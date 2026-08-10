@@ -59,7 +59,7 @@ For this RDR, LID matters because:
 
 ### Paid's run model today
 
-- **Agent run goals** (`AgentRun::GOALS`): `create_pr`, `create_issue`, `create_feature`, `review`, `enhance_issue`, `analyze_issue`, `lid_planning`. `AgentRun#prompt_for_goal` selects the prompt builder per goal. A new goal is the natural extension point.
+- **Agent run goals** (`AgentRun::GOALS`): `create_pr`, `create_issue`, `review`, `enhance_issue`, `analyze_issue`, `lid_planning`. `AgentRun#prompt_for_goal` selects the prompt builder per goal. A new goal is the natural extension point.
 - **`create_issue` goal**: takes a `custom_prompt`, runs the agent containerized (no repo clone unless `source_pull_request_number` is present), and creates a GitHub issue from the agent's output. This is the closest existing goal — but it produces a single issue, not an RDR PR + issue tree.
 - **`lid_planning` goal**: produces docs-only changes and opens a Planning PR. This is the precedent for docs-only PR output from a run. The `create_feature` goal produces a similar docs-only PR (the RDR) but goes further: it also files implementation issues.
 - **Issue enhancement** (`enhance_issue`): the synchronous human-in-the-chat step that asks intent-focused questions and waits (`paid_state: "needs_input"`). The Q&A style and the needs-input/clarifying-questions flow are the reuse targets for feature-creation Q&A when triggered as a run.
@@ -91,6 +91,7 @@ For this RDR, LID matters because:
 **`lid_planning` is the precedent for docs-only PRs.** A `create_feature` run opens a docs-only PR containing the RDR markdown, much like a `lid_planning` run opens a docs-only PR containing LID LLD/EARS artifacts. The `Lid::PlanningContract` server-side output validator (RDR-051) is a model for a `Features::RdrContract` that validates the RDR's required sections.
 
 **Two Q&A channels, same question style.** RDR-051 established that intent-focused questions (problem, desired behavior, constraints, rejected alternatives, scope, done-ness) are universal good practice. The feature-creation flow reuses this question style in two modes:
+
 - **Chat**: the chat agent asks questions inline, iterates until ready, then triggers a `create_feature` run via the existing `trigger_agent_run` MCP tool. No new chat infrastructure needed — just a new system-prompt clause and the ability to pass a rich feature brief as `custom_prompt`.
 - **Run (needs-input)**: if triggered directly (UI/API) with insufficient detail, the run posts clarifying questions via the `<!-- paid:enhance-issue -->` comment pattern and moves to `paid_state: "needs_input"`, riding the existing needs-input queue. The UX is similar to issue enhancement; the UI can be reused or lightly adapted.
 
@@ -132,6 +133,7 @@ AgentRun::GOALS = %w[create_pr create_issue create_feature review enhance_issue 
 ```
 
 The `create_feature` goal:
+
 - Always clones the repo (needs to read existing code + RDRs and write RDR files).
 - Derives its prompt from `Prompts::BuildForCreateFeature` (new), not from `custom_prompt`. The feature brief is passed via `external_metadata["feature_brief"]`.
 - Produces a docs-only PR (`docs/rdrs/`) and files issues.
@@ -154,3 +156,164 @@ The feature brief is a structured JSON object stored in `external_metadata["feat
   "target_rdr_number": null
 }
 ```
+
+#### 3. RDR generation
+
+The `create_feature` run clones the repo, reads `docs/rdrs/README.md` and the existing `docs/rdrs/RDR-*.md` files, and derives the next sequential number by finding the highest existing number and incrementing (a prompt instruction, not a Paid-side computation — consistent with the "repo stays the source of truth" tenet from RDR-051). It then researches the codebase (the same repo-read capability `lid_planning` already has) to ground the RDR's Context and Research Findings sections in real files and symbols, and writes `docs/rdrs/RDR-0XX-<slug>.md` following the section structure in `docs/rdrs/README.md`.
+
+Before the run opens the PR, a server-side validator — `Features::RdrContract`, modeled directly on `Lid::PlanningContract` (`app/services/lid/planning_contract.rb`) — checks that the generated file contains the required sections (Metadata, Problem Statement, Context, Research Findings, Proposed Solution, Alternatives Considered, Trade-offs and Consequences, Implementation Plan, Validation) and that `docs/rdrs/README.md`'s index has been updated with the new row. A missing section fails the contract the same way a missing HLD/LLD section fails `PlanningContract#call` today (`missing` list, `valid?` false) — the run does not open a PR with an incomplete RDR.
+
+The PR is docs-only (`docs/rdrs/` only), opened the same way `lid_planning`'s Planning PR is opened today, and its description links back to the feature brief for reviewer context.
+
+#### 4. Issue tree decomposition
+
+Decomposition happens in the same run, after the RDR passes the contract check, so the issue tree and the RDR it implements are generated from the same grounded understanding of the codebase — not a second pass with stale context.
+
+The agent reads the RDR's own Implementation Plan (§3) and produces one epic issue plus one issue per phase (or per task, for small RDRs where phases are already task-sized). Dependencies between issues are expressed as body text using the existing convention (`Issues::ParseDependencies`, `app/services/issues/parse_dependencies.rb`): `Depends on #N` / `Blocked by #N` inline, or a `## Dependencies` section for multiple links — the same syntax auto-pick already parses, so the filed tree is blocked/unblocked correctly without new dependency infrastructure. Each issue body also references the RDR by number (`Part of RDR-0XX`) so the issue is traceable back to the specification that produced it.
+
+Issue creation reuses the existing cross-repo issue-filing path (`AgentRun#cross_repo_issues`, `app/models/agent_run.rb:1919`) rather than a new mechanism — `create_feature` files issues the same way other goals record filed issues, just filing several instead of one.
+
+Issues are filed only after the RDR PR is opened (not after it merges) — the epic issue's body links to the (open) PR, so a reviewer evaluating the RDR can see the shape of the proposed decomposition alongside it, and can request changes to either before either is accepted. If the RDR PR is closed without merging, the run is responsible for closing the filed issues it created (mirroring how a rejected Planning PR leaves no orphaned LID artifacts).
+
+#### 5. LID chaining (conditional)
+
+If `project.lid_mode` is set, or the feature brief's `lid_requested` is `true`, the run chains into the existing `lid_planning` goal after the RDR PR is opened, passing the new RDR's path so `lid_planning` treats it as the input document (the same role a hand-written RDR plays for `lid_planning` today, per RDR-051's conversion table). This is a second `AgentRun` triggered with `lid_planning` as its goal, not new logic inside `create_feature` — it reuses the goal as-is, keeping the two-execution-model separation RDR-051 established for `lid_planning`'s docs-only-PR output.
+
+If `lid_mode` is not set and `lid_requested` is `false`, `create_feature` completes after filing the issue tree — no LID artifacts are produced, and the filed issues are picked up by the normal (non-LID) `create_pr` flow.
+
+If `lid_mode` is not set but `lid_requested` is `true`, the run's completion message tells the user LID bootstrap is required first and offers to trigger `lid_planning`'s adoption path (RDR-051) before continuing — it does not silently skip LID or silently bootstrap it without confirmation, since adoption changes repo-wide conventions.
+
+### Decision rationale
+
+1. **One new goal, not a new subsystem.** `create_feature` is deliberately shaped like `lid_planning` (docs-only PR from a containerized, codebase-aware run) plus one additional capability (filing an issue tree). Reusing `prompt_for_goal`, container provisioning, and `cross_repo_issues` means the only genuinely new code is the RDR/feature-brief prompt, `Features::RdrContract`, and the decomposition step itself.
+2. **Contract-gate the RDR before the PR, not after.** `Lid::PlanningContract` established the pattern of validating structure before opening a PR rather than relying on human review to catch missing sections. `Features::RdrContract` applies the same gate to RDR generation, catching the "generation cut off mid-document" failure mode this very RDR exhibited before this revision.
+3. **Decompose in the same run as generation.** A second run re-reading the RDR would re-derive context the first run already had, doubling cost for no accuracy gain. Decomposing immediately after the contract check keeps the RDR and its issue tree consistent with each other.
+4. **LID chaining is a second run, not inline logic.** Keeping `lid_planning` as a distinct triggered run (rather than folding its logic into `create_feature`) preserves RDR-051 Decision #4 (distinct output shape → distinct goal) and avoids `create_feature` growing a second, conditional output contract.
+
+## Alternatives Considered
+
+### Alternative 1: Skip the pre-run Q&A gate; let `create_feature` pause mid-run instead
+
+**Description**: Trigger `create_feature` immediately with whatever detail is available, and have the run itself post clarifying questions and pause (rather than requiring chat or needs-input to settle the brief *before* the run starts).
+
+**Pros**: One fewer concept for users to learn — always "just trigger the run."
+
+**Cons**: Agent runs cannot pause mid-execution and resume with new input; they are triggered, run, and complete (or fail). Building resumable mid-run pauses would be new orchestration machinery, not a use of existing capability.
+
+**Reason for rejection**: The two existing human-in-the-loop channels (chat, needs-input) already solve this without new orchestration primitives. This is the same reasoning RDR-051 applied to reconcile LID's mandatory stops with Paid's autonomous run model (§ The tension and its resolution).
+
+### Alternative 2: Fold `create_feature` into the `lid_planning` goal
+
+**Description**: Extend `lid_planning` to also accept a feature brief and produce both the RDR and (for LID projects) the LID artifacts in one run, instead of adding a separate goal.
+
+**Pros**: One goal instead of two; no chaining step.
+
+**Cons**: `lid_planning`'s output contract today is LID artifacts from an *existing* RDR or brownfield codebase (RDR-051, capability 4) — it has no issue-tree-filing capability, and folding that in would give it two unrelated jobs (LID conversion vs. RDR+issue-tree authoring) with two different completion criteria. Non-LID projects would also gain no value from a goal named for LID.
+
+**Reason for rejection**: Same conclusion RDR-052 (Alternative 3) reached for a similar merge proposal: distinct output shapes and confirmation surfaces belong in distinct goals. `create_feature` produces an RDR PR + issue tree unconditionally; `lid_planning` conversion is conditional and reused as-is.
+
+### Alternative 3: Generate the issue tree without an RDR (skip the specification document)
+
+**Description**: Decompose the feature brief directly into a linked issue tree, skipping the RDR document — faster time-to-issues, no PR review step.
+
+**Pros**: Fewer artifacts, faster to "issues exist."
+
+**Cons**: Loses the design-review checkpoint an RDR provides (a human can push back on the *approach* before dozens of issues exist), and loses the traceability surface (`Part of RDR-0XX`) that lets someone later understand *why* an issue tree looks the way it does. Directly contradicts the Problem Statement's framing of specification as the highest-leverage, most labor-intensive missing piece.
+
+**Reason for rejection**: Skipping the RDR optimizes for the wrong metric (time-to-issues) at the expense of the actual gap this RDR exists to close (missing specification).
+
+## Trade-offs and Consequences
+
+### Positive consequences
+
+- **Closes the highest-leverage gap.** The user no longer has to bridge "I want to build X" to "here are the issues Paid can pick up" by hand.
+- **Reuses proven infrastructure.** Container provisioning, docs-only PR opening, `cross_repo_issues`, and the needs-input/clarifying-questions machinery are all reused as-is; only the goal, prompt builder, and contract are new.
+- **Structural quality gate.** `Features::RdrContract` catches incomplete RDRs before they reach a human reviewer, the same way `PlanningContract` does for LID artifacts.
+- **LID-day-one option.** Projects that want intent tracking get it from the first PR of a feature, not bolted on after the fact.
+
+### Negative consequences
+
+- **Two-run chain for LID projects.** `create_feature` → `lid_planning` is two container boots and two PR review cycles instead of one, when LID chaining applies.
+- **RDR quality depends on brief quality.** A thin feature brief (chat abandoned early, or minimal needs-input answers) produces a thin RDR even though the contract validates *structure*, not *content* depth.
+- **Issue-tree decomposition is a judgment call.** Splitting an Implementation Plan into epic/phase/task issues is itself a design decision the agent makes; a poorly decomposed tree (too coarse or too fine) creates rework.
+
+### Risks and mitigations
+
+- **Risk**: Generation is cut off mid-document (as happened in this RDR's own first draft) and produces an incomplete RDR PR.
+  **Mitigation**: `Features::RdrContract` blocks the PR from opening until all required sections are present — this is the direct fix for the failure mode the reviewer identified.
+- **Risk**: The filed issue tree references an RDR PR that is later rejected or substantially reworked, leaving stale issues.
+  **Mitigation**: Issues are filed against the still-open RDR PR (not a merged one); if the PR is closed unmerged, the run closes the issues it filed. See Outstanding Questions for the merge-timing alternative.
+- **Risk**: `lid_requested: true` on a non-LID project triggers an unwanted repo-wide LID bootstrap.
+  **Mitigation**: The run only *offers* to bootstrap LID and waits for confirmation; it never bootstraps silently.
+
+## Implementation Plan
+
+> Status: Draft. Phases are indicative; the deferred questions below must be resolved during planning before locking.
+
+### Phase 1: `create_feature` goal and feature brief
+
+- Add `"create_feature"` to `AgentRun::GOALS`, goal predicates, `prompt_for_goal` branch, and the `has_prompt_source` exemption.
+- Define the feature brief JSON shape (§2) and wire it through `external_metadata["feature_brief"]`.
+- Add the chat-side system-prompt clause so the chat agent can gather a brief and trigger the run via `trigger_agent_run`.
+- Add the needs-input path so a directly triggered run with an insufficient brief posts clarifying questions and pauses.
+
+### Phase 2: RDR generation and the contract gate
+
+- Build `Prompts::BuildForCreateFeature`, instructing repo research, RDR numbering derivation, and RDR authoring per `docs/rdrs/README.md`'s section structure.
+- Build `Features::RdrContract` (modeled on `Lid::PlanningContract`) and wire it into the docs-only PR opening step so an incomplete RDR blocks the PR.
+
+### Phase 3: Issue tree decomposition
+
+- Decompose the RDR's Implementation Plan into an epic + phase/task issues using `Issues::ParseDependencies`-compatible dependency text.
+- File issues via the existing `cross_repo_issues` path, each referencing the RDR by number.
+- Handle the RDR-PR-closed-unmerged case by closing the issues the run filed.
+
+### Phase 4: LID chaining
+
+- Trigger `lid_planning` as a follow-on run when `lid_mode` is set or `lid_requested` is true, passing the new RDR as input.
+- Surface the LID-bootstrap offer (not silent bootstrap) when `lid_requested` is true but `lid_mode` is unset.
+
+### Phase 5: Validation and iteration
+
+- Run the scenarios in Validation below against real feature briefs; measure RDR completeness (contract pass rate on first attempt) and issue-tree quality.
+
+## Dependencies
+
+- Existing container provisioning + docs-only PR opening path (`lid_planning` precedent).
+- `Lid::PlanningContract` (`app/services/lid/planning_contract.rb`) as the structural model for `Features::RdrContract`.
+- `Issues::ParseDependencies` (`app/services/issues/parse_dependencies.rb`) for the dependency-text convention the filed issue tree must follow.
+- `AgentRun#cross_repo_issues` (`app/models/agent_run.rb:1919`) for issue-filing bookkeeping.
+- Chat's `trigger_agent_run` MCP tool and the needs-input/clarifying-questions machinery (`ClarifyingQuestions::Load` / `SubmitAnswers` / `ClearNeedsInput`) for the two Q&A entry paths.
+
+## Validation
+
+### Testing approach
+
+1. Unit: `Features::RdrContract` fails validation when a required RDR section is missing, and passes when all are present — the direct regression test for the failure mode this revision fixes.
+2. Integration: a chat-initiated `create_feature` run (brief already settled) produces a docs-only PR containing a contract-valid RDR and no code changes.
+3. Integration: a directly triggered `create_feature` run with an insufficient brief posts clarifying questions and moves to `paid_state: "needs_input"`, matching the existing needs-input flow.
+4. Integration: the filed issue tree's dependency text is parseable by `Issues::ParseDependencies` and each issue references the source RDR.
+5. Integration: `lid_requested: true` with `project.lid_mode` unset results in an offer to bootstrap LID, not a silent bootstrap or a silent skip.
+
+### Test scenarios
+
+1. **Scenario**: Chat user iterates on a feature brief for "add dark mode" until the brief is complete, then triggers `create_feature`.
+   **Expected**: The run opens a single docs-only PR with a contract-valid RDR and files an epic + phase issues linked back to it.
+2. **Scenario**: A `create_feature` run is triggered from the UI with only a one-line description.
+   **Expected**: The run posts clarifying questions via the needs-input flow instead of generating a thin RDR.
+3. **Scenario**: `create_feature` runs on a project with `lid_mode` set.
+   **Expected**: After the RDR PR opens, a follow-on `lid_planning` run is triggered against the new RDR.
+4. **Scenario**: The RDR generation is interrupted or the agent stops before completing all sections.
+   **Expected**: `Features::RdrContract` blocks the PR; no incomplete RDR reaches review.
+
+## Resolved Decisions
+
+- **RDR numbering** — derived by the agent from the repo (highest existing `docs/rdrs/RDR-*.md` number + 1), not computed by Paid. Consistent with RDR-051's "repo stays the source of truth" tenet.
+- **LID replaces CIRs** — no separate Change Intent Records; LID's design tree is the intent-tracking surface for `create_feature` output, per the user's direction (§ What LID provides).
+- **Decomposition timing** — issue-tree decomposition happens in the same run as RDR generation, not a separate run, so both are grounded in the same codebase research pass.
+
+## Outstanding Questions (to resolve in planning)
+
+- Should issues be filed when the RDR PR is *opened* (current design, §4) or only after it *merges*? Filing at open time gives reviewers the full picture sooner but risks orphaned issues if the PR is rejected; filing at merge time avoids orphans but splits feature creation across two async events (PR merge webhook → issue filing). Needs a decision before Phase 3 locks.
+- Should large RDRs (many phases) cap the number of issues filed per run to avoid an unreviewably large tree, and if so, what's the cap?
+- **Related Issues** (Metadata) are TBD pending planning — file and link tracking issues for Phases 1–5 before moving this RDR's status out of Draft.
