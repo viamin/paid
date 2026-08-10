@@ -16,6 +16,10 @@ module ChatSessions
       "gpt-4o"
     end
 
+    def self.usable_runner?(runner)
+      runner&.enabled_for_chat? && runner.api_key? && runner.effective_api_secret.present?
+    end
+
     def initialize(chat_session:)
       @chat_session = chat_session
     end
@@ -43,7 +47,8 @@ module ChatSessions
 
     def resolved_runner
       runner = chat_session.runner
-      return runner if runner&.effective_api_secret.present?
+      return runner if self.class.usable_runner?(runner)
+      return runner if runner.present?
 
       fallback_runner = Runner.first_configured_chat_enabled_for_owner(chat_session.created_by)
       return runner unless fallback_runner && fallback_runner != runner

@@ -216,12 +216,21 @@ RSpec.describe "ChatSessions" do
       end
 
       it "accepts provider_id as a legacy alias for runner_id" do
-        runner = create(:runner, user: user)
+        runner = create_api_chat_runner
 
         post chat_sessions_path(format: :json), params: { container_capability: "none", provider_id: runner.id }
 
         expect(response).to have_http_status(:created)
         expect(ChatSession.order(:id).last.runner).to eq(runner)
+      end
+
+      it "rejects inline sessions with non-API chat runners" do
+        runner = create(:runner, user: user, runner_key: "codex", auth_type: "subscription", enabled_for_chat: true)
+
+        post chat_sessions_path(format: :json), params: { container_capability: "none", runner_id: runner.id }
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body["error"]).to include("API-key chat runner")
       end
 
       it "redirects to the session page for html requests" do
@@ -400,6 +409,21 @@ RSpec.describe "ChatSessions" do
         expect(chat_root).to be_present
         expect(capability_panel).to be_present
         expect(chat_root.at_css("[data-chat-target='capabilityPanel']")).to eq(capability_panel)
+      end
+
+      it "only offers API-key-backed runners in the inline chat runner selector" do
+        # @spec CHAT-API-006
+        create(:runner, user: user, runner_key: "codex", auth_type: "subscription", enabled_for_chat: true)
+        api_runner = create(:runner, :api_key, user: user, runner_key: "opencode", name: "API Chat Runner",
+          provider_api_key: create(:provider_api_key, user: user, api_service_type: "openrouter"),
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2" } })
+
+        get chat_session_path(chat_session)
+
+        doc = Nokogiri::HTML(response.body)
+        runner_options = doc.css("select[name='chat_session[runner_id]'] option").map(&:text)
+        expect(runner_options).to include(api_runner.display_name)
+        expect(runner_options).not_to include("OpenAI Codex CLI")
       end
 
       it "renders mobile archive controls without expanding the sidebar by default" do
@@ -620,6 +644,42 @@ RSpec.describe "ChatSessions" do
         expect(chat_session.model).to eq("gpt-4.1")
       end
 
+      it "rejects runner updates that cannot build an API chat client" do
+        runner = create(:runner, user: user, runner_key: "codex", auth_type: "subscription", enabled_for_chat: true)
+
+        patch chat_session_path(chat_session, format: :json), params: { runner_id: runner.id }
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body["error"]).to include("API-key chat runner")
+        expect(chat_session.reload.runner_id).not_to eq(runner.id)
+      end
+
+      it "accepts an API-key chat runner owned by another user in the same account" do
+        teammate = create(:user, account: account)
+        runner = create(:runner, :api_key, user: teammate, runner_key: "opencode",
+          provider_api_key: create(:provider_api_key, user: teammate, api_service_type: "openrouter"),
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2" } })
+
+        patch chat_session_path(chat_session, format: :json), params: { runner_id: runner.id }
+
+        expect(response).to have_http_status(:ok)
+        expect(chat_session.reload.runner_id).to eq(runner.id)
+      end
+
+      it "rejects runners from a different account" do
+        other_account = create(:account)
+        other_user = create(:user, account: other_account)
+        runner = create(:runner, :api_key, user: other_user, runner_key: "opencode",
+          provider_api_key: create(:provider_api_key, user: other_user, api_service_type: "openrouter"),
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2" } })
+
+        patch chat_session_path(chat_session, format: :json), params: { runner_id: runner.id }
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body["error"]).to include("must belong to the same account")
+        expect(chat_session.reload.runner_id).not_to eq(runner.id)
+      end
+
       it "updates popup metadata context" do
         patch chat_session_path(chat_session, format: :json), params: {
           metadata: {
@@ -836,5 +896,11 @@ RSpec.describe "ChatSessions" do
       expect(form["class"]).to include('hidden')
       expect(form["data-chat-capability-stopped-only"]).to be_present
     end
+  end
+
+  def create_api_chat_runner
+    create(:runner, :api_key, user: user, runner_key: "opencode",
+      provider_api_key: create(:provider_api_key, user: user, api_service_type: "openrouter"),
+      config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2" } })
   end
 end
