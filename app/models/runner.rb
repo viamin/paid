@@ -704,13 +704,6 @@ class Runner < ApplicationRecord
     owner.runners.kept_only.for_agent_runs.where(runner_key: executable_keys).ordered.first
   end
 
-  def self.first_chat_enabled_for_owner(owner)
-    return unless owner
-
-    executable_keys = RunnerSupport.container_executable_runner_keys
-    owner.runners.kept_only.for_chat.where(runner_key: executable_keys).ordered.first
-  end
-
   def self.first_configured_chat_enabled_for_owner(owner)
     return unless owner
 
