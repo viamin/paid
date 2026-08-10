@@ -150,7 +150,7 @@ The feature brief is a structured JSON object stored in `external_metadata["feat
   "rejected_alternatives": ["CSS-only variables — rejected because we need server-side rendering support"],
   "scope": { "in": ["Color palette", "Toggle in settings", "Persistence"], "out": ["Themed syntax highlighting in code blocks"] },
   "done_criteria": "Dark mode is toggleable, persists across sessions, respects system preference, and passes visual regression tests",
-  "lid_requested": false
+  "lid_requested": false,
   "target_rdr_number": null
 }
 ```
