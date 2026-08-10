@@ -28,7 +28,9 @@ module ChatSessions
         runner
       end
 
-      automatic_candidates = user.runners.kept_only.for_fallback.where(enabled_for_chat: true).ordered.filter_map do |runner|
+      automatic_candidates = user.runners.kept_only.for_fallback.api_key
+        .includes(:provider_api_key, :integration_credential)
+        .where(enabled_for_chat: true).ordered.filter_map do |runner|
         next unless usable_runner?(runner)
         next if excluded_ids.include?(runner.id)
 
