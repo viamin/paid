@@ -10,6 +10,10 @@ module Knowledge
       new(user_setting:).runners_for(:chat)
     end
 
+    def self.for_issue_analysis(user_setting:)
+      new(user_setting:).runners_for(:issue_analysis)
+    end
+
     # Broadens chat selection beyond the kb_chat settings to every
     # chat-enabled Runner the user owns, applying the same circuit-breaker /
     # rate-limit availability filter as #runners_for. Used when the
@@ -67,6 +71,8 @@ module Knowledge
         [ user_setting.kb_embedding_runner, *Array(user_setting.kb_embedding_fallback_runners) ]
       when :chat
         [ user_setting.kb_chat_runner, *Array(user_setting.kb_chat_fallback_runners) ]
+      when :issue_analysis
+        [ user_setting.issue_analysis_runner, *Array(user_setting.issue_analysis_fallback_runners) ]
       else
         raise ArgumentError, "Unsupported knowledge runner operation: #{operation}"
       end
@@ -84,7 +90,7 @@ module Knowledge
       case operation.to_sym
       when :embedding
         UserSetting::KB_EMBEDDING_RUNNERS
-      when :chat
+      when :chat, :issue_analysis
         UserSetting::KB_CHAT_RUNNERS
       else
         raise ArgumentError, "Unsupported knowledge runner operation: #{operation}"
@@ -106,9 +112,20 @@ module Knowledge
         message: "knowledge.runner_selector.embedding_fallback_requires_compatible_model",
         user_setting_id: user_setting.id,
         runners: candidates,
-        model: Knowledge::Embeddings::Generate::MODEL,
-        dimensions: Knowledge::Embeddings::Generate::DIMENSIONS
+        model: embedding_model,
+        dimensions: embedding_dimensions
       )
+    end
+
+    # Returns the user-configured embedding model id, falling back to the
+    # bundled default. Centralized so the warn-log message reflects the
+    # actual model the pipeline will request — not the legacy constant.
+    def embedding_model
+      user_setting.kb_embedding_model.presence || Knowledge::Embeddings::Generate::DEFAULT_MODEL
+    end
+
+    def embedding_dimensions
+      user_setting.kb_embedding_dimensions
     end
 
     def log_unsupported_runners(operation, runners)

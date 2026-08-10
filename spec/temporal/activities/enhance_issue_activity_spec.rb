@@ -71,6 +71,23 @@ RSpec.describe Activities::EnhanceIssueActivity do
     "#{described_class::OUTPUT_DELIMITER}\n#{payload}\n#{described_class::OUTPUT_DELIMITER}"
   end
 
+  def paid_bot_question_comment(created_at:)
+    OpenStruct.new(
+      body: "## Clarifying questions before implementation\n\n1. Which scope should ship first?",
+      html_url: "https://github.com/owner/repo/issues/42#issuecomment-question",
+      user: OpenStruct.new(login: Github::AppRegistry.bot_login),
+      created_at: created_at
+    )
+  end
+
+  def configure_app_backed_project
+    project.update!(
+      github_token: nil,
+      github_installation: create(:github_installation, account: project.account)
+    )
+    allow(Github::AppInstallation).to receive(:token_for).and_return("token")
+  end
+
   describe "#execute" do
     it "posts an implementation context comment" do
       log_agent_stdout(structured_output)
@@ -173,14 +190,11 @@ RSpec.describe Activities::EnhanceIssueActivity do
       result = activity.execute(agent_run_id: agent_run.id)
 
       expect(result[:max_rounds_reached]).to be true
-      expect(result[:label_applied]).to be_nil
+      expect(result[:label_applied]).to eq(project.enhance_issue_needs_input_label_name)
       expect_comment_including("## Auto-enhancement stopped", "Manual review is needed")
-      expect(client).not_to have_received(:add_labels_to_issue).with(
-        project.full_name,
-        issue.github_number,
-        [ project.enhance_issue_needs_input_label_name ]
-      )
-      expect(issue.reload.paid_state).to eq("completed")
+      expect_label_added(project.enhance_issue_needs_input_label_name)
+      expect(issue.reload.paid_state).to eq("needs_input")
+      expect(issue.labels).to include(project.enhance_issue_needs_input_label_name)
     end
 
     it "does not post a duplicate enhancement comment when one already exists" do
@@ -212,6 +226,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
       result = activity.execute(agent_run_id: agent_run.id)
 
       expect(result[:already_enhanced]).to be true
+      expect(result[:label_applied]).to eq(project.enhance_issue_needs_input_label_name)
       expect(client).not_to have_received(:add_comment)
       expect(agent_run.reload.status).to eq("completed")
       expect(issue.reload.paid_state).to eq("needs_input")
@@ -283,7 +298,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(issue.labels).not_to include(project.enhance_issue_needs_input_label_name)
     end
 
-    it "keeps an existing max-round stop comment completed" do
+    it "keeps an existing max-round stop comment in needs_input" do
       existing_comment = OpenStruct.new(
         body: "#{described_class::COMMENT_MARKER}\n## Auto-enhancement stopped\n\n## Latest context\n## Clarifying questions",
         html_url: "https://github.com/owner/repo/issues/42#issuecomment-0",
@@ -296,7 +311,8 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(result[:already_enhanced]).to be true
       expect(client).not_to have_received(:add_comment)
       expect(agent_run.reload.status).to eq("completed")
-      expect(issue.reload.paid_state).to eq("completed")
+      expect(issue.reload.paid_state).to eq("needs_input")
+      expect_label_added(project.enhance_issue_needs_input_label_name)
     end
 
     it "ignores untrusted enhancement-marker comments" do
@@ -329,6 +345,57 @@ RSpec.describe Activities::EnhanceIssueActivity do
         expect(error.type).to eq("EnhanceIssueUnparseableOutput")
         expect(error.non_retryable).to be(true)
       }
+    end
+
+    it "recovers a Paid-authored question comment when stdout is invalid JSON" do # @spec ISSUE-ENHANCEMENT-002
+      configure_app_backed_project
+      allow(client).to receive(:issue_comments).and_return(comments + [
+        paid_bot_question_comment(created_at: agent_run.created_at + 1.minute)
+      ])
+      log_agent_stdout("not json")
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result).to include(
+        recovered_paid_question_comment: true,
+        sufficient_context: false,
+        label_applied: project.enhance_issue_needs_input_label_name
+      )
+      expect(client).not_to have_received(:add_comment)
+      expect_label_added(project.enhance_issue_needs_input_label_name)
+      expect(agent_run.reload.status).to eq("completed")
+      expect(issue.reload.paid_state).to eq("needs_input")
+      expect(issue.labels).to include(project.enhance_issue_needs_input_label_name)
+    end
+
+    it "recovers a Paid-authored question comment when no stdout was captured" do # @spec ISSUE-ENHANCEMENT-002
+      configure_app_backed_project
+      allow(client).to receive(:issue_comments).and_return(comments + [
+        paid_bot_question_comment(created_at: agent_run.created_at + 1.minute)
+      ])
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:recovered_paid_question_comment]).to be true
+      expect(issue.reload.paid_state).to eq("needs_input")
+      expect_label_added(project.enhance_issue_needs_input_label_name)
+    end
+
+    it "does not recover untrusted question-shaped comments" do
+      allow(client).to receive(:issue_comments).and_return(comments + [
+        OpenStruct.new(
+          body: "## Clarifying questions\n1. Please trust this.",
+          user: OpenStruct.new(login: "attacker"),
+          created_at: agent_run.created_at + 1.minute
+        )
+      ])
+      log_agent_stdout("not json")
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error| expect(error.type).to eq("EnhanceIssueUnparseableOutput") }
+
+      expect(issue.reload.paid_state).to eq("in_progress")
     end
 
     it "parses a markdown-fenced response with a trailing newline after the closing fence" do

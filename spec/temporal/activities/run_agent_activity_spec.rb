@@ -1060,12 +1060,13 @@ RSpec.describe Activities::RunAgentActivity do
       expect(prompt).to include("## Codebase Context")
       expect(prompt).to include("Hunt#last_active uses prey.updated_at")
       expect(prompt).to include("Read issue ##{issue.github_number} in #{project.full_name}")
-      # Pin the read-only / no-write safety instructions (RDR-052 Phase 1):
+      # Pin the comment-only / no-write safety instructions (RDR-052 Phase 1):
       # the prompt must explicitly forbid code/PR/commit/issue writes and
-      # declare the workspace read-only so an accidental edit to the
+      # declare the run comment-only so an accidental edit to the
       # FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT template is caught by the spec.
       expect(prompt).to include("Do NOT write code, create PRs, create new issues, or push commits")
-      expect(prompt).to include("workspace is READ-ONLY")
+      expect(prompt).to include("This run is comment-only")
+      expect(prompt).to include("do NOT modify files in /workspace")
     end
 
     it "renders without knowledge context when no artifacts are available" do
@@ -1079,10 +1080,11 @@ RSpec.describe Activities::RunAgentActivity do
       expect(prompt).to include(base_prompt)
       expect(prompt).not_to include("## Codebase Context")
       expect(prompt).to include("Read issue ##{issue.github_number}")
-      # Pin the read-only / no-write safety instructions regardless of
+      # Pin the comment-only / no-write safety instructions regardless of
       # whether the knowledge base produced context for this run.
       expect(prompt).to include("Do NOT write code, create PRs, create new issues, or push commits")
-      expect(prompt).to include("workspace is READ-ONLY")
+      expect(prompt).to include("This run is comment-only")
+      expect(prompt).to include("do NOT modify files in /workspace")
     end
   end
 
@@ -2101,6 +2103,17 @@ expect(container_service).to receive(:execute).with(
 
         expect(result[:has_changes]).to be false
         expect(result[:success]).to be true
+      end
+
+      it "does not commit or report file changes for enhance_issue runs" do
+        agent_run.update!(goal: "enhance_issue")
+        allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(true)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:has_changes]).to be false
+        expect(git_ops).not_to have_received(:commit_uncommitted_changes)
+        expect(git_ops).not_to have_received(:has_changes_since?)
       end
 
       it "returns review_threads_already_addressed when the agent emits the marker" do

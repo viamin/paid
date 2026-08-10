@@ -14,6 +14,7 @@ module ChatSessions
     private
 
     def run_with_fallbacks
+      # @spec CHAT-API-006
       attempted_runners = [ chat_session.runner ].compact
 
       loop do

@@ -13,8 +13,11 @@ module Activities
     activity_name "AnalyzeIssue"
 
     LLM_TIMEOUT = 90
-    DEFAULT_PROVIDER = "claude"
-    DEFAULT_MODEL = "claude-sonnet-4-6"
+    # Used only to pin a model and opt into the HTTP text transport when the
+    # resolved provider happens to be claude. The provider itself is no longer
+    # forced — selection comes from the user's issue-analysis / chat runners.
+    CLAUDE_RUNNER = "claude"
+    CLAUDE_MODEL = "claude-sonnet-4-6"
     MAX_SEARCH_RESULTS = 10
     MAX_COMMENTS = 50
 
@@ -168,28 +171,20 @@ module Activities
 
     # @spec ISSUE-ANALYSIS-001 ISSUE-ANALYSIS-002
     def chat_providers(project)
-      setting = project.effective_owner&.settings
-      providers = setting ? Knowledge::ProviderSelector.for_chat(user_setting: setting) : []
+      setting = project.effective_owner&.settings or return []
+
+      # Primary: the owner's explicit issue-analysis runner selection.
+      providers = Knowledge::ProviderSelector.for_issue_analysis(user_setting: setting)
       return providers if providers.any?
 
-      broadened = setting ? Knowledge::ProviderSelector.available_chat_runner_keys(user_setting: setting) : []
-      return broadened if broadened.any?
-
-      # Last resort: the platform default. Only used when it is not currently
-      # known-unavailable for this owner, so we never silently target a
-      # rate-limited / circuit-open runner. An empty list makes call_llm fail
-      # loudly rather than masking the outage by forcing a known-bad provider.
-      default_provider_available?(project) ? [ DEFAULT_PROVIDER ] : []
+      # Broaden to every chat-capable runner the owner has, applying the same
+      # circuit-breaker / rate-limit availability filter. An empty list makes
+      # call_llm fail loudly rather than masking the outage by forcing a
+      # provider the user never configured (the old Anthropic-only default).
+      Knowledge::ProviderSelector.available_chat_runner_keys(user_setting: setting)
     end
 
     # @spec ISSUE-ANALYSIS-002
-    def default_provider_available?(project)
-      owner = project.effective_owner or return true
-
-      state = owner.runner_states.find_by(runner_name: DEFAULT_PROVIDER)
-      state.nil? || !state.unavailable?
-    end
-
     def llm_options(provider)
       options = {
         provider: RunnerSupport.harness_runner_key_for(provider).to_sym,
@@ -197,8 +192,10 @@ module Activities
         dangerous_mode: false,
         tools: :none
       }
-      options[:model] = DEFAULT_MODEL if provider == DEFAULT_PROVIDER
-      options.merge!(Llm::TextMode.options) if provider == DEFAULT_PROVIDER
+      # Pin a model and opt into text mode only for claude; other providers use
+      # their harness default model and CLI transport.
+      options[:model] = CLAUDE_MODEL if provider == CLAUDE_RUNNER
+      options.merge!(Llm::TextMode.options) if provider == CLAUDE_RUNNER
       options
     end
 
@@ -309,7 +306,35 @@ module Activities
     end
 
     def extract_analysis_json(output)
-      JSON.parse(strip_markdown_fence(output.to_s.strip), symbolize_names: true)
+      parse_analysis_candidate(output) ||
+        raise(JSON::ParserError, "no analysis JSON object found")
+    end
+
+    def parse_analysis_candidate(output)
+      analysis_json_candidates(output).each do |candidate|
+        parsed = JSON.parse(candidate, symbolize_names: true)
+        return parsed if parsed.is_a?(Hash) && parsed.key?(:sufficient_context) && parsed.key?(:reasoning)
+      rescue JSON::ParserError
+        next
+      end
+
+      nil
+    end
+
+    def analysis_json_candidates(output)
+      stripped = output.to_s.strip
+      candidates = [ strip_markdown_fence(stripped) ]
+      candidates.concat(stripped.scan(/```(?:json)?\s*(.*?)\s*```/m).flatten)
+      candidates << embedded_json_object(stripped)
+      candidates.compact.uniq
+    end
+
+    def embedded_json_object(output)
+      start = output.index("{")
+      finish = output.rindex("}")
+      return unless start && finish && finish > start
+
+      output[start..finish]
     end
 
     def track_tokens(agent_run, response)

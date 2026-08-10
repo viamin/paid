@@ -908,7 +908,9 @@ upsert_global_prompt.call(
     IMPORTANT: Your goal is to ENHANCE AN EXISTING ISSUE by adding context or asking clarifying questions.
     Do NOT write code, create PRs, create new issues, or push commits.
 
-    The workspace is READ-ONLY -- you can explore and read files but cannot modify them.
+    This run is comment-only: do NOT modify files in /workspace, do NOT commit, push, or
+    create a PR. The workflow discards any /workspace modifications -- only the posted
+    comment and label state matter. You can explore and read the repo freely.
     State directories (under /home/agent/) are writable for scratch/tooling needs.
 
     Read issue #{{issue_number}} in {{repo}} -- its description and all comments.  Explore the repository

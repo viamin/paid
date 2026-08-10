@@ -38,8 +38,22 @@ RSpec.describe Knowledge::ProviderSelector do
           message: "knowledge.provider_selector.embedding_fallback_requires_compatible_model",
           user_setting_id: setting.id,
           providers: %w[openai openrouter deepseek],
-          model: Knowledge::Embeddings::Generate::MODEL,
-          dimensions: Knowledge::Embeddings::Generate::DIMENSIONS
+          model: Knowledge::Embeddings::Generate::DEFAULT_MODEL,
+          dimensions: Knowledge::Embeddings::Generate::DEFAULT_DIMENSIONS
+        )
+      )
+    end
+
+    it "logs the configured model and dimensions in the embedding fallback warning" do
+      setting.update!(kb_embedding_model: "text-embedding-3-small", kb_embedding_dimensions: 1536)
+      allow(Rails.logger).to receive(:warn)
+
+      described_class.for_embedding(user_setting: setting)
+
+      expect(Rails.logger).to have_received(:warn).with(
+        hash_including(
+          model: "text-embedding-3-small",
+          dimensions: 1536
         )
       )
     end
@@ -79,6 +93,42 @@ RSpec.describe Knowledge::ProviderSelector do
 
       expect(described_class.for_chat(user_setting: setting)).to eq(%w[claude cursor codex])
       expect(state.reload.circuit_state).to eq("half_open")
+    end
+  end
+
+  # @spec ISSUE-ANALYSIS-001
+  describe ".for_issue_analysis" do
+    let(:issue_setting) do
+      create(
+        :user_setting,
+        user: user,
+        issue_analysis_runner: "codex",
+        issue_analysis_fallback_runners: %w[cursor gemini],
+        circuit_breaker_timeout_seconds: 300
+      )
+    end
+
+    it "returns the configured issue analysis runner order" do
+      expect(described_class.for_issue_analysis(user_setting: issue_setting)).to eq(%w[codex cursor gemini])
+    end
+
+    it "returns an empty array when no issue analysis runner is configured" do
+      blank_setting = create(:user_setting, user: create(:user), issue_analysis_runner: "", issue_analysis_fallback_runners: [])
+
+      expect(described_class.for_issue_analysis(user_setting: blank_setting)).to eq([])
+    end
+
+    it "filters out unavailable runners" do
+      create(:runner_state, :rate_limited, user: user, runner_name: "codex")
+
+      expect(described_class.for_issue_analysis(user_setting: issue_setting)).to eq(%w[cursor gemini])
+    end
+
+    it "rejects an unsupported runner configured outside the supported set" do
+      issue_setting.update_columns(issue_analysis_runner: "not-a-runner")
+      allow(Rails.logger).to receive(:warn)
+
+      expect(described_class.for_issue_analysis(user_setting: issue_setting)).to eq(%w[cursor gemini])
     end
   end
 

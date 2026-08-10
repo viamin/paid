@@ -17,8 +17,13 @@
 - [x] **ISSUE-ENHANCEMENT-002** — When issue enhancement asks clarifying
   questions, the system SHALL continue using the existing enhancement comment
   marker and `needs_input` flow rather than creating a new state or surface.
+  If a containerized enhancement agent posts a Paid-authored clarifying-question
+  comment directly but fails to emit parseable structured output, the system
+  SHALL recover by applying the enhance-issue needs-input label and moving the
+  issue to `paid_state: "needs_input"` rather than leaving it auto-pick eligible.
   *Tests:* `spec/temporal/activities/enhance_issue_activity_spec.rb`.
-  *Code:* `app/temporal/activities/enhance_issue_activity.rb#prompt_for`,
+  *Code:* `app/temporal/activities/enhance_issue_activity.rb#enhance_issue_post_run`,
+  `app/temporal/activities/enhance_issue_activity.rb#recover_paid_question_comment!`,
   `app/services/clarifying_questions/load.rb`.
 
 - [D] **ISSUE-ENHANCEMENT-006** — When generating clarifying questions, the
@@ -80,12 +85,13 @@
 ## Containerized read-only execution (RDR-052)
 
 - [x] **ISSUE-ENHANCEMENT-006** — When issue enhancement runs, the system SHALL
-  execute it as a containerized agent with read-only repository access,
-  authenticating via the injected runner credential instead of the
-  `ANTHROPIC_API_KEY` environment variable. The workspace bind mount SHALL be
-  `:ro` and the agent prompt SHALL state the read-only constraint. The run
-  SHALL produce no file changes, commits, or pushes — only the posted
-  `<!-- paid:enhance-issue -->` comment and label state.
+  execute it as a containerized agent with repository access, authenticating
+  via the injected runner credential instead of the `ANTHROPIC_API_KEY`
+  environment variable. The agent prompt SHALL instruct the agent that the run
+  is comment-only: workspace modifications are discarded and the agent SHALL
+  NOT commit, push, or create a pull request. The workflow SHALL post the
+  `<!-- paid:enhance-issue -->` comment and label state without committing,
+  pushing, or creating a pull request.
   *Tests:* `spec/temporal/activities/enhance_issue_activity_spec.rb`.
   *Code:* `app/temporal/activities/enhance_issue_activity.rb#enhance_issue_post_run`,
   `app/temporal/workflows/agent_execution_workflow.rb`,

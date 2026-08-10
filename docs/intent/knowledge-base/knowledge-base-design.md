@@ -41,6 +41,19 @@ into Qdrant using the chunk UUID as the point ID. Qdrant is intentionally a
 derived index: vector payloads exclude chunk content, and semantic retrieval can
 be rebuilt from PostgreSQL plus a re-embedding pass.
 
+The embedding model and its vector dimensions are user-configurable per
+`user_settings` (`kb_embedding_model`, `kb_embedding_dimensions`); the legacy
+`text-embedding-3-large` / 3072 pair is the bundled default so existing
+knowledge bases keep working. The `Knowledge::Embeddings::ProxyGenerator` reads
+the configured values from the project's owner settings and threads them through
+the secrets-proxy-backed container, which already accepted arbitrary provider /
+model / dimensions via env vars. The runner-selection warning that fires when
+multiple embedding runners are configured references the configured model and
+dimensions rather than a hardcoded constant. Changing the model or dimensions
+on a populated knowledge base invalidates the Qdrant index and requires a
+re-embed; the embedding pipeline still records the new model id on each chunk
+as it is re-embedded.
+
 ### Search and retrieval
 
 Exact retrieval uses PostgreSQL identifier matching with trigram fallback.

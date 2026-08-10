@@ -22,8 +22,20 @@ class UserSetting < ApplicationRecord
   MAX_DELAY_SECONDS = 86_400
   KB_EMBEDDING_RUNNERS = Runner::OPENAI_COMPATIBLE_DIRECT_OUTBOUND_API_PROVIDER_KEYS.freeze
   KB_EMBEDDING_RUNNER_DEFAULT = "openai"
+  # @spec KNOWLEDGE-EMBED-001
+  # Default embedding model + dimensions. Mirrors the legacy hardcoded
+  # text-embedding-3-large / 3072 pair so existing knowledge bases do not
+  # need a re-embed on upgrade.
+  KB_EMBEDDING_MODEL_DEFAULT = Knowledge::Embeddings::Generate::DEFAULT_MODEL
+  KB_EMBEDDING_DIMENSIONS_DEFAULT = Knowledge::Embeddings::Generate::DEFAULT_DIMENSIONS
+  # Upper bound on embedding dimensions. The largest production models
+  # (OpenAI text-embedding-3-large, Cohere embed-v3) emit at most a few
+  # thousand dimensions; the cap keeps storage/index sizes predictable
+  # and prevents typos from blowing up the vector index.
+  KB_EMBEDDING_DIMENSIONS_MAX = 16_384
   KB_CHAT_RUNNERS = RunnerSupport::APP_RUNNER_KEYS.freeze
   KB_CHAT_RUNNER_DEFAULT = "claude"
+  ISSUE_ANALYSIS_RUNNERS = RunnerSupport::APP_RUNNER_KEYS.freeze
   RUNNER_SELECTION_MODES = %w[single round_robin random].freeze
   RUNNER_SELECTION_MODE_DEFAULT = "single"
   AGENT_UPDATE_COMMENT_MODES = %w[off summary].freeze
@@ -112,6 +124,23 @@ class UserSetting < ApplicationRecord
 
   def kb_embedding_fallback_providers=(value)
     self.kb_embedding_fallback_runners = value
+  end
+
+  # Effective embedding model id used by the knowledge pipeline. Falls back
+  # to the bundled default when the column is blank so settings imported
+  # from older exports still resolve.
+  def kb_embedding_model
+    self[:kb_embedding_model].to_s.presence || KB_EMBEDDING_MODEL_DEFAULT
+  end
+
+  # Effective vector dimensions used by the knowledge pipeline. Coerces
+  # blank/nil to the bundled default so legacy rows and JSONB round-trips
+  # that stored nil/empty values still produce a usable integer.
+  def kb_embedding_dimensions
+    raw = self[:kb_embedding_dimensions]
+    return KB_EMBEDDING_DIMENSIONS_DEFAULT if raw.nil? || raw.to_s.strip.empty?
+
+    Integer(raw)
   end
 
   # Polling & Timing
@@ -222,8 +251,12 @@ class UserSetting < ApplicationRecord
   validate :validate_fallback_runners
   validate :validate_kb_embedding_runner
   validate :validate_kb_embedding_fallback_runners
+  validate :validate_kb_embedding_model
+  validate :validate_kb_embedding_dimensions
   validate :validate_kb_chat_runner
   validate :validate_kb_chat_fallback_runners
+  validate :validate_issue_analysis_runner
+  validate :validate_issue_analysis_fallback_runners
   validate :validate_max_concurrent_runs_for_mode
   validates :auto_weight_enabled, inclusion: { in: [ true, false ] }
   validates :default_auto_approve, inclusion: { in: [ true, false ] }
@@ -375,6 +408,25 @@ class UserSetting < ApplicationRecord
   # Sets allowed_service_images from a comma-separated string
   def allowed_service_images_csv=(value)
     self.allowed_service_images = value.to_s.split(",").map(&:strip).reject(&:blank?).uniq
+  end
+
+  # Returns issue_analysis_fallback_runners as a comma-separated string for editing.
+  def issue_analysis_fallback_runners_csv
+    (issue_analysis_fallback_runners || []).join(", ")
+  end
+
+  # Sets issue_analysis_fallback_runners from a comma-separated string.
+  def issue_analysis_fallback_runners_csv=(value)
+    self.issue_analysis_fallback_runners = value.to_s.split(",").map(&:strip).reject(&:blank?).uniq
+  end
+
+  # Select options ([label, key]) for the issue analysis runner dropdown: the
+  # owner's chat-enabled runners plus all other supported chat runners, so a
+  # user can pin a specific runner or leave it blank to use all chat runners.
+  def issue_analysis_runner_options
+    owned = user&.runners&.kept_only&.for_chat&.ordered&.pluck(:runner_key).to_a.uniq
+    candidates = (owned + ISSUE_ANALYSIS_RUNNERS.to_a).uniq & ISSUE_ANALYSIS_RUNNERS.to_a
+    candidates.map { |key| [ Runner.display_name_for(key), key ] }
   end
 
   # Returns the ordered list of runners to try: primary first, then fallbacks.
@@ -694,6 +746,40 @@ class UserSetting < ApplicationRecord
     )
   end
 
+  # @spec KNOWLEDGE-EMBED-001
+  # Normalize the user-configurable embedding model. Blank values fall back
+  # to the bundled default so legacy rows keep working. Length is bounded so
+  # a misconfigured form cannot blow up the column or the secrets-proxy
+  # header that carries the value.
+  def validate_kb_embedding_model
+    normalized = self[:kb_embedding_model].to_s.strip
+    self[:kb_embedding_model] = normalized.presence || KB_EMBEDDING_MODEL_DEFAULT
+
+    if self[:kb_embedding_model].length > 200
+      errors.add(:kb_embedding_model, "is too long (maximum 200 characters)")
+    end
+  end
+
+  # @spec KNOWLEDGE-EMBED-001
+  # Coerce the user-configurable embedding dimensions to a positive integer
+  # bounded by KB_EMBEDDING_DIMENSIONS_MAX. Values outside that range almost
+  # always indicate a typo and would silently inflate the Qdrant index.
+  def validate_kb_embedding_dimensions
+    raw = self[:kb_embedding_dimensions]
+    if raw.is_a?(String) && raw.strip.empty?
+      self[:kb_embedding_dimensions] = KB_EMBEDDING_DIMENSIONS_DEFAULT
+      return
+    end
+
+    coerced = Integer(raw, exception: false)
+    if coerced.nil? || coerced < 1 || coerced > KB_EMBEDDING_DIMENSIONS_MAX
+      errors.add(:kb_embedding_dimensions, "must be an integer between 1 and #{KB_EMBEDDING_DIMENSIONS_MAX}")
+      return
+    end
+
+    self[:kb_embedding_dimensions] = coerced
+  end
+
   def validate_kb_chat_runner
     self.kb_chat_runner = normalize_kb_runner(kb_chat_runner, default: KB_CHAT_RUNNER_DEFAULT)
     return if KB_CHAT_RUNNERS.include?(kb_chat_runner)
@@ -706,6 +792,22 @@ class UserSetting < ApplicationRecord
       kb_chat_fallback_runners,
       attribute: :kb_chat_fallback_runners,
       supported_runners: KB_CHAT_RUNNERS
+    )
+  end
+
+  def validate_issue_analysis_runner
+    self.issue_analysis_runner = issue_analysis_runner.to_s.strip.downcase
+    return if issue_analysis_runner.blank?
+    return if ISSUE_ANALYSIS_RUNNERS.include?(issue_analysis_runner)
+
+    errors.add(:issue_analysis_runner, "is not a supported issue analysis runner")
+  end
+
+  def validate_issue_analysis_fallback_runners
+    self.issue_analysis_fallback_runners = normalize_kb_runner_list(
+      issue_analysis_fallback_runners,
+      attribute: :issue_analysis_fallback_runners,
+      supported_runners: ISSUE_ANALYSIS_RUNNERS
     )
   end
 

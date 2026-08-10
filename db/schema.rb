@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_08_053244) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_08_071316) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2859,11 +2859,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_08_053244) do
     t.integer "git_push_timeout_seconds", default: 60, null: false
     t.integer "git_unshallow_timeout_seconds", default: 1800, null: false
     t.integer "github_token_cache_ttl_minutes", default: 60, null: false
+    t.jsonb "issue_analysis_fallback_runners", default: [], null: false, comment: "Ordered fallback runner keys for analyze_issue when the primary runner is unavailable."
+    t.string "issue_analysis_runner", default: "", null: false, comment: "Preferred runner key for analyze_issue LLM assessment. Blank falls back to the owner's chat-enabled runners."
     t.integer "issue_goal_idle_timeout_seconds", default: 120, null: false
     t.integer "issue_goal_timeout_seconds", default: 600, null: false
     t.jsonb "kb_chat_fallback_runners", default: [], null: false
     t.string "kb_chat_runner", default: "claude", null: false
+    t.integer "kb_embedding_dimensions", default: 3072, null: false, comment: "Vector dimensions to request from the embedding model. Must match what the chosen kb_embedding_model emits; changing this on a populated knowledge base requires re-embedding."
     t.jsonb "kb_embedding_fallback_runners", default: [], null: false
+    t.string "kb_embedding_model", default: "text-embedding-3-large", null: false, comment: "User-configurable embedding model id. Defaults to text-embedding-3-large; users may pick any model from the provider catalog the configured embedding runner serves."
     t.string "kb_embedding_runner", default: "openai", null: false
     t.jsonb "log_data"
     t.boolean "marketplace_auto_attach_enabled", default: false, null: false, comment: "Whether this user opts their own agent runs into automatic and team-default marketplace attachments."

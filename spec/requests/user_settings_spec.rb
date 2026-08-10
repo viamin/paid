@@ -53,6 +53,15 @@ RSpec.describe "UserSettings" do
         expect(response.body).to include("Advanced Settings")
       end
 
+      it "renders the issue analysis runner selection controls" do
+        get edit_user_settings_path
+
+        expect(response.body).to include("Issue Analysis Runner")
+        expect(response.body).to include('name="user_setting[issue_analysis_runner]"')
+        expect(response.body).to include('name="user_setting[issue_analysis_fallback_runners_csv]"')
+        expect(response.body).to include("Automatic (use my chat runners)")
+      end
+
       it "does not render the deprecated auto-pick PR limit setting" do
         get edit_user_settings_path
 
@@ -381,6 +390,52 @@ RSpec.describe "UserSettings" do
         expect(settings.kb_chat_fallback_runners).to eq([ "cursor" ])
       end
 
+      it "updates the issue analysis runner selection" do
+        patch user_settings_path, params: {
+          user_setting: {
+            issue_analysis_runner: "codex",
+            issue_analysis_fallback_runners_csv: "cursor, gemini"
+          }
+        }
+
+        expect(response).to redirect_to(edit_user_settings_path)
+
+        settings = user.reload.settings
+        expect(settings.issue_analysis_runner).to eq("codex")
+        expect(settings.issue_analysis_fallback_runners).to eq(%w[cursor gemini])
+      end
+
+      it "clears the issue analysis runner back to automatic (blank)" do
+        user.settings.update!(issue_analysis_runner: "codex", issue_analysis_fallback_runners: %w[cursor])
+
+        patch user_settings_path, params: {
+          user_setting: {
+            issue_analysis_runner: "",
+            issue_analysis_fallback_runners_csv: ""
+          }
+        }
+
+        expect(response).to redirect_to(edit_user_settings_path)
+
+        settings = user.reload.settings
+        expect(settings.issue_analysis_runner).to eq("")
+        expect(settings.issue_analysis_fallback_runners).to eq([])
+      end
+
+      it "rejects an unsupported issue analysis runner" do
+        patch user_settings_path, params: {
+          user_setting: {
+            issue_analysis_runner: "not-a-runner"
+          }
+        }
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.body).to include("supported issue analysis runner")
+
+        # Validation failure does not persist the rejected value.
+        expect(user.reload.settings.issue_analysis_runner).to eq("")
+      end
+
       it "renders errors for unsupported knowledge embedding runners" do
         user.settings.update!(
           kb_embedding_runner: "openai",
@@ -401,6 +456,32 @@ RSpec.describe "UserSettings" do
         settings = user.reload.settings
         expect(settings.kb_embedding_runner).to eq("openai")
         expect(settings.kb_embedding_fallback_runners).to eq([ "openrouter" ])
+      end
+
+      it "updates the embedding model and dimensions" do
+        patch user_settings_path, params: {
+          user_setting: {
+            kb_embedding_model: "text-embedding-3-small",
+            kb_embedding_dimensions: 1536
+          }
+        }
+
+        expect(response).to redirect_to(edit_user_settings_path)
+
+        settings = user.reload.settings
+        expect(settings.kb_embedding_model).to eq("text-embedding-3-small")
+        expect(settings.kb_embedding_dimensions).to eq(1536)
+      end
+
+      it "rejects an out-of-range embedding dimension" do
+        patch user_settings_path, params: {
+          user_setting: {
+            kb_embedding_dimensions: 99_999
+          }
+        }
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.body).to include("between 1 and")
       end
     end
   end
