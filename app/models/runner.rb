@@ -715,7 +715,11 @@ class Runner < ApplicationRecord
     return unless owner
 
     executable_keys = RunnerSupport.container_executable_runner_keys
-    owner.runners.kept_only.for_chat.where(runner_key: executable_keys).ordered.find do |runner|
+    owner.runners.kept_only.for_chat.api_key
+      .includes(:provider_api_key, :integration_credential)
+      .where(runner_key: executable_keys)
+      .ordered
+      .find do |runner|
       runner.effective_api_secret.present?
     end
   end

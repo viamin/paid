@@ -7,18 +7,35 @@ module ChatSessions
     module_function
 
     def for(chat_session:, excluding: [])
+      # @spec CHAT-API-006
       user = chat_session.created_by
       return [] unless user&.settings
 
       excluded_ids = excluded_runner_ids(excluding)
+      excluded_ids << chat_session.runner_id if excluding.blank? && chat_session.runner_id.present?
+      current_runner = chat_session.reload.runner
+      current_candidates = if usable_runner?(current_runner) && !excluded_ids.include?(current_runner.id)
+        [ current_runner ]
+      else
+        []
+      end
 
-      Array(user.settings.kb_chat_fallback_runners).filter_map do |identifier|
+      configured_candidates = Array(user.settings.kb_chat_fallback_runners).filter_map do |identifier|
         runner = runner_for_identifier(user, identifier, excluding_ids: excluded_ids)
         next unless usable_runner?(runner)
         next if excluded_ids.include?(runner.id)
 
         runner
-      end.uniq
+      end
+
+      automatic_candidates = user.runners.kept_only.for_fallback.where(enabled_for_chat: true).ordered.filter_map do |runner|
+        next unless usable_runner?(runner)
+        next if excluded_ids.include?(runner.id)
+
+        runner
+      end
+
+      (current_candidates + configured_candidates + automatic_candidates).uniq
     end
 
     def switch!(chat_session:, runner:)
@@ -40,17 +57,18 @@ module ChatSessions
     end
 
     def usable_runner?(runner)
-      runner&.enabled_for_chat? && runner.effective_api_secret.present?
+      BuildLlmClient.usable_runner?(runner)
     end
 
     def runner_for_identifier(user, identifier, excluding_ids:)
       if Runner.routing_key?(identifier)
         runner = Runner.for_identifier(user, identifier)
         return nil if runner && excluding_ids.include?(runner.id)
+        return nil unless runner&.enabled_for_fallback?
 
         runner
       else
-        user.runners.kept_only.where(runner_key: identifier).ordered.find do |runner|
+        user.runners.kept_only.for_fallback.where(runner_key: identifier).ordered.find do |runner|
           usable_runner?(runner) && !excluding_ids.include?(runner.id)
         end
       end

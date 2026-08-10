@@ -151,6 +151,9 @@ module ChatSessions
             raise ArgumentError, "runner must belong to the same account"
           end
           raise ArgumentError, "runner must be enabled for chat" unless runner.enabled_for_chat?
+          unless ChatSessions::BuildLlmClient.usable_runner?(runner)
+            raise ArgumentError, "runner must be an API-key chat runner with a configured API key"
+          end
         end
       else
         default_runner_for_user
@@ -167,7 +170,7 @@ module ChatSessions
     end
 
     def default_runner_for_user
-      Runner.first_configured_chat_enabled_for_owner(user) || Runner.first_chat_enabled_for_owner(user)
+      Runner.first_configured_chat_enabled_for_owner(user)
     end
   end
 end

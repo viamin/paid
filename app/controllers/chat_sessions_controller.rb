@@ -140,6 +140,7 @@ class ChatSessionsController < ApplicationController
     authorize @chat_session
     project_changed = update_params.key?(:project_id) && update_params[:project_id].to_s != @chat_session.project_id.to_s
     metadata_changed = update_params.key?(:metadata) && update_params[:metadata] != @chat_session.metadata
+    validate_api_chat_runner!(update_params[:runner_id]) if update_params.key?(:runner_id)
     @chat_session.update!(update_params)
     regenerate_system_message! if project_changed || metadata_changed
 
@@ -148,6 +149,12 @@ class ChatSessionsController < ApplicationController
       format.turbo_stream { head :no_content }
       format.html { redirect_to chat_session_path(@chat_session), notice: "Chat session updated." }
       format.json { render json: session_json(@chat_session) }
+    end
+  rescue ArgumentError, ActiveRecord::RecordInvalid => e
+    respond_to do |format|
+      format.turbo_stream { render plain: update_error_message(e), status: :unprocessable_entity }
+      format.html { redirect_to chat_session_path(@chat_session), alert: update_error_message(e) }
+      format.json { render json: { error: update_error_message(e) }, status: :unprocessable_entity }
     end
   end
 
@@ -417,6 +424,21 @@ class ChatSessionsController < ApplicationController
     request.format = :json
   end
 
+  def validate_api_chat_runner!(runner_id)
+    return if runner_id.blank?
+
+    runner = current_user.runners.kept_only.find(runner_id)
+    return if ChatSessions::BuildLlmClient.usable_runner?(runner)
+
+    raise ArgumentError, "runner must be an API-key chat runner with a configured API key"
+  end
+
+  def update_error_message(error)
+    return error.record.errors.full_messages.to_sentence if error.respond_to?(:record) && error.record&.errors&.any?
+
+    error.message
+  end
+
   def load_sidebar_data(active_session: nil)
     archived = sidebar_view_archived?(active_session)
     sidebar = sidebar_batch(archived: archived)
@@ -430,7 +452,10 @@ class ChatSessionsController < ApplicationController
     @sidebar_next_frame_id = sidebar[:next_frame_id]
     @sidebar_next_params = sidebar[:next_params]
     @new_chat_session = ChatSession.new(container_capability: "none", auto_approve: current_user.settings.default_auto_approve)
-    @available_runners = current_user.runners.kept_only.ordered
+    @available_runners = current_user.runners.kept_only.for_chat.api_key
+      .includes(:provider_api_key, :integration_credential)
+      .ordered
+      .select { |runner| ChatSessions::BuildLlmClient.usable_runner?(runner) }
     @available_projects = current_account.projects.order(:name)
     @available_models = LlmModel.active.order(:provider, :display_name)
   end

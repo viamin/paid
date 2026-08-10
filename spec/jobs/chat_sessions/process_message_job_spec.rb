@@ -231,11 +231,7 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
       .and_return(rate_limited_llm_client, successful_fallback_llm_client)
 
     expect {
-      described_class.perform_now(
-        chat_session_id: chat_session.id,
-        content: "Hello",
-        stream_message_id: stream_message_id
-      )
+      perform_message
     }.to have_broadcasted_to(stream_name)
       .with(hash_including(type: "message_created", role: "assistant",
         fallback_notice: true,
@@ -245,6 +241,23 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
         html: include("Fallback answer")))
       .and have_broadcasted_to(stream_name)
       .with(hash_including(type: "message_complete", tokens: { input: 10, output: 5 }))
+  end
+
+  it "continues on a runner selected while the rate-limited attempt is running" do
+    # @spec CHAT-API-006
+    fallback_runner = configure_chat_fallback(configured: false)
+    fallback_runner.update!(enabled_for_fallback: false)
+    stub_mid_attempt_runner_switch(fallback_runner)
+
+    expect {
+      perform_message
+    }.to have_broadcasted_to(stream_name)
+      .with(hash_including(type: "message_created", role: "assistant",
+        fallback_notice: true,
+        html: include("Switching to #{fallback_runner.display_name} and continuing.")))
+      .and have_broadcasted_to(stream_name)
+      .with(hash_including(type: "message_created", role: "assistant",
+        html: include("Fallback answer")))
   end
 
   it "broadcasts generic error for unexpected failures" do
@@ -329,14 +342,33 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
     })
   end
 
-  def configure_chat_fallback
+  def perform_message(content: "Hello")
+    described_class.perform_now(
+      chat_session_id: chat_session.id,
+      content: content,
+      stream_message_id: stream_message_id
+    )
+  end
+
+  def stub_mid_attempt_runner_switch(fallback_runner)
+    build_attempts = 0
+    allow(ChatSessions::BuildLlmClient).to receive(:call)
+      .with(chat_session: chat_session)
+      .and_wrap_original do |_method, chat_session:|
+        build_attempts += 1
+        ChatSession.where(id: chat_session.id).update_all(runner_id: fallback_runner.id)
+        build_attempts == 1 ? rate_limited_llm_client : successful_fallback_llm_client
+      end
+  end
+
+  def configure_chat_fallback(configured: true)
     primary_runner = create(:runner, :api_key, user: user, runner_key: "opencode",
       provider_api_key: create(:provider_api_key, user: user, api_service_type: "openrouter"),
       config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2" } })
     fallback_runner = create(:runner, :api_key, user: user, runner_key: "claude",
       provider_api_key: create(:provider_api_key, user: user, api_service_type: "anthropic"))
 
-    user.settings.update!(kb_chat_fallback_runners: [ "claude" ])
+    user.settings.update!(kb_chat_fallback_runners: [ "claude" ]) if configured
     chat_session.update!(runner: primary_runner)
     fallback_runner
   end

@@ -54,7 +54,7 @@ RSpec.describe ChatSessions::Create do
     end
 
     it "resolves and associates a runner" do
-      runner = create(:runner, user: user)
+      runner = create_api_chat_runner
       session = described_class.call(
         account: account,
         user: user,
@@ -66,10 +66,11 @@ RSpec.describe ChatSessions::Create do
       expect(session.model).to eq("gpt-4o")
     end
 
-    it "defaults to the first chat-eligible runner" do
+    it "defaults to the first configured API-key chat runner" do
       non_chat_runner = user.runners.find_by!(runner_key: "claude")
       non_chat_runner.update!(enabled_for_chat: false)
-      chat_runner = create(:runner, user: user, runner_key: "cursor", enabled_for_chat: true)
+      create(:runner, user: user, runner_key: "cursor", enabled_for_chat: true)
+      chat_runner = create_api_chat_runner
 
       session = described_class.call(account: account, user: user)
 
@@ -94,7 +95,7 @@ RSpec.describe ChatSessions::Create do
     end
 
     it "accepts provider_id as a legacy alias for runner_id" do
-      runner = create(:runner, user: user)
+      runner = create_api_chat_runner
       session = described_class.call(
         account: account,
         user: user,
@@ -102,6 +103,14 @@ RSpec.describe ChatSessions::Create do
       )
 
       expect(session.runner).to eq(runner)
+    end
+
+    it "raises when an inline chat runner cannot build an API chat client" do
+      runner = create(:runner, user: user, runner_key: "codex", auth_type: "subscription", enabled_for_chat: true)
+
+      expect {
+        described_class.call(account: account, user: user, runner_id: runner.id)
+      }.to raise_error(ArgumentError, /API-key chat runner/)
     end
 
     it "raises when runner belongs to a different account" do
@@ -246,5 +255,11 @@ RSpec.describe ChatSessions::Create do
         )
       )
     end
+  end
+
+  def create_api_chat_runner
+    create(:runner, :api_key, user: user, runner_key: "opencode",
+      provider_api_key: create(:provider_api_key, user: user, api_service_type: "openrouter"),
+      config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2" } })
   end
 end
