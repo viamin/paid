@@ -1314,6 +1314,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_08_071316) do
     t.integer "pr_followup_count", default: 0, null: false
     t.string "pr_review_phase", default: "draft", null: false
     t.bigint "project_id", null: false
+    t.datetime "reconciled_at", comment: "When this issue was last verified via reconciliation; null = never reconciled"
     t.datetime "relationships_parsed_at"
     t.integer "review_goal_retry_count", default: 0, null: false
     t.datetime "review_goal_retry_reset_at"
