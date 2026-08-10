@@ -49,6 +49,17 @@ RSpec.describe Tools::BaseTool do
         { ok: true }
       end
     end)
+
+    stub_const("Tools::BaseToolNestedKeyErrorSpecTool", Class.new(described_class) do
+      authorize :show?, ->(_args) { {}.fetch(:internal_key) }
+
+      def self.tool_name = "base_tool_nested_key_error_spec"
+      def self.description = "Nested KeyError base tool spec"
+
+      def perform
+        { ok: true }
+      end
+    end)
   end
 
   describe "#dispatch" do
@@ -92,6 +103,22 @@ RSpec.describe Tools::BaseTool do
       expect { tool.dispatch(project_id: project.id) }
         .to raise_error(Tools::UnauthorizedError, "base_tool_post_hoc_authorized_spec must authorize before execution")
       expect(tool.perform_called).to be_nil
+    end
+
+    # @spec CHAT-TOOL-CONFIRMATION-003
+    it "normalizes missing authorization arguments" do
+      tool = Tools::BaseToolAuthorizedSpecTool.new(user: user, session: session)
+
+      expect { tool.dispatch }
+        .to raise_error(ArgumentError, "Missing required argument: project_id")
+    end
+
+    # @spec CHAT-TOOL-CONFIRMATION-003
+    it "does not normalize KeyErrors from inside resolver helpers" do
+      tool = Tools::BaseToolNestedKeyErrorSpecTool.new(user: user, session: session)
+
+      expect { tool.dispatch }
+        .to raise_error(KeyError, /internal_key/)
     end
   end
 end

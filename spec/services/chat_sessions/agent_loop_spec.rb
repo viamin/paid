@@ -236,6 +236,25 @@ RSpec.describe ChatSessions::AgentLoop do
         ])
       end
 
+      let(:malformed_auto_approve_client) do
+        Class.new do
+          def initialize
+            @called = false
+          end
+
+          def call(_conversation, tools: nil)
+            @called = !@called
+            return { content: "I need the project id before I can start that run.", tool_calls: [], tokens_input: 5, tokens_output: 2, model: "gpt-4o" } unless @called
+
+            {
+              content: "I'll kick off an agent run.",
+              tool_calls: [ { id: "call_1", name: "trigger_agent_run", arguments: {} } ],
+              tokens_input: 50, tokens_output: 20, model: "gpt-4o"
+            }
+          end
+        end.new
+      end
+
       before do
         allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user, session: anything).and_return(tool_definitions)
         allow(Tools::Registry).to receive(:dispatch).and_return({ "id" => 99, "status" => "queued" })
@@ -315,6 +334,20 @@ RSpec.describe ChatSessions::AgentLoop do
         expect(pending_message.tool_name).to eq("record_change_intent")
         expect(pending_message.tool_result).to include("status" => "draft")
         expect(chat_session.messages.where(tool_status: "approved")).not_to exist
+      end
+
+      # @spec CHAT-TOOL-CONFIRMATION-003
+      it "surfaces malformed auto-approved tool calls as invalid arguments" do
+        allow(Tools::Registry).to receive(:dispatch).and_call_original
+
+        described_class.new(chat_session: chat_session, llm_client: malformed_auto_approve_client).run
+
+        tool_result = chat_session.messages.find_by(role: "tool", tool_call_id: "call_1").tool_result
+        expect(tool_result).to include(
+          "status" => "error",
+          "error" => "invalid_arguments",
+          "message" => "Missing required argument: project_id"
+        )
       end
     end
 

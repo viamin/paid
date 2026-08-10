@@ -169,10 +169,18 @@ module Tools
 
     def run_declared_authorizations!(args)
       self.class.authorization_rules.each do |rule|
-        record = instance_exec(args, &rule[:resolver])
+        record = authorization_record_for(rule, args)
         @preflight_authorization_performed = true
         authorize(record, rule[:query], policy_class: rule[:policy_class])
       end
+    end
+
+    def authorization_record_for(rule, args)
+      instance_exec(args, &rule[:resolver])
+    rescue KeyError => error
+      raise unless error.respond_to?(:receiver) && error.receiver.equal?(args)
+
+      raise ArgumentError, "Missing required argument: #{error.key}"
     end
   end
 end

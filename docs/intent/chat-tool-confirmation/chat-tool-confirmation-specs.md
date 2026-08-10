@@ -31,3 +31,15 @@
   `Tools::BaseTool.auto_approve_eligible?`,
   `Tools::GithubIssueToolSupport` (ClassMethods),
   `Tools::TriggerAgentRun.auto_approve_eligible?`.
+
+- [x] **CHAT-TOOL-CONFIRMATION-003** - When a chat-dispatched tool call is
+  missing a required argument used for preflight authorization, the system SHALL
+  return an `invalid_arguments` tool result that names the missing argument
+  instead of surfacing an `internal_error`, including auto-approved write-tool
+  calls.
+
+  *Tests:* `spec/mcp/tools/base_tool_spec.rb`,
+  `spec/mcp/tools/trigger_agent_run_spec.rb`,
+  `spec/services/chat_sessions/agent_loop_spec.rb`.
+  *Code:* `Tools::BaseTool#authorization_record_for`,
+  `ChatSessions::ToolDispatch#normalize_tool_dispatch_result`.

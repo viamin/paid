@@ -52,6 +52,13 @@ RSpec.describe Tools::TriggerAgentRun do
       }.to raise_error(ArgumentError, /Confirmation required/)
     end
 
+    # @spec CHAT-TOOL-CONFIRMATION-003
+    it "raises an argument error when project_id is missing" do
+      expect {
+        tool.call(confirmed: true)
+      }.to raise_error(ArgumentError, "Missing required argument: project_id")
+    end
+
     it "raises for project in another account" do
       other_project = create(:project)
       other_issue = create(:issue, project: other_project)
