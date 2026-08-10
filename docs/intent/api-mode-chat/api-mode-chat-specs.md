@@ -69,3 +69,16 @@
   `TokenUsageTracker.record_per_request_usage`,
   `ChatSessionsController#session_scope_with_token_totals`,
   `ChatSessionsController#session_json`.
+
+- [x] **CHAT-API-006** — When an API-mode chat runner raises a provider error
+  such as a rate limit, the system SHALL retry the turn on a usable API-key
+  backed replacement runner, preferring a runner newly selected on the chat
+  session and then falling back through chat fallback-enabled runners; inline
+  chat runner selectors SHALL only offer runners that can build an API chat
+  client.
+  *Tests:* `spec/services/chat_sessions/fallback_runners_spec.rb`,
+  `spec/jobs/chat_sessions/process_message_job_spec.rb`,
+  `spec/requests/chat_sessions_spec.rb`.
+  *Code:* `ChatSessions::FallbackLoop#run_with_fallbacks`,
+  `ChatSessions::FallbackRunners.for`,
+  `ChatSessionsController#load_sidebar_data`.
