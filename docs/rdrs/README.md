@@ -148,6 +148,12 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 |-----|-------|--------|----------|
 | [RDR-051](RDR-051-lid-aware-agent-runs.md) | LID-Aware Agent Runs and Brownfield Adoption | Partially Implemented | P1 |
 
+### Feature Creation
+
+| RDR | Title | Status | Priority |
+|-----|-------|--------|----------|
+| [RDR-053](RDR-053-new-feature-creation.md) | New Feature Creation — RDR-Driven Issue Trees with LID Support | Draft | P1 |
+
 ## Decision Summary
 
 ### Core Stack
