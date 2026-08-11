@@ -412,6 +412,14 @@ module Workflows
             # recognized as assessed and ready for a follow-up implementation run.
             run_activity(Activities::MarkAgentRunCompleteActivity,
               { agent_run_id: agent_run_id, reason: "no_changes" }, timeout: 30)
+          elsif goal.in?(%w[create_feature lid_planning]) && issue_id.present?
+            # create_feature and lid_planning produce docs-only PRs from
+            # prompt builders, not from issues. No changes means the agent
+            # failed to produce output — mark complete without posting a
+            # needs_input comment (the run's issue is a tracking artifact,
+            # not the source of work).
+            run_activity(Activities::MarkAgentRunCompleteActivity,
+              { agent_run_id: agent_run_id, reason: "no_changes" }, timeout: 30)
           elsif issue_id.present? && !source_pull_request_number
             # Issue-based run with no code changes / no PR: classify as
             # needs_input or recommend_close and post an actionable GitHub comment.

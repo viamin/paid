@@ -56,6 +56,10 @@
               <input type="radio" name="goal" value="enhance_issue" <% if selected_goal == "enhance_issue" %>checked<% end %> class="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500" data-action="change->goal-toggle#toggle">
               <span class="ml-2 text-sm text-gray-700">Enhance Issue</span>
             </label>
+            <label class="inline-flex items-center">
+              <input type="radio" name="goal" value="create_feature" <% if selected_goal == "create_feature" %>checked<% end %> class="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500" data-action="change->goal-toggle#toggle">
+              <span class="ml-2 text-sm text-gray-700">Create New Feature</span>
+            </label>
           </div>
         </fieldset>
 
@@ -83,10 +87,26 @@
 
               <%= render "shared/issue_enhance_table", issues: @issues, issues_with_active_runs: @issues_with_active_runs, issue_enhancement_rounds: @issue_enhancement_rounds, initially_visible: selected_goal == "enhance_issue" %>
             <% else %>
+
+
               <p class="mt-1 text-sm text-gray-500">No actionable open issues found. Sync issues first.</p>
             <% end %>
           </div>
         </div>
+
+        <div data-goal-toggle-target="featureDescriptionSection" hidden>
+          <h2 class="text-base font-semibold text-gray-900">Feature Description</h2>
+          <p class="mt-1 text-sm text-gray-500">Describe the feature you want Paid to design. Include what the feature does, the problem it solves, and any constraints or requirements. Paid will ask clarifying questions if more detail is needed.</p>
+
+          <div class="mt-4 rounded-lg border border-gray-200 p-4">
+            <label for="feature_description" class="block text-sm font-medium text-gray-700">Feature description:</label>
+            <textarea name="feature_description" id="feature_description" rows="8"
+                      placeholder="Example: Add a dark mode toggle that switches the entire UI to a dark color palette. Should respect the user's system preference by default and persist the choice across sessions."
+                      class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"></textarea>
+            <p class="mt-1 text-xs text-gray-500">This description becomes the feature brief. If it's too sparse, the agent will pause and ask clarifying questions before starting work.</p>
+          </div>
+        </div>
+
 
         <div data-goal-toggle-target="prSection" <% if selected_goal == "enhance_issue" %>hidden<% end %>>
           <h2 class="text-base font-semibold text-gray-900" data-goal-toggle-target="prHeading">Or Work on an Existing PR</h2>

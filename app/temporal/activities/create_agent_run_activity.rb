@@ -128,6 +128,11 @@ module Activities
         },
         started_at: agent_run.created_at
       ) do
+        if goal == "create_feature" && issue.present? && feature_brief_sparse?(agent_run)
+          initiate_feature_needs_input!(agent_run, project, issue)
+          next build_result(agent_run, user_settings, project, scope_result, paused: true)
+        end
+
         issue&.update!(paid_state: "in_progress")
 
         # Select model for this run (creates a ModelSelection record for cost
@@ -149,20 +154,7 @@ module Activities
           prompt_version_id: prompt_version&.id
         )
 
-        result = {
-          agent_run_id: agent_run.id,
-          focus: agent_run.focus,
-          runner_attempt_count: runner_attempt_count_for(agent_run, user_settings),
-          agent_timeout_seconds: user_settings&.agent_timeout_seconds || AGENT_TIMEOUT_DEFAULT,
-          issue_goal_timeout_seconds: user_settings&.issue_goal_timeout_seconds || Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT,
-          max_execution_seconds: effective_max_execution_seconds(project, user_settings),
-          scope_analysis: scope_result ? {
-            should_decompose: scope_result.should_decompose?,
-            confidence: scope_result.confidence,
-            sub_components: scope_result.sub_components
-          } : nil
-        }
-        result[:paused] = true if policy_evaluation.paused
+        result = build_result(agent_run, user_settings, project, scope_result, paused: policy_evaluation.paused)
         result
       end
     end
@@ -336,6 +328,20 @@ module Activities
           current_status: agent_run.status,
           project_id: agent_run.project_id
         )
+      end
+
+      # RDR-053: If this is a create_feature run with a sparse brief,
+      # post clarifying questions and pause before the agent begins work.
+      if agent_run.create_feature_goal? && agent_run.issue.present? && feature_brief_sparse?(agent_run)
+        initiate_feature_needs_input!(agent_run, agent_run.project, agent_run.issue)
+        return {
+          agent_run_id: agent_run.id,
+          focus: agent_run.focus,
+          runner_attempt_count: 1,
+          agent_timeout_seconds: AGENT_TIMEOUT_DEFAULT,
+          max_execution_seconds: effective_max_execution_seconds(agent_run.project, nil),
+          paused: true
+        }
       end
 
       agent_run.issue&.update!(paid_state: "in_progress")
@@ -697,6 +703,95 @@ module Activities
         type: "NoRunnableProvider",
         non_retryable: true
       )
+    end
+    # Returns a result hash for CreateAgentRunActivity, factoring in pause state.
+    def build_result(agent_run, user_settings, project, scope_result, paused: false)
+      {
+        agent_run_id: agent_run.id,
+        focus: agent_run.focus,
+        runner_attempt_count: runner_attempt_count_for(agent_run, user_settings),
+        agent_timeout_seconds: user_settings&.agent_timeout_seconds || AGENT_TIMEOUT_DEFAULT,
+        issue_goal_timeout_seconds: user_settings&.issue_goal_timeout_seconds || Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT,
+        max_execution_seconds: effective_max_execution_seconds(project, user_settings),
+        scope_analysis: scope_result ? {
+          should_decompose: scope_result.should_decompose?,
+          confidence: scope_result.confidence,
+          sub_components: scope_result.sub_components
+        } : nil,
+        paused: paused
+      }
+    end
+
+    # A feature brief is considered sparse when it lacks the structured fields
+    # beyond the initial title/problem. The user provided only a description;
+    # the run should pause and ask clarifying questions before proceeding.
+    def feature_brief_sparse?(agent_run)
+      brief = agent_run.external_metadata.is_a?(Hash) ? agent_run.external_metadata["feature_brief"] : nil
+      return true if brief.blank?
+
+      # If the brief only has title and a free-text description, it's sparse.
+      required_fields = %w[desired_behavior constraints scope done_criteria]
+      required_fields.any? { |field| brief[field].blank? }
+    end
+
+    # Posts intent-focused clarifying questions on the feature's GitHub issue,
+    # applies the needs-input label, and pauses the run so the user can answer
+    # before the agent begins work.
+    def initiate_feature_needs_input!(agent_run, project, issue)
+      question_comment = build_feature_clarifying_questions_comment
+      client = project.client
+
+      if client
+        client.add_comment(project.full_name, issue.github_number, question_comment)
+        label = project.enhance_issue_needs_input_label_name
+        client.add_labels_to_issue(project.full_name, issue.github_number, [ label ])
+        # Persist the parsed questions locally so the dashboard needs-input
+        # queue can render them without a per-issue GitHub API round-trip.
+        questions = ClarifyingQuestions::Parse.call(comment_body: question_comment)
+        issue.update!(
+          paid_state: "needs_input",
+          labels: Array(issue.labels) | [ label ],
+          needs_input_questions: questions
+        )
+      end
+
+      agent_run.update!(status: "paused", paused_at: Time.current)
+
+      logger.info(
+        message: "agent_execution.create_feature_needs_input",
+        agent_run_id: agent_run.id,
+        issue_id: issue.id,
+        issue_number: issue.github_number
+      )
+    end
+
+    # Builds a clarifying questions comment for a create_feature run.
+    # The questions follow the intent-focused pattern from RDR-051,
+    # covering problem, desired behavior, constraints, alternatives,
+    # scope, and done-ness — the fields that make up a complete
+    # feature brief (RDR-053 §2).
+    def build_feature_clarifying_questions_comment
+      marker = "<!-- paid:enhance-issue -->"
+      questions = [
+        "What is the desired behavior? Describe what the feature should do from the user's perspective.",
+        "What constraints must be respected? List any technical, design, or business constraints.",
+        "What alternatives have been considered and rejected? This helps avoid re-litigating decisions.",
+        "What is in scope and out of scope? Be explicit about boundaries.",
+        "How will we know it's done? Define concrete acceptance criteria."
+      ]
+      question_lines = questions.each_with_index.map { |q, i| "#{i + 1}. #{q}" }.join("\n")
+
+      <<~COMMENT
+        #{marker}
+
+        ## Clarifying questions
+
+        Thanks for the feature description! Before I research and write a full specification, I need a bit more detail to make sure I design the right thing.
+
+        #{question_lines}
+
+        Please reply to this issue with your answers. Once all questions are addressed, the agent will resume and create the feature specification.
+      COMMENT
     end
   end
 end

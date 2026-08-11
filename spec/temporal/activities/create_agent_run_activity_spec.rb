@@ -1111,6 +1111,94 @@ RSpec.describe Activities::CreateAgentRunActivity do
     end
   end
 
+  describe "create_feature needs-input flow" do
+    let(:feature_issue) { create(:issue, project: project, title: "[Feature] Add dark mode", body: "Need dark mode") }
+
+    before do
+      allow(Prompts::BuildForCreateFeature).to receive(:call).and_return("feature prompt")
+      stub_request(:post, %r{api\.github\.com/repos/.*/issues/.*/comments}).to_return(status: 200, body: "{}")
+      stub_request(:post, %r{api\.github\.com/repos/.*/issues/.*/labels}).to_return(status: 200, body: "[]")
+    end
+
+    it "returns paused: true via resume_queued_run when feature brief is sparse" do
+      agent_run = create(:agent_run, :queued, :create_feature_goal, project: project, issue: feature_issue)
+      agent_run.update!(external_metadata: { "feature_brief" => { "title" => "Add dark mode", "problem" => "Need dark mode" } })
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:paused]).to be true
+      expect(result[:agent_run_id]).to eq(agent_run.id)
+      expect(agent_run.reload.status).to eq("paused")
+    end
+
+    it "persists clarifying questions locally so the dashboard avoids a per-issue API round-trip" do
+      agent_run = create(:agent_run, :queued, :create_feature_goal, project: project, issue: feature_issue)
+      agent_run.update!(external_metadata: { "feature_brief" => { "title" => "Add dark mode", "problem" => "Need dark mode" } })
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(feature_issue.reload.needs_input_questions).to be_an(Array).and include(
+        a_string_matching(/desired behavior/),
+        a_string_matching(/constraints/),
+        a_string_matching(/scope/)
+      )
+    end
+
+    it "does not pause when feature brief has all required fields" do
+      full_brief = {
+        "title" => "Add dark mode",
+        "problem" => "Need dark mode",
+        "desired_behavior" => "Toggle dark mode in settings",
+        "constraints" => [ "Must work with SSR" ],
+        "scope" => { "in" => "Color palette", "out" => "Syntax highlighting" },
+        "done_criteria" => "Visual regression tests pass"
+      }
+      agent_run = create(:agent_run, :queued, :create_feature_goal, project: project, issue: feature_issue)
+      agent_run.update!(external_metadata: { "feature_brief" => full_brief })
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:paused]).to be_falsey
+    end
+
+    describe "#build_feature_clarifying_questions_comment" do
+      it "includes the enhance-issue marker and clarifying questions section" do
+        comment = activity.send(:build_feature_clarifying_questions_comment)
+
+        expect(comment).to include("<!-- paid:enhance-issue -->")
+        expect(comment).to include("## Clarifying questions")
+        expect(comment).to include("desired behavior")
+        expect(comment).to include("constraints")
+        expect(comment).to include("alternatives")
+        expect(comment).to include("scope")
+        expect(comment).to include("done")
+      end
+    end
+
+    describe "#feature_brief_sparse?" do
+      it "returns true when brief is nil" do
+        agent_run = build(:agent_run, :create_feature_goal, external_metadata: {})
+        expect(activity.send(:feature_brief_sparse?, agent_run)).to be true
+      end
+
+      it "returns true when brief lacks required fields" do
+        agent_run = build(:agent_run, :create_feature_goal,
+          external_metadata: { "feature_brief" => { "title" => "Test", "problem" => "Test" } })
+        expect(activity.send(:feature_brief_sparse?, agent_run)).to be true
+      end
+
+      it "returns false when brief has all required fields" do
+        brief = {
+          "title" => "Test", "problem" => "Test",
+          "desired_behavior" => "X", "constraints" => [ "Y" ],
+          "scope" => { "in" => "Z" }, "done_criteria" => "Done"
+        }
+        agent_run = build(:agent_run, :create_feature_goal, external_metadata: { "feature_brief" => brief })
+        expect(activity.send(:feature_brief_sparse?, agent_run)).to be false
+      end
+    end
+  end
+
   def expect_requested_provider_decision(decision:, runner_id:, runner_key:, agent_type:)
     expect(decision).to be_present
     expect(decision.context).to include(

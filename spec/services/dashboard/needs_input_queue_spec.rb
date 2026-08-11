@@ -19,6 +19,25 @@ RSpec.describe Dashboard::NeedsInputQueue do
     BODY
   end
 
+  describe ".call" do
+    it "returns clarifying questions persisted locally for create_feature issues without an API round-trip" do
+      feature_issue = create(:issue, :needs_input, project: project, github_number: 20,
+                             body: "Need dark mode",
+                             needs_input_questions: [
+                               "What is the desired behavior?",
+                               "What constraints must be respected?"
+                             ])
+
+      entries = described_class.call(user: user, project: project)
+
+      feature_entry = entries.find { |entry| entry.issue == feature_issue }
+      expect(feature_entry.questions).to eq([
+        "What is the desired behavior?",
+        "What constraints must be respected?"
+      ])
+    end
+  end
+
   describe ".next_issue" do
     it "returns the following issue when the current issue is still in the queue" do
       first_issue

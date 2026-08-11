@@ -85,7 +85,13 @@ module Dashboard
     end
 
     def question_summary_for(issue)
-      ClarifyingQuestions::Parse.call(comment_body: issue.body)
+      questions = ClarifyingQuestions::Parse.call(comment_body: issue.body)
+      return questions if questions.any?
+
+      # create_feature runs persist their clarifying questions locally when
+      # the needs-input comment is posted, so the dashboard renders without a
+      # per-issue GitHub API round-trip (RDR-053).
+      Array(issue.needs_input_questions)
     end
   end
 end
