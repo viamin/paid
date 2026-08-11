@@ -57,6 +57,16 @@
   *Tests:* `spec/temporal/activities/analyze_issue_activity_spec.rb` ("provider rate limiting").
   *Code:* `app/temporal/activities/analyze_issue_activity.rb#record_runner_rate_limit`, `#record_runner_failure`.
 
+- [x] **ISSUE-ANALYSIS-008** — When no explicit issue-analysis runner is
+  configured and the broadening fallback (`available_chat_runner_keys`) is
+  used, economical (lean) runners SHALL be ordered before heavy-exploration
+  runners so a lightweight assessment call does not burn tokens on a
+  heavy-exploration runner. The candidate list is reordered via
+  `RunnerSupport.lean_first`; the set of available candidates is not narrowed.
+  *Tests:* `spec/temporal/activities/analyze_issue_activity_spec.rb` ("prefers an economical runner over claude in the fallback path").
+  *Code:* `app/temporal/activities/analyze_issue_activity.rb#chat_providers`,
+  `RunnerSupport.lean_first`.
+
 ## Trust and response contract
 
 - [x] **ISSUE-ANALYSIS-004** — The system SHALL reject untrusted issues and

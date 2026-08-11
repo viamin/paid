@@ -143,6 +143,64 @@ RSpec.describe RunnerSupport do
     end
   end
 
+  # @spec RUNNER-SCHED-011
+  describe ".lean_runner_keys" do
+    it "returns opencode, omp, and codex in priority order" do
+      keys = described_class.lean_runner_keys
+      expect(keys).to include("opencode", "omp", "codex")
+    end
+
+    it "excludes heavy-exploration runners like claude and cursor" do
+      keys = described_class.lean_runner_keys
+      expect(keys).not_to include("claude", "cursor")
+    end
+  end
+
+  # @spec RUNNER-SCHED-011
+  describe ".lean_runner?" do
+    it "returns true for codex" do
+      expect(described_class.lean_runner?("codex")).to be true
+    end
+
+    it "returns true for opencode" do
+      expect(described_class.lean_runner?("opencode")).to be true
+    end
+
+    it "returns true for omp" do
+      expect(described_class.lean_runner?("omp")).to be true
+    end
+
+    it "returns false for claude (heavy-exploration runner)" do
+      expect(described_class.lean_runner?("claude")).to be false
+    end
+
+    it "returns false for unsupported keys" do
+      expect(described_class.lean_runner?("unknown")).to be false
+    end
+  end
+
+  # @spec ISSUE-ANALYSIS-008
+  describe ".lean_first" do
+    it "moves lean runners before heavy ones, preserving relative order within each group" do
+      result = described_class.lean_first(%w[claude codex opencode cursor])
+      expect(result).to eq(%w[codex opencode claude cursor])
+    end
+
+    it "returns the list unchanged when no lean runners are present" do
+      result = described_class.lean_first(%w[claude cursor])
+      expect(result).to eq(%w[claude cursor])
+    end
+
+    it "returns the list unchanged when only lean runners are present" do
+      result = described_class.lean_first(%w[codex opencode])
+      expect(result).to eq(%w[codex opencode])
+    end
+
+    it "handles an empty list" do
+      expect(described_class.lean_first([])).to eq([])
+    end
+  end
+
   describe ".agent_type_for" do
     it "maps claude to claude_code" do
       expect(described_class.agent_type_for("claude")).to eq("claude_code")

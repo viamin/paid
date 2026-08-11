@@ -19,6 +19,14 @@ module RunnerSupport
   # non-interactive agent execution.
   CONTAINER_EXECUTABLE_RUNNER_KEYS = Set.new(%w[claude codex copilot cursor gemini kilocode opencode openrouter_free openrouter_pareto pi omp]).freeze
 
+  # Economical runner keys suitable for lightweight goals (enhance_issue,
+  # analyze_issue) that reason about an issue without aggressive codebase
+  # exploration. Ordered by preference: the first key the owner has enabled is
+  # chosen. Heavy-exploration runners (claude, cursor) are deliberately
+  # excluded so they stay reserved for create_pr / create_feature.
+  # @spec RUNNER-SCHED-011
+  LEAN_RUNNER_KEYS = %w[opencode omp codex].freeze
+
   APP_RUNNER_TO_HARNESS_KEY = {
     "openrouter_free" => "opencode",
     "openrouter_pareto" => "opencode"
@@ -76,6 +84,31 @@ module RunnerSupport
 
   def container_executable_runner_key?(runner_key)
     container_executable_runner_keys.include?(runner_key.to_s)
+  end
+
+  # Returns supported economical runner keys in LEAN_RUNNER_KEYS priority order,
+  # filtered to keys whose provider is registered in agent-harness.
+  # @spec RUNNER-SCHED-011
+  def lean_runner_keys
+    LEAN_RUNNER_KEYS.select { |key| supported_runner_keys_set.include?(key) }
+  end
+
+  # True when the runner key is a supported economical ("lean") runner suitable
+  # for lightweight goals.
+  # @spec RUNNER-SCHED-011
+  def lean_runner?(runner_key)
+    lean_runner_keys.include?(runner_key.to_s)
+  end
+
+  # Reorders a list of runner keys so economical (lean) runners come first,
+  # preserving the relative order within each group. Used by the analyze_issue
+  # fallback path so an economical runner is tried before heavy-exploration ones.
+  # @spec ISSUE-ANALYSIS-008
+  def lean_first(runner_keys)
+    keys = Array(runner_keys)
+    lean = keys.select { |key| lean_runner?(key) }
+    rest = keys.reject { |key| lean_runner?(key) }
+    lean + rest
   end
 
   # Returns runners that are both known to the app and runnable inside the
