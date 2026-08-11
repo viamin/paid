@@ -10,6 +10,7 @@ module Projects
     LID_SCOPE_HEADER = /^##\s+LID Scope\s*$/
     INVALID_MODE_WARNING = "Invalid LID mode in %s; defaulted to Full."
     MISSING_SCOPE_WARNING = "Scoped LID declared without a ## LID Scope section; defaulting future scope checks to in-scope."
+    MISSING_DESIGN_DOCS_WARNING = "LID declared in instruction file, but standard design docs (docs/high-level-design.md, docs/intent/) are absent; agents may waste tokens searching for them."
 
     def self.call(...)
       new(...).call
@@ -66,6 +67,8 @@ module Projects
       mode = parse_mode(lid_block, instruction_file.basename.to_s)
       version = parse_bullet(lid_block, "Version")
       warnings << MISSING_SCOPE_WARNING if mode == SCOPED_MODE && extract_section(contents, LID_SCOPE_HEADER).blank?
+      # @spec LID-DETECTION-009
+      warnings << MISSING_DESIGN_DOCS_WARNING if standard_design_docs_absent?
 
       {
         mode: mode,
@@ -154,6 +157,10 @@ module Projects
     def lid_intent_content?
       intent_path = repo_path.join("docs/intent")
       intent_path.directory? && intent_path.children.any?
+    end
+
+    def standard_design_docs_absent?
+      !repo_file?("docs/high-level-design.md") && !lid_intent_content?
     end
 
     def repo_file?(relative_path)

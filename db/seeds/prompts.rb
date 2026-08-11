@@ -199,7 +199,7 @@ upsert_global_prompt.call(
 
     This repository declares Linked-Intent Development mode: `{{lid_mode}}`.
 
-    - Read `docs/high-level-design.md`, the relevant LLDs under `docs/intent/`, and the cited EARS specs for the area this issue or PR touches.
+    - Read the project's high-level design doc and the relevant LLDs/EARS specs for the area this issue or PR touches. The conventional LID paths are `docs/high-level-design.md` and `docs/intent/`, but they may vary by project — locate the actual design docs if the standard paths are absent.
     - Walk the arrow before changing code: confirm the EARS trace to the LLD and the LLD traces to the HLD. If intent changed, update the spec and design docs first, then cascade into tests and code.
     - When the run includes confirmed elicited intent from issue enhancement, materialize that intent into draft or updated LLD and EARS artifacts before or alongside code changes.
     - Work tests first. Add `@spec` annotations in tests citing the EARS IDs, then add matching `@spec` annotations at the implementation-graph entry points for the behavior you changed.
