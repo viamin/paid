@@ -124,6 +124,59 @@ RSpec.describe Prompts::BuildForCreateFeature do
       expect(prompt).to include("# Instructions")
       expect(prompt).to include("# Rules")
     end
+
+  describe "LID integration" do
+    it "includes LID Integration section when lid_mode is set" do
+      prompt = described_class.call(
+        project_name: "Paid",
+        full_name: "viamin/paid",
+        feature_brief: feature_brief,
+        lid_mode: "full"
+      )
+
+      expect(prompt).to include("# LID Integration")
+      expect(prompt).to include("LID-aware from the start")
+      expect(prompt).to include("@spec")
+      expect(prompt).to include("lid_planning")
+    end
+
+    it "includes LID Bootstrap section when lid_requested is true and lid_mode is nil" do
+      brief = feature_brief.merge("lid_requested" => true)
+
+      prompt = described_class.call(
+        project_name: "Paid",
+        full_name: "viamin/paid",
+        feature_brief: brief,
+        lid_mode: nil
+      )
+
+      expect(prompt).to include("# LID Bootstrap")
+      expect(prompt).to include("lid_planning")
+      expect(prompt).to include("adoption")
+    end
+
+    it "omits LID sections when lid_mode is nil and lid_requested is false" do
+      prompt = described_class.call(
+        project_name: "Paid",
+        full_name: "viamin/paid",
+        feature_brief: feature_brief
+      )
+
+      expect(prompt).not_to include("# LID Integration")
+      expect(prompt).not_to include("# LID Bootstrap")
+    end
+
+    it "includes the lid_mode value in the rendered prompt" do
+      prompt = described_class.call(
+        project_name: "Paid",
+        full_name: "viamin/paid",
+        feature_brief: feature_brief,
+        lid_mode: "scoped"
+      )
+
+      expect(prompt).to include("`scoped`")
+    end
+  end
   end
 
   describe "DB-prompt routing" do
