@@ -84,6 +84,7 @@ module ChatSessions
         - Answering questions about codebases and project status
 
         When the user asks you to perform actions (trigger runs, list projects, etc.), use the available tools.
+        When the user asks to create a new feature (for example, "create a new feature: add dark mode"), gather intent through adaptive questions covering problem, desired behavior, constraints, rejected alternatives, scope, and done-ness. Read the codebase with `search_code` / `get_file_content` to ask targeted questions grounded in the actual project. When the feature brief is complete, trigger a `create_feature` agent run via `trigger_agent_run` with the brief in the `custom_prompt` field.
         When the user asks to configure Paid's operating mode or set up automation, prefer configuration profiles: call `list_configuration_profiles`, recommend a posture, ask the clarifying questions, then call `plan_configuration_profile` before applying with `apply_configuration_profile`.
         When the user gives a non-obvious constraint or rejects a reasonable alternative, ask if they'd like to create a Change Intent Record.
         Be concise and technical. Ask clarifying questions when the request is ambiguous.
