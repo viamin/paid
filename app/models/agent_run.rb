@@ -26,7 +26,7 @@ class AgentRun < ApplicationRecord
   AGENT_TYPES = %w[claude_code cursor codex copilot gemini opencode openrouter_free openrouter_pareto kilocode pi omp api devin factory internal_agent].freeze
   FOCUSES = %w[general ci_fix review_feedback merge_conflict conversation issue_implementation label_action].freeze # @spec FOCUSED-RUN-001
   # analyze_issue is automation-only (triggered via Automation::Decision), not exposed in the manual run form.
-  GOALS = %w[create_pr create_issue review enhance_issue analyze_issue lid_planning].freeze
+  GOALS = %w[create_pr create_issue review enhance_issue analyze_issue lid_planning create_feature].freeze
   TRIGGER_TYPES = %w[manual automatic].freeze
   EXECUTION_ORIGINS = %w[paid_native external].freeze
   ACTIVE_STATUSES = %w[running].freeze
@@ -978,7 +978,7 @@ class AgentRun < ApplicationRecord
     auto_pick: { label: "Auto-pick", indicator: 9 }
   }.freeze
   UNKNOWN_PRIORITY = { label: "Unknown", indicator: nil }.freeze
-  QUEUE_GOAL_PRIORITY_GOALS = %w[create_issue enhance_issue analyze_issue lid_planning].freeze
+  QUEUE_GOAL_PRIORITY_GOALS = %w[create_issue enhance_issue analyze_issue lid_planning create_feature].freeze
 
   def queue_priority_tier # @spec QUEUE-TIER-002
     return :manual if manual?
@@ -1571,6 +1571,10 @@ class AgentRun < ApplicationRecord
     goal == "lid_planning"
   end
 
+  def create_feature_goal?
+    goal == "create_feature"
+  end
+
   # Synthetic operational runs (e.g. live-preview provisioning) reuse the
   # agent-run lifecycle to drive container provisioning but never execute a real
   # agent and cannot produce a PR, issue, or review artifact. They must bypass
@@ -1597,7 +1601,9 @@ class AgentRun < ApplicationRecord
   # create_issue and analyze_issue goals skip cloning unless they target
   # an existing PR branch (source_pull_request_number present).
   # enhance_issue runs containerized with repo access (RDR-052).
+  # create_feature always clones so the agent can read existing code and RDRs.
   def repo_cloned?
+    return true if create_feature_goal?
     return true unless create_issue_goal? || analyze_issue_goal?
 
     source_pull_request_number.present?
@@ -2718,6 +2724,10 @@ class AgentRun < ApplicationRecord
       prompt_for_enhance_issue
     elsif analyze_issue_goal?
       prompt_for_analyze_issue
+    elsif create_feature_goal?
+      # Prompt builder (Prompts::BuildForCreateFeature) is added in a follow-up issue.
+      # Fall back to custom_prompt until the builder is available.
+      custom_prompt
     else
       prompt_for_issue
     end
@@ -2930,6 +2940,9 @@ class AgentRun < ApplicationRecord
     # lid_planning derives its prompt from Prompts::BuildForLidPlanning, so it
     # needs no issue, custom prompt, or source PR.
     return if lid_planning_goal?
+    # create_feature derives its prompt from Prompts::BuildForCreateFeature (follow-up issue)
+    # and external_metadata["feature_brief"], so it needs no issue or source PR.
+    return if create_feature_goal?
     return if issue.present? || custom_prompt.present? || source_pull_request_number.present?
 
     errors.add(:base, "must have either an issue, a custom prompt, or a source pull request")
