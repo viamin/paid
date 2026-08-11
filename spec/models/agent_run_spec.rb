@@ -132,6 +132,12 @@ RSpec.describe AgentRun do
 
         expect(agent_run).to be_valid
       end
+
+      it "allows create_feature without issue, custom_prompt, or source PR (prompt is derived)" do
+        agent_run = build(:agent_run, :create_feature_goal, issue: nil, custom_prompt: nil)
+
+        expect(agent_run).to be_valid
+      end
     end
 
     describe "review goal requires pull request" do
@@ -610,6 +616,46 @@ RSpec.describe AgentRun do
         agent_run = build(:agent_run, goal: "create_pr")
 
         expect(agent_run.create_issue_goal?).to be false
+      end
+    end
+
+    describe "#create_feature_goal?" do
+      it "returns true when goal is create_feature" do
+        agent_run = build(:agent_run, :create_feature_goal)
+
+        expect(agent_run.create_feature_goal?).to be true
+      end
+
+      it "returns false when goal is create_pr" do
+        agent_run = build(:agent_run, goal: "create_pr")
+
+        expect(agent_run.create_feature_goal?).to be false
+      end
+    end
+
+    describe "#repo_cloned?" do
+      it "returns true for create_pr goal" do
+        agent_run = build(:agent_run, goal: "create_pr")
+
+        expect(agent_run.repo_cloned?).to be true
+      end
+
+      it "returns false for create_issue goal without source PR" do
+        agent_run = build(:agent_run, :create_issue_goal, source_pull_request_number: nil)
+
+        expect(agent_run.repo_cloned?).to be false
+      end
+
+      it "returns true for create_issue goal with source PR" do
+        agent_run = build(:agent_run, :create_issue_goal, source_pull_request_number: 42)
+
+        expect(agent_run.repo_cloned?).to be true
+      end
+
+      it "always returns true for create_feature goal" do
+        agent_run = build(:agent_run, :create_feature_goal)
+
+        expect(agent_run.repo_cloned?).to be true
       end
     end
 
@@ -1754,6 +1800,20 @@ RSpec.describe AgentRun do
         expect(prompt).to include("Adopt Linked-Intent Development for #{project.full_name}")
         expect(prompt).to include("docs/rdrs/RDR-051.md")
         expect(prompt).to include("Treat named plan docs as authored intent")
+      end
+
+      it "returns the custom_prompt for create_feature when one is provided" do
+        agent_run = build(:agent_run, :create_feature_goal, custom_prompt: "Build the feature.")
+
+        expect(agent_run.send(:prompt_for_goal)).to eq("Build the feature.")
+      end
+
+      it "raises for create_feature without a custom_prompt (builder not yet implemented)" do
+        agent_run = build(:agent_run, :create_feature_goal, custom_prompt: nil)
+
+        expect {
+          agent_run.send(:prompt_for_goal)
+        }.to raise_error(RuntimeError, /require a custom_prompt until Prompts::BuildForCreateFeature is implemented/)
       end
     end
 
@@ -3221,7 +3281,7 @@ RSpec.describe AgentRun do
     end
 
     it "defines valid GOALS" do
-      expect(described_class::GOALS).to eq(%w[create_pr create_issue review enhance_issue analyze_issue lid_planning])
+      expect(described_class::GOALS).to eq(%w[create_pr create_issue review enhance_issue analyze_issue lid_planning create_feature])
     end
 
     it "defines valid TRIGGER_TYPES" do

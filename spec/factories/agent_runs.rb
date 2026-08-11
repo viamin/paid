@@ -252,6 +252,10 @@ FactoryBot.define do
       goal { "lid_planning" }
     end
 
+    trait :create_feature_goal do
+      goal { "create_feature" }
+    end
+
     trait :external_execution do
       execution_origin { "external" }
       external_source_key { "cursor" }
