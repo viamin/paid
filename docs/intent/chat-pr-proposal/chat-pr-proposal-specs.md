@@ -54,3 +54,21 @@
   present, instead of using generic platform text.
   *Test:* `spec/temporal/activities/create_pull_request_activity_spec.rb`.
   *Code:* `Activities::CreatePullRequestActivity`.
+
+- [x] **CHAT-PR-PROPOSAL-007** — When a successful agent run's stdout contains
+  a streaming `error`/`turn.failed` JSONL event from a superseded fallback
+  attempt, the agent summary SHALL reflect the winning attempt's output and
+  SHALL NOT surface the stale error, so the PR description generator receives
+  real agent output instead of blanking to the default body.
+  *Test:* `spec/models/agent_run_spec.rb`.
+  *Code:* `AgentRun#agent_summary`, `AgentRun#extract_text_from_stdout`.
+
+- [x] **CHAT-PR-PROPOSAL-008** — When custom-prompt content is published as PR
+  title/body fallback metadata, the system SHALL redact known provider secret
+  shapes (GitHub tokens plus bare Anthropic/OpenAI/Google/Slack/Stripe keys and
+  PEM blocks) and SHALL neutralize inline markdown link/image syntax so prompt
+  content cannot render tracking images or phishing links in the PR body.
+  *Test:* `spec/services/knowledge/redaction/scanner_spec.rb`,
+  `spec/temporal/activities/create_pull_request_activity_spec.rb`.
+  *Code:* `config/knowledge/redaction_patterns.yml`,
+  `Activities::CreatePullRequestActivity#neutralize_inline_markdown`.
