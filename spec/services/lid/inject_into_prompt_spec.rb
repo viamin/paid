@@ -126,5 +126,13 @@ RSpec.describe Lid::InjectIntoPrompt do
       expect(section).to include("Elicit missing intent")
       expect(section).not_to include("bin/coherence-check.mjs")
     end
+
+    it "returns the full contract for an unmapped goal instead of omitting the section" do
+      prompt = described_class.call(prompt: base_prompt, project: project, goal: "some_future_goal")
+
+      expect(prompt).to include("## LID-Aware Workflow")
+      expect(prompt).to include("bin/coherence-check.mjs")
+      expect(prompt).to include("@spec")
+    end
   end
 end

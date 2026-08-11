@@ -113,10 +113,10 @@ module Lid
         scope_instruction: scope_instruction
       }
 
-      if goal && !full_contract_goal?
-        fallback_for_goal(goal)
-          &.then { |t| Prompts::Render.interpolate(t, vars) }
-          &.strip
+      trimmed = full_contract_goal? ? nil : fallback_for_goal(goal)
+
+      if trimmed
+        Prompts::Render.interpolate(trimmed, vars).strip
       else
         Prompts::Render.call(
           slug: PROMPT_SLUG,
