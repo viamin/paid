@@ -205,8 +205,9 @@ module Prompts
         design tree before this feature's RDR can be tracked as intent.
 
         Include a note in the RDR PR description recommending LID bootstrap
-        before implementation begins. Do not file implementation issues until
-        LID adoption is confirmed.
+        before implementation begins. Defer Step 6 (issue-tree decomposition)
+        until LID adoption is confirmed — file only the RDR docs-only PR in
+        this run.
       LID
     end
 

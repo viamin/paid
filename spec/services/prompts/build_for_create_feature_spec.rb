@@ -154,6 +154,8 @@ RSpec.describe Prompts::BuildForCreateFeature do
       expect(prompt).to include("# LID Bootstrap")
       expect(prompt).to include("lid_planning")
       expect(prompt).to include("adoption")
+      expect(prompt).to include("Defer Step 6")
+      expect(prompt).to include("file only the RDR docs-only PR")
     end
 
     it "omits LID sections when lid_mode is nil and lid_requested is false" do
