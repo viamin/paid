@@ -1802,18 +1802,53 @@ RSpec.describe AgentRun do
         expect(prompt).to include("Treat named plan docs as authored intent")
       end
 
-      it "returns the custom_prompt for create_feature when one is provided" do
-        agent_run = build(:agent_run, :create_feature_goal, custom_prompt: "Build the feature.")
+      it "builds the create_feature prompt from the feature_brief (custom_prompt is checked at effective_prompt)" do
+        project = create(:project)
+        brief = { "title" => "Add dark mode", "problem" => "Eye strain", "desired_behavior" => "Dark" }
+        agent_run = build(
+          :agent_run, :create_feature_goal, project: project, issue: nil,
+          custom_prompt: "Ignored — effective_prompt short-circuits on custom_prompt",
+          external_metadata: { "feature_brief" => brief }
+        )
 
-        expect(agent_run.send(:prompt_for_goal)).to eq("Build the feature.")
+        prompt = agent_run.send(:prompt_for_goal)
+
+        expect(prompt).to include(project.full_name)
+        expect(prompt).to include("Add dark mode")
+        expect(prompt).not_to include("Ignored")
       end
 
-      it "raises for create_feature without a custom_prompt (builder not yet implemented)" do
-        agent_run = build(:agent_run, :create_feature_goal, custom_prompt: nil)
+      it "builds the create_feature prompt from the feature_brief when no custom_prompt is set" do
+        project = create(:project)
+        brief = {
+          "title" => "Add dark mode",
+          "problem" => "Eye strain",
+          "desired_behavior" => "Dark palette",
+          "constraints" => [ "System preference detection" ],
+          "rejected_alternatives" => [ "CSS-only variables" ],
+          "scope" => { "in" => [ "Color palette" ], "out" => [ "Syntax highlighting" ] },
+          "done_criteria" => "Toggleable and persists",
+          "lid_requested" => false,
+          "target_rdr_number" => 99
+        }
+        agent_run = build(
+          :agent_run, :create_feature_goal, project: project, issue: nil,
+          custom_prompt: nil, external_metadata: { "feature_brief" => brief }
+        )
+
+        prompt = agent_run.send(:prompt_for_goal)
+
+        expect(prompt).to include(project.full_name)
+        expect(prompt).to include("Add dark mode")
+        expect(prompt).to include("Target RDR number: 99")
+      end
+
+      it "raises for create_feature without a feature_brief" do
+        agent_run = build(:agent_run, :create_feature_goal, custom_prompt: nil, external_metadata: {})
 
         expect {
           agent_run.send(:prompt_for_goal)
-        }.to raise_error(RuntimeError, /require a custom_prompt until Prompts::BuildForCreateFeature is implemented/)
+        }.to raise_error(ArgumentError, /external_metadata\['feature_brief'\]/)
       end
     end
 
