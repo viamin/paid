@@ -20,19 +20,61 @@ module Lid
       {{scope_instruction}}
     PROMPT
 
-    def self.call(...)
-      new(...).call
+    # Lightweight prompts for goals that don't implement code.
+    # These skip spec walks, coherence checks, and @spec annotations.
+
+    ENHANCE_ISSUE_FALLBACK = <<~'PROMPT'
+      ## LID-Aware Workflow
+
+      This repository declares Linked-Intent Development mode: `{{lid_mode}}`.
+
+      - Read the issue description and all comments carefully to understand the change request.
+      - If design docs exist (`docs/high-level-design.md`, LLDs under `docs/intent/`), reference them for context on the affected area.
+      - Elicit missing intent: ask specific clarifying questions, suggest relevant files and architectural considerations.
+      - Your goal is to enhance the issue with enough implementation context for a coding agent to proceed — not to implement code or walk spec traces.
+      {{scope_instruction}}
+    PROMPT
+
+    ANALYZE_ISSUE_FALLBACK = <<~'PROMPT'
+      ## LID-Aware Workflow
+
+      This repository declares Linked-Intent Development mode: `{{lid_mode}}`.
+
+      - Read the issue description and comments to understand the change request.
+      - If design docs exist (`docs/high-level-design.md`, LLDs under `docs/intent/`), reference them for scope and complexity assessment.
+      - Determine whether the issue has sufficient context to begin implementation.
+      - Your goal is to assess scope and complexity — not to implement code or walk spec traces.
+      {{scope_instruction}}
+    PROMPT
+
+    REVIEW_FALLBACK = <<~'PROMPT'
+      ## LID-Aware Workflow
+
+      This repository declares Linked-Intent Development mode: `{{lid_mode}}`.
+
+      - Reference design docs (`docs/high-level-design.md`, LLDs under `docs/intent/`) for context on the affected area.
+      - Review the code against the design intent captured in those docs.
+      - Do NOT walk spec traces, add `@spec` annotations, or run coherence checks — this is a review, not an implementation run.
+      {{scope_instruction}}
+    PROMPT
+
+    # Goals that receive the full implementation contract.
+    FULL_CONTRACT_GOALS = %w[create_pr create_issue create_feature lid_planning].freeze
+
+    def self.call(prompt:, project:, goal: nil)
+      new(prompt: prompt, project: project, goal: goal).call
     end
 
-    def self.section_for(project:)
-      new(prompt: "", project: project).section
+    def self.section_for(project:, goal: nil)
+      new(prompt: "", project: project, goal: goal).section
     end
 
-    attr_reader :prompt, :project
+    attr_reader :prompt, :project, :goal
 
-    def initialize(prompt:, project:)
+    def initialize(prompt:, project:, goal: nil)
       @prompt = prompt.to_s
       @project = project
+      @goal = goal.to_s.presence
     end
 
     def call
@@ -59,12 +101,30 @@ module Lid
         scope_instruction: scope_instruction
       }
 
-      Prompts::Render.call(
-        slug: PROMPT_SLUG,
-        project: project,
-        variables: vars,
-        fallback: -> { Prompts::Render.interpolate(FALLBACK_PROMPT, vars) }
-      ).to_s.delete("\x00").strip
+      if goal && !full_contract_goal?
+        fallback_for_goal(goal)
+          &.then { |t| Prompts::Render.interpolate(t, vars) }
+          &.strip
+      else
+        Prompts::Render.call(
+          slug: PROMPT_SLUG,
+          project: project,
+          variables: vars,
+          fallback: -> { Prompts::Render.interpolate(FALLBACK_PROMPT, vars) }
+        ).to_s.delete("\x00").strip
+      end
+    end
+
+    def full_contract_goal?
+      FULL_CONTRACT_GOALS.include?(goal)
+    end
+
+    def fallback_for_goal(goal)
+      case goal
+      when "enhance_issue" then ENHANCE_ISSUE_FALLBACK
+      when "analyze_issue" then ANALYZE_ISSUE_FALLBACK
+      when "review" then REVIEW_FALLBACK
+      end
     end
 
     def lid_mode
