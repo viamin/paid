@@ -38,7 +38,6 @@ module Activities
         project: agent_run.project,
         goal: "lid_planning",
         plan_doc_source: plan_doc_source,
-        external_metadata: (plan_doc_source.present? ? { "plan_docs" => [ { "name" => plan_doc_source } ] } : {}),
         initiating_user_id: agent_run.initiating_user_id,
         agent_type: agent_run.agent_type,
         runner_id: agent_run.runner_id,
