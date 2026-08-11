@@ -5,6 +5,16 @@
        data-chat-target="container"
        data-action="scroll->chat#handleScroll"
        data-controller="chat-stream">
+    <button type="button"
+            class="pointer-events-none sticky top-0 z-10 mx-auto mb-3 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-gray-500 opacity-0 shadow-md ring-1 ring-gray-200 backdrop-blur-sm transition-opacity duration-200 hover:bg-gray-50 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            data-chat-target="backToTop"
+            data-action="click->chat#scrollToTop"
+            aria-label="Back to top"
+            title="Back to top">
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7" />
+      </svg>
+    </button>
     <div class="space-y-6"
          data-chat-target="messages"
          data-chat-stream-target="messageContainer">
