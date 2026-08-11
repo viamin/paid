@@ -681,6 +681,24 @@ RSpec.describe UserSetting do
         expect(result).to eq(claude.routing_key)
       end
 
+      it "prefers opencode over omp and codex when multiple lean runners are enabled" do
+        omp = user.runners.create!(runner_key: "omp", enabled_for_agent_runs: true)
+        opencode = user.runners.create!(runner_key: "opencode", enabled_for_agent_runs: true)
+
+        result = settings.select_automated_runner_identifier(goal: "enhance_issue")
+        expect(result).to eq(opencode.routing_key)
+        expect(result).not_to eq(omp.routing_key)
+        expect(result).not_to eq(codex.routing_key)
+      end
+
+      it "prefers omp over codex when opencode is not enabled" do
+        codex.update!(enabled_for_agent_runs: false)
+        omp = user.runners.create!(runner_key: "omp", enabled_for_agent_runs: true)
+
+        result = settings.select_automated_runner_identifier(goal: "enhance_issue")
+        expect(result).to eq(omp.routing_key)
+      end
+
       it "does not affect non-lightweight goals (create_pr still round-robins)" do
         claude.update!(weight: 1)
         cursor.update!(weight: 1)

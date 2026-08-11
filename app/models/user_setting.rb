@@ -752,10 +752,8 @@ class UserSetting < ApplicationRecord
     lean_keys = RunnerSupport.lean_runner_keys
     return if lean_keys.empty?
 
-    lean_runner = user.runners.kept_only.for_agent_runs
-      .where(runner_key: lean_keys)
-      .ordered
-      .first
+    lean_runners = user.runners.kept_only.for_agent_runs.where(runner_key: lean_keys)
+    lean_runner = lean_runners.min_by { |runner| lean_keys.index(runner.runner_key) }
     lean_runner&.routing_key
   end
 
