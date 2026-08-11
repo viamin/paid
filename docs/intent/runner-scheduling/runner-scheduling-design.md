@@ -102,3 +102,38 @@ skipped.
 - **Not a hard safety control.** In `"deprioritize"` mode the runner may
   still be used when no alternative exists. The restriction is a preference,
   not a guarantee.
+
+## Goal-based economical routing
+
+Some goals only read an issue body and reason about it — they don't need
+aggressive codebase exploration. `enhance_issue` and `analyze_issue` are
+lightweight goals (`AgentRun::LIGHTWEIGHT_GOALS`). Routing them through the
+same round-robin pool as `create_pr` causes intermittent failures when a
+lightweight task lands on a heavy-exploration runner (e.g. `claude_code`)
+that consumes 15–20× more tokens for the same task, degrading
+instruction-following near the context ceiling.
+
+**Lean runners** (`RunnerSupport::LEAN_RUNNER_KEYS`) are economical runners
+suitable for these goals. They are ordered by preference (`opencode`,
+`omp`, `codex`) and deliberately exclude heavy-exploration runners so those
+stay reserved for `create_pr` / `create_feature`.
+
+### Enforcement
+
+`UserSetting#select_automated_runner_identifier` short-circuits the
+round-robin / random pool for lightweight goals:
+
+1. If an explicit per-goal runner is configured in
+   `default_agent_runners_by_goal`, it wins — the user's explicit choice is
+   always respected.
+2. Otherwise, the first lean runner the owner has enabled (in
+   `LEAN_RUNNER_KEYS` priority order) is chosen.
+3. If the owner has no lean runner enabled, the goal-specific default runner
+   is used so the run still binds a runner.
+
+Heavy goals (`create_pr`, `create_feature`, `review`, etc.) are completely
+unaffected and continue to use the configured selection mode.
+
+This is a **default routing preference**, not a hard constraint: it never
+prevents a run from binding a runner, and users can override it per-goal by
+setting `default_agent_runners_by_goal`.

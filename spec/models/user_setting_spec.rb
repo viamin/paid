@@ -643,6 +643,70 @@ RSpec.describe UserSetting do
         expect(results).to eq([ claude.routing_key, codex.routing_key, codex.routing_key, cursor.routing_key ])
       end
     end
+
+    # @spec RUNNER-SCHED-011
+    describe "lightweight goal routing" do
+      before do
+        settings.update!(runner_selection_mode: "round_robin")
+      end
+
+      it "routes enhance_issue to an economical runner instead of round-robin" do
+        # codex is the only lean runner the user has enabled.
+        result = settings.select_automated_runner_identifier(goal: "enhance_issue")
+        expect(result).to eq(codex.routing_key)
+      end
+
+      it "routes analyze_issue to an economical runner instead of round-robin" do
+        result = settings.select_automated_runner_identifier(goal: "analyze_issue")
+        expect(result).to eq(codex.routing_key)
+      end
+
+      it "stays on the lean runner across repeated calls (no round-robin cycling)" do
+        sequence = Array.new(5) { settings.select_automated_runner_identifier(goal: "enhance_issue") }
+        expect(sequence.uniq).to eq([ codex.routing_key ])
+      end
+
+      it "respects an explicit per-goal runner over the lean default" do
+        settings.update!(default_agent_runners_by_goal: { "enhance_issue" => cursor.routing_key })
+
+        result = settings.select_automated_runner_identifier(goal: "enhance_issue")
+        expect(result).to eq(cursor.routing_key)
+      end
+
+      it "falls back to the goal default when no lean runner is enabled" do
+        codex.update!(enabled_for_agent_runs: false)
+        settings.update!(default_agent_runner: claude.routing_key)
+
+        result = settings.select_automated_runner_identifier(goal: "enhance_issue")
+        expect(result).to eq(claude.routing_key)
+      end
+
+      it "prefers opencode over omp and codex when multiple lean runners are enabled" do
+        omp = user.runners.create!(runner_key: "omp", enabled_for_agent_runs: true)
+        opencode = user.runners.create!(runner_key: "opencode", enabled_for_agent_runs: true)
+
+        result = settings.select_automated_runner_identifier(goal: "enhance_issue")
+        expect(result).to eq(opencode.routing_key)
+        expect(result).not_to eq(omp.routing_key)
+        expect(result).not_to eq(codex.routing_key)
+      end
+
+      it "prefers omp over codex when opencode is not enabled" do
+        codex.update!(enabled_for_agent_runs: false)
+        omp = user.runners.create!(runner_key: "omp", enabled_for_agent_runs: true)
+
+        result = settings.select_automated_runner_identifier(goal: "enhance_issue")
+        expect(result).to eq(omp.routing_key)
+      end
+
+      it "does not affect non-lightweight goals (create_pr still round-robins)" do
+        claude.update!(weight: 1)
+        cursor.update!(weight: 1)
+        codex.update!(weight: 1)
+        sequence = Array.new(3) { settings.select_automated_runner_identifier(goal: "create_pr") }
+        expect(sequence).to eq([ claude.routing_key, codex.routing_key, cursor.routing_key ])
+      end
+    end
   end
 
   describe "#fallback_priority_for" do

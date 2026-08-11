@@ -34,7 +34,13 @@ provider independently, through the knowledge/chat provider layer:
    widens to every chat-enabled `Runner` the owner actually has, applying the
    same availability filter. This is what lets an analysis succeed on `codex`
    when `claude` is rate-limited, and what serves the default case where no
-   explicit issue-analysis runner is set.
+   explicit issue-analysis runner is set. The widened list is then reordered via
+   `RunnerSupport.lean_first` so economical runners are tried before
+   heavy-exploration ones (`ISSUE-ANALYSIS-008`) — a lightweight assessment
+   call does not need aggressive codebase exploration, so it should not burn
+   tokens landing on `claude` when `codex` / `opencode` / `omp` is available.
+   The candidate set is not narrowed; every available chat runner remains
+   eligible if the lean runners fail.
 
 There is no hardcoded platform default. The previous design forced
 `[DEFAULT_PROVIDER]` ("claude") whenever the candidate list was empty, which

@@ -27,6 +27,11 @@ class AgentRun < ApplicationRecord
   FOCUSES = %w[general ci_fix review_feedback merge_conflict conversation issue_implementation label_action].freeze # @spec FOCUSED-RUN-001
   # analyze_issue is automation-only (triggered via Automation::Decision), not exposed in the manual run form.
   GOALS = %w[create_pr create_issue review enhance_issue analyze_issue lid_planning create_feature].freeze
+  # Goals that read an issue body and reason about it without needing aggressive
+  # codebase exploration. Routed to economical runners by default so they don't
+  # land on heavy-exploration runners that consume 15-20x more tokens.
+  # @spec RUNNER-SCHED-011
+  LIGHTWEIGHT_GOALS = %w[enhance_issue analyze_issue].freeze
   TRIGGER_TYPES = %w[manual automatic].freeze
   EXECUTION_ORIGINS = %w[paid_native external].freeze
   ACTIVE_STATUSES = %w[running].freeze

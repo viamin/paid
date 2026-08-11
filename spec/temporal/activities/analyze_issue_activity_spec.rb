@@ -503,6 +503,25 @@ RSpec.describe Activities::AnalyzeIssueActivity do
         activity.execute(agent_run_id: agent_run.id)
       }.to raise_error(Temporalio::Error::ApplicationError, "No LLM provider produced an issue analysis")
     end
+
+    # @spec ISSUE-ANALYSIS-008
+    it "prefers an economical runner over claude in the fallback path" do
+      # No explicit issue_analysis_runner configured, so chat_providers falls
+      # back to all available chat runners. The lean runner (codex) should be
+      # tried before the heavy-exploration runner (claude).
+      owner.runners.find_by!(runner_key: "claude").update!(enabled_for_chat: true)
+      create(:runner, user: owner, runner_key: "codex", enabled_for_chat: true)
+
+      selected_provider = nil
+      allow(AgentHarness).to receive(:send_message) do |_, **opts|
+        selected_provider = opts[:provider]
+        llm_response
+      end
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(selected_provider).to eq(:codex)
+    end
   end
 
   describe "knowledge usage attribution" do
