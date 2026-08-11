@@ -152,7 +152,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
-| [RDR-053](RDR-053-new-feature-creation.md) | New Feature Creation — RDR-Driven Issue Trees with LID Support | Draft | P1 |
+| [RDR-053](RDR-053-new-feature-creation.md) | New Feature Creation — RDR-Driven Issue Trees with LID Support | Implemented | P1 |
 
 ## Decision Summary
 

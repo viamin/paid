@@ -5,11 +5,11 @@
 ## Metadata
 
 - **Date**: 2026-08-09
-- **Status**: Draft
+- **Status**: Implemented (2026-08-11)
 - **Type**: Architecture + Process
 - **Priority**: P1
 - **Related RDRs**: [RDR-028](RDR-028-interactive-chat.md) (Interactive Chat), [RDR-051](RDR-051-lid-aware-agent-runs.md) (LID-Aware Agent Runs), [RDR-031](RDR-031-focused-agent-runs.md) (Focused Agent Runs), [RDR-009](RDR-009-prompt-evolution.md) (Feature Creation vs Existing Goals), [RDR-044](RDR-044-configuration-profiles-chat.md) (Chat-Driven Configuration Profiles)
-- **Related Issues**: TBD
+- **Related Issues**: #3305 (chat path), #3306 (run/needs-input path), #3307 (LID integration), #3308 (E2E tests + closeout)
 
 ## Problem Statement
 
@@ -248,7 +248,7 @@ If `lid_mode` is not set but `lid_requested` is `true`, the run's completion mes
 
 ## Implementation Plan
 
-> Status: Draft. Phases are indicative; the deferred questions below must be resolved during planning before locking.
+> Status: Implemented. All five phases shipped.
 
 ### Phase 1: `create_feature` goal and feature brief
 
@@ -312,8 +312,41 @@ If `lid_mode` is not set but `lid_requested` is `true`, the run's completion mes
 - **LID replaces CIRs** — no separate Change Intent Records; LID's design tree is the intent-tracking surface for `create_feature` output, per the user's direction (§ What LID provides).
 - **Decomposition timing** — issue-tree decomposition happens in the same run as RDR generation, not a separate run, so both are grounded in the same codebase research pass.
 
-## Outstanding Questions (to resolve in planning)
+## Resolved Questions
 
-- Should issues be filed when the RDR PR is *opened* (current design, §4) or only after it *merges*? Filing at open time gives reviewers the full picture sooner but risks orphaned issues if the PR is rejected; filing at merge time avoids orphans but splits feature creation across two async events (PR merge webhook → issue filing). Needs a decision before Phase 3 locks.
-- Should large RDRs (many phases) cap the number of issues filed per run to avoid an unreviewably large tree, and if so, what's the cap?
-- **Related Issues** (Metadata) are TBD pending planning — file and link tracking issues for Phases 1–5 before moving this RDR's status out of Draft.
+- **Issues filed at PR-open time** (current design): the implementation files issues when the RDR PR is opened, giving reviewers the full picture sooner. The run closes filed issues if the RDR PR is rejected.
+- **No issue-tree cap**: no artificial cap on the number of filed issues. The agent's token budget naturally bounds the decomposition.
+- **Related Issues** (Metadata) now reference the implementation chain: #3305 (chat), #3306 (run/needs-input), #3307 (LID), #3308 (closeout + E2E tests).
+
+## 2026-08-11 Closeout
+
+Shipped implementation matches the RDR's five-phase plan:
+
+- **Phase 1 (`create_feature` goal + feature brief)**: `create_feature` added to `AgentRun::GOALS`, goal predicates wired, `prompt_for_create_feature` builds from `external_metadata["feature_brief"]`, chat system-prompt clause included, needs-input path via `ClarifyingQuestions::ClearNeedsInput`.
+- **Phase 2 (RDR generation + contract gate)**: `Prompts::BuildForCreateFeature` built, `Features::RdrContract` gates docs-only PRs — incomplete RDRs are caught before review.
+- **Phase 3 (issue tree decomposition)**: Cross-repo issue filing via `cross_repo_issues`, each issue references the source RDR (`Part of RDR-053`), dependency text is `Issues::ParseDependencies`-compatible.
+- **Phase 4 (LID chaining)**: `ChainLidPlanningActivity` triggers a follow-on `lid_planning` run when `project.lid_mode` is set, reusing the existing `lid_planning` machinery. Skips silently when LID is not enabled.
+- **Phase 5 (validation)**: Contract pass rate verified via `Features::RdrContract` specs; E2E integration tests (`spec/integration/create_feature_e2e_spec.rb`) cover chat, run, needs-input, and LID paths.
+
+### Evidence
+
+| Acceptance criterion | Implementation | Tests |
+|---|---|---|
+| New `create_feature` goal in `GOALS` | `app/models/agent_run.rb:29` (`GOALS = %w[... create_feature]`) | `spec/models/agent_run_spec.rb:3319` |
+| Goal predicate `create_feature_goal?` | `app/models/agent_run.rb:1579` | `spec/models/agent_run_spec.rb:622-633` |
+| `repo_cloned?` always true for create_feature | `app/models/agent_run.rb:1610-1611` | `spec/models/agent_run_spec.rb:655-659` |
+| Prompt builder from feature brief | `app/models/agent_run.rb:2780-2795`, `app/services/prompts/build_for_create_feature.rb` | `spec/models/agent_run_spec.rb:1805-1852` |
+| Chat system-prompt clause | `app/services/chat_sessions/build_system_prompt.rb:87` | `spec/services/chat_sessions/build_system_prompt_spec.rb:52` |
+| Needs-input pause + resume | `app/temporal/activities/create_agent_run_activity.rb:131-134`, `app/services/clarifying_questions/clear_needs_input.rb:31-38` | `spec/temporal/activities/create_agent_run_activity_spec.rb:1114-1199`, `spec/services/clarifying_questions/clear_needs_input_spec.rb:72-97` |
+| RDR contract (section gate) | `app/services/features/rdr_contract.rb` | `spec/services/features/rdr_contract_spec.rb` |
+| Docs-only PR allowlist | `app/temporal/activities/create_pull_request_activity.rb:857-884` | `spec/temporal/activities/create_pull_request_activity_spec.rb:825-950` |
+| LID chaining | `app/temporal/activities/chain_lid_planning_activity.rb` | `spec/temporal/activities/chain_lid_planning_activity_spec.rb` |
+| E2E integration | `spec/integration/create_feature_e2e_spec.rb` | (this closeout) |
+
+### Audit report
+
+See [`audit-report-2026-08-11-rdr-053.md`](audit-report-2026-08-11-rdr-053.md).
+
+### Status: Implemented
+
+All five phases shipped with test coverage. No remaining gaps.
