@@ -117,6 +117,12 @@ RSpec.describe ClarifyingQuestions::ClearNeedsInput do
 
         expect(issue.reload.needs_input_questions).to be_nil
       end
+
+      it "drops the needs-input label locally" do
+        described_class.call(project: project, issue: issue)
+
+        expect(issue.reload.labels).not_to include(project.enhance_issue_needs_input_label_name)
+      end
     end
 
     context "when the issue has no paused create_feature run" do

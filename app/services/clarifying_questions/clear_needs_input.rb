@@ -33,7 +33,7 @@ module ClarifyingQuestions
       # instead of resetting to "new" (RDR-053 needs-input Q&A flow).
       create_feature_run = paused_create_feature_run_for(issue)
       if create_feature_run
-        assemble_and_resume_create_feature!(create_feature_run, issue)
+        assemble_and_resume_create_feature!(create_feature_run, issue, label)
         return
       end
 
@@ -65,11 +65,11 @@ module ClarifyingQuestions
     # Assembles a feature brief from the clarifying question answers and
     # resumes the paused create_feature run so the agent can proceed with
     # a complete brief (RDR-053).
-    def assemble_and_resume_create_feature!(agent_run, issue)
+    def assemble_and_resume_create_feature!(agent_run, issue, label)
       brief = assemble_feature_brief_from_answers(issue)
       existing = agent_run.external_metadata.is_a?(Hash) ? agent_run.external_metadata : {}
       agent_run.update!(external_metadata: existing.merge("feature_brief" => brief))
-      issue.update!(needs_input_questions: nil)
+      issue.update!(needs_input_questions: nil, labels: Array(issue.labels) - [ label ])
 
       agent_run.resume!(decision_point: "create_feature.needs_input_answered")
       ProcessRunQueueJob.perform_later
