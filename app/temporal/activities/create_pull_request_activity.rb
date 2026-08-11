@@ -41,6 +41,15 @@ module Activities
           enforce_lid_planning_contract!(agent_run, changed_files: changed_files)
         end
 
+        # create_feature runs are docs-only (RDR markdown under docs/rdrs/):
+        # verify the changed files and enforce the RDR output contract
+        # before opening the PR. Mirrors the lid_planning guard.
+        # @spec CREATE-FEATURE-003
+        if agent_run.create_feature_goal?
+          changed_files = validate_create_feature_changed_files!(agent_run, client)
+          enforce_create_feature_contract!(agent_run, changed_files: changed_files, client: client)
+        end
+
         if existing_pr
           pr = existing_pr
           pr_action = "reused"
@@ -217,6 +226,7 @@ module Activities
 
     def pr_title(agent_run, issue)
       return "docs: bootstrap LID design tree" if agent_run.lid_planning_goal?
+      return create_feature_pr_title(agent_run) if agent_run.create_feature_goal?
       return fallback_custom_prompt_title(agent_run) || "Agent changes" unless issue
 
       ConventionalCommitTitle.for_issue(issue, project: issue.project, style_key: "pr_title_style").truncate(255)
@@ -224,6 +234,7 @@ module Activities
 
     def build_pr_body(issue, agent_run, client: nil)
       return build_lid_planning_pr_body(agent_run) if agent_run.lid_planning_goal?
+      return build_create_feature_pr_body(agent_run) if agent_run.create_feature_goal?
 
       summary = agent_run.agent_summary
       validate_summary_scope(summary, issue, agent_run, client: client)
@@ -841,6 +852,114 @@ module Activities
 
     def lid_planning_allowed?(path)
       LID_PLANNING_ALLOWED_PATTERNS.any? { |pattern| path.match?(pattern) }
+    end
+
+    # create_feature runs must only touch docs/rdrs/ paths.
+    CREATE_FEATURE_ALLOWED_PATTERNS = [
+      %r{\Adocs/rdrs/}
+    ].freeze
+
+    # Validates that a create_feature run only touches docs/rdrs/ paths.
+    # @spec CREATE-FEATURE-003
+    def validate_create_feature_changed_files!(agent_run, client)
+      changed_files = fetch_changed_files(agent_run, client)
+      if changed_files.nil?
+        raise "create_feature validation requires changed file data (missing client or commit SHAs)"
+      end
+
+      rejected = changed_files.reject { |path| create_feature_allowed?(path) }
+      return changed_files if rejected.empty?
+
+      logger.error(
+        message: "agent_execution.create_feature_allowlist_violation",
+        agent_run_id: agent_run.id,
+        rejected_files: rejected,
+        total_changed: changed_files.size
+      )
+      agent_run.log!(
+        "system",
+        "create_feature allowlist violation: #{rejected.to_sentence} " \
+        "is outside docs/rdrs/. The run is aborted."
+      )
+      raise "create_feature changed files outside allowlist: #{rejected.join(', ')}"
+    end
+
+    # Enforces the positive output contract for a create_feature run: that
+    # the required RDR artifact (new RDR with all sections + README index
+    # update) was actually produced. Mirrors the lid_planning contract gate.
+    # @spec CREATE-FEATURE-003
+    def enforce_create_feature_contract!(agent_run, changed_files:, client:)
+      contents = fetch_create_feature_file_contents(agent_run, changed_files, client)
+      result = Features::RdrContract.call(
+        agent_run: agent_run,
+        changed_files: changed_files,
+        contents: contents
+      )
+      return if result.valid?
+
+      logger.error(
+        message: "agent_execution.create_feature_contract_violation",
+        agent_run_id: agent_run.id,
+        missing: result.missing
+      )
+      agent_run.log!(
+        "system",
+        "create_feature output contract not met: missing #{result.missing.to_sentence}. " \
+        "The run is aborted."
+      )
+      raise "create_feature output contract violated: missing #{result.missing.join(', ')}"
+    end
+
+    # Fetches file contents for the RDR docs and README index so the contract
+    # can check section presence and index update without a separate pass.
+    def fetch_create_feature_file_contents(agent_run, changed_files, client)
+      return {} unless client
+
+      rdr_files = changed_files.select { |path| path.match?(%r{\Adocs/rdrs/}) }
+      rdr_files.each_with_object({}) do |path, memo|
+        memo[path] = client.file_content(agent_run.project.full_name, path: path, ref: agent_run.result_commit_sha) || ""
+      rescue => e
+        logger.warn(
+          message: "agent_execution.create_feature_content_fetch_failed",
+          agent_run_id: agent_run.id,
+          path: path,
+          error: e.message
+        )
+        memo[path] = ""
+      end
+    end
+
+    def create_feature_allowed?(path)
+      CREATE_FEATURE_ALLOWED_PATTERNS.any? { |pattern| path.match?(pattern) }
+    end
+
+    def create_feature_pr_title(agent_run)
+      brief = agent_run.external_metadata&.dig("feature_brief") || {}
+      title = brief["title"].presence || "New feature specification"
+      "docs: RDR for #{title}".truncate(255)
+    end
+
+    def build_create_feature_pr_body(agent_run)
+      brief = agent_run.external_metadata&.dig("feature_brief") || {}
+      lines = [ "## Feature Creation RDR", "" ]
+
+      if brief["title"].present?
+        lines << "**Feature:** #{brief['title']}"
+        lines << ""
+      end
+
+      lines << "This PR adds a new RDR (Recommendation Decision Record) specifying the proposed feature, "
+      lines << "decomposed into a linked issue tree."
+      lines << ""
+
+      if brief["problem"].present?
+        lines << "**Problem:** #{brief['problem']}"
+        lines << ""
+      end
+
+      lines << "Review the RDR document under `docs/rdrs/` for the full specification."
+
+      { body: lines.join("\n"), llm_generated_description: false }
     end
 
 

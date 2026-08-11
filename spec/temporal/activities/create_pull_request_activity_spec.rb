@@ -821,6 +821,175 @@ RSpec.describe Activities::CreatePullRequestActivity do
       end
     end
 
+    # @spec CREATE-FEATURE-003
+    context "when the goal is create_feature" do
+      let(:feature_agent_run) do
+        create(:agent_run, :with_git_context, :create_feature_goal, project: project, issue: nil,
+          external_metadata: { "feature_brief" => { "title" => "Add dark mode", "problem" => "Eye strain" } })
+      end
+      let(:rdr_path) { "docs/rdrs/RDR-099-add-dark-mode.md" }
+
+      before do
+        feature_agent_run.update!(result_commit_sha: "abc123def456789012345678901234567890abcd")
+        valid_rdr_body = <<~MARKDOWN
+          # RDR-099: Add Dark Mode
+
+          ## Metadata
+
+          - Date: 2026-08-11
+
+          ## Problem Statement
+
+          Users want dark mode.
+
+          ## Context
+
+          The app uses ERB.
+
+          ## Research Findings
+
+          We read the codebase.
+
+          ## Proposed Solution
+
+          Add CSS variables.
+
+          ## Alternatives Considered
+
+          CSS-only.
+
+          ## Trade-offs and Consequences
+
+          Maintenance overhead.
+
+          ## Implementation Plan
+
+          Three phases.
+
+          ## Validation
+
+          Visual regression tests.
+        MARKDOWN
+        valid_index_body = "| [RDR-099](RDR-099-add-dark-mode.md) | Add Dark Mode | Draft | P1 |"
+
+        allow(github_client).to receive(:compare_changed_files)
+          .and_return([ rdr_path, "docs/rdrs/README.md" ])
+        allow(github_client).to receive(:file_content).with(
+          project.full_name, path: rdr_path, ref: feature_agent_run.result_commit_sha
+        ).and_return(valid_rdr_body)
+        allow(github_client).to receive(:file_content).with(
+          project.full_name, path: "docs/rdrs/README.md", ref: feature_agent_run.result_commit_sha
+        ).and_return(valid_index_body)
+      end
+
+      it "uses the create_feature PR title" do
+        expect(github_client).to receive(:create_pull_request).with(
+          anything,
+          hash_including(title: "docs: RDR for Add dark mode")
+        ).and_return(pr_response)
+
+        result = activity.execute(agent_run_id: feature_agent_run.id)
+        expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
+      end
+
+      it "uses a create_feature-specific PR body" do
+        captured_body = nil
+        allow(github_client).to receive(:create_pull_request) do |*_args, **kwargs|
+          captured_body = kwargs[:body]
+          pr_response
+        end
+
+        activity.execute(agent_run_id: feature_agent_run.id)
+
+        expect(captured_body).to include("Feature Creation RDR")
+        expect(captured_body).to include("Add dark mode")
+      end
+
+      it "fetches changed files once for both allowlist and contract checks" do
+        expect(github_client).to receive(:compare_changed_files)
+          .with(project.full_name, feature_agent_run.base_commit_sha, feature_agent_run.result_commit_sha)
+          .once
+          .and_return([ rdr_path, "docs/rdrs/README.md" ])
+
+        activity.execute(agent_run_id: feature_agent_run.id)
+      end
+
+      it "allows docs/rdrs/ files without raising" do
+        expect { activity.execute(agent_run_id: feature_agent_run.id) }.not_to raise_error
+      end
+
+      context "when the agent edits files outside docs/rdrs/" do
+        it "raises an error when code files are present" do
+          allow(github_client).to receive(:compare_changed_files)
+            .and_return([ rdr_path, "app/models/foo.rb" ])
+
+          expect {
+            activity.execute(agent_run_id: feature_agent_run.id)
+          }.to raise_error(RuntimeError, /outside allowlist/)
+        end
+
+        it "raises an error when only code files are present" do
+          allow(github_client).to receive(:compare_changed_files)
+            .and_return([ "app/models/foo.rb", "spec/models/foo_spec.rb" ])
+
+          expect {
+            activity.execute(agent_run_id: feature_agent_run.id)
+          }.to raise_error(RuntimeError, /outside allowlist/)
+        end
+
+        it "rejects docs outside docs/rdrs/" do
+          allow(github_client).to receive(:compare_changed_files)
+            .and_return([ rdr_path, "docs/intent/foo/foo-design.md" ])
+
+          expect {
+            activity.execute(agent_run_id: feature_agent_run.id)
+          }.to raise_error(RuntimeError, /outside allowlist/)
+        end
+      end
+
+      context "when the RDR output contract is violated" do
+        it "raises when no RDR file was produced" do
+          allow(github_client).to receive(:compare_changed_files)
+            .and_return([ "docs/rdrs/README.md" ])
+
+          expect {
+            activity.execute(agent_run_id: feature_agent_run.id)
+          }.to raise_error(RuntimeError, /output contract violated/)
+        end
+
+        it "raises when required RDR sections are missing" do
+          incomplete_body = <<~MARKDOWN
+            # RDR-099: Short
+
+            ## Metadata
+
+            - Date: 2026-08-11
+
+            ## Problem Statement
+
+            Just a problem.
+          MARKDOWN
+          allow(github_client).to receive(:file_content).with(
+            project.full_name, path: rdr_path, ref: feature_agent_run.result_commit_sha
+          ).and_return(incomplete_body)
+
+          expect {
+            activity.execute(agent_run_id: feature_agent_run.id)
+          }.to raise_error(RuntimeError, /output contract violated/)
+        end
+
+        it "raises when the README index was not updated" do
+          allow(github_client).to receive(:file_content).with(
+            project.full_name, path: "docs/rdrs/README.md", ref: feature_agent_run.result_commit_sha
+          ).and_return("# Index\n\nNo new entries.\n")
+
+          expect {
+            activity.execute(agent_run_id: feature_agent_run.id)
+          }.to raise_error(RuntimeError, /output contract violated/)
+        end
+      end
+    end
+
     it "does not fail when label addition fails" do
       allow(github_client).to receive(:add_labels_to_issue)
         .and_raise(GithubClient::ApiError.new("Label not found"))
