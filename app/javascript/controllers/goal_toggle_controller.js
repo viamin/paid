@@ -15,6 +15,7 @@ export default class extends Controller {
     "runnerSelect",
     "dockerHostSelect",
     "blockedBySection",
+    "featureDescriptionSection",
   ]
   static values = {
     currentGoal: String,
@@ -42,6 +43,7 @@ export default class extends Controller {
     const isReview = goal === "review"
     const isEnhanceIssue = goal === "enhance_issue"
     const isCreateIssue = goal === "create_issue"
+    const isCreateFeature = goal === "create_feature"
     const showPriority = !isReview
 
     this.issueSectionTargets.forEach((el) => {
@@ -82,6 +84,15 @@ export default class extends Controller {
           if (!control.hasAttribute("data-permanently-disabled")) {
             control.disabled = !isCreateIssue
           }
+        }
+      )
+    })
+
+    this.featureDescriptionSectionTargets.forEach((el) => {
+      el.hidden = !isCreateFeature
+      el.querySelectorAll("input, select, textarea, button").forEach(
+        (control) => {
+          control.disabled = !isCreateFeature
         }
       )
     })

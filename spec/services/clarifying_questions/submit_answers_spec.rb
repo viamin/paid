@@ -176,7 +176,7 @@ RSpec.describe ClarifyingQuestions::SubmitAnswers, :no_db do
         )
 
         expect(issue).to have_received(:update!).with(
-          paid_state: "new", labels: [ "P2" ]
+          paid_state: "new", labels: [ "P2" ], needs_input_questions: nil
         )
       end
 
@@ -191,7 +191,7 @@ RSpec.describe ClarifyingQuestions::SubmitAnswers, :no_db do
         )
 
         expect(issue).to have_received(:update!).with(
-          paid_state: "new", labels: [ "P2" ]
+          paid_state: "new", labels: [ "P2" ], needs_input_questions: nil
         )
       end
     end

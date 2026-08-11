@@ -161,6 +161,18 @@ module Projects
           goal: goal,
           priority_tier: priority_tier
         )
+      elsif goal == "create_feature"
+        feature_description = params[:feature_description]&.strip.presence
+        unless feature_description
+          redirect_to new_project_agent_run_path(@project, goal: goal),
+            alert: "Please provide a feature description."
+          return
+        end
+        create_feature_run_and_redirect(
+          feature_description: feature_description,
+          on_error_path: new_project_agent_run_path(@project, goal: goal),
+          priority_tier: priority_tier
+        )
       else
         source_pr_number = resolve_pull_request
         unless issue || custom_prompt || source_pr_number || (goal == "lid_planning" && plan_docs.present?)
@@ -1175,6 +1187,73 @@ module Projects
     rescue ActiveRecord::RecordNotUnique
       redirect_to on_error_path, alert: "An unexpected error occurred. Please try again."
     end
+
+    def create_feature_run_and_redirect(feature_description:, on_error_path:, priority_tier: nil)
+      budget_result = CostBudgets::Check.call(@project)
+      unless budget_result[:allowed]
+        redirect_to on_error_path, alert: "Your project's AI budget has been reached. Please adjust your budget settings or try again later."
+        return
+      end
+
+      # Extract a short title from the first line of the description.
+      title = feature_description.lines.first&.strip&.truncate(120) || "New Feature"
+      body = feature_description
+
+      # Create a GitHub issue to hold the feature brief and clarifying questions.
+      client = @project.client
+      unless client
+        redirect_to on_error_path, alert: "GitHub access is not configured for this project."
+        return
+      end
+
+      gh_issue = client.create_issue(
+        @project.full_name,
+        title: "[Feature] #{title}",
+        body: body
+      )
+      issue = Issues::UpsertFromGithub.call(project: @project, github_issue: gh_issue)
+
+      # Build an initial feature brief from the description.
+      feature_brief = {
+        "title" => title,
+        "problem" => feature_description
+      }
+
+      agent_run = nil
+      github_sync_args = nil
+      ActiveRecord::Base.transaction do
+        agent_run = create_agent_run(
+          issue: issue,
+          custom_prompt: nil,
+          goal: "create_feature",
+          priority_tier: priority_tier
+        )
+        # Store the feature brief in external_metadata.
+        agent_run.update!(external_metadata: agent_run.external_metadata.merge("feature_brief" => feature_brief))
+        github_sync_args = apply_priority_label(issue, priority_tier) if priority_tier
+      end
+
+      if github_sync_args
+        label_name, stale_labels = github_sync_args
+        sync_priority_label_to_github(issue, label_name, stale_labels)
+      end
+
+      ProcessRunQueueJob.perform_later
+
+      audit_event("agent_run.created", metadata: { agent_run_id: agent_run.id, project_name: @project.name, goal: "create_feature" })
+
+      notice = "Feature creation run queued. The agent will analyze your description and may ask clarifying questions if more detail is needed."
+      redirect_to project_path(@project), notice: notice
+    rescue NoRunnableRunnerError => e
+      redirect_to on_error_path, alert: e.message
+    rescue InvalidDockerHostSelectionError => e
+      redirect_to on_error_path, alert: e.message
+    rescue ActiveRecord::RecordInvalid => e
+      redirect_to on_error_path, alert: e.message
+    rescue ActiveRecord::RecordNotUnique
+      redirect_to on_error_path, alert: "An unexpected error occurred. Please try again."
+    end
+
 
     def compute_pr_priority_tiers(pull_requests)
       priority_labels = @project.effective_priority_labels
