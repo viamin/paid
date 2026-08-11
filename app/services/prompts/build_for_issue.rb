@@ -123,7 +123,7 @@ module Prompts
         source: self.class.name
       )
       with_conventions = ProjectConventions::InjectIntoPrompt.call(prompt: with_style_guides, project: project)
-      Lid::InjectIntoPrompt.call(prompt: with_conventions, project: project)
+      Lid::InjectIntoPrompt.call(prompt: with_conventions, project: project, goal: agent_run&.goal)
     end
 
     # Fetches and formats trusted issue comments as a prompt section.

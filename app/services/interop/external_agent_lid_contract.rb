@@ -3,12 +3,13 @@
 module Interop
   class ExternalAgentLidContract
     # @spec LID-RUNS-006
-    def self.call(...)
-      new(...).call
+    def self.call(project:, goal: nil)
+      new(project: project, goal: goal).call
     end
 
-    def initialize(project:)
+    def initialize(project:, goal: nil)
       @project = project
+      @goal = goal
     end
 
     def call
@@ -24,7 +25,7 @@ module Interop
 
     private
 
-    attr_reader :project
+    attr_reader :project, :goal
 
     def lid_mode
       @lid_mode ||= project.lid_mode.to_s.presence
@@ -44,7 +45,7 @@ module Interop
 
     def workflow_contract
       {
-        implementation_prompt: Lid::InjectIntoPrompt.section_for(project: project),
+        implementation_prompt: Lid::InjectIntoPrompt.section_for(project: project, goal: goal),
         coherence_check_behavior: "soft_block_reported_in_pr"
       }
     end
