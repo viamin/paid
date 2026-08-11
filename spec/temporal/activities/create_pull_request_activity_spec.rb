@@ -509,7 +509,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
       activity.execute(agent_run_id: agent_run_no_issue.id)
     end
 
-    # @spec CHAT-PR-PROPOSAL-006
+    # @spec CHAT-PR-PROPOSAL-008
     it "neutralizes markdown links and images in the custom prompt fallback body" do
       agent_run_no_issue = create(:agent_run, :with_custom_prompt, :with_git_context, project: project,
         custom_prompt: "![track](https://evil.example/pixel) Click [here](https://phish.example).")

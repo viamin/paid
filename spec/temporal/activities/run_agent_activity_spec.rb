@@ -4752,6 +4752,7 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.runners_attempted.first["error_type"]).to eq("rate_limited")
       end
 
+      # @spec RUNNER-FALLBACK-003
       it "classifies a streaming-event abort as an execution error, not rate_limited" do
         # A streaming {"type":"error"} JSONL event is a generic execution failure
         # (e.g. Codex 400 invalid_request_error), not a rate limit. See run 24528.
@@ -4774,6 +4775,7 @@ expect(container_service).to receive(:execute).with(
         expect(user.runner_states.find_by(runner_name: "claude")&.rate_limited_until).to be_nil
       end
 
+      # @spec RUNNER-FALLBACK-003
       it "classifies a streaming-event abort carrying a rate-limit payload as rate_limited" do
         # A real upstream 429/quota can arrive as a JSONL {"type":"error"} event.
         # The streaming payload must be inspected so genuine rate limits still

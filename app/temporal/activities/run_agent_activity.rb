@@ -1763,7 +1763,7 @@ module Activities
       # message so deterministic_runner_config_error? (model/CLI-version
       # patterns) can match and skip the circuit breaker for config faults.
       raise RunnerExecutionError,
-        "Runner aborted on streaming event: #{detail.presence || e.matched_output}"
+        "Runner aborted on streaming event: #{detail.presence || e.matched_output.to_s}"
     rescue Containers::Provision::ExecutionError => e
       # A container that died mid-execution is infrastructure failure, not a
       # runner fault. Classify it as infra so it does not trip the per-runner
