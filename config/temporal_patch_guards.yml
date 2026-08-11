@@ -19,3 +19,5 @@ workflows:
   Workflows::AgentExecutionWorkflow:
     agent-execution-provision-browser-container-v1:
       introduced_on: "2026-07-19"
+    create-feature-lid-chaining-v1:
+      introduced_on: "2026-08-11"

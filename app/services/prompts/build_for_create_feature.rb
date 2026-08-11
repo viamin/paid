@@ -41,6 +41,8 @@ module Prompts
 
       {{feature_brief}}
 
+      {{lid_section}}
+
       # Instructions
 
       1. **Research**: Read the repository. Identify the files, modules, and
@@ -126,7 +128,9 @@ module Prompts
       {
         project_name: project_name,
         full_name: full_name,
-        feature_brief: formatted_brief
+        feature_brief: formatted_brief,
+        lid_mode: lid_mode.to_s,
+        lid_section: lid_section
       }
     end
 
@@ -163,6 +167,48 @@ module Prompts
       parts << brief_section("Scope (in)", scope["in"])
       parts << brief_section("Scope (out)", scope["out"])
       parts.compact.join("\n\n")
+    end
+
+    def lid_section
+      return lid_enabled_section if lid_mode.present?
+      return lid_requested_section if feature_brief["lid_requested"]
+
+      ""
+    end
+
+    def lid_enabled_section
+      <<~LID.strip
+        # LID Integration
+
+        This project uses Linked-Intent Development (LID) in `#{lid_mode}` mode.
+        After this run completes, a `lid_planning` run will convert this RDR into
+        LID artifacts (HLD/LLD/EARS) using the conversion table in RDR-051:
+        - Problem Statement → HLD `## Problem`
+        - Proposed Solution → LLD `## Approach` / `## System Design`
+        - Alternatives Considered → LLD Decisions & Alternatives
+        - Validation / acceptance criteria → EARS specs
+        - Implementation Plan → cascade ordering
+
+        For the issue tree you file:
+        - Each issue body MUST reference relevant EARS spec IDs with `@spec`
+          annotations (e.g., `@spec FEAT-NAME-001`) so implementation runs are
+          LID-aware from the start
+      LID
+    end
+
+    def lid_requested_section
+      <<~LID.strip
+        # LID Bootstrap
+
+        The user has requested LID for this feature but the project is not yet
+        LID-enabled. A `lid_planning` adoption run is needed to bootstrap the
+        design tree before this feature's RDR can be tracked as intent.
+
+        Include a note in the RDR PR description recommending LID bootstrap
+        before implementation begins. Defer Step 6 (issue-tree decomposition)
+        until LID adoption is confirmed — file only the RDR docs-only PR in
+        this run.
+      LID
     end
 
     # When the DB prompt is missing, render the in-code fallback with the same

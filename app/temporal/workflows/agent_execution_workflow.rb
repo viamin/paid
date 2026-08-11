@@ -388,6 +388,14 @@ module Workflows
 
               # Step 10: Draft a decision record (best-effort)
               draft_decision_record(agent_run_id)
+
+              # Step 11: Chain into lid_planning for create_feature runs
+              # when the project is LID-enabled (RDR-053 Phase 4).
+              # Gated behind a Temporal patch so a rollback to a worker
+              # without this step does not break in-flight workflows.
+              if goal == "create_feature" && Temporalio::Workflow.patched("create-feature-lid-chaining-v1")
+                chain_lid_planning(agent_run_id, pr_result)
+              end
             end
           end
         else
@@ -843,6 +851,31 @@ module Workflows
         message: "agent_execution.resync_signal_failed",
         project_id: project_id,
         error: e.message
+      )
+    end
+
+    # Chains a completed create_feature run into a lid_planning run when the
+    # project is LID-enabled (RDR-053 Phase 4). The lid_planning run receives
+    # the RDR as a named plan-doc reference so it can convert the RDR's
+    # authored sections into LID artifacts (HLD/LLD/EARS).
+    #
+    # Best-effort: failures are logged but do not fail the parent
+    # create_feature run.
+    def chain_lid_planning(agent_run_id, pr_result)
+      plan_doc_source = pr_result[:pull_request_url] || "PR ##{pr_result[:pull_request_number]}"
+
+      run_activity(Activities::ChainLidPlanningActivity,
+        { agent_run_id: agent_run_id,
+          plan_doc_source: plan_doc_source },
+        timeout: 30, retry_policy: NO_RETRY)
+    rescue Temporalio::Error::CanceledError
+      raise
+    rescue => e
+      Temporalio::Workflow.logger.warn(
+        message: "agent_execution.lid_planning_chain_failed",
+        agent_run_id: agent_run_id,
+        error: e.message,
+        error_class: e.class.name
       )
     end
   end
