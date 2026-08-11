@@ -36,6 +36,16 @@
   *Tests:* `spec/services/projects/detect_lid_mode_spec.rb`.
   *Code:* `app/services/projects/detect_lid_mode.rb`.
 
+- [x] **LID-DETECTION-009** — When a `## LID` block declares an LID mode but
+  the standard design docs (`docs/high-level-design.md`, `docs/intent/`) are
+  absent from the repository, the system SHALL record a warning in detection
+  metadata. The warning is advisory: it is surfaced in the project settings UI
+  so owners know standard design docs are absent; downstream contract injection
+  uses resilient, path-agnostic wording unconditionally, so agents do not waste
+  tokens searching for design artifacts the repo never populated.
+  *Tests:* `spec/services/projects/detect_lid_mode_spec.rb`.
+  *Code:* `app/services/projects/detect_lid_mode.rb`.
+
 ## Lifecycle and override
 
 - [x] **LID-DETECTION-006** — When project conventions are collected during repo
