@@ -745,7 +745,14 @@ module Activities
         client.add_comment(project.full_name, issue.github_number, question_comment)
         label = project.enhance_issue_needs_input_label_name
         client.add_labels_to_issue(project.full_name, issue.github_number, [ label ])
-        issue.update!(paid_state: "needs_input", labels: Array(issue.labels) | [ label ])
+        # Persist the parsed questions locally so the dashboard needs-input
+        # queue can render them without a per-issue GitHub API round-trip.
+        questions = ClarifyingQuestions::Parse.call(comment_body: question_comment)
+        issue.update!(
+          paid_state: "needs_input",
+          labels: Array(issue.labels) | [ label ],
+          needs_input_questions: questions
+        )
       end
 
       agent_run.update!(status: "paused", paused_at: Time.current)

@@ -37,7 +37,7 @@ module ClarifyingQuestions
         return
       end
 
-      issue.update!(paid_state: "new", labels: Array(issue.labels) - [ label ])
+      issue.update!(paid_state: "new", labels: Array(issue.labels) - [ label ], needs_input_questions: nil)
     end
 
     private
@@ -69,6 +69,7 @@ module ClarifyingQuestions
       brief = assemble_feature_brief_from_answers(issue)
       existing = agent_run.external_metadata.is_a?(Hash) ? agent_run.external_metadata : {}
       agent_run.update!(external_metadata: existing.merge("feature_brief" => brief))
+      issue.update!(needs_input_questions: nil)
 
       agent_run.resume!(decision_point: "create_feature.needs_input_answered")
       ProcessRunQueueJob.perform_later
@@ -98,7 +99,11 @@ module ClarifyingQuestions
       constraints = []
       rejected_alternatives = ""
       scope_in = ""
-      scope_out = ""
+      # The single scope question covers both in and out of scope; without
+      # semantic splitting (an AI concern, not a code concern) the combined
+      # answer lands in "in". nil for "out" suppresses the empty section
+      # downstream (Array(nil).blank? is true; Array("").blank? is not).
+      scope_out = nil
       done_criteria = ""
 
       answers&.each do |qa|

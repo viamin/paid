@@ -1131,6 +1131,19 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(agent_run.reload.status).to eq("paused")
     end
 
+    it "persists clarifying questions locally so the dashboard avoids a per-issue API round-trip" do
+      agent_run = create(:agent_run, :queued, :create_feature_goal, project: project, issue: feature_issue)
+      agent_run.update!(external_metadata: { "feature_brief" => { "title" => "Add dark mode", "problem" => "Need dark mode" } })
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(feature_issue.reload.needs_input_questions).to be_an(Array).and include(
+        a_string_matching(/desired behavior/),
+        a_string_matching(/constraints/),
+        a_string_matching(/scope/)
+      )
+    end
+
     it "does not pause when feature brief has all required fields" do
       full_brief = {
         "title" => "Add dark mode",

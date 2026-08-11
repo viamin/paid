@@ -32,7 +32,7 @@ RSpec.describe ClarifyingQuestions::ClearNeedsInput do
     it "resets paid_state and drops the label locally" do
       described_class.call(project: project, issue: issue)
 
-      expect(issue).to have_received(:update!).with(paid_state: "new", labels: [ "P2" ])
+      expect(issue).to have_received(:update!).with(paid_state: "new", labels: [ "P2" ], needs_input_questions: nil)
     end
 
     context "when the issue is not awaiting input" do
@@ -51,7 +51,7 @@ RSpec.describe ClarifyingQuestions::ClearNeedsInput do
       it "still resets local state" do
         described_class.call(project: project, issue: issue)
 
-        expect(issue).to have_received(:update!).with(paid_state: "new", labels: [ "P2" ])
+        expect(issue).to have_received(:update!).with(paid_state: "new", labels: [ "P2" ], needs_input_questions: nil)
       end
     end
 
@@ -64,7 +64,7 @@ RSpec.describe ClarifyingQuestions::ClearNeedsInput do
       it "logs and still resets local state" do
         described_class.call(project: project, issue: issue)
 
-        expect(issue).to have_received(:update!).with(paid_state: "new", labels: [ "P2" ])
+        expect(issue).to have_received(:update!).with(paid_state: "new", labels: [ "P2" ], needs_input_questions: nil)
       end
     end
   end
@@ -109,12 +109,28 @@ RSpec.describe ClarifyingQuestions::ClearNeedsInput do
         described_class.call(project: project, issue: issue)
         expect(issue.reload.paid_state).to eq("needs_input")
       end
+
+      it "clears the persisted needs_input_questions" do
+        issue.update!(needs_input_questions: [ "What is the desired behavior?" ])
+
+        described_class.call(project: project, issue: issue)
+
+        expect(issue.reload.needs_input_questions).to be_nil
+      end
     end
 
     context "when the issue has no paused create_feature run" do
       it "resets paid_state to new normally" do
         described_class.call(project: project, issue: issue)
         expect(issue.reload.paid_state).to eq("new")
+      end
+
+      it "clears the persisted needs_input_questions" do
+        issue.update!(needs_input_questions: [ "What is the desired behavior?" ])
+
+        described_class.call(project: project, issue: issue)
+
+        expect(issue.reload.needs_input_questions).to be_nil
       end
     end
   end
@@ -177,7 +193,7 @@ RSpec.describe ClarifyingQuestions::ClearNeedsInput do
       expect(brief["desired_behavior"]).to eq("Toggle dark mode in settings")
       expect(brief["constraints"]).to include("Must work with SSR")
       expect(brief["rejected_alternatives"]).to eq("CSS-only approach")
-      expect(brief["scope"]).to eq({ "in" => "Color palette and toggle", "out" => "" })
+      expect(brief["scope"]).to eq({ "in" => "Color palette and toggle", "out" => nil })
       expect(brief["done_criteria"]).to eq("Visual regression tests pass")
     end
   end
