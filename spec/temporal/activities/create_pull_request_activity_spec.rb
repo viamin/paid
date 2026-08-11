@@ -828,8 +828,10 @@ RSpec.describe Activities::CreatePullRequestActivity do
           external_metadata: { "feature_brief" => { "title" => "Add dark mode", "problem" => "Eye strain" } })
       end
       let(:rdr_path) { "docs/rdrs/RDR-099-add-dark-mode.md" }
-      let(:valid_rdr_body) do
-        <<~MARKDOWN
+
+      before do
+        feature_agent_run.update!(result_commit_sha: "abc123def456789012345678901234567890abcd")
+        valid_rdr_body = <<~MARKDOWN
           # RDR-099: Add Dark Mode
 
           ## Metadata
@@ -868,13 +870,8 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
           Visual regression tests.
         MARKDOWN
-      end
-      let(:valid_index_body) do
-        "| [RDR-099](RDR-099-add-dark-mode.md) | Add Dark Mode | Draft | P1 |"
-      end
+        valid_index_body = "| [RDR-099](RDR-099-add-dark-mode.md) | Add Dark Mode | Draft | P1 |"
 
-      before do
-        feature_agent_run.update!(result_commit_sha: "abc123def456789012345678901234567890abcd")
         allow(github_client).to receive(:compare_changed_files)
           .and_return([ rdr_path, "docs/rdrs/README.md" ])
         allow(github_client).to receive(:file_content).with(

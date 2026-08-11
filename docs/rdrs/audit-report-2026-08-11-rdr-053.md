@@ -17,6 +17,7 @@
 - `app/models/agent_run.rb:2972-2975` — `has_prompt_source` exemption
 
 **Tests**:
+
 - `spec/models/agent_run_spec.rb:136-140` — allows create_feature without issue/custom_prompt
 - `spec/models/agent_run_spec.rb:622-633` — `create_feature_goal?` predicate
 - `spec/models/agent_run_spec.rb:1805-1852` — prompt building from feature brief
@@ -25,10 +26,12 @@
 ### Criterion 2: Feature brief JSON shape via `external_metadata["feature_brief"]`
 
 **Shipped**:
+
 - Controller creates sparse brief from user input: `app/controllers/projects/agent_runs_controller.rb:1217-1220`
 - Sparse brief detection and pause: `app/temporal/activities/create_agent_run_activity.rb:131-134`
 
 **Tests**:
+
 - `spec/temporal/activities/create_agent_run_activity_spec.rb:1123-1199` — sparse brief detection
 - `spec/integration/create_feature_e2e_spec.rb` — run path, needs-input path
 
@@ -37,16 +40,19 @@
 **Shipped**: `app/services/chat_sessions/build_system_prompt.rb:87`
 
 **Tests**:
+
 - `spec/services/chat_sessions/build_system_prompt_spec.rb:52` — includes `trigger a create_feature agent run`
 - `spec/integration/create_feature_e2e_spec.rb` — chat path
 
 ### Criterion 4: Needs-input path (sparse brief → pause → resume)
 
 **Shipped**:
+
 - Pause when brief is sparse: `app/temporal/activities/create_agent_run_activity.rb:131-134`
 - Resume when needs_input cleared: `app/services/clarifying_questions/clear_needs_input.rb:31-38,58-81`
 
 **Tests**:
+
 - `spec/temporal/activities/create_agent_run_activity_spec.rb:1114-1199`
 - `spec/services/clarifying_questions/clear_needs_input_spec.rb:72-97`
 - `spec/integration/create_feature_e2e_spec.rb` — needs-input path
@@ -68,6 +74,7 @@
 **Shipped**: `app/temporal/activities/create_pull_request_activity.rb:857-911`
 
 **Tests**:
+
 - `spec/temporal/activities/create_pull_request_activity_spec.rb:825-950` — allowlist, contract enforcement, PR title/body
 - `spec/integration/create_feature_e2e_spec.rb` — docs-only PR guard
 
@@ -76,6 +83,7 @@
 **Shipped**: `app/temporal/activities/chain_lid_planning_activity.rb`
 
 **Tests**:
+
 - `spec/temporal/activities/chain_lid_planning_activity_spec.rb` — chaining, skip when not LID, skip when active exists
 - `spec/integration/create_feature_e2e_spec.rb` — LID path
 
