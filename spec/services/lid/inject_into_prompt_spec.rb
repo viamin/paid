@@ -27,6 +27,7 @@ RSpec.describe Lid::InjectIntoPrompt do
     expect(prompt).to include("## LID-Aware Workflow")
     expect(prompt).to include("Linked-Intent Development mode: `full`")
     expect(prompt).to include("docs/high-level-design.md")
+    expect(prompt).to include("may vary by project")
     expect(prompt).to include("bin/coherence-check.mjs")
     expect(prompt).to include("materialize that intent into draft or updated LLD and EARS artifacts before or alongside code changes")
   end

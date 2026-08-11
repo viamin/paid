@@ -26,6 +26,8 @@ RSpec.describe Projects::DetectLidMode do
       - Mode: Full
       - Version: 1.3.0
     MD
+    write_repo_file("docs/high-level-design.md", "# HLD\n")
+    write_repo_file("docs/intent/auth/auth-design.md", "# Auth\n")
 
     result = described_class.call(project:, repo_path:)
 
@@ -122,6 +124,25 @@ RSpec.describe Projects::DetectLidMode do
     expect(result).to include(mode: nil, version: nil, sources: [])
     expect(project.reload.lid_mode).to be_nil
     expect(project.lid_detection).to include("sources" => [], "warnings" => [])
+  end
+
+  it "warns when LID is declared but standard design docs are absent" do
+    write_repo_file("AGENTS.md", <<~MD)
+      ## LID
+
+      - Mode: Full
+      - Version: 1.3.0
+    MD
+
+    result = described_class.call(project:, repo_path:)
+
+    expect(result[:mode]).to eq("full")
+    expect(result[:warnings]).to include(
+      "LID declared in instruction file, but standard design docs (docs/high-level-design.md, docs/intent/) are absent; agents may waste tokens searching for them."
+    )
+    expect(project.reload.lid_detection["warnings"]).to include(
+      "LID declared in instruction file, but standard design docs (docs/high-level-design.md, docs/intent/) are absent; agents may waste tokens searching for them."
+    )
   end
 
   # @spec LID-DETECTION-008
