@@ -46,4 +46,93 @@ RSpec.describe Lid::InjectIntoPrompt do
 
     expect(described_class.call(prompt:, project: project).scan("## LID-Aware Workflow").size).to eq(1)
   end
+
+  describe "goal-aware prompt generation" do
+    let(:project) { OpenStruct.new(lid_mode: "full") }
+
+    it "returns the full contract for create_pr goal" do
+      prompt = described_class.call(prompt: base_prompt, project: project, goal: "create_pr")
+
+      expect(prompt).to include("bin/coherence-check.mjs")
+      expect(prompt).to include("@spec")
+      expect(prompt).to include("materialize that intent")
+    end
+
+    it "returns the full contract for lid_planning goal" do
+      prompt = described_class.call(prompt: base_prompt, project: project, goal: "lid_planning")
+
+      expect(prompt).to include("bin/coherence-check.mjs")
+      expect(prompt).to include("@spec")
+    end
+
+    it "returns the full contract for create_feature goal" do
+      prompt = described_class.call(prompt: base_prompt, project: project, goal: "create_feature")
+
+      expect(prompt).to include("bin/coherence-check.mjs")
+      expect(prompt).to include("@spec")
+    end
+
+    it "returns the full contract when goal is nil (backward compatible)" do
+      prompt = described_class.call(prompt: base_prompt, project: project, goal: nil)
+
+      expect(prompt).to include("bin/coherence-check.mjs")
+      expect(prompt).to include("@spec")
+    end
+
+    it "returns a trimmed prompt for enhance_issue goal" do
+      prompt = described_class.call(prompt: base_prompt, project: project, goal: "enhance_issue")
+
+      expect(prompt).to include("## LID-Aware Workflow")
+      expect(prompt).to include("Elicit missing intent")
+      expect(prompt).not_to include("bin/coherence-check.mjs")
+      expect(prompt).not_to include("@spec")
+      expect(prompt).not_to include("materialize that intent")
+    end
+
+    it "returns a trimmed prompt for analyze_issue goal" do
+      prompt = described_class.call(prompt: base_prompt, project: project, goal: "analyze_issue")
+
+      expect(prompt).to include("## LID-Aware Workflow")
+      expect(prompt).to include("assess scope and complexity")
+      expect(prompt).not_to include("bin/coherence-check.mjs")
+      expect(prompt).not_to include("@spec")
+      expect(prompt).not_to include("Walk the arrow")
+    end
+
+    it "returns a trimmed prompt for review goal" do
+      prompt = described_class.call(prompt: base_prompt, project: project, goal: "review")
+
+      expect(prompt).to include("## LID-Aware Workflow")
+      expect(prompt).to include("design docs")
+      expect(prompt).to include("Do NOT walk spec traces")
+      expect(prompt).to include("the system runs the coherence check")
+      expect(prompt).not_to include("Walk the arrow")
+      expect(prompt).not_to include("materialize that intent")
+    end
+
+    it "returns a trimmed prompt for create_issue goal" do
+      prompt = described_class.call(prompt: base_prompt, project: project, goal: "create_issue")
+
+      expect(prompt).to include("## LID-Aware Workflow")
+      expect(prompt).to include("well-formed issue")
+      expect(prompt).not_to include("bin/coherence-check.mjs")
+      expect(prompt).not_to include("@spec")
+      expect(prompt).not_to include("Walk the arrow")
+    end
+
+    it "section_for class method accepts goal parameter" do
+      section = described_class.section_for(project: project, goal: "enhance_issue")
+
+      expect(section).to include("Elicit missing intent")
+      expect(section).not_to include("bin/coherence-check.mjs")
+    end
+
+    it "returns the full contract for an unmapped goal instead of omitting the section" do
+      prompt = described_class.call(prompt: base_prompt, project: project, goal: "some_future_goal")
+
+      expect(prompt).to include("## LID-Aware Workflow")
+      expect(prompt).to include("bin/coherence-check.mjs")
+      expect(prompt).to include("@spec")
+    end
+  end
 end
