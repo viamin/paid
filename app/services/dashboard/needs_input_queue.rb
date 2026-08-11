@@ -85,7 +85,25 @@ module Dashboard
     end
 
     def question_summary_for(issue)
-      ClarifyingQuestions::Parse.call(comment_body: issue.body)
+      questions = ClarifyingQuestions::Parse.call(comment_body: issue.body)
+      return questions if questions.any?
+
+      # Fall back to checking the latest enhancement comment for questions
+      # (e.g. create_feature runs post clarifying questions as a comment).
+      return [] unless issue.project.github_credential_present?
+
+      client = issue.project.client
+      return [] unless client
+
+      comments = client.issue_comments(issue.project.full_name, issue.github_number)
+      enhancement_comment = comments.reverse.find do |comment|
+        comment.body.to_s.include?(ClarifyingQuestions::Parse::ENHANCEMENT_MARKER)
+      end
+      return [] unless enhancement_comment
+
+      ClarifyingQuestions::Parse.call(comment_body: enhancement_comment.body.to_s)
+    rescue GithubClient::Error
+      []
     end
   end
 end
