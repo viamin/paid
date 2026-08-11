@@ -346,6 +346,98 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     end
   end
 
+  describe "provider rate limiting" do
+    # Reproduces the #3314 failure: every available provider is
+    # simultaneously rate-limited when call_llm actually calls it, even
+    # though chat_providers considered it available at loop start.
+    # @spec ISSUE-ANALYSIS-006
+    it "parks the run as rate_limited instead of failing permanently when every provider is rate limited" do
+      reset_at = 5.minutes.from_now.change(usec: 0)
+      allow(AgentHarness).to receive(:send_message).and_raise(
+        AgentHarness::RateLimitError.new("rate limited", reset_time: reset_at, provider: "claude")
+      )
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("RateLimit")
+        expect(error.non_retryable).to be(false)
+      }
+
+      agent_run.reload
+      expect(agent_run.status).to eq("rate_limited")
+      expect(agent_run.rate_limited_until).to eq(reset_at)
+    end
+
+    # @spec ISSUE-ANALYSIS-006
+    it "keeps the non-retryable failure when providers fail for reasons other than rate limiting" do
+      allow(AgentHarness).to receive(:send_message).and_raise(AgentHarness::ProviderUnavailableError.new("boom"))
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("AnalyzeIssueLlmFailed")
+        expect(error.non_retryable).to be(true)
+      }
+
+      expect(agent_run.reload.status).not_to eq("rate_limited")
+    end
+
+    # @spec ISSUE-ANALYSIS-007
+    it "records a circuit-breaker rate limit for the provider so it is available for recovery checks" do
+      reset_at = 5.minutes.from_now.change(usec: 0)
+      allow(AgentHarness).to receive(:send_message).and_raise(
+        AgentHarness::RateLimitError.new("rate limited", reset_time: reset_at, provider: "claude")
+      )
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError)
+
+      runner_state = project.effective_owner.settings.user.runner_states.find_by(runner_name: "claude")
+      expect(runner_state).to be_present
+      expect(runner_state.rate_limited?).to be(true)
+      expect(runner_state.rate_limited_until).to eq(reset_at)
+    end
+
+    # @spec ISSUE-ANALYSIS-007
+    it "records a circuit-breaker failure for a non-rate-limit provider error" do
+      allow(AgentHarness).to receive(:send_message).and_raise(AgentHarness::ProviderUnavailableError.new("boom"))
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError)
+
+      runner_state = project.effective_owner.settings.user.runner_states.find_by(runner_name: "claude")
+      expect(runner_state).to be_present
+      expect(runner_state.failure_count).to eq(1)
+    end
+
+    # @spec ISSUE-ANALYSIS-007
+    it "skips a provider on a later run after it was circuit-broken by a previous rate-limit exhaustion" do
+      allow(AgentHarness).to receive(:send_message).and_raise(
+        AgentHarness::RateLimitError.new("rate limited", reset_time: 5.minutes.from_now)
+      )
+
+      expect { activity.execute(agent_run_id: agent_run.id) }.to raise_error(Temporalio::Error::ApplicationError)
+
+      second_issue = create(:issue, :in_progress,
+        project: project, github_number: 43, title: "Second issue", body: "More context needed")
+      second_run = create(:agent_run, project: project, issue: second_issue, goal: "analyze_issue")
+      allow(client).to receive(:issue_comments).with(project.full_name, second_issue.github_number).and_return([])
+      allow(AgentHarness).to receive(:send_message)
+
+      expect {
+        activity.execute(agent_run_id: second_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError, "No LLM provider produced an issue analysis")
+
+      # Only the first run's attempt should have called send_message — the
+      # second run's candidate list is empty because "claude" is still
+      # circuit-broken, so it never reaches AgentHarness at all.
+      expect(AgentHarness).to have_received(:send_message).once
+    end
+  end
+
   describe "issue analysis runner selection" do
     let(:account) { create(:account) }
     let(:owner) { create(:user, account: account) }
