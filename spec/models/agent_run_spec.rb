@@ -3946,6 +3946,27 @@ RSpec.describe AgentRun do
       expect(agent_run.agent_summary).to eq("Agent encountered an error: Rate limit exceeded")
     end
 
+    it "does not surface a stale streaming error from a superseded attempt when the run succeeded" do
+      # Multi-attempt run: the first attempt emitted a {"type":"error"} JSONL
+      # event and was superseded; the fallback attempt succeeded with plain
+      # text. The summary must carry the winning attempt's output, not the
+      # stale error (which would blank the PR description). See run 24528.
+      agent_run.update!(status: "completed")
+      agent_run.log!("stdout", %({"type":"error","error":{"message":"model not supported"}}))
+      agent_run.log!("stdout", "Created the RDR file and updated the README index.")
+
+      summary = agent_run.agent_summary
+      expect(summary).to include("Created the RDR file and updated the README index.")
+      expect(summary).not_to include("Agent encountered an error")
+    end
+
+    it "still surfaces the streaming error for a failed run" do
+      agent_run.update!(status: "failed")
+      agent_run.log!("stdout", %({"type":"error","error":{"message":"model not supported"}}))
+
+      expect(agent_run.agent_summary).to start_with("Agent encountered an error")
+    end
+
     it "handles multi-chunk stdout that forms a complete JSON envelope" do
       part1 = '{"type":"result","result":"Done","is_error":false'
       part2 = ',"session_id":"abc"}'

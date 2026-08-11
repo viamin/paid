@@ -95,11 +95,24 @@ module Containers
 
     # Raised when streaming output matches an abort pattern, indicating a
     # fatal runner error where the CLI is known to hang instead of exiting.
+    #
+    # `source:` distinguishes the two abort origins so callers classify them
+    # correctly:
+    #   - :pattern          — stderr/stdout matched a configured quota/rate-limit
+    #                          pattern (e.g. KiloCode "Free tier limit reached").
+    #                          This is a genuine rate-limit/quota signal.
+    #   - :streaming_event  — a CLI streaming JSONL `error`/`turn.failed` event
+    #                          (e.g. Codex `{"type":"error",...}`). This is a
+    #                          generic execution failure, NOT a rate limit.
+    # Misclassifying :streaming_event as a rate limit marks the runner
+    # rate-limited and triggers unnecessary fallbacks (see run 24528).
     class OutputAbortError < Error
-      attr_reader :matched_output
+      attr_reader :matched_output, :source, :detail
 
-      def initialize(msg = "Process aborted due to fatal output pattern", matched_output: nil)
+      def initialize(msg = "Process aborted due to fatal output pattern", matched_output: nil, source: :pattern, detail: nil)
         @matched_output = matched_output
+        @source = source.to_sym
+        @detail = detail
         super(msg)
       end
     end
@@ -586,7 +599,9 @@ module Containers
         if streaming_abort_triggered
           raise OutputAbortError.new(
             "Process aborted: streaming #{streaming_abort_event_type || 'turn_failed'} event detected",
-            matched_output: "streaming_event:#{streaming_abort_event_type || 'turn_failed'}"
+            matched_output: "streaming_event:#{streaming_abort_event_type || 'turn_failed'}",
+            source: :streaming_event,
+            detail: streaming_event_processor&.last_error_message
           )
         end
 
@@ -675,7 +690,9 @@ module Containers
         if streaming_abort_triggered
           raise OutputAbortError.new(
             "Process aborted: streaming #{streaming_abort_event_type || 'turn_failed'} event detected",
-            matched_output: "streaming_event:#{streaming_abort_event_type || 'turn_failed'}"
+            matched_output: "streaming_event:#{streaming_abort_event_type || 'turn_failed'}",
+            source: :streaming_event,
+            detail: streaming_event_processor&.last_error_message
           )
         end
 

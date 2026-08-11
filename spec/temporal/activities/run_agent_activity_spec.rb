@@ -2991,6 +2991,28 @@ expect(container_service).to receive(:execute).with(
         expect(container_service).to have_received(:execute).twice
       end
 
+      # @spec RUNNER-FALLBACK-003
+      it "classifies a preflight streaming-event abort as an execution error, not rate_limited" do
+        opencode_provider = create_opencode_provider_for(user)
+        allow(container_service).to receive(:execute).and_raise(
+          Containers::Provision::OutputAbortError.new(
+            "Process aborted: streaming error event detected",
+            matched_output: "streaming_event:error", source: :streaming_event,
+            detail: "The configured model is not supported."
+          )
+        )
+
+        expect {
+          run_direct_outbound_preflight(
+            activity: activity,
+            agent_run: agent_run,
+            container_service: container_service,
+            provider: opencode_provider,
+            user: user
+          )
+        }.to raise_error(described_class::RunnerExecutionError, /streaming event/)
+      end
+
       it "succeeds if the smoke execution passes on the retry after a first timeout" do
         opencode_provider = create_opencode_provider_for(user)
         timeout_error = Containers::Provision::TimeoutError.new("Command timed out after 60 seconds")
@@ -4728,6 +4750,55 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.status).to eq("rate_limited")
         expect(agent_run.error_message).to include("rate limited")
         expect(agent_run.runners_attempted.first["error_type"]).to eq("rate_limited")
+      end
+
+      it "classifies a streaming-event abort as an execution error, not rate_limited" do
+        # A streaming {"type":"error"} JSONL event is a generic execution failure
+        # (e.g. Codex 400 invalid_request_error), not a rate limit. See run 24528.
+        call_count = 0
+        allow(container_service).to receive(:execute) do |_cmd, **_opts|
+          (call_count += 1) == 1 ? raise(Containers::Provision::OutputAbortError.new(
+            "streaming error", matched_output: "streaming_event:error", source: :streaming_event,
+            detail: "The 'gpt-5.6' model is not supported with a ChatGPT account.")) : exec_success
+        end
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result.values_at(:success, :final_runner)).to eq([ true, "cursor" ])
+        # The payload propagates into the message so deterministic_runner_config_error? can inspect it.
+        expect(agent_run.reload.runners_attempted).to contain_exactly(
+          hash_including("runner" => "claude_code", "success" => false, "error_type" => "error",
+            "error_message" => include("gpt-5.6").and(include("streaming event"))),
+          hash_including("runner" => "cursor", "success" => true)
+        )
+        expect(user.runner_states.find_by(runner_name: "claude")&.rate_limited_until).to be_nil
+      end
+
+      it "classifies a streaming-event abort carrying a rate-limit payload as rate_limited" do
+        # A real upstream 429/quota can arrive as a JSONL {"type":"error"} event.
+        # The streaming payload must be inspected so genuine rate limits still
+        # get backoff (otherwise the loop hammers the rate-limited API).
+        call_count = 0
+        allow(container_service).to receive(:execute) do |_cmd, **_opts|
+          call_count += 1
+          if call_count == 1
+            raise Containers::Provision::OutputAbortError.new(
+              "Process aborted: streaming error event detected",
+              matched_output: "streaming_event:error", source: :streaming_event,
+              detail: "Error: Free model usage limit reached. Please try again later."
+            )
+          else
+            exec_success
+          end
+        end
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:success]).to be(true)
+        expect(result[:final_runner]).to eq("cursor")
+        expect(agent_run.reload.runners_attempted.first).to include(
+          "runner" => "claude_code", "success" => false, "error_type" => "rate_limited"
+        )
       end
 
       it "detects a real quota error returned with exit code 0 and marks the runner rate-limited" do
