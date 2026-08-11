@@ -47,3 +47,10 @@
   before shipping multiple PRs.
   *Tests:* `spec/mcp/tools/propose_pull_request_spec.rb`.
   *Code:* `Tools::ProposePullRequest#workspace_warnings`.
+
+- [x] **CHAT-PR-PROPOSAL-006** — When a chat-triggered agent run opens a pull
+  request without a backing issue, the system SHALL derive fallback PR metadata
+  from the run's custom prompt, including an explicitly requested PR title when
+  present, instead of using generic platform text.
+  *Test:* `spec/temporal/activities/create_pull_request_activity_spec.rb`.
+  *Code:* `Activities::CreatePullRequestActivity`.

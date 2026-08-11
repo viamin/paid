@@ -439,12 +439,82 @@ RSpec.describe Activities::CreatePullRequestActivity do
       activity.execute(agent_run_id: agent_run.id)
     end
 
+    # @spec CHAT-PR-PROPOSAL-006
+    it "uses custom prompt metadata when no issue is present" do
+      prompt = <<~PROMPT
+        Create a new RDR document file and update the README index.
+
+        Open a PR titled `docs(rdr): RDR-053 - New Feature Creation` with a docs-only diff.
+      PROMPT
+      agent_run_no_issue = create(:agent_run, :with_custom_prompt, :with_git_context, project: project,
+        custom_prompt: prompt)
+
+      expect(github_client).to receive(:create_pull_request).with(
+        anything,
+        hash_including(
+          title: "docs(rdr): RDR-053 - New Feature Creation",
+          body: a_string_including("Create a new RDR document file and update the README index.")
+        )
+      ).and_return(pr_response)
+
+      result = activity.execute(agent_run_id: agent_run_no_issue.id)
+      expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
+    end
+
+    # @spec CHAT-PR-PROPOSAL-006
+    it "uses custom prompt fallback descriptions in PR templates" do
+      PrTemplate.create!(
+        account: project.account, project: project, name: "default",
+        body: "## Summary\n\n{{description}}\n\n## Test Plan\n\n{{quality_warnings}}",
+        pr_type: "default", position: 0, enabled: true
+      )
+      agent_run_no_issue = create(:agent_run, :with_custom_prompt, :with_git_context, project: project,
+        custom_prompt: "Write the RDR draft and update the index.")
+
+      expect(github_client).to receive(:create_pull_request).with(
+        anything,
+        hash_including(body: a_string_including("Write the RDR draft and update the index."))
+      ).and_return(pr_response)
+
+      activity.execute(agent_run_id: agent_run_no_issue.id)
+    end
+
+    # @spec CHAT-PR-PROPOSAL-006
+    it "does not include trailing instructions in unquoted custom prompt PR titles" do
+      agent_run_no_issue = create(:agent_run, :with_custom_prompt, :with_git_context, project: project,
+        custom_prompt: "Open a PR titled docs(rdr): RDR-053 - New Feature Creation with a docs-only diff.")
+
+      expect(github_client).to receive(:create_pull_request).with(
+        anything,
+        hash_including(title: "docs(rdr): RDR-053 - New Feature Creation")
+      ).and_return(pr_response)
+
+      activity.execute(agent_run_id: agent_run_no_issue.id)
+    end
+
+    # @spec CHAT-PR-PROPOSAL-006
+    it "redacts secrets from custom prompt fallback metadata" do
+      token = "ghp_" + "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn"
+      agent_run_no_issue = create(:agent_run, :with_custom_prompt, :with_git_context, project: project,
+        custom_prompt: "Rotate #{token} and update docs.")
+
+      expect(github_client).to receive(:create_pull_request).with(
+        anything,
+        hash_including(
+          title: a_string_including("[REDACTED:github_token]"),
+          body: a_string_including("[REDACTED:github_token]")
+        )
+      ).and_return(pr_response)
+
+      activity.execute(agent_run_id: agent_run_no_issue.id)
+    end
+
     it "handles missing issue gracefully" do
       agent_run_no_issue = create(:agent_run, :with_custom_prompt, :with_git_context, project: project)
 
       expect(github_client).to receive(:create_pull_request).with(
         anything,
-        hash_including(title: "Agent changes")
+        hash_including(title: "Make the requested changes")
       ).and_return(pr_response)
 
       result = activity.execute(agent_run_id: agent_run_no_issue.id)
