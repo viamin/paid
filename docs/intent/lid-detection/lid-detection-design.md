@@ -41,6 +41,12 @@ If the project declares Scoped mode but omits `## LID Scope`, detection keeps
 the project in Scoped mode, records a warning, and treats future scope checks
 as in-scope-by-default until a scope section is added.
 
+If a `## LID` block declares a mode but the repository has neither
+`docs/high-level-design.md` nor any `docs/intent/` content, detection records
+a warning rather than silently proceeding. Downstream contract injection reads
+this signal to avoid referencing those nonexistent docs, so agents do not
+waste tokens searching for design artifacts the repo never populated.
+
 ## Persistence model
 
 Detection writes:

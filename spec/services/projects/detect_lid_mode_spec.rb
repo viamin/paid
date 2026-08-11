@@ -126,6 +126,7 @@ RSpec.describe Projects::DetectLidMode do
     expect(project.lid_detection).to include("sources" => [], "warnings" => [])
   end
 
+  # @spec LID-DETECTION-009
   it "warns when LID is declared but standard design docs are absent" do
     write_repo_file("AGENTS.md", <<~MD)
       ## LID

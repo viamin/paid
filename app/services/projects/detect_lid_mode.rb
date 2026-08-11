@@ -67,6 +67,7 @@ module Projects
       mode = parse_mode(lid_block, instruction_file.basename.to_s)
       version = parse_bullet(lid_block, "Version")
       warnings << MISSING_SCOPE_WARNING if mode == SCOPED_MODE && extract_section(contents, LID_SCOPE_HEADER).blank?
+      # @spec LID-DETECTION-009
       warnings << MISSING_DESIGN_DOCS_WARNING if standard_design_docs_absent?
 
       {
