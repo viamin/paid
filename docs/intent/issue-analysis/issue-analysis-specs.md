@@ -27,11 +27,35 @@
   *Code:* `app/services/knowledge/runner_selector.rb#available_chat_runner_keys`,
   `app/temporal/activities/analyze_issue_activity.rb#chat_providers`.
 
-- [x] **ISSUE-ANALYSIS-003** — When no chat runner is available at all, the
-  system SHALL fail the run loudly with a non-retryable `AnalyzeIssueLlmFailed`
-  error instead of masking the outage by targeting a known-unhealthy provider.
+- [x] **ISSUE-ANALYSIS-003** — When no chat runner is available at all (the
+  candidate list itself is empty), the system SHALL fail the run loudly with a
+  non-retryable `AnalyzeIssueLlmFailed` error instead of masking the outage by
+  targeting a known-unhealthy provider. This is distinct from `ISSUE-ANALYSIS-006`,
+  where candidates exist but all attempts fail transiently.
   *Tests:* `spec/temporal/activities/analyze_issue_activity_spec.rb` ("raises when no chat runner is available").
   *Code:* `app/temporal/activities/analyze_issue_activity.rb#call_llm`.
+
+- [x] **ISSUE-ANALYSIS-006** — When every attempted provider fails specifically
+  because it is rate-limited (a transient, simultaneous-rate-limit outage
+  rather than a permanent failure), the system SHALL park the run as
+  `rate_limited` with a computed recovery time (`agent_run.rate_limit!`)
+  instead of raising a non-retryable error. This mirrors the `create_pr`
+  runner path: `StaleRunDetectorJob` re-queues the run once its
+  `rate_limited_until` window elapses, so the analysis retries automatically
+  instead of requiring a human to manually re-trigger it. A mix of rate-limit
+  and non-rate-limit failures, or an empty candidate list, keeps the existing
+  non-retryable `AnalyzeIssueLlmFailed` error (`ISSUE-ANALYSIS-003`).
+  *Tests:* `spec/temporal/activities/analyze_issue_activity_spec.rb` ("provider rate limiting").
+  *Code:* `app/temporal/activities/analyze_issue_activity.rb#call_llm`, `#raise_llm_failure!`.
+
+- [x] **ISSUE-ANALYSIS-007** — Every provider failure encountered inside
+  `call_llm` SHALL update that provider's `RunnerState` circuit-breaker record
+  (`mark_rate_limited!` for rate-limit errors, `record_failure!` for other
+  `AgentHarness::Error`s) so a subsequent `analyze_issue` attempt — on this run
+  or a later one — skips providers already known to be unavailable rather than
+  re-discovering the same outage from scratch.
+  *Tests:* `spec/temporal/activities/analyze_issue_activity_spec.rb` ("provider rate limiting").
+  *Code:* `app/temporal/activities/analyze_issue_activity.rb#record_runner_rate_limit`, `#record_runner_failure`.
 
 ## Trust and response contract
 
