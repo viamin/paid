@@ -918,7 +918,7 @@ module Activities
       rdr_files = changed_files.select { |path| path.match?(%r{\Adocs/rdrs/}) }
       rdr_files.each_with_object({}) do |path, memo|
         memo[path] = client.file_content(agent_run.project.full_name, path: path, ref: agent_run.result_commit_sha) || ""
-      rescue StandardError => e
+      rescue => e
         logger.warn(
           message: "agent_execution.create_feature_content_fetch_failed",
           agent_run_id: agent_run.id,

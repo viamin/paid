@@ -212,19 +212,17 @@ RSpec.describe "CreateFeature E2E", type: :model do
       end
 
       it "logs the resume event" do
-        # The resume path is triggered by ClearNeedsInput when a paused
-        # create_feature run exists for the issue.
-        paused = paused_run  # force let evaluation
-        expect(paused.status).to eq("paused")
-        expect(paused.goal).to eq("create_feature")
-
-        allow(Rails.logger).to receive(:info)
+        run_id = paused_run.id
+        allow(Rails.logger).to receive(:info).and_call_original
 
         ClarifyingQuestions::ClearNeedsInput.call(project: project, issue: feature_issue)
 
-        # After resume, the run is queued again and the event is logged.
-        paused.reload
-        expect(paused.status).to eq("queued")
+        expect(Rails.logger).to have_received(:info).with(
+          hash_including(
+            message: "agent_execution.create_feature_needs_input_answered",
+            agent_run_id: run_id
+          )
+        )
       end
     end
 
@@ -541,15 +539,20 @@ RSpec.describe "CreateFeature E2E", type: :model do
         Blocked by org/repo#456
       BODY
 
-      result = Issues::ParseDependencies.extract(body: body, comments: [])
+      local_deps, cross_deps = Issues::ParseDependencies.extract(body: body, comments: [])
 
-      expect(result).to be_an(Array)
+      expect(local_deps).to have_key(123)
+      expect(cross_deps.keys).to include([ "org", "repo", 456 ])
     end
 
-    it "issue body can reference the source RDR" do
-      body = "Part of RDR-053\n\n## Dependencies\n\nDepends on #3305"
+    it "instructs the agent to reference the source RDR in filed child issue bodies" do
+      prompt = Prompts::BuildForCreateFeature.call(
+        project_name: project.name,
+        full_name: project.full_name,
+        feature_brief: complete_feature_brief
+      )
 
-      expect(body).to include("RDR-053")
+      expect(prompt).to include("Part of RDR-0XX")
     end
 
     it "create_feature runs can have cross_repo_issues set" do
