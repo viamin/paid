@@ -1745,15 +1745,25 @@ module Activities
         )
       )
     rescue Containers::Provision::OutputAbortError => e
-      # The container was stopped early because stderr matched a fatal
-      # runner quota pattern (e.g. KiloCode "Free tier limit reached").
-      # Classify as rate-limited so dashboards and retry logic see the
-      # real root cause instead of a generic timeout.
-      reset_at = rate_limit_reset_at(runner, e.matched_output.to_s)
-      raise RunnerRateLimitError.new(
-        "Rate limited by #{runner}: #{e.matched_output.to_s.truncate(200)}",
-        reset_at: reset_at
-      )
+      detail = e.detail.to_s
+      if output_abort_rate_limit_error?(e) || (detail.present? && rate_limit_error?(detail, runner_key: runner))
+        # Either a configured quota/rate-limit pattern matched stderr, or the
+        # streaming event's own payload carries a rate-limit signal (a real
+        # upstream 429/quota can arrive as a JSONL {"type":"error"} event).
+        # Classify as rate-limited so dashboards and retry logic apply backoff.
+        reset_at = rate_limit_reset_at(runner, detail.presence || e.matched_output.to_s)
+        raise RunnerRateLimitError.new(
+          "Rate limited by #{runner}: #{detail.truncate(200).presence || e.matched_output.to_s.truncate(200)}",
+          reset_at: reset_at
+        )
+      end
+
+      # A streaming error/turn.failed JSONL event with a non-rate-limit payload
+      # is a generic execution failure. Surface the real error text in the
+      # message so deterministic_runner_config_error? (model/CLI-version
+      # patterns) can match and skip the circuit breaker for config faults.
+      raise RunnerExecutionError,
+        "Runner aborted on streaming event: #{detail.presence || e.matched_output.to_s}"
     rescue Containers::Provision::ExecutionError => e
       # A container that died mid-execution is infrastructure failure, not a
       # runner fault. Classify it as infra so it does not trip the per-runner
@@ -1878,12 +1888,19 @@ module Activities
 
       raise_preflight_failure!(agent_run: agent_run, runner: runner, reason: reason)
     rescue Containers::Provision::OutputAbortError => e
-      reset_at = rate_limit_reset_at(runner, e.matched_output.to_s)
-      log_preflight_failure(agent_run: agent_run, runner: runner, reason: e.matched_output.to_s.truncate(200))
-      raise RunnerRateLimitError.new(
-        "Rate limited by #{runner}: #{e.matched_output.to_s.truncate(200)}",
-        reset_at: reset_at
-      )
+      detail = e.detail.to_s
+      if output_abort_rate_limit_error?(e) || (detail.present? && rate_limit_error?(detail, runner_key: runner))
+        reset_at = rate_limit_reset_at(runner, detail.presence || e.matched_output.to_s)
+        log_preflight_failure(agent_run: agent_run, runner: runner, reason: "Rate limited by #{runner} during preflight")
+        raise RunnerRateLimitError.new(
+          "Rate limited by #{runner}: #{detail.truncate(200).presence || e.matched_output.to_s.truncate(200)}",
+          reset_at: reset_at
+        )
+      end
+
+      log_preflight_failure(agent_run: agent_run, runner: runner, reason: detail.truncate(200).presence || e.message)
+      raise RunnerExecutionError,
+        "Runner preflight aborted on streaming event: #{detail.presence || e.matched_output}"
     rescue Containers::Provision::ExecutionError => e
       reason = "Docker exec error: #{e.message}"
       # A container that died during preflight is infrastructure failure — keep
@@ -1940,6 +1957,17 @@ module Activities
 
     def run_lid_coherence_check(agent_run:, container_service:)
       Lid::CoherenceCheck.call(agent_run: agent_run, container_service: container_service, logger: logger)
+    end
+
+    # @spec RUNNER-FALLBACK-003
+    # An OutputAbortError is a rate limit only when it originated from a
+    # configured quota/rate-limit pattern (e.g. "Free tier limit reached").
+    # Streaming JSONL error/turn.failed events (:streaming_event source) are
+    # generic execution failures and must not be classified as rate limits —
+    # doing so marks the runner rate-limited and triggers fallbacks for
+    # non-rate-limit errors such as a Codex 400 invalid_request_error.
+    def output_abort_rate_limit_error?(abort_error)
+      abort_error.source == :pattern
     end
 
     # Checks if the output indicates a rate limit error.

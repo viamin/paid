@@ -61,6 +61,51 @@ RSpec.describe Knowledge::Redaction::Scanner do
       end
     end
 
+    context "with bare provider API keys (no api_key= prefix)" do
+      # These flow into prompts/logs frequently in an AI-orchestration
+      # product and must be redacted without a prefix hint.
+      it "detects Anthropic keys" do
+        text = "Rotate sk-ant-api03-" + ("x" * 80) + " and update docs."
+        expect(scanner.scan(text).map(&:pattern)).to include(:anthropic_key)
+      end
+
+      it "detects legacy OpenAI keys" do
+        text = "Key: sk-" + ("a" * 48)
+        expect(scanner.scan(text).map(&:pattern)).to include(:openai_key)
+      end
+
+      it "detects modern sk-proj OpenAI keys" do
+        text = "Key: sk-proj-" + ("a" * 40)
+        expect(scanner.scan(text).map(&:pattern)).to include(:openai_key)
+      end
+
+      it "detects Google API keys" do
+        text = "Use AIza" + ("a" * 35) + " for maps"
+        expect(scanner.scan(text).map(&:pattern)).to include(:google_api_key)
+      end
+
+      it "detects Slack tokens" do
+        text = "TOKEN=xoxb-" + ("a" * 30)
+        expect(scanner.scan(text).map(&:pattern)).to include(:slack_token)
+      end
+
+      it "detects Stripe live keys" do
+        text = "stripe_sk = sk_live_" + ("a" * 24)
+        expect(scanner.scan(text).map(&:pattern)).to include(:stripe_key)
+      end
+
+      it "detects OPENSSH private key blocks" do
+        text = "-----BEGIN OPENSSH PRIVATE KEY-----\n" + ("a" * 40) + "\n-----END OPENSSH PRIVATE KEY-----"
+        matches = scanner.scan(text)
+        expect(matches.first.pattern).to eq(:private_key)
+        expect(matches.first.length).to eq(text.length)
+      end
+
+      it "does not flag short sk- prefixed prose" do
+        expect(scanner.scan("sk- is a prefix sometimes used")).to be_empty
+      end
+    end
+
     context "with JWTs" do
       it "detects JWT tokens" do
         text = "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"

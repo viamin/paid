@@ -2172,10 +2172,13 @@ class AgentRun < ApplicationRecord
   # Strips the raw JSON envelope when stdout is a Claude CLI --output-format json
   # response, extracting just the assistant's result text.
   #
+  # For a successful run, stale error events from a superseded fallback attempt
+  # are ignored so the summary reflects the winning attempt's output.
+  #
   # @param limit [Integer] Max number of log entries to fetch (default 500)
   # @return [String] The agent summary text (may be empty)
   def agent_summary(limit: 500)
-    extract_text_from_stdout(logs_text(log_type: "stdout", limit: limit))
+    extract_text_from_stdout(logs_text(log_type: "stdout", limit: limit), succeeded: successful?)
   end
 
   # Returns the agent's output, preferring stdout but falling back to stderr.
@@ -2184,7 +2187,7 @@ class AgentRun < ApplicationRecord
   # @param limit [Integer] Max number of log entries to fetch (default 500)
   # @return [String] The best available agent output (may be empty)
   def agent_summary_with_stderr_fallback(limit: 500)
-    summary = extract_text_from_stdout(logs_text(log_type: "stdout", limit: limit))
+    summary = extract_text_from_stdout(logs_text(log_type: "stdout", limit: limit), succeeded: successful?)
     return summary if summary.present?
 
     logs_text(log_type: "stderr", limit: limit)
@@ -2574,19 +2577,20 @@ class AgentRun < ApplicationRecord
     end
   end
 
-  def extract_text_from_stdout(raw_stdout)
+  # @spec CHAT-PR-PROPOSAL-007
+  def extract_text_from_stdout(raw_stdout, succeeded: false)
     return raw_stdout if raw_stdout.blank?
 
     response = parse_structured_stdout(raw_stdout)
-    if response&.error.present?
+    if response&.error.present? && !succeeded
       return "Agent encountered an error: #{response.error}"
     end
     return response.output if response&.output.present?
 
-    extract_text_from_multiline_json(raw_stdout) || raw_stdout
+    extract_text_from_multiline_json(raw_stdout, succeeded: succeeded) || raw_stdout
   end
 
-  def extract_text_from_multiline_json(raw_stdout)
+  def extract_text_from_multiline_json(raw_stdout, succeeded: false)
     results = []
     error_messages = []
 
@@ -2629,7 +2633,11 @@ class AgentRun < ApplicationRecord
       end
     end
 
-    if error_messages.present? && results.empty?
+    # Only surface a streaming-error summary when the run actually failed. A
+    # successful run may still carry error JSON from a superseded fallback
+    # attempt; surfacing it would mask the winning attempt's real output and
+    # blank the PR description. See run 24528.
+    if error_messages.present? && results.empty? && !succeeded
       return "Agent encountered an error: #{error_messages.uniq.first.truncate(500)}"
     end
     return nil if results.empty?

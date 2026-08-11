@@ -19,8 +19,9 @@ spec/requests/projects_spec.rb:github-pat:1195
 spec/services/llm/generate_agent_update_summary_spec.rb:generic-api-key:59
 spec/services/knowledge/redaction/redactor_spec.rb:jwt:67
 spec/services/policy_controls/evaluate_spec.rb:generic-api-key:32
-spec/services/knowledge/redaction/scanner_spec.rb:private-key:119
-spec/services/knowledge/redaction/scanner_spec.rb:jwt:66
+spec/services/knowledge/redaction/scanner_spec.rb:private-key:98
+spec/services/knowledge/redaction/scanner_spec.rb:jwt:111
+spec/services/knowledge/redaction/scanner_spec.rb:private-key:171
 spec/temporal/activities/create_agent_run_activity_spec.rb:generic-api-key:689
 spec/requests/projects_spec.rb:github-pat:1255
 spec/requests/projects_spec.rb:github-pat:1260

@@ -19,7 +19,7 @@ module Containers
     TURN_FAILED_EVENT_TYPES = %w[turn.failed turn_failed].freeze
     ERROR_EVENT_TYPES = %w[error].freeze
 
-    attr_reader :turns_completed, :turns_data, :last_event_type
+    attr_reader :turns_completed, :turns_data, :last_event_type, :last_error_message
 
     def initialize(agent_run:, logger: nil)
       @agent_run = agent_run
@@ -228,11 +228,14 @@ module Containers
       @turns_completed += 1
       tokens = token_counts(event)
 
+      message = error_message(event)
+      @last_error_message = message if message.present?
+
       turn_data = {
         "turn_number" => @turns_completed,
         "completed_at" => Time.current.iso8601,
         "status" => "failed",
-        "error" => error_message(event),
+        "error" => message,
         "input_tokens" => tokens[:input],
         "output_tokens" => tokens[:output]
       }.compact
@@ -245,9 +248,12 @@ module Containers
     end
 
     def log_error_event(event)
+      message = error_message(event)
+      @last_error_message = message if message.present?
+
       log_streaming("container.execute.streaming_error",
         event_type: event_type(event),
-        error: error_message(event))
+        error: message)
     end
 
     def renumbered_turns(offset)

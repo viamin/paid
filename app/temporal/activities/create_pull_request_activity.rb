@@ -439,7 +439,17 @@ module Activities
     end
 
     def custom_prompt_excerpt(prompt)
-      redact_for_pr_metadata(prompt.to_s.lines.map(&:strip).find(&:present?)).to_s.truncate(1_000).presence
+      excerpt = redact_for_pr_metadata(prompt.to_s.lines.map(&:strip).find(&:present?))
+      neutralize_inline_markdown(excerpt).truncate(1_000).presence
+    end
+
+    # Prevents prompt content from rendering as active GitHub markdown
+    # (tracking images ![alt](url), phishing/[links](url)) when published as
+    # a PR body. Targeted at link/image syntax so ordinary prose is unaffected.
+    def neutralize_inline_markdown(text)
+      text.to_s
+        .gsub("![", "! [")
+        .gsub("](", "] (")
     end
 
     def redact_for_pr_metadata(text)
