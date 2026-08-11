@@ -208,7 +208,7 @@ module Activities
       )
     end
 
-    # @spec ISSUE-ANALYSIS-001 ISSUE-ANALYSIS-002
+    # @spec ISSUE-ANALYSIS-001 ISSUE-ANALYSIS-002 ISSUE-ANALYSIS-008
     def chat_providers(project)
       setting = owner_user_setting(project) or return []
 
@@ -220,7 +220,10 @@ module Activities
       # circuit-breaker / rate-limit availability filter. An empty list makes
       # call_llm fail loudly rather than masking the outage by forcing a
       # provider the user never configured (the old Anthropic-only default).
-      Knowledge::ProviderSelector.available_chat_runner_keys(user_setting: setting)
+      # Economical runners are tried first so a lightweight assessment call
+      # doesn't burn tokens on a heavy-exploration runner.
+      available = Knowledge::ProviderSelector.available_chat_runner_keys(user_setting: setting)
+      RunnerSupport.lean_first(available)
     end
 
     def owner_user_setting(project)

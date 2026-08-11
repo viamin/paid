@@ -472,9 +472,18 @@ class UserSetting < ApplicationRecord
   # picks up where the previous call left off, respecting runner weights
   # (a runner with weight N is used N consecutive times).
   #
+  # Lightweight goals (enhance_issue, analyze_issue) bypass the full
+  # round-robin / random pool and route to an economical runner by default,
+  # so they don't land on a heavy-exploration runner that wastes tokens on
+  # a task that only reads an issue body. An explicit per-goal runner in
+  # +default_agent_runners_by_goal+ always wins.
+  #
+  # @spec RUNNER-SCHED-011
   # @param goal [String, nil] The agent run goal (e.g. "create_pr").
   # @return [String, nil] A runner routing-key identifier or nil if none.
   def select_automated_runner_identifier(goal: nil)
+    return lightweight_goal_runner_identifier(goal) if AgentRun::LIGHTWEIGHT_GOALS.include?(goal.to_s)
+
     fallback_identifier = default_runner_identifier_for_goal(goal)
     candidates = allowed_runner_identifiers_for_agent_runs
     return fallback_identifier if candidates.length < 2 || runner_selection_mode == "single"
@@ -718,6 +727,36 @@ class UserSetting < ApplicationRecord
       user_id: user_id,
       error: e.message
     )
+  end
+
+  # @spec RUNNER-SCHED-011
+  # Lightweight goals (enhance_issue, analyze_issue) bypass the full
+  # round-robin / random pool. An explicit per-goal runner in
+  # +default_agent_runners_by_goal+ always wins; otherwise prefer an
+  # economical runner the owner has enabled, falling back to the goal
+  # default so the run still binds a runner.
+  def lightweight_goal_runner_identifier(goal)
+    return default_runner_identifier_for_goal(goal) if default_agent_runners_by_goal[goal.to_s].present?
+
+    lean_runner_identifier || default_runner_identifier_for_goal(goal)
+  end
+
+  # @spec RUNNER-SCHED-011
+  # Returns the routing-key identifier of the first economical ("lean")
+  # runner the owner has enabled for agent runs, in LEAN_RUNNER_KEYS
+  # priority order. Returns nil when the owner has no lean runner enabled.
+  def lean_runner_identifier
+    return unless user
+    return if user.new_record?
+
+    lean_keys = RunnerSupport.lean_runner_keys
+    return if lean_keys.empty?
+
+    lean_runner = user.runners.kept_only.for_agent_runs
+      .where(runner_key: lean_keys)
+      .ordered
+      .first
+    lean_runner&.routing_key
   end
 
   def validate_fallback_runners

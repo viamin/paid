@@ -77,3 +77,21 @@
   non-restricted hour after the current time in the configured timezone),
   used for parking-duration calculation and user-facing display.
   *Code:* `Runners::TimeWindowCheck#next_available_at`.
+
+## Goal-based economical routing
+
+- [x] **RUNNER-SCHED-011** — Lightweight goals (`enhance_issue`,
+  `analyze_issue`) SHALL route to an economical ("lean") runner by default
+  instead of entering the full round-robin / random runner pool. An explicit
+  per-goal runner in `default_agent_runners_by_goal` always wins; otherwise the
+  first economical runner the owner has enabled (in `LEAN_RUNNER_KEYS` priority
+  order) is chosen. When no economical runner is enabled, the goal-specific
+  default runner is used so the run still binds a runner. Heavy goals
+  (`create_pr`, `create_feature`, etc.) are unaffected and continue to use the
+  configured selection mode.
+  *Tests:* `spec/models/user_setting_spec.rb` ("lightweight goal routing"),
+  `spec/lib/runner_support_spec.rb` (".lean_runner_keys", ".lean_runner?").
+  *Code:* `AgentRun::LIGHTWEIGHT_GOALS`, `RunnerSupport::LEAN_RUNNER_KEYS`,
+  `UserSetting#select_automated_runner_identifier`,
+  `UserSetting#lightweight_goal_runner_identifier`,
+  `UserSetting#lean_runner_identifier`.
