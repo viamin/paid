@@ -421,6 +421,12 @@ module Workflows
             run_activity(Activities::MarkAgentRunCompleteActivity,
               { agent_run_id: agent_run_id, reason: "no_changes" }, timeout: 30)
           elsif issue_id.present? && !source_pull_request_number
+            # Issue-based run with no code changes / no PR: classify as
+            # needs_input or recommend_close and post an actionable GitHub comment.
+            run_activity(Activities::HandleNoOutputIssueRunActivity,
+              { agent_run_id: agent_run_id,
+                output_present: agent_result.fetch(:output_present, false) }, timeout: 30)
+          else
             # Non-issue run or existing-PR run: mark completed
             complete_result = run_activity(Activities::MarkAgentRunCompleteActivity,
               { agent_run_id: agent_run_id, reason: "no_changes" }, timeout: 30)
