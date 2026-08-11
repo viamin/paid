@@ -985,3 +985,20 @@ upsert_global_prompt.call(
     var.call("full_name", "Repository full_name (owner/repo)")
   ]
 )
+
+# ----------------------------------------------------------------------------
+# coding.create_feature_prompt — `create_feature` agent run prompt
+# Used by: Prompts::BuildForCreateFeature
+# ----------------------------------------------------------------------------
+upsert_global_prompt.call(
+  slug: "coding.create_feature_prompt",
+  name: "Create Feature — RDR + Issue Tree",
+  description: "Instructions for a `create_feature` agent run: research the repo, write an RDR under docs/rdrs/, update docs/rdrs/README.md, open a docs-only PR, and decompose the RDR's Implementation Plan into a tree of linked GitHub issues. Inputs are sourced from the feature brief on AgentRun#external_metadata.",
+  category: "coding",
+  template: Prompts::BuildForCreateFeature::FALLBACK_PROMPT,
+  variables: [
+    var.call("project_name", "Human-readable project name"),
+    var.call("full_name", "Repository full_name (owner/repo)"),
+    var.call("feature_brief", "Structured feature brief (title, problem, desired behavior, constraints, rejected alternatives, scope, done criteria, lid_requested, target_rdr_number)")
+  ]
+)

@@ -2725,13 +2725,8 @@ class AgentRun < ApplicationRecord
     elsif analyze_issue_goal?
       prompt_for_analyze_issue
     elsif create_feature_goal?
-      # Prompts::BuildForCreateFeature is added in a follow-up issue.
-      # Until then, create_feature runs require a custom_prompt — raise loudly
-      # rather than returning nil, which would silently send an empty prompt to
-      # the agent (effective_prompt falls through to custom_prompt || this branch).
-      custom_prompt || raise(
-        "create_feature runs require a custom_prompt until Prompts::BuildForCreateFeature is implemented"
-      )
+      # @spec CREATE-FEATURE-001
+      prompt_for_create_feature
     else
       prompt_for_issue
     end
@@ -2766,6 +2761,24 @@ class AgentRun < ApplicationRecord
       project_description: Prompts::BuildForLidPlanning.project_description_for(project),
       plan_docs: docs,
       adoption: project.lid_mode.blank?
+    )
+  end
+
+  def prompt_for_create_feature
+    # @spec CREATE-FEATURE-001
+    # @spec CREATE-FEATURE-002
+    # The feature brief lives on external_metadata["feature_brief"] (see RDR-053
+    # §2). has_prompt_source exempts create_feature, so the brief is the only
+    # required input. Raise loudly when it is missing so the run surfaces the
+    # bad input rather than dispatching an empty prompt.
+    brief = external_metadata.is_a?(Hash) ? external_metadata["feature_brief"] : nil
+    raise ArgumentError, "create_feature runs require external_metadata['feature_brief']" if brief.blank?
+
+    Prompts::BuildForCreateFeature.call(
+      project_name: project.full_name,
+      full_name: project.full_name,
+      feature_brief: brief,
+      lid_mode: project.lid_mode
     )
   end
 
@@ -2944,7 +2957,7 @@ class AgentRun < ApplicationRecord
     # lid_planning derives its prompt from Prompts::BuildForLidPlanning, so it
     # needs no issue, custom prompt, or source PR.
     return if lid_planning_goal?
-    # create_feature derives its prompt from Prompts::BuildForCreateFeature (follow-up issue)
+    # create_feature derives its prompt from Prompts::BuildForCreateFeature
     # and external_metadata["feature_brief"], so it needs no issue or source PR.
     return if create_feature_goal?
     return if issue.present? || custom_prompt.present? || source_pull_request_number.present?
