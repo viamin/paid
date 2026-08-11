@@ -138,20 +138,49 @@ module Activities
       { content: "", sections: [], total_tokens: 0 }
     end
 
-    # @spec ISSUE-ANALYSIS-003
+    # @spec ISSUE-ANALYSIS-003 ISSUE-ANALYSIS-006 ISSUE-ANALYSIS-007
     def call_llm(agent_run, prompt)
-      chat_providers(agent_run.project).each do |provider|
+      user_setting = owner_user_setting(agent_run.project)
+      providers = chat_providers(agent_run.project)
+      rate_limited_count = 0
+      earliest_reset_at = nil
+
+      providers.each do |provider|
         response = AgentHarness.send_message(prompt, **llm_options(provider))
         next if response_failed?(response, agent_run, provider)
 
+        record_runner_success(user_setting, provider)
         return response
+      rescue AgentHarness::RateLimitError => e
+        rate_limited_count += 1
+        earliest_reset_at = [ earliest_reset_at, e.reset_time ].compact.min
+        record_runner_rate_limit(user_setting, provider, e)
+        log_provider_failure(agent_run, provider, e)
       rescue AgentHarness::Error => e
-        logger.warn(
-          message: "agent_execution.analyze_issue_provider_failed",
-          agent_run_id: agent_run.id,
-          provider: provider,
-          error_class: e.class.name,
-          error: e.message
+        record_runner_failure(user_setting, provider)
+        log_provider_failure(agent_run, provider, e)
+      end
+
+      raise_llm_failure!(agent_run, providers, rate_limited_count, earliest_reset_at)
+    end
+
+    # @spec ISSUE-ANALYSIS-006
+    # When every attempted provider failed specifically because it is
+    # rate-limited, this is a transient outage rather than a permanent
+    # failure: park the run in "rate_limited" (mirrors the create_pr runner
+    # path) so StaleRunDetectorJob re-queues it once the window clears,
+    # instead of failing the issue analysis permanently. Any other failure
+    # mix (including "no candidates at all") keeps the existing non-retryable
+    # AnalyzeIssueLlmFailed error.
+    def raise_llm_failure!(agent_run, providers, rate_limited_count, reset_at)
+      if providers.any? && rate_limited_count == providers.size
+        agent_run.rate_limit!(
+          error: "All LLM providers rate limited: #{providers.join(', ')}",
+          reset_at: reset_at || 60.seconds.from_now
+        )
+        raise Temporalio::Error::ApplicationError.new(
+          "All LLM providers are currently rate limited",
+          type: "RateLimit"
         )
       end
 
@@ -169,9 +198,19 @@ module Activities
       true
     end
 
+    def log_provider_failure(agent_run, provider, error)
+      logger.warn(
+        message: "agent_execution.analyze_issue_provider_failed",
+        agent_run_id: agent_run.id,
+        provider: provider,
+        error_class: error.class.name,
+        error: error.message
+      )
+    end
+
     # @spec ISSUE-ANALYSIS-001 ISSUE-ANALYSIS-002
     def chat_providers(project)
-      setting = project.effective_owner&.settings or return []
+      setting = owner_user_setting(project) or return []
 
       # Primary: the owner's explicit issue-analysis runner selection.
       providers = Knowledge::ProviderSelector.for_issue_analysis(user_setting: setting)
@@ -182,6 +221,38 @@ module Activities
       # call_llm fail loudly rather than masking the outage by forcing a
       # provider the user never configured (the old Anthropic-only default).
       Knowledge::ProviderSelector.available_chat_runner_keys(user_setting: setting)
+    end
+
+    def owner_user_setting(project)
+      project.effective_owner&.settings
+    end
+
+    # @spec ISSUE-ANALYSIS-007
+    def record_runner_rate_limit(user_setting, provider, error)
+      runner_state_for(user_setting, provider)&.mark_rate_limited!(reset_at: error.reset_time)
+    end
+
+    # @spec ISSUE-ANALYSIS-007
+    def record_runner_failure(user_setting, provider)
+      return unless user_setting
+
+      runner_state_for(user_setting, provider)&.record_failure!(
+        threshold: user_setting.circuit_breaker_failure_threshold,
+        decay_window: user_setting.circuit_breaker_timeout_seconds
+      )
+    end
+
+    def record_runner_success(user_setting, provider)
+      runner_state_for(user_setting, provider)&.record_success!
+    end
+
+    def runner_state_for(user_setting, provider)
+      return unless user_setting
+
+      user_setting.user.runner_states.find_or_create_by!(runner_name: provider.to_s) do |state|
+        state.circuit_state = "closed"
+        state.failure_count = 0
+      end
     end
 
     # @spec ISSUE-ANALYSIS-002

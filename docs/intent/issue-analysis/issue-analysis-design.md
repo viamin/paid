@@ -48,6 +48,34 @@ If no provider is available at all, `call_llm` raises a non-retryable
 `AnalyzeIssueLlmFailed` ("No LLM provider produced an issue analysis") rather
 than silently masking the outage.
 
+## Transient rate-limit handling and circuit-breaker recording
+
+Candidates existing in `chat_providers` does not guarantee they still succeed
+by the time `call_llm` actually calls them — the availability filter reads a
+circuit-breaker snapshot taken before the loop starts, and a burst of traffic
+across the fleet can rate-limit every candidate in the same window. Two things
+happen when a provider attempt fails inside the loop (`ISSUE-ANALYSIS-007`):
+
+- `AgentHarness::RateLimitError` → `RunnerState#mark_rate_limited!` records
+  the provider's `reset_time` so it is excluded from `chat_providers` on the
+  next attempt (this run's retry or a later one) until the window clears.
+- Any other `AgentHarness::Error` → `RunnerState#record_failure!` increments
+  the provider's circuit-breaker failure count, using the owner's configured
+  threshold/decay window, same as `Knowledge::RunnerExecutor`.
+
+When every attempted provider in the candidate list failed and every one of
+those failures was a rate-limit error (`ISSUE-ANALYSIS-006`), the outage is
+transient rather than permanent. Instead of raising a non-retryable error,
+`call_llm` calls `agent_run.rate_limit!(error:, reset_at:)` — the same
+model-level state `create_pr`'s `run_agent` uses when all runners are
+rate-limited — and raises a `RateLimit`-typed `ApplicationError`.
+`StaleRunDetectorJob` already re-queues any run parked in `rate_limited` once
+`rate_limited_until` passes (`AgentRun#rate_limited_due`), so the analysis
+retries automatically once providers recover instead of requiring a human to
+manually re-trigger it. Any other outcome (a genuine mix of failure types, or
+an empty candidate list to begin with) keeps the original non-retryable
+`AnalyzeIssueLlmFailed` behavior — those are not transient rate-limit storms.
+
 ## Inputs and trust
 
 - The issue must be trusted (`issue.trusted?`); untrusted issues are rejected
