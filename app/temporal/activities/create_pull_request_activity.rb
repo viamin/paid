@@ -936,7 +936,7 @@ module Activities
     def create_feature_pr_title(agent_run)
       brief = agent_run.external_metadata&.dig("feature_brief") || {}
       title = brief["title"].presence || "New feature specification"
-      "docs: RDR for #{title}"
+      "docs: RDR for #{title}".truncate(255)
     end
 
     def build_create_feature_pr_body(agent_run)
