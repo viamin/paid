@@ -44,6 +44,15 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
         expect(prompt).to include("create a Change Intent Record")
         expect(prompt).to include("Be concise and technical")
       end
+
+      it "includes feature-creation guidance" do
+        expect(prompt).to include("gather intent through adaptive questions")
+        expect(prompt).to include("problem, desired behavior, constraints, rejected alternatives, scope, and done-ness")
+        expect(prompt).to include("search_code")
+        expect(prompt).to include("get_file_content")
+        expect(prompt).to include("trigger a `create_feature` agent run")
+        expect(prompt).to include("custom_prompt")
+      end
     end
 
     describe "user preferences" do
