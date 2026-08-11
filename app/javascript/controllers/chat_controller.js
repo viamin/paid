@@ -2,7 +2,7 @@ import { Controller } from "@hotwired/stimulus"
 import consumer from "../channels/consumer"
 
 export default class extends Controller {
-  static targets = ["container", "messages", "input", "status", "typingIndicator", "tokenUsage", "capabilityBadge", "capabilityPanel", "capabilityLabel", "capabilityIcon", "capabilityRepos"]
+  static targets = ["backToTop", "container", "messages", "input", "status", "typingIndicator", "tokenUsage", "capabilityBadge", "capabilityPanel", "capabilityLabel", "capabilityIcon", "capabilityRepos"]
   static values = { sessionId: Number }
 
   connect() {
@@ -83,6 +83,14 @@ export default class extends Controller {
     const threshold = 48
     const distanceFromBottom = this.containerTarget.scrollHeight - this.containerTarget.scrollTop - this.containerTarget.clientHeight
     this.autoScroll = distanceFromBottom <= threshold
+
+    if (this.hasBackToTopTarget) {
+      const show = this.containerTarget.scrollTop > 200
+      this.backToTopTarget.classList.toggle("opacity-100", show)
+      this.backToTopTarget.classList.toggle("pointer-events-auto", show)
+      this.backToTopTarget.classList.toggle("opacity-0", !show)
+      this.backToTopTarget.classList.toggle("pointer-events-none", !show)
+    }
   }
 
   handleEvent(data) {
@@ -527,5 +535,9 @@ export default class extends Controller {
     } else {
       this.containerTarget.scrollTop = this.containerTarget.scrollHeight
     }
+  }
+
+  scrollToTop() {
+    this.containerTarget.scrollTo({ top: 0, behavior: "smooth" })
   }
 }
