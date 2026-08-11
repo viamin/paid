@@ -49,6 +49,16 @@ module Activities
       ProcessRunQueueJob.perform_later
 
       { agent_run_id: followup.id, queued: true }
+    rescue ActiveRecord::RecordNotUnique => e
+      message = e.cause&.message || e.message
+      raise unless message&.include?("idx_agent_runs_unique_active_lid_planning")
+
+      logger.info(
+        message: "chain_lid_planning.skipped_active_exists",
+        agent_run_id: agent_run.id,
+        project_id: agent_run.project_id
+      )
+      { skipped: true, reason: "active_lid_planning_exists" }
     end
   end
 end

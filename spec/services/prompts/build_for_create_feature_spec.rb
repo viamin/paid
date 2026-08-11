@@ -124,6 +124,7 @@ RSpec.describe Prompts::BuildForCreateFeature do
       expect(prompt).to include("# Instructions")
       expect(prompt).to include("# Rules")
     end
+  end
 
   describe "LID integration" do
     it "includes LID Integration section when lid_mode is set" do
@@ -176,7 +177,6 @@ RSpec.describe Prompts::BuildForCreateFeature do
 
       expect(prompt).to include("`scoped`")
     end
-  end
   end
 
   describe "DB-prompt routing" do
