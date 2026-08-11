@@ -2725,9 +2725,13 @@ class AgentRun < ApplicationRecord
     elsif analyze_issue_goal?
       prompt_for_analyze_issue
     elsif create_feature_goal?
-      # Prompt builder (Prompts::BuildForCreateFeature) is added in a follow-up issue.
-      # Fall back to custom_prompt until the builder is available.
-      custom_prompt
+      # Prompts::BuildForCreateFeature is added in a follow-up issue.
+      # Until then, create_feature runs require a custom_prompt — raise loudly
+      # rather than returning nil, which would silently send an empty prompt to
+      # the agent (effective_prompt falls through to custom_prompt || this branch).
+      custom_prompt || raise(
+        "create_feature runs require a custom_prompt until Prompts::BuildForCreateFeature is implemented"
+      )
     else
       prompt_for_issue
     end

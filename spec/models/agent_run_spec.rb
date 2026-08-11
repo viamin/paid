@@ -1801,6 +1801,20 @@ RSpec.describe AgentRun do
         expect(prompt).to include("docs/rdrs/RDR-051.md")
         expect(prompt).to include("Treat named plan docs as authored intent")
       end
+
+      it "returns the custom_prompt for create_feature when one is provided" do
+        agent_run = build(:agent_run, :create_feature_goal, custom_prompt: "Build the feature.")
+
+        expect(agent_run.send(:prompt_for_goal)).to eq("Build the feature.")
+      end
+
+      it "raises for create_feature without a custom_prompt (builder not yet implemented)" do
+        agent_run = build(:agent_run, :create_feature_goal, custom_prompt: nil)
+
+        expect {
+          agent_run.send(:prompt_for_goal)
+        }.to raise_error(RuntimeError, /require a custom_prompt until Prompts::BuildForCreateFeature is implemented/)
+      end
     end
 
     describe "#ensure_proxy_token!" do
