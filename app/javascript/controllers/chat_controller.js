@@ -536,8 +536,11 @@ export default class extends Controller {
       this.containerTarget.scrollTop = this.containerTarget.scrollHeight
     }
   }
-
   scrollToTop() {
     this.containerTarget.scrollTo({ top: 0, behavior: "smooth" })
+  }
+
+  scrollToInput() {
+    this.containerTarget.scrollTo({ top: this.containerTarget.scrollHeight, behavior: "smooth" })
   }
 }

@@ -1,6 +1,18 @@
 <% can_create_chat_message = policy(ChatMessage.new(chat_session: chat_session)).create? && !chat_session.archived? %>
 
 <div class="flex h-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white">
+  <div class="shrink-0 border-b border-gray-100 bg-white px-4 py-1.5 text-center">
+    <button type="button"
+            class="text-xs text-gray-400 transition-colors hover:text-gray-600"
+            data-action="click->chat#scrollToInput"
+            aria-label="Scroll to message input"
+            title="Jump to input">
+      <svg class="mr-1 inline-block h-3 w-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+      </svg>
+      Jump to input
+    </button>
+  </div>
   <div class="flex-1 min-h-0 overflow-y-auto px-4 py-5 sm:px-6"
        data-chat-target="container"
        data-action="scroll->chat#handleScroll"
