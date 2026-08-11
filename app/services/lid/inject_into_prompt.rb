@@ -54,12 +54,24 @@ module Lid
 
       - Reference design docs (`docs/high-level-design.md`, LLDs under `docs/intent/`) for context on the affected area.
       - Review the code against the design intent captured in those docs.
-      - Do NOT walk spec traces, add `@spec` annotations, or run coherence checks — this is a review, not an implementation run.
+      - Do NOT walk spec traces, add `@spec` annotations, or invoke `bin/coherence-check.mjs` yourself — the system runs the coherence check on your behalf. This is a review, not an implementation run.
+      {{scope_instruction}}
+    PROMPT
+
+    CREATE_ISSUE_FALLBACK = <<~'PROMPT'
+      ## LID-Aware Workflow
+
+      This repository declares Linked-Intent Development mode: `{{lid_mode}}`.
+
+      - Read the issue description and comments to understand what issue to draft.
+      - If design docs exist (`docs/high-level-design.md`, LLDs under `docs/intent/`), reference them for context on the affected area.
+      - Draft a clear, well-scoped issue with sufficient implementation context for a coding agent to proceed.
+      - Your goal is to create a well-formed issue — not to implement code or walk spec traces.
       {{scope_instruction}}
     PROMPT
 
     # Goals that receive the full implementation contract.
-    FULL_CONTRACT_GOALS = %w[create_pr create_issue create_feature lid_planning].freeze
+    FULL_CONTRACT_GOALS = %w[create_pr create_feature lid_planning].freeze
 
     def self.call(prompt:, project:, goal: nil)
       new(prompt: prompt, project: project, goal: goal).call
@@ -124,6 +136,7 @@ module Lid
       when "enhance_issue" then ENHANCE_ISSUE_FALLBACK
       when "analyze_issue" then ANALYZE_ISSUE_FALLBACK
       when "review" then REVIEW_FALLBACK
+      when "create_issue" then CREATE_ISSUE_FALLBACK
       end
     end
 

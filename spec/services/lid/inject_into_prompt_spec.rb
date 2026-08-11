@@ -104,8 +104,19 @@ RSpec.describe Lid::InjectIntoPrompt do
 
       expect(prompt).to include("## LID-Aware Workflow")
       expect(prompt).to include("design docs")
-      expect(prompt).not_to include("bin/coherence-check.mjs")
       expect(prompt).to include("Do NOT walk spec traces")
+      expect(prompt).to include("the system runs the coherence check")
+      expect(prompt).not_to include("Walk the arrow")
+      expect(prompt).not_to include("materialize that intent")
+    end
+
+    it "returns a trimmed prompt for create_issue goal" do
+      prompt = described_class.call(prompt: base_prompt, project: project, goal: "create_issue")
+
+      expect(prompt).to include("## LID-Aware Workflow")
+      expect(prompt).to include("well-formed issue")
+      expect(prompt).not_to include("bin/coherence-check.mjs")
+      expect(prompt).not_to include("@spec")
       expect(prompt).not_to include("Walk the arrow")
     end
 
