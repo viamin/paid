@@ -223,6 +223,11 @@ module ExecutionRunners
         agent_run: agent_run, container_id: handle.identifier,
         worktree_path: handle.metadata["worktree_path"]
       )
+    rescue ActiveRecord::RecordNotFound
+      # A missing AgentRun means the environment can no longer be reached.
+      # Translate to ProvisionError so every lifecycle method's existing
+      # rescue maps it to the right "gone" outcome (not_found / false / nil).
+      raise Containers::Provision::ProvisionError, "AgentRun not found"
     end
   end
 end

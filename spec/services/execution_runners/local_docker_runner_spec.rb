@@ -198,6 +198,14 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
         idle_timeout: 30, abort_patterns: nil, preparation: nil, heartbeat_path: nil) }
         .to raise_error(ExecutionRunners::OutputAbortError) { |e| expect(e.matched_output).to eq("quota exceeded") }
     end
+
+    it "raises ProvisionError when the agent run record is missing" do
+      allow(AgentRun).to receive(:find).and_raise(ActiveRecord::RecordNotFound)
+
+      expect { runner.start(handle: handle, command: "echo ok", timeout: 60, startup_timeout: 30,
+        idle_timeout: 30, abort_patterns: nil, preparation: nil, heartbeat_path: nil) }
+        .to raise_error(ExecutionRunners::ProvisionError)
+    end
   end
 
   describe "#running?" do
@@ -216,6 +224,12 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     it "returns false when the container can no longer be reconnected to" do
       allow(Containers::Provision).to receive(:reconnect)
         .and_raise(Containers::Provision::ProvisionError, "Container abc123 not found")
+
+      expect(runner.running?(handle: handle)).to be(false)
+    end
+
+    it "returns false when the agent run record is missing" do
+      allow(AgentRun).to receive(:find).and_raise(ActiveRecord::RecordNotFound)
 
       expect(runner.running?(handle: handle)).to be(false)
     end
@@ -280,6 +294,12 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
 
       expect(runner.status(handle: handle)).to be_not_found
     end
+
+    it "returns not_found when the agent run record is missing" do
+      allow(AgentRun).to receive(:find).and_raise(ActiveRecord::RecordNotFound)
+
+      expect(runner.status(handle: handle)).to be_not_found
+    end
   end
 
   describe "#cancel" do
@@ -311,6 +331,12 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
 
       expect { runner.cancel(handle: handle) }.not_to raise_error
     end
+
+    it "does not raise when the agent run record is missing" do
+      allow(AgentRun).to receive(:find).and_raise(ActiveRecord::RecordNotFound)
+
+      expect { runner.cancel(handle: handle) }.not_to raise_error
+    end
   end
 
   describe "#cleanup" do
@@ -329,6 +355,12 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     it "is idempotent when the container was already torn down" do
       allow(Containers::Provision).to receive(:reconnect)
         .and_raise(Containers::Provision::ProvisionError, "Container abc123 not found")
+
+      expect { runner.cleanup(handle: handle, force: false) }.not_to raise_error
+    end
+
+    it "does not raise when the agent run record is missing" do
+      allow(AgentRun).to receive(:find).and_raise(ActiveRecord::RecordNotFound)
 
       expect { runner.cleanup(handle: handle, force: false) }.not_to raise_error
     end
