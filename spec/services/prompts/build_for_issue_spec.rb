@@ -681,7 +681,6 @@ RSpec.describe Prompts::BuildForIssue do
 
         expect(prompt).to include("Codebase Context")
         expect(prompt).to include("Relevant Routes")
-        expect(prompt).to include(PromptAssembly::Section::QUARANTINE_NOTICE)
       end
     end
 

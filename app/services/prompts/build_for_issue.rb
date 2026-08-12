@@ -252,7 +252,7 @@ module Prompts
       )
       return prompt if bundle[:content].blank?
 
-      "#{prompt}\n#{PromptAssembly::Section.quarantine(bundle[:content])}\n"
+      "#{prompt}\n#{bundle[:content]}\n"
     end
 
     def test_command
