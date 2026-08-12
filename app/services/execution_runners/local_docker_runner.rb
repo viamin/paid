@@ -175,6 +175,11 @@ module ExecutionRunners
         error: e.message,
         agent_run_id: service.agent_run&.id
       )
+      # Firewall rules are defense-in-depth — they restrict outbound traffic
+      # but the container is already on a restricted Docker network. Raising
+      # in dev/test/CI would block local development on hosts without iptables
+      # (e.g., macOS Docker Desktop, some CI runners). Production always
+      # raises: a firewall gap on a live deployment is a security incident.
       raise ProvisionError, "Firewall setup failed: #{e.message}" if Rails.env.production?
     end
 
