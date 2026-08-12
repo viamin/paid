@@ -54,6 +54,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
 | [RDR-009](RDR-009-prompt-evolution.md) | Prompt Evolution System | Implemented | High |
+| [RDR-054](RDR-054-prompt-assembly-service.md) | Prompt Assembly Service | Draft | P1 |
 
 ### Operations & Access
 
