@@ -50,7 +50,7 @@ RSpec.shared_examples "an ExecutionRunner implementation" do
       status = runner.status(handle: valid_handle)
 
       expect(status).to be_a(ExecutionRunners::ExecutionStatus)
-      expect(status.state).to be_in(%i[running exited oom_killed not_found])
+      expect(status.state).to be_in(%i[running exited oom_killed not_found error])
     end
 
     it "cancels an in-flight workload without raising" do

@@ -295,7 +295,10 @@ module ExecutionRunners
   #   :running     — workload process is still active
   #   :exited      — workload has terminated (check +exit_code+)
   #   :oom_killed  — the platform's OOM killer terminated the workload
-  #   :not_found   — the workload/environment no longer exists
+  #   :not_found   — the workload/environment no longer exists; callers may reap it
+  #   :error       — the status could not be determined because of a transient
+  #                  platform failure (daemon timeout, connection reset, etc.);
+  #                  callers should retry rather than reap
   #
   # @spec CONTAINER-RUNTIME-015
   ExecutionStatus = Data.define(:state, :exit_code, :oom_killed, :memory_limit) do
@@ -315,6 +318,10 @@ module ExecutionRunners
       state == :not_found
     end
 
+    def error?
+      state == :error
+    end
+
     def self.running(memory_limit: nil)
       new(state: :running, exit_code: nil, oom_killed: false, memory_limit: memory_limit)
     end
@@ -330,6 +337,10 @@ module ExecutionRunners
 
     def self.not_found
       new(state: :not_found, exit_code: nil, oom_killed: false, memory_limit: nil)
+    end
+
+    def self.error
+      new(state: :error, exit_code: nil, oom_killed: false, memory_limit: nil)
     end
   end
 

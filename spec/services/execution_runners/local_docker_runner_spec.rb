@@ -285,13 +285,23 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       expect(status).to be_not_found
     end
 
-    it "returns not_found when reconnect raises ProvisionError" do
+    it "returns not_found when reconnect raises ProvisionError with a not-found message" do
       allow(Containers::Provision).to receive(:reconnect)
         .and_raise(Containers::Provision::ProvisionError, "Container abc123 not found")
 
       status = runner.status(handle: handle)
 
       expect(status).to be_not_found
+    end
+
+    it "returns error when reconnect raises ProvisionError for a transient failure" do
+      allow(Containers::Provision).to receive(:reconnect)
+        .and_raise(Containers::Provision::ProvisionError, "Failed to reconnect to container: daemon timeout")
+
+      status = runner.status(handle: handle)
+
+      expect(status).to be_error
+      expect(status).not_to be_not_found
     end
 
     it "returns not_found on Docker::Error::NotFoundError" do
@@ -301,6 +311,16 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       status = runner.status(handle: handle)
 
       expect(status).to be_not_found
+    end
+
+    it "returns error on a transient Docker::Error::DockerError (not a NotFoundError)" do
+      allow(provision_service).to receive(:oom_exit_diagnostics)
+        .and_raise(Docker::Error::DockerError, "read: connection reset by peer")
+
+      status = runner.status(handle: handle)
+
+      expect(status).to be_error
+      expect(status).not_to be_not_found
     end
   end
 
