@@ -93,7 +93,8 @@ download_archive() {
   max_attempts="${ZIZMOR_DOWNLOAD_ATTEMPTS:-5}"
 
   for ((attempt = 1; attempt <= max_attempts; attempt++)); do
-    if curl -fsSL --connect-timeout 15 "${url}" -o "${archive}"; then
+    if curl -fsSL --connect-timeout 15 --retry 5 --retry-delay 2 --retry-connrefused --retry-all-errors \
+      "${url}" -o "${archive}"; then
       return 0
     fi
     if ((attempt < max_attempts)); then
