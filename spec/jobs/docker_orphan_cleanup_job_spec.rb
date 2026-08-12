@@ -8,7 +8,6 @@ RSpec.describe DockerOrphanCleanupJob do
   let(:pool_filter) { { label: [ "paid.container_pool=true" ] }.to_json }
   let(:collector_filter) { { label: [ "paid.resource=collector_container" ] }.to_json }
   let(:service_filter) { { label: [ "paid.service_container=true" ] }.to_json }
-  let(:preview_filter) { { label: [ "paid.preview_tunnel=true" ] }.to_json }
   let(:backend) { Containers.backend }
 
   def build_backend(identifier:, remote:)
@@ -59,9 +58,7 @@ RSpec.describe DockerOrphanCleanupJob do
   end
 
   def stub_preview_containers(*containers)
-    allow(backend).to receive(:list_containers)
-      .with(filters: preview_filter)
-      .and_return(containers)
+    allow(backend).to receive(:list_preview_containers).and_return(containers)
   end
 
   # `state_shape: :hash` mirrors the swarm backend (nested { "Running" => bool });
