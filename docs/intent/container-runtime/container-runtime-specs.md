@@ -151,8 +151,6 @@
   `memory_limit`) for status queries, and `ExecutionRunners::Base#status`
   SHALL return it so callers never inspect Docker container-state responses
   (`State.Running`, `State.OOMKilled`, `State.ExitCode`) directly.
-  `ExecutionResult` SHALL carry `timeout_type` and `abort_info` fields so a
-  structured failure records why it terminated alongside captured output.
   `LocalDockerRunner#status` SHALL translate Docker container-state inspection
   into `ExecutionStatus`, returning `:not_found` when the container is gone.
   *Tests:* `spec/services/execution_runners_spec.rb`,
