@@ -18,6 +18,19 @@ require "json"
 #
 # @see ExecutionRunners::Base
 module ExecutionRunners
+  # Resolves the concrete runner for a backend/runner descriptor. All current
+  # backends (local Docker, remote Docker, Swarm) are Docker transports, so
+  # they all resolve to {LocalDockerRunner} today; a future non-Docker runner
+  # (e.g. a remote-machine runner) adds a branch here rather than changing
+  # callers (RDR-054).
+  #
+  # @param backend [Object] backend/runner descriptor to resolve a runner for
+  # @return [Base] a runner instance
+  # @spec CONTAINER-RUNTIME-010
+  def self.resolve(backend:)
+    LocalDockerRunner.new
+  end
+
   # Compute resource limits for a workload. Mirrors the fields
   # +Containers::Provision::DEFAULTS+ actually consumes (memory_bytes,
   # cpu_quota, pids_limit). Runners translate these to their native

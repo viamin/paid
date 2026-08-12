@@ -5,7 +5,18 @@ require "rails_helper"
 # @spec CONTAINER-RUNTIME-007
 # @spec CONTAINER-RUNTIME-008
 # @spec CONTAINER-RUNTIME-009
+# @spec CONTAINER-RUNTIME-010
 RSpec.describe ExecutionRunners do
+  describe ".resolve" do
+    it "returns a LocalDockerRunner for the current Docker-only backends" do
+      backend = instance_double(Containers::Backends::Base, identifier: "local")
+
+      runner = described_class.resolve(backend: backend)
+
+      expect(runner).to be_a(ExecutionRunners::LocalDockerRunner)
+    end
+  end
+
   describe ExecutionRunners::ComputeRequirements do
     it "is an immutable Data object with cpu, memory, and pids fields" do
       requirements = described_class.new(cpu_quota: 200_000, memory_bytes: 4 * 1024 ** 3, pids_limit: 500)
