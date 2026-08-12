@@ -100,11 +100,21 @@ module Containers
     # (unlimited). Cloud runners need a declared capacity independent of Docker
     # memory measurement — e.g. "budget for 20 concurrent Fly Machines" — so
     # MAX_CONCURRENT_EXECUTIONS lets an operator set a ceiling without setting
-    # up multi-backend mode. When unset, the limit remains nil and only the
-    # global limit (Capacity::GlobalLimit) provides a deployment-wide ceiling.
+    # up multi-backend mode. When unset or 0, the limit remains nil (unlimited)
+    # and only the global limit (Capacity::GlobalLimit) provides a
+    # deployment-wide ceiling.
     def single_backend_max_concurrent_runs
-      value = env["MAX_CONCURRENT_EXECUTIONS"].to_s
-      value.present? ? Integer(value, exception: false) : nil
+      normalize_concurrency_limit(env["MAX_CONCURRENT_EXECUTIONS"])
+    end
+
+    # Treats 0, negative, blank, and non-numeric values as unlimited (nil),
+    # consistent with the per-host "0 means unlimited" convention documented in
+    # the Prometheus collector and with Capacity::GlobalLimit.enabled?, which
+    # disables the ceiling at 0. A truthy 0 here would otherwise flow through
+    # the `return nil unless selected_host_limit` guards in RunAdmission and
+    # zero out available slots, blocking all dispatch.
+    def normalize_concurrency_limit(value)
+      Integer(value, exception: false).then { |n| n&.positive? ? n : nil }
     end
 
     def config_payload
@@ -124,12 +134,11 @@ module Containers
         next unless raw_config.is_a?(Hash)
 
         backend = build_backend(identifier, raw_config)
-        max_concurrent_runs = raw_config.dig("concurrency", "max_concurrent_runs")
 
         HostDefinition.new(
           identifier: identifier.to_s,
           backend: backend,
-          max_concurrent_runs: max_concurrent_runs.present? ? Integer(max_concurrent_runs) : nil,
+          max_concurrent_runs: normalize_concurrency_limit(raw_config.dig("concurrency", "max_concurrent_runs")),
           fallback_enabled: ActiveModel::Type::Boolean.new.cast(raw_config.fetch("fallback_enabled", true))
         )
       end

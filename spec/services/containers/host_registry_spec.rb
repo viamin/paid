@@ -85,6 +85,21 @@ RSpec.describe Containers::HostRegistry, :no_db do
     expect(registry.host_limit_for("qnap")).to eq(3)
   end
 
+  it "treats a max_concurrent_runs of 0 as unlimited (nil) in multi-host config" do
+    env["CONTAINER_BACKENDS_CONFIG"] = <<~YAML
+      default_host: local
+      hosts:
+        local:
+          type: local
+          concurrency:
+            max_concurrent_runs: 0
+    YAML
+
+    registry = described_class.load(env: env)
+
+    expect(registry.host_limit_for("local")).to be_nil
+  end
+
   it "supports Rails credentials references for remote TLS settings" do
     env["CONTAINER_BACKENDS_CONFIG"] = credential_backed_remote_config
     stub_tls_credentials
@@ -213,6 +228,12 @@ RSpec.describe Containers::HostRegistry, :no_db do
 
     it "ignores invalid MAX_CONCURRENT_EXECUTIONS values" do
       registry = described_class.load(env: { "MAX_CONCURRENT_EXECUTIONS" => "abc" })
+
+      expect(registry.host_limit_for("local")).to be_nil
+    end
+
+    it "treats MAX_CONCURRENT_EXECUTIONS=0 as unlimited (nil)" do
+      registry = described_class.load(env: { "MAX_CONCURRENT_EXECUTIONS" => "0" })
 
       expect(registry.host_limit_for("local")).to be_nil
     end
