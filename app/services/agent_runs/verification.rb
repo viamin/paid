@@ -110,7 +110,7 @@ module AgentRuns
     end
 
     def provision_browser_container!
-      NetworkPolicy.ensure_network!(network: @network, backend: Containers.backend)
+      Containers::Provision.ensure_network!(network: @network, backend: Containers.backend)
 
       container = adopt_or_create_browser
       Containers.backend.start_container(container) unless container_running?(container)

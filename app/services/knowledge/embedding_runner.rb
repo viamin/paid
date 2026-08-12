@@ -73,7 +73,7 @@ module Knowledge
       end
 
       cleanup_input_dir!
-      NetworkPolicy.ensure_network!(network: NetworkPolicy::NETWORK_NAME, backend: Containers.backend)
+      ExecutionRunners::LocalDockerRunner.ensure_agent_network!(backend: Containers.backend)
       @input_dir = Dir.mktmpdir("paid-embedding-runner-")
       @container = Containers.backend.create_container(container_config)
       Containers.backend.start_container(@container)
@@ -158,7 +158,7 @@ module Knowledge
     end
 
     def apply_network_restrictions!
-      NetworkPolicy.apply_firewall_rules(@container, backend: Containers.backend)
+      ExecutionRunners::LocalDockerRunner.apply_firewall_rules(@container, backend: Containers.backend)
     end
 
     def script_env(provider:, model:, dimensions:, timeout:)
@@ -317,7 +317,7 @@ module Knowledge
           "Tmpfs" => {
             "/tmp" => "size=#{64 * 1024 * 1024},mode=1777"
           },
-          "NetworkMode" => NetworkPolicy::NETWORK_NAME,
+          "NetworkMode" => Containers.agent_network_name,
           "Binds" => [ "#{@input_dir}:/paid-input:ro" ]
         },
         "Env" => [

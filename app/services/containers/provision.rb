@@ -176,6 +176,33 @@ module Containers
       new(agent_run: agent_run).network_name
     end
 
+    # Ensures the specified Docker network exists (for sidecar provisioners
+    # that need network readiness before creating containers). This is a
+    # runtime check only — network creation is the runner's responsibility
+    # (RDR-054). Delegates to +backend.get_network+ which raises
+    # +Docker::Error::NotFoundError+ when the network is missing.
+    def self.ensure_network!(network:, backend: Containers.backend)
+      backend.get_network(network)
+    end
+
+    # Builds the provider-neutral +NetworkingPolicy+ for an agent run + project
+    # pair using the same subscription-auth / direct-outbound heuristics the
+    # legacy +#network_contract+ path uses. Exposed so the orchestrator can
+    # populate +RunSpec.networking_policy+ without instantiating a Provision
+    # (RDR-054).
+    #
+    # @return [ExecutionRunners::NetworkingPolicy]
+    def self.networking_policy_for(agent_run:, project:)
+      service = new(agent_run: agent_run, project: project, networking_policy: nil)
+      if service.send(:subscription_auth?)
+        ExecutionRunners::NetworkingPolicy.subscription_auth
+      elsif service.send(:direct_outbound_runner?)
+        ExecutionRunners::NetworkingPolicy.direct_outbound
+      else
+        ExecutionRunners::NetworkingPolicy.proxy_restricted
+      end
+    end
+
     def self.codex_notify_line
       CODEX_NOTIFY_LINE
     end
@@ -203,8 +230,15 @@ module Containers
     # @option options [Integer] :timeout_seconds Default command timeout
     # @option options [Integer] :tmpfs_codex_size Size of the writable ~/.codex tmpfs
     # @option options [String] :image Docker image to use
+    # @param networking_policy [ExecutionRunners::NetworkingPolicy, nil] optional
+    #   provider-neutral networking policy (RDR-054). When supplied, the
+    #   provisioner uses it directly as the source of truth for network name
+    #   and proxy URL, instead of recomputing +network_contract+ from
+    #   subscription-auth / direct-outbound heuristics. The runner is the
+    #   intended caller — direct callers should leave it nil and keep the
+    #   existing fallback behavior.
     def initialize(agent_run: nil, project: nil, worktree_path: nil, pool_entry: nil, workspace_volume: nil,
-      backend: Containers.backend, credential_maintenance: false, **options)
+      backend: Containers.backend, networking_policy: nil, credential_maintenance: false, **options)
       raise ArgumentError, "agent_run or project is required" if agent_run.nil? && project.nil? && !credential_maintenance
 
       if options.key?(:network)
@@ -222,6 +256,7 @@ module Containers
       @workspace_volume = workspace_volume
       @preview_tunnel_option = options.delete(:preview_tunnel)
       @pool_mode = options.delete(:pool_mode) { false }
+      @networking_policy = networking_policy
       @options = DEFAULTS.merge(resolve_user_setting_overrides).merge(resolve_project_image).merge(options)
       @backend = backend
       @container = nil
@@ -2558,11 +2593,22 @@ module Containers
       network_name
     end
 
+    # Returns the Docker-specific network contract for this provision.
+    #
+    # When the constructor was given a +networking_policy+ (the runner-driven
+    # RDR-054 path), the contract is derived from it without inspecting
+    # subscription-auth or direct-outbound heuristics — those decisions are
+    # already baked into the policy. Legacy direct callers fall back to
+    # recomputing the contract from the current auth context.
     def network_contract
-      @network_contract ||= NetworkPolicy.contract(
-        subscription_auth: subscription_auth?,
-        direct_outbound: direct_outbound_runner?
-      )
+      @network_contract ||= if @networking_policy
+        NetworkPolicy.contract_for_policy(@networking_policy)
+      else
+        NetworkPolicy.contract(
+          subscription_auth: subscription_auth?,
+          direct_outbound: direct_outbound_runner?
+        )
+      end
     end
 
     def direct_outbound_runner?
@@ -2778,7 +2824,11 @@ module Containers
     end
 
     def proxy_base_url
-      Containers::ProxyUrl.resolve(backend:, restricted: network_contract.restricted?)
+      if @networking_policy
+        Containers::ProxyUrl.resolve(backend:, policy: @networking_policy)
+      else
+        Containers::ProxyUrl.resolve(backend:, restricted: network_contract.restricted?)
+      end
     end
 
     # Enforces the RDR-041/RDR-048 subscription auth host eligibility contract
@@ -4088,6 +4138,12 @@ module Containers
     end
 
     def ensure_network!
+      # When the constructor was given a +networking_policy+, the runner owns
+      # the network-ensure + firewall-apply translation. Returning here keeps
+      # the existing call site in +#provision+ working without duplicating
+      # the side effect.
+      return if @networking_policy
+
       NetworkPolicy.ensure_network!(network: network_name, backend: backend)
       log_system("container.network.ready", network: network_name, mode: network_contract.mode)
     rescue NetworkPolicy::Error => e
@@ -4095,6 +4151,9 @@ module Containers
     end
 
     def apply_network_restrictions!
+      # See +#ensure_network!+: the runner owns the firewall translation
+      # when +networking_policy+ is supplied.
+      return if @networking_policy
       return unless network_contract.firewall?
 
       NetworkPolicy.apply_firewall_rules(

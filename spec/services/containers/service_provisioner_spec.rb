@@ -32,7 +32,7 @@ RSpec.describe Containers::ServiceProvisioner do
     let(:agent_run) { create(:agent_run, project: project, issue: issue) }
 
     before do
-      allow(NetworkPolicy).to receive(:ensure_network!)
+      allow(Containers::Provision).to receive(:ensure_network!)
     end
 
     context "when project has no service containers" do
@@ -597,7 +597,7 @@ RSpec.describe Containers::ServiceProvisioner do
 
     before do
       create(:project_service_container, project: project, service_container: service_container)
-      allow(NetworkPolicy).to receive(:ensure_network!)
+      allow(Containers::Provision).to receive(:ensure_network!)
     end
 
     it "passes resource limits to Docker::Container.create" do
@@ -718,7 +718,7 @@ RSpec.describe Containers::ServiceProvisioner do
 
     before do
       create(:project_service_container, project: project, service_container: service_container)
-      allow(NetworkPolicy).to receive(:ensure_network!)
+      allow(Containers::Provision).to receive(:ensure_network!)
       allow(Docker::Image).to receive(:create)
       docker_container = instance_double(Docker::Container, id: "m123")
       allow(docker_container).to receive(:start)

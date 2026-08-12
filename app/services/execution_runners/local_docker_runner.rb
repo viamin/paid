@@ -4,26 +4,41 @@ module ExecutionRunners
   # Thin adapter that wraps the existing +Containers::Provision+ Docker
   # orchestrator behind the provider-neutral +ExecutionRunners::Base+
   # interface (RDR-054). Translates {RunSpec}/{RunnerHandle}/{ExecutionResult}
-  # domain objects to and from +Containers::Provision+ calls without
-  # modifying +Containers::Provision+ itself.
+  # domain objects to and from +Containers::Provision+ calls.
+  #
+  # This runner owns the +NetworkingPolicy+ → Docker-network translation: it
+  # is the only place that calls +NetworkPolicy.ensure_network!+ and
+  # +NetworkPolicy.apply_firewall_rules+. +Containers::Provision+ accepts the
+  # +networking_policy+ for read-only Docker-config decisions (proxy URL,
+  # network name) but skips its own network/firewall side effects when a
+  # policy is provided.
   #
   # +RunnerHandle#metadata+ carries everything needed to reconnect to the
   # container on a later call (agent_run id, worktree_path, environment),
   # since +#start+/+#running?+/+#cancel+/+#cleanup+ only receive the handle.
   #
   # @spec CONTAINER-RUNTIME-010
+  # @spec CONTAINER-RUNTIME-011
   class LocalDockerRunner < Base
     RUNNER_TYPE = :local_docker
 
     def provision(spec:)
+      backend = backend_for(spec)
+      policy = spec.networking_policy
+      raise ProvisionError, "RunSpec requires a NetworkingPolicy" if policy.nil?
+
+      ensure_agent_network!(backend: backend, policy: policy)
       service = Containers::Provision.new(
         agent_run: spec.agent_run,
         project: spec.project,
         worktree_path: self.class.worktree_path_for(spec),
-        backend: backend_for(spec),
+        backend: backend,
+        networking_policy: policy,
         **provision_options(spec)
       )
-      handle_for(spec: spec, result: service.provision)
+      result = service.provision
+      apply_firewall!(service: service, backend: backend, policy: policy)
+      handle_for(spec: spec, result: result)
     rescue Containers::Provision::ProvisionError => e
       raise ProvisionError, e.message
     end
@@ -97,10 +112,61 @@ module ExecutionRunners
       spec.agent_run&.worktree_path
     end
 
+    # Ensures the agent Docker network exists, creating it if missing.
+    # Class-level entry point for components that need network readiness
+    # without going through the full runner lifecycle (e.g., embedding
+    # runner, MCP sidecar provisioner). Delegates to the Docker-specific
+    # +NetworkPolicy.ensure_network!+ so +NetworkPolicy+ stays the single
+    # source of truth for Docker network lifecycle (RDR-054).
+    def self.ensure_agent_network!(backend: Containers.backend)
+      NetworkPolicy.ensure_network!(backend: backend)
+    end
+
+    # Applies iptables firewall rules inside a running container.
+    # Class-level entry point for components that need container-level
+    # firewall without a full runner lifecycle (e.g., embedding runner).
+    # Delegates to the Docker-specific +NetworkPolicy.apply_firewall_rules+.
+    def self.apply_firewall_rules(container, **kwargs)
+      NetworkPolicy.apply_firewall_rules(container, **kwargs)
+    end
+
     private
 
     def backend_for(spec)
       Containers.backend_for(spec.agent_run&.workspace_volume_host)
+    end
+
+    # Translates the runner-level +NetworkingPolicy+ into the Docker side
+    # effect of ensuring the right network exists. +NetworkPolicy+ maps the
+    # policy mode to the +paid_agent+ / +paid_internal+ Docker network names
+    # — the runner never sees those literals.
+    def ensure_agent_network!(backend:, policy:)
+      network_name = NetworkPolicy.contract_for_policy(policy).network
+      NetworkPolicy.ensure_network!(network: network_name, backend: backend)
+    rescue NetworkPolicy::Error => e
+      raise ProvisionError, "Network setup failed: #{e.message}"
+    end
+
+    # Applies the in-container firewall when the policy demands one. The
+    # firewall service destinations come from the policy's +allow_destinations+
+    # field; any service container IPs (resolved by Provision's helper below)
+    # are merged on top so the firewall opens the same set of TCP paths it
+    # did before the RDR-054 refactor.
+    def apply_firewall!(service:, backend:, policy:)
+      return unless policy.firewall?
+
+      NetworkPolicy.apply_firewall_rules(
+        service.container,
+        service_destinations: policy.allow_destinations + service.send(:resolve_service_destinations),
+        backend: backend
+      )
+    rescue NetworkPolicy::Error => e
+      Rails.logger.warn(
+        message: "container.firewall.failed",
+        error: e.message,
+        agent_run_id: service.agent_run&.id
+      )
+      raise ProvisionError, "Firewall setup failed: #{e.message}" if Rails.env.production?
     end
 
     def provision_options(spec)
