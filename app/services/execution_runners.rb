@@ -109,6 +109,13 @@ module ExecutionRunners
   # @spec CONTAINER-RUNTIME-009
   ServiceDeclaration = Data.define(:name, :image, :port, :env, :type)
 
+  # Result of {ExecutionRunners::Base.compatible?}. Mirrors the shape of
+  # +Containers::Provision::CompatibilityResult+ but lives in the
+  # provider-neutral namespace so the abstract interface never references a
+  # Docker-specific class.
+  # @spec CONTAINER-RUNTIME-007
+  CompatibilityResult = Data.define(:compatible, :error_message)
+
   # Outcome of running a workload. Consolidates the existing
   # +Containers::Provision::Result+ patterns so callers no longer reach into
   # the Docker result object.
@@ -120,7 +127,8 @@ module ExecutionRunners
     :exit_code,           # Integer
     :oom_killed,          # Boolean
     :memory_limit_bytes,  # Integer, nil
-    :container_running    # Boolean, nil
+    :environment_running  # Boolean, nil — whether the launched environment is
+    # still running after the workload exited (used for OOM diagnostics)
   ) do
     def success?
       success
@@ -132,14 +140,14 @@ module ExecutionRunners
 
     def self.success(stdout: "", stderr: "", exit_code: 0)
       new(success: true, stdout: stdout, stderr: stderr, exit_code: exit_code,
-          oom_killed: false, memory_limit_bytes: nil, container_running: nil)
+          oom_killed: false, memory_limit_bytes: nil, environment_running: nil)
     end
 
     def self.failure(exit_code:, stdout: "", stderr: "",
-                     oom_killed: false, memory_limit_bytes: nil, container_running: nil)
+                     oom_killed: false, memory_limit_bytes: nil, environment_running: nil)
       new(success: false, stdout: stdout, stderr: stderr, exit_code: exit_code,
           oom_killed: oom_killed, memory_limit_bytes: memory_limit_bytes,
-          container_running: container_running)
+          environment_running: environment_running)
     end
   end
 

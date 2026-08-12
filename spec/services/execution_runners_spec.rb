@@ -35,9 +35,13 @@ RSpec.describe ExecutionRunners do
       }
     end
 
-    it "carries the full execution description without Docker-specific concepts" do
+    it "carries the full execution description" do
       expect(spec.image).to eq("paid/agent:latest")
       expect(spec.workspace_strategy).to eq(:named_volume)
+    end
+
+    it "never references Docker-specific concepts" do
+      expect(described_class.members).not_to include(:container_id, :network_name, :bind_mount)
     end
 
     it "embeds the resource, networking, and service declarations" do
@@ -138,14 +142,23 @@ RSpec.describe ExecutionRunners do
     describe ".failure" do
       it "builds a failed result carrying OOM diagnostics" do
         result = described_class.failure(exit_code: 137, stdout: "", stderr: "killed",
-                                         oom_killed: true, memory_limit_bytes: 1024, container_running: false)
+                                         oom_killed: true, memory_limit_bytes: 1024, environment_running: false)
 
         expect(result).to be_failure
         expect(result.exit_code).to eq(137)
         expect(result.oom_killed).to be(true)
         expect(result.memory_limit_bytes).to eq(1024)
-        expect(result.container_running).to be(false)
+        expect(result.environment_running).to be(false)
       end
+    end
+  end
+
+  describe ExecutionRunners::CompatibilityResult do
+    it "carries compatible and error_message fields" do
+      result = described_class.new(compatible: false, error_message: "no matching host path")
+
+      expect(result.compatible).to be(false)
+      expect(result.error_message).to eq("no matching host path")
     end
   end
 

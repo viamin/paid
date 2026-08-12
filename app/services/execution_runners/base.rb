@@ -98,7 +98,7 @@ module ExecutionRunners
     #
     # @param spec [RunSpec]
     # @param backend [Object] the backend/runner descriptor to evaluate
-    # @return [Containers::Provision::CompatibilityResult] compatible + message
+    # @return [CompatibilityResult] compatible + error_message
     def self.compatible?(spec:, backend:)
       raise NotImplementedError, "#{name} must implement .#{__method__}"
     end
