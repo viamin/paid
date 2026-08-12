@@ -283,13 +283,6 @@ RSpec.describe ExecutionRunners do
       expect(status).to be_not_found
       expect(status.exit_code).to be_nil
     end
-
-    it "classifies an OOM-killed exit via .exited as oom_killed state" do
-      status = described_class.exited(exit_code: 137, oom_killed: true)
-
-      expect(status.state).to eq(:oom_killed)
-      expect(status).to be_oom_killed
-    end
   end
 
   describe ExecutionRunners::CompatibilityResult do

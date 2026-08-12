@@ -319,9 +319,9 @@ module ExecutionRunners
       new(state: :running, exit_code: nil, oom_killed: false, memory_limit: memory_limit)
     end
 
-    def self.exited(exit_code:, oom_killed: false, memory_limit: nil)
-      new(state: oom_killed ? :oom_killed : :exited, exit_code: exit_code,
-          oom_killed: oom_killed, memory_limit: memory_limit)
+    def self.exited(exit_code:, memory_limit: nil)
+      new(state: :exited, exit_code: exit_code,
+          oom_killed: false, memory_limit: memory_limit)
     end
 
     def self.oom_killed(exit_code:, memory_limit: nil)
