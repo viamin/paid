@@ -44,6 +44,44 @@ class ChatControllerNodeHarness
       return { controller, appended, statusMessages };
     }
 
+    // --- Smooth-scroll test helpers --------------------------------------
+    // smoothScrollTo relies on requestAnimationFrame + performance.now(),
+    // neither of which exists in plain Node. The mock advances a virtual
+    // clock by ~16 ms per frame so the 300 ms animation completes in a single
+    // synchronous pass.
+    function withMockedTimers(callback) {
+      let time = 1000;
+      const origPerf = globalThis.performance;
+      const origRAF = globalThis.requestAnimationFrame;
+      const origCAF = globalThis.cancelAnimationFrame;
+
+      globalThis.performance = { now: () => time };
+      globalThis.requestAnimationFrame = (cb) => { time += 16; cb(time); return 1; };
+      globalThis.cancelAnimationFrame = () => {};
+
+      try {
+        callback();
+      } finally {
+        globalThis.performance = origPerf;
+        globalThis.requestAnimationFrame = origRAF;
+        globalThis.cancelAnimationFrame = origCAF;
+      }
+    }
+
+    // smoothScrollTo checks window.matchMedia("(prefers-reduced-motion: reduce)")
+    // to honor the user's OS-level motion preference. Node has no `window`, so
+    // stub it; defaults to "no preference reduced" unless overridden.
+    function withMatchMedia(matches, callback) {
+      const origWindow = globalThis.window;
+      globalThis.window = { matchMedia: () => ({ matches }) };
+
+      try {
+        callback();
+      } finally {
+        globalThis.window = origWindow;
+      }
+    }
+
     function testToolCallAppendsCardAndUpdatesStatus() {
       const { controller, appended, statusMessages } = makeController();
 
@@ -320,6 +358,129 @@ class ChatControllerNodeHarness
       }
     }
 
+    function testSmoothScrollToAnimatesContainer() {
+      let scrollTop = 0;
+      const { controller } = makeController({
+        containerTarget: {
+          get scrollTop() { return scrollTop; },
+          set scrollTop(v) { scrollTop = v; },
+          scrollHeight: 1000,
+          clientHeight: 200
+        }
+      });
+
+      withMatchMedia(false, () => withMockedTimers(() => controller.smoothScrollTo(1000)));
+
+      if (Math.abs(scrollTop - 1000) > 1) {
+        throw new Error(`Expected scrollTop to animate to ~1000, got ${scrollTop}`);
+      }
+    }
+
+    function testSmoothScrollToNoOpForZeroDistance() {
+      let sets = 0;
+      const { controller } = makeController({
+        containerTarget: {
+          get scrollTop() { return 500; },
+          set scrollTop(v) { sets += 1; },
+          scrollHeight: 1000,
+          clientHeight: 200
+        }
+      });
+
+      withMatchMedia(false, () => withMockedTimers(() => controller.smoothScrollTo(500)));
+
+      if (sets !== 0) {
+        throw new Error(`Expected no scrollTop writes when distance is 0, got ${sets}`);
+      }
+    }
+
+    function testSmoothScrollToJumpsInstantlyWhenReducedMotionPreferred() {
+      let scrollTop = 0;
+      const { controller } = makeController({
+        containerTarget: {
+          get scrollTop() { return scrollTop; },
+          set scrollTop(v) { scrollTop = v; },
+          scrollHeight: 1000,
+          clientHeight: 200
+        }
+      });
+
+      withMatchMedia(true, () => controller.smoothScrollTo(1000));
+
+      if (scrollTop !== 1000) {
+        throw new Error(`Expected reduced-motion scroll to jump instantly to 1000, got ${scrollTop}`);
+      }
+    }
+
+    function testScrollToInputScrollsToBottom() {
+      let scrolledTo = null;
+      const { controller } = makeController({
+        containerTarget: { scrollTop: 0, scrollHeight: 800, clientHeight: 200 }
+      });
+      controller.smoothScrollTo = (target) => { scrolledTo = target; };
+
+      controller.scrollToInput();
+
+      if (scrolledTo !== 800) {
+        throw new Error(`Expected scrollToInput to target scrollHeight (800), got ${scrolledTo}`);
+      }
+    }
+
+    function testScrollToTopScrollsToZero() {
+      let scrolledTo = null;
+      const { controller } = makeController({
+        containerTarget: { scrollTop: 400, scrollHeight: 800, clientHeight: 200 }
+      });
+      controller.smoothScrollTo = (target) => { scrolledTo = target; };
+
+      controller.scrollToTop();
+
+      if (scrolledTo !== 0) {
+        throw new Error(`Expected scrollToTop to target 0, got ${scrolledTo}`);
+      }
+    }
+
+    function testHandleScrollShowsBackToTopWhenScrolled() {
+      const toggles = [];
+      const { controller } = makeController({
+        containerTarget: { scrollTop: 300, scrollHeight: 2000, clientHeight: 400 },
+        hasBackToTopTarget: true,
+        backToTopTarget: {
+          classList: { toggle: (cls, cond) => toggles.push({ cls, cond }) }
+        }
+      });
+
+      controller.handleScroll();
+
+      const visible = toggles.find((t) => t.cls === "opacity-100");
+      if (!visible || visible.cond !== true) {
+        throw new Error("Expected back-to-top to become visible when scrollTop > 200");
+      }
+
+      const interactive = toggles.find((t) => t.cls === "pointer-events-auto");
+      if (!interactive || interactive.cond !== true) {
+        throw new Error("Expected back-to-top to become interactive when scrollTop > 200");
+      }
+    }
+
+    function testHandleScrollHidesBackToTopAtTop() {
+      const toggles = [];
+      const { controller } = makeController({
+        containerTarget: { scrollTop: 50, scrollHeight: 2000, clientHeight: 400 },
+        hasBackToTopTarget: true,
+        backToTopTarget: {
+          classList: { toggle: (cls, cond) => toggles.push({ cls, cond }) }
+        }
+      });
+
+      controller.handleScroll();
+
+      const hidden = toggles.find((t) => t.cls === "opacity-0");
+      if (!hidden || hidden.cond !== true) {
+        throw new Error("Expected back-to-top to be hidden when scrollTop <= 200");
+      }
+    }
+
     function run() {
       testToolCallAppendsCardAndUpdatesStatus();
       testToolCallWithUnknownToolName();
@@ -334,6 +495,13 @@ class ChatControllerNodeHarness
       testCapabilityChangedUpdatesPanelIconAndActions();
       testSystemNoticeReplacementTargetsTopLevelElement();
       testSystemNoticeDeletionTargetsTopLevelElement();
+      testSmoothScrollToAnimatesContainer();
+      testSmoothScrollToNoOpForZeroDistance();
+      testSmoothScrollToJumpsInstantlyWhenReducedMotionPreferred();
+      testScrollToInputScrollsToBottom();
+      testScrollToTopScrollsToZero();
+      testHandleScrollShowsBackToTopWhenScrolled();
+      testHandleScrollHidesBackToTopAtTop();
     }
 
     try {
