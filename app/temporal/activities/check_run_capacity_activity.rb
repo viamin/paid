@@ -33,6 +33,8 @@ module Activities
         message: "concurrency.capacity_check",
         user_active_count: admission[:user_active_count],
         max_concurrent_runs: admission[:effective_max_concurrent_runs],
+        global_active_count: admission[:global_active_count],
+        global_max_concurrent_executions: admission[:global_max_concurrent_executions],
         has_capacity: admission[:allowed],
         reason: admission[:reason],
         mode: admission[:mode],
@@ -44,6 +46,9 @@ module Activities
         user_active_count: admission[:user_active_count],
         max_concurrent_runs: admission[:effective_max_concurrent_runs],
         effective_max_concurrent_runs: admission[:effective_max_concurrent_runs],
+        global_active_count: admission[:global_active_count],
+        global_max_concurrent_executions: admission[:global_max_concurrent_executions],
+        global_available_slots: admission[:global_available_slots],
         reason: admission[:reason],
         available_memory_bytes: admission[:available_memory_bytes]
       }

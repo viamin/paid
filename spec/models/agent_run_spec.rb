@@ -2376,6 +2376,77 @@ RSpec.describe AgentRun do
       expect(described_class.active_count_for_host("elguapo")).to eq(2)
       expect(described_class.active_count_for_host("local")).to eq(1)
     end
+
+    it "bypasses tenant RLS so a shared host counts runs from every account" do
+      # A host is a shared physical resource; RunAdmission runs under
+      # TenantContext.with(account) and the Prometheus path is unauthenticated,
+      # so the count must span all tenants or it undercounts host load.
+      account_a = create(:account)
+      user_a = create(:user, account: account_a)
+      project_a = create(:project, account: account_a, created_by: user_a)
+      account_b = create(:account)
+      user_b = create(:user, account: account_b)
+      project_b = create(:project, account: account_b, created_by: user_b)
+
+      elguapo_backend = instance_double(
+        Containers::Backends::RemoteDocker,
+        remote?: true,
+        all_host_identifiers: [ "elguapo" ]
+      )
+      allow(Containers).to receive(:backend_for).with("elguapo").and_return(elguapo_backend)
+
+      create(:agent_run, :running, project: project_a, container_host: "elguapo")
+      create(:agent_run, :running, project: project_b, container_host: "elguapo")
+
+      scoped_count = TenantContext.with(account_a) { described_class.active_count_for_host("elguapo") }
+
+      expect(scoped_count).to eq(2)
+    end
+  end
+
+  describe ".active_count_global" do
+    it "counts all capacity-inflight runs across accounts and projects" do
+      account_a = create(:account)
+      user_a = create(:user, account: account_a)
+      project_a = create(:project, account: account_a, created_by: user_a)
+
+      account_b = create(:account)
+      user_b = create(:user, account: account_b)
+      project_b = create(:project, account: account_b, created_by: user_b)
+
+      create(:agent_run, :running, project: project_a)
+      create(:agent_run, :running, project: project_b)
+      create(:agent_run, :queued, project: project_a, temporal_workflow_id: "claimed")
+      create(:agent_run, :completed, project: project_a)
+
+      expect(described_class.active_count_global).to eq(3)
+    end
+
+    it "returns zero when no capacity-inflight runs exist" do
+      create(:agent_run, :completed)
+
+      expect(described_class.active_count_global).to eq(0)
+    end
+
+    it "bypasses tenant RLS so a scoped caller still sees every account" do
+      # CheckRunCapacityActivity runs under TenantContext.with(account) and
+      # Metrics::PrometheusCollector reads via an unauthenticated endpoint.
+      # Either way the caller may be tenant-scoped, so the global count must
+      # bypass RLS or it silently degrades into a per-account (or zero) count.
+      account_a = create(:account)
+      user_a = create(:user, account: account_a)
+      project_a = create(:project, account: account_a, created_by: user_a)
+      account_b = create(:account)
+      user_b = create(:user, account: account_b)
+      project_b = create(:project, account: account_b, created_by: user_b)
+
+      create(:agent_run, :running, project: project_a)
+      create(:agent_run, :running, project: project_b)
+
+      scoped_count = TenantContext.with(account_a) { described_class.active_count_global }
+
+      expect(scoped_count).to eq(2)
+    end
   end
 
   describe ".active_create_pr_count_for_account" do

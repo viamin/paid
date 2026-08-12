@@ -193,6 +193,11 @@ class ProcessRunQueueJob < ApplicationJob
           log_capacity_skip(next_run, admission, host_selection: host_selection, host_placement_decision: host_placement_decision)
 
           case admission[:reason]
+          when "global_hard_ceiling"
+            # Global limit exhausted — no further runs can start this pass
+            # regardless of user/project/host. Break rather than next to avoid
+            # needlessly scanning the rest of the queue.
+            break
           when "insufficient_docker_capacity"
             blocked_user_ids.add(user.id)
           when "host_hard_ceiling"
@@ -728,6 +733,9 @@ class ProcessRunQueueJob < ApplicationJob
       reason: admission[:reason],
       mode: admission[:mode],
       available_slots: admission[:available_slots],
+      global_active_count: admission[:global_active_count],
+      global_max_concurrent_executions: admission[:global_max_concurrent_executions],
+      global_available_slots: admission[:global_available_slots],
       effective_max_concurrent_runs: admission[:effective_max_concurrent_runs],
       available_memory_bytes: admission[:available_memory_bytes],
       estimated_memory_per_run_bytes: admission[:estimated_memory_per_run_bytes],
