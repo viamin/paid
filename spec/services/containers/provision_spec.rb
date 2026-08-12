@@ -3413,8 +3413,17 @@ RSpec.describe Containers::Provision do
       )
 
       expect(service.container_status).to eq(
-        running: true, exit_code: 0, oom_killed: false, memory_limit_bytes: 4_294_967_296
+        running: true, exit_code: nil, oom_killed: false, memory_limit_bytes: 4_294_967_296
       )
+    end
+
+    it "normalizes exit_code to nil while running even when Docker retains a prior exit code" do
+      allow(mock_container).to receive(:info).and_return(
+        { "State" => { "Running" => true, "ExitCode" => 137, "OOMKilled" => false },
+          "HostConfig" => { "Memory" => 4_294_967_296 } }
+      )
+
+      expect(service.container_status).to include(running: true, exit_code: nil)
     end
 
     it "reports oom_killed and exit code when the container was OOM killed" do

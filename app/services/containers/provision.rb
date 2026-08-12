@@ -884,7 +884,11 @@ module Containers
       state = info["State"] || {}
       {
         running: state["Running"] == true,
-        exit_code: state["ExitCode"],
+        # Docker reports ExitCode as 0 while a container is running and keeps
+        # the previous exit code across restarts; normalize to nil so a running
+        # workload is not misread as exited-with-0 (ExecutionStatus contract:
+        # exit_code is nil while still running).
+        exit_code: state["Running"] == true ? nil : state["ExitCode"],
         oom_killed: state["OOMKilled"] == true,
         memory_limit_bytes: info.dig("HostConfig", "Memory")
       }
