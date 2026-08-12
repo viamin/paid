@@ -2569,14 +2569,26 @@ class AgentRun < ApplicationRecord
 
   # Provisions a container through the execution runner interface.
   # Reuses an existing recorded container (Temporal retry safety) before
-  # delegating to the runner for a fresh provision.
+  # trying the warm pool, then delegating to the runner for a fresh
+  # provision. Pooling is not yet modeled by the runner interface (RunSpec
+  # has no pool-awareness), so this mirrors provision_new_container's
+  # pool-first behavior directly rather than pushing it into
+  # LocalDockerRunner#provision, keeping the pool/replenish contract in one
+  # place until pooling is designed into the runner contract itself.
   def provision_via_runner(**options)
     return reuse_or_reconcile_container(**options) if container_id.present?
+
+    planned_container_host = options.delete(:container_host)
+    pool_host_scope = planned_container_host.presence || container_host.presence
+
+    pooled_result = acquire_pooled_container(pool_host_scope: pool_host_scope, **options)
+    return pooled_result if pooled_result
 
     runner = ExecutionRunners.resolve_for(self)
     spec = ExecutionRunners::RunSpec.from_agent_run(self, **options)
     @current_handle = runner.provision(spec: spec)
     update!(container_id: @current_handle.identifier, container_host: @current_handle.host)
+    PoolReplenishmentJob.perform_later(project_id)
 
     Containers::Provision::Result.success(
       container_id: @current_handle.identifier,
@@ -2584,12 +2596,31 @@ class AgentRun < ApplicationRecord
     )
   end
 
+  # Claims a warm container from the pool for this run, if one is
+  # available and compatible. Shared by the legacy and runner-shim
+  # provision paths so both stay pool-aware (RDR-054).
+  #
+  # @return [Containers::Provision::Result, nil] the pooled result on a
+  #   successful claim, or nil when no warm container was claimed
+  def acquire_pooled_container(pool_host_scope:, **options)
+    pooled_result = Containers::PoolManager.new(project: project).acquire(
+      agent_run: self,
+      container_host: pool_host_scope,
+      **options
+    )
+    return unless pooled_result&.success?
+
+    @container_service = pooled_result[:service]
+    update!(container_id: pooled_result[:container_id], container_host: pooled_result[:container_host])
+    pooled_result
+  end
+
   # Executes a command via the runner interface. Translates
   # ExecutionResult back to Provision::Result for caller compatibility.
   def execute_via_runner(command, timeout: nil, env: {}, preparation: nil)
     runner = ExecutionRunners.resolve_for(self)
     result = runner.start(
-      handle: @current_handle, command: command, timeout: timeout,
+      handle: handle_with_env(env), command: command, timeout: timeout,
       startup_timeout: nil, idle_timeout: nil, abort_patterns: nil,
       preparation: preparation, heartbeat_path: nil
     )
@@ -2613,6 +2644,18 @@ class AgentRun < ApplicationRecord
     raise Containers::Provision::OutputAbortError.new(
       e.message, matched_output: e.matched_output, source: e.source, detail: e.detail
     )
+  end
+
+  # Merges per-call env into @current_handle's metadata for a single #start
+  # call. LocalDockerRunner#start only reads handle.metadata["environment"]
+  # (the persistent service_environment captured at provision time), so
+  # per-call env (e.g. HarnessExecutor's runner/auth env, KILOCODE_CONFIG_B64)
+  # would otherwise be silently dropped instead of reaching the command.
+  def handle_with_env(env)
+    return @current_handle if env.blank?
+
+    merged_environment = (@current_handle.metadata["environment"] || {}).merge(env)
+    @current_handle.with(metadata: @current_handle.metadata.merge("environment" => merged_environment))
   end
 
   # Cleans up through the runner interface. Idempotent on missing resources.
@@ -3001,16 +3044,8 @@ class AgentRun < ApplicationRecord
     planned_container_host = options.delete(:container_host)
     pool_host_scope = planned_container_host.presence || container_host.presence
 
-    pooled_result = Containers::PoolManager.new(project: project).acquire(
-      agent_run: self,
-      container_host: pool_host_scope,
-      **options
-    )
-    if pooled_result&.success?
-      @container_service = pooled_result[:service]
-      update!(container_id: pooled_result[:container_id], container_host: pooled_result[:container_host])
-      return pooled_result
-    end
+    pooled_result = acquire_pooled_container(pool_host_scope: pool_host_scope, **options)
+    return pooled_result if pooled_result
 
     backend_host = pool_host_scope.presence
     backend_host ||= container_host if container_host.present?

@@ -2257,6 +2257,42 @@ RSpec.describe AgentRun do
           expect(result).to be_success
           expect(result[:container_id]).to eq("existing-container")
         end
+
+        it "claims a warm pool container instead of provisioning via the runner" do
+          agent_run = create(:agent_run, worktree_path: nil)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          pooled_service = instance_double(Containers::Provision)
+          pooled_result = Containers::Provision::Result.success(
+            container_id: "warm-container",
+            container_host: "remote",
+            service: pooled_service,
+            pool_entry_id: 123
+          )
+          allow(Containers::PoolManager).to receive(:new)
+            .with(project: agent_run.project)
+            .and_return(instance_double(Containers::PoolManager, acquire: pooled_result))
+
+          result = agent_run.provision_container
+
+          expect(mock_runner).not_to have_received(:provision)
+          expect(result).to be_success
+          expect(result[:container_id]).to eq("warm-container")
+          expect(agent_run.reload.container_id).to eq("warm-container")
+          expect(agent_run.reload.container_host).to eq("remote")
+        end
+
+        it "enqueues pool replenishment after a cold provision via the runner" do
+          agent_run = create(:agent_run, worktree_path: worktree_path)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          allow(Containers::PoolManager).to receive(:new)
+            .with(project: agent_run.project)
+            .and_return(instance_double(Containers::PoolManager, acquire: nil))
+          allow(PoolReplenishmentJob).to receive(:perform_later)
+
+          agent_run.provision_container
+
+          expect(PoolReplenishmentJob).to have_received(:perform_later).with(agent_run.project_id)
+        end
       end
 
       describe "#execute_in_container (runner shim)" do
@@ -2294,6 +2330,25 @@ RSpec.describe AgentRun do
           )
           expect(result).to be_success
           expect(result[:stdout]).to eq("runner-output\n")
+        end
+
+        it "merges per-call env into the handle metadata passed to the runner" do
+          agent_run = create(:agent_run, worktree_path: worktree_path)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          mock_handle.metadata["agent_run_id"] = agent_run.id
+          mock_handle.metadata["environment"] = { "EXISTING_VAR" => "keep-me" }
+          agent_run.instance_variable_set(:@current_handle, mock_handle)
+
+          agent_run.execute_in_container("echo hello", env: { "KILOCODE_CONFIG_B64" => "abc123" })
+
+          expect(mock_runner).to have_received(:start) do |**kwargs|
+            expect(kwargs[:handle].metadata["environment"]).to eq(
+              "EXISTING_VAR" => "keep-me", "KILOCODE_CONFIG_B64" => "abc123"
+            )
+          end
+          # The original handle is left untouched so later calls without env
+          # do not inherit a previous call's per-call variables.
+          expect(mock_handle.metadata["environment"]).to eq("EXISTING_VAR" => "keep-me")
         end
 
         it "falls back to old path when flag is enabled but no handle is set" do
