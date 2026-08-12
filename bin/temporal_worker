@@ -3,6 +3,7 @@
 
 require_relative "../config/environment"
 require_relative "../lib/paid/temporal_observability"
+require_relative "../lib/paid/worker_readiness"
 
 # Explicitly load temporalio — the initializer defers it for web process boot
 # performance, but the worker process needs the full gem loaded upfront.
@@ -236,6 +237,7 @@ end
     end
 
     warn "Received #{signal}, shutting down Temporal workers gracefully"
+    Paid::WorkerReadiness.mark_not_ready!
     request_shutdown.call(reason: "#{signal} received")
 
     force_exit_thread ||= Thread.new do
@@ -247,4 +249,9 @@ end
 end
 
 # Run the selected worker set in the same process, sharing the cancellation token.
+# Mark readiness just before blocking: the workers are constructed and the client
+# connection is established, so polling will begin immediately inside run_all.
+at_exit { Paid::WorkerReadiness.mark_not_ready! }
+Paid::WorkerReadiness.mark_ready!
+puts "Temporal worker ready (readiness file: #{Paid::WorkerReadiness.file_path})"
 Temporalio::Worker.run_all(*workers, cancellation: shutdown_cancellation)

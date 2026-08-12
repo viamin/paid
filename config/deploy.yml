@@ -38,6 +38,9 @@ servers:
         - /var/run/docker.sock:/var/run/docker.sock
     env:
       clear:
+        # Unique readiness flag for this role (see docs/SCALING.md § Worker
+        # Readiness Signals). Keeps colocated workers from sharing one flag.
+        WORKER_READINESS_FILE: /tmp/paid-worker-ready-jobs
         # Preserve startup bootstrap jobs when GoodJob runs out-of-process via bin/jobs.
         GOOD_JOB_BOOTSTRAP_ON_START: true
         # GoodJob worker thread pool size (default: 11). Must not exceed DB_POOL.
@@ -83,6 +86,10 @@ servers:
     env:
       clear:
         TEMPORAL_WORKER_MODE: poll
+        # Unique readiness flag for this role (see docs/SCALING.md § Worker
+        # Readiness Signals). Distinct from worker_agent so a drain on one
+        # does not remove the other's flag on this shared host.
+        WORKER_READINESS_FILE: /tmp/paid-worker-ready-temporal_worker-poll
   worker_agent:
     hosts:
       - 192.168.0.1
@@ -95,6 +102,10 @@ servers:
     env:
       clear:
         TEMPORAL_WORKER_MODE: agent
+        # Unique readiness flag for this role (see docs/SCALING.md § Worker
+        # Readiness Signals). Distinct from worker_poll so a drain on one
+        # does not remove the other's flag on this shared host.
+        WORKER_READINESS_FILE: /tmp/paid-worker-ready-temporal_worker-agent
 
 # Enable SSL auto certification via Let's Encrypt and allow for multiple apps on a single web server.
 # If used with Cloudflare, set encryption mode in SSL/TLS setting to "Full" to enable CF-to-app encryption.

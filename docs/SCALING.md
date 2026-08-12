@@ -466,3 +466,110 @@ proxy and the Git credential proxy. Subscription-auth and direct-outbound provid
 runs are explicit exceptions: they use `paid_internal` so their provider CLIs can
 reach upstream APIs directly. Service containers are placed on the same network
 as the agent run that needs them.
+
+## Health Checks and Graceful Shutdown
+
+### Health Check Endpoints
+
+The web (Puma) process exposes distinct liveness and readiness endpoints for
+cloud schedulers and load balancers:
+
+| Endpoint | Purpose | Returns 503 when |
+|----------|---------|-------------------|
+| `GET /live` | Liveness — process is alive | Never (200 if the process responds) |
+| `GET /ready` | Readiness — can serve traffic | DB, Redis, or Temporal unreachable |
+| `GET /up` | Combined (Rails default) | App fails to boot |
+| `GET /health/readiness` | Alias for `/ready` | Same as `/ready` |
+| `GET /health/liveness` | Alias for `/live` | Same as `/live` |
+| `GET /health/services` | Legacy Qdrant-only check | Qdrant unreachable |
+
+**Recommended probe configuration:**
+
+- **Liveness probe** → `GET /live`. A failed liveness probe triggers a restart.
+  Use a generous failure threshold (3 consecutive failures) to avoid restarts
+  during transient blips.
+- **Readiness probe** → `GET /ready`. A failed readiness probe stops traffic
+  routing but does not restart the process. Use this for rolling deploys.
+
+The readiness check verifies:
+
+- **Database** — `SELECT 1` succeeds
+- **Migrations** — no pending migrations
+- **Redis** — `PING` returns `PONG` (2s timeout)
+- **Temporal** — client connection is live (2s timeout)
+- **Qdrant** — client `healthy?` (only when `QDRANT_URL` is set)
+
+Each check is independently reported in the JSON response. A process with
+unreachable dependencies reports `not_ready` (HTTP 503), not crashed.
+
+### Worker Readiness Signals
+
+Background worker processes (`bin/temporal_worker`, `bin/jobs`) do not serve
+HTTP. They signal readiness via a file-based flag:
+
+- On startup, the worker writes a ready-flag file to `WORKER_READINESS_FILE`.
+- On SIGTERM (graceful shutdown), the file is removed, signaling the
+  orchestrator that the worker is draining.
+
+**Each worker process must use a distinct flag file.** `config/deploy.yml`
+colocates `bin/jobs` and two `bin/temporal_worker` processes (`worker_poll`
+and `worker_agent`) on the same host. A single shared path would let one
+worker's graceful shutdown remove the flag for all of them, so an
+orchestrator could not tell which worker is actually draining. Each role
+therefore sets `WORKER_READINESS_FILE` explicitly:
+
+| Role | `WORKER_READINESS_FILE` |
+|------|-------------------------|
+| `job` | `/tmp/paid-worker-ready-jobs` |
+| `worker_poll` | `/tmp/paid-worker-ready-temporal_worker-poll` |
+| `worker_agent` | `/tmp/paid-worker-ready-temporal_worker-agent` |
+
+If `WORKER_READINESS_FILE` is unset (e.g. local development), the default is
+scoped per worker by program name plus `TEMPORAL_WORKER_MODE`
+(`#{Dir.tmpdir}/paid-worker-ready-<program>[-<mode>]`), so colocated workers
+still get independent flags without explicit configuration. Override it per
+process if you run multiple instances of the same role on one host.
+
+An orchestrator or sidecar checks a **specific** role's readiness with:
+
+```bash
+test -f "$WORKER_READINESS_FILE" && exit 0 || exit 1
+```
+
+During a rolling deploy, wait for the new worker's ready flag before removing
+the old worker.
+
+### Termination Grace Periods
+
+When a cloud scheduler sends SIGTERM, each worker process initiates a graceful
+shutdown with a bounded window, then force-exits if the shutdown does not
+complete. The scheduler's **termination grace period** must be at least as long
+as the total force-exit timeout for each worker process type:
+
+| Process | Graceful window | Force-exit buffer | Total | Grace period ≥ |
+|---------|----------------|-------------------|-------|----------------|
+| Temporal worker | `TEMPORAL_GRACEFUL_SHUTDOWN_PERIOD` (30s) | `TEMPORAL_FORCE_EXIT_BUFFER_SECONDS` (10s) | 40s | **40s** |
+| GoodJob worker | `GOOD_JOB_SHUTDOWN_TIMEOUT` (25s) | `GOOD_JOB_FORCE_EXIT_BUFFER_SECONDS` (10s) | 35s | **35s** |
+| Web (Puma) | `WORKER_SHUTDOWN_TIMEOUT` (30s) | — | 30s | **30s** |
+
+**Kubernetes:** set `terminationGracePeriodSeconds` to at least **45** (max
+worker total + headroom) on all worker pod templates.
+
+```yaml
+spec:
+  terminationGracePeriodSeconds: 45
+```
+
+**Kamal / Docker:** the default Docker stop timeout is 10s — too short. Set
+`stop_timeout` on each service to at least 45s:
+
+```yaml
+# config/deploy.yml (Kamal)
+server:
+  host: ...
+  options:
+    stop_timeout: 45
+```
+
+If you tune the graceful shutdown periods up (e.g., for very long-running
+activities), increase the termination grace period proportionally.

@@ -10,7 +10,14 @@ Rails.application.routes.draw do
 
   # Reveal health status on /up that returns 200 if the app boots with no exceptions, otherwise 500.
   # Can be used by load balancers and uptime monitors to verify that the app is live.
+  # Kept for docker-compose backward compatibility.
   get "up" => "rails/health#show", :as => :rails_health_check
+  # Cloud-deployment health probes (see app/controllers/health_controller.rb):
+  #   /ready — readiness: DB, Redis, Temporal, Qdrant (gate traffic routing)
+  #   /live  — liveness: process is up (trigger restart if hung)
+  get "ready", to: "health#readiness"
+  get "live", to: "health#liveness"
+  # Legacy aliases (backward compatibility for existing integrations).
   get "health/services", to: "health#show"
   get "health/liveness", to: "health#liveness"
   get "health/readiness", to: "health#readiness"
