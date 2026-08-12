@@ -145,10 +145,10 @@ retry finds a persisted `runner_handle`, `AgentRun#provision_via_runner` routes
 through `reuse_or_reconcile_via_runner`: it loads the handle via
 `RunnerHandle.from_record`, checks `runner.running?`, and either reuses the
 still-running environment or cleans up a dead/missing one before provisioning
-fresh. A data migration backfills `runner_handle` from existing `container_id`
-+ `container_host` so legacy rows are immediately recoverable. The column is
-also added to `container_pool_entries` and `service_containers` so future pool
-and service-container code can store runner handles.
+fresh. A data migration backfills `runner_handle` from existing
+`container_id` + `container_host` so legacy rows are immediately recoverable.
+The column is also added to `container_pool_entries` and `service_containers`
+so future pool and service-container code can store runner handles.
 
 ## References
 
