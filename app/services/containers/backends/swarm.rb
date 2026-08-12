@@ -184,6 +184,10 @@ module Containers
         containers + list_node_local_containers(options:, exclude_ids: service_task_container_ids)
       end
 
+      def list_preview_containers
+        list_containers(filters: { label: [ "#{Previews::TunnelManager::PREVIEW_TUNNEL_LABEL}=true" ] }.to_json)
+      end
+
       def get_network(name)
         Docker::Network.get(name, {}, manager_connection)
       end
