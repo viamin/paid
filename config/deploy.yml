@@ -31,7 +31,15 @@ image: paid
   # over the local unix socket (the `local` backend, the default). When
   # CONTAINER_BACKEND points at a remote Docker host (`remote`) or a Swarm
   # manager (`swarm`), the app connects over TCP/TLS and the mount is omitted.
+  #
   # Set CONTAINER_BACKEND in the shell that runs `bin/kamal` to switch modes.
+  # The same value is propagated into every container via the global `env.clear`
+  # block below, so the runtime backend the app selects (see
+  # config/initializers/container_backend.rb and app/services/containers.rb)
+  # cannot diverge from the mount decision made here. Operators who prefer to
+  # inject the value separately (e.g. `kamal env push -d CONTAINER_BACKEND=...`)
+  # should override or remove the global `CONTAINER_BACKEND` line below so the
+  # two sources cannot disagree.
   container_backend = ENV.fetch("CONTAINER_BACKEND", "local").to_s
   mount_docker_socket = !%w[remote swarm].include?(container_backend)
 -%>
@@ -165,6 +173,12 @@ env:
   secret:
     - RAILS_MASTER_KEY
   clear:
+    # Propagated from the ERB block above so the container's runtime backend
+    # (config/initializers/container_backend.rb, app/services/containers.rb)
+    # matches the docker-socket mount decision made here. Operators overriding
+    # CONTAINER_BACKEND out-of-band should reconcile both sources.
+    CONTAINER_BACKEND: <%= container_backend %>
+
     # Run GoodJob in a dedicated process (the `job` role) instead of in-process.
     # Applies to all roles:
     #   - web:        no in-process job execution (avoids OOM'ing the web server)
