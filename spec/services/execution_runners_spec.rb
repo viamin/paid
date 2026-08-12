@@ -218,8 +218,7 @@ RSpec.describe ExecutionRunners do
         expect(result).not_to be_failure
         expect(result.exit_code).to eq(0)
         expect(result.oom_killed).to be(false)
-        expect(result.timeout_type).to be_nil
-        expect(result.abort_info).to be_nil
+        expect(result.environment_running).to be_nil
       end
     end
 
@@ -233,18 +232,6 @@ RSpec.describe ExecutionRunners do
         expect(result.oom_killed).to be(true)
         expect(result.memory_limit_bytes).to eq(1024)
         expect(result.environment_running).to be(false)
-      end
-
-      it "builds a failed result carrying timeout classification" do
-        result = described_class.failure(exit_code: 137, timeout_type: :startup)
-
-        expect(result.timeout_type).to eq(:startup)
-      end
-
-      it "builds a failed result carrying abort info" do
-        result = described_class.failure(exit_code: 1, abort_info: { matched_output: "quota", source: :pattern })
-
-        expect(result.abort_info).to eq(matched_output: "quota", source: :pattern)
       end
     end
   end

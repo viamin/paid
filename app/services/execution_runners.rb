@@ -335,9 +335,11 @@ module ExecutionRunners
 
   # Outcome of running a workload. Consolidates the existing
   # +Containers::Provision::Result+ patterns so callers no longer reach into
-  # the Docker result object. Carries +timeout_type+ and +abort_info+ so a
-  # structured failure records *why* it failed alongside the captured output,
-  # even when the runner returns a result rather than raising (RDR-054).
+  # the Docker result object. Watchdog terminations (startup/idle/wall-clock
+  # timeout, abort pattern / streaming-event match) are surfaced through the
+  # typed error hierarchy (StartupTimeoutError, IdleTimeoutError, TimeoutError,
+  # OutputAbortError) raised by +#start+ rather than as fields here, so this
+  # value object only describes workloads that ran to an exit (RDR-054).
   # @spec CONTAINER-RUNTIME-009
   # @spec CONTAINER-RUNTIME-015
   ExecutionResult = Data.define(
@@ -347,13 +349,8 @@ module ExecutionRunners
     :exit_code,           # Integer
     :oom_killed,          # Boolean
     :memory_limit_bytes,  # Integer, nil
-    :environment_running, # Boolean, nil — whether the launched environment is
+    :environment_running  # Boolean, nil — whether the launched environment is
     # still running after the workload exited (used for OOM diagnostics)
-    :timeout_type,        # Symbol, nil — :startup | :idle | :wall_clock when the
-    # workload was terminated by a watchdog timeout (only set when the runner
-    # returns a result instead of raising the typed error)
-    :abort_info           # Hash, nil — { matched_output:, source:, detail: } when
-    # the workload was terminated by an abort-pattern / streaming-event match
   ) do
     def success?
       success
@@ -365,17 +362,14 @@ module ExecutionRunners
 
     def self.success(stdout: "", stderr: "", exit_code: 0)
       new(success: true, stdout: stdout, stderr: stderr, exit_code: exit_code,
-          oom_killed: false, memory_limit_bytes: nil, environment_running: nil,
-          timeout_type: nil, abort_info: nil)
+          oom_killed: false, memory_limit_bytes: nil, environment_running: nil)
     end
 
     def self.failure(exit_code:, stdout: "", stderr: "",
-                     oom_killed: false, memory_limit_bytes: nil, environment_running: nil,
-                     timeout_type: nil, abort_info: nil)
+                     oom_killed: false, memory_limit_bytes: nil, environment_running: nil)
       new(success: false, stdout: stdout, stderr: stderr, exit_code: exit_code,
           oom_killed: oom_killed, memory_limit_bytes: memory_limit_bytes,
-          environment_running: environment_running, timeout_type: timeout_type,
-          abort_info: abort_info)
+          environment_running: environment_running)
     end
   end
 
