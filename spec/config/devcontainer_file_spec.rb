@@ -14,6 +14,7 @@ RSpec.describe DevcontainerFile, :no_db do
 
   let(:oh_my_pi_installer) { Rails.root.join(".devcontainer/install-oh-my-pi.sh").read }
   let(:ponytail_installer) { Rails.root.join(".devcontainer/install-ponytail.sh").read }
+  let(:impeccable_installer) { Rails.root.join(".devcontainer/install-impeccable.sh").read }
 
   it "installs opencode through the shared contract wrapper" do
     command = devcontainer.fetch("postCreateCommand").fetch("opencode")
@@ -48,6 +49,17 @@ RSpec.describe DevcontainerFile, :no_db do
     expect(ponytail_installer).to include("codex plugin marketplace add DietrichGebert/ponytail")
     expect(ponytail_installer).to include('opencode plugin --global "$PONYTAIL_NPM_PACKAGE"')
     expect(ponytail_installer).to include('omp plugin install "$PONYTAIL_OMP_TARGET"')
+  end
+
+  it "installs Impeccable for the devcontainer agent CLIs" do
+    command = devcontainer.fetch("postCreateCommand").fetch("setup")
+
+    expect(command).to include("bash .devcontainer/install-impeccable.sh")
+    expect(command).to match(/install-ponytail\.sh.*install-impeccable\.sh.*configure-llm-tools\.sh/)
+    expect(impeccable_installer).to include('IMPECCABLE_PACKAGE="${IMPECCABLE_PACKAGE:-impeccable@3.5.0}"')
+    expect(impeccable_installer).to include('IMPECCABLE_PROVIDERS="${IMPECCABLE_PROVIDERS:-claude,codex,opencode,pi}"')
+    expect(impeccable_installer).to include('IMPECCABLE_SCOPE="${IMPECCABLE_SCOPE:-global}"')
+    expect(impeccable_installer).to include('npx --yes "$IMPECCABLE_PACKAGE" install')
   end
 
   it "re-runs setup on every start to restore the detached dev supervisor" do
