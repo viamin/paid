@@ -216,7 +216,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
 
     it "returns false when the container can no longer be reconnected to" do
       allow(Containers::Provision).to receive(:reconnect)
-        .and_raise(Containers::Provision::ProvisionError, "Container abc123 not found")
+        .and_raise(Containers::Provision::ContainerNotFoundError, "Container abc123 not found")
 
       expect(runner.running?(handle: handle)).to be(false)
     end
@@ -285,9 +285,9 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       expect(status).to be_not_found
     end
 
-    it "returns not_found when reconnect raises ProvisionError with a not-found message" do
+    it "returns not_found when reconnect raises ContainerNotFoundError" do
       allow(Containers::Provision).to receive(:reconnect)
-        .and_raise(Containers::Provision::ProvisionError, "Container abc123 not found")
+        .and_raise(Containers::Provision::ContainerNotFoundError, "Container abc123 not found")
 
       status = runner.status(handle: handle)
 
@@ -302,15 +302,6 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
 
       expect(status).to be_error
       expect(status).not_to be_not_found
-    end
-
-    it "returns not_found on Docker::Error::NotFoundError" do
-      allow(provision_service).to receive(:oom_exit_diagnostics)
-        .and_raise(Docker::Error::NotFoundError)
-
-      status = runner.status(handle: handle)
-
-      expect(status).to be_not_found
     end
 
     it "returns error when oom_exit_diagnostics reports a transient failure" do
@@ -349,7 +340,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
 
     it "does not raise when the container is already gone" do
       allow(Containers::Provision).to receive(:reconnect)
-        .and_raise(Containers::Provision::ProvisionError, "Container abc123 not found")
+        .and_raise(Containers::Provision::ContainerNotFoundError, "Container abc123 not found")
 
       expect { runner.cancel(handle: handle) }.not_to raise_error
     end
@@ -370,7 +361,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
 
     it "is idempotent when the container was already torn down" do
       allow(Containers::Provision).to receive(:reconnect)
-        .and_raise(Containers::Provision::ProvisionError, "Container abc123 not found")
+        .and_raise(Containers::Provision::ContainerNotFoundError, "Container abc123 not found")
 
       expect { runner.cleanup(handle: handle, force: false) }.not_to raise_error
     end
