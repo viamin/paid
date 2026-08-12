@@ -22,7 +22,7 @@ module ExecutionRunners
   # @spec CONTAINER-RUNTIME-012
   # @spec CONTAINER-RUNTIME-013
   # @spec CONTAINER-RUNTIME-014
-  # @spec CONTAINER-RUNTIME-016
+  # @spec CONTAINER-RUNTIME-017
   class LocalDockerRunner < Base
     RUNNER_TYPE = :local_docker
 
@@ -69,7 +69,7 @@ module ExecutionRunners
 
     def start(handle:, command:, timeout: nil, startup_timeout: nil, idle_timeout: nil,
               abort_patterns: nil, preparation: nil, heartbeat_path: nil)
-      result = reconnect(handle).execute(
+      result = reconnect(handle: handle).execute(
         command, timeout: timeout, startup_timeout: startup_timeout, idle_timeout: idle_timeout,
         env: handle.metadata["environment"] || {}, preparation: preparation,
         heartbeat_path: heartbeat_path, abort_patterns: abort_patterns
@@ -90,14 +90,31 @@ module ExecutionRunners
     end
 
     def running?(handle:)
-      reconnect(handle).container_running?
+      reconnect(handle: handle).container_running?
     rescue Containers::Provision::ProvisionError
       false
     end
 
+    # Reconnect to an existing Docker container from a persisted handle.
+    # Translates the handle's identifier back to a Docker container ID and
+    # delegates to +Containers::Provision.reconnect+. Used by Temporal activity
+    # retries to recover after a worker restart/failover (RDR-054).
+    def reconnect(handle:)
+      agent_run = AgentRun.find(handle.metadata["agent_run_id"])
+      Containers::Provision.reconnect(
+        agent_run: agent_run, container_id: handle.identifier,
+        worktree_path: handle.metadata["worktree_path"]
+      )
+    rescue ActiveRecord::RecordNotFound
+      # A missing AgentRun means the environment can no longer be reached.
+      # Translate to ProvisionError so every lifecycle method's existing
+      # rescue maps it to the right "gone" outcome (not_found / false / nil).
+      raise Containers::Provision::ProvisionError, "AgentRun not found"
+    end
+
     # @spec CONTAINER-RUNTIME-015
     def status(handle:)
-      state = reconnect(handle).container_status
+      state = reconnect(handle: handle).container_status
       return ExecutionStatus.not_found if state.empty?
 
       ExecutionStatus.new(
@@ -111,7 +128,7 @@ module ExecutionRunners
     end
 
     def cancel(handle:)
-      service = reconnect(handle)
+      service = reconnect(handle: handle)
       return unless service.container_running?
 
       # Containers::Provision#stop_container is private (only called from
@@ -125,7 +142,7 @@ module ExecutionRunners
     end
 
     def cleanup(handle:, force: false)
-      reconnect(handle).cleanup(force: force)
+      reconnect(handle: handle).cleanup(force: force)
       nil
     rescue Containers::Provision::ProvisionError
       nil
@@ -305,19 +322,6 @@ module ExecutionRunners
           environment_running: result[:container_running]
         )
       end
-    end
-
-    def reconnect(handle)
-      agent_run = AgentRun.find(handle.metadata["agent_run_id"])
-      Containers::Provision.reconnect(
-        agent_run: agent_run, container_id: handle.identifier,
-        worktree_path: handle.metadata["worktree_path"]
-      )
-    rescue ActiveRecord::RecordNotFound
-      # A missing AgentRun means the environment can no longer be reached.
-      # Translate to ProvisionError so every lifecycle method's existing
-      # rescue maps it to the right "gone" outcome (not_found / false / nil).
-      raise Containers::Provision::ProvisionError, "AgentRun not found"
     end
   end
 end

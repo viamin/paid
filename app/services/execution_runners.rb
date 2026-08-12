@@ -247,6 +247,25 @@ module ExecutionRunners
         metadata: data["metadata"] || {}
       )
     end
+
+    # Reconstruct a handle from a persisted record (e.g. an AgentRun with a
+    # +runner_handle+ jsonb column). Returns nil when no handle is stored, so
+    # callers can branch on handle presence without a separate query.
+    # @param record [Object] a record responding to +#runner_handle+
+    # @return [RunnerHandle, nil]
+    def self.from_record(record)
+      return nil if record.runner_handle.blank?
+
+      from_json(record.runner_handle)
+    end
+
+    # Serializes the handle to a JSON-native hash suitable for persisting in a
+    # DB jsonb column. Round-trips losslessly through {.from_json} /
+    # {.from_record}.
+    # @return [Hash]
+    def to_storage
+      as_json
+    end
   end
 
   # Provider-neutral networking policy, replacing Docker network names.
@@ -275,7 +294,7 @@ module ExecutionRunners
   #                          policy implementation never has to inspect Docker
   #                          network state.
   # @spec CONTAINER-RUNTIME-009
-  # @spec CONTAINER-RUNTIME-016
+  # @spec CONTAINER-RUNTIME-017
   NetworkingPolicy = Data.define(:mode, :firewall, :allow_destinations) do
     RESTRICTED_MODE = :proxy_restricted
 

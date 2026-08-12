@@ -2054,6 +2054,21 @@ RSpec.describe AgentRun do
       end
 
       describe "#recover_in_flight_container!" do
+        let(:runner_handle) do
+          ExecutionRunners::RunnerHandle.new(
+            runner_type: :local_docker,
+            identifier: "runner-container-999",
+            host: "remote",
+            workspace_ref: "paid-workspace-42",
+            metadata: { "agent_run_id" => 42, "worktree_path" => nil, "environment" => {} }
+          )
+        end
+        let(:mock_runner) { instance_double(ExecutionRunners::LocalDockerRunner) }
+
+        before do
+          allow(ExecutionRunners).to receive(:resolve_for).and_return(mock_runner)
+        end
+
         it "records an in-flight container that provisioning created but never persisted" do
           agent_run = create(:agent_run, worktree_path: worktree_path, container_id: nil)
           service = instance_double(Containers::Provision)
@@ -2087,6 +2102,49 @@ RSpec.describe AgentRun do
 
           expect(agent_run.recover_in_flight_container!).to be_nil
           expect(agent_run.reload.container_id).to be_nil
+        end
+
+
+
+        it "runner path: persists in-flight runner handle when the runner path produces an unrecorded container" do
+          agent_run = create(:agent_run, worktree_path: worktree_path, container_id: nil)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          agent_run.instance_variable_set(:@current_handle, runner_handle)
+
+          result = agent_run.recover_in_flight_container!
+
+          expect(result).to eq("runner-container-999")
+          reloaded = agent_run.reload
+          expect(reloaded.container_id).to eq("runner-container-999")
+          expect(reloaded.container_host).to eq("remote")
+          handle = ExecutionRunners::RunnerHandle.from_record(reloaded)
+          expect(handle).not_to be_nil
+          expect(handle.identifier).to eq("runner-container-999")
+          expect(handle.host).to eq("remote")
+          expect(handle.runner_type).to eq(:local_docker)
+        end
+
+        it "runner path: is a no-op when a container_id is already recorded" do
+          agent_run = create(:agent_run, worktree_path: worktree_path, container_id: "existing")
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          agent_run.instance_variable_set(:@current_handle, runner_handle)
+
+          expect(agent_run.recover_in_flight_container!).to be_nil
+          expect(agent_run.reload.container_id).to eq("existing")
+        end
+
+        it "runner path: falls back to the legacy path when the runner feature flag is off" do
+          agent_run = create(:agent_run, worktree_path: worktree_path, container_id: nil)
+          service = instance_double(Containers::Provision)
+          backend = instance_double(Containers::Backends::LocalDocker)
+          allow(service).to receive_messages(container: mock_container, backend: backend)
+          allow(backend).to receive(:container_host_for).with(mock_container).and_return("local")
+          agent_run.instance_variable_set(:@container_service, service)
+
+          result = agent_run.recover_in_flight_container!
+
+          expect(result).to eq("abc123container")
+          expect(agent_run.reload.container_id).to eq("abc123container")
         end
       end
 
@@ -2307,6 +2365,135 @@ RSpec.describe AgentRun do
 
           expect(captured_spec).to be_a(ExecutionRunners::RunSpec)
           expect(captured_spec.networking_policy).to be_a(ExecutionRunners::NetworkingPolicy)
+        end
+
+        it "persists runner_handle alongside container_id when provisioning via the runner" do
+          agent_run = create(:agent_run, worktree_path: worktree_path)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          allow(Containers::PoolManager).to receive(:new)
+            .with(project: agent_run.project)
+            .and_return(instance_double(Containers::PoolManager, acquire: nil))
+
+          agent_run.provision_container
+
+          reloaded = agent_run.reload
+          expect(reloaded.container_id).to eq("runner-container-123")
+          handle = ExecutionRunners::RunnerHandle.from_record(reloaded)
+          expect(handle).not_to be_nil
+          expect(handle.identifier).to eq("runner-container-123")
+          expect(handle.host).to eq("local")
+          expect(handle.runner_type).to eq(:local_docker)
+        end
+
+        it "does not persist runner_handle when a pool container is claimed" do
+          agent_run = create(:agent_run, worktree_path: nil)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          pooled_result = Containers::Provision::Result.success(
+            container_id: "warm-container", container_host: "remote",
+            service: instance_double(Containers::Provision), pool_entry_id: 123
+          )
+          allow(Containers::PoolManager).to receive(:new)
+            .with(project: agent_run.project)
+            .and_return(instance_double(Containers::PoolManager, acquire: pooled_result))
+
+          agent_run.provision_container
+
+          expect(agent_run.reload.container_id).to eq("warm-container")
+          expect(agent_run.reload.runner_handle).to be_nil
+        end
+      end
+
+      describe "#provision_container (runner handle recovery)" do
+        let(:mock_runner) { instance_double(ExecutionRunners::LocalDockerRunner) }
+
+        before do
+          allow(ExecutionRunners).to receive(:resolve_for).and_return(mock_runner)
+        end
+
+        def build_handle(run, identifier: "runner-container-123")
+          ExecutionRunners::RunnerHandle.new(
+            runner_type: :local_docker,
+            identifier: identifier,
+            host: "local",
+            workspace_ref: "paid-workspace-#{run.id}",
+            metadata: { "agent_run_id" => run.id, "worktree_path" => nil, "environment" => {} }
+          )
+        end
+
+        it "reuses a still-running environment from a persisted runner handle" do
+          agent_run = create(:agent_run, worktree_path: worktree_path,
+                             container_id: "runner-container-123", container_host: "local")
+          agent_run.update!(runner_handle: build_handle(agent_run).to_storage)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          allow(mock_runner).to receive_messages(running?: true, cleanup: nil)
+
+          result = agent_run.provision_container
+
+          expect(result).to be_success
+          expect(result[:container_id]).to eq("runner-container-123")
+          expect(mock_runner).to have_received(:running?)
+          expect(mock_runner).not_to have_received(:cleanup)
+        end
+
+        it "cleans up a dead environment and provisions fresh from the runner handle" do
+          agent_run = create(:agent_run, worktree_path: worktree_path,
+                             container_id: "runner-container-123", container_host: "local")
+          agent_run.update!(runner_handle: build_handle(agent_run).to_storage)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          fresh_handle = build_handle(agent_run, identifier: "fresh-container")
+          allow(mock_runner).to receive_messages(running?: false, cleanup: nil, provision: fresh_handle)
+          allow(Containers::PoolManager).to receive(:new)
+            .with(project: agent_run.project)
+            .and_return(instance_double(Containers::PoolManager, acquire: nil))
+          allow(PoolReplenishmentJob).to receive(:perform_later)
+
+          result = agent_run.provision_container
+
+          expect(result).to be_success
+          expect(result[:container_id]).to eq("fresh-container")
+          expect(mock_runner).to have_received(:cleanup).with(handle: anything, force: true)
+          expect(mock_runner).to have_received(:provision)
+          reloaded = agent_run.reload
+          expect(reloaded.container_id).to eq("fresh-container")
+          handle = ExecutionRunners::RunnerHandle.from_record(reloaded)
+          expect(handle.identifier).to eq("fresh-container")
+        end
+
+        it "reconciles a missing environment without error and provisions fresh" do
+          agent_run = create(:agent_run, worktree_path: worktree_path,
+                             container_id: "gone-container", container_host: "local")
+          agent_run.update!(runner_handle: build_handle(agent_run, identifier: "gone-container").to_storage)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          fresh_handle = build_handle(agent_run, identifier: "fresh-container")
+          allow(mock_runner).to receive(:running?).with(handle: anything).and_return(false)
+          allow(mock_runner).to receive(:cleanup).with(handle: anything, force: true)
+          allow(mock_runner).to receive(:provision).and_return(fresh_handle)
+          allow(Containers::PoolManager).to receive(:new)
+            .with(project: agent_run.project)
+            .and_return(instance_double(Containers::PoolManager, acquire: nil))
+          allow(PoolReplenishmentJob).to receive(:perform_later)
+
+          result = agent_run.provision_container
+
+          expect(result).to be_success
+          expect(result[:container_id]).to eq("fresh-container")
+          expect(mock_runner).to have_received(:cleanup)
+        end
+
+        it "clears runner_handle on cleanup via the runner" do
+          agent_run = create(:agent_run, worktree_path: worktree_path,
+                             container_id: "runner-container-123", container_host: "local")
+          handle = build_handle(agent_run)
+          agent_run.update!(runner_handle: handle.to_storage)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          allow(mock_runner).to receive(:cleanup)
+          agent_run.instance_variable_set(:@current_handle, handle)
+
+          agent_run.cleanup_container(force: true)
+
+          reloaded = agent_run.reload
+          expect(reloaded.container_id).to be_nil
+          expect(reloaded.runner_handle).to be_nil
         end
       end
 

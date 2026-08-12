@@ -2475,7 +2475,7 @@ class AgentRun < ApplicationRecord
     # Container may already be gone; clear the reference anyway
     @container_service = nil
     @current_handle = nil
-    update!(container_id: nil)
+    update!(container_id: nil, runner_handle: nil)
     # The container is gone but the workspace volume may still exist.
     # Provision#cleanup would normally handle this in its ensure block,
     # but we never reached it, so clean up the volume directly.
@@ -2484,6 +2484,15 @@ class AgentRun < ApplicationRecord
 
   # Persists the id of a container that provisioning created but never
   # recorded, so a later CleanupContainerActivity can tear it down.
+  #
+  # Two paths:
+  # 1. Runner path (+execution_runner_enabled?+): when the runner provisioned
+  #    the environment and the handle is in memory (+@current_handle+) but
+  #    not yet persisted, persists +runner_handle+ alongside +container_id+
+  #    and +container_host+ (RDR-054).
+  # 2. Legacy path: recovers the in-flight Docker container from
+  #    +@container_service+ when a provisioning worker was forcibly
+  #    terminated before the container id could be recorded.
   #
   # Containers::Provision#provision creates the Docker container at
   # +@container = create_container+ but only records it here once the full
@@ -2501,6 +2510,26 @@ class AgentRun < ApplicationRecord
   def recover_in_flight_container!
     return if container_id.present?
 
+    # Runner path: persist the in-flight handle before Thread#kill discards it.
+    if execution_runner_enabled? && @current_handle && runner_handle.blank?
+      handle_hash = @current_handle.to_storage
+      self.class.where(id: id, runner_handle: nil)
+        .update_all(runner_handle: handle_hash, container_id: @current_handle.identifier,
+                    container_host: @current_handle.host)
+      self.runner_handle = handle_hash
+      self.container_id = @current_handle.identifier
+      self.container_host = @current_handle.host
+      Rails.logger.info(
+        message: "container_manager.recovered_in_flight_runner_handle",
+        agent_run_id: id,
+        runner_type: @current_handle.runner_type.to_s,
+        identifier: @current_handle.identifier,
+        container_host: @current_handle.host
+      )
+      return @current_handle.identifier
+    end
+
+    # Legacy path: recover the in-flight Docker container.
     service = @container_service
     container = service&.container
     return unless container
@@ -2575,7 +2604,14 @@ class AgentRun < ApplicationRecord
   # pool-first behavior directly rather than pushing it into
   # LocalDockerRunner#provision, keeping the pool/replenish contract in one
   # place until pooling is designed into the runner contract itself.
+  #
+  # When a +runner_handle+ is already persisted (a prior provision via the
+  # runner that survived a worker restart), recovery goes through
+  # +reuse_or_reconcile_via_runner+ — the runner-level reconnect path —
+  # rather than the Docker-specific +reuse_or_reconcile_container+.
   def provision_via_runner(**options)
+    return reuse_or_reconcile_via_runner(**options) if runner_handle.present?
+
     return reuse_or_reconcile_container(**options) if container_id.present?
 
     planned_container_host = options.delete(:container_host)
@@ -2590,13 +2626,39 @@ class AgentRun < ApplicationRecord
     )
     spec = ExecutionRunners::RunSpec.from_agent_run(self, networking_policy: networking_policy, **options)
     @current_handle = runner.provision(spec: spec)
-    update!(container_id: @current_handle.identifier, container_host: @current_handle.host)
+    update!(container_id: @current_handle.identifier, container_host: @current_handle.host,
+            runner_handle: @current_handle.to_storage)
     PoolReplenishmentJob.perform_later(project_id)
 
     Containers::Provision::Result.success(
       container_id: @current_handle.identifier,
       container_host: @current_handle.host
     )
+  end
+
+  # Recovers a previously runner-provisioned environment from its persisted
+  # +RunnerHandle+ after a Temporal activity retry (worker restart/failover).
+  # Loads the handle from the DB, reconnects via the runner interface, and
+  # either reuses a still-running environment or cleans up a dead/missing one
+  # before provisioning fresh (RDR-054).
+  # @spec CONTAINER-RUNTIME-016
+  def reuse_or_reconcile_via_runner(**options)
+    handle = ExecutionRunners::RunnerHandle.from_record(self)
+    runner = ExecutionRunners.resolve_for(self)
+
+    if handle && runner.running?(handle: handle)
+      @current_handle = handle
+      Rails.logger.info(
+        message: "container_manager.provision_reused_existing",
+        agent_run_id: id,
+        container_id: container_id
+      )
+      return Containers::Provision::Result.success(container_id: handle.identifier, container_host: handle.host)
+    end
+
+    runner.cleanup(handle: handle, force: true) if handle
+    clear_runner_reference!
+    provision_via_runner(**options)
   end
 
   # Claims a warm container from the pool for this run, if one is
@@ -2669,7 +2731,16 @@ class AgentRun < ApplicationRecord
     nil
   ensure
     @current_handle = nil
-    update!(container_id: nil)
+    update!(container_id: nil, runner_handle: nil)
+  end
+
+  # Clears persisted container reference columns after a stale runner handle is
+  # cleaned up, so a subsequent provision starts from a clean slate. Uses
+  # +update_columns+ to bypass validations (the run may be in an inconsistent
+  # state mid-reconciliation).
+  def clear_runner_reference!
+    @current_handle = nil
+    update_columns(container_id: nil, runner_handle: nil)
   end
 
   def set_initiating_user_from_current_user
