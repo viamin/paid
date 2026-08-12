@@ -2293,6 +2293,21 @@ RSpec.describe AgentRun do
 
           expect(PoolReplenishmentJob).to have_received(:perform_later).with(agent_run.project_id)
         end
+
+        it "passes a NetworkingPolicy through to the runner via RunSpec" do
+          agent_run = create(:agent_run, worktree_path: worktree_path)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          allow(Containers::PoolManager).to receive(:new)
+            .with(project: agent_run.project)
+            .and_return(instance_double(Containers::PoolManager, acquire: nil))
+          captured_spec = nil
+          allow(mock_runner).to receive(:provision) { |spec:| captured_spec = spec; mock_handle }
+
+          agent_run.provision_container
+
+          expect(captured_spec).to be_a(ExecutionRunners::RunSpec)
+          expect(captured_spec.networking_policy).to be_a(ExecutionRunners::NetworkingPolicy)
+        end
       end
 
       describe "#execute_in_container (runner shim)" do

@@ -38,7 +38,7 @@ RSpec.describe ExecutionRunners do
         command: "claude code",
         resources: ExecutionRunners::ComputeRequirements.new(cpu_quota: 1, memory_bytes: 2, pids_limit: 3),
         environment: { "FOO" => "bar" },
-        networking_policy: ExecutionRunners::NetworkingPolicy.new(mode: :proxy, firewall: true),
+        networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted,
         workspace_strategy: :named_volume,
         services: [ ExecutionRunners::ServiceDeclaration.new(name: "postgres", image: "pg", port: 5432, env: {}, type: :database) ],
         secrets_config: { "auth" => "proxy" },
@@ -108,24 +108,27 @@ RSpec.describe ExecutionRunners do
   end
 
   describe ExecutionRunners::NetworkingPolicy do
-    it "treats proxy mode as restricted" do
-      policy = described_class.new(mode: :proxy, firewall: true)
+    it "treats proxy_restricted mode as restricted and firewall-required" do
+      policy = described_class.proxy_restricted(allow_destinations: [ { host: "10.0.0.1", port: 5432 } ])
 
       expect(policy).to be_restricted
       expect(policy).to be_firewall
+      expect(policy.allow_destinations).to eq([ { host: "10.0.0.1", port: 5432 } ])
     end
 
     it "treats subscription_auth mode as unrestricted" do
-      policy = described_class.new(mode: :subscription_auth, firewall: false)
+      policy = described_class.subscription_auth
 
       expect(policy).not_to be_restricted
       expect(policy).not_to be_firewall
+      expect(policy.allow_destinations).to eq([])
     end
 
     it "treats direct_outbound mode as unrestricted" do
-      policy = described_class.new(mode: :direct_outbound, firewall: false)
+      policy = described_class.direct_outbound
 
       expect(policy).not_to be_restricted
+      expect(policy).not_to be_firewall
     end
   end
 
