@@ -78,6 +78,16 @@ module Containers
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
+      # Lists containers that serve live-preview traffic for the tunnel
+      # server. The default filters by the preview tunnel label, which works
+      # for any Docker-backed backend. A non-Docker backend (e.g. a future
+      # remote runner) overrides this to return its own preview containers —
+      # or an empty set when previews run on a separate substrate the tunnel
+      # server cannot inspect.
+      def list_preview_containers
+        list_containers(filters: { label: [ "#{Previews::TunnelManager::PREVIEW_TUNNEL_LABEL}=true" ] }.to_json)
+      end
+
       def get_network(_name)
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end

@@ -37,6 +37,14 @@
   *Tests:* `spec/config/good_job_configuration_spec.rb`.
   *Code:* `Paid::GoodJobConfig`, `config/initializers/good_job.rb`.
 
+- [x] **RAILS-CONTROL-PLANE-007** — When multiple hosts run the GoodJob cron
+  scheduler, the system SHALL prevent duplicate scheduled jobs by stamping
+  every cron enqueue with a `(cron_key, cron_at)` pair guarded by the unique
+  index `index_good_jobs_on_cron_key_and_cron_at_cond`, so a second host firing
+  the same tick enqueues nothing.
+  *Tests:* `spec/config/good_job_cron_dedup_spec.rb`.
+  *Code:* `config/initializers/good_job.rb`, `db/schema.rb`.
+
 ## Current View Stack
 
 - [x] **RAILS-CONTROL-PLANE-004** — The control plane SHALL continue to ship

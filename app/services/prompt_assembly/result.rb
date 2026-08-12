@@ -1,18 +1,18 @@
 # frozen_string_literal: true
 
 module PromptAssembly
-  # The assembled output: prompt text plus the provenance explaining what
-  # reached the agent and why. Callers execute +prompt+ and persist
-  # +provenance+ for audit and preview.
+  # The output of a prompt assembly: prompt text plus provenance.
+  #
+  # +skipped+ records excluded or disabled sections as counts/provenance only —
+  # never bodies — so untrusted content cannot leak through the result.
   class Result
-    attr_reader :prompt, :sections, :skipped_sections, :warnings, :provenance
+    attr_reader :text, :sections, :skipped
 
-    def initialize(prompt:, sections:, skipped_sections: [], warnings: [], provenance: {})
-      @prompt = prompt
-      @sections = sections
-      @skipped_sections = skipped_sections
-      @warnings = warnings
-      @provenance = provenance
+    def initialize(text:, sections:, skipped: [])
+      @text = text.to_s
+      @sections = sections.freeze
+      @skipped = skipped.freeze
+      freeze
     end
   end
 end

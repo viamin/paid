@@ -217,6 +217,10 @@ module Previews
         first..last
       end
 
+      # Derives live service bindings from the backend abstraction rather than
+      # Docker-specific container filters, so a remote/non-Docker backend can
+      # supply preview containers without a local Docker socket.
+      # @spec LIVE-PREVIEW-008
       def active_server_bindings(backend: Containers.backend)
         list_preview_containers(backend:).filter_map do |container|
           build_active_binding(container)
@@ -315,7 +319,7 @@ module Previews
       end
 
       def list_preview_containers(backend:)
-        backend.list_containers(filters: { label: [ "#{PREVIEW_TUNNEL_LABEL}=true" ] }.to_json)
+        backend.list_preview_containers
       end
 
       def build_active_tunnel(container)

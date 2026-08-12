@@ -1,43 +1,86 @@
 # frozen_string_literal: true
 
 module PromptAssembly
-  # The trust model for prompt sections. Every section carries a trust level
-  # that classifies the provenance of its content and determines the only
-  # render mode under which the content may be assembled into a prompt.
+  # Centralized trust policy for prompt inputs.
   #
-  # Trust levels:
-  # - +trusted_instruction+: platform-authored safety/policy instructions.
-  # - +trusted_user_instruction+: tenant-authored prompts, style guides, and
-  #   other authenticated-user instructions.
-  # - +trusted_collaborator_context+: allowlisted GitHub collaborator content
-  #   (issue/PR bodies, comments, review threads) safe to treat as task text.
-  # - +quarantined_context+: repository and external content that may contain
-  #   hostile or stale instructions; rendered as quoted evidence only.
+  # @spec PROMPT-ASSEMBLY-001, PROMPT-ASSEMBLY-002, PROMPT-ASSEMBLY-007
+  #
+  # Single source of truth for whether a GitHub-authored input may reach an
+  # agent prompt. Reuses the existing allowlist predicates rather than
+  # inventing a second trust policy:
+  #
+  # - Project#trusted_github_user? — human collaborator allowlist
+  # - Project#paid_bot_author?     — Paid's own GitHub App bot identity
+  # - recognized Paid marker bodies — content Paid itself authored
   module Trust
-    TRUSTED_INSTRUCTION = "trusted_instruction"
-    TRUSTED_USER_INSTRUCTION = "trusted_user_instruction"
-    TRUSTED_COLLABORATOR_CONTEXT = "trusted_collaborator_context"
-    QUARANTINED_CONTEXT = "quarantined_context"
-
-    TRUST_LEVELS = [
-      TRUSTED_INSTRUCTION,
-      TRUSTED_USER_INSTRUCTION,
-      TRUSTED_COLLABORATOR_CONTEXT,
-      QUARANTINED_CONTEXT
+    # Markers Paid itself injects as its own bot. These re-admit structured
+    # content (enhancement questions, clarifying answers, review feedback)
+    # that Project#trusted_github_user? deliberately excludes because it is
+    # authored by the bot, not a human.
+    PAID_ADMITTED_MARKERS = [
+      ClarifyingQuestions::Parse::ENHANCEMENT_MARKER,
+      ClarifyingQuestions::Load::ANSWER_MARKER,
+      Github::ReviewMarker::PAID_REVIEW_MARKER
     ].freeze
 
-    RENDER_MODE_INSTRUCTION = :instruction
-    RENDER_MODE_CONTEXT = :context
+    module_function
 
-    RENDER_MODES = [ RENDER_MODE_INSTRUCTION, RENDER_MODE_CONTEXT ].freeze
+    # Whether +login+ is an allowlisted human collaborator.
+    def human_trusted?(project, login)
+      project.trusted_github_user?(login)
+    end
 
-    # The only render mode each trust level permits. Quarantined context may
-    # render as quoted evidence, never as instructions.
-    RENDER_MODES_BY_TRUST_LEVEL = {
-      TRUSTED_INSTRUCTION => RENDER_MODE_INSTRUCTION,
-      TRUSTED_USER_INSTRUCTION => RENDER_MODE_INSTRUCTION,
-      TRUSTED_COLLABORATOR_CONTEXT => RENDER_MODE_INSTRUCTION,
-      QUARANTINED_CONTEXT => RENDER_MODE_CONTEXT
-    }.freeze
+    # Whether +login+ is Paid's own GitHub App bot identity.
+    def paid_bot?(project, login)
+      project.paid_bot_author?(login)
+    end
+
+    # Paid-authored status comments that must never be fed back as actionable
+    # feedback (agent-update summaries, escalation notes).
+    def paid_status_comment?(body)
+      Activities::CompleteExistingPrRunActivity.agent_update_comment?(body) ||
+        body.to_s.include?(Activities::MarkEscalatedActivity::COMMENT_MARKER)
+    end
+
+    # Whether +body+ carries a recognized Paid-generated marker.
+    def paid_marker?(body)
+      text = body.to_s
+      PAID_ADMITTED_MARKERS.any? { |marker| text.include?(marker) }
+    end
+
+    # A Paid-authored marker comment: bot identity + recognized marker.
+    def paid_marker_comment?(project, login, body)
+      paid_bot?(project, login) && paid_marker?(body)
+    end
+
+    # Whether a GitHub comment is prompt-eligible: allowlisted human (excluding
+    # Paid status comments) or Paid-authored marker comment.
+    def comment_trusted?(project, comment)
+      login = comment&.user&.login
+      body = comment.respond_to?(:body) ? comment.body : nil
+
+      (human_trusted?(project, login) && !paid_status_comment?(body)) ||
+        paid_marker_comment?(project, login, body)
+    end
+
+    # Classify a GitHub comment into a TrustedInput. Fails closed: content
+    # whose author cannot be proven trusted is excluded, never trusted.
+    def classify_comment(project, comment, kind: :comment, source: :conversation)
+      login = comment&.user&.login
+      body = comment.respond_to?(:body) ? comment.body : nil
+
+      if comment_trusted?(project, comment)
+        TrustedInput.new(kind: kind, source: source, login: login, body: body, trust: :trusted)
+      else
+        TrustedInput.new(
+          kind: kind,
+          source: source,
+          login: login,
+          body: nil,
+          trust: :excluded,
+          exclusion_reason: login.present? ? "author_not_in_allowlist" : "missing_author_identity"
+        )
+      end
+    end
   end
 end

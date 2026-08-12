@@ -57,3 +57,15 @@
   human-driven traces, the system SHALL expose those session-specific viewer
   links as a separate contract from screenshot-comment / agent-run trace
   artifacts.
+
+- [x] **LIVE-PREVIEW-008** — When the tunnel server generates its live
+  `server.toml`, the system SHALL derive service bindings from the backend
+  abstraction (`list_preview_containers`) rather than Docker-specific container
+  filters, so a remote or non-Docker backend can supply preview containers
+  without a local Docker socket.
+  *Code:* `app/services/previews/tunnel_manager.rb`,
+  `app/services/containers/backends/base.rb`,
+  `app/services/containers/backends/local_docker.rb`,
+  `app/services/containers/backends/remote_docker.rb`,
+  `app/services/containers/backends/swarm.rb`.
+  *Test:* `spec/services/previews/tunnel_manager_spec.rb`.
