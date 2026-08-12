@@ -22,6 +22,7 @@ RSpec.describe Activities::LoadFeatureFlagsActivity do
       expect(activity.execute(project_id: project.id)).to eq(
         flags: {
           context_intake_agent_questions: false,
+          execution_runner_enabled: false,
           managed_subscription_runner_auth: false
         },
         project_missing: false

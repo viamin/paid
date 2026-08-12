@@ -2411,6 +2411,10 @@ class AgentRun < ApplicationRecord
   # @return [Containers::Provision::Result] Result with container_id on success
   # @raise [Containers::Provision::ProvisionError] When container creation fails
   def provision_container(**options)
+    if execution_runner_enabled?
+      return provision_via_runner(**options)
+    end
+
     return reuse_or_reconcile_container(**options) if container_id.present?
 
     provision_new_container(**options)
@@ -2425,6 +2429,10 @@ class AgentRun < ApplicationRecord
   # @raise [Containers::Provision::ProvisionError] When container not provisioned
   # @raise [Containers::Provision::TimeoutError] When command times out
   def execute_in_container(command, timeout: nil, stream: true, env: {}, preparation: nil)
+    if execution_runner_enabled? && @current_handle
+      return execute_via_runner(command, timeout: timeout, env: env, preparation: preparation)
+    end
+
     ensure_container_service!
     @container_service.execute(command, timeout: timeout, stream: stream, env: env, preparation: preparation)
   end
@@ -2444,23 +2452,29 @@ class AgentRun < ApplicationRecord
     # Safety net for a worker killed mid-provision: the workspace volume
     # may exist with no container_id to drive a normal cleanup. Run before
     # the early-return so it covers all paths (worktree-based runs are no-ops).
-    cleanup_orphaned_workspace_volume if container_id.blank? && @container_service.nil?
+    cleanup_orphaned_workspace_volume if container_id.blank? && @container_service.nil? && @current_handle.nil?
 
-    return if container_id.blank? && @container_service.nil?
+    return if container_id.blank? && @container_service.nil? && @current_handle.nil?
 
     if Containers::PoolManager.cleanup_claimed_container(agent_run: self, force: force)
       @container_service = nil
+      @current_handle = nil
       update!(container_id: nil)
       return
     end
 
-    ensure_container_service!
-    @container_service.cleanup(force: force)
-    @container_service = nil
-    update!(container_id: nil)
-  rescue Containers::Provision::Error
+    if execution_runner_enabled? && @current_handle
+      cleanup_via_runner(force: force)
+    else
+      ensure_container_service!
+      @container_service.cleanup(force: force)
+      @container_service = nil
+      update!(container_id: nil)
+    end
+  rescue Containers::Provision::Error, ExecutionRunners::Error
     # Container may already be gone; clear the reference anyway
     @container_service = nil
+    @current_handle = nil
     update!(container_id: nil)
     # The container is gone but the workspace volume may still exist.
     # Provision#cleanup would normally handle this in its ensure block,
@@ -2546,6 +2560,68 @@ class AgentRun < ApplicationRecord
   end
 
   private
+
+  # ── runner shim helpers (RDR-054) ──────────────────────────────
+
+  def execution_runner_enabled?
+    project.is_a?(Project) && FeatureFlags.enabled?(:execution_runner_enabled, project: project)
+  end
+
+  # Provisions a container through the execution runner interface.
+  # Reuses an existing recorded container (Temporal retry safety) before
+  # delegating to the runner for a fresh provision.
+  def provision_via_runner(**options)
+    return reuse_or_reconcile_container(**options) if container_id.present?
+
+    runner = ExecutionRunners.resolve_for(self)
+    spec = ExecutionRunners::RunSpec.from_agent_run(self, **options)
+    @current_handle = runner.provision(spec: spec)
+    update!(container_id: @current_handle.identifier, container_host: @current_handle.host)
+
+    Containers::Provision::Result.success(
+      container_id: @current_handle.identifier,
+      container_host: @current_handle.host
+    )
+  end
+
+  # Executes a command via the runner interface. Translates
+  # ExecutionResult back to Provision::Result for caller compatibility.
+  def execute_via_runner(command, timeout: nil, env: {}, preparation: nil)
+    runner = ExecutionRunners.resolve_for(self)
+    result = runner.start(
+      handle: @current_handle, command: command, timeout: timeout,
+      startup_timeout: nil, idle_timeout: nil, abort_patterns: nil,
+      preparation: preparation, heartbeat_path: nil
+    )
+    Containers::Provision::Result.success(
+      stdout: result.stdout, stderr: result.stderr, exit_code: result.exit_code,
+      container_running: result.environment_running
+    )
+  rescue ExecutionRunners::ProvisionError => e
+    raise Containers::Provision::ProvisionError, e.message
+  rescue ExecutionRunners::StartupTimeoutError, ExecutionRunners::IdleTimeoutError,
+         ExecutionRunners::TimeoutError => e
+    raise Containers::Provision::TimeoutError, e.message
+  rescue ExecutionRunners::ExecutionError => e
+    raise Containers::Provision::ExecutionError.new(
+      e.message, exit_code: e.exit_code, stdout: e.stdout, stderr: e.stderr
+    )
+  rescue ExecutionRunners::OutputAbortError => e
+    raise Containers::Provision::OutputAbortError.new(
+      e.message, matched_output: e.matched_output, source: e.source, detail: e.detail
+    )
+  end
+
+  # Cleans up through the runner interface. Idempotent on missing resources.
+  def cleanup_via_runner(force: false)
+    runner = ExecutionRunners.resolve_for(self)
+    runner.cleanup(handle: @current_handle, force: force)
+  rescue ExecutionRunners::ProvisionError
+    nil
+  ensure
+    @current_handle = nil
+    update!(container_id: nil)
+  end
 
   def set_initiating_user_from_current_user
     self.initiating_user ||= Current.user
