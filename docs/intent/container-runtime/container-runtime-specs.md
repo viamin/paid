@@ -185,3 +185,26 @@
   *Tests:* `spec/models/agent_run_spec.rb`,
   `spec/migrations/add_runner_handle_to_execution_tables_spec.rb`
   *Code:* `AgentRun#provision_via_runner`, `AgentRun#reuse_or_reconcile_via_runner`
+
+- [x] **CONTAINER-RUNTIME-017** — The system SHALL isolate networking policy
+  from Docker network implementation by carrying an
+  `ExecutionRunners::NetworkingPolicy` (mode `:proxy_restricted`,
+  `:subscription_auth`, or `:direct_outbound`; `firewall?` predicate;
+  `allow_destinations` array) on `RunSpec` and translating it to Docker
+  network + firewall operations only inside `LocalDockerRunner`. A
+  `proxy_restricted` policy SHALL map to the restricted Docker network plus
+  in-container iptables firewall; `subscription_auth` and `direct_outbound`
+  SHALL map to the infrastructure Docker network with no firewall. Proxy URL
+  resolution SHALL accept the policy's `restricted?` predicate instead of a
+  Docker network name, and `Containers::Provision` SHALL consume the policy
+  via a `networking_policy:` constructor argument so the agent-run container
+  decision flows from the runner rather than from inside the provisioner.
+  *Tests:* `spec/services/execution_runners/local_docker_runner_spec.rb`,
+  `spec/services/execution_runners_spec.rb`,
+  `spec/services/containers/proxy_url_spec.rb`,
+  `spec/services/containers/provision_spec.rb`,
+  `spec/services/network_policy_spec.rb`
+  *Code:* `ExecutionRunners::NetworkingPolicy`,
+  `ExecutionRunners::LocalDockerRunner`,
+  `Containers::Provision.networking_policy_for`,
+  `Containers::ProxyUrl.resolve`

@@ -2621,7 +2621,10 @@ class AgentRun < ApplicationRecord
     return pooled_result if pooled_result
 
     runner = ExecutionRunners.resolve_for(self)
-    spec = ExecutionRunners::RunSpec.from_agent_run(self, **options)
+    networking_policy = Containers::Provision.networking_policy_for(
+      agent_run: self, project: project
+    )
+    spec = ExecutionRunners::RunSpec.from_agent_run(self, networking_policy: networking_policy, **options)
     @current_handle = runner.provision(spec: spec)
     update!(container_id: @current_handle.identifier, container_host: @current_handle.host,
             runner_handle: @current_handle.to_storage)

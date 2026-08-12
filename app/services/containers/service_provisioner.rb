@@ -101,13 +101,13 @@ module Containers
     #   network the agent container will use so services are reachable.
     # @return [Hash] Environment variables hash for the agent container
     # @spec CONTAINER-RUNTIME-004
-    def provision(agent_run, network: NetworkPolicy::NETWORK_NAME, service_names: nil)
+    def provision(agent_run, network: Containers.agent_network_name, service_names: nil)
       service_containers = selected_service_containers(agent_run.project, service_names)
       return {} if service_containers.empty?
 
       @network = network
       requested_host = requested_container_host(agent_run)
-      NetworkPolicy.ensure_network!(network: @network, backend: Containers.backend_for(requested_host))
+      Containers::Provision.ensure_network!(network: @network, backend: Containers.backend_for(requested_host))
 
       # Record association early so concurrent cleanup counts this run.
       container_ids = service_containers.map(&:id)
