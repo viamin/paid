@@ -34,7 +34,7 @@ For deployment sizing and process topology, see [SCALING.md](SCALING.md).
 | Setting | How to provide | Notes |
 |---|---|---|
 | Database credentials | `DATABASE_URL` **or** `PAID_DATABASE_PASSWORD` | `database.yml` production block hardcodes `username: paid` and `database: paid_production`; the password comes from `PAID_DATABASE_PASSWORD`. A full `DATABASE_URL` overrides everything. Either one must be present. Use `DB_HOST` to point at a remote database server. |
-| Qdrant API key | `QDRANT_API_KEY` env var **or** `qdrant.api_key` in Rails credentials | Required for the knowledge base. `Paid.qdrant_api_key` also raises if absent; the validator surfaces it together with any other missing setting. |
+| Qdrant API key | `QDRANT_API_KEY` env var **or** `qdrant.api_key` in Rails credentials | Required for the knowledge base. `Paid.qdrant_api_key` returns the value (credentials first, then `QDRANT_API_KEY`); the validator surfaces it together with any other missing setting. |
 
 ### Failure message
 

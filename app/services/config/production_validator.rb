@@ -74,10 +74,9 @@ module Config
 
       # Resolve the live configuration values and validate them. This is the
       # single integration point that reads `ENV` / Rails config / credentials;
-      # the validator instance itself stays pure. Reading the Qdrant key from
-      # credentials/ENV directly (rather than via `Paid.qdrant_api_key`, which
-      # raises in production) lets the validator collect the missing-key error
-      # instead of crashing on first read.
+      # the validator instance itself stays pure. The Qdrant key comes from the
+      # canonical `Paid.qdrant_api_key` reader so the validator and runtime
+      # agree on the source of truth (credentials first, then `QDRANT_API_KEY`).
       def from_environment(logger: Rails.logger)
         new(
           database_url: ENV["DATABASE_URL"],
@@ -85,7 +84,7 @@ module Config
           temporal_address: Paid.temporal_address,
           redis_url: ENV["REDIS_URL"],
           qdrant_url: Paid.qdrant_url,
-          qdrant_api_key: qdrant_api_key,
+          qdrant_api_key: Paid.qdrant_api_key,
           workspace_root: Rails.application.config.x.workspace_root.to_s,
           workspace_writable: workspace_writable?(Rails.application.config.x.workspace_root.to_s),
           container_backend: ENV.fetch("CONTAINER_BACKEND", "local"),
@@ -93,12 +92,6 @@ module Config
           screenshots_configured: Screenshots::Storage.configured?,
           logger: logger
         )
-      end
-
-      private
-
-      def qdrant_api_key
-        Rails.application.credentials.dig(:qdrant, :api_key).presence || ENV["QDRANT_API_KEY"]
       end
 
       # True when the workspace root exists and is writable, or can be created
@@ -190,9 +183,14 @@ module Config
     end
 
     def redis_localhost?
-      # An unset REDIS_URL falls back to a localhost default elsewhere, so treat
-      # a blank value as a localhost warning rather than a hard failure: Redis
-      # is only consumed by optional coordination features in production.
+      # An unset REDIS_URL falls back to the localhost default used by
+      # `ClaudeLoginSessions::Coordination.redis` and
+      # `config/initializers/rails_performance.rb`, so treat a blank value as
+      # a localhost warning rather than a hard failure: Redis is only consumed
+      # by optional coordination features in production (the app cache is
+      # DB-backed via `solid_cache_store`). Warning is the safe level — the
+      # first Redis call would surface a connection error if coordination is
+      # actually wired up, but otherwise the deploy boots cleanly.
       redis_url.blank? || localhost?(redis_url)
     end
 
