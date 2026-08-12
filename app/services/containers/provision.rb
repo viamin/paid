@@ -184,7 +184,7 @@ module Containers
     # provisioners run in workflow steps 1.5-1.7, before the runner provisions
     # the agent container in step 2, so a pure existence check would fail on a
     # fresh or remote Docker host where the network has not been created yet.
-    def self.network_exists!(network:, backend: Containers.backend)
+    def self.ensure_network!(network:, backend: Containers.backend)
       NetworkPolicy.ensure_network!(network: network, backend: backend)
     end
 
@@ -4133,10 +4133,22 @@ module Containers
 
     public
 
-    # Resolves running service container IPs for firewall rules.
-    # Exposed as public so the runner can merge service-IP destinations
-    # into the firewall rule set without reaching into Provision internals
-    # (RDR-054).
+    # Resolves service container IPs plus the preview-tunnel destination for
+    # firewall rules. Exposed as public so the runner can merge these
+    # destinations into the firewall rule set without reaching into Provision
+    # internals or knowing about preview tunnels (RDR-054).
+    def firewall_service_destinations
+      destinations = resolve_service_destinations
+      return destinations unless preview_tunnel?
+
+      remote_destination = Previews::TunnelManager.client_remote_destination(
+        backend:,
+        restricted: network_contract.restricted?
+      )
+      destinations + [ { ip: remote_destination.fetch(:host), port: remote_destination.fetch(:port) } ]
+    end
+
+    private
     def resolve_service_destinations
       return [] unless agent_run
 
@@ -4153,7 +4165,6 @@ module Containers
       end
     end
 
-    private
     def docker_container_ip(docker_id)
       info = backend.get_container(docker_id).info
       networks = info.dig("NetworkSettings", "Networks") || {}
@@ -4201,17 +4212,6 @@ module Containers
       # (e.g., macOS Docker Desktop, some CI runners). Production always
       # raises: a firewall gap on a live deployment is a security incident.
       raise ProvisionError, "Firewall setup failed: #{e.message}" if Rails.env.production?
-    end
-
-    def firewall_service_destinations
-      destinations = resolve_service_destinations
-      return destinations unless preview_tunnel?
-
-      remote_destination = Previews::TunnelManager.client_remote_destination(
-        backend:,
-        restricted: network_contract.restricted?
-      )
-      destinations + [ { ip: remote_destination.fetch(:host), port: remote_destination.fetch(:port) } ]
     end
 
     def fetch_exit_code

@@ -142,7 +142,7 @@ module Containers
         raise Error, "docker_image MCP server #{definition["name"].inspect} requires transport \"sse\", got #{transport.inspect}"
       end
 
-      Containers::Provision.network_exists!(network: @network, backend: Containers.backend)
+      Containers::Provision.ensure_network!(network: @network, backend: Containers.backend)
 
       image = definition["image"]
       name = definition["name"]

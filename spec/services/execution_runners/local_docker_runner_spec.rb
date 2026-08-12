@@ -25,7 +25,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     allow(NetworkPolicy).to receive(:ensure_network!).and_return(instance_double(Docker::Network))
     allow(NetworkPolicy).to receive(:apply_firewall_rules)
     allow(provision_service).to receive_messages(
-      resolve_service_destinations: [],
+      firewall_service_destinations: [],
       container: started_container
     )
   end
@@ -119,6 +119,19 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
         .with(started_container, service_destinations: [ { ip: "10.0.0.1", port: 5432 } ], backend: backend)
 
       runner.provision(spec: allow_destinations_spec)
+    end
+
+    it "merges firewall destinations from Provision (service IPs + preview tunnel) into the rules" do
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      allow(provision_service).to receive_messages(
+        provision: Containers::Provision::Result.success(container_id: "abc123", container_host: "local"),
+        firewall_service_destinations: [ { ip: "192.0.2.10", port: 443 } ]
+      )
+
+      expect(NetworkPolicy).to receive(:apply_firewall_rules)
+        .with(started_container, service_destinations: [ { ip: "192.0.2.10", port: 443 } ], backend: backend)
+
+      runner.provision(spec: run_spec)
     end
 
     it "skips NetworkPolicy firewall application when the policy is unrestricted" do
@@ -371,7 +384,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
         execute: Containers::Provision::Result.success(stdout: "ok\n", stderr: "", exit_code: 0),
         container_running?: true, container: instance_double(Docker::Container), backend: backend, cleanup: nil
       )
-      allow(provision_service).to receive_messages(resolve_service_destinations: [])
+      allow(provision_service).to receive_messages(firewall_service_destinations: [])
     end
   end
 end

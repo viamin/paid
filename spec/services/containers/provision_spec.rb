@@ -455,7 +455,7 @@ RSpec.describe Containers::Provision do
     end
   end
 
-  describe ".network_exists!" do
+  describe ".ensure_network!" do
     it "delegates to NetworkPolicy.ensure_network! so the network is created when missing" do
       backend = instance_double(Containers::Backends::Base)
       network = instance_double(Docker::Network)
@@ -464,7 +464,7 @@ RSpec.describe Containers::Provision do
         .with(network: NetworkPolicy::NETWORK_NAME, backend: backend)
         .and_return(network)
 
-      expect(described_class.network_exists!(network: NetworkPolicy::NETWORK_NAME, backend: backend))
+      expect(described_class.ensure_network!(network: NetworkPolicy::NETWORK_NAME, backend: backend))
         .to eq(network)
     end
   end

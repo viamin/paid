@@ -162,15 +162,17 @@ module ExecutionRunners
       raise ProvisionError, "Network setup failed: #{e.message}"
     end
 
-    # Applies the in-container firewall when the policy demands one. Service
-    # container IPs are resolved from the Provision service after containers
-    # start. +policy.allow_destinations+ uses the provider-neutral
-    # +{host:, port:}+ shape, so entries are normalized to +{ip:, port:}+ to
-    # match +NetworkPolicy.build_firewall_script+, which reads +dest[:ip]+.
+    # Applies the in-container firewall when the policy demands one. Firewall
+    # destinations (service container IPs plus the preview-tunnel destination)
+    # are resolved from the Provision service after containers start, so the
+    # runner never inspects Docker network or preview-tunnel state directly.
+    # +policy.allow_destinations+ uses the provider-neutral +{host:, port:}+
+    # shape, so entries are normalized to +{ip:, port:}+ to match
+    # +NetworkPolicy.build_firewall_script+, which reads +dest[:ip]+.
     def apply_firewall!(service:, backend:, policy:)
       return unless policy.firewall?
 
-      destinations = policy.allow_destinations.map { |dest| { ip: dest.fetch(:host), port: dest.fetch(:port) } } + service.resolve_service_destinations
+      destinations = policy.allow_destinations.map { |dest| { ip: dest.fetch(:host), port: dest.fetch(:port) } } + service.firewall_service_destinations
 
       NetworkPolicy.apply_firewall_rules(
         service.container,

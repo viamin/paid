@@ -107,7 +107,7 @@ module Containers
 
       @network = network
       requested_host = requested_container_host(agent_run)
-      Containers::Provision.network_exists!(network: @network, backend: Containers.backend_for(requested_host))
+      Containers::Provision.ensure_network!(network: @network, backend: Containers.backend_for(requested_host))
 
       # Record association early so concurrent cleanup counts this run.
       container_ids = service_containers.map(&:id)
