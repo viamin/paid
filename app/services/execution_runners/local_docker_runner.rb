@@ -13,6 +13,9 @@ module ExecutionRunners
   #
   # @spec CONTAINER-RUNTIME-010
   # @spec CONTAINER-RUNTIME-011
+  # @spec CONTAINER-RUNTIME-012
+  # @spec CONTAINER-RUNTIME-013
+  # @spec CONTAINER-RUNTIME-014
   class LocalDockerRunner < Base
     RUNNER_TYPE = :local_docker
 

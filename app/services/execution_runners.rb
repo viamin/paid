@@ -54,7 +54,13 @@ module ExecutionRunners
   # platform-native writable storage. Declared on {WorkspaceStrategy} so the
   # writable layout travels with the workspace contract instead of being
   # hardcoded by orchestration code.
+  #
+  # The data shape and +docker_tmpfs_options+ helper exist so the runner can
+  # translate the strategy's writable dirs into Docker tmpfs mounts when
+  # CONTAINER-RUNTIME-012 lands; today +Containers::Provision#host_config+
+  # still hardcodes its own +Tmpfs+ block.
   # @spec CONTAINER-RUNTIME-011
+  # @spec CONTAINER-RUNTIME-012
   WritableDir = Data.define(:path, :size_bytes, :mode, :exec) do
     DEFAULT_MODE = 0o755
 
@@ -63,6 +69,8 @@ module ExecutionRunners
     end
 
     # Docker tmpfs mount options string (e.g. +"exec,size=1073741824,mode=1777"+).
+    # Used by the runner when it begins translating the strategy's writable
+    # dirs into Provision calls (CONTAINER-RUNTIME-012).
     def docker_tmpfs_options
       parts = []
       parts << "exec" if exec
@@ -76,7 +84,14 @@ module ExecutionRunners
   # runner owns how the heartbeat path is made observable — a host bind mount
   # when the backend exposes host paths, an in-container tmpfs otherwise — so
   # callers never reach into Docker volume/tmpfs mechanics.
+  #
+  # Declared on the strategy as the provider-neutral shape today so callers
+  # can begin expressing heartbeat needs on the strategy; the actual
+  # runner-owned translation lands with CONTAINER-RUNTIME-013, after which
+  # +LocalDockerRunner#start+ reads +workspace.heartbeat+ instead of taking
+  # +heartbeat_path:+ directly.
   # @spec CONTAINER-RUNTIME-011
+  # @spec CONTAINER-RUNTIME-013
   HeartbeatConfig = Data.define(:mount_point)
 
   # Provider-neutral workspace/storage strategy, isolating workspace assumptions
