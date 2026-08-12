@@ -58,10 +58,11 @@
 
 - [x] **CONTAINER-RUNTIME-007** — The system SHALL define a provider-neutral
   runner interface (`ExecutionRunners::Base`: `provision`, `start`, `running?`,
-  `cancel`, `cleanup`, `compatible?`, `ping`) whose method names and parameters
-  do not reference Docker concepts (no `container_id`, network name, bind mount,
-  or `exec`). A runner owns the complete execution environment and the watchdog
-  logic (startup, idle, wall-clock, heartbeat, abort-pattern detection).
+  `status`, `cancel`, `cleanup`, `compatible?`, `ping`) whose method names and
+  parameters do not reference Docker concepts (no `container_id`, network name,
+  bind mount, or `exec`). A runner owns the complete execution environment and
+  the watchdog logic (startup, idle, wall-clock, heartbeat, abort-pattern
+  detection).
   *Tests:* `spec/services/execution_runners/base_spec.rb`
   *Code:* `ExecutionRunners::Base`
 
@@ -145,3 +146,21 @@
   *Tests:* `spec/services/containers/pool_manager_spec.rb`,
   `spec/services/execution_runners/local_docker_runner_spec.rb`
   *Code:* `ExecutionRunners::LocalDockerRunner`, `Containers::PoolManager`
+
+- [x] **CONTAINER-RUNTIME-015** — The system SHALL define an
+  `ExecutionRunners::ExecutionStatus` domain object (`state`, `exit_code`,
+  `oom_killed`, `memory_limit`) for lifecycle status queries, and
+  `ExecutionRunners::Base#status` SHALL return it so callers classify a
+  workload as `:running | :exited | :oom_killed | :not_found` without reaching
+  into Docker API response shapes. `LocalDockerRunner#status` SHALL translate
+  `Containers::Provision#container_status` (running, exit code, OOM flag,
+  memory limit) into that object, mapping an unreachable environment to
+  `:not_found`.
+  *Tests:* `spec/services/execution_runners_spec.rb`,
+  `spec/services/execution_runners/base_spec.rb`,
+  `spec/services/execution_runners/local_docker_runner_spec.rb`,
+  `spec/services/containers/provision_spec.rb`
+  *Code:* `ExecutionRunners::ExecutionStatus`,
+  `ExecutionRunners::Base#status`,
+  `ExecutionRunners::LocalDockerRunner#status`,
+  `Containers::Provision#container_status`
