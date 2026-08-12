@@ -54,16 +54,18 @@ module Prompts
     end
 
     # Production-parity filter so REPLs/scripts get the same comments the live PR prompt does.
+    # @spec PROMPT-ASSEMBLY-007
     def self.select_trusted_comments(comments, project:)
       comments.select do |comment|
-        project.trusted_github_user?(comment.user&.login) &&
+        PromptAssembly::Trust.human_trusted?(project, comment.user&.login) &&
           !paid_generated_pr_comment?(comment.body)
       end
     end
 
+    # Delegates to the centralized trust policy so Paid-generated status
+    # comments are recognized in exactly one place.
     def self.paid_generated_pr_comment?(body)
-      Activities::CompleteExistingPrRunActivity.agent_update_comment?(body) ||
-        body.to_s.include?(Activities::MarkEscalatedActivity::COMMENT_MARKER)
+      PromptAssembly::Trust.paid_status_comment?(body)
     end
     private_class_method :paid_generated_pr_comment?
 

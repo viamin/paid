@@ -59,9 +59,12 @@ module Knowledge
       private
 
       def build_sections
-        # Reserve tokens for the top-level heading
-        header_overhead = estimate_tokens("## Codebase Context (auto-generated from knowledge base)\n")
-        remaining_budget = token_budget - header_overhead
+        # Reserve tokens for the quarantine framing plus the top-level heading
+        # so the rendered bundle never exceeds the token budget.
+        framing_overhead = estimate_tokens(
+          "#{PromptAssembly::Section::QUARANTINE_NOTICE}\n\n## Codebase Context (auto-generated from knowledge base)\n"
+        )
+        remaining_budget = token_budget - framing_overhead
         built = []
         queries_made = 0
         artifact_type_counts = Hash.new(0)
@@ -382,12 +385,16 @@ module Knowledge
         end
       end
 
+      # Renders the bundle, framing the whole block as quarantined context so
+      # embedded instructions are treated as untrusted data by every consumer.
+      #
+      # @spec PROMPT-ASSEMBLY-003
       def render(sections)
         parts = [ "## Codebase Context (auto-generated from knowledge base)\n" ]
         sections.each do |section|
           parts << "### #{section[:heading]}\n#{section[:content]}"
         end
-        parts.join("\n\n")
+        PromptAssembly::Section.quarantine(parts.join("\n\n"))
       end
 
       def truncate_section(section, budget)

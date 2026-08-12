@@ -47,6 +47,12 @@ RSpec.describe Knowledge::ContextBundle::Build do
         expect(result[:content]).to include("Relevant Routes")
         expect(result[:content]).to include("POST /api/users → UsersController#create")
       end
+
+      it "frames the bundle as quarantined context" do
+        result = described_class.call(issue: issue, project: project)
+
+        expect(result[:content]).to start_with(PromptAssembly::Section::QUARANTINE_NOTICE)
+      end
     end
 
     context "with imported document artifacts" do
@@ -446,9 +452,9 @@ RSpec.describe Knowledge::ContextBundle::Build do
           content: "route #{i}", status: "active")
       end
 
-      result = described_class.call(issue: issue, project: project, token_budget: 50)
+      result = described_class.call(issue: issue, project: project, token_budget: 100)
 
-      expect(result[:total_tokens]).to be <= 50
+      expect(result[:total_tokens]).to be <= 100
     end
 
     it "never exceeds the token budget" do
@@ -466,9 +472,9 @@ RSpec.describe Knowledge::ContextBundle::Build do
           identifier: "Model#{i}", content: "model content", status: "active")
       end
 
-      result = described_class.call(issue: issue, project: project, token_budget: 100)
+      result = described_class.call(issue: issue, project: project, token_budget: 150)
 
-      expect(result[:total_tokens]).to be <= 100
+      expect(result[:total_tokens]).to be <= 150
     end
 
     it "uses ENV-configured budget when no budget is passed" do
@@ -611,7 +617,7 @@ RSpec.describe Knowledge::ContextBundle::Build do
       create(:decision_record, project: project, title: "Use JWT", status: "active")
 
       # Budget too small for routes (single very long line) but enough for decisions
-      result = described_class.call(issue: issue, project: project, token_budget: 40)
+      result = described_class.call(issue: issue, project: project, token_budget: 100)
 
       # Without the fix, the bundle would break on the oversized route and miss decisions
       expect(result[:sections]).to include(:decisions)

@@ -154,12 +154,13 @@ module Prompts
     # When +comments+ is supplied, the GitHub fetch is skipped so callers that
     # already hold the comment list (e.g. #issue_comments) don't pay for a
     # second round-trip. Without it the list is fetched as before.
+    # @spec PROMPT-ASSEMBLY-007
     def self.fetch_trusted_comments(github_client:, repo:, number:, project:, max_comments: DEFAULT_MAX_COMMENTS, comments: nil)
       return [] if max_comments <= 0
       all_comments = comments || github_client.issue_comments(repo, number)
       trusted = []
       all_comments.reverse_each do |c|
-        next unless project.trusted_github_user?(c.user&.login)
+        next unless PromptAssembly::Trust.human_trusted?(project, c.user&.login)
         trusted << c
         break if trusted.size == max_comments
       end
