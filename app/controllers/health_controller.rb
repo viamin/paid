@@ -1,13 +1,46 @@
 # frozen_string_literal: true
 
+require "redis"
+require "timeout"
+
 # Service health check endpoint that bypasses Devise/Pundit authentication.
 # Returns aggregate status of infrastructure dependencies.
 #
 # Endpoints:
-# - GET /health/services — aggregate health for infrastructure dependencies
-# - GET /health/liveness — minimal liveness probe (always 200 if process is up)
-# - GET /health/readiness — readiness probe checking database connectivity
+# - GET /ready (alias /health/readiness) — readiness probe: DB, Redis, Temporal, Qdrant
+# - GET /live  (alias /health/liveness)  — liveness probe (always 200 if process is up)
+# - GET /health/services — aggregate health for infrastructure dependencies (legacy)
 class HealthController < ActionController::Base
+  # Readiness probe — returns 200 when the application can serve traffic.
+  # Checks database, migrations, Redis, Temporal, and Qdrant (when configured).
+  # Orchestrators use this to gate traffic routing and rolling deploys.
+  def readiness
+    checks = {
+      database: database_healthy?,
+      migrations: migrations_current?,
+      redis: redis_healthy?,
+      temporal: temporal_healthy?
+    }
+    checks[:qdrant] = qdrant_healthy? if qdrant_configured?
+
+    all_healthy = checks.values.all?
+    status = all_healthy ? :ok : :service_unavailable
+
+    render json: {
+      status: all_healthy ? "ready" : "not_ready",
+      checks: checks.transform_values { |v| v ? "ok" : "failing" }
+    }, status: status
+  end
+
+  # Liveness probe — returns 200 if the Rails process is running.
+  # Orchestrators use this to detect hung or crashed processes.
+  # A failed liveness probe typically triggers a container restart.
+  def liveness
+    render json: { status: "alive" }, status: :ok
+  end
+
+  # Legacy aggregate health endpoint (Qdrant only).
+  # Prefer /ready for a full readiness check.
   def show
     qdrant_healthy = begin
       Paid.qdrant_client.healthy?
@@ -25,31 +58,6 @@ class HealthController < ActionController::Base
     }, status: status
   end
 
-  # Liveness probe — returns 200 if the Rails process is running.
-  # Orchestrators use this to detect hung or crashed processes.
-  # A failed liveness probe typically triggers a container restart.
-  def liveness
-    render json: { status: "alive" }, status: :ok
-  end
-
-  # Readiness probe — returns 200 when the application can serve traffic.
-  # Checks database connectivity to ensure the instance is ready to
-  # accept work. Orchestrators use this to gate traffic routing.
-  def readiness
-    checks = {
-      database: database_healthy?,
-      migrations: migrations_current?
-    }
-
-    all_healthy = checks.values.all?
-    status = all_healthy ? :ok : :service_unavailable
-
-    render json: {
-      status: all_healthy ? "ready" : "not_ready",
-      checks: checks.transform_values { |v| v ? "ok" : "failing" }
-    }, status: status
-  end
-
   private
 
   def database_healthy?
@@ -64,5 +72,46 @@ class HealthController < ActionController::Base
     true
   rescue StandardError
     false
+  end
+
+  def redis_healthy?
+    Timeout.timeout(redis_timeout) do
+      redis = Redis.new(url: redis_url)
+      redis.ping == "PONG"
+    ensure
+      redis&.close
+    end
+  rescue StandardError
+    false
+  end
+
+  def temporal_healthy?
+    Timeout.timeout(temporal_timeout) do
+      Paid.temporal_client.connection.connected?
+    end
+  rescue StandardError
+    false
+  end
+
+  def qdrant_healthy?
+    Paid.qdrant_client.healthy?
+  rescue StandardError
+    false
+  end
+
+  def qdrant_configured?
+    ENV.key?("QDRANT_URL") || ENV.key?("QDRANT_API_KEY")
+  end
+
+  def redis_url
+    ENV.fetch("REDIS_URL", "redis://127.0.0.1:6379/0")
+  end
+
+  def redis_timeout
+    Integer(ENV.fetch("HEALTH_CHECK_REDIS_TIMEOUT", "2"))
+  end
+
+  def temporal_timeout
+    Integer(ENV.fetch("HEALTH_CHECK_TEMPORAL_TIMEOUT", "2"))
   end
 end

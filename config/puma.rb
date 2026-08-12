@@ -49,11 +49,11 @@ pidfile ENV["PIDFILE"] if ENV["PIDFILE"]
 # local development behavior is unchanged.
 #
 # Load balancer / proxy integration (see app/controllers/health_controller.rb):
-#   GET /health/readiness — 200 when the app can serve traffic (DB reachable,
-#                           migrations current). Use this to gate new deploys
-#                           and route traffic.
-#   GET /health/liveness  — 200 while the process is up. Use this to trigger an
-#                           auto-restart of a hung or crashed worker/container.
+#   GET /ready  — 200 when the app can serve traffic (DB, Redis, Temporal
+#                  reachable). Use this to gate new deploys and route traffic.
+#   GET /live   — 200 while the process is up. Use this to trigger an
+#                  auto-restart of a hung or crashed worker/container.
+#   GET /up     — combined boot check (backward compat for docker-compose).
 # ---------------------------------------------------------------------------
 
 # Restart workers that take too long to boot or stop responding to the master's
