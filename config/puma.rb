@@ -101,10 +101,14 @@ preload_app_enabled = ENV.fetch("RAILS_PRELOAD_APP", "false") == "true"
 preload_app! preload_app_enabled
 
 # Forked workers inherit the master's open database sockets when preload_app is
-# enabled and must discard them so each worker uses its own connections. The
-# hook only fires in cluster mode, so register it only when we know the worker
-# count is > 1 — registering a cluster-only hook under single-worker mode
-# triggers Puma's "block will not execute" warning on every boot. When
+# enabled and must discard them so each worker uses its own connections. We
+# also reset the inherited Temporal client and warm it in the background, so
+# the first /ready probe after a rolling deploy doesn't pay the cold
+# gem-load + connect cost inside its 2s window — see Paid::PumaBoot.
+#
+# The hook only fires in cluster mode, so register it only when we know the
+# worker count is > 1 — registering a cluster-only hook under single-worker
+# mode triggers Puma's "block will not execute" warning on every boot. When
 # WEB_CONCURRENCY=auto without a WEB_CONCURRENCY_AUTO override, the worker count
 # is resolved by Puma to the CPU count at boot time, so we cannot statically
 # determine cluster mode here; operators in that case should set
@@ -116,7 +120,8 @@ elsif workers_count
   Integer(workers_count)
 end
 if preload_app_enabled && preload_app_cluster_count && preload_app_cluster_count > 1
+  require_relative "../lib/paid/puma_boot"
   before_worker_boot do
-    ActiveRecord::Base.connection_handler.clear_all_connections! if defined?(ActiveRecord::Base)
+    Paid::PumaBoot.call_after_fork
   end
 end

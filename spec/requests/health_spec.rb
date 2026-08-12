@@ -10,11 +10,14 @@ RSpec.describe "Health" do
   let(:temporal_client) { double("TemporalClient", connection: temporal_connection) } # rubocop:disable RSpec/VerifiedDoubles
 
   before do
+    # Reset the class-level memoized Redis client so each example starts fresh
+    # and the first probe in each test builds a new client through the stub.
+    HealthController.instance_variable_set(:@redis_client, nil)
+
     allow(Paid).to receive_messages(qdrant_client: qdrant_client, temporal_client: temporal_client)
     allow(qdrant_client).to receive(:healthy?).and_return(true)
     allow(Redis).to receive(:new).and_return(redis_client)
     allow(redis_client).to receive(:ping).and_return("PONG")
-    allow(redis_client).to receive(:close)
     allow(ActiveRecord::Migration).to receive(:check_all_pending!)
     allow(ENV).to receive(:key?).with("QDRANT_URL").and_return(false)
     allow(ENV).to receive(:key?).with("QDRANT_API_KEY").and_return(false)
@@ -153,6 +156,27 @@ RSpec.describe "Health" do
 
       expect(response).not_to redirect_to(new_user_session_path)
       expect(response).to have_http_status(:ok)
+    end
+
+    describe "memoized Redis client" do
+      it "constructs the Redis client once across multiple readiness probes" do
+        expect(Redis).to receive(:new).once.and_return(redis_client)
+
+        get "/ready"
+        get "/ready"
+
+        expect(response).to have_http_status(:ok)
+        body = response.parsed_body
+        expect(body["checks"]["redis"]).to eq("ok")
+      end
+
+      it "does not close the Redis client after each probe (process-scoped connection)" do
+        expect(redis_client).not_to receive(:close)
+
+        get "/ready"
+
+        expect(response).to have_http_status(:ok)
+      end
     end
   end
 

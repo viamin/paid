@@ -11,6 +11,17 @@ require "timeout"
 # - GET /live  (alias /health/liveness)  — liveness probe (always 200 if process is up)
 # - GET /health/services — aggregate health for infrastructure dependencies (legacy)
 class HealthController < ActionController::Base
+  # Class-level memoized Redis client. Polled by orchestrators every few seconds
+  # per pod, so we want to reuse the TCP connection (the redis-rb gem is
+  # thread-safe via its built-in mutex) rather than open a fresh handshake on
+  # every probe — see ClaudeLoginSessions::Coordination.redis for the same
+  # memoized-client pattern. The connection is process-scoped; we deliberately
+  # do not close it here because Puma worker lifetime owns the socket and the
+  # OS reclaims it on exit.
+  def self.redis_client
+    @redis_client ||= Redis.new(url: ENV.fetch("REDIS_URL", "redis://127.0.0.1:6379/0"))
+  end
+
   # Readiness probe — returns 200 when the application can serve traffic.
   # Checks database, migrations, Redis, Temporal, and Qdrant (when configured).
   # Orchestrators use this to gate traffic routing and rolling deploys.
@@ -76,10 +87,7 @@ class HealthController < ActionController::Base
 
   def redis_healthy?
     Timeout.timeout(redis_timeout) do
-      redis = Redis.new(url: redis_url)
-      redis.ping == "PONG"
-    ensure
-      redis&.close
+      self.class.redis_client.ping == "PONG"
     end
   rescue StandardError
     false
@@ -101,10 +109,6 @@ class HealthController < ActionController::Base
 
   def qdrant_configured?
     ENV.key?("QDRANT_URL") || ENV.key?("QDRANT_API_KEY")
-  end
-
-  def redis_url
-    ENV.fetch("REDIS_URL", "redis://127.0.0.1:6379/0")
   end
 
   def redis_timeout
