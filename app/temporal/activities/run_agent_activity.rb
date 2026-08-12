@@ -3945,7 +3945,7 @@ module Activities
       )
       return prompt if bundle[:content].blank?
 
-      "#{prompt}\n#{bundle[:content]}\n"
+      "#{prompt}\n#{PromptAssembly::Section.quarantine(bundle[:content])}\n"
     end
 
     def validated_repo_name(agent_run)
