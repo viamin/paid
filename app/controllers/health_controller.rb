@@ -110,7 +110,13 @@ class HealthController < ActionController::Base
   end
 
   def qdrant_configured?
-    ENV["QDRANT_URL"].present? || ENV["QDRANT_API_KEY"].present?
+    # Mirror Paid.qdrant_api_key's resolution order (credentials first, then
+    # QDRANT_API_KEY, then QDRANT_URL). A credentials-only deploy must still
+    # surface the Qdrant probe — otherwise /ready would report "ready" while
+    # Qdrant is unreachable, defeating the readiness check.
+    Rails.application.credentials.dig(:qdrant, :api_key).present? ||
+      ENV["QDRANT_URL"].present? ||
+      ENV["QDRANT_API_KEY"].present?
   end
 
   def redis_timeout

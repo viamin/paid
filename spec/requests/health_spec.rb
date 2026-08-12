@@ -180,6 +180,48 @@ RSpec.describe "Health" do
       end
     end
 
+    context "when Qdrant is configured via Rails credentials only" do
+      before do
+        allow(Rails.application.credentials).to receive(:dig)
+          .with(:qdrant, :api_key).and_return("credential-key")
+      end
+
+      it "includes the qdrant check even when both QDRANT_URL and QDRANT_API_KEY are unset" do
+        get "/ready"
+
+        expect(response).to have_http_status(:ok)
+        body = response.parsed_body
+        expect(body["checks"]["qdrant"]).to eq("ok")
+      end
+
+      context "when Qdrant is configured via credentials but unhealthy" do
+        before { allow(qdrant_client).to receive(:healthy?).and_return(false) }
+
+        it "returns 503 with qdrant failing" do
+          get "/ready"
+
+          expect(response).to have_http_status(:service_unavailable)
+          body = response.parsed_body
+          expect(body["checks"]["qdrant"]).to eq("failing")
+        end
+      end
+    end
+
+    context "when no Qdrant source is configured" do
+      before do
+        allow(Rails.application.credentials).to receive(:dig)
+          .with(:qdrant, :api_key).and_return(nil)
+      end
+
+      it "omits the qdrant check" do
+        get "/ready"
+
+        expect(response).to have_http_status(:ok)
+        body = response.parsed_body
+        expect(body["checks"]).not_to have_key("qdrant")
+      end
+    end
+
     context "when a health check timeout env var is invalid" do
       it "falls back to the default timeout rather than failing the redis check" do
         ENV["HEALTH_CHECK_REDIS_TIMEOUT"] = "fast"
