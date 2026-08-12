@@ -31,6 +31,17 @@ module ExecutionRunners
     LocalDockerRunner.new
   end
 
+  # Convenience resolver that derives the backend from an agent run.
+  # All current backends (local Docker, remote Docker, Swarm) are Docker
+  # transports, so every agent run resolves to {LocalDockerRunner} (RDR-054).
+  # @param agent_run [AgentRun] the run to resolve a runner for
+  # @return [Base]
+  def self.resolve_for(agent_run)
+    resolve(backend: Containers.backend_for(agent_run.workspace_volume_host))
+  rescue Containers::Backends::Resolver::UnknownBackendError
+    resolve(backend: nil)
+  end
+
   # Compute resource limits for a workload. Mirrors the fields
   # +Containers::Provision::DEFAULTS+ actually consumes (memory_bytes,
   # cpu_quota, pids_limit). Runners translate these to their native
@@ -53,7 +64,37 @@ module ExecutionRunners
     :services,           # Array<ServiceDeclaration>
     :secrets_config,     # Auth/credential configuration
     :preview_tunnel      # Optional preview tunnel config
-  )
+  ) do
+    # Builds a RunSpec from an AgentRun context for the shim migration path
+    # (RDR-054). Derives workspace strategy, resource limits, and networking
+    # policy from the agent run and its project.
+    # @param agent_run [AgentRun]
+    # @param options [Hash] container options (memory_bytes, cpu_quota, etc.)
+    # @return [RunSpec]
+    def self.from_agent_run(agent_run, **options)
+      resources = if options[:memory_bytes] || options[:cpu_quota] || options[:pids_limit]
+                    ComputeRequirements.new(
+                      cpu_quota: options[:cpu_quota],
+                      memory_bytes: options[:memory_bytes],
+                      pids_limit: options[:pids_limit]
+                    )
+      end
+
+      new(
+        agent_run: agent_run,
+        project: agent_run.project,
+        image: options[:image],
+        command: nil, # Set at start time
+        resources: resources,
+        environment: agent_run.service_environment || {},
+        networking_policy: NetworkingPolicy.new(mode: :proxy, firewall: true),
+        workspace_strategy: agent_run.worktree_path.present? ? :bind_mount : :named_volume,
+        services: [],
+        secrets_config: nil,
+        preview_tunnel: nil
+      )
+    end
+  end
 
   # Opaque reference to a launched environment, returned by +#provision+ and
   # accepted by +#start+, +#running?+, +#cancel+, and +#cleanup+.

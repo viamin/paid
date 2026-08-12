@@ -2194,6 +2194,296 @@ RSpec.describe AgentRun do
         end
       end
 
+      describe "#provision_container (runner shim)" do
+        let(:mock_runner) { instance_double(ExecutionRunners::LocalDockerRunner) }
+        let(:mock_handle) do
+          ExecutionRunners::RunnerHandle.new(
+            runner_type: :local_docker,
+            identifier: "runner-container-123",
+            host: "local",
+            workspace_ref: "ws-ref",
+            metadata: { "agent_run_id" => nil, "worktree_path" => nil, "environment" => {} }
+          )
+        end
+
+        before do
+          allow(ExecutionRunners).to receive(:resolve_for).and_return(mock_runner)
+          allow(mock_runner).to receive_messages(
+            provision: mock_handle,
+            start: ExecutionRunners::ExecutionResult.success(stdout: "runner-output\n"),
+            cleanup: nil
+          )
+        end
+
+        it "routes through the runner when the feature flag is enabled" do
+          agent_run = create(:agent_run, worktree_path: worktree_path)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+
+          result = agent_run.provision_container
+
+          expect(ExecutionRunners).to have_received(:resolve_for).with(agent_run)
+          expect(mock_runner).to have_received(:provision)
+          expect(result).to be_success
+          expect(result[:container_id]).to eq("runner-container-123")
+          expect(agent_run.reload.container_id).to eq("runner-container-123")
+          expect(agent_run.reload.container_host).to eq("local")
+        end
+
+        it "uses the old path when the feature flag is disabled" do
+          agent_run = create(:agent_run, worktree_path: worktree_path)
+          FeatureFlags.disable!(:execution_runner_enabled)
+
+          result = agent_run.provision_container
+
+          expect(ExecutionRunners).not_to have_received(:resolve_for)
+          expect(result).to be_success
+          expect(result[:container_id]).to eq("abc123container")
+        end
+
+        it "reuses an existing container even when runner flag is enabled" do
+          agent_run = create(:agent_run, worktree_path: worktree_path, container_id: "existing-container")
+          existing = instance_double(
+            Docker::Container,
+            id: "existing-container",
+            refresh!: true,
+            info: { "State" => { "Running" => true } }
+          )
+          allow(Docker::Container).to receive(:get).with("existing-container").and_return(existing)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+
+          result = agent_run.provision_container
+
+          expect(mock_runner).not_to have_received(:provision)
+          expect(result).to be_success
+          expect(result[:container_id]).to eq("existing-container")
+        end
+
+        it "claims a warm pool container instead of provisioning via the runner" do
+          agent_run = create(:agent_run, worktree_path: nil)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          pooled_service = instance_double(Containers::Provision)
+          pooled_result = Containers::Provision::Result.success(
+            container_id: "warm-container",
+            container_host: "remote",
+            service: pooled_service,
+            pool_entry_id: 123
+          )
+          allow(Containers::PoolManager).to receive(:new)
+            .with(project: agent_run.project)
+            .and_return(instance_double(Containers::PoolManager, acquire: pooled_result))
+
+          result = agent_run.provision_container
+
+          expect(mock_runner).not_to have_received(:provision)
+          expect(result).to be_success
+          expect(result[:container_id]).to eq("warm-container")
+          expect(agent_run.reload.container_id).to eq("warm-container")
+          expect(agent_run.reload.container_host).to eq("remote")
+        end
+
+        it "enqueues pool replenishment after a cold provision via the runner" do
+          agent_run = create(:agent_run, worktree_path: worktree_path)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          allow(Containers::PoolManager).to receive(:new)
+            .with(project: agent_run.project)
+            .and_return(instance_double(Containers::PoolManager, acquire: nil))
+          allow(PoolReplenishmentJob).to receive(:perform_later)
+
+          agent_run.provision_container
+
+          expect(PoolReplenishmentJob).to have_received(:perform_later).with(agent_run.project_id)
+        end
+      end
+
+      describe "#execute_in_container (runner shim)" do
+        let(:mock_runner) { instance_double(ExecutionRunners::LocalDockerRunner) }
+        let(:mock_handle) do
+          ExecutionRunners::RunnerHandle.new(
+            runner_type: :local_docker,
+            identifier: "runner-container-123",
+            host: "local",
+            workspace_ref: "ws-ref",
+            metadata: { "agent_run_id" => nil, "worktree_path" => nil, "environment" => {} }
+          )
+        end
+
+        before do
+          allow(ExecutionRunners).to receive(:resolve_for).and_return(mock_runner)
+          allow(mock_runner).to receive(:start).and_return(
+            ExecutionRunners::ExecutionResult.success(stdout: "runner-output\n")
+          )
+        end
+
+        it "routes through the runner when the feature flag is enabled and handle is set" do
+          agent_run = create(:agent_run, worktree_path: worktree_path)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          agent_run.instance_variable_set(:@current_handle, mock_handle)
+          mock_handle.metadata["agent_run_id"] = agent_run.id
+
+          result = agent_run.execute_in_container("echo hello")
+
+          expect(ExecutionRunners).to have_received(:resolve_for).with(agent_run)
+          expect(mock_runner).to have_received(:start).with(
+            handle: mock_handle, command: "echo hello", timeout: nil,
+            startup_timeout: nil, idle_timeout: nil, abort_patterns: nil,
+            preparation: nil, heartbeat_path: nil
+          )
+          expect(result).to be_success
+          expect(result[:stdout]).to eq("runner-output\n")
+        end
+
+        it "merges per-call env into the handle metadata passed to the runner" do
+          agent_run = create(:agent_run, worktree_path: worktree_path)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          mock_handle.metadata["agent_run_id"] = agent_run.id
+          mock_handle.metadata["environment"] = { "EXISTING_VAR" => "keep-me" }
+          agent_run.instance_variable_set(:@current_handle, mock_handle)
+
+          agent_run.execute_in_container("echo hello", env: { "KILOCODE_CONFIG_B64" => "abc123" })
+
+          expect(mock_runner).to have_received(:start) do |**kwargs|
+            expect(kwargs[:handle].metadata["environment"]).to eq(
+              "EXISTING_VAR" => "keep-me", "KILOCODE_CONFIG_B64" => "abc123"
+            )
+          end
+          # The original handle is left untouched so later calls without env
+          # do not inherit a previous call's per-call variables.
+          expect(mock_handle.metadata["environment"]).to eq("EXISTING_VAR" => "keep-me")
+        end
+
+        it "falls back to old path when flag is enabled but no handle is set" do
+          agent_run = create(:agent_run, worktree_path: worktree_path, container_id: "abc123container")
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          allow(Docker::Container).to receive(:get).with("abc123container").and_return(mock_container)
+          allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+            block.call(:stdout, "reconnected\n") if block
+          end
+
+          result = agent_run.execute_in_container("echo hello")
+
+          expect(result).to be_success
+          expect(result[:stdout]).to eq("reconnected\n")
+        end
+
+        it "translates ExecutionError to Provision::ExecutionError" do
+          agent_run = create(:agent_run, worktree_path: worktree_path)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          agent_run.instance_variable_set(:@current_handle, mock_handle)
+          mock_handle.metadata["agent_run_id"] = agent_run.id
+          allow(mock_runner).to receive(:start).and_raise(
+            ExecutionRunners::ExecutionError.new("command failed", exit_code: 1, stdout: "out", stderr: "err")
+          )
+
+          expect { agent_run.execute_in_container("failing cmd") }
+            .to raise_error(Containers::Provision::ExecutionError, /command failed/)
+        end
+
+        it "translates StartupTimeoutError to Provision::StartupTimeoutError with diagnostics" do
+          agent_run = create(:agent_run, worktree_path: worktree_path)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          agent_run.instance_variable_set(:@current_handle, mock_handle)
+          mock_handle.metadata["agent_run_id"] = agent_run.id
+          allow(mock_runner).to receive(:start).and_raise(
+            ExecutionRunners::StartupTimeoutError.new("startup slow", diagnostics: { "elapsed" => 5 })
+          )
+
+          expect { agent_run.execute_in_container("cmd") }.to raise_error do |error|
+            expect(error).to be_a(Containers::Provision::StartupTimeoutError)
+            expect(error.message).to eq("startup slow")
+            expect(error.diagnostics).to eq("elapsed" => 5)
+          end
+        end
+
+        it "translates IdleTimeoutError to Provision::IdleTimeoutError with diagnostics" do
+          agent_run = create(:agent_run, worktree_path: worktree_path)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          agent_run.instance_variable_set(:@current_handle, mock_handle)
+          mock_handle.metadata["agent_run_id"] = agent_run.id
+          allow(mock_runner).to receive(:start).and_raise(
+            ExecutionRunners::IdleTimeoutError.new("output stalled", diagnostics: { "idle" => 30 })
+          )
+
+          expect { agent_run.execute_in_container("cmd") }.to raise_error do |error|
+            expect(error).to be_a(Containers::Provision::IdleTimeoutError)
+            expect(error.message).to eq("output stalled")
+            expect(error.diagnostics).to eq("idle" => 30)
+          end
+        end
+
+        it "translates generic TimeoutError to Provision::TimeoutError with diagnostics" do
+          agent_run = create(:agent_run, worktree_path: worktree_path)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          agent_run.instance_variable_set(:@current_handle, mock_handle)
+          mock_handle.metadata["agent_run_id"] = agent_run.id
+          allow(mock_runner).to receive(:start).and_raise(
+            ExecutionRunners::TimeoutError.new("wall clock exceeded", diagnostics: { "limit" => 600 })
+          )
+
+          expect { agent_run.execute_in_container("cmd") }.to raise_error do |error|
+            expect(error).to be_a(Containers::Provision::TimeoutError)
+            expect(error).not_to be_a(Containers::Provision::StartupTimeoutError)
+            expect(error).not_to be_a(Containers::Provision::IdleTimeoutError)
+            expect(error.message).to eq("wall clock exceeded")
+            expect(error.diagnostics).to eq("limit" => 600)
+          end
+        end
+      end
+
+      describe "#cleanup_container (runner shim)" do
+        let(:mock_runner) { instance_double(ExecutionRunners::LocalDockerRunner) }
+        let(:mock_handle) do
+          ExecutionRunners::RunnerHandle.new(
+            runner_type: :local_docker,
+            identifier: "runner-container-123",
+            host: "local",
+            workspace_ref: "ws-ref",
+            metadata: { "agent_run_id" => nil, "worktree_path" => nil, "environment" => {} }
+          )
+        end
+
+        before do
+          allow(ExecutionRunners).to receive(:resolve_for).and_return(mock_runner)
+          allow(mock_runner).to receive(:cleanup)
+        end
+
+        it "routes through the runner when the feature flag is enabled and handle is set" do
+          agent_run = create(:agent_run, worktree_path: worktree_path, container_id: "runner-container-123")
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          agent_run.instance_variable_set(:@current_handle, mock_handle)
+          mock_handle.metadata["agent_run_id"] = agent_run.id
+
+          agent_run.cleanup_container(force: true)
+
+          expect(ExecutionRunners).to have_received(:resolve_for).with(agent_run)
+          expect(mock_runner).to have_received(:cleanup).with(handle: mock_handle, force: true)
+          expect(agent_run.reload.container_id).to be_nil
+        end
+
+        it "does not raise when runner cleanup raises ProvisionError" do
+          agent_run = create(:agent_run, worktree_path: worktree_path, container_id: "runner-container-456")
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          agent_run.instance_variable_set(:@current_handle, mock_handle)
+          mock_handle.metadata["agent_run_id"] = agent_run.id
+          allow(mock_runner).to receive(:cleanup)
+            .and_raise(ExecutionRunners::ProvisionError.new("gone"))
+
+          expect { agent_run.cleanup_container(force: true) }.not_to raise_error
+          expect(agent_run.reload.container_id).to be_nil
+        end
+
+        it "falls back to old path when flag is enabled but no handle is set" do
+          agent_run = create(:agent_run, worktree_path: worktree_path, container_id: "abc123container")
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          allow(Docker::Container).to receive(:get).with("abc123container").and_return(mock_container)
+          expect(mock_container).to receive(:delete)
+
+          agent_run.cleanup_container
+
+          expect(mock_runner).not_to have_received(:cleanup)
+          expect(agent_run.reload.container_id).to be_nil
+        end
+      end
+
       describe "#with_container" do
         it "provisions, yields, and cleans up" do
           agent_run = create(:agent_run, worktree_path: worktree_path)
