@@ -69,7 +69,7 @@
   JSON-serializable and round-trip losslessly through `to_json` / `from_json`
   (including the `runner_type` symbol) so it can be persisted in a DB column or
   Temporal activity result for recovery after worker restart or failover.
-  *Tests:* `spec/services/execution_runners/contracts_spec.rb`
+  *Tests:* `spec/services/execution_runners_spec.rb`
   *Code:* `ExecutionRunners::RunnerHandle`
 
 - [x] **CONTAINER-RUNTIME-009** — The system SHALL define immutable value
@@ -77,5 +77,5 @@
   `ServiceDeclaration`, `ComputeRequirements`) as `Data.define` structures that
   consolidate the existing `Containers::Provision::Result` patterns and adapt
   `NetworkPolicy::NetworkContract` without Docker-specific identifiers.
-  *Tests:* `spec/services/execution_runners/contracts_spec.rb`
+  *Tests:* `spec/services/execution_runners_spec.rb`
   *Code:* `ExecutionRunners`
