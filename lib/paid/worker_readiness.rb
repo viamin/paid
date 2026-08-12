@@ -14,16 +14,40 @@ module Paid
   #
   #   test -f "$WORKER_READINESS_FILE"
   #
+  # The default flag path is scoped per worker process (program name plus
+  # TEMPORAL_WORKER_MODE) so colocated workers on one host each keep an
+  # independent flag. config/deploy.yml runs bin/jobs and two
+  # bin/temporal_worker processes (TEMPORAL_WORKER_MODE=poll and =agent) on
+  # the same host; a single shared path would let one worker's graceful
+  # shutdown remove the flag out from under the others, and an orchestrator's
+  # `test -f` check could not tell which worker is draining.
+  #
   # This mirrors how `lib/paid/good_job_worker.rb` keeps testable logic out of
   # the bin/ scripts.
   module WorkerReadiness
-    DEFAULT_FILE_NAME = "paid-worker-ready"
+    DEFAULT_FILE_PREFIX = "paid-worker-ready"
 
     module_function
 
     # Path to the readiness flag file. Overridable via WORKER_READINESS_FILE.
+    # The default is scoped per worker (program name + TEMPORAL_WORKER_MODE)
+    # so colocated workers do not share a single flag.
     def file_path(env = ENV)
-      env["WORKER_READINESS_FILE"].presence || File.join(Dir.tmpdir, DEFAULT_FILE_NAME)
+      env["WORKER_READINESS_FILE"].presence ||
+        File.join(Dir.tmpdir, default_file_name(env))
+    end
+
+    # Per-worker default flag file name, derived from the running program and,
+    # for Temporal workers, TEMPORAL_WORKER_MODE. bin/jobs yields
+    # "paid-worker-ready-jobs"; a temporal worker in poll mode yields
+    # "paid-worker-ready-temporal_worker-poll". This keeps each colocated
+    # worker's flag independent without requiring explicit configuration,
+    # though config/deploy.yml sets WORKER_READINESS_FILE explicitly per role
+    # for deterministic paths in production.
+    def default_file_name(env = ENV)
+      program = File.basename($PROGRAM_NAME, ".*")
+      mode = env["TEMPORAL_WORKER_MODE"].presence
+      mode ? "#{DEFAULT_FILE_PREFIX}-#{program}-#{mode}" : "#{DEFAULT_FILE_PREFIX}-#{program}"
     end
 
     # Write the ready flag. Safe to call repeatedly (overwrites).

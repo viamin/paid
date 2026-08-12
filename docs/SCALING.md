@@ -492,6 +492,7 @@ cloud schedulers and load balancers:
   routing but does not restart the process. Use this for rolling deploys.
 
 The readiness check verifies:
+
 - **Database** — `SELECT 1` succeeds
 - **Migrations** — no pending migrations
 - **Redis** — `PING` returns `PONG` (2s timeout)
@@ -506,12 +507,30 @@ unreachable dependencies reports `not_ready` (HTTP 503), not crashed.
 Background worker processes (`bin/temporal_worker`, `bin/jobs`) do not serve
 HTTP. They signal readiness via a file-based flag:
 
-- On startup, the worker writes a ready-flag file to `WORKER_READINESS_FILE`
-  (default: `#{Dir.tmpdir}/paid-worker-ready`).
+- On startup, the worker writes a ready-flag file to `WORKER_READINESS_FILE`.
 - On SIGTERM (graceful shutdown), the file is removed, signaling the
   orchestrator that the worker is draining.
 
-An orchestrator or sidecar checks readiness with:
+**Each worker process must use a distinct flag file.** `config/deploy.yml`
+colocates `bin/jobs` and two `bin/temporal_worker` processes (`worker_poll`
+and `worker_agent`) on the same host. A single shared path would let one
+worker's graceful shutdown remove the flag for all of them, so an
+orchestrator could not tell which worker is actually draining. Each role
+therefore sets `WORKER_READINESS_FILE` explicitly:
+
+| Role | `WORKER_READINESS_FILE` |
+|------|-------------------------|
+| `job` | `/tmp/paid-worker-ready-jobs` |
+| `worker_poll` | `/tmp/paid-worker-ready-temporal_worker-poll` |
+| `worker_agent` | `/tmp/paid-worker-ready-temporal_worker-agent` |
+
+If `WORKER_READINESS_FILE` is unset (e.g. local development), the default is
+scoped per worker by program name plus `TEMPORAL_WORKER_MODE`
+(`#{Dir.tmpdir}/paid-worker-ready-<program>[-<mode>]`), so colocated workers
+still get independent flags without explicit configuration. Override it per
+process if you run multiple instances of the same role on one host.
+
+An orchestrator or sidecar checks a **specific** role's readiness with:
 
 ```bash
 test -f "$WORKER_READINESS_FILE" && exit 0 || exit 1

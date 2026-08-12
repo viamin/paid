@@ -15,9 +15,37 @@ RSpec.describe Paid::WorkerReadiness do
       expect(described_class.file_path(env)).to eq(file_path)
     end
 
-    it "falls back to a default path in the system tmpdir" do
+    it "falls back to a program-scoped default in the system tmpdir" do
       path = described_class.file_path({})
-      expect(path).to eq(File.join(Dir.tmpdir, "paid-worker-ready"))
+      expect(path).to start_with(Dir.tmpdir)
+      expect(path).to include("paid-worker-ready")
+      # The default embeds the running program so it is unique per process.
+      expect(path).to include(File.basename($PROGRAM_NAME, ".*"))
+    end
+
+    it "gives poll and agent temporal workers distinct flag paths" do
+      poll = described_class.file_path("TEMPORAL_WORKER_MODE" => "poll")
+      agent = described_class.file_path("TEMPORAL_WORKER_MODE" => "agent")
+      expect(poll).to end_with("-poll")
+      expect(agent).to end_with("-agent")
+      expect(poll).not_to eq(agent)
+    end
+  end
+
+  describe ".default_file_name" do
+    it "includes the program basename" do
+      expect(described_class.default_file_name({})).to include(File.basename($PROGRAM_NAME, ".*"))
+    end
+
+    it "appends TEMPORAL_WORKER_MODE when set" do
+      name = described_class.default_file_name("TEMPORAL_WORKER_MODE" => "agent")
+      expect(name).to eq("paid-worker-ready-#{File.basename($PROGRAM_NAME, '.*')}-agent")
+    end
+
+    it "omits the mode suffix when TEMPORAL_WORKER_MODE is absent" do
+      expect(described_class.default_file_name({})).to eq(
+        "paid-worker-ready-#{File.basename($PROGRAM_NAME, '.*')}"
+      )
     end
   end
 
