@@ -336,6 +336,25 @@ RSpec.describe "ChatSessions" do
         expect(close_form).to be_nil
       end
 
+      it "gives the conversation's scroll wrapper a min-h-0 flex constraint (#3331)" do
+        # Without `min-h-0` on this flex-1 wrapper, WebKit lets it grow to fit
+        # its content instead of clamping to the available space, so the
+        # conversation partial's internal overflow-y-auto region never
+        # actually scrolls (the whole page scrolls instead). That breaks both
+        # the "jump to input" link and the "back to top" button on Safari,
+        # since chat_controller's handleScroll/scrollToInput act on
+        # containerTarget.scrollTop, which never changes when the page
+        # scrolls instead of the intended container.
+        get chat_session_path(chat_session)
+        expect(response).to have_http_status(:ok)
+
+        doc = Nokogiri::HTML(response.body)
+        wrapper = doc.at_xpath("//div[contains(@class, 'flex-1') and .//button[@data-action='click->chat#scrollToInput']]")
+
+        expect(wrapper).to be_present
+        expect(wrapper["class"].split.sort).to include("min-h-0")
+      end
+
       it "renders the auto-approve checkbox reflecting the session state" do
         chat_session.update!(auto_approve: true)
 
