@@ -49,6 +49,9 @@ module Capacity
         user_active_count: nil,
         project_active_count: nil,
         create_pr_active_count: nil,
+        global_active_count: nil,
+        global_max_concurrent_executions: nil,
+        global_available_slots: nil,
         effective_max_concurrent_runs: nil,
         available_slots: 0,
         available_memory_bytes: nil,
@@ -59,7 +62,7 @@ module Capacity
     end
 
     def manual_result(mode:)
-      remaining_slots = [ host_available_slots, user_available_slots, project_available_slots, create_pr_available_slots ].compact.min
+      remaining_slots = [ global_available_slots, host_available_slots, user_available_slots, project_available_slots, create_pr_available_slots ].compact.min
 
       {
         allowed: remaining_slots.positive?,
@@ -72,6 +75,9 @@ module Capacity
         user_active_count: user_active_count,
         project_active_count: project_active_count,
         create_pr_active_count: create_pr_active_count,
+        global_active_count: global_active_count,
+        global_max_concurrent_executions: global_limit,
+        global_available_slots: global_available_slots,
         effective_max_concurrent_runs: user_hard_ceiling,
         available_slots: remaining_slots,
         available_memory_bytes: nil,
@@ -97,6 +103,7 @@ module Capacity
       ].compact.min
       remaining_slots = [
         remaining_memory_slots,
+        global_available_slots,
         host_available_slots,
         user_available_slots,
         project_available_slots,
@@ -114,6 +121,9 @@ module Capacity
         user_active_count: user_active_count,
         project_active_count: project_active_count,
         create_pr_active_count: create_pr_active_count,
+        global_active_count: global_active_count,
+        global_max_concurrent_executions: global_limit,
+        global_available_slots: global_available_slots,
         effective_max_concurrent_runs: effective_max_concurrent_runs,
         available_slots: remaining_slots,
         available_memory_bytes: available_memory_bytes,
@@ -175,6 +185,9 @@ module Capacity
         user_active_count: user_active_count,
         project_active_count: project_active_count,
         create_pr_active_count: create_pr_active_count,
+        global_active_count: global_active_count,
+        global_max_concurrent_executions: global_limit,
+        global_available_slots: global_available_slots,
         effective_max_concurrent_runs: user_hard_ceiling,
         available_slots: 0,
         available_memory_bytes: 0,
@@ -199,8 +212,10 @@ module Capacity
         slot_available?(host_available_slots) &&
         slot_available?(project_available_slots) &&
         slot_available?(create_pr_available_slots) &&
+        slot_available?(global_available_slots) &&
         (remaining_memory_slots.nil? || remaining_memory_slots.positive?)
 
+      return "global_hard_ceiling" if global_available_slots <= 0
       return "host_hard_ceiling" if selected_host_limit && host_available_slots.to_i <= 0
       return "insufficient_docker_capacity" if !remaining_memory_slots.nil? && remaining_memory_slots <= 0
       return "user_hard_ceiling" if user_available_slots <= 0
@@ -285,6 +300,20 @@ module Capacity
       return nil unless goal == "create_pr"
 
       @create_pr_available_slots ||= [ user.account.tenant_max_concurrent_create_pr_runs - create_pr_active_count, 0 ].max
+    end
+
+    def global_active_count
+      @global_active_count ||= AgentRun.active_count_global
+    end
+
+    def global_limit
+      @global_limit ||= Capacity::GlobalLimit.max_concurrent_executions
+    end
+
+    def global_available_slots
+      return @global_available_slots if defined?(@global_available_slots)
+
+      @global_available_slots = [ global_limit - global_active_count, 0 ].max
     end
 
     def user_hard_ceiling

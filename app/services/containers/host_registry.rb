@@ -89,11 +89,22 @@ module Containers
           HostDefinition.new(
             identifier: active_backend.identifier,
             backend: active_backend,
-            max_concurrent_runs: nil,
+            max_concurrent_runs: single_backend_max_concurrent_runs,
             fallback_enabled: false
           )
         ]
       )
+    end
+
+    # In single-backend mode the per-host capacity was previously always nil
+    # (unlimited). Cloud runners need a declared capacity independent of Docker
+    # memory measurement — e.g. "budget for 20 concurrent Fly Machines" — so
+    # MAX_CONCURRENT_EXECUTIONS lets an operator set a ceiling without setting
+    # up multi-backend mode. When unset, the limit remains nil and only the
+    # global limit (Capacity::GlobalLimit) provides a deployment-wide ceiling.
+    def single_backend_max_concurrent_runs
+      value = env["MAX_CONCURRENT_EXECUTIONS"].to_s
+      value.present? ? Integer(value, exception: false) : nil
     end
 
     def config_payload

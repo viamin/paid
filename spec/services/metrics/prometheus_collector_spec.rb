@@ -55,6 +55,13 @@ RSpec.describe Metrics::PrometheusCollector do # @spec OBSERVABILITY-002
       expect(output).to include("paid_temporal_workflow_utilization_percent")
     end
 
+    it "includes capacity metrics" do
+      expect(output).to include("paid_capacity_global_concurrent_executions")
+      expect(output).to include("paid_capacity_global_concurrent_limit")
+      expect(output).to include("paid_capacity_host_concurrent_executions")
+      expect(output).to include("paid_capacity_host_concurrent_limit")
+    end
+
     context "with agent runs in various statuses" do
       before do
         create(:agent_run, :running, container_id: "ctr-1")
@@ -277,6 +284,22 @@ RSpec.describe Metrics::PrometheusCollector do # @spec OBSERVABILITY-002
 
       it "reports total unfinished jobs" do
         expect(output).to include("paid_goodjob_jobs_unfinished 3")
+      end
+    end
+
+    context "with capacity-inflight runs" do
+      before do
+        create(:agent_run, :running)
+        create(:agent_run, :running)
+        allow(Capacity::GlobalLimit).to receive(:max_concurrent_executions).and_return(10)
+      end
+
+      it "reports the global concurrent execution count" do
+        expect(output).to include("paid_capacity_global_concurrent_executions 2")
+      end
+
+      it "reports the global concurrent execution limit" do
+        expect(output).to include("paid_capacity_global_concurrent_limit 10")
       end
     end
 

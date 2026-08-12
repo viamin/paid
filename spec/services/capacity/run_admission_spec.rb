@@ -293,5 +293,101 @@ RSpec.describe Capacity::RunAdmission do
       expect(result[:reason]).to be_nil
       expect(result[:capacity_blocked]).to be_nil
     end
+
+    describe "global concurrent execution limit" do
+      before do
+        allow(Capacity::GlobalLimit).to receive(:max_concurrent_executions).and_return(2)
+      end
+
+      it "denies admission when the global limit is reached" do
+        2.times { create(:agent_run, :running, project: project) }
+
+        result = described_class.call(user: user, project: project, docker_snapshot: docker_snapshot)
+
+        expect(result[:allowed]).to be false
+        expect(result[:reason]).to eq("global_hard_ceiling")
+        expect(result[:global_active_count]).to eq(2)
+        expect(result[:global_max_concurrent_executions]).to eq(2)
+        expect(result[:global_available_slots]).to eq(0)
+      end
+
+      it "counts inflight runs from other accounts against the global limit" do
+        other_account = create(:account)
+        other_user = create(:user, account: other_account)
+        other_project = create(:project, account: other_account, created_by: other_user)
+        create(:agent_run, :running, project: other_project)
+        create(:agent_run, :running, project: project)
+
+        result = described_class.call(user: user, project: project, docker_snapshot: docker_snapshot)
+
+        expect(result[:allowed]).to be false
+        expect(result[:reason]).to eq("global_hard_ceiling")
+        expect(result[:global_active_count]).to eq(2)
+      end
+
+      it "allows admission when the global limit has remaining slots" do
+        create(:agent_run, :running, project: project)
+
+        result = described_class.call(user: user, project: project, docker_snapshot: docker_snapshot)
+
+        expect(result[:allowed]).to be true
+        expect(result[:global_active_count]).to eq(1)
+        expect(result[:global_available_slots]).to eq(1)
+      end
+
+      it "distinguishes global_hard_ceiling from user_hard_ceiling" do
+        user.settings.update!(run_concurrency_mode: "manual", max_concurrent_runs: 1)
+        create(:agent_run, :running, project: project)
+
+        # Global limit is 2, user limit is 1 — user is the binding constraint
+        result = described_class.call(user: user, project: project)
+
+        expect(result[:allowed]).to be false
+        expect(result[:reason]).to eq("user_hard_ceiling")
+      end
+
+      it "distinguishes global_hard_ceiling from host_hard_ceiling" do
+        create(:agent_run, :running, project: project, container_host: "elguapo")
+        create(:agent_run, :running, project: project, container_host: "aws-1")
+
+        # Global limit is 2 (exhausted), host elguapo has limit 4 (1 used)
+        result = described_class.call(
+          user: user, project: project, docker_snapshot: docker_snapshot,
+          selected_host: "elguapo", selected_host_limit: 4
+        )
+
+        expect(result[:allowed]).to be false
+        expect(result[:reason]).to eq("global_hard_ceiling")
+      end
+    end
+
+    describe "global limit in manual mode" do
+      before do
+        user.settings.update!(run_concurrency_mode: "manual", max_concurrent_runs: 10)
+        allow(Capacity::GlobalLimit).to receive(:max_concurrent_executions).and_return(2)
+      end
+
+      it "denies when global limit is reached even in manual mode" do
+        2.times { create(:agent_run, :running, project: project) }
+
+        result = described_class.call(user: user, project: project)
+
+        expect(result[:allowed]).to be false
+        expect(result[:reason]).to eq("global_hard_ceiling")
+        expect(result[:mode]).to eq("manual")
+      end
+    end
+
+    describe "global limit does not affect Docker auto mode when below ceiling" do
+      it "allows admission in auto mode with a high global limit" do
+        allow(Capacity::GlobalLimit).to receive(:max_concurrent_executions).and_return(50)
+
+        result = described_class.call(user: user, project: project, docker_snapshot: docker_snapshot)
+
+        expect(result[:allowed]).to be true
+        expect(result[:mode]).to eq("auto")
+        expect(result[:snapshot_available]).to be true
+      end
+    end
   end
 end

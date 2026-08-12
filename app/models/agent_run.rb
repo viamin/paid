@@ -750,6 +750,15 @@ class AgentRun < ApplicationRecord
     ).count
   end
 
+  # Returns the total count of capacity-inflight runs across all accounts,
+  # hosts, and projects. Used by the global concurrent execution limit
+  # (Capacity::GlobalLimit) to enforce a deployment-wide ceiling on total
+  # concurrent executions — the "how many cloud machines am I willing to pay
+  # for right now" control.
+  def self.active_count_global
+    capacity_inflight.count
+  end
+
   # Returns the count of active create_pr runs for the given account.
   # Used to enforce the account-level create_pr concurrency cap.
   #

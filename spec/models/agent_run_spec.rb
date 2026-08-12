@@ -2378,6 +2378,31 @@ RSpec.describe AgentRun do
     end
   end
 
+  describe ".active_count_global" do
+    it "counts all capacity-inflight runs across accounts and projects" do
+      account_a = create(:account)
+      user_a = create(:user, account: account_a)
+      project_a = create(:project, account: account_a, created_by: user_a)
+
+      account_b = create(:account)
+      user_b = create(:user, account: account_b)
+      project_b = create(:project, account: account_b, created_by: user_b)
+
+      create(:agent_run, :running, project: project_a)
+      create(:agent_run, :running, project: project_b)
+      create(:agent_run, :queued, project: project_a, temporal_workflow_id: "claimed")
+      create(:agent_run, :completed, project: project_a)
+
+      expect(described_class.active_count_global).to eq(3)
+    end
+
+    it "returns zero when no capacity-inflight runs exist" do
+      create(:agent_run, :completed)
+
+      expect(described_class.active_count_global).to eq(0)
+    end
+  end
+
   describe ".active_create_pr_count_for_account" do
     it "counts running and claimed create_pr runs for the account" do
       account = create(:account)

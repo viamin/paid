@@ -188,4 +188,33 @@ RSpec.describe Containers::HostRegistry, :no_db do
     allow(credentials).to receive(:dig).with(:docker_hosts, :elguapo, :client_cert).and_return("/secure/elguapo/cert.pem")
     allow(credentials).to receive(:dig).with(:docker_hosts, :elguapo, :client_key).and_return("/secure/elguapo/key.pem")
   end
+
+  describe "single-backend mode declared capacity" do
+    before do
+      allow(Containers::Backends::LocalDocker).to receive(:new) do |identifier: "local"|
+        instance_double(Containers::Backends::LocalDocker, identifier: identifier)
+      end
+      allow(Containers).to receive(:backend).and_return(
+        instance_double(Containers::Backends::LocalDocker, identifier: "local")
+      )
+    end
+
+    it "reads max_concurrent_runs from MAX_CONCURRENT_EXECUTIONS in single-backend mode" do
+      registry = described_class.load(env: { "MAX_CONCURRENT_EXECUTIONS" => "20" })
+
+      expect(registry.host_limit_for("local")).to eq(20)
+    end
+
+    it "defaults to nil (unlimited) when MAX_CONCURRENT_EXECUTIONS is unset" do
+      registry = described_class.load(env: {})
+
+      expect(registry.host_limit_for("local")).to be_nil
+    end
+
+    it "ignores invalid MAX_CONCURRENT_EXECUTIONS values" do
+      registry = described_class.load(env: { "MAX_CONCURRENT_EXECUTIONS" => "abc" })
+
+      expect(registry.host_limit_for("local")).to be_nil
+    end
+  end
 end
