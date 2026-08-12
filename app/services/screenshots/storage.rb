@@ -8,6 +8,12 @@ module Screenshots
   #
   # Files are organized by: screenshots/{org}/{repo}/pr-{number}/{commit_sha}/{route_name}.{ext}
   #
+  # S3 client construction, bucket/region/credential resolution, and the generic
+  # upload / signed-URL / delete operations are delegated to the shared
+  # {ArtifactStorage} module so every durable artifact type reuses one storage
+  # abstraction. This class keeps the screenshot-specific key layout and the
+  # before/after listing logic.
+  #
   # @example Upload a screenshot
   #   storage = Screenshots::Storage.new
   #   url = storage.upload(
@@ -28,15 +34,20 @@ module Screenshots
   #     commit_sha: "abc1234",
   #     route_name: "dashboard"
   #   )
+  # @spec ARTIFACT-STORAGE-003
   class Storage
     class StorageError < StandardError; end
 
-    DEFAULT_BUCKET = "paid-screenshots"
-    DEFAULT_REGION = "us-east-1"
-    DEFAULT_RETENTION_DAYS = 30
+    # Storage/client configuration is delegated to {ArtifactStorage}. These
+    # constants are aliased so historical references
+    # (`Screenshots::Storage::MAX_URL_TTL`, etc.) keep resolving.
+    DEFAULT_BUCKET = ArtifactStorage::DEFAULT_BUCKET
+    DEFAULT_REGION = ArtifactStorage::DEFAULT_REGION
     # AWS SigV4 presigned S3 URLs cannot exceed one week.
-    MAX_URL_TTL = Aws::S3::Presigner::ONE_WEEK
-    DEFAULT_URL_TTL = MAX_URL_TTL
+    MAX_URL_TTL = ArtifactStorage::MAX_URL_TTL
+    DEFAULT_URL_TTL = ArtifactStorage::DEFAULT_URL_TTL
+
+    DEFAULT_RETENTION_DAYS = 30
     PNG_CONTENT_TYPE = "image/png"
     GIF_CONTENT_TYPE = "image/gif"
     WEBM_CONTENT_TYPE = "video/webm"
@@ -48,23 +59,29 @@ module Screenshots
     }.freeze
 
     def initialize(bucket: nil, region: nil, url_ttl: nil)
-      @bucket = bucket || configured_bucket
-      @region = region || configured_region
-      @url_ttl = url_ttl
+      @artifact_storage = ArtifactStorage.new(bucket: bucket, region: region, url_ttl: url_ttl)
     end
+
+    # The shared artifact storage backend that owns S3 client construction.
+    attr_reader :artifact_storage
 
     # The S3 bucket screenshots and traces share. Exposed so sibling services
     # (e.g. {Previews::TraceViewer}) can address the same bucket.
-    attr_reader :bucket
+    def bucket
+      @artifact_storage.bucket
+    end
 
     # The AWS region for the configured bucket.
-    attr_reader :region
+    def region
+      @artifact_storage.region
+    end
 
-    # Underlying S3 client. Exposed so sibling services that operate on the
-    # shared bucket (trace existence checks, trace uploads) can reuse it
-    # instead of constructing a second, potentially divergent client.
+    # Underlying S3 client, delegated to {ArtifactStorage}. Exposed so sibling
+    # services that operate on the shared bucket (trace existence checks, trace
+    # uploads) can reuse it instead of constructing a second, potentially
+    # divergent client.
     def s3_client
-      @s3_client ||= Aws::S3::Client.new(client_options)
+      @artifact_storage.client
     end
 
     # Uploads a PNG screenshot to S3 and returns a presigned URL.
@@ -110,14 +127,7 @@ module Screenshots
 
       key = artifact_key(org:, repo:, pr_number:, commit_sha:, route_name:, extension: resolved_extension)
 
-      File.open(file_path, "rb") do |file|
-        s3_client.put_object(
-          bucket: @bucket,
-          key: key,
-          body: file,
-          content_type: content_type
-        )
-      end
+      put_object(file_path:, key:, content_type:)
       signed_url(key)
     rescue Aws::S3::Errors::ServiceError => e
       raise StorageError, "S3 upload failed: #{e.message}"
@@ -144,12 +154,7 @@ module Screenshots
     # @param key [String] S3 object key
     # @return [String] Presigned GET URL
     def signed_url(key)
-      presigner.presigned_url(
-        :get_object,
-        bucket: @bucket,
-        key: key,
-        expires_in: url_ttl.to_i
-      )
+      @artifact_storage.signed_url(key)
     end
 
     # Returns signed URLs for the most recent previous commit's screenshots,
@@ -164,7 +169,7 @@ module Screenshots
       prefix = "screenshots/#{org}/#{repo}/pr-#{pr_number}/"
       commits = Hash.new { |h, k| h[k] = [] }
 
-      s3_client.list_objects_v2(bucket: @bucket, prefix: prefix).each_page do |page|
+      s3_client.list_objects_v2(bucket: bucket, prefix: prefix).each_page do |page|
         page.contents.each do |obj|
           next unless obj.key.end_with?(".png")
 
@@ -209,7 +214,7 @@ module Screenshots
       allowed_extensions = Array(extensions).map(&:downcase)
       commits = Hash.new { |h, k| h[k] = [] }
 
-      s3_client.list_objects_v2(bucket: @bucket, prefix: prefix).each_page do |page|
+      s3_client.list_objects_v2(bucket: bucket, prefix: prefix).each_page do |page|
         page.contents.each do |obj|
           parts = obj.key.delete_prefix(prefix).split("/", 2)
           next unless parts.size == 2
@@ -247,7 +252,7 @@ module Screenshots
     # @param pr_number [Integer] Pull request number
     def delete_pr_screenshots(org:, repo:, pr_number:)
       prefix = "screenshots/#{org}/#{repo}/pr-#{pr_number}/"
-      delete_by_prefix(prefix)
+      @artifact_storage.delete_prefix(prefix)
     end
 
     # Deletes screenshots older than the retention period.
@@ -258,12 +263,12 @@ module Screenshots
       cutoff = retention_days.days.ago
       deleted_count = 0
 
-      s3_client.list_objects_v2(bucket: @bucket, prefix: "screenshots/").each_page do |page|
+      s3_client.list_objects_v2(bucket: bucket, prefix: "screenshots/").each_page do |page|
         old_objects = page.contents.select { |obj| obj.last_modified < cutoff }
         next if old_objects.empty?
 
         s3_client.delete_objects(
-          bucket: @bucket,
+          bucket: bucket,
           delete: { objects: old_objects.map { |obj| { key: obj.key } } }
         )
         deleted_count += old_objects.size
@@ -276,11 +281,11 @@ module Screenshots
     #
     # @return [Boolean]
     def self.configured?
-      configured_access_key_id.present? && configured_secret_access_key.present?
+      ArtifactStorage.configured?
     end
 
     def configured?
-      access_key_id.present? && secret_access_key.present?
+      @artifact_storage.configured?
     end
 
     # Builds the S3 object key for a screenshot.
@@ -311,94 +316,11 @@ module Screenshots
     def put_object(file_path:, key:, content_type:)
       File.open(file_path, "rb") do |file|
         s3_client.put_object(
-          bucket: @bucket,
+          bucket: bucket,
           key: key,
           body: file,
           content_type: content_type
         )
-      end
-    end
-
-    def delete_by_prefix(prefix)
-      s3_client.list_objects_v2(bucket: @bucket, prefix: prefix).each_page do |page|
-        next if page.contents.empty?
-
-        s3_client.delete_objects(
-          bucket: @bucket,
-          delete: { objects: page.contents.map { |obj| { key: obj.key } } }
-        )
-      end
-    end
-
-    def presigner
-      @presigner ||= Aws::S3::Presigner.new(client: s3_client)
-    end
-
-    def url_ttl
-      @url_ttl ||= configured_url_ttl
-    end
-
-    def client_options
-      opts = { region: @region }
-      opts[:access_key_id] = access_key_id if access_key_id.present?
-      opts[:secret_access_key] = secret_access_key if secret_access_key.present?
-      opts[:endpoint] = endpoint if endpoint.present?
-      opts[:force_path_style] = true if endpoint.present?
-      opts
-    end
-
-    def configured_bucket
-      ENV.fetch("SCREENSHOTS_S3_BUCKET", credentials_dig(:bucket) || DEFAULT_BUCKET)
-    end
-
-    def configured_region
-      ENV.fetch("SCREENSHOTS_S3_REGION", credentials_dig(:region) || DEFAULT_REGION)
-    end
-
-    def configured_url_ttl
-      value = ENV["SCREENSHOTS_S3_URL_TTL"] || credentials_dig(:url_ttl)
-      return DEFAULT_URL_TTL if value.blank?
-
-      ttl = Integer(value)
-      raise ArgumentError, "SCREENSHOTS_S3_URL_TTL must be positive" unless ttl.positive?
-      raise ArgumentError, "SCREENSHOTS_S3_URL_TTL cannot exceed #{MAX_URL_TTL} seconds for S3 presigned URLs" if ttl > MAX_URL_TTL
-
-      ttl
-    end
-
-    def access_key_id
-      self.class.send(:configured_access_key_id)
-    end
-
-    def secret_access_key
-      self.class.send(:configured_secret_access_key)
-    end
-
-    def endpoint
-      self.class.send(:configured_endpoint)
-    end
-
-    def credentials_dig(key)
-      Rails.application.credentials.dig(:screenshots, :s3, key)
-    end
-
-    class << self
-      private
-
-      def configured_access_key_id
-        ENV["SCREENSHOTS_S3_ACCESS_KEY_ID"] || credentials_dig(:access_key_id)
-      end
-
-      def configured_secret_access_key
-        ENV["SCREENSHOTS_S3_SECRET_ACCESS_KEY"] || credentials_dig(:secret_access_key)
-      end
-
-      def configured_endpoint
-        ENV["SCREENSHOTS_S3_ENDPOINT"] || credentials_dig(:endpoint)
-      end
-
-      def credentials_dig(key)
-        Rails.application.credentials.dig(:screenshots, :s3, key)
       end
     end
   end

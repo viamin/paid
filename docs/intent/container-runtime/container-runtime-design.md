@@ -111,20 +111,22 @@ generalization, and is reviewed against the coupling inventory (#3337) to
 confirm coverage.
 
 - `ExecutionRunners::Base` is the abstract interface: `provision`, `start`,
-  `running?`, `cancel`, `cleanup`, `.compatible?`, `.ping`. Method names and
-  parameters never reference Docker concepts.
+  `running?`, `status`, `cancel`, `cleanup`, `.compatible?`, `.ping`. Method
+  names and parameters never reference Docker concepts.
 - A runner owns the complete execution environment (primary workload, sidecars,
   services, network, workspace) as a single lifecycle, plus the watchdog logic
   (startup, idle, wall-clock, heartbeat, abort-pattern detection).
 - Value objects consolidate existing patterns: `RunSpec` (what to run),
   `RunnerHandle` (opaque, JSON-serializable reference for recovery),
   `ExecutionResult` (outcome, including OOM and timeout classification),
-  `NetworkingPolicy` (adapts `NetworkPolicy::NetworkContract`, drops the Docker
-  network name), `ServiceDeclaration`, and `ComputeRequirements`.
+  `ExecutionStatus` (lifecycle status: `:running | :exited | :oom_killed |
+  :not_found`, returned by `Base#status`), `NetworkingPolicy` (adapts
+  `NetworkPolicy::NetworkContract`, drops the Docker network name),
+  `ServiceDeclaration`, and `ComputeRequirements`.
 - `ExecutionRunners::LocalDockerRunner` implements `Base` as a thin adapter over
-  `Containers::Provision`: `#provision`/`#start`/`#running?`/`#cancel`/
+  `Containers::Provision`: `#provision`/`#start`/`#running?`/`#status`/`#cancel`/
   `#cleanup` translate `RunSpec`/`RunnerHandle` to `Containers::Provision.new`,
-  `#execute`, `#container_running?`, and `#cleanup` calls, and translate
+  `#execute`, `#container_running?`, `#container_status`, and `#cleanup` calls, and translate
   `Containers::Provision::Result` and its error classes into `ExecutionResult`
   and the `ExecutionRunners` error hierarchy. `RunnerHandle#metadata` carries
   the `agent_run_id`, `worktree_path`, and `environment` needed to reconnect a
@@ -134,6 +136,60 @@ confirm coverage.
   yet translated (tracked separately). `ExecutionRunners.resolve` currently
   always returns `LocalDockerRunner`, since every existing backend (local
   Docker, remote Docker, Swarm) is a Docker transport.
+
+### Workspace strategy isolation (#3342)
+
+Workspace storage is expressed as a provider-neutral `WorkspaceStrategy` on
+`RunSpec`, isolating workspace assumptions from Docker volumes and bind mounts
+so a future remote runner (Fly, Cloud Run) can substitute object storage or
+ephemeral disk without changing orchestration code.
+
+**This PR (implemented).** Volume and bind translation; volume-name isolation;
+orphan-cleanup delegation.
+
+- `WorkspaceStrategy` carries `mode` (`:named_volume | :bind_mount | :ephemeral
+  | :object_storage`), the workload `mount_point`, an opaque `reference`
+  (volume name, host path, or storage URI — nil until provisioned), the
+  `writable_dirs` the workload needs (`WritableDir`: path, size, mode, exec),
+  and a `heartbeat` `HeartbeatConfig`. The default writable directories
+  (`/tmp`, `/home/agent/.cache`) and the heartbeat `mount_point` are declared
+  on the strategy as the provider-neutral shape; runner-specific credential
+  tmpfs mounts (e.g. `~/.claude`, `~/.codex`) remain a Docker-implementation
+  detail owned by `Containers::Provision`.
+- `LocalDockerRunner` translates the `:named_volume` and `:bind_mount` modes
+  to Docker operations: `:named_volume` constructs the per-run volume name
+  (`paid-workspace-<id>`) inside the runner via `workspace_volume_name_for`
+  and mounts it via `Containers::Provision`; `:bind_mount` forwards the
+  host-path reference as `Containers::Provision#worktree_path`. Volume-name
+  construction lives in the runner, so no orchestration code or the domain
+  model builds Docker volume names.
+- `RunnerHandle#workspace_ref` stores the opaque workspace reference for
+  recovery and cleanup across the provision → start → cleanup lifecycle.
+- `AgentRun#cleanup_orphaned_workspace_volume` delegates volume-name
+  construction and deletion to `LocalDockerRunner#cleanup_workspace_reference`
+  rather than constructing `paid-workspace-<id>` in the model.
+
+**Deferred (see CONTAINER-RUNTIME-012, -013, -014).** Writable tmpfs layout,
+heartbeat ownership, pool workspace through the runner.
+
+- `WorkspaceStrategy#writable_dirs` is declared on the strategy with a
+  `WritableDir#docker_tmpfs_options` helper that produces the same option
+  string Docker consumes, but `Containers::Provision#host_config` still
+  hardcodes its own `Tmpfs` block; the runner does not yet translate the
+  strategy's writable dirs into Provision calls (CONTAINER-RUNTIME-012).
+- `WorkspaceStrategy#heartbeat` (`HeartbeatConfig`) declares the heartbeat
+  mount point on the strategy, but `Containers::Provision#prepare_heartbeat_dir!`
+  still owns the host temp-dir vs. in-container tmpfs selection from the
+  backend's host-path capability, and callers still pass `heartbeat_path:` to
+  `LocalDockerRunner#start` (CONTAINER-RUNTIME-013).
+- Pool workspace management (`paid-pool-workspace-<pool_entry_id>`) still
+  lives in `Containers::PoolManager` and `Containers::Provision`; the runner
+  does not yet own pool workspace construction or cleanup (CONTAINER-RUNTIME-014).
+
+`Containers::Provision` is intentionally unchanged in this PR: the existing
+default workspace strategy (named volumes with in-container clone), host
+bind-mount support, and all provision-side workspace/heartbeat tests are
+preserved until the deferred specs land.
 
 ## References
 

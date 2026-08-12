@@ -5597,7 +5597,9 @@ RSpec.describe AgentRun do
 
         agent_run.send(:cleanup_orphaned_workspace_volume)
 
-        expect(Containers).to have_received(:backend_for).with("remote")
+        # Delegates to the execution runner, which resolves the owning backend
+        # for deletion (the runner type is also resolved from the host).
+        expect(Containers).to have_received(:backend_for).with("remote").at_least(:once)
         expect(backend).to have_received(:get_volume).with("paid-workspace-#{agent_run.id}", host: "remote")
         expect(backend).to have_received(:delete_volume).with(volume)
       end
@@ -5614,9 +5616,23 @@ RSpec.describe AgentRun do
 
         agent_run.send(:cleanup_orphaned_workspace_volume)
 
-        expect(Containers).to have_received(:backend_for).with("remote")
+        expect(Containers).to have_received(:backend_for).with("remote").at_least(:once)
         expect(backend).to have_received(:get_volume).with("paid-workspace-#{agent_run.id}", host: "remote")
         expect(backend).to have_received(:delete_volume).with(volume)
+      end
+
+      it "delegates volume-name construction to the runner (no hardcoded name in the model)" do
+        allow(Containers).to receive(:backend_for).and_return(backend)
+        allow(backend).to receive(:get_volume).and_return(volume)
+        allow(backend).to receive(:delete_volume)
+        # Stub the runner's name builder with a sentinel to prove the model
+        # uses the runner's naming rather than constructing its own volume name.
+        allow(ExecutionRunners::LocalDockerRunner).to receive(:workspace_volume_name_for)
+          .and_return("runner-built-sentinel")
+
+        agent_run.send(:cleanup_orphaned_workspace_volume)
+
+        expect(backend).to have_received(:get_volume).with("runner-built-sentinel", host: "remote")
       end
     end
 

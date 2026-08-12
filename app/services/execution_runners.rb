@@ -49,9 +49,112 @@ module ExecutionRunners
   # @spec CONTAINER-RUNTIME-009
   ComputeRequirements = Data.define(:cpu_quota, :memory_bytes, :pids_limit)
 
+  # A writable directory inside the workload. A Docker runner translates this
+  # to a tmpfs mount; a remote runner translates it to ephemeral disk or
+  # platform-native writable storage. Declared on {WorkspaceStrategy} so the
+  # writable layout travels with the workspace contract instead of being
+  # hardcoded by orchestration code.
+  #
+  # The data shape and +docker_tmpfs_options+ helper exist so the runner can
+  # translate the strategy's writable dirs into Docker tmpfs mounts when
+  # CONTAINER-RUNTIME-012 lands; today +Containers::Provision#host_config+
+  # still hardcodes its own +Tmpfs+ block.
+  # @spec CONTAINER-RUNTIME-011
+  # @spec CONTAINER-RUNTIME-012
+  WritableDir = Data.define(:path, :size_bytes, :mode, :exec) do
+    DEFAULT_MODE = 0o755
+
+    def self.build(path, size_bytes:, mode: DEFAULT_MODE, exec: false)
+      new(path: path, size_bytes: size_bytes, mode: mode, exec: exec)
+    end
+
+    # Docker tmpfs mount options string (e.g. +"exec,size=1073741824,mode=1777"+).
+    # Used by the runner when it begins translating the strategy's writable
+    # dirs into Provision calls (CONTAINER-RUNTIME-012).
+    def docker_tmpfs_options
+      parts = []
+      parts << "exec" if exec
+      parts << "size=#{size_bytes}"
+      parts << "mode=#{format("%04o", mode)}"
+      parts.join(",")
+    end
+  end
+
+  # Heartbeat monitoring configuration carried by the workspace strategy. The
+  # runner owns how the heartbeat path is made observable — a host bind mount
+  # when the backend exposes host paths, an in-container tmpfs otherwise — so
+  # callers never reach into Docker volume/tmpfs mechanics.
+  #
+  # Declared on the strategy as the provider-neutral shape today so callers
+  # can begin expressing heartbeat needs on the strategy; the actual
+  # runner-owned translation lands with CONTAINER-RUNTIME-013, after which
+  # +LocalDockerRunner#start+ reads +workspace.heartbeat+ instead of taking
+  # +heartbeat_path:+ directly.
+  # @spec CONTAINER-RUNTIME-011
+  # @spec CONTAINER-RUNTIME-013
+  HeartbeatConfig = Data.define(:mount_point)
+
+  # Provider-neutral workspace/storage strategy, isolating workspace assumptions
+  # from Docker volumes and bind mounts (RDR-054). A runner implementation
+  # translates the mode into its native storage primitive:
+  #
+  #   :named_volume    — runner-managed named volume (Docker: +paid-workspace-<id>+)
+  #   :bind_mount      — an existing host path mounted into the workload (legacy worktree)
+  #   :ephemeral       — ephemeral container-local storage, no persistence
+  #   :object_storage  — remote object storage synced into the workload (future)
+  #
+  # +reference+ is nil until a runner provisions storage; afterwards it holds
+  # the opaque storage reference (volume name, host path, or storage URI) that
+  # {RunnerHandle#workspace_ref} carries for recovery and cleanup. Volume-name
+  # construction lives inside the runner, never in orchestration or the domain
+  # model.
+  # @spec CONTAINER-RUNTIME-011
+  WorkspaceStrategy = Data.define(:mode, :mount_point, :reference, :writable_dirs, :heartbeat) do
+    DEFAULT_MOUNT_POINT = "/workspace"
+    HEARTBEAT_MOUNT_POINT = "/paid-heartbeat"
+
+    # Default writable directories every workload needs (scratch + tool cache).
+    # Runner-specific credential tmpfs mounts (e.g. ~/.claude, ~/.codex) are a
+    # Docker-implementation detail owned by the runner, not part of the
+    # provider-neutral workspace contract.
+    def self.default_writable_dirs
+      [
+        WritableDir.build("/tmp", size_bytes: 1024 * 1024 * 1024, mode: 0o1777, exec: true),
+        WritableDir.build("/home/agent/.cache", size_bytes: 512 * 1024 * 1024, mode: 0o755, exec: true)
+      ]
+    end
+
+    def self.named_volume(mount_point: DEFAULT_MOUNT_POINT,
+                          writable_dirs: default_writable_dirs)
+      new(mode: :named_volume, mount_point: mount_point, reference: nil,
+          writable_dirs: writable_dirs, heartbeat: HeartbeatConfig.new(mount_point: HEARTBEAT_MOUNT_POINT))
+    end
+
+    def self.bind_mount(reference:, mount_point: DEFAULT_MOUNT_POINT,
+                        writable_dirs: default_writable_dirs)
+      new(mode: :bind_mount, mount_point: mount_point, reference: reference,
+          writable_dirs: writable_dirs, heartbeat: HeartbeatConfig.new(mount_point: HEARTBEAT_MOUNT_POINT))
+    end
+
+    def self.ephemeral(mount_point: DEFAULT_MOUNT_POINT,
+                       writable_dirs: default_writable_dirs)
+      new(mode: :ephemeral, mount_point: mount_point, reference: nil,
+          writable_dirs: writable_dirs, heartbeat: HeartbeatConfig.new(mount_point: HEARTBEAT_MOUNT_POINT))
+    end
+
+    def named_volume?
+      mode == :named_volume
+    end
+
+    def bind_mount?
+      mode == :bind_mount
+    end
+  end
+
   # Immutable description of what to execute. Built by orchestration from the
   # +AgentRun+/+Project+ context and handed to {ExecutionRunners::Base#provision}.
   # @spec CONTAINER-RUNTIME-009
+  # @spec CONTAINER-RUNTIME-011
   RunSpec = Data.define(
     :agent_run,          # AgentRun context
     :project,            # Project context
@@ -60,12 +163,12 @@ module ExecutionRunners
     :resources,          # ComputeRequirements (cpu, memory, pids)
     :environment,        # Hash of env vars
     :networking_policy,  # NetworkingPolicy (restricted vs. direct)
-    :workspace_strategy, # :named_volume | :bind_mount | :ephemeral
+    :workspace,          # WorkspaceStrategy (named_volume | bind_mount | ephemeral)
     :services,           # Array<ServiceDeclaration>
     :secrets_config      # Auth/credential configuration
   ) do
     # Builds a RunSpec from an AgentRun context for the shim migration path
-    # (RDR-054). Derives workspace strategy and resource limits from the
+    # (RDR-054). Derives the workspace strategy and resource limits from the
     # agent run; the networking policy is the caller's responsibility so the
     # +NetworkingPolicy+ flows in as a domain object rather than being
     # reconstructed from Docker signals inside the runner.
@@ -90,11 +193,23 @@ module ExecutionRunners
         resources: resources,
         environment: agent_run.service_environment || {},
         networking_policy: networking_policy,
-        workspace_strategy: agent_run.worktree_path.present? ? :bind_mount : :named_volume,
+        workspace: workspace_strategy_for(agent_run),
         services: [],
         secrets_config: nil
       )
     end
+
+    # Derives the workspace strategy from the agent run: a legacy bind mount
+    # when an explicit worktree path is present, otherwise the default named
+    # volume (in-container clone). Volume-name construction stays inside the
+    # runner; the strategy only records the mode and host reference.
+    def self.workspace_strategy_for(agent_run)
+      worktree_path = agent_run.worktree_path.presence
+      return WorkspaceStrategy.bind_mount(reference: worktree_path) if worktree_path
+
+      WorkspaceStrategy.named_volume
+    end
+    private_class_method :workspace_strategy_for
   end
 
   # Opaque reference to a launched environment, returned by +#provision+ and
@@ -160,7 +275,7 @@ module ExecutionRunners
   #                          policy implementation never has to inspect Docker
   #                          network state.
   # @spec CONTAINER-RUNTIME-009
-  # @spec CONTAINER-RUNTIME-011
+  # @spec CONTAINER-RUNTIME-016
   NetworkingPolicy = Data.define(:mode, :firewall, :allow_destinations) do
     RESTRICTED_MODE = :proxy_restricted
 
@@ -231,6 +346,46 @@ module ExecutionRunners
       new(success: false, stdout: stdout, stderr: stderr, exit_code: exit_code,
           oom_killed: oom_killed, memory_limit_bytes: memory_limit_bytes,
           environment_running: environment_running)
+    end
+  end
+
+  # Result of a status query ({ExecutionRunners::Base#status}). Reports the
+  # workload's lifecycle state without reaching into Docker API response
+  # shapes: a future remote runner maps its platform-native liveness signal
+  # to the same states. `:not_found` covers an environment that can no longer
+  # be reconnected to (container gone, machine stopped, job record missing).
+  #
+  # +state+ values:
+  #   :running     — workload still executing
+  #   :exited      — workload completed (normally or with an exit code)
+  #   :oom_killed  — workload was killed by the cgroup/OS OOM killer
+  #   :not_found   — environment is gone and cannot be inspected
+  # @spec CONTAINER-RUNTIME-015
+  ExecutionStatus = Data.define(
+    :state,        # :running | :exited | :oom_killed | :not_found
+    :exit_code,    # Integer or nil (nil while still running or not_found)
+    :oom_killed,   # Boolean — whether the workload was OOM-killed
+    :memory_limit  # Integer (bytes) or nil
+  ) do
+    def running?
+      state == :running
+    end
+
+    def exited?
+      state == :exited
+    end
+
+    def oom_killed?
+      state == :oom_killed
+    end
+
+    def not_found?
+      state == :not_found
+    end
+
+    # Status for an environment that can no longer be inspected.
+    def self.not_found
+      new(state: :not_found, exit_code: nil, oom_killed: false, memory_limit: nil)
     end
   end
 
