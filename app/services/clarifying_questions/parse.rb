@@ -3,7 +3,7 @@
 module ClarifyingQuestions
   class Parse
     ENHANCEMENT_MARKER = "<!-- paid:enhance-issue -->"
-    CLARIFYING_SECTION_PATTERN = /^##\s+.*clarifying questions[^\n]*\n(.+?)(?=^## |\z)/mi.freeze
+    CLARIFYING_SECTION_PATTERN = /^##\s+[^\n]*clarifying questions[^\n]*\n(.+?)(?=^## |\z)/mi.freeze
 
     def self.call(...)
       new(...).call
