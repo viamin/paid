@@ -72,6 +72,20 @@ module ExecutionRunners
       raise NotImplementedError, "#{self.class} must implement ##{__method__}"
     end
 
+    # Reconnect to an existing execution environment from a persisted handle.
+    # Used by Temporal activities to recover after a worker restart or
+    # failover: the activity loads the {RunnerHandle} from the DB and calls
+    # +#reconnect+ before checking +#running?+ to decide whether to reuse the
+    # environment or clean it up.
+    #
+    # @param handle [RunnerHandle] the persisted handle to reconnect from
+    # @return [Object] a reconnected runner/service instance that can answer
+    #   +#running?+, +#execute+, and +#cleanup+
+    # @raise [ProvisionError] when the environment cannot be found
+    def reconnect(handle:)
+      raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+    end
+
     # Cancel an in-flight workload. Best-effort stop; the caller should still
     # +#cleanup+ to release all resources.
     #

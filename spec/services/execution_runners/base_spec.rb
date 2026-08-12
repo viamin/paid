@@ -35,6 +35,11 @@ RSpec.describe ExecutionRunners::Base do
         .to raise_error(NotImplementedError, /running/)
     end
 
+    it "raises NotImplementedError for #reconnect" do
+      expect { described_class.new.reconnect(handle: handle) }
+        .to raise_error(NotImplementedError, /reconnect/)
+    end
+
     it "raises NotImplementedError for #cancel" do
       expect { described_class.new.cancel(handle: handle) }
         .to raise_error(NotImplementedError, /cancel/)
@@ -61,7 +66,7 @@ RSpec.describe ExecutionRunners::Base do
     it "exposes only the domain lifecycle methods, none referencing Docker concepts" do
       instance_methods = described_class.instance_methods(false)
 
-      expect(instance_methods).to contain_exactly(:provision, :start, :running?, :cancel, :cleanup)
+      expect(instance_methods).to contain_exactly(:provision, :start, :running?, :reconnect, :cancel, :cleanup)
 
       forbidden = %w[docker container_id bind_mount exec_in_container network_name]
       instance_methods.each do |method|

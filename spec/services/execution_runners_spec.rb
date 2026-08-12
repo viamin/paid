@@ -105,6 +105,44 @@ RSpec.describe ExecutionRunners do
       expect(restored.runner_type).to eq(:fly_machine)
       expect(restored.metadata).to eq({})
     end
+
+    describe ".from_record" do
+      it "reconstructs a handle from a record with a persisted runner_handle" do
+        record = instance_double(AgentRun, runner_handle: handle.to_storage)
+
+        restored = described_class.from_record(record)
+
+        expect(restored).to eq(handle)
+        expect(restored.runner_type).to eq(:local_docker)
+      end
+
+      it "returns nil when the record has no stored handle" do
+        record = instance_double(AgentRun, runner_handle: nil)
+
+        expect(described_class.from_record(record)).to be_nil
+      end
+
+      it "returns nil when the stored handle is blank" do
+        record = instance_double(AgentRun, runner_handle: {})
+
+        expect(described_class.from_record(record)).to be_nil
+      end
+    end
+
+    describe "#to_storage" do
+      it "returns a JSON-native hash that round-trips through from_json" do
+        stored = handle.to_storage
+
+        expect(stored).to eq(
+          "runner_type" => "local_docker",
+          "identifier" => "abc123",
+          "host" => "local",
+          "workspace_ref" => "paid-workspace-1",
+          "metadata" => { "pool_entry_id" => 42 }
+        )
+        expect(described_class.from_json(stored)).to eq(handle)
+      end
+    end
   end
 
   describe ExecutionRunners::NetworkingPolicy do
