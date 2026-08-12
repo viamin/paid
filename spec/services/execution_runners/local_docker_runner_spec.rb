@@ -313,9 +313,9 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       expect(status).to be_not_found
     end
 
-    it "returns error on a transient Docker::Error::DockerError (not a NotFoundError)" do
+    it "returns error when oom_exit_diagnostics reports a transient failure" do
       allow(provision_service).to receive(:oom_exit_diagnostics)
-        .and_raise(Docker::Error::DockerError, "read: connection reset by peer")
+        .and_return(error: "read: connection reset by peer")
 
       status = runner.status(handle: handle)
 

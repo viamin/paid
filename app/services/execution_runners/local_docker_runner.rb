@@ -80,6 +80,7 @@ module ExecutionRunners
       return ExecutionStatus.not_found unless service.container
 
       diagnostics = service.oom_exit_diagnostics
+      return ExecutionStatus.error if diagnostics[:error]
       return ExecutionStatus.not_found if diagnostics.empty?
 
       memory_limit = diagnostics[:memory_limit_bytes]

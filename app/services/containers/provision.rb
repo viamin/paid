@@ -849,7 +849,10 @@ module Containers
     # determine whether the cgroup OOM killer fired. Docker only sets
     # State.OOMKilled when the kernel OOM killer killed the container, so it is
     # the authoritative signal; a bare 137 is otherwise ambiguous. Best-effort —
-    # returns {} when the container is already gone.
+    # returns {} when the container is already gone (Docker +NotFoundError+) and
+    # +{ error: e.message }+ on a transient platform failure (daemon timeout,
+    # connection reset) so callers can distinguish "gone" from "temporarily
+    # unreachable" (RDR-054).
     #
     # Also returns +exit_code+ so the runner's +#status+ query can surface the
     # container's exit code without a separate Docker inspect (RDR-054).
@@ -865,9 +868,19 @@ module Containers
         exit_code: state["ExitCode"],
         memory_limit_bytes: info.dig("HostConfig", "Memory")
       }
-    rescue Docker::Error::DockerError => e
+    rescue Docker::Error::NotFoundError => e
+      # The container is definitively gone. An empty result is the "gone"
+      # signal consumed by LocalDockerRunner#status.
       log_system("container.execute.exit_state_unavailable", error: e.message)
       {}
+    rescue Docker::Error::DockerError => e
+      # A transient platform failure (daemon timeout, connection reset) must
+      # not masquerade as "container gone": report it distinctly so callers
+      # retry instead of reaping a live-but-temporarily-unreachable workload.
+      # The #execute caller only reads :oom_killed / :memory_limit_bytes /
+      # :container_running (all absent here), so its behavior is unchanged.
+      log_system("container.execute.exit_state_unavailable", error: e.message)
+      { error: e.message }
     end
 
     def heartbeat_host_path
