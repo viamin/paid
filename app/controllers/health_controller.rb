@@ -110,18 +110,24 @@ class HealthController < ActionController::Base
   end
 
   def qdrant_configured?
-    ENV.key?("QDRANT_URL") || ENV.key?("QDRANT_API_KEY")
+    ENV["QDRANT_URL"].present? || ENV["QDRANT_API_KEY"].present?
   end
 
   def redis_timeout
     Integer(ENV.fetch("HEALTH_CHECK_REDIS_TIMEOUT", "2"))
+  rescue ArgumentError
+    2
   end
 
   def temporal_timeout
     Integer(ENV.fetch("HEALTH_CHECK_TEMPORAL_TIMEOUT", "2"))
+  rescue ArgumentError
+    2
   end
 
   def qdrant_timeout
     Integer(ENV.fetch("HEALTH_CHECK_QDRANT_TIMEOUT", "2"))
+  rescue ArgumentError
+    2
   end
 end

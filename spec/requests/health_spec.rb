@@ -19,8 +19,11 @@ RSpec.describe "Health" do
     allow(Redis).to receive(:new).and_return(redis_client)
     allow(redis_client).to receive(:ping).and_return("PONG")
     allow(ActiveRecord::Migration).to receive(:check_all_pending!)
-    allow(ENV).to receive(:key?).with("QDRANT_URL").and_return(false)
-    allow(ENV).to receive(:key?).with("QDRANT_API_KEY").and_return(false)
+    # Fall through to the real ENV for any key other than the Qdrant ones
+    # stubbed below, so library code (Flipper, Rails, etc.) keeps working.
+    allow(ENV).to receive(:[]).and_call_original
+    allow(ENV).to receive(:[]).with("QDRANT_URL").and_return(nil)
+    allow(ENV).to receive(:[]).with("QDRANT_API_KEY").and_return(nil)
   end
 
   describe "GET /ready" do
@@ -125,7 +128,7 @@ RSpec.describe "Health" do
 
     context "when Qdrant is configured" do
       before do
-        allow(ENV).to receive(:key?).with("QDRANT_URL").and_return(true)
+        allow(ENV).to receive(:[]).with("QDRANT_URL").and_return("http://qdrant:6333")
       end
 
       context "when Qdrant is healthy" do
@@ -160,6 +163,33 @@ RSpec.describe "Health" do
           body = response.parsed_body
           expect(body["checks"]["qdrant"]).to eq("failing")
         end
+      end
+    end
+
+    context "when QDRANT_URL is set but empty" do
+      before do
+        allow(ENV).to receive(:[]).with("QDRANT_URL").and_return("")
+      end
+
+      it "treats Qdrant as not configured and omits the check" do
+        get "/ready"
+
+        expect(response).to have_http_status(:ok)
+        body = response.parsed_body
+        expect(body["checks"]).not_to have_key("qdrant")
+      end
+    end
+
+    context "when a health check timeout env var is invalid" do
+      it "falls back to the default timeout rather than failing the redis check" do
+        ENV["HEALTH_CHECK_REDIS_TIMEOUT"] = "fast"
+
+        get "/ready"
+
+        body = response.parsed_body
+        expect(body["checks"]["redis"]).to eq("ok")
+      ensure
+        ENV.delete("HEALTH_CHECK_REDIS_TIMEOUT")
       end
     end
 
