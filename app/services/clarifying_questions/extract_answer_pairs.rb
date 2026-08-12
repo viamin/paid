@@ -44,9 +44,7 @@ module ClarifyingQuestions
 
     def find_enhancement_comment
       admitted_comments.reverse.find do |comment|
-        body = comment.body.to_s
-        body.include?(Parse::ENHANCEMENT_MARKER) &&
-          body.include?("## Clarifying questions")
+        Parse.call(comment_body: comment.body).any?
       end
     end
 
@@ -66,7 +64,10 @@ module ClarifyingQuestions
     def current_questions(enhancement_comment)
       return Parse.call(comment_body: enhancement_comment.body.to_s) if enhancement_comment
 
-      Parse.call(comment_body: issue&.body.to_s)
+      questions = Parse.call(comment_body: issue&.body.to_s)
+      return questions if questions.any?
+
+      issue.respond_to?(:needs_input_questions) ? Array(issue.needs_input_questions) : []
     end
 
     def answer_satisfies_latest_questions?(answer_comment:, enhancement_comment:)

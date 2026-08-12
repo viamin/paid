@@ -3,7 +3,7 @@
 module ClarifyingQuestions
   class Parse
     ENHANCEMENT_MARKER = "<!-- paid:enhance-issue -->"
-    CLARIFYING_SECTION_PATTERN = /## Clarifying questions\s*\n(.+?)(?=\n## |\z)/m.freeze
+    CLARIFYING_SECTION_PATTERN = /^##\s+.*clarifying questions[^\n]*\n(.+?)(?=^## |\z)/mi.freeze
 
     def self.call(...)
       new(...).call
@@ -15,7 +15,7 @@ module ClarifyingQuestions
 
     def call
       return [] unless comment_body.include?(ENHANCEMENT_MARKER)
-      return [] unless comment_body.include?("## Clarifying questions")
+      return [] unless comment_body.match?(CLARIFYING_SECTION_PATTERN)
 
       section = extract_clarifying_section
       return [] unless section

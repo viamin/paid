@@ -20,6 +20,27 @@ RSpec.describe Dashboard::NeedsInputQueue do
   end
 
   describe ".call" do
+    it "excludes needs-input issues without a local or body questionnaire" do
+      stale_issue = create(:issue, :needs_input, project: project, github_number: 9, body: "Needs manual retry")
+      first_issue
+
+      entries = described_class.call(user: user, project: project)
+
+      expect(entries.map(&:issue)).to include(first_issue)
+      expect(entries.map(&:issue)).not_to include(stale_issue)
+    end
+
+    it "excludes issues whose body only looks like a questionnaire" do
+      stale_issue = create(:issue, :needs_input, project: project, github_number: 9,
+        body: "#{ClarifyingQuestions::Parse::ENHANCEMENT_MARKER}\n\n## Clarifying questions\nNo numbered questions here.")
+      first_issue
+
+      entries = described_class.call(user: user, project: project)
+
+      expect(entries.map(&:issue)).to include(first_issue)
+      expect(entries.map(&:issue)).not_to include(stale_issue)
+    end
+
     it "returns clarifying questions persisted locally for create_feature issues without an API round-trip" do
       feature_issue = create(:issue, :needs_input, project: project, github_number: 20,
                              body: "Need dark mode",

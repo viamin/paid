@@ -19,11 +19,14 @@ module Dashboard
     end
 
     def call
-      ordered_issues.map do |issue|
+      ordered_issues.filter_map do |issue|
+        questions = question_summary_for(issue)
+        next if questions.empty?
+
         Entry.new(
           project: issue.project,
           issue: issue,
-          questions: question_summary_for(issue)
+          questions: questions
         )
       end
     end
