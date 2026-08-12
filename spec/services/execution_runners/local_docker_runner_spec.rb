@@ -4,6 +4,7 @@ require "rails_helper"
 
 # @spec CONTAINER-RUNTIME-010
 # @spec CONTAINER-RUNTIME-011
+# @spec CONTAINER-RUNTIME-017
 RSpec.describe ExecutionRunners::LocalDockerRunner do
   subject(:runner) { described_class.new }
 
@@ -14,20 +15,28 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     ExecutionRunners::RunSpec.new(
       agent_run: agent_run, project: agent_run.project, image: "paid/agent:latest", command: "claude code",
       resources: resources, environment: { "FOO" => "bar" },
-      networking_policy: ExecutionRunners::NetworkingPolicy.new(mode: :proxy, firewall: true),
-      workspace: ExecutionRunners::WorkspaceStrategy.named_volume, services: [], secrets_config: nil, preview_tunnel: nil
+      networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted,
+      workspace: ExecutionRunners::WorkspaceStrategy.named_volume, services: [], secrets_config: nil
     )
   end
-  let(:provision_service) { instance_double(Containers::Provision) }
+  let(:provision_service) { instance_double(Containers::Provision, container: instance_double(Docker::Container)) }
+  let(:started_container) { instance_double(Docker::Container) }
 
   before do
     allow(Containers).to receive(:backend_for).and_return(backend)
+    allow(NetworkPolicy).to receive(:ensure_network!).and_return(instance_double(Docker::Network))
+    allow(NetworkPolicy).to receive(:apply_firewall_rules)
+    allow(provision_service).to receive_messages(
+      firewall_service_destinations: [],
+      container: started_container
+    )
   end
 
   describe "#provision" do
     it "delegates to Containers::Provision and returns a RunnerHandle" do
       expect(Containers::Provision).to receive(:new).with(
         agent_run: agent_run, project: agent_run.project, worktree_path: nil, backend: backend,
+        networking_policy: run_spec.networking_policy,
         image: "paid/agent:latest", memory_bytes: 1024, cpu_quota: 100_000, pids_limit: 50
       ).and_return(provision_service)
       allow(provision_service).to receive(:provision).and_return(
@@ -130,6 +139,104 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
 
       expect { runner.provision(spec: run_spec) }
         .to raise_error(ExecutionRunners::ProvisionError, "Docker error: no space left")
+    end
+
+    it "ensures the network from the NetworkingPolicy before delegating to Containers::Provision" do
+      expect(NetworkPolicy).to receive(:ensure_network!)
+        .with(network: NetworkPolicy::NETWORK_NAME, backend: backend)
+        .ordered
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      allow(provision_service).to receive(:provision).and_return(
+        Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
+      )
+
+      runner.provision(spec: run_spec)
+    end
+
+    it "applies firewall rules via NetworkPolicy when the policy requires it" do
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      allow(provision_service).to receive(:provision).and_return(
+        Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
+      )
+
+      expect(NetworkPolicy).to receive(:apply_firewall_rules)
+        .with(started_container, service_destinations: [], backend: backend)
+
+      runner.provision(spec: run_spec)
+    end
+
+    it "normalizes policy allow_destinations from {host:, port:} to {ip:, port:} for the firewall" do
+      allow_destinations_spec = ExecutionRunners::RunSpec.new(
+        **run_spec.to_h.merge(
+          networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted(
+            allow_destinations: [ { host: "10.0.0.1", port: 5432 } ]
+          )
+        )
+      )
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      allow(provision_service).to receive(:provision).and_return(
+        Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
+      )
+
+      expect(NetworkPolicy).to receive(:apply_firewall_rules)
+        .with(started_container, service_destinations: [ { ip: "10.0.0.1", port: 5432 } ], backend: backend)
+
+      runner.provision(spec: allow_destinations_spec)
+    end
+
+    it "merges firewall destinations from Provision (service IPs + preview tunnel) into the rules" do
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      allow(provision_service).to receive_messages(
+        provision: Containers::Provision::Result.success(container_id: "abc123", container_host: "local"),
+        firewall_service_destinations: [ { ip: "192.0.2.10", port: 443 } ]
+      )
+
+      expect(NetworkPolicy).to receive(:apply_firewall_rules)
+        .with(started_container, service_destinations: [ { ip: "192.0.2.10", port: 443 } ], backend: backend)
+
+      runner.provision(spec: run_spec)
+    end
+
+    it "skips NetworkPolicy firewall application when the policy is unrestricted" do
+      direct_outbound_spec = ExecutionRunners::RunSpec.new(
+        **run_spec.to_h.merge(
+          networking_policy: ExecutionRunners::NetworkingPolicy.direct_outbound
+        )
+      )
+      allow(NetworkPolicy).to receive(:contract_for_policy)
+        .and_return(double(network: NetworkPolicy::INFRA_NETWORK_NAME))
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      allow(provision_service).to receive(:provision).and_return(
+        Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
+      )
+
+      expect(NetworkPolicy).not_to receive(:apply_firewall_rules)
+
+      runner.provision(spec: direct_outbound_spec)
+    end
+
+    it "raises ProvisionError when network setup fails" do
+      allow(NetworkPolicy).to receive(:ensure_network!)
+        .and_raise(NetworkPolicy::Error, "Failed to create agent network")
+
+      expect { runner.provision(spec: run_spec) }
+        .to raise_error(ExecutionRunners::ProvisionError, /Network setup failed/)
+    end
+
+    it "cleans up the provisioned container when firewall application fails in production" do
+      allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new("production"))
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      allow(provision_service).to receive_messages(
+        provision: Containers::Provision::Result.success(container_id: "abc123", container_host: "local"),
+        agent_run: agent_run
+      )
+      allow(NetworkPolicy).to receive(:apply_firewall_rules)
+        .and_raise(NetworkPolicy::Error, "iptables not available")
+
+      expect(provision_service).to receive(:cleanup)
+
+      expect { runner.provision(spec: run_spec) }
+        .to raise_error(ExecutionRunners::ProvisionError, /Firewall setup failed/)
     end
   end
 
@@ -504,6 +611,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
         execute: Containers::Provision::Result.success(stdout: "ok\n", stderr: "", exit_code: 0),
         container_running?: true, container: instance_double(Docker::Container), backend: backend, cleanup: nil
       )
+      allow(provision_service).to receive_messages(firewall_service_destinations: [])
     end
   end
 end

@@ -3,10 +3,38 @@
 require "uri"
 
 module Containers
+  # Resolves the secrets-proxy URL the agent container should reach.
+  #
+  # The URL depends on the container's networking policy:
+  #
+  # - Restricted containers (Docker `paid_agent` bridge, in-container firewall)
+  #   reach the proxy by its Docker DNS hostname (`paid-proxy`) so the iptables
+  #   rules can pin egress to that host.
+  # - Unrestricted containers (Docker `paid_internal`) reach the proxy by its
+  #   `web` service hostname because they are not pinned by firewall rules.
+  # - Remote backends always use the configured external proxy URL because
+  #   the in-cluster Docker DNS names are unreachable across hosts.
+  #
+  # Callers pass either a +policy:+ object (the provider-neutral abstraction
+  # for restricted vs. unrestricted networking — preferred) or a +restricted:+
+  # boolean (legacy callers). The two parameters are mutually exclusive.
   module ProxyUrl
     module_function
 
-    def resolve(backend:, restricted:)
+    # @param backend [Containers::Backends::Base]
+    # @param policy [#restricted?] provider-neutral networking policy (RDR-054)
+    # @param restricted [Boolean, nil] legacy boolean form. Ignored when
+    #   +policy+ is supplied; required when +policy+ is nil.
+    # @return [String]
+    def resolve(backend:, policy: nil, restricted: nil)
+      effective_restricted = if policy
+        policy.restricted?
+      else
+        raise ArgumentError, "Containers::ProxyUrl.resolve requires either policy: or restricted:" if restricted.nil?
+
+        restricted
+      end
+
       if backend.remote?
         external_url = external_url_for(backend)
         raise ArgumentError, "PAID_PROXY_EXTERNAL_URL or PAID_PROXY_EXTERNAL_URL_<HOST> is required when CONTAINER_BACKEND is remote" if external_url.blank?
@@ -15,7 +43,7 @@ module Containers
       end
 
       proxy_port = Rails.application.config.x.paid_proxy_port
-      proxy_host = restricted ? "paid-proxy" : "web"
+      proxy_host = effective_restricted ? "paid-proxy" : "web"
       "http://#{proxy_host}:#{proxy_port}"
     end
 

@@ -216,6 +216,15 @@ RSpec.describe Containers::Provision do
     end
   end
 
+  describe ".networking_policy_for" do
+    it "derives the proxy-restricted policy for a run with no subscription auth or direct-outbound runner" do
+      policy = described_class.networking_policy_for(agent_run: agent_run, project: project)
+
+      expect(policy.mode).to eq(:proxy_restricted)
+      expect(policy).to be_restricted
+    end
+  end
+
   describe "#auth_source_log_payload (RDR-041 #2959)" do
     let(:service) { described_class.new(agent_run: agent_run, project: project) }
 
@@ -443,6 +452,20 @@ RSpec.describe Containers::Provision do
       expect(remote_backend).to have_received(:delete_container).with(mock_container, force: true, v: true)
       expect(remote_backend).to have_received(:get_volume).with("paid-workspace-#{agent_run.id}", host: "remote")
       expect(remote_backend).to have_received(:delete_volume).with(remote_volume)
+    end
+  end
+
+  describe ".ensure_network!" do
+    it "delegates to NetworkPolicy.ensure_network! so the network is created when missing" do
+      backend = instance_double(Containers::Backends::Base)
+      network = instance_double(Docker::Network)
+
+      expect(NetworkPolicy).to receive(:ensure_network!)
+        .with(network: NetworkPolicy::NETWORK_NAME, backend: backend)
+        .and_return(network)
+
+      expect(described_class.ensure_network!(network: NetworkPolicy::NETWORK_NAME, backend: backend))
+        .to eq(network)
     end
   end
 
@@ -1277,6 +1300,72 @@ RSpec.describe Containers::Provision do
         expect { service.provision }.to raise_error(
           described_class::ProvisionError, /Network setup failed/
         )
+      end
+    end
+
+    context "with networking_policy provided (RDR-054 runner-driven path)" do
+      let(:restricted_policy) { ExecutionRunners::NetworkingPolicy.proxy_restricted }
+      let(:direct_outbound_policy) { ExecutionRunners::NetworkingPolicy.direct_outbound }
+      let(:policy_service) do
+        described_class.new(
+          agent_run: agent_run, worktree_path: worktree_path, backend: service.backend,
+          networking_policy: restricted_policy
+        )
+      end
+
+      it "uses the policy's restricted? flag to choose the proxy URL" do
+        ENV.delete("PAID_PROXY_EXTERNAL_URL")
+        allow(Containers::ProxyUrl).to receive(:resolve).and_call_original
+
+        expect(Containers::ProxyUrl).to receive(:resolve)
+          .with(backend: policy_service.backend, policy: restricted_policy)
+          .and_return("http://paid-proxy:3000")
+
+        expect(policy_service.send(:proxy_base_url)).to eq("http://paid-proxy:3000")
+      end
+
+      it "uses the unrestricted policy's allowed host for the proxy URL" do
+        ENV.delete("PAID_PROXY_EXTERNAL_URL")
+        allow(Containers::ProxyUrl).to receive(:resolve).and_call_original
+
+        unrestricted_service = described_class.new(
+          agent_run: agent_run, worktree_path: worktree_path, backend: service.backend,
+          networking_policy: direct_outbound_policy
+        )
+
+        expect(Containers::ProxyUrl).to receive(:resolve)
+          .with(backend: unrestricted_service.backend, policy: direct_outbound_policy)
+          .and_return("http://web:3000")
+
+        expect(unrestricted_service.send(:proxy_base_url)).to eq("http://web:3000")
+      end
+
+      it "skips NetworkPolicy.ensure_network! during provision when a policy is provided" do
+        expect(NetworkPolicy).not_to receive(:ensure_network!)
+        allow(Docker::Container).to receive(:create).and_return(mock_container)
+
+        policy_service.provision
+      end
+
+      it "skips NetworkPolicy.apply_firewall_rules during provision when a policy is provided" do
+        allow(Docker::Container).to receive(:create).and_return(mock_container)
+
+        expect(NetworkPolicy).not_to receive(:apply_firewall_rules)
+
+        policy_service.provision
+      end
+
+      it "reports the paid_agent network name for restricted policies" do
+        expect(policy_service.network_name).to eq(NetworkPolicy::NETWORK_NAME)
+      end
+
+      it "reports the paid_internal network name for unrestricted policies" do
+        unrestricted_service = described_class.new(
+          agent_run: agent_run, worktree_path: worktree_path, backend: service.backend,
+          networking_policy: direct_outbound_policy
+        )
+
+        expect(unrestricted_service.network_name).to eq(NetworkPolicy::INFRA_NETWORK_NAME)
       end
     end
 

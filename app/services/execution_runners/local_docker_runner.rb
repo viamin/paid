@@ -4,8 +4,14 @@ module ExecutionRunners
   # Thin adapter that wraps the existing +Containers::Provision+ Docker
   # orchestrator behind the provider-neutral +ExecutionRunners::Base+
   # interface (RDR-054). Translates {RunSpec}/{RunnerHandle}/{ExecutionResult}
-  # domain objects to and from +Containers::Provision+ calls without
-  # modifying +Containers::Provision+ itself.
+  # domain objects to and from +Containers::Provision+ calls.
+  #
+  # This runner owns the +NetworkingPolicy+ → Docker-network translation: it
+  # is the only place that calls +NetworkPolicy.ensure_network!+ and
+  # +NetworkPolicy.apply_firewall_rules+. +Containers::Provision+ accepts the
+  # +networking_policy+ for read-only Docker-config decisions (proxy URL,
+  # network name) but skips its own network/firewall side effects when a
+  # policy is provided.
   #
   # +RunnerHandle#metadata+ carries everything needed to reconnect to the
   # container on a later call (agent_run id, worktree_path, environment),
@@ -16,6 +22,7 @@ module ExecutionRunners
   # @spec CONTAINER-RUNTIME-012
   # @spec CONTAINER-RUNTIME-013
   # @spec CONTAINER-RUNTIME-014
+  # @spec CONTAINER-RUNTIME-017
   class LocalDockerRunner < Base
     RUNNER_TYPE = :local_docker
 
@@ -25,16 +32,39 @@ module ExecutionRunners
     WORKSPACE_VOLUME_PREFIX = "paid-workspace"
 
     def provision(spec:)
+      backend = backend_for(spec)
+      policy = spec.networking_policy
+      raise ProvisionError, "RunSpec requires a NetworkingPolicy" if policy.nil?
+
+      ensure_agent_network!(backend: backend, policy: policy)
       service = Containers::Provision.new(
         agent_run: spec.agent_run,
         project: spec.project,
         worktree_path: self.class.worktree_path_for(spec),
-        backend: backend_for(spec),
+        backend: backend,
+        networking_policy: policy,
         **provision_options(spec)
       )
-      handle_for(spec: spec, result: service.provision)
+      result = service.provision
+      apply_firewall!(service: service, backend: backend, policy: policy)
+      handle_for(spec: spec, result: result)
     rescue Containers::Provision::ProvisionError => e
       raise ProvisionError, e.message
+    rescue ProvisionError
+      # The container is already provisioned and running by the time the
+      # runner raises its own error (the production firewall failure path in
+      # #apply_firewall!); +Containers::Provision#provision+ only cleans up
+      # failures raised inside itself. Clean up the live container before
+      # re-raising so a firewall gap does not also leak an orphaned container
+      # on the restricted network. Cleanup is best-effort — a partially-started
+      # container may resist removal, and that must not mask the original
+      # error.
+      begin
+        service.cleanup if service
+      rescue StandardError
+        # Surface the original provisioning error, not the cleanup error.
+      end
+      raise
     end
 
     def start(handle:, command:, timeout: nil, startup_timeout: nil, idle_timeout: nil,
@@ -170,6 +200,24 @@ module ExecutionRunners
       "#{WORKSPACE_VOLUME_PREFIX}-#{agent_run_id}"
     end
 
+    # Ensures the agent Docker network exists, creating it if missing.
+    # Class-level entry point for components that need network readiness
+    # without going through the full runner lifecycle (e.g., embedding
+    # runner, MCP sidecar provisioner). Delegates to the Docker-specific
+    # +NetworkPolicy.ensure_network!+ so +NetworkPolicy+ stays the single
+    # source of truth for Docker network lifecycle (RDR-054).
+    def self.ensure_agent_network!(backend: Containers.backend)
+      NetworkPolicy.ensure_network!(backend: backend)
+    end
+
+    # Applies iptables firewall rules inside a running container.
+    # Class-level entry point for components that need container-level
+    # firewall without a full runner lifecycle (e.g., embedding runner).
+    # Delegates to the Docker-specific +NetworkPolicy.apply_firewall_rules+.
+    def self.apply_firewall_rules(container, **kwargs)
+      NetworkPolicy.apply_firewall_rules(container, **kwargs)
+    end
+
     private
 
     # Maps the raw Docker state inspection to an ExecutionStatus state:
@@ -185,6 +233,48 @@ module ExecutionRunners
 
     def backend_for(spec)
       Containers.backend_for(spec.agent_run&.workspace_volume_host)
+    end
+
+    # Translates the runner-level +NetworkingPolicy+ into the Docker side
+    # effect of ensuring the right network exists. +NetworkPolicy+ maps the
+    # policy mode to the +paid_agent+ / +paid_internal+ Docker network names
+    # — the runner never sees those literals.
+    def ensure_agent_network!(backend:, policy:)
+      network_name = NetworkPolicy.contract_for_policy(policy).network
+      NetworkPolicy.ensure_network!(network: network_name, backend: backend)
+    rescue NetworkPolicy::Error => e
+      raise ProvisionError, "Network setup failed: #{e.message}"
+    end
+
+    # Applies the in-container firewall when the policy demands one. Firewall
+    # destinations (service container IPs plus the preview-tunnel destination)
+    # are resolved from the Provision service after containers start, so the
+    # runner never inspects Docker network or preview-tunnel state directly.
+    # +policy.allow_destinations+ uses the provider-neutral +{host:, port:}+
+    # shape, so entries are normalized to +{ip:, port:}+ to match
+    # +NetworkPolicy.build_firewall_script+, which reads +dest[:ip]+.
+    def apply_firewall!(service:, backend:, policy:)
+      return unless policy.firewall?
+
+      destinations = policy.allow_destinations.map { |dest| { ip: dest.fetch(:host), port: dest.fetch(:port) } } + service.firewall_service_destinations
+
+      NetworkPolicy.apply_firewall_rules(
+        service.container,
+        service_destinations: destinations,
+        backend: backend
+      )
+    rescue NetworkPolicy::Error => e
+      Rails.logger.warn(
+        message: "container.firewall.failed",
+        error: e.message,
+        agent_run_id: service.agent_run&.id
+      )
+      # Firewall rules are defense-in-depth — they restrict outbound traffic
+      # but the container is already on a restricted Docker network. Raising
+      # in dev/test/CI would block local development on hosts without iptables
+      # (e.g., macOS Docker Desktop, some CI runners). Production always
+      # raises: a firewall gap on a live deployment is a security incident.
+      raise ProvisionError, "Firewall setup failed: #{e.message}" if Rails.env.production?
     end
 
     def provision_options(spec)

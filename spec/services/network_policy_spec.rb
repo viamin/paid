@@ -541,6 +541,39 @@ RSpec.describe NetworkPolicy, :no_db do
     end
   end
 
+  describe ".contract_for_policy" do
+    let(:policy_class) { ExecutionRunners::NetworkingPolicy }
+
+    it "maps proxy_restricted to the restricted paid_agent network" do
+      policy = policy_class.proxy_restricted
+
+      contract = described_class.contract_for_policy(policy)
+
+      expect(contract.mode).to eq(:proxy)
+      expect(contract.network).to eq(described_class::NETWORK_NAME)
+      expect(contract).to be_restricted
+      expect(contract).to be_firewall
+    end
+
+    it "maps subscription_auth to the infrastructure paid_internal network" do
+      contract = described_class.contract_for_policy(policy_class.subscription_auth)
+
+      expect(contract.mode).to eq(:subscription_auth)
+      expect(contract.network).to eq(described_class::INFRA_NETWORK_NAME)
+      expect(contract).not_to be_restricted
+      expect(contract).not_to be_firewall
+    end
+
+    it "maps direct_outbound to the infrastructure paid_internal network" do
+      contract = described_class.contract_for_policy(policy_class.direct_outbound)
+
+      expect(contract.mode).to eq(:direct_outbound)
+      expect(contract.network).to eq(described_class::INFRA_NETWORK_NAME)
+      expect(contract).not_to be_restricted
+      expect(contract).not_to be_firewall
+    end
+  end
+
   describe "constants" do
     it "defines the network name" do
       expect(described_class::NETWORK_NAME).to eq("paid_agent")

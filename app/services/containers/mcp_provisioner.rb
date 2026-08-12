@@ -56,7 +56,7 @@ module Containers
     # @param agent_run [AgentRun] the run whose mcp_server_snapshot to provision
     # @param network [String] Docker network name for sidecar containers
     # @return [Hash] with :stdio_servers and :url_servers arrays
-    def provision(agent_run, network: NetworkPolicy::NETWORK_NAME)
+    def provision(agent_run, network: Containers.agent_network_name)
       snapshot = agent_run.mcp_server_snapshot
       sidecar_ids = []
       preserved_sidecar_ids = []
@@ -142,7 +142,7 @@ module Containers
         raise Error, "docker_image MCP server #{definition["name"].inspect} requires transport \"sse\", got #{transport.inspect}"
       end
 
-      NetworkPolicy.ensure_network!(network: @network, backend: Containers.backend)
+      Containers::Provision.ensure_network!(network: @network, backend: Containers.backend)
 
       image = definition["image"]
       name = definition["name"]

@@ -14,7 +14,7 @@ RSpec.describe AgentRuns::Verification do
   let(:browser_container_name) { "#{described_class::BROWSER_CONTAINER_NAME_PREFIX}-run#{agent_run.id}" }
 
   before do
-    allow(NetworkPolicy).to receive(:ensure_network!)
+    allow(Containers::Provision).to receive(:ensure_network!)
     allow(Containers::TcpHealthProbe).to receive(:open?).and_return(true)
     allow(Containers.backend).to receive(:pull_image)
     allow(Docker::Container).to receive(:create)

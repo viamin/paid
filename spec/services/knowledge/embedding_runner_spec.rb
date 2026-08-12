@@ -81,16 +81,15 @@ RSpec.describe Knowledge::EmbeddingRunner, :no_db do
       allow(local_backend).to receive(:create_container).and_return(container)
       allow(local_backend).to receive(:start_container)
       allow(Dir).to receive(:mktmpdir).and_return("/tmp/paid-embedding-runner-test")
-      allow(NetworkPolicy).to receive(:ensure_network!)
-      allow(NetworkPolicy).to receive(:apply_firewall_rules)
+      allow(ExecutionRunners::LocalDockerRunner).to receive(:ensure_agent_network!)
+      allow(ExecutionRunners::LocalDockerRunner).to receive(:apply_firewall_rules)
 
       runner.send(:ensure_container!)
 
-      expect(NetworkPolicy).to have_received(:ensure_network!).with(
-        network: NetworkPolicy::NETWORK_NAME,
+      expect(ExecutionRunners::LocalDockerRunner).to have_received(:ensure_agent_network!).with(
         backend: local_backend
       )
-      expect(NetworkPolicy).to have_received(:apply_firewall_rules).with(container, backend: Containers.backend)
+      expect(ExecutionRunners::LocalDockerRunner).to have_received(:apply_firewall_rules).with(container, backend: Containers.backend)
     end
   end
 

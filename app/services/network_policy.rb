@@ -79,6 +79,32 @@ class NetworkPolicy
       end
     end
 
+    # Translates a provider-neutral +ExecutionRunners::NetworkingPolicy+ into
+    # the Docker-specific +NetworkContract+. The mapping is the only place
+    # that knows which Docker network name corresponds to which runner-level
+    # mode, keeping +paid_agent+ / +paid_internal+ out of the policy and the
+    # runner (RDR-054).
+    #
+    # @param policy [ExecutionRunners::NetworkingPolicy]
+    # @return [NetworkContract]
+    def contract_for_policy(policy)
+      if policy.restricted?
+        NetworkContract.new(
+          mode: :proxy,
+          network: NETWORK_NAME,
+          restricted: true,
+          firewall: policy.firewall?
+        )
+      else
+        NetworkContract.new(
+          mode: policy.mode,
+          network: INFRA_NETWORK_NAME,
+          restricted: false,
+          firewall: false
+        )
+      end
+    end
+
     # Returns the network name that agent containers should use.
     #
     # @param direct_outbound [Boolean] whether this run uses a provider that bypasses Paid's proxy

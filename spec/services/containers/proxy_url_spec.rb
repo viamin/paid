@@ -121,4 +121,61 @@ RSpec.describe Containers::ProxyUrl, :no_db do
       }.to raise_error(ArgumentError, "PAID_PROXY_EXTERNAL_URL port must be between 1 and 65535")
     end
   end
+
+  describe "policy-driven resolution" do
+    let(:policy_class) { ExecutionRunners::NetworkingPolicy }
+    let(:local_backend) { instance_double(Containers::Backends::Base, remote?: false) }
+    let(:remote_backend) { instance_double(Containers::Backends::Base, remote?: true, identifier: "worker-1") }
+
+    around do |example|
+      original_proxy_external_url = ENV["PAID_PROXY_EXTERNAL_URL"]
+      original_specific_proxy_external_url = ENV["PAID_PROXY_EXTERNAL_URL_WORKER_1"]
+      example.run
+    ensure
+      ENV["PAID_PROXY_EXTERNAL_URL"] = original_proxy_external_url
+      ENV["PAID_PROXY_EXTERNAL_URL_WORKER_1"] = original_specific_proxy_external_url
+    end
+
+    it "uses paid-proxy for restricted policies on local backends" do
+      ENV.delete("PAID_PROXY_EXTERNAL_URL")
+
+      expect(described_class.resolve(backend: local_backend, policy: policy_class.proxy_restricted))
+        .to eq("http://paid-proxy:#{Rails.application.config.x.paid_proxy_port}")
+    end
+
+    it "uses web for unrestricted policies on local backends" do
+      ENV.delete("PAID_PROXY_EXTERNAL_URL")
+
+      expect(described_class.resolve(backend: local_backend, policy: policy_class.subscription_auth))
+        .to eq("http://web:#{Rails.application.config.x.paid_proxy_port}")
+    end
+
+    it "uses the configured external URL for restricted policies on remote backends" do
+      ENV["PAID_PROXY_EXTERNAL_URL"] = "https://proxy.example.test:3443"
+
+      expect(described_class.resolve(backend: remote_backend, policy: policy_class.proxy_restricted))
+        .to eq("https://proxy.example.test:3443")
+    end
+
+    it "uses the configured external URL for unrestricted policies on remote backends" do
+      ENV["PAID_PROXY_EXTERNAL_URL"] = "https://proxy.example.test:3443"
+
+      expect(described_class.resolve(backend: remote_backend, policy: policy_class.direct_outbound))
+        .to eq("https://proxy.example.test:3443")
+    end
+
+    it "raises when neither policy: nor restricted: is supplied" do
+      expect {
+        described_class.resolve(backend: local_backend)
+      }.to raise_error(ArgumentError, /Containers::ProxyUrl\.resolve requires/)
+    end
+
+    it "ignores restricted: when policy: is supplied" do
+      ENV.delete("PAID_PROXY_EXTERNAL_URL")
+
+      # Policy says unrestricted; restricted: true should be ignored.
+      expect(described_class.resolve(backend: local_backend, policy: policy_class.subscription_auth, restricted: true))
+        .to eq("http://web:#{Rails.application.config.x.paid_proxy_port}")
+    end
+  end
 end

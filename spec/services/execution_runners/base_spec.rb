@@ -9,7 +9,7 @@ RSpec.describe ExecutionRunners::Base do
       agent_run: nil, project: nil, image: "img", command: "cmd", resources: nil,
       environment: {}, networking_policy: nil,
       workspace: ExecutionRunners::WorkspaceStrategy.ephemeral,
-      services: [], secrets_config: nil, preview_tunnel: nil
+      services: [], secrets_config: nil
     )
   end
   let(:handle) do

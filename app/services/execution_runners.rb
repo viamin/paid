@@ -165,16 +165,18 @@ module ExecutionRunners
     :networking_policy,  # NetworkingPolicy (restricted vs. direct)
     :workspace,          # WorkspaceStrategy (named_volume | bind_mount | ephemeral)
     :services,           # Array<ServiceDeclaration>
-    :secrets_config,     # Auth/credential configuration
-    :preview_tunnel      # Optional preview tunnel config
+    :secrets_config      # Auth/credential configuration
   ) do
     # Builds a RunSpec from an AgentRun context for the shim migration path
-    # (RDR-054). Derives the workspace strategy, resource limits, and networking
-    # policy from the agent run and its project.
+    # (RDR-054). Derives the workspace strategy and resource limits from the
+    # agent run; the networking policy is the caller's responsibility so the
+    # +NetworkingPolicy+ flows in as a domain object rather than being
+    # reconstructed from Docker signals inside the runner.
     # @param agent_run [AgentRun]
+    # @param networking_policy [NetworkingPolicy, nil] required networking policy
     # @param options [Hash] container options (memory_bytes, cpu_quota, etc.)
     # @return [RunSpec]
-    def self.from_agent_run(agent_run, **options)
+    def self.from_agent_run(agent_run, networking_policy: nil, **options)
       resources = if options[:memory_bytes] || options[:cpu_quota] || options[:pids_limit]
                     ComputeRequirements.new(
                       cpu_quota: options[:cpu_quota],
@@ -190,11 +192,10 @@ module ExecutionRunners
         command: nil, # Set at start time
         resources: resources,
         environment: agent_run.service_environment || {},
-        networking_policy: NetworkingPolicy.new(mode: :proxy, firewall: true),
+        networking_policy: networking_policy,
         workspace: workspace_strategy_for(agent_run),
         services: [],
-        secrets_config: nil,
-        preview_tunnel: nil
+        secrets_config: nil
       )
     end
 
@@ -274,12 +275,40 @@ module ExecutionRunners
   # firewall rules, etc.
   #
   # +mode+ values:
-  #   :proxy              — restricted; traffic flows through Paid's secrets proxy
-  #   :subscription_auth  — unrestricted; provider CLI reaches upstream APIs directly
-  #   :direct_outbound    — unrestricted; provider bypasses the proxy entirely
+  #   :proxy_restricted   — restricted; traffic flows through Paid's secrets proxy
+  #                          and an in-container iptables firewall limits egress
+  #                          to the proxy, GitHub IPs, DNS, and service containers.
+  #   :subscription_auth  — unrestricted; provider CLI reaches upstream APIs directly.
+  #   :direct_outbound    — unrestricted; provider bypasses the proxy entirely.
+  #
+  # +firewall+ (boolean) — whether the runner must apply in-container firewall
+  #                          rules. Always true for +:proxy_restricted+, false
+  #                          for the unrestricted modes.
+  #
+  # +allow_destinations+ — array of destination hashes ({host:, port:}) the
+  #                          runner should grant in the firewall, in addition to
+  #                          the secrets proxy and GitHub ranges. The runner
+  #                          merges these with service container IPs (resolved
+  #                          from Provision after containers start) and
+  #                          preview-tunnel destinations, so the underlying
+  #                          policy implementation never has to inspect Docker
+  #                          network state.
   # @spec CONTAINER-RUNTIME-009
-  NetworkingPolicy = Data.define(:mode, :firewall) do
-    RESTRICTED_MODE = :proxy
+  # @spec CONTAINER-RUNTIME-017
+  NetworkingPolicy = Data.define(:mode, :firewall, :allow_destinations) do
+    RESTRICTED_MODE = :proxy_restricted
+
+    def self.proxy_restricted(allow_destinations: [])
+      new(mode: RESTRICTED_MODE, firewall: true, allow_destinations: allow_destinations)
+    end
+
+    def self.subscription_auth
+      new(mode: :subscription_auth, firewall: false, allow_destinations: [])
+    end
+
+    def self.direct_outbound
+      new(mode: :direct_outbound, firewall: false, allow_destinations: [])
+    end
 
     def restricted?
       mode == RESTRICTED_MODE

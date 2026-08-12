@@ -73,7 +73,7 @@ module ClaudeLoginSessions
           "CpuPeriod" => 100_000,
           "CpuQuota" => 50_000,
           "PidsLimit" => 128,
-          "NetworkMode" => NetworkPolicy::INFRA_NETWORK_NAME,
+          "NetworkMode" => Containers.infra_network_name,
           "Tmpfs" => {
             "/tmp" => "exec,size=268435456,mode=1777",
             "/home/agent" => "exec,size=67108864,mode=700"
