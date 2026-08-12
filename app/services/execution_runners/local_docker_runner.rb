@@ -147,17 +147,26 @@ module ExecutionRunners
       raise ProvisionError, "Network setup failed: #{e.message}"
     end
 
-    # Applies the in-container firewall when the policy demands one. The
-    # firewall service destinations come from the policy's +allow_destinations+
-    # field; any service container IPs (resolved by Provision's helper below)
-    # are merged on top so the firewall opens the same set of TCP paths it
-    # did before the RDR-054 refactor.
+    # Applies the in-container firewall when the policy demands one. Service
+    # container IPs are resolved from the Provision service after containers
+    # start; preview-tunnel destinations are appended when applicable. The
+    # resolved destinations are merged with +policy.allow_destinations+ before
+    # passing them to +NetworkPolicy.apply_firewall_rules+.
     def apply_firewall!(service:, backend:, policy:)
       return unless policy.firewall?
 
+      destinations = policy.allow_destinations + service.resolve_service_destinations
+      if service.preview_tunnel?
+        remote_dest = Previews::TunnelManager.client_remote_destination(
+          backend: backend,
+          restricted: policy.restricted?
+        )
+        destinations << { ip: remote_dest.fetch(:host), port: remote_dest.fetch(:port) }
+      end
+
       NetworkPolicy.apply_firewall_rules(
         service.container,
-        service_destinations: policy.allow_destinations + service.send(:resolve_service_destinations),
+        service_destinations: destinations,
         backend: backend
       )
     rescue NetworkPolicy::Error => e
@@ -172,6 +181,7 @@ module ExecutionRunners
     def provision_options(spec)
       options = {}
       options[:image] = spec.image if spec.image.present?
+      options[:preview_tunnel] = spec.preview_tunnel if spec.preview_tunnel.present?
       resources = spec.resources
       return options unless resources
 

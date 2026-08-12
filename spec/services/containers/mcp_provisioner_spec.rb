@@ -118,7 +118,7 @@ RSpec.describe Containers::McpProvisioner do
       end
 
       before do
-        allow(Containers::Provision).to receive(:ensure_network!)
+        allow(Containers::Provision).to receive(:network_exists!)
         allow(Docker::Image).to receive(:create)
         # adopt_or_create_sidecar tries get first; raise NotFound to fall through to create
         allow(Docker::Container).to receive(:get)
@@ -356,7 +356,7 @@ RSpec.describe Containers::McpProvisioner do
       end
 
       before do
-        allow(Containers::Provision).to receive(:ensure_network!)
+        allow(Containers::Provision).to receive(:network_exists!)
         allow(Docker::Image).to receive(:create)
         allow(Docker::Container).to receive(:get)
           .with(satisfy { |name| name.start_with?("paid-mcp-") })
@@ -391,7 +391,7 @@ RSpec.describe Containers::McpProvisioner do
       end
 
       before do
-        allow(Containers::Provision).to receive(:ensure_network!)
+        allow(Containers::Provision).to receive(:network_exists!)
         allow(Docker::Image).to receive(:create)
         allow(Docker::Container).to receive(:get)
           .with(satisfy { |name| name.start_with?("paid-mcp-") })

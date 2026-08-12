@@ -176,20 +176,22 @@ module Containers
       new(agent_run: agent_run).network_name
     end
 
-    # Ensures the specified Docker network exists (for sidecar provisioners
+    # Checks that the specified Docker network exists (for sidecar provisioners
     # that need network readiness before creating containers). This is a
     # runtime check only — network creation is the runner's responsibility
     # (RDR-054). Delegates to +backend.get_network+ which raises
     # +Docker::Error::NotFoundError+ when the network is missing.
-    def self.ensure_network!(network:, backend: Containers.backend)
+    def self.network_exists!(network:, backend: Containers.backend)
       backend.get_network(network)
     end
 
     # Builds the provider-neutral +NetworkingPolicy+ for an agent run + project
     # pair using the same subscription-auth / direct-outbound heuristics the
-    # legacy +#network_contract+ path uses. Exposed so the orchestrator can
-    # populate +RunSpec.networking_policy+ without instantiating a Provision
-    # (RDR-054).
+    # legacy +#network_contract+ path uses. Instantiates a Provision to
+    # inspect subscription-auth and direct-outbound state; the constructor
+    # runs user-setting resolution and image resolution as a side effect.
+    # A future refactor could extract these checks into stateless helpers
+    # to avoid the full instantiation (RDR-054).
     #
     # @return [ExecutionRunners::NetworkingPolicy]
     def self.networking_policy_for(agent_run:, project:)
@@ -2220,9 +2222,13 @@ module Containers
       end
     end
 
+    public
+
     def preview_tunnel?
       preview_tunnel.present?
     end
+
+    private
 
     def preview_tunnel_environment
       tunnel = preview_tunnel
@@ -4106,7 +4112,12 @@ module Containers
       File.directory?(path) ? path : nil
     end
 
+    public
+
     # Resolves running service container IPs for firewall rules.
+    # Exposed as public so the runner can merge service-IP destinations
+    # into the firewall rule set without reaching into Provision internals
+    # (RDR-054).
     def resolve_service_destinations
       return [] unless agent_run
 
@@ -4123,6 +4134,7 @@ module Containers
       end
     end
 
+    private
     def docker_container_ip(docker_id)
       info = backend.get_container(docker_id).info
       networks = info.dig("NetworkSettings", "Networks") || {}

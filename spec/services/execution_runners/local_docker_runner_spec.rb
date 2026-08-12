@@ -26,6 +26,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     allow(NetworkPolicy).to receive(:apply_firewall_rules)
     allow(provision_service).to receive_messages(
       resolve_service_destinations: [],
+      preview_tunnel?: false,
       container: started_container
     )
   end
@@ -336,7 +337,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
         execute: Containers::Provision::Result.success(stdout: "ok\n", stderr: "", exit_code: 0),
         container_running?: true, container: instance_double(Docker::Container), backend: backend, cleanup: nil
       )
-      allow(provision_service).to receive(:resolve_service_destinations).and_return([])
+      allow(provision_service).to receive_messages(resolve_service_destinations: [], preview_tunnel?: false)
     end
   end
 end

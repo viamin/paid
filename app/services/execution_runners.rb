@@ -155,9 +155,10 @@ module ExecutionRunners
   #
   # +allow_destinations+ — array of destination hashes ({host:, port:}) the
   #                          runner should grant in the firewall, in addition to
-  #                          the secrets proxy and GitHub ranges. Service
-  #                          container IPs and preview-tunnel destinations are
-  #                          passed through here by the runner so the underlying
+  #                          the secrets proxy and GitHub ranges. The runner
+  #                          merges these with service container IPs (resolved
+  #                          from Provision after containers start) and
+  #                          preview-tunnel destinations, so the underlying
   #                          policy implementation never has to inspect Docker
   #                          network state.
   # @spec CONTAINER-RUNTIME-009
