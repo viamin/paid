@@ -149,6 +149,18 @@ RSpec.describe "Health" do
           expect(body["checks"]["qdrant"]).to eq("failing")
         end
       end
+
+      context "when Qdrant times out" do
+        before { allow(qdrant_client).to receive(:healthy?).and_raise(Timeout::Error) }
+
+        it "returns 503 with qdrant failing" do
+          get "/ready"
+
+          expect(response).to have_http_status(:service_unavailable)
+          body = response.parsed_body
+          expect(body["checks"]["qdrant"]).to eq("failing")
+        end
+      end
     end
 
     it "does not require authentication" do

@@ -102,7 +102,9 @@ class HealthController < ActionController::Base
   end
 
   def qdrant_healthy?
-    Paid.qdrant_client.healthy?
+    Timeout.timeout(qdrant_timeout) do
+      Paid.qdrant_client.healthy?
+    end
   rescue StandardError
     false
   end
@@ -117,5 +119,9 @@ class HealthController < ActionController::Base
 
   def temporal_timeout
     Integer(ENV.fetch("HEALTH_CHECK_TEMPORAL_TIMEOUT", "2"))
+  end
+
+  def qdrant_timeout
+    Integer(ENV.fetch("HEALTH_CHECK_QDRANT_TIMEOUT", "2"))
   end
 end
