@@ -8,15 +8,14 @@ module PromptAssembly
   # profile explicitly authorized via +allow_safety_overrides+ may. Budgets
   # are declared for forward compatibility and are not enforced in Phase 1.
   class Profile
-    attr_reader :name, :goal, :order, :disabled_keys, :budgets, :allow_safety_overrides
+    attr_reader :name, :order, :disabled_keys, :budgets, :allow_safety_overrides
 
-    def initialize(name:, order: [], disabled_keys: [], budgets: {}, goal: nil,
+    def initialize(name:, order: [], disabled_keys: [], budgets: {},
                    allow_safety_overrides: false)
       @name = name
       @order = order
       @disabled_keys = disabled_keys
       @budgets = budgets
-      @goal = goal
       @allow_safety_overrides = allow_safety_overrides
     end
 
