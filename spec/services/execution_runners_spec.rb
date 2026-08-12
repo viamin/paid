@@ -41,8 +41,7 @@ RSpec.describe ExecutionRunners do
         networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted,
         workspace_strategy: :named_volume,
         services: [ ExecutionRunners::ServiceDeclaration.new(name: "postgres", image: "pg", port: 5432, env: {}, type: :database) ],
-        secrets_config: { "auth" => "proxy" },
-        preview_tunnel: nil
+        secrets_config: { "auth" => "proxy" }
       }
     end
 

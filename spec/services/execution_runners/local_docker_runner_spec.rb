@@ -14,7 +14,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       agent_run: agent_run, project: agent_run.project, image: "paid/agent:latest", command: "claude code",
       resources: resources, environment: { "FOO" => "bar" },
       networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted,
-      workspace_strategy: :named_volume, services: [], secrets_config: nil, preview_tunnel: nil
+      workspace_strategy: :named_volume, services: [], secrets_config: nil
     )
   end
   let(:provision_service) { instance_double(Containers::Provision, container: instance_double(Docker::Container)) }
@@ -26,7 +26,6 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     allow(NetworkPolicy).to receive(:apply_firewall_rules)
     allow(provision_service).to receive_messages(
       resolve_service_destinations: [],
-      preview_tunnel?: false,
       container: started_container
     )
   end
@@ -146,6 +145,22 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
 
       expect { runner.provision(spec: run_spec) }
         .to raise_error(ExecutionRunners::ProvisionError, /Network setup failed/)
+    end
+
+    it "cleans up the provisioned container when firewall application fails in production" do
+      allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new("production"))
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      allow(provision_service).to receive_messages(
+        provision: Containers::Provision::Result.success(container_id: "abc123", container_host: "local"),
+        agent_run: agent_run
+      )
+      allow(NetworkPolicy).to receive(:apply_firewall_rules)
+        .and_raise(NetworkPolicy::Error, "iptables not available")
+
+      expect(provision_service).to receive(:cleanup)
+
+      expect { runner.provision(spec: run_spec) }
+        .to raise_error(ExecutionRunners::ProvisionError, /Firewall setup failed/)
     end
   end
 
@@ -356,7 +371,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
         execute: Containers::Provision::Result.success(stdout: "ok\n", stderr: "", exit_code: 0),
         container_running?: true, container: instance_double(Docker::Container), backend: backend, cleanup: nil
       )
-      allow(provision_service).to receive_messages(resolve_service_destinations: [], preview_tunnel?: false)
+      allow(provision_service).to receive_messages(resolve_service_destinations: [])
     end
   end
 end

@@ -41,6 +41,21 @@ module ExecutionRunners
       handle_for(spec: spec, result: result)
     rescue Containers::Provision::ProvisionError => e
       raise ProvisionError, e.message
+    rescue ProvisionError
+      # The container is already provisioned and running by the time the
+      # runner raises its own error (the production firewall failure path in
+      # #apply_firewall!); +Containers::Provision#provision+ only cleans up
+      # failures raised inside itself. Clean up the live container before
+      # re-raising so a firewall gap does not also leak an orphaned container
+      # on the restricted network. Cleanup is best-effort — a partially-started
+      # container may resist removal, and that must not mask the original
+      # error.
+      begin
+        service.cleanup if service
+      rescue StandardError
+        # Surface the original provisioning error, not the cleanup error.
+      end
+      raise
     end
 
     def start(handle:, command:, timeout: nil, startup_timeout: nil, idle_timeout: nil,
@@ -149,21 +164,13 @@ module ExecutionRunners
 
     # Applies the in-container firewall when the policy demands one. Service
     # container IPs are resolved from the Provision service after containers
-    # start; preview-tunnel destinations are appended when applicable.
-    # +policy.allow_destinations+ uses the provider-neutral +{host:, port:}+
-    # shape, so entries are normalized to +{ip:, port:}+ to match
-    # +NetworkPolicy.build_firewall_script+, which reads +dest[:ip]+.
+    # start. +policy.allow_destinations+ uses the provider-neutral
+    # +{host:, port:}+ shape, so entries are normalized to +{ip:, port:}+ to
+    # match +NetworkPolicy.build_firewall_script+, which reads +dest[:ip]+.
     def apply_firewall!(service:, backend:, policy:)
       return unless policy.firewall?
 
       destinations = policy.allow_destinations.map { |dest| { ip: dest.fetch(:host), port: dest.fetch(:port) } } + service.resolve_service_destinations
-      if service.preview_tunnel?
-        remote_dest = Previews::TunnelManager.client_remote_destination(
-          backend: backend,
-          restricted: policy.restricted?
-        )
-        destinations << { ip: remote_dest.fetch(:host), port: remote_dest.fetch(:port) }
-      end
 
       NetworkPolicy.apply_firewall_rules(
         service.container,
@@ -187,7 +194,6 @@ module ExecutionRunners
     def provision_options(spec)
       options = {}
       options[:image] = spec.image if spec.image.present?
-      options[:preview_tunnel] = spec.preview_tunnel if spec.preview_tunnel.present?
       resources = spec.resources
       return options unless resources
 

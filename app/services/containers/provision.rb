@@ -170,7 +170,7 @@ module Containers
       workspace_mount: "/workspace"
     }.freeze
 
-    attr_reader :agent_run, :project, :worktree_path, :container, :options, :workspace_volume, :pool_entry, :heartbeat_dir_host, :backend
+    attr_reader :agent_run, :project, :worktree_path, :container, :workspace_volume, :pool_entry, :heartbeat_dir_host, :backend
 
     def self.network_for(agent_run:)
       new(agent_run: agent_run).network_name
@@ -190,22 +190,14 @@ module Containers
 
     # Builds the provider-neutral +NetworkingPolicy+ for an agent run + project
     # pair using the same subscription-auth / direct-outbound heuristics the
-    # legacy +#network_contract+ path uses. Instantiates a Provision to
-    # inspect subscription-auth and direct-outbound state; the constructor
-    # runs user-setting resolution and image resolution as a side effect.
-    # A future refactor could extract these checks into stateless helpers
-    # to avoid the full instantiation (RDR-054).
+    # legacy +#network_contract+ path uses. Construction is side-effect-free:
+    # container options resolve lazily (see +#options+), so deriving the policy
+    # does not pay the user-setting/image resolution cost of a full provision
+    # (RDR-054).
     #
     # @return [ExecutionRunners::NetworkingPolicy]
     def self.networking_policy_for(agent_run:, project:)
-      service = new(agent_run: agent_run, project: project, networking_policy: nil)
-      if service.send(:subscription_auth?)
-        ExecutionRunners::NetworkingPolicy.subscription_auth
-      elsif service.send(:direct_outbound_runner?)
-        ExecutionRunners::NetworkingPolicy.direct_outbound
-      else
-        ExecutionRunners::NetworkingPolicy.proxy_restricted
-      end
+      new(agent_run: agent_run, project: project).derived_networking_policy
     end
 
     def self.codex_notify_line
@@ -262,12 +254,21 @@ module Containers
       @preview_tunnel_option = options.delete(:preview_tunnel)
       @pool_mode = options.delete(:pool_mode) { false }
       @networking_policy = networking_policy
-      @options = DEFAULTS.merge(resolve_user_setting_overrides).merge(resolve_project_image).merge(options)
+      @raw_options = options
       @backend = backend
       @container = nil
       @heartbeat_age_cache = {}
       @heartbeat_age_cache_mutex = Mutex.new
       @heartbeat_dir_host = nil
+    end
+
+    # Resolves the effective container options on first access. Deferred from
+    # +initialize+ so callers that only need policy/eligibility state (e.g.
+    # +networking_policy_for+, +compatibility_for+) do not pay the user-setting
+    # and image resolution cost (DB queries plus profile lookups) that only
+    # provisioning actually needs.
+    def options
+      @options ||= DEFAULTS.merge(resolve_user_setting_overrides).merge(resolve_project_image).merge(@raw_options)
     end
 
     # Provisions a new container with security hardening.
@@ -373,6 +374,21 @@ module Containers
 
     def network_name
       network_contract.network
+    end
+
+    # Derives the provider-neutral +ExecutionRunners::NetworkingPolicy+ for
+    # this provision using the subscription-auth / direct-outbound heuristics
+    # (the same source of truth as the legacy +network_contract+ path). Public
+    # so +networking_policy_for+ can compute the policy without reaching into
+    # private detection methods.
+    def derived_networking_policy
+      @derived_networking_policy ||= if subscription_auth?
+        ExecutionRunners::NetworkingPolicy.subscription_auth
+      elsif direct_outbound_runner?
+        ExecutionRunners::NetworkingPolicy.direct_outbound
+      else
+        ExecutionRunners::NetworkingPolicy.proxy_restricted
+      end
     end
 
     private def abort_pattern_candidates(stream_type, normalized_chunk, stdout_buffer:)

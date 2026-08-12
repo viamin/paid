@@ -216,6 +216,15 @@ RSpec.describe Containers::Provision do
     end
   end
 
+  describe ".networking_policy_for" do
+    it "derives the proxy-restricted policy for a run with no subscription auth or direct-outbound runner" do
+      policy = described_class.networking_policy_for(agent_run: agent_run, project: project)
+
+      expect(policy.mode).to eq(:proxy_restricted)
+      expect(policy).to be_restricted
+    end
+  end
+
   describe "#auth_source_log_payload (RDR-041 #2959)" do
     let(:service) { described_class.new(agent_run: agent_run, project: project) }
 

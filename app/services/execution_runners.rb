@@ -62,8 +62,7 @@ module ExecutionRunners
     :networking_policy,  # NetworkingPolicy (restricted vs. direct)
     :workspace_strategy, # :named_volume | :bind_mount | :ephemeral
     :services,           # Array<ServiceDeclaration>
-    :secrets_config,     # Auth/credential configuration
-    :preview_tunnel      # Optional preview tunnel config
+    :secrets_config      # Auth/credential configuration
   ) do
     # Builds a RunSpec from an AgentRun context for the shim migration path
     # (RDR-054). Derives workspace strategy and resource limits from the
@@ -93,8 +92,7 @@ module ExecutionRunners
         networking_policy: networking_policy,
         workspace_strategy: agent_run.worktree_path.present? ? :bind_mount : :named_volume,
         services: [],
-        secrets_config: nil,
-        preview_tunnel: nil
+        secrets_config: nil
       )
     end
   end
