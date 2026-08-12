@@ -3401,6 +3401,53 @@ RSpec.describe Containers::Provision do
     end
   end
 
+  describe "#container_status" do
+    before do
+      service.provision
+    end
+
+    it "returns running, exit code, OOM flag, and memory limit" do
+      allow(mock_container).to receive(:info).and_return(
+        { "State" => { "Running" => true, "ExitCode" => 0, "OOMKilled" => false },
+          "HostConfig" => { "Memory" => 4_294_967_296 } }
+      )
+
+      expect(service.container_status).to eq(
+        running: true, exit_code: nil, oom_killed: false, memory_limit_bytes: 4_294_967_296
+      )
+    end
+
+    it "normalizes exit_code to nil while running even when Docker retains a prior exit code" do
+      allow(mock_container).to receive(:info).and_return(
+        { "State" => { "Running" => true, "ExitCode" => 137, "OOMKilled" => false },
+          "HostConfig" => { "Memory" => 4_294_967_296 } }
+      )
+
+      expect(service.container_status).to include(running: true, exit_code: nil)
+    end
+
+    it "reports oom_killed and exit code when the container was OOM killed" do
+      allow(mock_container).to receive(:info).and_return(
+        { "State" => { "Running" => false, "ExitCode" => 137, "OOMKilled" => true },
+          "HostConfig" => { "Memory" => 1024 } }
+      )
+
+      expect(service.container_status).to include(running: false, exit_code: 137, oom_killed: true, memory_limit_bytes: 1024)
+    end
+
+    it "returns an empty hash when the container is not provisioned" do
+      unprovisioned = described_class.new(agent_run: agent_run, worktree_path: worktree_path)
+
+      expect(unprovisioned.container_status).to eq({})
+    end
+
+    it "returns an empty hash when inspection fails" do
+      allow(mock_container).to receive(:refresh!).and_raise(Docker::Error::DockerError, "daemon down")
+
+      expect(service.container_status).to eq({})
+    end
+  end
+
   describe ".with_container" do
     it "provisions container, yields, and cleans up" do
       yielded_service = nil

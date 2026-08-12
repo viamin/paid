@@ -111,7 +111,7 @@ generalization, and is reviewed against the coupling inventory (#3337) to
 confirm coverage.
 
 - `ExecutionRunners::Base` is the abstract interface: `provision`, `start`,
-  `running?`, `reconnect`, `cancel`, `cleanup`, `.compatible?`, `.ping`. Method
+  `running?`, `reconnect`, `status`, `cancel`, `cleanup`, `.compatible?`, `.ping`. Method
   names and parameters never reference Docker concepts.
 - A runner owns the complete execution environment (primary workload, sidecars,
   services, network, workspace) as a single lifecycle, plus the watchdog logic
@@ -119,13 +119,15 @@ confirm coverage.
 - Value objects consolidate existing patterns: `RunSpec` (what to run),
   `RunnerHandle` (opaque, JSON-serializable reference for recovery),
   `ExecutionResult` (outcome, including OOM and timeout classification),
-  `NetworkingPolicy` (adapts `NetworkPolicy::NetworkContract`, drops the Docker
-  network name), `ServiceDeclaration`, and `ComputeRequirements`.
+  `ExecutionStatus` (lifecycle status: `:running | :exited | :oom_killed |
+  :not_found`, returned by `Base#status`), `NetworkingPolicy` (adapts
+  `NetworkPolicy::NetworkContract`, drops the Docker network name),
+  `ServiceDeclaration`, and `ComputeRequirements`.
 - `ExecutionRunners::LocalDockerRunner` implements `Base` as a thin adapter over
-  `Containers::Provision`: `#provision`/`#start`/`#running?`/`#reconnect`/
+  `Containers::Provision`: `#provision`/`#start`/`#running?`/`#reconnect`/`#status`/
   `#cancel`/`#cleanup` translate `RunSpec`/`RunnerHandle` to `Containers::Provision.new`,
-  `#execute`, `#container_running?`, `Containers::Provision.reconnect`, and
-  `#cleanup` calls, and translate
+  `#execute`, `#container_running?`, `#container_status`, `Containers::Provision.reconnect`,
+  and `#cleanup` calls, and translate
   `Containers::Provision::Result` and its error classes into `ExecutionResult`
   and the `ExecutionRunners` error hierarchy. `RunnerHandle#metadata` carries
   the `agent_run_id`, `worktree_path`, and `environment` needed to reconnect a

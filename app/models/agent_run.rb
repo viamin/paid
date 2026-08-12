@@ -2638,7 +2638,7 @@ class AgentRun < ApplicationRecord
   # Loads the handle from the DB, reconnects via the runner interface, and
   # either reuses a still-running environment or cleans up a dead/missing one
   # before provisioning fresh (RDR-054).
-  # @spec CONTAINER-RUNTIME-015
+  # @spec CONTAINER-RUNTIME-016
   def reuse_or_reconcile_via_runner(**options)
     handle = ExecutionRunners::RunnerHandle.from_record(self)
     runner = ExecutionRunners.resolve_for(self)

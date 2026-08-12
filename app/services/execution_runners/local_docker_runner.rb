@@ -75,6 +75,26 @@ module ExecutionRunners
         agent_run: agent_run, container_id: handle.identifier,
         worktree_path: handle.metadata["worktree_path"]
       )
+    rescue ActiveRecord::RecordNotFound
+      # A missing AgentRun means the environment can no longer be reached.
+      # Translate to ProvisionError so every lifecycle method's existing
+      # rescue maps it to the right "gone" outcome (not_found / false / nil).
+      raise Containers::Provision::ProvisionError, "AgentRun not found"
+    end
+
+    # @spec CONTAINER-RUNTIME-015
+    def status(handle:)
+      state = reconnect(handle: handle).container_status
+      return ExecutionStatus.not_found if state.empty?
+
+      ExecutionStatus.new(
+        state: classify_status(state),
+        exit_code: state[:exit_code],
+        oom_killed: state[:oom_killed],
+        memory_limit: state[:memory_limit_bytes]
+      )
+    rescue Containers::Provision::ProvisionError
+      ExecutionStatus.not_found
     end
 
     def cancel(handle:)
@@ -151,6 +171,17 @@ module ExecutionRunners
     end
 
     private
+
+    # Maps the raw Docker state inspection to an ExecutionStatus state:
+    # a running workload wins over OOM (a container can show OOMKilled=true
+    # on a prior probe while still running), otherwise OOM precedes a plain
+    # exit.
+    def classify_status(state)
+      return :running if state[:running]
+      return :oom_killed if state[:oom_killed]
+
+      :exited
+    end
 
     def backend_for(spec)
       Containers.backend_for(spec.agent_run&.workspace_volume_host)
