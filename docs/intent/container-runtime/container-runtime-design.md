@@ -102,9 +102,33 @@ bind-mount compatibility, but those legacy paths are not the current runtime
 requirement for ordinary agent runs and should not be reintroduced as the
 default design.
 
+## Runner abstraction boundary (RDR-054)
+
+`ExecutionRunners` defines the domain-oriented runner contract that will
+replace direct Docker API access in orchestration code. The interface is driven
+by what `Containers::Provision` actually does today, not speculative
+generalization, and is reviewed against the coupling inventory (#3337) to
+confirm coverage.
+
+- `ExecutionRunners::Base` is the abstract interface: `provision`, `start`,
+  `running?`, `cancel`, `cleanup`, `.compatible?`, `.ping`. Method names and
+  parameters never reference Docker concepts.
+- A runner owns the complete execution environment (primary workload, sidecars,
+  services, network, workspace) as a single lifecycle, plus the watchdog logic
+  (startup, idle, wall-clock, heartbeat, abort-pattern detection).
+- Value objects consolidate existing patterns: `RunSpec` (what to run),
+  `RunnerHandle` (opaque, JSON-serializable reference for recovery),
+  `ExecutionResult` (outcome, including OOM and timeout classification),
+  `NetworkingPolicy` (adapts `NetworkPolicy::NetworkContract`, drops the Docker
+  network name), `ServiceDeclaration`, and `ComputeRequirements`.
+- This issue defines the interface and objects only — no runner is implemented
+  and no existing code is modified.
+
 ## References
 
 - `app/services/containers/provision.rb`
+- `app/services/execution_runners.rb`
+- `app/services/execution_runners/base.rb`
 - `app/services/containers/resolve_host_for_run.rb`
 - `app/services/containers/backend_scheduler.rb`
 - `app/services/containers/service_provisioner.rb`
@@ -112,6 +136,9 @@ default design.
 - `app/services/capacity/run_admission.rb`
 - `app/models/agent_run.rb`
 - `spec/services/containers/provision_spec.rb`
+- `spec/services/execution_runners_spec.rb`
+- `spec/services/execution_runners/base_spec.rb`
+- `spec/support/shared_examples/execution_runner_contract.rb`
 - `spec/services/containers/service_provisioner_spec.rb`
 - `spec/services/capacity/docker_snapshot_spec.rb`
 - `spec/services/capacity/run_admission_spec.rb`

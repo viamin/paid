@@ -55,3 +55,27 @@
   *Tests:* `spec/services/capacity/run_admission_spec.rb`,
   `spec/jobs/process_run_queue_job_spec.rb`
   *Code:* `Capacity::RunAdmission`
+
+- [x] **CONTAINER-RUNTIME-007** — The system SHALL define a provider-neutral
+  runner interface (`ExecutionRunners::Base`: `provision`, `start`, `running?`,
+  `cancel`, `cleanup`, `compatible?`, `ping`) whose method names and parameters
+  do not reference Docker concepts (no `container_id`, network name, bind mount,
+  or `exec`). A runner owns the complete execution environment and the watchdog
+  logic (startup, idle, wall-clock, heartbeat, abort-pattern detection).
+  *Tests:* `spec/services/execution_runners/base_spec.rb`
+  *Code:* `ExecutionRunners::Base`
+
+- [x] **CONTAINER-RUNTIME-008** — `ExecutionRunners::RunnerHandle` SHALL be
+  JSON-serializable and round-trip losslessly through `to_json` / `from_json`
+  (including the `runner_type` symbol) so it can be persisted in a DB column or
+  Temporal activity result for recovery after worker restart or failover.
+  *Tests:* `spec/services/execution_runners/contracts_spec.rb`
+  *Code:* `ExecutionRunners::RunnerHandle`
+
+- [x] **CONTAINER-RUNTIME-009** — The system SHALL define immutable value
+  objects (`RunSpec`, `RunnerHandle`, `ExecutionResult`, `NetworkingPolicy`,
+  `ServiceDeclaration`, `ComputeRequirements`) as `Data.define` structures that
+  consolidate the existing `Containers::Provision::Result` patterns and adapt
+  `NetworkPolicy::NetworkContract` without Docker-specific identifiers.
+  *Tests:* `spec/services/execution_runners/contracts_spec.rb`
+  *Code:* `ExecutionRunners`
