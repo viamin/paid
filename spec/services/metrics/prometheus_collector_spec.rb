@@ -301,6 +301,29 @@ RSpec.describe Metrics::PrometheusCollector do # @spec OBSERVABILITY-002
       it "reports the global concurrent execution limit" do
         expect(output).to include("paid_capacity_global_concurrent_limit 10")
       end
+
+      it "emits host metric HELP and TYPE lines once regardless of host count" do
+        identifiers = [ "local", "elguapo", "aws-runner-1" ]
+        hosts = identifiers.zip([ 2, 4, 8 ]).map do |identifier, limit|
+          Containers::HostRegistry::HostDefinition.new(
+            identifier: identifier,
+            backend: instance_double(Containers::Backends::Base, identifier: identifier),
+            max_concurrent_runs: limit,
+            fallback_enabled: false
+          )
+        end
+        registry = Containers::HostRegistry::Registry.new(
+          default_host: "local",
+          fallback_policy: Containers::HostRegistry::FALLBACK_DISABLED,
+          hosts: hosts
+        )
+        allow(Containers).to receive(:host_registry).and_return(registry)
+
+        expect(output.scan("# TYPE paid_capacity_host_concurrent_executions gauge\n").size).to eq(1)
+        expect(output.scan("# TYPE paid_capacity_host_concurrent_limit gauge\n").size).to eq(1)
+        expect(output.scan(/^# HELP paid_capacity_host_concurrent_executions /).size).to eq(1)
+        expect(output.scan(/^# HELP paid_capacity_host_concurrent_limit /).size).to eq(1)
+      end
     end
 
     it "follows Prometheus text exposition format with TYPE and HELP lines" do

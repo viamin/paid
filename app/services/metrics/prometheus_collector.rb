@@ -199,13 +199,13 @@ module Metrics
       append_metric_sample(lines, "paid_capacity_global_concurrent_limit", global_limit)
 
       registry = Containers.host_registry
+      append_metric_header(lines, "paid_capacity_host_concurrent_executions", "gauge", "Capacity-inflight runs attributed to a specific host.")
+      append_metric_header(lines, "paid_capacity_host_concurrent_limit", "gauge", "Declared per-host concurrent execution limit. A value of 0 means unlimited.")
       registry.hosts.each do |host|
         host_active = AgentRun.active_count_for_host(host.identifier)
-        append_metric_header(lines, "paid_capacity_host_concurrent_executions", "gauge", "Capacity-inflight runs attributed to a specific host.")
         append_metric_sample(lines, "paid_capacity_host_concurrent_executions", host_active, host: host.identifier)
 
         host_limit = host.max_concurrent_runs
-        append_metric_header(lines, "paid_capacity_host_concurrent_limit", "gauge", "Declared per-host concurrent execution limit. A value of 0 means unlimited.")
         append_metric_sample(lines, "paid_capacity_host_concurrent_limit", host_limit || 0, host: host.identifier)
       end
     end
