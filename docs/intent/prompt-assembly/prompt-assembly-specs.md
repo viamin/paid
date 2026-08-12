@@ -42,3 +42,24 @@
   `Prompts::BuildForPr.select_trusted_comments`) rather than introduce a second
   allowlist policy.
   *Code:* `PromptAssembly::Trust`.
+
+- [x] **PROMPT-ASSEMBLY-008** — The migrated runner-time goal wrappers
+  (create-issue, review, enhance-issue, interactive verification) SHALL be
+  contributed as explicit `PromptAssembly::Section`s with trust metadata and
+  SHALL NOT be appended to the prompt as raw strings outside assembly.
+  *Code:* `PromptAssembly::GoalAssembly`,
+  `Activities::RunAgentActivity#augment_prompt_for_goal`.
+
+- [x] **PROMPT-ASSEMBLY-009** — A queue-time custom prompt SHALL NOT bypass
+  required safety sections: the goal-wrapper assembly runs after
+  `effective_prompt` resolves the base text and marks the migrated goal
+  sections `required`, so customization cannot suppress them.
+  *Code:* `Activities::RunAgentActivity#augment_prompt_for_goal`,
+  `PromptAssembly::GoalAssembly`, `PromptAssembly::Profile`.
+
+- [x] **PROMPT-ASSEMBLY-010** — The run metadata SHALL contain a prompt
+  assembly digest and section-level provenance (key, source, trust level,
+  required flag, inclusion reason) for migrated goals; section bodies SHALL NOT
+  be persisted in provenance.
+  *Code:* `PromptAssembly::Result#provenance`, `AgentRun#record_prompt_assembly!`,
+  `RunProvenanceBuilder#prompt_provenance`.

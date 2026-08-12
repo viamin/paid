@@ -2245,6 +2245,30 @@ class AgentRun < ApplicationRecord
     MarketplaceEntries::InjectIntoPrompt.call(agent_run: self, prompt: base, provider_key: runner_key)
   end
 
+  PROMPT_ASSEMBLY_KEY = "prompt_assembly"
+
+  # Persists prompt-assembly provenance (digest + section list) on the run so
+  # configuration bundles and run metadata can fingerprint exactly which
+  # sections reached the agent. Bodies are never included — only keys, sources,
+  # trust levels, and inclusion reasons.
+  #
+  # @spec PROMPT-ASSEMBLY-004
+  def record_prompt_assembly!(provenance)
+    return if provenance.blank?
+
+    metadata = (external_metadata.is_a?(Hash) ? external_metadata.dup : {})
+    metadata[PROMPT_ASSEMBLY_KEY] = provenance
+    update!(external_metadata: metadata)
+  end
+
+  def prompt_assembly_provenance
+    external_metadata.is_a?(Hash) ? external_metadata[PROMPT_ASSEMBLY_KEY] : nil
+  end
+
+  def prompt_assembly_digest
+    prompt_assembly_provenance&.dig("digest")
+  end
+
   # Returns the base prompt for the review goal.
   # The review_goal_requires_pull_request validation ensures
   # source_pull_request_number is always present for review goals.

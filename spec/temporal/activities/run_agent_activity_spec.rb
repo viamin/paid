@@ -1365,6 +1365,90 @@ RSpec.describe Activities::RunAgentActivity do
     end
   end
 
+  # @spec PROMPT-ASSEMBLY-004, PROMPT-ASSEMBLY-005, PROMPT-ASSEMBLY-006
+  describe "#augment_prompt_for_goal assembly routing" do
+    before do
+      allow(Prompt).to receive(:resolve).and_return(nil)
+    end
+
+    it "routes create-issue through PromptAssembly and records provenance with a digest" do
+      run = create(:agent_run, :create_issue_goal, project: project, issue: issue)
+
+      prompt, fallback = activity.send(:augment_prompt_for_goal, run, "Create the issue")
+
+      expect(fallback).to be_nil
+      expect(prompt).to include("CREATE A GITHUB ISSUE")
+      provenance = run.reload.prompt_assembly_provenance
+      expect(provenance["digest"]).to match(/\A[0-9a-f]{64}\z/)
+      expect(provenance["sections"].map { |s| s["key"] }).to include("goal.create_issue")
+      goal_section = provenance["sections"].find { |s| s["key"] == "goal.create_issue" }
+      expect(goal_section["required"]).to be true
+    end
+
+    it "routes review through PromptAssembly and records provenance" do
+      run = create(:agent_run, :review_goal, project: project)
+
+      prompt, fallback = activity.send(:augment_prompt_for_goal, run, "Review the branch")
+
+      expect(fallback).to be_nil
+      expect(prompt).to include("REVIEW A PULL REQUEST")
+      provenance = run.reload.prompt_assembly_provenance
+      expect(provenance["sections"].map { |s| s["key"] }).to include("goal.review")
+    end
+
+    it "routes enhance-issue through PromptAssembly and records provenance" do
+      run = create(:agent_run, :enhance_issue_goal, project: project, issue: issue)
+      allow(Knowledge::ContextBundle::Build).to receive(:call)
+        .with(issue: issue, project: project, agent_run: run, agent_run_id: run.id)
+        .and_return(content: "")
+
+      prompt, fallback = activity.send(:augment_prompt_for_goal, run, "Enhance this issue")
+
+      expect(fallback).to be_nil
+      expect(prompt).to include("ENHANCE AN EXISTING ISSUE")
+      provenance = run.reload.prompt_assembly_provenance
+      expect(provenance["sections"].map { |s| s["key"] }).to include("goal.enhance_issue")
+    end
+
+    it "routes interactive verification through PromptAssembly as a separate section" do
+      run = create(:agent_run, :with_git_context, project: project)
+      allow(AgentRuns::VerificationPrompt).to receive(:call).and_return(
+        AgentRuns::VerificationPrompt::Section.new(
+          content: "# Interactive Verification\nself-check", fallback_result: nil
+        )
+      )
+
+      prompt, fallback = activity.send(:augment_prompt_for_goal, run, "Implement the feature")
+
+      expect(fallback).to be_nil
+      expect(prompt).to include("# Interactive Verification")
+      provenance = run.reload.prompt_assembly_provenance
+      keys = provenance["sections"].map { |s| s["key"] }
+      expect(keys).to include("task.base", "verification.interactive")
+      verification = provenance["sections"].find { |s| s["key"] == "verification.interactive" }
+      expect(verification["required"]).to be true
+    end
+
+    it "records provenance for goals without a migrated wrapper" do
+      run = create(:agent_run, :create_feature_goal, project: project)
+
+      prompt, fallback = activity.send(:augment_prompt_for_goal, run, "Build the feature")
+
+      expect(fallback).to be_nil
+      expect(prompt).to eq("Build the feature")
+      provenance = run.reload.prompt_assembly_provenance
+      expect(provenance["sections"].map { |s| s["key"] }).to eq([ "task.base" ])
+    end
+
+    it "does not leak section bodies into recorded provenance" do
+      run = create(:agent_run, :create_issue_goal, project: project, issue: issue)
+
+      activity.send(:augment_prompt_for_goal, run, "Create the issue")
+
+      expect(run.reload.prompt_assembly_provenance.to_s).not_to include("CREATE A GITHUB ISSUE")
+    end
+  end
+
   describe "#build_runner_order" do
     def record_runner_quota!(runner_name:, remaining:, checked_at:)
       user.runner_states.find_or_create_by!(runner_name: runner_name).record_quota_status!(

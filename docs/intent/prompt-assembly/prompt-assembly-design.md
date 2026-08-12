@@ -87,3 +87,55 @@ the knowledge bundle gets the framing.
 - `app/services/prompts/build_for_pr.rb`
 - `app/services/knowledge/context_bundle/build.rb`
 - `app/services/clarifying_questions/comment_admission.rb`
+
+## Goal-Assembly Provenance (#3379)
+
+The four runner-time goal wrappers — create-issue, review, enhance-issue, and
+interactive verification — previously reached the prompt as raw string
+concatenations in `RunAgentActivity#augment_prompt_for_goal`. They now flow
+through `PromptAssembly::GoalAssembly`, which contributes them as explicit
+`Section`s with trust metadata:
+
+- create-issue / enhance-issue / review: the fully-rendered goal wrapper (base
+  prompt embedded via `{{base_prompt}}`) is contributed as a single `goal.*`
+  section marked `required: true` (safety-sensitive).
+- create_pr: the base prompt is a `task.base` section and interactive
+  verification is appended as a separate `verification.interactive` section.
+- Goals without a migrated wrapper (create_feature, lid_planning,
+  analyze_issue) contribute only `task.base`.
+
+`PromptAssembly::Result` now exposes a `digest` (SHA-256 over assembled section
+keys and content) and a `provenance` map (section keys, sources, trust levels,
+required flags, inclusion reasons — never bodies). The activity records this on
+the run via `AgentRun#record_prompt_assembly!` (stored under
+`external_metadata["prompt_assembly"]`) and `RunProvenanceBuilder` surfaces it
+under `prompt_provenance[:assembly]`.
+
+Because the assembly runs after `effective_prompt` resolves the base text, a
+queue-time custom prompt cannot bypass the required goal sections — they are
+applied here regardless of how the base text was produced.
+
+## Remaining Direct Prompt Builders (intentionally out of scope for #3379)
+
+The full RDR-054 migration is phased. The goal-wrapper move (#3379) covers the
+four runner-time wrappers above. These direct builders remain and are tracked
+for later phases:
+
+- `Prompts::BuildForIssue` and `Prompts::BuildForPr` still compose sections by
+  string concatenation rather than through `PromptAssembly::Build`. Routing
+  their internal sections (task, comments, CI failures, review threads,
+  knowledge, style guides, conventions, LID, marketplace) through the section
+  registry is the #3377/#3378 migration, tracked separately.
+- `CreateAgentRunActivity` queue-time materialization renders the
+  `coding.issue_implementation` prompt version into `custom_prompt` and injects
+  style guides and conventions directly. The base text it produces is captured
+  by the assembly's `task.base` section and digest at runner time, but the
+  queue-time inputs themselves are not yet expressed as assembly sections.
+- `Lid::InjectIntoPrompt`, `StyleGuides::InjectIntoPrompt`, and
+  `ProjectConventions::InjectIntoPrompt` remain call-site injectors invoked
+  inside the existing builders rather than registered providers.
+
+Splitting the goal-wrapper templates so the base prompt and goal instructions
+become truly separate sections (per the RDR-054 registry's `task.*` +
+`goal.*` split) is deferred to a follow-up; the templates and seeds embed
+`{{base_prompt}}` today, so #3379 records the combined wrapper as one section.
