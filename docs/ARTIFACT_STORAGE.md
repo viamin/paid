@@ -98,4 +98,4 @@ variable list and `docs/PRODUCTION_CONFIG.md` for the production contract.
 | `SCREENSHOTS_S3_ENDPOINT` | S3-compatible endpoint URL (MinIO, R2, etc.) | — |
 | `SCREENSHOTS_S3_URL_TTL` | Presigned URL lifetime (seconds, ≤ 1 week) | 1 week |
 
-The same variables also resolve from the `screensshots.s3.*` Rails credentials.
+The same variables also resolve from the `screenshots.s3.*` Rails credentials.
