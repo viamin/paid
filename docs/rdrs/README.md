@@ -117,6 +117,16 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | [RDR-050](RDR-050-account-queue-fairness-mode.md) | Account-Level Queue Fairness Mode — Strict Priority vs. Cross-Project Fair Share | Implemented | P1 |
 | [RDR-056](RDR-056-strict-test-driven-development-mode.md) | Test-Driven Development Modes with Human Test Review | Draft | P1 |
 
+### Cloud Execution Readiness
+
+| RDR | Title | Status | Priority |
+|-----|-------|--------|----------|
+| [RDR-055](RDR-055-remote-execution-data-contract.md) | Remote Execution Data Contract | Draft | P1 |
+| [RDR-056](RDR-056-execution-authority-network-and-isolation.md) | Execution Authority, Network Policy, and Isolation | Draft | P1 |
+| [RDR-057](RDR-057-immutable-agent-runtime-images.md) | Immutable Agent Runtime Images | Draft | P1 |
+| [RDR-058](RDR-058-external-execution-resource-ledger.md) | External Execution Resource Ledger | Draft | P1 |
+| [RDR-059](RDR-059-infrastructure-safety-and-audit.md) | Infrastructure Safety Rails and Execution Audit Events | Draft | P1 |
+
 ### Runner Intelligence
 
 | RDR | Title | Status | Priority |
