@@ -10,6 +10,7 @@ export default class extends Controller {
     this.streaming = false
     this.currentStreamId = null
     this.currentAttemptToolCards = []
+    this.scrollAnimationId = null
 
     this.subscription = consumer.subscriptions.create(
       { channel: "ChatChannel", session_id: this.sessionIdValue },
@@ -20,10 +21,13 @@ export default class extends Controller {
         received: (data) => this.handleEvent(data)
       }
     )
+
+    this.handleScroll()
   }
 
   disconnect() {
     this.subscription?.unsubscribe()
+    if (this.scrollAnimationId) cancelAnimationFrame(this.scrollAnimationId)
   }
 
   // A dropped/rejected connection mid-turn strands the streaming lock: the
@@ -538,10 +542,39 @@ export default class extends Controller {
   }
 
   scrollToTop() {
-    this.containerTarget.scrollTo({ top: 0, behavior: "smooth" })
+    this.smoothScrollTo(0)
   }
 
   scrollToInput() {
-    this.containerTarget.scrollTo({ top: this.containerTarget.scrollHeight, behavior: "smooth" })
+    this.smoothScrollTo(this.containerTarget.scrollHeight)
+  }
+
+  // Element.scrollTo({ behavior: "smooth" }) is unreliable on iOS Safari,
+  // especially in PWA / standalone mode — the call silently does nothing.
+  // A requestAnimationFrame loop that sets scrollTop directly works on every
+  // browser because scrollTop assignment is universally supported.
+  smoothScrollTo(target) {
+    if (this.scrollAnimationId) cancelAnimationFrame(this.scrollAnimationId)
+
+    const container = this.containerTarget
+    const start = container.scrollTop
+    const distance = target - start
+    if (distance === 0) return
+
+    const duration = 300
+    const startTime = performance.now()
+
+    const step = (now) => {
+      const progress = Math.min((now - startTime) / duration, 1)
+      const eased = progress < 0.5 ? 2 * progress * progress : 1 - (-2 * progress + 2) ** 2 / 2
+      container.scrollTop = start + distance * eased
+      if (progress < 1) {
+        this.scrollAnimationId = requestAnimationFrame(step)
+      } else {
+        this.scrollAnimationId = null
+      }
+    }
+
+    this.scrollAnimationId = requestAnimationFrame(step)
   }
 }
