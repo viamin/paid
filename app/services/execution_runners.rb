@@ -49,9 +49,97 @@ module ExecutionRunners
   # @spec CONTAINER-RUNTIME-009
   ComputeRequirements = Data.define(:cpu_quota, :memory_bytes, :pids_limit)
 
+  # A writable directory inside the workload. A Docker runner translates this
+  # to a tmpfs mount; a remote runner translates it to ephemeral disk or
+  # platform-native writable storage. Declared on {WorkspaceStrategy} so the
+  # writable layout travels with the workspace contract instead of being
+  # hardcoded by orchestration code.
+  # @spec CONTAINER-RUNTIME-011
+  WritableDir = Data.define(:path, :size_bytes, :mode, :exec) do
+    DEFAULT_MODE = 0o755
+
+    def self.build(path, size_bytes:, mode: DEFAULT_MODE, exec: false)
+      new(path: path, size_bytes: size_bytes, mode: mode, exec: exec)
+    end
+
+    # Docker tmpfs mount options string (e.g. +"exec,size=1073741824,mode=1777"+).
+    def docker_tmpfs_options
+      parts = []
+      parts << "exec" if exec
+      parts << "size=#{size_bytes}"
+      parts << "mode=#{format("%04o", mode)}"
+      parts.join(",")
+    end
+  end
+
+  # Heartbeat monitoring configuration carried by the workspace strategy. The
+  # runner owns how the heartbeat path is made observable — a host bind mount
+  # when the backend exposes host paths, an in-container tmpfs otherwise — so
+  # callers never reach into Docker volume/tmpfs mechanics.
+  # @spec CONTAINER-RUNTIME-011
+  HeartbeatConfig = Data.define(:mount_point)
+
+  # Provider-neutral workspace/storage strategy, isolating workspace assumptions
+  # from Docker volumes and bind mounts (RDR-054). A runner implementation
+  # translates the mode into its native storage primitive:
+  #
+  #   :named_volume    — runner-managed named volume (Docker: +paid-workspace-<id>+)
+  #   :bind_mount      — an existing host path mounted into the workload (legacy worktree)
+  #   :ephemeral       — ephemeral container-local storage, no persistence
+  #   :object_storage  — remote object storage synced into the workload (future)
+  #
+  # +reference+ is nil until a runner provisions storage; afterwards it holds
+  # the opaque storage reference (volume name, host path, or storage URI) that
+  # {RunnerHandle#workspace_ref} carries for recovery and cleanup. Volume-name
+  # construction lives inside the runner, never in orchestration or the domain
+  # model.
+  # @spec CONTAINER-RUNTIME-011
+  WorkspaceStrategy = Data.define(:mode, :mount_point, :reference, :writable_dirs, :heartbeat) do
+    DEFAULT_MOUNT_POINT = "/workspace"
+    HEARTBEAT_MOUNT_POINT = "/paid-heartbeat"
+
+    # Default writable directories every workload needs (scratch + tool cache).
+    # Runner-specific credential tmpfs mounts (e.g. ~/.claude, ~/.codex) are a
+    # Docker-implementation detail owned by the runner, not part of the
+    # provider-neutral workspace contract.
+    def self.default_writable_dirs
+      [
+        WritableDir.build("/tmp", size_bytes: 1024 * 1024 * 1024, mode: 0o1777, exec: true),
+        WritableDir.build("/home/agent/.cache", size_bytes: 512 * 1024 * 1024, mode: 0o755, exec: true)
+      ]
+    end
+
+    def self.named_volume(mount_point: DEFAULT_MOUNT_POINT,
+                          writable_dirs: default_writable_dirs)
+      new(mode: :named_volume, mount_point: mount_point, reference: nil,
+          writable_dirs: writable_dirs, heartbeat: HeartbeatConfig.new(mount_point: HEARTBEAT_MOUNT_POINT))
+    end
+
+    def self.bind_mount(reference:, mount_point: DEFAULT_MOUNT_POINT,
+                        writable_dirs: default_writable_dirs)
+      new(mode: :bind_mount, mount_point: mount_point, reference: reference,
+          writable_dirs: writable_dirs, heartbeat: HeartbeatConfig.new(mount_point: HEARTBEAT_MOUNT_POINT))
+    end
+
+    def self.ephemeral(mount_point: DEFAULT_MOUNT_POINT,
+                       writable_dirs: default_writable_dirs)
+      new(mode: :ephemeral, mount_point: mount_point, reference: nil,
+          writable_dirs: writable_dirs, heartbeat: HeartbeatConfig.new(mount_point: HEARTBEAT_MOUNT_POINT))
+    end
+
+    def named_volume?
+      mode == :named_volume
+    end
+
+    def bind_mount?
+      mode == :bind_mount
+    end
+  end
+
   # Immutable description of what to execute. Built by orchestration from the
   # +AgentRun+/+Project+ context and handed to {ExecutionRunners::Base#provision}.
   # @spec CONTAINER-RUNTIME-009
+  # @spec CONTAINER-RUNTIME-011
   RunSpec = Data.define(
     :agent_run,          # AgentRun context
     :project,            # Project context
@@ -60,13 +148,13 @@ module ExecutionRunners
     :resources,          # ComputeRequirements (cpu, memory, pids)
     :environment,        # Hash of env vars
     :networking_policy,  # NetworkingPolicy (restricted vs. direct)
-    :workspace_strategy, # :named_volume | :bind_mount | :ephemeral
+    :workspace,          # WorkspaceStrategy (named_volume | bind_mount | ephemeral)
     :services,           # Array<ServiceDeclaration>
     :secrets_config,     # Auth/credential configuration
     :preview_tunnel      # Optional preview tunnel config
   ) do
     # Builds a RunSpec from an AgentRun context for the shim migration path
-    # (RDR-054). Derives workspace strategy, resource limits, and networking
+    # (RDR-054). Derives the workspace strategy, resource limits, and networking
     # policy from the agent run and its project.
     # @param agent_run [AgentRun]
     # @param options [Hash] container options (memory_bytes, cpu_quota, etc.)
@@ -88,12 +176,24 @@ module ExecutionRunners
         resources: resources,
         environment: agent_run.service_environment || {},
         networking_policy: NetworkingPolicy.new(mode: :proxy, firewall: true),
-        workspace_strategy: agent_run.worktree_path.present? ? :bind_mount : :named_volume,
+        workspace: workspace_strategy_for(agent_run),
         services: [],
         secrets_config: nil,
         preview_tunnel: nil
       )
     end
+
+    # Derives the workspace strategy from the agent run: a legacy bind mount
+    # when an explicit worktree path is present, otherwise the default named
+    # volume (in-container clone). Volume-name construction stays inside the
+    # runner; the strategy only records the mode and host reference.
+    def self.workspace_strategy_for(agent_run)
+      worktree_path = agent_run.worktree_path.presence
+      return WorkspaceStrategy.bind_mount(reference: worktree_path) if worktree_path
+
+      WorkspaceStrategy.named_volume
+    end
+    private_class_method :workspace_strategy_for
   end
 
   # Opaque reference to a launched environment, returned by +#provision+ and

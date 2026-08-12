@@ -135,6 +135,36 @@ confirm coverage.
   always returns `LocalDockerRunner`, since every existing backend (local
   Docker, remote Docker, Swarm) is a Docker transport.
 
+### Workspace strategy isolation (#3342)
+
+Workspace storage is expressed as a provider-neutral `WorkspaceStrategy` on
+`RunSpec`, isolating workspace assumptions from Docker volumes and bind mounts
+so a future remote runner (Fly, Cloud Run) can substitute object storage or
+ephemeral disk without changing orchestration code.
+
+- `WorkspaceStrategy` carries `mode` (`:named_volume | :bind_mount | :ephemeral
+  | :object_storage`), the workload `mount_point`, an opaque `reference`
+  (volume name, host path, or storage URI — nil until provisioned), the
+  `writable_dirs` the workload needs (`WritableDir`: path, size, mode, exec),
+  and a `heartbeat` `HeartbeatConfig`. The default writable directories
+  (`/tmp`, `/home/agent/.cache`) are declared on the strategy rather than
+  hardcoded by orchestration; runner-specific credential tmpfs mounts remain a
+  Docker-implementation detail owned by `Containers::Provision`.
+- `LocalDockerRunner` translates the strategy: `:named_volume` constructs the
+  per-run volume name (`paid-workspace-<id>`) inside the runner and mounts it
+  via `Containers::Provision`; `:bind_mount` forwards the host-path reference.
+  Volume-name construction lives in the runner (`workspace_volume_name_for`),
+  so no orchestration code or the domain model builds Docker volume names.
+- `RunnerHandle#workspace_ref` stores the opaque workspace reference for
+  recovery and cleanup across the provision → start → cleanup lifecycle,
+  including pool-provisioned workspaces.
+- `AgentRun#cleanup_orphaned_workspace_volume` delegates volume-name
+  construction and deletion to `LocalDockerRunner#cleanup_workspace_reference`
+  rather than constructing `paid-workspace-<id>` in the model. Heartbeat
+  monitoring (host temp dir vs. in-container tmpfs) is owned by the runner's
+  delegate (`Containers::Provision`), selected from the backend's host-path
+  capability, not by callers.
+
 ## References
 
 - `app/services/containers/provision.rb`

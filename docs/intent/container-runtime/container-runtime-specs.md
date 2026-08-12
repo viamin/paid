@@ -91,3 +91,18 @@
   *Tests:* `spec/services/execution_runners/local_docker_runner_spec.rb`,
   `spec/services/execution_runners_spec.rb`
   *Code:* `ExecutionRunners::LocalDockerRunner`, `ExecutionRunners.resolve`
+
+- [x] **CONTAINER-RUNTIME-011** — The system SHALL express workspace storage as
+  a provider-neutral `WorkspaceStrategy` (`mode`, `mount_point`, `reference`,
+  `writable_dirs`, `heartbeat`) carried on `RunSpec`, so workspace assumptions
+  are isolated from Docker volumes and bind mounts. `LocalDockerRunner` SHALL
+  translate the strategy to Docker volume/bind/tmpfs operations and SHALL own
+  volume-name construction; no orchestration code or domain model SHALL
+  construct Docker volume names. `AgentRun#cleanup_orphaned_workspace_volume`
+  SHALL delegate to the runner, and heartbeat monitoring SHALL be owned by the
+  runner rather than by callers.
+  *Tests:* `spec/services/execution_runners_spec.rb`,
+  `spec/services/execution_runners/local_docker_runner_spec.rb`,
+  `spec/models/agent_run_spec.rb`
+  *Code:* `ExecutionRunners::WorkspaceStrategy`,
+  `ExecutionRunners::LocalDockerRunner`, `AgentRun#cleanup_orphaned_workspace_volume`
