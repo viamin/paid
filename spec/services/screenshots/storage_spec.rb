@@ -8,8 +8,8 @@ RSpec.describe Screenshots::Storage, :no_db do
   let(:storage) { described_class.new(bucket: "test-bucket", region: "us-east-1") }
 
   before do
-    allow(storage).to receive_messages(
-      s3_client: s3_client,
+    allow(storage.artifact_storage).to receive_messages(
+      client: s3_client,
       presigner: Aws::S3::Presigner.new(client: s3_client)
     )
   end
@@ -32,6 +32,31 @@ RSpec.describe Screenshots::Storage, :no_db do
   ensure
     file&.close
     file&.unlink
+  end
+
+  describe "delegation to the shared ArtifactStorage module" do
+    # @spec ARTIFACT-STORAGE-003
+    it "exposes the shared S3 client instead of constructing its own" do
+      shared_client = Aws::S3::Client.new(stub_responses: true)
+      storage = described_class.new(bucket: "shared-bucket", region: "us-west-2")
+
+      allow(storage.artifact_storage).to receive(:client).and_return(shared_client)
+
+      expect(storage.s3_client).to be(shared_client)
+      expect(storage.artifact_storage).to be_an(ArtifactStorage)
+    end
+
+    it "shares bucket and region resolution with ArtifactStorage" do
+      storage = described_class.new(bucket: "shared-bucket", region: "us-west-2")
+
+      expect(storage.bucket).to eq("shared-bucket")
+      expect(storage.region).to eq("us-west-2")
+      expect(storage.bucket).to eq(storage.artifact_storage.bucket)
+    end
+
+    it "class-level configured? mirrors ArtifactStorage.configured?" do
+      expect(described_class.configured?).to eq(ArtifactStorage.configured?)
+    end
   end
 
   describe "#object_key" do
@@ -134,11 +159,11 @@ RSpec.describe Screenshots::Storage, :no_db do
   end
 
   describe "#signed_url" do
-    it "uses the configured URL TTL" do
+    it "delegates to the shared artifact storage with the configured URL TTL" do
       presigner = instance_double(Aws::S3::Presigner)
       storage = described_class.new(bucket: "test-bucket", region: "us-east-1", url_ttl: 1234)
 
-      allow(storage).to receive(:presigner).and_return(presigner)
+      allow(storage.artifact_storage).to receive_messages(client: s3_client, presigner: presigner)
       allow(presigner).to receive(:presigned_url).and_return("https://example.test/screenshot.png")
 
       storage.signed_url("screenshots/acme/web/pr-42/abc1234/dashboard.png")
@@ -333,16 +358,8 @@ RSpec.describe Screenshots::Storage, :no_db do
   end
 
   describe "#configured?" do
-    it "returns true when credentials are present" do
-      allow(storage).to receive_messages(access_key_id: "AKIA...", secret_access_key: "secret")
-
-      expect(storage.configured?).to be true
-    end
-
-    it "returns false when credentials are missing" do
-      allow(storage).to receive_messages(access_key_id: nil, secret_access_key: nil)
-
-      expect(storage.configured?).to be false
+    it "mirrors the shared artifact storage configuration check" do
+      expect(storage.configured?).to eq(storage.artifact_storage.configured?)
     end
   end
 
@@ -370,48 +387,9 @@ RSpec.describe Screenshots::Storage, :no_db do
   end
 
   describe "default URL TTL configuration" do
-    around do |example|
-      original_env = ENV.to_h.slice("SCREENSHOTS_S3_URL_TTL")
-      ENV.delete("SCREENSHOTS_S3_URL_TTL")
-      example.run
-    ensure
-      if original_env.key?("SCREENSHOTS_S3_URL_TTL")
-        ENV["SCREENSHOTS_S3_URL_TTL"] = original_env["SCREENSHOTS_S3_URL_TTL"]
-      else
-        ENV.delete("SCREENSHOTS_S3_URL_TTL")
-      end
-    end
-
-    it "defaults to the S3 presigner maximum" do
-      storage = described_class.new(bucket: "test-bucket", region: "us-east-1")
-
-      expect(storage.send(:configured_url_ttl)).to eq(described_class::MAX_URL_TTL)
-    end
-
-    it "uses the SCREENSHOTS_S3_URL_TTL override when present" do
-      ENV["SCREENSHOTS_S3_URL_TTL"] = "7200"
-
-      storage = described_class.new(bucket: "test-bucket", region: "us-east-1")
-
-      expect(storage.send(:configured_url_ttl)).to eq(7200)
-    end
-
-    it "rejects non-positive TTL overrides" do
-      ENV["SCREENSHOTS_S3_URL_TTL"] = "0"
-
-      storage = described_class.new(bucket: "test-bucket", region: "us-east-1")
-
-      expect { storage.send(:configured_url_ttl) }
-        .to raise_error(ArgumentError, /SCREENSHOTS_S3_URL_TTL must be positive/)
-    end
-
-    it "rejects TTL overrides above the S3 presigner maximum" do
-      ENV["SCREENSHOTS_S3_URL_TTL"] = (described_class::MAX_URL_TTL + 1).to_s
-
-      storage = described_class.new(bucket: "test-bucket", region: "us-east-1")
-
-      expect { storage.send(:configured_url_ttl) }
-        .to raise_error(ArgumentError, /cannot exceed #{described_class::MAX_URL_TTL} seconds/)
+    it "delegates TTL resolution to the shared artifact storage" do
+      expect(described_class::MAX_URL_TTL).to eq(ArtifactStorage::MAX_URL_TTL)
+      expect(described_class::DEFAULT_URL_TTL).to eq(ArtifactStorage::DEFAULT_URL_TTL)
     end
   end
 
