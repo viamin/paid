@@ -2411,6 +2411,10 @@ class AgentRun < ApplicationRecord
   # @return [Containers::Provision::Result] Result with container_id on success
   # @raise [Containers::Provision::ProvisionError] When container creation fails
   def provision_container(**options)
+    if execution_runner_enabled?
+      return provision_via_runner(**options)
+    end
+
     return reuse_or_reconcile_container(**options) if container_id.present?
 
     provision_new_container(**options)
@@ -2425,6 +2429,10 @@ class AgentRun < ApplicationRecord
   # @raise [Containers::Provision::ProvisionError] When container not provisioned
   # @raise [Containers::Provision::TimeoutError] When command times out
   def execute_in_container(command, timeout: nil, stream: true, env: {}, preparation: nil)
+    if execution_runner_enabled? && @current_handle
+      return execute_via_runner(command, timeout: timeout, env: env, preparation: preparation)
+    end
+
     ensure_container_service!
     @container_service.execute(command, timeout: timeout, stream: stream, env: env, preparation: preparation)
   end
@@ -2444,23 +2452,29 @@ class AgentRun < ApplicationRecord
     # Safety net for a worker killed mid-provision: the workspace volume
     # may exist with no container_id to drive a normal cleanup. Run before
     # the early-return so it covers all paths (worktree-based runs are no-ops).
-    cleanup_orphaned_workspace_volume if container_id.blank? && @container_service.nil?
+    cleanup_orphaned_workspace_volume if container_id.blank? && @container_service.nil? && @current_handle.nil?
 
-    return if container_id.blank? && @container_service.nil?
+    return if container_id.blank? && @container_service.nil? && @current_handle.nil?
 
     if Containers::PoolManager.cleanup_claimed_container(agent_run: self, force: force)
       @container_service = nil
+      @current_handle = nil
       update!(container_id: nil)
       return
     end
 
-    ensure_container_service!
-    @container_service.cleanup(force: force)
-    @container_service = nil
-    update!(container_id: nil)
-  rescue Containers::Provision::Error
+    if execution_runner_enabled? && @current_handle
+      cleanup_via_runner(force: force)
+    else
+      ensure_container_service!
+      @container_service.cleanup(force: force)
+      @container_service = nil
+      update!(container_id: nil)
+    end
+  rescue Containers::Provision::Error, ExecutionRunners::Error
     # Container may already be gone; clear the reference anyway
     @container_service = nil
+    @current_handle = nil
     update!(container_id: nil)
     # The container is gone but the workspace volume may still exist.
     # Provision#cleanup would normally handle this in its ensure block,
@@ -2546,6 +2560,114 @@ class AgentRun < ApplicationRecord
   end
 
   private
+
+  # ── runner shim helpers (RDR-054) ──────────────────────────────
+
+  def execution_runner_enabled?
+    project.is_a?(Project) && FeatureFlags.enabled?(:execution_runner_enabled, project: project)
+  end
+
+  # Provisions a container through the execution runner interface.
+  # Reuses an existing recorded container (Temporal retry safety) before
+  # trying the warm pool, then delegating to the runner for a fresh
+  # provision. Pooling is not yet modeled by the runner interface (RunSpec
+  # has no pool-awareness), so this mirrors provision_new_container's
+  # pool-first behavior directly rather than pushing it into
+  # LocalDockerRunner#provision, keeping the pool/replenish contract in one
+  # place until pooling is designed into the runner contract itself.
+  def provision_via_runner(**options)
+    return reuse_or_reconcile_container(**options) if container_id.present?
+
+    planned_container_host = options.delete(:container_host)
+    pool_host_scope = planned_container_host.presence || container_host.presence
+
+    pooled_result = acquire_pooled_container(pool_host_scope: pool_host_scope, **options)
+    return pooled_result if pooled_result
+
+    runner = ExecutionRunners.resolve_for(self)
+    spec = ExecutionRunners::RunSpec.from_agent_run(self, **options)
+    @current_handle = runner.provision(spec: spec)
+    update!(container_id: @current_handle.identifier, container_host: @current_handle.host)
+    PoolReplenishmentJob.perform_later(project_id)
+
+    Containers::Provision::Result.success(
+      container_id: @current_handle.identifier,
+      container_host: @current_handle.host
+    )
+  end
+
+  # Claims a warm container from the pool for this run, if one is
+  # available and compatible. Shared by the legacy and runner-shim
+  # provision paths so both stay pool-aware (RDR-054).
+  #
+  # @return [Containers::Provision::Result, nil] the pooled result on a
+  #   successful claim, or nil when no warm container was claimed
+  def acquire_pooled_container(pool_host_scope:, **options)
+    pooled_result = Containers::PoolManager.new(project: project).acquire(
+      agent_run: self,
+      container_host: pool_host_scope,
+      **options
+    )
+    return unless pooled_result&.success?
+
+    @container_service = pooled_result[:service]
+    update!(container_id: pooled_result[:container_id], container_host: pooled_result[:container_host])
+    pooled_result
+  end
+
+  # Executes a command via the runner interface. Translates
+  # ExecutionResult back to Provision::Result for caller compatibility.
+  def execute_via_runner(command, timeout: nil, env: {}, preparation: nil)
+    runner = ExecutionRunners.resolve_for(self)
+    result = runner.start(
+      handle: handle_with_env(env), command: command, timeout: timeout,
+      startup_timeout: nil, idle_timeout: nil, abort_patterns: nil,
+      preparation: preparation, heartbeat_path: nil
+    )
+    Containers::Provision::Result.success(
+      stdout: result.stdout, stderr: result.stderr, exit_code: result.exit_code,
+      container_running: result.environment_running
+    )
+  rescue ExecutionRunners::ProvisionError => e
+    raise Containers::Provision::ProvisionError, e.message
+  rescue ExecutionRunners::StartupTimeoutError => e
+    raise Containers::Provision::StartupTimeoutError.new(e.message, diagnostics: e.diagnostics)
+  rescue ExecutionRunners::IdleTimeoutError => e
+    raise Containers::Provision::IdleTimeoutError.new(e.message, diagnostics: e.diagnostics)
+  rescue ExecutionRunners::TimeoutError => e
+    raise Containers::Provision::TimeoutError.new(e.message, diagnostics: e.diagnostics)
+  rescue ExecutionRunners::ExecutionError => e
+    raise Containers::Provision::ExecutionError.new(
+      e.message, exit_code: e.exit_code, stdout: e.stdout, stderr: e.stderr
+    )
+  rescue ExecutionRunners::OutputAbortError => e
+    raise Containers::Provision::OutputAbortError.new(
+      e.message, matched_output: e.matched_output, source: e.source, detail: e.detail
+    )
+  end
+
+  # Merges per-call env into @current_handle's metadata for a single #start
+  # call. LocalDockerRunner#start only reads handle.metadata["environment"]
+  # (the persistent service_environment captured at provision time), so
+  # per-call env (e.g. HarnessExecutor's runner/auth env, KILOCODE_CONFIG_B64)
+  # would otherwise be silently dropped instead of reaching the command.
+  def handle_with_env(env)
+    return @current_handle if env.blank?
+
+    merged_environment = (@current_handle.metadata["environment"] || {}).merge(env)
+    @current_handle.with(metadata: @current_handle.metadata.merge("environment" => merged_environment))
+  end
+
+  # Cleans up through the runner interface. Idempotent on missing resources.
+  def cleanup_via_runner(force: false)
+    runner = ExecutionRunners.resolve_for(self)
+    runner.cleanup(handle: @current_handle, force: force)
+  rescue ExecutionRunners::ProvisionError
+    nil
+  ensure
+    @current_handle = nil
+    update!(container_id: nil)
+  end
 
   def set_initiating_user_from_current_user
     self.initiating_user ||= Current.user
@@ -2922,16 +3044,8 @@ class AgentRun < ApplicationRecord
     planned_container_host = options.delete(:container_host)
     pool_host_scope = planned_container_host.presence || container_host.presence
 
-    pooled_result = Containers::PoolManager.new(project: project).acquire(
-      agent_run: self,
-      container_host: pool_host_scope,
-      **options
-    )
-    if pooled_result&.success?
-      @container_service = pooled_result[:service]
-      update!(container_id: pooled_result[:container_id], container_host: pooled_result[:container_host])
-      return pooled_result
-    end
+    pooled_result = acquire_pooled_container(pool_host_scope: pool_host_scope, **options)
+    return pooled_result if pooled_result
 
     backend_host = pool_host_scope.presence
     backend_host ||= container_host if container_host.present?
