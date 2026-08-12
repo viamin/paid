@@ -742,12 +742,33 @@ class AgentRun < ApplicationRecord
   # host with runs admitted elsewhere. Once container_host is set by a real
   # provision/pool result it is authoritative and the planned value is ignored.
   def self.active_count_for_host(container_host)
+    # A host is a shared physical resource that runs workloads for multiple
+    # accounts, so the count must span all tenants — otherwise RunAdmission
+    # (tenant-scoped) undercounts and the unauthenticated Prometheus path
+    # reads zero. See active_count_global for the same RLS concern.
     scope = host_scope_for(container_host)
-    capacity_inflight.where(
-      "COALESCE(NULLIF(container_host, ''), " \
-      "COALESCE(external_metadata->>'planned_container_host', '')) IN (:scope)",
-      scope: scope
-    ).count
+    TenantContext.with_system_access do
+      capacity_inflight.where(
+        "COALESCE(NULLIF(container_host, ''), " \
+        "COALESCE(external_metadata->>'planned_container_host', '')) IN (:scope)",
+        scope: scope
+      ).count
+    end
+  end
+
+  # Returns the total count of capacity-inflight runs across all accounts,
+  # hosts, and projects. Used by the global concurrent execution limit
+  # (Capacity::GlobalLimit) to enforce a deployment-wide ceiling on total
+  # concurrent executions — the "how many cloud machines am I willing to pay
+  # for right now" control.
+  def self.active_count_global
+    # `agent_runs` has FORCE ROW LEVEL SECURITY, so the count is only truly
+    # global when RLS is bypassed. CheckRunCapacityActivity runs under
+    # TenantContext.with(account) and Metrics::PrometheusCollector reads via
+    # the unauthenticated /api/metrics endpoint — either way the raw count
+    # would be scoped to one tenant (or zero). Bypass here so the method
+    # matches its "across all accounts" contract regardless of caller.
+    TenantContext.with_system_access { capacity_inflight.count }
   end
 
   # Returns the count of active create_pr runs for the given account.

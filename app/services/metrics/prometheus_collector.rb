@@ -41,6 +41,7 @@ module Metrics
       collect_container_pool_metrics(lines)
       collect_service_container_metrics(lines)
       collect_temporal_config_metrics(lines)
+      collect_capacity_metrics(lines)
       lines.join("\n") + "\n"
     end
 
@@ -185,6 +186,28 @@ module Metrics
 
     def resolve_worker_setting(key, env_key, default)
       TenantSetting.resolve_worker_setting(key, env_key: env_key, env: ENV, default: default)
+    end
+
+    def collect_capacity_metrics(lines)
+      global_active = AgentRun.active_count_global
+      global_limit = Capacity::GlobalLimit.max_concurrent_executions
+
+      append_metric_header(lines, "paid_capacity_global_concurrent_executions", "gauge", "Currently capacity-inflight agent runs across all accounts, hosts, and projects.")
+      append_metric_sample(lines, "paid_capacity_global_concurrent_executions", global_active)
+
+      append_metric_header(lines, "paid_capacity_global_concurrent_limit", "gauge", "Configured global concurrent execution limit (MAX_GLOBAL_CONCURRENT_EXECUTIONS).")
+      append_metric_sample(lines, "paid_capacity_global_concurrent_limit", global_limit)
+
+      registry = Containers.host_registry
+      append_metric_header(lines, "paid_capacity_host_concurrent_executions", "gauge", "Capacity-inflight runs attributed to a specific host.")
+      append_metric_header(lines, "paid_capacity_host_concurrent_limit", "gauge", "Declared per-host concurrent execution limit. A value of 0 means unlimited.")
+      registry.hosts.each do |host|
+        host_active = AgentRun.active_count_for_host(host.identifier)
+        append_metric_sample(lines, "paid_capacity_host_concurrent_executions", host_active, host: host.identifier)
+
+        host_limit = host.max_concurrent_runs
+        append_metric_sample(lines, "paid_capacity_host_concurrent_limit", host_limit || 0, host: host.identifier)
+      end
     end
 
     def collect_agent_run_outcome_metrics(lines)
