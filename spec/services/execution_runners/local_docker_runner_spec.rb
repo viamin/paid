@@ -4,6 +4,7 @@ require "rails_helper"
 
 # @spec CONTAINER-RUNTIME-010
 # @spec CONTAINER-RUNTIME-011
+# @spec CONTAINER-RUNTIME-015
 RSpec.describe ExecutionRunners::LocalDockerRunner do
   subject(:runner) { described_class.new }
 
@@ -221,6 +222,88 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     end
   end
 
+  describe "#status" do
+    let(:handle) do
+      ExecutionRunners::RunnerHandle.new(runner_type: :local_docker, identifier: "abc123", host: "local",
+        workspace_ref: "paid-workspace-1", metadata: { "agent_run_id" => agent_run.id })
+    end
+    let(:container) { instance_double(Docker::Container) }
+
+    before do
+      allow(Containers::Provision).to receive(:reconnect).and_return(provision_service)
+      allow(provision_service).to receive(:container).and_return(container)
+    end
+
+    it "returns a running ExecutionStatus when the container is running" do
+      allow(provision_service).to receive(:oom_exit_diagnostics).and_return(
+        oom_killed: false, container_running: true, exit_code: nil, memory_limit_bytes: 4_294_967_296
+      )
+
+      status = runner.status(handle: handle)
+
+      expect(status).to be_a(ExecutionRunners::ExecutionStatus)
+      expect(status).to be_running
+      expect(status.memory_limit).to eq(4_294_967_296)
+    end
+
+    it "returns an oom_killed ExecutionStatus when OOMKilled is true" do
+      allow(provision_service).to receive(:oom_exit_diagnostics).and_return(
+        oom_killed: true, container_running: false, exit_code: 137, memory_limit_bytes: 1024
+      )
+
+      status = runner.status(handle: handle)
+
+      expect(status).to be_oom_killed
+      expect(status.exit_code).to eq(137)
+      expect(status.memory_limit).to eq(1024)
+    end
+
+    it "returns an exited ExecutionStatus for a normal exit" do
+      allow(provision_service).to receive(:oom_exit_diagnostics).and_return(
+        oom_killed: false, container_running: false, exit_code: 0, memory_limit_bytes: nil
+      )
+
+      status = runner.status(handle: handle)
+
+      expect(status).to be_exited
+      expect(status.exit_code).to eq(0)
+    end
+
+    it "returns not_found when the container object is nil" do
+      allow(provision_service).to receive(:container).and_return(nil)
+
+      status = runner.status(handle: handle)
+
+      expect(status).to be_not_found
+    end
+
+    it "returns not_found when oom_exit_diagnostics returns empty (container gone)" do
+      allow(provision_service).to receive(:oom_exit_diagnostics).and_return({})
+
+      status = runner.status(handle: handle)
+
+      expect(status).to be_not_found
+    end
+
+    it "returns not_found when reconnect raises ProvisionError" do
+      allow(Containers::Provision).to receive(:reconnect)
+        .and_raise(Containers::Provision::ProvisionError, "Container abc123 not found")
+
+      status = runner.status(handle: handle)
+
+      expect(status).to be_not_found
+    end
+
+    it "returns not_found on Docker::Error::NotFoundError" do
+      allow(provision_service).to receive(:oom_exit_diagnostics)
+        .and_raise(Docker::Error::NotFoundError)
+
+      status = runner.status(handle: handle)
+
+      expect(status).to be_not_found
+    end
+  end
+
   describe "#cancel" do
     let(:handle) do
       ExecutionRunners::RunnerHandle.new(runner_type: :local_docker, identifier: "abc123", host: "local",
@@ -374,7 +457,8 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       allow(provision_service).to receive_messages(
         provision: Containers::Provision::Result.success(container_id: "abc123", container_host: "local"),
         execute: Containers::Provision::Result.success(stdout: "ok\n", stderr: "", exit_code: 0),
-        container_running?: true, container: instance_double(Docker::Container), backend: backend, cleanup: nil
+        container_running?: true, container: instance_double(Docker::Container), backend: backend, cleanup: nil,
+        oom_exit_diagnostics: { oom_killed: false, container_running: true, exit_code: nil, memory_limit_bytes: nil }
       )
     end
   end

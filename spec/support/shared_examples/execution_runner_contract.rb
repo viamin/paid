@@ -46,6 +46,13 @@ RSpec.shared_examples "an ExecutionRunner implementation" do
       expect(runner.running?(handle: valid_handle)).to be_in([ true, false ])
     end
 
+    it "returns an ExecutionStatus from #status" do
+      status = runner.status(handle: valid_handle)
+
+      expect(status).to be_a(ExecutionRunners::ExecutionStatus)
+      expect(status.state).to be_in(%i[running exited oom_killed not_found])
+    end
+
     it "cancels an in-flight workload without raising" do
       expect { runner.cancel(handle: valid_handle) }.not_to raise_error
     end

@@ -285,10 +285,61 @@ module ExecutionRunners
   # @spec CONTAINER-RUNTIME-007
   CompatibilityResult = Data.define(:compatible, :error_message)
 
+  # Snapshot of a workload's current state, returned by
+  # {ExecutionRunners::Base#status}. Abstracts Docker container-state inspection
+  # (+State.Running+, +State.OOMKilled+, +State.ExitCode+) behind a
+  # provider-neutral shape so callers never reach into the Docker API response
+  # directly (RDR-054).
+  #
+  # +state+ values:
+  #   :running     — workload process is still active
+  #   :exited      — workload has terminated (check +exit_code+)
+  #   :oom_killed  — the platform's OOM killer terminated the workload
+  #   :not_found   — the workload/environment no longer exists
+  #
+  # @spec CONTAINER-RUNTIME-015
+  ExecutionStatus = Data.define(:state, :exit_code, :oom_killed, :memory_limit) do
+    def running?
+      state == :running
+    end
+
+    def exited?
+      state == :exited
+    end
+
+    def oom_killed?
+      state == :oom_killed
+    end
+
+    def not_found?
+      state == :not_found
+    end
+
+    def self.running(memory_limit: nil)
+      new(state: :running, exit_code: nil, oom_killed: false, memory_limit: memory_limit)
+    end
+
+    def self.exited(exit_code:, oom_killed: false, memory_limit: nil)
+      new(state: oom_killed ? :oom_killed : :exited, exit_code: exit_code,
+          oom_killed: oom_killed, memory_limit: memory_limit)
+    end
+
+    def self.oom_killed(exit_code:, memory_limit: nil)
+      new(state: :oom_killed, exit_code: exit_code, oom_killed: true, memory_limit: memory_limit)
+    end
+
+    def self.not_found
+      new(state: :not_found, exit_code: nil, oom_killed: false, memory_limit: nil)
+    end
+  end
+
   # Outcome of running a workload. Consolidates the existing
   # +Containers::Provision::Result+ patterns so callers no longer reach into
-  # the Docker result object.
+  # the Docker result object. Carries +timeout_type+ and +abort_info+ so a
+  # structured failure records *why* it failed alongside the captured output,
+  # even when the runner returns a result rather than raising (RDR-054).
   # @spec CONTAINER-RUNTIME-009
+  # @spec CONTAINER-RUNTIME-015
   ExecutionResult = Data.define(
     :success,             # Boolean
     :stdout,              # String
@@ -296,8 +347,13 @@ module ExecutionRunners
     :exit_code,           # Integer
     :oom_killed,          # Boolean
     :memory_limit_bytes,  # Integer, nil
-    :environment_running  # Boolean, nil — whether the launched environment is
+    :environment_running, # Boolean, nil — whether the launched environment is
     # still running after the workload exited (used for OOM diagnostics)
+    :timeout_type,        # Symbol, nil — :startup | :idle | :wall_clock when the
+    # workload was terminated by a watchdog timeout (only set when the runner
+    # returns a result instead of raising the typed error)
+    :abort_info           # Hash, nil — { matched_output:, source:, detail: } when
+    # the workload was terminated by an abort-pattern / streaming-event match
   ) do
     def success?
       success
@@ -309,14 +365,17 @@ module ExecutionRunners
 
     def self.success(stdout: "", stderr: "", exit_code: 0)
       new(success: true, stdout: stdout, stderr: stderr, exit_code: exit_code,
-          oom_killed: false, memory_limit_bytes: nil, environment_running: nil)
+          oom_killed: false, memory_limit_bytes: nil, environment_running: nil,
+          timeout_type: nil, abort_info: nil)
     end
 
     def self.failure(exit_code:, stdout: "", stderr: "",
-                     oom_killed: false, memory_limit_bytes: nil, environment_running: nil)
+                     oom_killed: false, memory_limit_bytes: nil, environment_running: nil,
+                     timeout_type: nil, abort_info: nil)
       new(success: false, stdout: stdout, stderr: stderr, exit_code: exit_code,
           oom_killed: oom_killed, memory_limit_bytes: memory_limit_bytes,
-          environment_running: environment_running)
+          environment_running: environment_running, timeout_type: timeout_type,
+          abort_info: abort_info)
     end
   end
 
