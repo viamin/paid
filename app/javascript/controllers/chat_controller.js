@@ -557,6 +557,11 @@ export default class extends Controller {
     if (this.scrollAnimationId) cancelAnimationFrame(this.scrollAnimationId)
 
     const container = this.containerTarget
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      container.scrollTop = target
+      return
+    }
+
     const start = container.scrollTop
     const distance = target - start
     if (distance === 0) return

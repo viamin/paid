@@ -68,6 +68,20 @@ class ChatControllerNodeHarness
       }
     }
 
+    // smoothScrollTo checks window.matchMedia("(prefers-reduced-motion: reduce)")
+    // to honor the user's OS-level motion preference. Node has no `window`, so
+    // stub it; defaults to "no preference reduced" unless overridden.
+    function withMatchMedia(matches, callback) {
+      const origWindow = globalThis.window;
+      globalThis.window = { matchMedia: () => ({ matches }) };
+
+      try {
+        callback();
+      } finally {
+        globalThis.window = origWindow;
+      }
+    }
+
     function testToolCallAppendsCardAndUpdatesStatus() {
       const { controller, appended, statusMessages } = makeController();
 
@@ -355,7 +369,7 @@ class ChatControllerNodeHarness
         }
       });
 
-      withMockedTimers(() => controller.smoothScrollTo(1000));
+      withMatchMedia(false, () => withMockedTimers(() => controller.smoothScrollTo(1000)));
 
       if (Math.abs(scrollTop - 1000) > 1) {
         throw new Error(`Expected scrollTop to animate to ~1000, got ${scrollTop}`);
@@ -373,10 +387,28 @@ class ChatControllerNodeHarness
         }
       });
 
-      withMockedTimers(() => controller.smoothScrollTo(500));
+      withMatchMedia(false, () => withMockedTimers(() => controller.smoothScrollTo(500)));
 
       if (sets !== 0) {
         throw new Error(`Expected no scrollTop writes when distance is 0, got ${sets}`);
+      }
+    }
+
+    function testSmoothScrollToJumpsInstantlyWhenReducedMotionPreferred() {
+      let scrollTop = 0;
+      const { controller } = makeController({
+        containerTarget: {
+          get scrollTop() { return scrollTop; },
+          set scrollTop(v) { scrollTop = v; },
+          scrollHeight: 1000,
+          clientHeight: 200
+        }
+      });
+
+      withMatchMedia(true, () => controller.smoothScrollTo(1000));
+
+      if (scrollTop !== 1000) {
+        throw new Error(`Expected reduced-motion scroll to jump instantly to 1000, got ${scrollTop}`);
       }
     }
 
@@ -465,6 +497,7 @@ class ChatControllerNodeHarness
       testSystemNoticeDeletionTargetsTopLevelElement();
       testSmoothScrollToAnimatesContainer();
       testSmoothScrollToNoOpForZeroDistance();
+      testSmoothScrollToJumpsInstantlyWhenReducedMotionPreferred();
       testScrollToInputScrollsToBottom();
       testScrollToTopScrollsToZero();
       testHandleScrollShowsBackToTopWhenScrolled();
