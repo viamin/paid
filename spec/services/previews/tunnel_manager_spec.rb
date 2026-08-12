@@ -18,13 +18,11 @@ RSpec.describe Previews::TunnelManager do
   end
 
   let(:original_preview_tunnel_config) { Rails.application.config.x.preview_tunnel }
-  let(:default_backend) { instance_double(Containers::Backends::Base, identifier: "local", list_containers: [], remote?: false) }
+  let(:default_backend) { instance_double(Containers::Backends::Base, identifier: "local", list_preview_containers: [], remote?: false) }
 
   before do
     allow(Containers).to receive(:backend).and_return(default_backend)
-    allow(default_backend).to receive(:list_containers)
-      .with(filters: { label: [ "#{described_class::PREVIEW_TUNNEL_LABEL}=true" ] }.to_json)
-      .and_return([])
+    allow(default_backend).to receive(:list_preview_containers).and_return([])
     PreviewTunnelPortReservation.delete_all
     described_class.configure!(
       port_range: "8200-8202",
@@ -93,9 +91,7 @@ RSpec.describe Previews::TunnelManager do
 
       backend = instance_double(Containers::Backends::Base, identifier: "local")
       preview_container = instance_double(Docker::Container, info: preview_container_info(session_token: "active-preview", tunnel_port: 8202))
-      allow(backend).to receive(:list_containers)
-        .with(filters: { label: [ "#{described_class::PREVIEW_TUNNEL_LABEL}=true" ] }.to_json)
-        .and_return([ preview_container ])
+      allow(backend).to receive(:list_preview_containers).and_return([ preview_container ])
 
       described_class.prune_stale_reservations!(
         range: described_class.port_range,
@@ -125,13 +121,11 @@ RSpec.describe Previews::TunnelManager do
     end
   end
 
-  describe ".active_server_config_toml" do
+  describe ".active_server_config_toml" do # @spec LIVE-PREVIEW-008
     it "renders bindings from active preview containers" do
       backend = instance_double(Containers::Backends::Base, identifier: "local")
       preview_container = instance_double(Docker::Container, info: preview_container_info(session_token: "abc123", tunnel_port: 8201))
-      allow(backend).to receive(:list_containers)
-        .with(filters: { label: [ "#{described_class::PREVIEW_TUNNEL_LABEL}=true" ] }.to_json)
-        .and_return([ preview_container ])
+      allow(backend).to receive(:list_preview_containers).and_return([ preview_container ])
 
       config = described_class.active_server_config_toml(backend:)
 
