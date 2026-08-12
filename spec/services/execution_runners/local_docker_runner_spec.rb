@@ -3,6 +3,7 @@
 require "rails_helper"
 
 # @spec CONTAINER-RUNTIME-010
+# @spec CONTAINER-RUNTIME-011
 RSpec.describe ExecutionRunners::LocalDockerRunner do
   subject(:runner) { described_class.new }
 
@@ -14,7 +15,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       agent_run: agent_run, project: agent_run.project, image: "paid/agent:latest", command: "claude code",
       resources: resources, environment: { "FOO" => "bar" },
       networking_policy: ExecutionRunners::NetworkingPolicy.new(mode: :proxy, firewall: true),
-      workspace_strategy: :named_volume, services: [], secrets_config: nil, preview_tunnel: nil
+      workspace: ExecutionRunners::WorkspaceStrategy.named_volume, services: [], secrets_config: nil, preview_tunnel: nil
     )
   end
   let(:provision_service) { instance_double(Containers::Provision) }
@@ -46,7 +47,9 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
 
     it "uses the agent_run's worktree_path for a bind_mount workspace strategy" do
       agent_run.update!(worktree_path: "/var/paid/worktrees/1")
-      bind_mount_spec = ExecutionRunners::RunSpec.new(**run_spec.to_h.merge(workspace_strategy: :bind_mount))
+      bind_mount_spec = ExecutionRunners::RunSpec.new(**run_spec.to_h.merge(
+        workspace: ExecutionRunners::WorkspaceStrategy.bind_mount(reference: "/var/paid/worktrees/1")
+      ))
 
       expect(Containers::Provision).to receive(:new)
         .with(hash_including(worktree_path: "/var/paid/worktrees/1"))
@@ -58,6 +61,65 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       handle = runner.provision(spec: bind_mount_spec)
 
       expect(handle.metadata["worktree_path"]).to eq("/var/paid/worktrees/1")
+    end
+
+    it "translates a named_volume strategy to the per-run Docker volume on workspace_ref" do
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      allow(provision_service).to receive(:provision).and_return(
+        Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
+      )
+
+      handle = runner.provision(spec: run_spec)
+
+      # Volume-name construction lives in the runner; the ref matches the name
+      # Containers::Provision creates for a named-volume run.
+      expect(handle.workspace_ref).to eq("paid-workspace-#{agent_run.id}")
+    end
+
+    it "translates a bind_mount strategy to the host path on workspace_ref" do
+      bind_mount_spec = ExecutionRunners::RunSpec.new(**run_spec.to_h.merge(
+        workspace: ExecutionRunners::WorkspaceStrategy.bind_mount(reference: "/var/paid/worktrees/1")
+      ))
+      allow(Containers::Provision).to receive(:new)
+        .with(hash_including(worktree_path: "/var/paid/worktrees/1"))
+        .and_return(provision_service)
+      allow(provision_service).to receive(:provision).and_return(
+        Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
+      )
+
+      handle = runner.provision(spec: bind_mount_spec)
+
+      expect(handle.workspace_ref).to eq("/var/paid/worktrees/1")
+      expect(handle.workspace_ref).not_to include("paid-workspace-")
+    end
+
+    it "carries the workspace reference through a full provision → start → cleanup round-trip" do
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      allow(provision_service).to receive(:provision).and_return(
+        Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
+      )
+
+      handle = runner.provision(spec: run_spec)
+
+      # The runner owns workspace_ref; it never leaks a Docker volume name into
+      # the caller, and the handle carries it for recovery/cleanup.
+      expect(handle.workspace_ref).to eq("paid-workspace-#{agent_run.id}")
+      reloaded = ExecutionRunners::RunnerHandle.from_json(handle.to_json)
+      expect(reloaded.workspace_ref).to eq(handle.workspace_ref)
+
+      allow(Containers::Provision).to receive(:reconnect)
+        .with(agent_run: agent_run, container_id: "abc123", worktree_path: nil)
+        .and_return(provision_service)
+      allow(provision_service).to receive_messages(
+        execute: Containers::Provision::Result.success(stdout: "ok\n", stderr: "", exit_code: 0),
+        cleanup: nil
+      )
+
+      result = runner.start(handle: reloaded, command: "echo ok", timeout: 60, startup_timeout: 30,
+        idle_timeout: 30, abort_patterns: nil, preparation: nil, heartbeat_path: nil)
+      expect(result).to be_success
+
+      expect { runner.cleanup(handle: reloaded, force: true) }.not_to raise_error
     end
 
     it "wraps a Containers::Provision::ProvisionError in ExecutionRunners::ProvisionError" do
@@ -243,6 +305,42 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
         .and_raise(Containers::Provision::ProvisionError, "Container abc123 not found")
 
       expect { runner.cleanup(handle: handle, force: false) }.not_to raise_error
+    end
+  end
+
+  describe ".workspace_volume_name_for" do
+    it "constructs the per-run Docker named-volume name" do
+      expect(described_class.workspace_volume_name_for(42)).to eq("paid-workspace-42")
+    end
+  end
+
+  describe "#cleanup_workspace_reference" do
+    let(:volume) { instance_double(Docker::Volume) }
+
+    it "deletes the named workspace volume via the owning backend" do
+      allow(Containers).to receive(:backend_for).with("remote").and_return(backend)
+      allow(backend).to receive(:get_volume).with("paid-workspace-#{agent_run.id}", host: "remote").and_return(volume)
+      allow(backend).to receive(:delete_volume).with(volume)
+
+      runner.cleanup_workspace_reference(agent_run: agent_run, host: "remote")
+
+      expect(backend).to have_received(:get_volume).with("paid-workspace-#{agent_run.id}", host: "remote")
+      expect(backend).to have_received(:delete_volume).with(volume)
+    end
+
+    it "is a no-op when the volume was already removed" do
+      allow(Containers).to receive(:backend_for).and_return(backend)
+      allow(backend).to receive(:get_volume).and_raise(Docker::Error::NotFoundError)
+
+      expect { runner.cleanup_workspace_reference(agent_run: agent_run, host: "remote") }.not_to raise_error
+    end
+
+    it "logs a warning instead of raising on other Docker errors" do
+      allow(Containers).to receive(:backend_for).and_return(backend)
+      allow(backend).to receive(:get_volume).and_raise(Docker::Error::DockerError, "daemon down")
+
+      expect(Rails.logger).to receive(:warn).with(hash_including(message: "container_manager.orphaned_volume_cleanup_failed"))
+      expect { runner.cleanup_workspace_reference(agent_run: agent_run, host: "remote") }.not_to raise_error
     end
   end
 

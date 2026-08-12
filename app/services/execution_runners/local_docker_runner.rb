@@ -12,8 +12,17 @@ module ExecutionRunners
   # since +#start+/+#running?+/+#cancel+/+#cleanup+ only receive the handle.
   #
   # @spec CONTAINER-RUNTIME-010
+  # @spec CONTAINER-RUNTIME-011
+  # @spec CONTAINER-RUNTIME-012
+  # @spec CONTAINER-RUNTIME-013
+  # @spec CONTAINER-RUNTIME-014
   class LocalDockerRunner < Base
     RUNNER_TYPE = :local_docker
+
+    # Prefix for per-run Docker named volumes. Volume-name construction lives
+    # here (inside the runner) so no orchestration code or domain model builds
+    # Docker volume names (RDR-054).
+    WORKSPACE_VOLUME_PREFIX = "paid-workspace"
 
     def provision(spec:)
       service = Containers::Provision.new(
@@ -89,6 +98,31 @@ module ExecutionRunners
       nil
     end
 
+    # Removes the named Docker workspace volume for an agent run when it exists.
+    # Used as the orphan-volume safety net: a worker killed mid-provision may
+    # have created the volume without ever recording a container_id, so cleanup
+    # routes by volume name (constructed here, inside the runner) instead of via
+    # a recovered handle. Volume-name construction is owned by the runner so the
+    # domain model never builds Docker volume names (#3342).
+    #
+    # @param agent_run [AgentRun] the run whose workspace volume may be orphaned
+    # @param host [String, nil] owning backend host (resolved by the caller)
+    # @return [void]
+    def cleanup_workspace_reference(agent_run:, host: nil)
+      volume_name = self.class.workspace_volume_name_for(agent_run.id)
+      backend = Containers.backend_for(host)
+      backend.delete_volume(backend.get_volume(volume_name, host: host))
+    rescue Docker::Error::NotFoundError
+      # Volume already removed, nothing to do
+    rescue Docker::Error::DockerError => e
+      Rails.logger.warn(
+        message: "container_manager.orphaned_volume_cleanup_failed",
+        agent_run_id: agent_run.id,
+        volume_name: volume_name,
+        error: e.message
+      )
+    end
+
     def self.compatible?(spec:, backend:)
       result = Containers::Provision.compatibility_for(
         agent_run: spec.agent_run, backend: backend, worktree_path: worktree_path_for(spec)
@@ -104,9 +138,16 @@ module ExecutionRunners
     # :named_volume and :ephemeral both use Provision's default in-container
     # clone into a named Docker volume.
     def self.worktree_path_for(spec)
-      return nil unless spec.workspace_strategy == :bind_mount
+      return nil unless spec.workspace&.bind_mount?
 
-      spec.agent_run&.worktree_path
+      spec.workspace.reference
+    end
+
+    # Constructs the Docker named-volume name for an agent run. Centralized here
+    # so volume-name construction never leaks into orchestration or the domain
+    # model (#3342).
+    def self.workspace_volume_name_for(agent_run_id)
+      "#{WORKSPACE_VOLUME_PREFIX}-#{agent_run_id}"
     end
 
     private
@@ -132,13 +173,22 @@ module ExecutionRunners
         runner_type: RUNNER_TYPE,
         identifier: result[:container_id],
         host: result[:container_host],
-        workspace_ref: self.class.worktree_path_for(spec) || "paid-workspace-#{spec.agent_run&.id}",
+        workspace_ref: workspace_reference_for(spec),
         metadata: {
           "agent_run_id" => spec.agent_run&.id,
           "worktree_path" => self.class.worktree_path_for(spec),
           "environment" => spec.environment || {}
         }
       )
+    end
+
+    # Translates the {WorkspaceStrategy} into the opaque workspace reference
+    # carried on the handle: the bind-mount host path for legacy worktrees, or
+    # the Docker named-volume name (constructed here) for named-volume runs.
+    def workspace_reference_for(spec)
+      return spec.workspace.reference if spec.workspace&.bind_mount?
+
+      self.class.workspace_volume_name_for(spec.agent_run&.id)
     end
 
     def translate_result(result)

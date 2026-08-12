@@ -98,7 +98,61 @@
   `spec/services/execution_runners_spec.rb`
   *Code:* `ExecutionRunners::LocalDockerRunner`, `ExecutionRunners.resolve`
 
-- [x] **CONTAINER-RUNTIME-011** — When a Temporal activity retries after a
+- [x] **CONTAINER-RUNTIME-011** — The system SHALL express workspace storage as
+  a provider-neutral `WorkspaceStrategy` (`mode`, `mount_point`, `reference`,
+  `writable_dirs`, `heartbeat`) carried on `RunSpec`, so workspace assumptions
+  are isolated from Docker volumes and bind mounts. `LocalDockerRunner` SHALL
+  translate the `:named_volume` and `:bind_mount` modes to Docker volume and
+  bind-mount operations and SHALL own volume-name construction; no
+  orchestration code or domain model SHALL construct Docker volume names.
+  `AgentRun#cleanup_orphaned_workspace_volume` SHALL delegate to the runner.
+  The `writable_dirs` and `heartbeat` fields on the strategy define the
+  provider-neutral shape (declarative data + helper) for the writable
+  layout and heartbeat observation but are not yet consumed by the
+  Docker executor — see CONTAINER-RUNTIME-012 and CONTAINER-RUNTIME-013.
+  *Tests:* `spec/services/execution_runners_spec.rb`,
+  `spec/services/execution_runners/local_docker_runner_spec.rb`,
+  `spec/models/agent_run_spec.rb`
+  *Code:* `ExecutionRunners::WorkspaceStrategy`,
+  `ExecutionRunners::LocalDockerRunner`, `AgentRun#cleanup_orphaned_workspace_volume`
+
+- [D] **CONTAINER-RUNTIME-012** — `LocalDockerRunner` SHALL translate
+  `WorkspaceStrategy#writable_dirs` into Docker tmpfs mounts so the
+  workload's writable layout is declared via the strategy rather than
+  hardcoded in `Containers::Provision#host_config`. Today
+  `Containers::Provision#host_config` still hardcodes `/tmp` and
+  `/home/agent/.cache` tmpfs entries; the `WritableDir#docker_tmpfs_options`
+  helper exists to power this translation when it lands. Pool workspace
+  reuse through the runner (`paid-pool-workspace-<id>`) is deferred to
+  CONTAINER-RUNTIME-014.
+  *Tests:* `spec/services/execution_runners/local_docker_runner_spec.rb`,
+  `spec/services/containers/provision_spec.rb`
+  *Code:* `ExecutionRunners::LocalDockerRunner#provision`,
+  `Containers::Provision#host_config`
+
+- [D] **CONTAINER-RUNTIME-013** — Heartbeat monitoring SHALL be owned by the
+  execution runner rather than by callers, so callers never reach into Docker
+  host bind mounts or in-container tmpfs mechanics for heartbeat observation.
+  Today `WorkspaceStrategy#heartbeat` (`HeartbeatConfig`) is declared on the
+  strategy as the provider-neutral shape but is not yet consumed by the
+  runner; callers still pass `heartbeat_path:` to `LocalDockerRunner#start`
+  and `Containers::Provision#prepare_heartbeat_dir!` / `#cleanup_heartbeat_dir!`
+  still own the host temp-dir vs. in-container tmpfs selection.
+  *Tests:* `spec/services/execution_runners/local_docker_runner_spec.rb`
+  *Code:* `ExecutionRunners::LocalDockerRunner#start`,
+  `Containers::Provision#prepare_heartbeat_dir!`
+
+- [D] **CONTAINER-RUNTIME-014** — Pool workspace management SHALL flow through
+  the runner interface so a future remote runner can substitute its native
+  storage primitive (object storage, ephemeral disk) for the current Docker
+  named-volume pool entry (`paid-pool-workspace-<id>`). Today
+  `Containers::PoolManager` still constructs the Docker named-volume name
+  directly when claiming a pool entry.
+  *Tests:* `spec/services/containers/pool_manager_spec.rb`,
+  `spec/services/execution_runners/local_docker_runner_spec.rb`
+  *Code:* `ExecutionRunners::LocalDockerRunner`, `Containers::PoolManager`
+
+- [x] **CONTAINER-RUNTIME-015** — When a Temporal activity retries after a
   worker restart or failover, the system SHALL load the persisted
   `RunnerHandle` from the `agent_runs.runner_handle` column and call
   `runner.reconnect(handle:)` / `runner.running?(handle:)` to decide whether to

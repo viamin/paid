@@ -2638,7 +2638,7 @@ class AgentRun < ApplicationRecord
   # Loads the handle from the DB, reconnects via the runner interface, and
   # either reuses a still-running environment or cleans up a dead/missing one
   # before provisioning fresh (RDR-054).
-  # @spec CONTAINER-RUNTIME-011
+  # @spec CONTAINER-RUNTIME-015
   def reuse_or_reconcile_via_runner(**options)
     handle = ExecutionRunners::RunnerHandle.from_record(self)
     runner = ExecutionRunners.resolve_for(self)
@@ -3023,29 +3023,20 @@ class AgentRun < ApplicationRecord
     }
   end
 
-  # Removes the named Docker volume for this agent run if it exists.
+  # Removes the named Docker workspace volume for this agent run if it exists.
   # No-op for worktree-based runs (they use bind mounts, not named volumes).
+  # Delegates volume-name construction and deletion to the execution runner so
+  # the domain model never builds Docker volume names (#3342).
+  #
+  # container_host is blank from claim time until a backend records a real
+  # resource, so the owning host is resolved via workspace_volume_host — which
+  # falls back to the planned admission host — to avoid probing the local
+  # backend and leaking a remote volume when a worker died mid-provision.
   def cleanup_orphaned_workspace_volume
     return if worktree_path.present? # bind-mount runs don't use named volumes
 
-    volume_name = "paid-workspace-#{id}"
-    # container_host is blank from claim time until a backend records a real
-    # resource, so resolve the owning host via workspace_volume_host — which
-    # falls back to the planned admission host — to avoid probing the local
-    # backend and leaking a remote volume when a worker died mid-provision.
-    host = workspace_volume_host
-    backend = Containers.backend_for(host)
-    volume = backend.get_volume(volume_name, host: host)
-    backend.delete_volume(volume)
-  rescue Docker::Error::NotFoundError
-    # Volume already removed, nothing to do
-  rescue Docker::Error::DockerError => e
-    Rails.logger.warn(
-      message: "container_manager.orphaned_volume_cleanup_failed",
-      agent_run_id: id,
-      volume_name: volume_name,
-      error: e.message
-    )
+    ExecutionRunners.resolve_for(self)
+      .cleanup_workspace_reference(agent_run: self, host: workspace_volume_host)
   end
 
   # Ensures @container_service is available, reconnecting from persisted
