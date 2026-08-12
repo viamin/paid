@@ -107,7 +107,8 @@ install_zizmor() {
   archive="${tmpdir}/${asset}"
   url="https://github.com/zizmorcore/zizmor/releases/download/v${version}/${asset}"
 
-  curl -fsSL "${url}" -o "${archive}"
+  curl -fsSL --retry 5 --retry-delay 2 --retry-connrefused --retry-all-errors \
+    -o "${archive}" "${url}"
   verify_checksum "${checksum}" "${archive}"
   tar -xzf "${archive}" -C "${tmpdir}"
 
