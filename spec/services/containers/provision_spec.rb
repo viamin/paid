@@ -3401,6 +3401,33 @@ RSpec.describe Containers::Provision do
     end
   end
 
+  describe "#oom_exit_diagnostics" do
+    before do
+      service.provision
+    end
+
+    context "when the container is gone" do
+      before do
+        allow(mock_container).to receive(:refresh!).and_raise(Docker::Error::NotFoundError, "No such container")
+      end
+
+      it "returns an empty result (the definitive gone signal)" do
+        expect(service.oom_exit_diagnostics).to eq({})
+      end
+    end
+
+    context "when the daemon is transiently unreachable" do
+      before do
+        allow(mock_container).to receive(:refresh!)
+          .and_raise(Docker::Error::ServerError, "read: connection reset by peer")
+      end
+
+      it "returns a distinct error result rather than masquerading as gone" do
+        expect(service.oom_exit_diagnostics).to eq(error: "read: connection reset by peer")
+      end
+    end
+  end
+
   describe ".with_container" do
     it "provisions container, yields, and cleans up" do
       yielded_service = nil
