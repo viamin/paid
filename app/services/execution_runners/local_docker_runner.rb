@@ -149,13 +149,14 @@ module ExecutionRunners
 
     # Applies the in-container firewall when the policy demands one. Service
     # container IPs are resolved from the Provision service after containers
-    # start; preview-tunnel destinations are appended when applicable. The
-    # resolved destinations are merged with +policy.allow_destinations+ before
-    # passing them to +NetworkPolicy.apply_firewall_rules+.
+    # start; preview-tunnel destinations are appended when applicable.
+    # +policy.allow_destinations+ uses the provider-neutral +{host:, port:}+
+    # shape, so entries are normalized to +{ip:, port:}+ to match
+    # +NetworkPolicy.build_firewall_script+, which reads +dest[:ip]+.
     def apply_firewall!(service:, backend:, policy:)
       return unless policy.firewall?
 
-      destinations = policy.allow_destinations + service.resolve_service_destinations
+      destinations = policy.allow_destinations.map { |dest| { ip: dest.fetch(:host), port: dest.fetch(:port) } } + service.resolve_service_destinations
       if service.preview_tunnel?
         remote_dest = Previews::TunnelManager.client_remote_destination(
           backend: backend,

@@ -176,13 +176,16 @@ module Containers
       new(agent_run: agent_run).network_name
     end
 
-    # Checks that the specified Docker network exists (for sidecar provisioners
-    # that need network readiness before creating containers). This is a
-    # runtime check only — network creation is the runner's responsibility
-    # (RDR-054). Delegates to +backend.get_network+ which raises
-    # +Docker::Error::NotFoundError+ when the network is missing.
+    # Ensures the specified Docker network exists (for sidecar provisioners
+    # that need network readiness before creating containers), creating the
+    # restricted +paid_agent+ network if missing. Delegates to
+    # +NetworkPolicy.ensure_network!+ so +NetworkPolicy+ stays the single
+    # source of truth for Docker network lifecycle (RDR-054). The sidecar
+    # provisioners run in workflow steps 1.5-1.7, before the runner provisions
+    # the agent container in step 2, so a pure existence check would fail on a
+    # fresh or remote Docker host where the network has not been created yet.
     def self.network_exists!(network:, backend: Containers.backend)
-      backend.get_network(network)
+      NetworkPolicy.ensure_network!(network: network, backend: backend)
     end
 
     # Builds the provider-neutral +NetworkingPolicy+ for an agent run + project

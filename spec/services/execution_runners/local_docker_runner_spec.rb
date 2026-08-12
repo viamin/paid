@@ -103,6 +103,25 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       runner.provision(spec: run_spec)
     end
 
+    it "normalizes policy allow_destinations from {host:, port:} to {ip:, port:} for the firewall" do
+      allow_destinations_spec = ExecutionRunners::RunSpec.new(
+        **run_spec.to_h.merge(
+          networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted(
+            allow_destinations: [ { host: "10.0.0.1", port: 5432 } ]
+          )
+        )
+      )
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      allow(provision_service).to receive(:provision).and_return(
+        Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
+      )
+
+      expect(NetworkPolicy).to receive(:apply_firewall_rules)
+        .with(started_container, service_destinations: [ { ip: "10.0.0.1", port: 5432 } ], backend: backend)
+
+      runner.provision(spec: allow_destinations_spec)
+    end
+
     it "skips NetworkPolicy firewall application when the policy is unrestricted" do
       direct_outbound_spec = ExecutionRunners::RunSpec.new(
         **run_spec.to_h.merge(
