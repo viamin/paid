@@ -6,6 +6,7 @@ require "rails_helper"
 # @spec CONTAINER-RUNTIME-008
 # @spec CONTAINER-RUNTIME-009
 # @spec CONTAINER-RUNTIME-010
+# @spec CONTAINER-RUNTIME-011
 RSpec.describe ExecutionRunners do
   describe ".resolve" do
     it "returns a LocalDockerRunner for the current Docker-only backends" do
@@ -39,7 +40,7 @@ RSpec.describe ExecutionRunners do
         resources: ExecutionRunners::ComputeRequirements.new(cpu_quota: 1, memory_bytes: 2, pids_limit: 3),
         environment: { "FOO" => "bar" },
         networking_policy: ExecutionRunners::NetworkingPolicy.new(mode: :proxy, firewall: true),
-        workspace_strategy: :named_volume,
+        workspace: ExecutionRunners::WorkspaceStrategy.named_volume,
         services: [ ExecutionRunners::ServiceDeclaration.new(name: "postgres", image: "pg", port: 5432, env: {}, type: :database) ],
         secrets_config: { "auth" => "proxy" },
         preview_tunnel: nil
@@ -48,7 +49,8 @@ RSpec.describe ExecutionRunners do
 
     it "carries the full execution description" do
       expect(spec.image).to eq("paid/agent:latest")
-      expect(spec.workspace_strategy).to eq(:named_volume)
+      expect(spec.workspace).to be_a(ExecutionRunners::WorkspaceStrategy)
+      expect(spec.workspace.named_volume?).to be(true)
     end
 
     it "never references Docker-specific concepts" do
@@ -59,6 +61,74 @@ RSpec.describe ExecutionRunners do
       expect(spec.resources).to be_a(ExecutionRunners::ComputeRequirements)
       expect(spec.networking_policy).to be_a(ExecutionRunners::NetworkingPolicy)
       expect(spec.services.first).to be_a(ExecutionRunners::ServiceDeclaration)
+    end
+
+    it "embeds a WorkspaceStrategy as the workspace contract" do
+      expect(spec.workspace).to be_a(ExecutionRunners::WorkspaceStrategy)
+    end
+  end
+
+  describe ExecutionRunners::WritableDir do
+    it "builds a tmpfs-style writable directory spec" do
+      dir = described_class.build("/tmp", size_bytes: 1024, mode: 0o1777, exec: true)
+
+      expect(dir.path).to eq("/tmp")
+      expect(dir.size_bytes).to eq(1024)
+      expect(dir.exec).to be(true)
+    end
+
+    it "translates to Docker tmpfs mount options" do
+      dir = described_class.build("/tmp", size_bytes: 1024, mode: 0o1777, exec: true)
+
+      expect(dir.docker_tmpfs_options).to eq("exec,size=1024,mode=1777")
+    end
+
+    it "omits the exec flag when not requested" do
+      dir = described_class.build("/data", size_bytes: 512, mode: 0o755)
+
+      expect(dir.docker_tmpfs_options).to eq("size=512,mode=0755")
+    end
+  end
+
+  describe ExecutionRunners::HeartbeatConfig do
+    it "carries the heartbeat mount point" do
+      config = described_class.new(mount_point: "/paid-heartbeat")
+
+      expect(config.mount_point).to eq("/paid-heartbeat")
+    end
+  end
+
+  describe ExecutionRunners::WorkspaceStrategy do
+    it "builds a named_volume strategy with default mount point and writable dirs" do
+      strategy = described_class.named_volume
+
+      expect(strategy.named_volume?).to be(true)
+      expect(strategy.bind_mount?).to be(false)
+      expect(strategy.mode).to eq(:named_volume)
+      expect(strategy.mount_point).to eq("/workspace")
+      expect(strategy.reference).to be_nil
+      expect(strategy.writable_dirs).to all(be_a(ExecutionRunners::WritableDir))
+      expect(strategy.heartbeat).to be_a(ExecutionRunners::HeartbeatConfig)
+    end
+
+    it "builds a bind_mount strategy carrying the host-path reference" do
+      strategy = described_class.bind_mount(reference: "/var/paid/worktrees/1")
+
+      expect(strategy.bind_mount?).to be(true)
+      expect(strategy.reference).to eq("/var/paid/worktrees/1")
+    end
+
+    it "builds an ephemeral strategy with no persistent reference" do
+      strategy = described_class.ephemeral
+
+      expect(strategy.mode).to eq(:ephemeral)
+      expect(strategy.reference).to be_nil
+    end
+
+    it "declares the default writable directories (/tmp and ~/.cache) via the strategy" do
+      paths = described_class.default_writable_dirs.map(&:path)
+
+      expect(paths).to contain_exactly("/tmp", "/home/agent/.cache")
     end
   end
 

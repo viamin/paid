@@ -7,7 +7,8 @@ RSpec.describe ExecutionRunners::Base do
   let(:spec) do
     ExecutionRunners::RunSpec.new(
       agent_run: nil, project: nil, image: "img", command: "cmd", resources: nil,
-      environment: {}, networking_policy: nil, workspace_strategy: :ephemeral,
+      environment: {}, networking_policy: nil,
+      workspace: ExecutionRunners::WorkspaceStrategy.ephemeral,
       services: [], secrets_config: nil, preview_tunnel: nil
     )
   end
