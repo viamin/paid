@@ -80,7 +80,12 @@ Rails.application.configure do
   config.good_job.execution_mode = Paid::GoodJobConfig.execution_mode
 
   config.good_job.cleanup_preserved_jobs_before_seconds_ago = 1.day
-
+  # Cron scheduling is safe to enable on multiple hosts: GoodJob 4.x stamps
+  # every cron enqueue with a (cron_key, cron_at) pair guarded by the unique
+  # index `index_good_jobs_on_cron_key_and_cron_at_cond`, so a duplicate tick
+  # from a second host enqueues nothing. GOOD_JOB_ENABLE_CRON=false remains an
+  # available optimization for hosts that should skip scheduler polling
+  # entirely (see docs/SCALING.md § Horizontal Scaling).
   config.x.good_job_enable_cron = Paid::GoodJobConfig.enable_cron
   config.good_job.enable_cron = config.x.good_job_enable_cron
 

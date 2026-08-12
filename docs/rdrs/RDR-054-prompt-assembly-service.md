@@ -9,7 +9,7 @@
 - **Type**: Architecture
 - **Priority**: P1
 - **Related RDRs**: [RDR-009](RDR-009-prompt-evolution.md) (Prompt Evolution), [RDR-021](RDR-021-knowledge-base.md) (Knowledge Base), [RDR-035](RDR-035-style-guide-evolution.md) (Style Guide Evolution), [RDR-044](RDR-044-configuration-profiles-chat.md) (Configuration Profiles), [RDR-051](RDR-051-lid-aware-agent-runs.md) (LID-Aware Agent Runs), [RDR-053](RDR-053-new-feature-creation.md) (New Feature Creation)
-- **Related Issues**: TBD
+- **Related Issues**: #3375 (core assembly contract), #3376 (trusted-input filtering and quarantined context), #3377 (route `create_pr` issue prompts), #3378 (route PR follow-up prompts), #3379 (goal wrappers and prompt snapshots), #3380 (profiles, customization, provenance preview), #3381 (final audit/closeout)
 - **Related Tests**: TBD
 
 ## Problem Statement

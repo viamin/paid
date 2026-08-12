@@ -86,6 +86,26 @@ resolve_asset() {
 
   printf '%s\n%s\n' "${suffix}" "${checksum}"
 }
+download_archive() {
+  local url archive attempt max_attempts
+  url="$1"
+  archive="$2"
+  max_attempts="${ZIZMOR_DOWNLOAD_ATTEMPTS:-5}"
+
+  for ((attempt = 1; attempt <= max_attempts; attempt++)); do
+    if curl -fsSL --connect-timeout 15 --retry 5 --retry-delay 2 --retry-connrefused --retry-all-errors \
+      "${url}" -o "${archive}"; then
+      return 0
+    fi
+    if ((attempt < max_attempts)); then
+      echo "Zizmor download failed (attempt ${attempt}/${max_attempts}); retrying in ${attempt}s..." >&2
+      sleep "${attempt}"
+    fi
+  done
+
+  echo "Zizmor download failed after ${max_attempts} attempts: ${url}" >&2
+  return 1
+}
 
 install_zizmor() {
   local asset checksum tmpdir archive url extracted_path
@@ -107,8 +127,7 @@ install_zizmor() {
   archive="${tmpdir}/${asset}"
   url="https://github.com/zizmorcore/zizmor/releases/download/v${version}/${asset}"
 
-  curl -fsSL --retry 5 --retry-delay 2 --retry-connrefused --retry-all-errors \
-    -o "${archive}" "${url}"
+  download_archive "${url}" "${archive}"
   verify_checksum "${checksum}" "${archive}"
   tar -xzf "${archive}" -C "${tmpdir}"
 

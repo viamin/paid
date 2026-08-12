@@ -20,7 +20,10 @@ adapters translate those decisions into platform-specific actions:
 
 ## Architecture Overview
 
-Paid has four independently scalable process types:
+Paid ships five independently deployable process types — `web`, `job`,
+`preview_tunnel`, `worker_poll`, and `worker_agent` (see
+[Kamal Roles](#kamal-roles-configdeployyml)). All scale horizontally except the
+[Single-Instance Constraints](#single-instance-constraints) noted below.
 
 ```
                         ┌─────────────────┐
@@ -46,7 +49,7 @@ Paid has four independently scalable process types:
               ┌──────────────────┼──────────────────┐
               │                  │                   │
      ┌────────────────┐ ┌────────────────┐  ┌────────────────┐
-     │ GoodJob Worker │ │Temporal Worker │  │ Docker Engine  │
+     │ GoodJob Worker │ │Temporal Worker │  │Container Runner│
      │  (background   │ │  (durable      │  │  (agent        │
      │   jobs)        │ │   workflows)   │  │   containers)  │
      └────────────────┘ └────────────────┘  └────────────────┘
@@ -58,25 +61,32 @@ Paid has four independently scalable process types:
 |---------|---------|-------------------|------------|
 | **Web (Puma)** | HTTP requests, UI, Action Cable | Horizontal (add instances) | CPU-bound request handling |
 | **GoodJob Worker** | Background jobs (cleanup, metrics, cron) | Thread pool size | DB connections |
-| **Temporal Worker** | Durable workflow orchestration | Activity slots | DB connections, Docker capacity |
-| **Docker Engine** | Agent container execution | Host memory and CPU | 4 GB RAM per container default |
+| **Temporal Worker (`poll`)** | Durable workflow polling | Activity slots | DB connections |
+| **Temporal Worker (`agent`)** | Agent execution orchestration | Activity slots | DB connections, runner capacity |
+| **Preview Tunnel Server** | Rathole server for live previews | Single instance | Host port range, runner listing |
+| **Container Runner** | Agent container execution substrate | Host memory and CPU | 4 GB RAM per container default |
 
 ### Kamal Roles (`config/deploy.yml`)
 
-Production maps the process types above to four Kamal roles, each deployed as a
+Production maps the process types above to five Kamal roles, each deployed as a
 separate Docker container with its own restart boundary:
 
-| Role | CMD | Key env vars | Purpose |
-|------|-----|--------------|---------|
-| `web` | `bin/thrust bin/rails server` (Dockerfile CMD) | `GOOD_JOB_EXECUTION_MODE=external`, Puma vars | HTTP/UI; runs no jobs in-process |
-| `job` | `bin/jobs` | `GOOD_JOB_*` (threads, queues) | External GoodJob worker |
-| `worker_poll` | `bin/temporal_worker` | `TEMPORAL_WORKER_MODE=poll` | Poll-queue Temporal worker |
-| `worker_agent` | `bin/temporal_worker` | `TEMPORAL_WORKER_MODE=agent` | Agent-queue Temporal worker |
+| Role | CMD | Key env vars | Purpose | Docker socket |
+|------|-----|--------------|---------|---------------|
+| `web` | `bin/thrust bin/rails server` (Dockerfile CMD) | `GOOD_JOB_EXECUTION_MODE=external`, Puma vars | HTTP/UI; runs no jobs in-process | no |
+| `job` | `bin/jobs` | `GOOD_JOB_*` (threads, queues) | External GoodJob worker | local backend only |
+| `preview_tunnel` | `bin/preview-tunnel-server` | `PREVIEW_PORT_RANGE` | Rathole server for live previews | local backend only |
+| `worker_poll` | `bin/temporal_worker` | `TEMPORAL_WORKER_MODE=poll` | Poll-queue Temporal worker | no |
+| `worker_agent` | `bin/temporal_worker` | `TEMPORAL_WORKER_MODE=agent` | Agent-queue Temporal worker | local backend only |
 
 `GOOD_JOB_EXECUTION_MODE=external` is set globally so the `web` role never runs
-background jobs (preventing job load from OOM-crashing the control plane). Target
-a single role with `bin/kamal <cmd> -r <role>` (e.g. `bin/kamal app boot -r job`).
-For env-var sizing per role, see [WORKER_POOL_TUNING.md](WORKER_POOL_TUNING.md).
+background jobs (preventing job load from OOM-crashing the control plane). The
+Docker socket volume mounts on `job`, `preview_tunnel`, and `worker_agent` are
+conditional on `CONTAINER_BACKEND`: they default to mounted and are omitted
+automatically when `CONTAINER_BACKEND=remote` or `swarm`, because those backends
+talk to Docker over TCP/TLS rather than a local unix socket. Target a single
+role with `bin/kamal <cmd> -r <role>` (e.g. `bin/kamal app boot -r job`). For
+env-var sizing per role, see [WORKER_POOL_TUNING.md](WORKER_POOL_TUNING.md).
 
 ### Scaling Decision Flow
 
@@ -409,7 +419,10 @@ workers can run safely in parallel.
 
 1. Set `GOOD_JOB_EXECUTION_MODE=external` on all instances
 2. Deploy additional worker processes (`bin/jobs`)
-3. Only one worker should have `GOOD_JOB_ENABLE_CRON=true` to avoid duplicate cron runs
+3. Cron can run on every worker — GoodJob 4.x stamps each cron enqueue with a
+   `(cron_key, cron_at)` pair guarded by a unique index, so a duplicate tick
+   from a second host enqueues nothing. Set `GOOD_JOB_ENABLE_CRON=false` on
+   secondary hosts only if you want to skip redundant scheduler polling.
 4. Each worker needs its own `DB_POOL` allocation
 
 ### Temporal Workers
@@ -420,8 +433,32 @@ distributes work across all registered workers.
 1. Deploy additional Temporal worker processes (`bin/temporal_worker`)
 2. Set `TEMPORAL_WORKER_MODE=agent` or `TEMPORAL_WORKER_MODE=poll` when you want dedicated worker pools per queue
 3. Workers serving the same queue share the same task queue name and Temporal load-balances across them
-4. Each worker process needs its own `DB_POOL` and Docker Engine access
+4. Each worker process needs its own `DB_POOL`; only the `agent` worker needs
+   container-runner access, and only the local backend needs a Docker socket
 5. Total activity slots = sum across workers serving that queue
+
+### Preview Tunnel Server
+
+The `preview_tunnel` role runs a single rathole server that accepts preview
+container connections and publishes a host port range. It is a
+**single-instance** process in the Kamal topology: its host port publishing
+(`8200-8299`) assumes one host with a known range. A multi-replica or cloud
+deployment must front the tunnel server with a load balancer and move port
+allocation to the runner substrate rather than the control-plane host.
+
+### Single-Instance Constraints
+
+Every process type scales horizontally except:
+
+| Component | Constraint | Why |
+|-----------|------------|-----|
+| `preview_tunnel` | Single instance | Host port range (`8200-8299`) assumes one host; move ingress to a load balancer for multi-host/cloud |
+| GoodJob cron | None (safe multi-host) | Unique `(cron_key, cron_at)` index dedupes duplicate ticks |
+| `GOOD_JOB_ENABLE_CRON` | Optional single-host optimization | Skips redundant scheduler polling on secondary hosts |
+
+`web`, `job`, `worker_poll`, and `worker_agent` scale horizontally without
+constraints. The `worker_agent` role needs Docker socket access only when
+`CONTAINER_BACKEND=local`; `remote` and `swarm` backends connect over TCP/TLS.
 
 ### PostgreSQL
 
