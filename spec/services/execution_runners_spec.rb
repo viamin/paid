@@ -7,6 +7,7 @@ require "rails_helper"
 # @spec CONTAINER-RUNTIME-009
 # @spec CONTAINER-RUNTIME-010
 # @spec CONTAINER-RUNTIME-011
+# @spec CONTAINER-RUNTIME-015
 RSpec.describe ExecutionRunners do
   describe ".resolve" do
     it "returns a LocalDockerRunner for the current Docker-only backends" do
@@ -217,6 +218,8 @@ RSpec.describe ExecutionRunners do
         expect(result).not_to be_failure
         expect(result.exit_code).to eq(0)
         expect(result.oom_killed).to be(false)
+        expect(result.timeout_type).to be_nil
+        expect(result.abort_info).to be_nil
       end
     end
 
@@ -231,6 +234,61 @@ RSpec.describe ExecutionRunners do
         expect(result.memory_limit_bytes).to eq(1024)
         expect(result.environment_running).to be(false)
       end
+
+      it "builds a failed result carrying timeout classification" do
+        result = described_class.failure(exit_code: 137, timeout_type: :startup)
+
+        expect(result.timeout_type).to eq(:startup)
+      end
+
+      it "builds a failed result carrying abort info" do
+        result = described_class.failure(exit_code: 1, abort_info: { matched_output: "quota", source: :pattern })
+
+        expect(result.abort_info).to eq(matched_output: "quota", source: :pattern)
+      end
+    end
+  end
+
+  describe ExecutionRunners::ExecutionStatus do
+    it "builds a running status" do
+      status = described_class.running(memory_limit: 4_294_967_296)
+
+      expect(status).to be_running
+      expect(status).not_to be_exited
+      expect(status.state).to eq(:running)
+      expect(status.exit_code).to be_nil
+      expect(status.memory_limit).to eq(4_294_967_296)
+    end
+
+    it "builds an exited status" do
+      status = described_class.exited(exit_code: 0)
+
+      expect(status).to be_exited
+      expect(status.exit_code).to eq(0)
+      expect(status.oom_killed).to be(false)
+    end
+
+    it "builds an oom_killed status" do
+      status = described_class.oom_killed(exit_code: 137, memory_limit: 1024)
+
+      expect(status).to be_oom_killed
+      expect(status.exit_code).to eq(137)
+      expect(status.oom_killed).to be(true)
+      expect(status.memory_limit).to eq(1024)
+    end
+
+    it "builds a not_found status" do
+      status = described_class.not_found
+
+      expect(status).to be_not_found
+      expect(status.exit_code).to be_nil
+    end
+
+    it "classifies an OOM-killed exit via .exited as oom_killed state" do
+      status = described_class.exited(exit_code: 137, oom_killed: true)
+
+      expect(status.state).to eq(:oom_killed)
+      expect(status).to be_oom_killed
     end
   end
 

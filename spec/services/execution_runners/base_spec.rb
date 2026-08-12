@@ -3,6 +3,7 @@
 require "rails_helper"
 
 # @spec CONTAINER-RUNTIME-007
+# @spec CONTAINER-RUNTIME-015
 RSpec.describe ExecutionRunners::Base do
   let(:spec) do
     ExecutionRunners::RunSpec.new(
@@ -36,6 +37,11 @@ RSpec.describe ExecutionRunners::Base do
         .to raise_error(NotImplementedError, /running/)
     end
 
+    it "raises NotImplementedError for #status" do
+      expect { described_class.new.status(handle: handle) }
+        .to raise_error(NotImplementedError, /status/)
+    end
+
     it "raises NotImplementedError for #cancel" do
       expect { described_class.new.cancel(handle: handle) }
         .to raise_error(NotImplementedError, /cancel/)
@@ -62,7 +68,7 @@ RSpec.describe ExecutionRunners::Base do
     it "exposes only the domain lifecycle methods, none referencing Docker concepts" do
       instance_methods = described_class.instance_methods(false)
 
-      expect(instance_methods).to contain_exactly(:provision, :start, :running?, :cancel, :cleanup)
+      expect(instance_methods).to contain_exactly(:provision, :start, :running?, :status, :cancel, :cleanup)
 
       forbidden = %w[docker container_id bind_mount exec_in_container network_name]
       instance_methods.each do |method|

@@ -15,6 +15,7 @@ module ExecutionRunners
   #   handle = runner.provision(spec: spec)
   #   result = runner.start(handle: handle, command: ..., ...) { |stream, chunk| ... }
   #   runner.running?(handle: handle)
+  #   runner.status(handle: handle)
   #   runner.cancel(handle: handle)
   #   runner.cleanup(handle: handle, force: true)
   #
@@ -69,6 +70,19 @@ module ExecutionRunners
     # @param handle [RunnerHandle]
     # @return [Boolean]
     def running?(handle:)
+      raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+    end
+
+    # Query the current state of the workload, including exit code, OOM status,
+    # and memory limit. Abstracts platform-native container-state inspection
+    # (Docker +State.Running+, +State.OOMKilled+, +State.ExitCode+) behind a
+    # provider-neutral {ExecutionStatus} so callers never reach into the Docker
+    # API response (RDR-054).
+    #
+    # @param handle [RunnerHandle]
+    # @return [ExecutionStatus]
+    # @spec CONTAINER-RUNTIME-015
+    def status(handle:)
       raise NotImplementedError, "#{self.class} must implement ##{__method__}"
     end
 

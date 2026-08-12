@@ -850,6 +850,9 @@ module Containers
     # State.OOMKilled when the kernel OOM killer killed the container, so it is
     # the authoritative signal; a bare 137 is otherwise ambiguous. Best-effort —
     # returns {} when the container is already gone.
+    #
+    # Also returns +exit_code+ so the runner's +#status+ query can surface the
+    # container's exit code without a separate Docker inspect (RDR-054).
     def oom_exit_diagnostics
       return {} unless container
 
@@ -859,6 +862,7 @@ module Containers
       {
         oom_killed: state["OOMKilled"] == true,
         container_running: state["Running"],
+        exit_code: state["ExitCode"],
         memory_limit_bytes: info.dig("HostConfig", "Memory")
       }
     rescue Docker::Error::DockerError => e

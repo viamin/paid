@@ -65,6 +65,29 @@ module ExecutionRunners
       false
     end
 
+    # Queries the current workload state via +Containers::Provision+,
+    # translating the Docker container-state inspection into an
+    # {ExecutionStatus} so callers never reach into the Docker API response
+    # (RDR-054).
+    # @spec CONTAINER-RUNTIME-015
+    def status(handle:)
+      service = reconnect(handle)
+      return ExecutionStatus.not_found unless service.container
+
+      diagnostics = service.oom_exit_diagnostics
+      return ExecutionStatus.not_found if diagnostics.empty?
+
+      memory_limit = diagnostics[:memory_limit_bytes]
+      return ExecutionStatus.running(memory_limit: memory_limit) if diagnostics[:container_running]
+
+      exit_code = diagnostics[:exit_code]
+      return ExecutionStatus.oom_killed(exit_code: exit_code, memory_limit: memory_limit) if diagnostics[:oom_killed]
+
+      ExecutionStatus.exited(exit_code: exit_code, memory_limit: memory_limit)
+    rescue Containers::Provision::ProvisionError, Docker::Error::DockerError
+      ExecutionStatus.not_found
+    end
+
     def cancel(handle:)
       service = reconnect(handle)
       return unless service.container_running?
