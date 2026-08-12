@@ -105,7 +105,6 @@ module ExecutionRunners
   # All fields are JSON-native primitives; +#to_json+ / +.from_json+ round-trip
   # the +runner_type+ symbol losslessly.
   # @spec CONTAINER-RUNTIME-008
-  # @spec CONTAINER-RUNTIME-008
   RunnerHandle = Data.define(:runner_type, :identifier, :host, :workspace_ref, :metadata) do
     def as_json(*)
       {

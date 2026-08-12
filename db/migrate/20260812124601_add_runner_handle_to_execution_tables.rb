@@ -50,7 +50,10 @@ class AddRunnerHandleToExecutionTables < ActiveRecord::Migration[8.1]
         "identifier" => run.container_id,
         "host" => run.container_host,
         "workspace_ref" => "paid-workspace-#{run.id}",
-        "metadata" => {}
+        "metadata" => {
+          "agent_run_id" => run.id,
+          "worktree_path" => run.respond_to?(:worktree_path) ? run.worktree_path : nil
+        }
       }
       run_class.where(id: run.id).update_all(runner_handle: handle)
     end

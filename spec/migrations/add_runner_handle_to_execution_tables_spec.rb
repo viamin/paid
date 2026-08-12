@@ -47,7 +47,8 @@ RSpec.describe AddRunnerHandleToExecutionTables, :aggregate_failures do
     expect(handle["identifier"]).to eq("backfill-test-1")
     expect(handle["host"]).to eq("remote-host")
     expect(handle["workspace_ref"]).to eq("paid-workspace-#{run_with_container.id}")
-    expect(handle["metadata"]).to eq({})
+    expect(handle["metadata"]).to eq({ "agent_run_id" => run_with_container.id,
+                                       "worktree_path" => run_with_container.worktree_path })
 
     reloaded_without = run_class.find(run_without_container.id)
     expect(reloaded_without.runner_handle).to be_nil
