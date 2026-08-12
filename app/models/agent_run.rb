@@ -2599,9 +2599,12 @@ class AgentRun < ApplicationRecord
     )
   rescue ExecutionRunners::ProvisionError => e
     raise Containers::Provision::ProvisionError, e.message
-  rescue ExecutionRunners::StartupTimeoutError, ExecutionRunners::IdleTimeoutError,
-         ExecutionRunners::TimeoutError => e
-    raise Containers::Provision::TimeoutError, e.message
+  rescue ExecutionRunners::StartupTimeoutError => e
+    raise Containers::Provision::StartupTimeoutError.new(e.message, diagnostics: e.diagnostics)
+  rescue ExecutionRunners::IdleTimeoutError => e
+    raise Containers::Provision::IdleTimeoutError.new(e.message, diagnostics: e.diagnostics)
+  rescue ExecutionRunners::TimeoutError => e
+    raise Containers::Provision::TimeoutError.new(e.message, diagnostics: e.diagnostics)
   rescue ExecutionRunners::ExecutionError => e
     raise Containers::Provision::ExecutionError.new(
       e.message, exit_code: e.exit_code, stdout: e.stdout, stderr: e.stderr

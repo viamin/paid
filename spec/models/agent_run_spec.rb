@@ -2322,6 +2322,56 @@ RSpec.describe AgentRun do
           expect { agent_run.execute_in_container("failing cmd") }
             .to raise_error(Containers::Provision::ExecutionError, /command failed/)
         end
+
+        it "translates StartupTimeoutError to Provision::StartupTimeoutError with diagnostics" do
+          agent_run = create(:agent_run, worktree_path: worktree_path)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          agent_run.instance_variable_set(:@current_handle, mock_handle)
+          mock_handle.metadata["agent_run_id"] = agent_run.id
+          allow(mock_runner).to receive(:start).and_raise(
+            ExecutionRunners::StartupTimeoutError.new("startup slow", diagnostics: { "elapsed" => 5 })
+          )
+
+          expect { agent_run.execute_in_container("cmd") }.to raise_error do |error|
+            expect(error).to be_a(Containers::Provision::StartupTimeoutError)
+            expect(error.message).to eq("startup slow")
+            expect(error.diagnostics).to eq("elapsed" => 5)
+          end
+        end
+
+        it "translates IdleTimeoutError to Provision::IdleTimeoutError with diagnostics" do
+          agent_run = create(:agent_run, worktree_path: worktree_path)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          agent_run.instance_variable_set(:@current_handle, mock_handle)
+          mock_handle.metadata["agent_run_id"] = agent_run.id
+          allow(mock_runner).to receive(:start).and_raise(
+            ExecutionRunners::IdleTimeoutError.new("output stalled", diagnostics: { "idle" => 30 })
+          )
+
+          expect { agent_run.execute_in_container("cmd") }.to raise_error do |error|
+            expect(error).to be_a(Containers::Provision::IdleTimeoutError)
+            expect(error.message).to eq("output stalled")
+            expect(error.diagnostics).to eq("idle" => 30)
+          end
+        end
+
+        it "translates generic TimeoutError to Provision::TimeoutError with diagnostics" do
+          agent_run = create(:agent_run, worktree_path: worktree_path)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          agent_run.instance_variable_set(:@current_handle, mock_handle)
+          mock_handle.metadata["agent_run_id"] = agent_run.id
+          allow(mock_runner).to receive(:start).and_raise(
+            ExecutionRunners::TimeoutError.new("wall clock exceeded", diagnostics: { "limit" => 600 })
+          )
+
+          expect { agent_run.execute_in_container("cmd") }.to raise_error do |error|
+            expect(error).to be_a(Containers::Provision::TimeoutError)
+            expect(error).not_to be_a(Containers::Provision::StartupTimeoutError)
+            expect(error).not_to be_a(Containers::Provision::IdleTimeoutError)
+            expect(error.message).to eq("wall clock exceeded")
+            expect(error.diagnostics).to eq("limit" => 600)
+          end
+        end
       end
 
       describe "#cleanup_container (runner shim)" do
