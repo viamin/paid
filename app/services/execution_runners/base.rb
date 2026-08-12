@@ -15,6 +15,7 @@ module ExecutionRunners
   #   handle = runner.provision(spec: spec)
   #   result = runner.start(handle: handle, command: ..., ...) { |stream, chunk| ... }
   #   runner.running?(handle: handle)
+  #   runner.status(handle: handle) # => ExecutionStatus
   #   runner.cancel(handle: handle)
   #   runner.cleanup(handle: handle, force: true)
   #
@@ -69,6 +70,18 @@ module ExecutionRunners
     # @param handle [RunnerHandle]
     # @return [Boolean]
     def running?(handle:)
+      raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+    end
+
+    # Query the workload's lifecycle state. Unlike +#running?+ (a boolean
+    # convenience), this returns a rich {ExecutionStatus} carrying state,
+    # exit code, OOM flag, and memory limit so callers can classify the
+    # outcome without reaching into platform-specific state inspection.
+    #
+    # @param handle [RunnerHandle]
+    # @return [ExecutionStatus]
+    # @spec CONTAINER-RUNTIME-015
+    def status(handle:)
       raise NotImplementedError, "#{self.class} must implement ##{__method__}"
     end
 

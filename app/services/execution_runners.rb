@@ -320,6 +320,46 @@ module ExecutionRunners
     end
   end
 
+  # Result of a status query ({ExecutionRunners::Base#status}). Reports the
+  # workload's lifecycle state without reaching into Docker API response
+  # shapes: a future remote runner maps its platform-native liveness signal
+  # to the same states. `:not_found` covers an environment that can no longer
+  # be reconnected to (container gone, machine stopped, job record missing).
+  #
+  # +state+ values:
+  #   :running     — workload still executing
+  #   :exited      — workload completed (normally or with an exit code)
+  #   :oom_killed  — workload was killed by the cgroup/OS OOM killer
+  #   :not_found   — environment is gone and cannot be inspected
+  # @spec CONTAINER-RUNTIME-015
+  ExecutionStatus = Data.define(
+    :state,        # :running | :exited | :oom_killed | :not_found
+    :exit_code,    # Integer or nil (nil while still running or not_found)
+    :oom_killed,   # Boolean — whether the workload was OOM-killed
+    :memory_limit  # Integer (bytes) or nil
+  ) do
+    def running?
+      state == :running
+    end
+
+    def exited?
+      state == :exited
+    end
+
+    def oom_killed?
+      state == :oom_killed
+    end
+
+    def not_found?
+      state == :not_found
+    end
+
+    # Status for an environment that can no longer be inspected.
+    def self.not_found
+      new(state: :not_found, exit_code: nil, oom_killed: false, memory_limit: nil)
+    end
+  end
+
   # Base error for all execution-runner errors.
   class Error < StandardError; end
 

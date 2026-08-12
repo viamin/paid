@@ -31,6 +31,11 @@ RSpec.describe ExecutionRunners::Base do
       end.to raise_error(NotImplementedError, /start/)
     end
 
+    it "raises NotImplementedError for #status" do
+      expect { described_class.new.status(handle: handle) }
+        .to raise_error(NotImplementedError, /status/)
+    end
+
     it "raises NotImplementedError for #running?" do
       expect { described_class.new.running?(handle: handle) }
         .to raise_error(NotImplementedError, /running/)
@@ -62,7 +67,7 @@ RSpec.describe ExecutionRunners::Base do
     it "exposes only the domain lifecycle methods, none referencing Docker concepts" do
       instance_methods = described_class.instance_methods(false)
 
-      expect(instance_methods).to contain_exactly(:provision, :start, :running?, :cancel, :cleanup)
+      expect(instance_methods).to contain_exactly(:provision, :start, :running?, :status, :cancel, :cleanup)
 
       forbidden = %w[docker container_id bind_mount exec_in_container network_name]
       instance_methods.each do |method|
