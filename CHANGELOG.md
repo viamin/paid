@@ -1,5 +1,39 @@
 # Changelog
 
+## [1.10.0](https://github.com/viamin/paid/compare/v1.9.0...v1.10.0) (2026-08-12)
+
+
+### Features
+
+* "Jump to input" link doesn't work on mobile ([#3330](https://github.com/viamin/paid/issues/3330)) ([cc5dd3d](https://github.com/viamin/paid/commit/cc5dd3dfdb6cc53607fbbe9a052ef459cedcfc91))
+* Add "scroll to input" link at top of chat window ([#3327](https://github.com/viamin/paid/issues/3327)) ([b3df7cf](https://github.com/viamin/paid/commit/b3df7cff1ee0dbb42fa3d6b2e4ba215ba20713c2))
+* **agent-runs:** RDR-053 BuildForCreateFeature prompt builder and RdrContract ([#3310](https://github.com/viamin/paid/issues/3310)) ([7ea237b](https://github.com/viamin/paid/commit/7ea237baba47afc05e7b9a372c84f0d7766b1cee)), closes [#3304](https://github.com/viamin/paid/issues/3304)
+* **chat:** add back-to-top scroll button on chat page ([#3322](https://github.com/viamin/paid/issues/3322)) ([1f8e486](https://github.com/viamin/paid/commit/1f8e486c7ad5078c1c06ab358d80ed9e65a12dd5)), closes [#3315](https://github.com/viamin/paid/issues/3315)
+* **chat:** add feature-creation system-prompt clause for adaptive Q&A ([#3312](https://github.com/viamin/paid/issues/3312)) ([284dfa8](https://github.com/viamin/paid/commit/284dfa84dad98c95ff6fc66a561aa26aac921d18)), closes [#3305](https://github.com/viamin/paid/issues/3305)
+* **issue-analysis:** allow user-configurable runners, remove Anthropic-only fallback ([#3286](https://github.com/viamin/paid/issues/3286)) ([#3288](https://github.com/viamin/paid/issues/3288)) ([e6c723c](https://github.com/viamin/paid/commit/e6c723cb7a8fd5aa11e0ffb0d81bf07959977502))
+* **knowledge-base:** allow user-configurable embedding model + dimensions ([#3290](https://github.com/viamin/paid/issues/3290)) ([28fbbd6](https://github.com/viamin/paid/commit/28fbbd645414bd5877d4ddea7d0b18510864c52d))
+* LID contract injection should not reference nonexistent docs (docs/intent/, docs/high-level-design.md on yupyup) ([#3326](https://github.com/viamin/paid/issues/3326)) ([adb8329](https://github.com/viamin/paid/commit/adb83291d02ef738cd150d6f19425dbcaa887730))
+* LID workflow contract should be goal-aware — skip heavy implementation prompt for enhance_issue and analyze_issue ([#3325](https://github.com/viamin/paid/issues/3325)) ([6fb8535](https://github.com/viamin/paid/commit/6fb8535bf1ac50f3429f682cf44f92b01c30ba45))
+* RDR-053: Add `create_feature` agent run goal — data model, predicates, and prompt routing ([#3309](https://github.com/viamin/paid/issues/3309)) ([d5926a4](https://github.com/viamin/paid/commit/d5926a4d0179fd0b51db22da1ea946f4600e6c01))
+* RDR-053: End-to-end integration tests + RDR closeout ([#3328](https://github.com/viamin/paid/issues/3328)) ([72a5baf](https://github.com/viamin/paid/commit/72a5bafa94e4b1936b432827b6ceeec60a02d5a7))
+* RDR-053: LID integration — chain `create_feature` into `lid_planning` for LID projects ([#3311](https://github.com/viamin/paid/issues/3311)) ([229a631](https://github.com/viamin/paid/commit/229a631174af5faf2864c52c2304760233704b57))
+* RDR-053: Run-initiated feature creation — needs-input Q&A flow ([#3313](https://github.com/viamin/paid/issues/3313)) ([315ed52](https://github.com/viamin/paid/commit/315ed524e59ae504e6ec0f8dbf0e8a408fb7758c))
+* Route lightweight goal types (enhance_issue, analyze_issue) to economical runners by default ([#3323](https://github.com/viamin/paid/issues/3323)) ([2c07450](https://github.com/viamin/paid/commit/2c07450ff8f88225ee1afaa85fe865611faac738))
+
+
+### Bug Fixes
+
+* **agent-runs:** classify streaming aborts by payload and harden PR metadata ([#3300](https://github.com/viamin/paid/issues/3300)) ([666d90c](https://github.com/viamin/paid/commit/666d90c2586e5ba1b6e5e05ce384f109e1bfd68d))
+* **agent-runs:** derive prompt-only PR metadata ([#3299](https://github.com/viamin/paid/issues/3299)) ([1ef38d6](https://github.com/viamin/paid/commit/1ef38d6c4d578167c4db40e5c9e21006e391440a))
+* **chat-agent-loop:** use budget-specific soft-stop prompt when token budget is exhausted ([#3292](https://github.com/viamin/paid/issues/3292)) ([68a1c19](https://github.com/viamin/paid/commit/68a1c199795cc5e3a458289dc34f7d066e9e3455))
+* **chat:** constrain API runner fallback ([#3294](https://github.com/viamin/paid/issues/3294)) ([7cc18c0](https://github.com/viamin/paid/commit/7cc18c0d80679a7d88f9d63e6a34e4788e2b4e50))
+* **chat:** surface missing tool args as invalid ([#3298](https://github.com/viamin/paid/issues/3298)) ([47f963e](https://github.com/viamin/paid/commit/47f963e25d3184b3f4c28bc5d8c59a1482b24c7d))
+* **github-sync:** self-heal stale open-issue labels via hourly reconciliation ([#3285](https://github.com/viamin/paid/issues/3285)) ([28cacf9](https://github.com/viamin/paid/commit/28cacf9272897d3fac5c74b5361a47db51050d87))
+* **issue-agents:** stop analyze and enhance run failures ([#3291](https://github.com/viamin/paid/issues/3291)) ([bd2af36](https://github.com/viamin/paid/commit/bd2af369c277be5c5ef6aa03ceec4460cdfd90d3))
+* **issue-agents:** stop issue-agent failure loops ([#3293](https://github.com/viamin/paid/issues/3293)) ([ff81d56](https://github.com/viamin/paid/commit/ff81d5651d8136777ebf078913f0df51bcbee5d1))
+* remove CIR guidance from Paid chat system prompt ([#3324](https://github.com/viamin/paid/issues/3324)) ([84c67aa](https://github.com/viamin/paid/commit/84c67aabda17aaed937952aa010fe0e5d843617d)), closes [#3321](https://github.com/viamin/paid/issues/3321)
+* retry analyze_issue through transient rate limits instead of failing permanently ([#3314](https://github.com/viamin/paid/issues/3314)) ([#3317](https://github.com/viamin/paid/issues/3317)) ([1c5fd71](https://github.com/viamin/paid/commit/1c5fd714f15a1d75e7d3b36e0675f2ebc27b15fc))
+
 ## [1.9.0](https://github.com/viamin/paid/compare/v1.8.0...v1.9.0) (2026-08-07)
 
 
