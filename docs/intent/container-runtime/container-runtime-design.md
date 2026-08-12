@@ -121,14 +121,26 @@ confirm coverage.
   `ExecutionResult` (outcome, including OOM and timeout classification),
   `NetworkingPolicy` (adapts `NetworkPolicy::NetworkContract`, drops the Docker
   network name), `ServiceDeclaration`, and `ComputeRequirements`.
-- This issue defines the interface and objects only — no runner is implemented
-  and no existing code is modified.
+- `ExecutionRunners::LocalDockerRunner` implements `Base` as a thin adapter over
+  `Containers::Provision`: `#provision`/`#start`/`#running?`/`#cancel`/
+  `#cleanup` translate `RunSpec`/`RunnerHandle` to `Containers::Provision.new`,
+  `#execute`, `#container_running?`, and `#cleanup` calls, and translate
+  `Containers::Provision::Result` and its error classes into `ExecutionResult`
+  and the `ExecutionRunners` error hierarchy. `RunnerHandle#metadata` carries
+  the `agent_run_id`, `worktree_path`, and `environment` needed to reconnect a
+  handle recovered after worker restart, since only the handle (not the
+  original `RunSpec`) is passed back into later lifecycle calls.
+  `Containers::Provision` itself is not modified, and services/sidecars are not
+  yet translated (tracked separately). `ExecutionRunners.resolve` currently
+  always returns `LocalDockerRunner`, since every existing backend (local
+  Docker, remote Docker, Swarm) is a Docker transport.
 
 ## References
 
 - `app/services/containers/provision.rb`
 - `app/services/execution_runners.rb`
 - `app/services/execution_runners/base.rb`
+- `app/services/execution_runners/local_docker_runner.rb`
 - `app/services/containers/resolve_host_for_run.rb`
 - `app/services/containers/backend_scheduler.rb`
 - `app/services/containers/service_provisioner.rb`
@@ -138,6 +150,7 @@ confirm coverage.
 - `spec/services/containers/provision_spec.rb`
 - `spec/services/execution_runners_spec.rb`
 - `spec/services/execution_runners/base_spec.rb`
+- `spec/services/execution_runners/local_docker_runner_spec.rb`
 - `spec/support/shared_examples/execution_runner_contract.rb`
 - `spec/services/containers/service_provisioner_spec.rb`
 - `spec/services/capacity/docker_snapshot_spec.rb`

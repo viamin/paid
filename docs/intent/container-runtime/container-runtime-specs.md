@@ -79,3 +79,15 @@
   `NetworkPolicy::NetworkContract` without Docker-specific identifiers.
   *Tests:* `spec/services/execution_runners_spec.rb`
   *Code:* `ExecutionRunners`
+
+- [x] **CONTAINER-RUNTIME-010** — The system SHALL provide a
+  `ExecutionRunners::LocalDockerRunner` that implements `ExecutionRunners::Base`
+  as a thin adapter over `Containers::Provision`, translating `RunSpec` to
+  `Containers::Provision` calls and `Containers::Provision::Result` /
+  `Containers::Provision` errors to `ExecutionResult` / `ExecutionRunners`
+  errors, without modifying `Containers::Provision` itself.
+  `ExecutionRunners.resolve` SHALL return a `LocalDockerRunner` for all current
+  (Docker-only) backends.
+  *Tests:* `spec/services/execution_runners/local_docker_runner_spec.rb`,
+  `spec/services/execution_runners_spec.rb`
+  *Code:* `ExecutionRunners::LocalDockerRunner`, `ExecutionRunners.resolve`
