@@ -135,6 +135,7 @@ jobs:
             ".pg_log.txt"
             ".ruby_env.sh"
             ".paid-heartbeat"
+            ".codex/"
             ".codegraph/"
             "vendor/bundle/"
             "vendor/gems/"
