@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_11_135615) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_12_124601) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -288,6 +288,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_11_135615) do
     t.datetime "review_posted_at"
     t.jsonb "review_proxy_diagnostics", default: {}, null: false, comment: "Latest known outcome of the review-creation proxy POST for this run (outcome: attempted/timeout/connection_failed/upstream_error/succeeded, plus http_status/error_class/error_message/recorded_at when available). Lets CompleteReviewGoalActivity explain review-goal failures without raw log inspection (#2779). Not part of run history/state."
     t.string "review_url", limit: 500
+    t.jsonb "runner_handle", comment: "Persisted ExecutionRunners::RunnerHandle for recovery after worker restart/failover (RDR-054). Populated from container_id during migration; stored alongside (not replacing) container_id."
     t.bigint "runner_id"
     t.integer "runner_switches", default: 0, null: false
     t.jsonb "runners_attempted", default: [], null: false
@@ -698,6 +699,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_11_135615) do
     t.text "last_error", comment: "Most recent provisioning or lifecycle error for this pool entry."
     t.string "network", limit: 64, null: false
     t.bigint "project_id", null: false
+    t.jsonb "runner_handle", comment: "Persisted ExecutionRunners::RunnerHandle for warm-pool entries (RDR-054). Stored alongside container_id/workspace_volume."
     t.string "status", limit: 20, null: false, comment: "Warm pool lifecycle state: warming, warm, claimed, or error."
     t.datetime "updated_at", null: false
     t.datetime "warmed_at", precision: nil, comment: "Time the container finished warming and became available for claiming."
@@ -2525,6 +2527,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_11_135615) do
     t.float "peak_cpu_percent"
     t.bigint "peak_memory_bytes"
     t.integer "port", null: false
+    t.jsonb "runner_handle", comment: "Persisted ExecutionRunners::RunnerHandle for service containers (RDR-054). Stored alongside docker_container_id."
     t.string "status", default: "stopped", null: false
     t.datetime "updated_at", null: false
     t.index ["account_id", "name"], name: "index_service_containers_on_account_id_and_name", unique: true

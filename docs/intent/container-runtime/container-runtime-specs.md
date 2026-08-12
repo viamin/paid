@@ -58,7 +58,7 @@
 
 - [x] **CONTAINER-RUNTIME-007** — The system SHALL define a provider-neutral
   runner interface (`ExecutionRunners::Base`: `provision`, `start`, `running?`,
-  `status`, `cancel`, `cleanup`, `compatible?`, `ping`) whose method names and
+  `reconnect`, `status`, `cancel`, `cleanup`, `compatible?`, `ping`) whose method names and
   parameters do not reference Docker concepts (no `container_id`, network name,
   bind mount, or `exec`). A runner owns the complete execution environment and
   the watchdog logic (startup, idle, wall-clock, heartbeat, abort-pattern
@@ -69,7 +69,10 @@
 - [x] **CONTAINER-RUNTIME-008** — `ExecutionRunners::RunnerHandle` SHALL be
   JSON-serializable and round-trip losslessly through `to_json` / `from_json`
   (including the `runner_type` symbol) so it can be persisted in a DB column or
-  Temporal activity result for recovery after worker restart or failover.
+  Temporal activity result for recovery after worker restart or failover. The
+  system SHALL persist a `runner_handle` jsonb column on `agent_runs` (alongside,
+  not replacing, `container_id`/`container_host`) and SHALL provide
+  `RunnerHandle.from_record` / `RunnerHandle#to_storage` for DB round-trip.
   *Tests:* `spec/services/execution_runners_spec.rb`
   *Code:* `ExecutionRunners::RunnerHandle`
 
@@ -87,6 +90,8 @@
   `Containers::Provision` calls and `Containers::Provision::Result` /
   `Containers::Provision` errors to `ExecutionResult` / `ExecutionRunners`
   errors, without modifying `Containers::Provision` itself.
+  `LocalDockerRunner#reconnect(handle:)` SHALL translate the handle identifier
+  back to a Docker container ID and delegate to `Containers::Provision.reconnect`.
   `ExecutionRunners.resolve` SHALL return a `LocalDockerRunner` for all current
   (Docker-only) backends.
   *Tests:* `spec/services/execution_runners/local_docker_runner_spec.rb`,
@@ -164,3 +169,19 @@
   `ExecutionRunners::Base#status`,
   `ExecutionRunners::LocalDockerRunner#status`,
   `Containers::Provision#container_status`
+
+- [x] **CONTAINER-RUNTIME-016** — When a Temporal activity retries after a
+  worker restart or failover, the system SHALL load the persisted
+  `RunnerHandle` from the `agent_runs.runner_handle` column and call
+  `runner.reconnect(handle:)` / `runner.running?(handle:)` to decide whether to
+  reuse a still-running environment or clean up a dead/missing one before
+  provisioning fresh. Recovery SHALL work for all states: running (reuse), dead
+  (cleanup + reprovision), and missing (no error, clean state, reprovision).
+  A data migration SHALL populate `runner_handle` from existing `container_id` +
+  `container_host` so legacy rows are recoverable immediately. The
+  `runner_handle` column SHALL also be addable to `container_pool_entries` and
+  `service_containers` so pool entries and service containers can store runner
+  handles.
+  *Tests:* `spec/models/agent_run_spec.rb`,
+  `spec/migrations/add_runner_handle_to_execution_tables_spec.rb`
+  *Code:* `AgentRun#provision_via_runner`, `AgentRun#reuse_or_reconcile_via_runner`
