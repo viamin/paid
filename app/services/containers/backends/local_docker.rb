@@ -59,10 +59,6 @@ module Containers
         Docker::Container.all(**options)
       end
 
-      def list_preview_containers
-        list_containers(filters: { label: [ "#{Previews::TunnelManager::PREVIEW_TUNNEL_LABEL}=true" ] }.to_json)
-      end
-
       def get_network(name)
         Docker::Network.get(name)
       end
