@@ -110,10 +110,14 @@ class HealthController < ActionController::Base
   end
 
   def qdrant_configured?
-    # Mirror Paid.qdrant_api_key's resolution order (credentials first, then
-    # QDRANT_API_KEY, then QDRANT_URL). A credentials-only deploy must still
-    # surface the Qdrant probe — otherwise /ready would report "ready" while
-    # Qdrant is unreachable, defeating the readiness check.
+    # Qdrant is "configured" if any of credentials, QDRANT_URL, or
+    # QDRANT_API_KEY is set. A credentials-only deploy must still surface
+    # the Qdrant probe — otherwise /ready would report "ready" while
+    # Qdrant is unreachable, defeating the readiness check. This is
+    # deliberately broader than `Paid.qdrant_api_key`, which only checks
+    # credentials and QDRANT_API_KEY; here we add QDRANT_URL because a
+    # Qdrant deployment can exist without an API key (e.g. self-hosted,
+    # unauthenticated) but cannot exist without a URL.
     Rails.application.credentials.dig(:qdrant, :api_key).present? ||
       ENV["QDRANT_URL"].present? ||
       ENV["QDRANT_API_KEY"].present?
