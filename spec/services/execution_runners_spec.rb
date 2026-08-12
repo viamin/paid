@@ -270,6 +270,16 @@ RSpec.describe ExecutionRunners do
       expect(status).to be_not_found
       expect(status.exit_code).to be_nil
     end
+
+    it "builds an error status for transient platform failures" do
+      status = described_class.error
+
+      expect(status).to be_error
+      expect(status).not_to be_not_found
+      expect(status.exit_code).to be_nil
+      expect(status.oom_killed).to be(false)
+      expect(status.memory_limit).to be_nil
+    end
   end
 
   describe ExecutionRunners::CompatibilityResult do

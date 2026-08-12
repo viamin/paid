@@ -152,7 +152,10 @@
   SHALL return it so callers never inspect Docker container-state responses
   (`State.Running`, `State.OOMKilled`, `State.ExitCode`) directly.
   `LocalDockerRunner#status` SHALL translate Docker container-state inspection
-  into `ExecutionStatus`, returning `:not_found` when the container is gone.
+  into `ExecutionStatus`, returning `:not_found` when the container is gone
+  and `:error` when the status could not be determined because of a
+  transient platform failure (daemon timeout, connection reset) so callers
+  retry instead of reaping a live-but-temporarily-unreachable workload.
   *Tests:* `spec/services/execution_runners_spec.rb`,
   `spec/services/execution_runners/base_spec.rb`,
   `spec/services/execution_runners/local_docker_runner_spec.rb`

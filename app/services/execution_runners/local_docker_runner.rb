@@ -69,6 +69,11 @@ module ExecutionRunners
     # translating the Docker container-state inspection into an
     # {ExecutionStatus} so callers never reach into the Docker API response
     # (RDR-054).
+    #
+    # +:not_found+ is reserved for the genuine "container is gone" signal
+    # (Docker +NotFoundError+ from reconnect or inspection); a transient
+    # platform failure (daemon timeout, connection reset) is reported as
+    # +:error+ so callers retry instead of reaping a live workload.
     # @spec CONTAINER-RUNTIME-015
     def status(handle:)
       service = reconnect(handle)
@@ -84,8 +89,27 @@ module ExecutionRunners
       return ExecutionStatus.oom_killed(exit_code: exit_code, memory_limit: memory_limit) if diagnostics[:oom_killed]
 
       ExecutionStatus.exited(exit_code: exit_code, memory_limit: memory_limit)
-    rescue Containers::Provision::ProvisionError, Docker::Error::DockerError
+    rescue Docker::Error::NotFoundError
       ExecutionStatus.not_found
+    rescue Containers::Provision::ProvisionError => e
+      # Containers::Provision.reconnect collapses both NotFoundError and
+      # other Docker failures into ProvisionError. Only the canonical
+      # "Container <id> not found" message — produced exclusively by
+      # reconnect's NotFoundError branch — is treated as a definitive gone
+      # signal; every other ProvisionError from reconnect is a transient
+      # failure that must surface as :error so callers retry instead of
+      # reaping a live-but-temporarily-unreachable workload.
+      if e.message.match?(/\AContainer \S+ not found\z/)
+        ExecutionStatus.not_found
+      else
+        ExecutionStatus.error
+      end
+    rescue Docker::Error::DockerError
+      # A live-but-temporarily-unreachable workload (daemon timeout,
+      # connection reset) must not be reported as gone; callers will treat
+      # :not_found as authorization to reap and may delete a container that
+      # is still recoverable on retry.
+      ExecutionStatus.error
     end
 
     def cancel(handle:)
