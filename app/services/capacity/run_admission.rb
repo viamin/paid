@@ -215,7 +215,7 @@ module Capacity
         slot_available?(global_available_slots) &&
         (remaining_memory_slots.nil? || remaining_memory_slots.positive?)
 
-      return "global_hard_ceiling" if global_available_slots <= 0
+      return "global_hard_ceiling" if global_available_slots.present? && global_available_slots <= 0
       return "host_hard_ceiling" if selected_host_limit && host_available_slots.to_i <= 0
       return "insufficient_docker_capacity" if !remaining_memory_slots.nil? && remaining_memory_slots <= 0
       return "user_hard_ceiling" if user_available_slots <= 0
@@ -313,7 +313,11 @@ module Capacity
     def global_available_slots
       return @global_available_slots if defined?(@global_available_slots)
 
-      @global_available_slots = [ global_limit - global_active_count, 0 ].max
+      # A limit of 0 disables the global ceiling (consistent with the
+      # per-host "0 means unlimited" convention and GlobalLimit.enabled?).
+      # Returning nil lets slot_available? and the compact.min reductions
+      # treat the global dimension as non-binding.
+      @global_available_slots = Capacity::GlobalLimit.enabled? ? [ global_limit - global_active_count, 0 ].max : nil
     end
 
     def user_hard_ceiling

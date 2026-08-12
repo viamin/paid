@@ -389,5 +389,36 @@ RSpec.describe Capacity::RunAdmission do
         expect(result[:snapshot_available]).to be true
       end
     end
+
+    describe "global limit disabled" do
+      before do
+        # 0 disables the global ceiling (consistent with GlobalLimit.enabled?
+        # and the per-host "0 means unlimited" convention), so dispatch must
+        # not be blocked even when inflight runs exist.
+        allow(Capacity::GlobalLimit).to receive(:max_concurrent_executions).and_return(0)
+      end
+
+      it "does not block dispatch and reports nil available slots" do
+        create(:agent_run, :running, project: project)
+
+        result = described_class.call(user: user, project: project, docker_snapshot: docker_snapshot)
+
+        expect(result[:allowed]).to be true
+        expect(result[:reason]).to be_nil
+        expect(result[:global_available_slots]).to be_nil
+        expect(result[:global_max_concurrent_executions]).to eq(0)
+      end
+
+      it "does not raise in manual mode when the global ceiling is disabled" do
+        user.settings.update!(run_concurrency_mode: "manual", max_concurrent_runs: 10)
+        create(:agent_run, :running, project: project)
+
+        result = described_class.call(user: user, project: project)
+
+        expect(result[:allowed]).to be true
+        expect(result[:mode]).to eq("manual")
+        expect(result[:global_available_slots]).to be_nil
+      end
+    end
   end
 end
