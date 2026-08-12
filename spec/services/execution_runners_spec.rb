@@ -234,6 +234,33 @@ RSpec.describe ExecutionRunners do
     end
   end
 
+  describe ExecutionRunners::ExecutionStatus do
+    it "carries state, exit code, OOM flag, and memory limit" do
+      status = described_class.new(state: :exited, exit_code: 0, oom_killed: false, memory_limit: 1024)
+
+      expect(status.state).to eq(:exited)
+      expect(status.exit_code).to eq(0)
+      expect(status.oom_killed).to be(false)
+      expect(status.memory_limit).to eq(1024)
+    end
+
+    it "exposes state predicates" do
+      expect(described_class.new(state: :running, exit_code: nil, oom_killed: false, memory_limit: nil)).to be_running
+      expect(described_class.new(state: :exited, exit_code: 1, oom_killed: false, memory_limit: nil)).to be_exited
+      expect(described_class.new(state: :oom_killed, exit_code: 137, oom_killed: true, memory_limit: 1024)).to be_oom_killed
+      expect(described_class.new(state: :not_found, exit_code: nil, oom_killed: false, memory_limit: nil)).to be_not_found
+    end
+
+    it "builds a not_found status for an uninspectable environment" do
+      status = described_class.not_found
+
+      expect(status.state).to eq(:not_found)
+      expect(status.exit_code).to be_nil
+      expect(status.oom_killed).to be(false)
+      expect(status.memory_limit).to be_nil
+    end
+  end
+
   describe ExecutionRunners::CompatibilityResult do
     it "carries compatible and error_message fields" do
       result = described_class.new(compatible: false, error_message: "no matching host path")

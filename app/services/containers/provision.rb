@@ -866,6 +866,32 @@ module Containers
       {}
     end
 
+    # Inspects the container's current lifecycle state for status queries.
+    # Aggregates the Docker state fields the runner translates into
+    # {ExecutionRunners::ExecutionStatus} — running, exit code, OOM flag, and
+    # memory limit — so status inspection stays in the Docker-aware service
+    # rather than leaking `container.info["State"]` shapes into the runner.
+    #
+    # Returns an empty hash when the container is gone or inspection fails;
+    # the runner maps that to the `:not_found` state.
+    #
+    # @return [Hash] { running:, exit_code:, oom_killed:, memory_limit_bytes: }
+    def container_status
+      return {} unless container
+
+      container.refresh!
+      info = container.info || {}
+      state = info["State"] || {}
+      {
+        running: state["Running"] == true,
+        exit_code: state["ExitCode"],
+        oom_killed: state["OOMKilled"] == true,
+        memory_limit_bytes: info.dig("HostConfig", "Memory")
+      }
+    rescue Docker::Error::DockerError
+      {}
+    end
+
     def heartbeat_host_path
       return nil unless heartbeat_dir_host.present?
 

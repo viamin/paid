@@ -65,6 +65,21 @@ module ExecutionRunners
       false
     end
 
+    # @spec CONTAINER-RUNTIME-015
+    def status(handle:)
+      state = reconnect(handle).container_status
+      return ExecutionStatus.not_found if state.empty?
+
+      ExecutionStatus.new(
+        state: classify_status(state),
+        exit_code: state[:exit_code],
+        oom_killed: state[:oom_killed],
+        memory_limit: state[:memory_limit_bytes]
+      )
+    rescue Containers::Provision::ProvisionError
+      ExecutionStatus.not_found
+    end
+
     def cancel(handle:)
       service = reconnect(handle)
       return unless service.container_running?
@@ -139,6 +154,17 @@ module ExecutionRunners
     end
 
     private
+
+    # Maps the raw Docker state inspection to an ExecutionStatus state:
+    # a running workload wins over OOM (a container can show OOMKilled=true
+    # on a prior probe while still running), otherwise OOM precedes a plain
+    # exit.
+    def classify_status(state)
+      return :running if state[:running]
+      return :oom_killed if state[:oom_killed]
+
+      :exited
+    end
 
     def backend_for(spec)
       Containers.backend_for(spec.agent_run&.workspace_volume_host)

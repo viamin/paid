@@ -221,6 +221,67 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     end
   end
 
+  describe "#status" do
+    let(:handle) do
+      ExecutionRunners::RunnerHandle.new(runner_type: :local_docker, identifier: "abc123", host: "local",
+        workspace_ref: "paid-workspace-1", metadata: { "agent_run_id" => agent_run.id })
+    end
+
+    before do
+      allow(Containers::Provision).to receive(:reconnect).and_return(provision_service)
+    end
+
+    it "returns a running status when the container is running" do
+      allow(provision_service).to receive(:container_status)
+        .and_return(running: true, exit_code: nil, oom_killed: false, memory_limit_bytes: 1024)
+
+      status = runner.status(handle: handle)
+
+      expect(status).to be_a(ExecutionRunners::ExecutionStatus)
+      expect(status).to be_running
+      expect(status.exit_code).to be_nil
+      expect(status.memory_limit).to eq(1024)
+    end
+
+    it "returns an exited status with the exit code" do
+      allow(provision_service).to receive(:container_status)
+        .and_return(running: false, exit_code: 1, oom_killed: false, memory_limit_bytes: 1024)
+
+      status = runner.status(handle: handle)
+
+      expect(status).to be_exited
+      expect(status.exit_code).to eq(1)
+      expect(status).not_to be_oom_killed
+    end
+
+    it "reports oom_killed when the container was OOM killed" do
+      allow(provision_service).to receive(:container_status)
+        .and_return(running: false, exit_code: 137, oom_killed: true, memory_limit_bytes: 4_294_967_296)
+
+      status = runner.status(handle: handle)
+
+      expect(status).to be_oom_killed
+      expect(status.oom_killed).to be(true)
+      expect(status.exit_code).to eq(137)
+    end
+
+    it "returns not_found when the container can no longer be reconnected to" do
+      allow(Containers::Provision).to receive(:reconnect)
+        .and_raise(Containers::Provision::ProvisionError, "Container abc123 not found")
+
+      status = runner.status(handle: handle)
+
+      expect(status).to be_not_found
+      expect(status.exit_code).to be_nil
+    end
+
+    it "returns not_found when inspection returns no state" do
+      allow(provision_service).to receive(:container_status).and_return({})
+
+      expect(runner.status(handle: handle)).to be_not_found
+    end
+  end
+
   describe "#cancel" do
     let(:handle) do
       ExecutionRunners::RunnerHandle.new(runner_type: :local_docker, identifier: "abc123", host: "local",
