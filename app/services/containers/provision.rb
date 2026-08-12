@@ -57,6 +57,12 @@ module Containers
       end
     end
 
+    # Raised when a container cannot be found during reconnect. Subclasses
+    # ProvisionError so generic rescue clauses still work, while callers that
+    # must distinguish "definitively gone" from "transient failure" can rescue
+    # this specifically instead of pattern-matching the error message.
+    class ContainerNotFoundError < ProvisionError; end
+
     # Raised when command execution fails
     class ExecutionError < Error
       attr_reader :exit_code, :stdout, :stderr
@@ -909,7 +915,8 @@ module Containers
     # @param container_id [String] The Docker container ID
     # @param worktree_path [String, nil] Path to the git worktree (optional)
     # @return [Provision] The reconnected service instance
-    # @raise [ProvisionError] When container cannot be found
+    # @raise [ContainerNotFoundError] When the container does not exist
+    # @raise [ProvisionError] When reconnect fails for any other reason
     def self.reconnect(agent_run:, container_id:, worktree_path: nil, workspace_volume: nil, pool_entry: nil, **options)
       pool_entry ||= ContainerPoolEntry.claimed.find_by(agent_run: agent_run, container_id: container_id)
       host = pool_entry&.container_host || agent_run.container_host
@@ -927,7 +934,7 @@ module Containers
       )
         .with_existing_container(container, workspace_volume: workspace_volume, pool_entry: pool_entry)
     rescue Docker::Error::NotFoundError
-      raise ProvisionError, "Container #{container_id} not found"
+      raise ContainerNotFoundError, "Container #{container_id} not found"
     rescue Docker::Error::DockerError => e
       raise ProvisionError, "Failed to reconnect to container: #{e.message}"
     end
