@@ -41,7 +41,8 @@ TMPDIR="$(mktemp -d)"
 trap 'rm -rf "${TMPDIR}"' EXIT
 
 echo "Installing ast-grep ${AST_GREP_VERSION} from ${URL}..."
-curl -fsSL -o "${TMPDIR}/${ZIPFILE}" "${URL}"
+curl -fsSL --retry 5 --retry-delay 2 --retry-connrefused --retry-all-errors \
+  -o "${TMPDIR}/${ZIPFILE}" "${URL}"
 echo "${EXPECTED_CHECKSUM}  ${TMPDIR}/${ZIPFILE}" | sha256sum -c -
 unzip -j -o "${TMPDIR}/${ZIPFILE}" ast-grep -d "${TMPDIR}"
 install -m 0755 "${TMPDIR}/ast-grep" "${INSTALL_DIR}/ast-grep"

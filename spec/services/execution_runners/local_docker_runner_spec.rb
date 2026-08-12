@@ -302,6 +302,41 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     end
   end
 
+  describe "#reconnect" do
+    let(:handle) do
+      ExecutionRunners::RunnerHandle.new(runner_type: :local_docker, identifier: "abc123", host: "local",
+        workspace_ref: "paid-workspace-1",
+        metadata: { "agent_run_id" => agent_run.id, "worktree_path" => nil })
+    end
+
+    it "translates the handle identifier to a Docker container ID and reconnects" do
+      expect(Containers::Provision).to receive(:reconnect)
+        .with(agent_run: agent_run, container_id: "abc123", worktree_path: nil)
+        .and_return(provision_service)
+
+      expect(runner.reconnect(handle: handle)).to eq(provision_service)
+    end
+
+    it "raises ProvisionError when the container is missing" do
+      allow(Containers::Provision).to receive(:reconnect)
+        .and_raise(Containers::Provision::ProvisionError, "Container abc123 not found")
+
+      expect { runner.reconnect(handle: handle) }
+        .to raise_error(Containers::Provision::ProvisionError, /not found/)
+    end
+
+    it "threads worktree_path from the handle metadata" do
+      agent_run.update!(worktree_path: "/var/paid/worktrees/1")
+      path_handle = handle.with(metadata: handle.metadata.merge("worktree_path" => "/var/paid/worktrees/1"))
+
+      expect(Containers::Provision).to receive(:reconnect)
+        .with(agent_run: agent_run, container_id: "abc123", worktree_path: "/var/paid/worktrees/1")
+        .and_return(provision_service)
+
+      runner.reconnect(handle: path_handle)
+    end
+  end
+
   describe "#cancel" do
     let(:handle) do
       ExecutionRunners::RunnerHandle.new(runner_type: :local_docker, identifier: "abc123", host: "local",

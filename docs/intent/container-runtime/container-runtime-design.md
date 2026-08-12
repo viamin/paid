@@ -111,7 +111,7 @@ generalization, and is reviewed against the coupling inventory (#3337) to
 confirm coverage.
 
 - `ExecutionRunners::Base` is the abstract interface: `provision`, `start`,
-  `running?`, `status`, `cancel`, `cleanup`, `.compatible?`, `.ping`. Method
+  `running?`, `reconnect`, `status`, `cancel`, `cleanup`, `.compatible?`, `.ping`. Method
   names and parameters never reference Docker concepts.
 - A runner owns the complete execution environment (primary workload, sidecars,
   services, network, workspace) as a single lifecycle, plus the watchdog logic
@@ -124,9 +124,10 @@ confirm coverage.
   `NetworkPolicy::NetworkContract`, drops the Docker network name),
   `ServiceDeclaration`, and `ComputeRequirements`.
 - `ExecutionRunners::LocalDockerRunner` implements `Base` as a thin adapter over
-  `Containers::Provision`: `#provision`/`#start`/`#running?`/`#status`/`#cancel`/
-  `#cleanup` translate `RunSpec`/`RunnerHandle` to `Containers::Provision.new`,
-  `#execute`, `#container_running?`, `#container_status`, and `#cleanup` calls, and translate
+  `Containers::Provision`: `#provision`/`#start`/`#running?`/`#reconnect`/`#status`/
+  `#cancel`/`#cleanup` translate `RunSpec`/`RunnerHandle` to `Containers::Provision.new`,
+  `#execute`, `#container_running?`, `#container_status`, `Containers::Provision.reconnect`,
+  and `#cleanup` calls, and translate
   `Containers::Provision::Result` and its error classes into `ExecutionResult`
   and the `ExecutionRunners` error hierarchy. `RunnerHandle#metadata` carries
   the `agent_run_id`, `worktree_path`, and `environment` needed to reconnect a
@@ -136,6 +137,20 @@ confirm coverage.
   yet translated (tracked separately). `ExecutionRunners.resolve` currently
   always returns `LocalDockerRunner`, since every existing backend (local
   Docker, remote Docker, Swarm) is a Docker transport.
+
+### Persisted handle and recovery (RDR-054)
+
+A `runner_handle` jsonb column on `agent_runs` (alongside, not replacing,
+`container_id`/`container_host`) stores the serialized `RunnerHandle` so a
+Temporal activity retry can recover after a worker restart or failover. When a
+retry finds a persisted `runner_handle`, `AgentRun#provision_via_runner` routes
+through `reuse_or_reconcile_via_runner`: it loads the handle via
+`RunnerHandle.from_record`, checks `runner.running?`, and either reuses the
+still-running environment or cleans up a dead/missing one before provisioning
+fresh. A data migration backfills `runner_handle` from existing
+`container_id` + `container_host` so legacy rows are immediately recoverable.
+The column is also added to `container_pool_entries` and `service_containers`
+so future pool and service-container code can store runner handles.
 
 ### Workspace strategy isolation (#3342)
 
