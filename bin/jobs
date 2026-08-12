@@ -16,6 +16,7 @@ ENV["GOOD_JOB_EXECUTION_MODE"] = "external"
 require_relative "../config/environment"
 require "good_job"
 require_relative "../lib/paid/good_job_worker"
+require_relative "../lib/paid/worker_readiness"
 
 # Auto-grow the primary DB pool to cover GoodJob's worker threads before the
 # capsule opens any connections. Each worker thread can hold a DB connection
@@ -90,6 +91,7 @@ force_exit_thread = nil
 
     warn "Received #{signal}, shutting down GoodJob worker gracefully " \
          "(timeout=#{shutdown_timeout}s)"
+    Paid::WorkerReadiness.mark_not_ready!
     Thread.new { GoodJob.shutdown(timeout: shutdown_timeout) }
 
     force_exit_thread ||= Thread.new do
@@ -101,7 +103,9 @@ force_exit_thread = nil
 end
 
 GoodJob.capsule.start
-puts "GoodJob worker started. Send INT/TERM to shut down."
+at_exit { Paid::WorkerReadiness.mark_not_ready! }
+Paid::WorkerReadiness.mark_ready!
+puts "GoodJob worker started (readiness file: #{Paid::WorkerReadiness.file_path}). Send INT/TERM to shut down."
 
 # Block until the capsule has drained. An unstarted capsule also reports
 # shutdown?, so this loop must run only after `capsule.start` returns; a
