@@ -1202,6 +1202,30 @@ RSpec.describe Containers::GitOperations do
       )
     end
 
+    it "rejects Impeccable-generated Codex hook state even when force-added" do
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      staged_result = Containers::Provision::Result.success(
+        stdout: "app/models/user.rb\n.codex/hooks.json\n",
+        stderr: "", exit_code: 0
+      )
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_result)
+
+      expect { git_ops.commit_uncommitted_changes }.to raise_error(
+        described_class::Error,
+        /forbidden artifact files detected/
+      )
+    end
+
     it "rejects wildcard artifact patterns when excludes are bypassed" do
       status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
       allow(container_service).to receive(:execute)
@@ -1793,6 +1817,7 @@ RSpec.describe Containers::GitOperations do
       expect(script).to include(".pg-install/")
       expect(script).to include(".cache-rubocop/")
       expect(script).to include("vendor/bundle/")
+      expect(script).to include(".codex/")
     end
 
     it "guards with grep to prevent duplicate entries on retry" do
