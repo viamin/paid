@@ -135,6 +135,60 @@ confirm coverage.
   always returns `LocalDockerRunner`, since every existing backend (local
   Docker, remote Docker, Swarm) is a Docker transport.
 
+### Workspace strategy isolation (#3342)
+
+Workspace storage is expressed as a provider-neutral `WorkspaceStrategy` on
+`RunSpec`, isolating workspace assumptions from Docker volumes and bind mounts
+so a future remote runner (Fly, Cloud Run) can substitute object storage or
+ephemeral disk without changing orchestration code.
+
+**This PR (implemented).** Volume and bind translation; volume-name isolation;
+orphan-cleanup delegation.
+
+- `WorkspaceStrategy` carries `mode` (`:named_volume | :bind_mount | :ephemeral
+  | :object_storage`), the workload `mount_point`, an opaque `reference`
+  (volume name, host path, or storage URI — nil until provisioned), the
+  `writable_dirs` the workload needs (`WritableDir`: path, size, mode, exec),
+  and a `heartbeat` `HeartbeatConfig`. The default writable directories
+  (`/tmp`, `/home/agent/.cache`) and the heartbeat `mount_point` are declared
+  on the strategy as the provider-neutral shape; runner-specific credential
+  tmpfs mounts (e.g. `~/.claude`, `~/.codex`) remain a Docker-implementation
+  detail owned by `Containers::Provision`.
+- `LocalDockerRunner` translates the `:named_volume` and `:bind_mount` modes
+  to Docker operations: `:named_volume` constructs the per-run volume name
+  (`paid-workspace-<id>`) inside the runner via `workspace_volume_name_for`
+  and mounts it via `Containers::Provision`; `:bind_mount` forwards the
+  host-path reference as `Containers::Provision#worktree_path`. Volume-name
+  construction lives in the runner, so no orchestration code or the domain
+  model builds Docker volume names.
+- `RunnerHandle#workspace_ref` stores the opaque workspace reference for
+  recovery and cleanup across the provision → start → cleanup lifecycle.
+- `AgentRun#cleanup_orphaned_workspace_volume` delegates volume-name
+  construction and deletion to `LocalDockerRunner#cleanup_workspace_reference`
+  rather than constructing `paid-workspace-<id>` in the model.
+
+**Deferred (see CONTAINER-RUNTIME-012, -013, -014).** Writable tmpfs layout,
+heartbeat ownership, pool workspace through the runner.
+
+- `WorkspaceStrategy#writable_dirs` is declared on the strategy with a
+  `WritableDir#docker_tmpfs_options` helper that produces the same option
+  string Docker consumes, but `Containers::Provision#host_config` still
+  hardcodes its own `Tmpfs` block; the runner does not yet translate the
+  strategy's writable dirs into Provision calls (CONTAINER-RUNTIME-012).
+- `WorkspaceStrategy#heartbeat` (`HeartbeatConfig`) declares the heartbeat
+  mount point on the strategy, but `Containers::Provision#prepare_heartbeat_dir!`
+  still owns the host temp-dir vs. in-container tmpfs selection from the
+  backend's host-path capability, and callers still pass `heartbeat_path:` to
+  `LocalDockerRunner#start` (CONTAINER-RUNTIME-013).
+- Pool workspace management (`paid-pool-workspace-<pool_entry_id>`) still
+  lives in `Containers::PoolManager` and `Containers::Provision`; the runner
+  does not yet own pool workspace construction or cleanup (CONTAINER-RUNTIME-014).
+
+`Containers::Provision` is intentionally unchanged in this PR: the existing
+default workspace strategy (named volumes with in-container clone), host
+bind-mount support, and all provision-side workspace/heartbeat tests are
+preserved until the deferred specs land.
+
 ## References
 
 - `app/services/containers/provision.rb`
