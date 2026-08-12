@@ -516,7 +516,7 @@ RSpec.describe NetworkPolicy, :no_db do
     it "returns the restricted proxy-mode contract by default" do
       contract = described_class.contract(subscription_auth: false)
 
-      expect(contract.mode).to eq("proxy")
+      expect(contract.mode).to eq(:proxy)
       expect(contract.network).to eq(described_class::NETWORK_NAME)
       expect(contract).to be_restricted
       expect(contract).to be_firewall
@@ -525,7 +525,7 @@ RSpec.describe NetworkPolicy, :no_db do
     it "returns the infrastructure contract for subscription auth" do
       contract = described_class.contract(subscription_auth: true)
 
-      expect(contract.mode).to eq("subscription_auth")
+      expect(contract.mode).to eq(:subscription_auth)
       expect(contract.network).to eq(described_class::INFRA_NETWORK_NAME)
       expect(contract).not_to be_restricted
       expect(contract).not_to be_firewall
@@ -534,7 +534,7 @@ RSpec.describe NetworkPolicy, :no_db do
     it "returns the infrastructure contract for direct outbound providers" do
       contract = described_class.contract(subscription_auth: false, direct_outbound: true)
 
-      expect(contract.mode).to eq("direct_outbound")
+      expect(contract.mode).to eq(:direct_outbound)
       expect(contract.network).to eq(described_class::INFRA_NETWORK_NAME)
       expect(contract).not_to be_restricted
       expect(contract).not_to be_firewall
