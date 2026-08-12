@@ -170,6 +170,7 @@ The first registry should cover existing agent-run prompt paths:
 | `task.pr` | `Prompts::BuildForPr#task_section` | yes | no |
 | `comments.issue_trusted` | trusted issue comments | no | yes |
 | `comments.pr_trusted` | trusted PR comments | no | yes |
+| `intent.clarified_requirements` | `Prompts::BuildForIssue#clarifying_answers_section` | no | no |
 | `review.unresolved_threads` | unresolved trusted review threads | conditional | yes |
 | `ci.failures` | `Ci::FailureContext` | conditional | yes |
 | `service.environment` | `Prompts::ServiceContainerSections` | conditional | yes |
