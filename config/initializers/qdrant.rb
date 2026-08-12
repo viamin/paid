@@ -31,18 +31,17 @@ module Paid
     end
 
     def qdrant_api_key
+      # Credentials take precedence; the `QDRANT_API_KEY` env var is the
+      # documented alternative for ops who wire secrets through environment
+      # injection (e.g. `bin/rails` runners, container env). The validator
+      # (PROD-CONFIG-002) and docs/PRODUCTION_CONFIG.md both advertise the
+      # env var as a valid source in production, so the runtime must honor
+      # it too — otherwise an env-only deploy passes boot validation and
+      # then crashes on the first `Paid.qdrant_client` call.
       cred_key = Rails.application.credentials.dig(:qdrant, :api_key)
+      return cred_key if cred_key.present?
 
-      if cred_key.present?
-        return cred_key
-      end
-
-      if Rails.env.production?
-        raise "QDRANT_API_KEY is required in production. " \
-              "Set it via Rails credentials (qdrant.api_key)."
-      end
-
-      ENV["QDRANT_API_KEY"]
+      ENV["QDRANT_API_KEY"].presence
     end
 
     def embedding_dimensions
