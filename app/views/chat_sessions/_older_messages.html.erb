@@ -1,0 +1,13 @@
+<% frame_id = local_assigns.fetch(:frame_id, "older_messages") %>
+<%= turbo_frame_tag frame_id do %>
+  <% if has_more && messages.any? %>
+    <%= turbo_frame_tag "#{frame_id}_next",
+          src: older_messages_chat_session_path(chat_session, before: messages.first.id),
+          loading: :lazy do %>
+      <p class="py-2 text-center text-xs text-gray-400">Loading older messages...</p>
+    <% end %>
+  <% end %>
+  <% messages.each do |message| %>
+    <%= render "chat_messages/message", message: message %>
+  <% end %>
+<% end %>

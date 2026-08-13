@@ -1,0 +1,34 @@
+<div id="<%= dom_id(project, :issues) %>" class="mt-8">
+  <h2 class="text-lg font-medium text-gray-900">Synced Issues <%= issue_lifecycle_legend_tooltip %></h2>
+  <p class="mt-1 text-sm text-gray-500">Shows all open GitHub issues cached locally. Automation eligibility is evaluated separately from trust and labels.</p>
+
+  <% if issues.any? %>
+    <div class="mt-4 overflow-hidden bg-white shadow sm:rounded-lg">
+      <div class="max-h-96 overflow-y-auto">
+        <ul role="list" class="divide-y divide-gray-200">
+          <% statuses = local_assigns.fetch(:issue_lifecycle_statuses, {}) %>
+          <% paid_prs_by_issue_id = local_assigns.fetch(:paid_prs_by_issue_id, {}) %>
+          <% paused_runs_by_issue_id = local_assigns.fetch(:paused_runs_by_issue_id, {}) %>
+          <% issues.each do |issue| %>
+            <% issue_locals = {
+              issue: issue,
+              project: project,
+              lifecycle_status: statuses[issue.id],
+              paid_pr: paid_prs_by_issue_id[issue.id],
+              paused_run: paused_runs_by_issue_id[issue.id]
+            } %>
+            <% if local_assigns.key?(:merge_notification_issue_ids) %>
+              <% issue_locals[:merge_notification_issue_ids] = local_assigns[:merge_notification_issue_ids] %>
+            <% end %>
+            <%= render "projects/issue", **issue_locals %>
+          <% end %>
+        </ul>
+      </div>
+    </div>
+  <% else %>
+    <div class="mt-4 text-center rounded-lg border-2 border-dashed border-gray-300 p-8">
+      <h3 class="text-sm font-semibold text-gray-900">No synced issues</h3>
+      <p class="mt-1 text-sm text-gray-500">Issues will appear here once they are synced from GitHub.</p>
+    </div>
+  <% end %>
+</div>

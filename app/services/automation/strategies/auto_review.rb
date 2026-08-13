@@ -1,0 +1,343 @@
+# frozen_string_literal: true
+
+module Automation
+  module Strategies
+    # Auto-review strategy — owns the policy that translates a PR scan's
+    # review-related triggers and counters into {Automation::Decision}
+    # objects. Each configured review method
+    # (+copilot+ / +paid_agent+ / +codex+ / +ci_action+ / +manual+) is
+    # represented by a plugin under {Automation::ReviewMethods}; the
+    # strategy calls each enabled plugin, aggregates their
+    # {Outcome} reports, and composes a prioritized decision list that
+    # preserves current mixed-provider behavior.
+    #
+    # == High-level outcomes
+    #
+    # Per-method plugins report one of:
+    #
+    # * +:pending+            — review work still outstanding.
+    # * +:satisfied+          — review complete for this PR head.
+    # * +:retryable_failure+  — failure, but retry budget remains.
+    # * +:exhausted_retries+  — failure with no retries left.
+    # * +:not_applicable+     — method disabled or out of scope.
+    #
+    # A pending outcome may be either +blocking+ (the PR cannot advance
+    # until satisfied — e.g. paid_agent as sole method, or manual/ci_action
+    # when +wait_for_reviews+ is on) or a non-blocking +sidecar+ (the PR
+    # continues through follow-up work while the review is requested).
+    #
+    # == Mixed-provider handling
+    #
+    # When multiple review methods are enabled, the strategy:
+    #
+    # 1. Evaluates every enabled method, producing one outcome per method.
+    # 2. Emits each plugin's proposed decision (e.g. +queue_review_run+ for
+    #    paid_agent, +request_review+ for copilot/codex/manual) — so every
+    #    provider gets the chance to advance its own review concurrently.
+    # 3. Adds follow-up / ready / escalate / merge decisions based on the
+    #    non-review triggers present in the scan, unless a blocking
+    #    outcome forbids advancing (e.g. paid_agent_review_pending as the
+    #    sole method suppresses +queue_create_pr_run+ per #1135).
+    #
+    # This matches the behavior previously encoded in
+    # {Automation::PullRequestEvaluator} while making the per-method policy
+    # pluggable and the outcome vocabulary explicit.
+    class AutoReview
+      include Automation::Strategy
+
+      FOLLOWUP_TRIGGER_TYPES = %w[
+        ci_failure review_threads conversation_comments changes_requested
+        actionable_labels merge_conflicts review_bot_comments review_bot_threads
+      ].freeze
+      POSTED_BOT_FEEDBACK_TRIGGER_TYPES = %w[
+        review_bot_comments review_bot_threads
+      ].freeze
+
+      # Scan may be provided via +context.metadata[:scan]+; when absent,
+      # the strategy emits a noop result (this mirrors the behavior of
+      # {Automation::PullRequestEvaluator} when called without explicit
+      # scan data).
+      #
+      # @param context [Automation::Context]
+      # @return [Automation::Result]
+      def evaluate(context)
+        scan = context.metadata_fetch(:scan)
+        return noop_result if scan.nil?
+
+        config = Automation::Configuration::AutoReview.from_project(context.project)
+        signals = AutoReview::Signals.from_scan(scan)
+        plugins = build_plugins(config, signals)
+        outcomes = plugins.map(&:evaluate)
+
+        decisions = compose_decisions(signals, plugins, outcomes)
+        Automation::Result.new(decisions: decisions.presence || [ Automation::Decision.noop ])
+      end
+
+      # Evaluates just the per-method outcomes for a given project and
+      # scan, without composing the decision list. Useful for callers that
+      # want to inspect review state (e.g. the explicit scan tree in
+      # {Automation::PullRequestEvaluator}) without committing to a
+      # decision composition.
+      #
+      # @return [Array<Outcome>]
+      def outcomes_for(project:, scan:)
+        config = Automation::Configuration::AutoReview.from_project(project)
+        signals = AutoReview::Signals.from_scan(scan)
+        build_plugins(config, signals).map(&:evaluate)
+      end
+
+      private
+
+      # Instantiates a plugin for every known review method, whether or
+      # not the project has it enabled. The plugins themselves decide
+      # what state to report based on both signals and config, so the
+      # scan-trigger-driven routing from {PullRequestEvaluator} continues
+      # to work even when a trigger is present for a method the config
+      # reports as disabled (e.g. in focused specs that exercise trigger
+      # routing without fully configuring review_settings).
+      def build_plugins(config, signals)
+        Automation::Configuration::ReviewMethod::NAMES.map do |name|
+          method = config.method_for(name)
+          plugin_class = Automation::ReviewMethods::Registry.resolve(name)
+          plugin_class.new(method: method, config: config, signals: signals)
+        end
+      end
+
+      def compose_decisions(signals, plugins, outcomes)
+        decisions = []
+        trigger_types = signals.trigger_types
+
+        if trigger_types.include?("escalate_to_owner")
+          decisions << escalate_decision(signals)
+          return decisions
+        end
+
+        if trigger_types.include?("dismiss_escalation")
+          decisions << Automation::Decision.dismiss_escalation(issue_id: signals.issue_id, draft: signals.draft)
+          return decisions
+        end
+
+        if trigger_types.include?("owner_approved")
+          decisions << Automation::Decision.merge(issue_id: signals.issue_id, pr_number: signals.pr_number)
+          return decisions
+        end
+
+        if trigger_types.include?("review_goal_retry")
+          return review_goal_retry_decisions(signals, plugins, outcomes, trigger_types)
+        end
+
+        if trigger_types.include?("ready_for_owner")
+          return ready_for_owner_decisions(signals, plugins, outcomes, trigger_types)
+        end
+
+        if trigger_types.include?(Automation::ReviewMethods::PaidAgent::TRIGGER_TYPE)
+          return paid_agent_pending_decisions(plugins, signals)
+        end
+
+        if trigger_types.include?(Automation::ReviewMethods::Copilot::TRIGGER_TYPE)
+          return review_bot_pending_decisions(plugins, signals, trigger_types)
+        end
+
+        if trigger_types.include?(Automation::ReviewMethods::Manual::TRIGGER_TYPE) ||
+           trigger_types.include?(Automation::ReviewMethods::CiAction::TRIGGER_TYPE)
+          return non_bot_pending_decisions(plugins, signals, trigger_types)
+        end
+
+        followup_decisions(signals)
+      end
+
+      def paid_agent_pending_decisions(plugins, signals)
+        # paid_agent_review_pending is a hard gate: emit only the
+        # queue_review_run decision and suppress create_pr follow-up runs
+        # while the review is outstanding (#1135).
+        #
+        # Exception: posted bot feedback is already actionable. Queue a
+        # create_pr follow-up to address it before asking paid_agent to
+        # review the same findings again.
+        if !review_actively_running?(signals) && posted_bot_feedback_trigger?(signals.trigger_types)
+          return followup_decisions(signals)
+        end
+
+        # Exception: when merge_conflicts is also present and the review
+        # isn't currently running, address the conflict via create_pr first
+        # (#2324). A review of code with conflicts can't produce meaningful
+        # feedback, and suppressing the conflict-fix leaves the PR pinned in
+        # a queue→fail→requeue loop. Active-run state still suppresses to
+        # avoid /workspace collision with the running review.
+        if !review_actively_running?(signals) && merge_conflicts_present?(signals)
+          return followup_decisions(signals)
+        end
+
+        paid_plugin = plugins.find { |p| p.name == :paid_agent }
+        decision = paid_plugin&.decision
+        decision ? [ decision ] : []
+      end
+
+      def review_actively_running?(signals)
+        pending = signals.trigger(Automation::ReviewMethods::PaidAgent::TRIGGER_TYPE)
+        pending && pending[:active_run] == true
+      end
+
+      def merge_conflicts_present?(signals)
+        signals.triggers.any? { |t| t[:type].to_s == "merge_conflicts" }
+      end
+
+      def review_bot_pending_decisions(plugins, signals, trigger_types)
+        decisions = review_bot_request_decisions(plugins)
+
+        # Posted bot feedback is already actionable; keep the hard gate for
+        # outstanding review requests, but let the agent resolve existing bot
+        # comments/threads.
+        if posted_bot_feedback_trigger?(trigger_types)
+          decisions.concat(followup_decisions(signals))
+        end
+
+        decisions
+      end
+
+      def non_bot_pending_decisions(plugins, signals, trigger_types)
+        decisions = non_bot_request_decisions(plugins)
+
+        other_triggers = trigger_types - [
+          Automation::ReviewMethods::Manual::TRIGGER_TYPE,
+          Automation::ReviewMethods::CiAction::TRIGGER_TYPE
+        ]
+        decisions.concat(followup_decisions(signals)) if other_triggers.any?
+        decisions
+      end
+
+      def ready_for_owner_decisions(signals, plugins, outcomes, trigger_types)
+        decisions = []
+
+        paid_pending = trigger_types.include?(Automation::ReviewMethods::PaidAgent::TRIGGER_TYPE)
+        paid_active = outcomes.any? { |o| o.method == :paid_agent && o.pending? && o.metadata[:active_run] }
+
+        if paid_pending && !paid_active
+          paid_decision = plugins.find { |p| p.name == :paid_agent }&.decision
+          decisions << paid_decision if paid_decision
+        end
+
+        decisions << Automation::Decision.mark_ready(
+          issue_id: signals.issue_id,
+          pr_number: signals.pr_number,
+          owner_reviewer_login: signals.owner_reviewer_login
+        )
+
+        decisions
+      end
+
+      def review_goal_retry_decisions(signals, plugins, outcomes, trigger_types)
+        if posted_bot_feedback_trigger?(trigger_types)
+          return followup_decisions(signals)
+        end
+
+        paid_decision = plugins.find { |p| p.name == :paid_agent }&.decision
+        retry_decision = Automation::Decision.record_review_goal_retry(
+          issue_id: signals.issue_id,
+          expected_review_goal_retry_count: signals.review_goal_retry_count
+        )
+        decisions =
+          if trigger_types.include?(Automation::ReviewMethods::PaidAgent::TRIGGER_TYPE)
+            [ retry_decision ]
+          else
+            []
+          end
+
+        decisions << paid_decision if paid_decision
+        decisions << retry_decision unless decisions.include?(retry_decision)
+
+        if trigger_types.include?("ready_for_owner")
+          sans_paid = without_trigger(signals, Automation::ReviewMethods::PaidAgent::TRIGGER_TYPE)
+          decisions.concat(
+            ready_for_owner_decisions(sans_paid, plugins, outcomes, sans_paid.trigger_types)
+          )
+          return decisions
+        end
+
+        decisions.concat(non_bot_request_decisions(plugins))
+
+        if trigger_types.include?(Automation::ReviewMethods::Copilot::TRIGGER_TYPE)
+          # posted_bot_feedback_trigger? was already handled by the early
+          # return at the top of this method, so no follow-up is appended
+          # here — only the bot review request.
+          decisions.concat(review_bot_request_decisions(plugins))
+          return decisions
+        end
+
+        if signals.triggers.any? { |t| FOLLOWUP_TRIGGER_TYPES.include?(t[:type].to_s) }
+          decisions.concat(followup_decisions(signals))
+        else
+          decisions.concat(review_bot_request_decisions(plugins))
+        end
+
+        decisions
+      end
+
+      def review_bot_request_decisions(plugins)
+        bot_plugins = plugins.select { |p| p.kind == :bot || p.kind == :comment_bot }
+        bot_plugins.filter_map(&:decision)
+      end
+
+      def posted_bot_feedback_trigger?(trigger_types)
+        POSTED_BOT_FEEDBACK_TRIGGER_TYPES.any? { |type| trigger_types.include?(type) }
+      end
+
+      def non_bot_request_decisions(plugins)
+        plugins.select { |p| p.kind.in?([ :human, :ci ]) }.filter_map(&:decision)
+      end
+
+      def followup_decisions(signals)
+        if signals.draft_phase?
+          [
+            Automation::Decision.queue_create_pr_run(
+              issue_id: signals.issue_id,
+              source_pull_request_number: signals.pr_number,
+              focus: signals.focus,
+              count_toward_draft_review_round: true,
+              expected_draft_review_count: signals.draft_review_count
+            )
+          ]
+        else
+          [
+            Automation::Decision.queue_create_pr_run(
+              issue_id: signals.issue_id,
+              source_pull_request_number: signals.pr_number,
+              focus: signals.focus
+            ),
+            Automation::Decision.record_pr_followup(
+              issue_id: signals.issue_id,
+              labels_to_remove: signals.labels_to_remove,
+              expected_followup_count: signals.followup_count
+            )
+          ]
+        end
+      end
+
+      def escalate_decision(signals)
+        trigger = signals.trigger("escalate_to_owner") || {}
+        Automation::Decision.escalate(
+          issue_id: signals.issue_id,
+          pr_number: signals.pr_number,
+          owner_reviewer_login: signals.owner_reviewer_login,
+          reason: trigger[:details],
+          reason_key: trigger[:reason_key] || trigger["reason_key"]
+        )
+      end
+
+      def without_trigger(signals, type)
+        filtered = signals.triggers.reject { |t| t[:type].to_s == type.to_s }
+        Signals.new(
+          issue_id: signals.issue_id,
+          pr_number: signals.pr_number,
+          phase: signals.phase,
+          draft: signals.draft,
+          triggers: filtered.freeze,
+          focus: signals.focus,
+          counters: signals.counters,
+          owner_reviewer_login: signals.owner_reviewer_login,
+          labels_to_remove: signals.labels_to_remove
+        )
+      end
+    end
+  end
+end

@@ -1,0 +1,2533 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+require "shellwords"
+require "open3"
+
+RSpec.describe Containers::GitOperations do
+  let(:project) { create(:project) }
+  let(:agent_run) { create(:agent_run, :running, project: project, runner: runner) }
+  let(:container_service) { instance_double(Containers::Provision) }
+  let(:git_ops) { described_class.new(container_service: container_service, agent_run: agent_run) }
+
+  let(:success_result) { Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0) }
+  let(:failure_result) { Containers::Provision::Result.failure(error: "git failed", stdout: "", stderr: "error", exit_code: 1) }
+
+  # Helper (not a `let`) so we stay within the RSpec/MultipleMemoizedHelpers
+  # limit. Resolves the default "claude" subscription provider auto-created
+  # for the project owner and used throughout the specs for trailer setup.
+  def runner
+    project.effective_owner.runners.find_by!(runner_key: "claude")
+  end
+
+  # Installs git hooks with the given commands and returns the captured
+  # pre-commit hook content written to the container.
+  def capture_pre_commit_hook(**commands)
+    allow(container_service).to receive(:execute).and_return(hook_missing_result)
+    allow(container_service).to receive(:execute)
+      .with(a_string_matching(/chmod/), anything)
+      .and_return(success_result)
+
+    captured = nil
+    allow(container_service).to receive(:execute)
+      .with(a_string_matching(/cat > \.git\/hooks\/pre-commit/), timeout: nil, stream: false) { |cmd, **|
+        captured = cmd
+        success_result
+      }
+
+    git_ops.install_git_hooks(**commands)
+    captured
+  end
+
+  def stub_auto_commit_prerequisites(status_stdout: "M  file.rb\n", staged_stdout: "file.rb\n")
+    status_result = Containers::Provision::Result.success(stdout: status_stdout, stderr: "", exit_code: 0)
+    staged_result = Containers::Provision::Result.success(stdout: staged_stdout, stderr: "", exit_code: 0)
+
+    allow(container_service).to receive(:execute)
+      .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+      .and_return(status_result)
+
+    allow(container_service).to receive(:execute)
+      .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+      .and_return(success_result)
+
+    allow(container_service).to receive(:execute)
+      .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+      .and_return(staged_result)
+  end
+
+  def expect_git_identity_config(ordered: false)
+    receive_name = expect(container_service).to receive(:execute)
+      .with([ "git", "config", "user.name", "Paid Agent" ], timeout: nil, stream: false)
+      .and_return(success_result)
+    receive_name = receive_name.ordered if ordered
+
+    receive_email = expect(container_service).to receive(:execute)
+      .with([ "git", "config", "user.email", "paid-agents@paid-agents.com" ], timeout: nil, stream: false)
+      .and_return(success_result)
+    receive_email.ordered if ordered
+  end
+
+  def stub_successful_auto_commit_with_issue(issue)
+    status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+    agent_run.update!(issue: issue)
+
+    allow(container_service).to receive(:execute)
+      .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+      .and_return(status_result)
+    allow(container_service).to receive(:execute)
+      .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+      .and_return(success_result)
+    allow(container_service).to receive(:execute)
+      .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+      .and_return(Containers::Provision::Result.success(stdout: "file.rb\n", stderr: "", exit_code: 0))
+  end
+
+  describe "#clone_and_setup_branch" do
+    let(:head_sha) { "abc123def456789012345678901234567890abcd" }
+    let(:not_a_repo_result) { Containers::Provision::Result.failure(error: "not a git repo", stdout: "", stderr: "fatal: not a git repository", exit_code: 128) }
+    let(:bot_identity) { Github::BotIdentity.new(app_slug: "paid-agents", name: "Paid Agent", email: "paid-agents@paid-agents.com") }
+
+    before do
+      allow(container_service).to receive(:execute).and_return(success_result)
+      allow(Github::BotIdentity).to receive(:for_git).and_return(bot_identity)
+
+      # The clone is skipped when rev-parse HEAD succeeds (idempotency guard),
+      # so return failure first (triggering clone), then success (for head_sha).
+      sha_result = Containers::Provision::Result.success(stdout: "#{head_sha}\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
+        .and_return(not_a_repo_result, sha_result)
+    end
+
+    it "clones the repository inside the container" do
+      expect(container_service).to receive(:execute)
+        .with([ "git", "clone", "--depth", "1", "https://github.com/#{project.full_name}.git", "." ],
+              timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false, env: described_class::NETWORK_GIT_ENV)
+        .and_return(success_result)
+
+      git_ops.clone_and_setup_branch
+    end
+
+    it "configures the repository git commit identity from Github::BotIdentity" do
+      expect(container_service).to receive(:execute)
+        .with([ "git", "config", "user.name", "Paid Agent" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "config", "user.email", "paid-agents@paid-agents.com" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      git_ops.clone_and_setup_branch
+    end
+
+    it "cleans a partial clone before retrying" do
+      expect(container_service).to receive(:execute)
+        .with("find . -mindepth 1 -maxdepth 1 -print -quit", timeout: nil, stream: false)
+        .and_return(Containers::Provision::Result.success(stdout: ".git\n", stderr: "", exit_code: 0))
+        .ordered
+
+      expect(container_service).to receive(:execute)
+        .with("find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +", timeout: nil, stream: false)
+        .and_return(success_result)
+        .ordered
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "clone", "--depth", "1", "https://github.com/#{project.full_name}.git", "." ],
+              timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false, env: described_class::NETWORK_GIT_ENV)
+        .and_return(success_result)
+        .ordered
+
+      git_ops.clone_and_setup_branch
+    end
+
+    it "raises CloneError when partial clone cleanup fails" do
+      allow(container_service).to receive(:execute)
+        .with("find . -mindepth 1 -maxdepth 1 -print -quit", timeout: nil, stream: false)
+        .and_return(Containers::Provision::Result.success(stdout: ".git\n", stderr: "", exit_code: 0))
+
+      allow(container_service).to receive(:execute)
+        .with("find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +", timeout: nil, stream: false)
+        .and_return(Containers::Provision::Result.failure(error: "rm failed", stdout: "", stderr: "permission denied", exit_code: 1))
+
+      expect { git_ops.clone_and_setup_branch }
+        .to raise_error(described_class::CloneError, /Failed to clean partial clone/)
+    end
+
+    it "creates a branch with a slug from the issue title when issue is present" do
+      issue = create(:issue, project: project, title: "Fix login bug")
+      agent_run.update!(issue: issue)
+
+      git_ops.clone_and_setup_branch
+
+      expect(agent_run.reload.branch_name).to match(/\Apaid\/#{issue.github_number}-fix-login-bug-[0-9a-f]{6}\z/)
+    end
+
+    it "creates a branch with a slug from custom_prompt when no issue" do
+      agent_run.update!(issue: nil, custom_prompt: "Add dark mode toggle")
+
+      git_ops.clone_and_setup_branch
+
+      expect(agent_run.reload.branch_name).to match(/\Apaid\/add-dark-mode-toggle-[0-9a-f]{6}\z/)
+    end
+
+    it "falls back to agent ID when neither issue nor custom_prompt" do
+      agent_run.update!(issue: nil, custom_prompt: "placeholder")
+      agent_run.update_column(:custom_prompt, nil)
+
+      git_ops.clone_and_setup_branch
+
+      expect(agent_run.reload.branch_name).to match(/\Apaid\/agent-#{agent_run.id}-[0-9a-f]{6}\z/)
+    end
+
+    it "creates a lid/planning-bootstrap branch for lid_planning runs" do
+      agent_run.update!(issue: nil, custom_prompt: nil, goal: "lid_planning")
+
+      git_ops.clone_and_setup_branch
+
+      expect(agent_run.reload.branch_name).to match(%r{\Apaid/lid/planning-bootstrap-[0-9a-f]{6}\z})
+    end
+
+    it "truncates long titles to keep branch names reasonable" do
+      issue = create(:issue, project: project, title: "A very long issue title that should be truncated to keep branch names reasonable length")
+      agent_run.update!(issue: issue)
+
+      git_ops.clone_and_setup_branch
+
+      branch = agent_run.reload.branch_name
+      slug_part = branch.sub("paid/", "").sub(/-[0-9a-f]{6}\z/, "")
+      expect(slug_part.length).to be <= 55 # number + "-" + 50 char slug
+    end
+
+    it "records the base commit SHA" do
+      git_ops.clone_and_setup_branch
+
+      expect(agent_run.reload.base_commit_sha).to eq(head_sha)
+    end
+
+    it "sets worktree_path to /workspace" do
+      git_ops.clone_and_setup_branch
+
+      expect(agent_run.reload.worktree_path).to eq("/workspace")
+    end
+
+    it "raises CloneError when clone fails" do
+      allow(container_service).to receive(:execute)
+        .with(array_including("clone"), anything)
+        .and_return(failure_result)
+
+      expect { git_ops.clone_and_setup_branch }.to raise_error(described_class::CloneError)
+    end
+
+    it "raises CloneError when git identity configuration fails" do
+      allow(container_service).to receive(:execute)
+        .with([ "git", "config", "user.name", "Paid Agent" ], timeout: nil, stream: false)
+        .and_return(failure_result)
+
+      expect { git_ops.clone_and_setup_branch }
+        .to raise_error(described_class::CloneError, /Failed to configure git user\.name/)
+    end
+
+    context "when clone fails with a transient DNS/network error" do
+      let(:dns_failure_result) do
+        Containers::Provision::Result.failure(
+          error: "git failed",
+          stdout: "",
+          stderr: "Cloning into '.'...\nfatal: unable to access 'https://github.com/test/repo.git/': Could not resolve host: github.com",
+          exit_code: 128
+        )
+      end
+
+      before do
+        allow(git_ops).to receive(:sleep)
+      end
+
+      it "retries and succeeds on the second attempt" do
+        allow(container_service).to receive(:execute)
+          .with(array_including("clone"), anything)
+          .and_return(dns_failure_result, success_result)
+
+        git_ops.clone_and_setup_branch
+
+        expect(container_service).to have_received(:execute)
+          .with(array_including("clone"), anything).twice
+      end
+
+      it "retries up to CLONE_MAX_ATTEMPTS times then raises" do
+        allow(container_service).to receive(:execute)
+          .with(array_including("clone"), anything)
+          .and_return(dns_failure_result)
+
+        expect { git_ops.clone_and_setup_branch }.to raise_error(described_class::CloneError)
+        expect(container_service).to have_received(:execute)
+          .with(array_including("clone"), anything).exactly(described_class::CLONE_MAX_ATTEMPTS).times
+      end
+
+      it "uses exponential backoff between retries" do
+        allow(container_service).to receive(:execute)
+          .with(array_including("clone"), anything)
+          .and_return(dns_failure_result)
+
+        expect { git_ops.clone_and_setup_branch }.to raise_error(described_class::CloneError)
+        expect(git_ops).to have_received(:sleep).with(1).ordered
+        expect(git_ops).to have_received(:sleep).with(2).ordered
+      end
+
+      it "cleans partial clone between retries" do
+        allow(container_service).to receive(:execute)
+          .with("find . -mindepth 1 -maxdepth 1 -print -quit", timeout: nil, stream: false)
+          .and_return(Containers::Provision::Result.success(stdout: ".git\n", stderr: "", exit_code: 0))
+
+        allow(container_service).to receive(:execute)
+          .with("find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +", timeout: nil, stream: false)
+          .and_return(success_result)
+
+        allow(container_service).to receive(:execute)
+          .with(array_including("clone"), anything)
+          .and_return(dns_failure_result, success_result)
+
+        git_ops.clone_and_setup_branch
+
+        # Called once before initial clone (from before block setup) and once between retries
+        expect(container_service).to have_received(:execute)
+          .with("find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +", timeout: nil, stream: false)
+          .at_least(:once)
+      end
+
+      described_class::TRANSIENT_CLONE_PATTERNS.each do |pattern|
+        it "retries on '#{pattern}'" do
+          transient_result = Containers::Provision::Result.failure(
+            error: "git failed", stdout: "", stderr: "fatal: #{pattern}", exit_code: 128
+          )
+          allow(container_service).to receive(:execute)
+            .with(array_including("clone"), anything)
+            .and_return(transient_result, success_result)
+
+          git_ops.clone_and_setup_branch
+
+          expect(container_service).to have_received(:execute)
+            .with(array_including("clone"), anything).twice
+        end
+      end
+    end
+
+    context "when clone fails with a permanent error" do
+      before do
+        allow(git_ops).to receive(:sleep)
+      end
+
+      it "does not retry on authentication failure" do
+        auth_failure = Containers::Provision::Result.failure(
+          error: "git failed", stdout: "",
+          stderr: "fatal: Authentication failed for 'https://github.com/test/repo.git/'",
+          exit_code: 128
+        )
+        allow(container_service).to receive(:execute)
+          .with(array_including("clone"), anything)
+          .and_return(auth_failure)
+
+        expect { git_ops.clone_and_setup_branch }.to raise_error(described_class::CloneError)
+        expect(container_service).to have_received(:execute)
+          .with(array_including("clone"), anything).once
+        expect(git_ops).not_to have_received(:sleep)
+      end
+
+      it "does not retry on repository not found" do
+        not_found = Containers::Provision::Result.failure(
+          error: "git failed", stdout: "",
+          stderr: "fatal: repository 'https://github.com/test/nonexistent.git/' not found",
+          exit_code: 128
+        )
+        allow(container_service).to receive(:execute)
+          .with(array_including("clone"), anything)
+          .and_return(not_found)
+
+        expect { git_ops.clone_and_setup_branch }.to raise_error(described_class::CloneError)
+        expect(container_service).to have_received(:execute)
+          .with(array_including("clone"), anything).once
+        expect(git_ops).not_to have_received(:sleep)
+      end
+    end
+  end
+
+  describe "#clone_and_checkout_branch" do
+    let(:head_sha) { "abc123def456789012345678901234567890abcd" }
+    let(:merge_base_sha) { "fff000fff000fff000fff000fff000fff000fff0" }
+    let(:not_a_repo_result) { Containers::Provision::Result.failure(error: "not a git repo", stdout: "", stderr: "fatal: not a git repository", exit_code: 128) }
+
+    before do
+      allow(container_service).to receive(:execute).and_return(success_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
+        .and_return(not_a_repo_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "merge-base", "main", "HEAD" ], timeout: nil, stream: false)
+        .and_return(Containers::Provision::Result.success(stdout: "#{merge_base_sha}\n", stderr: "", exit_code: 0))
+    end
+
+    it "clones and checks out the existing branch via fetch" do
+      # First switch attempt fails (branch not local yet in shallow clone)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "switch", "--", "fix-bug-branch" ], timeout: nil, stream: false)
+        .and_return(failure_result, success_result)
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "clone", "--depth", "1", "https://github.com/#{project.full_name}.git", "." ],
+              timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false, env: described_class::NETWORK_GIT_ENV)
+        .and_return(success_result)
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "fetch", "--depth", "1", "origin", "refs/heads/fix-bug-branch:refs/remotes/origin/fix-bug-branch" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
+        .and_return(success_result)
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "checkout", "-B", "fix-bug-branch", "refs/remotes/origin/fix-bug-branch" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      git_ops.clone_and_checkout_branch(branch_name: "fix-bug-branch")
+
+      expect(agent_run.reload.branch_name).to eq("fix-bug-branch")
+      expect(agent_run.worktree_path).to eq("/workspace")
+      expect(agent_run.base_commit_sha).to eq(merge_base_sha)
+    end
+
+    it "skips clone and fetch when branch already exists locally (idempotent retry)" do
+      # On Temporal retry, rev-parse HEAD succeeds (clone already done)
+      # and switch succeeds (branch already checked out).
+      sha_result = Containers::Provision::Result.success(stdout: "#{head_sha}\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
+        .and_return(sha_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "switch", "--", "fix-bug-branch" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      expect(container_service).not_to receive(:execute)
+        .with([ "git", "clone", "--depth", "1", "https://github.com/#{project.full_name}.git", "." ],
+              timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false, env: described_class::NETWORK_GIT_ENV)
+
+      expect(container_service).not_to receive(:execute)
+        .with([ "git", "fetch", "--depth", "1", "origin", "refs/heads/fix-bug-branch:refs/remotes/origin/fix-bug-branch" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
+
+      git_ops.clone_and_checkout_branch(branch_name: "fix-bug-branch")
+
+      expect(agent_run.reload.branch_name).to eq("fix-bug-branch")
+    end
+
+    it "raises CloneError when checkout fails and no PR number given" do
+      allow(container_service).to receive(:execute)
+        .with([ "git", "switch", "--", "nonexistent" ], timeout: nil, stream: false)
+        .and_return(failure_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "fetch", "--depth", "1", "origin", "refs/heads/nonexistent:refs/remotes/origin/nonexistent" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
+        .and_return(failure_result)
+
+      expect { git_ops.clone_and_checkout_branch(branch_name: "nonexistent") }
+        .to raise_error(described_class::CloneError, /Checkout failed.*switch:.*fetch:/)
+    end
+
+    context "when branch is deleted but PR number is given" do
+      it "falls back to fetching the PR ref" do
+        # First switch fails (not local), shallow fetch fails (branch deleted),
+        # PR ref fetch succeeds, final switch succeeds.
+        switch_returns = [ failure_result, success_result ]
+        allow(container_service).to receive(:execute)
+          .with([ "git", "switch", "--", "deleted-branch" ], timeout: nil, stream: false) { switch_returns.shift }
+
+        allow(container_service).to receive(:execute)
+          .with([ "git", "fetch", "--depth", "1", "origin", "refs/heads/deleted-branch:refs/remotes/origin/deleted-branch" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
+          .and_return(failure_result)
+
+        expect(container_service).to receive(:execute)
+          .with([ "git", "fetch", "origin", "refs/pull/42/head:deleted-branch" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
+          .and_return(success_result)
+
+        git_ops.clone_and_checkout_branch(branch_name: "deleted-branch", pull_request_number: 42)
+
+        expect(agent_run.reload.branch_name).to eq("deleted-branch")
+      end
+
+      it "raises CloneError when PR ref fetch also fails" do
+        allow(container_service).to receive(:execute)
+          .with([ "git", "switch", "--", "deleted-branch" ], timeout: nil, stream: false)
+          .and_return(failure_result)
+
+        allow(container_service).to receive(:execute)
+          .with([ "git", "fetch", "--depth", "1", "origin", "refs/heads/deleted-branch:refs/remotes/origin/deleted-branch" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
+          .and_return(failure_result)
+
+        allow(container_service).to receive(:execute)
+          .with([ "git", "fetch", "origin", "refs/pull/42/head:deleted-branch" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
+          .and_return(failure_result)
+
+        expect { git_ops.clone_and_checkout_branch(branch_name: "deleted-branch", pull_request_number: 42) }
+          .to raise_error(described_class::CloneError, /Branch checkout failed.*PR ref fetch also failed/)
+      end
+    end
+
+    it "falls back to HEAD SHA when merge-base fails" do
+      allow(container_service).to receive(:execute)
+        .with([ "git", "merge-base", "main", "HEAD" ], timeout: nil, stream: false)
+        .and_return(failure_result)
+
+      sha_result = Containers::Provision::Result.success(stdout: "#{head_sha}\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
+        .and_return(sha_result)
+
+      git_ops.clone_and_checkout_branch(branch_name: "fix-bug-branch")
+
+      expect(agent_run.reload.base_commit_sha).to eq(head_sha)
+    end
+  end
+
+  describe "#push_branch" do
+    let(:head_sha) { "def456789012345678901234567890abcdef1234" }
+    let(:remote_sha) { "abc9999999999999999999999999999999999999" }
+    let(:bot_identity) { Github::BotIdentity.new(app_slug: "paid-agents", name: "Paid Agent", email: "paid-agents@paid-agents.com") }
+    let(:stale_push_result) do
+      Containers::Provision::Result.failure(
+        error: "Command exited with code 1",
+        stdout: "",
+        stderr: " ! [rejected] paid/test-branch -> paid/test-branch (stale info)",
+        exit_code: 1
+      )
+    end
+
+    before do
+      agent_run.update!(branch_name: "paid/test-branch")
+      create(:worktree, project: project, agent_run: agent_run, branch_name: "paid/test-branch", status: "active")
+      allow(Github::BotIdentity).to receive(:for_git).and_return(bot_identity)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch" ], timeout: 60, stream: false, env: described_class::NETWORK_GIT_ENV)
+        .and_return(success_result)
+
+      sha_result = Containers::Provision::Result.success(stdout: "#{head_sha}\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
+        .and_return(sha_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "config", "user.name", "Paid Agent" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "config", "user.email", "paid-agents@paid-agents.com" ], timeout: nil, stream: false)
+        .and_return(success_result)
+    end
+
+    it "pushes the branch with --no-verify and returns the commit SHA" do
+      result = git_ops.push_branch
+
+      expect(result).to eq(head_sha)
+    end
+
+    it "updates the agent run with the result commit SHA" do
+      git_ops.push_branch
+
+      expect(agent_run.reload.result_commit_sha).to eq(head_sha)
+    end
+
+    it "marks the worktree as pushed" do
+      git_ops.push_branch
+
+      expect(agent_run.worktree.reload).to be_pushed
+    end
+
+    context "when the App push is rejected for a missing permission" do
+      # Methods (not `let`s) to stay within RSpec/MultipleMemoizedHelpers.
+      def push_command
+        [ "git", "push", "--no-verify", "origin", "paid/test-branch" ]
+      end
+
+      def permission_rejection
+        Containers::Provision::Result.failure(
+          error: "Command exited with code 1",
+          stdout: "",
+          stderr: " ! [remote rejected] paid/test-branch -> paid/test-branch " \
+                  "(refusing to allow a GitHub App to create or update workflow " \
+                  "`.github/workflows/mutation.yml` without `workflows` permission)",
+          exit_code: 1
+        )
+      end
+
+      context "when PAT push fallback is configured" do
+        let(:project) { create(:project, :with_github_installation) }
+
+        before do
+          fallback_token = create(:github_token, :with_workflow_scope, account: project.account)
+          project.update!(git_push_pat_fallback_enabled: true, git_push_fallback_token: fallback_token)
+        end
+
+        it "retries the push once and returns the SHA, leaving the flag cleared" do
+          allow(container_service).to receive(:execute)
+            .with(push_command, timeout: 60, stream: false, env: described_class::NETWORK_GIT_ENV)
+            .and_return(permission_rejection, success_result)
+
+          expect(git_ops.push_branch).to eq(head_sha)
+          expect(agent_run.reload.git_credential_fallback_active).to be(false)
+        end
+
+        it "flags the run only while retrying, so the proxy serves the PAT for that push" do
+          flag_states = []
+          allow(container_service).to receive(:execute)
+            .with(push_command, timeout: 60, stream: false, env: described_class::NETWORK_GIT_ENV) do
+              flag_states << agent_run.reload.git_credential_fallback_active
+              flag_states.size == 1 ? permission_rejection : success_result
+            end
+
+          git_ops.push_branch
+
+          expect(flag_states).to eq([ false, true ])
+        end
+
+        it "raises PushError and clears the flag when the retry also fails" do
+          allow(container_service).to receive(:execute)
+            .with(push_command, timeout: 60, stream: false, env: described_class::NETWORK_GIT_ENV)
+            .and_return(permission_rejection, permission_rejection)
+
+          expect { git_ops.push_branch }.to raise_error(described_class::PushError)
+          expect(agent_run.reload.git_credential_fallback_active).to be(false)
+        end
+      end
+
+      context "when PAT push fallback is not configured" do
+        it "does not retry and raises PushError" do
+          expect(container_service).to receive(:execute)
+            .with(push_command, timeout: 60, stream: false, env: described_class::NETWORK_GIT_ENV)
+            .once
+            .and_return(permission_rejection)
+
+          expect { git_ops.push_branch }.to raise_error(described_class::PushError)
+        end
+      end
+    end
+
+    it "uses --force-with-lease for existing PR branches" do
+      agent_run.update!(source_pull_request_number: 42)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "fetch", "origin", "refs/heads/paid/test-branch:refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
+        .and_return(success_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false)
+        .and_return(Containers::Provision::Result.success(stdout: "#{remote_sha}\n", stderr: "", exit_code: 0))
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch", "--force-with-lease=paid/test-branch:#{remote_sha}" ], timeout: 60, stream: false, env: described_class::NETWORK_GIT_ENV)
+        .and_return(success_result)
+
+      git_ops.push_branch
+    end
+
+    it "fetches the remote branch before pushing on existing PR branches" do
+      agent_run.update!(source_pull_request_number: 42)
+
+      expect_refresh_remote_branch(remote_sha, ordered: true)
+      expect_push_with_lease(remote_sha, success_result, ordered: true)
+
+      git_ops.push_branch
+    end
+
+    it "does not fetch before pushing on new branches" do
+      expect(container_service).not_to receive(:execute)
+        .with([ "git", "fetch", "origin", "refs/heads/paid/test-branch:refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
+
+      git_ops.push_branch
+    end
+
+    it "raises PushError when fetch fails on existing PR branch" do
+      agent_run.update!(source_pull_request_number: 42)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "fetch", "origin", "refs/heads/paid/test-branch:refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
+        .and_return(failure_result)
+
+      expect { git_ops.push_branch }.to raise_error(described_class::PushError, /Fetch failed/)
+    end
+
+    it "raises PushError with remote ref context when remote SHA resolution fails" do
+      agent_run.update!(source_pull_request_number: 42)
+      rev_parse_failure = Containers::Provision::Result.failure(
+        error: "Command exited with code 128",
+        stdout: "",
+        stderr: "fatal: ambiguous argument 'refs/remotes/origin/paid/test-branch'",
+        exit_code: 128
+      )
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "fetch", "origin", "refs/heads/paid/test-branch:refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
+        .and_return(success_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false)
+        .and_return(rev_parse_failure)
+
+      expect { git_ops.push_branch }.to raise_error(
+        described_class::PushError,
+        /refs\/remotes\/origin\/paid\/test-branch/
+      )
+    end
+
+    it "refreshes the explicit remote-tracking ref before resolving the lease SHA" do
+      agent_run.update!(source_pull_request_number: 42)
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "fetch", "origin", "refs/heads/paid/test-branch:refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
+        .and_return(success_result)
+        .ordered
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false)
+        .and_return(Containers::Provision::Result.success(stdout: "#{remote_sha}\n", stderr: "", exit_code: 0))
+        .ordered
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch", "--force-with-lease=paid/test-branch:#{remote_sha}" ], timeout: 60, stream: false, env: described_class::NETWORK_GIT_ENV)
+        .and_return(success_result)
+        .ordered
+
+      git_ops.push_branch
+    end
+
+    it "rebases onto the refreshed remote branch after a stale info rejection" do
+      agent_run.update!(source_pull_request_number: 42)
+      refreshed_remote_sha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+      expect_refresh_remote_branch(remote_sha, ordered: true)
+      expect_push_with_lease(remote_sha, stale_push_result, ordered: true)
+      expect_not_shallow_repo(ordered: true)
+      expect_refresh_remote_branch(refreshed_remote_sha, ordered: true)
+      expect_git_identity_config(ordered: true)
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "rebase", "origin/paid/test-branch" ], timeout: nil, stream: false)
+        .and_return(success_result)
+        .ordered
+
+      expect_push_with_lease(refreshed_remote_sha, success_result, ordered: true)
+
+      git_ops.push_branch
+    end
+
+    it "raises PushError when rebasing after stale info fails" do
+      agent_run.update!(source_pull_request_number: 42)
+      rebase_failure = Containers::Provision::Result.failure(
+        error: "Command exited with code 1",
+        stdout: "",
+        stderr: "CONFLICT (content): Merge conflict in app/models/example.rb",
+        exit_code: 1
+      )
+
+      expect_stale_info_recovery_rebase_failure(rebase_failure)
+
+      expect { git_ops.push_branch }.to raise_error(
+        described_class::PushError,
+        /Rebase onto origin\/paid\/test-branch failed after branch advanced remotely/
+      )
+    end
+
+    it "raises PushError when branch_name is blank" do
+      agent_run.update!(branch_name: nil)
+
+      expect { git_ops.push_branch }.to raise_error(described_class::PushError, /branch_name is blank/)
+    end
+
+    it "raises PushError with stderr details when push fails" do
+      allow(container_service).to receive(:execute)
+        .with(array_including("push"), anything)
+        .and_return(failure_result)
+
+      expect { git_ops.push_branch }.to raise_error(described_class::PushError, /error/)
+    end
+
+    it "raises PushError when stderr is binary encoded" do
+      binary_stderr = "fatal: remote rejected push \xFF".b
+      binary_failure = Containers::Provision::Result.failure(
+        error: "Command exited with code 1",
+        stdout: "",
+        stderr: binary_stderr,
+        exit_code: 1
+      )
+
+      allow(container_service).to receive(:execute)
+        .with(array_including("push"), anything)
+        .and_return(binary_failure)
+
+      expect { git_ops.push_branch }.to raise_error(
+        described_class::PushError,
+        /Command exited with code 1.*fatal: remote rejected push/
+      )
+    end
+
+    it "treats a new-branch retry as success when the remote branch already exists at HEAD" do
+      branch_exists_result = Containers::Provision::Result.failure(
+        error: "Command exited with code 1",
+        stdout: "",
+        stderr: " ! [remote rejected] paid/test-branch -> paid/test-branch (cannot lock ref 'refs/heads/paid/test-branch': reference already exists)",
+        exit_code: 1
+      )
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch" ], timeout: 60, stream: false, env: described_class::NETWORK_GIT_ENV)
+        .ordered
+        .and_return(branch_exists_result)
+
+      expect_refresh_remote_branch(head_sha, ordered: true)
+
+      expect(git_ops.push_branch).to eq(head_sha)
+      expect(agent_run.reload.result_commit_sha).to eq(head_sha)
+      expect(agent_run.worktree.reload).to be_pushed
+    end
+
+    it "raises PushError when a new-branch retry finds a different remote SHA" do
+      branch_exists_result = Containers::Provision::Result.failure(
+        error: "Command exited with code 1",
+        stdout: "",
+        stderr: " ! [remote rejected] paid/test-branch -> paid/test-branch (cannot lock ref 'refs/heads/paid/test-branch': reference already exists)",
+        exit_code: 1
+      )
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch" ], timeout: 60, stream: false, env: described_class::NETWORK_GIT_ENV)
+        .ordered
+        .and_return(branch_exists_result)
+
+      expect_refresh_remote_branch(remote_sha, ordered: true)
+
+      expect { git_ops.push_branch }.to raise_error(
+        described_class::PushError,
+        /remote branch paid\/test-branch already exists/
+      )
+    end
+
+    def expect_refresh_remote_branch(sha, ordered: false)
+      receive_fetch = expect(container_service).to receive(:execute)
+        .with([ "git", "fetch", "origin", "refs/heads/paid/test-branch:refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
+        .and_return(success_result)
+      receive_fetch = receive_fetch.ordered if ordered
+
+      receive_rev_parse = expect(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false)
+        .and_return(Containers::Provision::Result.success(stdout: "#{sha}\n", stderr: "", exit_code: 0))
+      receive_rev_parse.ordered if ordered
+    end
+
+    def expect_push_with_lease(sha, result, ordered: false)
+      receive_push = expect(container_service).to receive(:execute)
+        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch", "--force-with-lease=paid/test-branch:#{sha}" ], timeout: 60, stream: false, env: described_class::NETWORK_GIT_ENV)
+        .and_return(result)
+      receive_push.ordered if ordered
+    end
+
+    def expect_not_shallow_repo(ordered: false)
+      receive_check = expect(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "--is-shallow-repository" ], timeout: nil, stream: false)
+        .and_return(Containers::Provision::Result.success(stdout: "false\n", stderr: "", exit_code: 0))
+      receive_check.ordered if ordered
+    end
+
+    def expect_stale_info_recovery_rebase_failure(rebase_failure)
+      expect_refresh_remote_branch(remote_sha, ordered: true)
+      expect_push_with_lease(remote_sha, stale_push_result, ordered: true)
+      expect_not_shallow_repo(ordered: true)
+      expect_refresh_remote_branch("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", ordered: true)
+      expect_git_identity_config(ordered: true)
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "rebase", "origin/paid/test-branch" ], timeout: nil, stream: false)
+        .and_return(rebase_failure)
+        .ordered
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "rebase", "--abort" ], timeout: nil, stream: false)
+        .and_return(success_result)
+        .ordered
+    end
+  end
+
+  describe "#head_sha" do
+    it "returns the current HEAD SHA" do
+      sha_result = Containers::Provision::Result.success(stdout: "abc123def456\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
+        .and_return(sha_result)
+
+      expect(git_ops.head_sha).to eq("abc123def456")
+    end
+
+    it "raises Error when command fails" do
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
+        .and_return(failure_result)
+
+      expect { git_ops.head_sha }.to raise_error(described_class::Error, /Failed to get HEAD SHA/)
+    end
+  end
+
+  describe "#commit_uncommitted_changes" do
+    let(:empty_result) { Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0) }
+    let(:status_failure) { Containers::Provision::Result.failure(error: "fatal: container unavailable", stderr: "container unavailable", exit_code: 1) }
+    let(:bot_identity) { Github::BotIdentity.new(app_slug: "paid-agents", name: "Paid Agent", email: "paid-agents@paid-agents.com") }
+
+    before do
+      allow(Github::BotIdentity).to receive(:for_git).and_return(bot_identity)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "config", "user.name", "Paid Agent" ], timeout: nil, stream: false)
+        .and_return(success_result)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "config", "user.email", "paid-agents@paid-agents.com" ], timeout: nil, stream: false)
+        .and_return(success_result)
+    end
+
+    it "returns false when working tree is clean" do
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(empty_result)
+
+      expect(git_ops.commit_uncommitted_changes).to be false
+    end
+
+    it "raises Error when status check fails" do
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_failure)
+
+      expect { git_ops.commit_uncommitted_changes }
+        .to raise_error(described_class::Error, /Failed to check git status/)
+    end
+
+    it "stages and commits with --no-verify when there are uncommitted changes" do
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      issue = create(:issue, project: project, title: "Add queue monitoring dashboard")
+      agent_run.update!(issue: issue)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      staged_result = Containers::Provision::Result.success(stdout: "file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_result)
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "commit", "--no-verify", "-m", "feat: Add queue monitoring dashboard" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      expect(git_ops.commit_uncommitted_changes).to be true
+    end
+
+    it "re-seeds git identity before the fallback auto-commit" do
+      issue = create(:issue, project: project, title: "Add queue monitoring dashboard")
+      agent_run.update!(issue: issue)
+      stub_auto_commit_prerequisites
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "config", "user.name", "Paid Agent" ], timeout: nil, stream: false)
+        .and_return(success_result)
+        .ordered
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "config", "user.email", "paid-agents@paid-agents.com" ], timeout: nil, stream: false)
+        .and_return(success_result)
+        .ordered
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "commit", "--no-verify", "-m", "feat: Add queue monitoring dashboard" ], timeout: nil, stream: false)
+        .and_return(success_result)
+        .ordered
+
+      expect(git_ops.commit_uncommitted_changes).to be true
+    end
+
+    it "appends the co-author trailer to the commit message when configured" do
+      issue = create(:issue, project: project, title: "Resolve stalled worker retries")
+      agent_run.update!(issue: issue)
+      stub_auto_commit_prerequisites
+
+      runner.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+      allow(agent_run).to receive(:effective_runner_record).and_return(runner)
+
+      expect(container_service).to receive(:execute)
+        .with(
+          [ "git", "commit", "--no-verify", "-m",
+            "fix: Resolve stalled worker retries\n\nCo-Authored-By: Claude <noreply@anthropic.com>" ],
+          timeout: nil, stream: false
+        )
+        .and_return(success_result)
+
+      expect(git_ops.commit_uncommitted_changes).to be true
+    end
+
+    it "falls back to a chore commit when there is no linked issue" do
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      agent_run.update!(issue: nil, custom_prompt: "Tidy workspace")
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      staged_result = Containers::Provision::Result.success(stdout: "file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_result)
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "commit", "--no-verify", "-m", "chore: apply agent changes" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      expect(git_ops.commit_uncommitted_changes).to be true
+    end
+
+    it "uses the resolved plain commit style when the project overrides away from conventional commits" do
+      issue = create(:issue, project: project, title: "Tidy workspace")
+      create(:project_convention_override,
+        project: project,
+        key: "commit_style",
+        value: { "type" => "plain", "fallback_subject" => "Apply Paid changes" })
+      stub_successful_auto_commit_with_issue(issue)
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "commit", "--no-verify", "-m", "Tidy workspace" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      expect(git_ops.commit_uncommitted_changes).to be true
+    end
+
+    it "enforces allowed conventional commit types for the auto-commit safety net" do
+      issue = create(:issue, project: project, title: "docs: Update architecture guide")
+      create(:project_convention_override,
+        project: project,
+        key: "commit_style",
+        value: {
+          "type" => "conventional_commits",
+          "required" => true,
+          "default_type" => "feat",
+          "allowed_types" => %w[feat fix]
+        })
+      stub_successful_auto_commit_with_issue(issue)
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "commit", "--no-verify", "-m", "feat: Update architecture guide" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      expect(git_ops.commit_uncommitted_changes).to be true
+    end
+
+    it "raises Error when staging fails" do
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(failure_result)
+
+      expect { git_ops.commit_uncommitted_changes }.to raise_error(described_class::Error, /Failed to stage/)
+    end
+
+    it "raises Error when commit fails" do
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      staged_result = Containers::Provision::Result.success(stdout: "file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "commit", "--no-verify", "-m", ConventionalCommitTitle.for_issue(agent_run.issue) ], timeout: nil, stream: false)
+        .and_return(failure_result)
+
+      expect { git_ops.commit_uncommitted_changes }.to raise_error(described_class::Error, /Failed to commit/)
+    end
+
+    it "rejects commits with too many staged files" do
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      files = (1..101).map { |i| ".bundle-pr-908/ruby/3.4.0/gems/gem-#{i}/lib.rb" }
+      staged_result = Containers::Provision::Result.success(stdout: "#{files.join("\n")}\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_result)
+
+      expect { git_ops.commit_uncommitted_changes }.to raise_error(
+        described_class::Error,
+        /Auto-commit rejected: 101 files staged/
+      )
+    end
+
+    it "allows merge_conflict runs to exceed the standard file cap up to the merge_conflict limit" do
+      agent_run.update!(focus: "merge_conflict")
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      files = (1..250).map { |i| "app/models/file#{i}.rb" }
+      staged_result = Containers::Provision::Result.success(stdout: "#{files.join("\n")}\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "commit", "--no-verify", "-m", ConventionalCommitTitle.for_issue(agent_run.issue) ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      expect { git_ops.commit_uncommitted_changes }.not_to raise_error
+    end
+
+    it "still rejects merge_conflict runs that exceed the merge_conflict limit" do
+      agent_run.update!(focus: "merge_conflict")
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      files = (1..501).map { |i| "app/models/file#{i}.rb" }
+      staged_result = Containers::Provision::Result.success(stdout: "#{files.join("\n")}\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_result)
+
+      expect { git_ops.commit_uncommitted_changes }.to raise_error(
+        described_class::Error,
+        /Auto-commit rejected: 501 files staged \(limit: 500\)/
+      )
+    end
+
+    it "raises Error when staged file validation cannot list staged files" do
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      staged_failure = Containers::Provision::Result.failure(error: "fatal: bad revision", exit_code: 128)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_failure)
+
+      expect { git_ops.commit_uncommitted_changes }.to raise_error(
+        described_class::Error,
+        /Failed to list staged files for artifact validation/
+      )
+    end
+
+    it "rejects commits with forbidden artifact directories" do
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      staged_result = Containers::Provision::Result.success(
+        stdout: "app/models/user.rb\nvendor/bundle/gem/lib.rb\n",
+        stderr: "", exit_code: 0
+      )
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_result)
+
+      expect { git_ops.commit_uncommitted_changes }.to raise_error(
+        described_class::Error,
+        /forbidden artifact files detected/
+      )
+    end
+
+    it "rejects commits with artifact prefixes that bypass exclude installation" do
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      staged_result = Containers::Provision::Result.success(
+        stdout: "app/models/user.rb\n.bundle/config\n.venv/pyvenv.cfg\n",
+        stderr: "", exit_code: 0
+      )
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_result)
+
+      expect { git_ops.commit_uncommitted_changes }.to raise_error(
+        described_class::Error,
+        /forbidden artifact files detected/
+      )
+    end
+
+    it "rejects Impeccable-generated Codex hook state even when force-added" do
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      staged_result = Containers::Provision::Result.success(
+        stdout: "app/models/user.rb\n.codex/hooks.json\n",
+        stderr: "", exit_code: 0
+      )
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_result)
+
+      expect { git_ops.commit_uncommitted_changes }.to raise_error(
+        described_class::Error,
+        /forbidden artifact files detected/
+      )
+    end
+
+    it "rejects wildcard artifact patterns when excludes are bypassed" do
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      staged_result = Containers::Provision::Result.success(
+        stdout: "app/models/user.rb\n.bundle-pr-123/config\n.tmp-build/cache.txt\n",
+        stderr: "", exit_code: 0
+      )
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_result)
+
+      expect { git_ops.commit_uncommitted_changes }.to raise_error(
+        described_class::Error,
+        /forbidden artifact files detected/
+      )
+    end
+
+    it "rejects nested artifact paths in subdirectories" do
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      staged_result = Containers::Provision::Result.success(
+        stdout: "app/models/user.rb\nfrontend/node_modules/react/index.js\nservices/api/.venv/bin/python\n",
+        stderr: "", exit_code: 0
+      )
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_result)
+
+      expect { git_ops.commit_uncommitted_changes }.to raise_error(
+        described_class::Error,
+        /forbidden artifact files detected/
+      )
+    end
+
+    it "rejects commits with binary files" do
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      staged_result = Containers::Provision::Result.success(
+        stdout: "app/models/user.rb\nlib/native_extension.so\n",
+        stderr: "", exit_code: 0
+      )
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_result)
+
+      expect { git_ops.commit_uncommitted_changes }.to raise_error(
+        described_class::Error,
+        /forbidden artifact files detected/
+      )
+    end
+
+    it "rejects commits with versioned shared objects" do
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      staged_result = Containers::Provision::Result.success(
+        stdout: "app/models/user.rb\nlib/temporalio_bridge.so.3.3\n",
+        stderr: "", exit_code: 0
+      )
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_result)
+
+      expect { git_ops.commit_uncommitted_changes }.to raise_error(
+        described_class::Error,
+        /forbidden artifact files detected/
+      )
+    end
+
+    it "allows non-binary filenames that merely mention versioned shared objects" do
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      staged_result = Containers::Provision::Result.success(
+        stdout: "docs/libfoo.so.3.md\n",
+        stderr: "", exit_code: 0
+      )
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_result)
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "commit", "--no-verify", "-m", ConventionalCommitTitle.for_issue(agent_run.issue) ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      expect(git_ops.commit_uncommitted_changes).to be true
+    end
+
+    it "allows commits that only delete forbidden artifact files" do
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      staged_result = Containers::Provision::Result.success(
+        stdout: "app/models/user.rb\n",
+        stderr: "", exit_code: 0
+      )
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_result)
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "commit", "--no-verify", "-m", ConventionalCommitTitle.for_issue(agent_run.issue) ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      expect(git_ops.commit_uncommitted_changes).to be true
+    end
+  end
+
+  describe "#has_changes_since?" do
+    let(:pre_sha) { "abc123def456" }
+    let(:empty_result) { Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0) }
+    let(:failure_result) { Containers::Provision::Result.failure(error: "fatal: container unavailable", stderr: "container unavailable", exit_code: 1) }
+
+    it "returns true when there are new commits since the given SHA" do
+      log_result = Containers::Provision::Result.success(stdout: "def789 Add feature\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "log", "--oneline", "#{pre_sha}..HEAD" ], timeout: nil, stream: false)
+        .and_return(log_result)
+
+      expect(git_ops.has_changes_since?(pre_sha)).to be true
+    end
+
+    it "returns true when there are uncommitted changes but no new commits" do
+      allow(container_service).to receive(:execute)
+        .with([ "git", "log", "--oneline", "#{pre_sha}..HEAD" ], timeout: nil, stream: false)
+        .and_return(empty_result)
+
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      expect(git_ops.has_changes_since?(pre_sha)).to be true
+    end
+
+    it "returns false when there are no new commits and no uncommitted changes" do
+      allow(container_service).to receive(:execute)
+        .with([ "git", "log", "--oneline", "#{pre_sha}..HEAD" ], timeout: nil, stream: false)
+        .and_return(empty_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(empty_result)
+
+      expect(git_ops.has_changes_since?(pre_sha)).to be false
+    end
+
+    it "raises Error when git log returns a failed result" do
+      allow(container_service).to receive(:execute)
+        .with([ "git", "log", "--oneline", "#{pre_sha}..HEAD" ], timeout: nil, stream: false)
+        .and_return(failure_result)
+
+      expect { git_ops.has_changes_since?(pre_sha) }
+        .to raise_error(described_class::Error, /Failed to check git log/)
+    end
+
+    it "raises Error when git status returns a failed result" do
+      allow(container_service).to receive(:execute)
+        .with([ "git", "log", "--oneline", "#{pre_sha}..HEAD" ], timeout: nil, stream: false)
+        .and_return(empty_result)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(failure_result)
+
+      expect { git_ops.has_changes_since?(pre_sha) }
+        .to raise_error(described_class::Error, /Failed to check git status/)
+    end
+
+    it "propagates container errors" do
+      allow(container_service).to receive(:execute).and_raise(Docker::Error::DockerError, "container gone")
+
+      expect { git_ops.has_changes_since?(pre_sha) }
+        .to raise_error(Docker::Error::DockerError, "container gone")
+    end
+  end
+
+  describe "#has_changes?" do
+    let(:base_sha) { "abc123def456" }
+    let(:failure_result) { Containers::Provision::Result.failure(error: "fatal: container unavailable", stderr: "container unavailable", exit_code: 1) }
+
+    it "returns true when there are committed changes vs base" do
+      agent_run.update!(base_commit_sha: base_sha)
+      diff_result = Containers::Provision::Result.success(stdout: " file.rb | 2 +-\n 1 file changed", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--stat", base_sha, "HEAD" ], timeout: nil, stream: false)
+        .and_return(diff_result)
+
+      expect(git_ops.has_changes?).to be true
+    end
+
+    it "returns false when there are no changes vs base" do
+      agent_run.update!(base_commit_sha: base_sha)
+      diff_result = Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--stat", base_sha, "HEAD" ], timeout: nil, stream: false)
+        .and_return(diff_result)
+
+      expect(git_ops.has_changes?).to be false
+    end
+
+    it "raises Error when git diff returns a failed result" do
+      agent_run.update!(base_commit_sha: base_sha)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--stat", base_sha, "HEAD" ], timeout: nil, stream: false)
+        .and_return(failure_result)
+
+      expect { git_ops.has_changes? }
+        .to raise_error(described_class::Error, /Failed to check git diff/)
+    end
+
+    it "falls back to local-only commits when base_commit_sha is blank" do
+      agent_run.update_column(:base_commit_sha, nil)
+      log_result = Containers::Provision::Result.success(stdout: "def789 Apply agent changes\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "log", "--oneline", "HEAD", "--not", "--remotes" ], timeout: nil, stream: false)
+        .and_return(log_result)
+
+      expect(git_ops.has_changes?).to be true
+    end
+
+    it "falls back to uncommitted changes when base_commit_sha is blank" do
+      agent_run.update_column(:base_commit_sha, nil)
+      empty_result = Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0)
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "log", "--oneline", "HEAD", "--not", "--remotes" ], timeout: nil, stream: false)
+        .and_return(empty_result)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      expect(git_ops.has_changes?).to be true
+    end
+
+    it "returns false when base_commit_sha is blank and there are no local changes" do
+      agent_run.update_column(:base_commit_sha, nil)
+      empty_result = Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "log", "--oneline", "HEAD", "--not", "--remotes" ], timeout: nil, stream: false)
+        .and_return(empty_result)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(empty_result)
+
+      expect(git_ops.has_changes?).to be false
+    end
+
+    it "raises Error when fallback git log returns a failed result" do
+      agent_run.update_column(:base_commit_sha, nil)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "log", "--oneline", "HEAD", "--not", "--remotes" ], timeout: nil, stream: false)
+        .and_return(failure_result)
+
+      expect { git_ops.has_changes? }
+        .to raise_error(described_class::Error, /Failed to check git log/)
+    end
+
+    it "raises Error when fallback git status returns a failed result" do
+      agent_run.update_column(:base_commit_sha, nil)
+      empty_result = Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "log", "--oneline", "HEAD", "--not", "--remotes" ], timeout: nil, stream: false)
+        .and_return(empty_result)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(failure_result)
+
+      expect { git_ops.has_changes? }
+        .to raise_error(described_class::Error, /Failed to check git status/)
+    end
+
+    it "propagates container errors" do
+      allow(container_service).to receive(:execute).and_raise(Docker::Error::DockerError, "container gone")
+
+      expect { git_ops.has_changes? }
+        .to raise_error(Docker::Error::DockerError, "container gone")
+    end
+  end
+
+  describe "#fetch_branch" do
+    it "fetches the specified branch from origin" do
+      expect(container_service).to receive(:execute)
+        .with([ "git", "fetch", "origin", "refs/heads/main:refs/remotes/origin/main" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
+        .and_return(success_result)
+
+      git_ops.fetch_branch("main")
+    end
+
+    it "raises Error when fetch fails" do
+      allow(container_service).to receive(:execute)
+        .with([ "git", "fetch", "origin", "refs/heads/main:refs/remotes/origin/main" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
+        .and_return(failure_result)
+
+      expect { git_ops.fetch_branch("main") }.to raise_error(described_class::Error, /Fetch failed/)
+    end
+  end
+
+  describe "#head_differs_from_remote_branch?" do
+    it "returns true when HEAD differs from the remote branch" do
+      allow(container_service).to receive(:execute)
+        .with([ "git", "fetch", "origin", "refs/heads/feature:refs/remotes/origin/feature" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
+        .and_return(success_result)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
+        .and_return(Containers::Provision::Result.success(stdout: "local-sha\n", stderr: "", exit_code: 0))
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "refs/remotes/origin/feature" ], timeout: nil, stream: false)
+        .and_return(Containers::Provision::Result.success(stdout: "remote-sha\n", stderr: "", exit_code: 0))
+
+      expect(git_ops.head_differs_from_remote_branch?("feature")).to be true
+    end
+
+    it "returns false when HEAD matches the remote branch" do
+      sha = Containers::Provision::Result.success(stdout: "same-sha\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "fetch", "origin", "refs/heads/feature:refs/remotes/origin/feature" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
+        .and_return(success_result)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
+        .and_return(sha)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "refs/remotes/origin/feature" ], timeout: nil, stream: false)
+        .and_return(sha)
+
+      expect(git_ops.head_differs_from_remote_branch?("feature")).to be false
+    end
+  end
+
+  describe "#rebase_onto" do
+    let(:fetch_result) { success_result }
+    let(:shallow_true_result) { Containers::Provision::Result.success(stdout: "true\n", stderr: "", exit_code: 0) }
+    let(:bot_identity) { Github::BotIdentity.new(app_slug: "paid-agents", name: "Paid Agent", email: "paid-agents@paid-agents.com") }
+
+    before do
+      allow(Github::BotIdentity).to receive(:for_git).and_return(bot_identity)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "config", "user.name", "Paid Agent" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "config", "user.email", "paid-agents@paid-agents.com" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "--is-shallow-repository" ], timeout: nil, stream: false)
+        .and_return(shallow_true_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "sh", "-c", "rm -f .git/shallow.lock" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "fetch", "--unshallow" ], timeout: described_class::DEFAULT_UNSHALLOW_TIMEOUT, stream: false, env: described_class::NETWORK_GIT_ENV)
+        .and_return(success_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "fetch", "origin", "refs/heads/main:refs/remotes/origin/main" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
+        .and_return(fetch_result)
+    end
+
+    context "when rebase succeeds" do
+      before do
+        allow(container_service).to receive(:execute)
+          .with([ "git", "rebase", "origin/main" ], timeout: nil, stream: false)
+          .and_return(success_result)
+      end
+
+      it "returns true" do
+        expect(git_ops.rebase_onto("main")).to be true
+      end
+
+      it "checks shallow status, unshallows, then fetches before rebasing" do
+        expect_unshallow_sequence
+        expect_git_identity_config(ordered: true)
+
+        expect(container_service).to receive(:execute)
+          .with([ "git", "rebase", "origin/main" ], timeout: nil, stream: false)
+          .and_return(success_result)
+          .ordered
+
+        git_ops.rebase_onto("main")
+      end
+
+      it "re-seeds git identity before rebasing existing PR branches" do
+        expect_git_identity_config
+
+        git_ops.rebase_onto("main")
+      end
+    end
+
+    context "when rebase has conflicts" do
+      let(:conflict_result) do
+        Containers::Provision::Result.failure(
+          error: "rebase failed",
+          stdout: "CONFLICT (content): Merge conflict in app/model.rb",
+          stderr: "Failed to merge in the changes.",
+          exit_code: 1
+        )
+      end
+
+      before do
+        allow(container_service).to receive(:execute)
+          .with([ "git", "rebase", "origin/main" ], timeout: nil, stream: false)
+          .and_return(conflict_result)
+
+        allow(container_service).to receive(:execute)
+          .with([ "git", "rebase", "--abort" ], timeout: nil, stream: false)
+          .and_return(success_result)
+      end
+
+      it "returns false" do
+        expect(git_ops.rebase_onto("main")).to be false
+      end
+
+      it "aborts the rebase" do
+        expect(container_service).to receive(:execute)
+          .with([ "git", "rebase", "--abort" ], timeout: nil, stream: false)
+          .and_return(success_result)
+
+        git_ops.rebase_onto("main")
+      end
+    end
+
+    context "when rebase fails for non-conflict reasons" do
+      let(:error_result) do
+        Containers::Provision::Result.failure(
+          error: "rebase failed",
+          stdout: "",
+          stderr: "fatal: invalid upstream 'origin/main'",
+          exit_code: 128
+        )
+      end
+
+      before do
+        allow(container_service).to receive(:execute)
+          .with([ "git", "rebase", "origin/main" ], timeout: nil, stream: false)
+          .and_return(error_result)
+
+        allow(container_service).to receive(:execute)
+          .with([ "git", "rebase", "--abort" ], timeout: nil, stream: false)
+          .and_return(success_result)
+      end
+
+      it "raises Error" do
+        expect { git_ops.rebase_onto("main") }.to raise_error(described_class::Error, /Rebase failed/)
+      end
+
+      it "aborts the rebase before raising" do
+        expect(container_service).to receive(:execute)
+          .with([ "git", "rebase", "--abort" ], timeout: nil, stream: false)
+          .and_return(success_result)
+
+        expect { git_ops.rebase_onto("main") }.to raise_error(described_class::Error)
+      end
+    end
+
+    context "when repo is not shallow" do
+      let(:shallow_false_result) { Containers::Provision::Result.success(stdout: "false\n", stderr: "", exit_code: 0) }
+
+      before do
+        allow(container_service).to receive(:execute)
+          .with([ "git", "rev-parse", "--is-shallow-repository" ], timeout: nil, stream: false)
+          .and_return(shallow_false_result)
+
+        allow(container_service).to receive(:execute)
+          .with([ "git", "rebase", "origin/main" ], timeout: nil, stream: false)
+          .and_return(success_result)
+      end
+
+      it "skips unshallow and proceeds with rebase" do
+        expect(container_service).not_to receive(:execute)
+          .with([ "git", "fetch", "--unshallow" ], timeout: described_class::DEFAULT_UNSHALLOW_TIMEOUT, stream: false, env: described_class::NETWORK_GIT_ENV)
+
+        expect(git_ops.rebase_onto("main")).to be true
+      end
+    end
+
+    context "when unshallow fails" do
+      before do
+        allow(container_service).to receive(:execute)
+          .with([ "git", "fetch", "--unshallow" ], timeout: described_class::DEFAULT_UNSHALLOW_TIMEOUT, stream: false, env: described_class::NETWORK_GIT_ENV)
+          .and_return(failure_result)
+      end
+
+      it "raises Error with unshallow details" do
+        expect { git_ops.rebase_onto("main") }
+          .to raise_error(described_class::Error, /Failed to unshallow/)
+      end
+    end
+
+    context "when clearing a stale shallow lock fails" do
+      before do
+        allow(container_service).to receive(:execute)
+          .with([ "sh", "-c", "rm -f .git/shallow.lock" ], timeout: nil, stream: false)
+          .and_return(failure_result)
+      end
+
+      it "raises Error before attempting the fetch" do
+        expect(container_service).not_to receive(:execute)
+          .with([ "git", "fetch", "--unshallow" ], timeout: described_class::DEFAULT_UNSHALLOW_TIMEOUT, stream: false, env: described_class::NETWORK_GIT_ENV)
+
+        expect { git_ops.rebase_onto("main") }
+          .to raise_error(described_class::Error, /Failed to remove stale shallow\.lock/)
+      end
+    end
+
+    def expect_unshallow_sequence
+      expect(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "--is-shallow-repository" ], timeout: nil, stream: false)
+        .and_return(shallow_true_result)
+        .ordered
+
+      expect(container_service).to receive(:execute)
+        .with([ "sh", "-c", "rm -f .git/shallow.lock" ], timeout: nil, stream: false)
+        .and_return(success_result)
+        .ordered
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "fetch", "--unshallow" ], timeout: described_class::DEFAULT_UNSHALLOW_TIMEOUT, stream: false, env: described_class::NETWORK_GIT_ENV)
+        .and_return(success_result)
+        .ordered
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "fetch", "origin", "refs/heads/main:refs/remotes/origin/main" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
+        .and_return(success_result)
+        .ordered
+    end
+  end
+
+  describe "#install_artifact_excludes" do
+    it "writes exclude patterns to .git/info/exclude" do
+      expect(container_service).to receive(:execute)
+        .with(a_string_matching(/\.git\/info\/exclude/), timeout: nil, stream: false)
+        .and_return(success_result)
+
+      git_ops.install_artifact_excludes
+    end
+
+    it "includes corepack, yarn-cache, pg-install, and cache-rubocop patterns" do
+      script = nil
+      allow(container_service).to receive(:execute) { |cmd, **|
+        script = cmd
+        success_result
+      }
+
+      git_ops.install_artifact_excludes
+
+      expect(script).to include(".corepack/")
+      expect(script).to include(".yarn-cache/")
+      expect(script).to include(".pg-install/")
+      expect(script).to include(".cache-rubocop/")
+      expect(script).to include("vendor/bundle/")
+      expect(script).to include(".codex/")
+    end
+
+    it "guards with grep to prevent duplicate entries on retry" do
+      script = nil
+      allow(container_service).to receive(:execute) { |cmd, **|
+        script = cmd
+        success_result
+      }
+
+      git_ops.install_artifact_excludes
+
+      expect(script).to include("grep -qF")
+      expect(script).to include("# -- Container artifact excludes (added by Paid) --")
+    end
+
+    it "logs a warning when the script returns a failure result" do
+      allow(container_service).to receive(:execute).and_return(failure_result)
+      allow(Rails.logger).to receive(:warn)
+
+      git_ops.install_artifact_excludes
+
+      expect(Rails.logger).to have_received(:warn).with(
+        hash_including(message: "container_git.install_excludes_failed")
+      )
+    end
+
+    it "does not raise on failure result" do
+      allow(container_service).to receive(:execute)
+        .and_return(failure_result)
+
+      expect { git_ops.install_artifact_excludes }.not_to raise_error
+    end
+
+    it "does not raise on unexpected exceptions" do
+      allow(container_service).to receive(:execute)
+        .and_raise(StandardError, "container gone")
+
+      expect { git_ops.install_artifact_excludes }.not_to raise_error
+    end
+
+    it "logs an error on unexpected exceptions" do
+      allow(container_service).to receive(:execute)
+        .and_raise(StandardError, "container gone")
+      allow(Rails.logger).to receive(:error)
+
+      git_ops.install_artifact_excludes
+
+      expect(Rails.logger).to have_received(:error).with(
+        hash_including(
+          message: "container_git.install_excludes_unexpected_error",
+          error_class: "StandardError"
+        )
+      )
+    end
+  end
+
+  describe "#install_git_hooks" do
+    let(:hook_missing_result) { Containers::Provision::Result.failure(error: "not found", stdout: "", stderr: "", exit_code: 1) }
+    let(:hook_exists_result) { Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0) }
+
+    it "writes only a pre-commit hook (no pre-push)" do
+      allow(container_service).to receive(:execute)
+        .with("test -f .git/hooks/pre-commit", timeout: nil, stream: false)
+        .and_return(hook_missing_result)
+
+      expect(container_service).to receive(:execute)
+        .with(a_string_matching(/cat > \.git\/hooks\/pre-commit/), timeout: nil, stream: false)
+        .and_return(success_result)
+      expect(container_service).to receive(:execute)
+        .with("chmod +x .git/hooks/pre-commit", timeout: nil, stream: false)
+        .and_return(success_result)
+
+      expect(container_service).not_to receive(:execute)
+        .with(a_string_matching(/pre-push/), anything)
+
+      git_ops.install_git_hooks(lint_command: "bundle exec rubocop", test_command: "bundle exec rspec")
+    end
+
+    it "does not overwrite existing pre-commit hook" do
+      allow(container_service).to receive(:execute)
+        .with("test -f .git/hooks/pre-commit", timeout: nil, stream: false)
+        .and_return(hook_exists_result)
+
+      expect(container_service).not_to receive(:execute)
+        .with(a_string_matching(/cat > \.git\/hooks/), anything)
+
+      git_ops.install_git_hooks(lint_command: "bundle exec rubocop", test_command: "bundle exec rspec")
+    end
+
+    it "includes lint, test, and mutation commands in the pre-commit hook" do
+      allow(container_service).to receive(:execute).and_return(hook_missing_result)
+      allow(container_service).to receive(:execute)
+        .with(a_string_matching(/chmod/), anything)
+        .and_return(success_result)
+
+      pre_commit_script = nil
+      allow(container_service).to receive(:execute)
+        .with(a_string_matching(/cat > \.git\/hooks\/pre-commit/), timeout: nil, stream: false) { |cmd, **|
+          pre_commit_script = cmd
+          success_result
+        }
+
+      git_ops.install_git_hooks(
+        lint_command: "ruff check .",
+        test_command: "pytest",
+        mutation_command: "bundle exec mutant run"
+      )
+
+      expect(pre_commit_script).to include("ruff check .")
+      expect(pre_commit_script).to include("pytest")
+      expect(pre_commit_script).to include("bundle exec mutant run")
+    end
+
+    it "emits one availability-checked block per command for a polyglot repo" do
+      captured = capture_pre_commit_hook(
+        lint_command: [ "bundle exec rubocop", "mix credo --strict" ],
+        test_command: [ "bundle exec rspec", "mix test" ],
+        mutation_command: "true"
+      )
+
+      [ "bundle exec rubocop", "mix credo --strict", "bundle exec rspec", "mix test" ].each do |command|
+        expect(captured).to include(command)
+      end
+
+      # The generated hook must be syntactically valid POSIX shell.
+      script = captured.match(/<< 'HOOKEOF'\n(.*)\nHOOKEOF\z/m)[1]
+      _out, err, status = Open3.capture3("sh", "-n", stdin_data: script)
+      expect(status.success?).to be(true), err
+    end
+
+    it "skips mutation checks when the project Gemfile does not declare mutant" do
+      allow(container_service).to receive(:execute).and_return(hook_missing_result)
+      allow(container_service).to receive(:execute)
+        .with(a_string_matching(/chmod/), anything)
+        .and_return(success_result)
+
+      pre_commit_script = nil
+      allow(container_service).to receive(:execute)
+        .with(a_string_matching(/cat > \.git\/hooks\/pre-commit/), timeout: nil, stream: false) { |cmd, **|
+          pre_commit_script = cmd
+          success_result
+        }
+
+      git_ops.install_git_hooks(
+        lint_command: "bundle exec rubocop",
+        test_command: "bundle exec rspec",
+        mutation_command: "bundle exec mutant run"
+      )
+
+      expect(pre_commit_script).to include("grep -Eq")
+    end
+
+    it "does not raise when hook installation fails with exception" do
+      allow(container_service).to receive(:execute).and_raise(StandardError, "container error")
+
+      expect { git_ops.install_git_hooks(lint_command: "rubocop", test_command: "rspec") }.not_to raise_error
+    end
+
+    it "does not raise when hook write returns a failure result" do
+      allow(container_service).to receive(:execute)
+        .with(a_string_matching(/test -f/), anything)
+        .and_return(hook_missing_result)
+      allow(container_service).to receive(:execute)
+        .with(a_string_matching(/cat > \.git\/hooks/), anything)
+        .and_return(failure_result)
+
+      expect { git_ops.install_git_hooks(lint_command: "rubocop", test_command: "rspec") }.not_to raise_error
+    end
+
+    describe "command validation" do
+      it "accepts simple commands" do
+        allow(container_service).to receive(:execute).and_return(hook_missing_result)
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/cat > \.git\/hooks/), anything)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/chmod/), anything)
+          .and_return(success_result)
+
+        expect { git_ops.install_git_hooks(lint_command: "bundle exec rubocop", test_command: "bundle exec rspec") }
+          .not_to raise_error
+      end
+
+      it "accepts commands with paths and dots" do
+        allow(container_service).to receive(:execute).and_return(hook_missing_result)
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/cat > \.git\/hooks/), anything)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/chmod/), anything)
+          .and_return(success_result)
+
+        expect { git_ops.install_git_hooks(lint_command: "ruff check .", test_command: "go test ./...") }
+          .not_to raise_error
+      end
+
+      it "accepts mutation commands with git refs that include tildes" do
+        allow(container_service).to receive(:execute).and_return(hook_missing_result)
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/cat > \.git\/hooks/), anything)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/chmod/), anything)
+          .and_return(success_result)
+
+        expect do
+          git_ops.install_git_hooks(
+            lint_command: "bundle exec rubocop",
+            test_command: "bundle exec rspec",
+            mutation_command: "bundle exec mutant run --since HEAD~1 --use rspec --jobs 1"
+          )
+        end.not_to raise_error
+      end
+
+      it "rejects commands with semicolons" do
+        expect { git_ops.install_git_hooks(lint_command: "echo; rm -rf /", test_command: "rspec") }
+          .not_to raise_error # rescued by install_git_hooks
+      end
+
+      it "rejects commands with backticks" do
+        expect { git_ops.install_git_hooks(lint_command: "`malicious`", test_command: "rspec") }
+          .not_to raise_error # rescued by install_git_hooks
+      end
+
+      it "rejects commands with dollar signs" do
+        expect { git_ops.install_git_hooks(lint_command: "echo $HOME", test_command: "rspec") }
+          .not_to raise_error # rescued by install_git_hooks
+      end
+
+      it "rejects commands with pipes" do
+        expect { git_ops.install_git_hooks(lint_command: "cat | sh", test_command: "rspec") }
+          .not_to raise_error # rescued by install_git_hooks
+      end
+
+      it "rejects commands with shell operators" do
+        expect { git_ops.install_git_hooks(lint_command: "true || malicious", test_command: "rspec") }
+          .not_to raise_error # rescued by install_git_hooks
+      end
+
+      it "logs a warning when command validation fails" do
+        allow(Rails.logger).to receive(:warn)
+
+        git_ops.install_git_hooks(lint_command: "echo; rm -rf /", test_command: "rspec")
+
+        expect(Rails.logger).to have_received(:warn).with(
+          hash_including(message: "container_git.install_hooks_failed")
+        )
+      end
+    end
+  end
+
+  describe "#install_co_author_hook" do
+    let(:hook_missing_result) { Containers::Provision::Result.failure(error: "not found", stdout: "", stderr: "", exit_code: 1) }
+    let(:hook_exists_result) { Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0) }
+    let(:marker_missing_result) { Containers::Provision::Result.failure(error: "not found", stdout: "", stderr: "", exit_code: 1) }
+    let(:marker_exists_result) { Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0) }
+
+    # Non-memoized helpers (not `let`) to stay under RSpec/MultipleMemoizedHelpers.
+    def trailer_file
+      described_class::CO_AUTHOR_TRAILER_FILE
+    end
+
+    def trailer_file_write_matcher
+      array_including("sh", "-c", a_string_matching(/printf '%s'/), "--")
+    end
+
+    context "when project has a trailer configured" do
+      before do
+        runner.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/grep -qF 'Installed by Paid'/), timeout: nil, stream: false)
+          .and_return(marker_missing_result)
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg.original", timeout: nil, stream: false)
+          .and_return(hook_missing_result)
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(hook_missing_result)
+        allow(container_service).to receive(:execute)
+          .with("chmod +x .git/hooks/commit-msg.tmp", timeout: nil, stream: false)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with("mv .git/hooks/commit-msg.tmp .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with(trailer_file_write_matcher, timeout: nil, stream: false)
+          .and_return(success_result)
+      end
+
+      it "installs a commit-msg hook that reads the trailer from the shared file" do
+        hook_script = nil
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/cat > \.git\/hooks\/commit-msg\.tmp/), timeout: nil, stream: false) { |script, **|
+            hook_script = script
+            success_result
+          }
+
+        git_ops.install_co_author_hook
+
+        expect(hook_script).to include(trailer_file)
+        expect(hook_script).to include("grep -qF --")
+        # Baking the literal trailer into the hook is what causes the
+        # fallback-staleness bug — make sure it stays out of the script.
+        expect(hook_script).not_to include("Co-Authored-By: Claude")
+      end
+
+      it "seeds the trailer file with the initial provider's trailer at install time" do
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/cat > \.git\/hooks\/commit-msg\.tmp/), timeout: nil, stream: false)
+          .and_return(success_result)
+
+        write_command = nil
+        allow(container_service).to receive(:execute)
+          .with(trailer_file_write_matcher, timeout: nil, stream: false) { |cmd, **|
+            write_command = cmd
+            success_result
+          }
+
+        git_ops.install_co_author_hook
+
+        expect(write_command).to include("Co-Authored-By: Claude <noreply@anthropic.com>")
+      end
+    end
+
+    context "when trailer contains a single quote" do
+      before do
+        runner.update!(agent_co_author_trailer: "Co-Authored-By: O'Brien <ob@example.com>")
+
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/grep -qF 'Installed by Paid'/), timeout: nil, stream: false)
+          .and_return(marker_missing_result)
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg.original", timeout: nil, stream: false)
+          .and_return(hook_missing_result)
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(hook_missing_result)
+        allow(container_service).to receive(:execute)
+          .with("chmod +x .git/hooks/commit-msg.tmp", timeout: nil, stream: false)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with("mv .git/hooks/commit-msg.tmp .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with(trailer_file_write_matcher, timeout: nil, stream: false)
+          .and_return(success_result)
+      end
+
+      it "passes the trailer as a positional argument, not interpolated" do
+        write_command = nil
+        allow(container_service).to receive(:execute)
+          .with(trailer_file_write_matcher, timeout: nil, stream: false) { |cmd, **|
+            write_command = cmd
+            success_result
+          }
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/cat > \.git\/hooks\/commit-msg\.tmp/), timeout: nil, stream: false)
+          .and_return(success_result)
+
+        git_ops.install_co_author_hook
+
+        # The trailer (containing a shell metacharacter) is passed as its own
+        # array element rather than woven into the script text, so no
+        # escaping of the trailer itself is needed.
+        expect(write_command).to include("Co-Authored-By: O'Brien <ob@example.com>")
+        expect(write_command[2]).to eq("mkdir -p .git && printf '%s' \"$1\" > \"$2\"")
+      end
+    end
+
+    context "when no provider owned by the project owner has a trailer configured" do
+      before { agent_run.project.effective_owner.runners.update_all(agent_co_author_trailer: nil) }
+
+      it "does not install a hook or touch the trailer file" do
+        expect(container_service).not_to receive(:execute)
+
+        git_ops.install_co_author_hook
+      end
+    end
+
+    context "when the effective provider has no trailer but another owned provider does" do
+      before do
+        # The initial provider has no trailer, but a fallback provider owned
+        # by the same user does — the hook must still be installed so the
+        # trailer file can be refreshed mid-run when fallback occurs.
+        runner.update!(agent_co_author_trailer: nil)
+        agent_run.project.effective_owner.runners.create!(
+          provider_key: "codex",
+          auth_type: "subscription",
+          enabled_for_agent_runs: false,
+          agent_co_author_trailer: "Co-Authored-By: Codex <noreply@openai.com>"
+        )
+
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/grep -qF 'Installed by Paid'/), timeout: nil, stream: false)
+          .and_return(marker_missing_result)
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg.original", timeout: nil, stream: false)
+          .and_return(hook_missing_result)
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(hook_missing_result)
+        allow(container_service).to receive(:execute)
+          .with("chmod +x .git/hooks/commit-msg.tmp", timeout: nil, stream: false)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with("mv .git/hooks/commit-msg.tmp .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/cat > \.git\/hooks\/commit-msg\.tmp/), timeout: nil, stream: false)
+          .and_return(success_result)
+      end
+
+      it "still installs the hook and clears the trailer file so the hook is a no-op" do
+        clear_cmd = nil
+        allow(container_service).to receive(:execute)
+          .with([ "rm", "-f", trailer_file ], timeout: nil, stream: false) { |cmd, **|
+            clear_cmd = cmd
+            success_result
+          }
+
+        git_ops.install_co_author_hook
+
+        expect(clear_cmd).to eq([ "rm", "-f", trailer_file ])
+      end
+    end
+
+    context "when a commit-msg hook already exists" do
+      before do
+        runner.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/grep -qF 'Installed by Paid'/), timeout: nil, stream: false)
+          .and_return(marker_missing_result)
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg.original", timeout: nil, stream: false)
+          .and_return(hook_missing_result)
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(hook_exists_result)
+        allow(container_service).to receive(:execute)
+          .with("mv .git/hooks/commit-msg .git/hooks/commit-msg.original", timeout: nil, stream: false)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with("chmod +x .git/hooks/commit-msg.tmp", timeout: nil, stream: false)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with("mv .git/hooks/commit-msg.tmp .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with(trailer_file_write_matcher, timeout: nil, stream: false)
+          .and_return(success_result)
+      end
+
+      it "renames the existing hook and installs a wrapper that reads from the shared file" do
+        captured_script = nil
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/cat > \.git\/hooks\/commit-msg\.tmp/), timeout: nil, stream: false) { |script, **|
+            captured_script = script
+            success_result
+          }
+
+        git_ops.install_co_author_hook
+
+        expect(captured_script).to include(".git/hooks/commit-msg.original")
+        expect(captured_script).to include(trailer_file)
+        expect(captured_script).to include("#!/bin/sh")
+        expect(captured_script).not_to include("Co-Authored-By: Claude")
+      end
+    end
+
+    context "when a prior failed installation left commit-msg.original orphaned" do
+      before do
+        runner.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/grep -qF 'Installed by Paid'/), timeout: nil, stream: false)
+          .and_return(marker_missing_result)
+        # commit-msg.original exists initially, but is gone after the restore mv
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg.original", timeout: nil, stream: false)
+          .and_return(hook_exists_result, hook_missing_result)
+        # commit-msg is missing initially, exists after restore, then exists
+        # again after the wrapper renames it back to .original
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(hook_missing_result, hook_exists_result)
+        # Restores original hook
+        allow(container_service).to receive(:execute)
+          .with("mv .git/hooks/commit-msg.original .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(success_result)
+        # Then proceeds with normal wrapper flow: rename restored hook back
+        allow(container_service).to receive(:execute)
+          .with("mv .git/hooks/commit-msg .git/hooks/commit-msg.original", timeout: nil, stream: false)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with("chmod +x .git/hooks/commit-msg.tmp", timeout: nil, stream: false)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with("mv .git/hooks/commit-msg.tmp .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with(trailer_file_write_matcher, timeout: nil, stream: false)
+          .and_return(success_result)
+      end
+
+      it "restores the original hook and then installs the wrapper" do
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/cat > \.git\/hooks\/commit-msg\.tmp/), timeout: nil, stream: false)
+          .and_return(success_result)
+
+        git_ops.install_co_author_hook
+
+        # Verify the restore step happened
+        expect(container_service).to have_received(:execute)
+          .with("mv .git/hooks/commit-msg.original .git/hooks/commit-msg", timeout: nil, stream: false)
+        # Verify the hook script was written with the marker and reads
+        # the trailer from the shared file (not a baked-in value).
+        expect(container_service).to have_received(:execute)
+          .with(
+            a_string_matching(/cat > \.git\/hooks\/commit-msg\.tmp/).and(
+              a_string_matching(/Installed by Paid/)
+            ).and(
+              a_string_matching(/#{Regexp.escape(trailer_file)}/)
+            ),
+            timeout: nil, stream: false
+          )
+      end
+    end
+
+    context "when the hook marker is already present (idempotency)" do
+      before { runner.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>") }
+
+      it "skips installation to avoid duplicate appends" do
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/grep -qF 'Installed by Paid'/), timeout: nil, stream: false)
+          .and_return(marker_exists_result)
+
+        expect(container_service).not_to receive(:execute)
+          .with(a_string_matching(/cat >>/), timeout: nil, stream: false)
+        expect(container_service).not_to receive(:execute)
+          .with(a_string_matching(/cat > /), timeout: nil, stream: false)
+
+        git_ops.install_co_author_hook
+      end
+    end
+
+    context "when commit-msg.original already exists alongside commit-msg" do
+      before do
+        runner.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/grep -qF 'Installed by Paid'/), timeout: nil, stream: false)
+          .and_return(marker_missing_result)
+        # Both commit-msg.original and commit-msg exist
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg.original", timeout: nil, stream: false)
+          .and_return(hook_exists_result)
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(hook_exists_result)
+      end
+
+      it "skips installation to avoid overwriting the existing backup" do
+        expect(container_service).not_to receive(:execute)
+          .with(a_string_matching(/mv .git\/hooks\/commit-msg /), timeout: nil, stream: false)
+        expect(container_service).not_to receive(:execute)
+          .with(a_string_matching(/cat > /), timeout: nil, stream: false)
+
+        git_ops.install_co_author_hook
+      end
+    end
+
+    context "when an exception occurs after renaming the original hook" do
+      before do
+        runner.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/grep -qF 'Installed by Paid'/), timeout: nil, stream: false)
+          .and_return(marker_missing_result)
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg.original", timeout: nil, stream: false)
+          .and_return(hook_missing_result, hook_exists_result)
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(hook_exists_result)
+        allow(container_service).to receive(:execute)
+          .with("mv .git/hooks/commit-msg .git/hooks/commit-msg.original", timeout: nil, stream: false)
+          .and_return(success_result)
+        # Simulate an exception (not a Result failure) during hook write
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/cat > \.git\/hooks\/commit-msg\.tmp/), timeout: nil, stream: false)
+          .and_raise(RuntimeError, "connection lost")
+      end
+
+      it "cleans up the tmp file and restores the original hook" do
+        allow(container_service).to receive(:execute)
+          .with("rm -f .git/hooks/commit-msg.tmp", timeout: nil, stream: false)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with("mv .git/hooks/commit-msg.original .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(success_result)
+
+        # install_co_author_hook rescues all errors at the top level
+        expect { git_ops.install_co_author_hook }.not_to raise_error
+
+        expect(container_service).to have_received(:execute)
+          .with("rm -f .git/hooks/commit-msg.tmp", timeout: nil, stream: false)
+        expect(container_service).to have_received(:execute)
+          .with("mv .git/hooks/commit-msg.original .git/hooks/commit-msg", timeout: nil, stream: false)
+      end
+    end
+
+    it "does not raise when installation fails" do
+      runner.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+      allow(container_service).to receive(:execute).and_raise(StandardError, "container error")
+
+      expect { git_ops.install_co_author_hook }.not_to raise_error
+    end
+  end
+
+  describe "#write_co_author_trailer" do
+    let(:trailer_file) { described_class::CO_AUTHOR_TRAILER_FILE }
+
+    it "writes the provider's trailer to the shared file" do
+      runner.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+
+      write_command = nil
+      allow(container_service).to receive(:execute)
+        .with(array_including("sh", "-c", a_string_matching(/printf '%s'/)), timeout: nil, stream: false) { |cmd, **|
+          write_command = cmd
+          success_result
+        }
+
+      git_ops.write_co_author_trailer(runner)
+
+      expect(write_command).to eq(
+        [ "sh", "-c", "mkdir -p .git && printf '%s' \"$1\" > \"$2\"", "--",
+          "Co-Authored-By: Claude <noreply@anthropic.com>", trailer_file ]
+      )
+    end
+
+    it "passes trailers containing shell metacharacters as a positional argument, not interpolated" do
+      runner.update!(agent_co_author_trailer: "Co-Authored-By: O'Brien <ob@example.com>")
+
+      write_command = nil
+      allow(container_service).to receive(:execute) { |cmd, **|
+        write_command = cmd
+        success_result
+      }
+
+      git_ops.write_co_author_trailer(runner)
+
+      expect(write_command).to eq(
+        [ "sh", "-c", "mkdir -p .git && printf '%s' \"$1\" > \"$2\"", "--",
+          "Co-Authored-By: O'Brien <ob@example.com>", trailer_file ]
+      )
+    end
+
+    it "removes the file when the provider has a blank trailer" do
+      runner.update!(agent_co_author_trailer: nil)
+
+      expect(container_service).to receive(:execute)
+        .with([ "rm", "-f", trailer_file ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      git_ops.write_co_author_trailer(runner)
+    end
+
+    it "removes the file when given nil" do
+      expect(container_service).to receive(:execute)
+        .with([ "rm", "-f", trailer_file ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      git_ops.write_co_author_trailer(nil)
+    end
+
+    it "removes the file when the trailer is whitespace-only" do
+      runner.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+      # Bypass the single-line validation to emulate legacy/corrupt data
+      runner.update_column(:agent_co_author_trailer, "   ")
+
+      expect(container_service).to receive(:execute)
+        .with([ "rm", "-f", trailer_file ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      git_ops.write_co_author_trailer(runner)
+    end
+
+    it "logs a warning when the write returns a failure result but does not raise" do
+      runner.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+      allow(container_service).to receive(:execute).and_return(failure_result)
+      allow(Rails.logger).to receive(:warn)
+
+      expect { git_ops.write_co_author_trailer(runner) }.not_to raise_error
+
+      expect(Rails.logger).to have_received(:warn).with(
+        hash_including(message: "container_git.write_co_author_trailer_failed")
+      )
+    end
+
+    it "does not raise when the container call raises" do
+      runner.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+      allow(container_service).to receive(:execute).and_raise(StandardError, "container gone")
+      allow(Rails.logger).to receive(:error)
+
+      expect { git_ops.write_co_author_trailer(runner) }.not_to raise_error
+      expect(Rails.logger).to have_received(:error).with(
+        hash_including(message: "container_git.write_co_author_trailer_unexpected_error")
+      )
+    end
+  end
+end

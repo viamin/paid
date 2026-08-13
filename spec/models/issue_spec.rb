@@ -1,0 +1,2257 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe Issue do
+  describe "associations" do
+    it { is_expected.to belong_to(:project) }
+    it { is_expected.to belong_to(:parent_issue).class_name("Issue").optional }
+    it { is_expected.to have_many(:sub_issues).class_name("Issue").with_foreign_key(:parent_issue_id).dependent(:nullify) }
+    it { is_expected.to have_many(:agent_runs).dependent(:nullify) }
+    it { is_expected.to have_many(:issue_dependencies).dependent(:destroy) }
+    it { is_expected.to have_many(:dependencies).through(:issue_dependencies) }
+    it { is_expected.to have_many(:reverse_issue_dependencies).class_name("IssueDependency").dependent(:destroy) }
+    it { is_expected.to have_many(:dependents).through(:reverse_issue_dependencies) }
+  end
+
+  describe "validations" do
+    subject { build(:issue) }
+
+    it { is_expected.to validate_presence_of(:github_issue_id) }
+    it { is_expected.to validate_uniqueness_of(:github_issue_id).scoped_to(:project_id) }
+    it { is_expected.to validate_presence_of(:github_number) }
+    it { is_expected.to validate_presence_of(:title) }
+    it { is_expected.to validate_length_of(:title).is_at_most(1000) }
+    it { is_expected.to validate_presence_of(:github_state) }
+    it { is_expected.to validate_presence_of(:github_created_at) }
+    it { is_expected.to validate_presence_of(:github_updated_at) }
+    it { is_expected.to validate_presence_of(:paid_state) }
+    it { is_expected.to validate_inclusion_of(:paid_state).in_array(described_class::PAID_STATES) }
+
+    describe "parent_issue project validation" do
+      it "allows parent_issue from the same project" do
+        project = create(:project)
+        parent = create(:issue, project: project)
+        issue = build(:issue, project: project, parent_issue: parent)
+
+        expect(issue).to be_valid
+      end
+
+      it "rejects parent_issue from a different project" do
+        project = create(:project)
+        other_project = create(:project)
+        parent = create(:issue, project: other_project)
+        issue = build(:issue, project: project, parent_issue: parent)
+
+        expect(issue).not_to be_valid
+        expect(issue.errors[:parent_issue]).to include("must belong to the same project")
+      end
+
+      it "allows nil parent_issue" do
+        issue = build(:issue, parent_issue: nil)
+
+        expect(issue).to be_valid
+      end
+    end
+  end
+
+  describe "scopes" do
+    describe ".by_paid_state" do
+      it "returns issues with the specified paid_state" do
+        planning_issue = create(:issue, :planning)
+        create(:issue, :in_progress)
+
+        expect(described_class.by_paid_state("planning")).to include(planning_issue)
+        expect(described_class.by_paid_state("planning").count).to eq(1)
+      end
+    end
+
+    describe ".root_issues" do
+      it "includes issues without a parent" do
+        root_issue = create(:issue)
+        expect(described_class.root_issues).to include(root_issue)
+      end
+
+      it "excludes sub-issues" do
+        sub_issue = create(:issue, :sub_issue)
+        expect(described_class.root_issues).not_to include(sub_issue)
+      end
+    end
+
+    describe ".sub_issues_only" do
+      it "includes sub-issues" do
+        sub_issue = create(:issue, :sub_issue)
+        expect(described_class.sub_issues_only).to include(sub_issue)
+      end
+
+      it "excludes root issues" do
+        root_issue = create(:issue)
+        expect(described_class.sub_issues_only).not_to include(root_issue)
+      end
+    end
+
+    describe ".issues_only" do
+      it "includes issues" do
+        issue = create(:issue)
+        expect(described_class.issues_only).to include(issue)
+      end
+
+      it "excludes pull requests" do
+        pr = create(:issue, :pull_request)
+        expect(described_class.issues_only).not_to include(pr)
+      end
+    end
+
+    describe ".pull_requests_only" do
+      it "includes pull requests" do
+        pr = create(:issue, :pull_request)
+        expect(described_class.pull_requests_only).to include(pr)
+      end
+
+      it "excludes issues" do
+        issue = create(:issue)
+        expect(described_class.pull_requests_only).not_to include(issue)
+      end
+    end
+
+    describe ".ready_for_work" do
+      let(:project) { create(:project) }
+
+      it "returns open issues with no dependencies" do
+        issue = create(:issue, project: project)
+
+        expect(described_class.ready_for_work(project)).to include(issue)
+      end
+
+      it "excludes issues with open dependencies" do
+        dep = create(:issue, project: project, github_state: "open")
+        issue = create(:issue, project: project)
+        create(:issue_dependency, issue: issue, depends_on_issue: dep)
+
+        expect(described_class.ready_for_work(project)).not_to include(issue)
+      end
+
+      it "includes issues whose dependencies are all closed" do
+        dep = create(:issue, project: project, github_state: "closed")
+        issue = create(:issue, project: project)
+        create(:issue_dependency, issue: issue, depends_on_issue: dep)
+
+        expect(described_class.ready_for_work(project)).to include(issue)
+      end
+
+      it "includes issues whose only open dep is paid_state recommend_close" do
+        dep = create(:issue, :recommend_close, project: project, github_state: "open")
+        issue = create(:issue, project: project)
+        create(:issue_dependency, issue: issue, depends_on_issue: dep)
+
+        expect(described_class.ready_for_work(project)).to include(issue)
+      end
+
+      it "excludes closed issues" do
+        issue = create(:issue, project: project, github_state: "closed")
+
+        expect(described_class.ready_for_work(project)).not_to include(issue)
+      end
+
+      it "excludes pull requests" do
+        pr = create(:issue, :pull_request, project: project)
+
+        expect(described_class.ready_for_work(project)).not_to include(pr)
+      end
+
+      it "excludes issues from other projects" do
+        other_project = create(:project)
+        issue = create(:issue, project: other_project)
+
+        expect(described_class.ready_for_work(project)).not_to include(issue)
+      end
+
+      it "excludes issues with unresolved external dependencies" do
+        issue = create(:issue, project: project)
+        create(:issue_dependency, issue: issue, depends_on_issue: nil,
+                                  depends_on_owner: "org", depends_on_repo: "repo",
+                                  depends_on_number: 42)
+
+        expect(described_class.ready_for_work(project)).not_to include(issue)
+      end
+
+      context "with an external dep that points at a sibling project in the same account" do
+        let(:sibling_project) { create(:project, account: project.account, owner: "viamin", name: "agent-harness") }
+        let(:issue) { create(:issue, project: project) }
+
+        it "includes the issue when the external dep's target is closed" do
+          create(:issue, project: sibling_project, github_number: 42, github_state: "closed")
+          create(:issue_dependency, issue: issue, depends_on_issue: nil,
+                                    depends_on_owner: "viamin", depends_on_repo: "agent-harness",
+                                    depends_on_number: 42)
+
+          expect(described_class.ready_for_work(project)).to include(issue)
+        end
+
+        it "excludes the issue when the external dep's target is still open" do
+          create(:issue, project: sibling_project, github_number: 42, github_state: "open")
+          create(:issue_dependency, issue: issue, depends_on_issue: nil,
+                                    depends_on_owner: "viamin", depends_on_repo: "agent-harness",
+                                    depends_on_number: 42)
+
+          expect(described_class.ready_for_work(project)).not_to include(issue)
+        end
+
+        it "includes the issue when the external dep target is open but paid_state=recommend_close" do
+          create(:issue, :recommend_close, project: sibling_project, github_number: 42, github_state: "open")
+          create(:issue_dependency, issue: issue, depends_on_issue: nil,
+                                    depends_on_owner: "viamin", depends_on_repo: "agent-harness",
+                                    depends_on_number: 42)
+
+          expect(described_class.ready_for_work(project)).to include(issue)
+        end
+
+        it "excludes the issue when the project is synced but the target issue has not been pulled yet" do
+          create(:issue_dependency, issue: issue, depends_on_issue: nil,
+                                    depends_on_owner: "viamin", depends_on_repo: "agent-harness",
+                                    depends_on_number: 999)
+
+          expect(described_class.ready_for_work(project)).not_to include(issue)
+        end
+
+        it "matches case-insensitively across owner/repo casing" do
+          sibling_project.update!(owner: "ViaMin", name: "Agent-Harness")
+          create(:issue, project: sibling_project, github_number: 42, github_state: "closed")
+          create(:issue_dependency, issue: issue, depends_on_issue: nil,
+                                    depends_on_owner: "viamin", depends_on_repo: "agent-harness",
+                                    depends_on_number: 42)
+
+          expect(described_class.ready_for_work(project)).to include(issue)
+        end
+
+        it "stays blocked when the matching project is in a different account" do
+          other_account_project = create(:project, owner: "viamin", name: "agent-harness")
+          create(:issue, project: other_account_project, github_number: 42, github_state: "closed")
+          create(:issue_dependency, issue: issue, depends_on_issue: nil,
+                                    depends_on_owner: "viamin", depends_on_repo: "agent-harness",
+                                    depends_on_number: 42)
+
+          expect(described_class.ready_for_work(project)).not_to include(issue)
+        end
+      end
+
+      it "excludes issues whose dep points at an open PR" do
+        pr = create(:issue, :pull_request, project: project, github_state: "open")
+        issue = create(:issue, project: project)
+        create(:issue_dependency, issue: issue, depends_on_issue: pr)
+
+        expect(described_class.ready_for_work(project)).not_to include(issue)
+      end
+
+      it "includes issues whose dep points at a closed/merged PR" do
+        pr = create(:issue, :pull_request, project: project, github_state: "closed")
+        issue = create(:issue, project: project)
+        create(:issue_dependency, issue: issue, depends_on_issue: pr)
+
+        expect(described_class.ready_for_work(project)).to include(issue)
+      end
+
+      it "excludes issues whose deployment-blocked dep points at a merged but undeployed PR" do
+        pr = create(:issue, :pull_request, project: project, github_state: "closed", deployed_at: nil)
+        issue = create(:issue, project: project)
+        create(:issue_dependency, issue: issue, depends_on_issue: pr, requires_deployment: true)
+
+        expect(described_class.ready_for_work(project)).not_to include(issue)
+      end
+
+      it "includes issues whose deployment-blocked dep points at a deployed PR" do
+        pr = create(:issue, :pull_request, project: project, github_state: "closed", deployed_at: Time.current)
+        issue = create(:issue, project: project)
+        create(:issue_dependency, issue: issue, depends_on_issue: pr, requires_deployment: true)
+
+        expect(described_class.ready_for_work(project)).to include(issue)
+      end
+    end
+  end
+
+  describe "after_update_commit on github_state change" do
+    it "enqueues a newly unblocked dependent when the blocker closes" do
+      project = create(:project, auto_pick_enabled: true)
+      blocker = create(:issue, project: project, github_state: "open")
+      dependent = create(:issue, project: project, github_state: "open")
+      create(:issue_dependency, issue: dependent, depends_on_issue: blocker)
+      allow(Issues::EnqueueEligible).to receive(:call)
+      allow(Rails.logger).to receive(:info)
+
+      blocker.update!(github_state: "closed")
+
+      expect(Issues::EnqueueEligible).to have_received(:call).with(dependent, project: project, skip_project_gate: true)
+      expect(Rails.logger).to have_received(:info).with(
+        hash_including(
+          message: "enqueue_eligible.dependency_resolved",
+          blocker_issue_id: blocker.id,
+          dependent_issue_id: dependent.id
+        )
+      )
+    end
+
+    it "does not enqueue a dependent that still has another open dependency" do
+      project = create(:project, auto_pick_enabled: true)
+      closing_blocker = create(:issue, project: project, github_state: "open")
+      other_blocker = create(:issue, project: project, github_state: "open")
+      dependent = create(:issue, project: project, github_state: "open")
+      create(:issue_dependency, issue: dependent, depends_on_issue: closing_blocker)
+      create(:issue_dependency, issue: dependent, depends_on_issue: other_blocker)
+      allow(Issues::EnqueueEligible).to receive(:call)
+
+      closing_blocker.update!(github_state: "closed")
+
+      expect(Issues::EnqueueEligible).not_to have_received(:call)
+    end
+
+    it "does not enqueue anything when the closed issue has no dependents" do
+      issue = create(:issue, github_state: "open")
+      allow(Issues::EnqueueEligible).to receive(:call)
+
+      issue.update!(github_state: "closed")
+
+      expect(Issues::EnqueueEligible).not_to have_received(:call)
+    end
+
+    it "enqueues dependents transitively as blockers close in sequence" do
+      project = create(:project, auto_pick_enabled: true)
+      issue_a = create(:issue, project: project, github_state: "open")
+      issue_b = create(:issue, project: project, github_state: "open")
+      issue_c = create(:issue, project: project, github_state: "open")
+      create(:issue_dependency, issue: issue_b, depends_on_issue: issue_a)
+      create(:issue_dependency, issue: issue_c, depends_on_issue: issue_b)
+      allow(Issues::EnqueueEligible).to receive(:call)
+
+      issue_a.update!(github_state: "closed")
+
+      expect(Issues::EnqueueEligible).to have_received(:call).with(issue_b, project: project, skip_project_gate: true)
+      expect(Issues::EnqueueEligible).not_to have_received(:call).with(issue_c, project: project, skip_project_gate: true)
+
+      issue_b.update!(github_state: "closed")
+
+      expect(Issues::EnqueueEligible).to have_received(:call).with(issue_c, project: project, skip_project_gate: true)
+    end
+
+    it "enqueues cross-project dependents when their project has auto_pick enabled" do
+      account = create(:account)
+      github_token = create(:github_token, account: account)
+      user = create(:user, account: account)
+      blocker_project = create(:project, account: account, github_token: github_token, created_by: user, auto_pick_enabled: true)
+      dependent_project = create(:project, account: account, github_token: github_token, created_by: user, auto_pick_enabled: true)
+      blocker = create(:issue, project: blocker_project, github_state: "open")
+      dependent = create(:issue, project: dependent_project, github_state: "open")
+      create(:issue_dependency, issue: dependent, depends_on_issue: blocker)
+      allow(Issues::EnqueueEligible).to receive(:call)
+
+      blocker.update!(github_state: "closed")
+
+      expect(Issues::EnqueueEligible).to have_received(:call).with(dependent, project: dependent_project, skip_project_gate: true)
+    end
+
+    it "does not enqueue dependents for paused projects" do
+      project = create(:project, auto_pick_enabled: true, quality_paused_at: Time.current)
+      blocker = create(:issue, project: project, github_state: "open")
+      dependent = create(:issue, project: project, github_state: "open")
+      create(:issue_dependency, issue: dependent, depends_on_issue: blocker)
+      allow(Issues::EnqueueEligible).to receive(:call)
+
+      blocker.update!(github_state: "closed")
+
+      expect(Issues::EnqueueEligible).not_to have_received(:call)
+    end
+
+    it "continues processing later dependents after one enqueue fails" do
+      project = create(:project, auto_pick_enabled: true)
+      blocker = create(:issue, project: project, github_state: "open")
+      first_dependent = create(:issue, project: project, github_state: "open")
+      second_dependent = create(:issue, project: project, github_state: "open")
+      create(:issue_dependency, issue: first_dependent, depends_on_issue: blocker)
+      create(:issue_dependency, issue: second_dependent, depends_on_issue: blocker)
+      allow(Rails.logger).to receive(:error)
+      allow(Issues::EnqueueEligible).to receive(:call) { |issue, **| raise StandardError, "transient failure" if issue == first_dependent }
+
+      blocker.update!(github_state: "closed")
+
+      expect(Issues::EnqueueEligible).to have_received(:call).with(first_dependent, project: project, skip_project_gate: true)
+      expect(Issues::EnqueueEligible).to have_received(:call).with(second_dependent, project: project, skip_project_gate: true)
+      expect(Rails.logger).to have_received(:error).with(
+        hash_including(
+          message: "enqueue_eligible.dependency_resolution_failed",
+          issue_id: blocker.id,
+          dependent_issue_id: first_dependent.id,
+          error: "transient failure"
+        )
+      )
+    end
+  end
+
+  describe "after_update_commit on paid_state change" do
+    it "enqueues an immediate recheck when a non-PR issue moves back into an auto-pick eligible state" do
+      project = create(:project, auto_pick_enabled: true)
+      issue = create(:issue, project: project, paid_state: "in_progress", github_state: "open")
+      allow(Rails.logger).to receive(:info)
+
+      expect {
+        issue.update!(paid_state: "new")
+      }.to have_enqueued_job(Issues::ReenqueueEligibleJob).with(issue.id)
+
+      expect(Rails.logger).to have_received(:info).with(
+        hash_including(
+          message: "enqueue_eligible.issue_state_changed",
+          issue_id: issue.id,
+          paid_state: "new",
+          wait_seconds: nil
+        )
+      )
+    end
+
+    it "applies a short Sidekiq-style backoff after the first failure" do
+      project = create(:project, auto_pick_enabled: true)
+      issue = create(:issue, project: project, paid_state: "in_progress", github_state: "open")
+      create(:agent_run, :failed, project: project, issue: issue, goal: "create_pr", auto_pick: true)
+      allow(issue).to receive(:rand).with(10).and_return(0)
+
+      # n = max(1 - 1, 0) = 0; delay = 0^4 + 15 + 0 * 1 = 15 seconds.
+      freeze_time do
+        expect {
+          issue.update!(paid_state: "failed")
+        }.to have_enqueued_job(Issues::ReenqueueEligibleJob).with(issue.id).at(15.seconds.from_now)
+      end
+    end
+
+    it "grows the backoff polynomially across consecutive failures" do
+      project = create(:project, auto_pick_enabled: true)
+      issue = create(:issue, project: project, paid_state: "in_progress", github_state: "open")
+      2.times do
+        create(:agent_run, :timeout, project: project, issue: issue, goal: "create_pr", auto_pick: true)
+      end
+      allow(issue).to receive(:rand).with(10).and_return(0)
+
+      # n = max(2 - 1, 0) = 1; delay = 1^4 + 15 + 0 * 2 = 16 seconds.
+      freeze_time do
+        expect {
+          issue.update!(paid_state: "failed")
+        }.to have_enqueued_job(Issues::ReenqueueEligibleJob).with(issue.id).at(16.seconds.from_now)
+      end
+    end
+
+    it "counts no_output runs toward the failure backoff streak" do
+      project = create(:project, auto_pick_enabled: true)
+      issue = create(:issue, project: project, paid_state: "in_progress", github_state: "open")
+      2.times do
+        create(:agent_run, :no_output, project: project, issue: issue, goal: "create_pr", auto_pick: true)
+      end
+      allow(issue).to receive(:rand).with(10).and_return(0)
+
+      freeze_time do
+        expect {
+          issue.update!(paid_state: "failed")
+        }.to have_enqueued_job(Issues::ReenqueueEligibleJob).with(issue.id).at(16.seconds.from_now)
+      end
+    end
+
+    it "does not re-enqueue intentional waiting states" do
+      project = create(:project, auto_pick_enabled: true)
+      issue = create(:issue, project: project, paid_state: "in_progress", github_state: "open")
+
+      expect {
+        issue.update!(paid_state: "needs_input")
+      }.not_to have_enqueued_job(Issues::ReenqueueEligibleJob)
+    end
+
+    it "re-enqueues analyzed issues so failed follow-up creation can recover" do
+      project = create(:project, auto_pick_enabled: true)
+      issue = create(:issue, project: project, paid_state: "in_progress", github_state: "open")
+
+      expect {
+        issue.update!(paid_state: "analyzed")
+      }.to have_enqueued_job(Issues::ReenqueueEligibleJob).with(issue.id)
+    end
+
+    it "does not re-enqueue pull requests" do
+      project = create(:project, auto_pick_enabled: true)
+      issue = create(:issue, :pull_request, project: project, paid_state: "in_progress", github_state: "open")
+
+      expect {
+        issue.update!(paid_state: "failed")
+      }.not_to have_enqueued_job(Issues::ReenqueueEligibleJob)
+    end
+
+    it "does not re-enqueue when project has auto-pick disabled" do
+      project = create(:project, auto_pick_enabled: false)
+      issue = create(:issue, project: project, paid_state: "in_progress", github_state: "open")
+
+      expect {
+        issue.update!(paid_state: "failed")
+      }.not_to have_enqueued_job(Issues::ReenqueueEligibleJob)
+    end
+
+    it "still enqueues recheck when the project gate defers auto-pick" do
+      project = create(:project, auto_pick_enabled: true, quality_paused_at: Time.current)
+      issue = create(:issue, project: project, paid_state: "in_progress", github_state: "open")
+
+      expect {
+        issue.update!(paid_state: "failed")
+      }.to have_enqueued_job(Issues::ReenqueueEligibleJob).with(issue.id)
+    end
+  end
+
+  describe "cancelling orphaned queued runs when work is no longer needed" do
+    it "cancels an unclaimed queued run when the issue becomes completed" do
+      issue = create(:issue, paid_state: "in_progress", github_state: "open")
+      run = create(:agent_run, project: issue.project, issue: issue, goal: "create_pr",
+                              status: "queued", temporal_workflow_id: nil)
+
+      issue.update!(paid_state: "completed")
+
+      expect(run.reload.status).to eq("cancelled")
+      expect(run.error_message).to include("Issue resolved")
+    end
+
+    it "cancels an unclaimed queued run when the issue is closed on GitHub" do
+      issue = create(:issue, paid_state: "in_progress", github_state: "open")
+      run = create(:agent_run, project: issue.project, issue: issue, goal: "create_pr",
+                              status: "queued", temporal_workflow_id: nil)
+
+      issue.update!(github_state: "closed")
+
+      expect(run.reload.status).to eq("cancelled")
+    end
+
+    it "leaves claimed queued runs alone (a Temporal workflow owns them)" do
+      issue = create(:issue, paid_state: "in_progress", github_state: "open")
+      run = create(:agent_run, project: issue.project, issue: issue, goal: "create_pr",
+                              status: "queued", temporal_workflow_id: "workflow-123")
+
+      issue.update!(paid_state: "completed")
+
+      expect(run.reload.status).to eq("queued")
+    end
+
+    it "leaves a run that was just claimed (sentinel workflow id) alone" do
+      issue = create(:issue, paid_state: "in_progress", github_state: "open")
+      run = create(:agent_run, project: issue.project, issue: issue, goal: "create_pr",
+                              status: "queued", temporal_workflow_id: AgentRun::CLAIMED_SENTINEL)
+
+      issue.update!(paid_state: "completed")
+
+      expect(run.reload.status).to eq("queued")
+    end
+
+    it "leaves running runs alone" do
+      issue = create(:issue, paid_state: "in_progress", github_state: "open")
+      run = create(:agent_run, :running, project: issue.project, issue: issue, goal: "create_pr")
+
+      issue.update!(paid_state: "completed")
+
+      expect(run.reload.status).to eq("running")
+    end
+
+    it "leaves review-goal runs alone (PR-scoped, not issue-scoped)" do
+      issue = create(:issue, paid_state: "in_progress", github_state: "open")
+      run = create(:agent_run, project: issue.project, issue: issue, goal: "review",
+                              source_pull_request_number: 42, status: "queued", temporal_workflow_id: nil)
+
+      issue.update!(paid_state: "completed")
+
+      expect(run.reload.status).to eq("queued")
+    end
+
+    it "does not touch queued runs on unrelated paid_state transitions" do
+      issue = create(:issue, paid_state: "new", github_state: "open")
+      run = create(:agent_run, project: issue.project, issue: issue, goal: "create_pr",
+                              status: "queued", temporal_workflow_id: nil)
+
+      issue.update!(paid_state: "in_progress")
+
+      expect(run.reload.status).to eq("queued")
+    end
+  end
+
+  describe "instance methods" do
+    describe "#github_url" do
+      it "returns the GitHub issue URL for issues" do
+        project = build(:project, owner: "viamin", repo: "paid")
+        issue = build(:issue, project: project, github_number: 42)
+
+        expect(issue.github_url).to eq("https://github.com/viamin/paid/issues/42")
+      end
+
+      it "returns the GitHub pull request URL for PRs" do
+        project = build(:project, owner: "viamin", repo: "paid")
+        pr = build(:issue, :pull_request, project: project, github_number: 43)
+
+        expect(pr.github_url).to eq("https://github.com/viamin/paid/pull/43")
+      end
+
+      it "returns the Dependabot alert URL for legacy Dependabot synthetic issues" do
+        project = build(:project, owner: "viamin", repo: "paid")
+        offset = Issue::LEGACY_DEPENDABOT_ID_OFFSET
+        issue = build(:issue, project: project,
+          source: Issue::DEPENDABOT_ALERT_SOURCE,
+          github_issue_id: offset + 5,
+          github_number: 100_000_005)
+
+        expect(issue.github_url).to eq("https://github.com/viamin/paid/security/dependabot/5")
+      end
+
+      it "returns the code scanning alert URL for CodeQL synthetic issues" do
+        project = build(:project, owner: "viamin", repo: "paid")
+        offset = Issue::SYNTHETIC_CODE_SCANNING_ID_OFFSET
+        issue = build(:issue, project: project,
+          source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE,
+          github_issue_id: offset + 10,
+          github_number: 200_000_010)
+
+        expect(issue.github_url).to eq("https://github.com/viamin/paid/security/code-scanning/10")
+      end
+    end
+
+    describe "#has_label?" do
+      it "returns true when the label is present" do
+        issue = build(:issue, :with_labels)
+
+        expect(issue.has_label?("bug")).to be true
+      end
+
+      it "returns false when the label is absent" do
+        issue = build(:issue, labels: [ "bug" ])
+
+        expect(issue.has_label?("enhancement")).to be false
+      end
+
+      it "returns false for empty labels" do
+        issue = build(:issue, labels: [])
+
+        expect(issue.has_label?("bug")).to be false
+      end
+    end
+
+    describe "#draft_phase?" do
+      it "returns true for draft phase" do
+        pr = build(:issue, :pull_request, pr_review_phase: "draft")
+
+        expect(pr.draft_phase?).to be true
+      end
+
+      it "returns true for restarted phase" do
+        pr = build(:issue, :pull_request, pr_review_phase: "restarted")
+
+        expect(pr.draft_phase?).to be true
+      end
+
+      it "returns false for ready phase" do
+        pr = build(:issue, :pull_request, pr_review_phase: "ready")
+
+        expect(pr.draft_phase?).to be false
+      end
+
+      it "returns false for escalated phase" do
+        pr = build(:issue, :pull_request, pr_review_phase: "escalated")
+
+        expect(pr.draft_phase?).to be false
+      end
+    end
+
+    describe "#sub_issue?" do
+      it "returns true when issue has a parent" do
+        issue = build(:issue, :sub_issue)
+
+        expect(issue.sub_issue?).to be true
+      end
+
+      it "returns false when issue has no parent" do
+        issue = build(:issue)
+
+        expect(issue.sub_issue?).to be false
+      end
+    end
+
+    describe "PR progress helpers", :no_db do
+      let(:issue) { described_class.allocate }
+      let(:project) { Object.new }
+      let(:progress_state) do
+        instance_double(
+          PullRequests::ProgressState::Result,
+          consecutive_unsuccessful_automatic_runs: 3,
+          last_meaningful_progress_at: Time.zone.parse("2026-05-15 12:00:00"),
+          escalation_worthy?: true,
+          retryable?: false,
+          stuck?: true
+        )
+      end
+
+      before do
+        allow(issue).to receive(:project).and_return(project)
+      end
+
+      it "does not register a commit callback for PR progress helper state" do
+        after_commit_filters = described_class._commit_callbacks
+          .select { |callback| callback.kind == :after }
+          .map(&:filter)
+
+        expect(after_commit_filters).not_to include(:invalidate_pr_progress_state_cache!)
+      end
+
+      it "recomputes progress state across helper calls" do
+        allow(PullRequests::ProgressState).to receive(:call)
+          .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
+          .and_return(progress_state)
+
+        expect(issue.consecutive_unsuccessful_pr_runs).to eq(3)
+        expect(issue.last_pr_meaningful_progress_at).to eq(Time.zone.parse("2026-05-15 12:00:00"))
+        expect(issue.pr_escalation_worthy?(limit: 3)).to be(true)
+        expect(issue.pr_retryable?(limit: 3)).to be(false)
+        expect(issue.pr_stuck?(limit: 3, confirmations: 2, required_confirmations: 2)).to be(true)
+        expect(PullRequests::ProgressState).to have_received(:call).exactly(5).times
+      end
+
+      it "forwards current_head_sha to ProgressState" do
+        head_aware_state = instance_double(
+          PullRequests::ProgressState::Result,
+          consecutive_unsuccessful_automatic_runs: 0
+        )
+        allow(PullRequests::ProgressState).to receive(:call)
+          .with(project:, issue:, current_head_sha: "abc123", current_head_updated_at: anything)
+          .and_return(head_aware_state)
+
+        expect(issue.consecutive_unsuccessful_pr_runs(current_head_sha: "abc123", current_head_updated_at: Time.current)).to eq(0)
+      end
+
+      it "does not reuse a head-aware result for later default lookups" do
+        head_aware_state = instance_double(
+          PullRequests::ProgressState::Result,
+          consecutive_unsuccessful_automatic_runs: 0
+        )
+        fetched_at = Time.zone.parse("2026-05-15 12:00:00")
+
+        allow(PullRequests::ProgressState).to receive(:call)
+          .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
+          .and_return(progress_state, progress_state)
+        allow(PullRequests::ProgressState).to receive(:call)
+          .with(project:, issue:, current_head_sha: "abc123", current_head_updated_at: fetched_at)
+          .and_return(head_aware_state)
+
+        expect(issue.consecutive_unsuccessful_pr_runs).to eq(3)
+        expect(issue.consecutive_unsuccessful_pr_runs(current_head_sha: "abc123", current_head_updated_at: fetched_at)).to eq(0)
+        expect(issue.consecutive_unsuccessful_pr_runs).to eq(3)
+      end
+
+      it "does not reuse a partial head-aware result for later default lookups" do
+        partial_head_state = instance_double(
+          PullRequests::ProgressState::Result,
+          consecutive_unsuccessful_automatic_runs: 1
+        )
+
+        allow(PullRequests::ProgressState).to receive(:call)
+          .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
+          .and_return(progress_state, progress_state)
+        allow(PullRequests::ProgressState).to receive(:call)
+          .with(project:, issue:, current_head_sha: "abc123", current_head_updated_at: nil)
+          .and_return(partial_head_state)
+
+        expect(issue.consecutive_unsuccessful_pr_runs).to eq(3)
+        expect(issue.consecutive_unsuccessful_pr_runs(current_head_sha: "abc123", current_head_updated_at: nil)).to eq(1)
+        expect(issue.consecutive_unsuccessful_pr_runs).to eq(3)
+      end
+
+      it "does not rewrite progress reset markers when dismissing escalation" do
+        allow(PullRequests::ProgressState).to receive(:call)
+          .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
+          .and_return(progress_state)
+        issue.define_singleton_method(:labels) { %w[paid-escalated paid-dismiss-escalation] }
+        allow(issue).to receive(:update!).and_return(true)
+
+        issue.dismiss_escalation!(draft: false)
+
+        expect(issue).to have_received(:update!).with(
+          hash_including(
+            pr_review_phase: "ready",
+            pr_escalation_reason: nil,
+            ci_retry_requested_at: nil
+          )
+        )
+        expect(issue).not_to have_received(:update!).with(hash_including(:review_goal_retry_reset_at))
+        expect(issue).not_to have_received(:update!).with(hash_including(:operational_failure_reset_at))
+      end
+    end
+
+    describe "#has_associated_pull_requests?" do
+      let(:project) { create(:project) }
+
+      it "returns true when issue has a sub-issue that is a pull request" do
+        issue = create(:issue, project: project)
+        create(:issue, :pull_request, project: project, parent_issue: issue)
+
+        expect(issue.has_associated_pull_requests?).to be true
+      end
+
+      it "returns false when issue has no sub-issues" do
+        issue = create(:issue, project: project)
+
+        expect(issue.has_associated_pull_requests?).to be false
+      end
+
+      it "returns false when issue has sub-issues that are not pull requests" do
+        issue = create(:issue, project: project)
+        create(:issue, project: project, parent_issue: issue)
+
+        expect(issue.has_associated_pull_requests?).to be false
+      end
+
+      context "when sub_issues are preloaded" do
+        it "returns true when preloaded sub-issues include a pull request" do
+          issue = create(:issue, project: project)
+          create(:issue, :pull_request, project: project, parent_issue: issue)
+
+          preloaded_issue = described_class.includes(:sub_issues).find(issue.id)
+
+          expect(preloaded_issue.sub_issues).to be_loaded
+          expect(preloaded_issue.has_associated_pull_requests?).to be true
+        end
+
+        it "returns false when preloaded sub-issues have no pull requests" do
+          issue = create(:issue, project: project)
+          create(:issue, project: project, parent_issue: issue)
+
+          preloaded_issue = described_class.includes(:sub_issues).find(issue.id)
+
+          expect(preloaded_issue.sub_issues).to be_loaded
+          expect(preloaded_issue.has_associated_pull_requests?).to be false
+        end
+      end
+    end
+
+    describe "#associated_pull_request" do
+      let(:project) { create(:project) }
+
+      it "returns the pull request sub-issue when one exists" do
+        issue = create(:issue, project: project)
+        pr = create(:issue, :pull_request, project: project, parent_issue: issue)
+
+        expect(issue.associated_pull_request).to eq(pr)
+      end
+
+      it "returns nil when no sub-issues exist" do
+        issue = create(:issue, project: project)
+
+        expect(issue.associated_pull_request).to be_nil
+      end
+
+      it "returns nil when sub-issues are not pull requests" do
+        issue = create(:issue, project: project)
+        create(:issue, project: project, parent_issue: issue)
+
+        expect(issue.associated_pull_request).to be_nil
+      end
+
+      it "prefers an open PR over a closed PR" do
+        issue = create(:issue, project: project)
+        create(:issue, :pull_request, :closed, project: project, parent_issue: issue,
+               github_updated_at: 2.days.ago)
+        open_pr = create(:issue, :pull_request, project: project, parent_issue: issue,
+                         github_updated_at: 3.days.ago)
+
+        expect(issue.associated_pull_request).to eq(open_pr)
+      end
+
+      it "returns the most recently updated open PR when multiple exist" do
+        issue = create(:issue, project: project)
+        create(:issue, :pull_request, project: project, parent_issue: issue,
+               github_updated_at: 2.days.ago)
+        newest_pr = create(:issue, :pull_request, project: project, parent_issue: issue,
+                           github_updated_at: 1.hour.ago)
+
+        expect(issue.associated_pull_request).to eq(newest_pr)
+      end
+
+      it "returns nil when only closed PRs exist" do
+        issue = create(:issue, project: project)
+        create(:issue, :pull_request, :closed, project: project, parent_issue: issue,
+               github_updated_at: 2.days.ago)
+        create(:issue, :pull_request, :closed, project: project,
+               parent_issue: issue, github_updated_at: 1.hour.ago)
+
+        expect(issue.associated_pull_request).to be_nil
+      end
+
+      context "when sub_issues are preloaded" do
+        it "returns the pull request from preloaded sub-issues" do
+          issue = create(:issue, project: project)
+          pr = create(:issue, :pull_request, project: project, parent_issue: issue)
+
+          preloaded_issue = described_class.includes(:sub_issues).find(issue.id)
+
+          expect(preloaded_issue.sub_issues).to be_loaded
+          expect(preloaded_issue.associated_pull_request).to eq(pr)
+        end
+
+        it "returns nil when preloaded sub-issues have no pull requests" do
+          issue = create(:issue, project: project)
+          create(:issue, project: project, parent_issue: issue)
+
+          preloaded_issue = described_class.includes(:sub_issues).find(issue.id)
+
+          expect(preloaded_issue.sub_issues).to be_loaded
+          expect(preloaded_issue.associated_pull_request).to be_nil
+        end
+
+        it "prefers an open PR over a closed PR with preloaded data" do
+          issue = create(:issue, project: project)
+          create(:issue, :pull_request, :closed, project: project, parent_issue: issue,
+                 github_updated_at: 2.days.ago)
+          open_pr = create(:issue, :pull_request, project: project, parent_issue: issue,
+                           github_updated_at: 3.days.ago)
+
+          preloaded_issue = described_class.includes(:sub_issues).find(issue.id)
+
+          expect(preloaded_issue.sub_issues).to be_loaded
+          expect(preloaded_issue.associated_pull_request).to eq(open_pr)
+        end
+
+        it "returns nil when only closed PRs exist with preloaded data" do
+          issue = create(:issue, project: project)
+          create(:issue, :pull_request, :closed, project: project, parent_issue: issue,
+                 github_updated_at: 2.days.ago)
+
+          preloaded_issue = described_class.includes(:sub_issues).find(issue.id)
+
+          expect(preloaded_issue.sub_issues).to be_loaded
+          expect(preloaded_issue.associated_pull_request).to be_nil
+        end
+
+        it "returns the most recently updated open PR with preloaded data" do
+          issue = create(:issue, project: project)
+          create(:issue, :pull_request, project: project, parent_issue: issue,
+                 github_updated_at: 2.days.ago)
+          newest_pr = create(:issue, :pull_request, project: project, parent_issue: issue,
+                             github_updated_at: 1.hour.ago)
+
+          preloaded_issue = described_class.includes(:sub_issues).find(issue.id)
+
+          expect(preloaded_issue.sub_issues).to be_loaded
+          expect(preloaded_issue.associated_pull_request).to eq(newest_pr)
+        end
+      end
+    end
+
+    describe "#associated_paid_pull_request" do
+      let(:project) { create(:project) }
+
+      it "returns the open PR when a completed agent run produced it" do
+        issue = create(:issue, project: project)
+        pr = create(:issue, :pull_request, project: project, github_number: 99, github_state: "open")
+        create(:agent_run, :completed, project: project, issue: issue,
+          pull_request_number: pr.github_number,
+          pull_request_url: "https://github.com/example/repo/pull/#{pr.github_number}")
+
+        expect(issue.associated_paid_pull_request).to eq(pr)
+      end
+
+      it "returns nil when the only linked PR was not paid-generated" do
+        issue = create(:issue, project: project)
+        create(:issue, :pull_request, project: project, parent_issue: issue, github_state: "open")
+
+        expect(issue.associated_paid_pull_request).to be_nil
+      end
+
+      it "returns nil when the paid-generated PR has been closed" do
+        issue = create(:issue, project: project)
+        pr = create(:issue, :pull_request, :closed, project: project, github_number: 99)
+        create(:agent_run, :completed, project: project, issue: issue,
+          pull_request_number: pr.github_number,
+          pull_request_url: "https://github.com/example/repo/pull/#{pr.github_number}")
+
+        expect(issue.associated_paid_pull_request).to be_nil
+      end
+
+      it "returns nil when called on a pull request record" do
+        issue = create(:issue, project: project)
+        pr = create(:issue, :pull_request, project: project, github_number: 99, github_state: "open")
+        create(:agent_run, :completed, project: project, issue: issue,
+          pull_request_number: pr.github_number,
+          pull_request_url: "https://github.com/example/repo/pull/#{pr.github_number}")
+
+        expect(pr.associated_paid_pull_request).to be_nil
+      end
+
+      it "ignores PRs from other projects with matching numbers" do
+        other_project = create(:project)
+        issue = create(:issue, project: project)
+        create(:issue, :pull_request, project: other_project, github_number: 99, github_state: "open")
+        create(:agent_run, :completed, project: project, issue: issue,
+          pull_request_number: 99,
+          pull_request_url: "https://github.com/example/repo/pull/99")
+
+        expect(issue.associated_paid_pull_request).to be_nil
+      end
+    end
+
+    describe ".open_paid_generated_prs_by_issue_id" do
+      let(:project) { create(:project) }
+
+      it "maps issue_id to the open paid-generated PR" do
+        issue_with_paid_pr = create(:issue, project: project)
+        paid_pr = create(:issue, :pull_request, project: project, github_number: 99, github_state: "open")
+        create(:agent_run, :completed, project: project, issue: issue_with_paid_pr,
+          pull_request_number: paid_pr.github_number,
+          pull_request_url: "https://github.com/example/repo/pull/#{paid_pr.github_number}")
+
+        issue_without_paid_pr = create(:issue, project: project)
+        create(:issue, :pull_request, project: project, parent_issue: issue_without_paid_pr,
+          github_state: "open")
+
+        result = described_class.open_paid_generated_prs_by_issue_id(
+          project: project,
+          issue_ids: [ issue_with_paid_pr.id, issue_without_paid_pr.id ]
+        )
+
+        expect(result).to eq(issue_with_paid_pr.id => paid_pr)
+      end
+
+      it "excludes issues whose paid PR has been closed" do
+        issue = create(:issue, project: project)
+        paid_pr = create(:issue, :pull_request, :closed, project: project, github_number: 99)
+        create(:agent_run, :completed, project: project, issue: issue,
+          pull_request_number: paid_pr.github_number,
+          pull_request_url: "https://github.com/example/repo/pull/#{paid_pr.github_number}")
+
+        result = described_class.open_paid_generated_prs_by_issue_id(
+          project: project, issue_ids: [ issue.id ]
+        )
+
+        expect(result).to be_empty
+      end
+
+      it "returns an empty hash when no issue IDs are supplied" do
+        expect(described_class.open_paid_generated_prs_by_issue_id(project: project, issue_ids: []))
+          .to eq({})
+      end
+
+      it "prefers the most recently updated PR when multiple are linked to one issue" do
+        issue = create(:issue, project: project)
+        older_pr = create(:issue, :pull_request, project: project, github_number: 98,
+          github_state: "open", github_updated_at: 2.hours.ago)
+        newer_pr = create(:issue, :pull_request, project: project, github_number: 99,
+          github_state: "open", github_updated_at: 1.minute.ago)
+        create(:agent_run, :completed, project: project, issue: issue,
+          pull_request_number: older_pr.github_number,
+          pull_request_url: "https://github.com/example/repo/pull/#{older_pr.github_number}")
+        create(:agent_run, :completed, project: project, issue: issue,
+          pull_request_number: newer_pr.github_number,
+          pull_request_url: "https://github.com/example/repo/pull/#{newer_pr.github_number}")
+
+        result = described_class.open_paid_generated_prs_by_issue_id(
+          project: project, issue_ids: [ issue.id ]
+        )
+
+        expect(result).to eq(issue.id => newer_pr)
+      end
+
+      it "ignores PRs from other projects with matching numbers" do
+        other_project = create(:project)
+        issue = create(:issue, project: project)
+        create(:issue, :pull_request, project: other_project, github_number: 99, github_state: "open")
+        create(:agent_run, :completed, project: project, issue: issue,
+          pull_request_number: 99,
+          pull_request_url: "https://github.com/example/repo/pull/99")
+
+        result = described_class.open_paid_generated_prs_by_issue_id(
+          project: project, issue_ids: [ issue.id ]
+        )
+
+        expect(result).to be_empty
+      end
+
+      it "issues a bounded number of queries regardless of issue count" do
+        issues = Array.new(5) { create(:issue, project: project) }
+        issues.each_with_index do |issue, idx|
+          pr = create(:issue, :pull_request, project: project, github_number: 100 + idx, github_state: "open")
+          create(:agent_run, :completed, project: project, issue: issue,
+            pull_request_number: pr.github_number,
+            pull_request_url: "https://github.com/example/repo/pull/#{pr.github_number}")
+        end
+
+        # Two queries: agent_runs pairs, then open PRs by number.
+        query_count = 0
+        counter = ->(*, payload) { query_count += 1 unless payload[:name] == "SCHEMA" }
+        ActiveSupport::Notifications.subscribed(counter, "sql.active_record") do
+          described_class.open_paid_generated_prs_by_issue_id(
+            project: project, issue_ids: issues.map(&:id)
+          )
+        end
+
+        expect(query_count).to eq(2)
+      end
+    end
+  end
+
+  describe "#ready_to_work?" do
+    let(:project) { create(:project) }
+
+    it "returns true when issue has no dependencies" do
+      issue = create(:issue, project: project)
+
+      expect(issue.ready_to_work?).to be true
+    end
+
+    it "returns false when issue has open dependencies" do
+      dep = create(:issue, project: project, github_state: "open")
+      issue = create(:issue, project: project)
+      create(:issue_dependency, issue: issue, depends_on_issue: dep)
+
+      expect(issue.ready_to_work?).to be false
+    end
+
+    it "returns true when all dependencies are closed" do
+      dep = create(:issue, project: project, github_state: "closed")
+      issue = create(:issue, project: project)
+      create(:issue_dependency, issue: issue, depends_on_issue: dep)
+
+      expect(issue.ready_to_work?).to be true
+    end
+
+    it "returns false when issue has unresolved external dependencies" do
+      issue = create(:issue, project: project)
+      create(:issue_dependency, issue: issue, depends_on_issue: nil,
+                                depends_on_owner: "org", depends_on_repo: "repo",
+                                depends_on_number: 42)
+
+      expect(issue.ready_to_work?).to be false
+    end
+
+    it "returns false when issue has both closed local and unresolved external dependencies" do
+      dep = create(:issue, project: project, github_state: "closed")
+      issue = create(:issue, project: project)
+      create(:issue_dependency, issue: issue, depends_on_issue: dep)
+      create(:issue_dependency, issue: issue, depends_on_issue: nil,
+                                depends_on_owner: "org", depends_on_repo: "repo",
+                                depends_on_number: 42)
+
+      expect(issue.ready_to_work?).to be false
+    end
+
+    it "returns false when a deployment-blocked dep points at a merged but undeployed PR" do
+      pr = create(:issue, :pull_request, project: project, github_state: "closed", deployed_at: nil)
+      issue = create(:issue, project: project)
+      create(:issue_dependency, issue: issue, depends_on_issue: pr, requires_deployment: true)
+
+      expect(issue.ready_to_work?).to be false
+    end
+
+    it "returns true when a deployment-blocked dep's target PR has been marked deployed" do
+      pr = create(:issue, :pull_request, project: project, github_state: "closed", deployed_at: Time.current)
+      issue = create(:issue, project: project)
+      create(:issue_dependency, issue: issue, depends_on_issue: pr, requires_deployment: true)
+
+      expect(issue.ready_to_work?).to be true
+    end
+
+    it "returns true when an external dep resolves to a closed issue in a sibling project" do
+      sibling = create(:project, account: project.account, owner: "viamin", name: "agent-harness")
+      create(:issue, project: sibling, github_number: 42, github_state: "closed")
+      issue = create(:issue, project: project)
+      create(:issue_dependency, issue: issue, depends_on_issue: nil,
+                                depends_on_owner: "viamin", depends_on_repo: "agent-harness",
+                                depends_on_number: 42)
+
+      expect(issue.ready_to_work?).to be true
+    end
+
+    it "returns false when an external dep resolves to an open issue in a sibling project" do
+      sibling = create(:project, account: project.account, owner: "viamin", name: "agent-harness")
+      create(:issue, project: sibling, github_number: 42, github_state: "open")
+      issue = create(:issue, project: project)
+      create(:issue_dependency, issue: issue, depends_on_issue: nil,
+                                depends_on_owner: "viamin", depends_on_repo: "agent-harness",
+                                depends_on_number: 42)
+
+      expect(issue.ready_to_work?).to be false
+    end
+  end
+
+  describe "#deployed?" do
+    it "is false for non-PR issues" do
+      issue = build(:issue, is_pull_request: false, deployed_at: Time.current)
+
+      expect(issue).not_to be_deployed
+    end
+
+    it "is false for PRs without a deployed_at timestamp" do
+      pr = build(:issue, :pull_request, deployed_at: nil)
+
+      expect(pr).not_to be_deployed
+    end
+
+    it "is true for PRs with a deployed_at timestamp" do
+      pr = build(:issue, :pull_request, deployed_at: Time.current)
+
+      expect(pr).to be_deployed
+    end
+  end
+
+  describe "#mark_deployed!" do
+    let(:project) { create(:project) }
+
+    it "sets deployed_at on a PR" do
+      pr = create(:issue, :pull_request, project: project, deployed_at: nil)
+
+      freeze_time do
+        pr.mark_deployed!
+        expect(pr.deployed_at).to eq(Time.current)
+      end
+    end
+
+    it "accepts an explicit timestamp" do
+      pr = create(:issue, :pull_request, project: project, deployed_at: nil)
+      ts = 2.days.ago.change(usec: 0)
+
+      pr.mark_deployed!(time: ts)
+      expect(pr.deployed_at).to be_within(1.second).of(ts)
+    end
+
+    it "raises when called on a non-PR issue" do
+      issue = create(:issue, project: project, is_pull_request: false)
+
+      expect { issue.mark_deployed! }.to raise_error(ArgumentError, /pull requests/)
+    end
+  end
+
+  describe "#blocking_issues" do
+    let(:project) { create(:project) }
+
+    it "returns only open dependencies" do
+      open_dep = create(:issue, project: project, github_state: "open")
+      closed_dep = create(:issue, project: project, github_state: "closed")
+      issue = create(:issue, project: project)
+      create(:issue_dependency, issue: issue, depends_on_issue: open_dep)
+      create(:issue_dependency, issue: issue, depends_on_issue: closed_dep)
+
+      expect(issue.blocking_issues).to contain_exactly(open_dep)
+    end
+
+    it "excludes open dependencies in recommend_close state" do
+      open_dep = create(:issue, project: project, github_state: "open")
+      recommend_close_dep = create(:issue, :recommend_close, project: project, github_state: "open")
+      issue = create(:issue, project: project)
+      create(:issue_dependency, issue: issue, depends_on_issue: open_dep)
+      create(:issue_dependency, issue: issue, depends_on_issue: recommend_close_dep)
+
+      expect(issue.blocking_issues).to contain_exactly(open_dep)
+    end
+  end
+
+  describe "#dependent_issues" do
+    let(:project) { create(:project) }
+
+    it "returns issues that depend on this issue" do
+      issue = create(:issue, project: project)
+      dependent = create(:issue, project: project)
+      create(:issue_dependency, issue: dependent, depends_on_issue: issue)
+
+      expect(issue.dependent_issues).to contain_exactly(dependent)
+    end
+  end
+
+  describe "#trusted? and #untrusted?" do
+    let(:project) { create(:project, allowed_github_usernames: [ "viamin" ]) }
+
+    it "returns trusted? true for allowlisted creator" do
+      issue = build(:issue, project: project, github_creator_login: "viamin")
+
+      expect(issue.trusted?).to be true
+      expect(issue.untrusted?).to be false
+    end
+
+    it "returns trusted? false for non-allowlisted creator" do
+      issue = build(:issue, project: project, github_creator_login: "attacker")
+
+      expect(issue.trusted?).to be false
+      expect(issue.untrusted?).to be true
+    end
+
+    it "is case-insensitive" do
+      issue = build(:issue, project: project, github_creator_login: "VIAMIN")
+
+      expect(issue.trusted?).to be true
+    end
+  end
+
+  describe "github_creator_login validation" do
+    it "requires github_creator_login" do
+      issue = build(:issue, github_creator_login: nil)
+
+      expect(issue).not_to be_valid
+      expect(issue.errors[:github_creator_login]).to include("can't be blank")
+    end
+  end
+
+  describe "labels JSONB storage" do
+    it "stores labels as JSONB array" do
+      labels = [ "paid:planning", "bug", "priority:high" ]
+      issue = create(:issue, labels: labels)
+      reloaded = described_class.find(issue.id)
+
+      expect(reloaded.labels).to eq(labels)
+    end
+
+    it "defaults to empty array" do
+      issue = create(:issue)
+      issue.reload
+      expect(issue.labels).to eq([])
+    end
+  end
+
+  describe "project association" do
+    it "is destroyed when project is destroyed" do
+      project = create(:project)
+      issue = create(:issue, project: project)
+
+      expect { project.destroy }.to change(described_class, :count).by(-1)
+      expect { issue.reload }.to raise_error(ActiveRecord::RecordNotFound)
+    end
+  end
+
+  describe "sub_issues association" do
+    it "nullifies parent_issue_id when parent issue is destroyed" do
+      parent = create(:issue)
+      sub_issue = create(:issue, project: parent.project, parent_issue: parent)
+
+      parent.destroy
+      sub_issue.reload
+
+      expect(sub_issue.parent_issue_id).to be_nil
+    end
+  end
+
+  describe "paid state machine values" do
+    it "defines valid PAID_STATES" do
+      expect(described_class::PAID_STATES).to eq(%w[new planning in_progress completed failed needs_input recommend_close analyzed])
+    end
+
+    it "defaults paid_state to new" do
+      issue = create(:issue)
+      expect(issue.paid_state).to eq("new")
+    end
+
+    it "accepts all valid paid states" do
+      described_class::PAID_STATES.each do |state|
+        issue = build(:issue, paid_state: state)
+        expect(issue).to be_valid
+      end
+    end
+
+    it "rejects invalid paid states" do
+      issue = build(:issue, paid_state: "invalid")
+      expect(issue).not_to be_valid
+      expect(issue.errors[:paid_state]).to include("is not included in the list")
+    end
+  end
+
+  describe "#needs_input?" do
+    it "returns true when the issue is waiting on user answers" do
+      project = build(:project, enhance_issue_needs_input_label_name: "paid-enhance-needs-input")
+      issue = build(:issue, :needs_input, project: project, labels: [ "paid-enhance-needs-input" ])
+
+      expect(issue).to be_needs_input
+    end
+
+    it "returns false for other paid states" do
+      expect(build(:issue, paid_state: "planning")).not_to be_needs_input
+    end
+
+    it "returns false for non-enhancement needs-input issues" do
+      project = build(:project, enhance_issue_needs_input_label_name: "paid-enhance-needs-input")
+      issue = build(:issue, :needs_input, project: project, labels: [ "paid-needs-input" ])
+
+      expect(issue).not_to be_needs_input
+    end
+  end
+
+  describe "broadcast callbacks" do
+    let(:project) { create(:project) }
+
+    context "when creating an issue" do
+      it "broadcasts issues update for a regular issue" do
+        allow(project).to receive(:broadcast_issues_update)
+        allow(project).to receive(:broadcast_pull_requests_update)
+
+        create(:issue, project: project)
+
+        expect(project).to have_received(:broadcast_issues_update)
+        expect(project).not_to have_received(:broadcast_pull_requests_update)
+      end
+
+      it "broadcasts pull requests update for a pull request" do
+        allow(project).to receive(:broadcast_issues_update)
+        allow(project).to receive(:broadcast_pull_requests_update)
+
+        create(:issue, :pull_request, project: project)
+
+        expect(project).not_to have_received(:broadcast_issues_update)
+        expect(project).to have_received(:broadcast_pull_requests_update)
+      end
+
+      it "broadcasts both sections for a pull request linked to an issue" do
+        parent = create(:issue, project: project)
+        allow(project).to receive(:broadcast_issues_update)
+        allow(project).to receive(:broadcast_pull_requests_update)
+
+        create(:issue, :pull_request, project: project, parent_issue: parent)
+
+        expect(project).to have_received(:broadcast_issues_update)
+        expect(project).to have_received(:broadcast_pull_requests_update)
+      end
+    end
+
+    context "when updating an issue" do
+      it "broadcasts issues update for a regular issue" do
+        allow(project).to receive(:broadcast_issues_update)
+        allow(project).to receive(:broadcast_pull_requests_update)
+        issue = create(:issue, project: project)
+
+        expect(project).to receive(:broadcast_issues_update).once
+        expect(project).not_to receive(:broadcast_pull_requests_update)
+
+        issue.update!(title: "Updated title")
+      end
+
+      it "broadcasts pull requests update for a pull request" do
+        allow(project).to receive(:broadcast_issues_update)
+        allow(project).to receive(:broadcast_pull_requests_update)
+        pr = create(:issue, :pull_request, project: project)
+
+        expect(project).not_to receive(:broadcast_issues_update)
+        expect(project).to receive(:broadcast_pull_requests_update).once
+
+        pr.update!(title: "Updated PR title")
+      end
+
+      it "broadcasts issues update when a PR is linked to an issue" do
+        parent = create(:issue, project: project)
+        allow(project).to receive(:broadcast_issues_update)
+        allow(project).to receive(:broadcast_pull_requests_update)
+        pr = create(:issue, :pull_request, project: project)
+
+        expect(project).to receive(:broadcast_issues_update).once
+        expect(project).to receive(:broadcast_pull_requests_update).once
+
+        pr.update!(parent_issue_id: parent.id)
+      end
+
+      it "broadcasts issues update when a PR is unlinked from an issue" do
+        parent = create(:issue, project: project)
+        allow(project).to receive(:broadcast_issues_update)
+        allow(project).to receive(:broadcast_pull_requests_update)
+        pr = create(:issue, :pull_request, project: project, parent_issue: parent)
+
+        expect(project).to receive(:broadcast_issues_update).once
+        expect(project).to receive(:broadcast_pull_requests_update).once
+
+        pr.update!(parent_issue_id: nil)
+      end
+
+      it "does not broadcast issues update when a linked PR title changes" do
+        parent = create(:issue, project: project)
+        allow(project).to receive(:broadcast_issues_update)
+        allow(project).to receive(:broadcast_pull_requests_update)
+        pr = create(:issue, :pull_request, project: project, parent_issue: parent)
+
+        expect(project).not_to receive(:broadcast_issues_update)
+        expect(project).to receive(:broadcast_pull_requests_update).once
+
+        pr.update!(title: "Updated PR title")
+      end
+
+      it "broadcasts both sections when is_pull_request changes" do
+        allow(project).to receive(:broadcast_issues_update)
+        allow(project).to receive(:broadcast_pull_requests_update)
+        issue = create(:issue, project: project, is_pull_request: false)
+
+        expect(project).to receive(:broadcast_issues_update).once
+        expect(project).to receive(:broadcast_pull_requests_update).once
+
+        issue.update!(is_pull_request: true)
+      end
+    end
+
+    context "when destroying an issue" do
+      it "broadcasts issues update for a regular issue" do
+        allow(project).to receive(:broadcast_issues_update)
+        allow(project).to receive(:broadcast_pull_requests_update)
+        issue = create(:issue, project: project)
+
+        expect(project).to receive(:broadcast_issues_update).once
+        expect(project).not_to receive(:broadcast_pull_requests_update)
+
+        issue.destroy!
+      end
+
+      it "broadcasts pull requests update for a pull request" do
+        allow(project).to receive(:broadcast_issues_update)
+        allow(project).to receive(:broadcast_pull_requests_update)
+        pr = create(:issue, :pull_request, project: project)
+
+        expect(project).not_to receive(:broadcast_issues_update)
+        expect(project).to receive(:broadcast_pull_requests_update).once
+
+        pr.destroy!
+      end
+
+      it "broadcasts both sections when destroying a PR linked to an issue" do
+        parent = create(:issue, project: project)
+        allow(project).to receive(:broadcast_issues_update)
+        allow(project).to receive(:broadcast_pull_requests_update)
+        pr = create(:issue, :pull_request, project: project, parent_issue: parent)
+
+        expect(project).to receive(:broadcast_issues_update).once
+        expect(project).to receive(:broadcast_pull_requests_update).once
+
+        pr.destroy!
+      end
+    end
+  end
+
+  describe "#tracker_issue?" do
+    it "returns true when title contains 'tracker'" do
+      issue = build(:issue, title: "Phase 2 remaining work tracker")
+      expect(issue.tracker_issue?).to be true
+    end
+
+    it "returns true when body contains 'completion criteria'" do
+      issue = build(:issue, title: "Phase 2 umbrella", body: "## Completion criteria\n- done")
+      expect(issue.tracker_issue?).to be true
+    end
+
+    it "returns true for 'remaining work' in title" do
+      issue = build(:issue, title: "Remaining work for phase 2")
+      expect(issue.tracker_issue?).to be true
+    end
+
+    it "returns true for 'meta issue' in a body heading" do
+      issue = build(:issue, title: "Phase 2 umbrella", body: "## Meta issue\nTracks all items")
+      expect(issue.tracker_issue?).to be true
+    end
+
+    it "returns false for regular issues" do
+      issue = build(:issue, title: "Fix login bug", body: "The login page crashes")
+      expect(issue.tracker_issue?).to be false
+    end
+
+    it "is case-insensitive" do
+      issue = build(:issue, title: "PHASE TRACKER for Q2")
+      expect(issue.tracker_issue?).to be true
+    end
+
+    # Regression: feature issues that incidentally mention tracker vocabulary in
+    # prose were being permanently excluded from auto-pick by the "tracker with
+    # no body refs" safety net. Body matches now require a markdown heading.
+    context "when tracker vocabulary appears only in prose body" do
+      it "returns false for 'issue tracker' mentioned in a feature description" do
+        issue = build(:issue, title: "Support custom issue trackers",
+          body: "In enterprise codebases, the issue tracker is rarely GitHub Issues.")
+        expect(issue.tracker_issue?).to be false
+      end
+
+      it "returns false for 'deploy tracker' mentioned in prose" do
+        issue = build(:issue, title: "Support multi-step PRs",
+          body: "- An external service (deploy tracker, CI/CD system, etc.)")
+        expect(issue.tracker_issue?).to be false
+      end
+
+      it "returns false for 'custom tracker integration' in a bulleted list" do
+        issue = build(:issue, title: "Support PR templates",
+          body: "- Linked issues/tickets (with custom tracker integration)")
+        expect(issue.tracker_issue?).to be false
+      end
+    end
+
+    # Regression: "## Remaining work" is a common section heading in regular
+    # implementation issues (describing what work the issue itself needs),
+    # not a signal that the issue is a tracker/meta-issue. It caused false
+    # positives that silently excluded issues from auto-pick.
+    context "when 'remaining work' appears only in a body heading" do
+      it "returns false for '## Remaining work' heading in a regular issue" do
+        issue = build(:issue, title: "Implement observability stack",
+          body: "## Remaining work\n- Add Prometheus config\n- Add Grafana dashboard")
+        expect(issue.tracker_issue?).to be false
+      end
+    end
+  end
+
+  describe "#body_referenced_issue_numbers" do
+    it "extracts issue numbers from body" do
+      issue = build(:issue, body: "Depends on #100, #200, and #300")
+      expect(issue.body_referenced_issue_numbers).to contain_exactly(100, 200, 300)
+    end
+
+    it "returns unique numbers" do
+      issue = build(:issue, body: "#100 is mentioned twice: #100")
+      expect(issue.body_referenced_issue_numbers).to eq([ 100 ])
+    end
+
+    it "returns empty array for nil body" do
+      issue = build(:issue, body: nil)
+      expect(issue.body_referenced_issue_numbers).to eq([])
+    end
+
+    it "does not match numbers without # prefix" do
+      issue = build(:issue, body: "Issue 100 is not a reference")
+      expect(issue.body_referenced_issue_numbers).to eq([])
+    end
+  end
+
+  describe "#closing_referenced_issue_numbers" do
+    let(:project) { build(:project, owner: "acme", repo: "widget") }
+
+    it "extracts same-repo closing references from the body" do
+      issue = build(:issue, project: project, body: "Closes #12. Fixes #14 and #15.")
+
+      expect(issue.closing_referenced_issue_numbers).to eq([ 12, 14, 15 ])
+    end
+
+    it "includes fully-qualified references for the same repo" do
+      issue = build(:issue, project: project, body: "Resolves acme/widget#42")
+
+      expect(issue.closing_referenced_issue_numbers).to eq([ 42 ])
+    end
+
+    it "ignores references for other repos" do
+      issue = build(:issue, project: project, body: "Closes other/repo#9 and #12")
+
+      expect(issue.closing_referenced_issue_numbers).to eq([ 12 ])
+    end
+
+    it "ignores repo-only qualified references like repo#123" do
+      issue = build(:issue, project: project, body: "Closes widget#42")
+
+      expect(issue.closing_referenced_issue_numbers).to eq([])
+    end
+
+    it "ignores non-closing references" do
+      issue = build(:issue, project: project, body: "Related to #12. Depends on #14.")
+
+      expect(issue.closing_referenced_issue_numbers).to eq([])
+    end
+
+    it "handles colon after closing keyword" do
+      issue = build(:issue, project: project, body: "Fixes: #123")
+
+      expect(issue.closing_referenced_issue_numbers).to eq([ 123 ])
+    end
+
+    it "stops at non-reference tokens so unrelated refs in the same clause are excluded" do
+      issue = build(:issue, project: project, body: "Closes #12, related to #14")
+
+      expect(issue.closing_referenced_issue_numbers).to eq([ 12 ])
+    end
+  end
+
+  describe "#closed_issue" do
+    let(:project) { create(:project, owner: "acme", repo: "widget") }
+
+    it "prefers a cached closing reference over parent_issue" do
+      parent_issue = create(:issue, project: project, github_number: 12, title: "Parent issue")
+      closed_issue = create(:issue, project: project, github_number: 42, title: "Actually closed")
+      pr = create(:issue, :pull_request, project: project, parent_issue: parent_issue,
+        body: "Closes #42")
+
+      expect(pr.closed_issue(42 => closed_issue)).to eq(closed_issue)
+    end
+
+    it "falls back to parent_issue when no cached closing reference is available" do
+      parent_issue = create(:issue, project: project, github_number: 12, title: "Parent issue")
+      pr = create(:issue, :pull_request, project: project, parent_issue: parent_issue,
+        body: "Related to #42")
+
+      expect(pr.closed_issue).to eq(parent_issue)
+    end
+  end
+
+  describe ".open_pull_request_parent_issue_ids" do
+    let(:project) { create(:project) }
+
+    it "returns parent issue ids for open linked PRs only" do
+      with_open_pr = create(:issue, project: project, github_state: "open")
+      with_closed_pr = create(:issue, project: project, github_state: "open")
+      create(:issue, :pull_request, project: project, parent_issue: with_open_pr, github_state: "open")
+      create(:issue, :pull_request, project: project, parent_issue: with_closed_pr, github_state: "closed")
+
+      result = described_class.open_pull_request_parent_issue_ids(project: project).pluck(:parent_issue_id)
+
+      expect(result).to contain_exactly(with_open_pr.id)
+    end
+
+    it "ignores open PRs that are not linked to a parent issue" do
+      linked_issue = create(:issue, project: project, github_state: "open")
+      create(:issue, :pull_request, project: project, parent_issue: linked_issue, github_state: "open")
+      create(:issue, :pull_request, project: project, parent_issue: nil, github_state: "open")
+
+      result = described_class.open_pull_request_parent_issue_ids(project: project).pluck(:parent_issue_id)
+
+      expect(result).to contain_exactly(linked_issue.id)
+    end
+
+    it "scopes parent issue ids to the provided issue ids" do
+      included = create(:issue, project: project, github_state: "open")
+      excluded = create(:issue, project: project, github_state: "open")
+      create(:issue, :pull_request, project: project, parent_issue: included, github_state: "open")
+      create(:issue, :pull_request, project: project, parent_issue: excluded, github_state: "open")
+
+      result = described_class.open_pull_request_parent_issue_ids(issue_ids: [ included.id ]).pluck(:parent_issue_id)
+
+      expect(result).to contain_exactly(included.id)
+    end
+  end
+
+  describe ".lifecycle_statuses" do
+    let(:project) { create(:project) }
+
+    it "returns :eligible for an issue with no dependencies or active runs" do
+      issue = create(:issue, project: project, github_state: "open")
+
+      result = described_class.lifecycle_statuses([ issue ])
+
+      expect(result[issue.id]).to eq(:eligible)
+    end
+
+    it "returns :blocked for an issue with an open local dependency" do
+      issue = create(:issue, project: project, github_state: "open")
+      dep = create(:issue, project: project, github_state: "open")
+      create(:issue_dependency, issue: issue, depends_on_issue: dep)
+
+      result = described_class.lifecycle_statuses([ issue ])
+
+      expect(result[issue.id]).to eq(:blocked)
+    end
+
+    it "returns :blocked for an issue with an external dependency" do
+      issue = create(:issue, project: project, github_state: "open")
+      create(:issue_dependency, issue: issue, depends_on_issue: nil,
+             depends_on_owner: "other-org", depends_on_repo: "other-repo",
+             depends_on_number: 42)
+
+      result = described_class.lifecycle_statuses([ issue ])
+
+      expect(result[issue.id]).to eq(:blocked)
+    end
+
+    it "returns :eligible when open dependency has paid_state recommend_close" do
+      issue = create(:issue, project: project, github_state: "open")
+      dep = create(:issue, :recommend_close, project: project, github_state: "open")
+      create(:issue_dependency, issue: issue, depends_on_issue: dep)
+
+      result = described_class.lifecycle_statuses([ issue ])
+
+      # Matches blocking_issues semantics: recommend_close deps are not blocking
+      expect(result[issue.id]).to eq(:eligible)
+    end
+
+    it "returns :eligible when local dependency is closed" do
+      issue = create(:issue, project: project, github_state: "open")
+      dep = create(:issue, project: project, github_state: "closed")
+      create(:issue_dependency, issue: issue, depends_on_issue: dep)
+
+      result = described_class.lifecycle_statuses([ issue ])
+
+      expect(result[issue.id]).to eq(:eligible)
+    end
+
+    it "returns :eligible when an external dep resolves to a closed sibling-project issue" do
+      sibling = create(:project, account: project.account, owner: "viamin", name: "agent-harness")
+      create(:issue, project: sibling, github_number: 42, github_state: "closed")
+      issue = create(:issue, project: project, github_state: "open")
+      create(:issue_dependency, issue: issue, depends_on_issue: nil,
+             depends_on_owner: "viamin", depends_on_repo: "agent-harness",
+             depends_on_number: 42)
+
+      result = described_class.lifecycle_statuses([ issue ])
+
+      expect(result[issue.id]).to eq(:eligible)
+    end
+
+    it "returns :blocked when a deployment-blocked dep points at a merged but undeployed PR" do
+      issue = create(:issue, project: project, github_state: "open")
+      pr = create(:issue, :pull_request, project: project, github_state: "closed", deployed_at: nil)
+      create(:issue_dependency, issue: issue, depends_on_issue: pr, requires_deployment: true)
+
+      result = described_class.lifecycle_statuses([ issue ])
+
+      expect(result[issue.id]).to eq(:blocked)
+    end
+
+    it "returns :eligible when a deployment-blocked dep's target PR has been marked deployed" do
+      issue = create(:issue, project: project, github_state: "open")
+      pr = create(:issue, :pull_request, project: project, github_state: "closed", deployed_at: Time.current)
+      create(:issue_dependency, issue: issue, depends_on_issue: pr, requires_deployment: true)
+
+      result = described_class.lifecycle_statuses([ issue ])
+
+      expect(result[issue.id]).to eq(:eligible)
+    end
+
+    it "returns :in_progress for an issue with an active agent run" do
+      issue = create(:issue, project: project, github_state: "open")
+      create(:agent_run, issue: issue, project: project, status: "running")
+
+      result = described_class.lifecycle_statuses([ issue ])
+
+      expect(result[issue.id]).to eq(:in_progress)
+    end
+
+    it "returns :in_progress for an issue with an associated open PR" do
+      issue = create(:issue, project: project, github_state: "open")
+      create(:issue, project: project, github_state: "open",
+             is_pull_request: true, parent_issue: issue, pr_review_phase: "draft")
+
+      # Reload to pick up the sub_issues association
+      issue.reload
+      issues = described_class.where(id: issue.id).includes(:sub_issues).to_a
+
+      result = described_class.lifecycle_statuses(issues)
+
+      expect(result[issue.id]).to eq(:in_progress)
+    end
+
+    it "returns :eligible for an issue with only closed PRs" do
+      issue = create(:issue, project: project, github_state: "open")
+      create(:issue, project: project, github_state: "closed",
+             is_pull_request: true, parent_issue: issue)
+
+      result = described_class.lifecycle_statuses([ issue ])
+
+      expect(result[issue.id]).to eq(:eligible)
+    end
+
+    it "returns :blocked for a parent with an open non-PR sub-issue" do
+      parent = create(:issue, project: project, github_state: "open")
+      create(:issue, project: project, github_state: "open", parent_issue: parent)
+
+      result = described_class.lifecycle_statuses([ parent ])
+
+      expect(result[parent.id]).to eq(:blocked)
+    end
+
+    it "returns :eligible when the only open sub-issue is paid_state recommend_close" do
+      parent = create(:issue, project: project, github_state: "open")
+      create(:issue, :recommend_close, project: project, github_state: "open", parent_issue: parent)
+
+      result = described_class.lifecycle_statuses([ parent ])
+
+      expect(result[parent.id]).to eq(:eligible)
+    end
+
+    it "returns :eligible for an issue with only completed agent runs" do
+      issue = create(:issue, project: project, github_state: "open")
+      create(:agent_run, issue: issue, project: project, status: "completed")
+
+      result = described_class.lifecycle_statuses([ issue ])
+
+      expect(result[issue.id]).to eq(:eligible)
+    end
+
+    it "returns correct statuses for multiple issues" do
+      blocked = create(:issue, project: project, github_state: "open")
+      dep = create(:issue, project: project, github_state: "open")
+      create(:issue_dependency, issue: blocked, depends_on_issue: dep)
+
+      in_progress = create(:issue, project: project, github_state: "open")
+      create(:agent_run, issue: in_progress, project: project, status: "running")
+
+      eligible = create(:issue, project: project, github_state: "open")
+
+      result = described_class.lifecycle_statuses([ blocked, in_progress, eligible ])
+
+      expect(result[blocked.id]).to eq(:blocked)
+      expect(result[in_progress.id]).to eq(:in_progress)
+      expect(result[eligible.id]).to eq(:eligible)
+    end
+
+    it "returns an empty hash for an empty collection" do
+      result = described_class.lifecycle_statuses([])
+
+      expect(result).to eq({})
+    end
+  end
+
+  describe "paused state sync (UI -> GitHub)" do
+    let(:project) { create(:project, owner: "owner", repo: "repo") }
+    let(:github_client) { instance_double(GithubClient) }
+
+    before do
+      allow(project).to receive(:client).and_return(github_client)
+      allow(github_client).to receive(:add_labels_to_issue)
+      allow(github_client).to receive(:remove_label_from_issue)
+    end
+
+    it "adds the paid-paused label when paused flips to true" do
+      issue = create(:issue, project: project, github_number: 42)
+
+      issue.update!(paused: true)
+
+      expect(github_client).to have_received(:add_labels_to_issue).with(
+        "owner/repo", 42, [ described_class::PAUSED_LABEL ]
+      )
+      expect(github_client).not_to have_received(:remove_label_from_issue)
+    end
+
+    it "removes the paid-paused label when paused flips back to false" do
+      issue = create(:issue, project: project, github_number: 42, paused: true)
+      allow(github_client).to receive(:add_labels_to_issue)
+
+      issue.update!(paused: false)
+
+      expect(github_client).to have_received(:remove_label_from_issue).with(
+        "owner/repo", 42, described_class::PAUSED_LABEL
+      )
+    end
+
+    it "stamps paused_at when the paused flag transitions" do
+      issue = create(:issue, project: project, paused: false)
+      allow(github_client).to receive(:add_labels_to_issue)
+
+      freeze_time do
+        issue.update!(paused: true)
+
+        expect(issue.reload.paused_at).to eq(Time.current)
+      end
+    end
+
+    it "does not stamp paused_at when paused is unchanged" do
+      issue = create(:issue, project: project, paused: false, paused_at: 2.days.ago)
+
+      issue.update!(title: "Updated title")
+
+      expect(issue.reload.paused_at).to be_within(1.second).of(2.days.ago)
+    end
+
+    it "does not push the label when paused is unchanged" do
+      issue = create(:issue, project: project, paused: false)
+
+      issue.update!(title: "Updated title")
+
+      expect(github_client).not_to have_received(:add_labels_to_issue)
+      expect(github_client).not_to have_received(:remove_label_from_issue)
+    end
+
+    it "is best-effort: logs and keeps the local change when the push fails" do
+      allow(github_client).to receive(:add_labels_to_issue)
+        .and_raise(GithubClient::Error.new("GitHub unavailable"))
+      allow(Rails.logger).to receive(:warn)
+
+      issue = create(:issue, project: project)
+
+      expect { issue.update!(paused: true) }.not_to raise_error
+
+      expect(issue.reload.paused).to be(true)
+      expect(Rails.logger).to have_received(:warn) do |payload|
+        expect(payload[:message]).to eq("github_sync.sync_paused_label_failed")
+      end
+    end
+
+    it "silently succeeds when unpausing and the label is already absent (404)" do
+      allow(github_client).to receive(:remove_label_from_issue)
+        .and_raise(GithubClient::NotFoundError.new("Label not found"))
+      allow(Rails.logger).to receive(:warn)
+
+      issue = create(:issue, project: project, github_number: 42, paused: true)
+
+      expect { issue.update!(paused: false) }.not_to raise_error
+
+      expect(issue.reload.paused).to be(false)
+      expect(Rails.logger).not_to have_received(:warn)
+    end
+
+
+    it "is a no-op when the project has no configured client" do
+      # Override the before-block stub so client returns nil. The after_commit
+      # callback accesses `project` via the cached belongs_to association, which
+      # is the same Ruby object as the shared `project` let variable, so this
+      # stub takes effect correctly.
+      allow(project).to receive(:client).and_return(nil)
+
+      issue = create(:issue, project: project)
+
+      expect { issue.update!(paused: true) }.not_to raise_error
+      expect(issue.reload.paused).to be(true)
+    end
+
+    it "does not push a label for synthetic code-scanning issues (no backing GitHub issue)" do
+      issue = create(:issue, project: project,
+        source: described_class::SYNTHETIC_CODE_SCANNING_SOURCE,
+        github_number: 200_000_010)
+
+      issue.update!(paused: true)
+
+      expect(github_client).not_to have_received(:add_labels_to_issue)
+      expect(issue.reload.paused).to be(true)
+    end
+  end
+
+  describe "#runner_retry_abandoned?" do
+    it "returns false when runner_retry_abandoned_at is nil" do
+      issue = build(:issue, runner_retry_abandoned_at: nil)
+
+      expect(issue.runner_retry_abandoned?).to be(false)
+    end
+
+    it "returns true when runner_retry_abandoned_at is present" do
+      issue = build(:issue, runner_retry_abandoned_at: Time.current)
+
+      expect(issue.runner_retry_abandoned?).to be(true)
+    end
+  end
+
+  describe "#abandon_due_to_runner_retry_cap!" do
+    let(:project) { create(:project) }
+    let(:issue) { create(:issue, project: project) }
+
+    it "stamps the abandonment timestamp and reason" do
+      freeze_time = Time.zone.local(2026, 6, 1, 12, 0, 0)
+      travel_to(freeze_time) do
+        issue.abandon_due_to_runner_retry_cap!(
+          reason: "all capped",
+          cap: 10,
+          runner_keys: [ "claude", "codex" ]
+        )
+
+        issue.reload
+        expect(issue.runner_retry_abandoned_at).to eq(freeze_time)
+        expect(issue.runner_retry_abandon_reason).to eq("all capped")
+      end
+    end
+
+    it "is idempotent when the issue is already abandoned" do
+      original_time = 1.hour.ago
+      issue.update!(runner_retry_abandoned_at: original_time, runner_retry_abandon_reason: "first")
+
+      issue.abandon_due_to_runner_retry_cap!(
+        reason: "second",
+        cap: 10,
+        runner_keys: [ "claude" ]
+      )
+
+      issue.reload
+      expect(issue.runner_retry_abandoned_at).to be_within(1.second).of(original_time)
+      expect(issue.runner_retry_abandon_reason).to eq("first")
+    end
+
+    it "emits a structured log event" do
+      allow(Rails.logger).to receive(:info)
+
+      issue.abandon_due_to_runner_retry_cap!(
+        reason: "all capped",
+        cap: 10,
+        runner_keys: [ "claude", "codex" ]
+      )
+
+      expect(Rails.logger).to have_received(:info).with(
+        hash_including(
+          message: "issue.runner_retry_abandoned",
+          component: "agent_execution",
+          issue_id: issue.id,
+          project_id: project.id,
+          retry_cap: 10,
+          runner_keys: [ "claude", "codex" ],
+          reason: "all capped"
+        )
+      )
+    end
+  end
+
+  describe "#clear_runner_retry_abandonment!" do
+    let(:project) { create(:project) }
+    let(:issue) do
+      create(:issue, project: project,
+        runner_retry_abandoned_at: 1.hour.ago,
+        runner_retry_abandon_reason: "all capped")
+    end
+
+    it "clears the abandonment flag and reason" do
+      issue.clear_runner_retry_abandonment!
+
+      issue.reload
+      expect(issue.runner_retry_abandoned_at).to be_nil
+      expect(issue.runner_retry_abandon_reason).to be_nil
+      expect(issue.runner_retry_abandoned?).to be(false)
+    end
+
+    it "is a no-op when the issue is not abandoned" do
+      active = create(:issue, project: project)
+
+      expect { active.clear_runner_retry_abandonment! }.not_to change { active.attributes }
+    end
+
+    it "emits a structured log event" do
+      allow(Rails.logger).to receive(:info)
+
+      issue.clear_runner_retry_abandonment!(reason: "manual override succeeded")
+
+      expect(Rails.logger).to have_received(:info).with(
+        hash_including(
+          message: "issue.runner_retry_abandonment_cleared",
+          component: "agent_execution",
+          issue_id: issue.id,
+          project_id: project.id,
+          reason: "manual override succeeded"
+        )
+      )
+    end
+
+    it "does not reset per-provider failure counts (windowed basis is preserved)" do
+      # The cap is enforced via IssueRunnerFailureHistory (a 50-run windowed
+      # total); clearing the abandonment flag is a UI/auto-pick signal, not
+      # a reset of failure counts. A subsequent auto-pick will re-trip the
+      # cap and re-abandon the issue if all providers are still over it.
+      record_run = ->(runner_key, error_type: "error") {
+        create(:agent_run, :failed, project: project, issue: issue, goal: "create_pr",
+          runners_attempted: [ { "runner" => runner_key, "success" => false, "error_type" => error_type } ])
+      }
+      10.times { record_run.call("claude_code") }
+
+      issue.clear_runner_retry_abandonment!
+
+      # The cap is still enforced against the same windowed failure history.
+      capped = AgentRuns::IssueRunnerRetryCap.capped_runner_keys(
+        project: project, issue: issue, goal: "create_pr", cap: 10
+      )
+      expect(capped).to contain_exactly("claude")
+    end
+  end
+
+  describe "#abandon_due_to_push_permission_rejection!" do
+    let(:project) { create(:project) }
+    let(:issue) { create(:issue, project: project) }
+
+    it "stamps the abandonment timestamp and a push-prefixed reason" do
+      freeze_time = Time.zone.local(2026, 6, 1, 12, 0, 0)
+      travel_to(freeze_time) do
+        issue.abandon_due_to_push_permission_rejection!(reason: "App lacks workflows permission")
+
+        issue.reload
+        expect(issue.runner_retry_abandoned_at).to eq(freeze_time)
+        expect(issue.runner_retry_abandon_reason).to eq("Push rejected: App lacks workflows permission")
+      end
+    end
+
+    it "marks the issue as push-permission abandoned" do
+      issue.abandon_due_to_push_permission_rejection!(reason: "App lacks workflows permission")
+
+      issue.reload
+      expect(issue.push_permission_abandoned?).to be(true)
+      expect(issue.runner_retry_abandoned?).to be(true)
+    end
+
+    it "is idempotent when the issue is already abandoned" do
+      original_time = 1.hour.ago
+      issue.update!(runner_retry_abandoned_at: original_time, runner_retry_abandon_reason: "Push rejected: first")
+
+      issue.abandon_due_to_push_permission_rejection!(reason: "second")
+
+      issue.reload
+      expect(issue.runner_retry_abandoned_at).to be_within(1.second).of(original_time)
+      expect(issue.runner_retry_abandon_reason).to eq("Push rejected: first")
+    end
+
+    it "does not clobber a retry-cap abandonment reason" do
+      issue.update!(runner_retry_abandoned_at: 1.hour.ago, runner_retry_abandon_reason: "all capped")
+
+      issue.abandon_due_to_push_permission_rejection!(reason: "App lacks workflows permission")
+
+      issue.reload
+      expect(issue.runner_retry_abandon_reason).to eq("all capped")
+      expect(issue.push_permission_abandoned?).to be(false)
+    end
+
+    it "is cleared by a successful run (clear_runner_retry_abandonment!) so the issue re-enters auto-pick" do
+      issue.abandon_due_to_push_permission_rejection!(reason: "App lacks workflows permission")
+
+      issue.clear_runner_retry_abandonment!
+
+      issue.reload
+      expect(issue.runner_retry_abandoned?).to be(false)
+      expect(issue.push_permission_abandoned?).to be(false)
+    end
+  end
+
+  describe "#push_permission_abandoned?" do
+    it "returns true for a push-prefixed abandonment reason" do
+      issue = build(:issue, runner_retry_abandoned_at: Time.current,
+        runner_retry_abandon_reason: "Push rejected: missing workflows permission")
+
+      expect(issue.push_permission_abandoned?).to be(true)
+    end
+
+    it "returns false for a retry-cap abandonment reason" do
+      issue = build(:issue, runner_retry_abandoned_at: Time.current,
+        runner_retry_abandon_reason: "all capped")
+
+      expect(issue.push_permission_abandoned?).to be(false)
+    end
+
+    it "returns false when not abandoned" do
+      issue = build(:issue, runner_retry_abandoned_at: nil)
+
+      expect(issue.push_permission_abandoned?).to be(false)
+    end
+  end
+
+  describe "#record_merge_permission_rejection!" do
+    let(:issue) { create(:issue) }
+
+    it "stamps the rejection timestamp and reason" do
+      freeze_time = Time.zone.local(2026, 6, 1, 12, 0, 0)
+      travel_to(freeze_time) do
+        issue.record_merge_permission_rejection!(reason: "App lacks workflows permission")
+
+        issue.reload
+        expect(issue.merge_permission_rejected_at).to eq(freeze_time)
+        expect(issue.merge_permission_rejection_reason).to eq("App lacks workflows permission")
+      end
+    end
+
+    it "refreshes the timestamp on a repeat rejection (not idempotent-once)" do
+      issue.update!(merge_permission_rejected_at: 1.hour.ago, merge_permission_rejection_reason: "first")
+
+      issue.record_merge_permission_rejection!(reason: "second")
+
+      issue.reload
+      expect(issue.merge_permission_rejected_at).to be_within(1.second).of(Time.current)
+      expect(issue.merge_permission_rejection_reason).to eq("second")
+    end
+  end
+
+  describe "#merge_permission_rejected?" do
+    it "returns true once a rejection is recorded" do
+      issue = build(:issue, merge_permission_rejected_at: Time.current)
+
+      expect(issue.merge_permission_rejected?).to be(true)
+    end
+
+    it "returns false when never rejected" do
+      issue = build(:issue, merge_permission_rejected_at: nil)
+
+      expect(issue.merge_permission_rejected?).to be(false)
+    end
+  end
+
+  describe "#merge_permission_retry_due?" do
+    it "is true when never rejected" do
+      issue = build(:issue, merge_permission_rejected_at: nil)
+
+      expect(issue.merge_permission_retry_due?).to be(true)
+    end
+
+    it "is false within the cooldown window" do
+      issue = build(:issue, merge_permission_rejected_at: 1.hour.ago)
+
+      expect(issue.merge_permission_retry_due?).to be(false)
+    end
+
+    it "is true once the cooldown window has elapsed" do
+      issue = build(:issue, merge_permission_rejected_at: (Issue::MERGE_PERMISSION_RETRY_COOLDOWN + 1.minute).ago)
+
+      expect(issue.merge_permission_retry_due?).to be(true)
+    end
+  end
+end

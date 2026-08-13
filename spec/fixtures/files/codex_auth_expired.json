@@ -1,0 +1,10 @@
+{
+  "OPENAI_API_KEY": null,
+  "tokens": {
+    "id_token": "eyJcodex-id-token",
+    "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImNvZGV4In0.eyJleHAiOjEsImlzcyI6Imh0dHBzOi8vYXV0aC5vcGVuYWkuY29tLyIsInN1YiI6InVzZXItY29kZXgtMTIzIn0.codex-fake-sig",
+    "refresh_token": "v1.managed-codex-refresh-token",
+    "account_id": "acc_managed-codex-001"
+  },
+  "last_refresh": "2026-07-01T12:00:00Z"
+}

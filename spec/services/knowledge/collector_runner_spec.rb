@@ -1,0 +1,511 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe Knowledge::CollectorRunner do
+  let(:project) { create(:project) }
+  let(:commit_sha) { "a" * 40 }
+
+  # Test collector that returns predictable data
+  let(:test_collector_class) do
+    Class.new(Knowledge::BaseCollector) do
+      def collect
+        [
+          {
+            artifact_type: "test_artifact",
+            scope_path: "app/models/user.rb",
+            identifier: "User",
+            content: '{"class": "User"}',
+            metadata: {},
+            chunks: [
+              { chunk_type: "definition", content: "class User < ApplicationRecord", scope_tags: [ "model" ] }
+            ]
+          }
+        ]
+      end
+
+      def collector_type
+        "test_collector"
+      end
+
+      def tool_version
+        "test-tool 1.0.0"
+      end
+    end
+  end
+
+  before do
+    described_class.reset_registry!
+    described_class.register("test_collector", test_collector_class)
+  end
+
+  after do
+    described_class.reset_registry!
+  end
+
+  describe ".call" do
+    it "creates a project version and runs collectors" do
+      result = described_class.call(project: project, commit_sha: commit_sha)
+
+      expect(result[:project_version]).to be_persisted
+      expect(result[:project_version].commit_sha).to eq(commit_sha)
+      expect(result[:results].size).to eq(1)
+      expect(result[:results].first[:status]).to eq("completed")
+      expect(result[:results].first[:artifacts_count]).to eq(1)
+    end
+
+    it "creates artifacts and chunks" do
+      described_class.call(project: project, commit_sha: commit_sha)
+
+      expect(KnowledgeArtifact.count).to eq(1)
+      artifact = KnowledgeArtifact.first
+      expect(artifact.artifact_type).to eq("test_artifact")
+      expect(artifact.identifier).to eq("User")
+      expect(artifact.status).to eq("active")
+
+      expect(KnowledgeChunk.count).to eq(1)
+      chunk = KnowledgeChunk.first
+      expect(chunk.chunk_type).to eq("definition")
+    end
+
+    it "records collector run with tool_version and duration" do
+      described_class.call(project: project, commit_sha: commit_sha)
+
+      run = CollectorRun.first
+      expect(run.status).to eq("completed")
+      expect(run.tool_version).to eq("test-tool 1.0.0")
+      expect(run.duration_ms).to be_present
+      expect(run.artifacts_count).to eq(1)
+    end
+
+    context "when run twice on the same commit (idempotency)" do
+      it "produces identical artifact counts" do
+        _result1 = described_class.call(project: project, commit_sha: commit_sha)
+        result2 = described_class.call(project: project, commit_sha: commit_sha)
+
+        expect(result2[:results].first[:status]).to eq("completed")
+        expect(result2[:results].first[:cached]).to be(true)
+        expect(KnowledgeArtifact.active.count).to eq(1)
+      end
+
+      it "reuses the same project version" do
+        result1 = described_class.call(project: project, commit_sha: commit_sha)
+        result2 = described_class.call(project: project, commit_sha: commit_sha)
+
+        expect(result1[:project_version].id).to eq(result2[:project_version].id)
+      end
+    end
+
+    context "when advancing to a new commit" do
+      let(:new_commit_sha) { "b" * 40 }
+      let(:old_committed_at) { 2.hours.ago }
+      let(:new_committed_at) { 1.hour.ago }
+
+      it "marks artifacts not collected by the new version as stale" do
+        # Run on old commit — creates an artifact via test_collector
+        described_class.call(project: project, commit_sha: commit_sha, committed_at: old_committed_at)
+
+        # Manually create an extra artifact on the old version's run
+        # that the new version's collector won't produce
+        old_run = CollectorRun.first
+        extra = KnowledgeArtifact.create!(
+          collector_run: old_run,
+          project: project,
+          collector_type: old_run.collector_type,
+          artifact_type: "orphaned_type",
+          identifier: "OrphanedThing",
+          content: "old content",
+          content_hash: Digest::SHA256.hexdigest("old content"),
+          status: "active"
+        )
+
+        expect(KnowledgeArtifact.active.count).to eq(2)
+
+        # Run on new commit — the test_collector artifact gets reassigned,
+        # but the extra artifact is not produced so it becomes stale
+        described_class.call(project: project, commit_sha: new_commit_sha, committed_at: new_committed_at)
+
+        extra.reload
+        expect(extra.status).to eq("stale")
+        expect(KnowledgeArtifact.active.count).to eq(1)
+      end
+
+      it "skips staling when committed_at is nil" do
+        described_class.call(project: project, commit_sha: commit_sha, committed_at: old_committed_at)
+
+        old_run = CollectorRun.first
+        extra = KnowledgeArtifact.create!(
+          collector_run: old_run,
+          project: project,
+          collector_type: old_run.collector_type,
+          artifact_type: "orphaned_type",
+          identifier: "OrphanedThing",
+          content: "old content",
+          content_hash: Digest::SHA256.hexdigest("old content"),
+          status: "active"
+        )
+
+        # Run on new commit without committed_at — should NOT stale prior artifacts
+        described_class.call(project: project, commit_sha: new_commit_sha)
+
+        expect(extra.reload.status).to eq("active")
+      end
+    end
+
+    context "when a collector raises SkipCollector" do
+      let(:skipping_collector_class) do
+        Class.new(Knowledge::BaseCollector) do
+          def collect
+            skip!("maat binary not found")
+          end
+
+          def collector_type
+            "skipping_collector"
+          end
+        end
+      end
+      let(:preserving_skip_collector_class) do
+        Class.new(Knowledge::BaseCollector) do
+          def collect
+            skip!("routes require database access during Rails boot", preserve_existing_artifacts: true)
+          end
+
+          def collector_type
+            "preserving_skip_collector"
+          end
+        end
+      end
+
+      before do
+        described_class.reset_registry!
+        described_class.register("skipping_collector", skipping_collector_class)
+        described_class.register("test_collector", test_collector_class)
+      end
+
+      def create_orphaned_artifact(commit_sha:, collector_type: "test_collector", artifact_type: "orphaned_type",
+        identifier: "OrphanedThing", content: "old")
+        project_version = ProjectVersion.find_by!(commit_sha:)
+        old_run = CollectorRun.find_by!(collector_type:, project_version:)
+
+        create(:knowledge_artifact,
+          collector_run: old_run, project: project,
+          collector_type: old_run.collector_type, artifact_type:,
+          identifier:, content:, content_hash: Digest::SHA256.hexdigest(content))
+      end
+
+      def collector_run_for(project_version, collector_type)
+        CollectorRun.find_by!(collector_type:, project_version:)
+      end
+
+      def register_preserving_skip_collector
+        described_class.reset_registry!
+        described_class.register("preserving_skip_collector", preserving_skip_collector_class)
+        described_class.register("test_collector", test_collector_class)
+      end
+
+      def register_lazy_skip_collector(skipped_exception)
+        lazy_skip_collector_class = Class.new(Knowledge::BaseCollector) do
+          define_method(:tool_version) { nil }
+
+          define_method(:collect) do
+            raise skipped_exception
+          end
+
+          define_method(:collector_type) do
+            "lazy_skip_collector"
+          end
+        end
+
+        described_class.reset_registry!
+        described_class.register("lazy_skip_collector", lazy_skip_collector_class)
+        described_class.register("test_collector", test_collector_class)
+      end
+
+      it "marks the collector run as skipped with a reason" do
+        result = described_class.call(project: project, commit_sha: commit_sha)
+
+        skipped_result = result[:results].find { |r| r[:collector_type] == "skipping_collector" }
+        expect(skipped_result[:status]).to eq("skipped")
+        expect(skipped_result[:reason]).to eq("maat binary not found")
+
+        skipped_run = CollectorRun.find_by(collector_type: "skipping_collector")
+        expect(skipped_run.status).to eq("skipped")
+        expect(skipped_run.error_message).to eq("maat binary not found")
+        expect(skipped_run.artifacts_count).to eq(0)
+      end
+
+      it "rescues skips when SkipCollector must be resolved from the Knowledge namespace" do
+        skip_collector_class = Knowledge::SkipCollector
+        skipped_exception = skip_collector_class.new("maat binary not found")
+        register_lazy_skip_collector(skipped_exception)
+
+        hide_const("Knowledge::SkipCollector")
+        allow(Knowledge).to receive(:const_missing).and_wrap_original do |original, name|
+          name == :SkipCollector ? skip_collector_class : original.call(name)
+        end
+
+        result = described_class.call(project: project, commit_sha: commit_sha)
+
+        skipped_result = result[:results].find { |run| run[:collector_type] == "lazy_skip_collector" }
+        expect(skipped_result).to include(
+          status: "skipped",
+          reason: "maat binary not found",
+          preserve_existing_artifacts: false
+        )
+      end
+
+      it "does not block other collectors" do
+        result = described_class.call(project: project, commit_sha: commit_sha)
+
+        statuses = result[:results].map { |r| r[:status] }
+        expect(statuses).to contain_exactly("skipped", "completed")
+      end
+
+      it "allows retrying a previously skipped collector on the same version" do
+        result1 = described_class.call(project: project, commit_sha: commit_sha)
+        skipped = result1[:results].find { |r| r[:collector_type] == "skipping_collector" }
+        expect(skipped[:status]).to eq("skipped")
+
+        # Re-running the same commit retries the skipped collector (does not short-circuit)
+        result2 = described_class.call(project: project, commit_sha: commit_sha)
+        retried = result2[:results].find { |r| r[:collector_type] == "skipping_collector" }
+        expect(retried[:status]).to eq("skipped")
+        expect(retried[:reason]).to eq("maat binary not found")
+      end
+
+      it "treats skipped as success for stale marking" do
+        old_sha = "e" * 40
+        described_class.call(project: project, commit_sha: old_sha, committed_at: 2.hours.ago)
+
+        old_run = CollectorRun.find_by(collector_type: "test_collector", project_version: ProjectVersion.find_by(commit_sha: old_sha))
+        extra = create(:knowledge_artifact,
+          collector_run: old_run, project: project,
+          collector_type: old_run.collector_type, artifact_type: "orphaned_type",
+          identifier: "OrphanedThing", content: "old", content_hash: Digest::SHA256.hexdigest("old"))
+
+        new_sha = "f" * 40
+        described_class.call(project: project, commit_sha: new_sha, committed_at: 1.hour.ago)
+
+        expect(extra.reload.status).to eq("stale")
+      end
+
+      it "preserves prior artifacts when a skipped collector requests it" do
+        register_preserving_skip_collector
+
+        old_sha = "g" * 40
+        described_class.call(project: project, commit_sha: old_sha, committed_at: 2.hours.ago)
+        extra = create_orphaned_artifact(
+          commit_sha: old_sha,
+          collector_type: "preserving_skip_collector",
+          artifact_type: "routes",
+          identifier: "GET /widgets",
+          content: "old routes"
+        )
+
+        new_sha = "h" * 40
+        result = described_class.call(project: project, commit_sha: new_sha, committed_at: 1.hour.ago)
+
+        preserving_result = result[:results].find { |r| r[:collector_type] == "preserving_skip_collector" }
+        expect(preserving_result).to include(
+          status: "skipped",
+          preserve_existing_artifacts: true
+        )
+        expect(extra.reload.status).to eq("active")
+        expect(collector_run_for(result[:project_version], "preserving_skip_collector").artifacts_count).to eq(1)
+      end
+
+      it "still marks other collectors' orphaned artifacts as stale" do
+        register_preserving_skip_collector
+
+        old_sha = "i" * 40
+        described_class.call(project: project, commit_sha: old_sha, committed_at: 2.hours.ago)
+        extra = create_orphaned_artifact(commit_sha: old_sha)
+        preserved_artifact = create_orphaned_artifact(
+          commit_sha: old_sha,
+          collector_type: "preserving_skip_collector",
+          artifact_type: "routes",
+          identifier: "GET /widgets",
+          content: "old routes"
+        )
+
+        new_sha = "j" * 40
+        described_class.call(project: project, commit_sha: new_sha, committed_at: 1.hour.ago)
+
+        expect(extra.reload.status).to eq("stale")
+        expect(preserved_artifact.reload.status).to eq("active")
+      end
+    end
+
+    context "when a collector fails" do
+      let(:failing_collector_class) do
+        Class.new(Knowledge::BaseCollector) do
+          def collect
+            raise "tool not found"
+          end
+
+          def collector_type
+            "failing_collector"
+          end
+        end
+      end
+
+      before do
+        described_class.reset_registry!
+        described_class.register("failing_collector", failing_collector_class)
+        described_class.register("test_collector", test_collector_class)
+      end
+
+      it "does not block other collectors" do
+        result = described_class.call(project: project, commit_sha: commit_sha)
+
+        statuses = result[:results].map { |r| r[:status] }
+        expect(statuses).to contain_exactly("failed", "completed")
+      end
+
+      it "records the failure on the collector run" do
+        described_class.call(project: project, commit_sha: commit_sha)
+
+        failed_run = CollectorRun.find_by(collector_type: "failing_collector")
+        expect(failed_run.status).to eq("failed")
+        expect(failed_run.error_message).to eq("tool not found")
+      end
+
+      it "does not mark prior artifacts as stale when a collector fails" do
+        old_sha = "c" * 40
+        described_class.call(project: project, commit_sha: old_sha, committed_at: 2.hours.ago)
+
+        old_run = CollectorRun.find_by(collector_type: "test_collector")
+        extra = create(:knowledge_artifact,
+          collector_run: old_run, project: project,
+          collector_type: old_run.collector_type, artifact_type: "orphaned_type",
+          identifier: "OrphanedThing", content: "old", content_hash: Digest::SHA256.hexdigest("old"))
+
+        # Run on new commit with both collectors (one will fail)
+        described_class.register("failing_collector", failing_collector_class)
+        new_sha = "d" * 40
+        described_class.call(project: project, commit_sha: new_sha, committed_at: 1.hour.ago)
+
+        # Extra artifact from old version stays active since the run had a failure
+        expect(extra.reload.status).to eq("active")
+      end
+    end
+
+    context "when a collector times out" do
+      let(:timing_out_collector_class) do
+        attempts = 0
+
+        Class.new(Knowledge::BaseCollector) do
+          define_method(:collect) do
+            attempts += 1
+            raise ApplicationJob::PerformTimeoutError, "perform timeout" if attempts == 1
+
+            [
+              {
+                artifact_type: "test_artifact",
+                scope_path: "app/models/user.rb",
+                identifier: "User",
+                content: '{"class": "User"}',
+                metadata: {},
+                chunks: []
+              }
+            ]
+          end
+
+          def collector_type
+            "timing_out_collector"
+          end
+        end
+      end
+
+      before do
+        described_class.reset_registry!
+        described_class.register("timing_out_collector", timing_out_collector_class)
+      end
+
+      it "marks the persisted run failed before re-raising so the same version can retry" do
+        expect {
+          described_class.call(project: project, commit_sha: commit_sha)
+        }.to raise_error(ApplicationJob::PerformTimeoutError, "perform timeout")
+
+        failed_run = CollectorRun.find_by!(collector_type: "timing_out_collector")
+        expect(failed_run.status).to eq("failed")
+        expect(failed_run.error_message).to eq("perform timeout")
+
+        retry_result = described_class.call(project: project, commit_sha: commit_sha)
+
+        expect(retry_result[:results]).to contain_exactly(
+          hash_including(collector_type: "timing_out_collector", status: "completed", artifacts_count: 1)
+        )
+      end
+    end
+
+    context "when running a subset of collectors" do
+      let(:other_collector_class) do
+        Class.new(Knowledge::BaseCollector) do
+          def collect
+            [
+              {
+                artifact_type: "other_artifact",
+                scope_path: "README.md",
+                identifier: "readme",
+                content: "docs",
+                metadata: {},
+                chunks: []
+              }
+            ]
+          end
+
+          def collector_type
+            "other_collector"
+          end
+        end
+      end
+
+      before do
+        described_class.reset_registry!
+        described_class.register("test_collector", test_collector_class)
+        described_class.register("other_collector", other_collector_class)
+      end
+
+      it "runs only the requested collector types" do
+        result = described_class.call(
+          project: project,
+          commit_sha: commit_sha,
+          options: { collector_types: [ "test_collector" ] }
+        )
+
+        expect(result[:results]).to contain_exactly(
+          hash_including(collector_type: "test_collector", status: "completed")
+        )
+        expect(CollectorRun.pluck(:collector_type)).to contain_exactly("test_collector")
+      end
+
+      it "memoizes the full collector registry for repeated access" do
+        runner = described_class.new(project: project, commit_sha: commit_sha)
+
+        first_registry = runner.send(:collector_classes)
+        expect(runner.send(:collector_classes)).to be(first_registry)
+      end
+
+      it "does not stale artifacts from non-selected collectors" do
+        old_sha = "b" * 40
+        new_sha = "c" * 40
+
+        described_class.call(project: project, commit_sha: old_sha, committed_at: 2.hours.ago)
+
+        old_version = ProjectVersion.find_by!(project:, commit_sha: old_sha)
+        other_run = CollectorRun.find_by!(project_version: old_version, collector_type: "other_collector")
+        other_artifact = KnowledgeArtifact.find_by!(collector_run: other_run, identifier: "readme")
+
+        described_class.call(
+          project: project,
+          commit_sha: new_sha,
+          committed_at: 1.hour.ago,
+          options: { collector_types: [ "test_collector" ] }
+        )
+
+        expect(other_artifact.reload.status).to eq("active")
+      end
+    end
+  end
+end

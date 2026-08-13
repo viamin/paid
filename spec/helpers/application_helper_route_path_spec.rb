@@ -1,0 +1,60 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe ApplicationHelper, :no_db, type: :helper do
+  describe "#project_agent_runs_collection_path" do
+    let(:project) { double(to_param: "1") }
+
+    it "uses the active helper route context before falling back to global url helpers" do
+      allow(helper).to receive(:respond_to?).and_call_original
+      allow(helper).to receive(:respond_to?).with(:project_agent_runs_path).and_return(true)
+      allow(helper).to receive(:respond_to?).with(:_routes_context, true).and_return(true)
+      allow(helper).to receive(:public_send)
+        .with(:project_agent_runs_path, project)
+        .and_return("/projects/1/agent_runs")
+
+      expect(helper.project_agent_runs_collection_path(project)).to eq("/projects/1/agent_runs")
+    end
+
+    it "falls back to global url helpers when the helper route is unavailable" do
+      route_helpers = Rails.application.routes.url_helpers
+
+      allow(helper).to receive(:respond_to?).and_call_original
+      allow(helper).to receive(:respond_to?).with(:project_agent_runs_path).and_return(false)
+      allow(helper).to receive(:main_app).and_return(route_helpers)
+      allow(route_helpers).to receive(:respond_to?).and_call_original
+      allow(route_helpers).to receive(:respond_to?).with(:project_agent_runs_path).and_return(false)
+      allow(route_helpers).to receive(:public_send)
+        .with(:project_agent_runs_path, project)
+        .and_return("/projects/1/agent_runs")
+
+      expect(helper.project_agent_runs_collection_path(project)).to eq("/projects/1/agent_runs")
+    end
+
+    it "prefers main_app when the helper route is unavailable on the current context" do
+      main_app = instance_double(Module)
+
+      allow(helper).to receive(:respond_to?).and_call_original
+      allow(helper).to receive(:respond_to?).with(:project_agent_runs_path).and_return(false)
+      allow(helper).to receive(:main_app).and_return(main_app)
+      allow(main_app).to receive(:respond_to?).with(:project_agent_runs_path).and_return(true)
+      allow(main_app).to receive(:public_send)
+        .with(:project_agent_runs_path, project)
+        .and_return("/projects/1/agent_runs")
+
+      expect(helper.project_agent_runs_collection_path(project)).to eq("/projects/1/agent_runs")
+    end
+
+    it "uses the active helper route context even when _routes_context is unavailable" do
+      allow(helper).to receive(:respond_to?).and_call_original
+      allow(helper).to receive(:respond_to?).with(:project_agent_runs_path).and_return(true)
+      allow(helper).to receive(:respond_to?).with(:_routes_context, true).and_return(false)
+      allow(helper).to receive(:public_send)
+        .with(:project_agent_runs_path, project)
+        .and_return("/projects/1/agent_runs")
+
+      expect(helper.project_agent_runs_collection_path(project)).to eq("/projects/1/agent_runs")
+    end
+  end
+end

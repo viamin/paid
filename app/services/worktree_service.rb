@@ -1,0 +1,441 @@
+# frozen_string_literal: true
+
+require "open3"
+
+# Manages git worktrees for isolated agent execution workspaces.
+#
+# Each project has a single bare clone shared across all agent runs.
+# Individual worktrees provide independent working directories per agent.
+#
+# @example
+#   service = WorktreeService.new(project)
+#   service.ensure_cloned
+#   worktree_path = service.create_worktree(agent_run)
+#   # ... agent does work ...
+#   service.push_branch(agent_run)
+#   service.remove_worktree(agent_run)
+class WorktreeService
+  class Error < StandardError; end
+  class CloneError < Error; end
+  class WorktreeError < Error; end
+
+  DEFAULT_WORKSPACE_ROOT = "/var/paid/workspaces"
+  FETCH_REFSPEC = "+refs/heads/*:refs/remotes/origin/*"
+  STALE_WORKTREE_GLOBS = %w[paid-agent-* paid-checkout-* paid-conflict-*].freeze
+
+  def self.workspace_root
+    Rails.application.config.x.workspace_root || DEFAULT_WORKSPACE_ROOT
+  end
+
+  # Per-repository mutexes to synchronize git operations across all
+  # WorktreeService instances in this process.
+  @repo_mutexes = {}
+  @repo_mutexes_mutex = Mutex.new
+
+  class << self
+    def mutex_for(repo_path)
+      @repo_mutexes_mutex.synchronize do
+        @repo_mutexes[repo_path] ||= Mutex.new
+      end
+    end
+  end
+
+  attr_reader :project
+
+  def initialize(project)
+    @project = project
+    @mutex = self.class.mutex_for(project_repo_path)
+  end
+
+  # Ensure we have an up-to-date clone of the repository.
+  #
+  # @param max_fetch_age [ActiveSupport::Duration, nil] When set, skip fetching
+  #   if the last fetch was within this duration (uses FETCH_HEAD mtime).
+  #   Callers like staleness detection use this to throttle network I/O.
+  # @return [String] Path to the bare repository
+  def ensure_cloned(max_fetch_age: nil)
+    repo_path = project_repo_path
+
+    @mutex.synchronize do
+      if File.exist?(File.join(repo_path, "HEAD"))
+        refspec_added = ensure_fetch_refspec
+        fetch_latest unless !refspec_added && max_fetch_age && recently_fetched?(repo_path, max_fetch_age)
+      else
+        clone_repository
+      end
+    end
+
+    repo_path
+  end
+
+  # Create a new worktree for an agent run.
+  #
+  # @param agent_run [AgentRun] The agent run needing a workspace
+  # @return [String] Path to the created worktree
+  # @raise [WorktreeError] When worktree creation fails
+  # @raise [CloneError] When repository cloning fails
+  # @raise [Error] When a git command fails
+  def create_worktree(agent_run)
+    ensure_cloned
+
+    timestamp = Time.current.strftime("%Y%m%d%H%M%S")
+    suffix = SecureRandom.hex(3)
+    worktree_name = "paid-agent-#{agent_run.id}-#{timestamp}-#{suffix}"
+    worktree_path = File.join(worktrees_path, worktree_name)
+    branch_name = "paid/#{worktree_name}"
+    base_sha = current_commit_sha
+
+    @mutex.synchronize do
+      FileUtils.mkdir_p(worktrees_path)
+
+      run_git(
+        "worktree", "add", "-b", branch_name, worktree_path, "origin/#{project.default_branch}",
+        chdir: project_repo_path
+      )
+    end
+
+    agent_run.update!(
+      worktree_path: worktree_path,
+      branch_name: branch_name,
+      base_commit_sha: base_sha
+    )
+
+    Worktree.create!(
+      project: project,
+      agent_run: agent_run,
+      path: worktree_path,
+      branch_name: branch_name,
+      base_commit: base_sha,
+      status: "active"
+    )
+
+    log_to_agent_run(agent_run, "Worktree created: #{worktree_name}")
+
+    worktree_path
+  rescue Error
+    raise
+  rescue => e
+    raise WorktreeError, "Failed to create worktree: #{e.message}"
+  end
+
+  # Remove a worktree after agent run completes.
+  #
+  # @param agent_run [AgentRun] The agent run whose worktree to remove
+  # @return [void]
+  def remove_worktree(agent_run)
+    worktree = agent_run.worktree
+    return unless worktree&.active?
+    return if agent_run.worktree_path.blank?
+
+    @mutex.synchronize do
+      if Dir.exist?(agent_run.worktree_path)
+        run_git(
+          "worktree", "remove", agent_run.worktree_path, "--force",
+          chdir: project_repo_path
+        )
+      end
+
+      unless worktree.pushed?
+        run_git(
+          "branch", "-D", agent_run.branch_name,
+          chdir: project_repo_path,
+          raise_on_error: false
+        )
+      end
+    end
+
+    worktree.mark_cleaned!
+    log_to_agent_run(agent_run, "Worktree removed")
+  rescue => e
+    Rails.logger.warn(
+      message: "worktree_service.remove_failed",
+      agent_run_id: agent_run.id,
+      error: e.message
+    )
+    worktree&.mark_cleanup_failed!
+  end
+
+  # Run a git command against the bare repository.
+  #
+  # Centralizes git execution (credential redaction, error handling) so
+  # callers like Knowledge::Staleness::Detector don't need to duplicate it.
+  #
+  # @param args [Array<String>] Git arguments (e.g. "rev-list", "--count", "sha..sha")
+  # @return [String] stdout from the command
+  # @raise [Error] when the git command fails
+  def run_repo_command(*args)
+    run_git(*args, chdir: project_repo_path)
+  rescue Errno::ENOENT => e
+    if !Dir.exist?(project_repo_path)
+      raise Error, "Repo directory missing: #{project_repo_path}"
+    else
+      raise Error, "Failed to execute git (missing executable or spawn error): #{e.message}"
+    end
+  end
+
+  # Run a git command inside an existing worktree path.
+  #
+  # @param worktree_path [String] Path to the checked-out worktree
+  # @param args [Array<String>] Git arguments
+  # @return [String] stdout from the command
+  def run_worktree_command(worktree_path, *args)
+    run_git(*args, chdir: worktree_path)
+  rescue Errno::ENOENT => e
+    if !Dir.exist?(worktree_path)
+      raise Error, "Worktree directory missing: #{worktree_path}"
+    else
+      raise Error, "Failed to execute git (missing executable or spawn error): #{e.message}"
+    end
+  end
+
+  # Get the current commit SHA of the default branch.
+  #
+  # @return [String] The 40-character SHA
+  def current_commit_sha
+    run_git(
+      "rev-parse", "origin/#{project.default_branch}",
+      chdir: project_repo_path
+    ).strip
+  end
+
+  # Push an agent run's branch to the remote.
+  #
+  # @param agent_run [AgentRun] The agent run whose branch to push
+  # @return [String] The result commit SHA
+  def push_branch(agent_run)
+    if agent_run.branch_name.blank?
+      raise WorktreeError, "Cannot push branch: branch_name is blank for AgentRun##{agent_run.id}"
+    end
+
+    if agent_run.worktree_path.blank?
+      raise WorktreeError, "Cannot push branch: worktree_path is blank for AgentRun##{agent_run.id}"
+    end
+
+    push_branch_to_remote(agent_run)
+
+    result_sha = run_git("rev-parse", "HEAD", chdir: agent_run.worktree_path).strip
+    agent_run.update!(result_commit_sha: result_sha)
+
+    worktree = agent_run.worktree
+    worktree&.mark_pushed!
+
+    result_sha
+  end
+
+  # Clean up stale worktrees older than the given threshold.
+  #
+  # @param older_than [ActiveSupport::Duration] Age threshold (default 24 hours)
+  # @return [void]
+  def cleanup_stale_worktrees(older_than: 24.hours)
+    return unless Dir.exist?(worktrees_path)
+
+    STALE_WORKTREE_GLOBS.each do |glob|
+      Dir.glob(File.join(worktrees_path, glob)).each do |path|
+        next unless File.directory?(path)
+        next unless File.mtime(path) < older_than.ago
+
+        run_git(
+          "worktree", "remove", path, "--force",
+          chdir: project_repo_path,
+          raise_on_error: false
+        )
+      end
+    end
+
+    run_git("worktree", "prune", chdir: project_repo_path, raise_on_error: false)
+  end
+
+  # Creates a short-lived worktree for host-side maintenance operations
+  # like rebasing a branch after the original agent container is gone.
+  #
+  # @param branch_name [String] Remote branch to check out
+  # @yieldparam worktree_path [String] Path to the temporary worktree
+  # @return [Object] the block result
+  def with_temporary_worktree(branch_name)
+    ensure_cloned
+
+    temp_branch = "paid-conflict/#{SecureRandom.hex(6)}"
+    temp_path = File.join(worktrees_path, "paid-conflict-#{SecureRandom.hex(6)}")
+
+    @mutex.synchronize do
+      FileUtils.mkdir_p(worktrees_path)
+      run_git(
+        "worktree", "add", "--force", "-B", temp_branch, temp_path, "origin/#{branch_name}",
+        chdir: project_repo_path
+      )
+    end
+
+    yield temp_path
+  ensure
+    @mutex.synchronize do
+      if defined?(temp_path) && temp_path.present? && Dir.exist?(temp_path)
+        run_git("worktree", "remove", temp_path, "--force", chdir: project_repo_path, raise_on_error: false)
+      end
+
+      if defined?(temp_branch) && temp_branch.present?
+        run_git("branch", "-D", temp_branch, chdir: project_repo_path, raise_on_error: false)
+      end
+
+      run_git("worktree", "prune", chdir: project_repo_path, raise_on_error: false)
+    end
+  end
+
+  # Creates a short-lived detached worktree for read-only maintenance or
+  # analysis against an exact commit SHA.
+  #
+  # @param ref [String] Commit SHA or other git rev to check out
+  # @yieldparam worktree_path [String] Path to the temporary worktree
+  # @return [Object] the block result
+  def with_temporary_checkout(ref)
+    ensure_cloned
+
+    temp_path = File.join(worktrees_path, "paid-checkout-#{SecureRandom.hex(6)}")
+
+    @mutex.synchronize do
+      FileUtils.mkdir_p(worktrees_path)
+      run_git(
+        "worktree", "add", "--detach", temp_path, ref,
+        chdir: project_repo_path
+      )
+    end
+
+    yield temp_path
+  ensure
+    @mutex.synchronize do
+      if defined?(temp_path) && temp_path.present? && Dir.exist?(temp_path)
+        run_git("worktree", "remove", temp_path, "--force", chdir: project_repo_path, raise_on_error: false)
+      end
+
+      run_git("worktree", "prune", chdir: project_repo_path, raise_on_error: false)
+    end
+  end
+
+  private
+
+  def project_repo_path
+    File.join(self.class.workspace_root, project.account_id.to_s, project.id.to_s, "repo")
+  end
+
+  def worktrees_path
+    File.join(self.class.workspace_root, project.account_id.to_s, project.id.to_s, "worktrees")
+  end
+
+  def recently_fetched?(repo_path, max_age)
+    fetch_head = File.join(repo_path, "FETCH_HEAD")
+    begin
+      File.mtime(fetch_head) > max_age.ago
+    rescue Errno::ENOENT
+      false
+    end
+  end
+
+  def clone_repository
+    FileUtils.mkdir_p(File.dirname(project_repo_path))
+
+    clone_url = authenticated_clone_url
+    run_git("clone", "--bare", clone_url, project_repo_path)
+
+    # Bare clones don't configure a fetch refspec, so `git fetch` won't
+    # create origin/* refs. Ensure it exists so fetch_latest and current_commit_sha work.
+    ensure_fetch_refspec
+
+    project.github_token&.touch_last_used!
+  rescue Error
+    raise
+  rescue => e
+    raise CloneError, "Failed to clone repository: #{e.message}"
+  end
+
+  def fetch_latest
+    remote_url = authenticated_clone_url
+    run_git("remote", "set-url", "origin", remote_url, chdir: project_repo_path, raise_on_error: false)
+    ensure_fetch_refspec
+    run_git("fetch", "--all", "--prune", chdir: project_repo_path)
+
+    project.github_token&.touch_last_used!
+  end
+
+  # Bare repos cloned before the refspec fix lack remote.origin.fetch,
+  # so `git fetch` silently skips creating origin/* refs. Idempotently
+  # add the refspec so existing repos self-heal on next fetch.
+  #
+  # @return [Boolean] true if the config was modified (callers may need to force a fetch)
+  def ensure_fetch_refspec
+    return false if @fetch_refspec_verified
+
+    desired_refspec = FETCH_REFSPEC
+    raw_output = run_git("config", "--get-all", "remote.origin.fetch", chdir: project_repo_path, raise_on_error: false)
+    existing = raw_output.lines.map(&:strip).reject(&:empty?)
+
+    if existing.include?(desired_refspec)
+      @fetch_refspec_verified = true
+      return false
+    end
+
+    run_git("config", "--add", "remote.origin.fetch", desired_refspec, chdir: project_repo_path)
+    @fetch_refspec_verified = true
+    true
+  end
+
+  # Pushes via the App-authenticated origin by default. If the App installation
+  # token is rejected for a missing permission and the project opted into PAT
+  # push fallback, retries that one push against the fallback PAT URL.
+  def push_branch_to_remote(agent_run)
+    run_git("push", "origin", agent_run.branch_name, chdir: agent_run.worktree_path)
+  rescue Error => e
+    raise unless app_permission_rejection?(e.message) && project.git_push_pat_fallback_configured?
+
+    Rails.logger.info(
+      message: "worktree_service.pat_push_fallback_retry",
+      agent_run_id: agent_run.id,
+      project_id: project.id
+    )
+    run_git("push", fallback_push_url, agent_run.branch_name, chdir: agent_run.worktree_path)
+  end
+
+  def authenticated_clone_url
+    "https://x-access-token:#{project.github_credential}@github.com/#{project.full_name}.git"
+  end
+
+  # Push URL that authenticates with the project's fallback PAT instead of the
+  # App installation token. Used only to retry a push the App token was rejected
+  # for (see #push_branch). The PAT is redacted from logs by #redact_credentials.
+  def fallback_push_url
+    "https://x-access-token:#{project.git_push_fallback_credential}@github.com/#{project.full_name}.git"
+  end
+
+  # True when a push failed because the GitHub App installation token lacks a
+  # permission the operation needs (e.g. a change under .github/workflows/).
+  def app_permission_rejection?(message)
+    message.to_s.include?("refusing to allow a GitHub App")
+  end
+
+  def run_git(*args, chdir: nil, raise_on_error: true)
+    options = {}
+    options[:chdir] = chdir if chdir
+
+    stdout, stderr, status = Open3.capture3("git", *args, **options)
+
+    if !status.success? && raise_on_error
+      redacted_args = args.map { |a| redact_credentials(a) }
+      redacted_stderr = redact_credentials(stderr)
+      raise Error, "Git command failed: git #{redacted_args.join(" ")}\n#{redacted_stderr}"
+    end
+
+    stdout
+  end
+
+  def redact_credentials(str)
+    str.gsub(%r{https://x-access-token:[^@]+@github\.com}, "https://x-access-token:[REDACTED]@github.com")
+  end
+
+  def log_to_agent_run(agent_run, message)
+    agent_run.log!("system", message)
+  rescue => e
+    Rails.logger.warn(
+      message: "worktree_service.log_failed",
+      agent_run_id: agent_run.id,
+      error: e.message
+    )
+  end
+end

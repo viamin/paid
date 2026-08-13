@@ -1,0 +1,966 @@
+# frozen_string_literal: true
+
+require "spec_helper"
+require "fileutils"
+require "open3"
+require "socket"
+require "tmpdir"
+require "timeout"
+require_relative "../support/exec_tmpdir"
+require_relative "../support/overmind_env_helpers"
+
+RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
+  include ExecTmpdir
+  include OvermindEnvHelpers
+  let(:script_source) { File.expand_path("../../bin/dev-update", __dir__) }
+  let(:poll_env) do
+    {
+      "DEV_UPDATE_OVERMIND_STOP_POLL_COUNT" => "3",
+      "DEV_UPDATE_OVERMIND_START_POLL_COUNT" => "3",
+      "DEV_UPDATE_OVERMIND_POLL_INTERVAL" => "0.01",
+      # Require only 1 consecutive healthy poll (instead of the default 2) so
+      # tests are resilient to CI timing variance when nohup bin/dev starts up
+      # asynchronously and may not be visible on the very first poll.
+      "DEV_UPDATE_OVERMIND_HEALTHY_CONFIRM_COUNT" => "1"
+    }
+  end
+
+  # Skip the slow pstree call inside dev_supervisor.sh's diagnostic snapshots.
+  # See spec/lib/dev_script_spec.rb for rationale.
+  around do |example|
+    previous = ENV["DEV_SUPERVISOR_FAST_DIAGNOSTICS"]
+    ENV["DEV_SUPERVISOR_FAST_DIAGNOSTICS"] = "1"
+    example.run
+  ensure
+    ENV["DEV_SUPERVISOR_FAST_DIAGNOSTICS"] = previous
+  end
+
+  it "removes a stale Overmind socket before restarting the dev environment" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+      socket_path = create_stale_socket(dir)
+
+      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}", "OVERMIND_SOCKET" => ".overmind.sock")
+      stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+      updater_log = read_updater_log(dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.exist?(socket_path)).to be(false)
+      expect(File.exist?(File.join(dir, "overmind-quit-ran"))).to be(false)
+      expect(File.exist?(File.join(dir, "setup-ran"))).to be(true)
+      expect(updater_log).to include("Overmind is healthy after restart.")
+      expect(updater_log).to include("Streaming detached bin/dev output to log/dev-update/dev-start.log")
+      expect(wait_for_dev_start_log(dir)).to include("bin/dev booted")
+
+      Timeout.timeout(5) do
+        sleep 0.1 until File.exist?(File.join(dir, "dev-ran"))
+      end
+    end
+  end
+
+  it "tries to recover the dev environment when setup fails after stopping Overmind" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, setup_exit_status: 1, start_overmind_running: true)
+      create_stale_socket(dir)
+
+      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}", "OVERMIND_SOCKET" => ".overmind.sock")
+      stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+      updater_log = read_updater_log(dir)
+
+      expect(status.success?).to be(false), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.exist?(File.join(dir, "overmind-quit-ran"))).to be(true)
+      expect(File.exist?(File.join(dir, "dev-ran"))).to be(true)
+      expect(updater_log).to include("Setup failed after Overmind stop.")
+      expect(updater_log).to include("Attempting recovery start because Overmind was stopped during this update.")
+      expect(updater_log).to include("Recovery start succeeded.")
+      expect(updater_log).to include("ERROR: Full restart aborted because bin/setup --skip-server failed.")
+    end
+  end
+
+  it "fails loudly when restart does not restore a healthy Overmind session" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, dev_starts_overmind: false)
+
+      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}", "OVERMIND_SOCKET" => ".overmind.sock")
+      stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+      updater_log = read_updater_log(dir)
+
+      expect(status.success?).to be(false), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.exist?(File.join(dir, "setup-ran"))).to be(true)
+      expect(File.exist?(File.join(dir, "dev-ran"))).to be(true)
+      expect(Dir.glob(File.join(dir, "log", "dev-update", "diagnostics", "*dev-update-start-timeout.log"))).not_to be_empty
+      expect(updater_log).to include("Inspect log/dev-update/dev-start.log for detached bin/dev output.")
+      expect(updater_log).to include("ERROR: Full restart completed setup but failed to restore a healthy Overmind session.")
+    end
+  end
+
+  it "restarts processes when Overmind is already healthy after setup" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, start_overmind_running: true)
+
+      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}", "OVERMIND_SOCKET" => ".overmind.sock")
+      stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+      updater_log = read_updater_log(dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.exist?(File.join(dir, "setup-ran"))).to be(true)
+      expect(File.exist?(File.join(dir, "overmind-restart-ran"))).to be(true)
+      expect(File.exist?(File.join(dir, "dev-ran"))).to be(false)
+      expect(updater_log).to include("overmind restart: overmind restarted processes")
+      expect(updater_log).to include("Overmind is already running, restarting processes.")
+      expect(updater_log).to include("Overmind process restart requested.")
+    end
+  end
+
+  it "truncates oversized dev-update logs during configure_logging" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+      log_dir = seed_oversized_logs(dir, 600_000)
+
+      env = poll_env.merge(
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "OVERMIND_SOCKET" => ".overmind.sock",
+        "DEV_UPDATE_MAX_LOG_BYTES" => "524288",
+        "DEV_UPDATE_KEEP_LOG_BYTES" => "102400"
+      )
+      stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+      expect(status.success?).to be(true), lambda {
+        "bin/dev-update failed\nstdout:\n#{stdout}\nstderr:\n#{stderr}"
+      }
+
+      # Both logs were truncated to ~100 KB then appended to by the script/bin/dev
+      expect(File.size(File.join(log_dir, "dev-update.log"))).to be < 200_000
+      expect(File.size(File.join(log_dir, "dev-start.log"))).to be < 200_000
+      expect(File.size(File.join(log_dir, "tmux.log"))).to be < 200_000
+      expect(File.size(File.join(log_dir, "overmind.log"))).to be < 200_000
+    end
+  end
+
+  it "preserves small dev-update logs without truncation" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+
+      # Create a small log file
+      log_dir = File.join(dir, "log", "dev-update")
+      FileUtils.mkdir_p(log_dir)
+      small_content = "previous run output\n" * 100
+      File.write(File.join(log_dir, "dev-update.log"), small_content)
+
+      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}", "OVERMIND_SOCKET" => ".overmind.sock")
+      stdout, stderr, status = Open3.capture3(env, script_path, "--lightweight", chdir: dir)
+
+      expect(status.success?).to be(true), lambda {
+        "bin/dev-update failed\nstdout:\n#{stdout}\nstderr:\n#{stderr}"
+      }
+
+      updater_log = File.read(File.join(log_dir, "dev-update.log"))
+      # The small content should still be present (not truncated)
+      expect(updater_log).to include("previous run output")
+      # And new content was appended
+      expect(updater_log).to include("Lightweight update complete.")
+    end
+  end
+
+  it "keeps a persistent updater log outside the files bin/setup deletes" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+
+      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}", "OVERMIND_SOCKET" => ".overmind.sock")
+      stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      updater_log_path = File.join(dir, "log", "dev-update", "dev-update.log")
+      dev_start_log_path = File.join(dir, "log", "dev-update", "dev-start.log")
+      expect(File.exist?(updater_log_path)).to be(true)
+      expect(File.exist?(dev_start_log_path)).to be(true)
+      expect(File.read(updater_log_path)).to include("Starting full restart update...")
+      expect(File.read(updater_log_path)).to include("Full restart update complete.")
+      expect(wait_for_dev_start_log(dir)).to include("bin/dev booted")
+    end
+  end
+
+  it "logs trigger context passed from the activity" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+      stdout, stderr, status = Open3.capture3(
+        trigger_context_env(dir,
+          "DEV_UPDATE_TRIGGER_MODE" => "full",
+          "DEV_UPDATE_PROJECT_ID" => "12",
+          "DEV_UPDATE_PR_NUMBER" => "42",
+          "DEV_UPDATE_CHANGED_FILES" => "app/models/user.rb\nbin/dev",
+          "DEV_UPDATE_RESTART_TRIGGER_FILES" => "bin/dev"),
+        script_path,
+        "--full",
+        chdir: dir
+      )
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect_trigger_context_log(dir)
+    end
+  end
+
+  it "upgrades lightweight mode to full restart when restart-worthy files are provided" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+
+      stdout, stderr, status = Open3.capture3(
+        trigger_context_env(dir,
+          "DEV_UPDATE_TRIGGER_MODE" => "lightweight",
+          "DEV_UPDATE_CHANGED_FILES" => "bin/dev\napp/models/user.rb"),
+        script_path,
+        "--lightweight",
+        chdir: dir
+      )
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.exist?(File.join(dir, "setup-ran"))).to be(true)
+      expect(File.exist?(File.join(dir, "dev-ran"))).to be(true)
+
+      updater_log = read_updater_log(dir)
+      expect(updater_log).to include("Restart-worthy files were provided with a lightweight request; upgrading to full restart.")
+      expect(updater_log).to include("Starting full restart update...")
+      expect(updater_log).not_to include("Lightweight update complete. Rails will autoload changes.")
+    end
+  end
+
+  it "upgrades lightweight to full restart when pull brings in restart-worthy files" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      diff_files = %w[app/models/user.rb config/initializers/temporal.rb]
+      script_path = prepare_script_fixture(dir, pull_diff_files: diff_files)
+      env = trigger_context_env(dir,
+        "DEV_UPDATE_TRIGGER_MODE" => "lightweight",
+        "DEV_UPDATE_CHANGED_FILES" => "app/models/user.rb")
+
+      stdout, stderr, status = Open3.capture3(env, script_path, "--lightweight", chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.exist?(File.join(dir, "setup-ran"))).to be(true)
+      expect(File.exist?(File.join(dir, "dev-ran"))).to be(true)
+
+      updater_log = read_updater_log(dir)
+      expect(updater_log).to include("upgrading to full restart")
+      expect(updater_log).to include("Full restart update complete.")
+      expect(updater_log).not_to include("Lightweight update complete.")
+    end
+  end
+
+  it "runs migrations before restarting when trigger context includes migration files" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, start_overmind_running: true)
+      create_stale_socket(dir)
+
+      stdout, stderr, status = run_with_migration_trigger(dir, script_path, "--full")
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect_calls(dir, migration_restart_calls("overmind quit"))
+
+      updater_log = read_updater_log(dir)
+      expect(updater_log).to include("stopping Overmind before pulling")
+      expect(updater_log).to include("Migration files changed; running bin/rails db:migrate before restart...")
+      expect(updater_log).to include("Database migrations are current.")
+    end
+  end
+
+  it "runs migrations before restarting when pull brings in migration files" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, pull_diff_files: %w[
+        app/models/user.rb
+        db/migrate/20260722000000_add_widgets.rb
+      ])
+
+      result = Open3.capture3(
+        trigger_context_env(dir,
+          "DEV_UPDATE_TRIGGER_MODE" => "lightweight",
+          "DEV_UPDATE_CHANGED_FILES" => "app/models/user.rb"),
+        script_path,
+        "--lightweight",
+        chdir: dir
+      )
+      stdout, stderr, status = result
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect_calls(dir, migration_restart_calls)
+    end
+  end
+
+  it "fails before restart when explicit migration run fails" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, rails_migrate_exit_status: 1)
+
+      stdout, stderr, status = run_with_migration_trigger(dir, script_path, "--full")
+
+      expect(status.success?).to be(false), -> { "expected failure but got success\nstdout: #{stdout}\nstderr: #{stderr}" }
+      expect_calls(dir, migration_restart_calls[0...-1])
+
+      updater_log = read_updater_log(dir)
+      expect(updater_log).to include("db:migrate: migration failed")
+      expect(updater_log).to include("ERROR: bin/rails db:migrate failed. Fix the migration and rerun bin/dev-update --full.")
+    end
+  end
+
+  it "recovers Overmind when a migration-triggered update stops before a failed pull" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, start_overmind_running: true, pull_exit_status: 1)
+      create_stale_socket(dir)
+
+      stdout, stderr, status = Open3.capture3(
+        trigger_context_env(dir,
+          "DEV_UPDATE_TRIGGER_MODE" => "full",
+          "DEV_UPDATE_CHANGED_FILES" => "db/migrate/20260722000000_add_widgets.rb",
+          "DEV_UPDATE_RESTART_TRIGGER_FILES" => "db/migrate/20260722000000_add_widgets.rb"),
+        script_path,
+        "--full",
+        chdir: dir
+      )
+
+      expect(status.success?).to be(false), -> { "expected failure but got success\nstdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.exist?(File.join(dir, "dev-ran"))).to be(true)
+      expect(read_updater_log(dir)).to include("Recovery start succeeded.")
+      expect(read_updater_log(dir)).to include("ERROR: git pull --ff-only failed.")
+    end
+  end
+
+  it "recovers Overmind when a migration-triggered update stops before a dirty branch abort" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, start_overmind_running: true, current_branch: "feature/fix", dirty_tree: true)
+      create_stale_socket(dir)
+
+      stdout, stderr, status = run_with_migration_trigger(dir, script_path, "--full")
+
+      expect(status.success?).to be(false), -> { "expected failure but got success\nstdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.exist?(File.join(dir, "dev-ran"))).to be(true)
+      expect(read_updater_log(dir)).to include("Recovery start succeeded.")
+      expect(read_updater_log(dir)).to include("ERROR: Cannot update while the current branch has uncommitted changes.")
+    end
+  end
+
+  it "stays lightweight when pull brings in only autoloadable files" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, pull_diff_files: %w[
+        app/models/user.rb
+        app/services/foo.rb
+      ])
+
+      stdout, stderr, status = Open3.capture3(
+        trigger_context_env(dir,
+          "DEV_UPDATE_TRIGGER_MODE" => "lightweight",
+          "DEV_UPDATE_CHANGED_FILES" => "app/models/user.rb"),
+        script_path,
+        "--lightweight",
+        chdir: dir
+      )
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.exist?(File.join(dir, "setup-ran"))).to be(false)
+
+      updater_log = read_updater_log(dir)
+      expect(updater_log).to include("Lightweight update complete.")
+      expect(updater_log).not_to include("upgrading to full restart")
+    end
+  end
+
+  it "does not forward STARTUP_CLEANUP_KILL_ALL when unset during full restart" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, capture_kill_all_in_dev: true)
+
+      env = poll_env.merge(
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "OVERMIND_SOCKET" => ".overmind.sock",
+        "DEV_UPDATE_STARTUP_CLEANUP_KILL_ALL" => nil
+      )
+      stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.read(File.join(dir, "setup-env.log"))).to eq("\n")
+      expect(File.read(File.join(dir, "dev-env.log"))).to eq("\n")
+    end
+  end
+
+  it "forwards STARTUP_CLEANUP_KILL_ALL to both setup and dev during full restart" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, capture_kill_all_in_dev: true)
+
+      env = poll_env.merge(
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "OVERMIND_SOCKET" => ".overmind.sock",
+        "DEV_UPDATE_STARTUP_CLEANUP_KILL_ALL" => "1"
+      )
+      stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.read(File.join(dir, "setup-env.log"))).to eq("1\n")
+      expect(File.read(File.join(dir, "dev-env.log"))).to eq("1\n")
+    end
+  end
+
+  it "unsets PORT before launching bin/dev so the default base port is used" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, capture_port_in_dev: true)
+
+      env = poll_env.merge(
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "OVERMIND_SOCKET" => ".overmind.sock",
+        "PORT" => "3300"
+      )
+      stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      port_log = File.join(dir, "dev-port.log")
+      expect(File.exist?(port_log)).to be(true)
+      expect(File.read(port_log).strip).to eq(""), "PORT should be unset when bin/dev is launched"
+    end
+  end
+
+  it "treats disown as best-effort after launching detached bin/dev" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+      bash_env = File.join(dir, "disable-disown.sh")
+      File.write(bash_env, "enable -n disown || true\n")
+
+      env = poll_env.merge(
+        "BASH_ENV" => bash_env,
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "OVERMIND_SOCKET" => ".overmind.sock"
+      )
+      stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.exist?(File.join(dir, "setup-ran"))).to be(true)
+      expect(File.exist?(File.join(dir, "dev-ran"))).to be(true)
+    end
+  end
+
+  it "clears bundler env before calling overmind during restart" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, start_overmind_running: true)
+      env = poll_env.merge(bundler_contaminated_env(dir))
+      stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      log = overmind_invocation_log(dir)
+      expect(log).to include("CMD=restart")
+      restart_block = log.split("\n--\n").find { |block| block.lines.first&.start_with?("CMD=restart") }
+      expect(restart_block).not_to include("BUNDLE_GEMFILE=")
+      expect(restart_block).not_to include("RUBYOPT=")
+      expect(File.exist?(File.join(dir, "overmind-restart-ran"))).to be(true)
+    end
+  end
+
+  it "clears bundler env before calling bin/setup" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, capture_bundler_env_in_setup: true)
+      env = poll_env.merge(bundler_contaminated_env(dir))
+
+      stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      setup_env_log = File.read(File.join(dir, "setup-bundler-env.log"))
+      expect(setup_env_log).not_to include("BUNDLE_GEMFILE=")
+      expect(setup_env_log).not_to include("RUBYOPT=")
+    end
+  end
+
+  it "clears bundler env before launching detached bin/dev" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, capture_bundler_env_in_dev: true)
+      env = poll_env.merge(bundler_contaminated_env(dir))
+
+      stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      dev_env_log = File.read(File.join(dir, "dev-bundler-env.log"))
+      expect(dev_env_log).not_to include("BUNDLE_GEMFILE=")
+      expect(dev_env_log).not_to include("RUBYOPT=")
+      expect(dev_env_log).not_to include("TMUX=")
+    end
+  end
+
+  it "requires consecutive healthy overmind polls before declaring restart success" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, status_successes_after_start: 1)
+      env = poll_env.merge(
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "OVERMIND_SOCKET" => ".overmind.sock",
+        "DEV_UPDATE_OVERMIND_HEALTHY_CONFIRM_COUNT" => "2"
+      )
+
+      stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+      updater_log = read_updater_log(dir)
+
+      expect(status.success?).to be(false), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(updater_log).to include("Inspect log/dev-update/dev-start.log for detached bin/dev output.")
+      expect(updater_log).to include("ERROR: Full restart completed setup but failed to restore a healthy Overmind session.")
+    end
+  end
+
+  it "does not treat overmind restart as success unless health persists" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, start_overmind_running: true, status_successes_after_start: 1)
+      env = poll_env.merge(
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "OVERMIND_SOCKET" => ".overmind.sock",
+        "DEV_UPDATE_OVERMIND_HEALTHY_CONFIRM_COUNT" => "2"
+      )
+
+      stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+      updater_log = read_updater_log(dir)
+
+      expect(status.success?).to be(false), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.exist?(File.join(dir, "overmind-restart-ran"))).to be(true)
+      expect(updater_log).to include("Overmind is already running, restarting processes.")
+      expect(updater_log).to include("Inspect log/dev-update/dev-start.log for detached bin/dev output.")
+      expect(updater_log).to include("ERROR: Full restart completed setup but failed to restore a healthy Overmind session.")
+    end
+  end
+
+  it "auto-stashes dirty working tree before pulling" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, dirty_tree: true)
+
+      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}", "OVERMIND_SOCKET" => ".overmind.sock")
+      stdout, stderr, status = Open3.capture3(env, script_path, "--lightweight", chdir: dir)
+      updater_log = read_updater_log(dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(updater_log).to include("Working tree has uncommitted changes; auto-stashing...")
+      expect(updater_log).to include("Restoring auto-stashed changes...")
+      expect(updater_log).to include("Lightweight update complete.")
+    end
+  end
+
+  it "logs git stash pop output after restoring auto-stashed changes" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, dirty_tree: true, stash_pop_output: "Applied autostash cleanly")
+
+      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}", "OVERMIND_SOCKET" => ".overmind.sock")
+      stdout, stderr, status = Open3.capture3(env, script_path, "--lightweight", chdir: dir)
+      updater_log = read_updater_log(dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(updater_log).to include("git stash pop: Applied autostash cleanly")
+    end
+  end
+
+  it "aborts with error when git stash pop conflicts during restore" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(
+        dir,
+        dirty_tree: true,
+        stash_pop_exit_status: 1,
+        stash_pop_output: "CONFLICT (content): Merge conflict in bin/dev-update"
+      )
+
+      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}", "OVERMIND_SOCKET" => ".overmind.sock")
+      stdout, stderr, status = Open3.capture3(env, script_path, "--lightweight", chdir: dir)
+      updater_log = read_updater_log(dir)
+
+      expect(status.success?).to be(false), -> { "expected failure but got success\nstdout: #{stdout}\nstderr: #{stderr}" }
+      expect(updater_log).to include("git stash pop: CONFLICT (content): Merge conflict in bin/dev-update")
+      expect(updater_log).to include("ERROR: git stash pop failed (conflict). Resolve manually with 'git stash pop'.")
+    end
+  end
+
+  it "stops retrying after max consecutive pull failures" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+
+      # Seed the failure lock at the max
+      FileUtils.mkdir_p(File.join(dir, "tmp"))
+      File.write(File.join(dir, "tmp", "dev-update-failure.lock"), "3")
+
+      env = poll_env.merge(
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "OVERMIND_SOCKET" => ".overmind.sock",
+        "DEV_UPDATE_MAX_CONSECUTIVE_FAILURES" => "3"
+      )
+      stdout, stderr, status = Open3.capture3(env, script_path, "--lightweight", chdir: dir)
+      updater_log = read_updater_log(dir)
+
+      expect(status.success?).to be(false), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(updater_log).to include("consecutive pull failures detected. Manual intervention required.")
+    end
+  end
+
+  it "self-clears a dirty non-main failure lock once the working tree is clean" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, current_branch: "feature/fix", dirty_tree: false)
+      lock_path, reason_path = seed_failure_lock(dir, reason: "dirty-non-main")
+
+      stdout, stderr, status = Open3.capture3(failure_lock_env(dir), script_path, "--lightweight", chdir: dir)
+      updater_log = read_updater_log(dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(updater_log).to include("Failure lock was caused by dirty non-main branch")
+      expect(updater_log).to include("Cleared failure lock after resolved working-tree condition.")
+      expect(updater_log).to include("Switching to main branch (currently on feature/fix)...")
+      expect(updater_log).to include("Lightweight update complete.")
+      expect(File.exist?(lock_path)).to be(false)
+      expect(File.exist?(reason_path)).to be(false)
+    end
+  end
+
+  it "self-clears a legacy count-only lock on a clean non-main branch" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, current_branch: "feature/fix", dirty_tree: false)
+      lock_path, = seed_failure_lock(dir)
+
+      stdout, stderr, status = Open3.capture3(failure_lock_env(dir), script_path, "--lightweight", chdir: dir)
+      updater_log = read_updater_log(dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(updater_log).to include("Legacy failure lock found on clean non-main branch")
+      expect(updater_log).to include("Cleared failure lock after resolved working-tree condition.")
+      expect(updater_log).to include("Lightweight update complete.")
+      expect(File.exist?(lock_path)).to be(false)
+    end
+  end
+
+  it "records and clears failure lock on pull success" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+
+      # Seed a failure lock below the max
+      FileUtils.mkdir_p(File.join(dir, "tmp"))
+      lock_path = File.join(dir, "tmp", "dev-update-failure.lock")
+      File.write(lock_path, "1")
+
+      env = poll_env.merge(
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "OVERMIND_SOCKET" => ".overmind.sock",
+        "DEV_UPDATE_MAX_CONSECUTIVE_FAILURES" => "3"
+      )
+      stdout, stderr, status = Open3.capture3(env, script_path, "--lightweight", chdir: dir)
+      updater_log = read_updater_log(dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(updater_log).to include("Cleared failure lock after successful pull.")
+      expect(File.exist?(lock_path)).to be(false)
+    end
+  end
+
+  it "records pull failure and exits with error" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, pull_exit_status: 1)
+
+      env = poll_env.merge(
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "OVERMIND_SOCKET" => ".overmind.sock",
+        "DEV_UPDATE_MAX_CONSECUTIVE_FAILURES" => "3"
+      )
+      stdout, stderr, status = Open3.capture3(env, script_path, "--lightweight", chdir: dir)
+      updater_log = read_updater_log(dir)
+
+      expect(status.success?).to be(false), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(updater_log).to include("Recorded pull failure (1/3).")
+      expect(updater_log).to include("ERROR: git pull --ff-only failed.")
+
+      lock_path = File.join(dir, "tmp", "dev-update-failure.lock")
+      expect(File.exist?(lock_path)).to be(true)
+      expect(File.read(lock_path).strip).to eq("1")
+    end
+  end
+
+  def write_executable(path, contents)
+    File.write(path, contents)
+    FileUtils.chmod("+x", path)
+  end
+
+  def read_updater_log(dir)
+    File.read(File.join(dir, "log", "dev-update", "dev-update.log"))
+  end
+
+  def expect_calls(dir, expected)
+    expect(File.read(File.join(dir, "calls.log")).lines.map(&:chomp)).to eq(expected)
+  end
+
+  def expect_trigger_context_log(dir)
+    updater_log = read_updater_log(dir)
+    expect(updater_log).to include("Trigger source: Activities::TriggerDevEnvironmentUpdateActivity")
+    expect(updater_log).to include("Requested mode: full")
+    expect(updater_log).to include("Project ID: 12")
+    expect(updater_log).to include("PR number: 42")
+    expect(updater_log).to include("Changed files: app/models/user.rb,bin/dev")
+    expect(updater_log).to include("Restart trigger files: bin/dev")
+  end
+
+  def trigger_context_env(dir, overrides = {})
+    poll_env.merge(
+      {
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "OVERMIND_SOCKET" => ".overmind.sock",
+        "DEV_UPDATE_TRIGGER_SOURCE" => "Activities::TriggerDevEnvironmentUpdateActivity"
+      }.merge(overrides)
+    )
+  end
+
+  def migration_trigger_env(dir)
+    trigger_context_env(dir,
+      "DEV_UPDATE_TRIGGER_MODE" => "full",
+      "DEV_UPDATE_CHANGED_FILES" => "db/migrate/20260722000000_add_widgets.rb",
+      "DEV_UPDATE_RESTART_TRIGGER_FILES" => "db/migrate/20260722000000_add_widgets.rb")
+  end
+
+  def run_with_migration_trigger(dir, script_path, mode)
+    Open3.capture3(migration_trigger_env(dir), script_path, mode, chdir: dir)
+  end
+
+  def migration_restart_calls(*prefix)
+    [
+      *prefix,
+      "git pull",
+      "setup --skip-server --skip-database",
+      "ensure-worktree-databases",
+      "rails db:migrate",
+      "dev"
+    ]
+  end
+
+  def failure_lock_env(dir)
+    poll_env.merge(
+      "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+      "OVERMIND_SOCKET" => ".overmind.sock",
+      "DEV_UPDATE_MAX_CONSECUTIVE_FAILURES" => "3"
+    )
+  end
+
+  def seed_failure_lock(dir, reason: nil)
+    FileUtils.mkdir_p(File.join(dir, "tmp"))
+    lock_path = File.join(dir, "tmp", "dev-update-failure.lock")
+    reason_path = "#{lock_path}.reason"
+    File.write(lock_path, "3")
+    File.write(reason_path, reason) if reason
+    [ lock_path, reason_path ]
+  end
+
+  def wait_for_dev_start_log(dir)
+    dev_start_log = nil
+
+    Timeout.timeout(5) do
+      loop do
+        dev_start_log_path = File.join(dir, "log", "dev-update", "dev-start.log")
+        dev_start_log = File.read(dev_start_log_path) if File.exist?(dev_start_log_path)
+        break if dev_start_log&.include?("bin/dev booted")
+
+        sleep 0.1
+      end
+    end
+
+    dev_start_log
+  end
+
+  def seed_oversized_logs(dir, size)
+    log_dir = File.join(dir, "log", "dev-update")
+    FileUtils.mkdir_p(log_dir)
+    %w[dev-update.log dev-start.log tmux.log overmind.log].each { |f| File.write(File.join(log_dir, f), "x" * size) }
+    log_dir
+  end
+
+  def prepare_script_fixture(
+    dir,
+    setup_exit_status: 0,
+    start_overmind_running: false,
+    dev_starts_overmind: true,
+    capture_bundler_env_in_setup: false,
+    capture_bundler_env_in_dev: false,
+    capture_port_in_dev: false,
+    capture_kill_all_in_dev: false,
+    dirty_tree: false,
+    current_branch: "main",
+    pull_exit_status: 0,
+    stash_pop_exit_status: 0,
+    stash_pop_output: "Applied stash",
+    pull_diff_files: [],
+    rails_migrate_exit_status: 0,
+    status_successes_after_start: nil
+  )
+    FileUtils.mkdir_p(File.join(dir, "bin"))
+    FileUtils.mkdir_p(File.join(dir, "bin", "lib"))
+    FileUtils.mkdir_p(File.join(dir, "log"))
+    FileUtils.mkdir_p(File.join(dir, "stubbin"))
+
+    FileUtils.touch(File.join(dir, "overmind-running")) if start_overmind_running
+
+    script_path = File.join(dir, "bin", "dev-update")
+    FileUtils.cp(script_source, script_path)
+    FileUtils.chmod("+x", script_path)
+    FileUtils.cp(File.expand_path("../../bin/lib/dev_supervisor.sh", __dir__), File.join(dir, "bin", "lib", "dev_supervisor.sh"))
+
+    dev_start_line = dev_starts_overmind ? %(touch "#{dir}/overmind-running") : ""
+    capture_port_line = capture_port_in_dev ? %(printf '%s\n' "${PORT:-}" > "#{dir}/dev-port.log") : ""
+    capture_kill_all_line =
+      capture_kill_all_in_dev ? %(printf '%s\n' "${STARTUP_CLEANUP_KILL_ALL:-}" > "#{dir}/dev-env.log") : ""
+    capture_setup_bundler_line =
+      capture_bundler_env_in_setup ? %((env | sort | grep -E '^(BUNDLE_GEMFILE|BUNDLE_BIN_PATH|BUNDLER_SETUP|BUNDLER_VERSION|RUBYLIB|RUBYOPT|RUBYGEMS_GEMDEPS|TMUX)=' || true) > "#{dir}/setup-bundler-env.log") : ""
+    capture_dev_bundler_line =
+      capture_bundler_env_in_dev ? %((env | sort | grep -E '^(BUNDLE_GEMFILE|BUNDLE_BIN_PATH|BUNDLER_SETUP|BUNDLER_VERSION|RUBYLIB|RUBYOPT|RUBYGEMS_GEMDEPS|TMUX)=' || true) > "#{dir}/dev-bundler-env.log") : ""
+
+    write_executable(
+      File.join(dir, "bin", "setup"),
+      <<~BASH
+        #!/usr/bin/env bash
+        touch "#{dir}/setup-ran"
+        printf 'setup %s\\n' "$*" >> "#{dir}/calls.log"
+        printf '%s\n' "${STARTUP_CLEANUP_KILL_ALL:-}" > "#{dir}/setup-env.log"
+        #{capture_setup_bundler_line}
+        exit #{setup_exit_status}
+      BASH
+    )
+
+    write_executable(
+      File.join(dir, "bin", "ensure-worktree-databases"),
+      <<~BASH
+        #!/usr/bin/env bash
+        printf 'ensure-worktree-databases\\n' >> "#{dir}/calls.log"
+        exit 0
+      BASH
+    )
+
+    write_executable(
+      File.join(dir, "bin", "rails"),
+      <<~BASH
+        #!/usr/bin/env bash
+        printf 'rails %s\\n' "$*" >> "#{dir}/calls.log"
+        if [ "$*" = "db:migrate" ]; then
+          if [ "#{rails_migrate_exit_status}" -eq 0 ]; then
+            echo "migrated"
+          else
+            echo "migration failed" >&2
+          fi
+          exit #{rails_migrate_exit_status}
+        fi
+        exit 0
+      BASH
+    )
+
+    write_executable(
+      File.join(dir, "bin", "dev"),
+      <<~BASH
+        #!/usr/bin/env bash
+        touch "#{dir}/dev-ran"
+        printf 'dev\\n' >> "#{dir}/calls.log"
+        #{capture_port_line}
+        #{capture_kill_all_line}
+        #{capture_dev_bundler_line}
+        #{dev_start_line}
+        echo "bin/dev booted"
+      BASH
+    )
+
+    dirty_status_output = dirty_tree ? " M dirty-file.txt" : ""
+    pull_diff_file = File.join(dir, "pull-diff-files")
+    File.write(pull_diff_file, pull_diff_files.join("\n"))
+    write_executable(
+      File.join(dir, "stubbin", "git"),
+      <<~BASH
+        #!/usr/bin/env bash
+        case "$1" in
+          rev-parse)
+            case "${2:-}" in
+              --abbrev-ref)
+                echo "#{current_branch}"
+                ;;
+              *)
+                if [ -f "#{dir}/pull-ran" ]; then
+                  echo "post-pull-sha"
+                else
+                  echo "pre-pull-sha"
+                fi
+                ;;
+            esac
+            ;;
+          status)
+            if [ "${2:-}" = "--porcelain" ]; then
+              printf '%s' "#{dirty_status_output}"
+            fi
+            exit 0
+            ;;
+          stash)
+            echo "stash: $*" >> "#{dir}/git-stash.log"
+            if [ "${2:-}" = "pop" ]; then
+              printf '%s\n' "#{stash_pop_output}"
+              exit #{stash_pop_exit_status}
+            fi
+            ;;
+          checkout)
+            exit 0
+            ;;
+          pull)
+            touch "#{dir}/pull-ran"
+            printf 'git pull\\n' >> "#{dir}/calls.log"
+            exit #{pull_exit_status}
+            ;;
+          diff)
+            cat "#{pull_diff_file}" 2>/dev/null || true
+            exit 0
+            ;;
+          *)
+            echo "unexpected git command: $*" >&2
+            exit 1
+            ;;
+        esac
+      BASH
+    )
+
+    write_executable(
+      File.join(dir, "stubbin", "overmind"),
+      <<~BASH
+        #!/usr/bin/env bash
+        {
+          printf 'CMD=%s\n' "$1"
+          env | sort | grep -E '^(BUNDLE_GEMFILE|BUNDLE_BIN_PATH|BUNDLER_SETUP|BUNDLER_VERSION|RUBYLIB|RUBYOPT|RUBYGEMS_GEMDEPS)=' || true
+          printf '%s\n' '--'
+        } >> "#{dir}/stubbin/overmind-env.log"
+        case "$1" in
+          status)
+            [ -e "#{dir}/overmind-running" ]
+            running=$?
+            if [ "$running" -ne 0 ]; then
+              exit "$running"
+            fi
+
+            count_file="#{dir}/overmind-status-count"
+            count=0
+            if [ -f "$count_file" ]; then
+              count="$(cat "$count_file")"
+            fi
+            count=$((count + 1))
+            printf '%s' "$count" > "$count_file"
+
+            if [ "#{status_successes_after_start.nil? ? '' : status_successes_after_start}" != "" ] && [ "$count" -gt #{status_successes_after_start || 0} ]; then
+              rm -f "#{dir}/overmind-running"
+              exit 1
+            fi
+            echo "PROCESS   PID       STATUS"
+            echo "web       12345     running"
+            exit 0
+            ;;
+          quit)
+            printf 'overmind quit\\n' >> "#{dir}/calls.log"
+            touch "#{dir}/overmind-quit-ran"
+            rm -f "#{dir}/overmind-running"
+            exit 0
+            ;;
+          restart)
+            touch "#{dir}/overmind-restart-ran"
+            echo "overmind restarted processes"
+            exit 0
+            ;;
+          *)
+            echo "unexpected overmind command: $*" >&2
+            exit 1
+            ;;
+        esac
+      BASH
+    )
+
+    script_path
+  end
+
+  def create_stale_socket(dir)
+    socket_path = File.join(dir, ".overmind.sock")
+    UNIXServer.open(socket_path) { |server| server.close }
+    expect(File.socket?(socket_path)).to be(true)
+    socket_path
+  end
+end

@@ -1,0 +1,91 @@
+import { Controller } from "@hotwired/stimulus"
+
+// Syncs action-button visibility when Turbo replaces the agent run detail partial.
+//
+// The detail partial carries data-agent-run-status and data-agent-run-has-error
+// on its root element. When a Turbo Stream broadcast replaces that element,
+// this controller detects the change via MutationObserver and hides/shows
+// action sections accordingly:
+//
+//   data-when-active       — visible while the run is active (running)
+//   data-when-unfinished   — visible while the run is unfinished (queued/running/paused)
+//   data-when-paused       — visible only when the run is paused
+//   data-when-finished     — visible once the run has finished (any terminal status)
+//   data-when-auth-expired — visible when the run's status is auth_expired
+//   data-when-error        — visible when the run has an error message
+const ACTIVE_STATUSES = ["running"]
+const UNFINISHED_STATUSES = ["queued", "running", "paused"]
+const FINISHED_STATUSES = [
+  "completed",
+  "no_output",
+  "failed",
+  "cancelled",
+  "timeout",
+  "token_budget_exceeded",
+  "retried",
+  "auth_expired",
+  "rate_limited",
+]
+
+export default class extends Controller {
+  static targets = ["actions"]
+  static values = { detailId: String }
+
+  connect() {
+    this.sync()
+    this.boundSync = this.sync.bind(this)
+    const detail = document.getElementById(this.detailIdValue)
+    if (detail && detail.parentNode) {
+      this.observer = new window.MutationObserver(this.boundSync)
+      this.observer.observe(detail.parentNode, { childList: true })
+    }
+  }
+
+  disconnect() {
+    if (this.observer) {
+      this.observer.disconnect()
+    }
+  }
+
+  sync() {
+    const detail = document.getElementById(this.detailIdValue)
+    if (!detail) {
+      return
+    }
+
+    const status = detail.dataset.agentRunStatus
+    if (!status) {
+      return
+    }
+
+    const active = ACTIVE_STATUSES.includes(status)
+    const authExpired = status === "auth_expired"
+    const hasError = detail.dataset.agentRunHasError === "true"
+
+    this.actionsTarget.querySelectorAll("[data-when-active]").forEach((el) => {
+      el.hidden = !active
+    })
+    const unfinished = UNFINISHED_STATUSES.includes(status)
+    this.actionsTarget
+      .querySelectorAll("[data-when-unfinished]")
+      .forEach((el) => {
+        el.hidden = !unfinished
+      })
+    const paused = status === "paused"
+    this.actionsTarget.querySelectorAll("[data-when-paused]").forEach((el) => {
+      el.hidden = !paused
+    })
+    const finished = FINISHED_STATUSES.includes(status)
+    this.actionsTarget.querySelectorAll("[data-when-finished]").forEach((el) => {
+      el.hidden = !finished
+    })
+    this.actionsTarget
+      .querySelectorAll("[data-when-auth-expired]")
+      .forEach((el) => {
+        el.hidden = !authExpired
+      })
+    this.actionsTarget.querySelectorAll("[data-when-error]").forEach((el) => {
+      el.hidden = !hasError
+    })
+  }
+}

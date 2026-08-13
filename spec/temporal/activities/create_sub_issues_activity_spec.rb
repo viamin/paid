@@ -1,0 +1,395 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe Activities::CreateSubIssuesActivity do
+  let(:activity) { described_class.new }
+  let(:project) { create(:project) }
+  let(:parent_issue) { create(:issue, project: project, github_number: 100) }
+  let(:github_client) { instance_double(GithubClient) }
+
+  let(:sub_tasks) do
+    [
+      { title: "Implement authentication", body: "Add JWT-based auth to the API" },
+      { title: "Add database migrations", body: "Create users and sessions tables" }
+    ]
+  end
+
+  def gh_issue_response(number:, id:, title:, body:)
+    Struct.new(:number, :id, :title, :body, :state, :user, :labels, :created_at, :updated_at, :html_url).new(
+      number, id, title, body, "open",
+      Struct.new(:login).new("paid-bot"),
+      [], Time.current, Time.current,
+      "https://github.com/#{project.full_name}/issues/#{number}"
+    )
+  end
+
+  def expect_orchestration_dependency_bodies!
+    call_count = 0
+    allow(github_client).to receive(:create_issue) do |_full_name, payload|
+      call_count += 1
+
+      if call_count == 1
+        expect(payload[:body]).not_to include("Depends on #")
+        gh_issue_response(number: 101, id: 200_001, title: payload[:title], body: payload[:body])
+      elsif call_count == 2
+        expect(payload[:body]).to include("Depends on #101")
+        gh_issue_response(number: 102, id: 200_002, title: payload[:title], body: payload[:body])
+      else
+        raise "Unexpected create_issue call ##{call_count}"
+      end
+    end
+  end
+
+  before do
+    allow(GithubClient).to receive(:new).and_return(github_client)
+    allow(github_client).to receive(:create_issue).and_return(
+      gh_issue_response(number: 101, id: 200_001, title: "Implement authentication", body: "body1"),
+      gh_issue_response(number: 102, id: 200_002, title: "Add database migrations", body: "body2")
+    )
+  end
+
+  describe "#execute" do
+    it "creates GitHub issues for each sub-task" do
+      expect(github_client).to receive(:create_issue).twice
+
+      activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: sub_tasks)
+    end
+
+    it "includes parent reference in sub-issue body" do
+      expect(github_client).to receive(:create_issue).with(
+        project.full_name,
+        hash_including(body: a_string_including("Sub-issue of #100"))
+      ).twice
+
+      activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: sub_tasks)
+    end
+
+    it "includes task body in sub-issue body" do
+      expect(github_client).to receive(:create_issue).with(
+        project.full_name,
+        hash_including(body: a_string_including("Add JWT-based auth"))
+      ).ordered
+
+      expect(github_client).to receive(:create_issue).with(
+        project.full_name,
+        hash_including(body: a_string_including("Create users and sessions"))
+      ).ordered
+
+      activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: sub_tasks)
+    end
+
+    it "syncs created issues to the local database" do
+      parent_issue # ensure parent is created before counting
+      expect {
+        activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: sub_tasks)
+      }.to change(Issue, :count).by(2)
+    end
+
+    it "sets parent-child relationships on synced issues" do
+      activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: sub_tasks)
+
+      children = parent_issue.sub_issues.reload
+      expect(children.size).to eq(2)
+      expect(children.map(&:github_number)).to contain_exactly(101, 102)
+    end
+
+    it "returns created issue details" do
+      result = activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: sub_tasks)
+
+      expect(result[:parent_issue_id]).to eq(parent_issue.id)
+      expect(result[:created_issues].size).to eq(2)
+      expect(result[:created_issues].first[:github_number]).to eq(101)
+      expect(result[:created_issues].last[:github_number]).to eq(102)
+    end
+
+    it "reuses existing sub-issues when executed twice with identical input" do
+      parent_issue # ensure parent is created before counting
+      activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: sub_tasks)
+
+      expect {
+        activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: sub_tasks)
+      }.not_to change(Issue, :count)
+
+      expect(github_client).to have_received(:create_issue).exactly(2).times
+      children = parent_issue.sub_issues.reload
+      expect(children.size).to eq(2)
+    end
+
+    context "when automation_on_label_enabled is true" do
+      before { project.update!(automation_on_label_enabled: true) }
+
+      it "adds the automation label for automatic pickup" do
+        expect(github_client).to receive(:create_issue).with(
+          project.full_name,
+          hash_including(labels: a_collection_including(project.automation_label_name))
+        ).twice
+
+        activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: sub_tasks)
+      end
+
+      it "suppresses the automation label for orchestration-owned sub-issues" do
+        expect(github_client).to receive(:create_issue).with(
+          project.full_name,
+          hash_including(labels: satisfy { |labels| !labels.include?(project.automation_label_name) })
+        ).twice
+
+        activity.execute(
+          project_id: project.id,
+          parent_issue_id: parent_issue.id,
+          creation_mode: described_class::ORCHESTRATION_MODE,
+          sub_tasks: sub_tasks
+        )
+      end
+    end
+
+    context "when automation_on_label_enabled is false" do
+      before { project.update!(automation_on_label_enabled: false) }
+
+      it "does not add the automation label" do
+        expect(github_client).to receive(:create_issue).with(
+          project.full_name,
+          hash_including(labels: satisfy { |l| !l.include?(project.automation_label_name) })
+        ).twice
+
+        activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: sub_tasks)
+      end
+    end
+
+    context "when auto_add_labels_enabled is true" do
+      before { project.update!(auto_add_labels_enabled: true) }
+
+      it "adds the generated label" do
+        expect(github_client).to receive(:create_issue).with(
+          project.full_name,
+          hash_including(labels: a_collection_including(project.generated_label_name))
+        ).twice
+
+        activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: sub_tasks)
+      end
+    end
+
+    context "when auto_add_labels_enabled is false" do
+      before { project.update!(auto_add_labels_enabled: false) }
+
+      it "does not add the generated label" do
+        expect(github_client).to receive(:create_issue).with(
+          project.full_name,
+          hash_including(labels: satisfy { |l| !l.include?(project.generated_label_name) })
+        ).twice
+
+        activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: sub_tasks)
+      end
+    end
+
+    it "truncates overlong titles to MAX_TITLE_LENGTH" do
+      max_length = Llm::GenerateIssueTitle::MAX_TITLE_LENGTH
+      long_title = "A" * 500
+      tasks = [ { title: long_title, body: "body" } ]
+
+      expect(github_client).to receive(:create_issue).with(
+        project.full_name,
+        hash_including(title: a_string_matching(/\A#{"A" * (max_length - 3)}\.{3}\z/))
+      ).and_return(
+        gh_issue_response(number: 101, id: 200_001, title: long_title.truncate(max_length), body: "body")
+      )
+
+      result = activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: tasks)
+      expect(result[:created_issues].first[:title].length).to be <= max_length
+    end
+
+    it "syncs orchestration-owned sub-issues in planning state" do
+      activity.execute(
+        project_id: project.id,
+        parent_issue_id: parent_issue.id,
+        creation_mode: described_class::ORCHESTRATION_MODE,
+        sub_tasks: sub_tasks
+      )
+
+      expect(parent_issue.sub_issues.reload.pluck(:paid_state)).to all(eq("planning"))
+    end
+
+    it "writes dependency lines for orchestration-owned sub-issues" do
+      orchestration_tasks = [
+        { title: "Task A", body: "First task", dependencies: [] },
+        { title: "Task B", body: "Second task", dependencies: [ 0 ] }
+      ]
+
+      expect_orchestration_dependency_bodies!
+
+      result = activity.execute(
+        project_id: project.id,
+        parent_issue_id: parent_issue.id,
+        creation_mode: described_class::ORCHESTRATION_MODE,
+        sub_tasks: orchestration_tasks
+      )
+
+      expect(result[:created_issues].map { |issue| issue[:index] }).to eq([ 0, 1 ])
+    end
+
+    context "with empty sub_tasks" do
+      it "returns empty created_issues array" do
+        result = activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: [])
+
+        expect(result[:created_issues]).to eq([])
+      end
+
+      it "does not call the GitHub API" do
+        expect(github_client).not_to receive(:create_issue)
+
+        activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: [])
+      end
+    end
+
+    it "raises ActiveRecord::RecordNotFound for invalid project_id" do
+      expect {
+        activity.execute(project_id: -1, parent_issue_id: parent_issue.id, sub_tasks: sub_tasks)
+      }.to raise_error(ActiveRecord::RecordNotFound)
+    end
+
+    it "raises ActiveRecord::RecordNotFound for invalid parent_issue_id" do
+      expect {
+        activity.execute(project_id: project.id, parent_issue_id: -1, sub_tasks: sub_tasks)
+      }.to raise_error(ActiveRecord::RecordNotFound)
+    end
+
+    context "with invalid sub_tasks input" do
+      it "raises a non-retryable error when sub_tasks is not an Array" do
+        expect {
+          activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: "not an array")
+        }.to raise_error(Temporalio::Error::ApplicationError, /must be an Array/)
+      end
+
+      it "raises a non-retryable error when a sub_task is not a Hash" do
+        expect {
+          activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: [ "not a hash" ])
+        }.to raise_error(Temporalio::Error::ApplicationError, /must be a Hash/)
+      end
+
+      it "raises a non-retryable error when a sub_task has a blank title" do
+        expect {
+          activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: [ { title: "", body: "x" } ])
+        }.to raise_error(Temporalio::Error::ApplicationError, /non-blank title/)
+      end
+    end
+
+    context "when create_issue fails after partial success" do
+      it "lets the original error propagate so Temporal can retry idempotently" do
+        call_count = 0
+        allow(github_client).to receive(:create_issue) do |*_args|
+          call_count += 1
+          if call_count == 1
+            gh_issue_response(number: 101, id: 200_001, title: "Implement authentication", body: "body1")
+          else
+            raise StandardError, "GitHub API timeout"
+          end
+        end
+
+        expect {
+          activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: sub_tasks)
+        }.to raise_error(StandardError, "GitHub API timeout")
+      end
+
+      it "reuses already-created sub-issues on retry instead of duplicating them" do
+        create_count = 0
+        allow(github_client).to receive(:create_issue) do |*_args|
+          create_count += 1
+          if create_count == 1
+            gh_issue_response(number: 101, id: 200_001, title: "Implement authentication", body: "body1")
+          elsif create_count == 2
+            raise StandardError, "GitHub API timeout"
+          else
+            gh_issue_response(number: 102, id: 200_002, title: "Add database migrations", body: "body2")
+          end
+        end
+
+        # First attempt: creates the first sub-issue, then fails on the second.
+        expect {
+          activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: sub_tasks)
+        }.to raise_error(StandardError, "GitHub API timeout")
+
+        # Retry: first sub-issue is reused (no new GitHub call for it), only
+        # the previously-failed second task is created.
+        result = activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: sub_tasks)
+
+        expect(result[:created_issues].size).to eq(2)
+        expect(result[:created_issues].map { |i| i[:github_number] }).to contain_exactly(101, 102)
+        expect(create_count).to eq(3) # two attempts only created each issue once
+      end
+
+      it "lets the error propagate normally when no sub-issues were created" do
+        allow(github_client).to receive(:create_issue).and_raise(
+          StandardError, "GitHub API timeout"
+        )
+
+        expect {
+          activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: sub_tasks)
+        }.to raise_error(StandardError, "GitHub API timeout")
+      end
+    end
+
+    context "when a CanceledError is raised after partial success" do
+      it "propagates the cancellation instead of wrapping it" do
+        call_count = 0
+        allow(github_client).to receive(:create_issue) do |*_args|
+          call_count += 1
+          if call_count == 1
+            gh_issue_response(number: 101, id: 200_001, title: "Implement authentication", body: "body1")
+          else
+            raise Temporalio::Error::CanceledError, "activity canceled"
+          end
+        end
+
+        expect {
+          activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: sub_tasks)
+        }.to raise_error(Temporalio::Error::CanceledError)
+      end
+    end
+
+    context "when sync_issue_record fails" do
+      it "continues creating remaining issues and returns nil issue_id" do
+        parent_issue # ensure created before stubbing
+
+        allow(Project).to receive(:find).with(project.id).and_return(project)
+        issues_relation = project.issues
+        allow(project).to receive(:issues).and_return(issues_relation)
+
+        bad_issue = Issue.new
+        allow(bad_issue).to receive(:update!).and_raise(StandardError, "DB error")
+        allow(issues_relation).to receive(:find_or_initialize_by).and_return(bad_issue)
+
+        result = activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: sub_tasks)
+
+        expect(result[:created_issues].size).to eq(2)
+        expect(result[:created_issues].map { |i| i[:issue_id] }).to all(be_nil)
+      end
+
+      it "fails fast for orchestration-owned sub-issues" do
+        parent_issue # ensure created before stubbing
+
+        allow(Project).to receive(:find).with(project.id).and_return(project)
+        issues_relation = project.issues
+        allow(project).to receive(:issues).and_return(issues_relation)
+
+        bad_issue = Issue.new
+        allow(bad_issue).to receive(:update!).and_raise(StandardError, "DB error")
+        allow(issues_relation).to receive(:find_or_initialize_by).and_return(bad_issue)
+
+        expect(github_client).to receive(:create_issue).once.and_return(
+          gh_issue_response(number: 101, id: 200_001, title: "Implement authentication", body: "body1")
+        )
+
+        expect {
+          activity.execute(
+            project_id: project.id,
+            parent_issue_id: parent_issue.id,
+            creation_mode: described_class::ORCHESTRATION_MODE,
+            sub_tasks: sub_tasks
+          )
+        }.to raise_error(Temporalio::Error::ApplicationError, /Failed to sync orchestration sub-issue #101 locally: DB error/) { |e|
+          expect(e.non_retryable).to be true
+        }
+      end
+    end
+  end
+end

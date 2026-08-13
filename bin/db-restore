@@ -1,0 +1,347 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+source "${APP_ROOT}/bin/lib/db_helpers.sh"
+cd "$APP_ROOT" || exit
+
+BACKUPS_DIR="${APP_ROOT}/backups"
+BACKEND=""
+RLS_TABLES=""
+DATA_TABLES=""
+
+read_rails_db_config() {
+  bin/rails runner "
+    cfg = ActiveRecord::Base.connection_db_config.configuration_hash
+    puts cfg[:host].to_s
+    puts cfg[:username].to_s
+    puts cfg[:password].to_s
+    puts cfg[:database].to_s
+    puts Rails.env
+  " 2>/dev/null
+}
+
+usage() {
+  echo "Usage: bin/db-restore BACKUP_FILENAME"
+  echo ""
+  echo "Restore database data from a custom-format archive."
+  echo "Truncates all existing data before restoring."
+  echo "Requires a freshly migrated database (schema must match the dump)."
+  echo "Automatically disables RLS and triggers during restore so all rows are written."
+  echo "Verifies schema completeness after restore (if a *_manifest.txt exists)."
+  echo ""
+  echo "After restore, verifies schema completeness by comparing FK, trigger,"
+  echo "and RLS counts against the *_manifest.txt file created by bin/db-dump."
+  echo "If counts are lower than expected, points to the *_postdata.sql snapshot"
+  echo "for reconciliation."
+  echo ""
+  echo "Defaults are read from the Rails database config."
+  echo ""
+  echo "Environment variables:"
+  echo "  DB_HOST      Database host (default: from config/database.yml)"
+  echo "  DB_NAME      Database name (default: from config/database.yml)"
+  echo "  DB_USER      Database user (default: from config/database.yml)"
+  echo "  DB_PASSWORD  Database password (default: from config/database.yml)"
+  echo "  DB_RESTORE_CONFIRM  Set to DB_NAME to allow production or remote restores"
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ -z "${1:-}" ]]; then
+  usage
+  exit 1
+fi
+
+if [[ -z "${DB_HOST+x}" || -z "${DB_NAME+x}" || -z "${DB_USER+x}" || -z "${DB_PASSWORD+x}" ]]; then
+  RAILS_CONFIG_OUTPUT="$(read_rails_db_config)"
+  mapfile -t RAILS_CONFIG <<< "$RAILS_CONFIG_OUTPUT"
+fi
+
+DB_HOST="${DB_HOST-${RAILS_CONFIG[0]:-}}"
+DB_USER="${DB_USER-${RAILS_CONFIG[1]:-}}"
+DB_PASSWORD="${DB_PASSWORD-${RAILS_CONFIG[2]:-}}"
+DB_NAME="${DB_NAME-${RAILS_CONFIG[3]:-}}"
+RAILS_ENVIRONMENT="${RAILS_ENVIRONMENT-${RAILS_CONFIG[4]:-${RAILS_ENV:-${RACK_ENV:-development}}}}"
+
+get_data_tables() {
+  local db="$1"
+  DATA_TABLES="$(db_helpers_get_data_tables "$db")" || true
+}
+
+read_container_env() {
+  local container="$1"
+  local name="$2"
+
+  docker exec "$container" printenv "$name" 2>/dev/null || true
+}
+
+local_db_host() {
+  case "$DB_HOST" in
+    "" | "localhost" | "127."* | "::1" | "0.0.0.0" | "postgres" | "db")
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+require_restore_confirmation() {
+  local reason="$1"
+
+  if [[ "${DB_RESTORE_CONFIRM:-}" == "$DB_NAME" ]]; then
+    return
+  fi
+
+  echo "Error: Refusing destructive restore for ${reason} database '${DB_NAME}'." >&2
+  echo "This command truncates every public table before restoring data." >&2
+  echo "Set DB_RESTORE_CONFIRM='${DB_NAME}' only if this is the intended target." >&2
+  exit 1
+}
+
+guard_destructive_restore() {
+  if [[ "$RAILS_ENVIRONMENT" == "production" ]]; then
+    require_restore_confirmation "production"
+  fi
+
+  if ! local_db_host; then
+    require_restore_confirmation "remote"
+  fi
+}
+
+# Verify schema completeness after restore by comparing FK, trigger, and RLS
+# counts against the manifest captured by bin/db-dump. Warns (does not fail)
+# when counts are lower than expected, pointing to the post-data snapshot for
+# reconciliation.
+verify_schema() {
+  local db="$1"
+  local manifest_path="${BACKUP_PATH%.dump}_manifest.txt"
+  local postdata_path="${BACKUP_PATH%.dump}_postdata.sql"
+
+  local fk_count trigger_count rls_tables rls_policies
+  fk_count=$(run_sql "$db" -c "SELECT count(*) FROM pg_constraint WHERE contype = 'f' AND connamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public')" 2>/dev/null || true)
+  trigger_count=$(run_sql "$db" -c "SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND NOT t.tgisinternal" 2>/dev/null || true)
+  rls_tables=$(run_sql "$db" -c "SELECT count(*) FROM pg_tables WHERE schemaname = 'public' AND rowsecurity = true" 2>/dev/null || true)
+  rls_policies=$(run_sql "$db" -c "SELECT count(*) FROM pg_policy" 2>/dev/null || true)
+
+  if [[ ! "$fk_count" =~ ^[0-9]+$ ]] || [[ ! "$trigger_count" =~ ^[0-9]+$ ]]; then
+    echo ""
+    echo "  (Could not query schema — verification skipped)"
+    return 0
+  fi
+
+  echo ""
+  echo "Schema verification:"
+  echo "  Foreign keys:  ${fk_count}"
+  echo "  Triggers:      ${trigger_count}"
+  echo "  RLS tables:    ${rls_tables}"
+  echo "  RLS policies:  ${rls_policies}"
+
+  if [[ ! -f "$manifest_path" ]]; then
+    echo "  (No manifest from backup — counts not verified)"
+    return 0
+  fi
+
+  local exp_fk exp_triggers exp_rls_tables exp_rls_policies
+  exp_fk=$(grep '^foreign_keys=' "$manifest_path" | cut -d= -f2)
+  exp_triggers=$(grep '^triggers=' "$manifest_path" | cut -d= -f2)
+  exp_rls_tables=$(grep '^rls_tables=' "$manifest_path" | cut -d= -f2)
+  exp_rls_policies=$(grep '^rls_policies=' "$manifest_path" | cut -d= -f2)
+
+  if ! [[ "$exp_fk" =~ ^[0-9]+$ && "$exp_triggers" =~ ^[0-9]+$ && "$exp_rls_tables" =~ ^[0-9]+$ && "$exp_rls_policies" =~ ^[0-9]+$ ]]; then
+    echo "  (Manifest is malformed — counts not verified)"
+    return 0
+  fi
+
+  local warnings=0
+  if [[ "$fk_count" -lt "$exp_fk" ]]; then
+    echo "  WARNING: Foreign keys ${fk_count} < backup had ${exp_fk}"
+    warnings=1
+  fi
+  if [[ "$trigger_count" -lt "$exp_triggers" ]]; then
+    echo "  WARNING: Triggers ${trigger_count} < backup had ${exp_triggers}"
+    warnings=1
+  fi
+  if [[ "$rls_tables" =~ ^[0-9]+$ && "$rls_tables" -lt "$exp_rls_tables" ]]; then
+    echo "  WARNING: RLS tables ${rls_tables} < backup had ${exp_rls_tables}"
+    warnings=1
+  fi
+  if [[ "$rls_policies" =~ ^[0-9]+$ && "$rls_policies" -lt "$exp_rls_policies" ]]; then
+    echo "  WARNING: RLS policies ${rls_policies} < backup had ${exp_rls_policies}"
+    warnings=1
+  fi
+
+  if [[ "$warnings" -eq 1 ]]; then
+    echo ""
+    echo "  Schema objects are missing! Restore may be incomplete."
+    if [[ -f "$postdata_path" ]]; then
+      echo "  A post-data snapshot is available at:"
+      echo "    $postdata_path"
+      echo "  Review and apply with: psql -h <host> -U <user> -d <db> < \"$postdata_path\""
+    else
+      echo "  No post-data snapshot found. Run 'bin/db-dump' on a known-good"
+      echo "  database to create one for future restores."
+    fi
+  else
+    echo "  All counts match the backup manifest."
+  fi
+}
+
+BACKUP_FILE="${1}"
+
+if [[ "$BACKUP_FILE" != /* ]]; then
+  BACKUP_PATH="${BACKUPS_DIR}/${BACKUP_FILE}"
+else
+  BACKUP_PATH="$BACKUP_FILE"
+fi
+
+if [[ ! -f "$BACKUP_PATH" ]]; then
+  echo "Error: Backup file not found: ${BACKUP_PATH}" >&2
+  exit 1
+fi
+
+COMPOSE_ARGS=(compose)
+if [[ -n "${COMPOSE_FILE:-}" ]]; then
+  COMPOSE_ARGS+=(-f "$COMPOSE_FILE")
+fi
+
+RESTORE_CLEANUP_DONE=""
+
+cleanup() {
+  local exit_code=$?
+  if [[ "$RESTORE_CLEANUP_DONE" == "1" ]]; then
+    exit "$exit_code"
+  fi
+  if [[ -n "$BACKEND" ]]; then
+    echo "Cleaning up after error..." >&2
+    if [[ -n "$DATA_TABLES" ]]; then
+      enable_triggers "$DB_NAME" "$DATA_TABLES"
+    fi
+    if [[ -n "$RLS_TABLES" ]]; then
+      enable_rls "$DB_NAME" "$RLS_TABLES" 0 RLS_TABLES
+    fi
+  fi
+  exit "$exit_code"
+}
+trap cleanup EXIT
+
+COMPOSE_CONTAINER="$(docker "${COMPOSE_ARGS[@]}" ps -q postgres 2>/dev/null | head -1 || true)"
+if [[ -n "$COMPOSE_CONTAINER" ]]; then
+  BACKEND="docker"
+  if [[ "$RAILS_ENVIRONMENT" == "production" ]]; then
+    require_restore_confirmation "production"
+  fi
+
+  echo "Restoring ${BACKUP_PATH} into ${DB_NAME}..."
+
+  COMPOSE_DB_USER="$(read_container_env "$COMPOSE_CONTAINER" POSTGRES_USER)"
+  COMPOSE_DB_PASSWORD="$(read_container_env "$COMPOSE_CONTAINER" POSTGRES_PASSWORD)"
+  COMPOSE_DB_USER="${COMPOSE_DB_USER:-paid}"
+  COMPOSE_DB_PASSWORD="${COMPOSE_DB_PASSWORD:-paid}"
+
+  get_data_tables "$DB_NAME"
+  disable_rls "$DB_NAME" 1 RLS_TABLES "Disabling RLS on %d tables..."
+  disable_triggers "$DB_NAME" "$DATA_TABLES" 1 "Disabling triggers on data tables..."
+
+  echo "Truncating existing data..."
+  run_sql_exec "$DB_NAME" -c "
+    DO \$\$
+    DECLARE
+      r RECORD;
+    BEGIN
+      FOR r IN (
+        SELECT tablename
+        FROM pg_tables
+        WHERE schemaname = 'public'
+          AND tablename NOT IN ('ar_internal_metadata', 'schema_migrations')
+        ORDER BY tablename
+      ) LOOP
+        EXECUTE format('TRUNCATE TABLE %I CASCADE', r.tablename);
+      END LOOP;
+    END;
+    \$\$;
+  "
+
+  echo "Restoring data..."
+  RESTORE_FAILED=""
+  RESTORE_OUTPUT="$(docker exec -e PGPASSWORD="$COMPOSE_DB_PASSWORD" -i "$COMPOSE_CONTAINER" \
+    pg_restore --data-only --no-owner --no-privileges -U "$COMPOSE_DB_USER" -d "$DB_NAME" < "$BACKUP_PATH" 2>&1)" || RESTORE_FAILED=1
+
+  enable_triggers "$DB_NAME" "$DATA_TABLES" 1 "Re-enabling triggers on data tables..."
+  enable_rls "$DB_NAME" "$RLS_TABLES" 1 RLS_TABLES "Re-enabling RLS on %d tables..."
+  RESTORE_CLEANUP_DONE=1
+
+  if [[ -n "$RESTORE_FAILED" ]]; then
+    RESTORE_ERRORS="$(echo "$RESTORE_OUTPUT" | grep -iE "error|failed" | grep -vi "errors ignored on restore" || true)"
+    if [[ -n "$RESTORE_ERRORS" ]]; then
+      echo "Error: pg_restore reported errors:" >&2
+      echo "$RESTORE_ERRORS" | head -20 >&2
+    else
+      echo "Error: pg_restore reported errors. Data may be incomplete." >&2
+    fi
+    exit 1
+  fi
+
+elif [[ -n "$DB_NAME" ]]; then
+  BACKEND="local"
+  guard_destructive_restore
+
+  echo "Restoring ${BACKUP_PATH} into ${DB_NAME}..."
+
+  get_data_tables "$DB_NAME"
+  disable_rls "$DB_NAME" 1 RLS_TABLES "Disabling RLS on %d tables..."
+  disable_triggers "$DB_NAME" "$DATA_TABLES" 1 "Disabling triggers on data tables..."
+
+  echo "Truncating existing data..."
+  run_sql_exec "$DB_NAME" -c "
+    DO \$\$
+    DECLARE
+      r RECORD;
+    BEGIN
+      FOR r IN (
+        SELECT tablename
+        FROM pg_tables
+        WHERE schemaname = 'public'
+          AND tablename NOT IN ('ar_internal_metadata', 'schema_migrations')
+        ORDER BY tablename
+      ) LOOP
+        EXECUTE format('TRUNCATE TABLE %I CASCADE', r.tablename);
+      END LOOP;
+    END;
+    \$\$;
+  "
+
+  echo "Restoring data..."
+  PG_HOST_ARGS=()
+  if [[ -n "$DB_HOST" ]]; then
+    PG_HOST_ARGS=(-h "$DB_HOST")
+  fi
+  RESTORE_FAILED=""
+  RESTORE_OUTPUT="$(PGPASSWORD="$DB_PASSWORD" pg_restore "${PG_HOST_ARGS[@]}" --data-only --no-owner --no-privileges -U "$DB_USER" -d "$DB_NAME" "$BACKUP_PATH" 2>&1)" || RESTORE_FAILED=1
+
+  enable_triggers "$DB_NAME" "$DATA_TABLES" 1 "Re-enabling triggers on data tables..."
+  enable_rls "$DB_NAME" "$RLS_TABLES" 1 RLS_TABLES "Re-enabling RLS on %d tables..."
+  RESTORE_CLEANUP_DONE=1
+
+  if [[ -n "$RESTORE_FAILED" ]]; then
+    RESTORE_ERRORS="$(echo "$RESTORE_OUTPUT" | grep -iE "error|failed" | grep -vi "errors ignored on restore" || true)"
+    if [[ -n "$RESTORE_ERRORS" ]]; then
+      echo "Error: pg_restore reported errors:" >&2
+      echo "$RESTORE_ERRORS" | head -20 >&2
+    else
+      echo "Error: pg_restore reported errors. Data may be incomplete." >&2
+    fi
+    exit 1
+  fi
+
+else
+  echo "Error: No running postgres container found and DB_NAME not set. Start services with 'bin/dev' or set DB_NAME." >&2
+  exit 1
+fi
+
+verify_schema "$DB_NAME"
+
+echo "Restore complete."

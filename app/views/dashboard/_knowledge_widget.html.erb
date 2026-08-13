@@ -1,0 +1,278 @@
+<%= turbo_frame_tag "dashboard-knowledge-stats" do %>
+<%# Knowledge Base Health Widget %>
+<div class="mt-8">
+  <h2 class="text-lg font-semibold text-gray-900">Knowledge Base</h2>
+  <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+      <dt class="truncate text-sm font-medium text-gray-500">Projects Indexed</dt>
+      <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+        <%= knowledge_stats[:projects_indexed] %>/<%= knowledge_stats[:projects_total] %>
+      </dd>
+    </div>
+    <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+      <dt class="truncate text-sm font-medium text-gray-500">Active Artifacts</dt>
+      <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+        <%= number_with_delimiter(knowledge_stats[:total_artifacts]) %>
+      </dd>
+    </div>
+    <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+      <dt class="truncate text-sm font-medium text-gray-500">Stale Artifacts</dt>
+      <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+        <span class="<%= knowledge_stats[:stale_percent] > 20 ? 'text-yellow-600' : 'text-gray-900' %>">
+          <%= number_with_delimiter(knowledge_stats[:stale_artifacts]) %>
+          (<%= knowledge_stats[:stale_percent] %>%)
+        </span>
+      </dd>
+    </div>
+    <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+      <dt class="truncate text-sm font-medium text-gray-500">Last Collection</dt>
+      <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+        <% if knowledge_stats[:last_collection_at] %>
+          <%= time_ago_in_words(knowledge_stats[:last_collection_at]) %> ago
+        <% else %>
+          --
+        <% end %>
+      </dd>
+    </div>
+  </div>
+
+  <% operational_status = knowledge_stats[:operational_status] %>
+  <% status_classes =
+    if operational_status == "healthy"
+      "bg-emerald-50 text-emerald-700 ring-emerald-600/20"
+    elsif operational_status == "degraded"
+      "bg-amber-50 text-amber-700 ring-amber-600/20"
+    else
+      "bg-red-50 text-red-700 ring-red-600/20"
+    end %>
+  <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+    <div class="px-4 py-5 sm:p-6">
+      <div class="flex items-center justify-between gap-3">
+        <div>
+          <h3 class="text-sm font-medium text-gray-500">Runner Health</h3>
+          <p class="mt-1 text-sm text-gray-700">Current availability for knowledge chat and embedding runners.</p>
+        </div>
+        <span class="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ring-1 ring-inset <%= status_classes %>">
+          <%= operational_status.humanize %>
+        </span>
+      </div>
+
+      <% if operational_status == "degraded" %>
+        <p class="mt-3 text-sm text-amber-700">
+          Knowledge capabilities are degraded while one runner group remains available.
+        </p>
+      <% elsif operational_status == "unavailable" %>
+        <p class="mt-3 text-sm text-red-700">
+          Knowledge capabilities are unavailable because both runner groups are down.
+        </p>
+      <% end %>
+
+      <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <% { "Embedding" => knowledge_stats[:provider_health][:embedding], "Decision Drafting" => knowledge_stats[:provider_health][:chat] }.each do |label, runners| %>
+          <div class="rounded-lg border border-gray-200 p-4">
+            <div class="flex items-center justify-between gap-3">
+              <h4 class="text-sm font-semibold text-gray-900"><%= label %></h4>
+              <span class="text-xs text-gray-500"><%= pluralize(runners.size, "runner") %></span>
+            </div>
+
+            <% if runners.any? %>
+              <div class="mt-3 space-y-3">
+                <% runners.each do |runner| %>
+                  <div class="rounded-md bg-gray-50 px-3 py-2">
+                    <div class="flex items-center justify-between gap-3">
+                      <span class="font-medium text-gray-900"><%= runner[:runner] %></span>
+                      <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium <%= runner[:available] ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700" %>">
+                        <%= runner[:available] ? "Available" : "Unavailable" %>
+                      </span>
+                    </div>
+                    <dl class="mt-2 grid grid-cols-3 gap-2 text-xs text-gray-600">
+                      <div>
+                        <dt class="font-medium text-gray-500">Circuit</dt>
+                        <dd><%= runner[:circuit_state].humanize %></dd>
+                      </div>
+                      <div>
+                        <dt class="font-medium text-gray-500">Rate Limit</dt>
+                        <dd><%= runner[:rate_limited] ? time_ago_in_words(runner[:rate_limited_until]) + " remaining" : "Clear" %></dd>
+                      </div>
+                      <div>
+                        <dt class="font-medium text-gray-500">Failures</dt>
+                        <dd><%= runner[:recent_failures] %></dd>
+                      </div>
+                    </dl>
+                  </div>
+                <% end %>
+              </div>
+            <% else %>
+              <p class="mt-3 text-sm text-gray-500">No runners configured.</p>
+            <% end %>
+          </div>
+        <% end %>
+      </div>
+    </div>
+  </div>
+
+  <% if knowledge_stats[:artifacts_by_type].any? %>
+    <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+      <div class="px-4 py-5 sm:p-6">
+        <h3 class="text-sm font-medium text-gray-500">Active Artifacts by Type</h3>
+        <div class="mt-3 flex flex-wrap gap-4 text-sm">
+          <% knowledge_stats[:artifacts_by_type].each do |type, count| %>
+            <div class="flex items-center gap-1.5">
+              <span class="inline-flex items-center rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">
+                <%= type %>
+              </span>
+              <span class="font-semibold text-gray-900"><%= number_with_delimiter(count) %></span>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    </div>
+  <% end %>
+
+  <% if knowledge_stats[:token_usage_summary].any? %>
+    <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+      <div class="px-4 py-5 sm:p-6">
+        <h3 class="text-sm font-medium text-gray-500">Token Usage by Operation</h3>
+        <div class="mt-3">
+          <table class="min-w-full text-sm">
+            <thead>
+              <tr class="text-left text-gray-500">
+                <th scope="col" class="pr-4 font-medium">Operation</th>
+                <th scope="col" class="pr-4 font-medium text-right">Tokens</th>
+                <th scope="col" class="font-medium text-right">Runs</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% knowledge_stats[:token_usage_summary].each do |summary| %>
+                <tr>
+                  <td class="pr-4 py-1">
+                    <span class="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+                      <%= summary[:operation_type].humanize %>
+                    </span>
+                  </td>
+                  <td class="pr-4 py-1 text-right font-semibold text-gray-900"><%= number_with_delimiter(summary[:total_tokens]) %></td>
+                  <td class="py-1 text-right text-gray-700"><%= number_with_delimiter(summary[:run_count]) %></td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  <% end %>
+
+  <% if knowledge_stats[:pipeline_metrics].values.any? { |metric| metric[:total_runs].positive? } %>
+    <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+      <div class="px-4 py-5 sm:p-6">
+        <h3 class="text-sm font-medium text-gray-500">LLM Pipeline Metrics (Last 30 Days)</h3>
+        <div class="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <% knowledge_stats[:pipeline_metrics].each do |operation, metrics| %>
+            <div class="rounded-lg border border-gray-200 p-4">
+              <div class="flex items-center justify-between gap-3">
+                <h4 class="text-sm font-semibold text-gray-900"><%= operation.humanize %></h4>
+                <span class="text-xs text-gray-500"><%= pluralize(metrics[:total_runs], "run") %></span>
+              </div>
+
+              <div class="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                <div>
+                  <div class="text-xs font-medium uppercase tracking-wide text-gray-500">Success Rate</div>
+                  <div class="mt-1 font-semibold text-gray-900"><%= number_with_precision(metrics[:success_rate], precision: 1) %>%</div>
+                </div>
+                <div>
+                  <div class="text-xs font-medium uppercase tracking-wide text-gray-500">Completed</div>
+                  <div class="mt-1 font-semibold text-gray-900"><%= metrics[:successful_runs] %></div>
+                </div>
+                <div>
+                  <div class="text-xs font-medium uppercase tracking-wide text-gray-500">Failed</div>
+                  <div class="mt-1 font-semibold text-gray-900"><%= metrics[:failed_runs] %></div>
+                </div>
+                <div>
+                  <div class="text-xs font-medium uppercase tracking-wide text-gray-500">Avg Latency</div>
+                  <div class="mt-1 font-semibold text-gray-900"><%= number_with_precision(metrics[:avg_duration_seconds], precision: 2) %>s</div>
+                </div>
+              </div>
+
+              <% if metrics[:runner_distribution].any? %>
+                <table class="mt-4 min-w-full text-sm">
+                  <thead>
+                    <tr class="text-left text-gray-500">
+                      <th scope="col" class="pr-4 font-medium">Runner</th>
+                      <th scope="col" class="pr-4 font-medium text-right">Runs</th>
+                      <th scope="col" class="pr-4 font-medium text-right">Success</th>
+                      <th scope="col" class="font-medium text-right">Avg Latency</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <% metrics[:runner_distribution].each do |runner| %>
+                      <tr>
+                        <td class="pr-4 py-1 text-gray-900"><%= runner[:runner] %></td>
+                        <td class="pr-4 py-1 text-right text-gray-700"><%= runner[:run_count] %></td>
+                        <td class="pr-4 py-1 text-right text-gray-700"><%= number_with_precision(runner[:success_rate], precision: 1) %>%</td>
+                        <td class="py-1 text-right text-gray-700"><%= number_with_precision(runner[:avg_duration_seconds], precision: 2) %>s</td>
+                      </tr>
+                    <% end %>
+                  </tbody>
+                </table>
+              <% else %>
+                <p class="mt-3 text-sm text-gray-500">No recent runs recorded for this operation.</p>
+              <% end %>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    </div>
+  <% end %>
+
+  <% if knowledge_stats[:knowledge_usage_summary].any? %>
+    <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+      <div class="px-4 py-5 sm:p-6">
+        <h3 class="text-sm font-medium text-gray-500">Knowledge Usage by Artifact Type</h3>
+        <div class="mt-3">
+          <table class="min-w-full text-sm">
+            <thead>
+              <tr class="text-left text-gray-500">
+                <th scope="col" class="pr-4 font-medium">Artifact Type</th>
+                <th scope="col" class="font-medium text-right">Usage Count</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% knowledge_stats[:knowledge_usage_summary].each do |type, count| %>
+                <tr>
+                  <td class="pr-4 py-1">
+                    <span class="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
+                      <%= type %>
+                    </span>
+                  </td>
+                  <td class="py-1 text-right font-semibold text-gray-900"><%= number_with_delimiter(count) %></td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  <% end %>
+
+  <% if knowledge_stats[:usage_by_goal].any? %>
+    <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+      <div class="px-4 py-5 sm:p-6">
+        <h3 class="text-sm font-medium text-gray-500">Knowledge Usage by Goal</h3>
+        <div class="mt-3 flex flex-wrap gap-4 text-sm">
+          <% knowledge_stats[:usage_by_goal].each do |goal, count| %>
+            <div class="flex items-center gap-1.5">
+              <span class="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700">
+                <%= goal.humanize %>
+              </span>
+              <span class="font-semibold text-gray-900"><%= number_with_delimiter(count) %></span>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    </div>
+  <% end %>
+
+  <div class="mt-4">
+    <%= link_to "Search Knowledge Base", knowledge_search_path, class: "text-sm font-medium text-indigo-600 hover:text-indigo-500", data: { turbo_frame: "_top" } %>
+  </div>
+</div>
+<% end %>

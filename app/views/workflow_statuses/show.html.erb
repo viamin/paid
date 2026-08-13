@@ -1,0 +1,4 @@
+<%= render "workflow_statuses/status",
+         project: @project,
+         health: @health,
+         show_restart: policy(@project).update? %>

@@ -1,0 +1,52 @@
+{
+  "generated_at": "2026-04-29T00:00:00Z",
+  "baseline_kind": "budget",
+  "summary": {
+    "total": 4,
+    "passed": 4,
+    "failed": 0,
+    "skipped": 0
+  },
+  "metrics": [
+    {
+      "key": "container_startup_time",
+      "name": "Container startup time",
+      "unit": "ms",
+      "budget_ms": 30000,
+      "regression_threshold": 1.25,
+      "sample_count": 5,
+      "comparison_value_ms": 12000,
+      "status": "pass"
+    },
+    {
+      "key": "workflow_latency",
+      "name": "Workflow latency",
+      "unit": "ms",
+      "budget_ms": 3600000,
+      "regression_threshold": 1.2,
+      "sample_count": 5,
+      "comparison_value_ms": 600000,
+      "status": "pass"
+    },
+    {
+      "key": "dashboard_load_time",
+      "name": "Dashboard load time",
+      "unit": "ms",
+      "budget_ms": 3000,
+      "regression_threshold": 1.5,
+      "sample_count": 10,
+      "comparison_value_ms": 500,
+      "status": "pass"
+    },
+    {
+      "key": "search_latency",
+      "name": "Search latency",
+      "unit": "ms",
+      "budget_ms": 2000,
+      "regression_threshold": 1.5,
+      "sample_count": 10,
+      "comparison_value_ms": 200,
+      "status": "pass"
+    }
+  ]
+}

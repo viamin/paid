@@ -1,0 +1,154 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+require "ostruct"
+
+RSpec.describe Activities::RebaseBranchActivity do
+  let(:project) { create(:project) }
+  let(:agent_run) do
+    create(:agent_run, :running,
+      project: project,
+      source_pull_request_number: 42,
+      custom_prompt: "Fix PR")
+  end
+  let(:container_service) { instance_double(Containers::Provision) }
+  let(:github_client) { instance_double(GithubClient) }
+  let(:activity) { described_class.new }
+
+  let(:pr_data) do
+    OpenStruct.new(
+      base: OpenStruct.new(ref: "main"),
+      head: OpenStruct.new(ref: "fix-branch", sha: "abc123")
+    )
+  end
+
+  before do
+    agent_run.update!(container_id: "container-123", branch_name: "fix-branch")
+
+    allow(Containers::Provision).to receive(:reconnect).and_return(container_service)
+    allow(GithubClient).to receive(:new).and_return(github_client)
+
+    allow(github_client).to receive(:pull_request)
+      .with(project.full_name, 42)
+      .and_return(pr_data)
+  end
+
+  describe "#execute" do
+    context "when rebase succeeds" do
+      before do
+        success_result = Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0)
+        after_sha = Containers::Provision::Result.success(stdout: "after-sha\n", stderr: "", exit_code: 0)
+        remote_sha = Containers::Provision::Result.success(stdout: "remote-sha\n", stderr: "", exit_code: 0)
+        allow(container_service).to receive(:execute).and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
+          .and_return(after_sha)
+        allow(container_service).to receive(:execute)
+          .with([ "git", "rev-parse", "refs/remotes/origin/fix-branch" ], timeout: nil, stream: false)
+          .and_return(remote_sha)
+      end
+
+      it "returns rebase_succeeded: true" do
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:rebase_succeeded]).to be true
+        expect(result[:branch_changed]).to be true
+        expect(result[:base_branch]).to eq("main")
+        expect(result[:agent_run_id]).to eq(agent_run.id)
+      end
+
+      it "returns branch_changed: false when HEAD is unchanged" do
+        same_sha = Containers::Provision::Result.success(stdout: "same-sha\n", stderr: "", exit_code: 0)
+        allow(container_service).to receive(:execute)
+          .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
+          .and_return(same_sha)
+        allow(container_service).to receive(:execute)
+          .with([ "git", "rev-parse", "refs/remotes/origin/fix-branch" ], timeout: nil, stream: false)
+          .and_return(same_sha)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:branch_changed]).to be false
+      end
+
+      it "fetches the base branch from the PR" do
+        expect(github_client).to receive(:pull_request)
+          .with(project.full_name, 42)
+          .and_return(pr_data)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+    end
+
+    context "when rebase has conflicts" do
+      before do
+        bot_identity = Github::BotIdentity.new(
+          app_slug: "paid-agents",
+          name: "Paid Agent",
+          email: "paid-agents@paid-agents.com"
+        )
+        success_result = Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0)
+        conflict_result = Containers::Provision::Result.failure(
+          error: "rebase failed",
+          stdout: "CONFLICT (content): Merge conflict in file.rb",
+          stderr: "Failed to merge in the changes.",
+          exit_code: 1
+        )
+
+        allow(Github::BotIdentity).to receive(:for_git).and_return(bot_identity)
+        allow(container_service).to receive(:execute)
+          .with([ "git", "config", "user.name", "Paid Agent" ], timeout: nil, stream: false)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with([ "git", "config", "user.email", "paid-agents@paid-agents.com" ], timeout: nil, stream: false)
+          .and_return(success_result)
+
+        # unshallow check + fetch (shallow clone -> full history)
+        allow(container_service).to receive(:execute)
+          .with([ "git", "rev-parse", "--is-shallow-repository" ], timeout: nil, stream: false)
+          .and_return(Containers::Provision::Result.success(stdout: "true\n", stderr: "", exit_code: 0))
+
+        allow(container_service).to receive(:execute)
+          .with([ "sh", "-c", "rm -f .git/shallow.lock" ], timeout: nil, stream: false)
+          .and_return(success_result)
+
+        allow(container_service).to receive(:execute)
+          .with(
+            [ "git", "fetch", "--unshallow" ],
+            timeout: Containers::GitOperations::DEFAULT_UNSHALLOW_TIMEOUT,
+            stream: false,
+            env: Containers::GitOperations::NETWORK_GIT_ENV
+          )
+          .and_return(success_result)
+
+        # fetch succeeds
+        allow(container_service).to receive(:execute)
+          .with(
+            [ "git", "fetch", "origin", "refs/heads/main:refs/remotes/origin/main" ],
+            timeout: nil,
+            stream: false,
+            env: Containers::GitOperations::NETWORK_GIT_ENV
+          )
+          .and_return(success_result)
+
+        # rebase fails with conflict
+        allow(container_service).to receive(:execute)
+          .with([ "git", "rebase", "origin/main" ], timeout: nil, stream: false)
+          .and_return(conflict_result)
+
+        # abort succeeds
+        allow(container_service).to receive(:execute)
+          .with([ "git", "rebase", "--abort" ], timeout: nil, stream: false)
+          .and_return(success_result)
+      end
+
+      it "returns rebase_succeeded: false" do
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:rebase_succeeded]).to be false
+        expect(result[:branch_changed]).to be false
+        expect(result[:base_branch]).to eq("main")
+      end
+    end
+  end
+end

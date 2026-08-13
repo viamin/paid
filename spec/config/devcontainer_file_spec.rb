@@ -1,0 +1,72 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+require "json"
+
+class DevcontainerFile < Pathname
+end
+
+RSpec.describe DevcontainerFile, :no_db do
+  subject(:devcontainer) do
+    source = Rails.root.join(".devcontainer/devcontainer.json").read
+    JSON.parse(source.lines.reject { |line| line.lstrip.start_with?("//") }.join)
+  end
+
+  let(:oh_my_pi_installer) { Rails.root.join(".devcontainer/install-oh-my-pi.sh").read }
+  let(:ponytail_installer) { Rails.root.join(".devcontainer/install-ponytail.sh").read }
+  let(:impeccable_installer) { Rails.root.join(".devcontainer/install-impeccable.sh").read }
+
+  it "installs opencode through the shared contract wrapper" do
+    command = devcontainer.fetch("postCreateCommand").fetch("opencode")
+
+    expect(command).to eq("bash scripts/install-from-contract.sh opencode")
+  end
+
+  it "installs oh-my-pi through the devcontainer installer" do
+    command = devcontainer.fetch("postCreateCommand").fetch("oh-my-pi")
+    path = devcontainer.fetch("remoteEnv").fetch("PATH")
+
+    expect(command).to eq("bash .devcontainer/install-oh-my-pi.sh")
+    expect(path).to include("/home/vscode/.bun/bin")
+  end
+
+  it "pins and verifies the oh-my-pi Bun runtime install" do
+    expect(oh_my_pi_installer).to include('BUN_VERSION="${BUN_VERSION:-1.3.14}"')
+    expect(oh_my_pi_installer).to include("SHASUMS256.txt")
+    expect(oh_my_pi_installer).to include("sha256sum -c -")
+    expect(oh_my_pi_installer).not_to include("https://bun.sh/install")
+  end
+
+  it "installs Ponytail for the devcontainer agent CLIs" do
+    command = devcontainer.fetch("postCreateCommand").fetch("setup")
+
+    expect(command).to include("bash .devcontainer/install-ponytail.sh")
+    expect(command).to match(/install-lid\.sh.*install-ponytail\.sh.*configure-llm-tools\.sh/)
+    expect(ponytail_installer).to include('STEP_TIMEOUT="${PONYTAIL_STEP_TIMEOUT:-180}"')
+    expect(ponytail_installer).to include('timeout -k 10 "$STEP_TIMEOUT" "$@" </dev/null')
+    expect(ponytail_installer).to include("known_marketplaces.json")
+    expect(ponytail_installer).to include('run_install "Claude Ponytail" install_claude_ponytail')
+    expect(ponytail_installer).to include("codex plugin marketplace add DietrichGebert/ponytail")
+    expect(ponytail_installer).to include('opencode plugin --global "$PONYTAIL_NPM_PACKAGE"')
+    expect(ponytail_installer).to include('omp plugin install "$PONYTAIL_OMP_TARGET"')
+  end
+
+  it "installs Impeccable for the devcontainer agent CLIs" do
+    command = devcontainer.fetch("postCreateCommand").fetch("setup")
+
+    expect(command).to include("bash .devcontainer/install-impeccable.sh")
+    expect(command).to match(/install-ponytail\.sh.*install-impeccable\.sh.*configure-llm-tools\.sh/)
+    expect(impeccable_installer).to include('IMPECCABLE_PACKAGE="${IMPECCABLE_PACKAGE:-impeccable@3.5.0}"')
+    expect(impeccable_installer).to include('IMPECCABLE_PROVIDERS="${IMPECCABLE_PROVIDERS:-claude,codex,opencode,pi}"')
+    expect(impeccable_installer).to include('IMPECCABLE_SCOPE="${IMPECCABLE_SCOPE:-global}"')
+    expect(impeccable_installer).to include('npx --yes "$IMPECCABLE_PACKAGE" install')
+  end
+
+  it "re-runs setup on every start to restore the detached dev supervisor" do
+    command = devcontainer.fetch("postStartCommand")
+
+    expect(command).to include("git config --local remote.origin.url https://github.com/viamin/paid.git")
+    expect(command).to include("git config --local credential.helper '!/usr/bin/gh auth git-credential'")
+    expect(command).to include("bash .devcontainer/ensure-networks-and-qdrant.sh && bin/setup")
+  end
+end

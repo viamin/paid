@@ -1,0 +1,340 @@
+<% content_for(:title) { "Trigger Agent Run - #{@project.name} - Paid" } %>
+
+<div class="mx-auto max-w-2xl px-4 pb-28 pt-8 sm:px-6 sm:pb-8 lg:px-8">
+  <div class="mb-6">
+    <%= link_to back_link_path(project_path(@project)), class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+      <svg class="mr-1 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd" />
+      </svg>
+      Back to <%= @project.name %>
+    <% end %>
+  </div>
+
+  <div class="bg-white shadow sm:rounded-lg">
+    <div class="px-4 py-5 sm:px-6">
+      <h1 class="text-xl font-semibold text-gray-900">Trigger Agent Run</h1>
+      <p class="mt-1 text-sm text-gray-500">Start an agent run for an issue or custom prompt in <%= @project.full_name %>.</p>
+      <% if policy(@project).update? %>
+        <p class="mt-3 text-sm text-gray-500">
+          Need more project context before you run?
+          <%= link_to "Business Context", project_context_intake_path(@project), class: "font-medium text-indigo-600 hover:text-indigo-500" %>,
+          <%= link_to "automation settings", edit_project_path(@project, anchor: "automation"), class: "font-medium text-indigo-600 hover:text-indigo-500" %>,
+          <%= link_to "labels", edit_project_path(@project, anchor: "labels"), class: "font-medium text-indigo-600 hover:text-indigo-500" %>,
+          and
+          <%= link_to "MCP servers", edit_project_path(@project, anchor: "mcp-servers"), class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+          are available.
+        </p>
+      <% end %>
+    </div>
+
+    <div class="border-t border-gray-200 px-4 py-5 sm:px-6">
+      <% selected_goal = params[:goal].presence || "create_pr" %>
+      <%= form_with url: project_agent_runs_path(@project), method: :post, class: "space-y-6", data: {
+        controller: "goal-toggle",
+        goal_toggle_current_goal_value: selected_goal,
+        goal_toggle_runner_defaults_value: @default_runner_identifiers_by_goal.to_json,
+        goal_toggle_docker_host_options_url_value: docker_host_options_project_agent_runs_path(@project, format: :json)
+      } do |f| %>
+
+        <fieldset>
+          <legend class="text-base font-semibold text-gray-900">Goal</legend>
+          <p class="mt-1 text-sm text-gray-500" id="goal-description">What should the agent produce?</p>
+          <div class="mt-4 flex items-center space-x-6" role="radiogroup" aria-describedby="goal-description">
+            <label class="inline-flex items-center">
+              <input type="radio" name="goal" value="create_pr" <% if selected_goal == "create_pr" %>checked<% end %> class="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500" data-action="change->goal-toggle#toggle">
+              <span class="ml-2 text-sm text-gray-700">Create/Edit Pull Request</span>
+            </label>
+            <label class="inline-flex items-center">
+              <input type="radio" name="goal" value="create_issue" <% if selected_goal == "create_issue" %>checked<% end %> class="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500" data-action="change->goal-toggle#toggle">
+              <span class="ml-2 text-sm text-gray-700">Create Issue</span>
+            </label>
+            <label class="inline-flex items-center">
+              <input type="radio" name="goal" value="review" <% if selected_goal == "review" %>checked<% end %> class="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500" data-action="change->goal-toggle#toggle">
+              <span class="ml-2 text-sm text-gray-700">PR Code Review</span>
+            </label>
+            <label class="inline-flex items-center">
+              <input type="radio" name="goal" value="enhance_issue" <% if selected_goal == "enhance_issue" %>checked<% end %> class="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500" data-action="change->goal-toggle#toggle">
+              <span class="ml-2 text-sm text-gray-700">Enhance Issue</span>
+            </label>
+            <label class="inline-flex items-center">
+              <input type="radio" name="goal" value="create_feature" <% if selected_goal == "create_feature" %>checked<% end %> class="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500" data-action="change->goal-toggle#toggle">
+              <span class="ml-2 text-sm text-gray-700">Create New Feature</span>
+            </label>
+          </div>
+        </fieldset>
+
+        <div data-goal-toggle-target="issueSection">
+          <h2 class="text-base font-semibold text-gray-900" data-goal-toggle-target="issueHeading">Select Issue</h2>
+
+          <div class="mt-4 rounded-lg border border-gray-200 p-4">
+            <% if @issues.any? %>
+              <%# Single-select dropdown for create_pr goal %>
+              <div data-goal-toggle-target="issueDropdown" <% if selected_goal == "enhance_issue" %>hidden<% end %>>
+                <label for="issue_id" class="block text-sm font-medium text-gray-700">Choose from synced issues:</label>
+                <select name="issue_id" id="issue_id" <% if selected_goal == "enhance_issue" %>disabled<% end %> class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                  <option value="">-- Select an issue --</option>
+                  <% @issues.each do |issue| %>
+                    <% paid_pr = @paid_prs_by_issue_id[issue.id] %>
+                    <option value="<%= issue.id %>"
+                            <% if params[:issue_id].to_s == issue.id.to_s && paid_pr.nil? %>selected<% end %>
+                            <% if paid_pr %>disabled<% end %>
+                            title="<%= paid_pr ? "Paid already opened PR ##{paid_pr.github_number} for this issue. Quick run on the PR instead." : "" %>">
+                      #<%= issue.github_number %> - <%= truncate(issue.title, length: 60) %><%= " (open paid PR ##{paid_pr.github_number} — quick run on the PR instead)" if paid_pr %>
+                    </option>
+                  <% end %>
+                </select>
+              </div>
+
+              <%= render "shared/issue_enhance_table", issues: @issues, issues_with_active_runs: @issues_with_active_runs, issue_enhancement_rounds: @issue_enhancement_rounds, initially_visible: selected_goal == "enhance_issue" %>
+            <% else %>
+
+
+              <p class="mt-1 text-sm text-gray-500">No actionable open issues found. Sync issues first.</p>
+            <% end %>
+          </div>
+        </div>
+
+        <div data-goal-toggle-target="featureDescriptionSection" hidden>
+          <h2 class="text-base font-semibold text-gray-900">Feature Description</h2>
+          <p class="mt-1 text-sm text-gray-500">Describe the feature you want Paid to design. Include what the feature does, the problem it solves, and any constraints or requirements. Paid will ask clarifying questions if more detail is needed.</p>
+
+          <div class="mt-4 rounded-lg border border-gray-200 p-4">
+            <label for="feature_description" class="block text-sm font-medium text-gray-700">Feature description:</label>
+            <textarea name="feature_description" id="feature_description" rows="8"
+                      placeholder="Example: Add a dark mode toggle that switches the entire UI to a dark color palette. Should respect the user's system preference by default and persist the choice across sessions."
+                      class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"></textarea>
+            <p class="mt-1 text-xs text-gray-500">This description becomes the feature brief. If it's too sparse, the agent will pause and ask clarifying questions before starting work.</p>
+          </div>
+        </div>
+
+
+        <div data-goal-toggle-target="prSection" <% if selected_goal == "enhance_issue" %>hidden<% end %>>
+          <h2 class="text-base font-semibold text-gray-900" data-goal-toggle-target="prHeading">Or Work on an Existing PR</h2>
+          <p class="mt-1 text-sm text-gray-500" data-goal-toggle-target="prDescription">Push changes to an existing pull request's branch instead of creating a new one.</p>
+
+          <div class="mt-4 rounded-lg border border-gray-200 p-4">
+            <% if @pull_requests.any? %>
+              <%# Single-select dropdown for create_pr goal %>
+              <div data-goal-toggle-target="prDropdown">
+                <label for="pull_request_id" class="block text-sm font-medium text-gray-700">Choose from synced PRs:</label>
+                <select name="pull_request_id" id="pull_request_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                  <option value="">-- Select a pull request --</option>
+                  <% @pull_requests.each do |pr| %>
+                    <option value="<%= pr.id %>" <% if params[:pull_request_id].to_s == pr.id.to_s %>selected<% end %>>
+                      #<%= pr.github_number %> - <%= truncate(pr.title, length: 60) %>
+                    </option>
+                  <% end %>
+                </select>
+              </div>
+
+              <%= render "shared/pr_review_table", pull_requests: @pull_requests, prs_with_active_runs: @prs_with_active_runs, pr_priority_tiers: @pr_priority_tiers %>
+            <% else %>
+              <p class="mt-1 text-sm text-gray-500">No open pull requests found. Sync PRs first.</p>
+            <% end %>
+          </div>
+        </div>
+
+        <div>
+          <h2 class="text-base font-semibold text-gray-900">Additional Instructions</h2>
+          <p class="mt-1 text-sm text-gray-500">Optionally provide extra context or instructions for the agent. This can be combined with an issue or PR selection above.</p>
+
+          <div class="mt-4 rounded-lg border border-gray-200 p-4">
+            <label for="custom_prompt" class="block text-sm font-medium text-gray-700">Custom prompt:</label>
+            <textarea name="custom_prompt" id="custom_prompt" rows="6"
+                      placeholder="Describe the changes you want the agent to make..."
+                      class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"></textarea>
+            <p class="mt-1 text-xs text-gray-500">Add any additional instructions for the agent. When used alone, this serves as the primary prompt for the run.</p>
+          </div>
+        </div>
+
+        <div data-goal-toggle-target="blockedBySection" <% unless selected_goal == "create_issue" %>hidden<% end %>>
+          <details class="rounded-lg border border-gray-200">
+            <summary class="cursor-pointer px-4 py-3 text-base font-semibold text-gray-900 hover:bg-gray-50">
+              Blocked By
+              <p class="mt-1 text-sm font-normal text-gray-500">Optionally select existing issues or PRs that must be closed before the new issue can be picked up for work.</p>
+            </summary>
+
+            <div class="border-t border-gray-200 p-4">
+              <% blocked_by_items = @issues + @pull_requests %>
+              <% if blocked_by_items.any? %>
+                <div class="max-h-60 space-y-2 overflow-y-auto">
+                  <% blocked_by_items.each do |item| %>
+                    <label class="flex items-center gap-2 rounded-md border border-gray-100 p-2 hover:border-indigo-200">
+                      <input type="checkbox" name="blocked_by_issue_ids[]" value="<%= item.id %>"
+                             class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                             <% if Array(params[:blocked_by_issue_ids]).map(&:to_s).include?(item.id.to_s) %>checked<% end %>>
+                      <span class="text-sm text-gray-700">
+                        <span class="font-medium <%= item.is_pull_request? ? 'text-purple-600' : 'text-gray-900' %>">#<%= item.github_number %></span>
+                        - <%= truncate(item.title, length: 70) %>
+                        <% if item.is_pull_request? %><span class="text-xs text-purple-500">(PR)</span><% end %>
+                      </span>
+                    </label>
+                  <% end %>
+                </div>
+              <% else %>
+                <p class="text-sm text-gray-500">No open issues or PRs found to select as blockers.</p>
+              <% end %>
+            </div>
+          </details>
+        </div>
+
+        <div data-goal-toggle-target="prioritySection">
+          <h2 class="text-base font-semibold text-gray-900">Priority</h2>
+          <p class="mt-1 text-sm text-gray-500">Optionally assign a priority level to the resulting issue (existing or auto-created).</p>
+
+          <div class="mt-4">
+            <select name="priority_tier" id="priority_tier" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+              <option value="">-- No priority --</option>
+              <% Project::PRIORITY_TIERS.each do |tier| %>
+                <option value="<%= tier %>"><%= @project.priority_label_for(tier) || tier %></option>
+              <% end %>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <h2 class="text-base font-semibold text-gray-900">Runner</h2>
+          <div class="mt-4">
+            <select name="runner" id="runner" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" data-action="change->goal-toggle#runnerChanged" data-goal-toggle-target="runnerSelect">
+              <option value="" selected>Inherit (from runner settings)</option>
+              <% @available_run_runner_options.each do |label, identifier| %>
+                <option value="<%= identifier %>">
+                  <%= label %>
+                </option>
+              <% end %>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <h2 class="text-base font-semibold text-gray-900">Docker Host</h2>
+          <p class="mt-1 text-sm text-gray-500">Optionally place this manual run on a specific enabled host. Leaving this on inherit uses the saved project/account preference when present; otherwise the existing scheduler path stays unchanged.</p>
+
+          <div class="mt-4">
+            <select name="container_host" id="container_host" data-goal-toggle-target="dockerHostSelect" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+              <% @available_docker_host_options.each do |label, identifier| %>
+                <option value="<%= identifier %>" <% if params[:container_host].to_s == identifier.to_s %>selected<% end %>><%= label %></option>
+              <% end %>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <h2 class="text-base font-semibold text-gray-900">Marketplace Entries</h2>
+          <p class="mt-1 text-sm text-gray-500">Optionally attach shared team skills, agents, prompt packs, plugins, MCP servers, provider presets, and enhancements to this run. Automatic and team-default matches will still apply.</p>
+
+          <div class="mt-4 rounded-lg border border-gray-200 p-4">
+            <% if @marketplace_entries.any? %>
+              <% selected_marketplace_entry_ids = Array(params[:marketplace_entry_ids]).map(&:to_s) %>
+              <% marketplace_tags = @marketplace_entries.flat_map { |entry| Array(entry.tags) }.compact_blank.uniq.sort %>
+              <div class="space-y-4" data-controller="marketplace-picker">
+                <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_12rem_12rem]">
+                  <div>
+                    <label for="marketplace-entry-query" class="block text-sm font-medium text-gray-700">Search</label>
+                    <input id="marketplace-entry-query" type="search" placeholder="Search by name, description, guidance, or tag"
+                           autocomplete="off"
+                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                           data-marketplace-picker-target="queryInput"
+                           data-action="input->marketplace-picker#filter">
+                  </div>
+
+                  <div>
+                    <label for="marketplace-entry-type" class="block text-sm font-medium text-gray-700">Type</label>
+                    <select id="marketplace-entry-type"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                            data-marketplace-picker-target="typeSelect"
+                            data-action="change->marketplace-picker#filter">
+                      <option value="">All types</option>
+                      <% MarketplaceEntry::ENTRY_TYPES.each do |entry_type| %>
+                        <option value="<%= entry_type %>"><%= entry_type.humanize %></option>
+                      <% end %>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label for="marketplace-entry-tag" class="block text-sm font-medium text-gray-700">Tag</label>
+                    <select id="marketplace-entry-tag"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                            data-marketplace-picker-target="tagSelect"
+                            data-action="change->marketplace-picker#filter">
+                      <option value="">All tags</option>
+                      <% marketplace_tags.each do |tag| %>
+                        <% normalized_tag = tag.downcase %>
+                        <option value="<%= normalized_tag %>"><%= tag %></option>
+                      <% end %>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="flex items-center justify-between gap-3">
+                  <p class="text-xs text-gray-500">Manual selections override team defaults and automatic matches for the same entry.</p>
+                  <p class="text-xs font-medium text-gray-500" data-marketplace-picker-target="resultsCount"><%= pluralize(@marketplace_entries.size, "entry") %> shown</p>
+                </div>
+
+                <div class="space-y-4">
+                  <% @marketplace_entries.group_by(&:entry_type).sort_by(&:first).each do |entry_type, entries| %>
+                    <section class="space-y-3" data-marketplace-picker-target="group">
+                      <div class="flex items-center justify-between gap-3">
+                        <h3 class="text-sm font-semibold text-gray-900"><%= entry_type.humanize.pluralize %></h3>
+                        <span class="text-xs text-gray-500"><%= pluralize(entries.size, "entry") %></span>
+                      </div>
+
+                      <div class="space-y-3">
+                        <% entries.each do |entry| %>
+                          <% entry_tags = Array(entry.tags) %>
+                          <% search_text = [entry.name, entry.description, entry.usage_guidance, entry_tags.join(" ")].compact.join(" ").downcase %>
+                          <% normalized_tags = entry_tags.map(&:downcase) %>
+                          <label class="flex items-start gap-3 rounded-md border border-gray-200 p-3 hover:border-indigo-300"
+                                 data-marketplace-picker-target="entry"
+                                 data-search-text="<%= search_text %>"
+                                 data-entry-type="<%= entry.entry_type %>"
+                                 data-tags="<%= normalized_tags.join("|") %>">
+                            <input type="checkbox" name="marketplace_entry_ids[]" value="<%= entry.id %>" class="mt-1 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                   <% if selected_marketplace_entry_ids.include?(entry.id.to_s) %>checked<% end %>>
+                            <div>
+                              <div class="text-sm font-medium text-gray-900"><%= entry.name %></div>
+                              <p class="mt-1 text-xs font-medium uppercase tracking-wide text-gray-500"><%= entry.entry_type.humanize %></p>
+                              <p class="mt-1 text-sm text-gray-600"><%= entry.description.presence || entry.usage_guidance.to_s.truncate(140) %></p>
+                              <% if entry.current_version&.canonical_artifact.is_a?(Hash) %>
+                                <% strategy = entry.current_version.canonical_artifact["attachment_strategy"].presence || (entry.entry_type == "mcp_server" ? "mcp_server" : entry.entry_type.in?(%w[plugin provider_config]) ? "runtime_config" : "prompt_append") %>
+                                <p class="mt-1 text-xs text-gray-500">Delivery: <%= strategy.humanize %></p>
+                              <% end %>
+                              <% if entry_tags.any? %>
+                                <div class="mt-2 flex flex-wrap gap-2">
+                                  <% entry_tags.each do |tag| %>
+                                    <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600"><%= tag %></span>
+                                  <% end %>
+                                </div>
+                              <% end %>
+                            </div>
+                          </label>
+                        <% end %>
+                      </div>
+                    </section>
+                  <% end %>
+                </div>
+
+                <div class="hidden rounded-md border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500"
+                     data-marketplace-picker-target="emptyState">
+                  No marketplace entries match the current filters.
+                </div>
+              </div>
+            <% else %>
+              <p class="text-sm text-gray-500">No active marketplace entries yet.</p>
+            <% end %>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-end space-x-4 border-t border-gray-200 pt-4">
+          <%= link_to "Cancel", project_path(@project), class: "text-sm font-medium text-gray-500 hover:text-gray-700" %>
+          <button type="submit" class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
+            <svg class="-ml-0.5 mr-1.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM9.555 7.168A1 1 0 0 0 8 8v4a1 1 0 0 0 1.555.832l3-2a1 1 0 0 0 0-1.664l-3-2Z" clip-rule="evenodd" />
+            </svg>
+            Start Agent Run
+          </button>
+        </div>
+      <% end %>
+    </div>
+  </div>
+</div>

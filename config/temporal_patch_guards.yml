@@ -1,0 +1,23 @@
+# Temporal workflow patch guards that still require sunset tracking.
+#
+# See docs/PATCH_GUARDS.md for the policy, sweep workflow, and the rules for
+# adding new guards.
+workflows:
+  Workflows::PlanningWorkflow:
+    planning-review-signal-gate-v1:
+      introduced_on: "2026-05-22"
+    planning-review-wait-condition-v1:
+      introduced_on: "2026-07-04"
+    create-sub-issues-idempotent-retry-v1:
+      introduced_on: "2026-07-04"
+  Workflows::FeatureOrchestrationWorkflow:
+    create-sub-issues-idempotent-retry-v1:
+      introduced_on: "2026-07-04"
+  Workflows::GitHubPollWorkflow:
+    github-poll-activity-heartbeats-v1:
+      introduced_on: "2026-07-08"
+  Workflows::AgentExecutionWorkflow:
+    agent-execution-provision-browser-container-v1:
+      introduced_on: "2026-07-19"
+    create-feature-lid-chaining-v1:
+      introduced_on: "2026-08-11"

@@ -1,0 +1,70 @@
+<% content_for(:title) { "Knowledge - #{@project.name} - Paid" } %>
+
+<div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to project_path(@project), class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+      <svg class="mr-1 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd" />
+      </svg>
+      Back to <%= @project.name %>
+    <% end %>
+  </div>
+
+  <div class="sm:flex sm:items-center sm:justify-between">
+    <div>
+      <h1 class="text-2xl font-semibold leading-6 text-gray-900">Knowledge Base</h1>
+      <p class="mt-2 text-sm text-gray-700">
+        Browse indexed knowledge for <span class="font-medium"><%= @project.name %></span>.
+        <%= pluralize(@total_artifacts, "artifact") %> indexed across <%= @artifact_counts.size %> <%= "category".pluralize(@artifact_counts.size) %>.
+      </p>
+    </div>
+    <div class="mt-4 flex items-center gap-3 sm:mt-0">
+      <% if policy(@project).update? %>
+        <%= link_to "Business Context", project_context_intake_path(@project),
+              class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+      <% end %>
+      <%= link_to "Search Knowledge", project_knowledge_search_path(@project),
+            class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+    </div>
+  </div>
+
+  <% if @artifact_counts.any? %>
+    <div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <% @artifact_counts.each do |artifact_type, count| %>
+        <%= link_to project_knowledge_browse_path(@project, artifact_type),
+              class: "group relative overflow-hidden rounded-lg bg-white px-4 py-5 shadow hover:shadow-md transition-shadow sm:px-6" do %>
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm font-medium text-gray-500"><%= artifact_type.titleize.pluralize %></p>
+              <p class="mt-1 text-2xl font-semibold text-gray-900"><%= number_with_delimiter(count) %></p>
+            </div>
+            <div class="rounded-full bg-indigo-50 p-3 group-hover:bg-indigo-100 transition-colors">
+              <%= render_artifact_type_icon(artifact_type) %>
+            </div>
+          </div>
+          <p class="mt-2 text-xs text-gray-400"><%= artifact_type %></p>
+        <% end %>
+      <% end %>
+    </div>
+  <% else %>
+    <div class="mt-6 overflow-hidden rounded-lg bg-white shadow">
+      <div class="px-4 py-12 text-center">
+        <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m6 4.125l2.25 2.25m0 0l2.25 2.25M12 13.875l2.25-2.25M12 13.875l-2.25 2.25M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
+        </svg>
+        <h3 class="mt-2 text-sm font-semibold text-gray-900">No knowledge indexed</h3>
+        <p class="mt-1 text-sm text-gray-500">
+          <% if @project.knowledge_status == "pending" %>
+            Knowledge collection has not started yet for this project. It will begin automatically.
+          <% elsif @project.knowledge_status == "collecting" %>
+            Knowledge is currently being collected. Check back shortly.
+          <% elsif @project.knowledge_status == "failed" %>
+            Knowledge collection failed. Check the project page for error details.
+          <% else %>
+            No knowledge artifacts have been indexed for this project yet.
+          <% end %>
+        </p>
+      </div>
+    </div>
+  <% end %>
+</div>

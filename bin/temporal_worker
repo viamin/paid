@@ -1,0 +1,257 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require_relative "../config/environment"
+require_relative "../lib/paid/temporal_observability"
+require_relative "../lib/paid/worker_readiness"
+
+# Explicitly load temporalio — the initializer defers it for web process boot
+# performance, but the worker process needs the full gem loaded upfront.
+begin
+  original_verbose = $VERBOSE
+  $VERBOSE = nil
+  require "temporalio/client"
+  require "temporalio/worker"
+ensure
+  $VERBOSE = original_verbose
+end
+
+# Eagerly load routes before spawning worker threads to avoid a race condition
+# with Rails 8.1's lazy route loading (LazyRouteSet). Turbo broadcasts triggered
+# by activities render partials that use route helpers; without eager loading,
+# concurrent threads can hit method_missing simultaneously and fail.
+Rails.application.reload_routes!
+
+Dir[Rails.root.join("app/temporal/activities/**/*.rb")].each { |f| require f }
+Dir[Rails.root.join("app/temporal/workflows/**/*.rb")].each { |f| require f }
+
+activities = Activities.constants.map { |c| Activities.const_get(c) }
+                       .select { |c| c.is_a?(Class) && c < Activities::BaseActivity }
+
+workflows = Workflows.constants.map { |c| Workflows.const_get(c) }
+                     .select { |c| c.is_a?(Class) && c < Workflows::BaseWorkflow }
+
+# Partition workflows into poll vs agent queues.
+# GitHubPollWorkflow runs on the poll queue; everything else on the agent queue.
+poll_workflows = workflows.select { |w| w == Workflows::GitHubPollWorkflow }
+agent_workflows = workflows.reject { |w| w == Workflows::GitHubPollWorkflow }
+begin
+  worker_mode = Paid::TemporalWorkerConfig.worker_mode
+rescue ArgumentError => error
+  warn error.message
+  exit 1
+end
+
+puts "Starting Temporal worker..."
+puts "Worker mode: #{worker_mode}"
+puts "Activities: #{activities.map(&:name).join(", ")}"
+puts "Poll workflows (#{Paid.poll_task_queue}): #{poll_workflows.map(&:name).join(", ")}"
+puts "Agent workflows (#{Paid.agent_task_queue}): #{agent_workflows.map(&:name).join(", ")}"
+
+def resolve_worker_setting(key, env_key, default)
+  TenantSetting.resolve_worker_setting(key, env_key: env_key, env: ENV, default: default)
+end
+
+graceful_shutdown = ENV.fetch("TEMPORAL_GRACEFUL_SHUTDOWN_PERIOD", "30").to_i
+
+agent_workflow_slots = resolve_worker_setting("temporal_workflow_slots", "TEMPORAL_WORKFLOW_SLOTS", 20)
+agent_activity_slots = resolve_worker_setting("temporal_activity_slots", "TEMPORAL_ACTIVITY_SLOTS", 4)
+agent_local_activity_slots = ENV.fetch("TEMPORAL_LOCAL_ACTIVITY_SLOTS", agent_activity_slots.to_s).to_i
+agent_activity_task_polls = ENV.fetch("TEMPORAL_MAX_CONCURRENT_ACTIVITY_TASK_POLLS", agent_activity_slots.to_s).to_i
+agent_workflow_task_polls = ENV.fetch("TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASK_POLLS", agent_workflow_slots.to_s).to_i
+
+# Poll worker concurrency (small fixed pool — poll activities are short-lived)
+poll_workflow_slots = resolve_worker_setting("temporal_poll_workflow_slots", "TEMPORAL_POLL_WORKFLOW_SLOTS", 20)
+poll_activity_slots = resolve_worker_setting("temporal_poll_activity_slots", "TEMPORAL_POLL_ACTIVITY_SLOTS", 10)
+poll_local_activity_slots = ENV.fetch("TEMPORAL_POLL_LOCAL_ACTIVITY_SLOTS", poll_activity_slots.to_s).to_i
+poll_activity_task_polls = ENV.fetch("TEMPORAL_POLL_MAX_CONCURRENT_ACTIVITY_TASK_POLLS", poll_activity_slots.to_s).to_i
+poll_workflow_task_polls = ENV.fetch("TEMPORAL_POLL_MAX_CONCURRENT_WORKFLOW_TASK_POLLS", poll_workflow_slots.to_s).to_i
+
+db_pool = ENV.fetch("DB_POOL") { ENV.fetch("RAILS_MAX_THREADS", "20") }.to_i
+selected_activity_slots = Paid::TemporalWorkerConfig.selected_activity_slots(
+  worker_mode: worker_mode,
+  agent_activity_slots: agent_activity_slots,
+  agent_local_activity_slots: agent_local_activity_slots,
+  poll_activity_slots: poll_activity_slots,
+  poll_local_activity_slots: poll_local_activity_slots
+)
+min_required_pool = Paid::TemporalWorkerConfig.min_required_db_pool(
+  worker_mode: worker_mode,
+  agent_activity_slots: agent_activity_slots,
+  agent_local_activity_slots: agent_local_activity_slots,
+  poll_activity_slots: poll_activity_slots,
+  poll_local_activity_slots: poll_local_activity_slots
+)
+
+puts "Agent worker concurrency: workflows=#{agent_workflow_slots} activities=#{agent_activity_slots} " \
+     "local_activities=#{agent_local_activity_slots} activity_polls=#{agent_activity_task_polls} " \
+     "workflow_polls=#{agent_workflow_task_polls}" unless worker_mode == "poll"
+puts "Poll worker concurrency: workflows=#{poll_workflow_slots} activities=#{poll_activity_slots} " \
+     "local_activities=#{poll_local_activity_slots} activity_polls=#{poll_activity_task_polls} " \
+     "workflow_polls=#{poll_workflow_task_polls}" unless worker_mode == "agent"
+
+if db_pool < min_required_pool
+  warn "WARNING: DB_POOL (#{db_pool}) is less than the required minimum " \
+       "(#{min_required_pool}) for selected activity_slots=#{selected_activity_slots} " \
+       "in #{worker_mode} mode (heartbeat-enabled regular activities can hold two connections each)."
+
+  # Auto-correct rather than booting under-provisioned: an undersized pool
+  # surfaces as "could not obtain a connection from the pool" mid-run, which
+  # fails live agent runs. Resizing the primary pool here is safe — worker
+  # threads have not started yet, so no connections are in flight. If the
+  # resize cannot be applied, refuse to boot rather than fail runs later.
+  resized = begin
+    db_config = ActiveRecord::Base.connection_db_config
+    resized_config = ActiveRecord::DatabaseConfigurations::HashConfig.new(
+      db_config.env_name, db_config.name, db_config.configuration_hash.merge(pool: min_required_pool)
+    )
+    # Replace the registry entry as well as the live pool. A bare
+    # establish_connection resizes the live pool but leaves
+    # ActiveRecord::Base.configurations stale at DB_POOL, which would silently
+    # revert the size on any later reconnect-by-name. Keep one source of truth.
+    configs = ActiveRecord::Base.configurations.configurations
+    configs.reject! { |c| c.env_name == db_config.env_name && c.name == db_config.name }
+    configs << resized_config
+    ActiveRecord::Base.establish_connection(resized_config)
+    # Verify against the live pool's actual capacity (db_config#pool is
+    # deprecated in Rails 8.1 in favour of #max_connections).
+    ActiveRecord::Base.connection_pool.size >= min_required_pool
+  rescue => error
+    warn "ERROR: failed to resize DB pool: #{error.class}: #{error.message}"
+    false
+  end
+
+  if resized
+    warn "Auto-corrected primary DB pool size: #{db_pool} -> #{min_required_pool}. " \
+         "Set DB_POOL >= #{min_required_pool} to make this explicit, or reduce " \
+         "TEMPORAL_ACTIVITY_SLOTS to need fewer connections. NOTE: this raises the " \
+         "connections this process opens — ensure the database server's max_connections " \
+         "covers the sum across all web/worker processes (see docs/WORKER_POOL_TUNING.md)."
+  else
+    warn "FATAL: DB_POOL (#{db_pool}) is below the required minimum (#{min_required_pool}) " \
+         "and the pool could not be resized automatically. Increase DB_POOL or reduce " \
+         "activity concurrency to avoid connection exhaustion."
+    exit 1
+  end
+end
+
+shutdown_cancellation, request_shutdown = Temporalio::Cancellation.new
+shutdown_state_mutex = Mutex.new
+shutdown_started = false
+forced_exit_buffer = ENV.fetch("TEMPORAL_FORCE_EXIT_BUFFER_SECONDS", "10").to_i
+forced_exit_timeout = graceful_shutdown + forced_exit_buffer
+force_exit_thread = nil
+
+activity_instances = activities.map(&:new)
+
+workers = case worker_mode
+when "poll"
+  [
+    # Poll worker: handles GitHubPollWorkflow and its activities on the poll queue.
+    # Small activity pool ensures poll cycles are never blocked by agent workloads.
+    Temporalio::Worker.new(
+      client: Paid.temporal_worker_client,
+      task_queue: Paid.poll_task_queue,
+      activities: activity_instances,
+      workflows: poll_workflows,
+      tuner: Temporalio::Worker::Tuner.create_fixed(
+        workflow_slots: poll_workflow_slots,
+        activity_slots: poll_activity_slots,
+        local_activity_slots: poll_local_activity_slots
+      ),
+      max_concurrent_activity_task_polls: poll_activity_task_polls,
+      max_concurrent_workflow_task_polls: poll_workflow_task_polls,
+      graceful_shutdown_period: graceful_shutdown
+    )
+  ]
+when "agent"
+  [
+    # Agent worker: handles AgentExecutionWorkflow, PlanningWorkflow, etc. on the agent queue.
+    # Larger activity pool for long-running agent activities.
+    Temporalio::Worker.new(
+      client: Paid.temporal_worker_client,
+      task_queue: Paid.agent_task_queue,
+      activities: activity_instances,
+      workflows: agent_workflows,
+      tuner: Temporalio::Worker::Tuner.create_fixed(
+        workflow_slots: agent_workflow_slots,
+        activity_slots: agent_activity_slots,
+        local_activity_slots: agent_local_activity_slots
+      ),
+      max_concurrent_activity_task_polls: agent_activity_task_polls,
+      max_concurrent_workflow_task_polls: agent_workflow_task_polls,
+      graceful_shutdown_period: graceful_shutdown
+    )
+  ]
+else
+  [
+    # Poll worker: handles GitHubPollWorkflow and its activities on the poll queue.
+    # Small activity pool ensures poll cycles are never blocked by agent workloads.
+    Temporalio::Worker.new(
+      client: Paid.temporal_worker_client,
+      task_queue: Paid.poll_task_queue,
+      activities: activity_instances,
+      workflows: poll_workflows,
+      tuner: Temporalio::Worker::Tuner.create_fixed(
+        workflow_slots: poll_workflow_slots,
+        activity_slots: poll_activity_slots,
+        local_activity_slots: poll_local_activity_slots
+      ),
+      max_concurrent_activity_task_polls: poll_activity_task_polls,
+      max_concurrent_workflow_task_polls: poll_workflow_task_polls,
+      graceful_shutdown_period: graceful_shutdown
+    ),
+    # Agent worker: handles AgentExecutionWorkflow, PlanningWorkflow, etc. on the agent queue.
+    # Larger activity pool for long-running agent activities.
+    Temporalio::Worker.new(
+      client: Paid.temporal_worker_client,
+      task_queue: Paid.agent_task_queue,
+      activities: activity_instances,
+      workflows: agent_workflows,
+      tuner: Temporalio::Worker::Tuner.create_fixed(
+        workflow_slots: agent_workflow_slots,
+        activity_slots: agent_activity_slots,
+        local_activity_slots: agent_local_activity_slots
+      ),
+      max_concurrent_activity_task_polls: agent_activity_task_polls,
+      max_concurrent_workflow_task_polls: agent_workflow_task_polls,
+      graceful_shutdown_period: graceful_shutdown
+    )
+  ]
+end
+
+%w[INT TERM].each do |signal|
+  Signal.trap(signal) do
+    force_exit_now = shutdown_state_mutex.synchronize do
+      if shutdown_started
+        true
+      else
+        shutdown_started = true
+        false
+      end
+    end
+
+    if force_exit_now
+      warn "Received #{signal} during shutdown, forcing Temporal worker exit"
+      exit! 1
+    end
+
+    warn "Received #{signal}, shutting down Temporal workers gracefully"
+    Paid::WorkerReadiness.mark_not_ready!
+    request_shutdown.call(reason: "#{signal} received")
+
+    force_exit_thread ||= Thread.new do
+      sleep(forced_exit_timeout)
+      warn "Temporal workers did not exit within #{forced_exit_timeout}s, forcing exit"
+      exit! 1
+    end
+  end
+end
+
+# Run the selected worker set in the same process, sharing the cancellation token.
+# Mark readiness just before blocking: the workers are constructed and the client
+# connection is established, so polling will begin immediately inside run_all.
+at_exit { Paid::WorkerReadiness.mark_not_ready! }
+Paid::WorkerReadiness.mark_ready!
+puts "Temporal worker ready (readiness file: #{Paid::WorkerReadiness.file_path})"
+Temporalio::Worker.run_all(*workers, cancellation: shutdown_cancellation)

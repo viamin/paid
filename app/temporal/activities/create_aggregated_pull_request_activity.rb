@@ -1,0 +1,202 @@
+# frozen_string_literal: true
+
+module Activities
+  # Creates a single aggregated PR from the feature branch that contains
+  # merged changes from multiple sub-task branches.
+  #
+  # The PR body includes a combined description referencing each sub-task
+  # and its completion status.
+  #
+  # Input:
+  #   project_id: ID of the project
+  #   parent_issue_id: ID of the parent feature issue (optional)
+  #   feature_branch: Name of the aggregated feature branch
+  #   merged_branches: Array of branch names that were merged
+  #   failed_merges: Array of { branch:, error: } for failed merges
+  #   results: Array of child workflow results
+  #
+  # Returns:
+  #   pull_request_url: URL of the created PR
+  #   pull_request_number: Number of the created PR
+  class CreateAggregatedPullRequestActivity < BaseActivity
+    activity_name "CreateAggregatedPullRequest"
+
+    def execute(input)
+      project = Project.find(input[:project_id])
+      parent_issue_id = input[:parent_issue_id]
+      feature_branch = input[:feature_branch]
+      merged_branches = input.fetch(:merged_branches, [])
+      failed_merges = input.fetch(:failed_merges, [])
+      results = input.fetch(:results, [])
+
+      parent_issue = Issue.find_by(id: parent_issue_id, project_id: project.id) if parent_issue_id
+
+      client = project.client
+      pr = create_pull_request_idempotently(
+        client, project, feature_branch, parent_issue, results, merged_branches, failed_merges
+      )
+
+      sync_pull_request_record(client, project, pr.number)
+      add_pr_labels(client, project, pr.number, parent_issue: parent_issue)
+
+      logger.info(
+        message: "aggregated_pr.created",
+        project_id: project.id,
+        pull_request_url: pr.html_url,
+        merged_branch_count: merged_branches.size,
+        failed_merge_count: failed_merges.size
+      )
+
+      {
+        pull_request_url: pr.html_url,
+        pull_request_number: pr.number
+      }
+    end
+
+    private
+
+    def create_pull_request_idempotently(client, project, feature_branch, parent_issue, results, merged_branches, failed_merges)
+      client.create_pull_request(
+        project.full_name,
+        base: project.default_branch,
+        head: feature_branch,
+        title: pr_title(parent_issue),
+        body: pr_body(project, parent_issue, results, merged_branches, failed_merges),
+        draft: true
+      )
+    rescue GithubClient::ApiError => e
+      raise unless e.status == 422
+
+      # PR already exists (likely a retry). Look up the existing open PR for this head branch.
+      existing_prs = client.pull_requests(
+        project.full_name,
+        state: "open",
+        head: "#{project.full_name.split('/').first}:#{feature_branch}"
+      )
+      existing_pr = existing_prs&.first
+      raise unless existing_pr
+
+      logger.info(
+        message: "aggregated_pr.already_exists",
+        project_id: project.id,
+        pull_request_url: existing_pr.html_url
+      )
+      existing_pr
+    end
+
+    def pr_title(parent_issue)
+      if parent_issue
+        ConventionalCommitTitle.for_issue(
+          parent_issue,
+          fallback_type: "feat",
+          project: parent_issue.project,
+          style_key: "pr_title_style"
+        ).truncate(255)
+      else
+        "Aggregated feature changes"
+      end
+    end
+
+    def pr_body(project, parent_issue, results, merged_branches, failed_merges)
+      parts = []
+
+      parts << "## Summary"
+      parts << ""
+
+      if parent_issue
+        parts << "Aggregated pull request for feature ##{parent_issue.github_number}: **#{parent_issue.title}**"
+      else
+        parts << "Aggregated pull request combining changes from multiple sub-tasks."
+      end
+
+      parts << ""
+      parts << "## Sub-task Results"
+      parts << ""
+
+      # Preload all referenced issues in one query to avoid N+1
+      issue_ids = results.filter_map { |r| r[:issue_id] }
+      issues_by_id = project.issues.where(id: issue_ids).index_by(&:id) if issue_ids.any?
+      issues_by_id ||= {}
+
+      results.each do |result|
+        issue = issues_by_id[result[:issue_id]] if result[:issue_id]
+        status = result[:success] ? "completed" : "failed"
+        icon = result[:success] ? "\u2705" : "\u274c"
+
+        if issue
+          parts << "- #{icon} ##{issue.github_number}: #{issue.title} (#{status})"
+        elsif result[:issue_id]
+          parts << "- #{icon} Sub-task (internal issue id #{result[:issue_id]}) (#{status})"
+        else
+          parts << "- #{icon} Sub-task (no issue linked) (#{status})"
+        end
+      end
+
+      if failed_merges.any?
+        parts << ""
+        parts << "## Merge Conflicts"
+        parts << ""
+        parts << "The following branches could not be merged:"
+        failed_merges.each do |failure|
+          parts << "- `#{failure[:branch]}`: #{failure[:error]}"
+        end
+      end
+
+      parts << ""
+      parts << "---"
+      parts << ""
+
+      if parent_issue
+        parts << "Closes ##{parent_issue.github_number}"
+        parts << ""
+      end
+
+      parts << "_This pull request was automatically generated by [Paid](https://github.com/viamin/paid)._"
+
+      parts.join("\n")
+    end
+
+    def add_pr_labels(client, project, pr_number, parent_issue: nil)
+      labels = []
+      if project.auto_add_labels_enabled?
+        labels << project.generated_label_name
+        labels << project.automation_label_name
+      end
+      if project.inherit_priority_labels? && parent_issue&.labels.present?
+        labels.concat(project.priority_label_names & Array(parent_issue.labels))
+      end
+      labels.uniq!
+      return if labels.empty?
+
+      client.add_labels_to_issue(project.full_name, pr_number, labels)
+      merge_local_pr_labels(project, pr_number, labels)
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "aggregated_pr.add_labels_failed",
+        pr_number: pr_number,
+        error: e.message
+      )
+    end
+
+    def sync_pull_request_record(client, project, pr_number)
+      github_issue = client.issue(project.full_name, pr_number)
+      Issues::UpsertFromGithub.call(project: project, github_issue: github_issue)
+    rescue => e
+      logger.warn(
+        message: "aggregated_pr.sync_failed",
+        project_id: project.id,
+        pr_number: pr_number,
+        error: e.message
+      )
+    end
+
+    def merge_local_pr_labels(project, pr_number, labels)
+      pull_request = project.issues.find_by(github_number: pr_number, is_pull_request: true)
+      return unless pull_request
+
+      pull_request.with_lock do
+        pull_request.update!(labels: (pull_request.labels + labels).uniq)
+      end
+    end
+  end
+end

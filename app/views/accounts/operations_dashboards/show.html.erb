@@ -1,0 +1,312 @@
+<% content_for :title, "Operations Dashboard" %>
+
+<% can_manage_operations = policy(current_account).update? %>
+<% configuration = @operations_dashboard[:configuration] %>
+<% service_levels = @operations_dashboard[:service_levels] %>
+<% disaster_recovery = @operations_dashboard[:disaster_recovery] %>
+<% upgrades = @operations_dashboard[:upgrades] %>
+<% support = @operations_dashboard[:support] %>
+<% capacity = @operations_dashboard[:capacity] %>
+
+<div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+    <div>
+      <p class="text-sm font-medium uppercase tracking-[0.2em] text-amber-700 dark:text-amber-300">Operations</p>
+      <h1 class="mt-2 text-3xl font-semibold text-gray-900 dark:text-white">Enterprise Operations &amp; Reliability</h1>
+      <p class="mt-2 max-w-3xl text-sm text-gray-600 dark:text-gray-300">
+        Turn managed-service expectations into an explicit operating contract with customer-visible SLOs, restore commitments, upgrade readiness, and support-safe diagnostics.
+      </p>
+    </div>
+
+    <div class="flex flex-wrap gap-3">
+      <%= link_to "Back to account", account_path, class: "rounded-full border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-900" %>
+      <% if can_manage_operations %>
+        <%= link_to "Export operations report", export_account_operations_dashboard_path(format: :json), class: "rounded-full bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-500" %>
+      <% end %>
+    </div>
+  </div>
+
+  <% if @tenant_setting.errors.any? %>
+    <div class="mt-6 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-800 dark:bg-red-950/40 dark:text-red-200">
+      <%= @tenant_setting.errors.full_messages.to_sentence %>
+    </div>
+  <% end %>
+
+  <div class="mt-8 grid gap-4 md:grid-cols-4">
+    <div class="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800 md:col-span-2">
+      <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Customer-visible reliability window</p>
+      <p class="mt-2 text-4xl font-semibold text-gray-900 dark:text-white"><%= service_levels[:window_days] %> days</p>
+      <p class="mt-2 text-sm text-gray-600 dark:text-gray-300">SLO reporting period used for uptime and queue-start reporting.</p>
+    </div>
+    <div class="rounded-3xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm dark:border-emerald-800 dark:bg-emerald-950/20">
+      <p class="text-xs uppercase tracking-wide text-emerald-700 dark:text-emerald-300">Uptime actual</p>
+      <p class="mt-2 text-4xl font-semibold text-gray-900 dark:text-white"><%= service_levels[:uptime_actual_percent] %>%</p>
+      <p class="text-sm text-gray-600 dark:text-gray-300">Target: <%= service_levels[:uptime_target_percent] %>%</p>
+    </div>
+    <div class="rounded-3xl border border-sky-200 bg-sky-50 p-5 shadow-sm dark:border-sky-800 dark:bg-sky-950/20">
+      <p class="text-xs uppercase tracking-wide text-sky-700 dark:text-sky-300">Queue health actual</p>
+      <p class="mt-2 text-4xl font-semibold text-gray-900 dark:text-white"><%= service_levels[:queue_health_actual_percent] %>%</p>
+      <p class="text-sm text-gray-600 dark:text-gray-300">Target: <%= service_levels[:queue_health_target_percent] %>%</p>
+    </div>
+  </div>
+
+  <div class="mt-8 grid gap-8 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.9fr)]">
+    <div class="space-y-8">
+      <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Support-safe diagnostics</h2>
+            <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">Expose the minimum data support needs to diagnose tenant issues without turning the dashboard into an unsafe control plane.</p>
+          </div>
+        </div>
+
+        <div class="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div class="rounded-2xl bg-gray-50 p-4 dark:bg-gray-900/60">
+            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Open incidents</p>
+            <p class="mt-2 text-3xl font-semibold text-gray-900 dark:text-white"><%= support[:open_incidents] %></p>
+          </div>
+          <div class="rounded-2xl bg-gray-50 p-4 dark:bg-gray-900/60">
+            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Available runners</p>
+            <p class="mt-2 text-3xl font-semibold text-gray-900 dark:text-white"><%= support[:runner_available] %> / <%= support[:runner_total] %></p>
+          </div>
+          <div class="rounded-2xl bg-gray-50 p-4 dark:bg-gray-900/60">
+            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Safe remediation mode</p>
+            <p class="mt-2 text-lg font-semibold text-gray-900 dark:text-white"><%= support[:safe_remediation_mode].to_s.humanize %></p>
+          </div>
+          <div class="rounded-2xl bg-gray-50 p-4 dark:bg-gray-900/60">
+            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Diagnostics contact</p>
+            <p class="mt-2 text-lg font-semibold text-gray-900 dark:text-white"><%= support[:diagnostics_contact].presence || "Unassigned" %></p>
+          </div>
+        </div>
+
+        <div class="mt-6 grid gap-6 lg:grid-cols-2">
+          <div>
+            <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Recent activity</h3>
+            <div class="mt-3 space-y-3">
+              <% support[:recent_account_events].each do |event| %>
+                <div class="rounded-2xl border border-gray-200 px-4 py-3 text-sm text-gray-700 dark:border-gray-700 dark:text-gray-200"><%= event %></div>
+              <% end %>
+            </div>
+          </div>
+
+          <div>
+            <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Support actions</h3>
+            <div class="mt-3 space-y-3">
+              <% support[:actions].each do |action| %>
+                <%= link_to action[:label], action[:path], class: "block rounded-2xl border border-gray-200 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900" %>
+              <% end %>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        <div>
+          <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Capacity &amp; cost controls</h2>
+          <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">Make queue pressure and managed-environment cost ceilings explicit before they become reliability incidents.</p>
+        </div>
+
+        <div class="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div class="rounded-2xl bg-gray-50 p-4 dark:bg-gray-900/60">
+            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Queue depth</p>
+            <p class="mt-2 text-3xl font-semibold text-gray-900 dark:text-white"><%= capacity[:current_queue_depth] %></p>
+            <p class="text-sm text-gray-500 dark:text-gray-400">Warn at <%= capacity[:queue_warning_threshold] %>, critical at <%= capacity[:queue_critical_threshold] %></p>
+          </div>
+          <div class="rounded-2xl bg-gray-50 p-4 dark:bg-gray-900/60">
+            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Concurrency limit</p>
+            <p class="mt-2 text-3xl font-semibold text-gray-900 dark:text-white"><%= capacity[:configured_concurrency_limit] %></p>
+            <p class="text-sm text-gray-500 dark:text-gray-400">Reserved: <%= capacity[:reserved_concurrency] %></p>
+          </div>
+          <div class="rounded-2xl bg-gray-50 p-4 dark:bg-gray-900/60">
+            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Monthly ceiling</p>
+            <p class="mt-2 text-3xl font-semibold text-gray-900 dark:text-white"><%= capacity[:monthly_cost_ceiling_cents] ? number_to_currency(capacity[:monthly_cost_ceiling_cents] / 100.0) : "None" %></p>
+            <p class="text-sm text-gray-500 dark:text-gray-400">Alert at <%= capacity[:monthly_budget_alert_percent] %>%</p>
+          </div>
+          <div class="rounded-2xl bg-gray-50 p-4 dark:bg-gray-900/60">
+            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Period spend</p>
+            <p class="mt-2 text-3xl font-semibold text-gray-900 dark:text-white"><%= capacity[:current_period_cost_cents] ? number_to_currency(capacity[:current_period_cost_cents] / 100.0) : "Hidden" %></p>
+            <p class="text-sm text-gray-500 dark:text-gray-400"><%= capacity[:cost_ceiling_utilization_percent] ? "#{capacity[:cost_ceiling_utilization_percent]}% of ceiling" : "Billing visibility required" %></p>
+          </div>
+        </div>
+
+        <%= render "auto_capacity_panel", capacity: capacity %>
+      </section>
+    </div>
+
+    <div class="space-y-8">
+      <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        <div>
+          <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Disaster recovery</h2>
+          <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">Track backup verification, restore drills, and customer-facing RPO/RTO commitments in one place.</p>
+        </div>
+
+        <dl class="mt-6 space-y-4 text-sm">
+          <div>
+            <dt class="font-medium text-gray-900 dark:text-white">Automated backups</dt>
+            <dd class="mt-1 text-gray-600 dark:text-gray-300"><%= disaster_recovery[:automated_backups_enabled] ? "Enabled" : "Disabled" %> • <%= disaster_recovery[:backup_cadence].to_s.humanize %></dd>
+          </div>
+          <div>
+            <dt class="font-medium text-gray-900 dark:text-white">Last backup verification</dt>
+            <dd class="mt-1 text-gray-600 dark:text-gray-300"><%= disaster_recovery[:backup_last_verified_at].presence || "Not recorded" %></dd>
+          </div>
+          <div>
+            <dt class="font-medium text-gray-900 dark:text-white">Last restore drill</dt>
+            <dd class="mt-1 text-gray-600 dark:text-gray-300"><%= disaster_recovery[:last_restore_drill_at].presence || "Not recorded" %> • <%= disaster_recovery[:restore_drill_status].to_s.humanize %></dd>
+          </div>
+          <div>
+            <dt class="font-medium text-gray-900 dark:text-white">Customer commitments</dt>
+            <dd class="mt-1 text-gray-600 dark:text-gray-300">RPO <%= disaster_recovery[:recovery_point_objective_hours] %>h • RTO <%= disaster_recovery[:recovery_time_objective_hours] %>h</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        <div>
+          <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Upgrade orchestration</h2>
+          <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">Record maintenance windows, compatibility validation, and rollout channel choices before a fleet-wide upgrade.</p>
+        </div>
+
+        <dl class="mt-6 space-y-4 text-sm">
+          <div>
+            <dt class="font-medium text-gray-900 dark:text-white">Release channel</dt>
+            <dd class="mt-1 text-gray-600 dark:text-gray-300"><%= upgrades[:release_channel].to_s.humanize %></dd>
+          </div>
+          <div>
+            <dt class="font-medium text-gray-900 dark:text-white">Maintenance window</dt>
+            <dd class="mt-1 text-gray-600 dark:text-gray-300"><%= upgrades[:maintenance_window] %></dd>
+          </div>
+          <div>
+            <dt class="font-medium text-gray-900 dark:text-white">Compatibility check</dt>
+            <dd class="mt-1 text-gray-600 dark:text-gray-300"><%= upgrades[:last_compatibility_check_at].presence || "Not recorded" %> • <%= upgrades[:compatibility_status].to_s.humanize %></dd>
+          </div>
+          <div>
+            <dt class="font-medium text-gray-900 dark:text-white">Last upgrade</dt>
+            <dd class="mt-1 text-gray-600 dark:text-gray-300"><%= upgrades[:last_upgrade_at].presence || "Not recorded" %></dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        <div>
+          <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Operations settings</h2>
+          <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">Manage the contract support and customer teams rely on when Paid is operated as a managed service.</p>
+        </div>
+
+        <%= form_with url: account_operations_dashboard_path, method: :patch, class: "mt-6 space-y-8" do %>
+          <section>
+            <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Service levels</h3>
+            <div class="mt-3 grid gap-4 sm:grid-cols-2">
+              <div>
+                <%= label_tag "enterprise_operations_service_levels_slo_window_days", "Reporting window (days)", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= number_field_tag "enterprise_operations[service_levels][slo_window_days]", configuration.dig("service_levels", "slo_window_days"), min: 1, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              </div>
+              <div>
+                <%= label_tag "enterprise_operations_service_levels_queue_start_slo_minutes", "Queue start SLO (minutes)", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= number_field_tag "enterprise_operations[service_levels][queue_start_slo_minutes]", configuration.dig("service_levels", "queue_start_slo_minutes"), min: 1, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              </div>
+              <div>
+                <%= label_tag "enterprise_operations_service_levels_uptime_target_percent", "Uptime target %", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= number_field_tag "enterprise_operations[service_levels][uptime_target_percent]", configuration.dig("service_levels", "uptime_target_percent"), min: 1, max: 100, step: 0.1, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              </div>
+              <div>
+                <%= label_tag "enterprise_operations_service_levels_queue_health_target_percent", "Queue health target %", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= number_field_tag "enterprise_operations[service_levels][queue_health_target_percent]", configuration.dig("service_levels", "queue_health_target_percent"), min: 1, max: 100, step: 0.1, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              </div>
+              <div>
+                <%= label_tag "enterprise_operations_service_levels_urgent_response_sla_hours", "Urgent response SLA (hours)", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= number_field_tag "enterprise_operations[service_levels][urgent_response_sla_hours]", configuration.dig("service_levels", "urgent_response_sla_hours"), min: 1, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              </div>
+              <div>
+                <%= label_tag "enterprise_operations_service_levels_standard_response_sla_hours", "Standard response SLA (hours)", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= number_field_tag "enterprise_operations[service_levels][standard_response_sla_hours]", configuration.dig("service_levels", "standard_response_sla_hours"), min: 1, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              </div>
+            </div>
+          </section>
+
+          <section>
+            <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Disaster recovery</h3>
+            <div class="mt-3 grid gap-4 sm:grid-cols-2">
+              <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+                <%= hidden_field_tag "enterprise_operations[disaster_recovery][automated_backups_enabled]", "0" %>
+                <%= check_box_tag "enterprise_operations[disaster_recovery][automated_backups_enabled]", "1", configuration.dig("disaster_recovery", "automated_backups_enabled") %>
+                Automated backups enabled
+              </label>
+              <div>
+                <%= label_tag "enterprise_operations_disaster_recovery_restore_drill_interval_days", "Restore drill interval (days)", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= number_field_tag "enterprise_operations[disaster_recovery][restore_drill_interval_days]", configuration.dig("disaster_recovery", "restore_drill_interval_days"), min: 1, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              </div>
+              <div>
+                <%= label_tag "enterprise_operations_disaster_recovery_restore_owner", "Restore owner", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= text_field_tag "enterprise_operations[disaster_recovery][restore_owner]", configuration.dig("disaster_recovery", "restore_owner"), class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              </div>
+              <div>
+                <%= label_tag "enterprise_operations_disaster_recovery_last_restore_drill_at", "Last restore drill", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= date_field_tag "enterprise_operations[disaster_recovery][last_restore_drill_at]", configuration.dig("disaster_recovery", "last_restore_drill_at"), class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              </div>
+            </div>
+          </section>
+
+          <section>
+            <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Upgrades, support, and capacity</h3>
+            <div class="mt-3 grid gap-4 sm:grid-cols-2">
+              <div>
+                <%= label_tag "enterprise_operations_upgrades_release_channel", "Release channel", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= select_tag "enterprise_operations[upgrades][release_channel]", options_for_select(TenantSetting::ENTERPRISE_OPERATIONS_RELEASE_CHANNELS.map { |value| [value.humanize, value] }, configuration.dig("upgrades", "release_channel")), class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              </div>
+              <div>
+                <%= label_tag "enterprise_operations_upgrades_maintenance_window", "Maintenance window", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= text_field_tag "enterprise_operations[upgrades][maintenance_window]", configuration.dig("upgrades", "maintenance_window"), class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              </div>
+              <div>
+                <%= label_tag "enterprise_operations_upgrades_compatibility_lookahead_days", "Compatibility lookahead (days)", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= number_field_tag "enterprise_operations[upgrades][compatibility_lookahead_days]", configuration.dig("upgrades", "compatibility_lookahead_days"), min: 1, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              </div>
+              <div>
+                <%= label_tag "enterprise_operations_upgrades_last_compatibility_check_at", "Last compatibility check", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= date_field_tag "enterprise_operations[upgrades][last_compatibility_check_at]", configuration.dig("upgrades", "last_compatibility_check_at"), class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              </div>
+              <div>
+                <%= label_tag "enterprise_operations_upgrades_last_upgrade_at", "Last upgrade", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= date_field_tag "enterprise_operations[upgrades][last_upgrade_at]", configuration.dig("upgrades", "last_upgrade_at"), class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              </div>
+              <div>
+                <%= label_tag "enterprise_operations_support_diagnostics_contact", "Diagnostics contact", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= text_field_tag "enterprise_operations[support][diagnostics_contact]", configuration.dig("support", "diagnostics_contact"), class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              </div>
+              <div>
+                <%= label_tag "enterprise_operations_support_safe_remediation_mode", "Safe remediation mode", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= select_tag "enterprise_operations[support][safe_remediation_mode]", options_for_select(TenantSetting::ENTERPRISE_OPERATIONS_REMEDIATION_MODES.map { |value| [value.humanize, value] }, configuration.dig("support", "safe_remediation_mode")), class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              </div>
+              <div>
+                <%= label_tag "enterprise_operations_support_health_report_recipients", "Health report recipients", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= text_field_tag "enterprise_operations[support][health_report_recipients]", configuration.dig("support", "health_report_recipients"), class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              </div>
+              <div>
+                <%= label_tag "enterprise_operations_capacity_management_reserved_concurrency", "Reserved concurrency", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= number_field_tag "enterprise_operations[capacity_management][reserved_concurrency]", configuration.dig("capacity_management", "reserved_concurrency"), min: 0, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              </div>
+              <div>
+                <%= label_tag "enterprise_operations_capacity_management_queue_warning_threshold", "Queue warning threshold", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= number_field_tag "enterprise_operations[capacity_management][queue_warning_threshold]", configuration.dig("capacity_management", "queue_warning_threshold"), min: 0, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              </div>
+              <div>
+                <%= label_tag "enterprise_operations_capacity_management_queue_critical_threshold", "Queue critical threshold", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= number_field_tag "enterprise_operations[capacity_management][queue_critical_threshold]", configuration.dig("capacity_management", "queue_critical_threshold"), min: 0, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              </div>
+              <div>
+                <%= label_tag "enterprise_operations_capacity_management_monthly_budget_alert_percent", "Budget alert %", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= number_field_tag "enterprise_operations[capacity_management][monthly_budget_alert_percent]", configuration.dig("capacity_management", "monthly_budget_alert_percent"), min: 1, max: 100, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              </div>
+            </div>
+          </section>
+
+          <% if can_manage_operations %>
+            <div class="flex justify-end">
+              <%= submit_tag "Save operations settings", class: "rounded-full bg-gray-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-gray-700 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200" %>
+            </div>
+          <% end %>
+        <% end %>
+      </section>
+    </div>
+  </div>
+</div>

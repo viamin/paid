@@ -1,0 +1,167 @@
+<div id="<%= dom_id(project, :knowledge) %>" class="mt-8">
+  <div class="flex items-center justify-between">
+    <div class="flex items-center space-x-3">
+      <h2 class="text-lg font-medium text-gray-900">Knowledge Base</h2>
+      <% status = project.knowledge_status.to_s %>
+      <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium
+        <%= case status
+            when 'ready' then 'bg-green-100 text-green-700'
+            when 'collecting' then 'bg-blue-100 text-blue-700'
+            when 'failed' then 'bg-red-100 text-red-700'
+            when 'stale' then 'bg-yellow-100 text-yellow-700'
+            when 'pending' then 'bg-gray-100 text-gray-600'
+            else 'bg-gray-100 text-gray-500'
+            end %>">
+        <%= case status
+            when 'ready' then 'Ready'
+            when 'collecting' then 'Collecting'
+            when 'failed' then 'Failed'
+            when 'stale' then 'Stale'
+            when 'pending' then 'Pending'
+            else 'Unknown'
+            end %>
+      </span>
+    </div>
+    <div class="flex items-center space-x-3">
+      <% if policy(project).update? %>
+        <%= link_to "Business Context", project_context_intake_path(project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+        <%= link_to "Recommendations", project_knowledge_recommendations_path(project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+        <% if project.account.paid_plan? %>
+          <%= link_to "Import PDF", new_project_pdf_knowledge_import_path(project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+        <% end %>
+      <% end %>
+      <%= link_to "Browse", project_knowledge_browse_index_path(project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+      <%= link_to "Search", project_knowledge_search_path(project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+    </div>
+  </div>
+
+  <% if status == 'failed' %>
+    <div class="mt-3 rounded-md bg-red-50 px-4 py-3" role="alert">
+      <div class="flex">
+        <svg class="h-5 w-5 flex-shrink-0 text-red-400" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+          <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd" />
+        </svg>
+        <div class="ml-3">
+          <h3 class="text-sm font-medium text-red-800">Knowledge collection failed</h3>
+          <% if failed_collector_runs.any? %>
+            <div class="mt-2 text-sm text-red-700">
+              <ul class="list-disc space-y-1 pl-5">
+                <% failed_collector_runs.each do |run| %>
+                  <li>
+                    <span class="font-medium"><%= run.collector_type %></span><% if run.error_message.present? %>: <%= truncate(redacted_error_message(run.error_message), length: 200) %><% end %>
+                  </li>
+                <% end %>
+              </ul>
+            </div>
+          <% else %>
+            <p class="mt-1 text-sm text-red-700">
+              The collection job failed, but no collector-level error details are available for the latest run.
+              Check the application logs for more information.
+            </p>
+          <% end %>
+        </div>
+      </div>
+    </div>
+  <% end %>
+
+  <% if artifact_counts.any? %>
+    <div class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+      <% artifact_counts.each do |artifact_type, count| %>
+        <%= link_to project_knowledge_browse_path(project, artifact_type),
+              class: "group rounded-lg bg-white px-4 py-3 shadow hover:shadow-md transition-shadow" do %>
+          <p class="text-xs font-medium text-gray-500 group-hover:text-indigo-600"><%= artifact_type.titleize.pluralize %></p>
+          <p class="mt-1 text-lg font-semibold text-gray-900"><%= number_with_delimiter(count) %></p>
+        <% end %>
+      <% end %>
+    </div>
+  <% elsif status != 'failed' %>
+    <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+      <div class="px-4 py-5 text-center text-sm text-gray-500">
+        <% if status == 'pending' %>
+          Knowledge collection has not started yet. It will begin automatically.
+        <% elsif status == 'collecting' %>
+          Knowledge is currently being collected. Check back shortly.
+        <% else %>
+          No knowledge artifacts have been indexed for this project yet.
+        <% end %>
+      </div>
+    </div>
+  <% end %>
+
+  <% if collector_runs.any? %>
+    <details class="mt-4">
+      <summary class="cursor-pointer text-sm font-medium text-gray-500 hover:text-gray-700">
+        Collector Runs (<%= collector_runs.size %>)
+      </summary>
+      <div class="mt-2 overflow-hidden overflow-x-auto rounded-lg bg-white shadow">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Type</th>
+              <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Version</th>
+              <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Duration</th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Artifacts</th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">When</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-200 bg-white">
+            <% collector_runs.each do |run| %>
+              <tr>
+                <td class="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900">
+                  <%= run.collector_type %>
+                </td>
+                <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500">
+                  <code class="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs"><%= run.project_version.commit_sha.first(7) %></code>
+                </td>
+                <td class="whitespace-nowrap px-4 py-3 text-sm">
+                  <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium
+                    <%= case run.status.to_s
+                        when 'completed' then 'bg-green-100 text-green-700'
+                        when 'failed' then 'bg-red-100 text-red-700'
+                        when 'running' then 'bg-blue-100 text-blue-700'
+                        when 'pending' then 'bg-gray-100 text-gray-600'
+                        when 'stale' then 'bg-yellow-100 text-yellow-700'
+                        when 'skipped' then 'bg-orange-100 text-orange-700'
+                        else 'bg-gray-100 text-gray-500'
+                        end %>">
+                    <%= run.status&.capitalize || "Unknown" %>
+                    <% if run.status == "skipped" && run.error_message.present? %>
+                      <span class="ml-1 text-xs font-normal text-orange-800">
+                        (Reason: <%= truncate(redacted_error_message(run.error_message), length: 120) %>)
+                      </span>
+                    <% end %>
+                  </span>
+                </td>
+                <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right">
+                  <% if run.duration_ms %>
+                    <%= format("%.1fs", run.duration_ms / 1000.0) %>
+                  <% else %>
+                    --
+                  <% end %>
+                </td>
+                <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right">
+                  <%= run.artifacts_count || 0 %>
+                </td>
+                <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right">
+                  <% if run.completed_at %>
+                    <%= time_ago_in_words(run.completed_at) %> ago
+                  <% elsif run.created_at %>
+                    <%= time_ago_in_words(run.created_at) %> ago
+                  <% end %>
+                </td>
+              </tr>
+              <% if run.status == "failed" && run.error_message.present? %>
+                <tr class="bg-red-50">
+                  <td colspan="6" class="px-4 py-2 text-xs text-red-700">
+                    <span class="font-medium">Error:</span> <%= truncate(redacted_error_message(run.error_message), length: 300) %>
+                  </td>
+                </tr>
+              <% end %>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    </details>
+  <% end %>
+</div>

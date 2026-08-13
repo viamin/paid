@@ -1,0 +1,25 @@
+<% renders_tool_call = message.tool_name.present? || message.role == "tool" %>
+<article class="<%= chat_message_bubble_classes(message) %>"
+         data-controller="chat-message"
+         data-chat-message-role-value="<%= message.role %>"
+         data-chat-message-markdown-value="<%= message.role == 'assistant' && message.content.present? %>"
+         data-message-id="<%= message.id %>">
+  <% unless renders_tool_call %>
+    <div class="<%= chat_message_meta_classes(message) %>">
+      <span class="text-xs font-medium <%= message.role == 'user' ? 'text-gray-200' : 'text-gray-500' %>"><%= chat_message_label(message) %></span>
+      <span class="text-xs <%= message.role == 'user' ? 'text-gray-400' : 'text-gray-400' %>"><%= local_time(message.created_at, format: :relative) %></span>
+    </div>
+  <% end %>
+
+  <% if renders_tool_call %>
+    <%= render "chat_messages/tool_call", message: message %>
+  <% elsif message.role == "assistant" %>
+    <div class="chat-markdown"
+         data-chat-message-target="content"
+         data-raw-content="<%= message.content.to_s %>">
+      <%= simple_format(h(message.content.to_s)) %>
+    </div>
+  <% else %>
+    <div class="whitespace-pre-wrap break-words leading-6"><%= message.content.to_s %></div>
+  <% end %>
+</article>

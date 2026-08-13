@@ -1,0 +1,361 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe Knowledge::DashboardStats do
+  let(:account) { create(:account) }
+  let(:project) { create(:project, account: account) }
+
+  around do |example|
+    original_cache = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    Rails.cache.clear
+    example.run
+  ensure
+    Rails.cache = original_cache
+  end
+
+  describe ".call" do
+    subject(:stats) { described_class.call(account: account) }
+
+    context "with no knowledge data" do
+      before { project } # ensure project exists
+
+      it "returns zero counts" do
+        expect(stats[:projects_indexed]).to eq(0)
+        expect(stats[:projects_total]).to eq(1)
+        expect(stats[:total_artifacts]).to eq(0)
+        expect(stats[:stale_artifacts]).to eq(0)
+        expect(stats[:stale_percent]).to eq(0)
+        expect(stats[:artifacts_by_type]).to be_empty
+        expect(stats[:last_collection_at]).to be_nil
+        expect(stats[:operational_status]).to eq("healthy")
+        expect(stats[:provider_health][:embedding_available]).to be true
+        expect(stats[:provider_health][:chat_available]).to be true
+      end
+    end
+
+    context "with unavailable runner states" do
+      let(:owner) { create(:user, account: account) }
+      let(:project) do
+        create(:project,
+          account: account,
+          created_by: owner,
+          github_token: create(:github_token, account: account, created_by: owner))
+      end
+
+      before do
+        project
+        create(:runner_state, :rate_limited, user: owner, runner_name: owner.settings.kb_embedding_runner)
+        create(:runner_state, :circuit_open, user: owner, runner_name: owner.settings.kb_chat_runner)
+      end
+
+      it "reports runner health and degraded operational status" do
+        embedding = stats[:provider_health][:embedding].first
+        chat = stats[:provider_health][:chat].first
+
+        expect(embedding[:runner]).to eq(owner.settings.kb_embedding_runner)
+        expect(embedding[:available]).to be false
+        expect(embedding[:rate_limited]).to be true
+
+        expect(chat[:runner]).to eq(owner.settings.kb_chat_runner)
+        expect(chat[:available]).to be false
+        expect(chat[:circuit_state]).to eq("open")
+
+        expect(stats[:operational_status]).to eq("unavailable")
+      end
+
+      it "checks circuit recovery once per configured runner state" do
+        dashboard = described_class.new(account: account)
+        allow(dashboard).to receive(:runner_status).and_call_original
+
+        dashboard.call
+
+        expect(dashboard).to have_received(:runner_status).twice
+      end
+
+      it "does not report an expired rate limit as active" do
+        expired_time = 2.minutes.ago
+        owner.runner_states.find_by!(runner_name: owner.settings.kb_embedding_runner)
+          .update!(rate_limited_until: expired_time)
+
+        embedding = stats[:provider_health][:embedding].first
+
+        expect(embedding[:rate_limited]).to be(false)
+        expect(embedding[:rate_limited_until]).to be_within(1.second).of(expired_time)
+      end
+    end
+
+    context "with knowledge artifacts" do
+      let(:version) { create(:project_version, project: project) }
+      let(:run) { create(:collector_run, :completed, project_version: version) }
+
+      before do
+        create_list(:knowledge_artifact, 3, collector_run: run, project: project, artifact_type: "route")
+        create_list(:knowledge_artifact, 2, collector_run: run, project: project, artifact_type: "dependency")
+        create(:knowledge_artifact, :stale, collector_run: run, project: project, artifact_type: "route")
+      end
+
+      it "returns correct artifact counts" do
+        expect(stats[:projects_indexed]).to eq(1)
+        expect(stats[:total_artifacts]).to eq(5)
+        expect(stats[:stale_artifacts]).to eq(1)
+      end
+
+      it "calculates stale percentage" do
+        expect(stats[:stale_percent]).to eq(17)
+      end
+
+      it "returns artifacts by type sorted by count" do
+        by_type = stats[:artifacts_by_type].to_h
+        expect(by_type["route"]).to eq(3)
+        expect(by_type["dependency"]).to eq(2)
+      end
+
+      it "returns last collection time" do
+        expect(stats[:last_collection_at]).to be_within(1.second).of(run.completed_at)
+      end
+    end
+
+    context "with knowledge runs for token usage" do
+      before do
+        create(:knowledge_run, project: project, operation_type: "embedding", total_tokens: 500, status: "completed")
+        create(:knowledge_run, project: project, operation_type: "embedding", total_tokens: 300, status: "completed")
+        create(:knowledge_run, project: project, operation_type: "decision_drafting", total_tokens: 1200, status: "completed")
+      end
+
+      it "returns token usage grouped by operation type" do
+        summary = stats[:token_usage_summary]
+        embedding = summary.find { |s| s[:operation_type] == "embedding" }
+        drafting = summary.find { |s| s[:operation_type] == "decision_drafting" }
+
+        expect(embedding[:total_tokens]).to eq(800)
+        expect(embedding[:run_count]).to eq(2)
+        expect(drafting[:total_tokens]).to eq(1200)
+        expect(drafting[:run_count]).to eq(1)
+      end
+
+      it "excludes runs from other accounts" do
+        other_account = create(:account)
+        other_project = create(:project, account: other_account)
+        create(:knowledge_run, project: other_project, operation_type: "embedding", total_tokens: 9999)
+
+        summary = stats[:token_usage_summary]
+        total = summary.sum { |s| s[:total_tokens] }
+        expect(total).to eq(2000)
+      end
+    end
+
+    context "with pipeline metrics" do
+      before do
+        create(:knowledge_run, :completed,
+          project: project,
+          operation_type: "embedding",
+          final_runner: "openai",
+          created_at: 20.minutes.ago,
+          updated_at: 10.minutes.ago)
+        create(:knowledge_run, :failed,
+          project: project,
+          operation_type: "embedding",
+          runner_attempts: [ { "runner" => "azure_openai" } ],
+          created_at: 9.minutes.ago,
+          updated_at: 5.minutes.ago)
+        create(:knowledge_run, :completed, :decision_drafting,
+          project: project,
+          final_runner: "claude",
+          created_at: 7.minutes.ago,
+          updated_at: 4.minutes.ago)
+      end
+
+      it "summarizes success rate, latency, and runner distribution by operation" do
+        embedding = stats[:pipeline_metrics]["embedding"]
+        drafting = stats[:pipeline_metrics]["decision_drafting"]
+
+        expect(embedding[:total_runs]).to eq(2)
+        expect(embedding[:successful_runs]).to eq(1)
+        expect(embedding[:failed_runs]).to eq(1)
+        expect(embedding[:success_rate]).to eq(50.0)
+        expect(embedding[:avg_duration_seconds]).to eq(420.0)
+        expect(embedding[:runner_distribution]).to contain_exactly(
+          hash_including(runner: "azure_openai", run_count: 1, success_rate: 0.0, avg_duration_seconds: 240.0),
+          hash_including(runner: "openai", run_count: 1, success_rate: 100.0, avg_duration_seconds: 600.0)
+        )
+
+        expect(drafting[:total_runs]).to eq(1)
+        expect(drafting[:success_rate]).to eq(100.0)
+        expect(drafting[:runner_distribution]).to contain_exactly(
+          hash_including(runner: "claude", run_count: 1, success_rate: 100.0)
+        )
+      end
+
+      it "falls back to unknown when a run has no recorded runner" do
+        create(:knowledge_run, :failed,
+          project: project,
+          operation_type: "embedding",
+          final_runner: nil,
+          runner_attempts: [],
+          created_at: 6.minutes.ago,
+          updated_at: 3.minutes.ago)
+
+        distribution = stats[:pipeline_metrics]["embedding"][:runner_distribution]
+
+        expect(distribution).to include(
+          hash_including(runner: "unknown", run_count: 1, success_rate: 0.0)
+        )
+      end
+
+      context "when unfinished runs exist in the lookback window" do
+        before do
+          create(:knowledge_run, :running,
+            project: project,
+            operation_type: "embedding",
+            final_runner: "openai",
+            created_at: 5.minutes.ago,
+            updated_at: 1.minute.ago)
+          create(:knowledge_run,
+            project: project,
+            operation_type: "decision_drafting",
+            status: "pending",
+            final_runner: "claude",
+            created_at: 4.minutes.ago,
+            updated_at: 2.minutes.ago)
+        end
+
+        it "excludes unfinished runs from pipeline totals and rates" do
+          embedding = stats[:pipeline_metrics]["embedding"]
+          drafting = stats[:pipeline_metrics]["decision_drafting"]
+
+          expect(embedding[:total_runs]).to eq(2)
+          expect(embedding[:finished_runs]).to eq(2)
+          expect(embedding[:successful_runs]).to eq(1)
+          expect(embedding[:failed_runs]).to eq(1)
+          expect(embedding[:success_rate]).to eq(50.0)
+
+          expect(drafting[:total_runs]).to eq(1)
+          expect(drafting[:finished_runs]).to eq(1)
+          expect(drafting[:successful_runs]).to eq(1)
+          expect(drafting[:success_rate]).to eq(100.0)
+        end
+
+        it "excludes unfinished runs from runner distribution counts" do
+          distribution = stats[:pipeline_metrics]["embedding"][:runner_distribution]
+
+          expect(distribution).to contain_exactly(
+            hash_including(runner: "azure_openai", run_count: 1, success_rate: 0.0),
+            hash_including(runner: "openai", run_count: 1, success_rate: 100.0)
+          )
+        end
+      end
+    end
+
+    context "with no knowledge runs" do
+      it "returns empty token usage summary" do
+        expect(stats[:token_usage_summary]).to be_empty
+      end
+
+      it "returns empty pipeline metrics" do
+        expect(stats[:pipeline_metrics]["embedding"]).to include(total_runs: 0, success_rate: 0.0)
+        expect(stats[:pipeline_metrics]["decision_drafting"]).to include(total_runs: 0, success_rate: 0.0)
+      end
+
+      it "reuses cached pipeline metrics until the cache entry expires" do
+        first_dashboard = described_class.new(account: account)
+        second_dashboard = described_class.new(account: account)
+
+        allow(first_dashboard).to receive(:build_pipeline_metrics).and_call_original
+        allow(second_dashboard).to receive(:build_pipeline_metrics).and_call_original
+
+        expect(first_dashboard.call[:pipeline_metrics]["embedding"][:total_runs]).to eq(0)
+
+        create(:knowledge_run, :completed,
+          project: project,
+          operation_type: "embedding",
+          final_runner: "openai")
+
+        expect(second_dashboard.call[:pipeline_metrics]["embedding"][:total_runs]).to eq(0)
+        expect(first_dashboard).to have_received(:build_pipeline_metrics).once
+        expect(second_dashboard).not_to have_received(:build_pipeline_metrics)
+      end
+    end
+
+    context "with knowledge usage stats" do
+      before do
+        run = create(:agent_run, project: project, goal: "create_pr")
+        create(:knowledge_usage_stat, agent_run: run, project: project, artifact_type: "route", artifact_count: 10)
+        create(:knowledge_usage_stat, agent_run: run, project: project, artifact_type: "dependency", artifact_count: 5, context_type: "search")
+      end
+
+      it "returns knowledge usage summary grouped by artifact type" do
+        summary = stats[:knowledge_usage_summary].to_h
+        expect(summary["route"]).to eq(10)
+        expect(summary["dependency"]).to eq(5)
+      end
+
+      it "returns usage by goal" do
+        by_goal = stats[:usage_by_goal].to_h
+        expect(by_goal["create_pr"]).to eq(15)
+      end
+
+      it "excludes usage from other accounts" do
+        other_account = create(:account)
+        other_project = create(:project, account: other_account)
+        other_run = create(:agent_run, project: other_project)
+        create(:knowledge_usage_stat, agent_run: other_run, project: other_project, artifact_type: "route", artifact_count: 999)
+
+        summary = stats[:knowledge_usage_summary].to_h
+        expect(summary["route"]).to eq(10)
+      end
+    end
+
+    context "with no knowledge usage stats" do
+      it "returns empty knowledge usage summary" do
+        expect(stats[:knowledge_usage_summary]).to be_empty
+      end
+
+      it "returns empty usage by goal" do
+        expect(stats[:usage_by_goal]).to be_empty
+      end
+    end
+
+    context "with caching" do
+      let(:version) { create(:project_version, project: project) }
+      let(:run) { create(:collector_run, :completed, project_version: version) }
+
+      it "returns fresh artifact counts on each call (no outer cache)" do
+        first = described_class.call(account: account)
+        create(:knowledge_artifact, collector_run: run, project: project, artifact_type: "route")
+
+        refreshed = described_class.call(account: account)
+
+        expect(first[:total_artifacts]).to eq(0)
+        expect(refreshed[:total_artifacts]).to eq(1)
+      end
+    end
+
+    context "with multiple projects" do
+      let(:project2) { create(:project, account: account) }
+      let(:other_account) { create(:account) }
+      let(:other_project) { create(:project, account: other_account) }
+
+      before do
+        version1 = create(:project_version, project: project)
+        run1 = create(:collector_run, :completed, project_version: version1)
+        create(:knowledge_artifact, collector_run: run1, project: project)
+
+        # project2 has no artifacts — should not be counted as indexed
+        create(:project_version, project: project2)
+
+        # other_account artifacts should not be counted
+        other_version = create(:project_version, project: other_project)
+        other_run = create(:collector_run, :completed, project_version: other_version)
+        create(:knowledge_artifact, collector_run: other_run, project: other_project)
+      end
+
+      it "counts only projects in the account" do
+        expect(stats[:projects_total]).to eq(2)
+        expect(stats[:projects_indexed]).to eq(1)
+        expect(stats[:total_artifacts]).to eq(1)
+      end
+    end
+  end
+end

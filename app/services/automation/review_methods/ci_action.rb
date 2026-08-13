@@ -1,0 +1,49 @@
+# frozen_string_literal: true
+
+module Automation
+  module ReviewMethods
+    # CI-action-based review — delegates review responsibilities to a
+    # GitHub Action (e.g. +Claude Code Review+). Paid dispatches the
+    # action via +repository_dispatch+ and waits for the configured
+    # +action_name+ check run to conclude +success+.
+    #
+    # Like {Manual}, a ci_action pending outcome blocks PR progress when
+    # +wait_for_reviews+ is enabled. When the action has not been dispatched
+    # yet, the plugin emits an {Automation::Decision.dispatch_claude_review}
+    # decision so workflow orchestration stays thin and executes the same
+    # dispatch path explicitly.
+    class CiAction < Base
+      TRIGGER_TYPE = "ci_action_pending"
+
+      def kind = :ci
+
+      def blocking_by_default?
+        config.wait_for_reviews?
+      end
+
+      def evaluate
+        pending = signals.trigger(TRIGGER_TYPE)
+        if pending
+          return outcome_pending(
+            blocking: blocking_by_default?,
+            message: "ci_action review pending",
+            metadata: {
+              action_name: method.action_name,
+              dispatch_required: pending[:dispatch_required] == true
+            }.compact
+          )
+        end
+
+        return outcome_not_applicable unless config.method_enabled?(:ci_action)
+
+        outcome_satisfied
+      end
+
+      def decision
+        return nil unless signals.trigger(TRIGGER_TYPE)&.dig(:dispatch_required)
+
+        Automation::Decision.dispatch_claude_review(pr_number: signals.pr_number)
+      end
+    end
+  end
+end

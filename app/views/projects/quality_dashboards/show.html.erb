@@ -1,0 +1,655 @@
+<% content_for(:title) { "Quality Metrics - #{@project.name} - Paid" } %>
+
+<div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to back_link_path(project_path(@project)), class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+      <svg class="mr-1 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd" />
+      </svg>
+      Back to <%= @project.name %>
+    <% end %>
+  </div>
+
+  <div class="sm:flex sm:items-center sm:justify-between">
+    <div>
+      <h1 class="text-2xl font-semibold text-gray-900">Quality Metrics</h1>
+      <p class="mt-1 text-sm text-gray-500"><%= @project.name %></p>
+    </div>
+    <div class="mt-4 sm:mt-0">
+      <%= link_to export_project_quality_dashboard_path(@project, format: :csv),
+            class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" do %>
+        <svg class="-ml-0.5 mr-1.5 h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+        </svg>
+        Export CSV
+      <% end %>
+    </div>
+  </div>
+
+  <div class="mt-8 overflow-hidden rounded-lg bg-white shadow">
+    <div class="px-4 py-5 sm:p-6">
+      <div class="sm:flex sm:items-center sm:justify-between">
+        <div>
+          <h2 class="text-lg font-semibold text-gray-900">Quality Thresholds</h2>
+          <p class="mt-1 text-sm text-gray-500">Minimum rolling averages that pause automatic runs when quality drops.</p>
+        </div>
+      </div>
+
+      <%= form_with url: project_quality_thresholds_path(@project), method: :patch, class: "mt-4" do %>
+        <div class="overflow-x-auto">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead>
+              <tr>
+                <th scope="col" class="py-3.5 pl-4 pr-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 sm:pl-0">Goal</th>
+                <th scope="col" class="px-3 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Metric</th>
+                <th scope="col" class="px-3 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Minimum</th>
+                <th scope="col" class="px-3 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Project Override</th>
+                <th scope="col" class="px-3 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Enabled</th>
+                <th scope="col" class="px-3 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Source</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+              <% @quality_thresholds.each_with_index do |threshold, index| %>
+                <tr>
+                  <td class="whitespace-nowrap py-3 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-0">
+                    <%= threshold.goal_type.humanize %>
+                    <input type="hidden" name="quality_thresholds[<%= index %>][goal_type]" value="<%= threshold.goal_type %>">
+                    <input type="hidden" name="quality_thresholds[<%= index %>][metric_type]" value="<%= threshold.metric_type %>">
+                  </td>
+                  <td class="whitespace-nowrap px-3 py-3 text-sm text-gray-700"><%= QualityThreshold.metric_label(threshold.metric_type) %></td>
+                  <td class="whitespace-nowrap px-3 py-3">
+                    <input type="number" name="quality_thresholds[<%= index %>][min_value]"
+                      value="<%= format('%.2f', threshold.min_value) %>" min="0" max="1" step="0.01" autocomplete="off"
+                      class="block w-24 rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
+                  </td>
+                  <td class="whitespace-nowrap px-3 py-3">
+                    <input type="hidden" name="quality_thresholds[<%= index %>][override]" value="0">
+                    <input type="checkbox" name="quality_thresholds[<%= index %>][override]" value="1"
+                      <% unless threshold.inherited? %>checked<% end %>
+                      class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600">
+                  </td>
+                  <td class="whitespace-nowrap px-3 py-3">
+                    <input type="hidden" name="quality_thresholds[<%= index %>][enabled]" value="0">
+                    <input type="checkbox" name="quality_thresholds[<%= index %>][enabled]" value="1"
+                      <% if threshold.enabled? %>checked<% end %>
+                      class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600">
+                  </td>
+                  <td class="whitespace-nowrap px-3 py-3 text-sm text-gray-500"><%= threshold.source_scope.humanize %></td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+        <div class="mt-4 flex justify-end">
+          <button type="submit" class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
+            Save thresholds
+          </button>
+        </div>
+      <% end %>
+    </div>
+  </div>
+
+  <% if @stats[:mutation_testing] %>
+    <% mutation_testing = @stats[:mutation_testing] %>
+    <div class="mt-8">
+      <h2 class="text-lg font-semibold text-gray-900">Mutation kill-rate</h2>
+      <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">Current sweep score</dt>
+          <% if mutation_testing[:current_sweep_score] %>
+            <dd class="mt-1 text-3xl font-semibold tracking-tight <%= quality_score_color(mutation_testing[:current_sweep_score]) %>">
+              <%= format_quality_score(mutation_testing[:current_sweep_score]) %>
+            </dd>
+            <p class="mt-2 text-sm text-gray-500">
+              Last sweep <%= time_ago_in_words(mutation_testing[:current_sweep_at]) %> ago
+            </p>
+          <% else %>
+            <dd class="mt-2 text-sm text-gray-500">No scheduled sweep recorded yet.</dd>
+          <% end %>
+        </div>
+
+        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6 lg:col-span-2">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <h3 class="text-sm font-medium text-gray-500">30-day sweep trend</h3>
+              <p class="mt-1 text-sm text-gray-500">Nightly full-suite scores against <%= @project.default_branch %>.</p>
+            </div>
+          </div>
+          <div class="mt-4">
+            <% if mutation_testing[:trend_sparkline].any? %>
+              <%= line_chart mutation_testing[:trend_sparkline],
+                  id: "mutation-sweep-sparkline",
+                  height: "120px",
+                  colors: ["#0f766e"],
+                  points: false,
+                  library: {
+                    plugins: { legend: { display: false } },
+                    scales: {
+                      x: { display: false },
+                      y: { display: false, min: 0, max: 1 }
+                    }
+                  } %>
+            <% else %>
+              <p class="text-sm text-gray-500">No sweep trend available yet.</p>
+            <% end %>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+        <div class="px-4 py-5 sm:p-6">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <h3 class="text-sm font-medium text-gray-500">Per-agent-run distribution</h3>
+              <p class="mt-1 text-sm text-gray-500">Last 100 in-loop mutation kill-rate scores.</p>
+            </div>
+          </div>
+          <div class="mt-4">
+            <%= column_chart mutation_testing[:run_histogram],
+                id: "mutation-run-histogram",
+                height: "220px",
+                colors: ["#0f766e"],
+                library: {
+                  plugins: { legend: { display: false } },
+                  scales: {
+                    y: { beginAtZero: true, ticks: { precision: 0 } }
+                  }
+                } %>
+          </div>
+        </div>
+      </div>
+    </div>
+  <% end %>
+
+  <% overview = @stats[:overview] %>
+  <% if overview[:total_metrics] > 0 %>
+
+    <%# Gate Status Alert %>
+    <% gate = @stats[:gate_status] %>
+    <% if gate[:active_breaches] > 0 %>
+      <div class="mt-6 rounded-md bg-red-50 p-4">
+        <div class="flex">
+          <div class="flex-shrink-0">
+            <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd" />
+            </svg>
+          </div>
+          <div class="ml-3">
+            <h3 class="text-sm font-medium text-red-800">
+              <%= pluralize(gate[:active_breaches], "quality gate") %> currently breached
+            </h3>
+          </div>
+        </div>
+      </div>
+    <% end %>
+
+    <%# Overview Cards %>
+    <div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-500">Average Score</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight <%= quality_score_color(overview[:average_score]) %>">
+          <%= format_quality_score(overview[:average_score]) %>
+        </dd>
+      </div>
+      <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-500">Total Metrics</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+          <%= overview[:total_metrics] %>
+        </dd>
+      </div>
+      <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-500">Score Range</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+          <%= format_quality_score(overview[:min_score]) %> - <%= format_quality_score(overview[:max_score]) %>
+        </dd>
+      </div>
+      <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-500">Metric Types</dt>
+        <dd class="mt-1 text-sm text-gray-900">
+          <span class="inline-flex items-center rounded-md bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700">
+            Automated: <%= overview[:automated_count] %>
+          </span>
+          <span class="ml-1 inline-flex items-center rounded-md bg-purple-100 px-2 py-1 text-xs font-medium text-purple-700">
+            Human: <%= overview[:human_count] %>
+          </span>
+        </dd>
+      </div>
+    </div>
+
+    <%# Quality Gate Alerts %>
+    <% if @quality_gate_settings["enabled"] %>
+      <div class="mt-8">
+        <h2 class="text-lg font-semibold text-gray-900">Quality Gate Alerts</h2>
+        <% if @quality_alerts.any? %>
+          <div class="mt-4 space-y-3">
+            <% @quality_alerts.each do |alert| %>
+              <div class="overflow-hidden rounded-lg bg-white shadow">
+                <div class="px-4 py-4 sm:px-6">
+                  <div class="flex items-start justify-between">
+                    <div class="flex items-center gap-2">
+                      <% if alert.error? %>
+                        <span class="inline-flex h-2 w-2 rounded-full bg-red-500"></span>
+                      <% elsif alert.warning? %>
+                        <span class="inline-flex h-2 w-2 rounded-full bg-yellow-500"></span>
+                      <% else %>
+                        <span class="inline-flex h-2 w-2 rounded-full bg-blue-500"></span>
+                      <% end %>
+                      <span class="text-sm font-medium text-gray-900"><%= alert.title %></span>
+                    </div>
+                    <span class="text-xs text-gray-400"><%= time_ago_in_words(alert.created_at) %> ago</span>
+                  </div>
+                  <% if alert.description.present? %>
+                    <p class="mt-1 text-sm text-gray-600"><%= alert.description %></p>
+                  <% end %>
+                  <% if alert.metadata.is_a?(Hash) %>
+                    <% breaches = alert.metadata["breaches"] || [] %>
+                    <% if breaches.any? %>
+                      <div class="mt-2 space-y-1">
+                        <% breaches.each do |breach| %>
+                          <div class="flex items-center gap-2 text-xs">
+                            <span class="font-medium text-gray-700"><%= breach["metric"]&.titleize %></span>
+                            <span class="text-red-600"><%= format("%.1f%%", (breach["current"] || 0) * 100) %></span>
+                            <span class="text-gray-400">/</span>
+                            <span class="text-gray-500">threshold: <%= format("%.1f%%", (breach["threshold"] || 0) * 100) %></span>
+                          </div>
+                        <% end %>
+                      </div>
+                    <% end %>
+                    <% actions = alert.metadata["remediation_actions"] || [] %>
+                    <% if actions.any? %>
+                      <div class="mt-3">
+                        <p class="text-xs font-medium text-gray-500">Recommended actions:</p>
+                        <ul class="mt-1 list-inside list-disc text-xs text-gray-600">
+                          <% actions.each do |action| %>
+                            <li><%= action %></li>
+                          <% end %>
+                        </ul>
+                      </div>
+                    <% end %>
+                  <% end %>
+                  <% if alert.resolved_at.present? %>
+                    <div class="mt-2">
+                      <span class="inline-flex items-center rounded-md bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Resolved</span>
+                    </div>
+                  <% end %>
+                </div>
+              </div>
+            <% end %>
+          </div>
+        <% else %>
+          <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+            <div class="px-4 py-5 text-sm text-gray-500">No quality gate alerts. Thresholds are being monitored.</div>
+          </div>
+        <% end %>
+      </div>
+    <% end %>
+
+    <%# Quality Trends with Threshold Overlays %>
+    <div class="mt-8">
+      <h2 class="text-lg font-semibold text-gray-900">Quality Trends</h2>
+      <% trends = @stats[:trends] %>
+      <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+        <% if trends.any? %>
+
+          <div class="px-4 py-5 sm:p-6">
+            <% max_score = [trends.map { |t| t[:score] }.max, 0.01].max %>
+            <% composite_thresholds = gate[:thresholds].select { |t| t[:metric_key] == "composite_score" } %>
+            <div class="relative">
+              <div class="flex items-end gap-1" style="height: 120px;" role="img" aria-label="Quality score trend chart with threshold overlays">
+                <% trends.each_with_index do |point, idx| %>
+                  <% height_pct = (point[:score] / max_score * 100).round %>
+                  <%# Check if this point has a gate event %>
+                  <% point_events = gate[:recent_events].select { |e| e[:created_at].to_date.iso8601 == point[:date] } %>
+                  <div class="group relative flex-1" style="min-width: 4px;">
+                    <div class="w-full rounded-t <%= point[:metric_type] == 'human' ? 'bg-purple-400' : 'bg-indigo-400' %> <%= point_events.any? { |e| e[:event_type] == 'trigger' } ? 'ring-2 ring-red-500' : '' %> <%= point_events.any? { |e| e[:event_type] == 'recovery' } ? 'ring-2 ring-green-500' : '' %>"
+                         style="height: <%= height_pct %>%;"
+                         title="<%= point[:date] %>: <%= format('%.1f%%', point[:score] * 100) %> (<%= point[:metric_type] %><%= point_events.any? ? ', ' + point_events.map { |e| e[:event_type] }.join('/') : '' %>)">
+                    </div>
+                    <% if point_events.any? { |e| e[:event_type] == "trigger" } %>
+                      <div class="absolute -top-1 left-1/2 h-2 w-2 -translate-x-1/2 rounded-full bg-red-500" title="Gate triggered"></div>
+                    <% end %>
+                    <% if point_events.any? { |e| e[:event_type] == "recovery" } %>
+                      <div class="absolute -top-1 left-1/2 h-2 w-2 -translate-x-1/2 rounded-full bg-green-500" title="Gate recovered"></div>
+                    <% end %>
+                  </div>
+                <% end %>
+              </div>
+
+              <%# Threshold overlay lines %>
+              <% composite_thresholds.each do |threshold| %>
+                <% if threshold[:min_threshold] %>
+                  <% line_pct = (threshold[:min_threshold] / max_score * 100).clamp(0, 100).round %>
+                  <div class="pointer-events-none absolute left-0 right-0 border-t-2 border-dashed <%= threshold[:severity] == 'critical' ? 'border-red-400' : 'border-yellow-400' %>"
+                       style="bottom: <%= line_pct %>%;"
+                       title="Min threshold: <%= format('%.1f%%', threshold[:min_threshold] * 100) %> (<%= threshold[:severity] %>)">
+                    <span class="absolute -top-4 right-0 text-xs <%= threshold[:severity] == 'critical' ? 'text-red-500' : 'text-yellow-500' %>">
+                      <%= format('%.0f%%', threshold[:min_threshold] * 100) %>
+                    </span>
+                  </div>
+                <% end %>
+              <% end %>
+            </div>
+
+            <div class="mt-2 flex justify-between text-xs text-gray-400">
+              <% if trends.any? %>
+                <span><%= trends.first[:date] %></span>
+                <span><%= trends.last[:date] %></span>
+              <% end %>
+            </div>
+            <div class="mt-2 flex flex-wrap gap-4 text-xs text-gray-500">
+              <div class="flex items-center gap-1">
+                <div class="h-2 w-2 rounded-full bg-indigo-400"></div>
+                Automated
+              </div>
+              <div class="flex items-center gap-1">
+                <div class="h-2 w-2 rounded-full bg-purple-400"></div>
+                Human
+              </div>
+              <% if composite_thresholds.any? %>
+                <div class="flex items-center gap-1">
+                  <div class="h-0.5 w-4 border-t-2 border-dashed border-yellow-400"></div>
+                  Warning Threshold
+                </div>
+                <div class="flex items-center gap-1">
+                  <div class="h-0.5 w-4 border-t-2 border-dashed border-red-400"></div>
+                  Critical Threshold
+                </div>
+              <% end %>
+              <div class="flex items-center gap-1">
+                <div class="h-2 w-2 rounded-full bg-red-500"></div>
+                Gate Trigger
+              </div>
+              <div class="flex items-center gap-1">
+                <div class="h-2 w-2 rounded-full bg-green-500"></div>
+                Recovery
+              </div>
+            </div>
+          </div>
+
+        <% else %>
+
+          <div class="px-4 py-5 text-sm text-gray-500">Not enough data for trend analysis.</div>
+
+        <% end %>
+      </div>
+    </div>
+
+    <%# Gate Events Timeline %>
+    <% if gate[:recent_events].any? %>
+      <div class="mt-8">
+        <h2 class="text-lg font-semibold text-gray-900">Gate Events</h2>
+        <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+          <div class="px-4 py-5 sm:p-6">
+            <div class="flow-root">
+              <ul role="list" class="-mb-8">
+                <% gate[:recent_events].first(10).each_with_index do |event, idx| %>
+                  <li>
+                    <div class="relative pb-8">
+                      <% unless idx == [gate[:recent_events].size, 10].min - 1 %>
+                        <span class="absolute left-4 top-4 -ml-px h-full w-0.5 bg-gray-200" aria-hidden="true"></span>
+                      <% end %>
+                      <div class="relative flex space-x-3">
+                        <div>
+                          <span class="flex h-8 w-8 items-center justify-center rounded-full <%= event[:event_type] == 'trigger' ? 'bg-red-100' : 'bg-green-100' %>">
+                            <% if event[:event_type] == "trigger" %>
+                              <svg class="h-4 w-4 text-red-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+                              </svg>
+                            <% else %>
+                              <svg class="h-4 w-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                              </svg>
+                            <% end %>
+                          </span>
+                        </div>
+                        <div class="flex min-w-0 flex-1 justify-between space-x-4 pt-1.5">
+                          <div>
+                            <p class="text-sm text-gray-500">
+                              <span class="font-medium <%= event[:event_type] == 'trigger' ? 'text-red-700' : 'text-green-700' %>">
+                                <%= event[:event_type].capitalize %>
+                              </span>
+                              on <span class="font-medium text-gray-900"><%= event[:metric_key].titleize %></span>
+                              <span class="text-gray-400">
+                                (score: <%= format('%.1f%%', event[:score_value] * 100) %>,
+                                threshold: <%= format('%.1f%%', event[:threshold_value] * 100) %>)
+                              </span>
+                            </p>
+                          </div>
+                          <div class="whitespace-nowrap text-right text-sm text-gray-500">
+                            <time datetime="<%= event[:created_at] %>"><%= Time.parse(event[:created_at]).strftime("%b %d, %H:%M") %></time>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </li>
+                <% end %>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    <% end %>
+
+    <%# Score Breakdown %>
+    <div class="mt-8">
+      <h2 class="text-lg font-semibold text-gray-900">Score Breakdown</h2>
+      <% breakdown = @stats[:breakdown] %>
+      <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+        <% if breakdown.any? %>
+
+          <div class="px-4 py-5 sm:p-6">
+            <div class="space-y-4">
+              <% breakdown.each do |key, avg_value| %>
+                <div>
+                  <div class="flex items-center justify-between text-sm">
+                    <span class="font-medium text-gray-700"><%= key.titleize %></span>
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs text-gray-400">Weight: <%= format("%.0f%%", QualityMetric::SCORE_WEIGHTS[key].to_f * 100) %></span>
+                      <span class="font-medium <%= quality_score_color(avg_value) %>"><%= format("%.0f%%", avg_value * 100) %></span>
+                    </div>
+                  </div>
+                  <div class="mt-1 h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                    <div class="h-2 rounded-full <%= quality_score_bar_color(avg_value) %>"
+                         style="width: <%= (avg_value * 100).round %>%"></div>
+                  </div>
+                </div>
+              <% end %>
+            </div>
+          </div>
+
+        <% else %>
+
+          <div class="px-4 py-5 text-sm text-gray-500">No automated metrics available for breakdown.</div>
+
+        <% end %>
+      </div>
+    </div>
+
+    <div class="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-2">
+      <%# Prompt Comparison %>
+      <div>
+        <h2 class="text-lg font-semibold text-gray-900">Prompt Effectiveness</h2>
+        <% prompts = @stats[:prompt_comparison] %>
+        <% if prompts.any? %>
+          <div class="mt-4 overflow-hidden overflow-x-auto rounded-lg bg-white shadow">
+            <table class="min-w-full divide-y divide-gray-200">
+              <thead class="bg-gray-50">
+                <tr>
+                  <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Prompt</th>
+                  <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Avg Score</th>
+                  <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Runs</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-200 bg-white">
+                <% prompts.each do |prompt_data| %>
+                  <tr>
+                    <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-900">
+                      <%= prompt_data[:prompt_name] %>
+                      <span class="text-gray-400">v<%= prompt_data[:version_number] %></span>
+                    </td>
+                    <td class="whitespace-nowrap px-4 py-3 text-right text-sm font-medium <%= quality_score_color(prompt_data[:avg_score]) %>">
+                      <%= format_quality_score(prompt_data[:avg_score]) %>
+                    </td>
+                    <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500">
+                      <%= prompt_data[:sample_size] %>
+                    </td>
+                  </tr>
+                <% end %>
+              </tbody>
+            </table>
+          </div>
+        <% else %>
+          <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+            <div class="px-4 py-5 text-sm text-gray-500">No prompt version data available yet.</div>
+          </div>
+        <% end %>
+      </div>
+
+      <%# Model/Provider Comparison %>
+      <div>
+        <h2 class="text-lg font-semibold text-gray-900">Model Comparison</h2>
+        <% models = @stats[:model_comparison] %>
+        <% if models.any? %>
+          <div class="mt-4 overflow-hidden overflow-x-auto rounded-lg bg-white shadow">
+            <table class="min-w-full divide-y divide-gray-200">
+              <thead class="bg-gray-50">
+                <tr>
+                  <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Provider</th>
+                  <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Avg Score</th>
+                  <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Runs</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-200 bg-white">
+                <% models.each do |model_data| %>
+                  <tr>
+                    <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-900">
+                      <%= model_data[:provider] %>
+                    </td>
+                    <td class="whitespace-nowrap px-4 py-3 text-right text-sm font-medium <%= quality_score_color(model_data[:avg_score]) %>">
+                      <%= format_quality_score(model_data[:avg_score]) %>
+                    </td>
+                    <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500">
+                      <%= model_data[:sample_size] %>
+                    </td>
+                  </tr>
+                <% end %>
+              </tbody>
+            </table>
+          </div>
+        <% else %>
+          <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+            <div class="px-4 py-5 text-sm text-gray-500">No model comparison data available yet.</div>
+          </div>
+        <% end %>
+      </div>
+    </div>
+
+    <%# Quality by Tier %>
+    <div class="mt-8">
+      <h2 class="text-lg font-semibold text-gray-900">Quality by Tier</h2>
+      <p class="mt-1 text-sm text-gray-500">Composite score breakdown by model tier, with escalation rates.</p>
+      <% tier_data = @stats[:tier_breakdown] %>
+      <% tiers_with_data = tier_data.select { |t| t[:run_count] > 0 } %>
+      <% if tiers_with_data.any? %>
+        <div class="mt-4 overflow-hidden overflow-x-auto rounded-lg bg-white shadow">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Tier</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Runs</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Avg Score</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Escalations</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Escalation Rate</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 bg-white">
+              <% tiers_with_data.each do |tier| %>
+                <tr>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm">
+                    <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium <%= tier_badge_classes(tier[:tier]) %>">
+                      <%= tier[:tier].titleize %>
+                    </span>
+                  </td>
+                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= tier[:run_count] %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm font-medium <%= quality_score_color(tier[:avg_score]) %>">
+                    <%= format_quality_score(tier[:avg_score]) %>
+                  </td>
+                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= tier[:escalation_count] %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500">
+                    <%= tier[:escalation_rate] ? "#{tier[:escalation_rate]}%" : "--" %>
+                  </td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      <% else %>
+        <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+          <div class="px-4 py-5 text-sm text-gray-500">No tier data available yet. Tier metrics appear after model selection is active.</div>
+        </div>
+      <% end %>
+    </div>
+
+    <%# Human Feedback %>
+    <div class="mt-8">
+      <h2 class="text-lg font-semibold text-gray-900">Human Feedback</h2>
+      <% feedback = @stats[:human_feedback] %>
+      <% if feedback[:total] > 0 %>
+        <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div class="overflow-hidden rounded-lg bg-white shadow">
+            <div class="px-4 py-5 sm:p-6">
+              <div class="grid grid-cols-2 gap-4">
+                <div>
+                  <dt class="text-sm font-medium text-gray-500">Feedback Count</dt>
+                  <dd class="mt-1 text-2xl font-semibold text-gray-900"><%= feedback[:total] %></dd>
+                </div>
+                <div>
+                  <dt class="text-sm font-medium text-gray-500">PR Merge Rate</dt>
+                  <dd class="mt-1 text-2xl font-semibold <%= feedback[:merge_rate] && feedback[:merge_rate] >= 50 ? 'text-green-600' : 'text-gray-900' %>">
+                    <%= feedback[:merge_rate] ? "#{feedback[:merge_rate]}%" : "--" %>
+                  </dd>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <% if feedback[:reactions][:count].to_i > 0 || feedback[:reviews][:count].to_i > 0 %>
+            <div class="overflow-hidden rounded-lg bg-white shadow">
+              <div class="px-4 py-4 sm:px-6">
+                <h3 class="text-sm font-medium text-gray-500">Feedback Breakdown</h3>
+                <div class="mt-3 space-y-2">
+                  <% if feedback[:reactions][:count].to_i > 0 %>
+                    <div class="flex items-center justify-between text-sm">
+                      <span class="text-gray-600">PRs with Reactions</span>
+                      <span class="font-medium"><%= feedback[:reactions][:count] %> (avg: <%= feedback[:reactions][:average_score] || "—" %>)</span>
+                    </div>
+                  <% end %>
+                  <% if feedback[:reviews][:count].to_i > 0 %>
+                    <div class="flex items-center justify-between text-sm">
+                      <span class="text-gray-600">PRs with Reviews</span>
+                      <span class="font-medium"><%= feedback[:reviews][:count] %> (avg: <%= feedback[:reviews][:average_score] || "—" %>)</span>
+                    </div>
+                  <% end %>
+                </div>
+              </div>
+            </div>
+          <% end %>
+        </div>
+      <% else %>
+        <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+          <div class="px-4 py-5 text-sm text-gray-500">No human feedback collected yet.</div>
+        </div>
+      <% end %>
+    </div>
+  <% else %>
+    <div class="mt-6 overflow-hidden rounded-lg bg-white shadow">
+      <div class="px-6 py-12 text-center">
+        <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" />
+        </svg>
+        <h3 class="mt-2 text-sm font-semibold text-gray-900">No quality metrics yet</h3>
+        <p class="mt-1 text-sm text-gray-500">Quality metrics will appear here after agent runs are completed and scored.</p>
+      </div>
+    </div>
+  <% end %>
+</div>

@@ -1,0 +1,1789 @@
+# frozen_string_literal: true
+
+require "octokit"
+require "digest"
+require "faraday/retry"
+require "faraday/http_cache"
+
+# GitHub API client wrapper with error handling and rate limit awareness.
+#
+# @example Basic usage
+#   client = GithubClient.new(token: "ghp_...")
+#   user = client.validate_token
+#   repo = client.repository("owner/repo")
+#
+# @example From a GithubToken record
+#   client = github_token.client
+#   issues = client.issues("owner/repo", labels: "bug")
+#
+class GithubClient
+  DEFAULT_CHECK_RUNS_PER_PAGE = 100
+  DEFAULT_CHECK_RUNS_MAX_PAGES = 10
+  WORKFLOW_RUNS_PER_PAGE = 100
+  RETRY_MAX = 3
+  RETRY_INTERVAL = 0.5
+  RETRY_INTERVAL_RANDOMNESS = 0.5
+  RETRY_BACKOFF_FACTOR = 2
+
+  # Base error for all GitHub client errors
+  class Error < StandardError; end
+
+  # Raised when authentication fails (401)
+  class AuthenticationError < Error
+    def initialize(msg = "Invalid or expired GitHub token")
+      super
+    end
+  end
+
+  # Raised when a resource is not found (404)
+  class NotFoundError < Error
+    def initialize(msg = "Resource not found")
+      super
+    end
+  end
+
+  # Raised when rate limit is exceeded (403 with rate limit header)
+  class RateLimitError < Error
+    attr_reader :reset_at
+
+    def initialize(reset_at = nil)
+      @reset_at = reset_at
+      msg = "GitHub API rate limit exceeded"
+      msg += ". Resets at #{reset_at}" if reset_at
+      super(msg)
+    end
+  end
+
+  # Raised for other API errors
+  class ApiError < Error
+    attr_reader :status
+
+    def initialize(message, status: nil)
+      @status = status
+      super(message)
+    end
+  end
+
+  attr_reader :client, :health_endpoint
+
+  # @param token [String] GitHub personal access token
+  # @param health_endpoint [String] Stable health-state key for the auth principal
+  # @param token_refresher [Proc, nil] Called with no args on 401 to obtain a
+  #   fresh token. Expected to clear any token cache and return a new token
+  #   string. When provided, a single retry is attempted before raising
+  #   AuthenticationError. Used by App-backed projects whose installation
+  #   tokens can become stale mid-process (RDR-030).
+  # @param options [Hash] Additional Octokit client options
+  def initialize(token:, health_endpoint: GithubHealthState::DEFAULT_ENDPOINT, token_refresher: nil, **options)
+    @token = token
+    @token_refresher = token_refresher
+    @client_options = options
+    @client = Octokit::Client.new(
+      access_token: token,
+      auto_paginate: false,
+      **options
+    )
+    @health_endpoint = health_endpoint
+
+    configure_middleware
+  end
+
+  # Validates the token and returns user information.
+  #
+  # @return [Hash] User info with :login, :id, :name, :email, :scopes, :expires_at keys
+  # @raise [AuthenticationError] if the token is invalid
+  # @raise [RateLimitError] if rate limit is exceeded
+  # @raise [ApiError] for other API errors
+  def validate_token
+    handle_errors do
+      response = client.user
+      {
+        login: response.login,
+        id: response.id,
+        name: response.name,
+        email: response.email,
+        scopes: client.scopes,
+        expires_at: token_expiration_from_response
+      }
+    end
+  end
+
+  # Returns the login of the authenticated user (or installation actor) this
+  # client is operating as. Cached per-instance because the answer does not
+  # change for the lifetime of the token. Callers should treat a nil return
+  # as "identity unknown" and fall back to author-agnostic behavior.
+  #
+  # @return [String, nil] Downcased login, or nil if lookup failed.
+  def authenticated_login
+    return @authenticated_login if defined?(@authenticated_login)
+
+    @authenticated_login = handle_errors { client.user.login&.downcase }
+  rescue Error
+    @authenticated_login = nil
+  end
+
+  # Fetches repository metadata.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @return [Sawyer::Resource] Repository data
+  # @raise [NotFoundError] if the repository does not exist
+  # @raise [AuthenticationError] if access is denied
+  def repository(repo)
+    handle_errors { client.repository(repo) }
+  end
+
+  # Fetches file contents from a repository.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param path [String] File path within the repository
+  # @return [Sawyer::Resource] File content data (Base64-encoded)
+  # @raise [NotFoundError] if the file does not exist
+  # @raise [AuthenticationError] if access is denied
+  def contents(repo, path:, ref: nil)
+    opts = { path: path }
+    opts[:ref] = ref if ref
+    handle_errors { client.contents(repo, opts) }
+  end
+
+  def file_content(repo, path:, ref: nil)
+    data = contents(repo, path: path, ref: ref)
+    return nil unless data&.content
+
+    Base64.decode64(data.content).force_encoding("UTF-8")
+  end
+
+  def actions_run(repo, run_id)
+    handle_errors { client.get("#{Octokit::Repository.path(repo)}/actions/runs/#{run_id}") }
+  end
+
+  # Re-runs only the failed jobs in a GitHub Actions workflow run.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param run_id [String, Integer] The workflow run ID
+  # @return [Boolean] true if the rerun was accepted
+  # @raise [GithubClient::Error] on API errors
+  def rerun_workflow_run_failed_jobs(repo, run_id)
+    handle_errors do
+      client.post("#{Octokit::Repository.path(repo)}/actions/runs/#{run_id}/rerun-failed-jobs")
+      true
+    end
+  end
+
+  # Fetches the full file tree for a repository at a given ref.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param ref [String] Git ref (branch, tag, or SHA)
+  # @param recursive [Boolean] Whether to fetch the tree recursively
+  # @return [Sawyer::Resource] Tree data with .tree array of items
+  # @raise [NotFoundError] if the ref does not exist
+  def tree(repo, ref, recursive: false)
+    handle_errors { client.tree(repo, ref, recursive: recursive) }
+  end
+
+  def search_code(query, per_page: 30)
+    handle_errors { client.search_code(query, per_page: per_page) }
+  end
+
+  # Searches issues and pull requests using GitHub's search API.
+  #
+  # @param query [String] GitHub search query (e.g. "repo:owner/name is:issue duplicate label:bug")
+  # @param per_page [Integer] Max results to return (GitHub caps at 100)
+  # @return [Sawyer::Resource] Search result with .total_count and .items
+  def search_issues(query, per_page: 30)
+    handle_errors { client.search_issues(query, per_page: per_page) }
+  end
+
+  # Lists repositories the token has push access to.
+  # Filters by permissions.push to exclude repos where the token only
+  # has metadata access (relevant for fine-grained PATs with selected repos).
+  #
+  # Note: GitHub's API does not expose fine-grained PAT repository scoping
+  # on read operations, so this returns all repos the user has push access to
+  # regardless of token configuration.
+  #
+  # @return [Array<Sawyer::Resource>] List of repositories
+  # @raise [AuthenticationError] if the token is invalid
+  # @raise [RateLimitError] if rate limit is exceeded
+  def repositories
+    handle_errors do
+      repos = with_auto_paginate { client.repositories }
+      repos.select { |r| r.permissions&.push }
+    end
+  end
+
+  # Lists issues for a repository.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param labels [String, Array<String>, nil] Label(s) to filter by
+  # @param state [String] Issue state: "open", "closed", or "all"
+  # @param options [Hash] Additional options passed to Octokit
+  # @return [Array<Sawyer::Resource>] List of issues
+  def issues(repo, labels: nil, state: "open", **options)
+    opts = { state: state, **options }
+    opts[:labels] = Array(labels).join(",") if labels
+    handle_errors { client.issues(repo, opts) }
+  end
+
+  # Fetches a pull request by number.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Pull request number
+  # @return [Sawyer::Resource] Pull request data (includes .head.ref, .head.sha, .base.ref, etc.)
+  # @raise [NotFoundError] if the pull request does not exist
+  def pull_request(repo, number)
+    handle_errors { client.pull_request(repo, number) }
+  end
+
+  # Lists files changed in a pull request.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Pull request number
+  # @return [Array<String>] File paths changed in the pull request
+  def pull_request_files(repo, number)
+    handle_errors do
+      with_auto_paginate { client.pull_request_files(repo, number) }
+    end.map(&:filename)
+  end
+
+  # Compares two commits and returns the list of changed file paths.
+  #
+  # NOTE: GitHub's compare API returns a maximum of 300 files per response.
+  # For very large diffs (e.g., a rebase onto a distant base), the result
+  # may be silently truncated. This is unlikely for the narrow
+  # commit-to-HEAD diffs this method currently serves, but callers doing
+  # broader comparisons should be aware of the limit.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param base [String] Base commit SHA
+  # @param head [String] Head commit SHA
+  # @return [Array<String>] File paths changed between base and head
+  def compare_changed_files(repo, base, head)
+    handle_errors do
+      comparison = client.compare(repo, base, head)
+      (comparison.files || []).map(&:filename)
+    end
+  end
+
+  # Compares two commits and returns bounded metadata suitable for public
+  # change-summary generation.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param base [String] Base commit SHA
+  # @param head [String] Head commit SHA
+  # @return [Hash] Compare metadata with commits and changed files
+  def compare_summary(repo, base, head)
+    handle_errors do
+      comparison = client.compare(repo, base, head)
+      {
+        ahead_by: comparison.ahead_by.to_i,
+        total_commits: comparison.total_commits.to_i,
+        commits: compare_commits_payload(comparison.commits || []),
+        files: compare_files_payload(comparison.files || [])
+      }
+    end
+  end
+
+  # Creates an issue on a repository.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param title [String] Issue title
+  # @param body [String] Issue body (Markdown supported)
+  # @param labels [Array<String>] Label names to add
+  # @param options [Hash] Additional options passed to Octokit
+  # @return [Sawyer::Resource] The created issue
+  def create_issue(repo, title:, body: "", labels: [], **options)
+    handle_errors { client.create_issue(repo, title, body, labels: labels, **options) }
+  end
+
+  # Creates a pull request.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param base [String] The branch to merge into
+  # @param head [String] The branch containing changes
+  # @param title [String] Pull request title
+  # @param body [String] Pull request description
+  # @param options [Hash] Additional options (draft, etc.)
+  # @return [Sawyer::Resource] The created pull request
+  def create_pull_request(repo, base:, head:, title:, body: "", **options)
+    handle_errors { client.create_pull_request(repo, base, head, title, body, **options) }
+  end
+
+  # Fetches an issue-shaped resource by number.
+  #
+  # Pull requests are also exposed through GitHub's issues API; this is the
+  # representation our local issues table stores.
+  def issue(repo, number)
+    handle_errors { client.issue(repo, number) }
+  end
+
+  # Updates an issue. Accepts the same keys the GitHub REST API does
+  # (+state+, +state_reason+, +title+, +body+, ...); policy code only
+  # uses it for lifecycle transitions today.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Issue number
+  # @param options [Hash] Attributes to update on the issue
+  # @return [Sawyer::Resource] The updated issue
+  def update_issue(repo, number, **options)
+    handle_errors { client.update_issue(repo, number, options) }
+  end
+
+  # Lists labels for a repository.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @return [Array<Sawyer::Resource>] List of labels
+  def labels(repo)
+    handle_errors { with_auto_paginate { client.labels(repo, per_page: 100) } }
+  end
+
+  # Creates a label on a repository.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param name [String] Label name
+  # @param color [String] Label color (hex without #)
+  # @param description [String] Label description
+  # @return [Sawyer::Resource] The created label
+  def create_label(repo, name:, color:, description: "")
+    handle_errors { client.add_label(repo, name, color, description: description) }
+  end
+
+  # Adds labels to an issue or pull request.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Issue or PR number
+  # @param labels [Array<String>] Label names to add
+  # @return [Array<Sawyer::Resource>] Updated list of labels
+  def add_labels_to_issue(repo, number, labels)
+    handle_errors { client.add_labels_to_an_issue(repo, number, labels) }
+  end
+
+  # Adds a comment to an issue or pull request.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Issue or PR number
+  # @param body [String] Comment body (Markdown supported)
+  # @return [Sawyer::Resource] The created comment
+  def add_comment(repo, number, body)
+    handle_errors { client.add_comment(repo, number, body) }
+  end
+
+  # Updates an existing comment on an issue or pull request.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param comment_id [Integer] The ID of the comment to update
+  # @param body [String] New comment body (Markdown supported)
+  # @return [Sawyer::Resource] The updated comment
+  def update_comment(repo, comment_id, body)
+    handle_errors { client.update_comment(repo, comment_id, body) }
+  end
+
+  # Removes a label from an issue or pull request.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Issue or PR number
+  # @param label [String] Label name to remove
+  # @return [Array<Sawyer::Resource>] Updated list of labels
+  def remove_label_from_issue(repo, number, label)
+    handle_errors { client.remove_label(repo, number, label) }
+  end
+
+  # Removes multiple labels from an issue in individual API calls,
+  # continuing past individual failures. This reduces call-site
+  # boilerplate by centralizing the loop-and-rescue pattern.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Issue or PR number
+  # @param labels [Array<String>] Label names to remove
+  # @return [Hash] Results: { removed: [String], failed: [{ label:, error: }] }
+  def remove_labels_from_issue(repo, number, labels)
+    removed = []
+    failed = []
+
+    labels.each do |label|
+      handle_errors { client.remove_label(repo, number, label) }
+      removed << label
+    rescue Error => e
+      failed << { label: label, error: e.message }
+    end
+
+    { removed: removed, failed: failed }
+  end
+
+  # Probes whether the token has write access to a repository by creating
+  # an unreferenced git blob. This is the only reliable way to check
+  # fine-grained PAT repository scoping, since read endpoints report the
+  # user's permissions rather than the token's.
+  #
+  # Creates a small unreferenced blob object per successful probe.
+  # Standard Git GC prunes these after ~2 weeks, but GitHub's backend
+  # GC behavior is not documented. Results are cached per client instance
+  # to avoid repeated probes.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @return [Boolean] true if the token can write to the repo
+  def write_accessible?(repo)
+    @write_access_cache ||= {}
+    return @write_access_cache[repo] if @write_access_cache.key?(repo)
+
+    client.create_blob(repo, "probe")
+    @write_access_cache[repo] = true
+  rescue Octokit::Forbidden, Octokit::NotFound
+    @write_access_cache[repo] = false
+  end
+
+  # Fetches CI check runs for a git ref (branch, tag, or SHA).
+  # Paginates to collect all check runs (repos with many workflows
+  # or matrix builds may exceed a single page).
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param ref [String] Git ref (branch name, tag, or SHA)
+  # @return [Array<Hash>] Check runs with :name, :status, :conclusion,
+  #   :html_url, and :details_url keys. +:status+ reflects execution
+  #   progress ("queued", "in_progress", "completed") and is required
+  #   by callers that gate on whether a check has finished.
+  def check_runs_for_ref(repo, ref)
+    handle_errors do
+      all_check_runs = []
+      total_count = 0
+      page = 1
+
+      loop do
+        response = client.check_runs_for_ref(repo, ref, per_page: DEFAULT_CHECK_RUNS_PER_PAGE, page: page)
+        total_count = response.total_count
+        all_check_runs.concat(response.check_runs)
+        break if all_check_runs.size >= response.total_count || response.check_runs.size < DEFAULT_CHECK_RUNS_PER_PAGE
+
+        page += 1
+        break if page > DEFAULT_CHECK_RUNS_MAX_PAGES
+      end
+
+      if all_check_runs.size < total_count
+        Rails.logger.warn(
+          message: "github_client.check_runs_pagination_truncated",
+          repo: repo,
+          ref: ref,
+          total_count: total_count,
+          fetched_count: all_check_runs.size,
+          max_pages: DEFAULT_CHECK_RUNS_MAX_PAGES
+        )
+      end
+
+      all_check_runs.map do |cr|
+        {
+          id: cr.id,
+          name: cr.name,
+          status: cr.status,
+          conclusion: cr.conclusion,
+          html_url: cr.html_url,
+          details_url: cr.details_url,
+          job_id: actions_job_id_from_url(cr.details_url),
+          output_text: check_run_output_text(cr)
+        }
+      end
+    end
+  end
+
+  # Fetches combined commit status with context count for a ref.
+  # Returns both the state and the number of status contexts, which
+  # lets callers distinguish "no CI configured" (pending + 0 contexts)
+  # from "CI is running" (pending + N contexts).
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param ref [String] Git ref (branch name, tag, or SHA)
+  # @return [Hash] { state: String, total_count: Integer }
+  def combined_status(repo, ref)
+    handle_errors do
+      response = client.combined_status(repo, ref)
+      { state: response.state, total_count: response.total_count }
+    end
+  end
+
+  # Lists GitHub Actions workflow runs for a specific commit SHA, deduped to
+  # the latest run per workflow file. Used as a fallback CI verifier when
+  # callers cannot read the Checks API (e.g., fine-grained tokens, which
+  # expose +Actions: Read+ but no Checks permission).
+  #
+  # Deduping is required because "Re-run all jobs" creates a new workflow_run
+  # sharing the same head_sha, leaving the original (failed) run in place;
+  # without deduping, a stale failure would block a now-green merge. GitHub
+  # returns runs newest-first by created_at, so keeping the first occurrence
+  # per workflow_id wins.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param sha [String] Commit SHA
+  # @return [Array<Hash>] Workflow runs with :id, :workflow_id, :name, :status,
+  #   :conclusion, :head_sha, and :html_url keys
+  def workflow_runs_for_sha(repo, sha)
+    handle_errors do
+      response = client.repository_workflow_runs(repo, head_sha: sha, per_page: WORKFLOW_RUNS_PER_PAGE)
+
+      truncated = response.total_count > WORKFLOW_RUNS_PER_PAGE
+
+      if truncated
+        Rails.logger.warn(
+          message: "github_client.workflow_runs_pagination_truncated",
+          repo: repo,
+          sha: sha,
+          total_count: response.total_count,
+          fetched_count: response.workflow_runs.size
+        )
+      end
+
+      latest_per_workflow = {}
+      response.workflow_runs.each do |wr|
+        latest_per_workflow[wr.workflow_id] ||= wr
+      end
+
+      runs = latest_per_workflow.values.map do |wr|
+        {
+          id: wr.id,
+          workflow_id: wr.workflow_id,
+          name: wr.name,
+          status: wr.status,
+          conclusion: wr.conclusion,
+          head_sha: wr.head_sha,
+          html_url: wr.html_url
+        }
+      end
+
+      # When the response is truncated, older workflow runs may have been
+      # omitted — some of which could be failing or in-progress. Inject a
+      # synthetic non-green entry so callers (conclusions_green?) refuse to
+      # merge rather than treating a partial page as authoritative.
+      if truncated
+        runs << {
+          id: 0,
+          workflow_id: 0,
+          name: "truncated_results_sentinel",
+          status: "completed",
+          conclusion: "failure",
+          head_sha: sha,
+          html_url: ""
+        }
+      end
+
+      runs
+    end
+  end
+
+  # Fetches raw GitHub Actions job logs for a check run when the run is backed
+  # by an Actions job. Non-Actions checks do not expose logs through this API.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param check_run [Hash] Check run hash from +check_runs_for_ref+
+  # @return [String] Raw log text, or an empty string when no job log is available
+  def check_run_log(repo, check_run)
+    job_id = check_run[:job_id] || actions_job_id_from_url(check_run[:details_url])
+    return "" unless job_id
+
+    handle_errors do
+      client.get("#{Octokit::Repository.path(repo)}/actions/jobs/#{job_id}/logs").to_s
+    end
+  end
+
+  # Fetches all conversation comments on an issue or pull request.
+  # Uses auto_paginate to collect all comments, since the default page
+  # size (~30) would miss newer comments on busy PRs.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Issue or PR number
+  # @return [Array<Sawyer::Resource>] Comments (each has .user.login, .body, .created_at)
+  def issue_comments(repo, number)
+    handle_errors do
+      with_auto_paginate { client.issue_comments(repo, number, per_page: 100, page: 1) }
+    end
+  end
+
+  # Fetches issue timeline events such as label additions/removals.
+  # Caps pagination at +max_pages+ (default 10 = 1 000 events) to avoid
+  # unbounded API usage on long-lived issues.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Issue or PR number
+  # @param max_pages [Integer] Maximum number of pages to fetch (default: 10)
+  # @return [Array<Sawyer::Resource>] Events (each may include .event, .actor.login, .label.name)
+  def issue_events(repo, number, max_pages: 10)
+    handle_errors do
+      all_events = []
+      page = 1
+
+      loop do
+        batch = client.issue_events(repo, number, per_page: 100, page: page)
+        all_events.concat(Array(batch))
+        break if batch.size < 100 || page >= max_pages
+
+        page += 1
+      end
+
+      all_events
+    end
+  end
+
+  # Fetches the most recent page of conversation comments. Use this for
+  # idempotency checks where auto-paginating all comments is unnecessary
+  # and wastes API rate limit on long-lived PRs.
+  #
+  # IMPORTANT: GitHub's REST `/repos/{owner}/{repo}/issues/{number}/comments`
+  # endpoint always returns comments in ascending order by ID and does NOT
+  # honor `sort` or `direction` params — those are only supported on the
+  # repo-level `/issues/comments` endpoint. To actually get the newest
+  # comments, we probe the `Link: last` header on page 1 and re-fetch the
+  # final page. When there is ≤1 page of comments, the first-page response
+  # is already the authoritative answer.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Issue or PR number
+  # @param pages [Integer] Number of most-recent pages to fetch (default: 1)
+  # @return [Array<Sawyer::Resource>] Up to +pages * 100+ most-recent comments,
+  #   each with .user.login, .body, .created_at. Order is ascending by ID
+  #   across the returned slice so callers can safely take the tail.
+  def recent_issue_comments(repo, number, pages: 1)
+    handle_errors do
+      first_page = client.issue_comments(repo, number, per_page: 100, page: 1)
+      last_rel = client.last_response&.rels&.dig(:last)
+
+      unless last_rel
+        return tag_recent_issue_comments_metadata(first_page, multi_page: false, older_pages_available: false)
+      end
+
+      page_count = [ pages.to_i, 1 ].max
+      recent_pages = []
+      page_response = client.get(last_rel.href)
+      recent_pages << Array(page_response)
+      remaining_pages = page_count - 1
+
+      while remaining_pages.positive?
+        prev_rel = client.last_response&.rels&.dig(:prev)
+        break unless prev_rel
+
+        page_response = client.get(prev_rel.href)
+        recent_pages << Array(page_response)
+        remaining_pages -= 1
+      end
+
+      prev_rel = client.last_response&.rels&.dig(:prev)
+      tag_recent_issue_comments_metadata(
+        recent_pages.reverse.flatten,
+        multi_page: true,
+        older_pages_available: prev_rel.present?,
+        next_older_page_url: prev_rel&.href
+      )
+    end
+  end
+
+  # Fetches a single older page of issue comments by URL.
+  #
+  # @param page_url [String] Full GitHub API URL for the page
+  # @return [Array<Sawyer::Resource>] Comments with older_pages_available? and next_older_page_url metadata
+  def fetch_issue_comment_page(page_url)
+    handle_errors do
+      page_response = client.get(page_url)
+      prev_rel = client.last_response&.rels&.dig(:prev)
+      tag_recent_issue_comments_metadata(
+        Array(page_response),
+        multi_page: true,
+        older_pages_available: prev_rel.present?,
+        next_older_page_url: prev_rel&.href
+      )
+    end
+  end
+
+  # Maximum issues fetched per GraphQL batch. Each issue becomes an aliased
+  # field in the query, so GitHub's per-query complexity limit caps how many
+  # we can include in a single request.
+  ISSUES_BATCH_SIZE = 100
+  MAX_COMMENTS_PER_ISSUE = 100
+
+  CommentAuthor = Struct.new(:login, keyword_init: true)
+  CommentNode = Struct.new(:created_at, :user, :body, keyword_init: true)
+
+  # Fetches the most recent comments for multiple issues in one or more GraphQL
+  # requests. Replaces N×(2 × pages) REST calls with batched aliased queries.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param issue_numbers [Array<Integer>] Issue numbers to fetch comments for
+  # @return [Hash{Integer => Array<CommentNode>}] Map of issue number to
+  #   chronologically-sorted comments. Returns empty array per issue when none exist.
+  def issue_comments_batch(repo, issue_numbers)
+    return {} if issue_numbers.empty?
+
+    owner, name = repo.split("/", 2)
+    numbers = issue_numbers.map { |n| Integer(n) }
+
+    result = {}
+    numbers.each_slice(ISSUES_BATCH_SIZE) do |batch|
+      result.merge!(issue_comments_batch_query(repo, owner, name, batch))
+    end
+    result
+  end
+
+  # Fetches review threads on a pull request via GraphQL.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Pull request number
+  # @return [Array<Hash>] Threads with :id, :is_resolved, :comments keys
+  def review_threads(repo, number)
+    owner, name = repo.split("/", 2)
+    query = <<~GRAPHQL
+      query($owner: String!, $name: String!, $number: Int!) {
+        repository(owner: $owner, name: $name) {
+          pullRequest(number: $number) {
+            reviewThreads(first: 100) {
+              nodes {
+                id
+                isResolved
+                comments(first: 50) {
+                  nodes {
+                    body
+                    path
+                    line
+                    author { login }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    GRAPHQL
+
+    data = graphql_request(query, owner: owner, name: name, number: number)
+    threads = data.dig("data", "repository", "pullRequest", "reviewThreads", "nodes") || []
+
+    threads.map do |thread|
+      {
+        id: thread["id"],
+        is_resolved: thread["isResolved"],
+        comments: (thread.dig("comments", "nodes") || []).map do |c|
+          { body: c["body"], path: c["path"], line: c["line"], author: c.dig("author", "login") }
+        end
+      }
+    end
+  end
+
+  # Resolves a review thread on a pull request via GraphQL.
+  #
+  # @param thread_node_id [String] The GraphQL node ID of the review thread
+  # @return [Hash] The response data
+  def resolve_review_thread(thread_node_id)
+    query = <<~GRAPHQL
+      mutation($threadId: ID!) {
+        resolveReviewThread(input: { threadId: $threadId }) {
+          thread { id isResolved }
+        }
+      }
+    GRAPHQL
+
+    graphql_request(query, threadId: thread_node_id)
+  end
+
+  # Resolves multiple review threads in a single GraphQL request using
+  # aliased mutations. Each thread resolution is independent — partial
+  # failures are reported per-thread without failing the entire batch.
+  #
+  # @param thread_node_ids [Array<String>] GraphQL node IDs of threads to resolve
+  # @return [Hash] Per-thread results: { resolved: [String], failed: [{ id:, error: }] }
+  def resolve_review_threads_batch(thread_node_ids)
+    return { resolved: [], failed: [] } if thread_node_ids.empty?
+
+    # Build aliased mutations: resolve_0, resolve_1, etc.
+    mutations = thread_node_ids.each_with_index.map do |_id, i|
+      "resolve_#{i}: resolveReviewThread(input: { threadId: $threadId_#{i} }) { thread { id isResolved } }"
+    end
+
+    variables_decl = thread_node_ids.each_with_index.map { |_, i| "$threadId_#{i}: ID!" }.join(", ")
+
+    query = <<~GRAPHQL
+      mutation(#{variables_decl}) {
+        #{mutations.join("\n    ")}
+      }
+    GRAPHQL
+
+    variables = thread_node_ids.each_with_index.each_with_object({}) do |(id, i), hash|
+      hash[:"threadId_#{i}"] = id
+    end
+
+    data = graphql_request(query, **variables)
+
+    resolved = []
+    failed = []
+
+    thread_node_ids.each_with_index do |thread_id, i|
+      alias_key = "resolve_#{i}"
+      result = data.dig("data", alias_key)
+      errors = (data["errors"] || []).select { |e| e.dig("path")&.first == alias_key }
+
+      if result&.dig("thread", "isResolved")
+        resolved << thread_id
+      elsif errors.any?
+        failed << { id: thread_id, error: errors.map { |e| e["message"] }.join("; ") }
+      else
+        failed << { id: thread_id, error: "Thread not confirmed as resolved" }
+      end
+    end
+
+    { resolved: resolved, failed: failed }
+  end
+
+  # Fetches reviews on a pull request.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Pull request number
+  # @return [Array<Hash>] Reviews with :id, :user_login, :state, :body, :submitted_at, :commit_id keys (:body is always a String)
+  # @raise [NotFoundError] if the pull request does not exist
+  def pull_request_reviews(repo, number)
+    handle_errors do
+      reviews = with_auto_paginate { client.pull_request_reviews(repo, number, per_page: 100) }
+      reviews.map do |r|
+        {
+          id: r.id,
+          user_login: r.user&.login,
+          state: r.state,
+          body: r.body.to_s,
+          submitted_at: parse_timestamp(r.submitted_at),
+          commit_id: r.commit_id
+        }
+      end
+    end
+  end
+
+  # Dismisses a pull request review. Requires write access on the repository
+  # and the review must be in CHANGES_REQUESTED state.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param pull_number [Integer] Pull request number
+  # @param review_id [Integer] The review ID to dismiss
+  # @param message [String] Reason for dismissal
+  def dismiss_pull_request_review(repo, pull_number, review_id, message:)
+    handle_errors do
+      client.dismiss_pull_request_review(repo, pull_number, review_id, message)
+    end
+  end
+
+  # Replies to a review comment on a pull request.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param pull_number [Integer] Pull request number
+  # @param comment_id [Integer] The ID of the review comment to reply to
+  # @param body [String] Reply body (Markdown supported)
+  # @return [Sawyer::Resource] The created reply
+  def create_pull_request_comment_reply(repo, pull_number, comment_id, body)
+    handle_errors do
+      client.create_pull_request_comment_reply(repo, pull_number, body, comment_id)
+    end
+  end
+
+  # Requests review from users on a pull request.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Pull request number
+  # @param reviewers [Array<String>] GitHub logins to request review from
+  # @return [Sawyer::Resource] The review request response
+  def request_pull_request_review(repo, number, reviewers:)
+    handle_errors { client.request_pull_request_review(repo, number, reviewers: reviewers) }
+  end
+
+  # Creates a pull request review.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Pull request number
+  # @param event [String] One of "APPROVE", "REQUEST_CHANGES", "COMMENT"
+  # @param body [String] Review body (Markdown supported)
+  # @return [Sawyer::Resource] The created review
+  def create_pull_request_review(repo, number, event:, body: "")
+    handle_errors do
+      client.create_pull_request_review(repo, number, event: event, body: body.to_s)
+    end
+  end
+
+  # Dispatches a repository event for workflows triggered by repository_dispatch.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param event_type [String] Custom event name consumed by the workflow
+  # @param client_payload [Hash] Arbitrary JSON payload delivered to the workflow
+  # @return [Sawyer::Resource, nil] API response
+  def dispatch_repository_event(repo, event_type:, client_payload: {})
+    handle_errors do
+      client.post("/repos/#{repo}/dispatches",
+        event_type: event_type,
+        client_payload: client_payload)
+    end
+  end
+
+  # Requests review from bots on a pull request via GraphQL.
+  #
+  # The REST API for requesting reviews silently fails for bot re-requests
+  # (returns 201 but does not actually create the review request). The GraphQL
+  # requestReviews mutation with botIds reliably triggers bot reviews.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Pull request number
+  # @param bot_node_ids [Array<String>] GraphQL node IDs of the bots (e.g. ["BOT_kgDOCnlnWA"])
+  # @return [Hash] The response data
+  def request_bot_review(repo, number, bot_node_ids:)
+    pr_node_id = pull_request_node_id!(repo, number)
+
+    query = <<~GRAPHQL
+      mutation($pullRequestId: ID!, $botIds: [ID!]!) {
+        requestReviews(input: { pullRequestId: $pullRequestId, botIds: $botIds }) {
+          pullRequest { id }
+        }
+      }
+    GRAPHQL
+
+    response = graphql_request(query, pullRequestId: pr_node_id, botIds: bot_node_ids)
+
+    if response["errors"].present?
+      message = response["errors"].map { |e| e["message"] }.join(", ")
+      status = message.match?(/unprocessable|cannot request|not available/i) ? 422 : nil
+      raise ApiError.new(message, status: status)
+    end
+
+    response
+  end
+
+  # Checks pending review requests on a pull request.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Pull request number
+  # @return [Hash] Review requests with :users and :teams keys
+  def pull_request_review_requests(repo, number)
+    handle_errors do
+      response = client.pull_request_review_requests(repo, number)
+      {
+        users: (response.users || []).map(&:login),
+        teams: (response.teams || []).map(&:slug)
+      }
+    end
+  end
+
+  # Marks a draft pull request as ready for review via GraphQL.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Pull request number
+  # @return [Hash] The response data
+  def mark_pull_request_ready(repo, number)
+    node_id = pull_request_node_id!(repo, number)
+
+    query = <<~GRAPHQL
+      mutation($pullRequestId: ID!) {
+        markPullRequestReadyForReview(input: { pullRequestId: $pullRequestId }) {
+          pullRequest { id isDraft }
+        }
+      }
+    GRAPHQL
+
+    response = graphql_request(query, pullRequestId: node_id)
+
+    if response["errors"].present?
+      raise ApiError.new(response["errors"].map { |e| e["message"] }.join(", "))
+    end
+
+    pr_result = response.dig("data", "markPullRequestReadyForReview", "pullRequest")
+    raise ApiError.new("Unexpected response from markPullRequestReadyForReview") unless pr_result
+
+    pr_result
+  end
+
+  # Merges a pull request.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Pull request number
+  # @param merge_method [String] Merge method: "squash", "merge", or "rebase"
+  # @param commit_title [String, nil] Custom commit title
+  # @param commit_message [String, nil] Custom commit message
+  # @return [Sawyer::Resource] The merge response
+  def merge_pull_request(repo, number, merge_method: "squash", commit_title: nil, commit_message: nil)
+    options = { merge_method: merge_method }
+    options[:commit_title] = commit_title if commit_title
+    options[:commit_message] = commit_message if commit_message
+
+    path = "#{Octokit::Repository.path repo}/pulls/#{number}/merge"
+    handle_errors { client.put(path, options) }
+  end
+
+  # Fetches a git reference (branch or tag).
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param ref [String] Reference name (e.g., "heads/main")
+  # @return [Sawyer::Resource] The reference object with :object containing :sha
+  def ref(repo, ref)
+    handle_errors { client.ref(repo, ref) }
+  end
+
+  # Fetches a single commit by SHA.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param sha [String] Commit SHA
+  # @return [Sawyer::Resource] The commit object with :commit containing :committer/:author dates
+  def commit(repo, sha)
+    handle_errors { client.commit(repo, sha) }
+  end
+
+  # Creates a git reference (branch or tag).
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param ref [String] Reference name (e.g., "refs/heads/feature-branch")
+  # @param sha [String] SHA to point the reference at
+  # @return [Sawyer::Resource] The created reference
+  def create_ref(repo, ref, sha)
+    handle_errors { client.create_ref(repo, ref, sha) }
+  end
+
+  # Deletes a git reference (branch or tag).
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param ref [String] Reference name (e.g., "heads/feature-branch")
+  # @return [Boolean] true if successfully deleted
+  def delete_ref(repo, ref)
+    handle_errors { client.delete_ref(repo, ref) }
+  end
+
+  # Lists pull requests for a repository.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param options [Hash] Filter options (state, head, base, etc.)
+  # @return [Array<Sawyer::Resource>] List of pull requests
+  def pull_requests(repo, **options)
+    handle_errors { client.pull_requests(repo, **options) }
+  end
+
+  # Merges a branch into another branch via the GitHub API.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param base [String] Branch to merge into
+  # @param head [String] Branch to merge from
+  # @param commit_message [String] Merge commit message
+  # @return [Sawyer::Resource] The merge commit
+  def merge(repo, base, head, commit_message: nil)
+    options = { base: base, head: head }
+    options[:commit_message] = commit_message if commit_message
+    handle_errors { client.merge(repo, base, head, options) }
+  end
+
+  # Fetches code scanning alerts for a repository for the given state (default: "open").
+  # Uses auto-pagination to get an authoritative snapshot of all alerts in the requested state.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param severity [String, nil] Filter by security severity: "low", "medium", "high", or "critical"
+  # @param state [String] Alert state to filter by: "open", "dismissed", or "fixed"
+  # @return [Array<Hash>] Alerts with :number, :state, :severity, :rule_id,
+  #   :rule_description, :tool_name, :summary, :html_url,
+  #   :created_at, :updated_at keys
+  def code_scanning_alerts(repo, severity: nil, state: "open", per_page: 100)
+    handle_errors do
+      params = { state: state, per_page: per_page }
+      params[:severity] = severity if severity.present?
+
+      all_alerts = client.paginate(
+        "#{Octokit::Repository.path(repo)}/code-scanning/alerts",
+        **params
+      )
+
+      Array(all_alerts).map do |alert|
+        rule = alert.rule
+        tool = alert.tool
+
+        {
+          number: alert.number,
+          state: alert.state,
+          severity: rule&.security_severity_level,
+          rule_id: rule&.id,
+          rule_description: rule&.description,
+          tool_name: tool&.name,
+          summary: alert.most_recent_instance&.message&.text,
+          html_url: alert.html_url,
+          created_at: alert.created_at,
+          updated_at: alert.updated_at || alert.created_at
+        }
+      end
+    end
+  end
+
+  # Fetches reactions on a pull request (actually an issue endpoint in GitHub's API).
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Pull request number
+  # @return [Array<Hash>] Reactions with :user_login, :content keys
+  #   Content values: "+1", "-1", "laugh", "confused", "heart", "hooray", "rocket", "eyes"
+  def pull_request_reactions(repo, number)
+    handle_errors do
+      reactions = with_auto_paginate do
+        client.issue_reactions(repo, number, accept: "application/vnd.github.squirrel-girl-preview+json")
+      end
+      reactions.map do |r|
+        {
+          user_login: r.user&.login,
+          content: r.content,
+          created_at: parse_timestamp(r.created_at)
+        }
+      end
+    end
+  end
+
+  # Fetches reactions on an issue (same API as PR reactions).
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Issue number
+  # @return [Array<Hash>] Reactions with :user_login, :content keys
+  def issue_reactions(repo, number)
+    pull_request_reactions(repo, number)
+  end
+
+  # Fetches reactions on a specific issue comment.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param comment_id [Integer] The issue comment ID
+  # @return [Array<Hash>] Reactions with :user_login, :content keys
+  def issue_comment_reactions(repo, comment_id)
+    handle_errors do
+      reactions = with_auto_paginate do
+        client.issue_comment_reactions(
+          repo, comment_id,
+          accept: "application/vnd.github.squirrel-girl-preview+json"
+        )
+      end
+      reactions.map do |r|
+        {
+          user_login: r.user&.login,
+          content: r.content,
+          created_at: parse_timestamp(r.created_at)
+        }
+      end
+    end
+  end
+
+  # Fetches review comments (line-level comments) on a pull request.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Pull request number
+  # @param per_page [Integer, nil] When set, fetches a single page of this size
+  #   (no auto-pagination). When nil, auto-paginates all comments.
+  # @return [Array<Hash>] Comments with :id, :user_login, :body, :created_at, :path, :pull_request_review_id keys
+  def pull_request_review_comments(repo, number, per_page: nil)
+    handle_errors do
+      comments = if per_page
+        client.pull_request_comments(repo, number, per_page: per_page)
+      else
+        with_auto_paginate do
+          client.pull_request_comments(repo, number, per_page: 100)
+        end
+      end
+      comments.map do |c|
+        {
+          id: c.id,
+          user_login: c.user&.login,
+          body: c.body.to_s,
+          created_at: parse_timestamp(c.created_at),
+          path: c.path,
+          pull_request_review_id: c.pull_request_review_id
+        }
+      end
+    end
+  end
+
+  # Fetches reactions on a specific pull request review comment.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param comment_id [Integer] The review comment ID
+  # @return [Array<Hash>] Reactions with :user_login, :content keys
+  def pull_request_review_comment_reactions(repo, comment_id)
+    handle_errors do
+      reactions = with_auto_paginate do
+        client.pull_request_review_comment_reactions(
+          repo, comment_id,
+          accept: "application/vnd.github.squirrel-girl-preview+json"
+        )
+      end
+      reactions.map do |r|
+        {
+          user_login: r.user&.login,
+          content: r.content,
+          created_at: parse_timestamp(r.created_at)
+        }
+      end
+    end
+  end
+
+  # Maximum comments fetched per review thread in the batch GraphQL query.
+  # Threads with more comments will be logged as truncated; reactions on
+  # comments beyond this limit are not captured.
+  MAX_COMMENTS_PER_THREAD = 50
+
+  # Fetches review comments and their reactions in a single GraphQL request.
+  # Replaces N+1 REST calls with one batched query.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param pr_number [Integer] Pull request number
+  # @param max_threads [Integer] Maximum number of review threads to fetch
+  # @return [Array<Hash>] Reactions with :user_login, :content, :created_at keys
+  def review_comment_reactions_batch(repo, pr_number, max_threads: 50)
+    owner, name = repo.split("/", 2)
+    query = <<~GRAPHQL
+      query($owner: String!, $name: String!, $number: Int!, $maxThreads: Int!) {
+        repository(owner: $owner, name: $name) {
+          pullRequest(number: $number) {
+            threads: reviewThreads(first: $maxThreads) {
+              pageInfo { hasNextPage }
+              nodes {
+                comments(first: #{MAX_COMMENTS_PER_THREAD}) {
+                  pageInfo { hasNextPage }
+                  nodes {
+                    databaseId
+                    reactions(first: 100) {
+                      pageInfo { hasNextPage }
+                      nodes {
+                        user { login }
+                        content
+                        createdAt
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    GRAPHQL
+
+    data = graphql_request(
+      query,
+      owner: owner, name: name, number: pr_number, maxThreads: max_threads
+    )
+
+    raise_graphql_errors(data, context: "fetching review reactions for #{repo}##{pr_number}")
+
+    pull_request = data.dig("data", "repository", "pullRequest")
+    unless pull_request
+      Rails.logger.warn(
+        message: "github_client.pull_request_not_found",
+        repo: repo, pr_number: pr_number
+      )
+      return []
+    end
+
+    threads_connection = pull_request["threads"] || {}
+    if threads_connection.dig("pageInfo", "hasNextPage")
+      Rails.logger.warn(
+        message: "github_client.review_threads_truncated",
+        repo: repo, pr_number: pr_number, max_threads: max_threads
+      )
+    end
+
+    threads = threads_connection["nodes"] || []
+    threads.flat_map do |thread|
+      if thread.dig("comments", "pageInfo", "hasNextPage")
+        Rails.logger.warn(
+          message: "github_client.review_thread_comments_truncated",
+          repo: repo, pr_number: pr_number
+        )
+      end
+      comments = thread.dig("comments", "nodes") || []
+      comments.flat_map do |comment|
+        reactions_data = comment["reactions"] || {}
+        if reactions_data.dig("pageInfo", "hasNextPage")
+          # When reactions exceed the GraphQL page size (100), fall back to the
+          # REST endpoint which auto-paginates. This intentionally re-fetches
+          # reactions already returned by GraphQL rather than merging the two
+          # result sets, trading a small amount of redundant data transfer for
+          # simpler, more reliable code.
+          begin
+            pull_request_review_comment_reactions(repo, comment["databaseId"])
+          rescue Error => e
+            Rails.logger.warn(
+              message: "github_client.comment_reaction_fallback_failed",
+              comment_id: comment["databaseId"],
+              error: e.message
+            )
+            []
+          end
+        else
+          (reactions_data["nodes"] || []).map do |r|
+            {
+              user_login: r.dig("user", "login"),
+              content: graphql_reaction_to_rest(r["content"]),
+              created_at: parse_timestamp(r["createdAt"])
+            }
+          end
+        end
+      end
+    end
+  end
+
+  # Gets the remaining rate limit. Returns 0 on transport/auth errors
+  # so callers treating 0 as "exhausted" get a safe default.
+  #
+  # @return [Integer] Number of requests remaining
+  def rate_limit_remaining
+    client.rate_limit.remaining
+  rescue Octokit::Error
+    0
+  end
+
+  # Returns remaining rate limit count, raising on transport/auth failure
+  # instead of returning 0. Use this when a false-positive "exhausted"
+  # reading would cause incorrect control flow (e.g. proactive budget checks).
+  #
+  # @return [Integer] Number of requests remaining
+  # @raise [Octokit::Error] on transport or auth failure
+  def rate_limit_remaining!
+    client.rate_limit.remaining
+  end
+
+  # Gets the rate limit reset time.
+  #
+  # @return [Time] When the rate limit resets
+  def rate_limit_reset_at
+    client.rate_limit.resets_at
+  rescue Octokit::Error
+    nil
+  end
+
+  # Gets the total rate-limit allowance for the current credential.
+  # GitHub App installation tokens are limited per-installation (15,000/hr)
+  # while PATs are limited per-user (5,000/hr).
+  #
+  # @return [Integer, nil] Total hourly requests allowed, or nil if unavailable
+  def rate_limit_limit
+    client.rate_limit.limit
+  rescue Octokit::Error
+    nil
+  end
+
+  # Checks if the rate limit is near exhaustion.
+  #
+  # @param threshold [Integer] Minimum remaining requests
+  # @return [Boolean] true if remaining requests are below threshold
+  def rate_limit_low?(threshold: 10)
+    rate_limit_remaining < threshold
+  end
+
+  # Reads the full rate-limit snapshot (remaining/limit/reset) in a single
+  # Octokit call. Use this when a caller needs all three figures together;
+  # calling the individual +rate_limit_remaining+ / +rate_limit_limit+ /
+  # +rate_limit_reset_at+ accessors each issues its own request because
+  # Octokit does not cache across calls. Tolerates transport errors so a
+  # failed probe never masks the result the caller is trying to surface.
+  #
+  # @return [Hash] { remaining: Integer, limit: Integer, reset_at: Time }.
+  #   All three values are nil when the underlying request failed.
+  def rate_limit_snapshot
+    rl = client.rate_limit
+    { remaining: rl.remaining, limit: rl.limit, reset_at: rl.resets_at }
+  rescue Octokit::Error
+    { remaining: nil, limit: nil, reset_at: nil }
+  end
+
+  # Maps GraphQL ReactionContent enum values to REST API content strings.
+  GRAPHQL_REACTION_MAP = {
+    "THUMBS_UP" => "+1",
+    "THUMBS_DOWN" => "-1",
+    "LAUGH" => "laugh",
+    "HOORAY" => "hooray",
+    "CONFUSED" => "confused",
+    "HEART" => "heart",
+    "ROCKET" => "rocket",
+    "EYES" => "eyes"
+  }.freeze
+
+  private
+
+  def issue_comments_batch_query(repo, owner, name, issue_numbers)
+    nodes_subquery = issue_numbers.map do |number|
+      "      issue_#{number}: issue(number: #{number}) {\n" \
+      "        comments: comments(last: #{MAX_COMMENTS_PER_ISSUE}) {\n" \
+      "          nodes { author { login } body createdAt }\n" \
+      "          pageInfo { hasPreviousPage }\n" \
+      "        }\n" \
+      "      }"
+    end.join("\n")
+
+    query = <<~GRAPHQL
+      query($owner: String!, $name: String!) {
+        repository(owner: $owner, name: $name) {
+          #{nodes_subquery}
+        }
+      }
+    GRAPHQL
+
+    data = graphql_request(query, owner: owner, name: name)
+    raise_graphql_errors(data, context: "fetching issue comments for #{repo}")
+
+    repository = data.dig("data", "repository") || {}
+
+    result = {}
+    issue_numbers.each do |issue_number|
+      alias_name = "issue_#{issue_number}"
+      issue_data = repository[alias_name]
+
+      if issue_data.nil?
+        result[issue_number] = []
+        next
+      end
+
+      comments_connection = issue_data["comments"] || {}
+
+      if comments_connection.dig("pageInfo", "hasPreviousPage")
+        Rails.logger.warn(
+          message: "github_client.issue_comments_truncated",
+          repo: repo, issue_number: issue_number,
+          max_comments: MAX_COMMENTS_PER_ISSUE
+        )
+      end
+
+      nodes = comments_connection["nodes"] || []
+
+      result[issue_number] = nodes
+        .map { |node| build_comment_node(node) }
+        .sort_by { |c| c.created_at || Time.at(0) }
+    end
+
+    result
+  end
+
+  def build_comment_node(node)
+    CommentNode.new(
+      created_at: parse_timestamp(node["createdAt"]),
+      user: CommentAuthor.new(login: node.dig("author", "login")),
+      body: node["body"]
+    )
+  end
+
+  def tag_recent_issue_comments_metadata(page, multi_page:, older_pages_available:, next_older_page_url: nil)
+    page.instance_variable_set(:@multi_page, multi_page)
+    page.instance_variable_set(:@older_pages_available, older_pages_available)
+    page.instance_variable_set(:@next_older_page_url, next_older_page_url)
+    page.define_singleton_method(:multi_page?) { @multi_page }
+    page.define_singleton_method(:older_pages_available?) { @older_pages_available }
+    page.define_singleton_method(:next_older_page_url) { @next_older_page_url }
+    page
+  end
+
+  def configure_middleware
+    client.middleware = Faraday::RackBuilder.new do |builder|
+      builder.use Faraday::HttpCache,
+        **http_cache_options
+      builder.use Faraday::Retry::Middleware,
+        max: RETRY_MAX,
+        interval: RETRY_INTERVAL,
+        interval_randomness: RETRY_INTERVAL_RANDOMNESS,
+        backoff_factor: RETRY_BACKOFF_FACTOR,
+        retry_statuses: [ 429, 500, 502, 503, 504 ],
+        exceptions: Faraday::Retry::Middleware::DEFAULT_EXCEPTIONS +
+          [ Octokit::ServerError ],
+        retry_block: ->(env:, options:, retry_count:, exception:, will_retry_in:) {
+          Rails.logger.warn(
+            message: "github_client.retry",
+            url: env[:url].to_s,
+            retry_count: retry_count,
+            will_retry_in: will_retry_in,
+            exception: exception&.class&.name
+          )
+        }
+      builder.use Octokit::Middleware::FollowRedirects
+      builder.use Octokit::Response::RaiseError
+      builder.adapter Faraday.default_adapter
+    end
+  end
+
+  def with_auto_paginate
+    original = client.auto_paginate
+    client.auto_paginate = true
+    yield
+  ensure
+    client.auto_paginate = original
+  end
+
+  def graphql_request(query, **variables)
+    # Mutations are not idempotent — retrying them after a transient failure
+    # (where the server may have applied the mutation before returning 5xx)
+    # can cause duplicate side effects. Only retry read-only queries.
+    conn = graphql_mutation?(query) ? graphql_connection_base : graphql_connection
+    token_refreshed = false
+    begin
+      response = conn.post("/graphql") do |req|
+        req.headers["Authorization"] = "token #{client.access_token}"
+        req.body = { query: query, variables: variables }
+      end
+      response.body
+    rescue Faraday::UnauthorizedError
+      if !token_refreshed && refresh_token!
+        token_refreshed = true
+        retry
+      else
+        raise AuthenticationError
+      end
+    rescue Faraday::Error => e
+      raise ApiError.new(e.message)
+    end
+  end
+
+  def raise_graphql_errors(data, context: nil)
+    return unless data["errors"].present?
+
+    message = data["errors"].map { |e| e["message"] }.join(", ")
+    prefix = context ? "GraphQL error #{context}: " : "GraphQL error: "
+    raise ApiError.new("#{prefix}#{message}")
+  end
+
+  def graphql_mutation?(query)
+    query.strip.start_with?("mutation")
+  end
+
+  def graphql_connection
+    @graphql_connection ||= build_graphql_connection(with_retry: true)
+  end
+
+  def graphql_connection_base
+    @graphql_connection_base ||= build_graphql_connection(with_retry: false)
+  end
+
+  def build_graphql_connection(with_retry:)
+    Faraday.new(url: "https://api.github.com") do |f|
+      f.request :json
+      if with_retry
+        f.request :retry,
+          max: RETRY_MAX,
+          interval: RETRY_INTERVAL,
+          interval_randomness: RETRY_INTERVAL_RANDOMNESS,
+          backoff_factor: RETRY_BACKOFF_FACTOR,
+          methods: %i[post],
+          retry_statuses: [ 429, 500, 502, 503, 504 ],
+          exceptions: Faraday::Retry::Middleware::DEFAULT_EXCEPTIONS +
+            [ Faraday::ServerError, Faraday::TooManyRequestsError ],
+          retry_block: ->(env:, options:, retry_count:, exception:, will_retry_in:) {
+            Rails.logger.warn(
+              message: "github_client.graphql_retry",
+              url: env[:url].to_s,
+              retry_count: retry_count,
+              will_retry_in: will_retry_in,
+              exception: exception&.class&.name
+            )
+          }
+      end
+      f.response :json
+      f.response :raise_error
+      f.adapter Faraday.default_adapter
+    end
+  end
+
+  def http_cache_options
+    {
+      store: TokenNamespacedStore.new(Rails.cache, cache_token_digest),
+      shared_cache: false,
+      serializer: JSON
+    }
+  end
+
+  def cache_token_digest
+    @cache_token_digest ||= Digest::SHA256.hexdigest(@token.to_s)
+  end
+
+  def pull_request_node_id(repo, number)
+    owner, name = repo.split("/", 2)
+    query = <<~GRAPHQL
+      query($owner: String!, $name: String!, $number: Int!) {
+        repository(owner: $owner, name: $name) {
+          pullRequest(number: $number) { id }
+        }
+      }
+    GRAPHQL
+
+    data = graphql_request(query, owner: owner, name: name, number: number)
+    raise_graphql_errors(data, context: "resolving #{repo}##{number}")
+
+    data.dig("data", "repository", "pullRequest", "id")
+  end
+
+  def pull_request_node_id!(repo, number)
+    node_id = pull_request_node_id(repo, number)
+    raise NotFoundError, "Could not find PR node ID for #{repo}##{number}" unless node_id
+
+    node_id
+  end
+
+  def parse_timestamp(value)
+    case value
+    when Time then value
+    when String then Time.parse(value)
+    end
+  end
+
+  def actions_job_id_from_url(url)
+    url.to_s[%r{/actions/runs/\d+/job/(\d+)}, 1]
+  end
+
+  def check_run_output_text(check_run)
+    output = check_run.output
+    return "" unless output
+
+    [ output.title, output.summary, output.text ].compact_blank.join("\n\n")
+  end
+
+  def graphql_reaction_to_rest(content)
+    GRAPHQL_REACTION_MAP.fetch(content, content)
+  end
+
+  # Extracts the token expiration from the GitHub API response header.
+  # Fine-grained PATs include a `github-authentication-token-expiration` header
+  # with a UTC timestamp. Classic PATs do not include this header.
+  #
+  # @return [Time, nil] Token expiration time, or nil if not available
+  def token_expiration_from_response
+    header = client.last_response&.headers&.[]("github-authentication-token-expiration")
+    return unless header.present?
+
+    parse_timestamp(header)
+  rescue ArgumentError
+    nil
+  end
+
+  def compare_commits_payload(commits)
+    commits.map do |commit|
+      {
+        sha: commit.sha.to_s,
+        message: commit.commit&.message.to_s
+      }
+    end
+  end
+
+  def compare_files_payload(files)
+    files.map do |file|
+      {
+        filename: file.filename.to_s,
+        status: file.status.to_s,
+        additions: file.additions.to_i,
+        deletions: file.deletions.to_i,
+        changes: file.changes.to_i,
+        patch: file.patch.to_s
+      }
+    end
+  end
+
+  def handle_errors
+    token_refreshed = false
+    begin
+      result = yield
+      record_github_health_success
+      result
+    rescue Octokit::Unauthorized => e
+      if !token_refreshed && refresh_token!
+        token_refreshed = true
+        retry
+      else
+        raise AuthenticationError, e.message
+      end
+    rescue Octokit::NotFound => e
+      raise NotFoundError, e.message
+    rescue Octokit::TooManyRequests
+      snapshot = rate_limit_snapshot
+      record_github_rate_limit(snapshot[:reset_at], remaining: snapshot[:remaining], limit: snapshot[:limit])
+      raise RateLimitError.new(snapshot[:reset_at])
+    rescue Octokit::Forbidden => e
+      if e.message.include?("rate limit")
+        snapshot = rate_limit_snapshot
+        record_github_rate_limit(snapshot[:reset_at], remaining: snapshot[:remaining], limit: snapshot[:limit])
+        raise RateLimitError.new(snapshot[:reset_at])
+      end
+      raise ApiError.new(e.message, status: 403)
+    rescue Octokit::ServerError => e
+      record_github_health_failure(e.message)
+      status = e.respond_to?(:response_status) ? e.response_status : nil
+      raise ApiError.new(e.message, status: status)
+    rescue Octokit::Error => e
+      status = e.respond_to?(:response_status) ? e.response_status : nil
+      raise ApiError.new(e.message, status: status)
+    rescue Faraday::Error => e
+      record_github_health_failure(e.message)
+      raise
+    end
+  end
+
+  def record_github_health_failure(error_message)
+    GithubHealthState.current(endpoint: health_endpoint).record_failure!(error_message: error_message)
+  rescue => e
+    Rails.logger.warn(
+      message: "github_client.health_state_record_failed",
+      error: e.message
+    )
+  end
+
+  def record_github_rate_limit(reset_at, remaining: nil, limit: nil)
+    GithubHealthState.current(endpoint: health_endpoint)
+      .mark_rate_limited!(reset_at: reset_at, remaining: remaining, limit: limit)
+  rescue => e
+    Rails.logger.warn(
+      message: "github_client.rate_limit_record_failed",
+      error: e.message
+    )
+  end
+
+  def record_github_health_success
+    state = GithubHealthState.find_by(endpoint: health_endpoint)
+    return unless state && (state.failure_count > 0 || !state.circuit_closed? || state.rate_limited_until.present?)
+
+    state.record_success!
+  rescue => e
+    Rails.logger.warn(
+      message: "github_client.health_state_record_failed",
+      error: e.message
+    )
+  end
+
+  # Called from +handle_errors+ on 401. When a +token_refresher+ is
+  # configured (App-backed projects), clears the stale installation token
+  # from cache, mints a fresh one, and updates the Octokit client. Returns
+  # true when a retry should be attempted, false when no refresher is
+  # available or the refresh itself fails (so the caller raises
+  # AuthenticationError).
+  def refresh_token!
+    return false unless @token_refresher
+
+    new_token = @token_refresher.call
+    return false if new_token.blank?
+
+    @token = new_token
+    @cache_token_digest = nil
+    @client = Octokit::Client.new(access_token: new_token, auto_paginate: false, **@client_options)
+    configure_middleware
+
+    Rails.logger.info(
+      message: "github_client.token_refreshed_on_401",
+      health_endpoint: health_endpoint
+    )
+    true
+  rescue => e
+    Rails.logger.warn(
+      message: "github_client.token_refresh_failed",
+      health_endpoint: health_endpoint,
+      error: e.message
+    )
+    false
+  end
+
+  class TokenNamespacedStore
+    def initialize(store, namespace)
+      @store = store
+      @namespace = namespace
+    end
+
+    def read(key)
+      @store.read(namespaced_key(key))
+    end
+
+    def write(key, value, **options)
+      @store.write(namespaced_key(key), value, **options)
+    end
+
+    def delete(key)
+      @store.delete(namespaced_key(key))
+    end
+
+    private
+
+    def namespaced_key(key)
+      "#{@namespace}:#{key}"
+    end
+  end
+end

@@ -1,0 +1,316 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe Activities::CloneRepoActivity do
+  let(:project) { create(:project) }
+  let(:agent_run) { create(:agent_run, :running, project: project, container_id: "abc123") }
+  let(:activity) { described_class.new }
+  let(:container_service) { instance_double(Containers::Provision) }
+  let(:git_ops) { instance_double(Containers::GitOperations) }
+
+  describe "#execute" do
+    before do
+      allow(Containers::Provision).to receive(:reconnect)
+        .with(agent_run: agent_run, container_id: "abc123")
+        .and_return(container_service)
+      allow(Containers::GitOperations).to receive(:new)
+        .with(container_service: container_service, agent_run: agent_run)
+        .and_return(git_ops)
+      allow(git_ops).to receive(:clone_and_setup_branch)
+      allow(git_ops).to receive(:install_artifact_excludes)
+      allow(git_ops).to receive(:install_git_hooks)
+      allow(git_ops).to receive(:install_co_author_hook)
+      allow(container_service).to receive(:execute)
+
+      # Simulate what clone_and_setup_branch does to agent_run
+      agent_run.update!(
+        branch_name: "paid/paid-agent-#{agent_run.id}-20260215-abc123",
+        base_commit_sha: "abc123def456",
+        worktree_path: "/workspace"
+      )
+    end
+
+    it "clones the repo and creates a worktree record" do
+      expect(git_ops).to receive(:clone_and_setup_branch)
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:agent_run_id]).to eq(agent_run.id)
+      expect(result[:branch_name]).to eq(agent_run.branch_name)
+      expect(Worktree.find_by(agent_run: agent_run)).to be_present
+    end
+
+    it "installs artifact excludes after cloning" do
+      expect(git_ops).to receive(:clone_and_setup_branch).ordered
+      expect(git_ops).to receive(:install_artifact_excludes).ordered
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "installs lint-only git hooks for Ruby projects when no database container is running" do
+      expect(git_ops).to receive(:install_git_hooks).with(
+        lint_command: [ "bundle exec rubocop" ],
+        test_command: [],
+        mutation_command: "true"
+      )
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "installs the co-author hook after artifact excludes and git hooks" do
+      expect(git_ops).to receive(:install_artifact_excludes).ordered
+      expect(git_ops).to receive(:install_git_hooks).ordered
+      expect(git_ops).to receive(:install_co_author_hook).ordered
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "sets up codegraph after clone and hooks" do
+      expect(Containers::TokenOptimization).to receive(:codegraph_setup)
+        .with(container_service: container_service)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    context "when project has a running database container" do
+      before do
+        sc = create(:service_container, :running, image: "postgres:16")
+        create(:project_service_container, project: project, service_container: sc)
+      end
+
+      it "installs git hooks with both lint and test commands" do
+        create(:pre_commit_requirement, :mutation_test, account: project.account, project: project, name: "mutant")
+
+        expect(git_ops).to receive(:install_git_hooks).with(
+          lint_command: [ "bundle exec rubocop" ],
+          test_command: [ "bundle exec rspec" ],
+          mutation_command: "RAILS_ENV=test bundle exec mutant run --since HEAD\\~1 --use rspec --jobs 1 --results-dir .mutant/results"
+        )
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+    end
+
+    context "when project uses a non-DB-dependent language without database container" do
+      before do
+        project.update!(primary_language: "JavaScript")
+      end
+
+      it "keeps the test hook for non-DB-dependent languages" do
+        expect(git_ops).to receive(:install_git_hooks).with(
+          lint_command: [ "npm run lint" ],
+          test_command: [ "npm test" ],
+          mutation_command: "true"
+        )
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+    end
+
+    it "raises ActiveRecord::RecordNotFound for invalid agent_run_id" do
+      expect { activity.execute(agent_run_id: -1) }.to raise_error(ActiveRecord::RecordNotFound)
+    end
+
+    context "when agent_run has an existing PR" do
+      let(:github_client) { instance_double(GithubClient) }
+      let(:pr_head) { double("pr_head", ref: "existing-feature-branch") } # rubocop:disable RSpec/VerifiedDoubles
+      let(:pr_data) { double("pr_data", state: "open", head: pr_head) } # rubocop:disable RSpec/VerifiedDoubles
+
+      before do
+        agent_run.update!(source_pull_request_number: 135)
+
+        allow(GithubClient).to receive(:new).and_return(github_client)
+        allow(github_client).to receive(:pull_request)
+          .with(project.full_name, 135)
+          .and_return(pr_data)
+        allow(git_ops).to receive(:clone_and_checkout_branch)
+        allow(git_ops).to receive(:install_artifact_excludes)
+        allow(git_ops).to receive(:install_git_hooks)
+      allow(git_ops).to receive(:install_co_author_hook)
+      allow(container_service).to receive(:execute)
+
+        agent_run.update!(
+          branch_name: "existing-feature-branch",
+          base_commit_sha: "abc123def456",
+          worktree_path: "/workspace"
+        )
+      end
+
+      it "checks out the existing PR branch instead of creating a new one" do
+        expect(git_ops).to receive(:clone_and_checkout_branch).with(
+          branch_name: "existing-feature-branch",
+          pull_request_number: 135
+        )
+        expect(git_ops).not_to receive(:clone_and_setup_branch)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "installs artifact excludes after checking out existing PR branch" do
+        expect(git_ops).to receive(:clone_and_checkout_branch).ordered
+        expect(git_ops).to receive(:install_artifact_excludes).ordered
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "installs lint-only git hooks for Ruby projects when no database container is running" do
+        expect(git_ops).to receive(:install_git_hooks).with(
+          lint_command: [ "bundle exec rubocop" ],
+          test_command: [],
+          mutation_command: "true"
+        )
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "installs the co-author hook after artifact excludes and git hooks" do
+        expect(git_ops).to receive(:install_artifact_excludes).ordered
+        expect(git_ops).to receive(:install_git_hooks).ordered
+        expect(git_ops).to receive(:install_co_author_hook).ordered
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      context "when project has a running database container" do
+        before do
+          sc = create(:service_container, :running, image: "postgres:16")
+          create(:project_service_container, project: project, service_container: sc)
+        end
+
+        it "installs git hooks with both lint and test commands" do
+          create(:pre_commit_requirement, :mutation_test, account: project.account, project: project, name: "mutant")
+
+          expect(git_ops).to receive(:install_git_hooks).with(
+            lint_command: [ "bundle exec rubocop" ],
+            test_command: [ "bundle exec rspec" ],
+            mutation_command: "RAILS_ENV=test bundle exec mutant run --since HEAD\\~1 --use rspec --jobs 1 --results-dir .mutant/results"
+          )
+
+          activity.execute(agent_run_id: agent_run.id)
+        end
+      end
+
+      context "when PR is closed" do
+        let(:pr_data) { double("pr_data", state: "closed", head: pr_head) } # rubocop:disable RSpec/VerifiedDoubles
+
+        it "raises StalePullRequest error" do
+          expect { activity.execute(agent_run_id: agent_run.id) }
+            .to raise_error(Temporalio::Error::ApplicationError, /PR #135 is closed/) do |error|
+              expect(error.type).to eq("StalePullRequest")
+            end
+        end
+
+        it "does not attempt clone or checkout" do
+          expect(git_ops).not_to receive(:clone_and_checkout_branch)
+          expect(git_ops).not_to receive(:clone_and_setup_branch)
+
+          begin
+            activity.execute(agent_run_id: agent_run.id)
+          rescue Temporalio::Error::ApplicationError
+            # expected
+          end
+        end
+      end
+
+      context "when PR is merged (GitHub API returns state=closed for merged PRs)" do
+        let(:pr_data) { double("pr_data", state: "closed", head: pr_head) } # rubocop:disable RSpec/VerifiedDoubles
+
+        it "raises StalePullRequest error" do
+          expect { activity.execute(agent_run_id: agent_run.id) }
+            .to raise_error(Temporalio::Error::ApplicationError, /PR #135 is closed/) do |error|
+              expect(error.type).to eq("StalePullRequest")
+            end
+        end
+      end
+
+      it "reclaims a cleaned worktree record with the same branch name" do
+        old_agent_run = create(:agent_run, project: project)
+        create(:worktree, :cleaned, project: project, agent_run: old_agent_run,
+          branch_name: "existing-feature-branch", created_at: 3.days.ago)
+
+        freeze_time do
+          activity.execute(agent_run_id: agent_run.id)
+
+          worktree = Worktree.find_by(project: project, branch_name: "existing-feature-branch")
+          expect(worktree.agent_run).to eq(agent_run)
+          expect(worktree).to be_active
+          expect(worktree.pushed).to be(false)
+          expect(worktree.created_at).to eq(Time.current)
+          expect(Worktree.stale).not_to include(worktree)
+        end
+      end
+
+      it "reclaims a cleanup_failed worktree record with the same branch name" do
+        old_agent_run = create(:agent_run, project: project)
+        create(:worktree, :cleanup_failed, project: project, agent_run: old_agent_run,
+          branch_name: "existing-feature-branch", created_at: 3.days.ago)
+
+        freeze_time do
+          activity.execute(agent_run_id: agent_run.id)
+
+          worktree = Worktree.find_by(project: project, branch_name: "existing-feature-branch")
+          expect(worktree.agent_run).to eq(agent_run)
+          expect(worktree).to be_active
+          expect(worktree.pushed).to be(false)
+          expect(worktree.created_at).to eq(Time.current)
+          expect(Worktree.stale).not_to include(worktree)
+        end
+      end
+
+      it "is idempotent when retried with an active worktree from the same agent_run" do
+        create(:worktree, :active, project: project, agent_run: agent_run, branch_name: "existing-feature-branch")
+
+        expect { activity.execute(agent_run_id: agent_run.id) }.not_to change(Worktree, :count)
+
+        worktree = Worktree.find_by(project: project, branch_name: "existing-feature-branch")
+        expect(worktree.agent_run).to eq(agent_run)
+        expect(worktree).to be_active
+      end
+
+      it "reclaims an active worktree when the owning agent_run has finished" do
+        failed_agent_run = create(:agent_run, :failed, project: project)
+        create(:worktree, :active, project: project, agent_run: failed_agent_run,
+          branch_name: "existing-feature-branch", created_at: 3.days.ago)
+
+        freeze_time do
+          activity.execute(agent_run_id: agent_run.id)
+
+          worktree = Worktree.find_by(project: project, branch_name: "existing-feature-branch")
+          expect(worktree.agent_run).to eq(agent_run)
+          expect(worktree).to be_active
+          expect(worktree.pushed).to be(false)
+          expect(worktree.created_at).to eq(Time.current)
+        end
+      end
+
+      it "raises WorktreeConflict when an active worktree belongs to a different running agent_run" do
+        other_agent_run = create(:agent_run, :running, project: project)
+        create(:worktree, :active, project: project, agent_run: other_agent_run, branch_name: "existing-feature-branch")
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(Temporalio::Error::ApplicationError, /active worktree from agent run/)
+      end
+
+      it "retries and reclaims when find_by misses a cleaned worktree and create! raises RecordInvalid" do
+        old_agent_run = create(:agent_run, project: project)
+        cleaned_worktree = create(:worktree, :cleaned, project: project, agent_run: old_agent_run,
+          branch_name: "existing-feature-branch", created_at: 3.days.ago)
+
+        # Simulate find_by returning nil on the first call (as observed in
+        # production), then finding the record on the retry after RecordInvalid.
+        call_count = 0
+        allow(Worktree).to receive(:find_by).and_wrap_original do |method, **args|
+          call_count += 1
+          call_count == 1 ? nil : method.call(**args)
+        end
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        cleaned_worktree.reload
+        expect(cleaned_worktree.agent_run).to eq(agent_run)
+        expect(cleaned_worktree).to be_active
+      end
+    end
+  end
+end

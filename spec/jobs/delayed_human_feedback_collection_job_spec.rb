@@ -1,0 +1,158 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe DelayedHumanFeedbackCollectionJob do
+  describe "#perform" do
+    let(:github_client) { instance_double(GithubClient, rate_limit_low?: false) }
+
+    before do
+      allow(GithubClient).to receive(:new).and_return(github_client)
+    end
+
+    it "enqueues feedback collection for recently completed runs" do
+      recent_run = create(:agent_run, :completed)
+      recent_run.update_columns(completed_at: 1.day.ago, updated_at: 1.day.ago)
+
+      expect {
+        described_class.new.perform
+      }.to have_enqueued_job(HumanFeedbackCollectionJob).with(recent_run.id)
+    end
+
+    it "enqueues runs with nil completed_at but recent updated_at" do
+      run_without_completed = create(:agent_run, :completed)
+      run_without_completed.update_columns(completed_at: nil, updated_at: 1.day.ago)
+
+      expect {
+        described_class.new.perform
+      }.to have_enqueued_job(HumanFeedbackCollectionJob).with(run_without_completed.id)
+    end
+
+    it "skips runs completed outside the lookback window" do
+      old_run = create(:agent_run, :completed)
+      old_run.update_columns(completed_at: 4.days.ago, updated_at: 4.days.ago)
+
+      expect {
+        described_class.new.perform
+      }.not_to have_enqueued_job(HumanFeedbackCollectionJob)
+    end
+
+    it "skips non-completed runs" do
+      create(:agent_run, :running)
+
+      expect {
+        described_class.new.perform
+      }.not_to have_enqueued_job(HumanFeedbackCollectionJob)
+    end
+
+    it "skips runs whose human metric was polled within the sweep interval" do
+      recent_run = create(:agent_run, :completed)
+      recent_run.update_columns(completed_at: 1.day.ago, updated_at: 1.day.ago)
+      recent_run.quality_metrics.create!(
+        metric_type: "human",
+        scores: { "pr_merged" => 1.0 },
+        composite_score: 1.0,
+        metadata: { "last_polled_at" => 2.hours.ago.iso8601 }
+      )
+
+      expect {
+        described_class.new.perform
+      }.not_to have_enqueued_job(HumanFeedbackCollectionJob)
+    end
+
+    it "includes runs whose human metric was polled longer ago than the sweep interval" do
+      stale_run = create(:agent_run, :completed)
+      stale_run.update_columns(completed_at: 1.day.ago, updated_at: 1.day.ago)
+      stale_run.quality_metrics.create!(
+        metric_type: "human",
+        scores: { "pr_merged" => 1.0 },
+        composite_score: 1.0,
+        metadata: { "last_polled_at" => 13.hours.ago.iso8601 }
+      )
+
+      expect {
+        described_class.new.perform
+      }.to have_enqueued_job(HumanFeedbackCollectionJob).with(stale_run.id)
+    end
+
+    it "includes runs when last_polled_at is stale despite recent updated_at from webhooks" do
+      run = create(:agent_run, :completed)
+      run.update_columns(completed_at: 1.day.ago, updated_at: 1.day.ago)
+      # Metric has recent updated_at (from a webhook comment) but stale last_polled_at.
+      # The sweep should use last_polled_at, not updated_at, to decide.
+      run.quality_metrics.create!(
+        metric_type: "human",
+        scores: { "pr_merged" => 1.0 },
+        composite_score: 1.0,
+        metadata: { "webhook_comment_count" => 3, "last_polled_at" => 13.hours.ago.iso8601 },
+        updated_at: 1.hour.ago
+      )
+
+      expect {
+        described_class.new.perform
+      }.to have_enqueued_job(HumanFeedbackCollectionJob).with(run.id)
+    end
+
+    it "includes runs with metrics missing last_polled_at (treated as never polled)" do
+      run = create(:agent_run, :completed)
+      run.update_columns(completed_at: 1.day.ago, updated_at: 1.day.ago)
+      run.quality_metrics.create!(
+        metric_type: "human",
+        scores: { "pr_merged" => 1.0 },
+        composite_score: 1.0,
+        metadata: {},
+        updated_at: 2.hours.ago
+      )
+
+      expect {
+        described_class.new.perform
+      }.to have_enqueued_job(HumanFeedbackCollectionJob).with(run.id)
+    end
+
+    it "skips runs when the GitHub token rate limit is low" do
+      run = create(:agent_run, :completed)
+      run.update_columns(completed_at: 1.day.ago, updated_at: 1.day.ago)
+
+      allow(github_client).to receive(:rate_limit_low?).and_return(true)
+
+      expect {
+        described_class.new.perform
+      }.not_to have_enqueued_job(HumanFeedbackCollectionJob)
+    end
+
+    it "skips all runs sharing a rate-limited token in a single check" do
+      project = create(:project)
+      run1 = create(:agent_run, :completed, project: project)
+      run2 = create(:agent_run, :completed, project: project)
+      run1.update_columns(completed_at: 1.day.ago, updated_at: 1.day.ago)
+      run2.update_columns(completed_at: 1.day.ago, updated_at: 1.day.ago)
+
+      allow(github_client).to receive(:rate_limit_low?).and_return(true)
+
+      expect {
+        described_class.new.perform
+      }.not_to have_enqueued_job(HumanFeedbackCollectionJob)
+
+      # Token is checked once per sweep, not once per run
+      expect(github_client).to have_received(:rate_limit_low?).once
+    end
+
+    it "enqueues runs when the GitHub token rate limit is sufficient" do
+      run = create(:agent_run, :completed)
+      run.update_columns(completed_at: 1.day.ago, updated_at: 1.day.ago)
+
+      expect {
+        described_class.new.perform
+      }.to have_enqueued_job(HumanFeedbackCollectionJob).with(run.id)
+    end
+
+    it "enqueues recently completed enhance_issue runs" do
+      run = create(:agent_run, :enhance_issue_goal, :completed, pull_request_number: nil)
+      run.update_columns(completed_at: 1.day.ago, updated_at: 1.day.ago)
+
+      expect {
+        described_class.new.perform
+      }.to have_enqueued_job(HumanFeedbackCollectionJob).with(run.id)
+    end
+  end
+end

@@ -1,0 +1,14 @@
+[
+  {
+    "runner": "runner:42",
+    "success": false,
+    "error_type": "provider_error",
+    "error_message": "Model metadata for `gpt-4o` not found",
+    "diagnostics": {
+      "details": [
+        "Bearer sk-secret-secret-secret-secret",
+        "github_pat_abcdefghijklmnopqrstuvwxyz1234567890"
+      ]
+    }
+  }
+]

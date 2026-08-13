@@ -1,0 +1,356 @@
+<% content_for(:title) { "#{@project.name} - Projects - Paid" } %>
+
+<%= turbo_stream_from @project, :project_updates %>
+
+<div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to back_link_path(projects_path), class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+      <svg class="mr-1 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd" />
+      </svg>
+      Back to Projects
+    <% end %>
+  </div>
+
+  <% if @project.paused? %>
+    <div class="mb-4 rounded-md bg-yellow-50 p-4 ring-1 ring-inset ring-yellow-200" data-testid="project-paused-banner">
+      <div class="flex items-center justify-between">
+        <div class="flex">
+          <div class="flex-shrink-0">
+            <svg class="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM8 7a1 1 0 0 0-1 1v4a1 1 0 1 0 2 0V8a1 1 0 0 0-1-1Zm4 0a1 1 0 0 0-1 1v4a1 1 0 1 0 2 0V8a1 1 0 0 0-1-1Z" clip-rule="evenodd" />
+            </svg>
+          </div>
+          <div class="ml-3">
+            <h3 class="text-sm font-medium text-yellow-800">Project Paused</h3>
+            <p class="mt-1 text-sm text-yellow-700">Automatic agent runs are on hold. Manual runs are unaffected.</p>
+          </div>
+        </div>
+        <% if policy(@project).update? %>
+          <%= button_to "Resume", toggle_pause_project_path(@project), method: :post,
+            class: "ml-4 flex-shrink-0 rounded-md bg-yellow-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-yellow-500 cursor-pointer",
+            data: { turbo_confirm: "Resume automatic agent runs for this project?" } %>
+        <% end %>
+      </div>
+    </div>
+  <% end %>
+
+  <% if @project.scheduler_paused? %>
+    <div class="mb-4 rounded-md bg-red-50 p-4 ring-1 ring-inset ring-red-200" data-testid="scheduler-paused-banner">
+      <div class="flex">
+        <div class="flex-shrink-0">
+          <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM8.28 7.22a.75.75 0 0 0-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 1 0 1.06 1.06L10 11.06l1.72 1.72a.75.75 0 1 0 1.06-1.06L11.06 10l1.72-1.72a.75.75 0 0 0-1.06-1.06L10 8.94 8.28 7.22Z" clip-rule="evenodd" />
+          </svg>
+        </div>
+        <div class="ml-3">
+          <h3 class="text-sm font-medium text-red-800">Scheduler Paused</h3>
+          <p class="mt-1 text-sm text-red-700"><%= @project.scheduler_pause_reason %></p>
+          <p class="mt-2 text-sm text-red-700">
+            Replace the GitHub token or
+            <%= link_to "manage tokens", github_tokens_path, class: "font-medium text-red-800 underline hover:text-red-900" %>
+            to resume.
+          </p>
+        </div>
+      </div>
+    </div>
+  <% end %>
+
+  <% if @project.quality_paused? %>
+    <% pause_metadata = @project.quality_pause_metadata || {} %>
+    <div class="mb-4 rounded-md bg-amber-50 p-4 ring-1 ring-inset ring-amber-200" data-testid="quality-paused-banner">
+      <div class="flex items-center justify-between">
+        <div class="flex">
+          <div class="flex-shrink-0">
+            <svg class="h-5 w-5 text-amber-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" />
+            </svg>
+          </div>
+          <div class="ml-3">
+            <h3 class="text-sm font-medium text-amber-800">Quality Paused</h3>
+            <p class="mt-1 text-sm text-amber-700">
+              Automatic work has been paused since <%= local_time(@project.quality_paused_at) %> after recent runs fell below the quality threshold.
+            </p>
+            <% if pause_metadata["composite_score"].present? && pause_metadata["threshold"].present? %>
+              <p class="mt-1 text-sm text-amber-700">
+                Score <%= format("%.1f%%", pause_metadata["composite_score"].to_f * 100) %>
+                below threshold <%= format("%.1f%%", pause_metadata["threshold"].to_f * 100) %>
+                <% if pause_metadata["metric_type"].present? %>
+                  (<%= pause_metadata["metric_type"].humanize.downcase %>)
+                <% end %>.
+                <% if policy(@project).update? %>
+                  <%= link_to "Review details", edit_project_path(@project), class: "font-medium text-amber-800 underline hover:text-amber-900" %>
+                <% end %>
+              </p>
+            <% end %>
+          </div>
+        </div>
+        <% if policy(@project).update? %>
+          <%= button_to "Resume", quality_resume_project_path(@project), method: :post,
+            class: "ml-4 flex-shrink-0 rounded-md bg-amber-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500 cursor-pointer",
+            data: { turbo_confirm: "Resume automatic work for this project?" } %>
+        <% end %>
+      </div>
+    </div>
+  <% end %>
+
+  <% if @paused_agent_runs.any? %>
+    <%= render "projects/paused_work", project: @project, paused_runs: @paused_agent_runs %>
+  <% end %>
+
+  <div class="bg-white shadow sm:rounded-lg">
+    <div class="px-4 py-5 sm:px-6">
+      <div class="flex items-center justify-between">
+        <div>
+          <h1 class="text-xl font-semibold text-gray-900"><%= @project.name %></h1>
+          <div class="mt-3 flex flex-wrap items-center gap-2" data-testid="project-external-links">
+            <% @external_links.each do |link| %>
+              <%= link_to link[:url], target: "_blank", rel: "noopener noreferrer", class: "inline-flex items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm text-gray-700 hover:border-indigo-200 hover:text-indigo-600 hover:bg-indigo-50", data: { testid: "project-external-link" } do %>
+                <span class="font-medium text-gray-900"><%= link[:label] %></span>
+                <span class="text-gray-500"><%= link[:url].delete_prefix("https://") %></span>
+              <% end %>
+            <% end %>
+          </div>
+        </div>
+        <div class="flex items-center space-x-3">
+          <% if @project.active? %>
+            <span class="inline-flex items-center rounded-md bg-green-100 px-3 py-1 text-sm font-medium text-green-700">
+              Active
+            </span>
+          <% else %>
+            <span class="inline-flex items-center rounded-md bg-gray-100 px-3 py-1 text-sm font-medium text-gray-600">
+              Inactive
+            </span>
+          <% end %>
+          <% if policy(@project).run_agent? %>
+            <%= link_to new_project_agent_run_path(@project), class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500", data: { action_button: true } do %>
+              <svg class="-ml-0.5 mr-1.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM9.555 7.168A1 1 0 0 0 8 8v4a1 1 0 0 0 1.555.832l3-2a1 1 0 0 0 0-1.664l-3-2Z" clip-rule="evenodd" />
+              </svg>
+              Trigger Run
+            <% end %>
+          <% end %>
+          <% if policy(@project).update? %>
+            <%= link_to edit_project_path(@project), class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" do %>
+              <svg class="-ml-0.5 mr-1.5 h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path d="m5.433 13.917 1.262-3.155A4 4 0 0 1 7.58 9.42l6.92-6.918a2.121 2.121 0 0 1 3 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 0 1-.65-.65Z" />
+                <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0 0 10 3H4.75A2.75 2.75 0 0 0 2 5.75v9.5A2.75 2.75 0 0 0 4.75 18h9.5A2.75 2.75 0 0 0 17 15.25V10a.75.75 0 0 0-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5Z" />
+              </svg>
+              Edit
+            <% end %>
+          <% end %>
+          <% if policy(@project).run_agent? && @project.lid_mode.nil? %>
+            <details data-testid="lid-planning-disclosure">
+              <summary class="inline-flex items-center rounded-md bg-amber-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500">
+                <svg class="-ml-0.5 mr-1.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                  <path fill-rule="evenodd" d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Z" clip-rule="evenodd" />
+                </svg>
+                Start using LID
+              </summary>
+              <div class="mt-3 rounded-md border border-amber-200 bg-amber-50 p-4">
+                <%= form_with url: start_lid_project_path(@project), method: :post, local: true, class: "space-y-3", data: { testid: "lid-planning-form", turbo_confirm: "Paid will analyze the repository and open a docs-only Planning PR. This won't change any code. Continue?" } do |f| %>
+                  <div>
+                    <%= f.label :plan_doc_source, "Existing design doc (optional)", class: "block text-sm font-medium text-gray-700" %>
+                    <p class="mt-1 text-xs text-gray-500">Point Paid at an RDR, ADR, or design doc to treat as authored intent (e.g. <code>docs/rdrs/RDR-051.md</code>). Leave blank for repo-only inference.</p>
+                    <%= f.text_field :plan_doc_source, placeholder: "docs/rdrs/RDR-051.md", maxlength: 1000,
+                          class: "mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 sm:text-sm",
+                          data: { testid: "plan_doc_source" } %>
+                  </div>
+                  <div>
+                    <%= f.submit "Queue LID planning run",
+                          class: "inline-flex items-center rounded-md bg-amber-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500" %>
+                  </div>
+                <% end %>
+              </div>
+            </details>
+          <% end %>
+        </div>
+      </div>
+    </div>
+
+    <details class="border-t border-gray-200">
+      <summary class="cursor-pointer px-4 py-4 text-sm font-medium text-gray-700 hover:bg-gray-50 sm:px-6">
+        Configuration
+      </summary>
+      <dl class="divide-y divide-gray-200">
+        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+          <dt class="text-sm font-medium text-gray-500">GitHub Credential</dt>
+          <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+            <% if @project.github_installation.present? %>
+              <span class="text-indigo-600">GitHub App Installation #<%= @project.github_installation.github_installation_id %></span>
+            <% elsif @project.github_token.present? %>
+              <%= link_to @project.github_token.name, github_token_path(@project.github_token), class: "text-indigo-600 hover:text-indigo-900" %>
+            <% end %>
+          </dd>
+        </div>
+
+        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+          <dt class="text-sm font-medium text-gray-500">Default Branch</dt>
+          <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+            <code class="rounded bg-gray-100 px-2 py-1 font-mono text-sm"><%= @project.default_branch %></code>
+          </dd>
+        </div>
+
+        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+          <dt class="text-sm font-medium text-gray-500">Poll Interval</dt>
+          <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+            Every <%= pluralize(@project.poll_interval_seconds, "second") %>
+          </dd>
+        </div>
+
+        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+          <dt class="text-sm font-medium text-gray-500">Trusted GitHub Users</dt>
+          <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+            <% if @project.allowed_github_usernames.any? %>
+              <div class="flex flex-wrap gap-1">
+                <% @project.allowed_github_usernames.each do |username| %>
+                  <span class="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800"><%= username %></span>
+                <% end %>
+              </div>
+            <% else %>
+              <span class="text-red-600 font-medium">None configured</span>
+            <% end %>
+          </dd>
+        </div>
+
+        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+          <dt class="text-sm font-medium text-gray-500">Added</dt>
+          <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+            <%= local_time(@project.created_at) %>
+            <% if @project.created_by %>
+              by <%= @project.created_by.email %>
+            <% end %>
+          </dd>
+        </div>
+        <% Project::AUTOMATION_SETTINGS.each do |setting| %>
+          <% enabled = @project.public_send(setting[:attribute]) %>
+          <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+            <dt class="text-sm font-medium text-gray-500"><%= setting[:label] %></dt>
+            <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+              <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium <%= enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600' %>">
+                <%= enabled ? "Enabled" : "Disabled" %>
+              </span>
+            </dd>
+          </div>
+        <% end %>
+        <%= render "projects/pause_toggle", project: @project %>
+        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+          <dt class="text-sm font-medium text-gray-500">Auto-Merge</dt>
+          <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+            <% auto_merge_label = Project::AUTO_MERGE_MODE_OPTIONS.find { |_, v| v == @project.auto_merge_mode }&.first || @project.auto_merge_mode.titleize %>
+            <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium <%= @project.auto_merge_enabled? ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600' %>">
+              <%= auto_merge_label %>
+            </span>
+          </dd>
+        </div>
+        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+          <dt class="text-sm font-medium text-gray-500">Auto-Scan Security Alerts</dt>
+          <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+            <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium <%= @project.auto_scan_security? ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600' %>">
+              <%= @project.auto_scan_security? ? "Enabled" : "Disabled" %>
+            </span>
+          </dd>
+        </div>
+
+        <%# PR Review Settings %>
+        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+          <dt class="text-sm font-medium text-gray-500">PR Reviews</dt>
+          <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+            <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium <%= @project.review_enabled? ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600' %>">
+              <%= @project.review_enabled? ? "Enabled" : "Disabled" %>
+            </span>
+            <% if @project.review_enabled? %>
+              <span class="ml-2 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium <%= @project.wait_for_reviews? ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600' %>">
+                <%= @project.wait_for_reviews? ? "Waits for reviews" : "Non-blocking" %>
+              </span>
+              <% if @project.enabled_review_methods.any? %>
+                <div class="mt-2 flex flex-wrap gap-1">
+                  <% review_method_labels = { "copilot" => "GitHub Copilot", "paid_agent" => "Paid Agent", "ci_action" => "CI Action", "manual" => "Manual" } %>
+                  <% @project.enabled_review_methods.each do |method| %>
+                    <span class="inline-flex items-center rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-700"><%= review_method_labels[method] || method.humanize %></span>
+                  <% end %>
+                </div>
+              <% end %>
+            <% end %>
+          </dd>
+        </div>
+      </dl>
+      <% if policy(@project).update? %>
+        <div class="px-4 py-3 sm:px-6">
+          <%= link_to edit_project_path(@project, anchor: "automation"), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" do %>
+            Edit automation settings &rarr;
+          <% end %>
+        </div>
+      <% end %>
+    </details>
+  </div>
+
+  <div data-show-actions="<%= policy(@project).run_agent? %>">
+    <% if policy(@project).update? %>
+      <div class="mt-6 overflow-hidden rounded-lg bg-white shadow">
+        <div class="px-4 py-5 sm:px-6">
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <h2 class="text-lg font-medium text-gray-900">Project Shortcuts</h2>
+              <p class="mt-1 text-sm text-gray-500">Jump to the project-specific context and configuration surfaces that shape agent output.</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-3">
+              <%= link_to "Business Context", project_context_intake_path(@project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+              <%= link_to "Automation Settings", edit_project_path(@project, anchor: "automation"), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+              <%= link_to "Labels", edit_project_path(@project, anchor: "labels"), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+              <%= link_to "MCP Servers", edit_project_path(@project, anchor: "mcp-servers"), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+              <%= link_to "Conventions", project_convention_settings_path(@project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+              <%= link_to "Health", project_health_check_path(@project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+            </div>
+          </div>
+        </div>
+      </div>
+    <% end %>
+
+    <%= render "projects/preview", project: @project, preview_session: @preview_session %>
+
+    <%= render "projects/stats", project: @project, budgets: @cost_budgets %>
+    <%= turbo_frame_tag dom_id(@project, :cost_snapshot), src: project_cost_snapshot_path(@project), loading: :lazy do %>
+      <div class="mt-4 h-14 animate-pulse rounded-lg bg-gray-100"></div>
+    <% end %>
+
+    <%= render "projects/issues", project: @project, issues: @issues,
+               issue_lifecycle_statuses: @issue_lifecycle_statuses,
+               paid_prs_by_issue_id: @paid_prs_by_issue_id,
+               paused_runs_by_issue_id: @paused_runs_by_issue_id,
+               merge_notification_issue_ids: @merge_notification_issue_ids %>
+
+    <%= render "projects/pull_requests", project: @project, pull_requests: @pull_requests,
+               merge_notification_issue_ids: @merge_notification_issue_ids,
+               paused_runs_by_pr_number: @paused_runs_by_pr_number,
+               pr_numbers_with_queued_auto_continue: @pr_numbers_with_queued_auto_continue,
+               pr_numbers_with_active_runs: @pr_numbers_with_active_runs %>
+
+    <div class="mt-8">
+      <h2 class="text-lg font-medium text-gray-900">Issue Monitoring</h2>
+      <div class="mt-4">
+        <%= turbo_frame_tag "workflow-status", src: project_workflow_status_path(@project), loading: :lazy do %>
+          <div class="animate-pulse bg-gray-100 h-24 rounded-lg"></div>
+        <% end %>
+      </div>
+    </div>
+
+    <%= render "projects/quality_summary", project: @project, quality_summary: @quality_summary %>
+
+    <%= render "projects/agent_runs",
+               project: @project,
+               recent_agent_runs: @recent_agent_runs,
+               stale_agent_runs_count: @stale_agent_runs_count,
+               show_stale_cleanup_action: @show_stale_cleanup_action %>
+
+    <%= render "projects/knowledge", project: @project, collector_runs: @collector_runs, failed_collector_runs: @latest_failed_collector_runs, artifact_counts: @artifact_counts %>
+
+    <% if @project.auto_merge_enabled? %>
+      <%= render "projects/recent_merged_pull_requests",
+                 project: @project,
+                 pull_requests: @recent_merged_pull_requests,
+                 closed_issues_by_number: @merged_pull_request_closed_issues_by_number %>
+    <% end %>
+  </div>
+
+</div>

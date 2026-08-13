@@ -1,0 +1,328 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe ChatSession do
+  subject(:chat_session) { build(:chat_session) }
+
+  before do
+    allow(Turbo::StreamsChannel).to receive(:broadcast_append_to)
+    allow(Turbo::StreamsChannel).to receive(:broadcast_prepend_to)
+    allow(Turbo::StreamsChannel).to receive(:broadcast_remove_to)
+  end
+
+  describe "associations" do
+    it { is_expected.to belong_to(:account) }
+    it { is_expected.to belong_to(:project).optional }
+    it { is_expected.to belong_to(:runner).optional }
+    it { is_expected.to belong_to(:created_by).class_name("User").optional }
+    it { is_expected.to have_many(:messages).class_name("ChatMessage").dependent(:destroy) }
+    it { is_expected.to have_many(:token_usages).dependent(:destroy) }
+    it { is_expected.to have_many(:chat_session_projects).dependent(:destroy) }
+    it { is_expected.to have_many(:projects).through(:chat_session_projects) }
+  end
+
+  describe "validations" do
+    it { is_expected.to validate_inclusion_of(:status).in_array(described_class::STATUSES) }
+    it { is_expected.to validate_inclusion_of(:container_capability).in_array(described_class::CONTAINER_CAPABILITIES) }
+
+    it "validates uniqueness of external_id" do
+      create(:chat_session)
+      expect(chat_session).to validate_uniqueness_of(:external_id).case_insensitive
+    end
+
+    it "rejects a runner from a different account" do
+      other_account = create(:account)
+      other_user = create(:user, account: other_account)
+      other_runner = other_user.runners.first
+
+      session = build(:chat_session, runner: other_runner)
+      expect(session).not_to be_valid
+      expect(session.errors[:runner]).to include("must belong to the same account")
+    end
+
+    it "rejects a project from a different account" do
+      other_account = create(:account)
+      other_project = create(:project, account: other_account)
+
+      session = build(:chat_session, project: other_project)
+      expect(session).not_to be_valid
+      expect(session.errors[:project]).to include("must belong to the same account")
+    end
+  end
+
+  describe "legacy provider alias" do
+    it "exposes runner_id through provider_id" do
+      account = create(:account)
+      user = create(:user, account: account)
+      runner = create(:runner, user: user, runner_key: "cursor")
+      session = create(:chat_session, account: account, created_by: user, runner: runner)
+
+      expect(session.provider_id).to eq(runner.id)
+    end
+
+    it "updates runner_id when the legacy provider_id setter is used" do
+      account = create(:account)
+      user = create(:user, account: account)
+      runner = create(:runner, user: user, runner_key: "cursor")
+      session = build(:chat_session, account: account, created_by: user)
+
+      session.provider_id = runner.id
+
+      expect(session.runner_id).to eq(runner.id)
+    end
+  end
+
+  describe "scopes" do
+    let(:account) { create(:account) }
+    let(:user) { create(:user, account: account) }
+
+    describe ".active" do
+      it "returns only active sessions" do
+        active = create(:chat_session, account: account, created_by: user)
+        create(:chat_session, :closed, account: account, created_by: user)
+
+        expect(described_class.active).to eq([ active ])
+      end
+    end
+
+    describe ".visible" do
+      it "excludes archived sessions" do
+        visible = create(:chat_session, account: account, created_by: user)
+        create(:chat_session, :archived, account: account, created_by: user)
+
+        expect(described_class.visible).to eq([ visible ])
+      end
+    end
+
+    describe ".idle_expired" do
+      it "returns active sessions past their idle timeout" do
+        expired = create(:chat_session, account: account, created_by: user, idle_timeout_at: 1.hour.ago)
+        create(:chat_session, account: account, created_by: user, idle_timeout_at: 1.hour.from_now)
+        create(:chat_session, :closed, account: account, created_by: user, idle_timeout_at: 1.hour.ago)
+
+        expect(described_class.idle_expired).to eq([ expired ])
+      end
+    end
+
+    describe ".with_container" do
+      it "returns only container-backed sessions" do
+        container_session = create(:chat_session, :workspace, account: account, created_by: user)
+        create(:chat_session, account: account, created_by: user)
+
+        expect(described_class.with_container).to eq([ container_session ])
+      end
+    end
+
+    describe ".awaiting_container" do
+      it "returns pending and provisioning sessions" do
+        pending_session = create(:chat_session, account: account, created_by: user, container_capability: "pending")
+        provisioning_session = create(:chat_session, account: account, created_by: user, container_capability: "provisioning")
+        create(:chat_session, :workspace, account: account, created_by: user)
+
+        expect(described_class.awaiting_container).to contain_exactly(pending_session, provisioning_session)
+      end
+    end
+  end
+
+  describe "container capability predicates" do
+    it "treats none as inline only" do
+      expect(build(:chat_session, container_capability: "none")).to be_inline_only
+    end
+
+    it "treats pending as pending" do
+      expect(build(:chat_session, container_capability: "pending")).to be_container_pending
+    end
+
+    it "treats provisioning as provisioning" do
+      expect(build(:chat_session, container_capability: "provisioning")).to be_container_provisioning
+    end
+
+    it "treats ready as ready" do
+      expect(build(:chat_session, container_capability: "ready")).to be_container_ready
+    end
+
+    it "treats failed as failed" do
+      expect(build(:chat_session, container_capability: "failed")).to be_container_failed
+    end
+
+    it "treats stopped as stopped" do
+      expect(build(:chat_session, container_capability: "stopped")).to be_container_stopped
+    end
+  end
+
+  describe "clone manifest" do
+    it "returns typed entries" do
+      session = build(:chat_session, clone_manifest: [
+        {
+          "project_id" => 42,
+          "cloned_at" => "2026-07-29T19:00:00Z",
+          "path" => "/workspace/projects/paid",
+          "token_identity" => "github-installation"
+        }
+      ])
+
+      entry = session.clone_manifest.first
+
+      expect(entry).to be_a(ChatSession::CloneManifestEntry)
+      expect(entry.project_id).to eq(42)
+      expect(entry.path).to eq("/workspace/projects/paid")
+      expect(entry.token_identity).to eq("github-installation")
+      expect(entry.cloned_at.iso8601).to eq("2026-07-29T19:00:00Z")
+    end
+
+    it "appends and replaces entries by project id" do
+      session = build(:chat_session)
+
+      session.append_clone_manifest_entry(
+        project_id: 7,
+        cloned_at: Time.zone.parse("2026-07-29 19:00:00 UTC"),
+        path: "/workspace/projects/api",
+        token_identity: "token-a"
+      )
+      session.append_clone_manifest_entry(
+        project_id: 7,
+        cloned_at: Time.zone.parse("2026-07-29 20:00:00 UTC"),
+        path: "/workspace/projects/api-v2",
+        token_identity: "token-b"
+      )
+
+      expect(session.clone_manifest.size).to eq(1)
+      expect(session.clone_manifest.first.path).to eq("/workspace/projects/api-v2")
+    end
+
+    it "removes entries by project id" do
+      session = build(:chat_session, clone_manifest: [
+        { project_id: 1, cloned_at: Time.zone.parse("2026-07-29 19:00:00 UTC"), path: "/workspace/one", token_identity: "a" },
+        { project_id: 2, cloned_at: Time.zone.parse("2026-07-29 20:00:00 UTC"), path: "/workspace/two", token_identity: "b" }
+      ])
+
+      removed = session.remove_clone_manifest_entry(project_id: 1)
+
+      expect(removed.map(&:project_id)).to eq([ 1 ])
+      expect(session.clone_manifest.map(&:project_id)).to eq([ 2 ])
+    end
+  end
+
+  describe "token aggregation" do
+    let(:account) { create(:account) }
+    let(:user) { create(:user, account: account) }
+    let(:session) { create(:chat_session, account: account, created_by: user) }
+
+    before do
+      create(:token_usage, :chat, chat_session: session, input_tokens: 100, output_tokens: 50, cost_cents: 0)
+      create(:token_usage, :chat, chat_session: session, input_tokens: 200, output_tokens: 75, cost_cents: 0)
+    end
+
+    describe "#total_tokens_input" do
+      it "sums input_tokens across token_usages" do
+        expect(session.total_tokens_input).to eq(300)
+      end
+    end
+
+    describe "#total_tokens_output" do
+      it "sums output_tokens across token_usages" do
+        expect(session.total_tokens_output).to eq(125)
+      end
+    end
+
+    describe "#total_tokens" do
+      it "returns the sum of input and output tokens" do
+        expect(session.total_tokens).to eq(425)
+      end
+    end
+
+    describe "#estimated_cost_cents" do
+      it "sums cost_cents from token_usages" do
+        create(:token_usage, :chat, chat_session: session, cost_cents: 10)
+        create(:token_usage, :chat, chat_session: session, cost_cents: 25)
+
+        expect(session.estimated_cost_cents).to eq(35)
+      end
+
+      it "returns 0 with no token usages" do
+        expect(session.estimated_cost_cents).to eq(0)
+      end
+    end
+  end
+
+  describe "#page_context" do
+    it "returns the stored page context hash" do
+      session = build(:chat_session,
+        metadata: {
+          "page_context" => {
+            "url" => "https://paid.example.test/projects/99",
+            "project_name" => "Acme API"
+          }
+        })
+
+      expect(session.page_context).to eq(
+        "url" => "https://paid.example.test/projects/99",
+        "project_name" => "Acme API"
+      )
+    end
+
+    it "returns an empty hash when no page context is present" do
+      expect(build(:chat_session, metadata: nil).page_context).to eq({})
+    end
+  end
+
+  describe "#sidebar_list_target" do
+    let(:account) { create(:account) }
+    let(:user) { create(:user, account: account) }
+
+    it "targets the active list frame for non-archived sessions" do
+      session = build(:chat_session, :active, account: account, created_by: user)
+
+      expect(session.sidebar_list_target).to eq("chat_sessions_list_active")
+    end
+
+    it "targets the archived list frame for archived sessions" do
+      session = build(:chat_session, :archived, account: account, created_by: user)
+
+      expect(session.sidebar_list_target).to eq("chat_sessions_list_archived")
+    end
+  end
+
+  describe "sidebar broadcasts" do
+    let(:account) { create(:account) }
+    let(:user) { create(:user, account: account) }
+
+    it "prepends new sessions into the active card list container" do
+      create(:chat_session, :active, account: account, created_by: user)
+
+      expect(Turbo::StreamsChannel).to have_received(:broadcast_prepend_to).with(
+        [ account, :chat_sessions ],
+        target: "chat_sessions_list_active",
+        partial: "chat_sessions/session_card",
+        locals: { chat_session: kind_of(described_class) }
+      )
+    end
+
+    it "moves archived sessions into the archived card list container on archive" do
+      session = create(:chat_session, :active, account: account, created_by: user)
+
+      session.update!(status: "archived")
+
+      expect(Turbo::StreamsChannel).to have_received(:broadcast_prepend_to).with(
+        [ account, :chat_sessions ],
+        target: "chat_sessions_list_archived",
+        partial: "chat_sessions/session_card",
+        locals: { chat_session: session }
+      )
+    end
+
+    it "restores the old list empty state when a status change leaves it empty" do
+      session = create(:chat_session, :active, account: account, created_by: user)
+
+      session.update!(status: "archived")
+
+      expect(Turbo::StreamsChannel).to have_received(:broadcast_append_to).with(
+        [ account, :chat_sessions ],
+        target: "chat_sessions_list_active",
+        partial: "chat_sessions/sidebar_empty_state",
+        locals: { archived_view: false }
+      )
+    end
+  end
+end

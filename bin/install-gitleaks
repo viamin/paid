@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+# @spec REPO-SECRET-SCAN-003
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "${script_dir}/.." && pwd)"
+
+version="8.30.1"
+install_dir="${GITLEAKS_INSTALL_DIR:-${repo_root}/tmp/tools/gitleaks}"
+target_path="${install_dir}/gitleaks-v${version}"
+
+print_path() {
+  printf '%s\n' "${target_path}"
+}
+
+verify_checksum() {
+  local expected archive
+  expected="$1"
+  archive="$2"
+
+  if command -v sha256sum >/dev/null 2>&1; then
+    printf '%s  %s\n' "${expected}" "${archive}" | sha256sum -c - >/dev/null
+    return
+  fi
+
+  if command -v shasum >/dev/null 2>&1; then
+    printf '%s  %s\n' "${expected}" "${archive}" | shasum -a 256 -c >/dev/null
+    return
+  fi
+
+  echo "No SHA-256 verifier found (expected sha256sum or shasum)." >&2
+  exit 1
+}
+
+current_version() {
+  if [[ ! -x "${target_path}" ]]; then
+    return 1
+  fi
+
+  "${target_path}" version 2>/dev/null | tr -d '\r'
+}
+
+resolve_asset() {
+  local os arch suffix checksum
+
+  case "$(uname -s)" in
+    Linux) os="linux" ;;
+    Darwin) os="darwin" ;;
+    *)
+      echo "Unsupported OS for Gitleaks install: $(uname -s)" >&2
+      exit 1
+      ;;
+  esac
+
+  case "$(uname -m)" in
+    x86_64|amd64) arch="x64" ;;
+    arm64|aarch64) arch="arm64" ;;
+    *)
+      echo "Unsupported architecture for Gitleaks install: $(uname -m)" >&2
+      exit 1
+      ;;
+  esac
+
+  case "${os}_${arch}" in
+    darwin_arm64) checksum="b40ab0ae55c505963e365f271a8d3846efbc170aa17f2607f13df610a9aeb6a5" ;;
+    darwin_x64) checksum="dfe101a4db2255fc85120ac7f3d25e4342c3c20cf749f2c20a18081af1952709" ;;
+    linux_arm64) checksum="e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080" ;;
+    linux_x64) checksum="551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb" ;;
+    *)
+      echo "No pinned checksum for Gitleaks asset ${os}_${arch}." >&2
+      exit 1
+      ;;
+  esac
+
+  suffix="gitleaks_${version}_${os}_${arch}.tar.gz"
+  printf '%s\n%s\n' "${suffix}" "${checksum}"
+}
+
+install_gitleaks() {
+  local asset checksum tmpdir archive url extracted_path
+  mapfile -t asset_data < <(resolve_asset)
+  asset="${asset_data[0]}"
+  checksum="${asset_data[1]}"
+
+  mkdir -p "${install_dir}"
+
+  if current_version | grep -Fqx "${version}"; then
+    print_path
+    return
+  fi
+
+  tmpdir=""
+  tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/gitleaks-install.XXXXXX")"
+  trap 'rm -rf "${tmpdir:-}"' EXIT
+
+  archive="${tmpdir}/${asset}"
+  url="https://github.com/gitleaks/gitleaks/releases/download/v${version}/${asset}"
+
+  curl -fsSL --retry 5 --retry-delay 2 --retry-connrefused --retry-all-errors \
+    -o "${archive}" "${url}"
+  verify_checksum "${checksum}" "${archive}"
+  tar -xzf "${archive}" -C "${tmpdir}"
+
+  extracted_path="${tmpdir}/gitleaks"
+  if [[ ! -x "${extracted_path}" ]]; then
+    echo "Downloaded Gitleaks archive did not contain an executable binary." >&2
+    exit 1
+  fi
+
+  mv "${extracted_path}" "${target_path}"
+  chmod +x "${target_path}"
+  print_path
+}
+
+case "${1:-}" in
+  ""|--print-path)
+    install_gitleaks
+    ;;
+  *)
+    echo "Usage: bin/install-gitleaks [--print-path]" >&2
+    exit 1
+    ;;
+esac

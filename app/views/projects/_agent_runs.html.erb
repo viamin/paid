@@ -1,0 +1,61 @@
+<div id="<%= dom_id(project, :agent_runs) %>" class="mt-8">
+  <% stale_agent_runs_count = local_assigns.fetch(:stale_agent_runs_count) { project.agent_runs.stale_for_cleanup.count } %>
+  <% show_stale_cleanup_action = local_assigns.fetch(:show_stale_cleanup_action, false) %>
+  <div class="flex items-center justify-between gap-4">
+    <h2 class="text-lg font-medium text-gray-900">
+      <%= link_to "Recent Agent Runs", project_agent_runs_collection_path(project), class: "hover:text-indigo-600" %>
+    </h2>
+    <% if show_stale_cleanup_action %>
+      <%= button_to "Clean Up Stale Runs",
+                    cleanup_stale_runs_project_member_path(project),
+                    method: :post,
+                    class: "inline-flex items-center rounded-md bg-amber-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500",
+                    form: { data: { turbo_confirm: "Clean up #{pluralize(stale_agent_runs_count, "stale agent run")} for this project?" } } %>
+    <% end %>
+  </div>
+
+  <% if recent_agent_runs.any? %>
+    <div class="mt-4 flow-root">
+      <div class="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
+        <div class="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
+          <div class="overflow-hidden shadow ring-1 ring-black ring-opacity-5 sm:rounded-lg">
+            <table class="min-w-full divide-y divide-gray-300">
+              <thead class="bg-gray-50">
+                <tr>
+                  <th scope="col" class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">Status</th>
+                  <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Priority</th>
+                  <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Goal</th>
+                  <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Context</th>
+                  <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Runner</th>
+                  <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Duration</th>
+                  <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Started</th>
+                  <th scope="col" class="relative py-3.5 pl-3 pr-4 sm:pr-6">
+                    <span class="sr-only">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-200 bg-white">
+                <% runner_displays = agent_run_runner_displays(recent_agent_runs) %>
+                <% recent_agent_runs.each do |run| %>
+                  <%= render "projects/agent_run", agent_run: run, project: project, runner_displays: runner_displays %>
+                <% end %>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-3 text-right">
+      <%= link_to "View all agent runs \u2192", project_agent_runs_collection_path(project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-900" %>
+    </div>
+  <% else %>
+    <div class="mt-4 text-center rounded-lg border-2 border-dashed border-gray-300 p-12">
+      <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+      </svg>
+      <h3 class="mt-2 text-sm font-semibold text-gray-900">No agent runs yet</h3>
+      <p class="mt-1 text-sm text-gray-500">Agent runs will appear here once the workflow execution is enabled.</p>
+    </div>
+  <% end %>
+</div>

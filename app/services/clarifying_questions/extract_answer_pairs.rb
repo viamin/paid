@@ -1,0 +1,88 @@
+# frozen_string_literal: true
+
+module ClarifyingQuestions
+  class ExtractAnswerPairs
+    Result = Struct.new(:qa_pairs, :answer_comment, keyword_init: true)
+
+    def self.call(...)
+      new(...).call
+    end
+
+    def initialize(project:, issue_comments:, issue: nil)
+      @project = project
+      @issue_comments = Array(issue_comments)
+      @issue = issue
+    end
+
+    def call
+      enhancement_comment = find_enhancement_comment
+      answer_comment = find_answer_comment(enhancement_comment)
+      return empty_result unless answer_comment
+
+      questions = current_questions(enhancement_comment)
+      parsed_pairs = AnswerPairs.parse(answer_comment.body.to_s)
+      return empty_result unless AnswerPairs.questions_match?(questions, parsed_pairs)
+
+      qa_pairs = pair_qa(questions, parsed_pairs)
+
+      Result.new(qa_pairs: qa_pairs, answer_comment: answer_comment)
+    end
+
+    private
+
+    attr_reader :project, :issue_comments, :issue
+
+    def empty_result
+      Result.new(qa_pairs: [], answer_comment: nil)
+    end
+
+    def admitted_comments
+      @admitted_comments ||= issue_comments.select do |comment|
+        CommentAdmission.admissible?(project: project, comment: comment)
+      end
+    end
+
+    def find_enhancement_comment
+      admitted_comments.reverse.find do |comment|
+        Parse.call(comment_body: comment.body).any?
+      end
+    end
+
+    def find_answer_comment(enhancement_comment)
+      admitted_comments.reverse.find do |comment|
+        comment.body.to_s.include?(Load::ANSWER_MARKER) &&
+          answer_satisfies_latest_questions?(answer_comment: comment, enhancement_comment: enhancement_comment)
+      end
+    end
+
+    # Determines which questions are "current", mirroring
+    # ClarifyingQuestions::Load#latest_questions so this service and Load agree:
+    # the latest enhancement comment wins when present, otherwise the questions
+    # embedded in the issue body. Without the body fallback, answers that Load
+    # treats as stale (because the body questions changed after they were posted)
+    # would still be injected into the agent prompt.
+    def current_questions(enhancement_comment)
+      return Parse.call(comment_body: enhancement_comment.body.to_s) if enhancement_comment
+
+      questions = Parse.call(comment_body: issue&.body.to_s)
+      return questions if questions.any?
+
+      issue.respond_to?(:needs_input_questions) ? Array(issue.needs_input_questions) : []
+    end
+
+    def answer_satisfies_latest_questions?(answer_comment:, enhancement_comment:)
+      return true unless enhancement_comment
+
+      answer_comment.created_at > enhancement_comment.created_at
+    end
+
+    def pair_qa(questions, parsed_pairs)
+      questions.each_with_index.filter_map do |question, index|
+        answer = parsed_pairs[index]&.fetch(:answer, nil)
+        next if answer.blank?
+
+        { question: question, answer: answer }
+      end
+    end
+  end
+end

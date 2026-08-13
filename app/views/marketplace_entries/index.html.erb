@@ -1,0 +1,63 @@
+<% content_for(:title) { "Marketplace Entries - Paid" } %>
+
+<div class="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-2xl font-semibold text-gray-900">Ecosystem Catalog</h1>
+      <p class="mt-1 text-sm text-gray-500">Shared integrations, prompts, policy packs, collectors, tools, workflow strategies, and runtime extensions.</p>
+    </div>
+    <div class="flex items-center gap-3">
+      <% if current_account.paid_plan? %>
+        <%= link_to "Import PDF", new_marketplace_entry_pdf_import_path, class: "inline-flex items-center rounded-md border border-indigo-200 px-4 py-2 text-sm font-semibold text-indigo-700 shadow-sm hover:bg-indigo-50" %>
+      <% end %>
+      <%= link_to "New Entry", new_marketplace_entry_path, class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+    </div>
+  </div>
+
+  <div class="mt-6 overflow-hidden rounded-lg bg-white shadow">
+    <table class="min-w-full divide-y divide-gray-200">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Name</th>
+          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Type</th>
+          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Status</th>
+          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Certification</th>
+          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Version</th>
+          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Updated</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-200 bg-white">
+        <% @marketplace_entries.each do |entry| %>
+          <% entry_tags = Array(entry.tags) %>
+          <tr>
+            <td class="px-4 py-3 text-sm text-gray-900">
+              <%= link_to entry.name, marketplace_entry_path(entry), class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+              <% if entry_tags.any? %>
+                <div class="mt-1 text-xs text-gray-500"><%= entry_tags.join(", ") %></div>
+              <% end %>
+            </td>
+            <td class="px-4 py-3 text-sm text-gray-700">
+              <div><%= entry.entry_type.humanize %></div>
+              <% if entry.extension_points.any? %>
+                <div class="mt-1 text-xs text-gray-500"><%= entry.extension_points.map(&:humanize).join(", ") %></div>
+              <% end %>
+            </td>
+            <td class="px-4 py-3 text-sm text-gray-700"><%= entry.status.humanize %></td>
+            <td class="px-4 py-3 text-sm text-gray-700">
+              <div><%= entry.certification_status.humanize %></div>
+              <div class="mt-1 text-xs text-gray-500"><%= entry.support_tier.humanize %></div>
+            </td>
+            <td class="px-4 py-3 text-sm text-gray-700"><%= entry.current_version&.version || "-" %></td>
+            <td class="px-4 py-3 text-sm text-gray-700"><%= local_time(entry.updated_at, format: :short) %></td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+
+  <% if @pagy.pages > 1 %>
+    <div class="mt-4">
+      <%== @pagy.series_nav %>
+    </div>
+  <% end %>
+</div>

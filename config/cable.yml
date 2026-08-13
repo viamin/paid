@@ -1,0 +1,19 @@
+development:
+  adapter: solid_cable
+  connects_to:
+    database:
+      writing: cable
+  # 1s keeps load reasonable in development while still feeling live.
+  polling_interval: 1.second
+  message_retention: 1.day
+
+test:
+  adapter: test
+
+production:
+  adapter: solid_cable
+  connects_to:
+    database:
+      writing: cable
+  polling_interval: <%= ENV.fetch("ACTION_CABLE_POLLING_INTERVAL", "1.second") %>
+  message_retention: 1.day
