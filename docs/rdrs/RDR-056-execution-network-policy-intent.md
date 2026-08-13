@@ -116,17 +116,20 @@ rather than silently downgraded.
 
 ### Existing behavior is preserved
 
-The current `:proxy_restricted` factory still returns a policy with
-`mode = :proxy_restricted`, `firewall = true`, and an empty default
-`allow_destinations` — the same shape `LocalDockerRunner` already understands.
-For convenience and so that callers expressing the new intent vocabulary do
-not lose approved-services handling, `:approved_services` is the canonical
-name and `:proxy_restricted` remains as a backward-compatible alias.
+The three backward-compatible constructors are thin aliases that normalize
+to their canonical intent, so existing callers keep the same restricted /
+unrestricted behavior while downstream translation paths only see the
+canonical six-intent set:
 
-The current `:subscription_auth` and `:direct_outbound` modes remain valid
-constructors; they map to the new `:model_direct` intent. The plan is to
-keep the old factories compiling so existing callers do not break, while
-encouraging new code to use the named intent factories.
+- `.proxy_restricted` returns `mode = :approved_services`, `firewall = true`.
+- `.subscription_auth` returns `mode = :model_direct`, `firewall = false`.
+- `.direct_outbound` returns `mode = :model_direct`, `firewall = false`.
+
+`#canonical_mode` normalizes any legacy mode symbol (`:proxy_restricted`,
+`:subscription_auth`, `:direct_outbound`) to its canonical equivalent, so
+callers that receive a policy from an older code path still resolve the
+right intent. The old factories keep compiling so existing callers do not
+break, while encouraging new code to use the named intent factories.
 
 ## Issue Plan
 

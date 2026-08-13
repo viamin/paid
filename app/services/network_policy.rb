@@ -24,9 +24,11 @@ class NetworkPolicy
   # Raised when network operations fail
   class Error < StandardError; end
 
-  # +mode+ values: :proxy | :subscription_auth | :direct_outbound
-  # (mirrors ExecutionRunners::NetworkingPolicy#mode, which this contract
-  # will be translated to/from during the runner-contract migration).
+  # +mode+ values: :proxy (restricted runs), or the unrestricted
+  # ExecutionRunners::NetworkingPolicy#mode (:model_direct,
+  # :explicit_internet, :subscription_auth, :direct_outbound). Set by
+  # {NetworkPolicy.contract_for_policy} during the runner-contract
+  # translation (RDR-054, RDR-056).
   NetworkContract = Struct.new(:mode, :network, :restricted, :firewall, keyword_init: true) do
     def restricted?
       restricted

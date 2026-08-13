@@ -308,6 +308,14 @@ RSpec.describe ExecutionRunners do
       it "normalizes :direct_outbound to the :model_direct canonical mode" do
         expect(described_class.direct_outbound.canonical_mode).to eq(:model_direct)
       end
+
+      it "returns the mode unchanged for each canonical intent" do
+        %i[no_outbound proxy_only git_plus_proxy approved_services model_direct explicit_internet].each do |mode|
+          policy = described_class.public_send(mode)
+
+          expect(policy.canonical_mode).to eq(mode), "expected canonical_mode for #{mode}"
+        end
+      end
     end
   end
 

@@ -231,6 +231,29 @@ RSpec.describe NetworkPolicy, :no_db do
         described_class.apply_firewall_rules(mock_container, proxy_host: "10.0.0.1")
       end
 
+      it "omits GitHub rules entirely when github_ips is empty (RDR-056 :no_outbound/:proxy_only)" do
+        expect(backend).to receive(:exec_in_container).with(mock_container, kind_of(Array)) do |_container, cmd|
+          script = cmd[2]
+          described_class::DEFAULT_GITHUB_IPS.each do |cidr|
+            expect(script).not_to include("-d #{cidr}"), "expected #{cidr} rule to be omitted"
+          end
+          [ [], [], 0 ]
+        end
+
+        described_class.apply_firewall_rules(mock_container, github_ips: [])
+      end
+
+      it "omits the proxy allow rule entirely when proxy_host is false (RDR-056 :no_outbound)" do
+        expect(backend).to receive(:exec_in_container).with(mock_container, kind_of(Array)) do |_container, cmd|
+          script = cmd[2]
+          expect(script).not_to include("-d paid-proxy")
+          expect(script).not_to include("--dport #{described_class::SECRETS_PROXY_PORT}")
+          [ [], [], 0 ]
+        end
+
+        described_class.apply_firewall_rules(mock_container, github_ips: [], proxy_host: false)
+      end
+
       it "uses PAID_PROXY_EXTERNAL_URL for remote backends" do
         remote_backend = instance_double(
           Containers::Backends::Base,
