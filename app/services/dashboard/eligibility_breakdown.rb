@@ -62,13 +62,13 @@ module Dashboard
       excluded = open.where.not(id: eligible_scope.select(:id))
       row = excluded.pick(
         Arel.sql("COUNT(*)"),
-        Arel.sql("COUNT(*) FILTER (WHERE paid_state = 'needs_input')"),
         Arel.sql("COUNT(*) FILTER (WHERE paid_state = 'in_progress')"),
         Arel.sql("COUNT(*) FILTER (WHERE paid_state = 'completed')"),
         Arel.sql("COUNT(*) FILTER (WHERE paid_state IN ('new','planning','failed','analyzed'))")
-      ) || [ 0, 0, 0, 0, 0 ]
-      excluded_total, needs_input, in_progress, completed, analyzable = row
+      ) || [ 0, 0, 0, 0 ]
+      excluded_total, in_progress, completed, analyzable = row
 
+      needs_input = count_question_backed_needs_input(excluded)
       skip_label = count_skip_labeled(excluded, analyzable, project)
       other = excluded_total - needs_input - in_progress - completed - skip_label
 
@@ -100,6 +100,19 @@ module Dashboard
           labels.map(&:downcase)
         )
         .count
+    end
+
+    def count_question_backed_needs_input(excluded_scope)
+      excluded_scope.where(paid_state: "needs_input")
+        .select(:body, :needs_input_questions)
+        .count { |issue| question_summary_for(issue).any? }
+    end
+
+    def question_summary_for(issue)
+      questions = ClarifyingQuestions::Parse.call(comment_body: issue.body)
+      return questions if questions.any?
+
+      Array(issue.needs_input_questions)
     end
 
     def visible_owner_ids

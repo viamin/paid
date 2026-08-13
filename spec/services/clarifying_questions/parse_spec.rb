@@ -46,6 +46,37 @@ RSpec.describe ClarifyingQuestions::Parse, :no_db do
         expect(questions[0]).to eq("What is the expected behavior for the edge case where the user has not yet confirmed their email address?")
         expect(questions[1]).to eq("Should this be enabled by default?")
       end
+
+      it "parses heading variants such as remaining clarifying questions" do
+        body = <<~COMMENT
+          <!-- paid:enhance-issue -->
+
+          ## Remaining clarifying questions
+          1. Which scope should ship first?
+        COMMENT
+
+        questions = described_class.call(comment_body: body)
+
+        expect(questions).to eq([ "Which scope should ship first?" ])
+      end
+
+      it "ignores the phrase clarifying questions repeated in a later section" do
+        body = <<~COMMENT
+          <!-- paid:enhance-issue -->
+
+          ## Clarifying questions
+          1. What is the expected behavior for edge case X?
+
+          ## Notes
+          These are the clarifying questions we still need to resolve.
+
+          Some trailing context.
+        COMMENT
+
+        questions = described_class.call(comment_body: body)
+
+        expect(questions).to eq([ "What is the expected behavior for edge case X?" ])
+      end
     end
 
     context "when comment has sufficient context (no clarifying questions)" do

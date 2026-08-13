@@ -31,7 +31,7 @@ RSpec.describe Dashboard::EligibilityBreakdown do
     it "returns a breakdown with correct counts" do
       create(:issue, project: project, github_state: "open", paid_state: "new")
       create(:issue, project: project, github_state: "open", paid_state: "new", labels: [ "tracking" ])
-      create(:issue, project: project, github_state: "open", paid_state: "needs_input")
+      create(:issue, project: project, github_state: "open", paid_state: "needs_input", needs_input_questions: [ "What should happen?" ])
       create(:issue, project: project, github_state: "open", paid_state: "in_progress")
       create(:issue, project: project, github_state: "open", paid_state: "completed")
 
@@ -47,6 +47,27 @@ RSpec.describe Dashboard::EligibilityBreakdown do
       expect(bd.completed).to eq(1)
       expect(bd.skip_label).to eq(1)
       expect(bd.other_excluded).to eq(0)
+    end
+
+    it "counts questionless needs-input issues as other excluded" do
+      create(:issue, project: project, github_state: "open", paid_state: "needs_input")
+
+      result = described_class.call(user: user)
+
+      bd = result.first
+      expect(bd.needs_input).to eq(0)
+      expect(bd.other_excluded).to eq(1)
+    end
+
+    it "does not count marker-only needs-input bodies as answerable" do
+      create(:issue, project: project, github_state: "open", paid_state: "needs_input",
+        body: "#{ClarifyingQuestions::Parse::ENHANCEMENT_MARKER}\n\n## Clarifying questions\nNo numbered questions here.")
+
+      result = described_class.call(user: user)
+
+      bd = result.first
+      expect(bd.needs_input).to eq(0)
+      expect(bd.other_excluded).to eq(1)
     end
 
     it "counts dependency-blocked issues in other_excluded" do
