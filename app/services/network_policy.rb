@@ -94,6 +94,7 @@ class NetworkPolicy
     #
     # @param policy [ExecutionRunners::NetworkingPolicy]
     # @return [NetworkContract]
+    # @spec CONTAINER-RUNTIME-018
     def contract_for_policy(policy)
       if policy.restricted?
         NetworkContract.new(
@@ -182,6 +183,7 @@ class NetworkPolicy
     #   each with :ip and :port keys (e.g., { ip: "172.28.0.5", port: 5432 })
     # @return [void]
     # @raise [Error] if applying rules fails
+    # @spec CONTAINER-RUNTIME-018
     def apply_firewall_rules(container, github_ips: nil, proxy_host: nil, service_destinations: [], backend: Containers.backend)
       github_ips = github_ips.nil? ? DEFAULT_GITHUB_IPS : github_ips
       proxy_destination = if proxy_host == false
@@ -422,6 +424,7 @@ class NetworkPolicy
       raise Error, "Invalid PAID_PROXY_EXTERNAL_URL: #{e.message}"
     end
 
+    # @spec CONTAINER-RUNTIME-018
     def build_firewall_script(github_ips:, proxy_host:, proxy_port:, service_destinations: [])
       github_rules = github_ips.flat_map do |cidr|
         [

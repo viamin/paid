@@ -8,6 +8,7 @@ require "rails_helper"
 # @spec CONTAINER-RUNTIME-010
 # @spec CONTAINER-RUNTIME-011
 # @spec CONTAINER-RUNTIME-017
+# @spec CONTAINER-RUNTIME-018
 RSpec.describe ExecutionRunners do
   describe ".resolve" do
     it "returns a LocalDockerRunner for the current Docker-only backends" do

@@ -26,6 +26,7 @@ module ExecutionRunners
   # The runner records calls into +provision_calls+, +start_calls+,
   # +cancel_calls+, and +cleanup_calls+ so specs can assert the runner was
   # exercised the expected number of times with the expected arguments.
+  # @spec CONTAINER-RUNTIME-018
   class ContractRunner < Base
     RUNNER_TYPE = :contract
 
