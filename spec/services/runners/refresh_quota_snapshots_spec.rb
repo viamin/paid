@@ -74,10 +74,10 @@ RSpec.describe Runners::RefreshQuotaSnapshots do
 
     it "uses provider check_quota for subscription runners when available" do
       provider_name = RunnerSupport.harness_runner_key_for("claude").to_sym
-      status = Struct.new(:remaining, :limit, :reset_at, :unit) do
+      checked_at = 5.minutes.ago
+      status = Struct.new(:remaining, :limit, :reset_at, :unit, :checked_at) do
         def available? = true
-        def checked_at = 5.minutes.ago
-      end.new(600, 1000, 1.hour.from_now, "requests")
+      end.new(600, 1000, 1.hour.from_now, "requests", checked_at)
       provider = double(subscription_unset_vars: [], check_quota: status)
 
       allow(AgentHarness).to receive(:provider).with(provider_name).and_return(provider)
@@ -92,7 +92,7 @@ RSpec.describe Runners::RefreshQuotaSnapshots do
         "available" => true,
         "source" => "provider"
       )
-      expect(Time.iso8601(snapshot.fetch("checked_at"))).to be_within(1.second).of(5.minutes.ago)
+      expect(Time.iso8601(snapshot.fetch("checked_at"))).to be_within(1.second).of(checked_at)
     end
 
     # @spec RUNNER-QUOTA-001
