@@ -195,4 +195,34 @@ RSpec.describe ClarifyingQuestions::ExtractAnswerPairs do
       expect(result.answer_comment).to be_nil
     end
   end
+
+  context "when the clarifying questions are persisted locally" do
+    let(:stored_issue) do
+      build_stubbed(
+        :issue,
+        body: "Original issue body",
+        needs_input_questions: [
+          "What problem are we solving?",
+          "When the redirect is invalid, what should happen?"
+        ]
+      )
+    end
+
+    it "returns pairs when stored questions match the posted answers" do
+      result = described_class.call(
+        project: project,
+        issue: stored_issue,
+        issue_comments: [ answer_comment ]
+      )
+
+      expect(result.qa_pairs).to eq(
+        [
+          { question: "What problem are we solving?",
+            answer: "Users should never land on a broken redirect." },
+          { question: "When the redirect is invalid, what should happen?",
+            answer: "The system should send them to `/dashboard`." }
+        ]
+      )
+    end
+  end
 end

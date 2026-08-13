@@ -19,6 +19,7 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
       body: issue_body,
       github_number: 1964,
       github_updated_at: 2.minutes.ago,
+      needs_input_questions: nil,
       needs_input?: false
     )
   end
@@ -93,6 +94,49 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
       end
 
       it "loads questions from the latest enhancement comment" do
+        questions = described_class.call(project: project, issue: issue)
+
+        expect(questions).to eq([
+          "What is the expected behavior?",
+          "Should this be behind a flag?"
+        ])
+      end
+    end
+
+    context "when clarifying questions are persisted locally" do
+      let(:issue) do
+        double(
+          id: 42,
+          body: "Original issue body",
+          github_number: 1964,
+          github_updated_at: 2.minutes.ago,
+          needs_input_questions: [ "Which scope should ship first?" ],
+          needs_input?: true
+        )
+      end
+
+      it "returns the persisted questions" do
+        questions = described_class.call(project: project, issue: issue)
+
+        expect(questions).to eq([ "Which scope should ship first?" ])
+      end
+
+      it "returns persisted questions when GitHub comments cannot be loaded" do
+        allow(github_client).to receive(:issue_comments).and_raise(GithubClient::Error, "GitHub unavailable")
+
+        questions = described_class.call(project: project, issue: issue)
+
+        expect(questions).to eq([ "Which scope should ship first?" ])
+      end
+
+      it "prefers newer questions from GitHub comments" do
+        comment = double(
+          body: comment_body,
+          user: double(login: trusted_login),
+          created_at: 1.minute.ago
+        )
+        allow(github_client).to receive(:issue_comments).and_return([ comment ])
+
         questions = described_class.call(project: project, issue: issue)
 
         expect(questions).to eq([

@@ -15,14 +15,17 @@ module ClarifyingQuestions
 
     def call
       body_questions = Parse.call(comment_body: issue.body)
+      stored_questions = issue.respond_to?(:needs_input_questions) ? Array(issue.needs_input_questions).map { |question| question.to_s.strip }.reject(&:blank?) : []
+      current_questions = body_questions.presence || stored_questions
 
-      if body_questions.any?
-        return body_questions unless github_available?
+      if current_questions.any?
+        return current_questions unless github_available?
 
         enhancement_comment = latest_enhancement_comment
-        return reconcile_answered if answered_after_latest_questions?(body_questions:, enhancement_comment:)
+        current_questions = latest_questions(body_questions: current_questions, enhancement_comment:)
+        return reconcile_answered if answered_after_latest_questions?(body_questions: current_questions, enhancement_comment:)
 
-        return body_questions
+        return current_questions
       end
 
       return [] unless github_available?
@@ -33,9 +36,9 @@ module ClarifyingQuestions
 
       Parse.call(comment_body: comment_body(enhancement_comment))
     rescue GithubClient::Error
-      raise if body_questions.empty?
+      raise if current_questions.empty?
 
-      body_questions
+      current_questions
     end
 
     private
@@ -50,8 +53,7 @@ module ClarifyingQuestions
       return unless github_available?
 
       issue_comments.reverse.find do |comment|
-        comment_body(comment).include?(Parse::ENHANCEMENT_MARKER) &&
-          comment_body(comment).include?("## Clarifying questions")
+        Parse.call(comment_body: comment_body(comment)).any?
       end
     end
 
@@ -67,7 +69,10 @@ module ClarifyingQuestions
     end
 
     def latest_questions(body_questions:, enhancement_comment:)
-      return Parse.call(comment_body: comment_body(enhancement_comment)) if enhancement_comment.present?
+      if enhancement_comment.present?
+        questions = Parse.call(comment_body: comment_body(enhancement_comment))
+        return questions if questions.any?
+      end
 
       body_questions
     end

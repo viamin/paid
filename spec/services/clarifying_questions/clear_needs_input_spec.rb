@@ -15,7 +15,9 @@ RSpec.describe ClarifyingQuestions::ClearNeedsInput do
     let(:issue) do
       double(
         github_number: 1964,
+        paid_state: "needs_input",
         needs_input?: true,
+        has_label?: true,
         labels: [ "paid-needs-input", "P2" ],
         update!: true
       )
@@ -36,12 +38,32 @@ RSpec.describe ClarifyingQuestions::ClearNeedsInput do
     end
 
     context "when the issue is not awaiting input" do
-      let(:issue) { double(needs_input?: false) }
+      let(:issue) { double(paid_state: "new", needs_input?: false) }
 
       it "is a no-op" do
         described_class.call(project: project, issue: issue)
 
         expect(github_client).not_to have_received(:remove_label_from_issue)
+      end
+    end
+
+    context "when the local state is stale and the label is already gone" do
+      let(:issue) do
+        double(
+          github_number: 1964,
+          paid_state: "needs_input",
+          needs_input?: false,
+          has_label?: false,
+          labels: [ "P2" ],
+          update!: true
+        )
+      end
+
+      it "clears local needs_input without calling GitHub" do
+        described_class.call(project: project, issue: issue)
+
+        expect(github_client).not_to have_received(:remove_label_from_issue)
+        expect(issue).to have_received(:update!).with(paid_state: "new", labels: [ "P2" ], needs_input_questions: nil)
       end
     end
 

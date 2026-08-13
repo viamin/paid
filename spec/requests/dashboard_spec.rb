@@ -869,7 +869,7 @@ RSpec.describe "Dashboard" do
     end
 
     it "links the needs-input count to the dashboard queue" do
-      create(:issue, :needs_input, project: project)
+      create(:issue, :needs_input, project: project, needs_input_questions: [ "What should happen?" ])
 
       get dashboard_eligibility_breakdown_path
 

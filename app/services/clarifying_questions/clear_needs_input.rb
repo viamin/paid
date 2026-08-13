@@ -23,10 +23,10 @@ module ClarifyingQuestions
     end
 
     def call
-      return unless issue.needs_input?
+      return unless issue.needs_input? || issue_paid_state_needs_input?
 
       label = project.enhance_issue_needs_input_label_name
-      remove_label(label)
+      remove_label(label) if issue.has_label?(label)
 
       # Check if this issue is associated with a paused create_feature run.
       # If so, assemble the feature brief from the answers and resume the run
@@ -43,6 +43,10 @@ module ClarifyingQuestions
     private
 
     attr_reader :project, :issue
+
+    def issue_paid_state_needs_input?
+      issue.respond_to?(:paid_state) && issue.paid_state == "needs_input"
+    end
 
     def remove_label(label)
       project.client&.remove_label_from_issue(project.full_name, issue.github_number, label)

@@ -66,11 +66,16 @@ module Activities
     # Build comment, post, apply labels, complete run.
     # @spec ISSUE-ENHANCEMENT-006
     def finish_enhance_issue(agent_run, project, issue, client, parsed)
+      max_rounds_reached = !parsed[:sufficient_context] && max_rounds_reached?(project, issue)
       parsed = stop_after_max_rounds(parsed, project, issue)
       draft = build_change_intent_draft(agent_run, project, issue, parsed)
       comment_body = comment_body_for(parsed, draft)
+      questions = needs_input_questions(parsed, comment_body, max_rounds_reached:)
+      raise_parse_error!(agent_run, "sufficient_context false without clarifying questions") if needs_questions?(parsed, max_rounds_reached) && questions.empty?
+
       gh_comment = client.add_comment(project.full_name, issue.github_number, comment_body)
       label_result = apply_label_state(client, project, issue, parsed)
+      sync_needs_input_questions(issue, questions)
 
       agent_run.log!("stdout", comment_body)
       complete_run!(agent_run, paid_state_for(parsed, project, issue))
@@ -142,14 +147,15 @@ module Activities
     end
 
     def recover_or_raise_parse_error!(agent_run, project, issue, client, comments, detail)
-      return recover_paid_question_comment!(agent_run, project, issue, client, comments) if paid_question_comment?(project, agent_run, comments)
+      comment = paid_question_comment(project, agent_run, comments)
+      return recover_paid_question_comment!(agent_run, project, issue, client, comment) if comment
 
       raise_parse_error!(agent_run, detail)
     end
 
-    def recover_paid_question_comment!(agent_run, project, issue, client, comments)
-      comment = paid_question_comment(project, agent_run, comments)
+    def recover_paid_question_comment!(agent_run, project, issue, client, comment)
       label_result = apply_label_state(client, project, issue, sufficient_context: false)
+      issue.update!(needs_input_questions: paid_comment_questions(comment))
       complete_run!(agent_run, "needs_input")
       ProcessRunQueueJob.perform_later
 
@@ -357,6 +363,20 @@ module Activities
       "needs_input"
     end
 
+    def needs_input_questions(parsed, comment_body, max_rounds_reached:)
+      return [] unless needs_questions?(parsed, max_rounds_reached)
+
+      ClarifyingQuestions::Parse.call(comment_body:)
+    end
+
+    def needs_questions?(parsed, max_rounds_reached)
+      !parsed[:sufficient_context] && !max_rounds_reached
+    end
+
+    def sync_needs_input_questions(issue, questions)
+      issue.update!(needs_input_questions: questions.presence)
+    end
+
     def max_rounds_reached?(project, issue)
       issue.enhance_issue_rounds >= project.max_enhance_issue_reevaluation_rounds
     end
@@ -419,16 +439,20 @@ module Activities
       issue.update!(labels: labels)
     end
 
-    def paid_question_comment?(project, agent_run, comments)
-      paid_question_comment(project, agent_run, comments).present?
-    end
-
     def paid_question_comment(project, agent_run, comments)
       comments.reverse.find do |comment|
         paid_bot_comment?(project, comment) &&
           comment_after_run?(comment, agent_run) &&
-          comment_needs_human_input?(comment.body.to_s)
+          paid_comment_questions(comment).present?
       end
+    end
+
+    def paid_comment_questions(comment)
+      body = comment.body.to_s
+      questions = ClarifyingQuestions::Parse.call(comment_body: body)
+      return questions if questions.any?
+
+      ClarifyingQuestions::Parse.call(comment_body: "#{COMMENT_MARKER}\n#{body}")
     end
 
     def paid_bot_comment?(project, comment)
@@ -438,11 +462,6 @@ module Activities
     def comment_after_run?(comment, agent_run)
       created_at = comment.created_at
       created_at && created_at.to_time >= agent_run.created_at
-    end
-
-    def comment_needs_human_input?(body)
-      body.match?(/^##\s+Clarifying questions\b/i) ||
-        body.match?(/\b(question|decision|confirm|blocked|answer)\b/i)
     end
 
     def github_client(project)

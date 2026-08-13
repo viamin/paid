@@ -95,6 +95,9 @@ RSpec.describe "Projects::ClarifyingQuestions" do
     context "when all answers are provided" do
       let(:questions) { [ "What is the expected behavior?", "Should this be behind a flag?" ] }
       let(:answers) { [ "X is a feature", "Yes, by default" ] }
+      let(:issue) do
+        create(:issue, :needs_input, project: project, body: issue_body, needs_input_questions: questions)
+      end
 
       before do
         allow(github_client).to receive(:issue_comments).and_return([ trusted_comment ])
@@ -135,7 +138,8 @@ RSpec.describe "Projects::ClarifyingQuestions" do
 
       it "redirects to the next queued issue when opened from the dashboard queue" do
         project.update!(auto_pick_enabled: true, active: true)
-        next_issue = create(:issue, :needs_input, project: project, github_number: issue.github_number + 1)
+        next_issue = create(:issue, :needs_input, project: project, github_number: issue.github_number + 1,
+          needs_input_questions: [ "What should happen next?" ])
         return_to = dashboard_needs_input_path(project_id: project.id)
 
         post project_issue_clarifying_questions_path(project, issue), params: {
@@ -218,7 +222,9 @@ RSpec.describe "Projects::ClarifyingQuestions" do
           auto_pick_enabled: true,
           active: true
         )
-        create(:issue, :needs_input, project: other_project, github_number: issue.github_number + 1)
+        create(:issue, :needs_input, project: other_project,
+          github_number: issue.github_number + 1,
+          needs_input_questions: [ "What should happen next?" ])
 
         post project_issue_clarifying_questions_path(project, issue), params: {
           questions: questions,

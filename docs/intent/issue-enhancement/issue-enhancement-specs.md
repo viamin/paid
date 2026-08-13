@@ -19,8 +19,9 @@
   marker and `needs_input` flow rather than creating a new state or surface.
   If a containerized enhancement agent posts a Paid-authored clarifying-question
   comment directly but fails to emit parseable structured output, the system
-  SHALL recover by applying the enhance-issue needs-input label and moving the
-  issue to `paid_state: "needs_input"` rather than leaving it auto-pick eligible.
+  SHALL recover only when it can parse and persist the questions, then apply the
+  enhance-issue needs-input label and move the issue to `paid_state:
+  "needs_input"` rather than leaving it auto-pick eligible.
   *Tests:* `spec/temporal/activities/enhance_issue_activity_spec.rb`.
   *Code:* `app/temporal/activities/enhance_issue_activity.rb#enhance_issue_post_run`,
   `app/temporal/activities/enhance_issue_activity.rb#recover_paid_question_comment!`,

@@ -89,13 +89,15 @@ module Projects
       params[:queue].to_s
     end
 
+    # Resolves the project whose queue the user was browsing from
+    # +queue_project_id+. It must resolve even when that project's
+    # question-backed queue is momentarily empty (e.g. the last stale
+    # needs-input row was just cleared) so the fallback redirect keeps its
+    # project scope. Accessibility is already enforced by +policy_scope+.
     def queue_project
       return unless queue_mode? && params[:queue_project_id].present?
 
-      @queue_project ||= begin
-        candidate = policy_scope(Project).find_by(id: params[:queue_project_id])
-        candidate if candidate && queue_scope_issues(project: candidate).any?
-      end
+      @queue_project ||= policy_scope(Project).find_by(id: params[:queue_project_id])
     end
 
     def queue_return_to

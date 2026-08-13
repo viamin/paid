@@ -122,6 +122,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect_label_added(project.enhance_issue_needs_input_label_name)
       expect(issue.reload.paid_state).to eq("needs_input")
       expect(issue.labels).to include(project.enhance_issue_needs_input_label_name)
+      expect(issue.needs_input_questions).to eq([ "Which events should be recorded?" ])
     end
 
     it "fails before moving to needs_input when adding the GitHub label fails" do
@@ -145,6 +146,21 @@ RSpec.describe Activities::EnhanceIssueActivity do
       )
       expect(issue.reload.paid_state).to eq("in_progress")
       expect(issue.reload.labels).not_to include(project.enhance_issue_needs_input_label_name)
+    end
+
+    it "fails before posting when insufficient context has no parseable questions" do
+      log_agent_stdout({
+        sufficient_context: false,
+        comment_body: "## Implementation context\nThis is not actionable yet."
+      }.to_json)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error| expect(error.type).to eq("EnhanceIssueUnparseableOutput") }
+
+      expect(client).not_to have_received(:add_comment)
+      expect(issue.reload.paid_state).to eq("in_progress")
+      expect(issue.needs_input_questions).to be_nil
     end
 
     it "fails before completing when adding the enhanced GitHub label fails" do
@@ -366,6 +382,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(agent_run.reload.status).to eq("completed")
       expect(issue.reload.paid_state).to eq("needs_input")
       expect(issue.labels).to include(project.enhance_issue_needs_input_label_name)
+      expect(issue.needs_input_questions).to eq([ "Which scope should ship first?" ])
     end
 
     it "recovers a Paid-authored question comment when no stdout was captured" do # @spec ISSUE-ENHANCEMENT-002
@@ -378,7 +395,26 @@ RSpec.describe Activities::EnhanceIssueActivity do
 
       expect(result[:recovered_paid_question_comment]).to be true
       expect(issue.reload.paid_state).to eq("needs_input")
+      expect(issue.needs_input_questions).to eq([ "Which scope should ship first?" ])
       expect_label_added(project.enhance_issue_needs_input_label_name)
+    end
+
+    it "does not recover a Paid-authored decision request without parseable questions" do # @spec ISSUE-ENHANCEMENT-002
+      configure_app_backed_project
+      allow(client).to receive(:issue_comments).and_return(comments + [
+        OpenStruct.new(
+          body: "## Decision request\n\nPlease choose the final implementation shape.",
+          user: OpenStruct.new(login: Github::AppRegistry.bot_login),
+          created_at: agent_run.created_at + 1.minute
+        )
+      ])
+      log_agent_stdout("not json")
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error| expect(error.type).to eq("EnhanceIssueUnparseableOutput") }
+
+      expect(issue.reload.paid_state).to eq("in_progress")
     end
 
     it "does not recover untrusted question-shaped comments" do
