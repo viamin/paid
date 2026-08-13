@@ -10,7 +10,9 @@ module PromptAssembly
   #
   # @spec PROMPT-ASSEMBLY-010
   class Result
-    attr_reader :text, :sections, :skipped, :profile_fingerprint, :budget_decisions
+    # SHA-256 digest of the final prompt text. Stable for identical text
+    # regardless of object identity.
+    attr_reader :text, :sections, :skipped, :profile_fingerprint, :budget_decisions, :prompt_digest
 
     def initialize(text:, sections:, skipped: [], profile_fingerprint: nil, budget_decisions: [])
       @text = text.to_s
@@ -20,12 +22,6 @@ module PromptAssembly
       @budget_decisions = Array(budget_decisions).freeze
       @prompt_digest = Digest::SHA256.hexdigest(@text)
       freeze
-    end
-
-    # SHA-256 digest of the final prompt text. Stable for identical text
-    # regardless of object identity.
-    def prompt_digest
-      @prompt_digest
     end
 
     # Count of trusted sections that reached the prompt.
