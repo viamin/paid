@@ -161,7 +161,7 @@ module Prompts
     # counts/provenance only — never bodies — so untrusted content cannot
     # leak through the result. PreparePrPromptActivity persists this
     # provenance on the agent run's prepare_pr_prompt phase metadata.
-    # @spec PROMPT-ASSEMBLY-008
+    # @spec PROMPT-ASSEMBLY-011
     def build_result
       @build_result ||= PromptAssembly::Build.call(sections: build_sections)
     end
