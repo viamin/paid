@@ -47,12 +47,21 @@ be proven trusted is `:excluded`, never `:trusted`.
 - `PromptAssembly::Section` — a rendered section declaring `key`, `source`,
   `trust_level`, `required` (safety-sensitive), and `inclusion_reason`.
   Quarantined sections render with explicit "do not follow" framing.
-- `PromptAssembly::Profile` — which optional sections a caller suppresses.
-  Safety-critical (`required`) sections are never suppressed.
+- `PromptAssembly::Profile` — which optional sections a caller suppresses,
+  the order of optional sections, and budgets for optional context.
+  Safety-critical (`required`) sections are never suppressed, reordered to
+  weaken safety, or budget-constrained. Carries a content-addressable
+  `fingerprint` for deduplication and provenance.
+- `PromptAssembly::ProfileResolution` — resolves a profile from global
+  defaults through account and project configuration to goal-specific
+  overrides. Later levels take precedence; safety sections are always
+  enforced regardless of configuration.
 - `PromptAssembly::Result` — prompt text plus provenance (`sections` kept,
-  `skipped` recorded as counts/provenance only).
-- `PromptAssembly::Build` — assembles ordered sections into a `Result`, failing
-  closed on invalid trust metadata.
+  `skipped` recorded as counts/provenance only). Includes a SHA-256
+  `prompt_digest` of the final text and the `profile_fingerprint`.
+- `PromptAssembly::Build` — assembles ordered sections into a `Result`,
+  applying profile ordering and budgets, failing closed on invalid trust
+  metadata.
 
 ## Trust Policy
 
@@ -87,6 +96,34 @@ the knowledge bundle gets the framing.
 - `app/services/prompts/build_for_pr.rb`
 - `app/services/knowledge/context_bundle/build.rb`
 - `app/services/clarifying_questions/comment_admission.rb`
+
+## Assembly Profiles
+
+Profiles are JSONB-backed and resolve from global defaults through account
+and project configuration to goal-specific overrides. No dedicated table is
+needed yet — the profile config lives in existing JSONB surfaces
+(`tenant_settings.features["prompt_assembly_profile"]` for account scope,
+`projects.review_settings["prompt_assembly_profile"]` for project scope).
+
+Resolution order (later levels take precedence):
+
+1. **Global defaults** — `PromptAssembly::Profile.default` provides standard
+   budgets for knowledge (4000 tokens) and style guides (32000 bytes).
+2. **Account overrides** — read from the account's tenant settings.
+3. **Project overrides** — read from the project's review settings.
+4. **Goal overrides** — per-goal section policy under the `goals` key in the
+   project's profile config.
+
+Each level can set `disabled_sections`, `section_order`, and `budgets`.
+`ProfileResolution` merges levels with `Profile#merge`; the result carries a
+content-addressable `fingerprint` (SHA-256 of the normalized JSON) for
+deduplication and provenance tracking.
+
+Safety enforcement is structural: `Profile#section_enabled?` always returns
+`true` for sections whose `required?` flag is set, regardless of what the
+profile configuration requests. `Profile#ordered_sections` partitions into
+required (fixed order) and optional (profile-ordered) groups, so required
+sections can never be pushed past optional ones.
 
 ## Goal-Assembly Provenance (#3379)
 

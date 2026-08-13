@@ -122,6 +122,19 @@ RSpec.describe Activities::PreparePrPromptActivity do
       expect(result[:prompt_excluded_count]).to be >= 0
     end
 
+    it "records prompt digest and profile fingerprint in provenance" do
+      activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
+
+      phase = agent_run.reload.agent_run_phases.find_by!(phase_key: "prepare_pr_prompt")
+      provenance = phase.metadata["prompt_assembly"]
+
+      expect(provenance["prompt_digest"]).to be_a(String)
+      expect(provenance["prompt_digest"].length).to eq(64)
+      expect(provenance["profile_fingerprint"]).to be_a(String)
+      expect(provenance["profile_fingerprint"].length).to eq(64)
+      expect(provenance["budget_decisions"]).to be_an(Array)
+    end
+
     it "passes explicit focus through to the prompt builder" do
       allow(github_client).to receive(:check_runs_for_ref)
         .with(project.full_name, "abc123")

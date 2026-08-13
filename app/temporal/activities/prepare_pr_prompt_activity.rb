@@ -65,7 +65,9 @@ module Activities
           review_thread_count: review_thread_ids.size,
           prompt_version_id: prompt_version&.id,
           prompt_section_keys: result.sections.map { |section| section.key.to_s },
-          prompt_excluded_count: result.skipped.size
+          prompt_excluded_count: result.skipped.size,
+          prompt_digest: result.prompt_digest,
+          profile_fingerprint: result.profile_fingerprint
         )
 
         {
@@ -75,7 +77,9 @@ module Activities
           review_thread_ids: review_thread_ids,
           prompt_version_id: prompt_version&.id,
           prompt_section_keys: result.sections.map { |section| section.key.to_s },
-          prompt_excluded_count: result.skipped.size
+          prompt_excluded_count: result.skipped.size,
+          prompt_digest: result.prompt_digest,
+          profile_fingerprint: result.profile_fingerprint
         }
       end
     end
@@ -99,6 +103,11 @@ module Activities
         end,
         "skipped" => result.skipped.map do |entry|
           entry.transform_keys(&:to_s)
+        end,
+        "prompt_digest" => result.prompt_digest,
+        "profile_fingerprint" => result.profile_fingerprint,
+        "budget_decisions" => result.budget_decisions.map do |decision|
+          decision.transform_keys(&:to_s)
         end
       }
     end

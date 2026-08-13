@@ -24,12 +24,31 @@ RSpec.describe RunProvenanceBuilder do
       }
     ]
   end
+  let(:prompt_assembly_metadata) do
+    {
+      "prompt_assembly" => {
+        "sections" => [
+          { "key" => "task", "source" => "build_for_pr", "trust_level" => "trusted",
+            "required" => true, "inclusion_reason" => "core task" },
+          { "key" => "knowledge", "source" => "context_bundle", "trust_level" => "quarantined",
+            "required" => false, "inclusion_reason" => "repo context" }
+        ],
+        "skipped" => [
+          { "key" => "comments", "source" => "conversation", "trust_level" => "excluded",
+            "reason" => "author_not_in_allowlist" }
+        ],
+        "prompt_digest" => "abc123def456",
+        "profile_fingerprint" => "fingerprint789",
+        "budget_decisions" => [ { "section" => "knowledge", "budget" => { "tokens" => 4000 } } ]
+      }
+    }
+  end
 
   it "builds a provenance hash with all categories" do
     provenance = described_class.new(agent_run).build
 
-    expect(provenance).to include(:run, :prompt, :model, :tools, :code_changes, :approvals,
-                                  :timeline, :costs, :runner_attempts)
+    expect(provenance).to include(:run, :prompt, :prompt_assembly, :model, :tools, :code_changes,
+                                  :approvals, :timeline, :costs, :runner_attempts)
   end
 
   it "includes run summary" do
@@ -86,6 +105,39 @@ RSpec.describe RunProvenanceBuilder do
     provenance = described_class.new(agent_run.reload).build
 
     expect(provenance[:prompt][:service_environment_prompt_blocks]).to eq(service_environment_prompt_blocks)
+  end
+
+  it "includes prompt assembly provenance when metadata exists" do
+    create_prompt_assembly_phase!(prompt_assembly_metadata)
+    provenance = described_class.new(agent_run.reload).build
+
+    pa = provenance[:prompt_assembly]
+    expect(pa).to be_a(Hash)
+    expect(pa[:sections].size).to eq(2)
+    expect(pa[:skipped].size).to eq(1)
+    expect(pa[:prompt_digest]).to eq("abc123def456")
+    expect(pa[:profile_fingerprint]).to eq("fingerprint789")
+    expect(pa[:budget_decisions]).to be_an(Array)
+    expect(pa[:trusted_content_count]).to eq(1)
+    expect(pa[:quarantined_content_count]).to eq(1)
+    expect(pa[:excluded_content_count]).to eq(1)
+  end
+
+  def create_prompt_assembly_phase!(metadata)
+    agent_run.agent_run_phases.create!(
+      phase_key: "prepare_pr_prompt",
+      phase_group: "prompt",
+      started_at: 1.minute.ago,
+      finished_at: 30.seconds.ago,
+      duration_seconds: 30,
+      metadata: metadata
+    )
+  end
+
+  it "returns nil prompt_assembly when no assembly metadata exists" do
+    provenance = described_class.new(agent_run).build
+
+    expect(provenance[:prompt_assembly]).to be_nil
   end
 
   # @spec PROMPT-ASSEMBLY-010
