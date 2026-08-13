@@ -37,18 +37,6 @@ module Prompts
       **Important:** Git pre-commit hooks will automatically run lint and tests when you commit.
       If the commit is rejected, read the error output carefully, fix the issues, and commit again.
       Keep iterating until the commit succeeds. Do not leave uncommitted changes.
-
-      # Rules — you MUST follow these
-
-      - **Lint and tests MUST pass before every commit.** Do not commit code that fails lint or tests.
-      - **Never use `--no-verify`** or any flag that skips git hooks.
-      - **Never disable linters** (e.g. rubocop:disable, eslint-disable, noqa) to silence failures. Fix the code instead.
-      - **Fix forward** — if a check fails, fix the underlying issue. Do not bypass the check.
-      - Work within the existing codebase style and conventions
-      - Do not modify unrelated files
-      - Focus on completing the specific task in the issue
-
-      When you're done, commit all your changes. Do not push.
     PROMPT
 
     # Kept for backwards compatibility with existing references
@@ -123,7 +111,8 @@ module Prompts
         source: self.class.name
       )
       with_conventions = ProjectConventions::InjectIntoPrompt.call(prompt: with_style_guides, project: project)
-      Lid::InjectIntoPrompt.call(prompt: with_conventions, project: project, goal: agent_run&.goal)
+      with_lid = Lid::InjectIntoPrompt.call(prompt: with_conventions, project: project, goal: agent_run&.goal)
+      [ with_lid, PromptAssembly::Sections::SafetyRules::SAFETY_RULES ].join("\n\n")
     end
 
     # Fetches and formats trusted issue comments as a prompt section.

@@ -73,7 +73,8 @@ module Activities
               project: project, issue: issue,
               github_client: project.github_token&.client
             ),
-            service_environment.content
+            service_environment.content,
+            PromptAssembly::Sections::SafetyRules::SAFETY_RULES
           ].reject(&:blank?).join("\n\n")
         end
       end
