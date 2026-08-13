@@ -52,3 +52,22 @@
   prepare_pr_prompt phase so the agent run's audit trail shows which
   sections reached the agent and which untrusted content was rejected.
   *Code:* `Prompts::BuildForPr`, `Activities::PreparePrPromptActivity`.
+
+- [x] **PROMPT-ASSEMBLY-009** — The system SHALL resolve assembly profiles
+  deterministically from global defaults through account and project
+  configuration to goal-specific overrides. Customization SHALL allow
+  disabling optional non-safety sections, reordering optional sections,
+  and setting budgets for knowledge/style/marketplace context. The
+  resolution SHALL reject any attempt to disable, reorder, or budget
+  safety-critical (required) sections.
+  *Code:* `PromptAssembly::Profile`, `PromptAssembly::ProfileResolution`,
+  `PromptAssembly::Build`.
+
+- [x] **PROMPT-ASSEMBLY-010** — The system SHALL record a content-addressable
+  fingerprint of the resolved profile and a SHA-256 digest of the final
+  prompt text in the assembly result and in the agent-run provenance. The
+  provenance SHALL display ordered included and skipped sections with
+  their trust levels, source records, trusted/excluded content counts,
+  and budget decisions.
+  *Code:* `PromptAssembly::Result`, `PromptAssembly::Build`,
+  `RunProvenanceBuilder`, `Activities::PreparePrPromptActivity`.
