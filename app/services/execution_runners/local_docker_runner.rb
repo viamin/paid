@@ -275,7 +275,7 @@ module ExecutionRunners
     # shape, so entries are normalized to +{ip:, port:}+ to match
     # +NetworkPolicy.build_firewall_script+, which reads +dest[:ip]+.
     #
-    # The four restricted RDR-056 intents (RDR-056) determine which default
+    # The four restricted RDR-056 intents determine which default
     # destinations the firewall allows:
     #
     # - +:no_outbound+       — nothing; loopback + DNS only.

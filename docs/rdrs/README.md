@@ -125,7 +125,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | [RDR-025](RDR-025-provider-quota-tracking.md) | Provider Quota Tracking and Quota-Aware Routing | Superseded | Medium |
 | [RDR-038](RDR-038-free-models-catalog-and-runner.md) | Free Models Catalog and Runner | Implemented | P1 |
 | [RDR-040](RDR-040-runner-model-compatibility-contracts.md) | Runner Model Compatibility Contracts | Implemented | P1 |
-| [RDR-056](RDR-056-execution-network-policy-intent.md) | Provider-Neutral Execution Network Policy Intent | Draft | P1 |
+| [RDR-056](RDR-056-execution-network-policy-intent.md) | Provider-Neutral Execution Network Policy Intent | Implemented | P1 |
 
 ### Semantic Understanding
 
