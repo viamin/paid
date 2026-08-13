@@ -123,10 +123,27 @@ module ExecutionRunners
     # Called for every candidate during scheduling, so it must be cheap and
     # must not mutate state or record telemetry.
     #
+    # Implementations should also check {.supports_policy?} so a spec whose
+    # networking policy the runner cannot implement is rejected here rather
+    # than failing during +#provision+.
+    #
     # @param spec [RunSpec]
     # @param backend [Object] the backend/runner descriptor to evaluate
     # @return [CompatibilityResult] compatible + error_message
     def self.compatible?(spec:, backend:)
+      raise NotImplementedError, "#{name} must implement .#{__method__}"
+    end
+
+    # Capability check: does this runner implement the given networking
+    # policy intent? A runner that cannot honor a policy returns +false+
+    # here so +.compatible?+ can reject the spec before any
+    # container/workload is provisioned (RDR-056). The intent is coarse —
+    # the runner does not need to support every flavor of every mode, only
+    # the named intents its native primitives can express.
+    #
+    # @param policy [NetworkingPolicy, nil]
+    # @return [Boolean]
+    def self.supports_policy?(policy)
       raise NotImplementedError, "#{name} must implement .#{__method__}"
     end
 

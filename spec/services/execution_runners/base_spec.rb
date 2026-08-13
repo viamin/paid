@@ -63,6 +63,11 @@ RSpec.describe ExecutionRunners::Base do
         .to raise_error(NotImplementedError, /compatible/)
     end
 
+    it "raises NotImplementedError for .supports_policy?" do
+      expect { described_class.supports_policy?(ExecutionRunners::NetworkingPolicy.model_direct) }
+        .to raise_error(NotImplementedError, /supports_policy/)
+    end
+
     it "raises NotImplementedError for .ping" do
       expect { described_class.ping }.to raise_error(NotImplementedError, /ping/)
     end

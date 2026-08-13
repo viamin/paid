@@ -83,7 +83,14 @@ class NetworkPolicy
     # the Docker-specific +NetworkContract+. The mapping is the only place
     # that knows which Docker network name corresponds to which runner-level
     # mode, keeping +paid_agent+ / +paid_internal+ out of the policy and the
-    # runner (RDR-054).
+    # runner (RDR-054, RDR-056).
+    #
+    # All four restricted intents (RDR-056: +:no_outbound+, +:proxy_only+,
+    # +:git_plus_proxy+, +:approved_services+) share the +paid_agent+ Docker
+    # network; the runner translates the intent to a firewall allowlist that
+    # is narrower than the legacy approved-services default. The two
+    # unrestricted intents (+:model_direct+, +:explicit_internet+) share
+    # +paid_internal+ with no firewall.
     #
     # @param policy [ExecutionRunners::NetworkingPolicy]
     # @return [NetworkContract]
@@ -149,27 +156,45 @@ class NetworkPolicy
     end
 
     # Applies iptables-based firewall rules inside a container to restrict
-    # outbound traffic. Only allows: secrets proxy, GitHub, and DNS.
+    # outbound traffic. The firewall script always allows loopback, DNS, and
+    # established/related responses. The secrets-proxy allow and GitHub CIDR
+    # allow are independent — pass +proxy_host:+ or +github_ips:+ explicitly
+    # when the policy intent allows them (RDR-056: :no_outbound omits both,
+    # :proxy_only omits GitHub, :approved_services includes both plus
+    # service container IPs).
+    #
+    # When +github_ips+ is +nil+ the caller's intent is "default GitHub
+    # allowlist" (the legacy +DEFAULT_GITHUB_IPS+); pass +[]+ to omit
+    # GitHub entirely (RDR-056 :no_outbound or :proxy_only). Pass
+    # +proxy_host: false+ to omit the proxy allow rule entirely (RDR-056
+    # :no_outbound).
     #
     # Requires NET_RAW capability on the container.
     #
     # @param container [Docker::Container] running container to apply rules to
-    # @param github_ips [Array<String>] GitHub CIDR ranges to allow
-    # @param proxy_host [String] hostname or IPv4 address of the secrets proxy
-    # @return [void]
-    # @raise [Error] if applying rules fails
-    # @param container [Docker::Container] running container to apply rules to
-    # @param github_ips [Array<String>] GitHub CIDR ranges to allow
-    # @param proxy_host [String] hostname or IPv4 address of the secrets proxy
+    # @param github_ips [Array<String>, nil] GitHub CIDR ranges to allow; +nil+
+    #   uses the legacy +DEFAULT_GITHUB_IPS+ default, +[]+ omits GitHub
+    #   entirely.
+    # @param proxy_host [String, false, nil] hostname or IPv4 address of the
+    #   secrets proxy; +false+ omits the proxy allow rule entirely
+    #   (RDR-056 :no_outbound), +nil+ uses the default proxy destination.
     # @param service_destinations [Array<Hash>] service containers to allow,
     #   each with :ip and :port keys (e.g., { ip: "172.28.0.5", port: 5432 })
+    # @return [void]
+    # @raise [Error] if applying rules fails
     def apply_firewall_rules(container, github_ips: nil, proxy_host: nil, service_destinations: [], backend: Containers.backend)
-      github_ips ||= DEFAULT_GITHUB_IPS
-      proxy_destination = proxy_host.present? ? { host: proxy_host, port: SECRETS_PROXY_PORT } : default_proxy_destination(backend: backend)
+      github_ips = github_ips.nil? ? DEFAULT_GITHUB_IPS : github_ips
+      proxy_destination = if proxy_host == false
+        nil
+      elsif proxy_host.present?
+        { host: proxy_host, port: SECRETS_PROXY_PORT }
+      else
+        default_proxy_destination(backend: backend)
+      end
 
       validated_ips = github_ips.map { |cidr| validate_cidr!(cidr) }
-      validated_host = validate_host!(proxy_destination.fetch(:host))
-      validated_port = validate_port!(proxy_destination.fetch(:port), label: "proxy port")
+      validated_host = proxy_destination ? validate_host!(proxy_destination.fetch(:host)) : nil
+      validated_port = proxy_destination ? validate_port!(proxy_destination.fetch(:port), label: "proxy port") : nil
 
       script = build_firewall_script(
         github_ips: validated_ips,
@@ -410,6 +435,12 @@ class NetworkPolicy
         "iptables -A OUTPUT -d #{validate_host!(dest[:ip])} -p tcp --dport #{service_port} -j ACCEPT"
       end
 
+      proxy_rule = if proxy_host && proxy_port
+        "iptables -A OUTPUT -d #{proxy_host} -p tcp --dport #{proxy_port} -j ACCEPT"
+      else
+        "# Secrets proxy omitted by RDR-056 :no_outbound intent"
+      end
+
       <<~SCRIPT
         # Default deny all outbound
         iptables -P OUTPUT DROP
@@ -425,7 +456,7 @@ class NetworkPolicy
         iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT
 
         # Allow secrets proxy
-        iptables -A OUTPUT -d #{proxy_host} -p tcp --dport #{proxy_port} -j ACCEPT
+        #{proxy_rule}
 
         # Allow GitHub
         #{github_rules.join("\n")}

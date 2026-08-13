@@ -208,3 +208,44 @@
   `ExecutionRunners::LocalDockerRunner`,
   `Containers::Provision.networking_policy_for`,
   `Containers::ProxyUrl.resolve`
+
+- [x] **CONTAINER-RUNTIME-018** — The system SHALL expose a coarse,
+  provider-neutral networking intent vocabulary on
+  `ExecutionRunners::NetworkingPolicy` with six intents:
+  `:no_outbound` (air-gapped; loopback + DNS only),
+  `:proxy_only` (Paid secrets proxy + DNS),
+  `:git_plus_proxy` (adds GitHub CIDR ranges),
+  `:approved_services` (adds service container IPs — the default
+  restricted behavior for API-key LLM runs),
+  `:model_direct` (provider CLI reaches upstream APIs), and
+  `:explicit_internet` (operator opt-in full egress). The three legacy
+  factories (`:proxy_restricted`, `:subscription_auth`, `:direct_outbound`)
+  SHALL remain valid constructors and normalize to their canonical
+  intent via `#canonical_mode`. `LocalDockerRunner` SHALL translate each
+  intent to a Docker network + firewall shape that matches the RDR-056
+  mapping table (`:no_outbound` omits both proxy and GitHub allow rules;
+  `:proxy_only` allows the proxy but not GitHub; `:approved_services` is
+  the previous restricted behavior; the two unrestricted intents use the
+  infrastructure Docker network with no firewall). The abstract
+  `ExecutionRunners::Base` SHALL declare `supports_policy?(policy)` so a
+  concrete runner can advertise which intents its native egress primitives
+  can implement, and `LocalDockerRunner.compatible?` SHALL call
+  `supports_policy?` to reject unsupported specs before any provision
+  attempt. `ExecutionRunners::ContractRunner` SHALL provide a configurable
+  in-memory implementation whose `.supports_policy?` honors a caller-set
+  list of modes so the runner contract specs can assert that capability
+  mismatches surface in `.compatible?` rather than silently downgrading.
+  *Tests:* `spec/services/execution_runners_spec.rb`,
+  `spec/services/execution_runners/base_spec.rb`,
+  `spec/services/execution_runners/local_docker_runner_spec.rb`,
+  `spec/services/execution_runners/contract_runner_spec.rb`,
+  `spec/services/network_policy_spec.rb`,
+  `spec/services/containers/proxy_url_spec.rb`
+  *Code:* `ExecutionRunners::NetworkingPolicy`,
+  `ExecutionRunners::Base`,
+  `ExecutionRunners::LocalDockerRunner`,
+  `ExecutionRunners::ContractRunner`,
+  `NetworkPolicy.apply_firewall_rules`,
+  `NetworkPolicy.build_firewall_script`,
+  `NetworkPolicy.contract_for_policy`,
+  `Containers::ProxyUrl.resolve`

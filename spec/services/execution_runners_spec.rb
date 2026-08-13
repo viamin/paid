@@ -222,6 +222,7 @@ RSpec.describe ExecutionRunners do
       expect(policy).to be_restricted
       expect(policy).to be_firewall
       expect(policy.allow_destinations).to eq([ { host: "10.0.0.1", port: 5432 } ])
+      expect(policy.canonical_mode).to eq(:approved_services)
     end
 
     it "treats subscription_auth mode as unrestricted" do
@@ -230,6 +231,7 @@ RSpec.describe ExecutionRunners do
       expect(policy).not_to be_restricted
       expect(policy).not_to be_firewall
       expect(policy.allow_destinations).to eq([])
+      expect(policy.canonical_mode).to eq(:model_direct)
     end
 
     it "treats direct_outbound mode as unrestricted" do
@@ -237,6 +239,74 @@ RSpec.describe ExecutionRunners do
 
       expect(policy).not_to be_restricted
       expect(policy).not_to be_firewall
+      expect(policy.canonical_mode).to eq(:model_direct)
+    end
+
+    describe "new RDR-056 intents" do
+      it "treats :no_outbound as restricted and firewall-required with no egress" do
+        policy = described_class.no_outbound
+
+        expect(policy).to be_restricted
+        expect(policy).to be_firewall
+        expect(policy).to be_no_outbound
+        expect(policy.allow_destinations).to eq([])
+      end
+
+      it "treats :proxy_only as restricted and firewall-required" do
+        policy = described_class.proxy_only
+
+        expect(policy).to be_restricted
+        expect(policy).to be_firewall
+        expect(policy.allow_destinations).to eq([])
+      end
+
+      it "treats :git_plus_proxy as restricted and firewall-required" do
+        policy = described_class.git_plus_proxy
+
+        expect(policy).to be_restricted
+        expect(policy).to be_firewall
+      end
+
+      it "treats :approved_services as restricted and firewall-required" do
+        policy = described_class.approved_services
+
+        expect(policy).to be_restricted
+        expect(policy).to be_firewall
+        expect(policy.canonical_mode).to eq(:approved_services)
+      end
+
+      it "treats :model_direct as unrestricted and firewall-free" do
+        policy = described_class.model_direct
+
+        expect(policy).not_to be_restricted
+        expect(policy).not_to be_firewall
+        expect(policy).to be_model_direct
+        expect(policy).not_to be_explicit_internet
+      end
+
+      it "treats :explicit_internet as unrestricted and firewall-free" do
+        policy = described_class.explicit_internet
+
+        expect(policy).not_to be_restricted
+        expect(policy).not_to be_firewall
+        expect(policy).to be_explicit_internet
+        expect(policy).not_to be_model_direct
+      end
+
+      it "preserves the backward-compatible :proxy_restricted alias for :approved_services" do
+        policy = described_class.proxy_restricted
+
+        expect(policy.mode).to eq(:approved_services)
+        expect(policy).to be_restricted
+      end
+
+      it "normalizes :subscription_auth to the :model_direct canonical mode" do
+        expect(described_class.subscription_auth.canonical_mode).to eq(:model_direct)
+      end
+
+      it "normalizes :direct_outbound to the :model_direct canonical mode" do
+        expect(described_class.direct_outbound.canonical_mode).to eq(:model_direct)
+      end
     end
   end
 

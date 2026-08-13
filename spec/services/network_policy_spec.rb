@@ -558,7 +558,7 @@ RSpec.describe NetworkPolicy, :no_db do
     it "maps subscription_auth to the infrastructure paid_internal network" do
       contract = described_class.contract_for_policy(policy_class.subscription_auth)
 
-      expect(contract.mode).to eq(:subscription_auth)
+      expect(contract.mode).to eq(:model_direct)
       expect(contract.network).to eq(described_class::INFRA_NETWORK_NAME)
       expect(contract).not_to be_restricted
       expect(contract).not_to be_firewall
@@ -567,10 +567,38 @@ RSpec.describe NetworkPolicy, :no_db do
     it "maps direct_outbound to the infrastructure paid_internal network" do
       contract = described_class.contract_for_policy(policy_class.direct_outbound)
 
-      expect(contract.mode).to eq(:direct_outbound)
+      expect(contract.mode).to eq(:model_direct)
       expect(contract.network).to eq(described_class::INFRA_NETWORK_NAME)
       expect(contract).not_to be_restricted
       expect(contract).not_to be_firewall
+    end
+
+    it "maps :model_direct to the infrastructure paid_internal network" do
+      contract = described_class.contract_for_policy(policy_class.model_direct)
+
+      expect(contract.mode).to eq(:model_direct)
+      expect(contract.network).to eq(described_class::INFRA_NETWORK_NAME)
+      expect(contract).not_to be_restricted
+    end
+
+    it "maps :explicit_internet to the infrastructure paid_internal network" do
+      contract = described_class.contract_for_policy(policy_class.explicit_internet)
+
+      expect(contract.mode).to eq(:explicit_internet)
+      expect(contract.network).to eq(described_class::INFRA_NETWORK_NAME)
+      expect(contract).not_to be_restricted
+      expect(contract).not_to be_firewall
+    end
+
+    it "maps :no_outbound, :proxy_only, :git_plus_proxy, :approved_services to the restricted paid_agent network" do
+      %i[no_outbound proxy_only git_plus_proxy approved_services].each do |mode|
+        policy = policy_class.public_send(mode)
+        contract = described_class.contract_for_policy(policy)
+
+        expect(contract.network).to eq(described_class::NETWORK_NAME), "network for #{mode}"
+        expect(contract).to be_restricted, "restricted for #{mode}"
+        expect(contract).to be_firewall, "firewall for #{mode}"
+      end
     end
   end
 

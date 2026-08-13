@@ -220,8 +220,9 @@ RSpec.describe Containers::Provision do
     it "derives the proxy-restricted policy for a run with no subscription auth or direct-outbound runner" do
       policy = described_class.networking_policy_for(agent_run: agent_run, project: project)
 
-      expect(policy.mode).to eq(:proxy_restricted)
+      expect(policy.mode).to eq(:approved_services)
       expect(policy).to be_restricted
+      expect(policy.canonical_mode).to eq(:approved_services)
     end
   end
 

@@ -1,0 +1,198 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+# @spec CONTAINER-RUNTIME-018
+RSpec.describe ExecutionRunners::ContractRunner do
+  subject(:runner) { described_class.new(supports: supported_modes) }
+
+  let(:agent_run) { create(:agent_run, container_host: "local") }
+  let(:backend) { instance_double(Containers::Backends::Base, identifier: "local") }
+  let(:networking_policy) { ExecutionRunners::NetworkingPolicy.approved_services }
+  let(:run_spec) do
+    ExecutionRunners::RunSpec.new(
+      agent_run: agent_run, project: agent_run.project, image: "paid/agent:latest", command: "claude code",
+      resources: nil, environment: {},
+      networking_policy: networking_policy,
+      workspace: ExecutionRunners::WorkspaceStrategy.named_volume, services: [], secrets_config: nil
+    )
+  end
+
+  describe ".supports_policy?" do
+    it "rejects a nil policy when the runner supports no policies" do
+      runner = described_class.new(supports: [])
+
+      expect(runner.class.supports_policy?(nil, supported_modes: runner.supported_modes)).to be(false)
+    end
+
+    it "accepts a policy whose mode is in the supported set" do
+      runner = described_class.new(supports: [ :approved_services ])
+      policy = ExecutionRunners::NetworkingPolicy.approved_services
+
+      expect(runner.class.supports_policy?(policy, supported_modes: runner.supported_modes)).to be(true)
+    end
+
+    it "rejects a policy whose mode is outside the supported set" do
+      runner = described_class.new(supports: [ :model_direct ])
+      policy = ExecutionRunners::NetworkingPolicy.approved_services
+
+      expect(runner.class.supports_policy?(policy, supported_modes: runner.supported_modes)).to be(false)
+    end
+
+    it "accepts a backward-compatible alias when its canonical mode is supported" do
+      runner = described_class.new(supports: [ :approved_services ])
+      policy = ExecutionRunners::NetworkingPolicy.proxy_restricted
+
+      expect(runner.class.supports_policy?(policy, supported_modes: runner.supported_modes)).to be(true)
+    end
+  end
+
+  describe ".compatible?" do
+    let(:supported_modes) { [ :model_direct ] }
+
+    it "rejects a spec whose networking policy is outside the supported set" do
+      spec = ExecutionRunners::RunSpec.new(**run_spec.to_h.merge(
+        networking_policy: ExecutionRunners::NetworkingPolicy.approved_services
+      ))
+
+      result = described_class.compatible?(spec: spec, backend: backend, supported_modes: supported_modes)
+
+      expect(result.compatible).to be(false)
+      expect(result.error_message).to include("approved_services")
+    end
+
+    it "accepts a spec whose networking policy is in the supported set" do
+      spec = ExecutionRunners::RunSpec.new(**run_spec.to_h.merge(
+        networking_policy: ExecutionRunners::NetworkingPolicy.model_direct
+      ))
+
+      result = described_class.compatible?(spec: spec, backend: backend, supported_modes: supported_modes)
+
+      expect(result.compatible).to be(true)
+      expect(result.error_message).to be_nil
+    end
+
+    it "rejects a nil backend" do
+      spec = ExecutionRunners::RunSpec.new(**run_spec.to_h.merge(
+        networking_policy: ExecutionRunners::NetworkingPolicy.model_direct
+      ))
+
+      result = described_class.compatible?(spec: spec, backend: nil, supported_modes: supported_modes)
+
+      expect(result.compatible).to be(false)
+      expect(result.error_message).to include("Backend is not supported")
+    end
+  end
+
+  describe "#provision" do
+    context "when the policy is in the supported set" do
+      let(:supported_modes) { [ :approved_services ] }
+
+      it "returns a RunnerHandle" do
+        handle = runner.provision(spec: run_spec)
+
+        expect(handle).to be_a(ExecutionRunners::RunnerHandle)
+        expect(handle.runner_type).to eq(:contract)
+      end
+
+      it "records the call" do
+        expect { runner.provision(spec: run_spec) }
+          .to change { runner.provision_calls.size }.from(0).to(1)
+      end
+    end
+
+    context "when the policy is outside the supported set" do
+      let(:supported_modes) { [ :model_direct ] }
+
+      it "raises ProvisionError with a descriptive message" do
+        expect { runner.provision(spec: run_spec) }
+          .to raise_error(ExecutionRunners::ProvisionError, /approved_services/)
+      end
+
+      it "records the call before raising" do
+        expect { runner.provision(spec: run_spec) rescue nil }
+          .to change { runner.provision_calls.size }.from(0).to(1)
+      end
+    end
+  end
+
+  describe "#start" do
+    let(:supported_modes) { [ :approved_services ] }
+    let(:handle) { ExecutionRunners::RunnerHandle.new(runner_type: :contract, identifier: "x", host: "contract", workspace_ref: "x", metadata: {}) }
+
+    it "returns the configured execute_result" do
+      result_value = ExecutionRunners::ExecutionResult.success(stdout: "hi", exit_code: 0)
+      runner = described_class.new(supports: supported_modes, execute_result: result_value)
+
+      result = runner.start(handle: handle, command: "echo hi", timeout: 60, startup_timeout: 30,
+                            idle_timeout: 30, abort_patterns: nil, preparation: nil, heartbeat_path: nil)
+
+      expect(result).to eq(result_value)
+    end
+
+    it "defaults to a successful result when no execute_result is configured" do
+      runner = described_class.new(supports: supported_modes)
+
+      result = runner.start(handle: handle, command: "echo hi", timeout: 60, startup_timeout: 30,
+                            idle_timeout: 30, abort_patterns: nil, preparation: nil, heartbeat_path: nil)
+
+      expect(result).to be_success
+    end
+  end
+
+  describe "#running?" do
+    let(:handle) { ExecutionRunners::RunnerHandle.new(runner_type: :contract, identifier: "x", host: "contract", workspace_ref: "x", metadata: {}) }
+    let(:supported_modes) { [ :model_direct ] }
+
+    it "returns the configured running_result" do
+      runner = described_class.new(supports: supported_modes, running_result: false)
+
+      expect(runner.running?(handle: handle)).to be(false)
+    end
+  end
+
+  describe "#status" do
+    let(:handle) { ExecutionRunners::RunnerHandle.new(runner_type: :contract, identifier: "x", host: "contract", workspace_ref: "x", metadata: {}) }
+    let(:supported_modes) { [ :model_direct ] }
+
+    it "returns the configured status_result" do
+      status = ExecutionRunners::ExecutionStatus.new(state: :exited, exit_code: 0, oom_killed: false, memory_limit: nil)
+      runner = described_class.new(supports: supported_modes, status_result: status)
+
+      expect(runner.status(handle: handle)).to eq(status)
+    end
+  end
+
+  describe "#cancel and #cleanup" do
+    let(:handle) { ExecutionRunners::RunnerHandle.new(runner_type: :contract, identifier: "x", host: "contract", workspace_ref: "x", metadata: {}) }
+    let(:supported_modes) { [ :model_direct ] }
+
+    it "records cancel calls without raising" do
+      expect { runner.cancel(handle: handle) }.not_to raise_error
+      expect(runner.cancel_calls).to eq([ handle ])
+    end
+
+    it "records cleanup calls without raising" do
+      expect { runner.cleanup(handle: handle, force: true) }.not_to raise_error
+      expect(runner.cleanup_calls).to eq([ { handle: handle, force: true } ])
+    end
+  end
+
+  describe ".ping" do
+    it "returns true" do
+      expect(described_class.ping).to be(true)
+    end
+  end
+
+  describe "shared runner contract" do
+    let(:supported_modes) { ExecutionRunners::NETWORKING_POLICY_KNOWN_MODES }
+    let(:networking_policy) { ExecutionRunners::NetworkingPolicy.model_direct }
+    let(:backend) { instance_double(Containers::Backends::Base, identifier: "local") }
+    let(:valid_handle) do
+      ExecutionRunners::RunnerHandle.new(runner_type: :contract, identifier: "x", host: "contract",
+                                         workspace_ref: "x", metadata: {})
+    end
+
+    it_behaves_like "an ExecutionRunner implementation"
+  end
+end
