@@ -1,0 +1,203 @@
+# frozen_string_literal: true
+
+module PreCommitRequirements
+  # Evaluates pre-commit requirements for an agent run by executing configured
+  # checks and collecting results. Supports auto-fix mode where a failing check
+  # can be retried after running its fix command.
+  #
+  # Called from RunAgentActivity after the agent commits changes and before
+  # the branch is pushed. Blocking failures prevent the PR from being created.
+  #
+  # @example
+  #   result = PreCommitRequirements::Evaluate.call(agent_run: agent_run)
+  #   result[:passed]     # => true/false
+  #   result[:results]    # => [{ requirement: ..., passed: true/false, output: "..." }, ...]
+  #   result[:blocking]   # => true if any blocking check failed
+  class Evaluate
+    MAX_AUTO_FIX_ATTEMPTS = 3
+
+    attr_reader :agent_run
+
+    def initialize(agent_run:)
+      @agent_run = agent_run
+    end
+
+    def self.call(...)
+      new(...).call
+    end
+
+    def call # @spec QUALITY-LOOPS-002
+      requirements = PreCommitRequirement.resolve(
+        project: agent_run.project,
+        user: agent_run.settings_user
+      )
+
+      return { passed: true, results: [], blocking: false } if requirements.empty?
+
+      results = requirements.map { |req| evaluate_requirement(req) }
+      blocking = results.any? { |r| r[:blocking] && !r[:passed] }
+
+      {
+        passed: results.all? { |r| r[:passed] || !r[:blocking] },
+        results: results,
+        blocking: blocking
+      }
+    end
+
+    private
+
+    def evaluate_requirement(requirement)
+      result = run_check(requirement)
+      result = attach_quality_feedback(requirement, result)
+
+      if !result[:passed] && requirement.auto_fix? && requirement.fix_command.present?
+        result = attempt_auto_fix(requirement)
+      end
+
+      log_result(requirement, result)
+
+      {
+        requirement_id: requirement.id,
+        name: requirement.name,
+        check_type: requirement.check_type,
+        passed: result[:passed],
+        output: result[:output],
+        quality_feedback: result[:quality_feedback],
+        blocking: requirement.blocking?,
+        failure_behavior: requirement.failure_behavior,
+        auto_fixed: result[:auto_fixed] || false
+      }
+    end
+
+    def run_check(requirement)
+      return { passed: false, output: "No container available" } unless agent_run.container_id.present?
+
+      result = agent_run.execute_in_container(resolve_command(requirement), stream: false)
+      passed = container_result_success?(result)
+      output = container_result_output(result)
+
+      { passed: passed, output: output.to_s.truncate(10_000) }
+    rescue Containers::Provision::ExecutionError => e
+      error_output = execution_error_output(e)
+      { passed: false, output: error_output.truncate(10_000) }
+    rescue Containers::Provision::Error => e
+      { passed: false, output: normalize_output_text(e.message).truncate(10_000) }
+    end
+
+    def attempt_auto_fix(requirement)
+      unless agent_run.container_id.present?
+        return { passed: false, output: "No container available for auto-fix", auto_fixed: false }
+      end
+
+      MAX_AUTO_FIX_ATTEMPTS.times do |attempt|
+        fix_result = agent_run.execute_in_container(requirement.fix_command, stream: false)
+
+        unless container_result_success?(fix_result)
+          fix_output = container_result_output(fix_result).to_s.truncate(10_000)
+          return { passed: false, output: "Auto-fix failed: #{fix_output}".truncate(10_000), auto_fixed: false }
+        end
+
+        result = run_check(requirement)
+        if result[:passed]
+          return result.merge(auto_fixed: true)
+        end
+
+        log_auto_fix_attempt(requirement, attempt + 1, result)
+      rescue Containers::Provision::ExecutionError => e
+        error_output = execution_error_output(e)
+        return { passed: false, output: "Auto-fix failed: #{error_output}".truncate(10_000), auto_fixed: false }
+      rescue Containers::Provision::Error => e
+        error_message = normalize_output_text(e.message)
+        return { passed: false, output: "Auto-fix failed: #{error_message}".truncate(10_000), auto_fixed: false }
+      end
+
+      { passed: false, output: "Auto-fix exhausted after #{MAX_AUTO_FIX_ATTEMPTS} attempts", auto_fixed: false }
+    end
+
+    def container_result_success?(result)
+      result.success?
+    end
+
+    def resolve_command(requirement) # @spec QUALITY-LOOPS-003
+      return requirement.command unless requirement.check_type == "mutation_test"
+
+      MutantResultsReader.with_results_dir(requirement.command)
+    end
+
+    # Extracts stdout, stderr, and exit_code from an ExecutionError for
+    # richer diagnostic output than e.message alone.
+    def execution_error_output(error)
+      parts = [ normalize_output_text(error.stdout), normalize_output_text(error.stderr) ].reject(&:blank?)
+      output = parts.join("\n")
+      return output if output.present?
+
+      error.exit_code ? "Command exited with code #{error.exit_code}" : normalize_output_text(error.message)
+    end
+
+    def container_result_output(result)
+      stdout = normalize_output_text(result[:stdout])
+      stderr = normalize_output_text(result[:stderr])
+
+      combined = [ stdout, stderr ].reject(&:blank?).join("\n")
+      return combined if combined.present?
+
+      exit_code = result[:exit_code]
+      exit_code ? "Command exited with code #{exit_code}" : ""
+    end
+
+    include OutputSanitizer
+
+    def attach_quality_feedback(requirement, result)
+      return result unless requirement.check_type == "mutation_test"
+      return result if agent_run.worktree_path.blank?
+
+      feedback = QualityFeedbackService.new(
+        worktree_path: agent_run.worktree_path,
+        language: "ruby"
+      ).mutation_result
+      return result if feedback.errors.empty?
+
+      messages = feedback.errors.map do |error|
+        location = [ error[:file].presence, error[:line] ].compact.join(":")
+        "#{location} #{error[:message]}".strip
+      end
+
+      result.merge(
+        passed: false,
+        output: messages.join("\n").truncate(10_000),
+        quality_feedback: feedback
+      )
+    end
+
+    def log_result(requirement, result)
+      status = result[:passed] ? "passed" : "failed"
+      agent_run.log!(
+        "system",
+        "Pre-commit check '#{requirement.name}' #{status}",
+        metadata: {
+          event: "pre_commit_check",
+          requirement_id: requirement.id,
+          check_type: requirement.check_type,
+          passed: result[:passed],
+          failure_behavior: requirement.failure_behavior,
+          auto_fixed: result[:auto_fixed] || false,
+          quality_feedback: result[:quality_feedback]&.to_h,
+          output_preview: result[:output].to_s.truncate(500)
+        }
+      )
+    end
+
+    def log_auto_fix_attempt(requirement, attempt, result)
+      agent_run.log!(
+        "system",
+        "Auto-fix attempt #{attempt}/#{MAX_AUTO_FIX_ATTEMPTS} for '#{requirement.name}' did not resolve the issue",
+        metadata: {
+          event: "pre_commit_check",
+          requirement_id: requirement.id,
+          attempt: attempt,
+          output_preview: result[:output].to_s.truncate(500)
+        }
+      )
+    end
+  end
+end

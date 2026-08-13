@@ -1,0 +1,62 @@
+<tr id="<%= dom_id(agent_run) %>">
+  <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm sm:pl-6">
+    <%= agent_run_status_badge(agent_run.status) %>
+  </td>
+  <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+    <%= agent_run_priority_badge(agent_run) %>
+  </td>
+  <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+    <%= agent_run_goal_text(agent_run) %>
+  </td>
+  <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+    <% context = agent_run_context(agent_run) %>
+    <% case context[:type] %>
+    <% when :link %>
+      <%= link_to context[:label], context[:url], target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
+    <% when :text %>
+      <span class="<%= context[:classes] %>"><%= context[:label] %></span>
+    <% when :in_progress %>
+      <span class="italic text-gray-500">Creating issue&hellip;</span>
+    <% else %>
+      <span class="text-gray-400">-</span>
+    <% end %>
+  </td>
+  <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+    <%= agent_run_runner_display(agent_run, local_assigns[:runner_displays]) %>
+  </td>
+  <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+    <% elapsed = agent_run_display_duration_seconds(agent_run) %>
+    <% if elapsed %>
+      <%= elapsed %>s
+    <% else %>
+      <span class="text-gray-400">-</span>
+    <% end %>
+  </td>
+  <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+    <% if agent_run.started_at.present? %>
+      <%= time_ago_in_words(agent_run.started_at) %> ago
+    <% else %>
+      <%= time_ago_in_words(agent_run.created_at) %> ago
+    <% end %>
+  </td>
+  <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
+    <%= link_to "View", project_agent_run_member_path(project, agent_run), class: "text-indigo-600 hover:text-indigo-900" %>
+    <% if safe_github_url?(agent_run.pull_request_url) %>
+      &middot;
+      <%= link_to "PR", agent_run.pull_request_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
+    <% end %>
+    <% if safe_github_url?(agent_run.review_url) %>
+      &middot;
+      <%= link_to "Review", agent_run.review_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
+    <% end %>
+    <% if safe_github_url?(agent_run.created_issue_url) %>
+      &middot;
+      <% issue_link_text = agent_run.created_issue_number.present? ? "Issue ##{agent_run.created_issue_number}" : "Issue" %>
+      <%= link_to issue_link_text, agent_run.created_issue_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
+    <% end %>
+    <% if agent_run.cross_repo_issue_pair? %>
+      &middot;
+      <span class="text-indigo-600">Cross-repo pair</span>
+    <% end %>
+  </td>
+</tr>

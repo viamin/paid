@@ -1,0 +1,144 @@
+<% content_for :title, @docker_host.display_name %>
+
+<div class="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+    <div>
+      <p class="text-sm font-medium uppercase tracking-[0.2em] text-amber-700">Docker Host</p>
+      <h1 class="mt-2 text-3xl font-semibold text-gray-900"><%= @docker_host.display_name %></h1>
+      <p class="mt-2 text-sm text-gray-600"><code><%= @docker_host.identifier %></code> • <%= @docker_host.backend_type.humanize %> • <%= @docker_host.enabled? ? "Enabled" : "Disabled" %></p>
+    </div>
+
+    <div class="flex flex-wrap gap-3">
+      <%= link_to "Back to hosts", docker_hosts_path, class: "rounded-full border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50" %>
+      <%= link_to "Edit host", edit_docker_host_path(@docker_host), class: "rounded-full bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-500" %>
+      <% if @docker_host.remote? %>
+        <%= link_to "Setup guide", setup_docker_host_path(@docker_host), class: "rounded-full border border-sky-300 px-4 py-2 text-sm font-semibold text-sky-700 hover:bg-sky-50" %>
+      <% end %>
+    </div>
+  </div>
+
+  <div class="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+    <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+      <h2 class="text-xl font-semibold text-gray-900">Host details</h2>
+      <dl class="mt-6 grid gap-4 sm:grid-cols-2">
+        <div>
+          <dt class="font-medium text-gray-900">Docker endpoint</dt>
+          <dd class="mt-1 text-gray-600"><%= @docker_host.endpoint_label %></dd>
+        </div>
+        <div>
+          <dt class="font-medium text-gray-900">Proxy callback URL</dt>
+          <dd class="mt-1 text-gray-600"><%= @docker_host.callback_url %></dd>
+        </div>
+        <div>
+          <dt class="font-medium text-gray-900">Readiness</dt>
+          <dd class="mt-1 text-gray-600"><%= @docker_host.readiness_status.humanize %></dd>
+        </div>
+        <div>
+          <dt class="font-medium text-gray-900">Failing check</dt>
+          <dd class="mt-1 text-gray-600"><%= @docker_host.failing_check.presence || "None recorded" %></dd>
+        </div>
+        <div>
+          <dt class="font-medium text-gray-900">Architecture</dt>
+          <dd class="mt-1 text-gray-600"><%= @docker_host.daemon_architecture.presence || "Unknown" %></dd>
+        </div>
+        <div>
+          <dt class="font-medium text-gray-900">Daemon summary</dt>
+          <dd class="mt-1 text-gray-600"><%= @docker_host.daemon_summary.presence || "Unknown" %></dd>
+        </div>
+        <div>
+          <dt class="font-medium text-gray-900">Image status</dt>
+          <dd class="mt-1 text-gray-600"><%= @docker_host.image_status.humanize %> • <%= @docker_host.image_tag %></dd>
+        </div>
+        <div>
+          <dt class="font-medium text-gray-900">Required network</dt>
+          <dd class="mt-1 text-gray-600"><%= @docker_host.required_network_status.humanize %> • <%= @docker_host.required_network_name %></dd>
+        </div>
+        <div>
+          <dt class="font-medium text-gray-900">Last checked</dt>
+          <dd class="mt-1 text-gray-600"><%= @docker_host.last_checked_at&.to_fs(:db) || "Never" %></dd>
+        </div>
+        <div>
+          <dt class="font-medium text-gray-900">Last ready</dt>
+          <dd class="mt-1 text-gray-600"><%= @docker_host.last_ready_at&.to_fs(:db) || "Never" %></dd>
+        </div>
+        <div>
+          <dt class="font-medium text-gray-900">Capacity snapshot</dt>
+          <dd class="mt-1 text-gray-600">
+            <% if @capacity_snapshot %>
+              <%= @capacity_snapshot.degraded? ? @capacity_snapshot.degraded_reasons.to_sentence : "Healthy" %>
+            <% else %>
+              Not available
+            <% end %>
+          </dd>
+        </div>
+        <div>
+          <dt class="font-medium text-gray-900">Available Docker memory</dt>
+          <dd class="mt-1 text-gray-600">
+            <% if @capacity_snapshot && !@capacity_snapshot.degraded? %>
+              <%= number_to_human_size(@capacity_snapshot.available_memory_bytes) %>
+            <% else %>
+              Unavailable
+            <% end %>
+          </dd>
+        </div>
+      </dl>
+
+      <% if @docker_host.last_error.present? %>
+        <div class="mt-6 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-800">
+          <strong>Last error:</strong> <%= @docker_host.last_error %>
+        </div>
+      <% end %>
+    </section>
+
+    <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+      <h2 class="text-xl font-semibold text-gray-900">Lifecycle</h2>
+      <p class="mt-2 text-sm text-gray-600">Disable or drain a host without losing the historical <code>container_host</code> ownership recorded on prior runs.</p>
+
+      <% if @docker_host.enabled? %>
+        <div class="mt-6">
+          <%= button_to "Disable host", disable_docker_host_path(@docker_host), method: :patch,
+            class: "rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500",
+            form: { data: { turbo_confirm: "Disable #{@docker_host.display_name} for new placements?" } } %>
+        </div>
+      <% else %>
+        <div class="mt-6 rounded-2xl border border-dashed border-gray-300 px-4 py-4 text-sm text-gray-600">
+          This host is disabled. Existing runs still retain their saved host ownership.
+        </div>
+      <% end %>
+    </section>
+  </div>
+
+  <section class="mt-8 rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+    <h2 class="text-xl font-semibold text-gray-900">Recent runs on this host</h2>
+    <div class="mt-6 overflow-hidden rounded-2xl border border-gray-200">
+      <table class="min-w-full divide-y divide-gray-200 text-sm">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="px-4 py-3 text-left font-medium text-gray-700">Run</th>
+            <th class="px-4 py-3 text-left font-medium text-gray-700">Project</th>
+            <th class="px-4 py-3 text-left font-medium text-gray-700">Goal</th>
+            <th class="px-4 py-3 text-left font-medium text-gray-700">Status</th>
+            <th class="px-4 py-3 text-left font-medium text-gray-700">Created</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200 bg-white">
+          <% if @recent_runs.any? %>
+            <% @recent_runs.each do |run| %>
+              <tr>
+                <td class="px-4 py-4"><%= link_to "##{run.id}", project_agent_run_path(run.project, run), class: "font-medium text-amber-700 hover:text-amber-600" %></td>
+                <td class="px-4 py-4 text-gray-700"><%= run.project.name %></td>
+                <td class="px-4 py-4 text-gray-700"><%= run.goal.humanize %></td>
+                <td class="px-4 py-4 text-gray-700"><%= run.status.humanize %></td>
+                <td class="px-4 py-4 text-gray-700"><%= run.created_at.to_fs(:db) %></td>
+              </tr>
+            <% end %>
+          <% else %>
+            <tr>
+              <td colspan="5" class="px-4 py-6 text-center text-gray-500">No runs have been placed on this host yet.</td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>

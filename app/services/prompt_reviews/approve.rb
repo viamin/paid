@@ -1,0 +1,86 @@
+# frozen_string_literal: true
+
+module PromptReviews
+  # Approves a pending evolved prompt version and promotes it to be the
+  # prompt's current version.
+  #
+  # @example
+  #   PromptReviews::Approve.call(
+  #     prompt_version: evolved_version,
+  #     reviewer: current_user,
+  #     notes: "LGTM"
+  #   )
+  class Approve
+    attr_reader :prompt_version, :reviewer, :notes, :promote
+
+    def initialize(prompt_version:, reviewer:, notes: nil, promote: true)
+      @prompt_version = prompt_version
+      @reviewer = reviewer
+      @notes = notes
+      @promote = promote
+    end
+
+    def self.call(...)
+      new(...).approve
+    end
+
+    def approve
+      validate!
+
+      prompt = prompt_version.prompt
+      approved_at = Time.current
+      prompt.with_lock do
+        raise ArgumentError, "prompt version is no longer pending review" unless prompt_version.reload.pending_review?
+
+        prompt_version.update!(
+          review_status: "approved",
+          reviewed_by_user: reviewer,
+          reviewed_at: approved_at,
+          review_notes: notes
+        )
+        prompt.update!(current_version: prompt_version) if promote
+      end
+      complete_recovery_action!(approved_at) if promote
+      record_audit_event
+      prompt_version
+    end
+
+    private
+
+    def record_audit_event
+      Audit::RecordEvent.call(
+        action: "prompt_version.approved",
+        actor: reviewer,
+        subject: prompt_version,
+        metadata: {
+          prompt_slug: prompt_version.prompt.slug,
+          version: prompt_version.version,
+          notes: notes
+        }
+      )
+    rescue StandardError => e
+      Rails.logger.error(
+        message: "prompt_reviews.audit_failed",
+        action: "approved",
+        error_class: e.class.name,
+        error_message: e.message
+      )
+    end
+
+    def validate!
+      raise ArgumentError, "reviewer is required" unless reviewer
+      raise ArgumentError, "prompt version is not pending review" unless prompt_version.pending_review?
+    end
+
+    def complete_recovery_action!(approved_at)
+      recovery_action = QualityRecoveryAction
+        .where(project: prompt_version.prompt.project, action_type: "prompt_evolution", status: "executing")
+        .for_prompt_version_rollout(prompt_version.id)
+        .order(created_at: :desc)
+        .first
+      return unless recovery_action
+
+      recovery_action.complete!(recovery_action.result, executed_at: approved_at)
+    end
+  end
+end

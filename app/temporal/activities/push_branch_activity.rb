@@ -1,0 +1,33 @@
+# frozen_string_literal: true
+
+module Activities
+  # Pushes the agent's branch to the remote from inside the container.
+  #
+  # Git push runs inside the container, authenticated via the git credential
+  # helper proxy. No git credentials touch the host.
+  class PushBranchActivity < BaseActivity
+    activity_name "PushBranch"
+
+    def execute(input)
+      agent_run_id = input[:agent_run_id]
+      agent_run = AgentRun.find(agent_run_id)
+      track_phase(agent_run_id: agent_run_id, phase_key: "push_branch", phase_group: "post", agent_run: agent_run) do
+        container_service = Containers::Provision.reconnect(
+          agent_run: agent_run,
+          container_id: agent_run.container_id
+        )
+
+        git_ops = Containers::GitOperations.new(
+          container_service: container_service,
+          agent_run: agent_run
+        )
+
+        commit_sha = with_periodic_heartbeat("push_branch", agent_run_id: agent_run_id, branch_name: agent_run.branch_name) do
+          git_ops.push_branch
+        end
+
+        { commit_sha: commit_sha, agent_run_id: agent_run_id }
+      end
+    end
+  end
+end

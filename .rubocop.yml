@@ -1,0 +1,62 @@
+# Omakase Ruby styling for Rails
+inherit_gem: { rubocop-rails-omakase: rubocop.yml }
+
+inherit_mode:
+  merge:
+    - Exclude
+
+# Load additional extensions as plugins
+plugins:
+  - rubocop-rspec
+  - rubocop-performance
+
+# Target Ruby version
+AllCops:
+  TargetRubyVersion: 3.4
+  NewCops: enable
+  Exclude:
+    - 'db/schema.rb'
+    - 'db/cable_schema.rb'
+    - 'db/cache_schema.rb'
+    - 'db/migrate/**/*'
+    - 'vendor/**/*'
+    - 'bin/*'
+    - 'node_modules/**/*'
+    - 'tmp/**/*'
+    - 'config/knowledge/**/*.yml'
+
+# Line length configuration
+Layout/LineLength:
+  Max: 120
+  AllowedPatterns:
+    - '^\s*#'  # Allow long comments
+
+# Disable documentation requirements
+Style/Documentation:
+  Enabled: false
+
+# Enforce frozen string literal
+Style/FrozenStringLiteralComment:
+  Enabled: true
+  EnforcedStyle: always
+
+# RSpec configuration
+RSpec/ExampleLength:
+  Max: 20
+
+RSpec/MultipleExpectations:
+  Max: 10
+
+RSpec/NestedGroups:
+  Max: 4
+
+RSpec/MultipleMemoizedHelpers:
+  Max: 10
+
+# Allow using expect().to receive() pattern for mocking
+RSpec/MessageSpies:
+  Enabled: false
+
+# Allow expect with stubs (common pattern in mocking)
+RSpec/StubbedMock:
+  Enabled: false

@@ -1,0 +1,84 @@
+# frozen_string_literal: true
+
+class WorkflowStatusesController < ApplicationController
+  def show
+    @project = policy_scope(Project).find(params[:project_id])
+    authorize @project, :show?
+
+    @health = compute_automation_health
+  end
+
+  def restart
+    @project = policy_scope(Project).find(params[:project_id])
+    authorize @project, :update?
+
+    unless @project.active?
+      redirect_to project_path(@project), alert: "Cannot restart monitoring on an inactive project."
+      return
+    end
+
+    temporal_status = ProjectWorkflowManager.workflow_status(@project)
+    if temporal_status[:running] && !@project.poll_stale_with_recheck?
+      redirect_to project_path(@project), alert: "Issue monitor is already running."
+      return
+    end
+
+    ProjectWorkflowManager.restart_polling(@project, reason: "manual restart from UI")
+    redirect_to project_path(@project), notice: "Issue monitor restarted."
+  rescue Temporalio::Error::RPCError, Temporalio::Error::WorkflowAlreadyStartedError => e
+    Rails.logger.error(
+      message: "workflow_status.restart_failed",
+      project_id: @project.id,
+      error_class: e.class.name,
+      error: e.message
+    )
+    redirect_to project_path(@project), alert: "Could not restart issue monitor. Please try again later."
+  end
+
+  private
+
+  def compute_automation_health
+    # Try WorkflowState first (avoids per-request Temporal RPC).
+    health = WorkflowState.compute_health_for(@project)
+    return health if health
+
+    # Fall back to Temporal when no WorkflowState record exists yet.
+    compute_automation_health_from_temporal
+  end
+
+  def compute_automation_health_from_temporal
+    unless @project.active?
+      return {
+        status: :inactive,
+        label: "Paused",
+        description: "Issue monitoring is paused. Activate the project to resume."
+      }
+    end
+
+    temporal_status = ProjectWorkflowManager.workflow_status(@project)
+
+    unless temporal_status[:running]
+      return {
+        status: :unhealthy,
+        label: "Not running",
+        description: "The issue monitor is not running. " \
+                     "It may be automatically restarted shortly if eligible."
+      }
+    end
+
+    if @project.poll_stale_with_recheck?
+      return {
+        status: :stale,
+        label: "Delayed",
+        description: "The issue monitor appears to be behind schedule. " \
+                     "It will be automatically recovered."
+      }
+    end
+
+    {
+      status: :healthy,
+      label: "Active",
+      description: "Paid is monitoring this repository for labeled issues."
+    }
+  end
+end

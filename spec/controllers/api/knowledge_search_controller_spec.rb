@@ -1,0 +1,155 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe Api::KnowledgeSearchController, type: :request do
+  include_context "without qdrant vector search"
+
+  let(:account) { create(:account) }
+  let(:user) { create(:user, account: account) }
+  let(:github_token) { create(:github_token, account: account) }
+  let(:project) { create(:project, account: account, github_token: github_token) }
+  let(:project_version) { create(:project_version, project: project) }
+  let(:collector_run) { create(:collector_run, project_version: project_version, collector_type: "routes") }
+
+  let!(:artifact) do
+    create(:knowledge_artifact,
+      project: project,
+      collector_run: collector_run,
+      artifact_type: "route",
+      identifier: "POST /api/users",
+      content: "POST /api/users → api/users#create",
+      scope_path: "config/routes.rb")
+  end
+
+  let(:chunk) do
+    create(:knowledge_chunk,
+      knowledge_artifact: artifact,
+      project: project,
+      chunk_type: "definition",
+      content: "Route: POST /api/users\nController: api/users#create")
+  end
+
+  before { sign_in user }
+
+  describe "GET /api/knowledge/search" do
+    before { chunk } # ensure chunk exists in DB
+
+    it "returns search results" do
+      get "/api/knowledge/search", params: { project_id: project.id, q: "POST /api/users", mode: "exact" }
+
+      expect(response).to have_http_status(:ok)
+      body = response.parsed_body
+      expect(body["results"]).not_to be_empty
+      expect(body["results"].first["identifier"]).to eq("POST /api/users")
+    end
+
+    it "returns meta information" do
+      get "/api/knowledge/search", params: { project_id: project.id, q: "POST /api/users" }
+
+      body = response.parsed_body
+      expect(body["meta"]).to include("mode", "total", "took_ms")
+    end
+
+    it "supports mode parameter" do
+      owner = project.effective_owner
+      owner.settings.update!(kb_embedding_runner: "openai", kb_embedding_fallback_runners: [])
+      create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-test-mode")
+
+      get "/api/knowledge/search", params: { project_id: project.id, q: "users", mode: "semantic" }
+
+      body = response.parsed_body
+      expect(body["meta"]["mode"]).to eq("semantic")
+    end
+
+    it "supports type filter" do
+      get "/api/knowledge/search", params: {
+        project_id: project.id, q: "POST /api/users", mode: "exact", type: "route"
+      }
+
+      expect(response).to have_http_status(:ok)
+    end
+
+    it "returns 404 for unknown project" do
+      get "/api/knowledge/search", params: { project_id: 0, q: "test" }
+
+      expect(response).to have_http_status(:not_found)
+    end
+
+    it "returns 401 JSON for unauthenticated requests" do
+      sign_out user
+      get "/api/knowledge/search", params: { project_id: project.id, q: "test" }
+
+      expect(response).to have_http_status(:unauthorized)
+      expect(response.parsed_body["error"]).to eq("Unauthorized")
+    end
+
+    it "returns 403 JSON for other accounts' projects" do
+      other_account = create(:account)
+      other_token = create(:github_token, account: other_account)
+      other_project = create(:project, account: other_account, github_token: other_token)
+
+      get "/api/knowledge/search", params: { project_id: other_project.id, q: "test" }
+
+      expect(response).to have_http_status(:forbidden)
+      expect(response.parsed_body["error"]).to eq("Forbidden")
+    end
+
+    it "routes non-exact modes through Knowledge::Search without passing raw provider credentials" do
+      owner = project.effective_owner
+      owner.settings.update!(kb_embedding_runner: "openrouter", kb_embedding_fallback_runners: [ "openai" ])
+      create(:provider_api_key, user: owner, api_service_type: "openrouter", api_key: "sk-test-api")
+
+      allow(Knowledge::Search).to receive(:call).and_return({ results: [], meta: { mode: "hybrid", total: 0, took_ms: 0, exact_count: 0, semantic_count: 0 } })
+
+      get "/api/knowledge/search", params: { project_id: project.id, q: "test", mode: "hybrid" }
+
+      expect(Knowledge::Search).to have_received(:call).with(
+        hash_including(project: project, query: "test", mode: "hybrid")
+      )
+    end
+
+    it "preserves semantic mode when only a platform OpenAI credential is available" do
+      owner = project.effective_owner
+      owner.settings.update!(kb_embedding_runner: "openai", kb_embedding_fallback_runners: [])
+      allow(Rails.application.credentials).to receive(:dig).with(:llm, :openai_api_key).and_return("sk-platform")
+      allow(Knowledge::Search).to receive(:call).and_return({ results: [], meta: { mode: "semantic", total: 0, took_ms: 0, exact_count: 0, semantic_count: 0 } })
+
+      get "/api/knowledge/search", params: { project_id: project.id, q: "test", mode: "semantic" }
+
+      expect(Knowledge::Search).to have_received(:call).with(
+        hash_including(project: project, query: "test", mode: "semantic")
+      )
+    end
+
+    it "skips semantic provider resolution for exact mode" do
+      owner = project.effective_owner
+      create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-test-api")
+
+      allow(Knowledge::Search).to receive(:call).and_return({ results: [], meta: { mode: "exact", total: 0, took_ms: 0, exact_count: 0, semantic_count: 0 } })
+
+      get "/api/knowledge/search", params: { project_id: project.id, q: "test", mode: "exact" }
+
+      expect(Knowledge::Search).to have_received(:call).with(
+        hash_including(project: project, query: "test", mode: "exact")
+      )
+    end
+
+    context "when rate limit is exceeded" do
+      it "returns 429 JSON when rate limit is exceeded" do
+        limit = described_class::RATE_LIMIT_MAX_REQUESTS
+
+        # Stub the cache store increment to simulate exceeding the rate limit.
+        # The store reference is captured at class load time (NullStore in test),
+        # so we stub the specific store instance to return a count above the limit.
+        store = described_class.cache_store
+        allow(store).to receive(:increment).and_return(limit + 1)
+
+        get "/api/knowledge/search", params: { project_id: project.id, q: "test", mode: "exact" }
+
+        expect(response).to have_http_status(:too_many_requests)
+        expect(response.parsed_body["error"]).to eq("Rate limit exceeded")
+      end
+    end
+  end
+end

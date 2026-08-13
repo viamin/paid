@@ -1,0 +1,181 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "shellwords"
+require "json"
+require "open3"
+require "tempfile"
+
+ENV["BUNDLE_GEMFILE"] ||= File.expand_path("../Gemfile", __dir__)
+
+require "bundler/setup"
+
+CHAT_SERVICE_TYPES = %w[anthropic openrouter openai inception deepseek mistral xai zai zai_coding].freeze
+SERVICE_TYPE_ENV_VARS = {
+  "anthropic" => "ANTHROPIC_API_KEY",
+  "openrouter" => "OPENROUTER_API_KEY",
+  "openai" => "OPENAI_API_KEY",
+  "inception" => "INCEPTION_API_KEY",
+  "deepseek" => "DEEPSEEK_API_KEY",
+  "mistral" => "MISTRAL_API_KEY",
+  "xai" => "XAI_API_KEY",
+  "zai" => "ZAI_API_KEY",
+  "zai_coding" => "ZHIPU_API_KEY"
+}.freeze
+MODEL_ENV = "PAID_CHAT_SMOKE_MODEL"
+
+def usage
+  puts <<~USAGE
+    Usage:
+      bin/chat-smoke
+      bin/chat-smoke ui
+      bin/chat-smoke api
+      bin/chat-smoke all
+      bin/chat-smoke help
+
+    Defaults:
+      `bin/chat-smoke` runs all chat end-to-end tests against every
+      eligible API key found in the development DB.
+
+      Set a service-type-specific env var (e.g. ANTHROPIC_API_KEY) to
+      test only that single provider. Otherwise all DB keys are tested.
+
+    Environment:
+      #{SERVICE_TYPE_ENV_VARS.values.join(", ")}
+        Test a single provider. Skips DB discovery.
+      #{MODEL_ENV}
+        Override the model for all providers (auto-detected per provider otherwise).
+
+  USAGE
+end
+
+def resolve_providers
+  env_providers = resolve_from_env_vars
+  return env_providers unless env_providers.empty?
+
+  resolve_from_db
+end
+
+def resolve_from_env_vars
+  env_model = ENV[MODEL_ENV].to_s.strip
+  SERVICE_TYPE_ENV_VARS.filter_map do |service_type, env_var|
+    key = ENV[env_var].to_s.strip
+    next if key.empty?
+
+    {
+      api_key: key,
+      service_type: service_type,
+      model: env_model.empty? ? nil : env_model,
+      source: env_var
+    }
+  end
+end
+
+def resolve_from_db
+  runner_script = <<~'RUBY'
+    require "json"
+
+    eligible_types = %w[anthropic openrouter openai inception deepseek mistral xai zai zai_coding]
+
+    results = TenantContext.with_system_access do
+      ProviderApiKey.where(api_service_type: eligible_types).order(:id).filter_map do |key|
+        provider = key.providers.where.not(provider_key: [ nil, "" ]).order(:id).first
+        next unless provider
+
+        config = provider.config.is_a?(Hash) ? provider.config[provider.provider_key] || {} : {}
+        {
+          api_key: key.api_key,
+          service_type: key.api_service_type,
+          model: config["model"],
+          provider_key: provider.provider_key,
+          label: "#{key.api_service_type} (#{provider.provider_key}/#{config['model'] || 'default'})"
+        }
+      end
+    end
+
+    puts JSON.generate(results)
+  RUBY
+
+  stdout, _stderr, status = Open3.capture3(
+    { "RAILS_ENV" => "development" },
+    "bundle", "exec", "rails", "runner", runner_script
+  )
+
+  return [] unless status.success?
+
+  parsed = JSON.parse(stdout.lines.last.to_s)
+  return [] unless parsed.is_a?(Array)
+
+  env_model = ENV[MODEL_ENV].to_s.strip
+  parsed.filter_map do |entry|
+    model = env_model.empty? ? entry["model"].to_s.strip : env_model
+    next if model.empty?
+
+    {
+      api_key: entry["api_key"].to_s.strip,
+      service_type: entry["service_type"].to_s.strip,
+      model: model,
+      provider_key: entry["provider_key"].to_s.strip,
+      source: "development DB (#{entry['label']})"
+    }
+  end
+rescue JSON::ParserError
+  []
+end
+
+def run_rspec!(spec_globs:)
+  providers = resolve_providers
+
+  if providers.empty?
+    warn "Error: No eligible API keys found."
+    warn "Set one of #{SERVICE_TYPE_ENV_VARS.values.join(', ')} or create provider API keys in the development DB."
+    exit 1
+  end
+
+  puts "Testing #{providers.size} provider(s):"
+  providers.each { |p| puts "  - #{p[:source]} (model: #{p[:model]})" }
+  puts
+
+  providers_json = JSON.generate(providers.map { |p|
+    {
+      "api_key" => p[:api_key],
+      "service_type" => p[:service_type],
+      "model" => p[:model],
+      "provider_key" => p[:provider_key]
+    }
+  })
+
+  tmpfile = Tempfile.new("chat-smoke-providers")
+  tmpfile.write(providers_json)
+  tmpfile.close
+
+  env = {
+    "RUN_CHAT_E2E" => "true",
+    "COVERAGE" => "false",
+    "PAID_CHAT_SMOKE_PROVIDERS_PATH" => tmpfile.path
+  }
+
+  command = [ "bundle", "exec", "rspec", *spec_globs ]
+  puts "Running #{Shellwords.join(command)}"
+
+  success = system(env, *command)
+  tmpfile.unlink
+  exit($CHILD_STATUS&.exitstatus || 1) unless success
+end
+
+command = ARGV.shift || "all"
+
+case command
+when "list", "--help", "-h", "help"
+  usage
+when "ui"
+  run_rspec!(spec_globs: [ "spec/system/chat_spec.rb", "--tag", "chat_ui" ])
+when "api"
+  run_rspec!(spec_globs: [ "spec/system/chat_spec.rb", "--tag", "chat_api" ])
+when "all"
+  run_rspec!(spec_globs: [ "spec/system/chat_spec.rb" ])
+else
+  warn "Unknown command: #{command}"
+  usage
+  exit 1
+end

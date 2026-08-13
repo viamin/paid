@@ -1,0 +1,194 @@
+[
+  {
+    "id": "agent-run-2731",
+    "info": {
+      "State": "running",
+      "Labels": {
+        "paid.agent_run_id": "2731",
+        "paid.project_id": "1"
+      },
+      "Image": "paid-agent:latest",
+      "Name": "paid-agent-2731"
+    },
+    "stats": {
+      "cpu_stats": {
+        "cpu_usage": { "total_usage": 220000000 },
+        "system_cpu_usage": 1000000000,
+        "online_cpus": 1
+      },
+      "precpu_stats": {
+        "cpu_usage": { "total_usage": 110000000 },
+        "system_cpu_usage": 500000000
+      },
+      "memory_stats": {
+        "usage": 3000,
+        "limit": 16000
+      }
+    }
+  },
+  {
+    "id": "mcp-sidecar-2731",
+    "info": {
+      "State": "running",
+      "Labels": {
+        "paid.mcp_sidecar": "true",
+        "paid.agent_run_id": "2731"
+      },
+      "Image": "ghcr.io/example/mcp:latest",
+      "Name": "paid-mcp-sidecar-2731"
+    },
+    "stats": {
+      "cpu_stats": {
+        "cpu_usage": { "total_usage": 120000000 },
+        "system_cpu_usage": 1000000000,
+        "online_cpus": 1
+      },
+      "precpu_stats": {
+        "cpu_usage": { "total_usage": 60000000 },
+        "system_cpu_usage": 500000000
+      },
+      "memory_stats": {
+        "usage": 500,
+        "limit": 16000
+      }
+    }
+  },
+  {
+    "id": "service-container-88",
+    "info": {
+      "State": "running",
+      "Labels": {
+        "paid.service_container": "true",
+        "paid.service_container_id": "88"
+      },
+      "Image": "postgres:16",
+      "Name": "paid-svc-db"
+    },
+    "stats": {
+      "cpu_stats": {
+        "cpu_usage": { "total_usage": 80000000 },
+        "system_cpu_usage": 1000000000,
+        "online_cpus": 1
+      },
+      "precpu_stats": {
+        "cpu_usage": { "total_usage": 40000000 },
+        "system_cpu_usage": 500000000
+      },
+      "memory_stats": {
+        "usage": 1200,
+        "limit": 16000
+      }
+    }
+  },
+  {
+    "id": "compose-web-1",
+    "info": {
+      "State": "running",
+      "Labels": {
+        "com.docker.compose.project": "paid",
+        "com.docker.compose.project.working_dir": "/workspace/paid",
+        "com.docker.compose.service": "web"
+      },
+      "Image": "paid-web:latest",
+      "Name": "paid-web-1"
+    },
+    "stats": {
+      "cpu_stats": {
+        "cpu_usage": { "total_usage": 100000000 },
+        "system_cpu_usage": 1000000000,
+        "online_cpus": 1
+      },
+      "precpu_stats": {
+        "cpu_usage": { "total_usage": 50000000 },
+        "system_cpu_usage": 500000000
+      },
+      "memory_stats": {
+        "usage": 1800,
+        "limit": 16000
+      }
+    }
+  },
+  {
+    "id": "compose-postgres-1",
+    "info": {
+      "State": "running",
+      "Labels": {
+        "com.docker.compose.project": "paid",
+        "com.docker.compose.project.working_dir": "/workspace/paid",
+        "com.docker.compose.service": "postgres"
+      },
+      "Image": "postgres:16",
+      "Name": "paid-postgres-1"
+    },
+    "stats": {
+      "cpu_stats": {
+        "cpu_usage": { "total_usage": 40000000 },
+        "system_cpu_usage": 1000000000,
+        "online_cpus": 1
+      },
+      "precpu_stats": {
+        "cpu_usage": { "total_usage": 20000000 },
+        "system_cpu_usage": 500000000
+      },
+      "memory_stats": {
+        "usage": 1000,
+        "limit": 16000
+      }
+    }
+  },
+  {
+    "id": "chat-session-31",
+    "info": {
+      "State": "running",
+      "Labels": {
+        "paid.managed": "true",
+        "paid.resource": "chat_container",
+        "paid.chat_session_id": "31"
+      },
+      "Image": "paid-agent:latest",
+      "Name": "paid-chat-31"
+    },
+    "stats": {
+      "cpu_stats": {
+        "cpu_usage": { "total_usage": 20000000 },
+        "system_cpu_usage": 1000000000,
+        "online_cpus": 1
+      },
+      "precpu_stats": {
+        "cpu_usage": { "total_usage": 10000000 },
+        "system_cpu_usage": 500000000
+      },
+      "memory_stats": {
+        "usage": 600,
+        "limit": 16000
+      }
+    }
+  },
+  {
+    "id": "other-1",
+    "info": {
+      "State": "running",
+      "Labels": {
+        "com.docker.compose.project": "random",
+        "com.docker.compose.service": "db"
+      },
+      "Image": "unrelated-ci-db:latest",
+      "Name": "unrelated-ci-db"
+    },
+    "stats": {
+      "cpu_stats": {
+        "cpu_usage": { "total_usage": 20000000 },
+        "system_cpu_usage": 1000000000,
+        "online_cpus": 1
+      },
+      "precpu_stats": {
+        "cpu_usage": { "total_usage": 10000000 },
+        "system_cpu_usage": 500000000
+      },
+      "memory_stats": {
+        "usage": 500,
+        "limit": 16000
+      }
+    }
+  }
+]

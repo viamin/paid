@@ -1,0 +1,640 @@
+#!/usr/bin/env bash
+#
+# Dev environment auto-updater.
+#
+# Pulls the latest changes from main and optionally performs a full restart
+# of the dev environment (Overmind stop + bin/setup).
+#
+# This script is intentionally standalone (no Ruby/Rails dependency) so it
+# can run even when Rails cannot boot (e.g., pending migrations).
+#
+# Usage:
+#   bin/dev-update --lightweight   # git pull only
+#   bin/dev-update --full          # git pull + overmind stop + bin/setup
+#
+# Safety:
+#   - Must be run from the repository root.
+#   - The full-restart path uses setsid to detach the overmind stop command,
+#     so stopping Overmind does not kill this script even when invoked from
+#     an Overmind-managed process.
+
+set -euo pipefail
+
+APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$APP_ROOT" || exit
+
+# shellcheck source=bin/lib/dev_supervisor.sh
+source "${APP_ROOT}/bin/lib/dev_supervisor.sh"
+
+MODE="${1:---lightweight}"
+LOG_PREFIX="[dev-update]"
+DEFAULT_OVERMIND_SOCKET="${APP_ROOT}/.overmind.sock"
+OVERMIND_SOCKET="${OVERMIND_SOCKET:-$DEFAULT_OVERMIND_SOCKET}"
+if [[ "$OVERMIND_SOCKET" != /* ]]; then
+  OVERMIND_SOCKET="${APP_ROOT}/${OVERMIND_SOCKET}"
+fi
+SCRIPT_LOG="log/dev-update/dev-update.log"
+START_DEV_LOG="log/dev-update/dev-start.log"
+TMUX_LOG="log/dev-update/tmux.log"
+OVERMIND_LOG="log/dev-update/overmind.log"
+STOPPED_OVERMIND=0
+OVERMIND_STOP_POLL_COUNT="${DEV_UPDATE_OVERMIND_STOP_POLL_COUNT:-10}"
+OVERMIND_START_POLL_COUNT="${DEV_UPDATE_OVERMIND_START_POLL_COUNT:-15}"
+OVERMIND_POLL_INTERVAL="${DEV_UPDATE_OVERMIND_POLL_INTERVAL:-1}"
+OVERMIND_HEALTHY_CONFIRM_COUNT="${DEV_UPDATE_OVERMIND_HEALTHY_CONFIRM_COUNT:-2}"
+STARTUP_CLEANUP_KILL_ALL="${DEV_UPDATE_STARTUP_CLEANUP_KILL_ALL:-}"
+STASHED_CHANGES=0
+FAILURE_LOCK_FILE="${APP_ROOT}/tmp/dev-update-failure.lock"
+FAILURE_REASON_FILE="${FAILURE_LOCK_FILE}.reason"
+MAX_CONSECUTIVE_FAILURES="${DEV_UPDATE_MAX_CONSECUTIVE_FAILURES:-3}"
+
+newline_list_to_csv() {
+  printf '%s' "${1:-}" | tr '\n' ',' | sed 's/,$//'
+}
+
+restart_required_for_file() {
+  local file="$1"
+
+  case "$file" in
+    app/temporal/*|config/*|db/migrate/*|bin/*|lib/*|Procfile*)
+      return 0
+      ;;
+    Gemfile|Gemfile.lock|package.json|package-lock.json|yarn.lock)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+restart_required_from_trigger_context() {
+  local file
+
+  if [ -n "${DEV_UPDATE_RESTART_TRIGGER_FILES:-}" ]; then
+    return 0
+  fi
+
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    if restart_required_for_file "$file"; then
+      return 0
+    fi
+  done <<< "${DEV_UPDATE_CHANGED_FILES:-}"
+
+  return 1
+}
+
+migrations_changed_in() {
+  local files="$1"
+  local file
+
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    case "$file" in
+      db/migrate/*)
+        return 0
+        ;;
+    esac
+  done <<< "$files"
+
+  return 1
+}
+
+migrations_changed() {
+  migrations_changed_in "${DEV_UPDATE_RESTART_TRIGGER_FILES:-}" ||
+    migrations_changed_in "${DEV_UPDATE_CHANGED_FILES:-}" ||
+    migrations_changed_in "$PULL_CHANGED_FILES"
+}
+
+migrations_changed_in_trigger_context() {
+  migrations_changed_in "${DEV_UPDATE_RESTART_TRIGGER_FILES:-}" ||
+    migrations_changed_in "${DEV_UPDATE_CHANGED_FILES:-}"
+}
+
+log() {
+  echo "$LOG_PREFIX $(date '+%Y-%m-%d %H:%M:%S') $*"
+}
+
+MAX_LOG_BYTES="${DEV_UPDATE_MAX_LOG_BYTES:-524288}"  # 512 KB default
+KEEP_LOG_BYTES="${DEV_UPDATE_KEEP_LOG_BYTES:-102400}" # 100 KB tail to keep
+
+truncate_log_if_oversized() {
+  local file="$1"
+  [ -f "$file" ] || return 0
+  local size
+  size="$(wc -c < "$file")"
+  if [ "$size" -gt "$MAX_LOG_BYTES" ]; then
+    local tmp="${file}.trim"
+    tail -c "$KEEP_LOG_BYTES" "$file" > "$tmp"
+    mv "$tmp" "$file"
+  fi
+}
+
+truncate_dev_update_logs() {
+  truncate_log_if_oversized "$SCRIPT_LOG"
+  truncate_log_if_oversized "$START_DEV_LOG"
+  truncate_log_if_oversized "$TMUX_LOG"
+  truncate_log_if_oversized "$OVERMIND_LOG"
+}
+
+tree_is_dirty() {
+  # Exclude .worktrees/ — sibling git worktrees live there and always appear
+  # untracked in the primary checkout; they are not changes to stash or commit.
+  [ -n "$(git status --porcelain -- . ':(exclude).worktrees' 2>/dev/null)" ]
+}
+
+stash_dirty_tree() {
+  if tree_is_dirty; then
+    log "Working tree has uncommitted changes; auto-stashing..."
+    local stash_output
+    stash_output="$(git stash push --include-untracked -m "dev-update-autostash" 2>&1)"
+    log_command_output "git stash" "$stash_output"
+    STASHED_CHANGES=1
+  fi
+}
+
+unstash_dirty_tree() {
+  if [ "$STASHED_CHANGES" -eq 1 ]; then
+    log "Restoring auto-stashed changes..."
+    local pop_output
+    if ! pop_output="$(git stash pop 2>&1)"; then
+      log_command_output "git stash pop" "$pop_output"
+      # Abort on conflict — continuing with a conflicted tree would leave the
+      # repo in a broken state that downstream steps (bin/setup, restart) cannot
+      # recover from.  The stash entry is preserved so the user can resolve
+      # manually with `git stash pop`.
+      record_failure "stash-pop-conflict"
+      fail "git stash pop failed (conflict). Resolve manually with 'git stash pop'."
+    else
+      log_command_output "git stash pop" "$pop_output"
+    fi
+    STASHED_CHANGES=0
+  fi
+}
+
+check_failure_lock() {
+  mkdir -p "$(dirname "$FAILURE_LOCK_FILE")"
+  if [ -f "$FAILURE_LOCK_FILE" ]; then
+    local count
+    count="$(cat "$FAILURE_LOCK_FILE")"
+    if [ "$count" -ge "$MAX_CONSECUTIVE_FAILURES" ]; then
+      if failure_lock_can_self_clear; then
+        clear_failure_lock "Cleared failure lock after resolved working-tree condition."
+        return 0
+      fi
+
+      log "ERROR: $count consecutive pull failures detected. Manual intervention required."
+      log "Remove $FAILURE_LOCK_FILE after resolving the working tree issue."
+      exit 1
+    fi
+  fi
+}
+
+record_failure() {
+  local reason="${1:-unknown}"
+  mkdir -p "$(dirname "$FAILURE_LOCK_FILE")"
+  local count=0
+  [ -f "$FAILURE_LOCK_FILE" ] && count="$(cat "$FAILURE_LOCK_FILE")"
+  count=$((count + 1))
+  echo "$count" > "$FAILURE_LOCK_FILE"
+  echo "$reason" > "$FAILURE_REASON_FILE"
+  log "Recorded pull failure ($count/$MAX_CONSECUTIVE_FAILURES)."
+}
+
+clear_failure_lock() {
+  if [ -f "$FAILURE_LOCK_FILE" ]; then
+    local message="${1:-Cleared failure lock after successful pull.}"
+    rm -f "$FAILURE_LOCK_FILE" "$FAILURE_REASON_FILE"
+    log "$message"
+  fi
+}
+
+failure_lock_can_self_clear() {
+  local reason=""
+  [ -f "$FAILURE_REASON_FILE" ] && reason="$(cat "$FAILURE_REASON_FILE")"
+
+  if [ "$reason" = "dirty-non-main" ] && ! tree_is_dirty; then
+    log "Failure lock was caused by dirty non-main branch, but the working tree is clean now; retrying update."
+    return 0
+  fi
+
+  # Older lock files only stored a count. If the updater is still on a clean
+  # non-main branch, this matches the historical dirty-branch failure shape and
+  # lets the next run switch to main instead of requiring manual lock removal.
+  if [ -z "$reason" ] && ! tree_is_dirty; then
+    local current_branch
+    current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+    if [ -n "$current_branch" ] && [ "$current_branch" != "main" ]; then
+      log "Legacy failure lock found on clean non-main branch; retrying update."
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
+configure_logging() {
+  mkdir -p "$(dirname "$SCRIPT_LOG")"
+  truncate_dev_update_logs
+  dev_supervisor_prepare_logging
+
+  if [ -t 1 ]; then
+    exec > >(tee -a "$SCRIPT_LOG") 2>&1
+  else
+    exec >>"$SCRIPT_LOG" 2>&1
+  fi
+}
+
+log_trigger_context() {
+  log "Trigger source: ${DEV_UPDATE_TRIGGER_SOURCE:-unknown}"
+  log "Requested mode: ${DEV_UPDATE_TRIGGER_MODE:-unknown}"
+  log "Project ID: ${DEV_UPDATE_PROJECT_ID:-unknown}"
+  log "PR number: ${DEV_UPDATE_PR_NUMBER:-unknown}"
+
+  local changed_files_csv
+  changed_files_csv="$(newline_list_to_csv "${DEV_UPDATE_CHANGED_FILES:-}")"
+  local restart_files_csv
+  restart_files_csv="$(newline_list_to_csv "${DEV_UPDATE_RESTART_TRIGGER_FILES:-}")"
+
+  [ -z "$changed_files_csv" ] || log "Changed files: $changed_files_csv"
+  [ -z "$restart_files_csv" ] || log "Restart trigger files: $restart_files_csv"
+}
+
+enforce_safe_mode() {
+  if [ "$MODE" = "--lightweight" ] && restart_required_from_trigger_context; then
+    log "Restart-worthy files were provided with a lightweight request; upgrading to full restart."
+    MODE="--full"
+  fi
+}
+
+log_command_output() {
+  local label="$1"
+  local output="$2"
+  [ -z "$output" ] && return
+
+  while IFS= read -r line; do
+    log "${label}: ${line}"
+  done <<< "$output"
+}
+
+fail() {
+  log "ERROR: $*"
+  exit 1
+}
+
+on_error() {
+  local exit_code=$?
+  local line_number="${1:-unknown}"
+  local command="${2:-unknown}"
+  log "ERROR: command failed at line ${line_number}: ${command} (exit ${exit_code})"
+  exit "$exit_code"
+}
+
+trap 'on_error "${LINENO}" "${BASH_COMMAND}"' ERR
+
+overmind_available() {
+  command -v overmind &> /dev/null
+}
+
+overmind_running() {
+  overmind_available && dev_supervisor_run_overmind overmind status &>/dev/null
+}
+
+overmind_healthy() {
+  overmind_available || return 1
+
+  local status_output
+  if ! status_output="$(dev_supervisor_overmind_status_output)"; then
+    return 1
+  fi
+
+  if dev_supervisor_overmind_has_dead_processes "$status_output"; then
+    return 1
+  fi
+
+  if dev_supervisor_tmux_has_dead_panes; then
+    return 1
+  fi
+
+  return 0
+}
+
+remove_stale_overmind_socket() {
+  if [ -S "$OVERMIND_SOCKET" ] && ! overmind_running; then
+    log "Removing stale Overmind socket..."
+    rm -f "$OVERMIND_SOCKET"
+  fi
+}
+
+ensure_on_main() {
+  local current_branch
+  current_branch="$(git rev-parse --abbrev-ref HEAD)"
+
+  if [ "$current_branch" != "main" ]; then
+    # Refuse to switch branches with a dirty tree — stashing would carry
+    # feature-branch edits onto main when unstash_dirty_tree runs later.
+    if tree_is_dirty; then
+      record_failure "dirty-non-main"
+      log "ERROR: Working tree on '$current_branch' has uncommitted changes. Commit or stash them before running dev-update."
+      return 1
+    fi
+    log "Switching to main branch (currently on $current_branch)..."
+    git checkout main
+  fi
+}
+
+PULL_CHANGED_FILES=""
+
+pull_latest() {
+  PULL_CHANGED_FILES=""
+  stash_dirty_tree
+  local pre_head
+  pre_head="$(git rev-parse HEAD)"
+
+  log "Pulling latest changes from main..."
+  if ! git pull --ff-only origin main; then
+    record_failure "git-pull"
+    unstash_dirty_tree
+    log "ERROR: git pull --ff-only failed. Check for diverged history or upstream issues."
+    return 1
+  fi
+
+  local post_head
+  post_head="$(git rev-parse HEAD)"
+
+  clear_failure_lock
+  unstash_dirty_tree
+
+  if [ "$pre_head" != "$post_head" ]; then
+    PULL_CHANGED_FILES="$(git diff --name-only "$pre_head" "$post_head")"
+    if [ -n "$PULL_CHANGED_FILES" ]; then
+      local csv
+      csv="$(newline_list_to_csv "$PULL_CHANGED_FILES")"
+      log "Files changed in pull: $csv"
+    fi
+  fi
+}
+
+restart_required_from_pull() {
+  local file
+
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    if restart_required_for_file "$file"; then
+      return 0
+    fi
+  done <<< "$PULL_CHANGED_FILES"
+
+  return 1
+}
+
+stop_overmind() {
+  if overmind_available && [ -e "$OVERMIND_SOCKET" ]; then
+    if ! overmind_running; then
+      log "Detected stale Overmind socket."
+      remove_stale_overmind_socket
+      return
+    fi
+
+    log "Stopping Overmind (detached)..."
+    # Use setsid to run overmind quit in a new session so that stopping
+    # Overmind does not kill this script (which may be a child of Overmind).
+    local quit_output
+    if ! quit_output="$(setsid env \
+      -u BUNDLE_BIN_PATH \
+      -u BUNDLE_GEMFILE \
+      -u BUNDLER_SETUP \
+      -u BUNDLER_VERSION \
+      -u RUBYLIB \
+      -u RUBYOPT \
+      -u RUBYGEMS_GEMDEPS \
+      overmind quit 2>&1)"; then
+      log "Warning: overmind quit returned a non-zero exit status."
+    fi
+    log_command_output "overmind quit" "$quit_output"
+    STOPPED_OVERMIND=1
+
+    # Give Overmind a moment to shut down gracefully and release its socket.
+    for ((i = 0; i < OVERMIND_STOP_POLL_COUNT; i += 1)); do
+      if [ ! -e "$OVERMIND_SOCKET" ]; then
+        log "Overmind socket removed."
+        return
+      fi
+
+      if ! overmind_running; then
+        log "Overmind stopped; cleaning up socket if needed."
+        break
+      fi
+
+      sleep "$OVERMIND_POLL_INTERVAL"
+    done
+
+    remove_stale_overmind_socket
+  else
+    log "Overmind not running, skipping stop."
+  fi
+}
+
+# Drop databases left behind by removed git worktrees. bin/setup creates a
+# worktree's databases via bin/ensure-worktree-databases but nothing reaps them
+# when the worktree goes away, so they accumulate and exhaust Postgres
+# connection slots. Best-effort: a prune failure must never abort an auto-update,
+# so it runs inside an `if` (which the ERR trap ignores) and only logs warnings.
+prune_worktree_databases() {
+  log "Pruning orphaned worktree databases..."
+  local output
+  if output="$(bin/prune-worktree-databases --force 2>&1)"; then
+    log_command_output "prune-worktree-databases" "$output"
+  else
+    log "Warning: prune-worktree-databases failed; continuing with update."
+    log_command_output "prune-worktree-databases" "$output"
+  fi
+}
+
+run_setup() {
+  local setup_args=(--skip-server)
+  if migrations_changed; then
+    setup_args+=(--skip-database)
+  fi
+
+  log "Running bin/setup ${setup_args[*]}..."
+  local status=0
+  STARTUP_CLEANUP_KILL_ALL="$STARTUP_CLEANUP_KILL_ALL" \
+    dev_supervisor_run_clean bin/setup "${setup_args[@]}" || status=$?
+  # Mirror bin/setup's worktree-database creation by reaping orphans, but only
+  # after a clean setup — the DB is in a known-good state and Ruby is available.
+  [ "$status" -eq 0 ] && ! migrations_changed && prune_worktree_databases
+  return "$status"
+}
+
+run_migrations_if_needed() {
+  migrations_changed || return 0
+
+  log "Migration files changed; running bin/rails db:migrate before restart..."
+  local output
+  if output="$(dev_supervisor_run_clean bin/ensure-worktree-databases 2>&1)"; then
+    log_command_output "ensure-worktree-databases" "$output"
+  else
+    log_command_output "ensure-worktree-databases" "$output"
+    fail "bin/ensure-worktree-databases failed. Fix database setup and rerun bin/dev-update --full."
+  fi
+
+  if output="$(dev_supervisor_run_clean bin/rails db:migrate 2>&1)"; then
+    log_command_output "db:migrate" "$output"
+    log "Database migrations are current."
+  else
+    log_command_output "db:migrate" "$output"
+    fail "bin/rails db:migrate failed. Fix the migration and rerun bin/dev-update --full."
+  fi
+
+  prune_worktree_databases
+}
+
+wait_for_overmind_health() {
+  local healthy_polls=0
+  for ((i = 0; i < OVERMIND_START_POLL_COUNT; i += 1)); do
+    if overmind_healthy; then
+      healthy_polls=$((healthy_polls + 1))
+    else
+      healthy_polls=0
+    fi
+
+    if [ "$healthy_polls" -ge "$OVERMIND_HEALTHY_CONFIRM_COUNT" ]; then
+      log "Overmind is healthy after restart."
+      return 0
+    fi
+
+    sleep "$OVERMIND_POLL_INTERVAL"
+  done
+
+  if [ -e "$OVERMIND_SOCKET" ]; then
+    log "Warning: Overmind restart did not become healthy before timeout. Socket still exists at $OVERMIND_SOCKET."
+  else
+    log "Warning: Overmind restart did not become healthy before timeout. No socket present."
+  fi
+
+  dev_supervisor_snapshot_state "dev-update-start-timeout"
+  log "Inspect $START_DEV_LOG for detached bin/dev output."
+  return 1
+}
+
+start_dev() {
+  mkdir -p "$(dirname "$START_DEV_LOG")"
+  remove_stale_overmind_socket
+  dev_supervisor_cleanup_stale_tmux_sockets
+
+  if overmind_running; then
+    log "Overmind is already running, restarting processes."
+    local restart_output
+    restart_output="$(dev_supervisor_run_overmind overmind restart 2>&1)"
+    log_command_output "overmind restart" "$restart_output"
+    log "Overmind process restart requested."
+    wait_for_overmind_health
+    return $?
+  fi
+
+  log "Starting dev environment..."
+  log "Streaming detached bin/dev output to $START_DEV_LOG"
+  dev_supervisor_snapshot_state "dev-update-before-start"
+  # Start bin/dev detached so this script can exit cleanly.
+  # Unset PORT so bin/dev applies its own default (3000) instead of
+  # inheriting a per-process port assigned by the previous Overmind session.
+  dev_supervisor_run_clean env -u PORT -u TMUX \
+    STARTUP_CLEANUP_KILL_ALL="$STARTUP_CLEANUP_KILL_ALL" \
+    nohup bin/dev >>"$START_DEV_LOG" 2>&1 &
+  # `disown` is best-effort here: the detached start has already been launched,
+  # and fast stubbed/failed `bin/dev` processes can disappear before Bash
+  # resolves the jobspec in CI.
+  disown || true
+  log "Dev environment start command launched (PID $!)."
+
+  wait_for_overmind_health
+}
+
+recover_dev_if_needed() {
+  if [ "$STOPPED_OVERMIND" -eq 1 ] && ! overmind_healthy; then
+    log "Attempting recovery start because Overmind was stopped during this update."
+    if start_dev; then
+      log "Recovery start succeeded."
+    else
+      log "Recovery start failed. Inspect $START_DEV_LOG for detached bin/dev output."
+    fi
+  fi
+}
+
+run_full_restart() {
+  log "Starting full restart update..."
+  if migrations_changed_in_trigger_context; then
+    log "Migration files are in the trigger context; stopping Overmind before pulling to avoid Rails pending-migration errors."
+    stop_overmind
+  fi
+
+  if ! ensure_on_main; then
+    recover_dev_if_needed
+    fail "Cannot update while the current branch has uncommitted changes."
+  fi
+  if ! pull_latest; then
+    recover_dev_if_needed
+    fail "git pull --ff-only failed. Check for diverged history or upstream issues."
+  fi
+  stop_overmind
+
+  if ! run_setup; then
+    log "Setup failed after Overmind stop."
+    recover_dev_if_needed
+    fail "Full restart aborted because bin/setup --skip-server failed."
+  fi
+  run_migrations_if_needed
+
+  if ! start_dev; then
+    fail "Full restart completed setup but failed to restore a healthy Overmind session."
+  fi
+
+  log "Full restart update complete."
+}
+
+case "$MODE" in
+  --lightweight)
+    configure_logging
+    log_trigger_context
+    check_failure_lock
+    enforce_safe_mode
+    if [ "$MODE" = "--full" ]; then
+      run_full_restart
+      exit 0
+    fi
+    log "Starting lightweight update..."
+    if ! ensure_on_main; then
+      fail "Cannot update while the current branch has uncommitted changes."
+    fi
+    if ! pull_latest; then
+      fail "git pull --ff-only failed. Check for diverged history or upstream issues."
+    fi
+    if restart_required_from_pull; then
+      log "Pull included restart-worthy files outside the trigger context; upgrading to full restart."
+      stop_overmind
+      if ! run_setup; then
+        recover_dev_if_needed
+        fail "Full restart aborted because bin/setup --skip-server failed."
+      fi
+      run_migrations_if_needed
+      if ! start_dev; then
+        fail "Full restart completed setup but failed to restore a healthy Overmind session."
+      fi
+      log "Full restart update complete."
+    else
+      log "Lightweight update complete. Rails will autoload changes."
+    fi
+    ;;
+  --full)
+    configure_logging
+    log_trigger_context
+    check_failure_lock
+    run_full_restart
+    ;;
+  *)
+    echo "Usage: bin/dev-update [--lightweight|--full]" >&2
+    exit 1
+    ;;
+esac

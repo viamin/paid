@@ -1,0 +1,251 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+# @spec CHAT-CONTAINER-PROVISIONING-002
+# @spec CHAT-CONTAINER-PROVISIONING-003
+# @spec CHAT-CONTAINER-PROVISIONING-004
+# @spec CHAT-CONTAINER-PROVISIONING-006
+RSpec.describe ChatSessions::ProvisionContainerJob, type: :job do
+  let(:account) { create(:account) }
+  let(:user) { create(:user, :owner, account: account) }
+  let(:stream_name) { "chat_session:#{chat_session.id}" }
+
+  before do
+    # ProvisionForChat touches the Docker daemon; the job spec validates the
+    # job's orchestration (guarding, broadcasting, error containment) without
+    # standing up a real container, matching the ProcessMessageJob spec pattern.
+    allow(Containers::ProvisionForChat).to receive(:call) do |kwargs|
+      # The reopen path passes `ready: false` so the session stays non-ready
+      # until restore completes; honor it to exercise the real flow.
+      ready = kwargs[:ready] != false
+      attrs = {
+        container_id: "chat-container-1",
+        workspace_volume: "paid-chat-workspace-#{kwargs[:chat_session].id}"
+      }
+      attrs[:container_capability] = ready ? "ready" : "provisioning"
+      attrs[:container_ready_at] = Time.current if ready
+      kwargs[:chat_session].update!(**attrs)
+      Containers::Provision::Result.success(container_id: "chat-container-1")
+    end
+  end
+
+  describe "#perform" do
+    context "when the session is awaiting provisioning" do
+      let(:chat_session) { create(:chat_session, account: account, created_by: user, container_capability: "pending") }
+
+      it "provisions the container and transitions to ready" do
+        described_class.perform_now(chat_session_id: chat_session.id, account_id: account.id)
+
+        expect(Containers::ProvisionForChat).to have_received(:call).with(hash_including(chat_session: chat_session, seed_project: true))
+        expect(chat_session.reload.container_capability).to eq("ready")
+      end
+
+      it "broadcasts the capability change to the chat stream" do
+        expect {
+          described_class.perform_now(chat_session_id: chat_session.id, account_id: account.id)
+        }.to have_broadcasted_to(stream_name)
+          .with(hash_including(type: "capability_changed", container_capability: "ready"))
+          .at_least(:once)
+      end
+
+      it "schedules a follow-up drain for other pending sessions in the account" do
+        expect {
+          described_class.perform_now(chat_session_id: chat_session.id, account_id: account.id)
+        }.to have_enqueued_job(ChatSessions::ReenqueuePendingProvisionJob)
+          .with(account_id: account.id, exclude_chat_session_id: chat_session.id)
+      end
+    end
+
+    context "when the session is already provisioning" do
+      let(:chat_session) { create(:chat_session, account: account, created_by: user, container_capability: "provisioning") }
+
+      it "provisions the container" do
+        described_class.perform_now(chat_session_id: chat_session.id, account_id: account.id)
+
+        expect(Containers::ProvisionForChat).to have_received(:call)
+      end
+    end
+
+    context "when reopening a previously provisioned workspace" do
+      let(:project) { create(:project, account: account) }
+      let(:chat_session) do
+        create(:chat_session, account: account, created_by: user,
+          container_capability: "pending",
+          metadata: { "workspace_reopen_requested_at" => Time.current.iso8601 }).tap do |session|
+            session.update!(clone_manifest: [
+              { project_id: project.id, project_name: project.name,
+                project_full_name: project.full_name, path: "/workspace",
+                token_identity: "project-token:#{project.github_token.name}" }
+            ])
+          end
+      end
+
+      it "skips project seeding and restores the clone manifest" do
+        allow(ChatSessions::RestoreCloneManifest).to receive(:call)
+
+        described_class.perform_now(chat_session_id: chat_session.id)
+
+        expect(Containers::ProvisionForChat).to have_received(:call)
+          .with(hash_including(chat_session: chat_session, seed_project: false))
+        expect(ChatSessions::RestoreCloneManifest).to have_received(:call)
+      end
+
+      context "when restore fails after provisioning succeeded" do
+        let(:mock_container) { instance_double(Docker::Container, stop: true, delete: true) }
+        let(:mock_volume) { instance_double(Docker::Volume, remove: true) }
+
+        before do
+          allow(ChatSessions::RestoreCloneManifest).to receive(:call) do
+            raise "Workspace reset failed: permission denied"
+          end
+          allow(Docker::Container).to receive(:get).and_return(mock_container)
+          allow(Docker::Volume).to receive(:get).and_return(mock_volume)
+        end
+
+        it "tears down the provisioned container and clears recorded ids so a retry does not leak it" do
+          expect(mock_container).to receive(:stop).with(timeout: 10)
+          expect(mock_container).to receive(:delete).with(force: true, v: true)
+          expect(mock_volume).to receive(:remove).twice
+
+          described_class.perform_now(chat_session_id: chat_session.id)
+
+          session = chat_session.reload
+          expect(session.container_capability).to eq("stopped")
+          expect(session.container_id).to be_nil
+          expect(session.workspace_volume).to be_nil
+          expect(session.container_ready_at).to be_nil
+        end
+
+        it "moves the session to stopped and persists a reopen-failure notice" do
+          expect {
+            described_class.perform_now(chat_session_id: chat_session.id)
+          }.not_to raise_error
+
+          expect(chat_session.reload.container_capability).to eq("stopped")
+
+          notice = chat_session.messages.system.find_by("metadata ->> 'reopen_clone_failures' = 'true'")
+          expect(notice).to be_present
+          expect(notice.content).to include("Workspace reopen failed")
+          expect(notice.content).to include("Workspace reset failed")
+        end
+
+        it "broadcasts the stopped capability rather than ready" do
+          # The ready -> stopped update fires the capability-transition callback
+          # broadcast, and the handler also broadcasts explicitly; both carry
+          # the stopped state, so assert the event is emitted at least once.
+          expect {
+            described_class.perform_now(chat_session_id: chat_session.id)
+          }.to have_broadcasted_to(stream_name)
+            .with(hash_including(type: "capability_changed", container_capability: "stopped")).at_least(:once)
+        end
+      end
+    end
+
+    [ "none", "ready", "failed", "stopped" ].each do |capability|
+      context "when the session is #{capability}" do
+        let(:chat_session) { create(:chat_session, account: account, created_by: user, container_capability: capability) }
+
+        it "does not provision or broadcast" do
+          expect {
+            described_class.perform_now(chat_session_id: chat_session.id, account_id: account.id)
+          }.not_to have_broadcasted_to(stream_name)
+
+          expect(Containers::ProvisionForChat).not_to have_received(:call)
+        end
+      end
+    end
+
+    context "when provisioning fails" do
+      let(:chat_session) { create(:chat_session, account: account, created_by: user, container_capability: "pending") }
+
+      it "broadcasts the failed capability without re-raising" do
+        allow(Containers::ProvisionForChat).to receive(:call) do |kwargs|
+          kwargs[:chat_session].update!(
+            container_capability: "failed",
+            metadata: (kwargs[:chat_session].metadata || {}).merge("container_failure_reason" => "Docker error: image pull failed")
+          )
+          raise Containers::ProvisionForChat::ProvisionError, "Docker error: image pull failed"
+        end
+        allow(ActionCable.server).to receive(:broadcast).and_call_original
+
+        described_class.perform_now(chat_session_id: chat_session.id, account_id: account.id)
+
+        expect(ActionCable.server).to have_received(:broadcast).with(
+          stream_name,
+          hash_including(type: "capability_changed", container_capability: "failed")
+        ).at_least(:once)
+        expect(chat_session.reload.container_capability).to eq("failed")
+        expect(chat_session.metadata["container_failure_reason"]).to eq("Docker error: image pull failed")
+      end
+
+      it "contains a raw Docker error without re-raising" do
+        allow(Containers::ProvisionForChat).to receive(:call) do |kwargs|
+          kwargs[:chat_session].update!(
+            container_capability: "failed",
+            metadata: (kwargs[:chat_session].metadata || {}).merge("container_failure_reason" => "daemon unavailable")
+          )
+          raise Docker::Error::DockerError, "daemon unavailable"
+        end
+
+        expect {
+          described_class.perform_now(chat_session_id: chat_session.id, account_id: account.id)
+        }.not_to raise_error
+
+        expect(chat_session.reload.container_capability).to eq("failed")
+      end
+
+      it "broadcasts timeout failures before re-raising" do
+        allow(Containers::ProvisionForChat).to receive(:call) do |kwargs|
+          kwargs[:chat_session].update_columns(container_capability: "failed")
+          raise ApplicationJob::PerformTimeoutError, "provisioning timed out"
+        end
+
+        expect {
+          expect {
+            described_class.perform_now(chat_session_id: chat_session.id, account_id: account.id)
+          }.to raise_error(ApplicationJob::PerformTimeoutError)
+        }.to have_broadcasted_to(stream_name)
+          .with(hash_including(type: "capability_changed", container_capability: "failed"))
+      end
+
+      it "broadcasts unexpected provisioning failures before re-raising" do
+        allow(Containers::ProvisionForChat).to receive(:call) do |kwargs|
+          kwargs[:chat_session].update_columns(container_capability: "failed")
+          raise StandardError, "unexpected provision failure"
+        end
+
+        expect {
+          expect {
+            described_class.perform_now(chat_session_id: chat_session.id, account_id: account.id)
+          }.to raise_error(StandardError, "unexpected provision failure")
+        }.to have_broadcasted_to(stream_name)
+          .with(hash_including(type: "capability_changed", container_capability: "failed"))
+      end
+    end
+
+    context "when the session no longer exists" do
+      it "is discarded without raising" do
+        expect {
+          described_class.perform_now(chat_session_id: 999_999_999, account_id: account.id)
+        }.not_to raise_error
+      end
+    end
+  end
+
+  describe ".good_job_concurrency_config" do
+    it "runs on the low-priority queue" do
+      expect(described_class.queue_name).to eq("low_priority")
+    end
+
+    it "limits provisioning to one job per account" do
+      chat_session = create(:chat_session, account: account, created_by: user, container_capability: "pending")
+
+      config = described_class.good_job_concurrency_config
+      expect(config[:total_limit]).to eq(1)
+      expect(config[:enqueue_limit]).to eq(1)
+      expect(described_class.new(chat_session_id: chat_session.id, account_id: account.id).good_job_concurrency_key)
+        .to eq(described_class.concurrency_key_for(account.id))
+    end
+  end
+end

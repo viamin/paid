@@ -1,0 +1,591 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "json"
+require "net/http"
+require "pathname"
+require "time"
+require "uri"
+
+APP_ROOT = Pathname(__dir__).join("..").expand_path
+AGENT_DOCKERFILE_PATH = APP_ROOT.join("docker/agent/Dockerfile")
+DEVCONTAINER_DOCKERFILE_PATH = APP_ROOT.join(".devcontainer/Dockerfile")
+INSTALL_AST_GREP_PATH = APP_ROOT.join("bin/install-ast-grep")
+PACKAGE_JSON_PATH = APP_ROOT.join("package.json")
+GEMFILE_LOCK_PATH = APP_ROOT.join("Gemfile.lock")
+YARN_LOCK_PATH = APP_ROOT.join("yarn.lock")
+CLAUDE_MD_PATH = APP_ROOT.join("CLAUDE.md")
+
+YARN_PATTERNS = {
+  AGENT_DOCKERFILE_PATH => /^(\s*&& corepack prepare yarn@)([^\s]+)( --activate\s*)$/,
+  DEVCONTAINER_DOCKERFILE_PATH => /^(RUN corepack enable && corepack prepare yarn@)([^\s]+)( --activate\s*)$/
+}.freeze
+
+BINARY_RELEASES = {
+  "ast-grep" => {
+    repo: "ast-grep/ast-grep",
+    strip_leading_v: false
+  },
+  "scc" => {
+    repo: "boyter/scc",
+    strip_leading_v: true
+  }
+}.freeze
+
+# Vendored LID reference (docs/lid/ + bin/coherence-check.mjs). bin/update
+# reports drift against upstream but does NOT auto-apply — re-syncing requires
+# re-applying local adaptations (Rails globs in coherence-check.mjs; the
+# tool-agnostic edits in workflow.md). See docs/lid/README.md § Sync policy.
+LID_SOURCE = "jszmajda/lid"
+LID_PLUGIN_VERSION_URL =
+  "https://raw.githubusercontent.com/#{LID_SOURCE}/main/" \
+  "plugins/linked-intent-dev/.claude-plugin/plugin.json"
+
+# Minimum age (in hours) a package version must have been published before
+# bin/update will adopt it. This quarantine period reduces exposure to supply
+# chain attacks that are typically detected and yanked within hours.
+# Override with MIN_PACKAGE_AGE_HOURS env var. Skip entirely with --skip-age-check.
+MIN_PACKAGE_AGE_HOURS = Integer(ENV.fetch("MIN_PACKAGE_AGE_HOURS", 72))
+
+def system!(*args)
+  system(*args, exception: true)
+end
+
+def fetch_json(uri_string, headers: {})
+  uri = URI(uri_string)
+  request = Net::HTTP::Get.new(uri)
+  headers.each { |key, value| request[key] = value }
+
+  response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true, open_timeout: 10, read_timeout: 15) do |http|
+    http.request(request)
+  end
+  raise "Failed to fetch #{uri}: #{response.code}" unless response.is_a?(Net::HTTPSuccess)
+
+  JSON.parse(response.body)
+end
+
+def fetch_npm_registry(package_name)
+  @npm_registry_cache ||= {}
+  @npm_registry_cache[package_name] ||= begin
+    escaped = package_name.gsub("/", "%2F")
+    fetch_json("https://registry.npmjs.org/#{escaped}")
+  end
+end
+
+def fetch_npm_version_info(package_name)
+  data = fetch_npm_registry(package_name)
+  latest = data.dig("dist-tags", "latest")
+  published_at = Time.parse(data.dig("time", latest))
+  [ latest, published_at ]
+end
+
+def fetch_github_release(package_name)
+  @github_release_cache ||= {}
+  @github_release_cache[package_name] ||= begin
+    repo = BINARY_RELEASES.fetch(package_name).fetch(:repo)
+    fetch_json(
+      "https://api.github.com/repos/#{repo}/releases/latest",
+      headers: { "Accept" => "application/vnd.github+json" }
+    )
+  end
+end
+
+def fetch_binary_version_info(package_name)
+  release = fetch_github_release(package_name)
+  version = release.fetch("tag_name")
+  version = version.delete_prefix("v") if BINARY_RELEASES.fetch(package_name).fetch(:strip_leading_v)
+  [ version, Time.parse(release.fetch("published_at")) ]
+end
+
+def fetch_release_asset_digest(package_name, asset_name)
+  release = fetch_github_release(package_name)
+  asset = release.fetch("assets").find { |item| item.fetch("name") == asset_name }
+  raise "Asset #{asset_name} not found in #{package_name} release" unless asset
+
+  digest = asset.fetch("digest")
+  digest.delete_prefix("sha256:")
+end
+
+def fetch_gem_publish_time(gem_name, version)
+  data = fetch_json("https://rubygems.org/api/v2/rubygems/#{gem_name}/versions/#{version}.json")
+  Time.parse(data.fetch("created_at"))
+rescue StandardError
+  nil
+end
+
+def fetch_npm_publish_time(package_name, version)
+  data = fetch_npm_registry(package_name)
+  time_str = data.dig("time", version)
+  time_str ? Time.parse(time_str) : nil
+rescue StandardError
+  nil
+end
+
+def fetch_lid_latest_version
+  fetch_json(LID_PLUGIN_VERSION_URL).fetch("version")
+end
+
+def pinned_lid_version
+  # Read only the `## LID` block so a stray `- Version:` elsewhere in CLAUDE.md
+  # (e.g., a Bundler/tool-config section) can't be mistaken for the LID pin.
+  block = +""
+  in_block = false
+  CLAUDE_MD_PATH.each_line do |line|
+    if line.start_with?("## ")
+      in_block = line.strip == "## LID"
+      next
+    end
+    block << line if in_block
+  end
+  block[/^- Version:\s*(\S+)\s*$/, 1]
+end
+
+def age_hours(published_at)
+  ((Time.now - published_at) / 3600).round(1)
+end
+
+def replace_version(contents, pattern, new_version)
+  matched = false
+  changed = false
+
+  rewritten = contents.gsub(pattern) do
+    matched = true
+    changed ||= Regexp.last_match(2) != new_version
+    "#{Regexp.last_match(1)}#{new_version}#{Regexp.last_match(3)}"
+  end
+
+  [ rewritten, matched, changed ]
+end
+
+def plan_file_replacements(path, replacements)
+  contents = path.read
+  applied = []
+
+  replacements.each do |replacement|
+    updated_contents, matched, changed = replace_version(
+      contents,
+      replacement.fetch(:pattern),
+      replacement.fetch(:value)
+    )
+    raise "Did not find #{replacement.fetch(:label)}" unless matched
+
+    contents = updated_contents
+    applied << replacement.fetch(:label) if changed
+  end
+
+  {
+    path: path,
+    contents: contents,
+    updates: applied
+  }
+end
+
+def apply_planned_updates(planned_updates)
+  planned_updates.each do |entry|
+    next if entry.fetch(:updates).empty?
+
+    entry.fetch(:path).write(entry.fetch(:contents))
+  end
+end
+
+def plan_package_manager_update(latest_yarn)
+  package_json = JSON.parse(PACKAGE_JSON_PATH.read)
+  updated = "yarn@#{latest_yarn}"
+  current = package_json["packageManager"]
+  package_json["packageManager"] = updated
+
+  {
+    path: PACKAGE_JSON_PATH,
+    contents: JSON.pretty_generate(package_json) << "\n",
+    updates: current == updated ? [] : [ "package.json -> #{updated}" ]
+  }
+end
+
+def usage
+  puts "Usage: bin/update [--lockfiles] [--skip-age-check]"
+  puts "Updates supported pinned tool binaries."
+  puts ""
+  puts "Options:"
+  puts "  --lockfiles       Also update Ruby gems and JavaScript lockfiles"
+  puts "  --skip-age-check  Skip the package age quarantine check"
+  puts ""
+  puts "Environment:"
+  puts "  MIN_PACKAGE_AGE_HOURS  Minimum hours since publish (default: 72)"
+end
+
+def update_yarn(version)
+  planned_updates = [ plan_package_manager_update(version) ]
+
+  YARN_PATTERNS.each do |path, pattern|
+    planned_updates << plan_file_replacements(
+      path,
+      [
+        {
+          pattern: pattern,
+          value: version,
+          label: "#{path.relative_path_from(APP_ROOT)} -> yarn@#{version}"
+        }
+      ]
+    )
+  end
+
+  apply_planned_updates(planned_updates)
+  planned_updates.flat_map { |entry| entry.fetch(:updates) }
+end
+
+def update_ast_grep(version, amd64_checksum, arm64_checksum)
+  planned_updates = [
+    {
+      path: AGENT_DOCKERFILE_PATH,
+      replacements: [
+        {
+          pattern: /^(RUN AST_GREP_VERSION=)([^\s]+)( \\\s*)$/,
+          value: version,
+          label: "#{AGENT_DOCKERFILE_PATH.relative_path_from(APP_ROOT)} AST_GREP_VERSION"
+        },
+        {
+          pattern: /^(\s*amd64\) RUST_TRIPLE="x86_64-unknown-linux-gnu"; EXPECTED_CHECKSUM=")([0-9a-f]+)(".*)$/,
+          value: amd64_checksum,
+          label: "#{AGENT_DOCKERFILE_PATH.relative_path_from(APP_ROOT)} ast-grep amd64 checksum"
+        },
+        {
+          pattern: /^(\s*arm64\) RUST_TRIPLE="aarch64-unknown-linux-gnu"; EXPECTED_CHECKSUM=")([0-9a-f]+)(".*)$/,
+          value: arm64_checksum,
+          label: "#{AGENT_DOCKERFILE_PATH.relative_path_from(APP_ROOT)} ast-grep arm64 checksum"
+        }
+      ]
+    },
+    {
+      path: DEVCONTAINER_DOCKERFILE_PATH,
+      replacements: [
+        {
+          pattern: /^(ARG AST_GREP_VERSION=)([^\s]+)(\s*)$/,
+          value: version,
+          label: "#{DEVCONTAINER_DOCKERFILE_PATH.relative_path_from(APP_ROOT)} AST_GREP_VERSION"
+        },
+        {
+          pattern: /^(\s*amd64\) rust_triple="x86_64-unknown-linux-gnu"; checksum=")([0-9a-f]+)(".*)$/,
+          value: amd64_checksum,
+          label: "#{DEVCONTAINER_DOCKERFILE_PATH.relative_path_from(APP_ROOT)} ast-grep amd64 checksum"
+        },
+        {
+          pattern: /^(\s*arm64\) rust_triple="aarch64-unknown-linux-gnu"; checksum=")([0-9a-f]+)(".*)$/,
+          value: arm64_checksum,
+          label: "#{DEVCONTAINER_DOCKERFILE_PATH.relative_path_from(APP_ROOT)} ast-grep arm64 checksum"
+        }
+      ]
+    }
+  ].map { |entry| plan_file_replacements(entry.fetch(:path), entry.fetch(:replacements)) }
+
+  planned_updates << plan_install_ast_grep_update(version, amd64_checksum, arm64_checksum)
+  apply_planned_updates(planned_updates)
+  planned_updates.flat_map { |entry| entry.fetch(:updates) }
+end
+
+def plan_install_ast_grep_update(version, amd64_checksum, arm64_checksum)
+  lines = INSTALL_AST_GREP_PATH.readlines
+  original = lines.join
+  current_version = lines
+    .find { |line| line.start_with?("AST_GREP_VERSION=") }
+    &.match(/AST_GREP_VERSION="\$\{AST_GREP_VERSION:-([^}]+)\}"/)
+    &.captures
+    &.first
+  raise "Could not determine current ast-grep default version" unless current_version
+
+  default_matched = false
+  amd64_matched = false
+  arm64_matched = false
+  current_arch = nil
+
+  rewritten = lines.map do |line|
+    current_arch = :amd64 if line.strip == "amd64)"
+    current_arch = :arm64 if line.strip == "arm64)"
+
+    if line.start_with?("AST_GREP_VERSION=")
+      default_matched = true
+      %(AST_GREP_VERSION="${AST_GREP_VERSION:-#{version}}"\n)
+    elsif line.match?(/^\s+#{Regexp.escape(current_version)}\) EXPECTED_CHECKSUM="/)
+      case current_arch
+      when :amd64
+        amd64_matched = true
+        line.sub(current_version, version).sub(/EXPECTED_CHECKSUM="[0-9a-f]+"/, %(EXPECTED_CHECKSUM="#{amd64_checksum}"))
+      when :arm64
+        arm64_matched = true
+        line.sub(current_version, version).sub(/EXPECTED_CHECKSUM="[0-9a-f]+"/, %(EXPECTED_CHECKSUM="#{arm64_checksum}"))
+      else
+        line
+      end
+    else
+      line
+    end
+  end
+
+  raise "Failed to update default version in #{INSTALL_AST_GREP_PATH.relative_path_from(APP_ROOT)}" unless default_matched
+  raise "Failed to update amd64 checksum in #{INSTALL_AST_GREP_PATH.relative_path_from(APP_ROOT)}" unless amd64_matched
+  raise "Failed to update arm64 checksum in #{INSTALL_AST_GREP_PATH.relative_path_from(APP_ROOT)}" unless arm64_matched
+
+  updated = rewritten.join
+  updates = if updated == original
+    []
+  else
+    [
+      "#{INSTALL_AST_GREP_PATH.relative_path_from(APP_ROOT)} AST_GREP_VERSION=#{version}",
+      "#{INSTALL_AST_GREP_PATH.relative_path_from(APP_ROOT)} ast-grep amd64 checksum",
+      "#{INSTALL_AST_GREP_PATH.relative_path_from(APP_ROOT)} ast-grep arm64 checksum"
+    ]
+  end
+
+  {
+    path: INSTALL_AST_GREP_PATH,
+    contents: updated,
+    updates: updates
+  }
+end
+
+def update_scc(version, amd64_checksum, arm64_checksum)
+  planned_updates = [
+    {
+      path: AGENT_DOCKERFILE_PATH,
+      replacements: [
+        {
+          pattern: /^(RUN SCC_VERSION=)([^\s]+)( \\\s*)$/,
+          value: version,
+          label: "#{AGENT_DOCKERFILE_PATH.relative_path_from(APP_ROOT)} SCC_VERSION"
+        },
+        {
+          pattern: /^(\s*amd64\) SCC_ARCH="x86_64"; EXPECTED_CHECKSUM=")([0-9a-f]+)(".*)$/,
+          value: amd64_checksum,
+          label: "#{AGENT_DOCKERFILE_PATH.relative_path_from(APP_ROOT)} scc amd64 checksum"
+        },
+        {
+          pattern: /^(\s*arm64\) SCC_ARCH="arm64"; EXPECTED_CHECKSUM=")([0-9a-f]+)(".*)$/,
+          value: arm64_checksum,
+          label: "#{AGENT_DOCKERFILE_PATH.relative_path_from(APP_ROOT)} scc arm64 checksum"
+        }
+      ]
+    },
+    {
+      path: DEVCONTAINER_DOCKERFILE_PATH,
+      replacements: [
+        {
+          pattern: /^(ARG SCC_VERSION=)([^\s]+)(\s*)$/,
+          value: version,
+          label: "#{DEVCONTAINER_DOCKERFILE_PATH.relative_path_from(APP_ROOT)} SCC_VERSION"
+        },
+        {
+          pattern: /^(\s*amd64\) scc_arch="x86_64"; checksum=")([0-9a-f]+)(".*)$/,
+          value: amd64_checksum,
+          label: "#{DEVCONTAINER_DOCKERFILE_PATH.relative_path_from(APP_ROOT)} scc amd64 checksum"
+        },
+        {
+          pattern: /^(\s*arm64\) scc_arch="arm64"; checksum=")([0-9a-f]+)(".*)$/,
+          value: arm64_checksum,
+          label: "#{DEVCONTAINER_DOCKERFILE_PATH.relative_path_from(APP_ROOT)} scc arm64 checksum"
+        }
+      ]
+    }
+  ].map { |entry| plan_file_replacements(entry.fetch(:path), entry.fetch(:replacements)) }
+
+  apply_planned_updates(planned_updates)
+  planned_updates.flat_map { |entry| entry.fetch(:updates) }
+end
+
+def parse_yarn_lock_versions
+  content = YARN_LOCK_PATH.read
+  versions = {}
+  current_name = nil
+
+  content.each_line do |line|
+    if (match = line.match(/^"?(@?[^@\s"]+)@/))
+      current_name = match[1]
+    elsif current_name && (match = line.match(/^\s+version "([^"]+)"/))
+      versions[current_name] ||= match[1]
+      current_name = nil
+    end
+  end
+
+  versions
+end
+
+def parse_gemfile_lock_versions
+  content = GEMFILE_LOCK_PATH.read
+  versions = {}
+  in_specs = false
+
+  content.each_line do |line|
+    if line.strip == "specs:"
+      in_specs = true
+    elsif in_specs && line.match?(/^\S/)
+      in_specs = false
+    elsif in_specs && (match = line.match(/^\s{4}(\S+)\s+\(([^)]+)\)/))
+      versions[match[1]] = match[2]
+    end
+  end
+
+  versions
+end
+
+def check_lockfile_ages(before_versions, after_versions, &fetch_time)
+  quarantined = []
+  checked = 0
+
+  after_versions.each do |name, version|
+    next if before_versions[name] == version
+
+    checked += 1
+    published_at = fetch_time.call(name, version)
+    next unless published_at
+
+    hours = age_hours(published_at)
+    if hours < MIN_PACKAGE_AGE_HOURS
+      quarantined << "  #{name}@#{version} (#{hours}h old, minimum: #{MIN_PACKAGE_AGE_HOURS}h)"
+    end
+  end
+
+  [ quarantined, checked ]
+end
+
+if ARGV.any? { |arg| %w[-h --help].include?(arg) }
+  usage
+  exit 0
+end
+
+skip_age_check = ARGV.delete("--skip-age-check") || MIN_PACKAGE_AGE_HOURS.zero?
+update_lockfiles = ARGV.delete("--lockfiles")
+
+if ARGV.any?
+  warn "Unknown arguments: #{ARGV.join(" ")}"
+  usage
+  exit 1
+end
+
+Dir.chdir(APP_ROOT) do
+  gem_versions_before = update_lockfiles ? parse_gemfile_lock_versions : {}
+  yarn_versions_before = update_lockfiles ? parse_yarn_lock_versions : {}
+
+  if update_lockfiles
+    puts "== Updating Ruby gems =="
+    system! "bundle", "update"
+
+    puts "\n== Updating JavaScript packages =="
+    system! "yarn", "upgrade"
+    system! "bin/yarn-postinstall"
+  else
+    puts "== Skipping lockfile updates =="
+    puts "Use --lockfiles to also run bundle/yarn updates."
+  end
+
+  puts "\n== Updating pinned tool binaries =="
+  updates = []
+  skipped_too_new = []
+
+  yarn_version, yarn_published_at = fetch_npm_version_info("yarn")
+  yarn_hours = age_hours(yarn_published_at)
+  if !skip_age_check && yarn_hours < MIN_PACKAGE_AGE_HOURS
+    skipped_too_new << "  yarn@#{yarn_version} (#{yarn_hours}h old, minimum: #{MIN_PACKAGE_AGE_HOURS}h)"
+  else
+    begin
+      updates.concat(update_yarn(yarn_version))
+    rescue StandardError => error
+      raise "Failed to update yarn: #{error.message}"
+    end
+  end
+
+  BINARY_RELEASES.each_key do |package_name|
+    version, published_at = fetch_binary_version_info(package_name)
+    hours = age_hours(published_at)
+    if !skip_age_check && hours < MIN_PACKAGE_AGE_HOURS
+      skipped_too_new << "  #{package_name}@#{version} (#{hours}h old, minimum: #{MIN_PACKAGE_AGE_HOURS}h)"
+      next
+    end
+
+    binary_updates = case package_name
+    when "ast-grep"
+      update_ast_grep(
+        version,
+        fetch_release_asset_digest(package_name, "app-x86_64-unknown-linux-gnu.zip"),
+        fetch_release_asset_digest(package_name, "app-aarch64-unknown-linux-gnu.zip")
+      )
+    when "scc"
+      update_scc(
+        version,
+        fetch_release_asset_digest(package_name, "scc_Linux_x86_64.tar.gz"),
+        fetch_release_asset_digest(package_name, "scc_Linux_arm64.tar.gz")
+      )
+    else
+      []
+    end
+
+    updates.concat(binary_updates)
+  rescue StandardError => error
+    raise "Failed to update #{package_name}: #{error.message}"
+  end
+
+  if updates.empty?
+    puts "No pinned tool versions changed."
+  else
+    updates.each { |update| puts "Updated #{update}" }
+  end
+
+  unless skip_age_check
+    puts "\n== Checking package ages (quarantine: #{MIN_PACKAGE_AGE_HOURS}h) =="
+    all_quarantined = skipped_too_new.dup
+
+    if update_lockfiles
+      gem_quarantined, gem_checked = check_lockfile_ages(
+        gem_versions_before, parse_gemfile_lock_versions
+      ) { |name, version| fetch_gem_publish_time(name, version) }
+      puts "  Checked #{gem_checked} updated gem(s)"
+
+      yarn_quarantined, yarn_checked = check_lockfile_ages(
+        yarn_versions_before, parse_yarn_lock_versions
+      ) { |name, version| fetch_npm_publish_time(name, version) }
+      puts "  Checked #{yarn_checked} updated npm package(s)"
+
+      all_quarantined.concat(gem_quarantined).concat(yarn_quarantined)
+    else
+      puts "  Checked pinned tool binaries only"
+    end
+
+    if all_quarantined.any?
+      warn "\n⚠ WARNING: #{all_quarantined.size} package(s) are newer than the " \
+        "#{MIN_PACKAGE_AGE_HOURS}h quarantine period:"
+      all_quarantined.each { |entry| warn entry }
+      warn "\nPinned tool binaries were NOT updated to quarantined versions."
+      if update_lockfiles
+        warn "Lockfile packages (gems/npm) were updated by bundle/yarn — review the diff"
+        warn "carefully before committing, or revert with: git checkout Gemfile.lock yarn.lock"
+      end
+    else
+      puts "  All updated packages are older than #{MIN_PACKAGE_AGE_HOURS}h ✓"
+    end
+  end
+
+  puts "\n== Checking vendored LID reference =="
+  begin
+    pinned = pinned_lid_version
+    if pinned.nil?
+      warn "  ⚠ Could not read - Version: from CLAUDE.md (## LID block); skipping LID check."
+    else
+      latest = fetch_lid_latest_version
+      if latest == pinned
+        puts "  LID v#{pinned} — vendored reference is up to date ✓"
+      else
+        warn "  ⚠ LID is out of date: CLAUDE.md pins v#{pinned}, upstream is v#{latest}."
+        warn "    Three surfaces to reconcile:"
+        warn "      1. Vendored docs/lid/ + bin/coherence-check.mjs — re-sync per docs/lid/README.md § Sync policy."
+        warn "      2. CLAUDE.md (## LID - Version:) — bump to v#{latest}."
+        warn "      3. Installed Claude plugin in devcontainers — rebuild containers; install-lid.sh currently"
+        warn "         pulls latest, so verify the installed version matches the pin."
+        warn "    (bin/update reports only; it does not auto-apply any of these.)"
+      end
+    end
+  rescue StandardError => error
+    warn "  ⚠ Could not check LID for updates: #{error.message}"
+  end
+
+  puts "\n== Skipped pinned binary installs =="
+  puts "Skipped Node.js and Ruby because they still require manual checksum-aware release updates."
+
+  puts "\n== Update complete =="
+end

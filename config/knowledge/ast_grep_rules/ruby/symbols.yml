@@ -1,0 +1,17 @@
+# These patterns document the queries corresponding to those used by
+# Knowledge::Collectors::SymbolIndexCollector and are intended for use
+# via the `ast-grep run --pattern` CLI interface (they are not loaded
+# directly by the collector).
+#
+# Class definitions:  class $NAME
+# Module definitions: module $NAME
+# Method definitions: def $NAME
+#
+# Usage:
+#   ast-grep run --pattern "class $NAME" --lang Ruby --json <path>
+#   ast-grep run --pattern "module $NAME" --lang Ruby --json <path>
+#   ast-grep run --pattern "def $NAME" --lang Ruby --json <path>
+patterns:
+  class: "class $NAME"
+  module: "module $NAME"
+  method: "def $NAME"

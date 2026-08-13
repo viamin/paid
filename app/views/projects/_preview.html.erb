@@ -1,0 +1,60 @@
+<%# Live preview panel: reflects the real PreviewSession lifecycle
+    (queued -> provisioning -> starting -> ready -> failed -> stopped). %>
+<% status = preview_session&.status %>
+<% if preview_session&.expired? %>
+  <% status_badge = "Expired" %>
+<% else %>
+  <% status_badge = preview_session&.status_label || "Not started" %>
+<% end %>
+<% status_classes = case status
+                    when "ready"
+                      "bg-green-100 text-green-700"
+                    when "failed"
+                      "bg-red-100 text-red-700"
+                    when "stopped"
+                      "bg-gray-100 text-gray-700"
+                    when "provisioning", "starting", "pending"
+                      "bg-amber-100 text-amber-700"
+                    else
+                      "bg-gray-100 text-gray-700"
+                    end %>
+<% show_controls = policy(project).update? %>
+<% branch_field_value = preview_session&.branch_name.presence || project.default_branch %>
+
+<div id="preview" class="mt-6 overflow-hidden rounded-lg bg-white shadow" data-testid="project-preview-panel">
+  <div class="border-b border-gray-200 px-4 py-5 sm:px-6">
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div>
+        <div class="flex flex-wrap items-center gap-3">
+          <h2 class="text-lg font-medium text-gray-900">Live Preview</h2>
+          <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium <%= status_classes %>" data-testid="project-preview-status">
+            <%= status_badge %>
+          </span>
+        </div>
+        <p class="mt-1 text-sm text-gray-500">
+          Start a disposable app preview for this project and track its lifecycle from the project page.
+        </p>
+      </div>
+      <% if show_controls %>
+        <%= render "projects/preview_controls", project: project, preview_session: preview_session,
+          branch_field_value: branch_field_value %>
+      <% end %>
+    </div>
+  </div>
+
+  <div class="px-4 py-5 sm:px-6">
+    <% if preview_session.present? %>
+      <%= render "projects/preview_meta", preview_session: preview_session %>
+      <div class="mt-4 rounded-md border border-dashed border-gray-200 bg-gray-50 p-4">
+        <%= render "projects/preview_state", project: project, preview_session: preview_session %>
+      </div>
+    <% else %>
+      <div class="rounded-md border border-dashed border-gray-200 bg-gray-50 p-4">
+        <p class="text-sm font-medium text-gray-900">No preview has been started yet.</p>
+        <p class="mt-1 text-sm text-gray-500">
+          Preview sessions default to the project's configured branch: <code class="rounded bg-white px-1.5 py-0.5 font-mono text-xs"><%= project.default_branch %></code>.
+        </p>
+      </div>
+    <% end %>
+  </div>
+</div>

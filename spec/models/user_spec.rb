@@ -1,0 +1,293 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe User do
+  describe "associations" do
+    it { is_expected.to belong_to(:account) }
+    it { is_expected.to have_many(:account_memberships).dependent(:destroy) }
+    it { is_expected.to have_many(:member_accounts).through(:account_memberships).source(:account) }
+    it { is_expected.to have_many(:project_memberships).dependent(:destroy) }
+    it { is_expected.to have_many(:member_projects).through(:project_memberships).source(:project) }
+    it { is_expected.to have_many(:runners).dependent(:destroy) }
+  end
+
+  describe "validations" do
+    subject { build(:user) }
+
+    it { is_expected.to validate_presence_of(:email) }
+    it { is_expected.to validate_uniqueness_of(:email).case_insensitive }
+    it { is_expected.to validate_presence_of(:account) }
+
+    it "validates password length" do
+      user = build(:user, password: "short", password_confirmation: "short")
+      expect(user).not_to be_valid
+      expect(user.errors[:password]).to include("is too short (minimum is 6 characters)")
+    end
+
+    it "validates password confirmation" do
+      user = build(:user, password: "password123", password_confirmation: "different")
+      expect(user).not_to be_valid
+      expect(user.errors[:password_confirmation]).to include("doesn't match Password")
+    end
+  end
+
+  describe "devise modules" do
+    it "is database authenticatable" do
+      expect(described_class.devise_modules).to include(:database_authenticatable)
+    end
+
+    it "is registerable" do
+      expect(described_class.devise_modules).to include(:registerable)
+    end
+
+    it "is recoverable" do
+      expect(described_class.devise_modules).to include(:recoverable)
+    end
+
+    it "is rememberable" do
+      expect(described_class.devise_modules).to include(:rememberable)
+    end
+
+    it "is validatable" do
+      expect(described_class.devise_modules).to include(:validatable)
+    end
+  end
+
+  describe "role management" do
+    describe "#assign_owner_role_if_first_user" do
+      it "assigns owner role to first user in account" do
+        account = create(:account)
+        user = create(:user, account: account)
+
+        expect(user.has_role?(:owner, account)).to be true
+      end
+
+      it "does not assign owner role to subsequent users" do
+        account = create(:account)
+        first_user = create(:user, account: account)
+        second_user = create(:user, account: account)
+
+        expect(first_user.has_role?(:owner, account)).to be true
+        expect(second_user.has_role?(:owner, account)).to be false
+      end
+    end
+
+    describe "#has_role?" do
+      it "returns true when user has the specified role" do
+        user = create(:user, :admin)
+
+        expect(user.has_role?(:admin, user.account)).to be true
+      end
+
+      it "returns false when user does not have the specified role" do
+        account = create(:account)
+        create(:user, account: account) # first user gets owner role
+        user = create(:user, account: account)
+
+        expect(user.has_role?(:admin, account)).to be false
+      end
+
+      it "works with project-scoped roles" do
+        account = create(:account)
+        user = create(:user, account: account)
+        project = create(:project, account: account)
+
+        user.add_role(:project_admin, project)
+
+        expect(user.has_role?(:project_admin, project)).to be true
+        expect(user.has_role?(:admin, project)).to be true
+      end
+    end
+
+    describe "#has_any_role?" do
+      it "returns true when user has one of the specified scoped roles" do
+        account = create(:account)
+        create(:user, account: account) # first user gets owner role
+        user = create(:user, :member, account: account)
+
+        expect(user.has_any_role?(:owner, :admin, :member, account)).to be true
+      end
+
+      it "returns false when user has none of the specified scoped roles" do
+        account = create(:account)
+        create(:user, account: account) # first user gets owner role
+        user = create(:user, account: account)
+
+        expect(user.has_any_role?(:admin, :member, account)).to be false
+      end
+    end
+
+    describe "#add_role" do
+      it "creates a membership with the specified role" do
+        account = create(:account)
+        user = create(:user, account: account)
+        other_account = create(:account)
+
+        user.add_role(:admin, other_account)
+
+        expect(user.has_role?(:admin, other_account)).to be true
+      end
+
+      it "updates existing membership role" do
+        account = create(:account)
+        create(:user, account: account) # first user
+        user = create(:user, :member, account: account)
+
+        user.add_role(:admin, account)
+
+        expect(user.has_role?(:admin, account)).to be true
+        expect(user.has_role?(:member, account)).to be false
+      end
+
+      it "works with projects" do
+        account = create(:account)
+        user = create(:user, account: account)
+        project = create(:project, account: account)
+
+        user.add_role(:project_member, project)
+
+        expect(user.has_role?(:project_member, project)).to be true
+      end
+    end
+
+    describe "#remove_role" do
+      it "removes the membership" do
+        account = create(:account)
+        user = create(:user, :admin, account: account)
+
+        result = user.remove_role(:admin, account)
+
+        expect(result).to be true
+        expect(user.has_role?(:admin, account)).to be false
+      end
+
+      it "returns false if role does not match" do
+        account = create(:account)
+        user = create(:user, :admin, account: account)
+
+        result = user.remove_role(:member, account)
+
+        expect(result).to be false
+        expect(user.has_role?(:admin, account)).to be true
+      end
+
+      it "destroys the user when removing their last account role" do
+        account = create(:account)
+        user = create(:user, :admin, account: account)
+
+        expect {
+          user.remove_role(:admin, account)
+        }.to change(described_class, :count).by(-1)
+          .and change(AccountMembership, :count).by(-1)
+      end
+
+      it "switches the user's current account when another membership remains" do
+        primary_account = create(:account)
+        user = create(:user, :admin, account: primary_account)
+        secondary_account = create(:account)
+        secondary_membership = create(:account_membership, :member, user: user, account: secondary_account)
+
+        user.remove_role(:admin, primary_account)
+
+        expect(user.reload.account).to eq(secondary_account)
+        expect(user.account_membership_for(primary_account)).to be_nil
+        expect(user.account_membership_for(secondary_account)).to eq(secondary_membership)
+      end
+    end
+
+    describe "#role_on" do
+      it "returns the role for an account" do
+        user = create(:user, :admin)
+
+        expect(user.role_on(user.account)).to eq("admin")
+      end
+
+      it "returns nil if no membership exists" do
+        account = create(:account)
+        user = create(:user, account: account)
+        other_account = create(:account)
+
+        expect(user.role_on(other_account)).to be_nil
+      end
+    end
+
+    describe "#membership_for" do
+      it "returns the account membership" do
+        user = create(:user, :admin)
+
+        membership = user.membership_for(user.account)
+
+        expect(membership).to be_an(AccountMembership)
+        expect(membership.admin?).to be true
+      end
+
+      it "returns the project membership" do
+        account = create(:account)
+        user = create(:user, account: account)
+        project = create(:project, account: account)
+        user.add_role(:member, project)
+
+        membership = user.membership_for(project)
+
+        expect(membership).to be_a(ProjectMembership)
+        expect(membership.member?).to be true
+      end
+    end
+  end
+
+  describe "runner cleanup" do
+    it "destroys discarded providers when the user is destroyed" do
+      user = create(:user)
+      runner = create(:runner, user: user, runner_key: "cursor")
+      runner.discard!
+
+      expect { user.destroy! }
+        .to change { Runner.with_discarded.where(id: runner.id).count }
+        .from(1).to(0)
+    end
+
+    it "destroys created Claude login sessions when the user is destroyed" do
+      user = create(:user)
+      login_session = create(:claude_login_session, account: user.account, created_by: user)
+
+      expect { user.destroy! }
+        .to change(ClaudeLoginSession, :count).by(-1)
+
+      expect(ClaudeLoginSession.exists?(login_session.id)).to be(false)
+    end
+  end
+
+  describe "#settings" do
+    it "returns existing settings inside a transaction when the association cached nil" do
+      user = create(:user)
+      expect(user.user_setting).to be_nil
+
+      existing = create(:user_setting, user: user)
+
+      ActiveRecord::Base.transaction do
+        expect(user.settings).to eq(existing)
+      end
+    end
+  end
+
+  describe "default runner setup" do
+    it "skips default runner creation when the runners table is unavailable" do
+      allow(Runner).to receive(:table_exists?).and_return(false)
+
+      expect(Runner).not_to receive(:ensure_default_for)
+
+      create(:user)
+    end
+
+    it "ignores missing runners table errors when the schema cache is stale" do
+      error = ActiveRecord::StatementInvalid.new("missing runners table")
+      allow(error).to receive(:cause).and_return(PG::UndefinedTable.new)
+
+      allow(Runner).to receive(:table_exists?).and_return(true)
+      allow(Runner).to receive(:ensure_default_for).and_raise(error)
+
+      expect { create(:user) }.not_to raise_error
+    end
+  end
+end

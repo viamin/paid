@@ -1,0 +1,116 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Dedicated GoodJob worker entrypoint.
+#
+# Boots the Rails app and runs a GoodJob worker in `:external` execution mode
+# without starting a web server. Intended as a Kamal `cmd: bin/jobs` override
+# for the job role (the default Dockerfile CMD starts the web server).
+#
+# Mirrors `bin/temporal_worker`: validates the DB pool against the configured
+# thread count, then owns signal handling so a single INT/TERM triggers a
+# graceful shutdown (pending jobs complete within GOOD_JOB_SHUTDOWN_TIMEOUT)
+# and a second signal forces an immediate exit.
+ENV["GOOD_JOB_EXECUTION_MODE"] = "external"
+
+require_relative "../config/environment"
+require "good_job"
+require_relative "../lib/paid/good_job_worker"
+require_relative "../lib/paid/worker_readiness"
+
+# Auto-grow the primary DB pool to cover GoodJob's worker threads before the
+# capsule opens any connections. Each worker thread can hold a DB connection
+# while a job runs; an undersized pool surfaces mid-job as
+# "could not obtain a connection from the pool" and fails work.
+def ensure_db_pool!(max_threads)
+  required = Paid::GoodJobWorker.min_required_db_pool(max_threads: max_threads)
+  current = ActiveRecord::Base.connection_pool.size
+  return if current >= required
+
+  warn "WARNING: DB pool (#{current}) is smaller than the required minimum " \
+       "(#{required}) for max_threads=#{max_threads}."
+
+  if resize_db_pool!(required)
+    warn "Auto-corrected primary DB pool size: #{current} -> #{required}. Set " \
+         "DB_POOL >= #{required} to make this explicit. NOTE: this raises the " \
+         "connections this process opens — ensure the database server's " \
+         "max_connections covers the sum across all web/worker processes."
+  else
+    warn "FATAL: DB pool (#{current}) is below the required minimum (#{required}) " \
+         "and the pool could not be resized automatically. Increase DB_POOL or " \
+         "reduce GOOD_JOB_MAX_THREADS to avoid connection exhaustion."
+    exit 1
+  end
+end
+
+# Resize the primary pool by replacing the live pool and the configurations
+# registry entry (so a later reconnect-by-name cannot silently revert it). Safe
+# to call before `capsule.start` because no worker connections are in flight.
+def resize_db_pool!(required)
+  db_config = ActiveRecord::Base.connection_db_config
+  resized_config = ActiveRecord::DatabaseConfigurations::HashConfig.new(
+    db_config.env_name, db_config.name, db_config.configuration_hash.merge(pool: required)
+  )
+
+  configs = ActiveRecord::Base.configurations.configurations
+  configs.reject! { |config| config.env_name == db_config.env_name && config.name == db_config.name }
+  configs << resized_config
+  ActiveRecord::Base.establish_connection(resized_config)
+  ActiveRecord::Base.connection_pool.size >= required
+rescue => error
+  warn "ERROR: failed to resize DB pool: #{error.class}: #{error.message}"
+  false
+end
+
+max_threads = Paid::GoodJobConfig.max_threads
+queues = Paid::GoodJobConfig.queues
+shutdown_timeout = Paid::GoodJobConfig.shutdown_timeout
+force_exit_buffer = Paid::GoodJobWorker.force_exit_buffer
+forced_exit_timeout = Paid::GoodJobWorker.forced_exit_timeout(
+  shutdown_timeout: shutdown_timeout,
+  force_exit_buffer: force_exit_buffer
+)
+
+puts "Starting GoodJob worker..."
+puts "Execution mode: external"
+puts "Max threads: #{max_threads}"
+puts "Queues: #{queues}"
+puts "Graceful shutdown timeout: #{shutdown_timeout}s (force exit after #{forced_exit_timeout}s)"
+
+ensure_db_pool!(max_threads)
+
+shutdown = Paid::GoodJobWorker::ShutdownCoordinator.new
+force_exit_thread = nil
+
+%w[INT TERM].each do |signal|
+  Signal.trap(signal) do
+    if shutdown.trigger == :force_exit
+      warn "Received #{signal} during shutdown, forcing GoodJob worker exit"
+      exit! 1
+    end
+
+    warn "Received #{signal}, shutting down GoodJob worker gracefully " \
+         "(timeout=#{shutdown_timeout}s)"
+    Paid::WorkerReadiness.mark_not_ready!
+    Thread.new { GoodJob.shutdown(timeout: shutdown_timeout) }
+
+    force_exit_thread ||= Thread.new do
+      sleep(forced_exit_timeout)
+      warn "GoodJob worker did not exit within #{forced_exit_timeout}s, forcing exit"
+      exit! 1
+    end
+  end
+end
+
+GoodJob.capsule.start
+at_exit { Paid::WorkerReadiness.mark_not_ready! }
+Paid::WorkerReadiness.mark_ready!
+puts "GoodJob worker started (readiness file: #{Paid::WorkerReadiness.file_path}). Send INT/TERM to shut down."
+
+# Block until the capsule has drained. An unstarted capsule also reports
+# shutdown?, so this loop must run only after `capsule.start` returns; a
+# graceful shutdown flips GoodJob.shutdown? back to true and breaks the loop.
+loop do
+  sleep 1
+  break if GoodJob.shutdown?
+end

@@ -1,0 +1,41 @@
+<% session_title = chat_session_title(chat_session) %>
+<% session_preview = chat_session_preview(chat_session) %>
+<% session_projects = chat_session_projects(chat_session) %>
+<% archived_card = chat_session.archived? %>
+<% session_runner_display = if chat_session.respond_to?(:runner)
+                              chat_session.runner&.display_name
+                            elsif chat_session.respond_to?(:provider)
+                              chat_session.provider&.display_name
+                            end %>
+
+<%= link_to chat_session_member_path(chat_session),
+            id: dom_id(chat_session),
+            class: "chat-session-card block rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition hover:bg-gray-50 #{'opacity-60' if archived_card}",
+            data: {
+              chat_session_list_target: "card",
+              session_id: chat_session.id,
+              search_text: "#{session_title} #{session_preview} #{session_projects.map(&:name).join(' ')} #{session_runner_display} #{chat_session.model}".downcase
+            } do %>
+  <div class="flex items-start justify-between gap-3">
+    <div class="min-w-0 flex-1">
+      <p class="truncate text-sm font-semibold text-gray-900"><%= session_title %></p>
+      <p class="mt-1 truncate text-xs text-gray-500"><%= session_preview %></p>
+    </div>
+    <%= chat_session_status_badge(chat_session) %>
+  </div>
+
+  <div class="mt-3 flex flex-wrap items-center gap-2">
+    <%= chat_mode_badge(chat_session) %>
+    <% if chat_session.model.present? %>
+      <span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600"><%= chat_session.model %></span>
+    <% end %>
+    <% session_projects.each do |project| %>
+      <span class="inline-flex items-center rounded-md bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700"><%= project.name %></span>
+    <% end %>
+  </div>
+
+  <div class="mt-3 flex items-center justify-between text-xs text-gray-400">
+    <span><%= session_runner_display || "Default runner" %></span>
+    <span><%= local_time(chat_session.updated_at, format: :relative) %></span>
+  </div>
+<% end %>

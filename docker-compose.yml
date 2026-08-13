@@ -1,0 +1,286 @@
+# Docker Compose configuration for Paid development environment
+# Includes Rails, PostgreSQL, and Temporal for workflow orchestration
+
+# Networks:
+#   paid_internal - For Paid infrastructure services (Rails, Temporal, Postgres)
+#                   and agent runs that require direct provider egress
+#   paid_agent    - Restricted network for proxy-mode agent containers
+#                   (no default internet access)
+#
+# Proxy-mode agent containers use paid_agent with internal: true to prevent
+# default outbound access. Subscription-auth and direct-outbound provider
+# runs use paid_internal so provider CLIs can reach upstream APIs directly.
+# Allowed egress on paid_agent is enforced by NetworkPolicy iptables rules.
+
+services:
+  postgres:
+    image: postgres:16.14
+    restart: unless-stopped
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres/init-multiple-dbs.sh:/docker-entrypoint-initdb.d/init-multiple-dbs.sh
+    environment:
+      POSTGRES_USER: paid_admin
+      POSTGRES_PASSWORD: paid_admin
+      POSTGRES_DB: postgres
+      POSTGRES_APP_USER: paid
+      POSTGRES_APP_PASSWORD: paid
+      POSTGRES_APP_DATABASES: paid_development,paid_development_cable,paid_test,paid_test_cable
+      POSTGRES_MULTIPLE_DATABASES: temporal,temporal_visibility
+    ports:
+      - "5432:5432"
+    networks:
+      - paid_internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U paid_admin"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - paid_internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  web:
+    build:
+      context: .
+      dockerfile: .devcontainer/Dockerfile
+    command: bin/setup
+    working_dir: /workspaces/paid
+    volumes:
+      - .:/workspaces/paid
+      - bundle-cache:/usr/local/bundle
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/paid/workspaces:/var/paid/workspaces
+    ports:
+      - "3000:3000"
+    networks:
+      paid_internal:
+      paid_agent:
+        aliases:
+          - paid-proxy
+    environment:
+      DB_HOST: postgres
+      DB_USERNAME: paid
+      DB_PASSWORD: paid
+      DB_ADMIN_USERNAME: paid_admin
+      DB_ADMIN_PASSWORD: paid_admin
+      RAILS_ENV: development
+      RAILS_LOG_TO_STDOUT: "1"
+      PAID_LOG_FORMAT: json
+      REDIS_URL: redis://redis:6379/0
+      TEMPORAL_HOST: temporal:7233
+      PAID_PROXY_PORT: "3000"
+      # Optional bearer token for /api/metrics. When set, the Rails app
+      # requires `Authorization: Bearer ${METRICS_TOKEN}` on the metrics
+      # endpoint. The docker-compose.observability.yml overlay wires the
+      # same value into the Prometheus scraper via a secret mount, so the
+      # two stay in sync.
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      # Set CLAUDE_CONFIG_DIR to the Docker-host path to ~/.claude/ for subscription auth.
+      # When set, agent containers mount this directory and use native Claude Code auth.
+      # When unset, falls back to API key mode (set ANTHROPIC_API_KEY in Rails credentials).
+      CLAUDE_CONFIG_DIR: ${CLAUDE_CONFIG_DIR:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_API_KEY: ${QDRANT_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      temporal:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/up || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 30s
+
+  temporal:
+    image: temporalio/auto-setup:1.29.7
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DB=postgres12
+      - DB_PORT=5432
+      - POSTGRES_USER=paid_admin
+      - POSTGRES_PWD=paid_admin
+      - POSTGRES_SEEDS=postgres
+      - DYNAMIC_CONFIG_FILE_PATH=/etc/temporal/config/dynamicconfig/development-sql.yaml
+    ports:
+      - "7233:7233"
+    networks:
+      - paid_internal
+    volumes:
+      - ./config/temporal:/etc/temporal/config/dynamicconfig
+    healthcheck:
+      test: ["CMD", "tctl", "--address", "temporal:7233", "cluster", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  temporal-ui:
+    image: temporalio/ui:2.26.2
+    depends_on:
+      temporal:
+        condition: service_healthy
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://localhost:3000
+    ports:
+      - "8080:8080"
+    networks:
+      - paid_internal
+
+  temporal-admin-tools:
+    image: temporalio/admin-tools:1.30.1
+    depends_on:
+      temporal:
+        condition: service_healthy
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+    networks:
+      - paid_internal
+    stdin_open: true
+    tty: true
+
+  qdrant:
+    image: qdrant/qdrant:v1.13.2
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    networks:
+      - paid_internal
+    healthcheck:
+      test: ["CMD-SHELL", "bash -ec ': >/dev/tcp/127.0.0.1/6333'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  worker:
+    build:
+      context: .
+      dockerfile: .devcontainer/Dockerfile
+    command: >
+      bash -c "bin/setup --skip-server &&
+               mkdir -p /var/paid/workspaces/runs &&
+               bin/temporal_worker"
+    working_dir: /workspaces/paid
+    depends_on:
+      redis:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    environment:
+      - DB_HOST=postgres
+      - DB_USERNAME=paid
+      - DB_PASSWORD=paid
+      - DB_ADMIN_USERNAME=paid_admin
+      - DB_ADMIN_PASSWORD=paid_admin
+      - REDIS_URL=redis://redis:6379/0
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_NAMESPACE=default
+      - TEMPORAL_POLL_TASK_QUEUE=paid-poll-tasks
+      - TEMPORAL_AGENT_TASK_QUEUE=paid-agent-tasks
+      - RAILS_ENV=development
+      - RAILS_LOG_TO_STDOUT=1
+      - PAID_LOG_FORMAT=json
+      - PAID_PROXY_PORT=3000
+      - CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - QDRANT_URL=http://qdrant:6333
+      - QDRANT_API_KEY=${QDRANT_API_KEY:-}
+    networks:
+      - paid_internal
+      - paid_agent
+    volumes:
+      - .:/workspaces/paid
+      - bundle-cache:/usr/local/bundle
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/paid/workspaces:/var/paid/workspaces
+
+  # Legacy setup profile for paid-agent:latest. Prefer scripts/build-agent-image.sh,
+  # which extracts required build args from Gemfile.lock and agent-harness.
+  agent-image:
+    build:
+      context: ./docker/agent
+      dockerfile: Dockerfile
+      args:
+        CLAUDE_INSTALL_COMMAND: ${CLAUDE_INSTALL_COMMAND:-}
+        CLAUDE_POST_INSTALL_BINARY_PATH: ${CLAUDE_POST_INSTALL_BINARY_PATH:-}
+        CURSOR_ARTIFACT_URL: ${CURSOR_ARTIFACT_URL:-}
+        CURSOR_ARTIFACT_SHA256: ${CURSOR_ARTIFACT_SHA256:-}
+        CURSOR_BINARY_NAME: ${CURSOR_BINARY_NAME:-cursor-agent}
+        CURSOR_GLOBAL_PATH: ${CURSOR_GLOBAL_PATH:-/usr/local/bin/cursor-agent}
+        GEMINI_CLI_INSTALL_COMMAND: ${GEMINI_CLI_INSTALL_COMMAND:-}
+    image: paid-agent:latest
+    command: ["true"]
+    profiles:
+      - setup
+
+  # Agent container for testing the agent image
+  agent-test:
+    build:
+      context: ./docker/agent
+      dockerfile: Dockerfile
+      args:
+        CLAUDE_INSTALL_COMMAND: ${CLAUDE_INSTALL_COMMAND:-}
+        CLAUDE_POST_INSTALL_BINARY_PATH: ${CLAUDE_POST_INSTALL_BINARY_PATH:-}
+        CURSOR_ARTIFACT_URL: ${CURSOR_ARTIFACT_URL:-}
+        CURSOR_ARTIFACT_SHA256: ${CURSOR_ARTIFACT_SHA256:-}
+        CURSOR_BINARY_NAME: ${CURSOR_BINARY_NAME:-cursor-agent}
+        CURSOR_GLOBAL_PATH: ${CURSOR_GLOBAL_PATH:-/usr/local/bin/cursor-agent}
+        GEMINI_CLI_INSTALL_COMMAND: ${GEMINI_CLI_INSTALL_COMMAND:-}
+    image: paid-agent:latest
+    volumes:
+      - ./agent-workspace:/workspace
+    networks:
+      - paid_agent
+    profiles:
+      - test
+
+volumes:
+  postgres-data:
+  bundle-cache:
+  qdrant-data:
+
+networks:
+  # Internal network for Paid infrastructure services.
+  # Explicit name: ensures agent containers created via Docker API can resolve
+  # compose service names (e.g. "web") on this network.
+  paid_internal:
+    name: paid_internal
+    driver: bridge
+
+  # Restricted network for proxy-mode agent containers.
+  # internal: true disables default internet access.
+  # Explicit name: ensures NetworkPolicy::NETWORK_NAME matches.
+  paid_agent:
+    name: paid_agent
+    driver: bridge
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

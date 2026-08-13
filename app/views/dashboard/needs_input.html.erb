@@ -1,0 +1,79 @@
+<% content_for(:title) { "Needs Input - Paid" } %>
+
+<div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to back_link_path(dashboard_path), class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+      <svg class="mr-1 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd" />
+      </svg>
+      Back to dashboard
+    <% end %>
+  </div>
+
+  <div class="rounded-lg bg-white shadow">
+    <div class="border-b border-gray-200 px-4 py-5 sm:px-6">
+      <h1 class="text-xl font-semibold text-gray-900">Needs Input Queue</h1>
+      <p class="mt-1 text-sm text-gray-500">
+        <% if @scoped_project %>
+          Open issues in <strong><%= @scoped_project.full_name %></strong> waiting on clarifying answers.
+        <% else %>
+          Open issues across your auto-pick projects waiting on clarifying answers.
+        <% end %>
+      </p>
+    </div>
+
+    <% if @needs_input_entries.any? %>
+      <% @needs_input_entries.group_by(&:project).each do |project, entries| %>
+        <div class="border-b border-gray-100 last:border-b-0">
+          <div class="bg-gray-50 px-4 py-3 sm:px-6">
+            <h2 class="text-sm font-semibold text-gray-900"><%= project.full_name %></h2>
+          </div>
+          <ul class="divide-y divide-gray-100">
+            <% entries.each do |entry| %>
+              <li class="px-4 py-4 sm:px-6">
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2 text-sm">
+                      <%= link_to "##{entry.issue.github_number}",
+                            entry.issue.github_url,
+                            target: "_blank",
+                            rel: "noopener noreferrer",
+                            class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+                      <span class="truncate font-medium text-gray-900"><%= entry.issue.title %></span>
+                    </div>
+                    <p class="mt-2 text-sm text-gray-600">
+                      <% if entry.questions.any? %>
+                        Pending:
+                        <%= entry.questions.first(2).join(" ").truncate(220) %>
+                      <% else %>
+                        Pending questions are still attached to the issue, but no summary is available locally.
+                      <% end %>
+                    </p>
+                  </div>
+                  <div class="flex-shrink-0">
+                    <%= link_to "Answer Questions",
+                          project_issue_clarifying_questions_path(
+                            entry.project,
+                            entry.issue,
+                            queue: "dashboard_needs_input",
+                            queue_project_id: @scoped_project&.id,
+                            return_to: dashboard_needs_input_path(project_id: @scoped_project&.id)
+                          ),
+                          class: "inline-flex items-center rounded-md bg-amber-100 px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-200" %>
+                  </div>
+                </div>
+              </li>
+            <% end %>
+          </ul>
+        </div>
+      <% end %>
+    <% else %>
+      <div class="px-4 py-10 text-center sm:px-6">
+        <h2 class="text-sm font-semibold text-gray-900">No needs-input issues</h2>
+        <p class="mt-1 text-sm text-gray-500">
+          Paid does not currently have any open non-PR issues blocked on clarifying questions in this queue.
+        </p>
+      </div>
+    <% end %>
+  </div>
+</div>

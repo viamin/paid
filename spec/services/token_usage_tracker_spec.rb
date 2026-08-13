@@ -1,0 +1,522 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe TokenUsageTracker do
+  let(:project) { create(:project) }
+  let(:agent_run) { create(:agent_run, :running, project: project) }
+  let(:knowledge_run) { create(:knowledge_run, :running, project: project) }
+
+  describe ".track" do
+    it "increments tokens_input on the agent run" do
+      expect {
+        described_class.track(tracked_run: agent_run, usage: { tokens_input: 1000, tokens_output: 500 })
+      }.to change { agent_run.reload.tokens_input }.by(1000)
+    end
+
+    it "increments tokens_output on the agent run" do
+      expect {
+        described_class.track(tracked_run: agent_run, usage: { tokens_input: 1000, tokens_output: 500 })
+      }.to change { agent_run.reload.tokens_output }.by(500)
+    end
+
+    it "calculates and sets cost_cents on the agent run" do
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 1_000_000, tokens_output: 1_000_000 })
+
+      agent_run.reload
+      # $3/M input + $15/M output = $18 = 1800 cents
+      expect(agent_run.cost_cents).to eq(1800)
+    end
+
+    it "accumulates across multiple calls" do
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 100, tokens_output: 50 })
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 200, tokens_output: 100 })
+
+      agent_run.reload
+      expect(agent_run.tokens_input).to eq(300)
+      expect(agent_run.tokens_output).to eq(150)
+    end
+
+    it "updates project total_tokens_used" do
+      expect {
+        described_class.track(tracked_run: agent_run, usage: { tokens_input: 1000, tokens_output: 500 })
+      }.to change { project.reload.total_tokens_used }.by(1500)
+    end
+
+    it "updates project total_cost_cents" do
+      expect {
+        described_class.track(tracked_run: agent_run, usage: { tokens_input: 1_000_000, tokens_output: 1_000_000 })
+      }.to change { project.reload.total_cost_cents }.by(1800)
+    end
+
+    it "resolves the per-run token limit once per tracking call" do
+      project.update!(max_tokens_per_run: nil)
+      project.created_by.settings.update!(max_tokens_per_run: 5_000)
+      allow(AgentRuns::UserSettingsResolver).to receive(:call).and_call_original
+      allow(described_class).to receive(:enforce_hard_stop_budgets)
+
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 1000, tokens_output: 500 })
+
+      expect(AgentRuns::UserSettingsResolver).to have_received(:call).once.with(project: project, strict: false, create: false)
+    end
+
+    it "creates a metric log entry" do
+      expect {
+        described_class.track(tracked_run: agent_run, usage: { tokens_input: 1000, tokens_output: 500 })
+      }.to change { agent_run.agent_run_logs.where(log_type: "metric").count }.by(1)
+
+      log = agent_run.agent_run_logs.where(log_type: "metric").last
+      content = JSON.parse(log.content)
+      expect(content["tokens_input"]).to eq(1000)
+      expect(content["tokens_output"]).to eq(500)
+      expect(log.metadata).to eq({ "type" => "token_usage" })
+    end
+
+    it "creates a per-request TokenUsage record" do
+      create(:llm_model, model_id: "claude-3-5-sonnet-20241022", pricing_tier: "paid")
+
+      expect {
+        described_class.track(
+          tracked_run: agent_run,
+          usage: {
+            tokens_input: 1000,
+            tokens_output: 500,
+            llm_model: "claude-3-5-sonnet-20241022",
+            request_type: "agent"
+          }
+        )
+      }.to change(TokenUsage, :count).by(1)
+
+      usage = TokenUsage.last
+      expect(usage.agent_run).to eq(agent_run)
+      expect(usage.input_tokens).to eq(1000)
+      expect(usage.output_tokens).to eq(500)
+      expect(usage.llm_model).to eq("claude-3-5-sonnet-20241022")
+      expect(usage.request_type).to eq("agent")
+      expect(usage.metadata).to include("pricing_tier" => "paid")
+    end
+
+    it "preserves supplied metadata when the model cannot be resolved" do
+      described_class.track(
+        tracked_run: agent_run,
+        usage: {
+          tokens_input: 1000,
+          tokens_output: 500,
+          llm_model: "unknown-model",
+          request_type: "agent",
+          metadata: {
+            pricing_tier: "proxy-free",
+            provider_data_collection: nil,
+            source: "proxy"
+          }
+        }
+      )
+
+      expect(TokenUsage.last.metadata).to eq(
+        "pricing_tier" => "proxy-free",
+        "provider_data_collection" => nil,
+        "source" => "proxy"
+      )
+    end
+
+    it "updates cost budgets for the project" do
+      budget = create(:cost_budget, project: project, limit_cents: 100_000, period_started_at: Time.current.beginning_of_month)
+
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 1_000_000, tokens_output: 1_000_000 })
+
+      expect(budget.reload.current_usage_cents).to eq(1800)
+    end
+
+    it "includes llm_model and request_type in the log entry" do
+      described_class.track(
+        tracked_run: agent_run,
+        usage: {
+          tokens_input: 1000,
+          tokens_output: 500,
+          llm_model: "claude-3-5-sonnet-20241022",
+          request_type: "planning"
+        }
+      )
+
+      log = agent_run.agent_run_logs.where(log_type: "metric").last
+      content = JSON.parse(log.content)
+      expect(content["llm_model"]).to eq("claude-3-5-sonnet-20241022")
+      expect(content["request_type"]).to eq("planning")
+    end
+
+    context "when update_aggregates is false" do
+      it "creates a TokenUsage record without updating agent_run or project counters" do
+        expect {
+          described_class.track(
+            tracked_run: agent_run,
+            usage: { tokens_input: 1000, tokens_output: 500, request_type: "run_summary" },
+            update_aggregates: false
+          )
+        }.to change(TokenUsage, :count).by(1)
+
+        expect(agent_run.reload.tokens_input).to eq(0)
+        expect(project.reload.total_tokens_used).to eq(0)
+      end
+
+      it "does not create a metric log entry" do
+        expect {
+          described_class.track(
+            tracked_run: agent_run,
+            usage: { tokens_input: 1000, tokens_output: 500, request_type: "run_summary" },
+            update_aggregates: false
+          )
+        }.not_to change { agent_run.agent_run_logs.where(log_type: "metric").count }
+      end
+
+      it "does not update cost budgets" do
+        budget = create(:cost_budget, project: project, limit_cents: 100_000, period_started_at: Time.current.beginning_of_month)
+
+        described_class.track(
+          tracked_run: agent_run,
+          usage: { tokens_input: 1_000_000, tokens_output: 1_000_000, request_type: "run_summary" },
+          update_aggregates: false
+        )
+
+        expect(budget.reload.current_usage_cents).to eq(0)
+      end
+    end
+
+    context "when guardrail enforcement is disabled" do
+      before do
+        allow(AgentRuns::Cancel).to receive(:call)
+      end
+
+      it "updates usage counters without pausing a successful run for hard-stop budgets" do
+        create(:cost_budget, :hard_stop, :per_run, project: project, limit_cents: 100)
+
+        described_class.track(
+          tracked_run: agent_run,
+          usage: { tokens_input: 1_000_000, tokens_output: 1_000_000, request_type: "run_delta" },
+          enforce_guardrails: false
+        )
+
+        agent_run.reload
+        expect(agent_run.tokens_input).to eq(1_000_000)
+        expect(agent_run.tokens_output).to eq(1_000_000)
+        expect(agent_run.cost_cents).to eq(1800)
+        expect(agent_run.status).to eq("running")
+        expect(agent_run.guardrail_violation_type).to be_nil
+        expect(AgentRuns::Cancel).not_to have_received(:call)
+      end
+    end
+
+    context "with a knowledge run" do
+      it "increments total_tokens on the knowledge run" do
+        expect {
+          described_class.track(
+            tracked_run: knowledge_run,
+            usage: { tokens_input: 80, tokens_output: 20, request_type: "knowledge" }
+          )
+        }.to change { knowledge_run.reload.total_tokens }.by(100)
+      end
+
+      it "creates a TokenUsage record for the knowledge run" do
+        described_class.track(
+          tracked_run: knowledge_run,
+          usage: {
+            tokens_input: 1000,
+            tokens_output: 500,
+            llm_model: "text-embedding-3-large",
+            request_type: "knowledge",
+            metadata: { operation_type: "embedding" }
+          }
+        )
+
+        usage = TokenUsage.last
+        expect(usage.knowledge_run).to eq(knowledge_run)
+        expect(usage.agent_run).to be_nil
+        expect(usage.metadata).to include("operation_type" => "embedding")
+      end
+
+      it "defaults the request type to knowledge" do
+        described_class.track(
+          tracked_run: knowledge_run,
+          usage: { tokens_input: 100, tokens_output: 50 }
+        )
+
+        expect(TokenUsage.last.request_type).to eq("knowledge")
+      end
+
+      it "updates project totals for knowledge runs" do
+        expect {
+          described_class.track(
+            tracked_run: knowledge_run,
+            usage: { tokens_input: 100, tokens_output: 50, request_type: "knowledge" }
+          )
+        }.to change { project.reload.total_tokens_used }.by(150)
+      end
+
+      it "does not create an agent run log entry" do
+        expect {
+          described_class.track(
+            tracked_run: knowledge_run,
+            usage: { tokens_input: 100, tokens_output: 50, request_type: "knowledge" }
+          )
+        }.not_to change(AgentRunLog, :count)
+      end
+    end
+  end
+
+  describe "token limit checking" do
+    before do
+      project.update!(max_tokens_per_run: 10_000, token_limit_warning_threshold: 80)
+      allow(AgentRuns::Cancel).to receive(:call)
+      allow(Notifications::Publish).to receive(:call)
+    end
+
+    it "persists the agent run once when token_limit_status changes" do
+      allow(agent_run).to receive(:save!).and_call_original
+
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 5000, tokens_output: 3000 })
+
+      expect(agent_run).to have_received(:save!).once
+    end
+
+    it "sets token_limit_status to ok when below warning threshold" do
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 3000, tokens_output: 1000 })
+      expect(agent_run.reload.token_limit_status).to eq("ok")
+    end
+
+    it "sets token_limit_status to warning when at or above warning threshold" do
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 5000, tokens_output: 3000 })
+      expect(agent_run.reload.token_limit_status).to eq("warning")
+    end
+
+    it "sets token_limit_status to exceeded when at or above hard limit" do
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 7000, tokens_output: 4000 })
+      expect(agent_run.reload.token_limit_status).to eq("exceeded")
+    end
+
+    it "times out a running agent when the hard token limit is exceeded" do
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 7000, tokens_output: 4000 })
+
+      agent_run.reload
+      expect(agent_run.status).to eq("timeout")
+      expect(agent_run.guardrail_violation_type).to eq("token_limit")
+      expect(AgentRuns::Cancel).to have_received(:call).with(agent_run: agent_run, skip_status_update: true)
+    end
+
+    it "logs a warning when crossing the soft threshold" do
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 5000, tokens_output: 3000 })
+      log = agent_run.agent_run_logs.find_by(log_type: "system")
+      expect(log.content).to include("Token usage warning")
+      expect(log.metadata).to eq({ "type" => "token_limit_warning" })
+    end
+
+    it "logs an exceeded message when crossing the hard limit" do
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 7000, tokens_output: 4000 })
+      log = agent_run.agent_run_logs.find_by(log_type: "system", metadata: { type: "token_limit_exceeded" })
+      expect(log.content).to include("Token limit exceeded")
+      expect(log.metadata).to eq({ "type" => "token_limit_exceeded" })
+    end
+
+    it "does not check limits when update_aggregates is false" do
+      described_class.track(
+        tracked_run: agent_run,
+        usage: { tokens_input: 7000, tokens_output: 4000 },
+        update_aggregates: false
+      )
+      expect(agent_run.reload.token_limit_status).to be_nil
+    end
+
+    it "still checks limits when guardrail enforcement is disabled" do
+      described_class.track(
+        tracked_run: agent_run,
+        usage: { tokens_input: 7000, tokens_output: 4000 },
+        enforce_guardrails: false
+      )
+      expect(agent_run.reload.token_limit_status).to eq("exceeded")
+      expect(agent_run.reload.status).to eq("running")
+    end
+
+    it "transitions from warning to exceeded as usage grows" do
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 5000, tokens_output: 3000 })
+      expect(agent_run.reload.token_limit_status).to eq("warning")
+
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 2000, tokens_output: 1000 })
+      expect(agent_run.reload.token_limit_status).to eq("exceeded")
+    end
+
+    context "when a UserSetting overrides max_tokens_per_run" do
+      before do
+        project.update!(max_tokens_per_run: nil)
+        user = project.created_by
+        user_setting = user.settings
+        user_setting.update!(max_tokens_per_run: 5_000)
+      end
+
+      it "uses the UserSetting limit for status transitions" do
+        described_class.track(tracked_run: agent_run, usage: { tokens_input: 3000, tokens_output: 1500 })
+        expect(agent_run.reload.token_limit_status).to eq("warning")
+      end
+
+      it "marks exceeded when usage reaches the UserSetting limit" do
+        described_class.track(tracked_run: agent_run, usage: { tokens_input: 3000, tokens_output: 2000 })
+        expect(agent_run.reload.token_limit_status).to eq("exceeded")
+      end
+    end
+
+    context "when the UserSetting still has the inherited global default" do
+      before do
+        project.update!(max_tokens_per_run: nil)
+        project.account.update!(default_max_tokens_per_run: 6_000)
+        project.created_by.settings
+      end
+
+      it "uses the account default for status transitions" do
+        described_class.track(tracked_run: agent_run, usage: { tokens_input: 3000, tokens_output: 2000 })
+
+        expect(agent_run.reload.token_limit_status).to eq("warning")
+      end
+    end
+  end
+
+  describe ".calculate_cost" do
+    it "returns 0 for zero tokens" do
+      expect(described_class.calculate_cost(0, 0)).to eq(0)
+    end
+
+    it "calculates cost based on default pricing" do
+      # $3/M input, $15/M output
+      # 1M input = $3 = 300 cents
+      # 1M output = $15 = 1500 cents
+      expect(described_class.calculate_cost(1_000_000, 1_000_000)).to eq(1800)
+    end
+
+    it "handles small token counts" do
+      # 1000 input = $0.003 = 0.3 cents
+      # 500 output = $0.0075 = 0.75 cents
+      # Total = $0.0105 => 1.05 cents, rounded = 1
+      expect(described_class.calculate_cost(1000, 500)).to eq(1)
+    end
+
+    it "handles large token counts" do
+      # 10M input = $30 = 3000 cents
+      # 5M output = $75 = 7500 cents
+      expect(described_class.calculate_cost(10_000_000, 5_000_000)).to eq(10_500)
+    end
+  end
+
+  describe "per-run token budget early termination" do
+    let(:runner) { create(:runner, user: project.created_by, no_progress_thresholds: { "min_input_tokens" => 1000, "max_output_tokens" => 10 }) }
+    let(:agent_run) { create(:agent_run, :running, project: project, runner: runner) }
+
+    before do
+      allow(AgentRuns::Cancel).to receive(:call)
+      allow(Notifications::Publish).to receive(:call)
+    end
+
+    it "terminates a running agent with a distinct status when input is high and output is near-zero" do
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 1000, tokens_output: 5 })
+
+      agent_run.reload
+      expect(agent_run.status).to eq("token_budget_exceeded")
+      expect(agent_run.guardrail_violation_type).to eq("token_budget")
+    end
+
+    it "does not terminate when output is at or above the progress floor" do
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 1000, tokens_output: 10 })
+
+      expect(agent_run.reload.status).to eq("running")
+    end
+
+    it "does not terminate when input is below the budget" do
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 999, tokens_output: 0 })
+
+      expect(agent_run.reload.status).to eq("running")
+    end
+
+    it "does not terminate when enforce_guardrails is false" do
+      described_class.track(
+        tracked_run: agent_run,
+        usage: { tokens_input: 1000, tokens_output: 5 },
+        enforce_guardrails: false
+      )
+
+      expect(agent_run.reload.status).to eq("running")
+    end
+
+    it "does not terminate when update_aggregates is false" do
+      described_class.track(
+        tracked_run: agent_run,
+        usage: { tokens_input: 1000, tokens_output: 5 },
+        update_aggregates: false
+      )
+
+      expect(agent_run.reload.status).to eq("running")
+    end
+
+    it "uses default thresholds when agent_run has no runner" do
+      agent_run_without_runner = create(:agent_run, :running, project: project, runner: nil)
+
+      # Should not terminate: below default min_input_tokens (100_000)
+      described_class.track(tracked_run: agent_run_without_runner, usage: { tokens_input: 1000, tokens_output: 0 })
+
+      expect(agent_run_without_runner.reload.status).to eq("running")
+    end
+
+    it "respects per-provider (runner) threshold overrides" do
+      stricter_runner = create(:runner, user: project.created_by, no_progress_thresholds: { "min_input_tokens" => 500, "max_output_tokens" => 50 })
+      strict_run = create(:agent_run, :running, project: project, runner: stricter_runner)
+
+      described_class.track(tracked_run: strict_run, usage: { tokens_input: 500, tokens_output: 30 })
+
+      strict_run.reload
+      expect(strict_run.status).to eq("token_budget_exceeded")
+      expect(strict_run.guardrail_violation_type).to eq("token_budget")
+    end
+
+    it "uses the project-level budget override in preference to the provider threshold" do
+      project.update!(token_budget_max_input_tokens: 2000)
+      run = create(:agent_run, :running, project: project, runner: runner)
+
+      # Below the project budget (2000) → not terminated even though it is at
+      # the provider threshold (1000).
+      described_class.track(tracked_run: run, usage: { tokens_input: 1000, tokens_output: 0 })
+
+      expect(run.reload.status).to eq("running")
+
+      # Exceed the project budget → terminated.
+      described_class.track(tracked_run: run, usage: { tokens_input: 1500, tokens_output: 0 })
+
+      run.reload
+      expect(run.status).to eq("token_budget_exceeded")
+    end
+
+    it "cancels in-flight execution on budget termination" do
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 1000, tokens_output: 5 })
+
+      expect(AgentRuns::Cancel).to have_received(:call).with(agent_run: agent_run, skip_status_update: true)
+    end
+  end
+
+  describe "knowledge run token limit checking" do
+    before do
+      project.update!(token_limit_warning_threshold: 80)
+      knowledge_run.update!(max_tokens: 100)
+    end
+
+    it "sets warning when usage crosses the threshold" do
+      described_class.track(
+        tracked_run: knowledge_run,
+        usage: { tokens_input: 60, tokens_output: 20, request_type: "knowledge" }
+      )
+
+      expect(knowledge_run.reload.token_limit_status).to eq("warning")
+    end
+
+    it "sets exceeded when usage reaches the hard limit" do
+      described_class.track(
+        tracked_run: knowledge_run,
+        usage: { tokens_input: 60, tokens_output: 40, request_type: "knowledge" }
+      )
+
+      expect(knowledge_run.reload.token_limit_status).to eq("exceeded")
+    end
+  end
+end

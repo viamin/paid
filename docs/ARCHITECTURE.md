@@ -1,0 +1,575 @@
+# Paid Architecture
+
+## System Overview
+
+Paid is composed of four main subsystems that work together to orchestrate AI-driven software development:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              PAID SYSTEM                                     │
+│                                                                              │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │                         RAILS APPLICATION                              │ │
+│  │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐  │ │
+│  │  │   Web UI     │ │  API Layer   │ │  Background  │ │   Database   │  │ │
+│  │  │  (Hotwire)   │ │  (Internal)  │ │  Jobs (GJ)   │ │ (PostgreSQL) │  │ │
+│  │  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘  │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+│                                    │                                         │
+│                                    ▼                                         │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │                      TEMPORAL ORCHESTRATION                            │ │
+│  │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐  │ │
+│  │  │   Temporal   │ │   Workflow   │ │   Activity   │ │   Worker     │  │ │
+│  │  │   Server     │ │  Definitions │ │  Definitions │ │   Pool       │  │ │
+│  │  │  (External)  │ │              │ │              │ │              │  │ │
+│  │  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘  │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+│                                    │                                         │
+│                                    ▼                                         │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │                      CONTAINER MANAGEMENT                              │ │
+│  │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐  │ │
+│  │  │   Docker     │ │   Project    │ │  Git         │ │   Secrets    │  │ │
+│  │  │   Engine     │ │  Containers  │ │  Worktrees   │ │   Proxy      │  │ │
+│  │  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘  │ │
+│  │  ┌──────────────┐                                                     │ │
+│  │  │   Service    │                                                     │ │
+│  │  │  Containers  │                                                     │ │
+│  │  └──────────────┘                                                     │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+│                                    │                                         │
+│                                    ▼                                         │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │                      EXTERNAL INTEGRATIONS                             │ │
+│  │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐  │ │
+│  │  │   GitHub     │ │  LLM APIs    │ │  Agent CLIs  │ │  agent-harness    │  │ │
+│  │  │   (PAT)      │ │  (proxied)   │ │  (in-cont.)  │ │  (LLM iface) │  │ │
+│  │  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘  │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+## Technology Stack
+
+### Core Application
+
+| Component | Technology | Rationale |
+|-----------|------------|-----------|
+| Framework | Rails 8+ | Mature, productive, excellent for data-heavy apps |
+| Database | PostgreSQL | JSON support, reliability, Temporal compatibility |
+| Frontend | Hotwire (Turbo + Stimulus) | Real-time UI without SPA complexity |
+| Background Jobs | GoodJob | PostgreSQL-backed Active Job runner |
+| Caching | Solid Cache | Rails-native, database-backed |
+| WebSockets | Action Cable | Real-time dashboard updates |
+
+### Orchestration
+
+| Component | Technology | Rationale |
+|-----------|------------|-----------|
+| Workflow Engine | Temporal.io | Durable workflows, built-in retry, observability |
+| Temporal Client | temporalio | Official Ruby SDK |
+| Worker Pool | Fixed pool (configurable) | Simplicity first, auto-scale later |
+
+### Agent Execution
+
+| Component | Technology | Rationale |
+|-----------|------------|-----------|
+| Containers | Docker | Industry standard, aidp compatibility |
+| Agent CLIs | Claude Code, Cursor, Gemini CLI, GitHub Copilot, Codex, OpenCode, Kilocode, MistralVibe | Extracted to shared gem |
+| API Calls | agent-harness gem | Unified LLM interface, model registry |
+| Isolation | Git worktrees | Parallel work without conflicts |
+
+### External Services
+
+| Component | Technology | Rationale |
+|-----------|------------|-----------|
+| Source Control | GitHub (PAT) | Projects V2 integration, issue tracking |
+| LLM Providers | Anthropic, OpenAI, Google, OpenRouter, etc. | Via agent-harness abstraction |
+
+## Component Details
+
+### 1. Rails Application
+
+The Rails app is the control plane for Paid. It manages:
+
+#### Web UI (Hotwire)
+
+- **Project Management**: Add/remove GitHub repos, configure tokens
+- **Agent Dashboard**: Live view of running agents, ability to interrupt
+- **Prompt Management**: Version history, A/B test configuration
+- **Metrics & Costs**: Per-project token usage, cost tracking
+- **Style Guides**: Global and project-specific LLM style guides
+
+#### Data Layer (PostgreSQL)
+
+- All configuration stored as data (prompts, model preferences, thresholds)
+- Prompt versioning with full history
+- Agent run logs and metrics
+- Cost tracking per project/model
+- Quality feedback (human votes, automated scores)
+
+#### Background Jobs (GoodJob)
+
+- GitHub polling (runs via Temporal GitHubPollWorkflow, not GoodJob cron)
+- Metric aggregation
+- Prompt evolution processing
+- Container health checks
+
+### 2. Temporal Orchestration
+
+Temporal handles long-running, stateful workflows. The Rails app schedules workflows; Temporal ensures they complete reliably.
+
+#### Workflows
+
+**GitHubPollWorkflow**
+
+- Runs continuously per project
+- Checks for labeled issues (configurable labels)
+- Triggers planning or execution workflows
+- Handles rate limiting gracefully
+
+**PlanningWorkflow**
+
+- Decomposes feature requests into sub-issues
+- Creates GitHub Project items
+- Assigns issues to appropriate agents
+- Handles user input requests
+
+**AgentExecutionWorkflow**
+
+- Selects model via meta-agent
+- Provisions container and worktree
+- Runs agent activity with monitoring
+- Handles retries, timeouts, cost limits
+- Creates PR on completion
+
+**PromptEvolutionWorkflow**
+
+- Samples completed agent runs
+- Evaluates quality metrics
+- Proposes prompt mutations
+- Runs A/B tests
+- Promotes winning prompts
+
+**ParallelAgentExecutionWorkflow**
+
+- Manages multiple AgentExecutionWorkflows running concurrently
+- Coordinates resource allocation across parallel agent runs
+- Aggregates results from parallel executions
+
+**KnowledgeEvolutionWorkflow**
+
+- Triggers knowledge base re-collection when codebases change
+- Manages incremental updates to vector embeddings
+- Coordinates artifact and chunk updates across collectors
+
+#### Activities
+
+Activities are the units of work executed by workers:
+
+| Activity | Description |
+|----------|-------------|
+| `CloneRepoActivity` | Clone/fetch repo into container |
+| `CreateWorktreeActivity` | Set up isolated worktree for agent |
+| `RunAgentActivity` | Execute agent CLI or API call |
+| `CreatePullRequestActivity` | Open PR with agent's changes |
+| `UpdateIssueWithPrActivity` | Update GitHub issue status/labels |
+
+> The codebase has 60+ activities covering repo operations, container management, knowledge base collection, prompt evolution, and more.
+
+#### Worker Pool
+
+Workers run as separate processes, executing activities:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     WORKER POOL                              │
+│                                                              │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐            │
+│  │  Worker 1   │ │  Worker 2   │ │  Worker N   │   ...      │
+│  │             │ │             │ │             │            │
+│  │ ┌─────────┐ │ │ ┌─────────┐ │ │ ┌─────────┐ │            │
+│  │ │Container│ │ │ │Container│ │ │ │Container│ │            │
+│  │ │ (Proj A)│ │ │ │ (Proj B)│ │ │ │ (Proj A)│ │            │
+│  │ └─────────┘ │ │ └─────────┘ │ │ └─────────┘ │            │
+│  └─────────────┘ └─────────────┘ └─────────────┘            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+Configuration (Phase 1):
+
+- Fixed worker count via environment variable
+- Each worker can run one activity at a time
+- Workers are stateless; containers are per-activity
+
+### 3. Container Management
+
+Each agent runs in an isolated Docker container with:
+
+#### Container Image
+
+Based on aidp's devcontainer approach:
+
+- Base: Ruby + Node + common dev tools
+- Pre-installed: Agent CLIs (Claude Code, Cursor, Gemini CLI, GitHub Copilot, Codex, OpenCode, Kilocode, MistralVibe)
+- Firewall: Allowlist-only network access
+- No secrets: API keys not passed to container
+
+#### Git Worktree Isolation
+
+```
+/workspaces/
+├── project-a/
+│   ├── .git/                    # Shared git directory
+│   ├── main/                    # Main branch checkout
+│   ├── worktree-agent-1-abc/    # Agent 1's isolated workspace
+│   ├── worktree-agent-2-def/    # Agent 2's isolated workspace
+│   └── worktree-agent-3-ghi/    # Agent 3's isolated workspace
+└── project-b/
+    ├── .git/
+    ├── main/
+    └── worktree-agent-4-jkl/
+```
+
+Each agent gets:
+
+- Unique worktree from current main
+- Unique branch name
+- Complete isolation from other agents
+- Cleanup after PR creation
+
+#### Secrets Proxy
+
+Agents need API access but shouldn't have raw keys:
+
+```
+┌─────────────┐         ┌─────────────┐         ┌─────────────┐
+│   Agent     │ ──────► │   Secrets   │ ──────► │  LLM API    │
+│ (Container) │         │   Proxy     │         │  (External) │
+│             │         │   (Paid)    │         │             │
+│ No API keys │         │ Adds auth   │         │             │
+└─────────────┘         └─────────────┘         └─────────────┘
+```
+
+The proxy:
+
+- Runs as part of Paid
+- Receives unauthenticated requests from containers
+- Adds appropriate API keys
+- Forwards to LLM providers
+- Logs usage for cost tracking
+
+#### Service Containers
+
+Agents often need external services (PostgreSQL, Redis, Selenium) for running tests. Service containers provide these as shared Docker containers on the same network as the agent:
+
+- **Shared across runs**: Multiple concurrent agent runs within a project reuse the same service containers, reducing startup latency and resource consumption
+- **Reference counting**: Containers are only stopped when no active agent runs reference them
+- **Image allowlist**: Operators control which Docker images are permitted via admin settings (defaults: `postgres:16`, `redis:7-alpine`, `selenium/standalone-chromium:latest`)
+- **Environment injection**: The provisioner generates well-known env vars (`DATABASE_URL`, `REDIS_URL`, `SELENIUM_URL`) and injects them into the agent container
+- **Health checking**: Dual-mode checks (Docker HEALTHCHECK + TCP probe) with a 30-second timeout ensure services are ready before agents connect
+- **Drift reconciliation**: Background jobs detect and correct mismatches between database status and actual Docker state
+
+See [RDR-020](rdrs/RDR-020-service-container-architecture.md) for the full architectural decision record.
+
+### 4. Knowledge Base
+
+The knowledge base provides agents with persistent, semantic understanding of the codebases they work on. See [KNOWLEDGE_BASE.md](KNOWLEDGE_BASE.md) for full documentation and [RDR-021](rdrs/RDR-021-knowledge-base.md) for the architectural decision record.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                      KNOWLEDGE BASE                           │
+│                                                               │
+│  ┌────────────────┐  ┌───────────────┐  ┌────────────────┐  │
+│  │   Collector    │  │  PostgreSQL   │  │    Qdrant      │  │
+│  │   Framework    │  │  (canonical   │  │  (vector       │  │
+│  │  (9 types)     │  │   store)      │  │   index)       │  │
+│  └───────┬────────┘  └───────┬───────┘  └───────┬────────┘  │
+│          │                   │                   │           │
+│          ▼                   ▼                   ▼           │
+│  ┌────────────────┐  ┌───────────────┐  ┌────────────────┐  │
+│  │   Embedding    │  │  Hybrid       │  │  Audit &       │  │
+│  │   Pipeline     │  │  Search       │  │  Provenance    │  │
+│  │  (OpenAI)      │  │  Service      │  │                │  │
+│  └────────────────┘  └───────────────┘  └────────────────┘  │
+└──────────────────────────────────────────────────────────────┘
+```
+
+Key components:
+
+- **Collectors**: Nine collector types analyze codebases (routes, symbols, dependencies, language stats, churn hotspots, config keys, AST structures, decision records, schema)
+- **PostgreSQL**: Canonical store for artifacts, chunks, links, and audit events
+- **Qdrant**: Vector database for semantic search (one collection per project, cosine similarity)
+- **Embedding Pipeline**: Generates 3,072-dimensional vectors via OpenAI text-embedding-3-large
+- **Hybrid Search**: Combines exact (trigram) and semantic (vector) search with reranking
+
+### 5. External Integrations
+
+#### GitHub (PAT-based)
+
+Initial implementation uses Personal Access Tokens:
+
+- UI guides users through token creation
+- Shows required permissions for granular tokens
+- Stores tokens encrypted in database
+
+Required permissions:
+
+- `repo`: Full repository access
+- `project`: GitHub Projects V2 access (if available)
+- `read:org`: Organization membership (for org repos)
+
+Graceful degradation:
+
+- If Projects V2 unavailable, use issues-only workflow
+- Track sub-tasks via issue references instead of project items
+
+#### LLM Integration
+
+Two modes of agent execution:
+
+**CLI Mode** (via agent-harness gem):
+
+- Claude Code, Cursor, Gemini CLI, GitHub Copilot, Codex, OpenCode, Kilocode, MistralVibe
+- Runs in container with proxied API access
+- Orchestration handles fallbacks, rate limits, and health checks
+- Output and token usage captured via `AgentHarness::Response`/token tracker
+
+**API Mode** (via agent-harness):
+
+- Direct API calls for simpler tasks
+- Model registry provides capabilities/costs
+- Used by meta-agent for model selection
+
+### 6. Model Selection System
+
+The meta-agent chooses models based on:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    MODEL SELECTION                           │
+│                                                              │
+│  ┌─────────────────┐    ┌─────────────────┐                 │
+│  │  Task Context   │    │  Model Registry │                 │
+│  │  - Complexity   │    │  Model Registry (LlmModel ActiveRecord)     │                 │
+│  │  - Token est.   │    │  - Capabilities │                 │
+│  │  - Budget       │    │  - Costs        │                 │
+│  │  - History      │    │  - Limits       │                 │
+│  └────────┬────────┘    └────────┬────────┘                 │
+│           │                      │                           │
+│           ▼                      ▼                           │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │              META-AGENT (LLM-based)                     ││
+│  │                                                          ││
+│  │  Fallback: Rules-based selection if meta-agent fails    ││
+│  └─────────────────────────────────────────────────────────┘│
+│                          │                                   │
+│                          ▼                                   │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │              SELECTED MODEL + RATIONALE                 ││
+│  │              (logged for analysis)                      ││
+│  └─────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────┘
+```
+
+Rules-based fallback:
+
+1. If budget constrained → cheapest capable model
+2. If high complexity → most capable model within budget
+3. If similar past task → model that succeeded before
+4. Default → configured default model
+
+#### Per-Project LLM Provider Routing
+
+A project can restrict which upstream LLM providers may serve its runs, stored
+under `projects.model_preferences["llm_providers"]`:
+
+```json
+{
+  "llm_providers": {
+    "allowlist": ["anthropic"]
+  }
+}
+```
+
+or
+
+```json
+{
+  "llm_providers": {
+    "blocklist": ["openai", "google"]
+  }
+}
+```
+
+- **Allowlist mode**: only the listed providers are available; all others are blocked.
+- **Blocklist mode**: all providers are available except those explicitly listed.
+- Allowlist and blocklist are mutually exclusive — specifying both is a
+  validation error.
+- Provider identifiers are the upstream LLM services from the API service-type
+  catalog (e.g. `anthropic`, `openai`, `google`, `mistral`, `deepseek`), exposed
+  via `Project.supported_llm_provider_keys`.
+
+Enforcement is applied at model-selection time (`Models::Select` / the shared
+`Models::RunnerTierLookup` scope): blocked providers are excluded from candidate
+selection, an explicit override (`required_model_id`) targeting a blocked provider
+is rejected, and the no-selection decision records a clear reason. Restrictions
+are scoped to the project only — global/user-level provider configuration is
+unaffected.
+
+## Data Flow Examples
+
+### Example 1: Issue to PR
+
+```
+1. User labels issue "paid-plan" on GitHub
+            │
+            ▼
+2. GitHubPollWorkflow detects label
+            │
+            ▼
+3. PlanningWorkflow creates sub-issues
+            │
+            ▼
+4. Each sub-issue triggers AgentExecutionWorkflow
+            │
+            ▼
+5. Meta-agent selects model for each task
+            │
+            ▼
+6. Container provisioned, worktree created
+            │
+            ▼
+7. Agent runs (CLI or API mode)
+            │
+            ▼
+8. PR created with changes
+            │
+            ▼
+9. Human reviews and merges (or requests changes)
+            │
+            ▼
+10. Quality metrics collected, prompt evolution triggered
+```
+
+### Example 2: Prompt Evolution
+
+```
+1. PromptEvolutionWorkflow samples recent agent runs
+            │
+            ▼
+2. EvaluateQualityActivity scores each run:
+   - Iteration count
+   - Code quality metrics
+   - Human feedback (thumbs up/down)
+   - PR merge rate
+            │
+            ▼
+3. Prompt evolution agent proposes mutations:
+   - Modify underperforming prompts
+   - Create variants for A/B testing
+            │
+            ▼
+4. New prompt versions created (not replacing old)
+            │
+            ▼
+5. A/B test assignment updated
+            │
+            ▼
+6. Future runs use test assignments
+            │
+            ▼
+7. After sufficient data, winning prompts promoted
+```
+
+## Deployment Architecture
+
+### Development
+
+```
+docker-compose up
+```
+
+Starts:
+
+- Rails app
+- PostgreSQL
+- Temporal (server, UI, admin-tools)
+- Qdrant (vector database for knowledge base)
+- No Redis dependencies (Action Cable uses async adapter in dev)
+
+### Production (Self-Hosted)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    PRODUCTION DEPLOYMENT                     │
+│                                                              │
+│  ┌──────────────────┐  ┌──────────────────┐                 │
+│  │   Rails App      │  │   Worker Pool    │                 │
+│  │   (web + jobs)   │  │   (N workers)    │                 │
+│  └────────┬─────────┘  └────────┬─────────┘                 │
+│           │                     │                            │
+│           ▼                     ▼                            │
+│  ┌──────────────────────────────────────────────────────────│
+│  │              Temporal Server                              │
+│  │        (self-hosted or Temporal Cloud)                   │
+│  └──────────────────────────────────────────────────────────│
+│                          │                                   │
+│                          ▼                                   │
+│  ┌──────────────────────────────────────────────────────────│
+│  │              PostgreSQL                                   │
+│  │        (shared by Rails + Temporal)                      │
+│  └──────────────────────────────────────────────────────────│
+│                          │                                   │
+│                          ▼                                   │
+│  ┌──────────────────────────────────────────────────────────│
+│  │              Docker Host(s)                               │
+│  │        (for agent containers)                            │
+│  └──────────────────────────────────────────────────────────│
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Multi-Tenancy
+
+Multi-tenancy is implemented via Row-Level Security (RLS). The `TenantContext` service sets the current account context for each request, and RLS migrations enforce tenant isolation at the database level:
+
+| Concern | Implementation |
+|---------|----------------|
+| Data isolation | Row-Level Security (RLS) via PostgreSQL policies, enforced by `TenantContext` service |
+| Secrets | Per-tenant encrypted store |
+| Containers | Per-tenant container quotas |
+| Temporal | Per-tenant namespaces |
+| Billing | Per-tenant aggregation |
+
+RLS migrations add `WITH CHECK` and `USING` clauses on core tables (agent_runs, projects, issues, etc.) to ensure queries are scoped to the current tenant. The `TenantContext` service provides `with_system_access` for administrative operations that must bypass tenant filtering.
+
+## Performance Considerations
+
+### Scaling Bottlenecks (in order of likely impact)
+
+1. **Worker pool size**: More workers = more parallel agents
+2. **Container startup time**: Consider pre-warmed containers
+3. **GitHub API rate limits**: Implement backoff, caching
+4. **LLM API latency**: Async where possible, timeouts configured
+5. **Database connections**: Connection pooling, read replicas if needed
+
+### Monitoring Points
+
+- Worker queue depth (Temporal metrics)
+- Container startup latency
+- API call latency (GitHub, LLM providers)
+- Cost per project (trending)
+- Prompt A/B test statistical significance
+
+## Security Model
+
+See [SECURITY.md](./SECURITY.md) for detailed security architecture.
+
+Key points:
+
+- Containers are isolated and have no secrets
+- All API access proxied through Paid
+- GitHub tokens encrypted at rest
+- Agents cannot merge PRs
+- Network allowlisting in containers

@@ -1,0 +1,19 @@
+<%# Mirrors Issue#paused onto GitHub (via the Issue after_commit callback).
+    Rendered inside both the issue and PR rows, so it stays compact. %>
+<%= tag.span id: dom_id(issue, :pause_toggle), class: "inline-flex items-center" do %>
+  <% if policy(issue).toggle_pause? %>
+    <% kind = issue.is_pull_request? ? "PR" : "issue" %>
+    <% form_data = { action_button: true } %>
+    <% form_data[:turbo_confirm] = issue_pause_confirm_message(issue) unless issue.paused? %>
+    <%= button_to toggle_pause_project_issue_path(project, issue),
+          method: :post,
+          class: "text-xs font-medium #{issue.paused? ? 'text-green-600 hover:text-green-900' : 'text-gray-500 hover:text-gray-700'}",
+          title: issue.paused? ? "Unpause #{kind} ##{issue.github_number}" : "Pause #{kind} ##{issue.github_number}",
+          aria: { label: issue.paused? ? "Unpause #{kind} ##{issue.github_number}" : "Pause #{kind} ##{issue.github_number}" },
+          form: { data: form_data } do %>
+      <%= issue.paused? ? "Resume" : "Pause" %>
+    <% end %>
+  <% elsif issue.paused? %>
+    <span class="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700">Paused</span>
+  <% end %>
+<% end %>

@@ -1,0 +1,295 @@
+<% content_for :title, "Tenant Configuration" %>
+
+<div class="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-8">
+    <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Tenant Configuration</h1>
+    <p class="mt-2 text-sm text-gray-600 dark:text-gray-300"><%= current_account.name %></p>
+  </div>
+
+  <% if @tenant_setting.errors.any? %>
+    <div class="mb-6 rounded-md bg-red-50 p-4 text-sm text-red-800 dark:bg-red-900/40 dark:text-red-200">
+      <%= @tenant_setting.errors.full_messages.to_sentence %>
+    </div>
+  <% end %>
+
+  <%= form_with model: @tenant_setting, url: tenant_configuration_path, method: :patch, class: "space-y-10" do |form| %>
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Runner Preferences</h2>
+      <div class="mt-4 grid gap-4 sm:grid-cols-2">
+        <% RunnerSupport.api_service_types.each do |service_type, label| %>
+          <% selected_id = @tenant_setting.effective_runner_preferences.dig("api_key_ids", service_type).to_s %>
+          <div>
+            <%= label_tag "tenant_setting_runner_preferences_api_key_ids_#{service_type}", "#{label} API key", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+            <%= select_tag "tenant_setting[runner_preferences][api_key_ids][#{service_type}]",
+              options_for_select([["Account fallback", ""]] + @provider_api_keys.select { |key| key.api_service_type == service_type }.map { |key| ["#{key.name} (#{key.user.email})", key.id] }, selected_id),
+              id: "tenant_setting_runner_preferences_api_key_ids_#{service_type}",
+              class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+          </div>
+        <% end %>
+      </div>
+
+      <div class="mt-6 grid gap-4 sm:grid-cols-2">
+        <% RunnerSupport.supported_runner_keys.each do |runner_key| %>
+          <% model_id = @tenant_setting.effective_runner_preferences.dig("model_preferences", runner_key).to_s %>
+          <div>
+            <%= label_tag "tenant_setting_runner_preferences_model_preferences_#{runner_key}", "#{Runner.display_name_for(runner_key)} model", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+            <%= text_field_tag "tenant_setting[runner_preferences][model_preferences][#{runner_key}]", model_id,
+              id: "tenant_setting_runner_preferences_model_preferences_#{runner_key}",
+              class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+          </div>
+        <% end %>
+      </div>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Default Budgets</h2>
+      <div class="mt-4 overflow-hidden rounded-md border border-gray-200 dark:border-gray-700">
+        <table class="min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-700">
+          <thead class="bg-gray-50 dark:bg-gray-800">
+            <tr>
+              <th class="px-4 py-3 text-left font-medium text-gray-700 dark:text-gray-200">Type</th>
+              <th class="px-4 py-3 text-left font-medium text-gray-700 dark:text-gray-200">Enabled</th>
+              <th class="px-4 py-3 text-left font-medium text-gray-700 dark:text-gray-200">Limit cents</th>
+              <th class="px-4 py-3 text-left font-medium text-gray-700 dark:text-gray-200">Mode</th>
+              <th class="px-4 py-3 text-left font-medium text-gray-700 dark:text-gray-200">Alert %</th>
+              <th class="px-4 py-3 text-left font-medium text-gray-700 dark:text-gray-200">Grace %</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-900">
+            <% @tenant_setting.effective_default_budgets.each do |budget_type, settings| %>
+              <tr>
+                <td class="px-4 py-3 font-medium text-gray-900 dark:text-white"><%= budget_type.humanize %></td>
+                <td class="px-4 py-3"><%= check_box_tag "tenant_setting[default_budgets][#{budget_type}][enabled]", "1", settings["enabled"] %></td>
+                <td class="px-4 py-3"><%= number_field_tag "tenant_setting[default_budgets][#{budget_type}][limit_cents]", settings["limit_cents"], min: 1, class: "w-28 rounded-md border-gray-300 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %></td>
+                <td class="px-4 py-3"><%= select_tag "tenant_setting[default_budgets][#{budget_type}][enforcement_mode]", options_for_select(CostBudget::ENFORCEMENT_MODES.map { |mode| [mode.humanize, mode] }, settings["enforcement_mode"]), class: "rounded-md border-gray-300 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %></td>
+                <td class="px-4 py-3"><%= number_field_tag "tenant_setting[default_budgets][#{budget_type}][alert_threshold_percent]", settings["alert_threshold_percent"], min: 1, max: 100, class: "w-20 rounded-md border-gray-300 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %></td>
+                <td class="px-4 py-3"><%= number_field_tag "tenant_setting[default_budgets][#{budget_type}][grace_buffer_percent]", settings["grace_buffer_percent"], min: 0, max: 100, class: "w-20 rounded-md border-gray-300 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %></td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Guardrails and Quality</h2>
+      <div class="mt-4 grid gap-4 sm:grid-cols-3">
+        <% @tenant_setting.effective_guardrails.each do |key, value| %>
+          <div>
+            <%= label_tag "tenant_setting_guardrails_#{key}", key.humanize, class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+            <%= number_field_tag "tenant_setting[guardrails][#{key}]", value, min: 0, class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+          </div>
+        <% end %>
+      </div>
+
+      <% quality = @tenant_setting.effective_quality_thresholds %>
+      <div class="mt-6 grid gap-4 sm:grid-cols-4">
+        <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+          <%= check_box_tag "tenant_setting[quality_thresholds][enabled]", "1", quality["enabled"] %>
+          Quality gates
+        </label>
+        <%= number_field_tag "tenant_setting[quality_thresholds][composite_score_threshold]", quality["composite_score_threshold"], min: 0, max: 1, step: 0.01, class: "rounded-md border-gray-300 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+        <%= number_field_tag "tenant_setting[quality_thresholds][min_recent_runs]", quality["min_recent_runs"], min: 1, class: "rounded-md border-gray-300 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+        <%= number_field_tag "tenant_setting[quality_thresholds][lookback_window_hours]", quality["lookback_window_hours"], min: 1, class: "rounded-md border-gray-300 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+      </div>
+
+      <div class="mt-6 max-w-md">
+        <%= label_tag "tenant_setting_queue_fairness_mode", "Queue fairness mode", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+        <%= select_tag "tenant_setting[queue_fairness_mode]",
+          options_for_select(TenantSetting::QUEUE_FAIRNESS_MODES.map { |value| [value.humanize, value] }, @tenant_setting.resolved_queue_fairness_mode),
+          class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Fair share keeps the current round-robin across projects. Strict priority lets high-priority work outrank cross-project fairness and can starve lower-priority queues.</p>
+      </div>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Agent Settings and Features</h2>
+      <% agent_settings = @tenant_setting.effective_agent_settings %>
+      <div class="mt-4 grid gap-4 sm:grid-cols-2">
+        <div>
+          <%= label_tag "tenant_setting_agent_settings_default_goal", "Default goal", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+          <%= text_field_tag "tenant_setting[agent_settings][default_goal]", agent_settings["default_goal"], class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+        </div>
+        <label class="flex items-center gap-2 pt-6 text-sm text-gray-700 dark:text-gray-200">
+          <%= hidden_field_tag "tenant_setting[agent_settings][auto_continue]", "0" %>
+          <%= check_box_tag "tenant_setting[agent_settings][auto_continue]", "1", agent_settings["auto_continue"] %>
+          Auto-continue follow-up runs
+        </label>
+        <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200 sm:col-span-2">
+          <%= hidden_field_tag "tenant_setting[agent_settings][marketplace_auto_attach_required]", "0" %>
+          <%= check_box_tag "tenant_setting[agent_settings][marketplace_auto_attach_required]", "1", agent_settings["marketplace_auto_attach_required"] %>
+          Require automatic and team-default marketplace attachments on all account runs
+        </label>
+      </div>
+
+      <div class="mt-4 grid gap-4 sm:grid-cols-2">
+        <div>
+          <%= label_tag "tenant_setting_self_repo_full_name", "Self-repo full name", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+          <%= text_field_tag "tenant_setting[self_repo_full_name]", @tenant_setting.self_repo_full_name, placeholder: "owner/repo", class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Repository that triggers auto dev-environment updates (e.g. owner/repo). Leave blank to disable.</p>
+        </div>
+      </div>
+
+      <div class="mt-6">
+        <label class="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-200">
+          <%= hidden_field_tag "tenant_setting[auto_pick_skip_labels_override]", "0" %>
+          <%= check_box_tag "tenant_setting[auto_pick_skip_labels_override]", "1", @tenant_setting.auto_pick_skip_labels_configured? %>
+          Override Auto-pick Skip Labels
+        </label>
+        <%= text_field_tag "tenant_setting[auto_pick_skip_labels_csv]", @tenant_setting.auto_pick_skip_labels_csv,
+          placeholder: "planning, research",
+          class: "mt-2 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Comma-separated labels that prevent auto-pick across this tenant. When override is off, Paid uses the built-in default skip labels. When override is on and this field is blank, no labels are skipped.</p>
+      </div>
+
+      <p class="mt-2 text-sm text-gray-600 dark:text-gray-300">
+        Tenant overrides apply only to this account. Percentage rollout controls update the shared Flipper gates for each flag.
+      </p>
+
+      <div class="mt-6 space-y-3">
+        <% @feature_flags.each do |definition| %>
+          <% rollout = @feature_flag_rollouts.fetch(definition) %>
+          <div class="rounded-md border border-gray-200 p-4 dark:border-gray-700">
+            <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div class="max-w-2xl">
+                <label class="flex items-start gap-3 text-sm text-gray-700 dark:text-gray-200">
+                  <%= check_box_tag "tenant_setting[features][#{definition.name}]", "1", @tenant_setting.features[definition.name.to_s] == true %>
+                  <span>
+                    <span class="font-medium"><%= definition.name %></span>
+                    <span class="block text-gray-500 dark:text-gray-400"><%= definition.intent %></span>
+                  </span>
+                </label>
+
+                <dl class="mt-4 grid gap-3 text-sm text-gray-600 dark:text-gray-300 sm:grid-cols-2">
+                  <div>
+                    <dt class="font-medium text-gray-900 dark:text-white">Boolean gate</dt>
+                    <dd><%= rollout[:boolean] ? "Enabled" : "Disabled" %></dd>
+                  </div>
+                  <div>
+                    <dt class="font-medium text-gray-900 dark:text-white">Project overrides</dt>
+                    <dd><%= rollout[:actors].presence&.join(", ") || "None" %></dd>
+                  </div>
+                  <div>
+                    <dt class="font-medium text-gray-900 dark:text-white">Named groups</dt>
+                    <dd><%= rollout[:groups].presence&.join(", ") || "None" %></dd>
+                  </div>
+                </dl>
+              </div>
+
+              <div class="grid gap-4 sm:grid-cols-2 lg:min-w-80">
+                <div>
+                  <%= label_tag "feature_flag_rollouts_#{definition.name}_percentage_of_actors", "Percentage of actors", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                  <%= number_field_tag "feature_flag_rollouts[#{definition.name}][percentage_of_actors]",
+                    rollout[:percentage_of_actors],
+                    id: "feature_flag_rollouts_#{definition.name}_percentage_of_actors",
+                    min: 0,
+                    max: 100,
+                    class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+                  <%= hidden_field_tag "feature_flag_rollout_originals[#{definition.name}][percentage_of_actors]", rollout[:percentage_of_actors] %>
+                </div>
+
+                <div>
+                  <%= label_tag "feature_flag_rollouts_#{definition.name}_percentage_of_time", "Percentage of time", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                  <%= number_field_tag "feature_flag_rollouts[#{definition.name}][percentage_of_time]",
+                    rollout[:percentage_of_time],
+                    id: "feature_flag_rollouts_#{definition.name}_percentage_of_time",
+                    min: 0,
+                    max: 100,
+                    class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+                  <%= hidden_field_tag "feature_flag_rollout_originals[#{definition.name}][percentage_of_time]", rollout[:percentage_of_time] %>
+                </div>
+              </div>
+            </div>
+          </div>
+        <% end %>
+      </div>
+    </section>
+
+    <section>
+      <div class="flex items-center gap-2">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Worker Concurrency</h2>
+        <span class="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">Restart required</span>
+      </div>
+      <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Changes to these settings require a Temporal worker and/or Rails server restart to take effect.</p>
+      <% ws = @tenant_setting.effective_worker_settings %>
+      <div class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div>
+          <%= label_tag "tenant_setting_worker_settings_temporal_workflow_slots", "Agent workflow slots", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+          <%= number_field_tag "tenant_setting[worker_settings][temporal_workflow_slots]", ws["temporal_workflow_slots"], min: 1, max: 100, class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+        </div>
+        <div>
+          <%= label_tag "tenant_setting_worker_settings_temporal_activity_slots", "Agent activity slots", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+          <%= number_field_tag "tenant_setting[worker_settings][temporal_activity_slots]", ws["temporal_activity_slots"], min: 1, max: 100, class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+        </div>
+        <div>
+          <%= label_tag "tenant_setting_worker_settings_temporal_poll_workflow_slots", "Poll workflow slots", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+          <%= number_field_tag "tenant_setting[worker_settings][temporal_poll_workflow_slots]", ws["temporal_poll_workflow_slots"], min: 1, max: 100, class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+        </div>
+        <div>
+          <%= label_tag "tenant_setting_worker_settings_temporal_poll_activity_slots", "Poll activity slots", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+          <%= number_field_tag "tenant_setting[worker_settings][temporal_poll_activity_slots]", ws["temporal_poll_activity_slots"], min: 1, max: 100, class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+        </div>
+      </div>
+      <div class="mt-4 grid gap-4 sm:grid-cols-2">
+        <div>
+          <%= label_tag "tenant_setting_worker_settings_good_job_max_threads", "GoodJob max threads", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+          <%= number_field_tag "tenant_setting[worker_settings][good_job_max_threads]", ws["good_job_max_threads"], min: 1, max: 100, class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+        </div>
+        <div>
+          <%= label_tag "tenant_setting_worker_settings_good_job_queues", "GoodJob queues", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+          <%= text_field_tag "tenant_setting[worker_settings][good_job_queues]", ws["good_job_queues"], class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white font-mono text-xs" %>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Format: name:count;name:count</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Chat Settings</h2>
+      <% chat = @tenant_setting.effective_chat_settings %>
+      <div class="mt-4 grid gap-4 sm:grid-cols-3">
+        <div>
+          <%= label_tag "tenant_setting_chat_settings_chat_max_tool_iterations", "Max tool calls per turn", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+          <%= number_field_tag "tenant_setting[chat_settings][chat_max_tool_iterations]", chat["chat_max_tool_iterations"], min: 1, max: 200, class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Maximum LLM round-trips (tool calls) per user message before the agent summarizes and stops. Default: 50.</p>
+        </div>
+        <div>
+          <%= label_tag "tenant_setting_chat_settings_chat_session_token_limit", "Session token limit", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+          <%= number_field_tag "tenant_setting[chat_settings][chat_session_token_limit]", chat["chat_session_token_limit"], min: 1, class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Total tokens allowed per chat session. Leave blank for no limit. Default: 100,000.</p>
+        </div>
+        <div>
+          <%= label_tag "tenant_setting_chat_settings_chat_monthly_token_limit", "Monthly token limit", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+          <%= number_field_tag "tenant_setting[chat_settings][chat_monthly_token_limit]", chat["chat_monthly_token_limit"], min: 1, class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Total chat tokens allowed per month across all sessions. Leave blank for no limit.</p>
+        </div>
+      </div>
+      <div class="mt-4 grid gap-4 sm:grid-cols-2">
+        <div>
+          <%= label_tag "tenant_setting_chat_settings_chat_max_cloned_repos", "Max cloned repos per session", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+          <%= number_field_tag "tenant_setting[chat_settings][chat_max_cloned_repos]", chat["chat_max_cloned_repos"], min: 1, max: 50, class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Maximum repos clonable per chat session. Default: 5.</p>
+        </div>
+        <div>
+          <%= label_tag "tenant_setting_chat_settings_chat_clone_timeout", "Clone timeout (seconds)", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+          <%= number_field_tag "tenant_setting[chat_settings][chat_clone_timeout]", chat["chat_clone_timeout"], min: 10, max: 600, class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Per-clone wall-clock timeout in seconds. Default: 120.</p>
+        </div>
+      </div>
+      <label class="mt-4 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+        <%= hidden_field_tag "tenant_setting[chat_settings][chat_shell_enabled]", "0" %>
+        <%= check_box_tag "tenant_setting[chat_settings][chat_shell_enabled]", "1", chat["chat_shell_enabled"] %>
+        Allow the run_shell tool in chat (RDR-037)
+      </label>
+      <label class="mt-4 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+        <%= hidden_field_tag "tenant_setting[chat_settings][chat_eager_provisioning]", "0" %>
+        <%= check_box_tag "tenant_setting[chat_settings][chat_eager_provisioning]", "1", chat["chat_eager_provisioning"] %>
+        Provision chat workspace containers in the background (RDR-037)
+      </label>
+      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">When enabled (default), a container is provisioned as soon as a session requests one, so the first message is never blocked. Disable to defer provisioning until a container-only tool is invoked.</p>
+    </section>
+
+    <div class="flex justify-end">
+      <%= form.submit "Save configuration", class: "rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+    </div>
+  <% end %>
+</div>

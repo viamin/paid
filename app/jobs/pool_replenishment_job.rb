@@ -1,0 +1,41 @@
+# frozen_string_literal: true
+
+class PoolReplenishmentJob < ApplicationJob
+  include GoodJob::ActiveJobExtensions::Concurrency
+
+  queue_as :maintenance
+
+  # Backstop against container provisioning blocking indefinitely on the Docker
+  # daemon while replenishing pools across projects. Guarantees the job fails
+  # rather than pinning a worker thread (and the code reloader) forever.
+  self.perform_timeout = 15.minutes.to_i
+
+  good_job_control_concurrency_with(
+    total_limit: 1,
+    enqueue_limit: 1,
+    key: -> { "container_pool_replenishment_#{arguments.first || "all"}" }
+  )
+
+  def perform(project_id = nil)
+    projects(project_id).find_each do |project|
+      # Hold the per-project advisory lock across all host iterations so a
+      # competing replenishment (triggered by PoolManager#acquire calling
+      # perform_later, which GoodJob's total_limit: 1 will re-enqueue) cannot
+      # interleave with the next host's pass and produce duplicate warm
+      # entries. Without this, the lock was released between hosts, weakening
+      # the replenishment invariant.
+      Containers::PoolManager.with_project_replenishment_lock(project) do
+        Containers.all_backends.each do |backend|
+          Containers::PoolManager.new(project: project, container_host: backend.identifier).replenish_unlocked
+        end
+      end
+    end
+  end
+
+  private
+
+  def projects(project_id)
+    scope = Project.active
+    project_id.present? ? scope.where(id: project_id) : scope
+  end
+end

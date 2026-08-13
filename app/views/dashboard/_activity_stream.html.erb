@@ -1,0 +1,85 @@
+<div class="overflow-hidden rounded-lg bg-white shadow">
+  <% if activity_items.any? %>
+
+    <ul class="divide-y divide-gray-200">
+      <% activity_items.each do |item| %>
+        <% if item.is_a?(AgentRun) %>
+          <li id="<%= dom_id(item, :activity) %>" class="px-4 py-3">
+            <div class="flex items-center justify-between gap-4">
+              <div class="flex items-center gap-3">
+                <%= agent_run_status_badge(item.status) %>
+                <span class="text-sm font-medium text-gray-900"><%= item.project.full_name %></span>
+                <% if item.issue.present? %>
+                  <span class="text-sm text-gray-500">#<%= item.issue.github_number %></span>
+                <% end %>
+              </div>
+              <div class="flex items-center gap-4 text-sm text-gray-500">
+                <span><%= item.agent_type.titleize %></span>
+                <% if item.duration_seconds.present? %>
+                  <span><%= format_duration(item.duration_seconds) %></span>
+                <% end %>
+                <span><%= time_ago_in_words(item.completed_at || item.created_at) %> ago</span>
+              </div>
+            </div>
+            <% if item.error_message.present? %>
+              <p class="mt-1 truncate text-sm text-red-600"><%= item.error_message %></p>
+            <% end %>
+          </li>
+        <% elsif item.is_a?(Issue) %>
+          <li id="<%= dom_id(item, :activity) %>" class="px-4 py-3">
+            <div class="flex items-center justify-between gap-4">
+              <div class="flex min-w-0 items-center gap-3">
+                <span class="inline-flex items-center rounded-md bg-purple-100 px-2 py-1 text-xs font-medium text-purple-700">Merged</span>
+                <span class="text-sm font-medium text-gray-900"><%= item.project.full_name %></span>
+                <% if safe_github_url?(item.github_url) %>
+                  <%= link_to "PR ##{item.github_number}", item.github_url,
+                        target: "_blank", rel: "noopener noreferrer",
+                        class: "text-sm text-indigo-600 hover:text-indigo-900" %>
+                <% else %>
+                  <span class="text-sm text-gray-500">PR #<%= item.github_number %></span>
+                <% end %>
+                <span class="truncate text-sm text-gray-500"><%= item.title %></span>
+              </div>
+              <div class="flex items-center gap-4 text-sm text-gray-500">
+                <span><%= time_ago_in_words(item.github_updated_at) %> ago</span>
+              </div>
+            </div>
+          </li>
+        <% elsif item.is_a?(QualityPauseEvent) %>
+          <li id="<%= dom_id(item, :activity) %>" class="px-4 py-3">
+            <div class="flex items-center justify-between gap-4">
+              <div class="flex min-w-0 items-center gap-3">
+                <% if item.event_type == "paused" %>
+                  <span class="inline-flex items-center rounded-md bg-red-100 px-2 py-1 text-xs font-medium text-red-700">Paused</span>
+                <% else %>
+                  <span class="inline-flex items-center rounded-md bg-green-100 px-2 py-1 text-xs font-medium text-green-700">Resumed</span>
+                <% end %>
+                <span class="text-sm font-medium text-gray-900"><%= item.project.full_name %></span>
+                <span class="truncate text-sm text-gray-500">
+                  <% if item.event_type == "paused" %>
+                    Automatic work paused by quality gate
+                  <% else %>
+                    Quality pause resumed
+                  <% end %>
+                </span>
+              </div>
+              <div class="flex items-center gap-4 text-sm text-gray-500">
+                <% if item.event_type == "paused" && item.composite_score.present? && item.threshold.present? %>
+                  <span><%= format("%.1f%%", item.composite_score.to_f * 100) %> below <%= format("%.1f%%", item.threshold.to_f * 100) %></span>
+                <% elsif item.event_type == "resumed" && item.metadata["resumed_by_user_email"].present? %>
+                  <span><%= item.metadata["resumed_by_user_email"] %></span>
+                <% end %>
+                <span><%= time_ago_in_words(item.created_at) %> ago</span>
+              </div>
+            </div>
+          </li>
+        <% end %>
+      <% end %>
+    </ul>
+
+  <% else %>
+
+    <div class="px-4 py-5 text-sm text-gray-500">No recent activity.</div>
+
+  <% end %>
+</div>

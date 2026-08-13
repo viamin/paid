@@ -1,0 +1,48 @@
+<%= turbo_frame_tag "dashboard-queue-health" do %>
+<div class="overflow-hidden rounded-lg bg-white shadow">
+  <div class="px-4 py-5 sm:p-6">
+    <div class="flex items-center justify-between">
+      <h3 class="text-base font-semibold text-gray-900">Queue Health</h3>
+      <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium <%= healthy ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' %>">
+        <%= healthy ? "Healthy" : "Degraded" %>
+      </span>
+    </div>
+
+    <div class="mt-4 flow-root">
+      <div class="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
+        <div class="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
+          <table class="min-w-full divide-y divide-gray-300">
+            <thead>
+              <tr>
+                <th scope="col" class="py-2 pl-4 pr-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 sm:pl-0">Queue</th>
+                <th scope="col" class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Type</th>
+                <th scope="col" class="px-3 py-2 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Depth</th>
+                <th scope="col" class="px-3 py-2 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Status</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200">
+              <% queue_depths.each do |queue| %>
+                <tr>
+                  <td class="whitespace-nowrap py-2 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-0"><%= queue.name %></td>
+                  <td class="whitespace-nowrap px-3 py-2 text-sm text-gray-500"><%= queue.type.to_s.tr("_", " ").titleize %></td>
+                  <td class="whitespace-nowrap px-3 py-2 text-sm text-right text-gray-900"><%= queue.depth %></td>
+                  <td class="whitespace-nowrap px-3 py-2 text-sm text-right">
+                    <% case queue.status %>
+                    <% when :ok %>
+                      <span class="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">OK</span>
+                    <% when :warning %>
+                      <span class="inline-flex items-center rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-700">Warning</span>
+                    <% when :critical %>
+                      <span class="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">Critical</span>
+                    <% end %>
+                  </td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<% end %>

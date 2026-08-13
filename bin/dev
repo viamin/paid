@@ -1,0 +1,197 @@
+#!/usr/bin/env bash
+
+set -u
+
+APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$APP_ROOT" || exit
+
+# shellcheck source=bin/lib/dev_supervisor.sh
+source "${APP_ROOT}/bin/lib/dev_supervisor.sh"
+
+DEFAULT_OVERMIND_SOCKET="${APP_ROOT}/.overmind.sock"
+export OVERMIND_SOCKET="${OVERMIND_SOCKET:-$DEFAULT_OVERMIND_SOCKET}"
+if [[ "$OVERMIND_SOCKET" != /* ]]; then
+  export OVERMIND_SOCKET="${APP_ROOT}/${OVERMIND_SOCKET}"
+fi
+
+if ! command -v overmind &> /dev/null
+then
+  echo "Installing overmind..."
+  gem install overmind
+fi
+
+# Parse our own flags before they're handed to overmind. --detach (or -D, or
+# DEV_DETACH=1) re-execs bin/dev under setsid+nohup so it survives the parent
+# terminal being hung up — important in devcontainers where the host laptop
+# sleeping or the editor reconnecting sends SIGHUP to the foreground process
+# group and kills overmind+tmux. See log/dev-update/diagnostics for the
+# previous crash pattern that motivated this. --restart-if-running (or -R, or
+# DEV_RESTART_IF_RUNNING=1) tells bin/dev to restart a healthy existing
+# Overmind session instead of exiting early.
+DEV_DETACH_FLAG="${DEV_DETACH:-0}"
+DEV_RESTART_IF_RUNNING_FLAG="${DEV_RESTART_IF_RUNNING:-0}"
+DEV_PASSTHRU_ARGS=()
+for arg in "$@"; do
+  case "$arg" in
+    --detach|-D) DEV_DETACH_FLAG=1 ;;
+    --restart-if-running|-R) DEV_RESTART_IF_RUNNING_FLAG=1 ;;
+    *) DEV_PASSTHRU_ARGS+=("$arg") ;;
+  esac
+done
+set -- ${DEV_PASSTHRU_ARGS[@]+"${DEV_PASSTHRU_ARGS[@]}"}
+
+dev_supervisor_prepare_logging
+
+if [ "$DEV_DETACH_FLAG" = "1" ] && [ -z "${DEV_DETACHED:-}" ]; then
+  log_path="$(dev_supervisor_overmind_log)"
+  echo "Detaching bin/dev -- output streams to ${log_path}"
+  DEV_DETACHED=1 setsid nohup "${APP_ROOT}/bin/dev" ${1+"$@"} </dev/null >>"$log_path" 2>&1 &
+  # $! is the setsid wrapper PID, not overmind itself. Killing this PID still
+  # propagates to the session, so it's useful for teardown; it just won't match
+  # the overmind PID you'd see in `ps` or `overmind status`.
+  detached_pid=$!
+  disown "$detached_pid" 2>/dev/null || true
+
+  # Wait for the detached child to open its Overmind socket before returning,
+  # so a follow-up `overmind status` / `overmind connect` from the caller
+  # (e.g. bin/setup) doesn't race the startup. Fall through with a warning
+  # after DEV_DETACH_READY_TIMEOUT seconds so we never hang setup scripts.
+  ready_timeout="${DEV_DETACH_READY_TIMEOUT:-60}"
+  deadline=$(( $(date +%s) + ready_timeout ))
+  socket_ready=0
+  while [ "$(date +%s)" -lt "$deadline" ]; do
+    if [ -S "$OVERMIND_SOCKET" ]; then
+      socket_ready=1
+      break
+    fi
+    if ! kill -0 "$detached_pid" 2>/dev/null; then
+      echo "bin/dev detached process exited before the overmind socket appeared. See ${log_path}." >&2
+      exit 1
+    fi
+    sleep 0.2
+  done
+
+  if [ "$socket_ready" -ne 1 ]; then
+    echo "bin/dev detached (setsid pid=${detached_pid}), but overmind socket did not appear within ${ready_timeout}s. Tail ${log_path} to investigate." >&2
+    exit 0
+  fi
+
+  echo "bin/dev detached (setsid pid=${detached_pid}). Use 'overmind connect' to attach."
+  exit 0
+fi
+
+dev_supervisor_log_line "$(dev_supervisor_overmind_log)" \
+  "bin/dev starting pid=$$ ppid=$PPID tty=$(dev_supervisor_tty) term=${TERM:-} cwd=$PWD"
+
+DEV_SUPERVISOR_EXIT_SNAPSHOT_TAKEN=0
+DEV_SUPERVISOR_MONITOR_PID=""
+
+dev_supervisor_snapshot_once() {
+  local label="$1"
+  if [ "${DEV_SUPERVISOR_EXIT_SNAPSHOT_TAKEN:-0}" -eq 1 ]; then
+    return 0
+  fi
+
+  DEV_SUPERVISOR_EXIT_SNAPSHOT_TAKEN=1
+  dev_supervisor_snapshot_state "$label"
+}
+
+dev_supervisor_handle_signal() {
+  local signal="$1"
+  dev_supervisor_log_line "$(dev_supervisor_overmind_log)" \
+    "bin/dev received signal ${signal} pid=$$ ppid=$PPID tty=$(dev_supervisor_tty) term=${TERM:-}"
+  dev_supervisor_snapshot_once "bin-dev-signal-${signal,,}"
+  trap - "$signal"
+  kill -s "$signal" "$$"
+}
+
+dev_supervisor_handle_exit() {
+  local exit_code="$1"
+  if [ -n "${DEV_SUPERVISOR_MONITOR_PID:-}" ] && kill -0 "$DEV_SUPERVISOR_MONITOR_PID" >/dev/null 2>&1; then
+    kill "$DEV_SUPERVISOR_MONITOR_PID" >/dev/null 2>&1 || true
+    wait "$DEV_SUPERVISOR_MONITOR_PID" 2>/dev/null || true
+  fi
+  dev_supervisor_log_line "$(dev_supervisor_overmind_log)" \
+    "bin/dev exiting code=${exit_code} pid=$$ ppid=$PPID tty=$(dev_supervisor_tty) term=${TERM:-}"
+  if [ "$exit_code" -ne 0 ]; then
+    dev_supervisor_snapshot_once "bin-dev-exit-${exit_code}"
+  fi
+}
+
+trap 'dev_supervisor_handle_exit $?' EXIT
+trap 'dev_supervisor_handle_signal HUP' HUP
+trap 'dev_supervisor_handle_signal INT' INT
+trap 'dev_supervisor_handle_signal TERM' TERM
+trap 'dev_supervisor_handle_signal QUIT' QUIT
+
+if [ -S "$OVERMIND_SOCKET" ]; then
+  if ! status_output="$(dev_supervisor_overmind_status_output)"; then
+    echo "Removing stale Overmind socket..."
+    rm -f "$OVERMIND_SOCKET"
+  elif dev_supervisor_overmind_has_dead_processes "$status_output" || dev_supervisor_tmux_has_dead_panes; then
+    echo "Detected unhealthy Overmind session with dead processes. Restarting it..."
+    dev_supervisor_snapshot_state "bin-dev-unhealthy-overmind"
+    if ! dev_supervisor_run_overmind overmind quit >> "$(dev_supervisor_overmind_log)" 2>&1; then
+      echo "Warning: overmind quit returned a non-zero exit status. Continuing recovery..."
+    fi
+    sleep "${DEV_SUPERVISOR_QUIT_GRACE_SECONDS:-1}"
+    if [ -S "$OVERMIND_SOCKET" ] && ! dev_supervisor_run_overmind overmind status &>/dev/null; then
+      rm -f "$OVERMIND_SOCKET"
+    fi
+  else
+    if [ "$DEV_RESTART_IF_RUNNING_FLAG" = "1" ]; then
+      echo "Overmind is already running and healthy. Restarting processes..."
+      if restart_output="$(dev_supervisor_run_overmind overmind restart 2>&1)"; then
+        printf '%s\n' "$restart_output"
+        exit 0
+      else
+        echo "Failed to restart healthy Overmind session. Capturing diagnostics..." >&2
+        dev_supervisor_snapshot_state "bin-dev-healthy-overmind-restart-failed"
+        printf '%s\n' "$restart_output" >&2
+        exit 1
+      fi
+    fi
+
+    echo "Overmind is already running and healthy."
+    echo "Use 'overmind connect web' to attach, or 'overmind restart' to restart processes."
+    printf '%s\n' "$status_output"
+    exit 0
+  fi
+fi
+
+dev_supervisor_cleanup_stale_tmux_sockets
+dev_supervisor_cleanup_stale_overmind_tmp_dirs
+
+# Let the debug gem allow remote connections,
+# but avoid loading until `debugger` is called
+export RUBY_DEBUG_OPEN="true"
+export RUBY_DEBUG_LAZY="true"
+
+# Default to port 3000 if not specified
+export PORT="${PORT:-3000}"
+
+# Clean up stale containers and volumes from previous runs.
+# Runs inline (takes <2s when no stale resources exist).
+# Skip with SKIP_DEV_CLEANUP=1 if you want a faster start.
+if [ "${SKIP_DEV_CLEANUP:-0}" != "1" ]; then
+  echo "Cleaning up stale Docker resources..."
+  bin/rake dev:cleanup 2>/dev/null || true
+fi
+
+dev_supervisor_snapshot_state "bin-dev-before-start"
+
+dev_supervisor_monitor_overmind "$$" "bin-dev-monitor" &
+DEV_SUPERVISOR_MONITOR_PID=$!
+dev_supervisor_log_line "$(dev_supervisor_overmind_log)" \
+  "started overmind monitor pid=${DEV_SUPERVISOR_MONITOR_PID}"
+
+if dev_supervisor_run_overmind overmind start -f Procfile.dev -F "$(dev_supervisor_tmux_config)" "$@" \
+  > >(tee -a "$(dev_supervisor_overmind_log)") \
+  2> >(tee -a "$(dev_supervisor_overmind_log)" >&2); then
+  :
+else
+  exit_code=$?
+  dev_supervisor_log_line "$(dev_supervisor_overmind_log)" "overmind start exited with code ${exit_code}"
+  dev_supervisor_snapshot_state "bin-dev-overmind-start-failed"
+  exit "$exit_code"
+fi

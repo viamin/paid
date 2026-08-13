@@ -1,0 +1,455 @@
+name: Agent Image
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/agent-image.yml
+      - bin/coherence-check.mjs
+      - docs/lid/**
+      - docker/agent/**
+      - Gemfile.lock
+      - scripts/build-agent-image.sh
+      - scripts/extract-runner-install-contract.rb
+      - scripts/lib/install_contract_helpers.rb
+      - scripts/test-agent-image.sh
+      - scripts/test-agent-image-inner.sh
+      - scripts/test-agent-runner-contracts.sh
+      - scripts/test-agent-runner-contracts-inner.sh
+      - app/services/containers/provision.rb
+      - lib/runner_support.rb
+  push:
+    branches: [ main ]
+    paths:
+      - .github/workflows/agent-image.yml
+      - bin/coherence-check.mjs
+      - docs/lid/**
+      - docker/agent/**
+      - Gemfile.lock
+      - scripts/build-agent-image.sh
+      - scripts/extract-runner-install-contract.rb
+      - scripts/lib/install_contract_helpers.rb
+      - scripts/test-agent-image.sh
+      - scripts/test-agent-image-inner.sh
+      - scripts/test-agent-runner-contracts.sh
+      - scripts/test-agent-runner-contracts-inner.sh
+      - app/services/containers/provision.rb
+      - lib/runner_support.rb
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-image-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  agent-image:
+    if: >-
+      github.event_name != 'pull_request'
+      || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+      || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PAID_SKIP_DATABASE_RUNTIME_ROLE_GUARD: "true"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Detect agent-image relevant changes
+        id: changes
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          diff_files=$(git diff --name-only --diff-filter=d "${BASE_SHA}"..."${HEAD_SHA}" 2>/dev/null || true)
+
+          if [ -z "$diff_files" ]; then
+            echo "image_relevant=false" >> "$GITHUB_OUTPUT"
+            echo "No changed files detected for agent-image workflow."
+            exit 0
+          fi
+
+          relevant_non_lockfile_changes=$(
+            while IFS= read -r path; do
+              case "$path" in
+                .github/workflows/agent-image.yml|\
+                bin/coherence-check.mjs|\
+                docs/lid/**|\
+                docker/agent/*|\
+                scripts/build-agent-image.sh|\
+                scripts/extract-runner-install-contract.rb|\
+                scripts/lib/install_contract_helpers.rb|\
+                scripts/test-agent-image.sh|\
+                scripts/test-agent-image-inner.sh|\
+                scripts/test-agent-runner-contracts.sh|\
+                scripts/test-agent-runner-contracts-inner.sh|\
+                app/services/containers/provision.rb|\
+                lib/runner_support.rb)
+                  printf '%s\n' "$path"
+                  ;;
+              esac
+            done <<< "$diff_files"
+          )
+
+          if [ -n "$relevant_non_lockfile_changes" ]; then
+            echo "image_relevant=true" >> "$GITHUB_OUTPUT"
+            echo "Agent-image relevant files changed:"
+            printf '%s\n' "$relevant_non_lockfile_changes" | sed 's/^/  /'
+            exit 0
+          fi
+
+          extract_lockfile_dependency_version() {
+            local sha="$1"
+            local dependency="$2"
+
+            # Gemfile.lock lists each dependency inside either a `GEM` (RubyGems)
+            # or a `GIT` (git source) section. Search both so the helper keeps
+            # working when a dependency is pinned to a git ref instead of a
+            # published version.
+            git show "${sha}:Gemfile.lock" 2>/dev/null \
+              | sed -n "/^\\(GEM\\|GIT\\)$/,/^$/s/^  *${dependency} (\\(.*\\))/\\1/p" \
+              | head -n 1
+          }
+
+          extract_lockfile_git_revision() {
+            local sha="$1"
+            local dependency="$2"
+
+            git show "${sha}:Gemfile.lock" 2>/dev/null \
+              | awk -v dependency="$dependency" '
+                  /^GIT$/ { in_git = 1; has_dependency = 0; next }
+                  /^$/ {
+                    if (in_git && has_dependency && revision != "") {
+                      print revision
+                      exit
+                    }
+                    in_git = 0
+                    has_dependency = 0
+                    revision = ""
+                    next
+                  }
+                  in_git && /^  revision: / { revision = $2; next }
+                  in_git && $0 ~ "^    " dependency " \\(" { has_dependency = 1 }
+                ' \
+              | head -n 1
+          }
+
+          extract_lockfile_bundler_version() {
+            local sha="$1"
+
+            git show "${sha}:Gemfile.lock" 2>/dev/null \
+              | awk '/^BUNDLED WITH$/{getline; gsub(/^ +/, "", $0); print $0}'
+          }
+
+          previous_agent_harness_version=$(extract_lockfile_dependency_version "${BASE_SHA}" "agent-harness")
+          current_agent_harness_version=$(extract_lockfile_dependency_version "${HEAD_SHA}" "agent-harness")
+          previous_agent_harness_revision=$(extract_lockfile_git_revision "${BASE_SHA}" "agent-harness")
+          current_agent_harness_revision=$(extract_lockfile_git_revision "${HEAD_SHA}" "agent-harness")
+          previous_ruby_maat_version=$(extract_lockfile_dependency_version "${BASE_SHA}" "ruby-maat")
+          current_ruby_maat_version=$(extract_lockfile_dependency_version "${HEAD_SHA}" "ruby-maat")
+          previous_bundler_version=$(extract_lockfile_bundler_version "${BASE_SHA}")
+          current_bundler_version=$(extract_lockfile_bundler_version "${HEAD_SHA}")
+
+          lockfile_contract_changes=""
+          if [ "${previous_agent_harness_version}" != "${current_agent_harness_version}" ]; then
+            lockfile_contract_changes="${lockfile_contract_changes}agent-harness: ${previous_agent_harness_version:-missing} -> ${current_agent_harness_version:-missing}\n"
+          fi
+          if [ "${previous_agent_harness_revision}" != "${current_agent_harness_revision}" ]; then
+            lockfile_contract_changes="${lockfile_contract_changes}agent-harness revision: ${previous_agent_harness_revision:-rubygems} -> ${current_agent_harness_revision:-rubygems}\n"
+          fi
+          if [ "${previous_ruby_maat_version}" != "${current_ruby_maat_version}" ]; then
+            lockfile_contract_changes="${lockfile_contract_changes}ruby-maat: ${previous_ruby_maat_version:-missing} -> ${current_ruby_maat_version:-missing}\n"
+          fi
+          if [ "${previous_bundler_version}" != "${current_bundler_version}" ]; then
+            lockfile_contract_changes="${lockfile_contract_changes}bundler: ${previous_bundler_version:-missing} -> ${current_bundler_version:-missing}\n"
+          fi
+
+          if [ -n "$lockfile_contract_changes" ]; then
+            echo "image_relevant=true" >> "$GITHUB_OUTPUT"
+            echo "Gemfile.lock changed agent-image-managed dependencies:"
+            printf '%b' "$lockfile_contract_changes" | sed 's/^/  /'
+          else
+            echo "image_relevant=false" >> "$GITHUB_OUTPUT"
+            echo "Gemfile.lock changed, but not Bundler, agent-harness, or ruby-maat. Skipping agent image rebuild."
+          fi
+
+      - name: Set up Docker Buildx
+        if: steps.changes.outputs.image_relevant == 'true'
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Extract ruby-maat version from Gemfile.lock
+        if: steps.changes.outputs.image_relevant == 'true'
+        id: ruby-maat
+        run: |
+          version=$(sed -n '/^GEM$/,/^$/s/^  *ruby-maat (\(.*\))/\1/p' Gemfile.lock | head -n 1)
+          if [ -z "$version" ]; then
+            echo "Failed to extract ruby-maat version from Gemfile.lock" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Extract agent-harness version from Gemfile.lock
+        if: steps.changes.outputs.image_relevant == 'true'
+        id: agent-harness
+        run: |
+          # Search both GEM and GIT sections so the helper keeps working when
+          # agent-harness is pinned to a git ref (e.g. unreleased upstream fix)
+          # instead of a published RubyGems version.
+          version=$(sed -n '/^\(GEM\|GIT\)$/,/^$/s/^  *agent-harness (\(.*\))/\1/p' Gemfile.lock | head -n 1)
+          if [ -z "$version" ]; then
+            echo "Failed to extract agent-harness version from Gemfile.lock" >&2
+            exit 1
+          fi
+
+          git_ref=$(
+            awk '
+              /^GIT$/ { in_git = 1; has_dependency = 0; next }
+              /^$/ {
+                if (in_git && has_dependency && revision != "") {
+                  print revision
+                  exit
+                }
+                in_git = 0
+                has_dependency = 0
+                revision = ""
+                next
+              }
+              in_git && /^  revision: / { revision = $2; next }
+              in_git && /^    agent-harness \(/ { has_dependency = 1 }
+            ' Gemfile.lock | head -n 1
+          )
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "git_ref=$git_ref" >> "$GITHUB_OUTPUT"
+
+      - name: Extract Bundler version from Gemfile.lock
+        if: steps.changes.outputs.image_relevant == 'true'
+        id: bundler-version
+        run: |
+          version=$(awk '/^BUNDLED WITH$/{getline; gsub(/^ +/, "", $0); print $0}' Gemfile.lock)
+          if [ -z "$version" ]; then
+            echo "Failed to extract Bundler version from Gemfile.lock" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Ruby
+        if: steps.changes.outputs.image_relevant == 'true'
+        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: true
+
+      - name: Extract Claude install contract from agent-harness
+        if: steps.changes.outputs.image_relevant == 'true'
+        id: claude-contract
+        run: |
+          contract=$(bundle exec ruby scripts/extract-runner-install-contract.rb claude)
+          install_command=$(echo "$contract" | sed -n 's/^INSTALL_COMMAND=//p')
+          post_install_path=$(echo "$contract" | sed -n 's/^POST_INSTALL_BINARY_PATH=//p')
+          if [ -z "$install_command" ]; then
+            echo "Failed to extract Claude install command from agent-harness" >&2
+            exit 1
+          fi
+          if [ -z "$post_install_path" ]; then
+            echo "Failed to extract Claude post-install binary path from agent-harness" >&2
+            exit 1
+          fi
+          echo "install_command<<PAID_EOF" >> "$GITHUB_OUTPUT"
+          echo "$install_command" >> "$GITHUB_OUTPUT"
+          echo "PAID_EOF" >> "$GITHUB_OUTPUT"
+          echo "post_install_binary_path<<PAID_EOF" >> "$GITHUB_OUTPUT"
+          echo "$post_install_path" >> "$GITHUB_OUTPUT"
+          echo "PAID_EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Extract Cursor install contract from agent-harness
+        if: steps.changes.outputs.image_relevant == 'true'
+        id: cursor-contract
+        run: |
+          contract=$(bundle exec ruby scripts/extract-runner-install-contract.rb cursor)
+          artifact_url=$(echo "$contract" | sed -n 's/^ARTIFACT_URL=//p')
+          artifact_sha256=$(echo "$contract" | sed -n 's/^ARTIFACT_SHA256=//p')
+          binary_name=$(echo "$contract" | sed -n 's/^BINARY_NAME=//p')
+          global_path=$(echo "$contract" | sed -n 's/^GLOBAL_PATH=//p')
+          if [ -z "$artifact_url" ]; then
+            echo "Failed to extract Cursor artifact URL from agent-harness" >&2
+            exit 1
+          fi
+          if [ -z "$artifact_sha256" ]; then
+            echo "Failed to extract Cursor artifact SHA256 from agent-harness" >&2
+            exit 1
+          fi
+          if [ -z "$binary_name" ]; then
+            echo "Failed to extract Cursor binary name from agent-harness" >&2
+            exit 1
+          fi
+          if [ -z "$global_path" ]; then
+            echo "Failed to extract Cursor global path from agent-harness" >&2
+            exit 1
+          fi
+          echo "artifact_url=$artifact_url" >> "$GITHUB_OUTPUT"
+          echo "artifact_sha256=$artifact_sha256" >> "$GITHUB_OUTPUT"
+          echo "binary_name=$binary_name" >> "$GITHUB_OUTPUT"
+          echo "global_path=$global_path" >> "$GITHUB_OUTPUT"
+
+      - name: Extract Codex package from agent-harness
+        if: steps.changes.outputs.image_relevant == 'true'
+        id: codex-contract
+        run: |
+          contract=$(bundle exec ruby scripts/extract-runner-install-contract.rb codex)
+          package=$(echo "$contract" | sed -n 's/^PACKAGE=//p')
+          if [ -z "$package" ]; then
+            echo "Failed to extract Codex package from agent-harness" >&2
+            exit 1
+          fi
+          echo "package=$package" >> "$GITHUB_OUTPUT"
+
+      - name: Extract OpenCode install command from agent-harness
+        if: steps.changes.outputs.image_relevant == 'true'
+        id: opencode-contract
+        run: |
+          contract=$(bundle exec ruby scripts/extract-runner-install-contract.rb opencode)
+          install_command=$(echo "$contract" | sed -n 's/^INSTALL_COMMAND=//p')
+          if [ -z "$install_command" ]; then
+            echo "Failed to extract OpenCode install command from agent-harness" >&2
+            exit 1
+          fi
+          echo "install_command<<PAID_EOF" >> "$GITHUB_OUTPUT"
+          echo "$install_command" >> "$GITHUB_OUTPUT"
+          echo "PAID_EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Extract Pi package from agent-harness
+        if: steps.changes.outputs.image_relevant == 'true'
+        id: pi-contract
+        run: |
+          contract=$(bundle exec ruby scripts/extract-runner-install-contract.rb pi)
+          package=$(echo "$contract" | sed -n 's/^PACKAGE=//p')
+          if [ -z "$package" ]; then
+            echo "Failed to extract Pi package from agent-harness" >&2
+            exit 1
+          fi
+          echo "package=$package" >> "$GITHUB_OUTPUT"
+
+      - name: Extract Oh My Pi package from agent-harness
+        if: steps.changes.outputs.image_relevant == 'true'
+        id: omp-contract
+        run: |
+          contract=$(bundle exec ruby scripts/extract-runner-install-contract.rb omp)
+          package=$(echo "$contract" | sed -n 's/^PACKAGE=//p')
+          install_command=$(echo "$contract" | sed -n 's/^INSTALL_COMMAND=//p')
+          bun_version=$(echo "$contract" | sed -n 's/^BUN_VERSION=//p')
+          bun_install_script_url=$(echo "$contract" | sed -n 's/^BUN_INSTALL_SCRIPT_URL=//p')
+          if [ -z "$package" ]; then
+            echo "Failed to extract Oh My Pi package from agent-harness" >&2
+            exit 1
+          fi
+          if [ -z "$install_command" ]; then
+            echo "Failed to extract Oh My Pi install command from agent-harness" >&2
+            exit 1
+          fi
+          if [ -z "$bun_version" ]; then
+            echo "Failed to extract Oh My Pi Bun version from agent-harness" >&2
+            exit 1
+          fi
+          if [ -z "$bun_install_script_url" ]; then
+            echo "Failed to extract Oh My Pi Bun install script URL from agent-harness" >&2
+            exit 1
+          fi
+          echo "package=$package" >> "$GITHUB_OUTPUT"
+          echo "install_command<<PAID_EOF" >> "$GITHUB_OUTPUT"
+          echo "$install_command" >> "$GITHUB_OUTPUT"
+          echo "PAID_EOF" >> "$GITHUB_OUTPUT"
+          echo "bun_version=$bun_version" >> "$GITHUB_OUTPUT"
+          echo "bun_install_script_url=$bun_install_script_url" >> "$GITHUB_OUTPUT"
+
+      - name: Extract Kilocode CLI install contract from agent-harness
+        if: steps.changes.outputs.image_relevant == 'true'
+        id: kilocode-contract
+        run: |
+          contract=$(bundle exec ruby scripts/extract-runner-install-contract.rb kilocode)
+          install_command=$(echo "$contract" | sed -n 's/^INSTALL_COMMAND=//p')
+          if [ -z "$install_command" ]; then
+            echo "Failed to extract Kilocode CLI install command from agent-harness" >&2
+            exit 1
+          fi
+          echo "install_command<<PAID_EOF" >> "$GITHUB_OUTPUT"
+          echo "$install_command" >> "$GITHUB_OUTPUT"
+          echo "PAID_EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Extract Gemini CLI install contract from agent-harness
+        if: steps.changes.outputs.image_relevant == 'true'
+        id: gemini-contract
+        run: |
+          contract=$(bundle exec ruby scripts/extract-runner-install-contract.rb gemini)
+          install_command=$(echo "$contract" | sed -n 's/^INSTALL_COMMAND=//p')
+          if [ -z "$install_command" ]; then
+            echo "Failed to extract Gemini CLI install command from agent-harness" >&2
+            exit 1
+          fi
+          echo "install_command<<PAID_EOF" >> "$GITHUB_OUTPUT"
+          echo "$install_command" >> "$GITHUB_OUTPUT"
+          echo "PAID_EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Extract Copilot CLI install contract from agent-harness
+        if: steps.changes.outputs.image_relevant == 'true'
+        id: copilot-contract
+        run: |
+          contract=$(bundle exec ruby scripts/extract-runner-install-contract.rb copilot)
+          install_command=$(echo "$contract" | sed -n 's/^INSTALL_COMMAND=//p')
+          if [ -z "$install_command" ]; then
+            echo "Failed to extract Copilot CLI install command from agent-harness" >&2
+            exit 1
+          fi
+          echo "install_command<<PAID_EOF" >> "$GITHUB_OUTPUT"
+          echo "$install_command" >> "$GITHUB_OUTPUT"
+          echo "PAID_EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Build paid-agent image
+        if: steps.changes.outputs.image_relevant == 'true'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: ./docker/agent/Dockerfile
+          load: true
+          pull: true
+          tags: paid-agent:latest
+          build-args: |
+            BUNDLER_VERSION=${{ steps.bundler-version.outputs.version }}
+            RUBY_MAAT_VERSION=${{ steps.ruby-maat.outputs.version }}
+            AGENT_HARNESS_VERSION=${{ steps.agent-harness.outputs.version }}
+            AGENT_HARNESS_GIT_REF=${{ steps.agent-harness.outputs.git_ref }}
+            CLAUDE_INSTALL_COMMAND=${{ steps.claude-contract.outputs.install_command }}
+            CLAUDE_POST_INSTALL_BINARY_PATH=${{ steps.claude-contract.outputs.post_install_binary_path }}
+            CURSOR_ARTIFACT_URL=${{ steps.cursor-contract.outputs.artifact_url }}
+            CURSOR_ARTIFACT_SHA256=${{ steps.cursor-contract.outputs.artifact_sha256 }}
+            CURSOR_BINARY_NAME=${{ steps.cursor-contract.outputs.binary_name }}
+            CURSOR_GLOBAL_PATH=${{ steps.cursor-contract.outputs.global_path }}
+            CODEX_PACKAGE=${{ steps.codex-contract.outputs.package }}
+            OPENCODE_INSTALL_COMMAND=${{ steps.opencode-contract.outputs.install_command }}
+            PI_PACKAGE=${{ steps.pi-contract.outputs.package }}
+            OMP_PACKAGE=${{ steps.omp-contract.outputs.package }}
+            OMP_INSTALL_COMMAND=${{ steps.omp-contract.outputs.install_command }}
+            OMP_BUN_VERSION=${{ steps.omp-contract.outputs.bun_version }}
+            OMP_BUN_INSTALL_SCRIPT_URL=${{ steps.omp-contract.outputs.bun_install_script_url }}
+            KILOCODE_INSTALL_COMMAND=${{ steps.kilocode-contract.outputs.install_command }}
+            GEMINI_CLI_INSTALL_COMMAND=${{ steps.gemini-contract.outputs.install_command }}
+            COPILOT_INSTALL_COMMAND=${{ steps.copilot-contract.outputs.install_command }}
+          cache-from: type=gha,scope=paid-agent
+          cache-to: type=gha,mode=max,scope=paid-agent
+
+      - name: Smoke test paid-agent image
+        if: steps.changes.outputs.image_relevant == 'true'
+        run: ./scripts/test-agent-image.sh
+
+      - name: Runner-contract smoke test
+        if: steps.changes.outputs.image_relevant == 'true'
+        run: ./scripts/test-agent-runner-contracts.sh
+
+      - name: Agent image workflow not needed
+        if: steps.changes.outputs.image_relevant != 'true'
+        run: echo "No agent-image-managed files or lockfile entries changed."
