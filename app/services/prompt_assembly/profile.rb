@@ -10,7 +10,7 @@ module PromptAssembly
   # weaken safety, or budget-constrained. The assembler enforces this via
   # +section_enabled?+ and +ordered_sections+.
   #
-  # @spec PROMPT-ASSEMBLY-005, PROMPT-ASSEMBLY-009
+  # @spec PROMPT-ASSEMBLY-005, PROMPT-ASSEMBLY-012
   class Profile
     # Sections whose budgets are configurable.
     BUDGETABLE_SECTIONS = %i[knowledge style_guides marketplace].freeze

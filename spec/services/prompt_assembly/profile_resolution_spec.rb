@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec PROMPT-ASSEMBLY-009
+# @spec PROMPT-ASSEMBLY-012
 RSpec.describe PromptAssembly::ProfileResolution do
   let(:account) { create(:account) }
   let(:project) { create(:project, account: account) }

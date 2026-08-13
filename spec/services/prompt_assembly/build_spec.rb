@@ -3,7 +3,7 @@
 require "rails_helper"
 
 # @spec PROMPT-ASSEMBLY-003, PROMPT-ASSEMBLY-004, PROMPT-ASSEMBLY-005,
-#       PROMPT-ASSEMBLY-006, PROMPT-ASSEMBLY-009, PROMPT-ASSEMBLY-010
+#       PROMPT-ASSEMBLY-006, PROMPT-ASSEMBLY-012, PROMPT-ASSEMBLY-013
 RSpec.describe PromptAssembly::Build, :no_db do
   def section(key:, content:, trust_level: :trusted, required: false, exclusion_reason: nil)
     PromptAssembly::Section.new(
@@ -104,7 +104,7 @@ RSpec.describe PromptAssembly::Build, :no_db do
     expect(result.text).to include(PromptAssembly::Section::QUARANTINE_NOTICE)
   end
 
-  # @spec PROMPT-ASSEMBLY-009
+  # @spec PROMPT-ASSEMBLY-012
   describe "profile ordering" do
     it "reorders optional sections according to profile section_order" do
       profile = PromptAssembly::Profile.new(section_order: [ :style_guides, :knowledge ])
@@ -145,7 +145,7 @@ RSpec.describe PromptAssembly::Build, :no_db do
     end
   end
 
-  # @spec PROMPT-ASSEMBLY-009
+  # @spec PROMPT-ASSEMBLY-012
   describe "profile budgets" do
     it "records budget decisions for budgetable sections" do
       profile = PromptAssembly::Profile.new(budgets: { knowledge: { tokens: 2000 } })
@@ -170,7 +170,7 @@ RSpec.describe PromptAssembly::Build, :no_db do
     end
   end
 
-  # @spec PROMPT-ASSEMBLY-010
+  # @spec PROMPT-ASSEMBLY-013
   describe "result provenance" do
     it "computes a stable prompt digest" do
       result = described_class.call(sections: [ section(key: :task, content: "# Task") ])

@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec PROMPT-ASSEMBLY-005, PROMPT-ASSEMBLY-009
+# @spec PROMPT-ASSEMBLY-005, PROMPT-ASSEMBLY-012
 RSpec.describe PromptAssembly::Profile, :no_db do
   def sec(key, required: false)
     PromptAssembly::Section.new(key: key, content: "x", required: required)

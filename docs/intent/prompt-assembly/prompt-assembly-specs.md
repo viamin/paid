@@ -43,7 +43,28 @@
   allowlist policy.
   *Code:* `PromptAssembly::Trust`.
 
-- [x] **PROMPT-ASSEMBLY-008** — When PR follow-up runs build their prompt,
+- [x] **PROMPT-ASSEMBLY-008** — The migrated runner-time goal wrappers
+  (create-issue, review, enhance-issue, interactive verification) SHALL be
+  contributed as explicit `PromptAssembly::Section`s with trust metadata and
+  SHALL NOT be appended to the prompt as raw strings outside assembly.
+  *Code:* `PromptAssembly::GoalAssembly`,
+  `Activities::RunAgentActivity#augment_prompt_for_goal`.
+
+- [x] **PROMPT-ASSEMBLY-009** — A queue-time custom prompt SHALL NOT bypass
+  required safety sections: the goal-wrapper assembly runs after
+  `effective_prompt` resolves the base text and marks the migrated goal
+  sections `required`, so customization cannot suppress them.
+  *Code:* `Activities::RunAgentActivity#augment_prompt_for_goal`,
+  `PromptAssembly::GoalAssembly`, `PromptAssembly::Profile`.
+
+- [x] **PROMPT-ASSEMBLY-010** — The run metadata SHALL contain a prompt
+  assembly digest and section-level provenance (key, source, trust level,
+  required flag, inclusion reason) for migrated goals; section bodies SHALL NOT
+  be persisted in provenance.
+  *Code:* `PromptAssembly::Result#provenance`, `AgentRun#record_prompt_assembly!`,
+  `RunProvenanceBuilder#prompt_provenance`.
+
+- [x] **PROMPT-ASSEMBLY-011** — When PR follow-up runs build their prompt,
   the system SHALL assemble sections through `PromptAssembly::Build`,
   classify PR review thread comments and PR conversation comments by
   author trust, exclude untrusted comments from the prompt text, and
@@ -53,7 +74,7 @@
   sections reached the agent and which untrusted content was rejected.
   *Code:* `Prompts::BuildForPr`, `Activities::PreparePrPromptActivity`.
 
-- [x] **PROMPT-ASSEMBLY-009** — The system SHALL resolve assembly profiles
+- [x] **PROMPT-ASSEMBLY-012** — The system SHALL resolve assembly profiles
   deterministically from global defaults through account and project
   configuration to goal-specific overrides. Customization SHALL allow
   disabling optional non-safety sections, reordering optional sections,
@@ -63,7 +84,7 @@
   *Code:* `PromptAssembly::Profile`, `PromptAssembly::ProfileResolution`,
   `PromptAssembly::Build`.
 
-- [x] **PROMPT-ASSEMBLY-010** — The system SHALL record a content-addressable
+- [x] **PROMPT-ASSEMBLY-013** — The system SHALL record a content-addressable
   fingerprint of the resolved profile and a SHA-256 digest of the final
   prompt text in the assembly result and in the agent-run provenance. The
   provenance SHALL display ordered included and skipped sections with

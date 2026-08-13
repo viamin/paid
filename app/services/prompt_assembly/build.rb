@@ -3,8 +3,8 @@
 module PromptAssembly
   # Assembles ordered sections into a prompt plus provenance.
   #
-  # @spec PROMPT-ASSEMBLY-005, PROMPT-ASSEMBLY-006, PROMPT-ASSEMBLY-009,
-  #       PROMPT-ASSEMBLY-010
+  # @spec PROMPT-ASSEMBLY-005, PROMPT-ASSEMBLY-006, PROMPT-ASSEMBLY-012,
+  #       PROMPT-ASSEMBLY-013
   #
   # Fails closed: a section with invalid trust metadata raises before any
   # prompt text is produced. Excluded sections are dropped from the text and

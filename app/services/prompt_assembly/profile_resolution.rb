@@ -13,7 +13,7 @@ module PromptAssembly
   # what the override config requests. The Profile itself enforces this
   # at assembly time via +section_enabled?+.
   #
-  # @spec PROMPT-ASSEMBLY-009
+  # @spec PROMPT-ASSEMBLY-012
   class ProfileResolution
     def self.resolve(project: nil, account: nil, goal: nil, overrides: {})
       new(
