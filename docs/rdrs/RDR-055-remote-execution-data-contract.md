@@ -8,7 +8,7 @@
 - **Status**: Draft
 - **Type**: Architecture
 - **Priority**: P1
-- **Related RDRs**: [RDR-004](RDR-004-container-isolation.md), [RDR-006](RDR-006-secrets-proxy.md), [RDR-019](RDR-019-remote-container-execution.md), [RDR-020](RDR-020-service-container-architecture.md), [RDR-045](RDR-045-live-web-app-preview-agent-verification.md), [RDR-048](RDR-048-multi-host-docker-backend-support.md)
+- **Related RDRs**: [RDR-004](RDR-004-container-isolation.md), [RDR-006](RDR-006-secrets-proxy.md), [RDR-019](RDR-019-remote-container-execution.md), [RDR-020](RDR-020-service-container-architecture.md), [RDR-045](RDR-045-live-web-app-preview-agent-verification.md), [RDR-048](RDR-048-multi-host-docker-backend-support.md), [RDR-056](RDR-056-execution-authority-network-and-isolation.md) (credential lane authority), [RDR-057](RDR-057-immutable-agent-runtime-images.md) (image identity in RunSpec), [RDR-059](RDR-059-infrastructure-safety-and-audit.md) (artifact movement audit)
 - **Related Issues**: #3336 (runner extraction), #3342 (workspace strategy), #3350 (stateless artifact storage), #3358 (runner conformance)
 
 ## Problem Statement

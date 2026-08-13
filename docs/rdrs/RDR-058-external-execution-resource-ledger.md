@@ -8,7 +8,7 @@
 - **Status**: Draft
 - **Type**: Architecture + Operations
 - **Priority**: P1
-- **Related RDRs**: [RDR-019](RDR-019-remote-container-execution.md), [RDR-020](RDR-020-service-container-architecture.md), [RDR-045](RDR-045-live-web-app-preview-agent-verification.md), [RDR-048](RDR-048-multi-host-docker-backend-support.md)
+- **Related RDRs**: [RDR-019](RDR-019-remote-container-execution.md), [RDR-020](RDR-020-service-container-architecture.md), [RDR-045](RDR-045-live-web-app-preview-agent-verification.md), [RDR-048](RDR-048-multi-host-docker-backend-support.md), [RDR-055](RDR-055-remote-execution-data-contract.md) (output manifest references ledger resources), [RDR-059](RDR-059-infrastructure-safety-and-audit.md) (audit events reference ledger IDs)
 - **Related Issues**: #3336, #3344, #3346, #3352
 
 ## Problem Statement
