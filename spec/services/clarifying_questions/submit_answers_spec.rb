@@ -146,6 +146,7 @@ RSpec.describe ClarifyingQuestions::SubmitAnswers, :no_db do
         double(
           github_number: 1964,
           needs_input?: true,
+          has_label?: true,
           labels: [ "paid-needs-input", "P2" ]
         )
       end
