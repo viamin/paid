@@ -19,20 +19,11 @@ module Dashboard
     end
 
     def call
-      ordered_issues.filter_map do |issue|
-        questions = question_summary_for(issue)
-        next if questions.empty?
-
-        Entry.new(
-          project: issue.project,
-          issue: issue,
-          questions: questions
-        )
-      end
+      queued_entries
     end
 
     def next_issue
-      queue = ordered_issues.to_a
+      queue = queued_entries.map(&:issue)
       return queue.first if after_issue.blank?
 
       current_index = queue.index { |issue| issue.id == after_issue.id }
@@ -44,6 +35,22 @@ module Dashboard
     private
 
     attr_reader :after_issue, :project, :user
+
+    # Question-backed needs-input issues only. Shared by +call+ (dashboard
+    # render) and +next_issue+ (queue navigation) so neither links to a stale
+    # needs-input row that has no parseable questions.
+    def queued_entries
+      @queued_entries ||= ordered_issues.filter_map do |issue|
+        questions = question_summary_for(issue)
+        next if questions.empty?
+
+        Entry.new(
+          project: issue.project,
+          issue: issue,
+          questions: questions
+        )
+      end
+    end
 
     def ordered_issues
       @ordered_issues ||= begin

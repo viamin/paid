@@ -73,5 +73,16 @@ RSpec.describe Dashboard::NeedsInputQueue do
 
       expect(described_class.next_issue(user: user, project: project, after_issue: stale_issue)).to be_nil
     end
+
+    it "skips questionless issues when advancing to the next queued issue" do
+      first_issue
+      questionless = create(:issue, :needs_input, project: project, github_number: 11, body: "Needs manual retry")
+      third_issue = create(:issue, :needs_input, project: project, github_number: 12, body: questions_body)
+
+      entries = described_class.call(user: user, project: project).map(&:issue)
+
+      expect(entries).not_to include(questionless)
+      expect(described_class.next_issue(user: user, project: project, after_issue: first_issue)).to eq(third_issue)
+    end
   end
 end
