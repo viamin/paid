@@ -84,6 +84,8 @@ export default class extends Controller {
   }
 
   handleScroll() {
+    if (!this.hasContainerTarget) return
+
     const threshold = 48
     const distanceFromBottom = this.containerTarget.scrollHeight - this.containerTarget.scrollTop - this.containerTarget.clientHeight
     this.autoScroll = distanceFromBottom <= threshold
@@ -531,6 +533,7 @@ export default class extends Controller {
   }
 
   scrollToBottom() {
+    if (!this.hasContainerTarget) return
     if (!this.autoScroll) return
 
     const streamController = this.application.getControllerForElementAndIdentifier(this.containerTarget, "chat-stream")
@@ -546,6 +549,7 @@ export default class extends Controller {
   }
 
   scrollToInput() {
+    if (!this.hasContainerTarget) return
     this.smoothScrollTo(this.containerTarget.scrollHeight)
   }
 
@@ -554,6 +558,7 @@ export default class extends Controller {
   // A requestAnimationFrame loop that sets scrollTop directly works on every
   // browser because scrollTop assignment is universally supported.
   smoothScrollTo(target) {
+    if (!this.hasContainerTarget) return
     if (this.scrollAnimationId) cancelAnimationFrame(this.scrollAnimationId)
 
     const container = this.containerTarget

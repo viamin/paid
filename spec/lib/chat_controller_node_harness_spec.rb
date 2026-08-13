@@ -41,6 +41,14 @@ class ChatControllerNodeHarness
 
       Object.assign(controller, overrides);
 
+      // Stimulus sets hasContainerTarget to true when the container element
+      // exists in the DOM. Mirror that so the defensive guards in handleScroll,
+      // scrollToBottom, scrollToInput, and smoothScrollTo exercise their real
+      // path whenever a containerTarget is provided.
+      if ("containerTarget" in controller) {
+        controller.hasContainerTarget = true;
+      }
+
       return { controller, appended, statusMessages };
     }
 
