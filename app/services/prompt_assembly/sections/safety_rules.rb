@@ -4,7 +4,7 @@
 # This is a required section so the assembler always includes it and never
 # suppresses it — even if the DB-stored template is modified to drop them.
 #
-# @spec PROMPT-ASSEMBLY-013
+# @spec PROMPT-ASSEMBLY-015
 class PromptAssembly::Sections::SafetyRules
   include PromptAssembly::Sections::Base
 

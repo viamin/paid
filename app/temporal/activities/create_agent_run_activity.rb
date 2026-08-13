@@ -74,7 +74,7 @@ module Activities
               github_client: project.github_token&.client
             ),
             service_environment.content,
-            # @spec PROMPT-ASSEMBLY-013
+            # @spec PROMPT-ASSEMBLY-015
             PromptAssembly::Sections::SafetyRules::SAFETY_RULES
           ].reject(&:blank?).join("\n\n")
         end

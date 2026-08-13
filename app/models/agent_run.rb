@@ -2192,7 +2192,7 @@ class AgentRun < ApplicationRecord
   # result is memoized so {#effective_prompt} can record provenance and avoid
   # double-injecting marketplace content.
   #
-  # @spec PROMPT-ASSEMBLY-012
+  # @spec PROMPT-ASSEMBLY-014
   #
   # @return [String, nil] The built prompt, or nil if no issue is attached
   def prompt_for_issue
@@ -2271,7 +2271,7 @@ class AgentRun < ApplicationRecord
   # Whether the PromptAssembly result already included marketplace content,
   # so {#effective_prompt} can skip the separate injection step.
   #
-  # @spec PROMPT-ASSEMBLY-012
+  # @spec PROMPT-ASSEMBLY-014
   def prompt_assembly_marketplace_handled?
     @prompt_assembly_result&.sections&.any? { |section| section.key == :marketplace_attachments }
   end
@@ -2280,7 +2280,7 @@ class AgentRun < ApplicationRecord
   # external_metadata. Uses update_columns to avoid triggering lifecycle
   # callbacks — this is a metadata-only audit record, not a state change.
   #
-  # @spec PROMPT-ASSEMBLY-012
+  # @spec PROMPT-ASSEMBLY-014
   def persist_prompt_assembly_provenance!
     return unless @prompt_assembly_result
     return unless persisted?

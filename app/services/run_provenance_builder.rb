@@ -9,6 +9,7 @@ class RunProvenanceBuilder
     {
       run: run_summary,
       prompt: prompt_provenance,
+      prompt_assembly: prompt_assembly_provenance,
       model: model_provenance,
       tools: tool_provenance,
       code_changes: code_provenance,
@@ -71,6 +72,33 @@ class RunProvenanceBuilder
     end
     blocks = phase && service_environment_prompt_blocks_for(phase)
     Array(blocks).map { |block| block.respond_to?(:deep_symbolize_keys) ? block.deep_symbolize_keys : block }
+  end
+
+  def prompt_assembly_provenance
+    metadata = prompt_assembly_metadata
+    return nil unless metadata
+
+    sections = Array(metadata["sections"])
+    skipped = Array(metadata["skipped"])
+    trusted = sections.count { |s| s["trust_level"] == "trusted" }
+    quarantined = sections.count { |s| s["trust_level"] == "quarantined" }
+    excluded = skipped.count { |s| s["trust_level"] == "excluded" }
+
+    {
+      sections: sections.map { |s| s.respond_to?(:deep_symbolize_keys) ? s.deep_symbolize_keys : s },
+      skipped: skipped.map { |s| s.respond_to?(:deep_symbolize_keys) ? s.deep_symbolize_keys : s },
+      prompt_digest: metadata["prompt_digest"],
+      profile_fingerprint: metadata["profile_fingerprint"],
+      budget_decisions: Array(metadata["budget_decisions"]).map { |d| d.respond_to?(:deep_symbolize_keys) ? d.deep_symbolize_keys : d },
+      trusted_content_count: trusted,
+      quarantined_content_count: quarantined,
+      excluded_content_count: excluded
+    }
+  end
+
+  def prompt_assembly_metadata
+    phase = prompt_assembly_phases.find { |candidate| candidate.metadata&.key?("prompt_assembly") }
+    phase&.metadata&.dig("prompt_assembly")
   end
 
   def prompt_assembly_phases

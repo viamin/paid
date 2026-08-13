@@ -8,7 +8,7 @@
 # {Prompts::BuildForIssue} path while adding full section provenance and
 # keeping the task and safety-rules sections required (never suppressed).
 #
-# @spec PROMPT-ASSEMBLY-012
+# @spec PROMPT-ASSEMBLY-014
 #
 # @example
 #   result = PromptAssembly::BuildIssuePrompt.call(

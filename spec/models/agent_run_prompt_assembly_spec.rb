@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec PROMPT-ASSEMBLY-012
+# @spec PROMPT-ASSEMBLY-014
 RSpec.describe AgentRun do
   let(:project) { create(:project, allowed_github_usernames: [ "viamin" ]) }
   let(:issue) do

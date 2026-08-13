@@ -74,7 +74,26 @@
   sections reached the agent and which untrusted content was rejected.
   *Code:* `Prompts::BuildForPr`, `Activities::PreparePrPromptActivity`.
 
-- [x] **PROMPT-ASSEMBLY-012** — When a create_pr run builds its
+- [x] **PROMPT-ASSEMBLY-012** — The system SHALL resolve assembly profiles
+  deterministically from global defaults through account and project
+  configuration to goal-specific overrides. Customization SHALL allow
+  disabling optional non-safety sections, reordering optional sections,
+  and setting budgets for knowledge/style/marketplace context. The
+  resolution SHALL reject any attempt to disable, reorder, or budget
+  safety-critical (required) sections.
+  *Code:* `PromptAssembly::Profile`, `PromptAssembly::ProfileResolution`,
+  `PromptAssembly::Build`.
+
+- [x] **PROMPT-ASSEMBLY-013** — The system SHALL record a content-addressable
+  fingerprint of the resolved profile and a SHA-256 digest of the final
+  prompt text in the assembly result and in the agent-run provenance. The
+  provenance SHALL display ordered included and skipped sections with
+  their trust levels, source records, trusted/excluded content counts,
+  and budget decisions.
+  *Code:* `PromptAssembly::Result`, `PromptAssembly::Build`,
+  `RunProvenanceBuilder`, `Activities::PreparePrPromptActivity`.
+
+- [x] **PROMPT-ASSEMBLY-014** — When a create_pr run builds its
   issue-implementation prompt, the system SHALL assemble it through
   `PromptAssembly::Build` via `PromptAssembly::BuildIssuePrompt` — ordered,
   provenance-tracked section providers — and SHALL persist the assembly
@@ -83,7 +102,7 @@
   *Code:* `PromptAssembly::BuildIssuePrompt`, `AgentRun#prompt_for_issue`,
   `AgentRun#persist_prompt_assembly_provenance!`.
 
-- [x] **PROMPT-ASSEMBLY-013** — The non-negotiable safety rules SHALL be
+- [x] **PROMPT-ASSEMBLY-015** — The non-negotiable safety rules SHALL be
   contributed as a required section (`required: true`) so the assembler always
   includes them and never suppresses them; the rules SHALL appear exactly once
   in the assembled prompt and SHALL NOT be embedded in the DB-stored
