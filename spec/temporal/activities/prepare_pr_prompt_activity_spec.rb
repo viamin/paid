@@ -108,6 +108,20 @@ RSpec.describe Activities::PreparePrPromptActivity do
       )
     end
 
+    it "records prompt assembly provenance on the prepare_pr_prompt phase" do
+      result = activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
+
+      phase = agent_run.reload.agent_run_phases.find_by!(phase_key: "prepare_pr_prompt")
+      provenance = phase.metadata["prompt_assembly"]
+
+      expect(provenance["sections"]).to be_an(Array)
+      keys = provenance["sections"].map { |section| section["key"] }
+      expect(keys).to include("task", "instructions_and_rules", "service_environment")
+      expect(provenance["skipped"]).to be_an(Array)
+      expect(result[:prompt_section_keys]).to include("task")
+      expect(result[:prompt_excluded_count]).to be >= 0
+    end
+
     it "passes explicit focus through to the prompt builder" do
       allow(github_client).to receive(:check_runs_for_ref)
         .with(project.full_name, "abc123")
@@ -195,8 +209,9 @@ RSpec.describe Activities::PreparePrPromptActivity do
         allow(github_client).to receive(:review_threads)
           .with(project.full_name, 42)
           .and_return([
-            { id: "thread_1", is_resolved: false, comments: [ { body: "Needs a fix", path: "app/models/user.rb", line: 42, author: "reviewer" } ] }
+            { id: "thread_1", is_resolved: false, comments: [ { body: "Needs a fix", path: "app/models/user.rb", line: 42, author: "allowed-collaborator" } ] }
           ])
+        project.update!(allowed_github_usernames: [ "allowed-collaborator" ])
       end
 
       it "reports that the generated prompt included review threads" do
