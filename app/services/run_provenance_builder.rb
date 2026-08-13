@@ -44,6 +44,7 @@ class RunProvenanceBuilder
     }
   end
 
+  # @spec PROMPT-ASSEMBLY-010
   def prompt_provenance
     prompt_version = agent_run.prompt_version
     custom_prompt = agent_run.custom_prompt
@@ -59,7 +60,8 @@ class RunProvenanceBuilder
       reviewed_by_user_id: prompt_version&.reviewed_by_user_id,
       reviewed_at: prompt_version&.reviewed_at&.iso8601,
       custom_prompt_truncated: custom_prompt&.truncate(200),
-      service_environment_prompt_blocks: service_environment_prompt_blocks
+      service_environment_prompt_blocks: service_environment_prompt_blocks,
+      assembly: agent_run.prompt_assembly_provenance
     }
   end
 

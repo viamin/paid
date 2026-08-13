@@ -1418,7 +1418,7 @@ RSpec.describe Prompts::BuildForPr do
     end
   end
 
-  # @spec PROMPT-ASSEMBLY-008
+  # @spec PROMPT-ASSEMBLY-011
   describe "#build_result provenance" do
     def build_pr_builder(rebase_succeeded: true, issue: nil)
       described_class.new(

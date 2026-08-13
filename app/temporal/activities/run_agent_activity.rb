@@ -3441,29 +3441,69 @@ module Activities
       false
     end
 
+    # @spec PROMPT-ASSEMBLY-008, PROMPT-ASSEMBLY-009
+    # Routes every agent-run goal through PromptAssembly so the migrated goal
+    # wrappers (create-issue, review, enhance-issue, interactive verification)
+    # are contributed as required Sections rather than appended as raw strings.
+    # The assembly is mandatory for migrated goals: a queue-time custom prompt
+    # cannot bypass it because the safety sections are applied here, after
+    # effective_prompt resolves the base text. Assembly provenance (digest +
+    # section list) is recorded on the run for configuration-bundle/run
+    # metadata.
     def augment_prompt_for_goal(agent_run, prompt)
+      goal_text, verification_text, verification_fallback = goal_prompt_inputs(agent_run, prompt)
+
+      result = PromptAssembly::GoalAssembly.call(
+        agent_run: agent_run,
+        base_prompt: prompt,
+        goal_text: goal_text,
+        verification_text: verification_text
+      )
+      record_prompt_assembly(agent_run, result)
+      [ result.text, verification_fallback ]
+    end
+
+    # Returns [goal_text, verification_text, verification_fallback]. For
+    # create_issue/enhance_issue/review the goal wrapper embeds the base prompt
+    # so the rendered wrapper is the full goal_text. For create_pr the
+    # verification section is returned separately so the assembly can append it
+    # as its own section. Other goals contribute no wrapper.
+    def goal_prompt_inputs(agent_run, prompt)
       if agent_run.create_issue_goal?
-        [ augment_prompt_for_issue_goal(agent_run, prompt), nil ]
+        [ augment_prompt_for_issue_goal(agent_run, prompt), nil, nil ]
       elsif agent_run.enhance_issue_goal?
-        [ augment_prompt_for_enhance_issue_goal(agent_run, prompt), nil ]
+        [ augment_prompt_for_enhance_issue_goal(agent_run, prompt), nil, nil ]
       elsif agent_run.review_goal?
-        [ augment_prompt_for_review_goal(agent_run, prompt), nil ]
+        [ augment_prompt_for_review_goal(agent_run, prompt), nil, nil ]
       elsif agent_run.create_pr_goal?
-        augment_prompt_for_verification(agent_run, prompt)
+        verification_text, fallback = verification_section_for(agent_run)
+        [ nil, verification_text, fallback ]
       else
-        [ prompt, nil ]
+        [ nil, nil, nil ]
       end
     end
 
-    def augment_prompt_for_verification(agent_run, prompt)
+    # Returns [verification_content, fallback_result]. The verification section
+    # content is contributed to the assembly rather than concatenated here, so
+    # it is recorded as its own provenance section.
+    def verification_section_for(agent_run)
       section = AgentRuns::VerificationPrompt.call(
         agent_run: agent_run,
         repo_path: agent_run.worktree_path
       )
 
-      return [ prompt, section.fallback_result ] if section.content.blank?
+      [ section.content, section.fallback_result ]
+    end
 
-      [ "#{prompt}\n#{section.content}", section.fallback_result ]
+    def record_prompt_assembly(agent_run, result)
+      agent_run.record_prompt_assembly!(result.provenance)
+    rescue => e
+      logger.warn(
+        message: "agent_execution.prompt_assembly_record_failed",
+        agent_run_id: agent_run.id,
+        error_class: e.class.name,
+        error: e.message
+      )
     end
 
     # Goal-augmentation prompts.
