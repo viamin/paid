@@ -39,6 +39,95 @@
       </dl>
     </section>
 
+    <% if prov[:prompt_assembly] %>
+      <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Prompt Assembly</h2>
+        <% pa = prov[:prompt_assembly] %>
+        <dl class="mt-4 grid gap-2 text-sm">
+          <div class="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
+            <dt class="font-medium text-gray-700 dark:text-gray-200">Included Sections</dt>
+            <dd class="text-gray-600 dark:text-gray-300"><%= pa[:sections].size %></dd>
+          </div>
+          <div class="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
+            <dt class="font-medium text-gray-700 dark:text-gray-200">Skipped Sections</dt>
+            <dd class="text-gray-600 dark:text-gray-300"><%= pa[:skipped].size %></dd>
+          </div>
+          <div class="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
+            <dt class="font-medium text-gray-700 dark:text-gray-200">Trusted Content</dt>
+            <dd class="text-gray-600 dark:text-gray-300"><%= pa[:trusted_content_count] %></dd>
+          </div>
+          <div class="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
+            <dt class="font-medium text-gray-700 dark:text-gray-200">Quarantined Content</dt>
+            <dd class="text-gray-600 dark:text-gray-300"><%= pa[:quarantined_content_count] %></dd>
+          </div>
+          <div class="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
+            <dt class="font-medium text-gray-700 dark:text-gray-200">Excluded Content</dt>
+            <dd class="text-gray-600 dark:text-gray-300"><%= pa[:excluded_content_count] %></dd>
+          </div>
+          <div class="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
+            <dt class="font-medium text-gray-700 dark:text-gray-200">Prompt Digest</dt>
+            <dd class="text-gray-600 dark:text-gray-300 font-mono text-xs"><%= pa[:prompt_digest]&.first(16) %></dd>
+          </div>
+          <% if pa[:profile_fingerprint] %>
+            <div class="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
+              <dt class="font-medium text-gray-700 dark:text-gray-200">Profile Fingerprint</dt>
+              <dd class="text-gray-600 dark:text-gray-300 font-mono text-xs"><%= pa[:profile_fingerprint].first(16) %></dd>
+            </div>
+          <% end %>
+        </dl>
+
+        <% if pa[:sections].any? %>
+          <h3 class="mt-4 text-sm font-semibold text-gray-900 dark:text-white">Included Sections (ordered)</h3>
+          <ul class="mt-2 space-y-1">
+            <% pa[:sections].each_with_index do |section, index| %>
+              <li class="rounded-lg border border-gray-200 p-2 text-xs dark:border-gray-700">
+                <div class="flex items-center justify-between">
+                  <span class="font-medium text-gray-900 dark:text-white"><%= index + 1 %>. <%= section[:key] %></span>
+                  <span class="rounded-full px-2 py-0.5 text-xs font-semibold
+                    <%= section[:trust_level] == 'trusted' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : '' %>
+                    <%= section[:trust_level] == 'quarantined' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' : '' %>
+                    <%= section[:trust_level] == 'excluded' ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' : '' %>">
+                    <%= section[:trust_level] %>
+                  </span>
+                </div>
+                <% if section[:source] || section[:required] %>
+                  <p class="mt-1 text-gray-500 dark:text-gray-400">
+                    <%= "source: #{section[:source]}" if section[:source] %>
+                    <%= " · " if section[:source] && section[:required] %>
+                    <%= "required" if section[:required] %>
+                  </p>
+                <% end %>
+              </li>
+            <% end %>
+          </ul>
+        <% end %>
+
+        <% if pa[:skipped].any? %>
+          <h3 class="mt-4 text-sm font-semibold text-gray-900 dark:text-white">Skipped Sections</h3>
+          <ul class="mt-2 space-y-1">
+            <% pa[:skipped].each do |skip| %>
+              <li class="rounded-lg border border-gray-200 p-2 text-xs dark:border-gray-700">
+                <span class="font-medium text-gray-900 dark:text-white"><%= skip[:key] %></span>
+                <span class="ml-2 text-gray-500 dark:text-gray-400"><%= skip[:reason] %></span>
+              </li>
+            <% end %>
+          </ul>
+        <% end %>
+
+        <% if pa[:budget_decisions]&.any? %>
+          <h3 class="mt-4 text-sm font-semibold text-gray-900 dark:text-white">Budget Decisions</h3>
+          <ul class="mt-2 space-y-1">
+            <% pa[:budget_decisions].each do |decision| %>
+              <li class="rounded-lg border border-gray-200 p-2 text-xs dark:border-gray-700">
+                <span class="font-medium text-gray-900 dark:text-white"><%= decision[:section] %></span>
+                <span class="ml-2 text-gray-500 dark:text-gray-400"><%= decision[:budget].inspect %></span>
+              </li>
+            <% end %>
+          </ul>
+        <% end %>
+      </section>
+    <% end %>
+
     <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
       <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Model Selection</h2>
       <dl class="mt-4 grid gap-2 text-sm">

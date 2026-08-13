@@ -2,7 +2,8 @@
 
 require "rails_helper"
 
-# @spec PROMPT-ASSEMBLY-003, PROMPT-ASSEMBLY-004, PROMPT-ASSEMBLY-005, PROMPT-ASSEMBLY-006
+# @spec PROMPT-ASSEMBLY-003, PROMPT-ASSEMBLY-004, PROMPT-ASSEMBLY-005,
+#       PROMPT-ASSEMBLY-006, PROMPT-ASSEMBLY-012, PROMPT-ASSEMBLY-013
 RSpec.describe PromptAssembly::Build, :no_db do
   def section(key:, content:, trust_level: :trusted, required: false, exclusion_reason: nil)
     PromptAssembly::Section.new(
@@ -101,5 +102,110 @@ RSpec.describe PromptAssembly::Build, :no_db do
 
     expect(result.text).to include("quarantined docs")
     expect(result.text).to include(PromptAssembly::Section::QUARANTINE_NOTICE)
+  end
+
+  # @spec PROMPT-ASSEMBLY-012
+  describe "profile ordering" do
+    it "reorders optional sections according to profile section_order" do
+      profile = PromptAssembly::Profile.new(section_order: [ :style_guides, :knowledge ])
+      result = described_class.call(
+        profile: profile,
+        sections: [
+          section(key: :knowledge, content: "Knowledge"),
+          section(key: :style_guides, content: "Style")
+        ]
+      )
+
+      expect(result.sections.map(&:key)).to eq([ :style_guides, :knowledge ])
+    end
+
+    it "keeps required sections before optional sections regardless of order" do
+      profile = PromptAssembly::Profile.new(section_order: [ :knowledge ])
+      result = described_class.call(
+        profile: profile,
+        sections: [
+          section(key: :knowledge, content: "Knowledge"),
+          section(key: :task, content: "Task", required: true)
+        ]
+      )
+
+      expect(result.sections.map(&:key)).to eq([ :task, :knowledge ])
+    end
+
+    it "preserves natural order when profile has no section_order" do
+      result = described_class.call(
+        profile: PromptAssembly::Profile.new,
+        sections: [
+          section(key: :knowledge, content: "Knowledge"),
+          section(key: :style_guides, content: "Style")
+        ]
+      )
+
+      expect(result.sections.map(&:key)).to eq([ :knowledge, :style_guides ])
+    end
+  end
+
+  # @spec PROMPT-ASSEMBLY-012
+  describe "profile budgets" do
+    it "records budget decisions for budgetable sections" do
+      profile = PromptAssembly::Profile.new(budgets: { knowledge: { tokens: 2000 } })
+      result = described_class.call(
+        profile: profile,
+        sections: [ section(key: :knowledge, content: "Knowledge") ]
+      )
+
+      expect(result.budget_decisions).to include(
+        hash_including(section: "knowledge", budget: { "tokens" => 2000 })
+      )
+    end
+
+    it "does not record budget decisions for non-budgetable sections" do
+      profile = PromptAssembly::Profile.new
+      result = described_class.call(
+        profile: profile,
+        sections: [ section(key: :task, content: "Task", required: true) ]
+      )
+
+      expect(result.budget_decisions).to eq([])
+    end
+  end
+
+  # @spec PROMPT-ASSEMBLY-013
+  describe "result provenance" do
+    it "computes a stable prompt digest" do
+      result = described_class.call(sections: [ section(key: :task, content: "# Task") ])
+
+      expect(result.prompt_digest).to be_a(String)
+      expect(result.prompt_digest.length).to eq(64)
+    end
+
+    it "produces the same digest for identical text" do
+      r1 = described_class.call(sections: [ section(key: :task, content: "X") ])
+      r2 = described_class.call(sections: [ section(key: :task, content: "X") ])
+
+      expect(r1.prompt_digest).to eq(r2.prompt_digest)
+    end
+
+    it "records the profile fingerprint" do
+      profile = PromptAssembly::Profile.new(disabled_sections: [ :knowledge ])
+      result = described_class.call(
+        profile: profile,
+        sections: [ section(key: :task, content: "X", required: true) ]
+      )
+
+      expect(result.profile_fingerprint).to eq(profile.fingerprint)
+    end
+
+    it "counts included and skipped sections" do
+      result = described_class.call(
+        sections: [
+          section(key: :task, content: "X"),
+          section(key: :excluded, content: "Y", trust_level: :excluded, exclusion_reason: "test")
+        ]
+      )
+
+      expect(result.included_count).to eq(1)
+      expect(result.skipped_count).to eq(1)
+    end
   end
 end
