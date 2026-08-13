@@ -7,6 +7,11 @@ module Prompts
   # optionally linked issue requirements to produce a comprehensive prompt
   # that tells the agent to rebase, fix CI, address reviews, and push.
   #
+  # Sections are assembled via +PromptAssembly::Build+ so the prompt text
+  # travels with section provenance (key, source, trust level, required flag)
+  # and excluded untrusted content is recorded as counts/revenance only —
+  # never as prompt text.
+  #
   # @example
   #   prompt = Prompts::BuildForPr.call(
   #     project: project,
@@ -22,6 +27,48 @@ module Prompts
     GITHUB_COMMENTS_PER_PAGE = 100
     MAX_RECENT_COMMENT_PAGES = 10
     ALREADY_ADDRESSED_MARKER = "PAID_REVIEW_THREADS_ALREADY_ADDRESSED"
+
+    PROMPT_SLUG = "coding.pr_review_rebase"
+
+    # Fallback used only if the seeded prompt is missing or deactivated.
+    # The active template lives in db/seeds/prompts.rb under PROMPT_SLUG.
+    FALLBACK_PROMPT = <<~'PROMPT'
+      # Instructions
+
+      Priority order:
+      {{priority_list}}
+
+      Steps:
+      1. Install dependencies (`bundle install`, `yarn install`, etc.)
+      {{setup_database_instruction}}
+      2. Work through the priorities above in order
+      3. Proactive scan: After making your changes, review the **entire diff** you are
+         about to commit{{review_scan_instruction}}. Look for missing guard clauses,
+         insufficient input validation, unhandled edge cases, missing tests, unclear
+         naming, and style inconsistencies. Fix every issue you find — the goal is
+         zero new review rounds for problems you could have caught yourself.
+      4. Run lint and fix any violations: `{{lint_command}}`
+      5. Run the test suite and fix any failures: `{{test_command}}`
+      6. Commit your changes with a descriptive message
+
+      **Important:** Git pre-commit hooks will automatically run lint and tests when you commit.
+      If the commit is rejected, read the error output carefully, fix the issues, and commit again.
+      Keep iterating until the commit succeeds. Do not leave uncommitted changes.
+
+      {{already_addressed_instruction}}
+
+      When you're done, commit all your changes. Do not push.
+
+      # Rules — you MUST follow these
+
+      - **Lint and tests MUST pass before every commit.** Do not commit code that fails lint or tests.
+      - **Never use `--no-verify`** or any flag that skips git hooks.
+      - **Never disable linters** (e.g. rubocop:disable, eslint-disable, noqa) to silence failures. Fix the code instead.
+      - **Fix forward** — if a check fails, fix the underlying issue. Do not bypass the check.
+      - Work within the existing codebase style and conventions
+      - Do not modify unrelated files
+      - Focus on completing the specific tasks listed above
+    PROMPT
 
     attr_reader :project, :pr_number, :github_client, :rebase_succeeded,
                 :lint_command, :test_command, :issue, :prompt_version, :focus,
@@ -90,68 +137,16 @@ module Prompts
     def unresolved_review_thread_ids
       return [] unless includes_review_threads?
 
-      unresolved_threads.filter_map { |thread| thread[:id] }
+      trusted_review_threads.filter_map { |thread| thread[:id] }
     end
 
-    PROMPT_SLUG = "coding.pr_review_rebase"
-
-    # Fallback used only if the seeded prompt is missing or deactivated.
-    # The active template lives in db/seeds/prompts.rb under PROMPT_SLUG.
-    FALLBACK_PROMPT = <<~'PROMPT'
-      # Instructions
-
-      Priority order:
-      {{priority_list}}
-
-      Steps:
-      1. Install dependencies (`bundle install`, `yarn install`, etc.)
-      {{setup_database_instruction}}
-      2. Work through the priorities above in order
-      3. Proactive scan: After making your changes, review the **entire diff** you are
-         about to commit{{review_scan_instruction}}. Look for missing guard clauses,
-         insufficient input validation, unhandled edge cases, missing tests, unclear
-         naming, and style inconsistencies. Fix every issue you find — the goal is
-         zero new review rounds for problems you could have caught yourself.
-      4. Run lint and fix any violations: `{{lint_command}}`
-      5. Run the test suite and fix any failures: `{{test_command}}`
-      6. Commit your changes with a descriptive message
-
-      **Important:** Git pre-commit hooks will automatically run lint and tests when you commit.
-      If the commit is rejected, read the error output carefully, fix the issues, and commit again.
-      Keep iterating until the commit succeeds. Do not leave uncommitted changes.
-
-      {{already_addressed_instruction}}
-
-      When you're done, commit all your changes. Do not push.
-
-      # Rules — you MUST follow these
-
-      - **Lint and tests MUST pass before every commit.** Do not commit code that fails lint or tests.
-      - **Never use `--no-verify`** or any flag that skips git hooks.
-      - **Never disable linters** (e.g. rubocop:disable, eslint-disable, noqa) to silence failures. Fix the code instead.
-      - **Fix forward** — if a check fails, fix the underlying issue. Do not bypass the check.
-      - Work within the existing codebase style and conventions
-      - Do not modify unrelated files
-      - Focus on completing the specific tasks listed above
-    PROMPT
-
+    # Returns the assembled prompt text. Existing callers (PreparePrPromptActivity,
+    # scripts, and tests) continue to receive a plain string.
     def build
-      sections = []
-      sections << task_section
-      sections << issue_requirements_section if include_issue_requirements_section?
-      sections << merge_conflicts_section if include_merge_conflicts_section?
-      sections << ci_failures_section if include_ci_failures_section?
-      sections << code_review_section if includes_review_threads?
-      sections << planning_pr_revision_section if planning_pr_revision?
-      sections << conversation_section if include_conversation_section?
-      other_issues = other_issues_section
-      sections << other_issues if other_issues.present?
-      sections << instructions_and_rules_shell
-      sections << service_environment_section
-      base_prompt = sections.join("\n").delete("\x00")
+      base = build_result.text.delete("\x00")
 
       with_style_guides = StyleGuides::InjectIntoPrompt.call(
-        prompt: base_prompt,
+        prompt: base,
         project: project,
         agent_run: agent_run,
         source: self.class.name
@@ -160,7 +155,37 @@ module Prompts
       Lid::InjectIntoPrompt.call(prompt: with_conventions, project: project, goal: agent_run&.goal)
     end
 
+    # Returns the full assembly result: prompt text plus section provenance.
+    # +sections+ records every included section (key, source, trust level,
+    # inclusion reason); +skipped+ records excluded/disabled sections as
+    # counts/provenance only — never bodies — so untrusted content cannot
+    # leak through the result. PreparePrPromptActivity persists this
+    # provenance on the agent run's prepare_pr_prompt phase metadata.
+    # @spec PROMPT-ASSEMBLY-008
+    def build_result
+      @build_result ||= PromptAssembly::Build.call(sections: build_sections)
+    end
+
     private
+
+    # Ordered list of sections assembled into the PR follow-up prompt.
+    # Each section declares its key, source, trust level, and required flag
+    # so PromptAssembly::Build can produce auditable provenance and exclude
+    # untrusted content without leaking bodies.
+    def build_sections
+      [
+        task_section,
+        (issue_requirements_section if include_issue_requirements_section?),
+        (merge_conflicts_section if include_merge_conflicts_section?),
+        (ci_failures_section if include_ci_failures_section?),
+        *review_section_with_excluded,
+        (planning_pr_revision_section if planning_pr_revision?),
+        *conversation_section_with_excluded,
+        other_issues_section,
+        instructions_and_rules_shell,
+        service_environment_section
+      ].flatten.compact
+    end
 
     def instructions_and_rules_shell
       vars = {
@@ -172,13 +197,40 @@ module Prompts
         test_command: test_command
       }
 
-      return prompt_version.render(vars) if prompt_version.present?
+      content = if prompt_version.present?
+        prompt_version.render(vars)
+      else
+        Prompts::Render.call(
+          slug: PROMPT_SLUG,
+          project: project,
+          variables: vars,
+          fallback: -> { Prompts::Render.interpolate(FALLBACK_PROMPT, vars) }
+        )
+      end
 
-      Prompts::Render.call(
-        slug: PROMPT_SLUG,
+      PromptAssembly::Section.new(
+        key: :instructions_and_rules,
+        source: :instructions_and_rules,
+        content: content.to_s,
+        trust_level: :trusted,
+        required: true,
+        inclusion_reason: "core instructions and rules shell"
+      )
+    end
+
+    def service_environment_section
+      content = ServiceContainerSections.service_environment_section_for(
         project: project,
-        variables: vars,
-        fallback: -> { Prompts::Render.interpolate(FALLBACK_PROMPT, vars) }
+        include_setup_instruction: false
+      )
+
+      PromptAssembly::Section.new(
+        key: :service_environment,
+        source: :service_environment,
+        content: content.to_s,
+        trust_level: :trusted,
+        required: true,
+        inclusion_reason: "service container guardrails"
       )
     end
 
@@ -218,7 +270,7 @@ module Prompts
     end
 
     def task_section
-      <<~SECTION
+      content = <<~SECTION
         # Task
 
         You are working on an existing pull request:
@@ -229,10 +281,19 @@ module Prompts
 
         #{pr_data.body}
       SECTION
+
+      PromptAssembly::Section.new(
+        key: :task,
+        source: :pull_request,
+        content: content,
+        trust_level: :trusted,
+        required: true,
+        inclusion_reason: "PR title/body/base branch"
+      )
     end
 
     def issue_requirements_section
-      <<~SECTION
+      content = <<~SECTION
         # Issue Requirements
 
         This PR is linked to the following issue:
@@ -244,23 +305,41 @@ module Prompts
         Evaluate whether the current PR changes fully implement the issue requirements.
         Close any implementation or testing gaps you find.
       SECTION
+
+      PromptAssembly::Section.new(
+        key: :issue_requirements,
+        source: :issue,
+        content: content,
+        trust_level: :trusted,
+        required: true,
+        inclusion_reason: "linked issue body and requirement review"
+      )
     end
 
     def merge_conflicts_section
-      <<~SECTION
+      content = <<~SECTION
         # Merge Conflicts
 
         Automatic rebase against `#{base_branch}` failed due to conflicts.
         Run `git merge origin/#{base_branch}` and resolve all conflicts.
         Ensure the merged result compiles and passes all tests.
       SECTION
+
+      PromptAssembly::Section.new(
+        key: :merge_conflicts,
+        source: :merge_conflicts,
+        content: content,
+        trust_level: :trusted,
+        required: true,
+        inclusion_reason: "rebase against #{base_branch} failed"
+      )
     end
 
     def ci_failures_section
       names = ci_failure_context.checks.map { |c| "- #{c[:name]} (#{c[:conclusion]})" }.join("\n")
       output = ci_failure_context.output
 
-      <<~SECTION
+      content = <<~SECTION
         # CI Status: FAILING
 
         The following CI checks are failing on this branch:
@@ -273,6 +352,15 @@ module Prompts
 
         Fix the issue causing these CI failures. Do not skip or disable checks.
       SECTION
+
+      PromptAssembly::Section.new(
+        key: :ci_failures,
+        source: :ci_failures,
+        content: content,
+        trust_level: :quarantined,
+        required: true,
+        inclusion_reason: "failing CI checks present on branch"
+      )
     end
 
     def ci_failure_output_section(output)
@@ -343,8 +431,29 @@ module Prompts
       "## CI Workflow Configuration\n\nThe following CI workflow files are active on this branch:\n\n#{content}"
     end
 
+    # Returns the included code-review section plus excluded inputs as
+    # separate sections so the assembler records untrusted thread comments
+    # as provenance without leaking their bodies. When every thread is
+    # untrusted, the included section is omitted but the excluded inputs
+    # are still recorded so the audit trail captures who tried to inject.
+    def review_section_with_excluded
+      excluded = excluded_review_thread_inputs
+      return [] if excluded.empty? && !includes_review_threads?
+
+      sections = []
+      sections << code_review_section if includes_review_threads?
+      sections.concat(excluded.map(&:to_section))
+      sections
+    end
+
+    # Code review threads filtered to trusted authors. Each comment is
+    # classified via PromptAssembly::Trust and excluded comments are
+    # captured as excluded sections so the assembler records them as
+    # counts/provenance only.
     def code_review_section
-      thread_text = unresolved_threads.map do |thread|
+      threads = trusted_review_threads
+
+      thread_text = threads.map do |thread|
         comments = thread[:comments].map do |c|
           location = [ c[:path], c[:line] ].compact.join(":")
           "  - **#{c[:author]}**#{" (#{location})" if location.present?}: #{c[:body]}"
@@ -353,7 +462,7 @@ module Prompts
         "**Thread** (#{thread[:comments].first&.dig(:path) || "general"}):\n#{comments}"
       end.join("\n\n")
 
-      <<~SECTION
+      content = <<~SECTION
         # Code Review Comments
 
         The following review threads are unresolved:
@@ -363,6 +472,15 @@ module Prompts
         Address each thread: fix the code if the reviewer is correct, or explain
         your reasoning in a code comment if you disagree. Do not ignore review feedback.
       SECTION
+
+      PromptAssembly::Section.new(
+        key: :code_review,
+        source: :review_thread,
+        content: content,
+        trust_level: :trusted,
+        required: true,
+        inclusion_reason: "unresolved review threads present"
+      )
     end
 
     # @spec LID-RUNS-004
@@ -372,7 +490,7 @@ module Prompts
     # LLD/EARS content and replace the markers with authored rationale, not
     # treat the feedback as code fixes.
     def planning_pr_revision_section
-      <<~SECTION
+      content = <<~SECTION
         # Planning PR Intent Correction
 
         This pull request is a LID Planning PR containing docs-only design
@@ -391,14 +509,41 @@ module Prompts
         The `[inferred]` markers sit inline in the diff. The review comments ARE
         the corrections — apply them directly to the LID artifacts.
       SECTION
+
+      PromptAssembly::Section.new(
+        key: :planning_pr_revision,
+        source: :planning_pr_revision,
+        content: content,
+        trust_level: :trusted,
+        required: true,
+        inclusion_reason: "LID Planning PR with unresolved review threads"
+      )
+    end
+
+    # Returns the included conversation section plus excluded inputs as
+    # separate sections so the assembler records untrusted collaborator
+    # comments as provenance without leaking their bodies. When every
+    # comment is untrusted, the included section is omitted but the
+    # excluded inputs are still recorded so the audit trail captures
+    # who tried to inject.
+    def conversation_section_with_excluded
+      excluded = excluded_conversation_inputs
+      return [] if excluded.empty? && !include_conversation_section?
+
+      sections = []
+      sections << conversation_section if include_conversation_section?
+      sections.concat(excluded.map(&:to_section))
+      sections
     end
 
     def conversation_section
-      comment_text = trusted_comments.map do |c|
+      trusted = trusted_conversation_comments
+
+      comment_text = trusted.map do |c|
         "- **#{c.user.login}**: #{truncate_comment_body(c.body.to_s)}"
       end.join("\n")
 
-      <<~SECTION
+      content = <<~SECTION
         # Conversation Comments
 
         Recent comments from project collaborators:
@@ -407,15 +552,24 @@ module Prompts
 
         Address any actionable requests in these comments.
       SECTION
+
+      PromptAssembly::Section.new(
+        key: :conversation,
+        source: :conversation,
+        content: content,
+        trust_level: :trusted,
+        required: true,
+        inclusion_reason: "trusted collaborator comments present"
+      )
     end
 
     def other_issues_section
-      return "" unless focused?
+      return nil unless focused?
 
       issues = deferred_issue_descriptions
-      return "" if issues.empty?
+      return nil if issues.empty?
 
-      <<~SECTION
+      content = <<~SECTION
         # Other Issues on This PR (Deferred)
 
         This PR also has the following issues that are **not** your responsibility this run:
@@ -424,6 +578,15 @@ module Prompts
         Ignore the "fix forward" directive for these unrelated problems. Follow-up runs will address them.
         Do not attempt to fix these issues. Focus solely on the task described above.
       SECTION
+
+      PromptAssembly::Section.new(
+        key: :other_issues,
+        source: :other_issues,
+        content: content,
+        trust_level: :trusted,
+        required: true,
+        inclusion_reason: "focused run with deferred work classes"
+      )
     end
 
     # When reviewers have flagged specific issues, tell the agent to scan for
@@ -494,11 +657,11 @@ module Prompts
     end
 
     def review_threads_present?
-      unresolved_threads.any?
+      trusted_review_threads.any?
     end
 
     def conversation_comments_present?
-      trusted_comments.any?
+      trusted_conversation_comments.any?
     end
 
     def use_focused_priority_list?
@@ -573,12 +736,118 @@ module Prompts
       end
     end
 
+    # Filters unresolved review threads to only include comments authored by
+    # allowlisted collaborators. Comments from non-allowlisted authors are
+    # excluded so they cannot be treated as instructions; their provenance
+    # is captured via excluded_review_thread_inputs.
+    def trusted_review_threads
+      threads = unresolved_threads.filter_map do |thread|
+        kept_comments = thread[:comments].select do |comment|
+          PromptAssembly::Trust.human_trusted?(project, comment[:author])
+        end
+        next nil if kept_comments.empty?
+
+        thread.merge(comments: kept_comments)
+      end
+
+      threads
+    end
+
+    # Per-comment TrustedInputs for comments authored by non-allowlisted
+    # collaborators. These become excluded sections during assembly so
+    # they appear as provenance only.
+    def excluded_review_thread_inputs
+      unresolved_threads.flat_map do |thread|
+        thread[:comments].filter_map do |comment|
+          next if PromptAssembly::Trust.human_trusted?(project, comment[:author])
+
+          PromptAssembly::TrustedInput.new(
+            kind: :review,
+            source: :review_thread,
+            login: comment[:author],
+            body: nil,
+            trust: :excluded,
+            exclusion_reason: comment[:author].present? ? "author_not_in_allowlist" : "missing_author_identity"
+          )
+        end
+      end
+    end
+
     def trusted_comments
       @trusted_comments ||= begin
-        recent_trusted_comments
+        trusted_conversation_comments
       rescue GithubClient::Error
         []
       end
+    end
+
+    # Single shared fetch for conversation comments: trusts the comments
+    # back to a sufficient limit and captures excluded comments as
+    # TrustedInput objects for provenance. Both #trusted_conversation_comments
+    # and #excluded_conversation_inputs read from this memoized result so
+    # the GitHub fetch happens exactly once per build.
+    def classified_conversation_comments_with_backfill
+      @classified_conversation_comments_with_backfill ||= begin
+        classified = classified_conversation_comments
+        pages_fetched = recent_comment_page_window
+
+        while classified[:trusted].size < max_prompt_comments && pages_fetched < MAX_RECENT_COMMENT_PAGES
+          break unless classified[:page_state]&.respond_to?(:next_older_page_url) && classified[:page_state].next_older_page_url
+
+          older_page = github_client.fetch_issue_comment_page(classified[:page_state].next_older_page_url)
+          classified = merge_classified_page(
+            classified,
+            fetch_and_classify(older_page)
+          )
+          pages_fetched += 1
+        end
+
+        classified
+      rescue GithubClient::Error
+        { trusted: [], excluded: [], page_state: nil }
+      end
+    end
+
+    def trusted_conversation_comments
+      classified_conversation_comments_with_backfill[:trusted].last(max_prompt_comments)
+    end
+
+    # Tracks the excluded comments observed during backfill so the
+    # assembler can record their provenance without leaking bodies.
+    def excluded_conversation_inputs
+      classified_conversation_comments_with_backfill[:excluded]
+    end
+
+    def classified_conversation_comments
+      page = github_client.recent_issue_comments(
+        project.full_name,
+        pr_number,
+        pages: recent_comment_page_window
+      )
+      fetch_and_classify(page)
+    end
+
+    def fetch_and_classify(page)
+      classified = { trusted: [], excluded: [], page_state: page }
+
+      Array(page).each do |comment|
+        input = PromptAssembly::Trust.classify_comment(project, comment, source: :conversation)
+        if input.trusted?
+          classified[:trusted] << comment
+        else
+          classified[:excluded] << input
+        end
+      end
+
+      classified
+    end
+
+    def merge_classified_page(accumulated, new_page)
+      {
+        trusted: accumulated[:trusted] + new_page[:trusted],
+        excluded: accumulated[:excluded] + new_page[:excluded],
+        page_state: new_page[:page_state]
+      }
     end
 
     def prompt_comment_settings
@@ -604,23 +873,6 @@ module Prompts
         [ (max_prompt_comments.to_f / GITHUB_COMMENTS_PER_PAGE).ceil, 1 ].max,
         MAX_RECENT_COMMENT_PAGES
       ].min
-    end
-
-    def recent_trusted_comments
-      comments = github_client.recent_issue_comments(project.full_name, pr_number, pages: recent_comment_page_window)
-      trusted = select_trusted_comments(comments)
-      pages_fetched = recent_comment_page_window
-
-      while trusted.size < max_prompt_comments && pages_fetched < MAX_RECENT_COMMENT_PAGES
-        break unless comments.respond_to?(:next_older_page_url) && comments.next_older_page_url
-
-        older_page = github_client.fetch_issue_comment_page(comments.next_older_page_url)
-        trusted = select_trusted_comments(older_page) + trusted
-        pages_fetched += 1
-        comments = older_page
-      end
-
-      trusted.last(max_prompt_comments)
     end
 
     def select_trusted_comments(comments)
