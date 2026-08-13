@@ -1,0 +1,10 @@
+alive_mutations:
+  - subject: Foo#bar
+    subject_path: app/models/foo.rb
+    source_line: 42
+    mutation_diff: "return true -> return false"
+errored_mutations:
+  - subject: Bad#method
+    subject_path: app/models/bad.rb
+    source_line: 10
+    error_message: "SyntaxError: unexpected end of input"

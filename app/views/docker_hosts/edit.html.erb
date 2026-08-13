@@ -1,0 +1,22 @@
+<% content_for :title, "Edit #{@docker_host.display_name}" %>
+
+<div class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to "Back to host", docker_host_path(@docker_host), class: "text-sm font-medium text-gray-500 hover:text-gray-700" %>
+    <% if @docker_host.remote? %>
+      <span class="mx-2 text-gray-300">•</span>
+      <%= link_to "Remote setup guide", setup_docker_host_path(@docker_host), class: "text-sm font-medium text-sky-700 hover:text-sky-600" %>
+    <% end %>
+  </div>
+
+  <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+    <div>
+      <h1 class="text-3xl font-semibold text-gray-900">Edit Docker host</h1>
+      <p class="mt-2 text-sm text-gray-600">Update placement and readiness metadata without changing environment variables.</p>
+    </div>
+
+    <div class="mt-6">
+      <%= render "form", docker_host: @docker_host %>
+    </div>
+  </section>
+</div>

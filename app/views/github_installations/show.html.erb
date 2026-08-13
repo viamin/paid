@@ -1,0 +1,122 @@
+<% content_for(:title) { "#{@github_installation.account_login} - GitHub App - Paid" } %>
+
+<div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="flex items-start justify-between gap-4">
+    <div>
+      <%= link_to "GitHub Apps", github_installations_path, class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+      <h1 class="mt-2 text-2xl font-bold text-gray-900"><%= @github_installation.account_login %></h1>
+      <p class="mt-1 text-sm text-gray-500">
+        Installation ID <%= @github_installation.github_installation_id %> for <%= @github_installation.target_type || "Organization" %> access.
+      </p>
+    </div>
+    <div class="flex gap-3">
+      <% if policy(@github_installation).update? && @github_installation.active? %>
+        <%= link_to "Migrate Projects", migrate_project_github_installation_path(@github_installation), class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      <% end %>
+    </div>
+  </div>
+
+  <div class="mt-8 grid gap-6 lg:grid-cols-3">
+    <div class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Status</h2>
+      <p class="mt-3 text-lg font-semibold text-gray-900">
+        <% if @github_installation.revoked? %>
+          Revoked
+        <% elsif @github_installation.suspended? %>
+          Suspended
+        <% else %>
+          Active
+        <% end %>
+      </p>
+      <p class="mt-2 text-sm text-gray-500">Repository selection: <%= @github_installation.repository_selection %></p>
+    </div>
+
+    <div class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Accessible Repositories</h2>
+      <p class="mt-3 text-3xl font-bold text-gray-900"><%= @accessible_repos_count %></p>
+      <p class="mt-2 text-sm text-gray-500">Repositories currently visible to the GitHub App.</p>
+    </div>
+
+    <div class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Linked Projects</h2>
+      <p class="mt-3 text-3xl font-bold text-gray-900"><%= @projects_using_installation.size %></p>
+      <p class="mt-2 text-sm text-gray-500">Projects already using this installation for GitHub access.</p>
+    </div>
+  </div>
+
+  <div class="mt-8 rounded-lg border border-gray-200 bg-white shadow-sm">
+    <div class="border-b border-gray-200 px-6 py-4">
+      <h2 class="text-lg font-semibold text-gray-900">Projects Using This Installation</h2>
+    </div>
+
+    <% if @projects_using_installation.any? %>
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Project</th>
+              <th class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Repository</th>
+              <th class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Created By</th>
+              <th class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Created</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-200 bg-white">
+            <% @projects_using_installation.each do |project| %>
+              <tr>
+                <td class="px-6 py-4 text-sm font-medium text-gray-900"><%= project.name %></td>
+                <td class="px-6 py-4 text-sm text-gray-500"><%= project.full_name %></td>
+                <td class="px-6 py-4 text-sm text-gray-500"><%= project.created_by&.email || "Unknown" %></td>
+                <td class="px-6 py-4 text-sm text-gray-500"><%= local_time(project.created_at, format: :date) %></td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    <% else %>
+      <div class="px-6 py-8 text-sm text-gray-500">
+        No projects are using this installation yet.
+      </div>
+    <% end %>
+  </div>
+
+  <div class="mt-8 rounded-lg border border-gray-200 bg-white shadow-sm">
+    <div class="border-b border-gray-200 px-6 py-4">
+      <h2 class="text-lg font-semibold text-gray-900">Accessible Repositories</h2>
+    </div>
+
+    <% if @accessible_repos.any? %>
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Repository</th>
+              <th class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Visibility</th>
+              <th class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Default Branch</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-200 bg-white">
+            <% @accessible_repos.each do |repo| %>
+              <tr>
+                <td class="px-6 py-4 text-sm font-medium text-gray-900">
+                  <%= link_to repo["full_name"], "https://github.com/#{repo["full_name"]}", target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-500" %>
+                </td>
+                <td class="px-6 py-4 text-sm text-gray-500">
+                  <% if repo["private"] %>
+                    <span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600">Private</span>
+                  <% else %>
+                    <span class="inline-flex items-center rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700">Public</span>
+                  <% end %>
+                </td>
+                <td class="px-6 py-4 text-sm text-gray-500"><%= repo["default_branch"] %></td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    <% else %>
+      <div class="px-6 py-8 text-sm text-gray-500">
+        No repositories found. If repository selection is "all", any repository under <strong><%= @github_installation.account_login %></strong> is accessible.
+      </div>
+    <% end %>
+  </div>
+</div>

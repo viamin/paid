@@ -1,0 +1,99 @@
+<%# Preview wrapper: reflects the real PreviewSession lifecycle. A live,
+    proxiable session embeds the authorized proxied app in a same-origin
+    iframe; every other state surfaces clear, actionable messaging. %>
+<% session = @preview_session %>
+<% status_classes = case session.status
+                    when "ready" then "bg-green-100 text-green-700"
+                    when "failed" then "bg-red-100 text-red-700"
+                    when "stopped" then "bg-gray-100 text-gray-700"
+                    when "provisioning", "starting", "pending" then "bg-amber-100 text-amber-700"
+                    else "bg-gray-100 text-gray-700"
+                    end %>
+<div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+  <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div>
+      <div class="flex flex-wrap items-center gap-3">
+        <h1 class="text-2xl font-bold tracking-tight text-gray-900">Live preview</h1>
+        <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium <%= status_classes %>">
+          <%= session.expired? ? "Expired" : session.status_label %>
+        </span>
+      </div>
+      <dl class="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500">
+        <% if session.branch_name.present? %>
+          <div><dt class="inline font-medium text-gray-700">Branch:</dt> <dd class="inline font-mono"><%= session.branch_name %></dd></div>
+        <% end %>
+        <% if session.expires_at.present? %>
+          <div><dt class="inline font-medium text-gray-700">Expires:</dt>
+            <dd class="inline <%= session.ttl_warning? ? 'text-amber-700' : '' %>">
+              <%= local_time(session.expires_at) %><% if session.active? %> (<%= distance_of_time_in_words(session.time_remaining) %> remaining)<% end %>
+            </dd>
+          </div>
+        <% end %>
+        <% if session.tunnel_port.present? %>
+          <div><dt class="inline font-medium text-gray-700">Tunnel:</dt> <dd class="inline"><%= session.tunnel_port %></dd></div>
+        <% end %>
+      </dl>
+    </div>
+    <div class="flex items-center gap-2">
+      <%= link_to "Back to project", session.project, class: "rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+      <% if policy(session).stop? && session.active? %>
+        <%= button_to "Stop preview",
+              stop_project_preview_session_path(session.project, session),
+              method: :post,
+              data: { turbo_confirm: "Stop this preview and tear down its tunnel?" },
+              class: "rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500" %>
+      <% end %>
+    </div>
+  </div>
+
+  <div class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+    <% if session.expired? %>
+      <div class="p-6">
+        <p class="text-sm font-medium text-gray-900">This preview has expired.</p>
+        <p class="mt-1 text-sm text-gray-500">It was automatically stopped after its time-to-live elapsed. Start a new preview from the project page to relaunch.</p>
+      </div>
+    <% elsif session.live? && session.proxiable? %>
+      <iframe
+        src="<%= session.proxy_prefix %>/"
+        title="Preview of <%= session.branch_name.presence || session.project.name %>"
+        class="h-[80vh] w-full"
+        allow="clipboard-read; clipboard-write; fullscreen"
+        referrerpolicy="no-referrer"
+        loading="eager"></iframe>
+    <% elsif session.live? %>
+      <div class="p-6">
+        <p class="text-sm font-medium text-amber-700">Finalizing preview tunnel.</p>
+        <p class="mt-1 text-sm text-amber-600">The app is ready and the preview tunnel is opening. Reload shortly to view the live app.</p>
+      </div>
+    <% elsif session.failed? %>
+      <div class="p-6">
+        <p class="text-sm font-medium text-red-700">Preview provisioning failed.</p>
+        <p class="mt-1 text-sm text-red-600"><%= session.error_message.presence || "Unknown error" %></p>
+        <p class="mt-1 text-sm text-gray-500">Restart the preview from the project page to provision a fresh environment.</p>
+      </div>
+    <% elsif session.stopped? %>
+      <div class="p-6">
+        <p class="text-sm font-medium text-gray-900">This preview is stopped.</p>
+        <p class="mt-1 text-sm text-gray-500">Start a new preview from the project page to relaunch a disposable app environment.</p>
+      </div>
+    <% elsif session.in_progress? %>
+      <div class="p-6">
+        <p class="text-sm font-medium text-amber-700">Preview is provisioning.</p>
+        <p class="mt-1 text-sm text-amber-600">
+          <% if session.pending? %>
+            Queued and waiting to provision a container.
+          <% elsif session.starting? %>
+            Starting the application and opening the preview tunnel.
+          <% else %>
+            Booting the container and installing dependencies.
+          <% end %>
+          Reload this page once provisioning completes to view the live app.
+        </p>
+      </div>
+    <% else %>
+      <div class="p-6">
+        <p class="text-sm font-medium text-gray-900">Preview session is <%= session.status_label.downcase %>.</p>
+      </div>
+    <% end %>
+  </div>
+</div>

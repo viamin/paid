@@ -1,0 +1,40 @@
+# Temporal dynamic configuration for development
+# See: https://docs.temporal.io/references/dynamic-configuration
+
+limit.maxIDLength:
+  - value: 255
+    constraints: {}
+
+system.forceSearchAttributesCacheRefreshOnRead:
+  - value: true
+    constraints: {}
+
+matching.useNewMatcher:
+  - value: true
+    constraints:
+      namespace: default
+      taskQueueName: paid-agent-tasks
+
+matching.enableFairness:
+  - value: true
+    constraints:
+      namespace: default
+      taskQueueName: paid-agent-tasks
+
+matching.enableMigration:
+  - value: true
+    constraints:
+      namespace: default
+      taskQueueName: paid-agent-tasks
+
+matching.numTaskqueueReadPartitions:
+  - value: 1
+    constraints:
+      namespace: default
+      taskQueueName: paid-agent-tasks
+
+matching.numTaskqueueWritePartitions:
+  - value: 1
+    constraints:
+      namespace: default
+      taskQueueName: paid-agent-tasks

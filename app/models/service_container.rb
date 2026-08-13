@@ -1,0 +1,110 @@
+# frozen_string_literal: true
+
+class ServiceContainer < ApplicationRecord
+  has_logidze
+  STATUSES = %w[stopped starting running error].freeze
+
+  belongs_to :account
+  has_many :project_service_containers, dependent: :destroy
+  has_many :projects, through: :project_service_containers
+  has_many :service_container_metrics, dependent: :delete_all
+
+  validates :image, presence: true
+  validates :name, presence: true, uniqueness: { scope: :account_id }
+  validates :port, presence: true, numericality: { only_integer: true, greater_than: 0, less_than: 65_536 }
+  validates :status, presence: true, inclusion: { in: STATUSES }
+  validates :docker_container_id, length: { maximum: 128 }, allow_blank: true
+  validates :container_host, length: { maximum: 64 }, allow_blank: true
+  validates :container_metrics_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  validate :image_in_allowlist, if: :validate_image?
+  validate :env_json_valid
+
+  scope :running, -> { where(status: "running") }
+  scope :stopped, -> { where(status: "stopped") }
+
+  # Virtual attribute for editing env as JSON text
+  def env_json
+    (env || {}).to_json
+  end
+
+  def env_json=(value)
+    self.env = value.present? ? JSON.parse(value) : {}
+  rescue JSON::ParserError
+    @env_json_invalid = true
+  end
+
+  def running?
+    status == "running"
+  end
+
+  def docker_host
+    container_host.presence
+  end
+
+  def docker_backend
+    Containers.backend_for(docker_host)
+  end
+
+  # Counts in-flight capacity runs across all associated projects that reference this container.
+  # Includes running runs and claimed queued runs that are still provisioning.
+  def capacity_inflight_agent_run_count
+    AgentRun.capacity_inflight
+      .where(project_id: project_ids)
+      .where("service_container_ids @> ?", [ id ].to_json)
+      .count
+  end
+
+  private
+
+  def env_json_valid
+    errors.add(:env_json, "must be valid JSON") if @env_json_invalid
+  end
+
+  # Only validate image on create or when the image is actually changing.
+  # Status-only updates (stop/start/error) must not re-validate.
+  def validate_image?
+    new_record? || will_save_change_to_image?
+  end
+
+  # Checks the image against the allowlist from UserSettings of
+  # account admins/owners.
+  def image_in_allowlist
+    return if image.blank?
+
+    allowed = allowed_images
+    return if allowed.include?(image)
+
+    errors.add(:image, "is not in the allowed service images list")
+  end
+
+  def allowed_images
+    allowed_images_from_settings
+  end
+
+  # Falls back to settings from account admins/owners.
+  # Scoped to associated projects' accounts when the container already
+  # belongs to projects (i.e. on image update). On create the record is
+  # not yet persisted, so falls back to all admin/owner settings.
+  def allowed_images_from_settings
+    admin_user_ids = if account_id.present?
+      AccountMembership
+        .where(account_id: account_id, role: [ :admin, :owner ])
+        .select(:user_id)
+    elsif persisted? && project_service_containers.any?
+      account_ids = projects.select(:account_id)
+      AccountMembership
+        .where(account_id: account_ids, role: [ :admin, :owner ])
+        .select(:user_id)
+    else
+      AccountMembership
+        .where(role: [ :admin, :owner ])
+        .select(:user_id)
+    end
+
+    UserSetting.where(user_id: admin_user_ids)
+      .pluck(:allowed_service_images)
+      .compact
+      .flatten
+      .uniq
+  end
+end

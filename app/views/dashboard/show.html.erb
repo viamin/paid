@@ -1,0 +1,182 @@
+<%= turbo_stream_from current_account, :dashboard_updates %>
+<%= turbo_stream_from current_account, :live_dashboard %>
+<div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10" data-controller="live-dashboard dashboard-frames">
+  <div class="sm:flex sm:items-center sm:justify-between">
+    <div class="sm:flex-auto">
+      <h1 class="text-2xl font-semibold leading-6 text-gray-900">Dashboard</h1>
+      <p class="mt-2 text-sm text-gray-700">
+        Welcome to Paid, <%= current_user.name.presence || current_user.email %>!
+        You're part of the <strong><%= current_user.account.name %></strong> account.
+      </p>
+    </div>
+    <div class="mt-4 flex items-center gap-3 sm:mt-0">
+      <% if policy(ExceptionIncident).index? %>
+        <%= link_to "Exception incidents",
+          exception_incidents_path,
+          data: { testid: "dashboard-exception-incidents-link" },
+          class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+      <% end %>
+      <span class="relative flex h-3 w-3 transition-transform duration-300" id="live-indicator">
+        <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75"></span>
+        <span class="relative inline-flex h-3 w-3 rounded-full bg-green-500"></span>
+      </span>
+      <span class="text-sm text-gray-500">Live</span>
+    </div>
+  </div>
+
+  <%# Section 1: Live Metrics (expanded by default) %>
+  <details open class="mt-8">
+    <summary class="cursor-pointer select-none text-lg font-semibold text-gray-900 hover:text-indigo-600">
+      Live Metrics
+    </summary>
+    <div class="mt-4">
+      <div id="live-stats">
+        <%= render "dashboard/live_stats", stats: @live_stats %>
+      </div>
+
+      <div class="mt-6">
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <h3 class="text-base font-semibold text-gray-900">Active Runs</h3>
+            <p class="mt-1 text-sm text-gray-500">Currently running agent runs across all projects, with one-click cancellation.</p>
+          </div>
+          <%= link_to "View all runs", agent_runs_path, class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+        </div>
+        <div id="active-runs" class="mt-4">
+          <%= render "dashboard/active_runs", active_runs: @active_runs %>
+        </div>
+      </div>
+
+      <div class="mt-6" id="paused-runs">
+        <%= render "dashboard/paused_runs", paused_runs: @paused_runs %>
+      </div>
+
+      <div class="mt-6">
+        <%= render "dashboard/quality_paused_projects", projects: @quality_paused_projects %>
+      </div>
+
+      <div class="mt-6">
+        <%= render "dashboard/queue_preview_frame",
+          queue_preview: @queue_preview,
+          paused_projects: @quality_paused_projects,
+          queue_fairness_mode: @queue_fairness_mode %>
+      </div>
+
+      <turbo-frame id="dashboard-eligibility-breakdown"
+        data-dashboard-frames-target="frame"
+        data-dashboard-frames-src="<%= dashboard_eligibility_breakdown_path %>"
+        class="mt-6 block">
+        <div class="animate-pulse rounded-lg bg-gray-100 h-32"></div>
+      </turbo-frame>
+
+      <div class="mt-6">
+        <%= render "dashboard/retry_limited_issues", retry_limited_issues: @retry_limited_issues %>
+      </div>
+
+      <turbo-frame id="dashboard-auth-health"
+        data-dashboard-frames-target="frame"
+        data-dashboard-frames-src="<%= dashboard_auth_health_path %>"
+        class="mt-6 block">
+        <div class="animate-pulse rounded-lg bg-amber-50 h-24"></div>
+      </turbo-frame>
+
+      <turbo-frame id="dashboard-runner-health"
+        data-dashboard-frames-target="frame"
+        data-dashboard-frames-src="<%= dashboard_runner_health_path %>"
+        class="mt-6 block">
+        <div class="animate-pulse rounded-lg bg-gray-100 h-32"></div>
+      </turbo-frame>
+
+      <turbo-frame id="dashboard-queue-health"
+        data-dashboard-frames-target="frame"
+        data-dashboard-frames-src="<%= dashboard_queue_health_path %>"
+        class="mt-6 block">
+        <div class="animate-pulse rounded-lg bg-gray-100 h-24"></div>
+      </turbo-frame>
+
+      <turbo-frame id="dashboard-github-health"
+        data-dashboard-frames-target="frame"
+        data-dashboard-frames-src="<%= dashboard_github_health_path %>"
+        class="mt-6 block">
+        <div class="animate-pulse rounded-lg bg-gray-100 h-32"></div>
+      </turbo-frame>
+
+      <div id="dashboard-alerts" class="mt-6 space-y-3"></div>
+    </div>
+  </details>
+
+  <%# Section 2: Cumulative / Periodic Metrics (expanded by default) %>
+  <details open class="mt-8">
+    <summary class="cursor-pointer select-none text-lg font-semibold text-gray-900 hover:text-indigo-600">
+      Cumulative / Periodic Metrics
+    </summary>
+    <div class="mt-4">
+      <turbo-frame id="dashboard-metrics"
+        data-dashboard-frames-target="frame"
+        data-dashboard-frames-src="<%= dashboard_metrics_path(time_range: @time_range) %>">
+        <div class="animate-pulse space-y-4">
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div class="rounded-lg bg-gray-100 h-24"></div>
+            <div class="rounded-lg bg-gray-100 h-24"></div>
+            <div class="rounded-lg bg-gray-100 h-24"></div>
+            <div class="rounded-lg bg-gray-100 h-24"></div>
+          </div>
+        </div>
+      </turbo-frame>
+      <turbo-frame id="dashboard-knowledge-stats"
+        data-dashboard-frames-target="frame"
+        data-dashboard-frames-src="<%= dashboard_knowledge_stats_path %>">
+        <div class="animate-pulse mt-8 rounded-lg bg-gray-100 h-24"></div>
+      </turbo-frame>
+      <turbo-frame id="dashboard-pr-cycle-time"
+        data-dashboard-frames-target="frame"
+        data-dashboard-frames-src="<%= dashboard_pr_cycle_time_path(time_range: @time_range) %>"
+        class="mt-8 block">
+        <div class="animate-pulse rounded-lg bg-gray-100 h-64"></div>
+      </turbo-frame>
+      <turbo-frame id="dashboard-decision-metrics"
+        data-dashboard-frames-target="frame"
+        data-dashboard-frames-src="<%= dashboard_decision_metrics_path(time_range: @time_range) %>"
+        class="mt-8 block">
+        <div class="animate-pulse space-y-4">
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div class="rounded-lg bg-gray-100 h-24"></div>
+            <div class="rounded-lg bg-gray-100 h-24"></div>
+            <div class="rounded-lg bg-gray-100 h-24"></div>
+            <div class="rounded-lg bg-gray-100 h-24"></div>
+          </div>
+          <div class="rounded-lg bg-gray-100 h-48"></div>
+        </div>
+      </turbo-frame>
+    </div>
+  </details>
+
+  <%# Section 3: Performance (expanded by default) %>
+  <details open class="mt-8">
+    <summary class="cursor-pointer select-none text-lg font-semibold text-gray-900 hover:text-indigo-600">
+      Performance
+    </summary>
+    <div class="mt-4">
+      <turbo-frame id="dashboard-performance"
+        data-dashboard-frames-target="frame"
+        data-dashboard-frames-src="<%= dashboard_performance_path(time_range: @time_range, status: @status_filter, goal: @goal_filter) %>">
+        <div class="animate-pulse space-y-4">
+          <div class="rounded-lg bg-gray-100 h-48"></div>
+          <div class="rounded-lg bg-gray-100 h-48"></div>
+        </div>
+      </turbo-frame>
+    </div>
+  </details>
+
+  <%# Section 4: Recent Activity (collapsed by default) %>
+  <details class="mt-8">
+    <summary class="cursor-pointer select-none text-lg font-semibold text-gray-900 hover:text-indigo-600">
+      Recent Activity
+    </summary>
+    <div class="mt-4">
+      <div id="activity-stream">
+        <%= render "dashboard/activity_stream", activity_items: @recent_activity %>
+      </div>
+    </div>
+  </details>
+</div>

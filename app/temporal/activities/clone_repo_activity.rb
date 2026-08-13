@@ -1,0 +1,154 @@
+# frozen_string_literal: true
+
+module Activities
+  # Clones a repository and creates a working branch inside an already-provisioned container.
+  #
+  # Replaces the host-side CreateWorktreeActivity. Git operations run inside
+  # the container, authenticated via the git credential helper proxy.
+  class CloneRepoActivity < BaseActivity
+    activity_name "CloneRepo"
+
+    include Containers::QualityHooks
+
+    def execute(input)
+      agent_run_id = input[:agent_run_id]
+      agent_run = AgentRun.find(agent_run_id)
+      track_phase(agent_run_id: agent_run_id, phase_key: "clone_repo", phase_group: "setup", agent_run: agent_run) do
+        container_service = reconnect_container(agent_run)
+        git_ops = Containers::GitOperations.new(
+          container_service: container_service,
+          agent_run: agent_run
+        )
+
+        if agent_run.existing_pr?
+          heartbeat("clone_repo.fetch_pr_branch", agent_run_id: agent_run_id)
+          branch_name = fetch_pr_branch(agent_run)
+          with_periodic_heartbeat("clone_repo.checkout_existing_pr", agent_run_id: agent_run_id, branch_name: branch_name) do
+            git_ops.clone_and_checkout_branch(
+              branch_name: branch_name,
+              pull_request_number: agent_run.source_pull_request_number
+            )
+          end
+        else
+          with_periodic_heartbeat("clone_repo.setup_branch", agent_run_id: agent_run_id, branch_name: agent_run.branch_name) do
+            git_ops.clone_and_setup_branch
+          end
+        end
+
+        heartbeat("clone_repo.install_hooks", agent_run_id: agent_run_id, branch_name: agent_run.branch_name)
+        git_ops.install_artifact_excludes
+        install_quality_hooks(git_ops, agent_run)
+        git_ops.install_co_author_hook
+
+        heartbeat("clone_repo.codegraph_setup", agent_run_id: agent_run_id)
+        Containers::TokenOptimization.codegraph_setup(container_service: container_service)
+
+        create_worktree_record(agent_run)
+
+        { agent_run_id: agent_run_id, branch_name: agent_run.branch_name }
+      end
+    end
+
+    private
+
+    def fetch_pr_branch(agent_run)
+      project = agent_run.project
+      client = project.client
+      pr = client.pull_request(project.full_name, agent_run.source_pull_request_number)
+
+      unless pr.state == "open"
+        raise Temporalio::Error::ApplicationError.new(
+          "PR ##{agent_run.source_pull_request_number} is #{pr.state}; project resync needed",
+          type: "StalePullRequest",
+          non_retryable: true
+        )
+      end
+
+      pr.head.ref
+    end
+
+    def reconnect_container(agent_run)
+      Containers::Provision.reconnect(
+        agent_run: agent_run,
+        container_id: agent_run.container_id
+      )
+    end
+
+    MAX_WORKTREE_RETRIES = 3
+
+    def create_worktree_record(agent_run, attempts: 0)
+      # For existing PR runs the branch name is deterministic, so a finished
+      # worktree record from a previous run may still exist. Reclaim it
+      # instead of failing on the uniqueness constraint.
+      #
+      # An active record for the *same* agent_run is a Temporal retry —
+      # return it as-is to stay idempotent.
+      #
+      # Rescue RecordNotUnique to handle the race where two activities
+      # both see no existing record and try to insert concurrently.
+      agent_run.reload
+      existing = Worktree.find_by(
+        project_id: agent_run.project_id,
+        branch_name: agent_run.branch_name
+      )
+
+      if existing.nil?
+        Worktree.create!(
+          project: agent_run.project,
+          agent_run: agent_run,
+          path: "/workspace",
+          branch_name: agent_run.branch_name,
+          base_commit: agent_run.base_commit_sha,
+          status: "active"
+        )
+      elsif existing.active? && existing.agent_run_id == agent_run.id
+        # Temporal retry — the previous attempt already created this record.
+        existing
+      elsif existing.active? && existing.agent_run&.finished?
+        # The owning agent run finished (failed/completed) but cleanup never
+        # marked the worktree as cleaned. Reclaim the stale record.
+        existing.update!(
+          agent_run: agent_run,
+          path: "/workspace",
+          base_commit: agent_run.base_commit_sha,
+          pushed: false,
+          cleaned_at: nil,
+          created_at: Time.current
+        )
+        existing
+      elsif existing.active?
+        raise Temporalio::Error::ApplicationError.new(
+          "Branch #{agent_run.branch_name} has an active worktree from agent run #{existing.agent_run_id}",
+          type: "WorktreeConflict"
+        )
+      else
+        # Reclaim cleaned or cleanup_failed records from finished runs.
+        # Reset created_at so the record isn't immediately flagged as
+        # stale/orphaned by cleanup jobs that check created_at age.
+        existing.update!(
+          agent_run: agent_run,
+          path: "/workspace",
+          base_commit: agent_run.base_commit_sha,
+          status: "active",
+          pushed: false,
+          cleaned_at: nil,
+          created_at: Time.current
+        )
+        existing
+      end
+    rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid => e
+      # RecordNotUnique: lost the race — another activity inserted first.
+      # RecordInvalid with uniqueness error: find_by missed the existing
+      # record (e.g. stale query cache) but the validation caught it.
+      # In both cases, re-fetch and apply the idempotent/conflict logic.
+      retryable_uniqueness_error =
+        e.is_a?(ActiveRecord::RecordInvalid) &&
+        e.record.is_a?(Worktree) &&
+        e.record.errors.of_kind?(:branch_name, :taken)
+
+      raise unless e.is_a?(ActiveRecord::RecordNotUnique) || retryable_uniqueness_error
+      raise if attempts >= MAX_WORKTREE_RETRIES
+      create_worktree_record(agent_run, attempts: attempts + 1)
+    end
+  end
+end

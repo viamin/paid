@@ -1,0 +1,67 @@
+<% content_for(:title) { "Notifications" } %>
+
+<div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="sm:flex sm:items-center sm:justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Notifications</h1>
+      <p class="mt-1 text-sm text-gray-500">Review and manage system notifications.</p>
+    </div>
+    <div class="mt-4 sm:mt-0">
+      <%= button_to "Mark all read", mark_all_read_notifications_path, method: :post, params: request.query_parameters.slice("filter", "severity", "source"), class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500", form: { data: { turbo: false } } %>
+    </div>
+  </div>
+
+  <div class="mt-4 flex gap-2">
+    <% severity_active = params[:severity].in?(%w[info warning error]) %>
+    <%= link_to "All", notifications_path(severity: severity_active ? params[:severity] : nil), class: "rounded-md px-3 py-1.5 text-sm font-medium #{params[:filter].blank? ? 'bg-indigo-100 text-indigo-700' : 'text-gray-500 hover:text-gray-700'}" %>
+    <%= link_to "Unread", notifications_path(filter: "unread", severity: severity_active ? params[:severity] : nil), class: "rounded-md px-3 py-1.5 text-sm font-medium #{params[:filter] == 'unread' ? 'bg-indigo-100 text-indigo-700' : 'text-gray-500 hover:text-gray-700'}" %>
+    <% %w[info warning error].each do |sev| %>
+      <%= link_to sev.capitalize, notifications_path(severity: sev, filter: params[:filter]), class: "rounded-md px-3 py-1.5 text-sm font-medium #{params[:severity] == sev ? 'bg-indigo-100 text-indigo-700' : 'text-gray-500 hover:text-gray-700'}" %>
+    <% end %>
+  </div>
+
+  <div class="mt-6 overflow-hidden shadow ring-1 ring-black ring-opacity-5 sm:rounded-lg">
+    <div class="overflow-x-auto">
+    <table class="min-w-full divide-y divide-gray-300" style="min-width: 640px">
+      <thead class="bg-gray-50">
+        <tr>
+          <th scope="col" class="min-w-[5rem] py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">Severity</th>
+          <th scope="col" class="min-w-[16rem] px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Notification</th>
+          <th scope="col" class="min-w-[6rem] px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Source</th>
+          <th scope="col" class="min-w-[7rem] px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Time</th>
+          <th scope="col" class="min-w-[6rem] relative py-3.5 pl-3 pr-4 sm:pr-6"><span class="sr-only">Actions</span></th>
+        </tr>
+      </thead>
+      <%= tag.tbody id: "notifications_list", class: "divide-y divide-gray-200 bg-white" do %>
+        <% if @notifications.any? %>
+          <% @notifications.each do |notification| %>
+            <%= render "notifications/notification", notification: notification %>
+          <% end %>
+        <% else %>
+          <tr>
+            <td colspan="5" class="px-4 py-12 text-center text-sm text-gray-500">
+              No notifications found.
+            </td>
+          </tr>
+        <% end %>
+      <% end %>
+    </table>
+    </div>
+  </div>
+
+  <% if @pagy.pages > 1 %>
+    <div class="mt-4 flex items-center justify-between">
+      <p class="text-sm text-gray-700">
+        Showing <span class="font-medium"><%= @pagy.from %></span> to <span class="font-medium"><%= @pagy.to %></span> of <span class="font-medium"><%= @pagy.count %></span> notifications
+      </p>
+      <nav class="flex gap-1">
+        <% if @pagy.previous %>
+          <%= link_to "Previous", notifications_path(page: @pagy.previous, filter: params[:filter], severity: params[:severity], source: params[:source]), class: "rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50" %>
+        <% end %>
+        <% if @pagy.next %>
+          <%= link_to "Next", notifications_path(page: @pagy.next, filter: params[:filter], severity: params[:severity], source: params[:source]), class: "rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50" %>
+        <% end %>
+      </nav>
+    </div>
+  <% end %>
+</div>

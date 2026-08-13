@@ -1,0 +1,152 @@
+groups:
+  - name: paid-availability
+    rules:
+      - alert: PaidMetricsEndpointDown
+        expr: up{job="paid"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: paid-web
+        annotations:
+          summary: Paid metrics endpoint is down
+          description: Prometheus has failed to scrape the Rails /api/metrics endpoint for 2 minutes.
+
+      - alert: PaidTemporalWorkerMetricsDown
+        expr: up{job="paid-temporal-worker"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: paid-temporal-worker
+        annotations:
+          summary: Paid Temporal worker metrics are down
+          description: Prometheus has failed to scrape the Temporal worker Prometheus exporter for 2 minutes.
+
+      - alert: PaidPostgresExporterDown
+        expr: up{job="postgres-exporter"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          service: postgres-exporter
+        annotations:
+          summary: Postgres exporter is down
+          description: PostgreSQL infrastructure metrics are unavailable because postgres-exporter is not being scraped.
+
+  - name: paid-capacity
+    rules:
+      - alert: PaidQueuedRunsBacklog
+        expr: paid_agent_runs_queued > 10
+        for: 10m
+        labels:
+          severity: warning
+          service: paid-web
+        annotations:
+          summary: Agent run queue is backing up
+          description: There are more than 10 queued agent runs for at least 10 minutes.
+
+      - alert: PaidGoodJobBacklog
+        expr: sum(paid_goodjob_queue_depth) > 50
+        for: 10m
+        labels:
+          severity: warning
+          service: good_job
+        annotations:
+          summary: GoodJob backlog is elevated
+          description: More than 50 unfinished GoodJob jobs are waiting across queues.
+
+      - alert: PaidTemporalWorkflowSlotsSaturated
+        expr: paid_temporal_workflow_utilization_percent > 90
+        for: 10m
+        labels:
+          severity: warning
+          service: paid-temporal-worker
+        annotations:
+          summary: Temporal workflow slots are saturated
+          description: Workflow slot utilization has exceeded 90 percent for 10 minutes.
+
+      - alert: PaidAgentRunFailureRateHigh
+        expr: |
+          (
+            sum(max without(instance, pod, job) (paid_agent_run_outcomes_window{outcome="failure"}))
+            /
+            clamp_min(sum(max without(instance, pod, job) (paid_agent_run_outcomes_window{outcome!="non_provider"})), 1)
+          ) > 0.4
+          and
+          sum(max without(instance, pod, job) (paid_agent_run_outcomes_window{outcome!="non_provider"})) >= 5
+        for: 15m
+        labels:
+          severity: warning
+          service: paid-web
+        annotations:
+          summary: Agent run failure rate is elevated
+          description: More than 40 percent of current finished agent runs have ended unsuccessfully for 15 minutes, with at least 5 finished runs present.
+
+      - alert: PaidAgentRunDurationP95High
+        # Sliding-window gauge: histogram_quantile on snapshot buckets approximates the
+        # current-window p95. This is not a true cumulative Prometheus histogram — the
+        # quantile can shift as runs age past the 6h window boundary.
+        expr: |
+          histogram_quantile(
+            0.95,
+            max without(instance, pod, job) (
+              paid_agent_run_duration_seconds_bucket_window{outcome="success"}
+            )
+          ) > 1800
+        for: 15m
+        labels:
+          severity: warning
+          service: paid-web
+        annotations:
+          summary: Successful agent runs are taking longer than expected
+          description: The p95 duration for successful agent runs has exceeded 30 minutes for 15 minutes.
+
+      - alert: PaidTemporalWorkflowScheduleToStartP95High
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (task_queue, le) (
+              rate(temporal_workflow_task_schedule_to_start_latency_seconds_bucket[5m])
+            )
+          ) > 30
+        for: 10m
+        labels:
+          severity: warning
+          service: paid-temporal-worker
+        annotations:
+          summary: Temporal workflow queue latency is elevated
+          description: Workflow task schedule-to-start p95 latency has exceeded 30 seconds for 10 minutes.
+
+      - alert: PaidTemporalActivityScheduleToStartP95High
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (task_queue, le) (
+              rate(temporal_activity_schedule_to_start_latency_seconds_bucket[5m])
+            )
+          ) > 30
+        for: 10m
+        labels:
+          severity: warning
+          service: paid-temporal-worker
+        annotations:
+          summary: Temporal activity queue latency is elevated
+          description: Activity task schedule-to-start p95 latency has exceeded 30 seconds for 10 minutes.
+
+      - alert: PaidContainerMemoryPressure
+        expr: paid_containers_avg_memory_percent > 85
+        for: 10m
+        labels:
+          severity: warning
+          service: agent-containers
+        annotations:
+          summary: Agent container memory pressure is high
+          description: Average memory utilization across active agent containers has exceeded 85 percent.
+
+      - alert: PaidServiceContainerMemoryPressure
+        expr: paid_service_containers_avg_memory_percent > 85
+        for: 10m
+        labels:
+          severity: warning
+          service: service-containers
+        annotations:
+          summary: Service container memory pressure is high
+          description: Average memory utilization across running service containers has exceeded 85 percent.

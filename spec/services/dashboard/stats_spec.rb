@@ -1,0 +1,1229 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe Dashboard::Stats do
+  let(:account) { create(:account) }
+  let(:project) { create(:project, account: account) }
+
+  around do |example|
+    original_store = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    example.run
+  ensure
+    Rails.cache = original_store
+  end
+
+  def create_timed_completed_run(project:, created_at:)
+    create(:agent_run, :completed, project: project,
+      created_at: created_at, started_at: created_at + 1.minute,
+      completed_at: created_at + 2.minutes, duration_seconds: 60)
+  end
+
+  def create_setup_phase(agent_run, duration_seconds:)
+    create(:agent_run_phase, agent_run: agent_run, phase_group: "setup",
+      duration_seconds: duration_seconds, started_at: agent_run.started_at,
+      finished_at: agent_run.started_at + duration_seconds.seconds)
+  end
+
+  describe ".call" do
+    subject(:stats) { described_class.call(account: account) }
+
+    context "with no agent runs" do
+      it "returns zero counts" do
+        expect(stats[:run_volume][:total]).to eq(0)
+        expect(stats[:run_volume][:last_7_days]).to eq(0)
+        expect(stats[:run_volume][:last_30_days]).to eq(0)
+        expect(stats[:run_volume][:active]).to eq(0)
+      end
+
+      it "returns zero failure rate" do
+        expect(stats[:run_volume][:failure_rate]).to eq(0.0)
+      end
+
+      it "returns zero-filled daily run chart series for the last 30 days" do
+        travel_to(Time.zone.local(2026, 5, 3, 12, 0, 0)) do
+          series = stats[:daily_run_status_chart]
+
+          expect(series.map { |item| item[:name] }).to eq([ "Failed", "Completed" ])
+          expect(series.all? { |item| item[:data].size == 30 }).to be(true)
+          expect(series.flat_map { |item| item[:data].values }.uniq).to eq([ 0 ])
+        end
+      end
+
+      it "returns nil-safe duration percentiles" do
+        expect(stats[:duration_percentiles][:p50]).to eq(0)
+        expect(stats[:duration_percentiles][:p75]).to eq(0)
+        expect(stats[:duration_percentiles][:p90]).to eq(0)
+        expect(stats[:duration_percentiles][:avg]).to eq(0)
+      end
+
+      it "returns zero cost and tokens" do
+        expect(stats[:cost_and_tokens][:total_cost_cents]).to eq(0)
+        expect(stats[:cost_and_tokens][:total_tokens]).to eq(0)
+      end
+
+      it "returns empty agent type, runner, and project breakdowns" do
+        expect(stats[:runs_by_agent_type]).to be_empty
+        expect(stats[:runs_by_runner]).to be_empty
+        expect(stats[:runs_by_project]).to be_empty
+      end
+
+      it "returns zero runner fallback stats" do
+        fs = stats[:runner_fallback_stats]
+        expect(fs[:total_runs]).to eq(0)
+        expect(fs[:fallback_count]).to eq(0)
+        expect(fs[:fallback_rate]).to eq(0.0)
+        expect(fs[:by_requested_runner]).to be_empty
+        expect(fs[:by_effective_runner]).to be_empty
+      end
+
+      it "returns zero issue completion stats" do
+        ic = stats[:issue_completion]
+        expect(ic[:merged_count]).to eq(0)
+        expect(ic[:runs_per_issue]).to eq(avg: 0.0, min: 0, max: 0, median: 0.0)
+        expect(ic[:time_to_merge]).to eq(avg_seconds: 0, p50_seconds: 0, p90_seconds: 0)
+        expect(ic[:agent_run_seconds]).to eq(avg_seconds: 0, p50_seconds: 0, p90_seconds: 0)
+      end
+
+      it "refreshes cached stats after the dashboard version changes" do
+        first = described_class.call(account: account)
+        create(:agent_run, :completed, project:, duration_seconds: 60)
+
+        cached = described_class.call(account: account)
+        Dashboard::CacheVersion.bump(account, scope: Dashboard::CacheVersion::STATS_SCOPE)
+        refreshed = described_class.call(account: account)
+
+        expect(first[:run_volume][:total]).to eq(0)
+        expect(cached[:run_volume][:total]).to eq(0)
+        expect(refreshed[:run_volume][:total]).to eq(1)
+      end
+
+      it "keeps cached stats warm when only the list cache version changes" do
+        first = described_class.call(account: account)
+        create(:agent_run, :completed, project:, duration_seconds: 60)
+
+        Dashboard::CacheVersion.bump(account, scope: Dashboard::CacheVersion::LISTS_SCOPE)
+        still_cached = described_class.call(account: account)
+
+        expect(first[:run_volume][:total]).to eq(0)
+        expect(still_cached[:run_volume][:total]).to eq(0)
+      end
+    end
+
+    context "with agent runs" do
+      around do |example|
+        travel_to(Time.zone.local(2026, 5, 3, 12, 0, 0)) { example.run }
+      end
+
+      before do
+        create(:agent_run, :completed, project: project, duration_seconds: 100,
+          tokens_input: 1000, tokens_output: 500, cost_cents: 50, iterations: 3,
+          created_at: 2.days.ago)
+        create(:agent_run, :completed, project: project, duration_seconds: 200,
+          tokens_input: 2000, tokens_output: 1000, cost_cents: 100, iterations: 5,
+          created_at: 5.days.ago)
+        create(:agent_run, :completed, project: project, duration_seconds: 600,
+          tokens_input: 5000, tokens_output: 2500, cost_cents: 250, iterations: 8,
+          created_at: 20.days.ago)
+        create(:agent_run, :failed, project: project, duration_seconds: 50,
+          created_at: 3.days.ago)
+        create(:agent_run, :running, project: project,
+          created_at: 1.hour.ago)
+      end
+
+      it "counts total runs" do
+        expect(stats[:run_volume][:total]).to eq(5)
+      end
+
+      it "counts runs in time windows" do
+        expect(stats[:run_volume][:last_7_days]).to eq(4)
+        expect(stats[:run_volume][:last_30_days]).to eq(5)
+      end
+
+      it "counts active runs" do
+        expect(stats[:run_volume][:active]).to eq(1)
+      end
+
+      it "groups runs by status" do
+        expect(stats[:run_volume][:by_status]["completed"]).to eq(3)
+        expect(stats[:run_volume][:by_status]["failed"]).to eq(1)
+        expect(stats[:run_volume][:by_status]["running"]).to eq(1)
+      end
+
+      it "calculates failure rate" do
+        # 1 failed / (3 completed + 1 failed) = 25.0%
+        expect(stats[:run_volume][:failure_rate]).to eq(25.0)
+      end
+
+      it "calculates duration percentiles for completed runs" do
+        expect(stats[:duration_percentiles][:p50]).to eq(200)
+        expect(stats[:duration_percentiles][:avg]).to eq(300)
+        expect(stats[:duration_percentiles][:p90]).to be > 0
+      end
+
+      it "builds a zero-filled daily chart grouped by day and status" do
+        series = stats[:daily_run_status_chart].index_by { |item| item[:name] }
+
+        expect(series["Failed"][:data][Date.new(2026, 4, 30)]).to eq(1)
+        expect(series["Completed"][:data][Date.new(2026, 5, 1)]).to eq(1)
+        expect(series["Completed"][:data][Date.new(2026, 4, 28)]).to eq(1)
+        expect(series["Completed"][:data][Date.new(2026, 4, 13)]).to eq(1)
+        expect(series["Failed"][:data][Date.new(2026, 5, 2)]).to eq(0)
+        expect(series["Completed"][:data].keys.first).to eq(Date.new(2026, 4, 4))
+        expect(series["Completed"][:data].keys.last).to eq(Date.new(2026, 5, 3))
+      end
+
+      it "calculates phase breakdown percentiles" do
+        completed_runs = AgentRun.where(project: project, status: "completed").order(:duration_seconds).to_a
+
+        create(:agent_run_phase, agent_run: completed_runs[0], phase_group: "setup", duration_seconds: 10, started_at: 2.days.ago, finished_at: 2.days.ago + 10.seconds)
+        create(:agent_run_phase, agent_run: completed_runs[0], phase_group: "agent", duration_seconds: 80, started_at: 2.days.ago + 20.seconds, finished_at: 2.days.ago + 100.seconds)
+
+        create(:agent_run_phase, agent_run: completed_runs[1], phase_group: "setup", duration_seconds: 20, started_at: 5.days.ago, finished_at: 5.days.ago + 20.seconds)
+        create(:agent_run_phase, agent_run: completed_runs[1], phase_group: "agent", duration_seconds: 160, started_at: 5.days.ago + 30.seconds, finished_at: 5.days.ago + 190.seconds)
+
+        create(:agent_run_phase, agent_run: completed_runs[2], phase_group: "setup", duration_seconds: 40, started_at: 20.days.ago, finished_at: 20.days.ago + 40.seconds)
+        create(:agent_run_phase, agent_run: completed_runs[2], phase_group: "agent", duration_seconds: 500, started_at: 20.days.ago + 60.seconds, finished_at: 20.days.ago + 560.seconds)
+
+        expect(stats[:phase_breakdown]["setup"][:avg_seconds]).to eq(23)
+        expect(stats[:phase_breakdown]["agent"][:p50_seconds]).to eq(160)
+        expect(stats[:phase_breakdown]["queue"][:sample_size]).to eq(3)
+      end
+
+      it "skips completed runs without phase rows" do
+        completed_run = AgentRun.where(project: project, status: "completed").first
+        create_setup_phase(completed_run, duration_seconds: 20)
+
+        expect(stats[:phase_breakdown]["setup"][:sample_size]).to eq(1)
+        expect(stats[:phase_breakdown]["setup"][:avg_seconds]).to eq(20)
+        expect(stats[:phase_breakdown]["queue"][:sample_size]).to eq(1)
+      end
+
+      it "calculates cost totals" do
+        expect(stats[:cost_and_tokens][:total_cost_cents]).to eq(400)
+      end
+
+      it "calculates token totals" do
+        # (1000+500) + (2000+1000) + (5000+2500) = 12000
+        expect(stats[:cost_and_tokens][:total_tokens]).to eq(12_000)
+      end
+
+      it "calculates per-run averages for completed runs" do
+        # 400 cents / 3 completed = 133
+        expect(stats[:cost_and_tokens][:avg_cost_per_run_cents]).to eq(133)
+        # 12000 tokens / 3 completed = 4000
+        expect(stats[:cost_and_tokens][:avg_tokens_per_run]).to eq(4000)
+      end
+
+      it "calculates average iterations per completed run" do
+        # (3 + 5 + 8) / 3 = 5.3
+        expect(stats[:cost_and_tokens][:avg_iterations_per_run]).to eq(5.3)
+      end
+
+      it "groups runs by agent type" do
+        expect(stats[:runs_by_agent_type]).to include([ "claude_code", 5 ])
+      end
+
+      it "groups runs by project" do
+        expect(stats[:runs_by_project]).to include([ project.name, 5 ])
+      end
+    end
+
+    context "with performance_by_outcome" do
+      before do
+        create(:agent_run, :completed, project: project, cost_cents: 100,
+          tokens_input: 1000, tokens_output: 500, duration_seconds: 60)
+        create(:agent_run, :completed, project: project, cost_cents: 200,
+          tokens_input: 2000, tokens_output: 1000, duration_seconds: 120)
+        create(:agent_run, project: project, status: "failed", cost_cents: 50,
+          tokens_input: 500, tokens_output: 250, duration_seconds: 30)
+        create(:agent_run, project: project, status: "timeout", cost_cents: 300,
+          tokens_input: 3000, tokens_output: 1500, duration_seconds: 600)
+      end
+
+      it "separates completed from other outcomes" do
+        completed = stats[:performance_by_outcome]["completed"]
+        other = stats[:performance_by_outcome]["other"]
+
+        expect(completed[:run_count]).to eq(2)
+        expect(completed[:total_cost_cents]).to eq(300)
+        expect(completed[:avg_cost_cents]).to eq(150)
+
+        expect(other[:run_count]).to eq(2)
+        expect(other[:total_cost_cents]).to eq(350)
+        expect(other[:avg_cost_cents]).to eq(175)
+      end
+    end
+
+    context "with performance_by_goal" do
+      before do
+        create(:agent_run, :completed, project: project, goal: "create_pr",
+          cost_cents: 200, tokens_input: 2000, tokens_output: 1000, duration_seconds: 120)
+        create(:agent_run, :completed, project: project, goal: "create_issue",
+          cost_cents: 50, tokens_input: 500, tokens_output: 250, duration_seconds: 30)
+        create(:agent_run, project: project, goal: "create_pr", status: "failed",
+          cost_cents: 100, tokens_input: 1000, tokens_output: 500, duration_seconds: 60)
+        create(:agent_run, :completed, :internal_agent, project: project, goal: "create_pr",
+          cost_cents: 9_999, tokens_input: 9000, tokens_output: 9000, duration_seconds: 999,
+          synthetic: true, external_metadata: { "preview_session" => true })
+      end
+
+      it "breaks down by goal type" do
+        pr = stats[:performance_by_goal]["create_pr"]
+        issue = stats[:performance_by_goal]["create_issue"]
+
+        expect(pr[:run_count]).to eq(2)
+        expect(pr[:total_cost_cents]).to eq(300)
+        expect(issue[:run_count]).to eq(1)
+        expect(issue[:total_cost_cents]).to eq(50)
+      end
+
+      it "includes outcome sub-breakdown per goal" do
+        pr = stats[:performance_by_goal]["create_pr"]
+        expect(pr[:by_outcome]["completed"][:run_count]).to eq(1)
+        expect(pr[:by_outcome]["completed"][:avg_cost_cents]).to eq(200)
+        expect(pr[:by_outcome]["other"][:run_count]).to eq(1)
+        expect(pr[:by_outcome]["other"][:avg_cost_cents]).to eq(100)
+      end
+
+      it "returns zeros for goal types with no runs" do
+        review = stats[:performance_by_goal]["review"]
+        expect(review[:run_count]).to eq(0)
+        expect(review[:total_cost_cents]).to eq(0)
+      end
+    end
+
+    context "with time_range filter" do
+      before do
+        create(:agent_run, :completed, project: project, created_at: 2.days.ago, cost_cents: 100)
+        create(:agent_run, :completed, project: project, created_at: 10.days.ago, cost_cents: 200)
+        create(:agent_run, :completed, project: project, created_at: 40.days.ago, cost_cents: 300)
+      end
+
+      it "returns all runs for cumulative" do
+        result = described_class.call(account: account, time_range: "cumulative")
+        expect(result[:run_volume][:total]).to eq(3)
+      end
+
+      it "filters to past 7 days" do
+        result = described_class.call(account: account, time_range: "7d")
+        expect(result[:run_volume][:total]).to eq(1)
+      end
+
+      it "filters to past 30 days" do
+        result = described_class.call(account: account, time_range: "30d")
+        expect(result[:run_volume][:total]).to eq(2)
+      end
+
+      it "filters to past 24 hours" do
+        result = described_class.call(account: account, time_range: "24h")
+        expect(result[:run_volume][:total]).to eq(0)
+      end
+
+      it "keeps trailing 30-day cost unfiltered when time_range narrows the window" do
+        result = described_class.call(account: account, time_range: "7d")
+        # Only 1 run in 7d window (cost 100), but trailing 30d should include 2 runs (cost 300)
+        expect(result[:cost_and_tokens][:total_cost_cents]).to eq(100)
+        expect(result[:cost_and_tokens][:trailing_30d_cost_cents]).to eq(300)
+      end
+
+      it "caches results per filter set" do
+        first = described_class.call(account: account, time_range: "24h", only: %i[run_volume])
+
+        create(:agent_run, :completed, project: project, created_at: 1.hour.ago, cost_cents: 400)
+
+        cached = described_class.call(account: account, time_range: "24h", only: %i[run_volume])
+        uncached = described_class.call(account: account, time_range: "30d", only: %i[run_volume])
+
+        expect(first[:run_volume][:total]).to eq(0)
+        expect(cached[:run_volume][:total]).to eq(0)
+        expect(uncached[:run_volume][:total]).to eq(3)
+      end
+    end
+
+    context "with only: section scoping" do
+      before do
+        create(:agent_run, :completed, project: project, cost_cents: 100,
+          tokens_input: 1000, tokens_output: 500, duration_seconds: 60)
+      end
+
+      it "returns only requested sections" do
+        result = described_class.call(account: account, only: %i[run_volume])
+        expect(result).to have_key(:run_volume)
+        expect(result).not_to have_key(:cost_and_tokens)
+        expect(result).not_to have_key(:performance_by_outcome)
+      end
+
+      it "returns all sections when only is nil" do
+        result = described_class.call(account: account)
+        expect(result.keys).to match_array(Dashboard::Stats::SECTIONS)
+      end
+    end
+
+    context "with status and goal filters on performance" do
+      before do
+        create(:agent_run, :completed, project: project, goal: "create_pr",
+          cost_cents: 100, tokens_input: 1000, tokens_output: 500, duration_seconds: 60)
+        create(:agent_run, project: project, goal: "create_pr", status: "failed",
+          cost_cents: 50, tokens_input: 500, tokens_output: 250, duration_seconds: 30)
+        create(:agent_run, :completed, :review_goal, project: project,
+          cost_cents: 75, tokens_input: 800, tokens_output: 400, duration_seconds: 45)
+      end
+
+      it "filters performance by status" do
+        result = described_class.call(account: account, status_filter: "completed")
+        completed = result[:performance_by_outcome]["completed"]
+        expect(completed[:run_count]).to eq(2)
+        expect(result[:performance_by_outcome]["other"][:run_count]).to eq(0)
+      end
+
+      it "filters performance by goal" do
+        result = described_class.call(account: account, goal_filter: "create_pr")
+        pr = result[:performance_by_goal]["create_pr"]
+        expect(pr[:run_count]).to eq(2)
+        # review goal shows 0 because the data is filtered to create_pr only
+        review = result[:performance_by_goal]["review"]
+        expect(review[:run_count]).to eq(0)
+      end
+
+      it "combines status and goal filters" do
+        result = described_class.call(account: account, status_filter: "completed", goal_filter: "create_pr")
+        completed = result[:performance_by_outcome]["completed"]
+        expect(completed[:run_count]).to eq(1)
+        expect(completed[:avg_cost_cents]).to eq(100)
+      end
+    end
+
+    context "with runs from another account" do
+      let(:other_account) { create(:account) }
+      let(:other_project) { create(:project, account: other_account) }
+
+      before do
+        create(:agent_run, :completed, project: other_project)
+        create(:agent_run, :completed, project: project)
+      end
+
+      it "only includes runs from the specified account" do
+        expect(stats[:run_volume][:total]).to eq(1)
+      end
+    end
+
+    # @spec LIVE-PREVIEW-003
+    context "with synthetic operational runs" do
+      before do
+        create(:agent_run, :completed, project: project, duration_seconds: 100,
+          created_at: 2.days.ago)
+        create(:agent_run, :running, :synthetic, project: project, started_at: 1.minute.ago)
+        create(:agent_run, :synthetic, :completed, project: project, duration_seconds: 50,
+          created_at: 1.day.ago)
+      end
+
+      it "excludes synthetic runs from run volume, active counts, and project breakdowns" do
+        aggregate_failures do
+          expect(stats[:run_volume][:total]).to eq(1)
+          expect(stats[:run_volume][:active]).to eq(0)
+          expect(stats[:runs_by_project].sum { |_name, count| count }).to eq(1)
+        end
+      end
+    end
+
+    context "with many completed runs for phase breakdown" do
+      it "limits phase breakdown to recent completed runs" do
+        travel_to Time.zone.parse("2026-03-20 12:00:00 UTC") do
+          stub_const("Dashboard::Stats::PHASE_BREAKDOWN_RUN_LIMIT", 2)
+
+          recent_runs = [
+            create_timed_completed_run(project: project, created_at: 5.days.ago),
+            create_timed_completed_run(project: project, created_at: 4.days.ago),
+            create_timed_completed_run(project: project, created_at: 3.days.ago)
+          ]
+
+          create_setup_phase(recent_runs[0], duration_seconds: 5)
+          create_setup_phase(recent_runs[1], duration_seconds: 10)
+          create_setup_phase(recent_runs[2], duration_seconds: 20)
+
+          old_run = create_timed_completed_run(project: project, created_at: 45.days.ago)
+          create_setup_phase(old_run, duration_seconds: 999)
+
+          expect(stats[:phase_breakdown]["setup"][:sample_size]).to eq(2)
+          expect(stats[:phase_breakdown]["setup"][:avg_seconds]).to eq(15)
+        end
+      end
+    end
+
+    context "with multiple agent types" do
+      before do
+        create(:agent_run, :completed, project: project)
+        create(:agent_run, :completed, :cursor, project: project)
+        create(:agent_run, :completed, :cursor, project: project)
+      end
+
+      it "sorts agent types by count descending" do
+        types = stats[:runs_by_agent_type]
+        expect(types.first).to eq([ "cursor", 2 ])
+        expect(types.last).to eq([ "claude_code", 1 ])
+      end
+    end
+
+    context "with provider fallbacks" do
+      before do
+        # Run requested claude_code, completed by claude_code (no fallback)
+        create(:agent_run, :completed, project: project, agent_type: "claude_code")
+        # Run requested claude_code, fell back to codex
+        create(:agent_run, :completed, project: project, agent_type: "claude_code",
+          final_runner: "codex", runner_switches: 1)
+        # Run requested claude_code, fell back to cursor
+        create(:agent_run, :completed, project: project, agent_type: "claude_code",
+          final_runner: "cursor", runner_switches: 1)
+        # Run requested cursor, completed by cursor (no fallback)
+        create(:agent_run, :completed, :cursor, project: project)
+      end
+
+      it "groups runs_by_runner by effective runner" do
+        runners = stats[:runs_by_runner]
+        runner_hash = runners.to_h
+        expect(runner_hash[Runner.display_name("claude")]).to eq(1)
+        expect(runner_hash[Runner.display_name("codex")]).to eq(1)
+        expect(runner_hash[Runner.display_name("cursor")]).to eq(2)
+      end
+
+      it "still groups runs_by_agent_type by requested provider" do
+        types = stats[:runs_by_agent_type].to_h
+        expect(types["claude_code"]).to eq(3)
+        expect(types["cursor"]).to eq(1)
+      end
+
+      it "calculates fallback rate" do
+        fs = stats[:runner_fallback_stats]
+        expect(fs[:total_runs]).to eq(4)
+        expect(fs[:fallback_count]).to eq(2)
+        expect(fs[:fallback_rate]).to eq(50.0)
+      end
+
+      it "breaks down fallbacks by requested runner" do
+        by_requested = stats[:runner_fallback_stats][:by_requested_runner].to_h
+        expect(by_requested["claude_code"]).to eq(2)
+      end
+
+      it "breaks down fallbacks by effective runner" do
+        by_effective = stats[:runner_fallback_stats][:by_effective_runner].to_h
+        expect(by_effective[Runner.display_name("codex")]).to eq(1)
+        expect(by_effective[Runner.display_name("cursor")]).to eq(1)
+      end
+    end
+
+    context "with routed provider entries" do
+      let(:owner) { project.effective_owner }
+      let(:api_key) { create(:provider_api_key, user: owner, api_service_type: "openrouter") }
+      let(:provider_entry) do
+        create(:runner, :api_key, user: owner, runner_key: "opencode",
+          provider_api_key: api_key, name: "Opencode Kimi K2",
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } })
+      end
+
+      before do
+        create(:agent_run, :completed, project: project, agent_type: "claude_code",
+          final_runner: provider_entry.routing_key, runner_switches: 1)
+      end
+
+      it "uses the runner entry display name for runs_by_runner" do
+        runners = stats[:runs_by_runner].to_h
+        expect(runners["Opencode Kimi K2"]).to eq(1)
+      end
+
+      it "uses the runner entry display name for fallback breakdowns" do
+        by_effective = stats[:runner_fallback_stats][:by_effective_runner].to_h
+        expect(by_effective["Opencode Kimi K2"]).to eq(1)
+      end
+    end
+
+    context "with deleted routed provider entries" do
+      let(:owner) { project.effective_owner }
+      let(:api_key) { create(:provider_api_key, user: owner, api_service_type: "openrouter") }
+      let(:deleted_provider_routing_key) do
+        provider = create(:runner, :api_key, user: owner, runner_key: "opencode",
+          provider_api_key: api_key, name: "Deleted Provider Entry 1",
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } })
+        routing_key = provider.routing_key
+        provider.destroy!
+        routing_key
+      end
+      let(:other_deleted_provider_routing_key) do
+        provider = create(:runner, :api_key, user: owner, runner_key: "opencode",
+          provider_api_key: api_key, name: "Deleted Provider Entry 2",
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } })
+        routing_key = provider.routing_key
+        provider.destroy!
+        routing_key
+      end
+
+      before do
+        create(:agent_run, :completed, project: project, agent_type: "claude_code",
+          final_runner: deleted_provider_routing_key, runner_switches: 1)
+        create(:agent_run, :completed, project: project, agent_type: "claude_code",
+          final_runner: other_deleted_provider_routing_key, runner_switches: 1)
+      end
+
+      it "shows a deleted runner entry label in runs_by_runner" do
+        runners = stats[:runs_by_runner].to_h
+        expect(runners["Deleted runner entry"]).to eq(2)
+      end
+    end
+
+    context "with multiple provider entries sharing a display name" do
+      let(:owner) { project.effective_owner }
+      let(:first_api_key) { create(:provider_api_key, user: owner, api_service_type: "openrouter") }
+      let(:second_api_key) { create(:provider_api_key, user: owner, api_service_type: "openrouter") }
+      let!(:first_provider_entry) do
+        create(:runner, :api_key, user: owner, runner_key: "opencode",
+          provider_api_key: first_api_key, name: "Shared Label",
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } })
+      end
+      let!(:second_provider_entry) do
+        create(:runner, :api_key, user: owner, runner_key: "opencode",
+          provider_api_key: second_api_key, name: "Shared Label", fallback_role: "rate_limit_fallback",
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } })
+      end
+
+      before do
+        create(:agent_run, :completed, project: project, agent_type: "claude_code",
+          final_runner: first_provider_entry.routing_key, runner_switches: 1)
+        create(:agent_run, :completed, project: project, agent_type: "claude_code",
+          final_runner: second_provider_entry.routing_key, runner_switches: 1)
+      end
+
+      it "sums counts across identifiers that resolve to the same label" do
+        runners = stats[:runs_by_runner].to_h
+        expect(runners["Shared Label"]).to eq(2)
+      end
+    end
+
+    context "with provider fallback via skipped primary (no runner_switches)" do
+      before do
+        # Primary provider was skipped as unavailable; fallback used directly.
+        # final_runner differs from agent_type but runner_switches remains 0.
+        create(:agent_run, :completed, project: project, agent_type: "claude_code",
+          final_runner: "cursor", runner_switches: 0)
+        # Normal run with no fallback
+        create(:agent_run, :completed, project: project, agent_type: "claude_code")
+      end
+
+      it "counts the skipped-primary run as a fallback" do
+        fs = stats[:runner_fallback_stats]
+        expect(fs[:total_runs]).to eq(2)
+        expect(fs[:fallback_count]).to eq(1)
+        expect(fs[:fallback_rate]).to eq(50.0)
+      end
+
+      it "attributes the skipped-primary run to the effective provider" do
+        runners = stats[:runs_by_runner].to_h
+        expect(runners[Runner.display_name("cursor")]).to eq(1)
+        expect(runners[Runner.display_name("claude")]).to eq(1)
+      end
+    end
+
+    context "with claude_code run completed by claude provider (no fallback)" do
+      before do
+        # final_runner is the normalized provider key "claude" for agent_type "claude_code".
+        # This should NOT be counted as a fallback.
+        create(:agent_run, :completed, project: project, agent_type: "claude_code",
+          final_runner: "claude", runner_switches: 0)
+      end
+
+      it "does not count normalized provider match as a fallback" do
+        fs = stats[:runner_fallback_stats]
+        expect(fs[:fallback_count]).to eq(0)
+        expect(fs[:fallback_rate]).to eq(0.0)
+      end
+
+      it "groups under the claude provider" do
+        runners = stats[:runs_by_runner].to_h
+        expect(runners[Runner.display_name("claude")]).to eq(1)
+        expect(runners).not_to have_key("claude_code")
+      end
+    end
+
+    context "with legacy final_runner matching agent_type (no fallback)" do
+      before do
+        # final_runner contains the legacy agent-type identifier "claude_code"
+        # rather than the normalized provider key "claude". Both should normalize
+        # to "claude", so this must NOT be counted as a fallback.
+        create(:agent_run, :completed, project: project, agent_type: "claude_code",
+          final_runner: "claude_code", runner_switches: 0)
+      end
+
+      it "does not count legacy final_runner as a fallback" do
+        fs = stats[:runner_fallback_stats]
+        expect(fs[:fallback_count]).to eq(0)
+        expect(fs[:fallback_rate]).to eq(0.0)
+      end
+    end
+
+    context "with multiple projects" do
+      let(:project2) { create(:project, account: account, name: "Active Project") }
+
+      before do
+        create_list(:agent_run, 3, :completed, project: project2)
+        create(:agent_run, :completed, project: project)
+      end
+
+      it "limits to top 5 projects sorted by run count" do
+        projects = stats[:runs_by_project]
+        expect(projects.first).to eq([ "Active Project", 3 ])
+        expect(projects.length).to be <= 5
+      end
+    end
+
+    describe "cost_by_project" do
+      context "with no projects having costs" do
+        it "returns an empty array" do
+          expect(stats[:cost_by_project]).to be_empty
+        end
+      end
+
+      context "with projects having costs" do
+        let(:expensive_project) { create(:project, account: account, name: "Expensive Project", total_cost_cents: 5000) }
+        let(:cheap_project) { create(:project, account: account, name: "Cheap Project", total_cost_cents: 100) }
+
+        before do
+          project.update!(total_cost_cents: 1000)
+          expensive_project
+          cheap_project
+        end
+
+        it "only includes projects with non-zero costs" do
+          names = stats[:cost_by_project].map(&:first)
+          expect(names).to include(project.name, "Expensive Project", "Cheap Project")
+        end
+
+        it "orders by cost descending" do
+          result = stats[:cost_by_project]
+          expect(result.first).to eq([ "Expensive Project", 5000 ])
+          expect(result.last).to eq([ "Cheap Project", 100 ])
+        end
+
+        it "excludes zero-cost projects" do
+          create(:project, account: account, name: "Free Project", total_cost_cents: 0)
+          names = stats[:cost_by_project].map(&:first)
+          expect(names).not_to include("Free Project")
+        end
+      end
+
+      context "with projects from another account" do
+        let(:other_account) { create(:account) }
+
+        before do
+          create(:project, account: other_account, name: "Other Project", total_cost_cents: 9999)
+          project.update!(total_cost_cents: 500)
+        end
+
+        it "only includes projects from the specified account" do
+          names = stats[:cost_by_project].map(&:first)
+          expect(names).to include(project.name)
+          expect(names).not_to include("Other Project")
+        end
+      end
+
+      context "with more than 10 projects" do
+        before do
+          12.times do |i|
+            create(:project, account: account, name: "Project #{i}", total_cost_cents: (i + 1) * 100)
+          end
+        end
+
+        it "limits results to 10" do
+          expect(stats[:cost_by_project].length).to eq(10)
+        end
+      end
+    end
+
+    context "with merged PRs" do
+      let(:merged_issue) do
+        create(:issue, :pull_request, :closed, project: project,
+          pr_review_phase: "merged",
+          github_created_at: 5.days.ago,
+          github_updated_at: 1.day.ago)
+      end
+
+      before do
+        create(:agent_run, :completed, project: project, issue: merged_issue,
+          duration_seconds: 300, created_at: 4.days.ago, started_at: 4.days.ago)
+        create(:agent_run, :completed, project: project, issue: merged_issue,
+          duration_seconds: 200, created_at: 3.days.ago, started_at: 3.days.ago)
+        create(:agent_run, :completed, project: project, issue: merged_issue,
+          duration_seconds: 100, created_at: 2.days.ago, started_at: 2.days.ago)
+      end
+
+      it "counts merged PRs" do
+        expect(stats[:issue_completion][:merged_count]).to eq(1)
+      end
+
+      it "calculates runs per issue" do
+        rpi = stats[:issue_completion][:runs_per_issue]
+        expect(rpi[:avg]).to eq(3.0)
+        expect(rpi[:min]).to eq(3)
+        expect(rpi[:max]).to eq(3)
+        expect(rpi[:median]).to eq(3.0)
+      end
+
+      it "calculates time to merge as wall clock seconds" do
+        ttm = stats[:issue_completion][:time_to_merge]
+        # Wall clock: github_updated_at (1.day.ago) - first run started_at (4.days.ago) = 3 days
+        expected_seconds = (merged_issue.github_updated_at - 4.days.ago).to_i
+        expect(ttm[:avg_seconds]).to be_within(5).of(expected_seconds)
+        expect(ttm[:p50_seconds]).to be_within(5).of(expected_seconds)
+      end
+
+      it "calculates agent run seconds" do
+        arm = stats[:issue_completion][:agent_run_seconds]
+        # Total: 300 + 200 + 100 = 600 seconds
+        expect(arm[:avg_seconds]).to eq(600)
+        expect(arm[:p50_seconds]).to eq(600)
+      end
+
+      it "excludes preview provisioning runs from merged PR aggregates" do
+        create(:agent_run, :completed, :internal_agent, project: project, issue: merged_issue,
+          duration_seconds: 9_999, created_at: 1.day.ago, started_at: 1.day.ago,
+          synthetic: true, external_metadata: { "preview_session" => true })
+
+        expect(stats[:issue_completion][:runs_per_issue][:avg]).to eq(3.0)
+        expect(stats[:issue_completion][:agent_run_seconds][:avg_seconds]).to eq(600)
+      end
+    end
+
+    context "with multiple merged PRs" do
+      let(:issue_a) do
+        create(:issue, :pull_request, :closed, project: project,
+          pr_review_phase: "merged",
+          github_created_at: 10.days.ago,
+          github_updated_at: 8.days.ago)
+      end
+      let(:issue_b) do
+        create(:issue, :pull_request, :closed, project: project,
+          pr_review_phase: "merged",
+          github_created_at: 5.days.ago,
+          github_updated_at: 1.day.ago)
+      end
+
+      before do
+        # Issue A: 1 run, 120s duration, started 9 days ago
+        create(:agent_run, :completed, project: project, issue: issue_a,
+          duration_seconds: 120, created_at: 9.days.ago, started_at: 9.days.ago)
+        # Issue B: 3 runs, total 900s duration, first started 4 days ago
+        create(:agent_run, :completed, project: project, issue: issue_b,
+          duration_seconds: 300, created_at: 4.days.ago, started_at: 4.days.ago)
+        create(:agent_run, :completed, project: project, issue: issue_b,
+          duration_seconds: 300, created_at: 3.days.ago, started_at: 3.days.ago)
+        create(:agent_run, :completed, project: project, issue: issue_b,
+          duration_seconds: 300, created_at: 2.days.ago, started_at: 2.days.ago)
+      end
+
+      it "counts all merged PRs" do
+        expect(stats[:issue_completion][:merged_count]).to eq(2)
+      end
+
+      it "calculates runs per issue across multiple issues" do
+        rpi = stats[:issue_completion][:runs_per_issue]
+        # Issue A: 1 run, Issue B: 3 runs -> avg 2.0
+        expect(rpi[:avg]).to eq(2.0)
+        expect(rpi[:min]).to eq(1)
+        expect(rpi[:max]).to eq(3)
+      end
+
+      it "calculates agent run seconds across issues" do
+        arm = stats[:issue_completion][:agent_run_seconds]
+        # Issue A: 120s, Issue B: 900s -> avg 510
+        expect(arm[:avg_seconds]).to eq(510)
+      end
+    end
+
+    context "with merged PRs from another account" do
+      let(:other_account) { create(:account) }
+      let(:other_project) { create(:project, account: other_account) }
+
+      before do
+        other_issue = create(:issue, :pull_request, :closed, project: other_project,
+          pr_review_phase: "merged",
+          github_created_at: 5.days.ago,
+          github_updated_at: 1.day.ago)
+        create(:agent_run, :completed, project: other_project, issue: other_issue,
+          duration_seconds: 300)
+      end
+
+      it "excludes merged PRs from other accounts" do
+        expect(stats[:issue_completion][:merged_count]).to eq(0)
+      end
+    end
+
+    context "with non-merged PRs" do
+      before do
+        open_pr = create(:issue, :pull_request, project: project,
+          pr_review_phase: "draft",
+          github_created_at: 5.days.ago,
+          github_updated_at: 1.day.ago)
+        create(:agent_run, :completed, project: project, issue: open_pr,
+          duration_seconds: 300)
+      end
+
+      it "does not count non-merged PRs" do
+        expect(stats[:issue_completion][:merged_count]).to eq(0)
+      end
+    end
+
+    describe "#daily_outcome_chart" do
+      around do |example|
+        travel_to(Time.zone.local(2026, 5, 3, 12, 0, 0)) { example.run }
+      end
+
+      context "with no create_pr runs" do
+        it "returns zero totals and empty series" do
+          result = stats[:daily_outcome_chart]
+          expect(result[:overall_total]).to eq(0)
+          expect(result[:overall_completed]).to eq(0)
+          expect(result[:overall_completion_rate]).to eq(0.0)
+          expect(result[:series].map { |s| s[:name] }).to match_array(
+            Dashboard::Stats::OUTCOME_CHART_STATUSES.map(&:titleize)
+          )
+          expect(result[:series].all? { |s| s[:data].size == 30 }).to be(true)
+          expect(result[:series].flat_map { |s| s[:data].values }.uniq).to eq([ 0 ])
+        end
+      end
+
+      context "with create_pr runs of various statuses" do
+        before do
+          completed_at_2d_ago = 2.days.ago
+          completed_at_5d_ago = 5.days.ago
+
+          create(:agent_run, :completed, project: project, goal: "create_pr",
+            completed_at: completed_at_2d_ago)
+          create(:agent_run, :completed, project: project, goal: "create_pr",
+            completed_at: completed_at_2d_ago)
+          create(:agent_run, :failed, project: project, goal: "create_pr",
+            completed_at: completed_at_2d_ago)
+          create(:agent_run, :timeout, project: project, goal: "create_pr",
+            completed_at: completed_at_5d_ago)
+          # non-create_pr run should be excluded
+          create(:agent_run, :completed, project: project, goal: "create_issue",
+            completed_at: completed_at_2d_ago)
+        end
+
+        it "counts outcomes for create_pr goal only" do
+          result = stats[:daily_outcome_chart]
+          expect(result[:overall_total]).to eq(4)
+          expect(result[:overall_completed]).to eq(2)
+        end
+
+        it "excludes preview provisioning runs from create_pr totals" do
+          create(:agent_run, :completed, :internal_agent, project: project, goal: "create_pr",
+            completed_at: 2.days.ago,
+            synthetic: true, external_metadata: { "preview_session" => true })
+
+          result = stats[:daily_outcome_chart]
+          expect(result[:overall_total]).to eq(4)
+          expect(result[:overall_completed]).to eq(2)
+        end
+
+        it "calculates overall completion rate" do
+          result = stats[:daily_outcome_chart]
+          # 2 completed out of 4 total = 50.0%
+          expect(result[:overall_completion_rate]).to eq(50.0)
+        end
+
+        it "breaks down counts by status" do
+          result = stats[:daily_outcome_chart]
+          expect(result[:overall_by_status]["completed"]).to eq(2)
+          expect(result[:overall_by_status]["failed"]).to eq(1)
+          expect(result[:overall_by_status]["timeout"]).to eq(1)
+          expect(result[:overall_by_status]["no_output"]).to eq(0)
+        end
+
+        it "builds daily series with correct counts per day" do
+          result = stats[:daily_outcome_chart]
+          completed_series = result[:series].find { |s| s[:name] == "Completed" }
+          failed_series = result[:series].find { |s| s[:name] == "Failed" }
+          timeout_series = result[:series].find { |s| s[:name] == "Timeout" }
+
+          day_2d_ago = Date.new(2026, 5, 1)
+          day_5d_ago = Date.new(2026, 4, 28)
+
+          expect(completed_series[:data][day_2d_ago]).to eq(2)
+          expect(failed_series[:data][day_2d_ago]).to eq(1)
+          expect(timeout_series[:data][day_5d_ago]).to eq(1)
+          expect(timeout_series[:data][day_2d_ago]).to eq(0)
+        end
+
+        it "computes per-day completion rates" do
+          result = stats[:daily_outcome_chart]
+          day_2d_ago = Date.new(2026, 5, 1)
+          day_5d_ago = Date.new(2026, 4, 28)
+
+          # day 2d ago: 2 completed, 1 failed = 66.7%
+          expect(result[:completion_rate][day_2d_ago]).to eq(66.7)
+          # day 5d ago: 0 completed, 1 timeout = 0.0%
+          expect(result[:completion_rate][day_5d_ago]).to eq(0.0)
+        end
+
+        it "returns nil completion rate for days with no runs" do
+          result = stats[:daily_outcome_chart]
+          today = Date.new(2026, 5, 3)
+          expect(result[:completion_rate][today]).to be_nil
+        end
+
+        it "excludes runs without completed_at" do
+          create(:agent_run, :running, project: project, goal: "create_pr")
+          result = stats[:daily_outcome_chart]
+          expect(result[:overall_total]).to eq(4)
+        end
+
+        it "returns series for all expected statuses" do
+          result = stats[:daily_outcome_chart]
+          status_names = result[:series].map { |s| s[:name] }
+          expect(status_names).to eq(Dashboard::Stats::OUTCOME_CHART_STATUSES.map(&:titleize))
+        end
+
+        it "exposes colors aligned with the series order" do
+          result = stats[:daily_outcome_chart]
+          expected = Dashboard::Stats::OUTCOME_CHART_STATUSES.map { |s| Dashboard::Stats::OUTCOME_CHART_COLORS[s] }
+          expect(result[:colors]).to eq(expected)
+          expect(result[:colors].length).to eq(result[:series].length)
+        end
+      end
+
+      context "with retried create_pr runs" do
+        # retry! flips an already-finished run to "retried" but leaves
+        # completed_at intact, so a retried failure still has a completion
+        # day. It must stay in the denominator (counted as non-completed) to
+        # match performance_by_goal and avoid inflating completion rate.
+        before do
+          create(:agent_run, :completed, project: project, goal: "create_pr",
+            completed_at: 2.days.ago)
+          create(:agent_run, :retried, project: project, goal: "create_pr",
+            completed_at: 2.days.ago)
+        end
+
+        it "includes retried runs in the total denominator" do
+          result = stats[:daily_outcome_chart]
+          expect(result[:overall_total]).to eq(2)
+          expect(result[:overall_completed]).to eq(1)
+          expect(result[:overall_by_status]["retried"]).to eq(1)
+        end
+
+        it "counts retried runs as non-completed for completion rate" do
+          result = stats[:daily_outcome_chart]
+          # 1 completed of 2 total (1 retried) = 50.0%, not 100.0%
+          expect(result[:overall_completion_rate]).to eq(50.0)
+        end
+
+        it "renders a Retried series and matching color" do
+          result = stats[:daily_outcome_chart]
+          names = result[:series].map { |s| s[:name] }
+          expect(names).to include("Retried")
+          retried_index = names.index("Retried")
+          expect(result[:colors][retried_index]).to eq(Dashboard::Stats::OUTCOME_CHART_COLORS["retried"])
+        end
+      end
+
+      context "with create_pr runs from another account" do
+        let(:other_account) { create(:account) }
+        let(:other_project) { create(:project, account: other_account) }
+
+        before do
+          create(:agent_run, :completed, project: other_project, goal: "create_pr",
+            completed_at: 1.day.ago)
+          create(:agent_run, :completed, project: project, goal: "create_pr",
+            completed_at: 1.day.ago)
+        end
+
+        it "only includes runs from the specified account" do
+          result = stats[:daily_outcome_chart]
+          expect(result[:overall_total]).to eq(1)
+          expect(result[:overall_completed]).to eq(1)
+        end
+      end
+
+      context "with time_range filter" do
+        before do
+          create(:agent_run, :completed, project: project, goal: "create_pr",
+            created_at: 2.days.ago, completed_at: 2.days.ago)
+          create(:agent_run, :completed, project: project, goal: "create_pr",
+            created_at: 10.days.ago, completed_at: 10.days.ago)
+          create(:agent_run, :failed, project: project, goal: "create_pr",
+            created_at: 40.days.ago, completed_at: 40.days.ago)
+        end
+
+        it "returns a 30-day series for the 30d window" do
+          result = described_class.call(account: account, time_range: "30d")[:daily_outcome_chart]
+          expect(result[:range_end]).to eq(Date.new(2026, 5, 3))
+          expect(result[:range_end] - result[:range_start]).to eq(29)
+          expect(result[:overall_total]).to eq(2)
+        end
+
+        it "returns a 7-day series for the 7d window" do
+          result = described_class.call(account: account, time_range: "7d")[:daily_outcome_chart]
+          expect(result[:range_end] - result[:range_start]).to eq(6)
+          expect(result[:overall_total]).to eq(1)
+        end
+
+        it "returns a single-day series for the 24h window" do
+          result = described_class.call(account: account, time_range: "24h")[:daily_outcome_chart]
+          expect(result[:range_start]).to eq(result[:range_end])
+          expect(result[:overall_total]).to eq(0)
+        end
+
+        it "spans from earliest data to today for cumulative" do
+          result = stats[:daily_outcome_chart]
+          expect(result[:range_end]).to eq(Date.new(2026, 5, 3))
+          expect(result[:overall_total]).to eq(3)
+        end
+
+        it "caps the cumulative window at OUTCOME_CHART_CUMULATIVE_MAX_WINDOW_DAYS" do
+          create(:agent_run, :completed, project: project, goal: "create_pr",
+            created_at: 200.days.ago, completed_at: 200.days.ago)
+          result = stats[:daily_outcome_chart]
+          expected_start = Date.new(2026, 5, 3) - Dashboard::Stats::OUTCOME_CHART_CUMULATIVE_MAX_WINDOW_DAYS.days
+          expect(result[:range_start]).to eq(expected_start)
+        end
+      end
+
+      context "when a run was created before the window but completed inside it" do
+        # The chart tracks when runs finished, so the window must be rooted on
+        # completed_at. A run created before the cutoff but completed inside the
+        # selected range must still be counted.
+        it "still counts the run for the 7d window" do
+          create(:agent_run, :completed, project: project, goal: "create_pr",
+            created_at: 10.days.ago, completed_at: 2.days.ago)
+          result = described_class.call(account: account, time_range: "7d")[:daily_outcome_chart]
+          expect(result[:overall_total]).to eq(1)
+          expect(result[:overall_completed]).to eq(1)
+        end
+      end
+    end
+
+    describe "duration_trend_chart" do
+      subject(:chart) { described_class.call(account: account, only: %i[duration_trend_chart])[:duration_trend_chart] }
+
+      context "with no completed create_pr runs" do
+        it "returns empty series and zero slope" do
+          expect(chart[:series].all? { |s| s[:data].empty? }).to be(true)
+          expect(chart[:slope_seconds_per_day]).to eq(0.0)
+          expect(chart[:run_counts]).to be_empty
+        end
+      end
+
+      context "with completed create_pr runs on distinct days" do
+        around { |example| travel_to(Time.zone.local(2026, 5, 3, 12, 0, 0)) { example.run } }
+
+        before do
+          create(:agent_run, :completed, project: project, goal: "create_pr",
+            duration_seconds: 100,
+            completed_at: Time.zone.local(2026, 5, 1, 10, 0, 0))
+          create(:agent_run, :completed, project: project, goal: "create_pr",
+            duration_seconds: 200,
+            completed_at: Time.zone.local(2026, 5, 1, 14, 0, 0))
+          create(:agent_run, :completed, project: project, goal: "create_pr",
+            duration_seconds: 300,
+            completed_at: Time.zone.local(2026, 5, 2, 10, 0, 0))
+        end
+
+        it "groups runs by completed_at date" do
+          avg_series = chart[:series].find { |s| s[:name] == "Average" }
+          expect(avg_series[:data].keys).to contain_exactly("2026-05-01", "2026-05-02")
+        end
+
+        it "computes daily average correctly" do
+          avg_series = chart[:series].find { |s| s[:name] == "Average" }
+          expect(avg_series[:data]["2026-05-01"]).to eq(150)
+          expect(avg_series[:data]["2026-05-02"]).to eq(300)
+        end
+
+        it "computes daily p50 correctly" do
+          p50_series = chart[:series].find { |s| s[:name] == "Median (p50)" }
+          expect(p50_series[:data]["2026-05-01"]).to eq(150)
+          expect(p50_series[:data]["2026-05-02"]).to eq(300)
+        end
+
+        it "includes a trend series with data" do
+          trend_series = chart[:series].find { |s| s[:name] == "Trend" }
+          expect(trend_series[:data]).not_to be_empty
+        end
+
+        it "records run counts per day" do
+          expect(chart[:run_counts]["2026-05-01"]).to eq(2)
+          expect(chart[:run_counts]["2026-05-02"]).to eq(1)
+        end
+
+        it "excludes preview provisioning runs" do
+          create(:agent_run, :completed, :internal_agent, project: project, goal: "create_pr",
+            duration_seconds: 9_999,
+            completed_at: Time.zone.local(2026, 5, 1, 16, 0, 0),
+            synthetic: true, external_metadata: { "preview_session" => true })
+
+          avg_series = chart[:series].find { |s| s[:name] == "Average" }
+          expect(avg_series[:data]["2026-05-01"]).to eq(150)
+          expect(chart[:run_counts]["2026-05-01"]).to eq(2)
+        end
+
+        it "returns a numeric slope" do
+          expect(chart[:slope_seconds_per_day]).to be_a(Numeric)
+        end
+      end
+
+      context "with non-create_pr runs" do
+        before do
+          create(:agent_run, :completed, project: project, goal: "create_issue",
+            duration_seconds: 999,
+            completed_at: Time.zone.local(2026, 5, 1, 10, 0, 0))
+          create(:agent_run, :completed, :review_goal, project: project,
+            duration_seconds: 888,
+            completed_at: Time.zone.local(2026, 5, 1, 10, 0, 0))
+        end
+
+        it "excludes non-create_pr runs" do
+          expect(chart[:series].all? { |s| s[:data].empty? }).to be(true)
+        end
+      end
+
+      context "with time range filter" do
+        around { |example| travel_to(Time.zone.local(2026, 5, 3, 12, 0, 0)) { example.run } }
+
+        before do
+          create(:agent_run, :completed, project: project, goal: "create_pr",
+            duration_seconds: 100,
+            completed_at: 2.days.ago)
+          create(:agent_run, :completed, project: project, goal: "create_pr",
+            duration_seconds: 200,
+            completed_at: 40.days.ago)
+        end
+
+        it "respects 7d filter by completed_at" do
+          result = described_class.call(account: account, time_range: "7d", only: %i[duration_trend_chart])
+          avg_data = result[:duration_trend_chart][:series].find { |s| s[:name] == "Average" }[:data]
+          expect(avg_data.size).to eq(1)
+          expect(avg_data.values.first).to eq(100)
+        end
+
+        it "includes older run under cumulative" do
+          result = described_class.call(account: account, time_range: "cumulative", only: %i[duration_trend_chart])
+          avg_data = result[:duration_trend_chart][:series].find { |s| s[:name] == "Average" }[:data]
+          expect(avg_data.size).to eq(2)
+        end
+      end
+
+      context "with runs from another account" do
+        let(:other_account) { create(:account) }
+        let(:other_project) { create(:project, account: other_account) }
+
+        before do
+          create(:agent_run, :completed, project: other_project, goal: "create_pr",
+            duration_seconds: 999,
+            completed_at: 1.day.ago)
+        end
+
+        it "excludes runs from other accounts" do
+          expect(chart[:series].all? { |s| s[:data].empty? }).to be(true)
+        end
+      end
+    end
+  end
+end

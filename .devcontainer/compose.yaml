@@ -1,0 +1,124 @@
+name: "paid"
+
+services:
+  rails-app:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+    shm_size: '2gb'
+
+    volumes:
+    - ../../paid:/workspaces/paid:cached
+    # Agent CLI tool state lives in named volumes: container-local (never shared
+    # with the host) but persisted across container rebuilds. Auth is no longer
+    # bind-mounted from the host — the upstream browser-based login flows now
+    # work inside containers, so each tool authenticates into its own volume on
+    # first use. Removing a tool's auth is as simple as deleting its volume
+    # (`docker volume rm paid_agent-<tool>`).
+    - agent-claude:/home/vscode/.claude
+    - agent-codex:/home/vscode/.codex
+    - agent-opencode-config:/home/vscode/.config/opencode
+    - agent-opencode-data:/home/vscode/.local/share/opencode
+    - agent-copilot:/home/vscode/.copilot
+    - agent-kilocode:/home/vscode/.kilocode
+    - agent-cursor:/home/vscode/.cursor
+    - agent-omp:/home/vscode/.omp
+
+    # Overrides default command so things don't shut down after the process ends.
+    command: sleep infinity
+
+    # Use a non-root user for all processes.
+    user: vscode
+
+    # Expose Rails for external access (e.g., Tailscale).
+    # Override the app/host port in .devcontainer/.env.
+    ports:
+    - "${PAID_WEB_PORT:-3000}:${PAID_WEB_PORT:-3000}"
+    environment:
+      PORT: "${PAID_WEB_PORT:-3000}"
+      PAID_PROXY_PORT: "${PAID_WEB_PORT:-3000}"
+      PAID_WEB_PORT: "${PAID_WEB_PORT:-3000}"
+      PAID_TEMPORAL_UI_PORT: "${PAID_TEMPORAL_UI_PORT:-8080}"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16.14
+    # This single container is shared by Temporal (temporal/temporal_visibility),
+    # the app, the GoodJob worker, the temporal worker, and every active git
+    # worktree's databases. The default max_connections=100 is exhausted under
+    # that combined load; 200 gives headroom. Production sets max_connections at
+    # its own DB layer (see docs/WORKER_POOL_TUNING.md).
+    command: postgres -c max_connections=200
+    restart: unless-stopped
+    networks:
+    - default
+    volumes:
+    - postgres-data:/var/lib/postgresql/data
+    - ../docker/postgres/init-multiple-dbs.sh:/docker-entrypoint-initdb.d/init-multiple-dbs.sh
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_APP_USER: paid
+      POSTGRES_APP_PASSWORD: paid
+      POSTGRES_APP_DATABASES: paid_development,paid_development_cable,paid_test,paid_test_cable
+      POSTGRES_MULTIPLE_DATABASES: temporal,temporal_visibility
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  temporal:
+    image: temporalio/auto-setup:1.29.7
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DB=postgres12
+      - DB_PORT=5432
+      - POSTGRES_USER=postgres
+      - POSTGRES_PWD=postgres
+      - POSTGRES_SEEDS=postgres
+      - DYNAMIC_CONFIG_FILE_PATH=/etc/temporal/config/dynamicconfig/development-sql.yaml
+    networks:
+    - default
+    volumes:
+    - ../config/temporal:/etc/temporal/config/dynamicconfig
+    healthcheck:
+      test: ["CMD", "tctl", "--address", "temporal:7233", "cluster", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  temporal-ui:
+    image: temporalio/ui:2.26.2
+    depends_on:
+      temporal:
+        condition: service_healthy
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://localhost:${PAID_WEB_PORT:-3000}
+    ports:
+    - "${PAID_TEMPORAL_UI_PORT:-8080}:8080"
+    networks:
+    - default
+
+volumes:
+  postgres-data:
+  # Agent CLI tool state (see rails-app service volumes above).
+  agent-claude:
+  agent-codex:
+  agent-opencode-config:
+  agent-opencode-data:
+  agent-copilot:
+  agent-kilocode:
+  agent-cursor:
+  agent-omp:

@@ -1,0 +1,13 @@
+<% content_for(:title) { "Edit MCP Server Definition – #{@mcp_server_definition.name}" } %>
+
+<div class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
+  <h1 class="text-2xl font-bold text-gray-900">Edit MCP Server Definition</h1>
+  <div class="mt-6">
+    <%= form_with model: @mcp_server_definition, local: true do |form| %>
+      <%= render "form", form: form, mcp_server_definition: @mcp_server_definition %>
+      <div class="mt-6">
+        <%= form.submit "Update MCP Server", class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-500" %>
+      </div>
+    <% end %>
+  </div>
+</div>

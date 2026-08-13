@@ -1,0 +1,70 @@
+# frozen_string_literal: true
+
+require "set"
+
+module MarketplaceEntries
+  class Renderer
+    InvalidRendererPayloadError = Class.new(ArgumentError)
+
+    attr_reader :entry, :version, :provider_key
+
+    def initialize(entry:, version:, provider_key:)
+      @entry = entry
+      @version = version
+      @provider_key = provider_key.to_s
+    end
+
+    def self.call(...)
+      new(...).call
+    end
+
+    def self.for_attachment(attachment, provider_key: nil)
+      requested_provider_key = provider_key.to_s
+      stored_payload = attachment.rendered_payload
+
+      return stored_payload if requested_provider_key.blank?
+      return stored_payload if stored_payload["provider"] == requested_provider_key
+
+      call(
+        entry: attachment.marketplace_entry,
+        version: attachment.marketplace_entry_version,
+        provider_key: requested_provider_key
+      )
+    end
+
+    def call
+      artifact = selected_renderer
+      unless artifact.is_a?(Hash)
+        raise InvalidRendererPayloadError,
+          "Renderer payload for provider #{provider_key.inspect} must be a JSON object"
+      end
+
+      artifact = artifact.deep_dup
+      {
+        "provider" => provider_key,
+        "provider_format" => artifact.delete("provider_format") || artifact.delete("format") || entry.provider_format,
+        "attachment_strategy" => artifact.delete("attachment_strategy") || inferred_attachment_strategy,
+        "payload" => artifact
+      }
+    end
+
+    private
+
+    def selected_renderer
+      version.renderers[provider_key] || version.renderers["default"] || version.canonical_artifact
+    end
+
+    def inferred_attachment_strategy
+      return "mcp_server" if entry.entry_type == "mcp_server"
+      return "runtime_config" if entry.entry_type.in?(%w[plugin provider_config])
+
+      "prompt_append"
+    end
+
+    STRATEGIES_PROMPT_ONLY = Set.new(%w[prompt_append]).freeze
+
+    def self.prompt_only?(strategy)
+      STRATEGIES_PROMPT_ONLY.include?(strategy)
+    end
+  end
+end

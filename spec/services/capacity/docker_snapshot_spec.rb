@@ -1,0 +1,489 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe Capacity::DockerSnapshot do
+  let(:backend) { instance_double(Containers::Backends::Base, identifier: "local", all_host_identifiers: [ "local" ]) }
+  let(:cache) { ActiveSupport::Cache::MemoryStore.new }
+  let(:now) { Time.zone.parse("2026-06-28 12:00:00 UTC") }
+  let(:project) { create(:project) }
+  let(:agent_run) do
+    create(
+      :agent_run,
+      :running,
+      project: project,
+      id: 2731,
+      container_id: "agent-run-2731",
+      container_host: "local",
+      mcp_sidecar_container_ids: [ "mcp-sidecar-2731" ]
+    )
+  end
+  let(:service_container) do
+    create(
+      :service_container,
+      account: project.account,
+      id: 88,
+      status: "running",
+      docker_container_id: "service-container-88"
+    )
+  end
+  let(:chat_session) do
+    create(
+      :chat_session,
+      account: project.account,
+      status: "active",
+      container_id: "chat-session-31"
+    )
+  end
+  let(:system_info) { load_fixture("system_info.json") }
+  let(:container_rows) { load_fixture("containers.json") }
+  let(:containers) do
+    container_rows.map do |row|
+      instance_double(
+        Docker::Container,
+        id: row.fetch("id"),
+        info: row.fetch("info")
+      ).tap do |container|
+        allow(backend).to receive(:container_stats).with(container, stream: false).and_return(row.fetch("stats"))
+      end
+    end
+  end
+
+  before do
+    agent_run
+    service_container
+    chat_session
+
+    allow(backend).to receive_messages(
+      capacity_snapshot_list_container_options: {},
+      system_info: system_info,
+      list_containers: containers
+    )
+  end
+
+  describe ".call" do
+    # @spec CONTAINER-RUNTIME-005
+    it "returns Docker capacity, aggregate usage buckets, timestamp, and confidence" do
+      snapshot = described_class.call(backend: backend, now: now, cache: cache)
+
+      expect(snapshot.docker_cpu_count).to eq(8)
+      expect(snapshot.docker_memory_bytes).to eq(16_000)
+      expect(snapshot.snapshot_at).to eq(now)
+      expect(snapshot.confidence).to eq(1.0)
+      expect(snapshot).not_to be_degraded
+      expect(snapshot.agent_container_count).to eq(2)
+      expect(snapshot.available_memory_bytes).to eq(7_400)
+    end
+
+    it "tags local backends with backend_kind 'local' and not shared" do
+      snapshot = described_class.call(backend: backend, now: now, cache: cache)
+
+      expect(snapshot.backend_kind).to eq("local")
+      expect(snapshot.backend_shared).to be(false)
+      expect(snapshot).to be_local
+      expect(snapshot).not_to be_remote
+      expect(snapshot).not_to be_shared
+    end
+
+    it "tags remote backends as backend_kind 'remote' and shared" do
+      remote_backend = build_backend_double(
+        identifier: "prod-broker",
+        remote: true,
+        host_identifiers: [ "prod-broker" ],
+        containers: containers
+      )
+
+      snapshot = described_class.call(backend: remote_backend, now: now, cache: cache)
+
+      expect(snapshot.backend_kind).to eq("remote")
+      expect(snapshot.backend_shared).to be(true)
+      expect(snapshot).to be_remote
+      expect(snapshot).to be_shared
+    end
+
+    it "tags the swarm backend as backend_kind 'swarm'" do
+      swarm_backend = build_backend_double(
+        identifier: "swarm",
+        remote: false,
+        host_identifiers: [ "swarm" ],
+        containers: containers
+      )
+
+      snapshot = described_class.call(backend: swarm_backend, now: now, cache: cache)
+
+      expect(snapshot.backend_kind).to eq("swarm")
+      expect(snapshot).to be_swarm
+      expect(snapshot.backend_shared).to be(false)
+    end
+
+    it "fails closed (degraded snapshot) when the Docker daemon hangs on system_info" do
+      hanging_backend = build_backend_double(
+        identifier: "local",
+        remote: false,
+        host_identifiers: [ "local" ],
+        containers: containers
+      )
+      allow(hanging_backend).to receive(:system_info).and_raise(Timeout::Error)
+
+      snapshot = described_class.call(backend: hanging_backend, now: now, cache: cache)
+
+      expect(snapshot).to be_degraded
+      expect(snapshot.degraded_reasons).to include("docker_timeout")
+      expect(snapshot.docker_memory_bytes).to eq(0)
+      expect(snapshot.available_memory_bytes).to eq(0)
+    end
+
+    it "degrades safely when every container sample runs past the shared budget" do
+      stub_const("Capacity::DockerSnapshot::DOCKER_SAMPLING_BUDGET", 0.05)
+      slow_backend = build_backend_double(
+        identifier: "local",
+        remote: false,
+        host_identifiers: [ "local" ],
+        containers: containers
+      )
+      allow(slow_backend).to receive(:container_stats) do |_container, **_opts|
+        sleep 1
+        {}
+      end
+
+      snapshot = described_class.call(backend: slow_backend, now: now, cache: cache)
+
+      expect(snapshot).to be_degraded
+      expect(snapshot.available_memory_bytes).to eq(0)
+      expect(snapshot.degraded_reasons).to include("container_sample_failed")
+      expect(snapshot.usage_buckets.values.sum(&:container_count)).to eq(container_rows.size)
+    end
+
+    it "cuts off remaining containers once the shared sampling budget is exhausted" do
+      stub_const("Capacity::DockerSnapshot::DOCKER_SAMPLING_BUDGET", 0.05)
+      stub_const("Capacity::ConcurrentStatsSampler::MAX_THREADS", 1)
+      slow_backend = build_backend_double(
+        identifier: "local",
+        remote: false,
+        host_identifiers: [ "local" ],
+        containers: containers
+      )
+      call_count = 0
+      allow(slow_backend).to receive(:container_stats) do |_container, **_opts|
+        call_count += 1
+        sleep 1
+        {}
+      end
+
+      snapshot = described_class.call(backend: slow_backend, now: now, cache: cache)
+
+      expect(snapshot).to be_degraded
+      expect(snapshot.available_memory_bytes).to eq(0)
+      expect(snapshot.degraded_reasons).to include("container_sampling_budget_exceeded")
+      expect(call_count).to be < container_rows.size
+      expect(snapshot.usage_buckets.values.sum(&:container_count)).to eq(container_rows.size)
+    end
+
+    it "still counts labeled live agent containers when sampling budget exhaustion skips stats collection" do
+      orphaned_run = create(:agent_run, :completed, project: project, container_id: nil)
+      blocking_container = build_container(id: "slow-unrelated", labels: {})
+      timed_out_agent = build_container(
+        id: "orphaned-agent-live",
+        labels: { "paid.agent_run_id" => orphaned_run.id.to_s }
+      )
+
+      stub_const("Capacity::DockerSnapshot::DOCKER_SAMPLING_BUDGET", 0.05)
+      stub_const("Capacity::ConcurrentStatsSampler::MAX_THREADS", 1)
+      allow(backend).to receive(:list_containers).and_return([ blocking_container, timed_out_agent ])
+      allow(backend).to receive(:container_stats).with(blocking_container, stream: false) do
+        sleep 1
+        {}
+      end
+      allow(backend).to receive(:container_stats).with(timed_out_agent, stream: false).and_return({})
+
+      snapshot = described_class.call(backend: backend, now: now, cache: cache, force_refresh: true)
+
+      expect(snapshot).to be_degraded
+      expect(snapshot.degraded_reasons).to include("container_sampling_budget_exceeded")
+      expect(snapshot.bucket(:paid_agents).container_count).to eq(1)
+      expect(snapshot.agent_container_count).to eq(1)
+    end
+
+    it "reports container_list_changed_during_sampling when a container starts mid-sample" do
+      late_arrival = build_container(id: "late-arrival", labels: {})
+      allow(backend).to receive(:list_containers).and_return(containers, containers + [ late_arrival ])
+      allow(Rails.logger).to receive(:warn)
+
+      snapshot = described_class.call(backend: backend, now: now, cache: cache, force_refresh: true)
+
+      expect(snapshot).to be_degraded
+      expect(snapshot.available_memory_bytes).to eq(0)
+      expect(snapshot.degraded_reasons).to include("container_list_changed_during_sampling")
+      expect(Rails.logger).to have_received(:warn).with(
+        hash_including(
+          message: "container_manager.container_list_changed_during_sampling",
+          backend_identifier: "local",
+          original_container_count: containers.size,
+          current_container_count: containers.size + 1
+        )
+      )
+    end
+
+    it "keeps the snapshot healthy when a container stops mid-sample" do
+      allow(backend).to receive(:list_containers).and_return(containers, containers.drop(1))
+      allow(Rails.logger).to receive(:warn)
+
+      snapshot = described_class.call(backend: backend, now: now, cache: cache, force_refresh: true)
+
+      expect(snapshot).not_to be_degraded
+      expect(snapshot.available_memory_bytes).to eq(7_400)
+      expect(snapshot.degraded_reasons).to be_empty
+      expect(Rails.logger).not_to have_received(:warn).with(
+        hash_including(message: "container_manager.container_list_changed_during_sampling")
+      )
+    end
+
+    it "does not re-list containers when the sample is already degraded" do
+      stub_const("Capacity::DockerSnapshot::DOCKER_SAMPLING_BUDGET", 0.05)
+      stub_const("Capacity::ConcurrentStatsSampler::MAX_THREADS", 1)
+      allow(backend).to receive(:container_stats) do |_container, **_opts|
+        sleep 1
+        {}
+      end
+
+      described_class.call(backend: backend, now: now, cache: cache, force_refresh: true)
+
+      expect(backend).to have_received(:list_containers).once
+    end
+
+    it "classifies containers from fixtures into paid buckets and aggregates unrelated usage" do
+      snapshot = described_class.call(backend: backend, now: now, cache: cache)
+
+      expect(snapshot.usage_buckets).to include(
+        paid_control_plane: have_attributes(container_count: 3, memory_bytes: 3_400, cpu_percent: 16.0),
+        paid_agents: have_attributes(container_count: 2, memory_bytes: 3_500, cpu_percent: 34.0),
+        paid_service_containers: have_attributes(container_count: 1, memory_bytes: 1_200, cpu_percent: 8.0),
+        other_docker: have_attributes(container_count: 1, memory_bytes: 500, cpu_percent: 2.0)
+      )
+    end
+
+    it "does not expose unrelated container names, images, labels, or mounts in the snapshot payload" do
+      snapshot = described_class.call(backend: backend, now: now, cache: cache)
+      payload = snapshot.to_h.deep_stringify_keys.to_json
+
+      expect(payload).not_to include("postgres:16")
+      expect(payload).not_to include("unrelated-ci-db")
+      expect(payload).not_to include("com.docker.compose.project")
+      expect(payload).not_to include("/var/lib/postgresql/data")
+    end
+
+    it "falls back to DB-backed classification when labels are absent" do
+      allow(containers.first).to receive(:info).and_return(
+        container_rows.first.fetch("info").merge("Labels" => {})
+      )
+
+      snapshot = described_class.call(backend: backend, now: now, cache: cache, force_refresh: true)
+
+      expect(snapshot.bucket(:paid_agents).container_count).to eq(2)
+      expect(snapshot.bucket(:paid_agents).memory_bytes).to eq(3_500)
+    end
+
+    it "degrades safely when Docker becomes unavailable after a cached snapshot exists" do
+      described_class.call(backend: backend, now: now, cache: cache)
+      allow(backend).to receive(:system_info).and_raise(Timeout::Error)
+
+      snapshot = described_class.call(
+        backend: backend,
+        now: now + described_class::CACHE_TTL + 1.second,
+        cache: cache
+      )
+
+      expect(snapshot).to be_degraded
+      expect(snapshot.available_memory_bytes).to eq(0)
+      expect(snapshot.confidence).to eq(0.1)
+      expect(snapshot.degraded_reasons).to include("stale_cache", "docker_timeout")
+    end
+
+    it "preserves a healthy cached snapshot when deserializing explicit false values" do
+      snapshot = described_class.call(backend: backend, now: now, cache: cache)
+      cached_snapshot = described_class.deserialize(cache.read(described_class.cache_key(backend.identifier)))
+
+      expect(snapshot).not_to be_degraded
+      expect(cached_snapshot).not_to be_degraded
+      expect(cached_snapshot.degraded).to be(false)
+    end
+
+    it "returns a conservative degraded snapshot when the first Docker read fails" do
+      allow(backend).to receive(:system_info).and_raise(Docker::Error::DockerError.new("down"))
+
+      snapshot = described_class.call(backend: backend, now: now, cache: cache)
+
+      expect(snapshot).to be_degraded
+      expect(snapshot.confidence).to eq(0.0)
+      expect(snapshot.available_memory_bytes).to eq(0)
+      expect(snapshot.degraded_reasons).to eq([ "docker_unavailable" ])
+    end
+
+    it "uses backend host identifiers for DB-backed swarm classification when labels are absent" do
+      agent_run.update!(container_host: "worker-1")
+      allow(backend).to receive_messages(
+        identifier: "swarm",
+        all_host_identifiers: [ "worker-1", "swarm" ],
+        capacity_snapshot_list_container_options: { include_node_containers: true }
+      )
+      allow(containers.first).to receive(:info).and_return(
+        container_rows.first.fetch("info").merge("Labels" => {})
+      )
+
+      snapshot = described_class.call(backend: backend, now: now, cache: cache, force_refresh: true)
+
+      expect(snapshot.bucket(:paid_agents).container_count).to eq(2)
+      expect(snapshot.bucket(:other_docker).container_count).to eq(1)
+    end
+
+    it "accounts for standalone swarm-node containers in other_docker usage" do
+      standalone = build_container(id: "standalone-db", labels: { "com.example.role" => "db" })
+      allow(backend).to receive_messages(
+        identifier: "swarm",
+        all_host_identifiers: [ "worker-1", "swarm" ],
+        capacity_snapshot_list_container_options: { include_node_containers: true },
+        list_containers: containers + [ standalone ]
+      )
+      allow(backend).to receive(:container_stats).with(standalone, stream: false).and_return(stats_payload(memory_bytes: 700, cpu_percent: 30.0))
+
+      snapshot = described_class.call(backend: backend, now: now, cache: cache, force_refresh: true)
+
+      expect(snapshot.bucket(:other_docker)).to have_attributes(container_count: 2, memory_bytes: 1_200, cpu_percent: 32.0)
+      expect(snapshot.available_memory_bytes).to eq(6_700)
+    end
+
+    it "bypasses tenant RLS when building daemon-wide references" do
+      other_account = create(:account)
+
+      allow(TenantContext).to receive(:with_system_access).and_call_original
+      allow(containers.first).to receive(:info).and_return(
+        container_rows.first.fetch("info").merge("Labels" => {})
+      )
+      allow(containers.second).to receive(:info).and_return(
+        container_rows.second.fetch("info").merge("Labels" => {})
+      )
+      allow(containers[2]).to receive(:info).and_return(
+        container_rows[2].fetch("info").merge("Labels" => {})
+      )
+
+      snapshot = TenantContext.with(other_account) do
+        described_class.call(backend: backend, now: now, cache: cache, force_refresh: true)
+      end
+
+      expect(TenantContext).to have_received(:with_system_access).at_least(:once)
+      expect(snapshot.bucket(:paid_agents)).to have_attributes(container_count: 2, memory_bytes: 3_500)
+      expect(snapshot.bucket(:paid_service_containers)).to have_attributes(container_count: 1, memory_bytes: 1_200)
+      expect(snapshot.bucket(:paid_control_plane)).to have_attributes(container_count: 3, memory_bytes: 3_400)
+    end
+
+    it "only treats compose workdirs with an exact paid basename as control plane containers" do
+      stub_compose_labels(containers[3], container_rows[3], {
+        "com.docker.compose.project" => "random",
+        "com.docker.compose.project.working_dir" => "/srv/unpaid-tools"
+      })
+      stub_compose_labels(containers[4], container_rows[4], {
+        "com.docker.compose.project" => "random",
+        "com.docker.compose.project.working_dir" => "C:\\src\\paid",
+        "com.docker.compose.service" => "postgres"
+      })
+
+      snapshot = described_class.call(backend: backend, now: now, cache: cache, force_refresh: true)
+
+      expect(snapshot.bucket(:paid_control_plane)).to have_attributes(container_count: 2, memory_bytes: 1_600, cpu_percent: 6.0)
+      expect(snapshot.bucket(:other_docker)).to have_attributes(container_count: 2, memory_bytes: 2_300, cpu_percent: 12.0)
+    end
+  end
+
+  describe ".fetch" do
+    it "returns the hash payload expected by run admission" do
+      snapshot = described_class.fetch(backend: backend, now: now, cache: cache)
+
+      expect(snapshot).to include(
+        available: true,
+        docker_memory_bytes: 16_000,
+        agent_memory_bytes: 3_500,
+        paid_control_plane_memory_bytes: 3_400,
+        service_container_memory_bytes: 1_200,
+        unrelated_container_memory_bytes: 500,
+        reserved_non_agent_bytes: 5_100,
+        spike_margin_bytes: 690,
+        effective_agent_budget_bytes: 6_710,
+        running_container_count: 7,
+        sampled_container_count: 7,
+        reason: nil,
+        error_class: nil,
+        error_message: nil
+      )
+    end
+
+    it "surfaces the degraded reason when docker inspection falls back" do
+      allow(backend).to receive(:system_info).and_raise(Timeout::Error)
+
+      snapshot = described_class.fetch(backend: backend, now: now, cache: cache)
+
+      expect(snapshot[:available]).to be(false)
+      expect(snapshot[:reason]).to eq("docker_timeout")
+      expect(snapshot[:effective_agent_budget_bytes]).to eq(0)
+    end
+  end
+
+  def load_fixture(name)
+    JSON.parse(file_fixture("capacity/docker_snapshot/#{name}").read)
+  end
+
+  def stub_compose_labels(container, row, labels)
+    info = row.fetch("info")
+    allow(container).to receive(:info).and_return(
+      info.merge("Labels" => info.fetch("Labels").merge(labels))
+    )
+  end
+
+  def build_container(id:, labels:, state: "running")
+    instance_double(
+      Docker::Container,
+      id: id,
+      info: {
+        "Id" => id,
+        "Labels" => labels,
+        "State" => state
+      }
+    )
+  end
+
+  def build_backend_double(identifier:, remote:, host_identifiers:, containers:)
+    backend_double = instance_double(
+      Containers::Backends::Base,
+      identifier: identifier,
+      remote?: remote,
+      all_host_identifiers: host_identifiers
+    )
+    container_rows.each do |row|
+      container = containers.find { |candidate| candidate.id == row.fetch("id") }
+      allow(backend_double).to receive(:container_stats).with(container, stream: false).and_return(row.fetch("stats"))
+    end
+    allow(backend_double).to receive_messages(
+      capacity_snapshot_list_container_options: {},
+      system_info: system_info,
+      list_containers: containers
+    )
+    backend_double
+  end
+
+  def stats_payload(memory_bytes:, cpu_percent:)
+    system_cpu_delta = 10_000
+    total_cpu_delta = ((cpu_percent / 100.0) * system_cpu_delta).to_i
+
+    {
+      "memory_stats" => { "usage" => memory_bytes },
+      "cpu_stats" => {
+        "cpu_usage" => { "total_usage" => total_cpu_delta },
+        "system_cpu_usage" => system_cpu_delta,
+        "online_cpus" => 1
+      },
+      "precpu_stats" => {
+        "cpu_usage" => { "total_usage" => 0 },
+        "system_cpu_usage" => 0
+      }
+    }
+  end
+end

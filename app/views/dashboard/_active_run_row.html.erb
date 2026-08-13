@@ -1,0 +1,40 @@
+<tr id="<%= dom_id(run, :dashboard_row) %>">
+  <td class="whitespace-nowrap px-4 py-3 text-sm">
+    <%= agent_run_status_badge(run.status) %>
+  </td>
+  <td class="whitespace-nowrap px-4 py-3 text-sm">
+    <%= agent_run_priority_badge(run) %>
+  </td>
+  <td class="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900">
+    <%= link_to run.project.full_name, project_member_path(run.project), class: "hover:text-indigo-600" %>
+  </td>
+  <td class="px-4 py-3 text-sm text-gray-500">
+    <%= agent_run_context_display(run) %>
+  </td>
+  <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500"><%= agent_run_goal_display(run) %></td>
+  <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500"><%= agent_run_runner_display(run, local_assigns[:runner_displays]) %></td>
+  <td class="whitespace-nowrap px-4 py-3 text-sm">
+    <% run_tier = run.model_selection&.tier %>
+    <% if run_tier.present? %>
+      <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium <%= tier_badge_classes(run_tier) %>">
+        <%= run_tier.titleize %>
+      </span>
+    <% else %>
+      <span class="text-gray-400">--</span>
+    <% end %>
+  </td>
+  <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500"
+      data-controller="elapsed-time"
+      data-elapsed-time-started-at-value="<%= run.started_at&.iso8601 %>">
+    <span data-elapsed-time-target="display"><%= run.started_at ? format_duration(run.duration) : "--" %></span>
+  </td>
+  <td class="whitespace-nowrap px-4 py-3 text-right text-sm">
+    <div class="inline-flex items-center gap-2">
+      <%= link_to "View", project_agent_run_member_path(run.project, run), class: "text-indigo-600 hover:text-indigo-900" %>
+      <%= button_to "Cancel", dashboard_cancel_agent_run_member_path(run),
+        method: :post,
+        class: "inline-flex items-center rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100",
+        data: { turbo_confirm: "Cancel this agent run?" } %>
+    </div>
+  </td>
+</tr>

@@ -1,0 +1,221 @@
+# frozen_string_literal: true
+
+require "yaml"
+
+module Containers
+  class HostRegistry
+    FALLBACK_DISABLED = "disabled"
+    FALLBACK_FIRST_HEALTHY = "first_healthy"
+    FALLBACK_CAPACITY_AWARE = "capacity_aware"
+    FALLBACK_POLICIES = [ FALLBACK_DISABLED, FALLBACK_FIRST_HEALTHY, FALLBACK_CAPACITY_AWARE ].freeze
+
+    HostDefinition = Data.define(:identifier, :backend, :max_concurrent_runs, :fallback_enabled)
+
+    class Registry
+      attr_reader :default_host, :fallback_policy, :hosts
+
+      def initialize(default_host:, fallback_policy:, hosts:)
+        @default_host = default_host
+        @fallback_policy = fallback_policy
+        @hosts = hosts
+      end
+
+      def host(identifier)
+        hosts.find { |entry| entry.identifier == identifier.to_s }
+      end
+
+      def host_limit_for(identifier)
+        host(identifier)&.max_concurrent_runs
+      end
+
+      def fallback_candidates_for(identifier)
+        hosts
+          .select(&:fallback_enabled)
+          .map(&:identifier)
+          .reject { |candidate| candidate == identifier.to_s }
+      end
+
+      def multi_host?
+        hosts.length > 1
+      end
+    end
+
+    class << self
+      def load(...)
+        new(...).load
+      end
+    end
+
+    def initialize(env: ENV)
+      @env = env
+    end
+
+    def load
+      return single_backend_registry unless multi_backend_mode?
+
+      parsed_config = config_payload
+      host_entries = build_hosts(parsed_config.fetch("hosts", {}))
+      raise ArgumentError, "CONTAINER_BACKENDS_CONFIG must define at least one host under 'multi' backend mode" if host_entries.empty?
+
+      default_host = parsed_config["default_host"].presence || host_entries.first&.identifier
+      unless host_entries.any? { |host| host.identifier == default_host }
+        raise ArgumentError, "CONTAINER_BACKENDS_CONFIG default_host #{default_host.inspect} is not defined under hosts"
+      end
+
+      fallback_policy = normalize_fallback_policy(parsed_config["fallback"])
+
+      Registry.new(
+        default_host: default_host,
+        fallback_policy: fallback_policy,
+        hosts: host_entries
+      )
+    end
+
+    private
+
+    attr_reader :env
+
+    def multi_backend_mode?
+      env.fetch("CONTAINER_BACKEND", "local").to_s == "multi"
+    end
+
+    def single_backend_registry
+      active_backend = Containers.backend
+
+      Registry.new(
+        default_host: active_backend.identifier,
+        fallback_policy: FALLBACK_DISABLED,
+        hosts: [
+          HostDefinition.new(
+            identifier: active_backend.identifier,
+            backend: active_backend,
+            max_concurrent_runs: single_backend_max_concurrent_runs,
+            fallback_enabled: false
+          )
+        ]
+      )
+    end
+
+    # In single-backend mode the per-host capacity was previously always nil
+    # (unlimited). Cloud runners need a declared capacity independent of Docker
+    # memory measurement — e.g. "budget for 20 concurrent Fly Machines" — so
+    # MAX_CONCURRENT_EXECUTIONS lets an operator set a ceiling without setting
+    # up multi-backend mode. When unset or 0, the limit remains nil (unlimited)
+    # and only the global limit (Capacity::GlobalLimit) provides a
+    # deployment-wide ceiling.
+    def single_backend_max_concurrent_runs
+      normalize_concurrency_limit(env["MAX_CONCURRENT_EXECUTIONS"])
+    end
+
+    # Treats 0, negative, blank, and non-numeric values as unlimited (nil),
+    # consistent with the per-host "0 means unlimited" convention documented in
+    # the Prometheus collector and with Capacity::GlobalLimit.enabled?, which
+    # disables the ceiling at 0. A truthy 0 here would otherwise flow through
+    # the `return nil unless selected_host_limit` guards in RunAdmission and
+    # zero out available slots, blocking all dispatch.
+    def normalize_concurrency_limit(value)
+      Integer(value, exception: false).then { |n| n&.positive? ? n : nil }
+    end
+
+    def config_payload
+      raw = env["CONTAINER_BACKENDS_CONFIG"].to_s
+      return {} if raw.blank?
+
+      parsed = YAML.safe_load(raw, permitted_classes: [], aliases: false)
+      return {} unless parsed.is_a?(Hash)
+
+      parsed
+    rescue Psych::SyntaxError => e
+      raise ArgumentError, "Invalid CONTAINER_BACKENDS_CONFIG: #{e.message}"
+    end
+
+    def build_hosts(hosts_config)
+      hosts_config.filter_map do |identifier, raw_config|
+        next unless raw_config.is_a?(Hash)
+
+        backend = build_backend(identifier, raw_config)
+
+        HostDefinition.new(
+          identifier: identifier.to_s,
+          backend: backend,
+          max_concurrent_runs: normalize_concurrency_limit(raw_config.dig("concurrency", "max_concurrent_runs")),
+          fallback_enabled: ActiveModel::Type::Boolean.new.cast(raw_config.fetch("fallback_enabled", true))
+        )
+      end
+    end
+
+    def build_backend(identifier, raw_config)
+      case raw_config.fetch("type", nil).to_s
+      when "local"
+        Containers::Backends::LocalDocker.new(identifier: identifier.to_s)
+      when "remote"
+        build_remote_backend(identifier, raw_config)
+      else
+        raise ArgumentError, "Unsupported Docker host type for #{identifier.inspect}"
+      end
+    rescue KeyError => e
+      raise ArgumentError, "Docker host #{identifier.inspect} is missing required config: #{e.key}"
+    rescue ArgumentError => e
+      raise ArgumentError, "Docker host #{identifier.inspect} is invalid: #{e.message}"
+    end
+
+    def normalize_fallback_policy(value)
+      normalized = value.to_s.presence || FALLBACK_DISABLED
+      return normalized if FALLBACK_POLICIES.include?(normalized)
+
+      FALLBACK_DISABLED
+    end
+
+    def build_remote_backend(identifier, raw_config)
+      proxy_external_url = raw_config["proxy_external_url"]
+      proxy_external_url = validate_proxy_external_url!(identifier, proxy_external_url) if proxy_external_url.present?
+
+      Containers::Backends::RemoteDocker.new(
+        host: raw_config.fetch("host"),
+        identifier: identifier.to_s,
+        proxy_external_url: proxy_external_url,
+        tls_config: {
+          client_cert: resolve_tls_value(identifier, "client_cert", raw_config.dig("tls", "client_cert")),
+          client_key: resolve_tls_value(identifier, "client_key", raw_config.dig("tls", "client_key")),
+          ssl_ca_file: resolve_tls_value(identifier, "ca_file", raw_config.dig("tls", "ca_file"))
+        }
+      )
+    end
+
+    def resolve_tls_value(identifier, key, value)
+      return value if value.is_a?(String)
+      return credential_value_for(identifier, key, value) if value.is_a?(Hash)
+
+      value
+    end
+
+    def validate_proxy_external_url!(identifier, url)
+      Containers::ProxyUrl.validate_external_url_from!(
+        url,
+        source: "proxy_external_url for Docker host #{identifier.inspect}"
+      )
+    end
+
+    def credential_value_for(identifier, key, value)
+      reference = value["credentials"] || value["credential"]
+      credential_path = normalize_credential_path(reference)
+      raise ArgumentError, "tls.#{key} must be a string or a credentials reference" if credential_path.empty?
+
+      resolved = Rails.application.credentials.dig(*credential_path)
+      return resolved if resolved.present?
+
+      raise ArgumentError, "Rails credentials #{credential_path.join('.')} are blank for tls.#{key}"
+    end
+
+    def normalize_credential_path(reference)
+      case reference
+      when Array
+        reference.map { |segment| segment.to_s.to_sym }
+      when String
+        reference.split(".").reject(&:blank?).map(&:to_sym)
+      else
+        []
+      end
+    end
+  end
+end

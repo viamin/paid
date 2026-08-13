@@ -1,0 +1,61 @@
+# frozen_string_literal: true
+
+class CollectorRun < ApplicationRecord
+  STATUSES = %w[pending running completed failed stale skipped].freeze
+
+  belongs_to :project_version
+
+  has_many :knowledge_artifacts, dependent: :destroy
+
+  validates :collector_type, presence: true, length: { maximum: 100 }
+  validates :status, presence: true, inclusion: { in: STATUSES }
+
+  scope :by_status, ->(status) { where(status: status) }
+  scope :completed, -> { where(status: "completed") }
+  scope :failed, -> { where(status: "failed") }
+  scope :running, -> { where(status: "running") }
+  scope :skipped, -> { where(status: "skipped") }
+
+  def mark_running!
+    update!(
+      status: "running",
+      started_at: Time.current,
+      completed_at: nil,
+      duration_ms: nil,
+      artifacts_count: nil,
+      error_message: nil
+    )
+  end
+
+  def mark_completed!(count:)
+    now = Time.current
+    update!(
+      status: "completed",
+      completed_at: now,
+      duration_ms: started_at ? ((now - started_at) * 1000).to_i : nil,
+      artifacts_count: count,
+      error_message: nil
+    )
+  end
+
+  def mark_failed!(error:)
+    now = Time.current
+    update!(
+      status: "failed",
+      completed_at: now,
+      duration_ms: started_at ? ((now - started_at) * 1000).to_i : nil,
+      error_message: error
+    )
+  end
+
+  def mark_skipped!(reason:, artifacts_count: 0)
+    now = Time.current
+    update!(
+      status: "skipped",
+      completed_at: now,
+      duration_ms: started_at ? ((now - started_at) * 1000).to_i : nil,
+      artifacts_count: artifacts_count,
+      error_message: reason
+    )
+  end
+end

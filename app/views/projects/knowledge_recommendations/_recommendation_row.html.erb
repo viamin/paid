@@ -1,0 +1,44 @@
+<tr id="<%= dom_id(recommendation) %>">
+  <td class="whitespace-nowrap px-4 py-3 text-sm">
+    <span class="inline-flex items-center rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-700">
+      <%= recommendation.recommendation_type.humanize %>
+    </span>
+  </td>
+  <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500">
+    <%= recommendation.collector_type || "--" %>
+  </td>
+  <td class="whitespace-nowrap px-4 py-3 text-sm">
+    <%= render "projects/knowledge_recommendations/priority_badge", priority: recommendation.priority %>
+  </td>
+  <td class="px-4 py-3 text-sm text-gray-900">
+    <p><%= recommendation.description %></p>
+    <% if recommendation.evidence.present? && recommendation.evidence.any? %>
+      <details class="mt-1">
+        <summary class="cursor-pointer text-xs text-gray-500 hover:text-gray-700">Evidence</summary>
+        <pre class="mt-1 whitespace-pre-wrap rounded bg-gray-50 p-2 text-xs text-gray-600"><%= JSON.pretty_generate(recommendation.evidence) %></pre>
+      </details>
+    <% end %>
+  </td>
+  <td class="whitespace-nowrap px-4 py-3 text-right text-sm">
+    <div class="flex flex-col items-end gap-2 sm:flex-row sm:items-center">
+      <%= button_to "Accept",
+            project_knowledge_recommendation_path(project, recommendation),
+            method: :patch,
+            params: { action_type: "accept" },
+            form: { data: { turbo_stream: true } },
+            class: "inline-flex items-center rounded-md bg-green-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-green-500" %>
+
+      <%= form_with url: project_knowledge_recommendation_path(project, recommendation), method: :patch, data: { turbo_stream: true }, class: "flex items-center justify-end gap-2" do %>
+        <%= hidden_field_tag :action_type, "dismiss" %>
+        <label for="<%= dom_id(recommendation, :dismissal_reason) %>" class="sr-only">Dismissal reason</label>
+        <%= text_field_tag :dismissal_reason,
+              nil,
+              id: dom_id(recommendation, :dismissal_reason),
+              placeholder: "Dismissal reason",
+              required: true,
+              class: "w-40 rounded-md border-gray-300 px-2 py-1 text-xs text-gray-900 placeholder:text-gray-400" %>
+        <%= submit_tag "Dismiss", class: "inline-flex items-center rounded-md bg-gray-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-gray-500" %>
+      <% end %>
+    </div>
+  </td>
+</tr>

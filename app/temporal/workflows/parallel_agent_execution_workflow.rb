@@ -1,0 +1,637 @@
+# frozen_string_literal: true
+
+module Workflows
+  # Orchestrates parallel execution of multiple AgentExecutionWorkflow instances
+  # for independent sub-tasks from a decomposed feature.
+  #
+  # Input:
+  #   project_id: ID of the project
+  #   sub_tasks: Array of sub-task hashes, each containing:
+  #     - issue_id: ID of the sub-task issue
+  #     - agent_type: (optional) Agent type to use
+  #     - custom_prompt: (optional) Custom prompt for this sub-task
+  #     - goal: (optional) Goal type (defaults to "create_pr")
+  #   parent_workflow_id: (optional) Identifier for this parallel execution group
+  #   timeout_seconds: (optional) Overall timeout for all parallel tasks
+  #
+  # The workflow:
+  #   1. Checks project-level capacity for parallel runs
+  #   2. Launches child AgentExecutionWorkflow instances in batches respecting concurrency limits
+  #   3. Re-checks capacity between batches and enforces an overall deadline
+  #   4. Returns aggregate results
+  class ParallelAgentExecutionWorkflow < BaseWorkflow
+    # Default overall timeout for parallel execution (2 hours)
+    DEFAULT_TIMEOUT_SECONDS = 7200
+    # Maximum sub-tasks allowed per parallel execution
+    MAX_SUB_TASKS = 20
+
+    def execute(input)
+      project_id = input[:project_id]
+      sub_tasks = normalize_sub_tasks(input.fetch(:sub_tasks, []))
+      parent_wf_id = input[:parent_workflow_id] || Temporalio::Workflow.info.workflow_id
+      timeout_seconds = input.fetch(:timeout_seconds, DEFAULT_TIMEOUT_SECONDS)
+      coordination_policy = normalize_coordination_policy(input[:coordination_policy])
+
+      Temporalio::Workflow.logger.info(
+        message: "parallel_execution.started",
+        project_id: project_id,
+        sub_task_count: sub_tasks.size,
+        parent_workflow_id: parent_wf_id
+      )
+
+      validate_input!(project_id, sub_tasks)
+
+      # Step 1: Check project-level capacity
+      capacity = run_activity(
+        Activities::CheckProjectRunCapacityActivity,
+        { project_id: project_id },
+        timeout: 30
+      )
+
+      unless capacity[:has_capacity]
+        error_code = capacity[:error] || "no_capacity"
+        Temporalio::Workflow.logger.warn(
+          message: "parallel_execution.no_capacity",
+          project_id: project_id,
+          error: error_code
+        )
+        return {
+          success: false,
+          error: error_code,
+          project_active_count: capacity[:project_active_count],
+          max_parallel_per_project: capacity[:max_parallel_per_project]
+        }
+      end
+
+      # Step 2: Launch child workflows with concurrency control
+      max_concurrent = capacity[:available_slots]
+      results, execution_summary = launch_and_monitor_children(
+        project_id: project_id,
+        sub_tasks: sub_tasks,
+        max_concurrent: max_concurrent,
+        parent_wf_id: parent_wf_id,
+        timeout_seconds: timeout_seconds,
+        coordination_policy: coordination_policy
+      )
+
+      # Step 3: Detect and resolve conflicts between successful runs.
+      # This must happen before PR aggregation so that any rebased branches
+      # are reflected in the aggregated feature branch/PR.
+      completed = results.count { |r| r[:success] }
+      failed = results.count { |r| r[:success] == false }
+
+      conflict_result = detect_and_resolve_conflicts(
+        results: results,
+        project_id: project_id
+      )
+
+      # Step 4: Optionally aggregate branches into a single PR.
+      # Default to the project-level setting (returned by the capacity check)
+      # when the caller does not explicitly pass aggregate_pr.
+      aggregate = if input.key?(:aggregate_pr)
+        input[:aggregate_pr]
+      else
+        capacity.fetch(:pr_aggregation_enabled, false)
+      end
+      parent_issue_id = input[:parent_issue_id]
+
+      aggregated_pr = nil
+      if aggregate && results.any? { |r| r[:success] }
+        aggregated_pr = aggregate_branches_and_create_pr(
+          project_id: project_id,
+          parent_issue_id: parent_issue_id,
+          results: results,
+          parent_wf_id: parent_wf_id
+        )
+      end
+
+      Temporalio::Workflow.logger.info(
+        message: "parallel_execution.completed",
+        project_id: project_id,
+        total: sub_tasks.size,
+        completed: completed,
+        failed: failed,
+        has_conflicts: conflict_result[:has_conflicts],
+        aggregated_pr: aggregated_pr&.dig(:pull_request_url)
+      )
+
+      output = {
+        success: failed == 0,
+        total: sub_tasks.size,
+        completed: completed,
+        failed: failed,
+        results: results,
+        conflicts: conflict_result,
+        execution_summary: execution_summary
+      }
+      output[:aggregated_pr] = aggregated_pr if aggregated_pr
+      output
+    end
+
+    private
+
+    def validate_input!(project_id, sub_tasks)
+      unless project_id
+        raise Temporalio::Error::ApplicationError.new(
+          "project_id is required",
+          type: "InvalidInput",
+          non_retryable: true
+        )
+      end
+
+      if sub_tasks.empty?
+        raise Temporalio::Error::ApplicationError.new(
+          "sub_tasks must not be empty",
+          type: "InvalidInput",
+          non_retryable: true
+        )
+      end
+
+      if sub_tasks.size > MAX_SUB_TASKS
+        raise Temporalio::Error::ApplicationError.new(
+          "sub_tasks exceeds maximum of #{MAX_SUB_TASKS}",
+          type: "InvalidInput",
+          non_retryable: true
+        )
+      end
+
+      sub_tasks.each_with_index do |sub_task, index|
+        unless sub_task.is_a?(Hash)
+          raise Temporalio::Error::ApplicationError.new(
+            "sub_tasks[#{index}] must be a Hash",
+            type: "InvalidInput",
+            non_retryable: true
+          )
+        end
+
+        if sub_task[:issue_id].nil? && sub_task[:custom_prompt].nil?
+          raise Temporalio::Error::ApplicationError.new(
+            "sub_tasks[#{index}] must include at least one of :issue_id or :custom_prompt",
+            type: "InvalidInput",
+            non_retryable: true
+          )
+        end
+
+        unless sub_task[:dependencies].is_a?(Array) && sub_task[:dependencies].all? { |dependency| dependency.is_a?(Integer) }
+          raise Temporalio::Error::ApplicationError.new(
+            "sub_tasks[#{index}] dependencies must be an array of task indexes",
+            type: "InvalidInput",
+            non_retryable: true
+          )
+        end
+      end
+
+      task_indexes = sub_tasks.map { |sub_task| sub_task[:task_index] }
+      if task_indexes.uniq.size != task_indexes.size
+        raise Temporalio::Error::ApplicationError.new(
+          "sub_tasks task_index values must be unique",
+          type: "InvalidInput",
+          non_retryable: true
+        )
+      end
+
+      sub_tasks.each do |sub_task|
+        missing_dependencies = sub_task[:dependencies] - task_indexes
+        next if missing_dependencies.empty?
+
+        raise Temporalio::Error::ApplicationError.new(
+          "sub_task #{sub_task[:task_index]} has unknown dependencies: #{missing_dependencies.join(', ')}",
+          type: "InvalidInput",
+          non_retryable: true
+        )
+      end
+    end
+
+    def normalize_sub_tasks(sub_tasks)
+      sub_tasks.each_with_index.map do |sub_task, index|
+        next sub_task unless sub_task.is_a?(Hash)
+
+        sub_task.merge(
+          task_index: sub_task.fetch(:task_index, index),
+          dependencies: Array(sub_task[:dependencies])
+        )
+      end
+    end
+
+    # Launches child workflows in batches respecting concurrency limits,
+    # then waits for all to complete. Recomputes batch size from the latest
+    # capacity check before each batch, and enforces an overall deadline
+    # derived from timeout_seconds.
+    def launch_and_monitor_children(project_id:, sub_tasks:, max_concurrent:, parent_wf_id:, timeout_seconds:, coordination_policy:)
+      deadline = Temporalio::Workflow.now + timeout_seconds
+      remaining_tasks = sub_tasks.dup
+      all_results = []
+      batch_index = 0
+      current_slots = max_concurrent
+      batch_sizes = []
+
+      while remaining_tasks.any?
+        ready_tasks, blocked_tasks = partition_ready_tasks(remaining_tasks, all_results)
+
+        if ready_tasks.empty?
+          all_results.concat(
+            build_terminal_results_for_remaining(
+              all_results: all_results,
+              remaining_tasks: remaining_tasks,
+              ready_tasks: ready_tasks,
+              blocked_tasks: blocked_tasks,
+              ready_error: "unresolvable_dependencies"
+            )
+          )
+          break
+        end
+
+        remaining_seconds = deadline - Temporalio::Workflow.now
+        if remaining_seconds <= 0
+          all_results.concat(
+            build_terminal_results_for_remaining(
+              all_results: all_results,
+              remaining_tasks: remaining_tasks,
+              ready_tasks: ready_tasks,
+              blocked_tasks: blocked_tasks,
+              ready_error: "deadline_exceeded"
+            )
+          )
+          break
+        end
+
+        # Re-check capacity before each batch (except the first, already checked)
+        if batch_index > 0
+          capacity = run_activity(
+            Activities::CheckProjectRunCapacityActivity,
+            { project_id: project_id },
+            timeout: 30
+          )
+
+          unless capacity[:has_capacity]
+            all_results.concat(
+              build_terminal_results_for_remaining(
+                all_results: all_results,
+                remaining_tasks: remaining_tasks,
+                ready_tasks: ready_tasks,
+                blocked_tasks: blocked_tasks,
+                ready_error: "no_capacity"
+              )
+            )
+            break
+          end
+
+          current_slots = capacity[:available_slots]
+        end
+
+        if current_slots.to_i <= 0
+          all_results.concat(
+            build_terminal_results_for_remaining(
+              all_results: all_results,
+              remaining_tasks: remaining_tasks,
+              ready_tasks: ready_tasks,
+              blocked_tasks: blocked_tasks,
+              ready_error: "no_capacity"
+            )
+          )
+          break
+        end
+
+        batch_size = [
+          current_slots,
+          ready_tasks.size,
+          max_batch_size_for(coordination_policy)
+        ].compact.min
+        batch = ready_tasks.first(batch_size)
+        remaining_tasks -= batch
+        batch_sizes << batch.size
+
+        batch_results = execute_batch(
+          project_id: project_id,
+          batch: batch,
+          batch_index: batch_index,
+          parent_wf_id: parent_wf_id,
+          deadline: deadline
+        )
+
+        all_results.concat(batch_results)
+        if cancel_remaining_on_failure?(coordination_policy) && batch_results.any? { |batch_result| batch_result[:success] == false }
+          all_results.concat(
+            build_terminal_results_for_remaining(
+              all_results: all_results,
+              remaining_tasks: remaining_tasks,
+              ready_tasks: remaining_tasks,
+              blocked_tasks: [],
+              ready_error: "cancelled_by_policy"
+            )
+          )
+          break
+        end
+        batch_index += 1
+      end
+
+      [
+        all_results,
+        {
+          batch_count: batch_sizes.size,
+          batch_sizes: batch_sizes,
+          max_parallelism_observed: batch_sizes.max.to_i
+        }
+      ]
+    end
+
+    def partition_ready_tasks(remaining_tasks, all_results)
+      completed_results = all_results.index_by { |result| result[:task_index] }
+      ready_tasks = []
+      blocked_tasks = []
+
+      remaining_tasks.each do |task|
+        dependency_results = task[:dependencies].map { |dependency| completed_results[dependency] }
+
+        if dependency_results.any?(&:nil?)
+          next
+        elsif dependency_results.all? { |result| result[:success] }
+          ready_tasks << task
+        else
+          blocked_tasks << task
+        end
+      end
+
+      [ ready_tasks, blocked_tasks ]
+    end
+
+    def build_blocked_results(blocked_tasks)
+      blocked_tasks.map do |task|
+        {
+          issue_id: task[:issue_id],
+          task_index: task[:task_index],
+          success: false,
+          error: "dependencies_failed",
+          blocked_by: task[:dependencies]
+        }
+      end
+    end
+
+    def build_terminal_results_for_remaining(all_results:, remaining_tasks:, ready_tasks:, blocked_tasks:, ready_error:)
+      terminal_results = build_ready_failure_results(ready_tasks, ready_error) + build_blocked_results(blocked_tasks)
+      completed_results = (all_results + terminal_results).index_by { |result| result[:task_index] }
+      unresolved_tasks = remaining_tasks - ready_tasks - blocked_tasks
+
+      while unresolved_tasks.any?
+        newly_ready, newly_blocked = partition_ready_tasks(unresolved_tasks, completed_results.values)
+        break if newly_ready.empty? && newly_blocked.empty?
+
+        new_results = build_ready_failure_results(newly_ready, ready_error) + build_blocked_results(newly_blocked)
+        terminal_results.concat(new_results)
+        completed_results.merge!(new_results.index_by { |result| result[:task_index] })
+        unresolved_tasks -= newly_ready
+        unresolved_tasks -= newly_blocked
+      end
+
+      terminal_results + build_unresolvable_results(unresolved_tasks)
+    end
+
+    def build_ready_failure_results(ready_tasks, error)
+      ready_tasks.map do |task|
+        {
+          issue_id: task[:issue_id],
+          task_index: task[:task_index],
+          success: false,
+          error: error,
+          queued: true
+        }
+      end
+    end
+
+    def build_unresolvable_results(tasks)
+      tasks.map do |task|
+        {
+          issue_id: task[:issue_id],
+          task_index: task[:task_index],
+          success: false,
+          error: "unresolvable_dependencies",
+          blocked_by: task[:dependencies]
+        }
+      end
+    end
+
+    # Aggregates branches from completed sub-tasks into a single feature branch
+    # and creates a combined PR. Called when aggregate_pr is true and at least
+    # one sub-task succeeded.
+    def aggregate_branches_and_create_pr(project_id:, parent_issue_id:, results:, parent_wf_id:)
+      timestamp = Temporalio::Workflow.now.to_i
+      safe_id = parent_wf_id.to_s.parameterize[0, 60]
+      feature_branch = "feature/aggregated-#{safe_id}-#{timestamp}"
+
+      # Step 1: Merge sub-task branches into feature branch
+      aggregate_result = run_activity(
+        Activities::AggregateBranchesActivity,
+        {
+          project_id: project_id,
+          results: results,
+          feature_branch_name: feature_branch
+        },
+        timeout: 120,
+        heartbeat_timeout: DEFAULT_HEARTBEAT_TIMEOUT
+      )
+
+      return nil if aggregate_result[:merged_branches].empty?
+
+      # Step 2: Create aggregated PR
+      run_activity(
+        Activities::CreateAggregatedPullRequestActivity,
+        {
+          project_id: project_id,
+          parent_issue_id: parent_issue_id,
+          feature_branch: aggregate_result[:feature_branch],
+          merged_branches: aggregate_result[:merged_branches],
+          failed_merges: aggregate_result[:failed_merges],
+          results: results
+        },
+        timeout: 60
+      )
+    rescue Temporalio::Error::CanceledError
+      raise
+    rescue => e
+      Temporalio::Workflow.logger.warn(
+        message: "parallel_execution.aggregation_failed",
+        project_id: project_id,
+        error_class: e.class.name,
+        error: e.message
+      )
+      nil
+    end
+
+    # Detects and attempts to resolve conflicts between successful parallel runs.
+    # Only checks runs that completed successfully and produced agent_run_ids.
+    # Returns a summary of conflict detection and resolution outcomes.
+    def detect_and_resolve_conflicts(results:, project_id:)
+      successful_run_ids = results
+        .select { |r| r[:success] && r[:agent_run_id] }
+        .map { |r| r[:agent_run_id] }
+
+      return no_conflicts_result(project_id: project_id, runs_checked: successful_run_ids.size) if successful_run_ids.size < 2
+
+      detection = run_activity(
+        Activities::DetectConflictsActivity,
+        { agent_run_ids: successful_run_ids, project_id: project_id },
+        timeout: 120,
+        heartbeat_timeout: DEFAULT_HEARTBEAT_TIMEOUT
+      )
+
+      unless detection[:has_conflicts]
+        return detection.merge(
+          detection_failed: false,
+          requires_manual_review: false,
+          resolution: nil,
+          error: nil
+        )
+      end
+
+      # If detection failed and produced no usable conflict information,
+      # require manual review without attempting resolution.
+      if detection[:detection_failed] &&
+         (detection[:conflicting_pairs].nil? || detection[:conflicting_pairs].empty?)
+        return detection.merge(resolution: nil, error: nil)
+      end
+
+      resolution = run_activity(
+        Activities::ResolveConflictsActivity,
+        { detection_result: detection, project_id: project_id, strategy: "auto_rebase" },
+        timeout: 300,
+        heartbeat_timeout: DEFAULT_HEARTBEAT_TIMEOUT
+      )
+
+      detection.merge(
+        resolution: resolution,
+        requires_manual_review: resolution[:requires_manual_review] || detection[:requires_manual_review],
+        error: nil
+      )
+    rescue Temporalio::Error::CanceledError
+      raise
+    rescue => e
+      Temporalio::Workflow.logger.warn(
+        message: "parallel_execution.conflict_detection_failed",
+        project_id: project_id,
+        error_class: e.class.name,
+        error: e.message
+      )
+      {
+        has_conflicts: true,
+        conflicting_pairs: [],
+        files_by_run: [],
+        total_runs_checked: 0,
+        project_id: project_id,
+        detection_failed: true,
+        failed_run_ids: [],
+        requires_manual_review: true,
+        resolution: nil,
+        error: e.message
+      }
+    end
+
+    def no_conflicts_result(project_id: nil, runs_checked: 0)
+      {
+        has_conflicts: false,
+        conflicting_pairs: [],
+        files_by_run: [],
+        total_runs_checked: runs_checked,
+        project_id: project_id,
+        detection_failed: false,
+        failed_run_ids: [],
+        requires_manual_review: false,
+        resolution: nil,
+        error: nil
+      }
+    end
+
+    def normalize_coordination_policy(policy)
+      (policy || {}).deep_symbolize_keys
+    end
+
+    def max_batch_size_for(policy)
+      Integer(policy.dig(:parallel_execution, :max_batch_size))
+    rescue ArgumentError, TypeError
+      nil
+    end
+
+    def cancel_remaining_on_failure?(policy)
+      policy.dig(:parallel_execution, :cancel_remaining_on_failure) == true
+    end
+
+    # Launches a batch of child workflows in parallel and waits for all to complete.
+    # Each child receives the remaining time until the workflow-level deadline,
+    # ensuring the overall timeout_seconds cap is respected across all batches.
+    def execute_batch(project_id:, batch:, batch_index:, parent_wf_id:, deadline:)
+      timestamp = Temporalio::Workflow.now.to_i
+      child_timeout = [ (deadline - Temporalio::Workflow.now).to_i, 1 ].max
+
+      # Start all child workflows in this batch
+      child_futures = batch.map.with_index do |task, task_index|
+        issue_id = task[:issue_id]
+        workflow_id = "parallel-#{parent_wf_id}-#{batch_index}-#{task_index}-#{issue_id}-#{timestamp}"
+        agent_type = task[:agent_type]
+        goal = task.fetch(:goal, "create_pr")
+
+        child_input = {
+          project_id: project_id,
+          issue_id: issue_id,
+          goal: goal,
+          parent_workflow_id: parent_wf_id
+        }
+        child_input[:agent_type] = agent_type if task.key?(:agent_type)
+        child_input[:custom_prompt] = task[:custom_prompt] if task[:custom_prompt]
+
+        Temporalio::Workflow.logger.info(
+          message: "parallel_execution.launching_child",
+          project_id: project_id,
+          issue_id: issue_id,
+          workflow_id: workflow_id,
+          batch_index: batch_index
+        )
+
+        future = Temporalio::Workflow::Future.new do
+          Temporalio::Workflow.execute_child_workflow(
+            Workflows::AgentExecutionWorkflow,
+            child_input,
+            id: workflow_id,
+            execution_timeout: child_timeout,
+            cancellation_type: Temporalio::Workflow::ChildWorkflowCancellationType::WAIT_CANCELLATION_COMPLETED
+          )
+        end
+
+        { future: future, issue_id: issue_id, workflow_id: workflow_id, task_index: task[:task_index] }
+      end
+
+      # Wait for all futures to complete (success or failure)
+      Temporalio::Workflow::Future.try_all_of(
+        *child_futures.map { |cf| cf[:future] }
+      ).wait
+
+      # Collect results
+      child_futures.map do |child|
+        if child[:future].failure?
+          error = child[:future].failure
+          Temporalio::Workflow.logger.warn(
+            message: "parallel_execution.child_failed",
+            issue_id: child[:issue_id],
+            workflow_id: child[:workflow_id],
+            error: error.message
+          )
+          {
+            issue_id: child[:issue_id],
+            task_index: child[:task_index],
+            workflow_id: child[:workflow_id],
+            success: false,
+            error: error.message
+          }
+        else
+          result = child[:future].result || {}
+          {
+            issue_id: child[:issue_id],
+            task_index: child[:task_index],
+            workflow_id: child[:workflow_id],
+            success: result[:success] || false,
+            paused: result[:paused] || false,
+            agent_run_id: result[:agent_run_id]
+          }
+        end
+      end
+    end
+  end
+end

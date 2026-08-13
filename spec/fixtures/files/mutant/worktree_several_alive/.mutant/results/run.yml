@@ -1,0 +1,13 @@
+alive_mutations:
+  - subject: Foo#bar
+    subject_path: app/models/foo.rb
+    source_line: 42
+    mutation_diff: "return true -> return false"
+  - subject: Baz#qux
+    subject_path: app/services/baz.rb
+    source_line: 17
+    mutation_diff: "nil -> 0"
+  - subject: Widget#render
+    subject_path: app/models/widget.rb
+    source_line: 8
+    mutation_diff: "x + y -> x - y"

@@ -1,0 +1,146 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "fileutils"
+
+APP_ROOT = File.expand_path("..", __dir__)
+BUNDLER_VERSION_PATTERN = /^BUNDLED WITH$\n\s+(.+)$/.freeze
+
+def system!(*args)
+  system(*args, exception: true)
+end
+
+def lockfile_bundler_version
+  lockfile_path = File.join(APP_ROOT, "Gemfile.lock")
+  return unless File.exist?(lockfile_path)
+
+  File.read(lockfile_path)[BUNDLER_VERSION_PATTERN, 1]
+end
+
+def ensure_bundler_version!(bundler_version)
+  return if bundler_version.nil? || bundler_version.empty?
+  return if system("bundle", "_#{bundler_version}_", "--version", out: File::NULL, err: File::NULL)
+
+  puts "Installing Bundler #{bundler_version} to match Gemfile.lock"
+  system!("gem", "install", "--no-document", "bundler:#{bundler_version}")
+end
+
+def bundle_command(*args)
+  bundler_version = lockfile_bundler_version
+  ensure_bundler_version!(bundler_version)
+  return [ "bundle", *args ] if bundler_version.nil? || bundler_version.empty?
+
+  [ "bundle", "_#{bundler_version}_", *args ]
+end
+
+FileUtils.chdir APP_ROOT do
+  # This script is a way to set up or update your development environment automatically.
+  # This script is idempotent, so that you can run it at any time and get an expectable outcome.
+  # Add necessary setup steps to this file.
+  skip_database = ARGV.include?("--skip-database")
+
+  puts "== Setting up git hooks =="
+  system! "git config core.hooksPath .githooks"
+
+  puts "\n== Installing dependencies =="
+  system(*bundle_command("check")) || system!(*bundle_command("install"))
+
+  # Install JavaScript dependencies (scripts disabled via .yarnrc for supply-chain security)
+  system!("yarn install")
+  system!("bin/yarn-postinstall")
+  system!("bin/install-gitleaks")
+
+  # puts "\n== Copying sample files =="
+  # unless File.exist?("config/database.yml")
+  #   FileUtils.cp "config/database.yml.sample", "config/database.yml"
+  # end
+
+  puts "\n== Ensuring workspace directory =="
+  workspace_root = ENV.fetch("WORKSPACE_ROOT", "/var/paid/workspaces")
+  unless Dir.exist?(workspace_root)
+    system("sudo mkdir -p #{workspace_root}/runs && sudo chown -R $(whoami) /var/paid")
+  end
+
+  unless skip_database
+    puts "\n== Preparing database =="
+    system! "bin/ensure-worktree-databases"
+    system! "bin/rails db:prepare"
+    system! "bin/rails db:reset" if ARGV.include?("--reset")
+  end
+
+  unless skip_database
+    puts "\n== Checking Qdrant connectivity =="
+    system "bin/rails qdrant:check"
+  end
+
+  puts "\n== Materializing Prometheus metrics token =="
+  # docker-compose.observability.yml mounts the host file at
+  # ${METRICS_TOKEN_FILE:-./tmp/prometheus/metrics_token} into Prometheus
+  # as a Docker secret, and the Rails app reads METRICS_TOKEN to decide
+  # whether /api/metrics requires a Bearer header. Both sides must use
+  # the same token file path; we resolve it the same way the compose
+  # overlay does — honouring METRICS_TOKEN_FILE when set, falling back
+  # to the default untracked location (./tmp/prometheus/metrics_token).
+  # The default lives under ./tmp/ so it is gitignored and a live token
+  # never ends up in the tracked working tree. We ensure the file exists
+  # (creating an empty one when missing) so `docker compose --profile
+  # observability up` does not fail on a fresh checkout; the empty
+  # content makes Prometheus send a blank Bearer header, which the Rails
+  # side accepts because its auth check is gated on the env var.
+  # When METRICS_TOKEN is present in this process environment, we write
+  # it into the resolved file so the scraper picks up the same value.
+  # When absent, we leave any pre-existing content alone so helper
+  # processes like the worker do not clobber a token that a separate
+  # bootstrap path already materialized.
+  metrics_token_file = ENV.fetch("METRICS_TOKEN_FILE", "")
+  token_path = if metrics_token_file.empty?
+    File.join(APP_ROOT, "tmp", "prometheus", "metrics_token")
+  else
+    File.expand_path(metrics_token_file, APP_ROOT)
+  end
+  FileUtils.mkdir_p(File.dirname(token_path))
+  # Guard on a non-blank value so that the compose-style empty-string case
+  # (docker-compose.yml injects METRICS_TOKEN: ${METRICS_TOKEN:-}, which is
+  # always present but empty when the host var is unset) does not clobber a
+  # token that a separate bootstrap path already materialized.
+  token = ENV.fetch("METRICS_TOKEN", "")
+  if token.empty?
+    File.write(token_path, "") unless File.exist?(token_path)
+  else
+    File.write(token_path, token)
+  end
+  # Tighten the file mode so another local user on a shared dev host
+  # cannot read the Bearer credential Prometheus sends to /api/metrics.
+  # File.write creates the file with the process umask (typically 022 ->
+  # 0644 on Linux), which would otherwise leak the token. We chmod
+  # unconditionally — on Windows the mode bits are ignored, on Linux
+  # this narrows the read set to the owning user. The parent directory
+  # is left at the umask default (0755) which matches common Linux
+  # expectations; we only flag it for the multi-tenant threat model.
+  File.chmod(0o600, token_path)
+
+  puts "\n== Building agent container image =="
+  system! "scripts/build-agent-image.sh"
+
+  puts "\n== Removing old logs and tempfiles =="
+  FileUtils.rm_f(Dir["log/*.log"])
+  FileUtils.rm_rf(%w[tmp/cache tmp/pids tmp/sockets tmp/screenshots tmp/storage])
+
+  puts "\n== Truncating dev-update logs =="
+  require_relative "../lib/paid/log_truncator"
+  Paid::LogTruncator.truncate_logs("log/dev-update")
+
+  unless ARGV.include?("--skip-server")
+    puts "\n== Starting development server =="
+    puts "   (detaching — use 'overmind connect web' to see logs, Ctrl-C to detach)"
+    STDOUT.flush # flush the output before exec(2) so that it displays
+    # --detach forks bin/dev into a new session and returns immediately, so
+    # bin/setup exits back to the prompt instead of staying attached to the
+    # dev server output. --restart-if-running lets bin/dev refresh an already
+    # healthy Overmind session after setup instead of exiting early. Use
+    # `overmind connect` to re-attach.
+    exec "bin/dev", "--detach", "--restart-if-running"
+  end
+
+  puts "\n== Setup complete! =="
+end

@@ -1,0 +1,11 @@
+<% if @queue_preview_request %>
+  <%= turbo_stream.replace "queue-preview",
+    partial: "dashboard/queue_preview",
+    locals: { queue_preview: @queue_preview, paused_projects: @quality_paused_projects, queue_fairness_mode: @queue_fairness_mode } %>
+<% elsif @cancel_result.cancelled? %>
+  <%= turbo_stream.remove dom_id(@agent_run, :dashboard_row) %>
+<% end %>
+
+<% unless @cancel_result.cancelled? %>
+  <%= turbo_stream.prepend "dashboard-alerts", partial: "shared/flash_alert", locals: { message: @cancel_result.message } %>
+<% end %>

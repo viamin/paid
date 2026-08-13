@@ -1,0 +1,218 @@
+# frozen_string_literal: true
+
+# Automatically retries issue goal agent runs that have timed out.
+#
+# When an issue goal run times out (stuck in queued/running beyond
+# the timeout threshold), this job creates a new queued run with the
+# same parameters so the issue creation is retried without manual
+# intervention. Respects a maximum retry count to avoid infinite loops.
+#
+# Enqueued from AgentRun's after_commit callback when an issue goal
+# run transitions to "timeout" status.
+class RetryTimedOutIssueGoalJob < ApplicationJob
+  queue_as :default
+
+  MAX_RETRIES = 3
+
+  def perform(agent_run_id)
+    agent_run = AgentRun.find_by(id: agent_run_id)
+    return unless agent_run
+    return unless eligible_for_retry?(agent_run)
+
+    begin
+      new_run = AgentRun.transaction do
+        # Lock the original run to prevent concurrent retry jobs from both
+        # creating a new queued run. Re-check eligibility under the lock
+        # since the status may have changed since the initial check.
+        locked_run = AgentRun.lock.find_by(id: agent_run.id)
+        next unless locked_run && eligible_for_retry?(locked_run)
+
+        previous_retries = count_previous_retries(locked_run)
+        retry_attempt = previous_retries + 1
+        if previous_retries >= MAX_RETRIES
+          locked_run.update!(error_message: "Auto-retry limit reached (#{MAX_RETRIES} retries)")
+          log_retry_decision(
+            agent_run: locked_run,
+            status: "noop",
+            signals: { previous_retries: previous_retries, retry_attempt: retry_attempt, max_retries: MAX_RETRIES },
+            result: { reason: "retry_limit_reached", retry_attempt: retry_attempt }
+          )
+
+          Rails.logger.info(
+            message: "agent_execution.issue_goal_retry_limit_reached",
+            agent_run_id: locked_run.id,
+            issue_id: locked_run.issue_id,
+            project_id: locked_run.project_id,
+            previous_retries: previous_retries,
+            max_retries: MAX_RETRIES
+          )
+          next
+        end
+
+        existing_run = existing_active_run_for(locked_run)
+        if existing_run
+          mark_existing_run_retry!(locked_run, existing_run, previous_retries: previous_retries, retry_attempt: retry_attempt)
+          next :existing_active_run
+        end
+
+        created = AgentRun.create!(
+          project: locked_run.project,
+          issue: locked_run.issue,
+          initiating_user: locked_run.initiating_user,
+          runner: locked_run.runner,
+          agent_type: locked_run.agent_type,
+          custom_prompt: locked_run.custom_prompt,
+          source_pull_request_number: locked_run.source_pull_request_number,
+          goal: locked_run.goal,
+          # Use "manual" trigger_type so retries get the same scheduling
+          # priority as user-initiated runs. "automatic" with no source PR
+          # is treated as auto-pick by ProcessRunQueueJob, which subjects
+          # the run to reserved-slot throttling and lowest queue priority —
+          # inappropriate for retrying already-approved work.
+          trigger_type: "manual",
+          status: "queued"
+        )
+        locked_run.retry!(
+          decision_point: "timeout_auto_retry",
+          signals: { previous_retries: previous_retries, retry_attempt: retry_attempt, max_retries: MAX_RETRIES },
+          result: { new_agent_run_id: created.id, retry_attempt: retry_attempt }
+        )
+        created
+      end
+    rescue ActiveRecord::RecordNotUnique => e
+      # Another active run exists for this project+issue or project+PR
+      # (enforced by idx_agent_runs_unique_active_issue or
+      # idx_agent_runs_unique_active_pr). Inspect the violated constraint
+      # so we can reliably find the conflicting run.
+      constraint_message = e.cause&.message || e.message
+
+      existing_run =
+        if constraint_message.include?("idx_agent_runs_unique_active_issue")
+          AgentRun.where(
+            project_id: agent_run.project_id,
+            issue_id: agent_run.issue_id,
+            status: AgentRun::UNFINISHED_STATUSES
+          ).where.not(id: agent_run.id).first
+        elsif constraint_message.include?("idx_agent_runs_unique_active_pr")
+          AgentRun.where(
+            project_id: agent_run.project_id,
+            source_pull_request_number: agent_run.source_pull_request_number,
+            status: AgentRun::UNFINISHED_STATUSES
+          ).where.not(id: agent_run.id).first
+        end
+
+      # If we couldn't positively identify the conflicting run, bubble up
+      # the exception so unexpected unique violations aren't silently hidden.
+      raise unless existing_run
+
+      previous_retries = count_previous_retries(agent_run)
+      mark_existing_run_retry!(
+        agent_run,
+        existing_run,
+        previous_retries: previous_retries,
+        retry_attempt: previous_retries + 1
+      )
+      return enqueue_queue_processing
+    end
+
+    return unless new_run
+    return enqueue_queue_processing if new_run == :existing_active_run
+
+    Rails.logger.info(
+      message: "agent_execution.issue_goal_auto_retry",
+      original_agent_run_id: agent_run.id,
+      new_agent_run_id: new_run.id,
+      issue_id: agent_run.issue_id,
+      project_id: agent_run.project_id
+    )
+
+    # Idempotent (advisory lock + SKIP LOCKED). This job is enqueued from
+    # AgentRun's after_commit callback when a run transitions to "timeout",
+    # regardless of whether the timeout was set by Temporal activities or by
+    # StaleRunDetectorJob.
+    enqueue_queue_processing
+  end
+
+  private
+
+  def eligible_for_retry?(agent_run)
+    agent_run.status == "timeout" && agent_run.create_issue_goal?
+  end
+
+  # Counts how many previous issue goal runs for the same issue (when present)
+  # or for the same goal parameters (when issue is nil) have already been
+  # retried (timed out or marked as retried), excluding the current run.
+  # This counts retries, not total attempts — the original run is not included.
+  def count_previous_retries(agent_run)
+    scope =
+      if agent_run.issue_id
+        agent_run.issue.agent_runs.where(goal: "create_issue")
+      else
+        AgentRun.where(
+          project_id: agent_run.project_id,
+          goal: agent_run.goal,
+          issue_id: nil,
+          runner: agent_run.runner,
+          agent_type: agent_run.agent_type,
+          custom_prompt: agent_run.custom_prompt,
+          source_pull_request_number: agent_run.source_pull_request_number
+        )
+      end
+
+    scope
+      .where(status: %w[timeout retried])
+      .where.not(id: agent_run.id)
+      .count
+  end
+
+  def existing_active_run_for(agent_run)
+    scope = AgentRun.where(
+      project_id: agent_run.project_id,
+      goal: agent_run.goal,
+      status: AgentRun::UNFINISHED_STATUSES
+    ).where.not(id: agent_run.id)
+
+    if agent_run.issue_id.present?
+      scope.find_by(issue_id: agent_run.issue_id)
+    elsif agent_run.source_pull_request_number.present?
+      scope.find_by(source_pull_request_number: agent_run.source_pull_request_number)
+    end
+  end
+
+  def mark_existing_run_retry!(agent_run, existing_run, previous_retries:, retry_attempt:)
+    agent_run.retry!(
+      decision_point: "timeout_auto_retry",
+      signals: {
+        previous_retries: previous_retries,
+        retry_attempt: retry_attempt,
+        max_retries: MAX_RETRIES
+      },
+      result: { existing_agent_run_id: existing_run.id, reason: "existing_active_run", retry_attempt: retry_attempt }
+    )
+
+    Rails.logger.info(
+      message: "agent_execution.issue_goal_auto_retry_skipped_existing_run",
+      original_agent_run_id: agent_run.id,
+      existing_agent_run_id: existing_run.id,
+      issue_id: agent_run.issue_id,
+      project_id: agent_run.project_id
+    )
+  end
+
+  def enqueue_queue_processing
+    ProcessRunQueueJob.perform_later
+  end
+
+  def log_retry_decision(agent_run:, status:, signals:, result:)
+    OrchestrationDecision.record(
+      project: agent_run.project,
+      issue: agent_run.issue,
+      agent_run: agent_run,
+      decision_point: "timeout_auto_retry",
+      action: "retry",
+      status: status,
+      signals: signals,
+      result: result
+    )
+  end
+end

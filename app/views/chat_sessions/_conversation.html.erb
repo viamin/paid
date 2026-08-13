@@ -1,0 +1,100 @@
+<% can_create_chat_message = policy(ChatMessage.new(chat_session: chat_session)).create? && !chat_session.archived? %>
+
+<div class="flex h-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white">
+  <div class="shrink-0 border-b border-gray-100 bg-white px-4 py-1.5 text-center">
+    <button type="button"
+            class="text-xs font-medium text-indigo-600 underline-offset-2 transition-colors hover:text-indigo-500 hover:underline focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            data-action="click->chat#scrollToInput"
+            aria-label="Scroll to message input"
+            title="Jump to input">
+      <svg class="mr-1 inline-block h-3 w-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+      </svg>
+      Jump to input
+    </button>
+  </div>
+  <div class="flex-1 min-h-0 overflow-y-auto px-4 py-5 sm:px-6"
+        data-chat-target="container"
+        data-action="scroll->chat#handleScroll touchend->chat#handleScroll"
+        data-controller="chat-stream">
+    <button type="button"
+            class="pointer-events-none sticky top-0 z-10 mx-auto mb-3 flex h-8 w-8 items-center justify-center rounded-full bg-white text-gray-500 opacity-0 shadow-md ring-1 ring-gray-200 transition-opacity duration-200 hover:bg-gray-50 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            data-chat-target="backToTop"
+            data-action="click->chat#scrollToTop"
+            aria-label="Back to top"
+            title="Back to top">
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7" />
+      </svg>
+    </button>
+    <div class="space-y-6"
+         data-chat-target="messages"
+         data-chat-stream-target="messageContainer">
+      <% if has_older_messages %>
+        <%= turbo_frame_tag "older_messages",
+              src: older_messages_chat_session_path(chat_session, before: chat_messages.first.id),
+              loading: :lazy do %>
+          <p class="py-2 text-center text-xs text-gray-400">Loading older messages...</p>
+        <% end %>
+      <% end %>
+      <% chat_messages.each do |message| %>
+        <%= render "chat_messages/message", message: message %>
+      <% end %>
+    </div>
+
+    <div class="hidden px-2 pt-3"
+         data-chat-target="typingIndicator"
+         data-chat-stream-target="typingIndicator">
+      <div class="inline-flex items-center gap-2 rounded-full bg-gray-50 px-3 py-1.5 text-sm text-gray-500 ring-1 ring-gray-200">
+        <span class="h-2 w-2 animate-pulse rounded-full bg-indigo-400"></span>
+        Assistant is typing...
+      </div>
+    </div>
+  </div>
+
+  <div class="border-t border-gray-200 bg-white px-4 py-3 sm:px-6">
+    <% if can_create_chat_message %>
+      <form data-controller="chat-input"
+            data-action="submit->chat-input#send chat-input:send->chat#sendMessage chat:busy->chat-input#disable chat:idle->chat-input#enable"
+            class="space-y-2">
+        <label class="block">
+          <span class="sr-only">Message</span>
+          <textarea name="content"
+                    rows="1"
+                    maxlength="12000"
+                    placeholder="Ask about this project, request code changes, or continue the thread..."
+                    class="max-h-72 min-h-[3.25rem] w-full resize-none rounded-md border-gray-300 px-4 py-3 text-sm leading-6 text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500"
+                    data-chat-input-target="textarea"
+                    data-chat-target="input"
+                    data-action="input->chat-input#resize keydown->chat-input#handleKeydown"></textarea>
+        </label>
+        <div class="flex items-center justify-between gap-3">
+          <p class="text-xs text-gray-500" data-chat-target="status">Ready</p>
+          <div class="flex items-center gap-3">
+            <span class="text-xs font-medium text-gray-400" data-chat-input-target="charCount">0 / 12000</span>
+            <button type="submit"
+                    class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-gray-300"
+                    data-chat-input-target="sendButton">
+              Send
+            </button>
+          </div>
+        </div>
+      </form>
+
+      <%= form_with model: chat_session, url: chat_session_path(chat_session), method: :patch,
+            class: "mt-2 inline-flex items-center gap-2",
+            data: { action: "change->chat#submitForm", turbo_stream: true } do |form| %>
+        <%= form.check_box :auto_approve,
+              checked: chat_session.auto_approve?,
+              class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" %>
+        <%= form.label :auto_approve, "Auto-approve actions",
+              class: "text-xs font-medium text-gray-600",
+              title: "Skip the approval prompt and run requested actions (like agent runs) automatically" %>
+      <% end %>
+    <% else %>
+      <p class="text-sm text-gray-500">
+        <%= chat_session.archived? ? "This chat is archived. Restore it to continue the conversation." : "You have read-only access to this chat." %>
+      </p>
+    <% end %>
+  </div>
+</div>

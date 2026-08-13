@@ -1,0 +1,198 @@
+# frozen_string_literal: true
+
+# @spec POSTGRESQL-PERSISTENCE-003
+class GithubToken < ApplicationRecord
+  has_logidze
+  # GitHub token format patterns
+  # Classic PAT: ghp_xxxx (40 chars after prefix)
+  # Fine-grained PAT: github_pat_xxxx
+  # OAuth: gho_xxxx
+  # User-to-server: ghu_xxxx
+  # Server-to-server: ghs_xxxx
+  # Refresh token: ghr_xxxx
+  GITHUB_TOKEN_PATTERN = /\A(ghp_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,}|gh[ours]_[A-Za-z0-9]{36,})\z/
+  VALIDATION_STATUSES = %w[pending validating validated failed].freeze
+  VALIDATION_STALE_THRESHOLD = 2.minutes
+
+  belongs_to :account
+  belongs_to :created_by, class_name: "User", optional: true
+
+  has_many :projects, dependent: :restrict_with_error
+  # Projects that reference this token only as their git-push fallback (not as
+  # their primary credential). Restrict destroy so a hard-delete fails with a
+  # model error instead of a raw foreign-key violation; the normal UI path
+  # revokes (soft-deletes), which a fallback's active? check already neutralizes.
+  has_many :git_push_fallback_projects, class_name: "Project",
+    foreign_key: :git_push_fallback_token_id, inverse_of: :git_push_fallback_token,
+    dependent: :restrict_with_error
+
+  encrypts :token
+
+  validates :name, presence: true, uniqueness: { scope: :account_id }
+  validates :token, presence: true
+  validates :validation_status, inclusion: { in: VALIDATION_STATUSES }
+  validate :token_format_valid, if: -> { token.present? }
+  validate :created_by_belongs_to_same_account, if: -> { created_by.present? }
+
+  scope :active, -> { where(revoked_at: nil).where("expires_at IS NULL OR expires_at > ?", Time.current) }
+  scope :expired, -> { where.not(expires_at: nil).where("expires_at <= ?", Time.current) }
+  scope :revoked, -> { where.not(revoked_at: nil) }
+  scope :pending_validation, -> { where(validation_status: "pending") }
+  scope :validated, -> { where(validation_status: "validated") }
+
+  def active?
+    revoked_at.nil? && (expires_at.nil? || expires_at > Time.current)
+  end
+
+  def expired?
+    expires_at.present? && expires_at <= Time.current
+  end
+
+  def revoked?
+    revoked_at.present?
+  end
+
+  def revoke!
+    update!(revoked_at: Time.current)
+  end
+
+  def validation_pending?
+    validation_status == "pending"
+  end
+
+  def validating?
+    validation_status == "validating"
+  end
+
+  def validated?
+    validation_status == "validated"
+  end
+
+  def validation_failed?
+    validation_status == "failed"
+  end
+
+  def validation_stale?
+    (validation_pending? || validating?) && updated_at < VALIDATION_STALE_THRESHOLD.ago
+  end
+
+  def mark_validating!
+    update!(validation_status: "validating", validation_error: nil)
+    broadcast_validation_status
+  end
+
+  def mark_validated!
+    update!(validation_status: "validated", validation_error: nil)
+    broadcast_validation_status
+  end
+
+  def mark_validation_failed!(error_message)
+    update!(validation_status: "failed", validation_error: error_message)
+    broadcast_validation_status
+  end
+
+  def broadcast_validation_status
+    broadcast_replace_to(
+      self, :validation_status,
+      target: "validation-status",
+      partial: "github_tokens/validation_status",
+      locals: { github_token: self }
+    )
+    broadcast_replace_to(
+      self, :validation_status,
+      target: "status-badge",
+      partial: "github_tokens/status_badge",
+      locals: { github_token: self }
+    )
+  end
+
+  # Whether this token is a fine-grained personal access token.
+  def fine_grained?
+    token.start_with?("github_pat_")
+  end
+
+  def touch_last_used!
+    update_column(:last_used_at, Time.current)
+  end
+
+  # Returns a GithubClient instance configured with this token.
+  # Caches the client instance for the lifetime of the record.
+  #
+  # @return [GithubClient] GitHub API client
+  def client
+    @client ||= GithubClient.new(token: token, health_endpoint: github_health_endpoint)
+  end
+
+  def github_health_endpoint
+    GithubHealthState.endpoint_for_github_token(id)
+  end
+
+  # Validates the token against GitHub API and updates scopes.
+  # Also touches last_used_at on successful validation.
+  #
+  # @return [Hash] User info with :login, :id, :name, :email, :scopes, :expires_at keys
+  # @raise [GithubClient::AuthenticationError] if the token is invalid
+  def validate_with_github!
+    result = client.validate_token
+    expires_at = result[:expires_at]
+    attrs = { scopes: result[:scopes] }
+    attrs[:expires_at] = expires_at if expires_at
+    update!(attrs)
+    touch_last_used!
+    sync_repositories!
+    result
+  end
+
+  # Fetches accessible repositories from GitHub and caches them.
+  # For fine-grained PATs, probes write access to filter down to repos
+  # the token was actually granted access to (GitHub's read APIs report
+  # user permissions, not token permissions).
+  #
+  # @return [Array<Hash>] Cached repository data
+  # @raise [GithubClient::Error] on API failures
+  def sync_repositories!
+    repos = client.repositories
+    repos = repos.select { |r| client.write_accessible?(r.full_name) } if fine_grained?
+    repo_data = repos.map { |r| serialize_repository(r) }
+    update!(accessible_repositories: repo_data, repositories_synced_at: Time.current)
+    touch_last_used!
+    repo_data
+  end
+
+  # Returns cached repositories, syncing if stale.
+  #
+  # @param max_age [ActiveSupport::Duration] Maximum cache age before re-syncing
+  # @return [Array<Hash>] Cached repository data
+  def cached_repositories(max_age: 1.hour)
+    repositories_stale?(max_age) ? sync_repositories! : accessible_repositories
+  end
+
+  private
+
+  def token_format_valid
+    return if token.match?(GITHUB_TOKEN_PATTERN)
+
+    errors.add(:token, "must be a valid GitHub token format")
+  end
+
+  def created_by_belongs_to_same_account
+    return if created_by.account_id == account_id
+
+    errors.add(:created_by, "must belong to the same account")
+  end
+
+  def serialize_repository(repo)
+    {
+      "id" => repo.id,
+      "full_name" => repo.full_name,
+      "name" => repo.name,
+      "owner" => repo.full_name.split("/").first,
+      "default_branch" => repo.default_branch,
+      "private" => repo.private
+    }
+  end
+
+  def repositories_stale?(max_age)
+    repositories_synced_at.nil? || repositories_synced_at < max_age.ago
+  end
+end

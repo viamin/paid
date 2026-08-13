@@ -1,0 +1,106 @@
+<li id="<%= dom_id(issue) %>" class="flex items-center justify-between px-4 py-3">
+  <% paused_run = local_assigns.fetch(:paused_run, nil) %>
+  <div class="min-w-0 flex-1">
+    <div class="flex items-center space-x-2">
+      <%= link_to "##{issue.github_number}",
+            issue.github_url,
+            target: "_blank",
+            rel: "noopener noreferrer",
+            class: "flex-shrink-0 text-sm font-medium text-indigo-600 hover:text-indigo-900" %>
+      <span class="truncate text-sm text-gray-900"><%= issue.title %></span>
+      <% if issue.runner_retry_abandoned? %>
+        <% if issue.push_permission_abandoned? %>
+          <span class="inline-flex items-center rounded-md bg-orange-50 px-2 py-0.5 text-xs font-medium text-orange-700 ring-1 ring-inset ring-orange-600/20"
+                title="<%= issue.runner_retry_abandon_reason %>">
+            Push Blocked
+          </span>
+        <% else %>
+          <span class="inline-flex items-center rounded-md bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-600/20"
+                title="<%= issue.runner_retry_abandon_reason %>">
+            Retry Cap Reached
+          </span>
+        <% end %>
+      <% end %>
+      <% if issue.merge_permission_rejected? %>
+        <span class="inline-flex items-center rounded-md bg-orange-50 px-2 py-0.5 text-xs font-medium text-orange-700 ring-1 ring-inset ring-orange-600/20"
+              title="<%= issue.merge_permission_rejection_reason %>">
+          Merge Blocked
+        </span>
+      <% end %>
+      <% if paused_run.present? %>
+        <span class="inline-flex items-center rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">
+          Paused by <%= guardrail_violation_label_for(paused_run).downcase %>
+        </span>
+      <% end %>
+      <% if issue.needs_input? && policy(project).update? %>
+        <%= link_to "Answer Questions",
+              project_issue_clarifying_questions_path(project, issue),
+              class: "inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-200" %>
+      <% end %>
+    </div>
+    <% if issue.labels.any? %>
+      <div class="mt-1 flex flex-wrap gap-1">
+        <% issue.labels.each do |label| %>
+          <span class="<%= issue_label_badge_classes(project, label) %>"><%= label %></span>
+        <% end %>
+      </div>
+    <% end %>
+  </div>
+  <div class="ml-4 flex flex-shrink-0 items-center space-x-2">
+    <%= issue_lifecycle_badge(local_assigns.fetch(:lifecycle_status, :eligible)) %>
+    <%= render "projects/issue_pause_toggle", issue: issue, project: project %>
+    <% if issue.source == Issue::GITHUB_SOURCE %>
+      <% subscription_locals = { issue: issue, project: project } %>
+      <% if local_assigns.key?(:merge_notification_issue_ids) %>
+        <% subscription_locals[:subscribed] = local_assigns[:merge_notification_issue_ids].include?(issue.id) %>
+      <% end %>
+      <%= render "projects/issue_merge_subscription", **subscription_locals %>
+    <% end %>
+    <% paid_pr = local_assigns.fetch(:paid_pr, nil) %>
+    <%# Prefer the paid-generated PR when one exists; otherwise fall back to
+        any open associated PR so manually-opened PRs still get a visible
+        link (matches pre-#1181 behavior). Build URL from the parent issue's
+        project to avoid N+1 on sub_issues: :project. %>
+    <% linked_pr = paid_pr || issue.associated_pull_request %>
+    <% if linked_pr %>
+      <%= link_to "#{project.github_url}/pull/#{linked_pr.github_number}",
+                  target: "_blank",
+                  rel: "noopener noreferrer",
+                  title: paid_pr ? "Paid already opened PR ##{paid_pr.github_number} for this issue. Quick run on the PR to iterate on it." : nil,
+                  class: "inline-flex items-center space-x-1 text-xs font-medium text-indigo-600 hover:text-indigo-900" do %>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-3.5 w-3.5" aria-hidden="true">
+          <path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z"/>
+        </svg>
+        <span>PR #<%= linked_pr.github_number %></span>
+      <% end %>
+    <% end %>
+    <% if paused_run.present? %>
+      <% if policy(paused_run).resume? %>
+        <%= button_to "Resume Run",
+                      resume_project_agent_run_path(project, paused_run),
+                      method: :post,
+                      params: { return_to: project_path(project) },
+                      form: { data: { action_button: true, turbo_confirm: "Resume this paused agent run?" } },
+                      class: "text-xs font-semibold text-green-600 hover:text-green-900" %>
+      <% end %>
+      <%= link_to "View Run",
+                  project_agent_run_path(project, paused_run),
+                  class: "text-xs font-medium text-yellow-700 hover:text-yellow-900" %>
+    <% elsif paid_pr %>
+      <%# Paid already produced an open PR — steer the user to iterate on
+          that PR rather than starting a duplicate run. %>
+      <span class="inline-flex cursor-not-allowed items-center rounded bg-gray-100 px-2 py-1 text-xs font-medium text-gray-400"
+            title="Quick run on PR #<%= paid_pr.github_number %> instead of this issue."
+            aria-disabled="true"
+            data-issue-quick-run-disabled="true">
+        Quick Run
+      </span>
+    <% else %>
+      <%= button_to "Quick Run",
+                    quick_create_project_agent_runs_path(project, issue_id: issue.id),
+                    method: :post,
+                    class: "text-xs font-medium text-indigo-600 hover:text-indigo-900",
+                    form: { data: { action_button: true } } %>
+    <% end %>
+  </div>
+</li>

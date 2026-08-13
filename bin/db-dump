@@ -1,0 +1,189 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+source "${APP_ROOT}/bin/lib/db_helpers.sh"
+cd "$APP_ROOT" || exit
+
+BACKUPS_DIR="${APP_ROOT}/backups"
+BACKEND=""
+RLS_TABLES=""
+
+read_rails_db_config() {
+  bin/rails runner "
+    cfg = ActiveRecord::Base.connection_db_config.configuration_hash
+    puts cfg[:host].to_s
+    puts cfg[:username].to_s
+    puts cfg[:password].to_s
+    puts cfg[:database].to_s
+  " 2>/dev/null
+}
+
+usage() {
+  echo "Usage: bin/db-dump [BACKUP_FILENAME]"
+  echo ""
+  echo "Dump database data to a custom-format archive in backups/."
+  echo "Also captures a schema snapshot (*_postdata.sql) and object-count"
+  echo "manifest (*_manifest.txt) for restore verification."
+  echo "Automatically disables RLS before dumping so all rows are captured."
+  echo ""
+  echo "Also creates two companion files alongside the data dump:"
+  echo "  *_postdata.sql   Post-data schema snapshot (FKs, triggers, RLS policies)"
+  echo "  *_manifest.txt    Object counts for post-restore verification"
+  echo ""
+  echo "These capture RLS policies and other objects that schema.rb alone"
+  echo "does not include, enabling bin/db-restore to detect drift."
+  echo ""
+  echo "Defaults are read from the Rails database config."
+  echo ""
+  echo "Environment variables:"
+  echo "  DB_HOST      Database host (default: from config/database.yml)"
+  echo "  DB_NAME      Database name (default: from config/database.yml)"
+  echo "  DB_USER      Database user (default: from config/database.yml)"
+  echo "  DB_PASSWORD  Database password (default: from config/database.yml)"
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ -z "${DB_HOST+x}" || -z "${DB_NAME+x}" || -z "${DB_USER+x}" || -z "${DB_PASSWORD+x}" ]]; then
+  RAILS_CONFIG_OUTPUT="$(read_rails_db_config)"
+  mapfile -t RAILS_CONFIG <<< "$RAILS_CONFIG_OUTPUT"
+fi
+
+DB_HOST="${DB_HOST-${RAILS_CONFIG[0]:-}}"
+DB_USER="${DB_USER-${RAILS_CONFIG[1]:-}}"
+DB_PASSWORD="${DB_PASSWORD-${RAILS_CONFIG[2]:-}}"
+DB_NAME="${DB_NAME-${RAILS_CONFIG[3]:-}}"
+
+read_container_env() {
+  local container="$1"
+  local name="$2"
+
+  docker exec "$container" printenv "$name" 2>/dev/null || true
+}
+
+pg_dump_args() {
+  local user="$1"
+
+  PG_DUMP_ARGS=(--data-only --exclude-table-data=ar_internal_metadata --exclude-table-data=schema_migrations --no-owner --no-privileges -Fc)
+  if [[ -n "$user" ]]; then
+    PG_DUMP_ARGS+=(-U "$user")
+  fi
+  PG_DUMP_ARGS+=("$DB_NAME")
+}
+
+# Capture a post-data schema snapshot (FKs, triggers, RLS policies — objects that
+# schema.rb alone does not fully capture, especially RLS policies). Also write a
+# manifest with object counts so bin/db-restore can verify completeness.
+# Non-fatal: the data backup is already complete when this runs.
+capture_schema_snapshot() {
+  local postdata_path="${BACKUP_PATH%.dump}_postdata.sql"
+  local manifest_path="${BACKUP_PATH%.dump}_manifest.txt"
+
+  local schema_args=(--schema-only --section=post-data --no-owner --no-privileges)
+
+  if [[ "$BACKEND" == "docker" ]]; then
+    docker exec -e PGPASSWORD="$COMPOSE_DB_PASSWORD" "$COMPOSE_CONTAINER" \
+      pg_dump "${schema_args[@]}" -U "$COMPOSE_DB_USER" "$DB_NAME" > "$postdata_path" || return 1
+  else
+    local host_args=()
+    [[ -n "${DB_HOST:-}" ]] && host_args=(-h "$DB_HOST")
+    PGPASSWORD="$DB_PASSWORD" pg_dump "${host_args[@]}" "${schema_args[@]}" -U "$DB_USER" "$DB_NAME" > "$postdata_path" || return 1
+  fi
+
+  chmod 600 "$postdata_path" 2>/dev/null || true
+
+  local fk_count trigger_count rls_tables rls_policies
+  fk_count=$(run_sql "$DB_NAME" -c "SELECT count(*) FROM pg_constraint WHERE contype = 'f' AND connamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public')") || return 1
+  trigger_count=$(run_sql "$DB_NAME" -c "SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND NOT t.tgisinternal") || return 1
+  rls_tables=$(run_sql "$DB_NAME" -c "SELECT count(*) FROM pg_tables WHERE schemaname = 'public' AND rowsecurity = true") || return 1
+  rls_policies=$(run_sql "$DB_NAME" -c "SELECT count(*) FROM pg_policy") || return 1
+
+  cat > "$manifest_path" <<MANIFEST
+foreign_keys=${fk_count}
+triggers=${trigger_count}
+rls_tables=${rls_tables}
+rls_policies=${rls_policies}
+MANIFEST
+  chmod 600 "$manifest_path" 2>/dev/null || true
+}
+
+mkdir -p "$BACKUPS_DIR"
+# Backups contain every tenant's data (RLS is disabled for the dump). Restrict
+# the directory so only the owner can list/read them; tighten an existing dir
+# that may have been created with a looser umask.
+chmod 700 "$BACKUPS_DIR" 2>/dev/null || true
+
+if [[ -n "${1:-}" ]]; then
+  BACKUP_FILE="${1}"
+else
+  BACKUP_FILE="${DB_NAME}_dataonly_$(date +%Y%m%d_%H%M%S).dump"
+fi
+
+if [[ "$BACKUP_FILE" != /* ]]; then
+  BACKUP_PATH="${BACKUPS_DIR}/${BACKUP_FILE}"
+else
+  BACKUP_PATH="$BACKUP_FILE"
+fi
+
+COMPOSE_ARGS=(compose)
+if [[ -n "${COMPOSE_FILE:-}" ]]; then
+  COMPOSE_ARGS+=(-f "$COMPOSE_FILE")
+fi
+
+cleanup() {
+  local exit_code=$?
+  if [[ "$exit_code" -ne 0 && -n "$RLS_TABLES" && -n "$BACKEND" ]]; then
+    echo "Re-enabling RLS after error..." >&2
+    enable_rls "$DB_NAME" "$RLS_TABLES"
+  fi
+  exit "$exit_code"
+}
+trap cleanup EXIT
+
+COMPOSE_CONTAINER="$(docker "${COMPOSE_ARGS[@]}" ps -q postgres 2>/dev/null | head -1 || true)"
+if [[ -n "$COMPOSE_CONTAINER" ]]; then
+  BACKEND="docker"
+  COMPOSE_DB_USER="$(read_container_env "$COMPOSE_CONTAINER" POSTGRES_USER)"
+  COMPOSE_DB_PASSWORD="$(read_container_env "$COMPOSE_CONTAINER" POSTGRES_PASSWORD)"
+  COMPOSE_DB_USER="${COMPOSE_DB_USER:-paid}"
+  COMPOSE_DB_PASSWORD="${COMPOSE_DB_PASSWORD:-paid}"
+
+  disable_rls "$DB_NAME" 1 RLS_TABLES "Disabling RLS on %d tables..."
+
+  pg_dump_args "$COMPOSE_DB_USER"
+  docker exec -e PGPASSWORD="$COMPOSE_DB_PASSWORD" "$COMPOSE_CONTAINER" pg_dump "${PG_DUMP_ARGS[@]}" > "$BACKUP_PATH"
+
+  enable_rls "$DB_NAME" "$RLS_TABLES" 1 RLS_TABLES
+elif [[ -n "$DB_NAME" ]]; then
+  BACKEND="local"
+
+  disable_rls "$DB_NAME" 1 RLS_TABLES "Disabling RLS on %d tables..."
+
+  pg_dump_args "$DB_USER"
+  PG_HOST_ARGS=()
+  if [[ -n "$DB_HOST" ]]; then
+    PG_HOST_ARGS=(-h "$DB_HOST")
+  fi
+  PGPASSWORD="$DB_PASSWORD" pg_dump "${PG_HOST_ARGS[@]}" "${PG_DUMP_ARGS[@]}" > "$BACKUP_PATH"
+
+  enable_rls "$DB_NAME" "$RLS_TABLES" 1 RLS_TABLES
+else
+  echo "Error: No running postgres container found and DB_NAME not set. Start services with 'bin/dev' or set DB_NAME." >&2
+  exit 1
+fi
+
+# Capture post-data schema snapshot and manifest for restore verification.
+# Non-fatal: the data backup is already complete at this point.
+capture_schema_snapshot || echo "Warning: Schema snapshot capture failed (data backup is complete)" >&2
+
+# Lock the dump to the owner -- it contains all tenant data with RLS disabled.
+chmod 600 "$BACKUP_PATH" 2>/dev/null || true
+
+FILESIZE=$(du -h "$BACKUP_PATH" | cut -f1)
+echo "Dumped ${DB_NAME} data to ${BACKUP_PATH} (${FILESIZE})"
+echo "Schema snapshot:  ${BACKUP_PATH%.dump}_postdata.sql"
+echo "Schema manifest:  ${BACKUP_PATH%.dump}_manifest.txt"

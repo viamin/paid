@@ -1,0 +1,115 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "shellwords"
+
+ENV["BUNDLE_GEMFILE"] ||= File.expand_path("../Gemfile", __dir__)
+
+require "bundler/setup"
+require_relative "../config/environment"
+require_relative "../spec/support/runner_smoke_helpers"
+
+def usage
+  puts <<~USAGE
+    Usage:
+      bin/runner-smoke
+      bin/runner-smoke list
+      bin/runner-smoke service [SCENARIO_OR_PRESET...]
+      bin/runner-smoke ui [SCENARIO_OR_PRESET...]
+      bin/runner-smoke all [SCENARIO_OR_PRESET...]
+
+    Defaults:
+      `bin/runner-smoke` runs the service smoke matrix for the `current-enabled` preset.
+
+    Presets:
+  USAGE
+
+  RunnerSmokeHelpers::PRESETS.each do |name, scenarios|
+    resolved = scenarios || RunnerSmokeHelpers.expand_name(name)
+    puts "      #{name}: #{resolved.join(', ')}"
+  end
+
+  puts "    Scenarios:"
+  RunnerSmokeHelpers::SCENARIOS.each_value do |scenario|
+    detail = if scenario.api_key?
+      default_model = scenario.default_model ? ", default model: #{scenario.default_model}" : ""
+      "#{scenario.runner_key} via #{scenario.api_provider} (model env: #{scenario.model_env}#{default_model})"
+    else
+      "#{scenario.runner_key} subscription"
+    end
+    puts "      #{scenario.name}: #{detail}"
+  end
+end
+
+def expand_targets(targets)
+  selected = targets.presence || [ "current-enabled" ]
+  selected.flat_map { |name| RunnerSmokeHelpers.expand_name(name) }
+end
+
+def validate_targets!(targets)
+  unknown = targets.reject do |name|
+    RunnerSmokeHelpers::PRESETS.key?(name) || RunnerSmokeHelpers::SCENARIOS.key?(name)
+  end
+  return if unknown.empty?
+
+  warn "Unknown runner smoke target(s): #{unknown.join(', ')}"
+  usage
+  exit 1
+end
+
+def run_rspec!(spec_paths:, scenario_names:)
+  env = {
+    "RUN_RUNNER_SMOKE" => "true",
+    "RUN_PROVIDER_SMOKE" => "true",
+    "COVERAGE" => "false",
+    "PAID_SMOKE_SCENARIOS" => scenario_names.join(",")
+  }
+  command = [
+    "bundle", "exec", "rspec",
+    "--options", "/dev/null",
+    "--require", "spec_helper",
+    "--color",
+    "--format", "documentation",
+    *spec_paths
+  ]
+
+  puts "Running #{Shellwords.join(command)}"
+  puts "PAID_SMOKE_SCENARIOS=#{env.fetch('PAID_SMOKE_SCENARIOS')}"
+
+  success = system(env, *command)
+  exit($CHILD_STATUS.exitstatus || 1) unless success
+end
+
+command = ARGV.shift || "service"
+targets = ARGV
+
+case command
+when "list", "--help", "-h", "help"
+  usage
+when "service"
+  validate_targets!(targets)
+  run_rspec!(
+    spec_paths: [ "spec/services/runners/test_agent_local_smoke_spec.rb" ],
+    scenario_names: expand_targets(targets)
+  )
+when "ui"
+  validate_targets!(targets)
+  run_rspec!(
+    spec_paths: [ "spec/system/runners/runner_smoke_spec.rb" ],
+    scenario_names: expand_targets(targets)
+  )
+when "all"
+  validate_targets!(targets)
+  scenario_names = expand_targets(targets)
+  run_rspec!(
+    spec_paths: [
+      "spec/services/runners/test_agent_local_smoke_spec.rb",
+      "spec/system/runners/runner_smoke_spec.rb"
+    ],
+    scenario_names: scenario_names
+  )
+else
+  warn "Unknown command: #{command}"
+  usage
+  exit 1
+end

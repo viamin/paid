@@ -1,0 +1,229 @@
+name: PR Artifact Check
+
+on:
+  pull_request:
+    types: [ opened, synchronize, reopened ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-artifact-check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  check-artifacts:
+    if: >-
+      contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+      || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check for artifact files in PR diff
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          MAX_DIFF_FILES: 500
+        run: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          echo "=== PR #${PR_NUMBER} artifact check ==="
+          echo "Base: ${BASE_SHA}"
+          echo "Head: ${HEAD_SHA}"
+          echo ""
+
+          # Get the list of changed files (exclude deletions — removing
+          # previously committed artifacts is a valid remediation).
+          if ! diff_files=$(git diff --name-only --diff-filter=d "${BASE_SHA}"..."${HEAD_SHA}"); then
+            echo "::error::Failed to diff ${BASE_SHA}...${HEAD_SHA}; refusing to skip artifact validation."
+            exit 1
+          fi
+
+          if [ -z "${diff_files}" ]; then
+            echo "No diff files found (empty PR or merge commit). Skipping check."
+            exit 0
+          fi
+
+          file_count=$(echo "${diff_files}" | wc -l)
+          echo "PR changes ${file_count} files"
+
+          # --- Check 1: Too many files ---
+          if [ "${file_count}" -gt "${MAX_DIFF_FILES}" ]; then
+            echo "::error::PR changes ${file_count} files (limit: ${MAX_DIFF_FILES}). This likely includes unintended build artifacts."
+            echo ""
+            echo "First 30 files:"
+            echo "${diff_files}" | head -30 | sed 's/^/  /'
+            echo ""
+            echo "Run 'git diff --name-only ${BASE_SHA}...${HEAD_SHA}' locally to review."
+            exit 1
+          fi
+
+          # --- Check 2: Forbidden artifact path patterns ---
+          forbidden_prefixes=(
+            ".corepack/"
+            ".yarn-cache/"
+            ".yarn-cache-v2/"
+            ".yarn-local-cache/"
+            ".yarn-tmp/"
+            ".bundle/"
+            ".bundle-"
+            ".bundle-install/"
+            ".bundle-gems/"
+            ".bundle_path/"
+            ".bundle-pr-"
+            ".gem/"
+            ".gems/"
+            ".gem-home/"
+            ".gem-spec-cache/"
+            ".gem_cache/"
+            ".gem-cache/"
+            ".gem_home/"
+            ".cache-yarn/"
+            ".pg/"
+            ".pg-bin/"
+            ".pg-local/"
+            ".pg-data/"
+            ".pg-install/"
+            ".pg-lib/"
+            ".pg-share/"
+            ".pg-src/"
+            ".pgbuild/"
+            ".pgdata/"
+            ".pg_build/"
+            ".pg_data/"
+            ".pg_src/"
+            ".pg_bin/"
+            "pgdata/"
+            ".postgres/"
+            ".local/"
+            ".local-include/"
+            ".local-deps/"
+            ".venv/"
+            "__pycache__/"
+            ".apt/"
+            ".apt-cache/"
+            ".cache-pkg/"
+            ".xdg-cache/"
+            ".cache/"
+            ".tmp/"
+            ".tmp-*/"
+            ".tmpbin/"
+            ".build/"
+            ".*-build/"
+            ".*_build/"
+            ".mise-cache/"
+            ".mise-data/"
+            ".mise-home/"
+            ".npm-cache/"
+            ".npm/"
+            ".rubies/"
+            ".libyaml-build/"
+            ".libyaml-src/"
+            ".libyaml_build/"
+            ".libyaml_src/"
+            ".cache-rubocop/"
+            ".rubocop-cache/"
+            ".rubocop_cache/"
+            "backups/"
+            ".pg_log.txt"
+            ".ruby_env.sh"
+            ".paid-heartbeat"
+            ".codex/"
+            ".codegraph/"
+            "vendor/bundle/"
+            "vendor/gems/"
+            "node_modules/"
+          )
+
+          violations=""
+          while IFS= read -r file; do
+            for prefix in "${forbidden_prefixes[@]}"; do
+              if [[ "${file}" == ${prefix}* || "${file}" == */${prefix}* ]]; then
+                violations="${violations}${file}"$'\n'
+                break
+              fi
+            done
+          done <<< "${diff_files}"
+
+          if [ -n "${violations}" ]; then
+            violation_count=$(echo "${violations}" | wc -l)
+            echo "::error::Found ${violation_count} files in forbidden artifact directories:"
+            echo "${violations}" | sed 's/^/  /'
+            echo ""
+            echo "These are build artifacts that should not be committed."
+            echo "Check .gitignore and .git/info/exclude to ensure these patterns are excluded."
+            exit 1
+          fi
+
+          # --- Check 3: Binary files that should not be committed ---
+          binary_extensions=(
+            ".so" ".dll" ".dylib" ".o" ".a" ".lib" ".exe"
+            ".gem" ".deb" ".rpm" ".whl"
+            ".pyc" ".pyo" ".class" ".jar" ".war"
+            ".sqlite3" ".db"
+          )
+
+          binary_violations=""
+          while IFS= read -r file; do
+            for ext in "${binary_extensions[@]}"; do
+              if [[ "${file}" == *"${ext}" ]]; then
+                binary_violations="${binary_violations}${file}"$'\n'
+                break
+              fi
+            done
+
+            if [[ "$(basename "${file}")" =~ \.so\.[0-9]+(\.[0-9]+)*$ ]]; then
+              binary_violations="${binary_violations}${file}"$'\n'
+            fi
+          done <<< "${diff_files}"
+
+          if [ -n "${binary_violations}" ]; then
+            bv_count=$(echo "${binary_violations}" | wc -l)
+            echo "::error::Found ${bv_count} binary artifact files:"
+            echo "${binary_violations}" | sed 's/^/  /'
+            echo ""
+            echo "Binary files (compiled objects, packages, databases) should not be committed."
+            exit 1
+          fi
+
+          echo "No artifact violations detected. PR is clean."
+
+      - name: Check Gemfile.lock bundler version consistency
+        run: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          bundled_with=$(awk '/^BUNDLED WITH$/{getline; gsub(/^ +/, "", $0); print $0}' Gemfile.lock)
+          checksums_bundler=$(grep -E "^  bundler \([0-9]" Gemfile.lock | sed -E 's/.*bundler \(([^)]+)\).*/\1/' | head -n 1)
+
+          if [ -z "${bundled_with}" ]; then
+            echo "::error::Could not read BUNDLED WITH from Gemfile.lock"
+            exit 1
+          fi
+
+          if [ -z "${checksums_bundler}" ]; then
+            # No CHECKSUMS bundler entry means there is no drift surface to check
+            # (the drift bug requires `bundle install` to rewrite that line). Pass
+            # quietly so a future bundler/format change does not block every PR.
+            echo "::notice::Gemfile.lock has no CHECKSUMS bundler entry; skipping consistency check."
+            exit 0
+          fi
+
+          if [ "${bundled_with}" != "${checksums_bundler}" ]; then
+            echo "::error::Gemfile.lock bundler version mismatch: BUNDLED WITH=${bundled_with}, CHECKSUMS=${checksums_bundler}"
+            echo ""
+            echo "This usually means 'bundle install' was run with a different bundler"
+            echo "than the one declared in BUNDLED WITH (often by Dependabot's host bundler)."
+            echo "Re-run 'bundle install' with bundler ${bundled_with} and recommit Gemfile.lock,"
+            echo "or run 'bundle update --bundler' to intentionally bump BUNDLED WITH to ${checksums_bundler}."
+            exit 1
+          fi
+
+          echo "Gemfile.lock bundler versions match: ${bundled_with}"

@@ -1,0 +1,54 @@
+<% queue_fairness_mode = local_assigns[:queue_fairness_mode].presence || TenantSetting::DEFAULT_QUEUE_FAIRNESS_MODE %>
+<% fair_share_mode = queue_fairness_mode == "fair_share" %>
+<div id="queue-preview" class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+  <div class="flex items-center justify-between gap-4">
+    <div>
+      <h3 class="text-base font-semibold text-gray-900">Upcoming Queue</h3>
+      <p class="mt-1 text-sm text-gray-500"
+         title="<%= fair_share_mode ? "Runs are shown in approximate dispatch order from the next batch of queued work. The scheduler gives each sampled project a turn based on its in-flight run count, and priority labels only order runs within the same project." : "Runs are shown in scheduler dispatch order. Strict priority lets queue priority outrank cross-project fairness, so high-priority work can jump ahead across the account." %>">
+        <%= fair_share_mode ? "Balanced across sampled projects; priority ranks within each project." : "Strict priority across the account; high-priority work can outrank other projects." %>
+      </p>
+    </div>
+  </div>
+
+  <% if queue_preview.any? %>
+    <div class="mt-4 flow-root">
+      <div class="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
+        <div class="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
+          <table class="min-w-full divide-y divide-gray-300">
+            <thead>
+              <tr>
+                <th scope="col" class="py-2 pl-4 pr-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 sm:pl-0">Pos</th>
+                <th scope="col" class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Project</th>
+                <th scope="col" class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Priority</th>
+                <th scope="col" class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Goal</th>
+                <th scope="col" class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Context</th>
+                <th scope="col" class="px-3 py-2 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 bg-white">
+              <% queue_preview.each do |entry| %>
+                <%= render "dashboard/queue_preview_row", entry: entry %>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  <% else %>
+    <% paused_autopick = Array(local_assigns[:paused_projects]).count(&:auto_pick_enabled?) %>
+    <% if paused_autopick.positive? %>
+      <div class="mt-4 rounded-md bg-amber-50 p-3 ring-1 ring-inset ring-amber-200">
+        <p class="text-sm text-amber-800">
+          <%= pluralize(paused_autopick, "project") %> with auto-pick enabled
+          <%= paused_autopick == 1 ? "is" : "are" %>
+          <%= link_to "quality-paused", "#quality-paused-projects",
+            class: "font-medium text-amber-900 underline hover:text-amber-700" %>,
+          so no work is being queued. Resume a project to start picking up its issues.
+        </p>
+      </div>
+    <% else %>
+      <p class="mt-4 text-sm text-gray-500">No queued runs for your projects.</p>
+    <% end %>
+  <% end %>
+</div>

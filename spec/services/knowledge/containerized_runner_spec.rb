@@ -1,0 +1,705 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe Knowledge::ContainerizedRunner, :no_db do
+  let(:project) { Struct.new(:id, :full_name).new(42, "owner/repo") }
+  let(:commit_sha) { "a" * 40 }
+
+  let(:mock_volume) do
+    instance_double(Docker::Volume, remove: true)
+  end
+
+  let(:mock_container) do
+    instance_double(
+      Docker::Container,
+      id: "collector123",
+      start: true,
+      stop: true,
+      delete: true,
+      exec: [ [ "output" ], [ "" ], 0 ]
+    )
+  end
+
+  let(:mock_bridge_network) do
+    instance_double(Docker::Network, connect: true, disconnect: true)
+  end
+
+  before do
+    allow(Docker::Container).to receive(:create).and_return(mock_container)
+    allow(Docker::Volume).to receive_messages(create: mock_volume, get: mock_volume)
+    allow(Docker::Network).to receive(:get).with("bridge").and_return(mock_bridge_network)
+    # Stub host-side git clone
+    allow(Dir).to receive(:mktmpdir).and_return("/tmp/paid-collector-test")
+    allow(Open3).to receive(:capture3).and_return([ "", "", instance_double(Process::Status, success?: true) ])
+    allow(FileUtils).to receive(:chmod)
+    allow(FileUtils).to receive(:rm_rf)
+    # Stub tar streaming and Docker archive_in_stream for seeding
+    tar_stdout = instance_double(IO, read: nil, binmode: nil)
+    tar_stderr = instance_double(IO, read: "")
+    tar_status = instance_double(Process::Status, success?: true, exitstatus: 0)
+    tar_wait_thr = instance_double(Thread, value: tar_status)
+    allow(Open3).to receive(:popen3)
+      .with("tar", "-cf", "-", "-C", "/tmp/paid-collector-test", ".")
+      .and_yield(instance_double(IO), tar_stdout, tar_stderr, tar_wait_thr)
+    allow(mock_container).to receive(:archive_in_stream)
+  end
+
+  describe ".available?" do
+    it "returns true when Docker is reachable" do
+      allow(Docker).to receive(:ping).and_return("OK")
+      expect(described_class.available?).to be true
+    end
+
+    it "returns false when Docker is unreachable" do
+      allow(Docker).to receive(:ping).and_raise(Excon::Error::Socket.new(StandardError.new("connect failed")))
+      expect(described_class.available?).to be false
+    end
+
+    it "returns false when COLLECTORS_USE_HOST is set" do
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("COLLECTORS_USE_HOST").and_return("true")
+      expect(described_class.available?).to be false
+    end
+  end
+
+  describe "CONTAINER_DEFAULTS" do
+    it "uses 4GB memory limit" do
+      expect(described_class::CONTAINER_DEFAULTS[:memory_bytes]).to eq(4 * 1024 * 1024 * 1024)
+    end
+
+    it "uses 1 CPU" do
+      expect(described_class::CONTAINER_DEFAULTS[:cpu_quota]).to eq(100_000)
+    end
+
+    it "uses 5-minute timeout" do
+      expect(described_class::CONTAINER_DEFAULTS[:timeout_seconds]).to eq(300)
+    end
+
+    it "uses paid-agent:latest image" do
+      expect(described_class::CONTAINER_DEFAULTS[:image]).to eq("paid-agent:latest")
+    end
+  end
+
+  describe "DATABASE_YML_STUB" do
+    it "is valid YAML" do
+      expect { YAML.safe_load(described_class::DATABASE_YML_STUB) }.not_to raise_error
+    end
+
+    it "provides sqlite3 in-memory config for all standard environments" do
+      config = YAML.safe_load(described_class::DATABASE_YML_STUB)
+      expect(config.keys).to contain_exactly("test", "development", "production")
+      config.each_value do |env_config|
+        expect(env_config).to eq({ "adapter" => "sqlite3", "database" => ":memory:" })
+      end
+    end
+  end
+
+  describe "#run" do
+    let(:runner_result) do
+      {
+        project_version: Object.new,
+        results: [ { collector_type: "test", status: "completed", artifacts_count: 1 } ]
+      }
+    end
+
+    before do
+      allow(Knowledge::CollectorRunner).to receive(:call).and_return(runner_result)
+    end
+
+    it "clones on host before provisioning the container" do
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      expect(Open3).to have_received(:capture3).with("git", "init", "/tmp/paid-collector-test")
+      expect(Open3).to have_received(:capture3).with(
+        "git", "-C", "/tmp/paid-collector-test",
+        "fetch", "--depth", "1", "origin", commit_sha
+      )
+    end
+
+    it "creates a named volume instead of bind-mounting host paths" do
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      expect(Docker::Volume).to have_received(:create).with(
+        a_string_matching(/\Apaid-collector-42-[a-f0-9]{8}\z/),
+        hash_including(
+          "Labels" => hash_including(
+            "paid.managed" => "true",
+            "paid.resource" => "collector_volume",
+            "paid.project_id" => "42"
+          )
+        )
+      )
+    end
+
+    it "provisions a container with the named volume and runs collectors" do
+      result = described_class.new(project: project, commit_sha: commit_sha).run
+
+      expect(Docker::Container).to have_received(:create).with(
+        hash_including(
+          "Image" => "paid-agent:latest",
+          "HostConfig" => hash_including(
+            "NetworkMode" => "bridge",
+            "Memory" => 4 * 1024 * 1024 * 1024,
+            "Binds" => [ a_string_matching(%r{\Apaid-collector-42-[a-f0-9]{8}:/workspace:rw\z}) ]
+          )
+        )
+      )
+      expect(mock_container).to have_received(:start)
+      expect(result[:results].first[:status]).to eq("completed")
+    end
+
+    it "streams repo tar into the container via Docker API" do
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      expect(Open3).to have_received(:popen3).with(
+        "tar", "-cf", "-", "-C", "/tmp/paid-collector-test", "."
+      )
+      expect(mock_container).to have_received(:archive_in_stream).with("/workspace")
+    end
+
+    it "enforces root ownership and read-only permissions after seeding" do
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      # chown to root so the agent user cannot restore write permissions
+      expect(mock_container).to have_received(:exec).with(
+        [ "chown", "-R", "root:root", "/workspace" ],
+        user: "root"
+      )
+      expect(mock_container).to have_received(:exec).with(
+        [ "chmod", "-R", "a=rX", "/workspace" ],
+        user: "root"
+      )
+    end
+
+    # Regression: without writable log/ and tmp/, `bin/rails routes` fails
+    # during logger initialization with "Unable to access log file. Please
+    # ensure that /workspace/log/development.log exists and is writable".
+    # This surfaced after #1167 raised the memory limit past the point where
+    # Rails could finish booting and hit the logger.
+    it "pre-creates log/ and tmp/ before locking the workspace read-only" do
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      expect(mock_container).to have_received(:exec).with(
+        [ "mkdir", "-p", "/workspace/log", "/workspace/tmp" ],
+        user: "root"
+      )
+    end
+
+    # Ordering invariant: mkdir MUST precede chmod -R a=rX. After that
+    # chmod, /workspace is read-only even for root (CapDrop: ALL strips
+    # CAP_DAC_OVERRIDE), so a reorder would break directory creation in
+    # production while leaving mock-based tests green.
+    it "creates Rails writable dirs before applying the read-only chmod" do
+      call_order = []
+      allow(mock_container).to receive(:exec) do |cmd, **|
+        call_order << cmd
+        [ [ "" ], [ "" ], 0 ]
+      end
+
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      mkdir_index = call_order.index do |cmd|
+        cmd.is_a?(Array) && cmd.first == "mkdir" && cmd.include?("/workspace/log")
+      end
+      lockdown_index = call_order.index { |cmd| cmd == [ "chmod", "-R", "a=rX", "/workspace" ] }
+
+      expect(mkdir_index).not_to be_nil
+      expect(lockdown_index).not_to be_nil
+      expect(mkdir_index).to be < lockdown_index
+    end
+
+    it "grants the agent user write access to log/ and tmp/ only" do
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      expect(mock_container).to have_received(:exec).with(
+        [ "chown", "-R", "agent:agent", "/workspace/log", "/workspace/tmp" ],
+        user: "root"
+      )
+      expect(mock_container).to have_received(:exec).with(
+        [ "chmod", "-R", "u+rwX", "/workspace/log", "/workspace/tmp" ],
+        user: "root"
+      )
+    end
+
+    it "raises ContainerError when mkdir of Rails writable dirs fails" do
+      allow(mock_container).to receive(:exec)
+        .with([ "mkdir", "-p", "/workspace/log", "/workspace/tmp" ], user: "root")
+        .and_return([ [ "" ], [ "Permission denied" ], 1 ])
+
+      expect {
+        described_class.new(project: project, commit_sha: commit_sha).run
+      }.to raise_error(
+        Knowledge::ContainerizedRunner::ContainerError,
+        /Failed to create Rails writable directories/
+      )
+    end
+
+    it "raises ContainerError when chown of Rails writable dirs fails" do
+      allow(mock_container).to receive(:exec)
+        .with([ "chown", "-R", "agent:agent", "/workspace/log", "/workspace/tmp" ], user: "root")
+        .and_return([ [ "" ], [ "Operation not permitted" ], 1 ])
+
+      expect {
+        described_class.new(project: project, commit_sha: commit_sha).run
+      }.to raise_error(
+        Knowledge::ContainerizedRunner::ContainerError,
+        /Failed to set Rails writable directory ownership/
+      )
+    end
+
+    it "raises ContainerError when chmod of Rails writable dirs fails" do
+      allow(mock_container).to receive(:exec)
+        .with([ "chmod", "-R", "u+rwX", "/workspace/log", "/workspace/tmp" ], user: "root")
+        .and_return([ [ "" ], [ "Operation not permitted" ], 1 ])
+
+      expect {
+        described_class.new(project: project, commit_sha: commit_sha).run
+      }.to raise_error(
+        Knowledge::ContainerizedRunner::ContainerError,
+        /Failed to grant Rails writable directory permissions/
+      )
+    end
+
+    it "raises ContainerError when chown fails during seeding" do
+      allow(mock_container).to receive(:exec)
+        .with([ "chown", "-R", "root:root", "/workspace" ], user: "root")
+        .and_return([ [ "" ], [ "Operation not permitted" ], 1 ])
+
+      expect {
+        described_class.new(project: project, commit_sha: commit_sha).run
+      }.to raise_error(
+        Knowledge::ContainerizedRunner::ContainerError,
+        /Failed to set workspace ownership/
+      )
+    end
+
+    it "raises ContainerError when chmod fails during seeding" do
+      allow(mock_container).to receive(:exec)
+        .with([ "chmod", "-R", "a=rX", "/workspace" ], user: "root")
+        .and_return([ [ "" ], [ "Operation not permitted" ], 1 ])
+
+      expect {
+        described_class.new(project: project, commit_sha: commit_sha).run
+      }.to raise_error(
+        Knowledge::ContainerizedRunner::ContainerError,
+        /Failed to set workspace permissions/
+      )
+    end
+
+    it "writes database.yml stub before locking workspace permissions" do
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      expect(mock_container).to have_received(:exec).with(
+        [ "sh", "-c", a_string_including("config/database.yml") ],
+        user: "root"
+      )
+    end
+
+    it "guards stub write behind file-existence and symlink checks" do
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      expect(mock_container).to have_received(:exec).with(
+        [ "sh", "-c", a_string_including("if [ -f '/workspace/config/database.yml' ] && [ ! -L '/workspace/config/database.yml' ]") ],
+        user: "root"
+      )
+    end
+
+    it "raises ContainerError when database.yml stub write fails" do
+      allow(mock_container).to receive(:exec)
+        .with([ "sh", "-c", a_string_including("database.yml") ], user: "root")
+        .and_return([ [], [ "write error" ], 1 ])
+
+      expect {
+        described_class.new(project: project, commit_sha: commit_sha).run
+      }.to raise_error(
+        Knowledge::ContainerizedRunner::ContainerError,
+        /Failed to write database.yml stub/
+      )
+    end
+
+    it "writes database.yml stub between mkdir and chmod" do
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      expect(mock_container).to have_received(:exec).with(
+        [ "mkdir", "-p", "/workspace/log", "/workspace/tmp" ], user: "root"
+      ).ordered
+      expect(mock_container).to have_received(:exec).with(
+        [ "sh", "-c", a_string_including("database.yml") ], user: "root"
+      ).ordered
+      expect(mock_container).to have_received(:exec).with(
+        [ "chmod", "-R", "a=rX", "/workspace" ], user: "root"
+      ).ordered
+    end
+
+    it "wraps Docker errors from seed_workspace! as ContainerError" do
+      allow(mock_container).to receive(:archive_in_stream)
+        .and_raise(Docker::Error::ServerError.new("daemon error"))
+
+      expect {
+        described_class.new(project: project, commit_sha: commit_sha).run
+      }.to raise_error(
+        Knowledge::ContainerizedRunner::ContainerError,
+        /Failed to seed workspace.*daemon error/
+      )
+    end
+
+    it "raises ContainerError when tar fails" do
+      failed_status = instance_double(Process::Status, success?: false, exitstatus: 1)
+      failed_wait_thr = instance_double(Thread, value: failed_status)
+      tar_stdout = instance_double(IO, read: nil, binmode: nil)
+      tar_stderr = instance_double(IO, read: "tar: /nonexistent: No such file or directory")
+      allow(Open3).to receive(:popen3)
+        .with("tar", "-cf", "-", "-C", "/tmp/paid-collector-test", ".")
+        .and_yield(instance_double(IO), tar_stdout, tar_stderr, failed_wait_thr)
+
+      expect {
+        described_class.new(project: project, commit_sha: commit_sha).run
+      }.to raise_error(
+        Knowledge::ContainerizedRunner::ContainerError,
+        /tar failed \(exit 1\) stderr: tar: \/nonexistent/
+      )
+    end
+
+    it "passes container_runner in options to CollectorRunner" do
+      runner = described_class.new(project: project, commit_sha: commit_sha)
+
+      allow(Knowledge::CollectorRunner).to receive(:call) do |args|
+        expect(args[:options][:container_runner]).to eq(runner)
+        runner_result
+      end
+
+      runner.run
+    end
+
+    it "exposes host_repo_dir for file access by collectors" do
+      runner = described_class.new(project: project, commit_sha: commit_sha)
+
+      allow(Knowledge::CollectorRunner).to receive(:call) do |args|
+        expect(args[:options][:container_runner].host_repo_dir).to eq("/tmp/paid-collector-test")
+        runner_result
+      end
+
+      runner.run
+    end
+
+    it "cleans up the container, volume, and host repo after execution" do
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      expect(mock_container).to have_received(:stop)
+      expect(mock_container).to have_received(:delete)
+      expect(mock_volume).to have_received(:remove).with(force: true)
+      expect(FileUtils).to have_received(:rm_rf).with("/tmp/paid-collector-test")
+    end
+
+    it "logs a warning when volume cleanup fails with a non-NotFound error" do
+      allow(mock_volume).to receive(:remove).and_raise(
+        Docker::Error::ServerError.new("volume in use")
+      )
+      allow(Rails.logger).to receive(:warn)
+
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      expect(Rails.logger).to have_received(:warn).with(
+        hash_including(
+          message: "knowledge.containerized_runner.cleanup_workspace_volume.failed",
+          project_id: 42,
+          error_class: "Docker::Error::ServerError"
+        )
+      )
+    end
+
+    it "cleans up even when CollectorRunner raises" do
+      allow(Knowledge::CollectorRunner).to receive(:call).and_raise(RuntimeError, "boom")
+
+      expect {
+        described_class.new(project: project, commit_sha: commit_sha).run
+      }.to raise_error(RuntimeError, "boom")
+
+      expect(mock_container).to have_received(:delete)
+      expect(mock_volume).to have_received(:remove).with(force: true)
+      expect(FileUtils).to have_received(:rm_rf).with("/tmp/paid-collector-test")
+    end
+
+    it "does not expose API keys or proxy URLs" do
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      config = nil
+      allow(Docker::Container).to receive(:create) { |cfg| config = cfg; mock_container }
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      env = config["Env"]
+      expect(env).not_to include(a_string_matching(/PROXY_TOKEN/))
+      expect(env).not_to include(a_string_matching(/ANTHROPIC/))
+      expect(env).not_to include(a_string_matching(/OPENAI/))
+      expect(env).not_to include(a_string_matching(/API_KEY/))
+    end
+
+    it "starts on bridge so routes collection can temporarily enable network" do
+      config = nil
+      allow(Docker::Container).to receive(:create) { |cfg| config = cfg; mock_container }
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      expect(config.dig("HostConfig", "NetworkMode")).to eq("bridge")
+    end
+
+    it "disconnects bridge before collectors run" do
+      mock_bridge_network = instance_double(Docker::Network, disconnect: true)
+      allow(Docker::Network).to receive(:get).with("bridge").and_return(mock_bridge_network)
+
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      expect(mock_bridge_network).to have_received(:disconnect).with("collector123")
+    end
+
+    it "uses a named volume instead of a host bind mount" do
+      config = nil
+      allow(Docker::Container).to receive(:create) { |cfg| config = cfg; mock_container }
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      binds = config.dig("HostConfig", "Binds")
+      expect(binds.first).to match(%r{\Apaid-collector-42-[a-f0-9]{8}:/workspace:rw\z})
+    end
+
+    # Regression: Docker's default tmpfs flags include noexec, which makes
+    # mkmf's File.executable? check fail when bundle install builds native
+    # gem extensions in /tmp — surfacing as a misleading "compiler failed
+    # to generate an executable file" error during routes collection.
+    it "mounts /tmp tmpfs with exec so bundle install can build native gems" do
+      config = nil
+      allow(Docker::Container).to receive(:create) { |cfg| config = cfg; mock_container }
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      tmp_options = config.dig("HostConfig", "Tmpfs", "/tmp")
+      expect(tmp_options.split(",")).to include("exec")
+    end
+
+    # Regression: BUNDLE_PATH=/tmp/bundle means the routes collector unpacks
+    # the target repo's full gem set into /tmp. Rails 8 apps commonly ship
+    # 300–600MB of gems; an undersized /tmp surfaces as ENOSPC during
+    # bundle install and leaves routes collection broken even after the
+    # OOM fix. 2GB fits large gem sets with room for transient build files.
+    it "sizes /tmp tmpfs large enough for a target Rails app's gem set" do
+      config = nil
+      allow(Docker::Container).to receive(:create) { |cfg| config = cfg; mock_container }
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      tmp_options = config.dig("HostConfig", "Tmpfs", "/tmp").split(",")
+      size_option = tmp_options.find { |opt| opt.start_with?("size=") }
+      expect(size_option).to eq("size=#{2 * 1024 * 1024 * 1024}")
+    end
+  end
+
+  describe "network_mode validation" do
+    let(:runner_result) do
+      { project_version: Object.new, results: [] }
+    end
+
+    before do
+      allow(Knowledge::CollectorRunner).to receive(:call).and_return(runner_result)
+    end
+
+    it "accepts network_mode: none" do
+      expect {
+        described_class.new(project: project, commit_sha: commit_sha, options: { network_mode: "none" }).run
+      }.not_to raise_error
+    end
+
+    it "accepts network_mode: bridge" do
+      expect {
+        described_class.new(project: project, commit_sha: commit_sha, options: { network_mode: "bridge" }).run
+      }.not_to raise_error
+    end
+
+    it "rejects invalid network_mode" do
+      expect {
+        described_class.new(project: project, commit_sha: commit_sha, options: { network_mode: "host" }).run
+      }.to raise_error(Knowledge::ContainerizedRunner::ContainerError, /Invalid network_mode/)
+    end
+  end
+
+  describe "#connect_network! and #disconnect_network!" do
+    let(:runner_result) do
+      { project_version: Object.new, results: [] }
+    end
+
+    before do
+      allow(Knowledge::CollectorRunner).to receive(:call).and_return(runner_result)
+    end
+
+    it "connects and disconnects the container from the bridge network" do
+      runner = described_class.new(project: project, commit_sha: commit_sha)
+
+      allow(Knowledge::CollectorRunner).to receive(:call) do |args|
+        cr = args[:options][:container_runner]
+        cr.connect_network!
+        cr.disconnect_network!
+        runner_result
+      end
+
+      runner.run
+
+      expect(mock_bridge_network).to have_received(:connect).with("collector123")
+      expect(mock_bridge_network).to have_received(:disconnect).twice
+    end
+
+    it "raises ContainerError when connect_network! is called without a container" do
+      runner = described_class.new(project: project, commit_sha: commit_sha)
+      expect { runner.connect_network! }.to raise_error(
+        Knowledge::ContainerizedRunner::ContainerError, /not provisioned/
+      )
+    end
+
+    it "treats Docker already-connected errors as idempotent success" do
+      runner = described_class.new(project: project, commit_sha: commit_sha)
+      runner.instance_variable_set(:@container, mock_container)
+      runner.instance_variable_set(:@network_connected, false)
+      allow(mock_bridge_network).to receive(:connect).and_raise(
+        Docker::Error::ServerError.new("endpoint with name collector123 already exists in network bridge")
+      )
+
+      expect { runner.connect_network! }.not_to raise_error
+    end
+
+    it "raises a clear error when connect_network! is used with network_mode none" do
+      runner = described_class.new(project: project, commit_sha: commit_sha, options: { network_mode: "none" })
+      runner.instance_variable_set(:@container, mock_container)
+
+      expect { runner.connect_network! }.to raise_error(
+        Knowledge::ContainerizedRunner::ContainerError,
+        /network_mode=none/
+      )
+    end
+
+    it "raises ContainerError when disconnect_network! is called without a container" do
+      runner = described_class.new(project: project, commit_sha: commit_sha)
+      expect { runner.disconnect_network! }.to raise_error(
+        Knowledge::ContainerizedRunner::ContainerError, /not provisioned/
+      )
+    end
+
+    it "treats Docker already-disconnected errors as idempotent success" do
+      runner = described_class.new(project: project, commit_sha: commit_sha)
+      runner.instance_variable_set(:@container, mock_container)
+      runner.instance_variable_set(:@network_connected, true)
+      allow(mock_bridge_network).to receive(:disconnect).and_raise(
+        Docker::Error::ServerError.new("container collector123 is not connected to network bridge")
+      )
+
+      expect { runner.disconnect_network! }.not_to raise_error
+    end
+  end
+
+  describe "input validation" do
+    it "rejects invalid commit SHA" do
+      expect {
+        described_class.new(
+          project: project,
+          commit_sha: "not-a-sha; rm -rf /"
+        ).run
+      }.to raise_error(Knowledge::ContainerizedRunner::CloneError, /Invalid commit SHA/)
+    end
+
+    it "rejects invalid project name" do
+      bad_project = Struct.new(:id, :full_name).new(42, "owner/repo; echo pwned")
+
+      expect {
+        described_class.new(
+          project: bad_project,
+          commit_sha: commit_sha
+        ).run
+      }.to raise_error(Knowledge::ContainerizedRunner::CloneError, /Invalid project name/)
+    end
+
+    it "accepts valid 40-hex commit SHA" do
+      runner_result = {
+        project_version: Object.new,
+        results: []
+      }
+      allow(Knowledge::CollectorRunner).to receive(:call).and_return(runner_result)
+
+      expect {
+        described_class.new(project: project, commit_sha: "abcdef1234567890abcdef1234567890abcdef12").run
+      }.not_to raise_error
+    end
+  end
+
+  describe "#execute" do
+    it "runs a command inside the container and returns stdout" do
+      runner_result = { project_version: Object.new, results: [] }
+      runner = described_class.new(project: project, commit_sha: commit_sha)
+
+      allow(Knowledge::CollectorRunner).to receive(:call) do |args|
+        container_runner = args[:options][:container_runner]
+        allow(mock_container).to receive(:exec).and_return([ [ "hello world" ], [ "" ], 0 ])
+        result = container_runner.execute("echo hello world")
+        expect(result).to eq("hello world")
+        runner_result
+      end
+
+      runner.run
+    end
+
+    it "passes exec environment variables to Docker" do
+      runner_result = { project_version: Object.new, results: [] }
+      runner = described_class.new(project: project, commit_sha: commit_sha)
+
+      allow(Knowledge::CollectorRunner).to receive(:call) do |args|
+        container_runner = args[:options][:container_runner]
+        allow(mock_container).to receive(:exec)
+          .with([ "echo", "hello" ], hash_including(wait: 300, Env: [ "FOO=bar" ]))
+          .and_return([ [ "hello" ], [ "" ], 0 ])
+        expect(container_runner.execute([ "echo", "hello" ], env: { "FOO" => "bar" })).to eq("hello")
+        runner_result
+      end
+
+      runner.run
+    end
+
+    it "raises ContainerError when command fails" do
+      runner_result = { project_version: Object.new, results: [] }
+      runner = described_class.new(project: project, commit_sha: commit_sha)
+
+      allow(Knowledge::CollectorRunner).to receive(:call) do |args|
+        container_runner = args[:options][:container_runner]
+        allow(mock_container).to receive(:exec).and_return([ [ "" ], [ "error msg" ], 1 ])
+        expect { container_runner.execute("bad command") }.to raise_error(
+          Knowledge::ContainerizedRunner::ContainerError, /Command failed/
+        )
+        runner_result
+      end
+
+      runner.run
+    end
+
+    it "redacts secret env values from command failures" do
+      runner_result = { project_version: Object.new, results: [] }
+      runner = described_class.new(project: project, commit_sha: commit_sha)
+
+      allow(Knowledge::CollectorRunner).to receive(:call) do |args|
+        container_runner = args[:options][:container_runner]
+        allow(mock_container).to receive(:exec).and_return([
+          [ "" ],
+          [ "fatal: repository 'https://x-access-token:secret123@github.com/owner/private.git/' not found" ],
+          1
+        ])
+        expect {
+          container_runner.execute("bad command", env: { "PAID_GITHUB_TOKEN" => "secret123" })
+        }.to raise_error(
+          Knowledge::ContainerizedRunner::ContainerError,
+          /x-access-token:\[REDACTED\]@github\.com/
+        )
+        runner_result
+      end
+
+      runner.run
+    end
+
+    it "raises ContainerError when container is not provisioned" do
+      runner = described_class.new(project: project, commit_sha: commit_sha)
+      expect { runner.execute("echo test") }.to raise_error(
+        Knowledge::ContainerizedRunner::ContainerError, /not provisioned/
+      )
+    end
+  end
+end

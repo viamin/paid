@@ -1,0 +1,319 @@
+name: PR Screenshots
+run-name: PR Screenshots (#${{ github.event.pull_request.number }})
+
+on:
+  pull_request:
+    types: [ opened, synchronize, reopened, ready_for_review ]
+  # Clean up uploaded screenshots when PRs are closed/merged
+  pull_request_target:
+    types: [ closed ]
+
+# Permissions are set per-job to minimize blast radius.
+# This workflow never receives comment/storage secrets on `pull_request`;
+# trusted publish/comment work runs from `pr-screenshots-publish.yml` on
+# `pull_request_target` using base-branch code.
+
+# Cancel in-progress screenshot runs when the same PR event type is retriggered.
+# Including the action avoids "synchronize" and "ready_for_review" runs for the
+# same SHA canceling each other and leaving duplicate cancelled checks behind.
+# Uses PR number instead of github.ref so pull_request_target events (which
+# resolve to the base branch) don't collide across PRs.
+concurrency:
+  group: pr-screenshots-${{ github.workflow }}-${{ github.event.pull_request.number }}-${{ github.event.action }}
+  cancel-in-progress: true
+
+jobs:
+  detect:
+    if: github.event.action != 'closed'
+      && (
+        (github.event_name != 'pull_request' && github.event_name != 'pull_request_target')
+        || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+        || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      has_ui_changes: ${{ steps.check.outputs.has_ui_changes }}
+      ui_files: ${{ steps.check.outputs.ui_files }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b
+        with:
+          ruby-version: .tool-versions
+
+      - name: Detect UI-facing changes
+        id: check
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          diff_files=$(git diff --name-only "${BASE_SHA}"..."${HEAD_SHA}" 2>/dev/null || true)
+
+          if [ -z "$diff_files" ]; then
+            echo "has_ui_changes=false" >> "$GITHUB_OUTPUT"
+            echo "ui_files=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          ui_files=$(
+            DIFF_FILES="$diff_files" ruby -rjson -e '
+              require_relative "app/services/screenshots/detect_ui_changes"
+              changed_files = ENV.fetch("DIFF_FILES", "").split("\n").map(&:strip).reject(&:empty?)
+              result = Screenshots::DetectUiChanges.call(changed_files: changed_files)
+              print result.fetch(:ui_files).join("\n")
+            '
+          )
+
+          if [ -n "$ui_files" ]; then
+            echo "has_ui_changes=true" >> "$GITHUB_OUTPUT"
+            # Store file list as base64 to preserve newlines
+            echo "ui_files=$(echo "$ui_files" | base64 -w 0)" >> "$GITHUB_OUTPUT"
+            echo "UI-facing files changed:"
+            echo "$ui_files" | sed 's/^/  /'
+          else
+            echo "has_ui_changes=false" >> "$GITHUB_OUTPUT"
+            echo "ui_files=" >> "$GITHUB_OUTPUT"
+            echo "No UI-facing file changes detected."
+          fi
+
+  capture:
+    needs: detect
+    if: >-
+      needs.detect.outputs.has_ui_changes == 'true'
+      && (
+        (github.event_name != 'pull_request' && github.event_name != 'pull_request_target')
+        || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+        || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
+      )
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    services:
+      postgres:
+        # Use the Docker Official Images ECR Public mirror to avoid Docker Hub
+        # pull timeouts during service initialization on GitHub-hosted runners.
+        image: public.ecr.aws/docker/library/postgres:16.14
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      BUNDLE_FROZEN: "true"
+      RAILS_ENV: test
+      SECRET_KEY_BASE: test-secret-key-base
+      RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY }}
+      PAID_TEST_DATABASE: paid_test
+      DATABASE_URL: postgres://paid:paid@localhost:5432/paid_test
+      DB_HOST: localhost
+      DB_USERNAME: paid
+      DB_PASSWORD: paid
+      TMPDIR: ${{ github.workspace }}/.tmp-build
+      YARN_CACHE_FOLDER: ${{ github.workspace }}/.cache-yarn
+      XDG_CACHE_HOME: ${{ github.workspace }}/.cache
+      npm_config_cache: ${{ github.workspace }}/.cache/npm
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
+      SCREENSHOT_OUTPUT_DIR: tmp/screenshots
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Normalize test master key
+        if: env.RAILS_TEST_KEY == ''
+        env:
+          RAILS_MASTER_KEY_FALLBACK: ${{ secrets.RAILS_MASTER_KEY }}
+        run: |
+          if [ -n "$RAILS_MASTER_KEY_FALLBACK" ]; then
+            echo "RAILS_TEST_KEY=$RAILS_MASTER_KEY_FALLBACK" >> "$GITHUB_ENV"
+          fi
+
+      - name: Prepare workspace cache directories
+        run: mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME" "$npm_config_cache" "$PLAYWRIGHT_BROWSERS_PATH"
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version-file: .tool-versions
+          cache: 'yarn'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install JavaScript dependencies
+        run: |
+          mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME"
+          yarn install --frozen-lockfile && bin/yarn-postinstall
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo tee /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc >/dev/null
+          . /etc/os-release
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nArchitectures: %s\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' "$VERSION_CODENAME" "$(dpkg --print-architecture)" | sudo tee /etc/apt/sources.list.d/pgdg.sources >/dev/null
+          # GitHub's Ubuntu runners sometimes ship unrelated Microsoft sources
+          # that transiently 403 and break apt-get update before PGDG installs.
+          sudo find /etc/apt/sources.list.d -maxdepth 1 -type f -print0 | xargs -0 --no-run-if-empty grep -lZ 'packages.microsoft.com' | sudo xargs -0 --no-run-if-empty rm -f
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-16
+
+      - name: Create application database role
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h "$DB_HOST" -U postgres -d postgres <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'paid') THEN
+              CREATE ROLE paid LOGIN PASSWORD 'paid';
+            ELSE
+              ALTER ROLE paid WITH LOGIN PASSWORD 'paid';
+            END IF;
+          END
+          $$;
+          ALTER ROLE paid CREATEDB NOSUPERUSER NOBYPASSRLS;
+          SQL
+
+      - name: Set up Chrome
+        id: setup_chrome
+        uses: browser-actions/setup-chrome@2e1d749697dd1612b833dba4a722266286fbefcd # v2.1.2
+
+      - name: Export Chromium path
+        id: export_chromium_path
+        env:
+          INSTALLED_CHROME_PATH: ${{ steps.setup_chrome.outputs.chrome-path }}
+        run: |
+          chrome_path="${INSTALLED_CHROME_PATH}"
+          if [ -n "$chrome_path" ] && [ -x "$chrome_path" ]; then
+            echo "chromium_path=$chrome_path" >> "$GITHUB_OUTPUT"
+            echo "Chrome available at ${chrome_path}"
+            "$chrome_path" --version
+          else
+            echo "::error::No Chrome/Chromium binary found after setup"
+            exit 1
+          fi
+
+      - name: Export changed UI files
+        env:
+          UI_FILES_B64: ${{ needs.detect.outputs.ui_files }}
+        run: |
+          # Use a random delimiter (rather than a static "EOF") so a crafted
+          # changed-file path cannot break out of the heredoc and inject
+          # arbitrary GITHUB_ENV assignments.
+          delimiter="ghadelim_$(openssl rand -hex 16)"
+          {
+            echo "CHANGED_FILES<<${delimiter}"
+            printf '%s' "$UI_FILES_B64" | base64 -d
+            echo
+            echo "${delimiter}"
+          } >> "$GITHUB_ENV"
+
+      - name: Build assets
+        run: yarn build && yarn build:css
+
+      - name: Set up database
+        run: bin/rails db:create db:schema:load
+
+      - name: Bootstrap test defaults
+        run: bin/rails ci:bootstrap_test_defaults
+
+      - name: Capture screenshots
+        id: capture_screenshots
+        env:
+          CHROMIUM_PATH: ${{ steps.export_chromium_path.outputs.chromium_path }}
+        run: bin/rails screenshots:capture
+
+      - name: Detect captured screenshots
+        if: always()
+        id: detect_screenshots
+        run: |
+          shopt -s nullglob
+          screenshots=(tmp/screenshots/*.png)
+
+          if [ "${#screenshots[@]}" -gt 0 ]; then
+            echo "has_screenshots=true" >> "$GITHUB_OUTPUT"
+            printf 'Captured screenshots:\n'
+            printf '  %s\n' "${screenshots[@]}"
+          else
+            echo "has_screenshots=false" >> "$GITHUB_OUTPUT"
+            echo "No screenshots were captured."
+          fi
+
+      - name: Upload screenshots to artifacts
+        id: upload_screenshots
+        if: always() && steps.detect_screenshots.outputs.has_screenshots == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pr-screenshots
+          path: tmp/screenshots/*.png
+          if-no-files-found: ignore
+          retention-days: 30
+
+  # Clean up uploaded screenshots when a PR is closed or merged.
+  cleanup-storage:
+    if: >-
+      github.event.action == 'closed'
+      && (
+        contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+        || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
+      )
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: true
+
+      - name: Delete PR screenshots from storage
+        env:
+          BUNDLE_FROZEN: "true"
+          RAILS_ENV: test
+          SECRET_KEY_BASE: test-secret-key-base
+          RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY }}
+          PAID_TEST_DATABASE: paid_test
+          npm_config_cache: ${{ github.workspace }}/.cache/npm
+          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
+          SCREENSHOTS_S3_ACCESS_KEY_ID: ${{ secrets.SCREENSHOTS_S3_ACCESS_KEY_ID }}
+          SCREENSHOTS_S3_SECRET_ACCESS_KEY: ${{ secrets.SCREENSHOTS_S3_SECRET_ACCESS_KEY }}
+          SCREENSHOTS_S3_BUCKET: ${{ secrets.SCREENSHOTS_S3_BUCKET }}
+          SCREENSHOTS_S3_REGION: ${{ secrets.SCREENSHOTS_S3_REGION }}
+          SCREENSHOTS_S3_ENDPOINT: ${{ secrets.SCREENSHOTS_S3_ENDPOINT }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RAILS_MASTER_KEY_FALLBACK: ${{ secrets.RAILS_MASTER_KEY }}
+        run: |
+          export RAILS_TEST_KEY="${RAILS_TEST_KEY:-$RAILS_MASTER_KEY_FALLBACK}"
+          bin/rails screenshots:cleanup_pr

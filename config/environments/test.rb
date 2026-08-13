@@ -1,0 +1,83 @@
+# frozen_string_literal: true
+
+# The test environment is used exclusively to run your application's
+# test suite. You never need to work with it otherwise. Remember that
+# your test database is "scratch space" for the test suite and is wiped
+# and recreated between test runs. Don't rely on the data there!
+
+Rails.application.configure do
+  # Settings specified here will take precedence over those in config/application.rb.
+
+  # Pull request CI may not have access to encrypted test credentials. Prefer
+  # an explicit env-provided test key when available, then fall back to a
+  # non-production default so the app still boots in isolated environments.
+  config.secret_key_base = ENV["SECRET_KEY_BASE"].presence ||
+    ENV["RAILS_TEST_KEY"].presence ||
+    "test-secret-key-base"
+
+  # While tests run files are not watched, reloading is not necessary.
+  config.enable_reloading = false
+
+  # Disable Rails' built-in log rotation (shift_age/shift_size). The 8.1
+  # framework defaults enable rotation at 100 MB for local envs, but under
+  # parallel test workers the rotation lock contends across processes and
+  # fails ("log rotation inter-process lock failed ... test.log"), and once
+  # test.log is renamed to test.log.0 the recreation can leave it missing.
+  # Mirrors the same opt-out in config/environments/development.rb.
+  config.log_file_size = nil
+
+  # Eager loading loads your entire application. When running a single test locally,
+  # this is usually not necessary, and can slow down your test suite. However, it's
+  # recommended that you enable it in continuous integration systems to ensure eager
+  # loading is working properly before deploying your code.
+  config.eager_load = ENV["CI"].present?
+
+  # Configure public file server for tests with cache-control for performance.
+  config.public_file_server.headers = { "cache-control" => "public, max-age=3600" }
+
+  # Show full error reports.
+  config.consider_all_requests_local = true
+  config.cache_store = :null_store
+
+  # Render exception templates for rescuable exceptions and raise for other exceptions.
+  config.action_dispatch.show_exceptions = :rescuable
+
+  # Use test adapter for ActiveJob so jobs are enqueued but not executed inline.
+  config.active_job.queue_adapter = :test
+
+  # Disable request forgery protection in test environment.
+  config.action_controller.allow_forgery_protection = false
+
+  # Tell Action Mailer not to deliver emails to the real world.
+  # The :test delivery method accumulates sent emails in the
+  # ActionMailer::Base.deliveries array.
+  config.action_mailer.delivery_method = :test
+
+  # Set host to be used by links generated in mailer templates.
+  config.action_mailer.default_url_options = { host: "example.com" }
+
+  # Print deprecation notices to the stderr.
+  config.active_support.deprecation = :stderr
+
+  # Raises error for missing translations.
+  # config.i18n.raise_on_missing_translations = true
+
+  # Annotate rendered view with file names.
+  # config.action_view.annotate_rendered_view_with_filenames = true
+
+  # Raise error when a before_action's only/except options reference missing actions.
+  config.action_controller.raise_on_missing_callback_actions = true
+
+  # Configure Active Record encryption for testing
+  # Keys must be sufficiently long (32 bytes recommended)
+  config.active_record.encryption.primary_key = "test0primary0key0for0encryption0"
+  config.active_record.encryption.deterministic_key = "test0deterministic0key0for0encr"
+  config.active_record.encryption.key_derivation_salt = "test0key0derivation0salt0value0"
+
+  config.after_initialize do
+    next unless ENV["PROSOPITE"] == "true"
+
+    Prosopite.raise = ENV["PROSOPITE_RAISE"] == "true"
+    Prosopite.stderr_logger = true unless Prosopite.raise?
+  end
+end

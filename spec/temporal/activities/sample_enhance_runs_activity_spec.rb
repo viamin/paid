@@ -1,0 +1,162 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe Activities::SampleEnhanceRunsActivity do
+  let(:activity) { described_class.new }
+
+  describe "class" do
+    it "inherits from BaseActivity" do
+      expect(described_class.superclass).to eq(Activities::BaseActivity)
+    end
+  end
+
+  describe "#execute" do
+    let(:account) { create(:account) }
+    let(:project) { create(:project, account: account) }
+    let(:input) { { project_id: project.id, lookback_days: 14 } }
+
+    context "with completed enhance_issue runs" do
+      let!(:issue) { create(:issue, project: project, title: "Add user authentication") }
+
+      let!(:run_with_questions) do
+        run = create(:agent_run, :completed,
+          project: project, issue: issue, goal: "enhance_issue", completed_at: 1.day.ago)
+        run.agent_run_logs.create!(
+          log_type: "stdout",
+          content: "<!-- paid:enhance-issue -->\n## Clarifying questions\n1. How does the auth flow work?\n2. Where is session config?\n## Current context\n- Some context"
+        )
+        create(:knowledge_usage_stat, agent_run: run, project: project,
+          artifact_type: "route", artifact_count: 15, goal: "enhance_issue")
+        run
+      end
+
+      let!(:run_with_context) do
+        run = create(:agent_run, :completed,
+          project: project, issue: issue, goal: "enhance_issue", completed_at: 2.days.ago)
+        run.agent_run_logs.create!(
+          log_type: "stdout",
+          content: "<!-- paid:enhance-issue -->\n## Implementation context\n### Relevant files\n- app/models/user.rb"
+        )
+        run
+      end
+
+      it "returns sampled run data" do
+        result = activity.execute(input)
+
+        expect(result[:project_id]).to eq(project.id)
+        expect(result[:runs].size).to eq(2)
+      end
+
+      it "extracts questions from clarifying runs" do
+        result = activity.execute(input)
+
+        question_run = result[:runs].find { |r| r[:agent_run_id] == run_with_questions.id }
+        expect(question_run[:questions_asked]).to eq([ "How does the auth flow work?", "Where is session config?" ])
+        expect(question_run[:sufficient_context]).to be false
+      end
+
+      it "marks sufficient context runs correctly" do
+        result = activity.execute(input)
+
+        context_run = result[:runs].find { |r| r[:agent_run_id] == run_with_context.id }
+        expect(context_run[:questions_asked]).to be_empty
+        expect(context_run[:sufficient_context]).to be true
+      end
+
+      it "includes knowledge usage data" do
+        result = activity.execute(input)
+
+        question_run = result[:runs].find { |r| r[:agent_run_id] == run_with_questions.id }
+        expect(question_run[:knowledge_available]).to include("route" => 15)
+      end
+
+      it "includes run outcome fields" do
+        result = activity.execute(input)
+
+        question_run = result[:runs].find { |r| r[:agent_run_id] == run_with_questions.id }
+        expect(question_run).to include(user_responded: false, user_reply_text: nil, run_outcome: "pr_created")
+      end
+
+      context "when the user responded to clarifying questions" do
+        let(:github_client) { instance_double(GithubClient) }
+
+        before do
+          run_with_questions.quality_metrics.create!(
+            metric_type: "human",
+            feedback_source: "enhance_issue_feedback",
+            scores: { "author_replied" => 1.0, "comment_posted" => 1.0 }
+          )
+          allow(GithubClient).to receive(:new).and_return(github_client)
+          allow(github_client).to receive(:issue_comments).and_return([])
+        end
+
+        it "detects user response from the enhance_issue_feedback metric" do
+          result = activity.execute(input)
+
+          question_run = result[:runs].find { |r| r[:agent_run_id] == run_with_questions.id }
+          expect(question_run[:user_responded]).to be true
+          expect(question_run[:user_reply_text]).to be_nil
+        end
+
+        it "fetches user reply text when GitHub API is available" do
+          allow(github_client).to receive(:issue_comments).and_return([
+            { body: "<!-- paid:enhance-issue -->\n## Clarifying questions\n1. How?", created_at: 1.day.ago, user: { login: "bot" } },
+            { body: "The auth uses OAuth2 with PKCE flow", created_at: 1.hour.ago, user: { login: run_with_questions.issue.github_creator_login } }
+          ])
+
+          result = activity.execute(input)
+
+          question_run = result[:runs].find { |r| r[:agent_run_id] == run_with_questions.id }
+          expect(question_run[:user_reply_text]).to include("OAuth2 with PKCE flow")
+        end
+      end
+
+      context "when a run only produced an enhancement (no PR or commit)" do
+        before do
+          run_with_questions.update!(pull_request_url: nil, result_commit_sha: nil)
+        end
+
+        it "reflects the enhancement_only outcome" do
+          result = activity.execute(input)
+
+          question_run = result[:runs].find { |r| r[:agent_run_id] == run_with_questions.id }
+          expect(question_run[:run_outcome]).to eq("enhancement_only")
+        end
+      end
+
+      it "includes artifact usage statistics" do
+        result = activity.execute(input)
+
+        expect(result[:artifact_usage]).to be_a(Hash)
+      end
+    end
+
+    context "with no enhance_issue runs" do
+      it "returns empty runs" do
+        result = activity.execute(input)
+
+        expect(result[:runs]).to be_empty
+      end
+    end
+
+    context "with runs outside lookback window" do
+      let!(:issue) { create(:issue, project: project) }
+
+      before do
+        run = create(:agent_run, :completed,
+          project: project, issue: issue, goal: "enhance_issue", completed_at: 30.days.ago)
+        run.agent_run_logs.create!(
+          log_type: "stdout",
+          content: "<!-- paid:enhance-issue -->\n## Clarifying questions\n1. Old question"
+        )
+      end
+
+      it "excludes old runs" do
+        result = activity.execute(input)
+
+        expect(result[:runs]).to be_empty
+      end
+    end
+  end
+end

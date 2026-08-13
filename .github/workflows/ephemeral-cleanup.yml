@@ -1,0 +1,82 @@
+name: Ephemeral Cleanup
+
+# Ephemeral PR tests (.ephemeral-tests/*_spec.rb) are meant to live only on PR
+# branches and be removed before merge (see .ephemeral-tests/README.md). When an
+# author forgets, the files land on main and the "No ephemeral tests on main"
+# guard in ci.yml turns red on every subsequent push.
+#
+# This workflow auto-removes them: after any PR merges into main, if stray
+# ephemeral test files are present, it opens an auto-merging cleanup PR that
+# deletes them. main is protected (no direct pushes), so cleanup goes through a
+# PR rather than a direct push. The ci.yml guard remains as the backstop alarm.
+#
+# This is a no-op (no PR opened) when no stray files exist, including when the
+# cleanup PR itself merges — so it does not loop.
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [ main ]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: ephemeral-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: Remove stray ephemeral tests from main
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Detect and remove stray ephemeral test files
+        id: detect
+        run: |
+          stray=$(find .ephemeral-tests -type f \( -name '*_spec.rb' -o -name '*_test.js' -o -name '*_test.ts' \) 2>/dev/null || true)
+          if [ -z "$stray" ]; then
+            echo "No stray ephemeral test files on main; nothing to clean up."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "::warning::Stray ephemeral test files found on main; opening cleanup PR:"
+          echo "$stray"
+          echo "$stray" | xargs git rm
+          {
+            echo "files<<EOF"
+            echo "$stray"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Open auto-merging cleanup PR
+        if: steps.detect.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MERGED_PR: ${{ github.event.pull_request.number }}
+          FILES: ${{ steps.detect.outputs.files }}
+        run: |
+          set -euo pipefail
+          branch="ci/auto-remove-ephemeral-tests-${MERGED_PR}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git commit \
+            -m "fix(ci): remove stray ephemeral test files from main" \
+            -m "Ephemeral test files are meant to live only on PR branches and be removed before merge (see .ephemeral-tests/README.md). Left behind by #${MERGED_PR}; this auto-generated cleanup removes them so the \"No ephemeral tests on main\" guard goes green again."
+          git push origin "$branch"
+          body=$(printf 'Auto-generated cleanup. #%s merged with ephemeral test files left on `main`, which trips the **No ephemeral tests on main** guard in ci.yml.\n\nRemoving:\n```\n%s\n```\n\nSee [.ephemeral-tests/README.md](.ephemeral-tests/README.md) — these files are meant to be deleted before merge.' "$MERGED_PR" "$FILES")
+          gh pr create \
+            --base main \
+            --head "$branch" \
+            --title "fix(ci): remove stray ephemeral test files from main" \
+            --body "$body"
+          gh pr merge "$branch" --squash --auto --delete-branch

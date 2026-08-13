@@ -1,0 +1,1120 @@
+<% content_for(:title) { "Edit #{@project.name} - Projects - Paid" } %>
+
+<div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to project_path(@project), class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+      <svg class="mr-1 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd" />
+      </svg>
+      Back to Project
+    <% end %>
+  </div>
+
+  <div class="bg-white shadow sm:rounded-lg">
+    <div class="px-4 py-5 sm:p-6">
+      <h1 class="text-xl font-semibold text-gray-900">Edit Project</h1>
+      <p class="mt-1 text-sm text-gray-500">
+        Update settings for <%= @project.full_name %>.
+      </p>
+
+      <% pause_metadata = @project.quality_pause_metadata || {} %>
+      <div class="mt-6 rounded-md border <%= @project.quality_paused? ? 'border-amber-200 bg-amber-50' : 'border-gray-200 bg-gray-50' %> p-4">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <h2 class="text-sm font-semibold <%= @project.quality_paused? ? 'text-amber-900' : 'text-gray-900' %>">Quality Pause</h2>
+            <% if @project.quality_paused? %>
+              <p class="mt-1 text-sm text-amber-800">
+                Automatic work has been paused since <%= local_time(@project.quality_paused_at) %>.
+              </p>
+            <% else %>
+              <p class="mt-1 text-sm text-gray-600">Automatic work is not paused by quality gates.</p>
+            <% end %>
+          </div>
+          <% if @project.quality_paused? %>
+            <span class="inline-flex items-center rounded-md bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800">Paused</span>
+          <% else %>
+            <span class="inline-flex items-center rounded-md bg-green-100 px-2 py-1 text-xs font-medium text-green-700">Running</span>
+          <% end %>
+        </div>
+
+        <% if @project.quality_paused? %>
+          <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div>
+              <dt class="text-xs font-medium uppercase tracking-wide text-amber-700">Score</dt>
+              <dd class="mt-1 text-sm font-semibold text-amber-950">
+                <% if pause_metadata["composite_score"].present? %>
+                  <%= format("%.1f%%", pause_metadata["composite_score"].to_f * 100) %>
+                <% else %>
+                  Unknown
+                <% end %>
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs font-medium uppercase tracking-wide text-amber-700">Threshold</dt>
+              <dd class="mt-1 text-sm font-semibold text-amber-950">
+                <% if pause_metadata["threshold"].present? %>
+                  <%= format("%.1f%%", pause_metadata["threshold"].to_f * 100) %>
+                <% else %>
+                  Unknown
+                <% end %>
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs font-medium uppercase tracking-wide text-amber-700">Samples</dt>
+              <dd class="mt-1 text-sm font-semibold text-amber-950">
+                <%= pause_metadata["sample_size"].presence || Array(pause_metadata["recent_scores"]).size %>
+              </dd>
+            </div>
+          </dl>
+
+          <% if pause_metadata["metric_type"].present? || pause_metadata["goal_type"].present? %>
+            <p class="mt-3 text-sm text-amber-800">
+              Triggered by <%= pause_metadata["metric_type"].presence || "quality" %>
+              <% if pause_metadata["goal_type"].present? %>
+                for <%= pause_metadata["goal_type"].humanize.downcase %>
+              <% end %>.
+            </p>
+          <% end %>
+
+          <% recent_scores = Array(pause_metadata["recent_scores"]) %>
+          <% if recent_scores.any? %>
+            <div class="mt-4">
+              <h3 class="text-xs font-medium uppercase tracking-wide text-amber-700">Recent Scores</h3>
+              <div class="mt-2 flex flex-wrap gap-2">
+                <% recent_scores.each do |score| %>
+                  <span class="inline-flex items-center rounded-md bg-white px-2 py-1 text-xs font-medium text-amber-900 ring-1 ring-inset ring-amber-200">
+                    <%= format("%.1f%%", score.to_f * 100) %>
+                  </span>
+                <% end %>
+              </div>
+            </div>
+          <% end %>
+
+          <div class="mt-4">
+            <%= button_to "Resume", quality_resume_project_path(@project),
+              method: :post,
+              class: "rounded-md bg-amber-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500 cursor-pointer",
+              data: { turbo_confirm: "Resume automatic work for this project?" } %>
+          </div>
+        <% end %>
+      </div>
+
+      <%= form_with model: @project, url: project_path(@project), method: :patch, class: "mt-6",
+        data: { controller: "project-settings-form", action: "keydown->project-settings-form#submitOnEnter" } do |form| %>
+        <% if @project.errors.any? %>
+          <div class="mb-6 rounded-md bg-red-50 p-4">
+            <div class="flex">
+              <div class="flex-shrink-0">
+                <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                  <path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM8.28 7.22a.75.75 0 0 0-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 1 0 1.06 1.06L10 11.06l1.72 1.72a.75.75 0 1 0 1.06-1.06L11.06 10l1.72-1.72a.75.75 0 0 0-1.06-1.06L10 8.94 8.28 7.22Z" clip-rule="evenodd" />
+                </svg>
+              </div>
+              <div class="ml-3">
+                <h3 class="text-sm font-medium text-red-800">
+                  <%= pluralize(@project.errors.count, "error") %> prevented this project from being saved:
+                </h3>
+                <div class="mt-2 text-sm text-red-700">
+                  <ul class="list-disc space-y-1 pl-5">
+                    <% @project.errors.full_messages.each do |message| %>
+                      <li><%= message %></li>
+                    <% end %>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        <% end %>
+
+        <div class="space-y-6">
+          <div class="rounded-md bg-gray-50 p-4">
+            <div class="flex">
+              <div class="flex-shrink-0">
+                <svg class="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                  <path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-7-4a1 1 0 1 1-2 0 1 1 0 0 1 2 0ZM9 9a.75.75 0 0 0 0 1.5h.253a.25.25 0 0 1 .244.304l-.459 2.066A1.75 1.75 0 0 0 10.747 15H11a.75.75 0 0 0 0-1.5h-.253a.25.25 0 0 1-.244-.304l.459-2.066A1.75 1.75 0 0 0 9.253 9H9Z" clip-rule="evenodd" />
+                </svg>
+              </div>
+              <div class="ml-3">
+                <p class="text-sm text-gray-700">
+                  Repository: <strong><%= @project.full_name %></strong>
+                </p>
+                <p class="mt-1 text-xs text-gray-500">
+                  Repository owner and name cannot be changed. Delete this project and add a new one to connect to a different repository.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <fieldset id="github-authentication" class="rounded-lg border border-gray-200 p-4">
+            <legend class="px-1 text-sm font-semibold text-gray-900">GitHub Authentication</legend>
+            <p class="mt-1 text-sm text-gray-600">
+              Choose how Paid authenticates to <strong><%= @project.full_name %></strong>.
+            </p>
+
+            <div class="mt-4 space-y-3">
+              <label class="block cursor-pointer rounded-lg border border-gray-200 p-4 hover:border-indigo-300">
+                <div class="flex items-start gap-3">
+                  <%= form.radio_button :github_auth_source, "app",
+                    checked: @github_auth_source == "app",
+                    class: "mt-1 h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-600",
+                    data: { action: "change->project-settings-form#githubAuthSourceChanged", project_settings_form_target: "githubAuthSource" } %>
+                  <div>
+                    <div class="flex items-center gap-2">
+                      <span class="text-sm font-medium text-gray-900">Paid Agents App</span>
+                      <span class="inline-flex items-center rounded-md bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700">Default</span>
+                    </div>
+                    <p class="mt-1 text-sm text-gray-600">
+                      Use the <code><%= Github::AppRegistry.bot_login %></code> GitHub App identity for repository access and PR authorship.
+                    </p>
+                  </div>
+                </div>
+              </label>
+
+              <label class="block cursor-pointer rounded-lg border border-gray-200 p-4 hover:border-indigo-300">
+                <div class="flex items-start gap-3">
+                  <%= form.radio_button :github_auth_source, "pat",
+                    checked: @github_auth_source == "pat",
+                    class: "mt-1 h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-600",
+                    data: { action: "change->project-settings-form#githubAuthSourceChanged", project_settings_form_target: "githubAuthSource" } %>
+                  <div>
+                    <span class="text-sm font-medium text-gray-900">Personal Access Token</span>
+                    <p class="mt-1 text-sm text-gray-600">
+                      Keep using a GitHub token for repositories that are not yet using the Paid Agents App.
+                    </p>
+                  </div>
+                </div>
+              </label>
+            </div>
+
+            <div class="<%= [ "mt-4", ("hidden" unless @github_auth_source == "app") ].compact.join(" ") %>" data-project-settings-form-target="appPanel">
+              <% if @paid_agents_installation.present? %>
+                <div class="rounded-md border border-green-200 bg-green-50 p-4">
+                  <div class="flex items-start gap-3">
+                    <svg class="mt-0.5 h-5 w-5 flex-none text-green-600" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                      <path fill-rule="evenodd" d="M16.704 5.29a1 1 0 0 1 .006 1.414l-8 8.07a1 1 0 0 1-1.42.006L3.3 10.79a1 1 0 1 1 1.4-1.428l2.28 2.235 7.3-7.365a1 1 0 0 1 1.424-.006Z" clip-rule="evenodd" />
+                    </svg>
+                    <div>
+                      <h3 class="text-sm font-medium text-green-900">Paid Agents App detected</h3>
+                      <p class="mt-1 text-sm text-green-800">
+                        Installation <strong>#<%= @paid_agents_installation.github_installation_id %></strong> covers this repository through <strong><%= @paid_agents_installation.account_login %></strong>.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              <% else %>
+                <div class="rounded-md border border-amber-200 bg-amber-50 p-4">
+                  <div class="flex items-start gap-3">
+                    <svg class="mt-0.5 h-5 w-5 flex-none text-amber-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                      <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.72-1.36 3.485 0l6.518 11.592c.75 1.334-.213 2.992-1.742 2.992H3.48c-1.53 0-2.492-1.658-1.742-2.992L8.257 3.1ZM11 13a1 1 0 1 0-2 0 1 1 0 0 0 2 0Zm-1-7a1 1 0 0 1 1 1v4a1 1 0 1 1-2 0V7a1 1 0 0 1 1-1Z" clip-rule="evenodd" />
+                    </svg>
+                    <div>
+                      <h3 class="text-sm font-medium text-amber-900">Install the Paid Agents App for this repository</h3>
+                      <p class="mt-1 text-sm text-amber-800">
+                        Paid could not find an active <code><%= Github::AppRegistry.bot_login %></code> installation that covers <strong><%= @project.full_name %></strong>.
+                        Install the app on <strong><%= @project.owner %></strong> and grant it access to this repository, then reload this page.
+                      </p>
+                      <div class="mt-3">
+                        <%= link_to "Install Paid Agents App", Github::AppRegistry.install_url,
+                          class: "inline-flex items-center rounded-md bg-amber-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500",
+                          target: "_blank", rel: "noopener noreferrer" %>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              <% end %>
+
+              <div class="mt-4 rounded-md border border-gray-200 p-4">
+                <div class="flex items-start gap-3">
+                  <div class="flex h-6 items-center">
+                    <%= form.check_box :git_push_pat_fallback_enabled,
+                      class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
+                  </div>
+                  <div class="text-sm leading-6">
+                    <%= form.label :git_push_pat_fallback_enabled, "Use a PAT fallback for pushes and merges",
+                      class: "font-medium text-gray-900" %>
+                    <p class="text-gray-500">
+                      The App is used for everything by default. If a push or an auto-merge is rejected
+                      because the App lacks a permission it needs — for example a change under
+                      <code>.github/workflows/</code>, which requires the <code>workflows</code> permission —
+                      that single operation is retried with the selected token instead. The token must have
+                      the needed permission; fine-grained tokens don't report their scopes, so this is
+                      trusted rather than verified. Because a merge performed with this token is attributed
+                      to the token's owner rather than the App, only select a token you're comfortable
+                      appearing as the merger of record.
+                    </p>
+                  </div>
+                </div>
+
+                <div class="mt-3">
+                  <%= form.label :git_push_fallback_token_id, "Fallback token",
+                    class: "block text-sm font-medium leading-6 text-gray-900" %>
+                  <div class="mt-2">
+                    <%= form.select :git_push_fallback_token_id,
+                        options_from_collection_for_select(@github_tokens, :id, :name, @project.git_push_fallback_token_id),
+                        { include_blank: true },
+                        class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+                  </div>
+                  <p class="mt-1 text-xs text-gray-500">Required when the fallback is enabled. Must have access to this repository and the permissions the App is missing.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="<%= [ "mt-4", ("hidden" unless @github_auth_source == "pat") ].compact.join(" ") %>" data-project-settings-form-target="patPanel">
+              <div>
+                <%= form.label :github_token_id, "GitHub Token", class: "block text-sm font-medium leading-6 text-gray-900" %>
+                <div class="mt-2">
+                  <%= form.select :github_token_id,
+                      options_from_collection_for_select(@github_tokens, :id, :name, @project.github_token_id),
+                      { include_blank: true },
+                      class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+                </div>
+                <p class="mt-1 text-xs text-gray-500">Select the token that has access to this repository.</p>
+              </div>
+
+              <div class="mt-3 flex flex-wrap gap-3 text-sm">
+                <%= link_to "Add GitHub Token", new_github_token_path, class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+                <%= link_to "Manage Tokens", github_tokens_path, class: "font-medium text-gray-700 hover:text-gray-900" %>
+              </div>
+            </div>
+          </fieldset>
+
+          <div>
+            <%= form.label :name, "Display Name", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <div class="mt-2">
+              <%= form.text_field :name, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6", required: true %>
+            </div>
+            <p class="mt-1 text-xs text-gray-500">A friendly name for this project.</p>
+          </div>
+
+          <div>
+            <%= form.label :poll_interval_seconds, "Poll Interval (seconds)", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <div class="mt-2">
+              <%= form.number_field :poll_interval_seconds, min: 60, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            </div>
+            <p class="mt-1 text-xs text-gray-500">How often to check for new issues (minimum 60 seconds).</p>
+          </div>
+
+          <div>
+            <%= form.label :max_execution_seconds, "Max Execution Time (seconds)", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <div class="mt-2">
+              <%= form.number_field :max_execution_seconds, min: 60, max: 86_400, step: 1, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            </div>
+            <p class="mt-1 text-xs text-gray-500">Maximum wall-clock time for agent runs (60 to 86,400 seconds). Default: 3,600 seconds (1 hour).</p>
+          </div>
+
+          <div>
+            <%= form.label :plan_review_timeout_hours, "Plan Review Timeout (hours)", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <div class="mt-2">
+              <%= form.number_field :plan_review_timeout_hours, min: 1, max: 720, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            </div>
+            <p class="mt-1 text-xs text-gray-500">Hours to wait for plan review approval before auto-approving (1 to 720). Default: 24 hours.</p>
+          </div>
+
+          <div id="trusted-usernames">
+            <%= form.label :allowed_github_usernames, "Trusted GitHub Usernames", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <div class="mt-2">
+              <input type="text" name="project[allowed_github_usernames_csv]" id="project_allowed_github_usernames_csv"
+                value="<%= @project.allowed_github_usernames.join(', ') %>"
+                autocomplete="off"
+                class="block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+                placeholder="viamin, other-user">
+            </div>
+            <p class="mt-1 text-xs text-gray-500">Comma-separated list of GitHub usernames whose issues are trusted. Issues from other users will never be sent to an LLM.</p>
+            <div class="mt-2 rounded-md bg-yellow-50 p-3">
+              <div class="flex">
+                <div class="flex-shrink-0">
+                  <svg class="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                    <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" />
+                  </svg>
+                </div>
+                <div class="ml-3">
+                  <p class="text-xs text-yellow-700">
+                    <strong>Security:</strong> Only add usernames you fully trust. Issue content from these users will be sent directly to AI agents. Untrusted users' issue bodies are never stored or sent to any LLM.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div id="owner-reviewer">
+            <%= form.label :owner_reviewer_login, "Owner Reviewer Login", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <div class="mt-2">
+              <%= form.text_field :owner_reviewer_login, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6", placeholder: "github-username" %>
+            </div>
+            <p class="mt-1 text-xs text-gray-500">GitHub username to request review from when the PR is ready. Must be in trusted usernames above.</p>
+          </div>
+
+          <div>
+            <%= form.label :merge_method, "Merge Method", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <div class="mt-2">
+              <%= form.select :merge_method,
+                  options_for_select(Project::MERGE_METHODS.map { |m| [m.capitalize, m] }, @project.merge_method),
+                  {},
+                  class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            </div>
+            <p class="mt-1 text-xs text-gray-500">How to merge pull requests when auto-merging on owner approval.</p>
+          </div>
+
+          <fieldset class="rounded-md border border-gray-200 p-4">
+            <legend class="text-sm font-semibold leading-6 text-gray-900">Linked-Intent Development</legend>
+
+            <div>
+              <%= form.label :lid_mode, "LID Mode", class: "block text-sm font-medium leading-6 text-gray-900" %>
+              <div class="mt-2">
+                <%= form.select :lid_mode,
+                    options_for_select([
+                      ["Off / not configured", nil],
+                      ["Full", "full"],
+                      ["Scoped", "scoped"]
+                    ], @project.lid_mode),
+                    {},
+                    class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+              </div>
+              <p class="mt-1 text-xs text-gray-500">Force the effective LID mode directly, or re-detect it from the repository instruction file and design tree.</p>
+            </div>
+
+            <% lid_detection = @project.lid_detection || {} %>
+            <div class="mt-3 space-y-1 text-xs text-gray-500">
+              <% if @project.lid_mode_overridden? %>
+                <p class="text-amber-700">Manually overridden — repository sync will not change this until you re-detect.</p>
+              <% end %>
+              <p>Detected version: <%= lid_detection["version"].presence || "none" %></p>
+              <p>Sources: <%= Array(lid_detection["sources"]).presence&.join(", ") || "none" %></p>
+              <% Array(lid_detection["warnings"]).each do |warning| %>
+                <p class="text-amber-700"><%= warning %></p>
+              <% end %>
+            </div>
+
+            <div class="mt-3">
+              <button type="submit"
+                name="project[redetect_lid_mode]"
+                value="1"
+                class="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50">
+                Re-detect from Repository
+              </button>
+            </div>
+          </fieldset>
+
+          <div>
+            <%= form.label :max_draft_review_rounds, "Max Draft Review Rounds", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <div class="mt-2">
+              <%= form.number_field :max_draft_review_rounds, min: 0, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            </div>
+            <p class="mt-1 text-xs text-gray-500">Maximum Copilot review rounds before escalating to the owner (0 to skip draft review phase).</p>
+          </div>
+
+          <div>
+            <%= form.label :max_issue_runner_failures, "Max Issue Runner Failures", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <div class="mt-2">
+              <%= form.number_field :max_issue_runner_failures, min: 1, max: 1000, placeholder: @project.account&.tenant_setting&.effective_agent_settings&.dig("max_issue_runner_failures") || Issue::DEFAULT_MAX_RUNNER_FAILURES, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            </div>
+            <p class="mt-1 text-xs text-gray-500">Per-issue per-provider retry cap. After a provider fails this many times for one issue it is skipped and remaining providers are tried; leave blank to use the account default (<%= @project.account&.tenant_setting&.effective_agent_settings&.dig("max_issue_runner_failures") || Issue::DEFAULT_MAX_RUNNER_FAILURES %>).</p>
+          </div>
+
+          <%# Review Settings Section %>
+          <% rs = @project.effective_review_settings %>
+          <fieldset id="review-settings" class="space-y-4 rounded-md border border-gray-200 p-4">
+            <legend class="text-sm font-semibold leading-6 text-gray-900">PR Review Settings</legend>
+
+            <div>
+              <div class="flex items-center">
+                <input type="hidden" name="project[review_settings][enabled]" value="0">
+                <input type="checkbox" name="project[review_settings][enabled]" value="1" id="project_review_settings_enabled"
+                  <% if rs["enabled"] %>checked<% end %>
+                  class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600">
+                <label for="project_review_settings_enabled" class="ml-3 block text-sm font-medium leading-6 text-gray-900">Enable PR Reviews</label>
+              </div>
+              <p class="mt-1 ml-7 text-xs text-gray-500">When enabled, pull requests will be reviewed using the configured methods below.</p>
+            </div>
+
+            <div>
+              <div class="flex items-center">
+                <input type="hidden" name="project[review_settings][wait_for_reviews]" value="0">
+                <input type="checkbox" name="project[review_settings][wait_for_reviews]" value="1" id="project_review_settings_wait_for_reviews"
+                  <% if rs["wait_for_reviews"] %>checked<% end %>
+                  class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600">
+                <label for="project_review_settings_wait_for_reviews" class="ml-3 block text-sm font-medium leading-6 text-gray-900">Wait for Reviews</label>
+              </div>
+              <p class="mt-1 ml-7 text-xs text-gray-500">Block workflow until all configured reviews have completed before proceeding.</p>
+            </div>
+
+            <div>
+              <div class="flex items-center">
+                <input type="hidden" name="project[review_settings][address_all_bot_reviews]" value="0">
+                <input type="checkbox" name="project[review_settings][address_all_bot_reviews]" value="1" id="project_review_settings_address_all_bot_reviews"
+                  <% if rs["address_all_bot_reviews"] %>checked<% end %>
+                  class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600">
+                <label for="project_review_settings_address_all_bot_reviews" class="ml-3 block text-sm font-medium leading-6 text-gray-900">Address All Bot Reviews</label>
+              </div>
+              <p class="mt-1 ml-7 text-xs text-gray-500">Detect and address reviews from all bot accounts (e.g. Codex, Claude, Copilot), not just the configured review type. Human reviews follow existing configured behavior.</p>
+            </div>
+
+            <div id="review-methods" class="space-y-4 border-t border-gray-200 pt-4">
+              <p class="text-sm font-medium text-gray-700">Review Methods</p>
+
+              <%# GitHub Copilot %>
+              <% copilot = rs.dig("methods", "copilot") || {} %>
+              <div class="rounded-md border border-gray-100 bg-gray-50 p-3 space-y-3"
+                data-controller="collapsible-panel">
+                <div class="flex items-center">
+                  <input type="hidden" name="project[review_settings][methods][copilot][enabled]" value="0">
+                  <input type="checkbox" name="project[review_settings][methods][copilot][enabled]" value="1" id="review_copilot_enabled"
+                    <% if copilot["enabled"] %>checked<% end %>
+                    aria-controls="review_copilot_settings"
+                    class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600"
+                    data-action="change->collapsible-panel#toggle"
+                    data-collapsible-panel-target="checkbox">
+                  <label for="review_copilot_enabled" class="ml-3 block text-sm font-medium leading-6 text-gray-900">GitHub Copilot</label>
+                  <span class="ml-2 inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">GitHub-hosted only</span>
+                </div>
+                <div id="review_copilot_settings"
+                  class="ml-7 grid grid-cols-2 gap-3 transition-all duration-200 ease-in-out <%= copilot["enabled"] ? "max-h-[2000px] opacity-100" : "max-h-0 overflow-hidden opacity-0" %>"
+                  <% unless copilot["enabled"] %>inert<% end %>
+                  data-collapsible-panel-target="panel">
+                  <div>
+                    <label for="review_copilot_max_rounds" class="block text-xs font-medium text-gray-600">Max Review Rounds</label>
+                    <input type="number" name="project[review_settings][methods][copilot][termination][max_review_rounds]" id="review_copilot_max_rounds"
+                      value="<%= copilot.dig("termination", "max_review_rounds") %>" min="1" placeholder="e.g. 15" autocomplete="off"
+                      class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
+                  </div>
+                  <div>
+                    <label for="review_copilot_timeout" class="block text-xs font-medium text-gray-600">Timeout (minutes)</label>
+                    <input type="number" name="project[review_settings][methods][copilot][termination][timeout_minutes]" id="review_copilot_timeout"
+                      value="<%= copilot.dig("termination", "timeout_minutes") %>" min="1" placeholder="e.g. 30" autocomplete="off"
+                      class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
+                  </div>
+                  <div>
+                    <label for="review_copilot_quality" class="block text-xs font-medium text-gray-600">Quality Threshold</label>
+                    <input type="text" name="project[review_settings][methods][copilot][termination][quality_threshold]" id="review_copilot_quality"
+                      value="<%= copilot.dig("termination", "quality_threshold") %>" placeholder="e.g. approved" autocomplete="off"
+                      class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
+                  </div>
+                  <div class="flex items-center col-span-2">
+                    <input type="hidden" name="project[review_settings][methods][copilot][termination][stop_when_no_comments]" value="0">
+                    <input type="checkbox" name="project[review_settings][methods][copilot][termination][stop_when_no_comments]" value="1" id="review_copilot_stop_no_comments"
+                      <% if copilot.dig("termination", "stop_when_no_comments") %>checked<% end %>
+                      class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600">
+                    <label for="review_copilot_stop_no_comments" class="ml-2 block text-xs text-gray-600">Stop when no new comments</label>
+                  </div>
+                </div>
+              </div>
+
+              <%# Paid PR Code Review Agent %>
+              <% paid = rs.dig("methods", "paid_agent") || {} %>
+              <div class="rounded-md border border-gray-100 bg-gray-50 p-3 space-y-3"
+                data-controller="collapsible-panel">
+                <div class="flex items-center">
+                  <input type="hidden" name="project[review_settings][methods][paid_agent][enabled]" value="0">
+                  <input type="checkbox" name="project[review_settings][methods][paid_agent][enabled]" value="1" id="review_paid_agent_enabled"
+                    <% if paid["enabled"] %>checked<% end %>
+                    aria-controls="review_paid_agent_settings"
+                    class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600"
+                    data-action="change->collapsible-panel#toggle"
+                    data-collapsible-panel-target="checkbox">
+                  <label for="review_paid_agent_enabled" class="ml-3 block text-sm font-medium leading-6 text-gray-900">Paid PR Code Review Agent</label>
+                </div>
+                <div id="review_paid_agent_settings"
+                  class="ml-7 grid grid-cols-2 gap-3 transition-all duration-200 ease-in-out <%= paid["enabled"] ? "max-h-[2000px] opacity-100" : "max-h-0 overflow-hidden opacity-0" %>"
+                  <% unless paid["enabled"] %>inert<% end %>
+                  data-collapsible-panel-target="panel">
+                  <div>
+                    <label for="review_paid_max_rounds" class="block text-xs font-medium text-gray-600">Max Review Rounds</label>
+                    <input type="number" name="project[review_settings][methods][paid_agent][termination][max_review_rounds]" id="review_paid_max_rounds"
+                      value="<%= paid.dig("termination", "max_review_rounds") %>" min="1" placeholder="e.g. 15" autocomplete="off"
+                      class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
+                  </div>
+                  <div>
+                    <label for="review_paid_timeout" class="block text-xs font-medium text-gray-600">Timeout (minutes)</label>
+                    <input type="number" name="project[review_settings][methods][paid_agent][termination][timeout_minutes]" id="review_paid_timeout"
+                      value="<%= paid.dig("termination", "timeout_minutes") %>" min="1" placeholder="e.g. 30" autocomplete="off"
+                      class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
+                  </div>
+                  <div>
+                    <label for="review_paid_quality" class="block text-xs font-medium text-gray-600">Quality Threshold</label>
+                    <input type="text" name="project[review_settings][methods][paid_agent][termination][quality_threshold]" id="review_paid_quality"
+                      value="<%= paid.dig("termination", "quality_threshold") %>" placeholder="e.g. approved" autocomplete="off"
+                      class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
+                  </div>
+                  <div class="flex items-center">
+                    <input type="hidden" name="project[review_settings][methods][paid_agent][termination][stop_when_no_comments]" value="0">
+                    <input type="checkbox" name="project[review_settings][methods][paid_agent][termination][stop_when_no_comments]" value="1" id="review_paid_stop_no_comments"
+                      <% if paid.dig("termination", "stop_when_no_comments") %>checked<% end %>
+                      class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600">
+                    <label for="review_paid_stop_no_comments" class="ml-2 block text-xs text-gray-600">Stop when no new comments</label>
+                  </div>
+                </div>
+              </div>
+
+              <%# OpenAI Codex %>
+              <% codex = rs.dig("methods", "codex") || {} %>
+              <div class="rounded-md border border-gray-100 bg-gray-50 p-3 space-y-3"
+                data-controller="collapsible-panel">
+                <div class="flex items-center">
+                  <input type="hidden" name="project[review_settings][methods][codex][enabled]" value="0">
+                  <input type="checkbox" name="project[review_settings][methods][codex][enabled]" value="1" id="review_codex_enabled"
+                    <% if codex["enabled"] %>checked<% end %>
+                    aria-controls="review_codex_settings"
+                    class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600"
+                    data-action="change->collapsible-panel#toggle"
+                    data-collapsible-panel-target="checkbox">
+                  <label for="review_codex_enabled" class="ml-3 block text-sm font-medium leading-6 text-gray-900">OpenAI Codex</label>
+                  <span class="ml-2 inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">GitHub-hosted only</span>
+                </div>
+                <div id="review_codex_settings"
+                  class="space-y-3 transition-all duration-200 ease-in-out <%= codex["enabled"] ? "max-h-[2000px] opacity-100" : "max-h-0 overflow-hidden opacity-0" %>"
+                  <% unless codex["enabled"] %>inert<% end %>
+                  data-collapsible-panel-target="panel">
+                  <p class="ml-7 text-xs text-gray-500">Waits for the <code>chatgpt-codex-connector</code> bot to review the PR and resolve its threads before advancing.</p>
+                  <div class="ml-7 grid grid-cols-2 gap-3">
+                    <div>
+                      <label for="review_codex_max_rounds" class="block text-xs font-medium text-gray-600">Max Review Rounds</label>
+                      <input type="number" name="project[review_settings][methods][codex][termination][max_review_rounds]" id="review_codex_max_rounds"
+                        value="<%= codex.dig("termination", "max_review_rounds") %>" min="1" placeholder="e.g. 15" autocomplete="off"
+                        class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
+                    </div>
+                    <div>
+                      <label for="review_codex_timeout" class="block text-xs font-medium text-gray-600">Timeout (minutes)</label>
+                      <input type="number" name="project[review_settings][methods][codex][termination][timeout_minutes]" id="review_codex_timeout"
+                        value="<%= codex.dig("termination", "timeout_minutes") %>" min="1" placeholder="e.g. 60" autocomplete="off"
+                        class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
+                    </div>
+                    <div>
+                      <label for="review_codex_quality" class="block text-xs font-medium text-gray-600">Quality Threshold</label>
+                      <input type="text" name="project[review_settings][methods][codex][termination][quality_threshold]" id="review_codex_quality"
+                        value="<%= codex.dig("termination", "quality_threshold") %>" placeholder="e.g. approved" autocomplete="off"
+                        class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
+                    </div>
+                    <div class="flex items-center col-span-2">
+                      <input type="hidden" name="project[review_settings][methods][codex][termination][stop_when_no_comments]" value="0">
+                      <input type="checkbox" name="project[review_settings][methods][codex][termination][stop_when_no_comments]" value="1" id="review_codex_stop_no_comments"
+                        <% if codex.dig("termination", "stop_when_no_comments") %>checked<% end %>
+                        class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600">
+                      <label for="review_codex_stop_no_comments" class="ml-2 block text-xs text-gray-600">Stop when no new comments</label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <%# CI Review Action %>
+              <% ci = rs.dig("methods", "ci_action") || {} %>
+              <div class="rounded-md border border-gray-100 bg-gray-50 p-3 space-y-3"
+                data-controller="collapsible-panel">
+                <div class="flex items-center">
+                  <input type="hidden" name="project[review_settings][methods][ci_action][enabled]" value="0">
+                  <input type="checkbox" name="project[review_settings][methods][ci_action][enabled]" value="1" id="review_ci_action_enabled"
+                    <% if ci["enabled"] %>checked<% end %>
+                    aria-controls="review_ci_action_settings"
+                    class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600"
+                    data-action="change->collapsible-panel#toggle"
+                    data-collapsible-panel-target="checkbox">
+                  <label for="review_ci_action_enabled" class="ml-3 block text-sm font-medium leading-6 text-gray-900">CI Review Action</label>
+                </div>
+                <div id="review_ci_action_settings"
+                  class="ml-7 space-y-3 transition-all duration-200 ease-in-out <%= ci["enabled"] ? "max-h-[2000px] opacity-100" : "max-h-0 overflow-hidden opacity-0" %>"
+                  <% unless ci["enabled"] %>inert<% end %>
+                  data-collapsible-panel-target="panel">
+                  <div>
+                    <label for="review_ci_action_name" class="block text-xs font-medium text-gray-600">Action Name</label>
+                    <input type="text" name="project[review_settings][methods][ci_action][action_name]" id="review_ci_action_name"
+                      value="<%= ci["action_name"] %>" placeholder="e.g. Claude Code Review" autocomplete="off"
+                      class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
+                  </div>
+                  <p class="text-xs text-gray-500">
+                    Use <code>Claude Code Review</code> to let Paid trigger the restored Claude workflow via <code>repository_dispatch</code>.
+                    The target repo must also define the <code>CLAUDE_CODE_OAUTH_TOKEN</code> Actions secret.
+                  </p>
+                  <div class="grid grid-cols-2 gap-3">
+                    <div>
+                      <label for="review_ci_max_rounds" class="block text-xs font-medium text-gray-600">Max Review Rounds</label>
+                      <input type="number" name="project[review_settings][methods][ci_action][termination][max_review_rounds]" id="review_ci_max_rounds"
+                        value="<%= ci.dig("termination", "max_review_rounds") %>" min="1" placeholder="optional" autocomplete="off"
+                        class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
+                    </div>
+                    <div>
+                      <label for="review_ci_timeout" class="block text-xs font-medium text-gray-600">Timeout (minutes)</label>
+                      <input type="number" name="project[review_settings][methods][ci_action][termination][timeout_minutes]" id="review_ci_timeout"
+                        value="<%= ci.dig("termination", "timeout_minutes") %>" min="1" placeholder="optional" autocomplete="off"
+                        class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
+                    </div>
+                    <div>
+                      <label for="review_ci_quality" class="block text-xs font-medium text-gray-600">Quality Threshold</label>
+                      <input type="text" name="project[review_settings][methods][ci_action][termination][quality_threshold]" id="review_ci_quality"
+                        value="<%= ci.dig("termination", "quality_threshold") %>" placeholder="e.g. approved" autocomplete="off"
+                        class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
+                    </div>
+                    <div class="flex items-center col-span-2">
+                      <input type="hidden" name="project[review_settings][methods][ci_action][termination][stop_when_no_comments]" value="0">
+                      <input type="checkbox" name="project[review_settings][methods][ci_action][termination][stop_when_no_comments]" value="1" id="review_ci_stop_no_comments"
+                        <% if ci.dig("termination", "stop_when_no_comments") %>checked<% end %>
+                        class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600">
+                      <label for="review_ci_stop_no_comments" class="ml-2 block text-xs text-gray-600">Stop when no new comments</label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <%# Manual Review %>
+              <% manual = rs.dig("methods", "manual") || {} %>
+              <div class="rounded-md border border-gray-100 bg-gray-50 p-3 space-y-3"
+                data-controller="collapsible-panel">
+                <div class="flex items-center">
+                  <input type="hidden" name="project[review_settings][methods][manual][enabled]" value="0">
+                  <input type="checkbox" name="project[review_settings][methods][manual][enabled]" value="1" id="review_manual_enabled"
+                    <% if manual["enabled"] %>checked<% end %>
+                    aria-controls="review_manual_settings"
+                    class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600"
+                    data-action="change->collapsible-panel#toggle"
+                    data-collapsible-panel-target="checkbox">
+                  <label for="review_manual_enabled" class="ml-3 block text-sm font-medium leading-6 text-gray-900">Manual Review</label>
+                </div>
+                <div id="review_manual_settings"
+                  class="ml-7 space-y-3 transition-all duration-200 ease-in-out <%= manual["enabled"] ? "max-h-[2000px] opacity-100" : "max-h-0 overflow-hidden opacity-0" %>"
+                  <% unless manual["enabled"] %>inert<% end %>
+                  data-collapsible-panel-target="panel">
+                  <div>
+                    <label for="review_manual_reviewer_login" class="block text-xs font-medium text-gray-600">Reviewer Login</label>
+                    <input type="text" name="project[review_settings][methods][manual][reviewer_login]" id="review_manual_reviewer_login"
+                      value="<%= manual["reviewer_login"] %>" placeholder="e.g. octocat" autocomplete="off"
+                      class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
+                  </div>
+                  <div class="grid grid-cols-2 gap-3">
+                    <div>
+                      <label for="review_manual_max_rounds" class="block text-xs font-medium text-gray-600">Max Review Rounds</label>
+                      <input type="number" name="project[review_settings][methods][manual][termination][max_review_rounds]" id="review_manual_max_rounds"
+                        value="<%= manual.dig("termination", "max_review_rounds") %>" min="1" placeholder="optional" autocomplete="off"
+                        class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
+                    </div>
+                    <div>
+                      <label for="review_manual_timeout" class="block text-xs font-medium text-gray-600">Timeout (minutes)</label>
+                      <input type="number" name="project[review_settings][methods][manual][termination][timeout_minutes]" id="review_manual_timeout"
+                        value="<%= manual.dig("termination", "timeout_minutes") %>" min="1" placeholder="e.g. 1440 (24h)" autocomplete="off"
+                        class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
+                    </div>
+                    <div>
+                      <label for="review_manual_quality" class="block text-xs font-medium text-gray-600">Quality Threshold</label>
+                      <input type="text" name="project[review_settings][methods][manual][termination][quality_threshold]" id="review_manual_quality"
+                        value="<%= manual.dig("termination", "quality_threshold") %>" placeholder="e.g. approved" autocomplete="off"
+                        class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
+                    </div>
+                    <div class="flex items-center">
+                      <input type="hidden" name="project[review_settings][methods][manual][termination][stop_when_no_comments]" value="0">
+                      <input type="checkbox" name="project[review_settings][methods][manual][termination][stop_when_no_comments]" value="1" id="review_manual_stop_no_comments"
+                        <% if manual.dig("termination", "stop_when_no_comments") %>checked<% end %>
+                        class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600">
+                      <label for="review_manual_stop_no_comments" class="ml-2 block text-xs text-gray-600">Stop when no new comments</label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset id="labels" class="space-y-4">
+            <div class="flex items-center justify-between">
+              <legend class="text-sm font-semibold leading-6 text-gray-900">Labels</legend>
+              <%= link_to "Sync Labels to GitHub", ensure_labels_project_path(@project), data: { turbo_method: :post }, class: "rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 cursor-pointer" %>
+            </div>
+
+            <div>
+              <%= form.label :generated_label_name, "Generated Label", class: "block text-sm font-medium leading-6 text-gray-900" %>
+              <div class="mt-2">
+                <%= form.text_field :generated_label_name, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+              </div>
+              <p class="mt-1 text-xs text-gray-500">Label added to PRs and issues created by Paid.</p>
+            </div>
+
+            <div>
+              <%= form.label :automation_label_name, "Automation Label", class: "block text-sm font-medium leading-6 text-gray-900" %>
+              <div class="mt-2">
+                <%= form.text_field :automation_label_name, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+              </div>
+              <p class="mt-1 text-xs text-gray-500">Label that triggers automatic agent runs when added to issues or PRs.</p>
+            </div>
+
+            <div>
+              <%= form.label :enhance_issue_needs_input_label_name, "Enhance Issue Needs Input Label", class: "block text-sm font-medium leading-6 text-gray-900" %>
+              <div class="mt-2">
+                <%= form.text_field :enhance_issue_needs_input_label_name, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+              </div>
+              <p class="mt-1 text-xs text-gray-500">Label added when issue enhancement needs answers before re-evaluation.</p>
+            </div>
+
+            <div>
+              <%= form.label :enhance_issue_enhanced_label_name, "Enhanced Issue Label", class: "block text-sm font-medium leading-6 text-gray-900" %>
+              <div class="mt-2">
+                <%= form.text_field :enhance_issue_enhanced_label_name, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+              </div>
+              <p class="mt-1 text-xs text-gray-500">Label added when issue enhancement has enough implementation context.</p>
+            </div>
+
+            <div>
+              <%= form.label :max_enhance_issue_reevaluation_rounds, "Max Enhance Issue Re-evaluation Rounds", class: "block text-sm font-medium leading-6 text-gray-900" %>
+              <div class="mt-2">
+                <%= form.number_field :max_enhance_issue_reevaluation_rounds, min: 0, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+              </div>
+              <p class="mt-1 text-xs text-gray-500">Maximum automatic re-evaluation rounds after users answer clarifying questions.</p>
+            </div>
+
+            <% %w[P1 P2 P3].each do |tier| %>
+              <div>
+                <%= form.label "priority_labels_#{tier}", "Priority Label (#{tier})", class: "block text-sm font-medium leading-6 text-gray-900" %>
+                <div class="mt-2">
+                  <input type="text" name="project[priority_labels][<%= tier %>]" id="project_priority_labels_<%= tier %>"
+                    value="<%= @project.effective_priority_labels[tier] %>"
+                    autocomplete="off"
+                    class="block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+                </div>
+                <p class="mt-1 text-xs text-gray-500">GitHub label name for <%= tier %> priority issues.</p>
+              </div>
+            <% end %>
+            <% if @project.errors[:priority_labels].any? %>
+              <% @project.errors[:priority_labels].each do |msg| %>
+                <p class="mt-1 text-xs text-red-600"><%= msg %></p>
+              <% end %>
+            <% end %>
+          </fieldset>
+
+          <fieldset id="automation" class="space-y-4">
+            <legend class="text-sm font-semibold leading-6 text-gray-900">Automation</legend>
+
+            <% Project::AUTOMATION_SETTINGS.each do |setting| %>
+              <div>
+                <div class="flex items-center">
+                  <%= form.check_box setting[:attribute], class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
+                  <%= form.label setting[:attribute], setting[:label], class: "ml-3 block text-sm font-medium leading-6 text-gray-900" %>
+                </div>
+                <p class="mt-1 ml-7 text-xs text-gray-500"><%= setting[:description] %></p>
+              </div>
+            <% end %>
+
+            <div>
+              <div class="flex items-center">
+                <%= form.check_box :auto_scan_security,
+                  class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
+                <%= form.label :auto_scan_security, "Auto-Scan Security Alerts",
+                  class: "ml-3 block text-sm font-medium leading-6 text-gray-900" %>
+              </div>
+              <p class="mt-1 ml-7 text-xs text-gray-500">
+                Periodically scan GitHub CodeQL alerts and create synthetic issues for all open alerts. Issues are labeled with a priority tier matching severity (critical/high &rarr; P1, medium &rarr; P2, low &rarr; P3).
+              </p>
+            </div>
+
+            <div>
+              <label class="flex items-center gap-2 text-sm font-medium leading-6 text-gray-900">
+                <%= hidden_field_tag "project[auto_pick_skip_labels_override]", "0" %>
+                <%= check_box_tag "project[auto_pick_skip_labels_override]", "1", @project.auto_pick_skip_labels_configured?, class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
+                Override Auto-Pick Skip Labels
+              </label>
+              <div class="mt-2">
+                <%= text_field_tag "project[auto_pick_skip_labels_csv]", @project.auto_pick_skip_labels_csv, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6", placeholder: "planning, research" %>
+              </div>
+              <p class="mt-1 text-xs text-gray-500">Comma-separated labels that prevent auto-pick for this project. When override is off, Paid falls back to the creator's user setting, then the tenant setting, then built-in defaults. When override is on and this field is blank, no labels are skipped.</p>
+            </div>
+          </fieldset>
+
+          <%= render "screenshot_settings", form: form,
+                screenshot_settings: @screenshot_settings,
+                screenshot_service_options: @screenshot_service_options,
+                screenshot_status: @screenshot_status,
+                screenshot_repo_config_result: @screenshot_repo_config_result,
+                screenshot_preview_config: @screenshot_preview_config,
+                screenshot_conflicts: @screenshot_conflicts %>
+
+          <fieldset id="auto-release" class="space-y-4">
+            <legend class="text-sm font-semibold leading-6 text-gray-900">Auto-Merge &amp; Auto-Release</legend>
+
+            <div>
+              <%= form.label :auto_merge_mode, "Auto-Merge", class: "block text-sm font-medium leading-6 text-gray-900" %>
+              <div class="mt-2 max-w-xs">
+                <%= form.select :auto_merge_mode,
+                  Project::AUTO_MERGE_MODE_OPTIONS,
+                  {},
+                  class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+              </div>
+              <p class="mt-1 text-xs text-gray-500">
+                Automatically merge PRs when CI passes and all checks are green.
+                In "Dependabot Only" and "All PRs" modes, Paid may run agents on Dependabot PRs when CI or merge conflicts need fixes.
+                Dependabot PRs use a dependency-update merge path; GitHub branch protection rules still apply.
+                "All PRs" merges any paid-ready PR, including Paid-generated and Dependabot PRs.
+              </p>
+              <% if @project.errors[:auto_merge_mode].any? %>
+                <% @project.errors[:auto_merge_mode].each do |msg| %>
+                  <p class="mt-1 text-xs text-red-600"><%= msg %></p>
+                <% end %>
+              <% end %>
+            </div>
+
+            <div class="flex items-start gap-3">
+              <%= form.check_box :allow_bot_authored_pr_auto_merge, class: "mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
+              <div>
+                <%= form.label :allow_bot_authored_pr_auto_merge, "Allow agent bot auto-merge without owner approval", class: "block text-sm font-medium leading-6 text-gray-900" %>
+                <p class="text-xs text-gray-500">
+                  When enabled, PRs authored by this project's GitHub App agent bot may auto-merge without an explicit owner approval review,
+                  as long as CI is green and all other gates pass. Only applies to this project's own agent bot — third-party bots (Dependabot, Renovate) are unaffected.
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <%= form.label :auto_release_granularity, "Release PR Auto-Merge", class: "block text-sm font-medium leading-6 text-gray-900" %>
+              <div class="mt-2 max-w-xs">
+                <%= form.select :auto_release_granularity,
+                  Project::AUTO_RELEASE_GRANULARITY_OPTIONS,
+                  {},
+                  class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+              </div>
+              <p class="mt-1 text-xs text-gray-500">
+                Controls which semver bump levels are auto-merged for release-please PRs.
+                "Minor and below" includes both minor and patch bumps. "Major and below" includes all bump types.
+                Note: 0.x versioning uses literal semver positions (0.22.0 → 0.23.0 is a minor bump).
+              </p>
+              <% if @project.errors[:auto_release_granularity].any? %>
+                <% @project.errors[:auto_release_granularity].each do |msg| %>
+                  <p class="mt-1 text-xs text-red-600"><%= msg %></p>
+                <% end %>
+              <% end %>
+            </div>
+          </fieldset>
+
+          <div class="flex items-center">
+            <%= form.check_box :active, class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
+            <%= form.label :active, "Active", class: "ml-3 block text-sm font-medium leading-6 text-gray-900" %>
+          </div>
+          <p class="-mt-4 ml-7 text-xs text-gray-500">When inactive, the project will not be polled for new issues.</p>
+        </div>
+
+          <%# Mutation Testing section %>
+          <fieldset id="mutation-testing" class="space-y-4 rounded-md border border-gray-200 p-4">
+            <legend class="px-1 text-sm font-semibold text-gray-900">Mutation Testing</legend>
+            <p class="text-sm text-gray-600">
+              Run mutation tests before committing to catch inadequate test coverage.
+              Uses <a href="https://github.com/viamin/mutant" class="text-indigo-600 hover:text-indigo-500" target="_blank" rel="noopener noreferrer">viamin/mutant</a> via <code class="rounded bg-gray-100 px-1 text-xs">bundle exec mutant</code>.
+            </p>
+
+            <div data-controller="collapsible-panel">
+              <div class="flex items-center">
+                <input type="hidden" name="mutation_test[enabled]" value="0">
+                <input type="checkbox" name="mutation_test[enabled]" value="1"
+                  id="mutation_test_enabled"
+                  <% if @mutation_req&.enabled? %>checked<% end %>
+                  aria-controls="mutation_test_settings"
+                  class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600"
+                  data-action="change->collapsible-panel#toggle"
+                  data-collapsible-panel-target="checkbox">
+                <label for="mutation_test_enabled" class="ml-3 block text-sm font-medium leading-6 text-gray-900">Enable mutation testing</label>
+                <% if @mutation_req&.enabled? %>
+                  <span class="ml-2 inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Active</span>
+                <% end %>
+              </div>
+
+              <div id="mutation_test_settings"
+                class="space-y-4 transition-all duration-200 ease-in-out <%= @mutation_req&.enabled? ? 'max-h-[2000px] opacity-100' : 'max-h-0 overflow-hidden opacity-0' %>"
+                <% unless @mutation_req&.enabled? %>inert<% end %>
+                data-collapsible-panel-target="panel">
+                <div>
+                  <label for="mutation_test_command" class="block text-sm font-medium leading-6 text-gray-900">Command</label>
+                  <div class="mt-1">
+                    <input type="text" name="mutation_test[command]" id="mutation_test_command"
+                      value="<%= @mutation_req&.command || PreCommitRequirement::MUTATION_TEST_DEFAULT_COMMAND %>"
+                      autocomplete="off"
+                      required
+                      class="block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+                  </div>
+                  <p class="mt-1 text-xs text-gray-500">
+                    Default: <code class="rounded bg-gray-100 px-1"><%= PreCommitRequirement::MUTATION_TEST_DEFAULT_COMMAND %></code>
+                  </p>
+                </div>
+
+                <div>
+                  <label for="mutation_test_failure_behavior" class="block text-sm font-medium leading-6 text-gray-900">Failure behavior</label>
+                  <div class="mt-1">
+                    <select name="mutation_test[failure_behavior]" id="mutation_test_failure_behavior"
+                      class="block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+                      <%= options_for_select(
+                        [
+                          [ "Warn (log result, do not block)", "warn" ],
+                          [ "Block (fail the pre-commit check)", "block" ]
+                        ],
+                        @mutation_req&.failure_behavior || "warn"
+                      ) %>
+                    </select>
+                  </div>
+                  <p class="mt-1 text-xs text-gray-500">Choose <strong>Warn</strong> to start with, then switch to <strong>Block</strong> once your kill rate is stable.</p>
+                </div>
+              </div>
+            </div>
+
+            <% if @mutation_req&.updated_at %>
+              <div class="pt-2">
+                <span class="text-xs text-gray-500">Last updated: <%= @mutation_req.updated_at.strftime("%b %-d, %Y") %></span>
+              </div>
+            <% end %>
+          </fieldset>
+
+        <div class="mt-6 flex items-center justify-end gap-x-4">
+          <%= link_to "Cancel", project_path(@project), class: "text-sm font-semibold leading-6 text-gray-900 hover:text-gray-700" %>
+          <%= form.submit "Save Changes",
+            class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 cursor-pointer",
+            data: { project_settings_form_target: "saveButton" } %>
+        </div>
+      <% end %>
+    </div>
+  </div>
+  <%# MCP Servers section %>
+  <div id="mcp-servers" class="mt-6 bg-white shadow sm:rounded-lg">
+    <div class="px-4 py-5 sm:p-6">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-lg font-semibold text-gray-900">MCP Servers</h2>
+          <p class="mt-1 text-sm text-gray-500">
+            Associate MCP server definitions with this project. Agents will use these definitions during runs.
+          </p>
+        </div>
+      </div>
+
+      <% project_mcp_servers = @project_mcp_servers %>
+      <% if project_mcp_servers.any? %>
+        <div class="mt-4 overflow-x-auto">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th scope="col" class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Name</th>
+                <th scope="col" class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Install Type</th>
+                <th scope="col" class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Transport</th>
+                <th scope="col" class="relative px-4 py-2"><span class="sr-only">Remove</span></th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 bg-white">
+              <% project_mcp_servers.each do |pms| %>
+                <tr>
+                  <td class="whitespace-nowrap px-4 py-2 text-sm font-medium text-gray-900">
+                    <%= link_to pms.mcp_server_definition.name, mcp_server_definition_path(pms.mcp_server_definition), class: "text-indigo-600 hover:text-indigo-900" %>
+                  </td>
+                  <td class="whitespace-nowrap px-4 py-2 text-sm text-gray-500"><%= pms.mcp_server_definition.install_type %></td>
+                  <td class="whitespace-nowrap px-4 py-2 text-sm text-gray-500"><%= pms.mcp_server_definition.transport %></td>
+                  <td class="whitespace-nowrap px-4 py-2 text-right text-sm">
+                    <%= button_to "Remove", project_project_mcp_server_path(@project, pms), method: :delete, class: "text-red-600 hover:text-red-900 text-sm font-medium", data: { turbo_confirm: "Remove this MCP server from the project?" } %>
+                  </td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      <% end %>
+
+      <% if @available_mcp_server_definitions.any? %>
+        <%= form_with url: project_project_mcp_servers_path(@project), method: :post, class: "mt-4 flex items-end gap-x-3" do |f| %>
+          <div>
+            <%= f.label :mcp_server_definition_id, "Add MCP Server", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <div class="mt-1">
+              <%= f.select :mcp_server_definition_id, @available_mcp_server_definitions.map { |m| ["#{m.name} (#{m.install_type})", m.id] }, {}, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            </div>
+          </div>
+          <%= f.submit "Add", class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 cursor-pointer" %>
+        <% end %>
+      <% elsif project_mcp_servers.empty? %>
+        <div class="mt-4 text-sm text-gray-500">
+          No MCP server definitions available. <%= link_to "Create one", new_mcp_server_definition_path, class: "text-indigo-600 hover:text-indigo-900" %> first.
+        </div>
+      <% end %>
+    </div>
+  </div>
+  <%# Service Containers section %>
+  <div class="mt-6 bg-white shadow sm:rounded-lg">
+    <div class="px-4 py-5 sm:p-6">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-lg font-semibold text-gray-900">Service Containers</h2>
+          <p class="mt-1 text-sm text-gray-500">
+            Associate service containers with this project. Agents will receive connection environment variables (e.g. <code class="rounded bg-gray-100 px-1 py-0.5 text-xs">DATABASE_URL</code>) during runs.
+          </p>
+        </div>
+        <%= button_to "Detect from Repo", detect_services_project_path(@project), method: :post, class: "rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 cursor-pointer" %>
+      </div>
+
+      <% project_service_containers = @project.project_service_containers.includes(:service_container).to_a %>
+      <% if project_service_containers.any? %>
+        <div class="mt-4 overflow-x-auto">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th scope="col" class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Name</th>
+                <th scope="col" class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Image</th>
+                <th scope="col" class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Port</th>
+                <th scope="col" class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
+                <th scope="col" class="relative px-4 py-2"><span class="sr-only">Remove</span></th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 bg-white">
+              <% project_service_containers.each do |psc| %>
+                <tr>
+                  <td class="whitespace-nowrap px-4 py-2 text-sm font-medium text-gray-900">
+                    <%= link_to psc.service_container.name, service_container_path(psc.service_container), class: "text-indigo-600 hover:text-indigo-900" %>
+                  </td>
+                  <td class="whitespace-nowrap px-4 py-2 text-sm text-gray-500">
+                    <code class="rounded bg-gray-100 px-1.5 py-0.5 text-xs"><%= psc.service_container.image %></code>
+                  </td>
+                  <td class="whitespace-nowrap px-4 py-2 text-sm text-gray-500"><%= psc.service_container.port %></td>
+                  <td class="whitespace-nowrap px-4 py-2 text-sm">
+                    <%= service_container_status_badge(psc.service_container.status) %>
+                  </td>
+                  <td class="whitespace-nowrap px-4 py-2 text-right text-sm">
+                    <%= button_to "Remove", project_project_service_container_path(@project, psc), method: :delete, class: "text-red-600 hover:text-red-900 text-sm font-medium", data: { turbo_confirm: "Remove this service container from the project?" } %>
+                  </td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      <% end %>
+
+      <% if @available_service_containers.any? %>
+        <%= form_with url: project_project_service_containers_path(@project), method: :post, class: "mt-4 flex items-end gap-x-3" do |f| %>
+          <div>
+            <%= f.label :service_container_id, "Add Service Container", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <div class="mt-1">
+              <%= f.select :service_container_id, @available_service_containers.map { |sc| ["#{sc.name} (#{sc.image})", sc.id] }, {}, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            </div>
+          </div>
+          <%= f.submit "Add", class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 cursor-pointer" %>
+        <% end %>
+      <% elsif project_service_containers.empty? %>
+        <div class="mt-4 text-sm text-gray-500">
+          No service containers available. <%= link_to "Create one", new_service_container_path, class: "text-indigo-600 hover:text-indigo-900" %> first.
+        </div>
+      <% end %>
+    </div>
+  </div>
+
+  <% if policy(@project).destroy? %>
+    <div class="mt-6 bg-white shadow sm:rounded-lg border border-red-200">
+      <div class="px-4 py-5 sm:p-6">
+        <h2 class="text-lg font-semibold text-red-600">Danger Zone</h2>
+        <p class="mt-1 text-sm text-gray-500">
+          Permanently remove this project and all associated agent runs. This action cannot be undone.
+        </p>
+
+        <% persisted_name = @project.name_in_database %>
+        <div class="mt-4" data-controller="confirm-delete" data-confirm-delete-name-value="<%= persisted_name %>">
+          <label for="delete_confirmation" class="block text-sm font-medium leading-6 text-gray-900">
+            Type <strong><%= persisted_name %></strong> to confirm deletion
+          </label>
+          <div class="mt-2 flex items-center gap-x-3">
+            <input type="text" id="delete_confirmation" name="name_confirmation"
+              form="delete-project-form"
+              data-confirm-delete-target="input"
+              data-action="input->confirm-delete#validate"
+              class="block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-red-600 sm:text-sm sm:leading-6"
+              placeholder="<%= persisted_name %>"
+              autocomplete="off">
+          </div>
+
+          <%= button_to "Delete Project", project_path(@project),
+            method: :delete,
+            form: { id: "delete-project-form" },
+            class: "mt-3 inline-flex items-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500 disabled:opacity-50 disabled:cursor-not-allowed",
+            data: { confirm_delete_target: "button" } %>
+        </div>
+      </div>
+    </div>
+  <% end %>
+</div>

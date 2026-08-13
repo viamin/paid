@@ -1,0 +1,365 @@
+<% content_for(:title) { "Bundle Performance - #{@project.name} - Paid" } %>
+
+<div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to back_link_path(project_path(@project)), class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+      <svg class="mr-1 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd" />
+      </svg>
+      Back to <%= @project.name %>
+    <% end %>
+  </div>
+
+  <div class="sm:flex sm:items-center sm:justify-between">
+    <div>
+      <h1 class="text-2xl font-semibold text-gray-900">Bundle Performance Analysis</h1>
+      <p class="mt-1 text-sm text-gray-500"><%= @project.name %></p>
+    </div>
+  </div>
+
+  <% summary = @stats[:summary] %>
+  <% if @stats[:sparse] %>
+    <div class="mt-6 overflow-hidden rounded-lg bg-white shadow">
+      <div class="px-4 py-5 text-sm text-gray-500">
+        No bundle outcomes or active optimizer experiments are available yet. Once runs record bundle outcomes, this page will compare performance, evidence strength, and cost tradeoffs.
+      </div>
+    </div>
+  <% else %>
+    <div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-500">Analyzed Bundles</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900"><%= summary[:bundle_count] %></dd>
+      </div>
+      <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-500">Recorded Outcomes</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900"><%= summary[:outcome_count] %></dd>
+      </div>
+      <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-500">Reviewable Bundles</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900"><%= summary[:reviewable_bundle_count] %></dd>
+      </div>
+      <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-500">Active Experiments</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900"><%= summary[:active_experiment_count] %></dd>
+      </div>
+    </div>
+
+    <% sparse_details = @stats[:sparse_details] %>
+    <% if sparse_details[:sparse_bundle_count].positive? || sparse_details[:sparse_experiment_count].positive? || sparse_details[:sparse_goal_count].positive? %>
+      <div class="mt-6 rounded-lg bg-yellow-50 p-4 ring-1 ring-inset ring-yellow-200">
+        <h2 class="text-sm font-semibold text-yellow-900">Sparse Evidence Summary</h2>
+        <p class="mt-1 text-sm text-yellow-800">
+          <% sparse_notes = [] %>
+          <% if sparse_details[:sparse_bundle_count].positive? %>
+            <% sparse_notes << "#{pluralize(sparse_details[:sparse_bundle_count], 'bundle')} below the 3-sample review threshold" %>
+          <% end %>
+          <% if sparse_details[:sparse_experiment_count].positive? %>
+            <% sparse_notes << "#{pluralize(sparse_details[:sparse_experiment_count], 'active experiment')} still #{sparse_details[:sparse_experiment_count] == 1 ? 'needs' : 'need'} more samples" %>
+          <% end %>
+          <% if sparse_details[:sparse_goal_count].positive? %>
+            <% sparse_notes << "#{pluralize(sparse_details[:sparse_goal_count], 'optimizer goal')} currently #{sparse_details[:sparse_goal_count] == 1 ? 'relies' : 'rely'} on sparse predictions" %>
+          <% end %>
+          <%= sparse_notes.join(". ") %>.
+        </p>
+      </div>
+    <% end %>
+
+    <% improvement = @stats[:outcome_improvement] %>
+    <% if improvement&.sufficient_data %>
+    <div class="mt-8">
+      <h2 class="text-lg font-semibold text-gray-900">Outcome Improvement Trends</h2>
+      <p class="mt-1 text-sm text-gray-500">Tracks how the optimizer improves outcome-cost ratios over time by comparing early and recent runs.</p>
+      <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">Objective Improvement</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight <%= improvement_delta_color(improvement.objective_improvement) %>">
+            <%= improvement_delta_label(improvement.objective_improvement) %>
+          </dd>
+          <p class="mt-1 text-xs text-gray-500">
+            Early <%= format_quality_score(improvement.early_objective_score) %> &rarr; Recent <%= format_quality_score(improvement.recent_objective_score) %>
+          </p>
+        </div>
+        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">Quality / $ Improvement</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight <%= improvement_delta_color(improvement.quality_per_dollar_improvement) %>">
+            <%= improvement_delta_label(improvement.quality_per_dollar_improvement) %>
+          </dd>
+          <p class="mt-1 text-xs text-gray-500">
+            <%= improvement.early_quality_per_dollar ? number_with_precision(improvement.early_quality_per_dollar, precision: 2, strip_insignificant_zeros: true) : "--" %> &rarr; <%= improvement.recent_quality_per_dollar ? number_with_precision(improvement.recent_quality_per_dollar, precision: 2, strip_insignificant_zeros: true) : "--" %>
+          </p>
+        </div>
+        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">Cost Change</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight <%= improvement_delta_color(improvement.cost_change_fraction, invert: true) %>">
+            <%= improvement_delta_label(improvement.cost_change_fraction) %>
+          </dd>
+          <p class="mt-1 text-xs text-gray-500">
+            <%= improvement.early_cost_cents ? format_cost_cents(improvement.early_cost_cents) : "--" %> &rarr; <%= improvement.recent_cost_cents ? format_cost_cents(improvement.recent_cost_cents) : "--" %>
+          </p>
+        </div>
+        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">Optimizer Learning</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight <%= improvement_delta_color(improvement.optimizer_learning_ratio) %>">
+            <%= improvement.optimizer_learning_ratio ? number_to_percentage(improvement.optimizer_learning_ratio * 100, precision: 1) : "--" %>
+          </dd>
+          <p class="mt-1 text-xs text-gray-500">
+            Exploitative <%= improvement.exploitative_sample_count %> / Exploratory <%= improvement.exploratory_sample_count %> runs
+          </p>
+        </div>
+      </div>
+
+      <% if improvement.periods.length > 1 %>
+        <div class="mt-4 overflow-hidden overflow-x-auto rounded-lg bg-white shadow">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Period</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Outcomes</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Avg Objective</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Avg Quality</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Quality / $</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Avg Cost</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Success Rate</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 bg-white">
+              <% improvement.periods.each do |period| %>
+                <tr>
+                  <td class="px-4 py-3 text-sm font-medium text-gray-900"><%= period.label %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= period.outcome_count %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm <%= quality_score_color(period.avg_objective_score) %>"><%= format_quality_score(period.avg_objective_score) %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm <%= quality_score_color(period.avg_quality_score) %>"><%= format_quality_score(period.avg_quality_score) %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= period.avg_quality_per_dollar ? number_with_precision(period.avg_quality_per_dollar, precision: 2, strip_insignificant_zeros: true) : "--" %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= period.avg_cost_cents ? format_cost_cents(period.avg_cost_cents) : "--" %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= number_to_percentage((period.success_rate || 0) * 100, precision: 0) %></td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      <% end %>
+    </div>
+    <% end %>
+
+    <div class="mt-8">
+      <h2 class="text-lg font-semibold text-gray-900">Bundle Performance</h2>
+      <p class="mt-1 text-sm text-gray-500">Top bundles ranked by the observed outcome-cost objective, with raw quality and efficiency shown alongside sparse evidence warnings.</p>
+      <% if @stats[:bundle_rankings].any? %>
+        <div class="mt-4 overflow-hidden overflow-x-auto rounded-lg bg-white shadow">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Bundle</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Samples</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Objective</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Avg Quality</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Quality / $</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Success</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Avg Cost</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Avg Duration</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 bg-white">
+              <% @stats[:bundle_rankings].each do |row| %>
+                <% bundle = row[:bundle] %>
+                <tr>
+                  <td class="px-4 py-3 text-sm text-gray-900">
+                    <div class="font-medium"><%= bundle.name %></div>
+                    <div class="mt-1 text-xs text-gray-500">
+                      v<%= bundle.version %> · <%= bundle.status %>
+                      <% if row[:experiment_values].any? %>
+                        · <%= row[:experiment_values].join(", ") %>
+                      <% end %>
+                    </div>
+                    <% if row[:sparse] %>
+                      <div class="mt-2 inline-flex items-center rounded-md bg-yellow-100 px-2 py-1 text-xs font-medium text-yellow-700">
+                        Sparse evidence
+                      </div>
+                    <% end %>
+                  </td>
+                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= row[:quality_sample_count] %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm <%= quality_score_color(row[:avg_objective_score]) %>"><%= format_quality_score(row[:avg_objective_score]) %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm <%= quality_score_color(row[:avg_quality_score]) %>"><%= format_quality_score(row[:avg_quality_score]) %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= row[:avg_quality_per_dollar] ? number_with_precision(row[:avg_quality_per_dollar], precision: 2, strip_insignificant_zeros: true) : "--" %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= number_to_percentage((row[:success_rate] || 0) * 100, precision: 0) %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= row[:avg_cost_cents] ? format_cost_cents(row[:avg_cost_cents]) : "--" %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= format_duration(row[:avg_duration_seconds]) %></td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      <% else %>
+        <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+          <div class="px-4 py-5 text-sm text-gray-500">No bundle outcomes have been recorded for this project yet.</div>
+        </div>
+      <% end %>
+    </div>
+
+    <div class="mt-8">
+      <h2 class="text-lg font-semibold text-gray-900">Experiment Confidence</h2>
+      <p class="mt-1 text-sm text-gray-500">Evidence strength for active bundle experiments, including minimum sample thresholds and any detected winner.</p>
+      <% if @stats[:experiment_confidence].any? %>
+        <div class="mt-4 space-y-4">
+          <% @stats[:experiment_confidence].each do |experiment| %>
+            <div class="overflow-hidden rounded-lg bg-white shadow">
+              <div class="px-4 py-5 sm:p-6">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h3 class="text-sm font-semibold text-gray-900"><%= experiment[:config_label] %></h3>
+                    <p class="mt-1 text-xs text-gray-500">
+                      Confidence target <%= number_to_percentage(experiment[:confidence_threshold] * 100, precision: 0) %> ·
+                      minimum <%= pluralize(experiment[:min_samples_per_variant], "sample") %> per variant
+                    </p>
+                  </div>
+                  <div class="text-sm text-gray-600">
+                    <%= experiment[:status].to_s.humanize %>
+                    <% if experiment[:confidence] %>
+                      · <%= number_to_percentage(experiment[:confidence] * 100, precision: 1) %> confidence
+                    <% end %>
+                  </div>
+                </div>
+                <% if experiment[:winner] %>
+                  <p class="mt-3 text-sm text-green-700">
+                    Leading winner: <%= experiment[:winner_label] %>
+                    <% if experiment[:improvement] %>
+                      with <%= number_to_percentage(experiment[:improvement] * 100, precision: 1) %> average-score lift.
+                    <% end %>
+                  </p>
+                <% end %>
+                <div class="mt-4 overflow-hidden overflow-x-auto rounded-lg ring-1 ring-gray-200">
+                  <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                      <tr>
+                        <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Variant</th>
+                        <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Samples</th>
+                        <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Avg Quality</th>
+                        <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Readiness</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200 bg-white">
+                      <% experiment[:variants].each do |variant| %>
+                        <tr>
+                          <td class="px-4 py-3 text-sm text-gray-900"><%= variant[:label] %></td>
+                          <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= variant[:sample_count] %></td>
+                          <td class="whitespace-nowrap px-4 py-3 text-right text-sm <%= quality_score_color(variant[:avg_quality_score]) %>"><%= format_quality_score(variant[:avg_quality_score]) %></td>
+                          <td class="whitespace-nowrap px-4 py-3 text-right text-sm">
+                            <% if variant[:sparse] %>
+                              <span class="inline-flex items-center rounded-md bg-yellow-100 px-2 py-1 text-xs font-medium text-yellow-700">Needs more data</span>
+                            <% else %>
+                              <span class="inline-flex items-center rounded-md bg-green-100 px-2 py-1 text-xs font-medium text-green-700">Reviewable</span>
+                            <% end %>
+                          </td>
+                        </tr>
+                      <% end %>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          <% end %>
+        </div>
+      <% else %>
+        <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+          <div class="px-4 py-5 text-sm text-gray-500">No active configuration experiments are running for this project.</div>
+        </div>
+      <% end %>
+    </div>
+
+    <div class="mt-8">
+      <h2 class="text-lg font-semibold text-gray-900">Outcome-Cost Tradeoffs</h2>
+      <p class="mt-1 text-sm text-gray-500">Pareto-efficient bundles keep the cost-aware objective high without paying more than a clearly better alternative.</p>
+      <% if @stats[:tradeoff_frontier].any? %>
+        <div class="mt-4 overflow-hidden overflow-x-auto rounded-lg bg-white shadow">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Bundle</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Objective</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Avg Quality</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Avg Cost</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Avg Tokens</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 bg-white">
+              <% @stats[:tradeoff_frontier].each do |bundle| %>
+                <tr>
+                  <td class="px-4 py-3 text-sm font-medium text-gray-900"><%= bundle[:bundle].name %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm <%= quality_score_color(bundle[:avg_objective_score]) %>"><%= format_quality_score(bundle[:avg_objective_score]) %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm <%= quality_score_color(bundle[:avg_quality_score]) %>"><%= format_quality_score(bundle[:avg_quality_score]) %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= bundle[:avg_cost_cents] ? format_cost_cents(bundle[:avg_cost_cents]) : "--" %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= number_with_delimiter(bundle[:avg_tokens_used]) %></td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      <% else %>
+        <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+          <div class="px-4 py-5 text-sm text-gray-500">Cost tradeoff analysis will appear once bundles have both quality and cost observations.</div>
+        </div>
+      <% end %>
+    </div>
+
+    <div class="mt-8">
+      <h2 class="text-lg font-semibold text-gray-900">Optimizer Candidate Signals</h2>
+      <p class="mt-1 text-sm text-gray-500">Current acquisition rankings from the optimizer, using the latest run context for each goal.</p>
+      <div class="mt-4 space-y-4">
+        <% @stats[:optimizer_insights].each do |insight| %>
+          <div class="overflow-hidden rounded-lg bg-white shadow">
+            <div class="px-4 py-5 sm:p-6">
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 class="text-sm font-semibold text-gray-900"><%= goal_label(insight[:goal]) %></h3>
+                  <p class="mt-1 text-xs text-gray-500">
+                    <% if insight[:representative_run] %>
+                      Representative run #<%= insight[:representative_run].id %>
+                    <% else %>
+                      No project run exists yet for this goal, so no optimizer candidate can be scored.
+                    <% end %>
+                  </p>
+                </div>
+                <% if insight[:sparse] %>
+                  <span class="inline-flex items-center rounded-md bg-yellow-100 px-2 py-1 text-xs font-medium text-yellow-700">Sparse predictions</span>
+                <% end %>
+              </div>
+
+              <% if insight[:candidates].any? %>
+                <div class="mt-4 overflow-hidden overflow-x-auto rounded-lg ring-1 ring-gray-200">
+                  <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                      <tr>
+                        <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Candidate</th>
+                        <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Predicted Objective</th>
+                        <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Predicted Quality</th>
+                        <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Confidence Proxy</th>
+                        <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Weighted Samples</th>
+                        <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Acquisition</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200 bg-white">
+                      <% insight[:candidates].each do |candidate| %>
+                        <tr>
+                          <td class="px-4 py-3 text-sm text-gray-900"><%= candidate[:experiment_values].presence&.join(", ") || "Baseline configuration" %></td>
+                          <td class="whitespace-nowrap px-4 py-3 text-right text-sm <%= quality_score_color(candidate[:predicted_objective_score]) %>"><%= format_quality_score(candidate[:predicted_objective_score]) %></td>
+                          <td class="whitespace-nowrap px-4 py-3 text-right text-sm <%= quality_score_color(candidate[:predicted_quality_score]) %>"><%= format_quality_score(candidate[:predicted_quality_score]) %></td>
+                          <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= number_to_percentage(candidate[:confidence_proxy] * 100, precision: 0) %></td>
+                          <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= number_with_precision(candidate[:sample_count], precision: 2, strip_insignificant_zeros: true) %></td>
+                          <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= number_with_precision(candidate[:acquisition_score], precision: 3, strip_insignificant_zeros: true) %></td>
+                        </tr>
+                      <% end %>
+                    </tbody>
+                  </table>
+                </div>
+              <% else %>
+                <div class="mt-4 rounded-lg bg-gray-50 px-4 py-3 text-sm text-gray-500">
+                  No active experiment candidates are available for this goal yet.
+                </div>
+              <% end %>
+            </div>
+          </div>
+        <% end %>
+      </div>
+    </div>
+  <% end %>
+</div>

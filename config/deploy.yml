@@ -1,0 +1,294 @@
+# Name of your application. Used to uniquely configure containers.
+service: paid
+
+# Name of the container image (use your-user/app-name on external registries).
+image: paid
+
+# Deploy to these servers.
+#
+# Production runs five independent process types, each as its own Docker
+# container with an independent restart boundary. On a single server all five
+# roles point at the same host; for multi-server deployments move the `job` and
+# `worker_*` roles to dedicated hosts to isolate background/agent load from the
+# web tier.
+#
+#   web          — Puma web server (HTTP/UI). Uses the Dockerfile CMD
+#                  (Thruster + bin/rails server); no cmd: override needed.
+#   job          — GoodJob worker process (background jobs). Runs bin/jobs.
+#   preview_tunnel — Rathole server that accepts preview container connections.
+#                  Runs bin/preview-tunnel-server.
+#   worker_poll  — Temporal worker for the poll queue. Runs bin/temporal_worker
+#                  with TEMPORAL_WORKER_MODE=poll.
+#   worker_agent — Temporal worker for the agent queue. Runs bin/temporal_worker
+#                  with TEMPORAL_WORKER_MODE=agent.
+#
+# Target a single role with `bin/kamal <cmd> -r <role>`, e.g.
+# `bin/kamal app exec -r job ...`, `bin/kamal app logs -r worker_agent`,
+# or `bin/kamal app boot -r job`. See docs/SCALING.md for sizing guidance.
+
+<%
+  # Docker socket mounts below are required only when a role talks to Docker
+  # over the local unix socket (the `local` backend, the default). When
+  # CONTAINER_BACKEND points at a remote Docker host (`remote`) or a Swarm
+  # manager (`swarm`), the app connects over TCP/TLS and the mount is omitted.
+  #
+  # Set CONTAINER_BACKEND in the shell that runs `bin/kamal` to switch modes.
+  # The same value is propagated into every container via the global `env.clear`
+  # block below, so the runtime backend the app selects (see
+  # config/initializers/container_backend.rb and app/services/containers.rb)
+  # cannot diverge from the mount decision made here. Operators who prefer to
+  # inject the value separately (e.g. `kamal env push -d CONTAINER_BACKEND=...`)
+  # should override or remove the global `CONTAINER_BACKEND` line below so the
+  # two sources cannot disagree.
+  container_backend = ENV.fetch("CONTAINER_BACKEND", "local").to_s
+  mount_docker_socket = !%w[remote swarm].include?(container_backend)
+-%>
+servers:
+  web:
+    - 192.168.0.1
+  job:
+    hosts:
+      - 192.168.0.1
+    cmd: bin/jobs
+    options:
+      # GoodJob runs Docker-backed maintenance/reconciliation jobs in this role.
+      # The socket mount is required only for the local Docker backend; it is
+      # omitted when CONTAINER_BACKEND=remote|swarm (see the ERB block above).
+      <%- if mount_docker_socket -%>
+      volume:
+        - /var/run/docker.sock:/var/run/docker.sock
+      <%- end -%>
+    env:
+      clear:
+        # Unique readiness flag for this role (see docs/SCALING.md § Worker
+        # Readiness Signals). Keeps colocated workers from sharing one flag.
+        WORKER_READINESS_FILE: /tmp/paid-worker-ready-jobs
+        # Preserve startup bootstrap jobs when GoodJob runs out-of-process via bin/jobs.
+        GOOD_JOB_BOOTSTRAP_ON_START: true
+        # GoodJob worker thread pool size (default: 11). Must not exceed DB_POOL.
+        GOOD_JOB_MAX_THREADS: 10
+        # Per-queue thread caps (semicolons create independent pools).
+        # Sums to GOOD_JOB_MAX_THREADS so no queue can starve another.
+        GOOD_JOB_QUEUES: default:3;maintenance:2;metrics:2;knowledge:2;low_priority:1
+        # CRON SAFETY: GoodJob 4.x already prevents duplicate cron scheduling
+        # across hosts — each cron enqueue writes (cron_key, cron_at) through a
+        # unique index, so a second host firing the same tick enqueues nothing.
+        # You MAY still set GOOD_JOB_ENABLE_CRON=false on secondary job hosts to
+        # avoid redundant scheduler polling; it is no longer a correctness
+        # requirement. If you do:
+        #
+        #   job-secondary:
+        #     hosts:
+        #       - 192.168.0.3
+        #     cmd: bin/jobs
+        #     env:
+        #       clear:
+        #         GOOD_JOB_ENABLE_CRON: false
+        #
+        # GOOD_JOB_ENABLE_CRON: false   # optional on secondary job hosts
+  preview_tunnel:
+    hosts:
+      - 192.168.0.1
+    cmd: bin/preview-tunnel-server
+    env:
+      clear:
+        # Keep this aligned with the published port range below so browsers can
+        # reach every preview listener that the tunnel server allocates.
+        PREVIEW_PORT_RANGE: 8200-8299
+    options:
+      # The tunnel server derives live service mappings from preview containers
+      # via the backend abstraction (local socket, remote Docker, or a future
+      # runner). The socket mount is required only for the local backend; it is
+      # omitted when CONTAINER_BACKEND=remote|swarm (see the ERB block above).
+      <%- if mount_docker_socket -%>
+      volume:
+        - /var/run/docker.sock:/var/run/docker.sock
+      <%- end -%>
+      # Host port publishing assumes a single host with a known port range. A
+      # multi-replica or cloud deployment needs a different ingress strategy
+      # (e.g. a load balancer in front of the tunnel server's port range).
+      publish:
+        - "7000:7000"
+        - "8200-8299:8200-8299"
+  worker_poll:
+    hosts:
+      - 192.168.0.1
+    cmd: bin/temporal_worker
+    env:
+      clear:
+        TEMPORAL_WORKER_MODE: poll
+        # Unique readiness flag for this role (see docs/SCALING.md § Worker
+        # Readiness Signals). Distinct from worker_agent so a drain on one
+        # does not remove the other's flag on this shared host.
+        WORKER_READINESS_FILE: /tmp/paid-worker-ready-temporal_worker-poll
+  worker_agent:
+    hosts:
+      - 192.168.0.1
+    cmd: bin/temporal_worker
+    options:
+      # RunAgentActivity provisions sibling containers via the backend
+      # abstraction. The socket mount is required only for the local Docker
+      # backend; it is omitted when CONTAINER_BACKEND=remote|swarm (see the ERB
+      # block above). A remote runner backend (#3339) will not need it at all.
+      <%- if mount_docker_socket -%>
+      volume:
+        - /var/run/docker.sock:/var/run/docker.sock
+      <%- end -%>
+    env:
+      clear:
+        TEMPORAL_WORKER_MODE: agent
+        # Unique readiness flag for this role (see docs/SCALING.md § Worker
+        # Readiness Signals). Distinct from worker_poll so a drain on one
+        # does not remove the other's flag on this shared host.
+        WORKER_READINESS_FILE: /tmp/paid-worker-ready-temporal_worker-agent
+
+# Enable SSL auto certification via Let's Encrypt and allow for multiple apps on a single web server.
+# If used with Cloudflare, set encryption mode in SSL/TLS setting to "Full" to enable CF-to-app encryption.
+#
+# Using an SSL proxy like this requires turning on config.assume_ssl and config.force_ssl in production.rb!
+#
+# Don't use this when deploying to multiple web servers (then you have to terminate SSL at your load balancer).
+#
+# proxy:
+#   ssl: true
+#   host: app.example.com
+
+# Where you keep your container images.
+registry:
+  # Alternatives: hub.docker.com / registry.digitalocean.com / ghcr.io / ...
+  server: localhost:5555
+
+  # Needed for authenticated registries.
+  # username: your-user
+
+  # Always use an access token rather than real password when possible.
+  # password:
+  #   - KAMAL_REGISTRY_PASSWORD
+
+# Inject ENV variables into containers (secrets come from .kamal/secrets).
+#
+# Variables set here apply to EVERY role; per-role `env:` blocks under
+# `servers:` add or override these for that role only.
+env:
+  secret:
+    - RAILS_MASTER_KEY
+  clear:
+    # Propagated from the ERB block above so the container's runtime backend
+    # (config/initializers/container_backend.rb, app/services/containers.rb)
+    # matches the docker-socket mount decision made here. Operators overriding
+    # CONTAINER_BACKEND out-of-band should reconcile both sources.
+    CONTAINER_BACKEND: <%= container_backend %>
+
+    # Run GoodJob in a dedicated process (the `job` role) instead of in-process.
+    # Applies to all roles:
+    #   - web:        no in-process job execution (avoids OOM'ing the web server)
+    #   - job:        the external GoodJob worker process consumes the queue
+    #   - worker_*:   harmless; Temporal worker processes never run GoodJob jobs
+    # Development remains unaffected because the Rails server process still
+    # triggers the one-time startup bootstrap in config/initializers/good_job.rb.
+    GOOD_JOB_EXECUTION_MODE: external
+
+    # GoodJob DB polling interval in seconds (default: 3). Only the job role reads it.
+    # GOOD_JOB_POLL_INTERVAL: 3
+
+    # GoodJob graceful shutdown timeout in seconds (default: 25). Only the job role reads it.
+    # GOOD_JOB_SHUTDOWN_TIMEOUT: 25
+
+    # Set number of Puma worker processes (default: 1, "auto" for one per CPU).
+    # Only the web role reads it. Production serving multiple paying users
+    # should run 2+ workers for fault tolerance. Set WEB_CONCURRENCY_AUTO to
+    # pin `auto` to a specific count on hosts where the CPU count overshoots
+    # the desired worker count.
+    # WEB_CONCURRENCY: 2
+    # WEB_CONCURRENCY_AUTO: 2
+
+    # Restart a worker that takes longer than this (seconds) to boot or stop
+    # responding to the master's heartbeat (cluster mode only; default: 3600).
+    # WORKER_TIMEOUT: 3600
+
+    # Force-kill a worker that does not shut down within this window during a
+    # deploy (cluster mode only; default: 30).
+    # WORKER_SHUTDOWN_TIMEOUT: 30
+
+    # Preload the app in the master process before forking (copy-on-write memory
+    # savings). Requires workers >= 2. Confirm DB_POOL sizing before enabling.
+    # RAILS_PRELOAD_APP: false
+
+    # Puma threads per worker (default: 3). Only the web role reads it.
+    # RAILS_MAX_THREADS: 3
+
+    # Database connection pool size (default: 20). Each role opens its own pool
+    # against the shared PostgreSQL server, so size it per role:
+    #   - web:       >= RAILS_MAX_THREADS
+    #   - job:       >= GOOD_JOB_MAX_THREADS
+    #   - worker_*:  see docs/WORKER_POOL_TUNING.md (bin/temporal_worker
+    #                 auto-corrects an undersized pool at boot)
+    # The sum of all process pools must stay under PostgreSQL max_connections.
+    # DB_POOL: 20
+
+    # Temporal worker concurrency — only the worker_* roles read these.
+    # See docs/WORKER_POOL_TUNING.md for sizing.
+    # TEMPORAL_WORKFLOW_SLOTS: 20
+    # TEMPORAL_ACTIVITY_SLOTS: 4
+
+    # Match this to any external database server to configure Active Record correctly.
+    # Use paid-db for a db accessory server on same machine via local kamal docker network.
+    # DB_HOST: 192.168.0.2
+
+    # Log everything from Rails
+    # RAILS_LOG_LEVEL: debug
+
+# Aliases are triggered with "bin/kamal <alias>". You can overwrite arguments on invocation:
+# "bin/kamal logs -r job" will tail logs from the first server in the job section.
+aliases:
+  console: app exec --interactive --reuse "bin/rails console"
+  shell: app exec --interactive --reuse "bash"
+  logs: app logs -f
+  dbc: app exec --interactive --reuse "bin/rails dbconsole --include-password"
+
+# Bridge fingerprinted assets, like JS and CSS, between versions to avoid
+# hitting 404 on in-flight requests. Combines all files from new and old
+# version inside the asset_path.
+asset_path: /rails/public/assets
+
+# Configure the image builder.
+builder:
+  arch: amd64
+
+  # # Build image via remote server (useful for faster amd64 builds on arm64 computers)
+  # remote: ssh://docker@docker-builder-server
+  #
+  # # Pass arguments and secrets to the Docker build process
+  # args:
+  #   RUBY_VERSION: ruby-3.4.8
+  # secrets:
+  #   - GITHUB_TOKEN
+  #   - RAILS_MASTER_KEY
+
+# Use a different ssh user than root
+# ssh:
+#   user: app
+
+# Use accessory services (secrets come from .kamal/secrets).
+# accessories:
+#   db:
+#     image: mysql:8.0
+#     host: 192.168.0.2
+#     # Change to 3306 to expose port to the world instead of just local network.
+#     port: "127.0.0.1:3306:3306"
+#     env:
+#       clear:
+#         MYSQL_ROOT_HOST: '%'
+#       secret:
+#         - MYSQL_ROOT_PASSWORD
+#     files:
+#       - config/mysql/production.cnf:/etc/mysql/my.cnf
+#       - db/production.sql:/docker-entrypoint-initdb.d/setup.sql
+#     directories:
+#       - data:/var/lib/mysql
+#   redis:
+#     image: valkey/valkey:8
+#     host: 192.168.0.2
+#     port: 6379
+#     directories:
+#       - data:/data

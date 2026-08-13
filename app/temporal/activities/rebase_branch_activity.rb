@@ -1,0 +1,63 @@
+# frozen_string_literal: true
+
+module Activities
+  # Rebases the current branch onto the PR's base branch inside the container.
+  #
+  # On conflict, returns rebase_succeeded: false so the workflow can instruct
+  # the agent to resolve conflicts via merge instead.
+  class RebaseBranchActivity < BaseActivity
+    activity_name "RebaseBranch"
+
+    def execute(input)
+      agent_run_id = input[:agent_run_id]
+      agent_run = AgentRun.find(agent_run_id)
+      track_phase(agent_run_id: agent_run_id, phase_key: "rebase_branch", phase_group: "setup", agent_run: agent_run) do
+        project = agent_run.project
+
+        base_branch = fetch_base_branch(agent_run, project)
+
+        container_service = reconnect_container(agent_run)
+        git_ops = Containers::GitOperations.new(
+          container_service: container_service,
+          agent_run: agent_run
+        )
+
+        rebase_succeeded = git_ops.rebase_onto(base_branch)
+        branch_changed = rebase_succeeded && git_ops.head_differs_from_remote_branch?(agent_run.branch_name)
+
+        agent_run.log!("system",
+          rebase_succeeded ? "Rebased onto #{base_branch}" : "Rebase onto #{base_branch} failed (conflicts)")
+
+        logger.info(
+          message: "agent_execution.rebase_branch",
+          agent_run_id: agent_run_id,
+          base_branch: base_branch,
+          rebase_succeeded: rebase_succeeded,
+          branch_changed: branch_changed
+        )
+
+        {
+          agent_run_id: agent_run_id,
+          rebase_succeeded: rebase_succeeded,
+          base_branch: base_branch,
+          branch_changed: branch_changed
+        }
+      end
+    end
+
+    private
+
+    def fetch_base_branch(agent_run, project)
+      client = project.client
+      pr = client.pull_request(project.full_name, agent_run.source_pull_request_number)
+      pr.base.ref
+    end
+
+    def reconnect_container(agent_run)
+      Containers::Provision.reconnect(
+        agent_run: agent_run,
+        container_id: agent_run.container_id
+      )
+    end
+  end
+end

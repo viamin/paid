@@ -1,0 +1,61 @@
+<div class="mt-4 rounded-lg bg-white p-4 shadow ring-1 ring-black ring-opacity-5">
+  <%= search_form_for q, url: request.path, html: { method: :get, class: "flex flex-wrap items-end gap-4" } do |f| %>
+    <div>
+      <%= f.label :status_eq, "Status", class: "block text-sm font-medium text-gray-700" %>
+      <%= f.select :status_eq,
+        options_for_select(AgentRun::STATUSES.map { |s| [s.titleize, s] }, params.dig(:q, :status_eq)),
+        { include_blank: "All Statuses" },
+        class: "mt-1 block rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
+    </div>
+
+    <div>
+      <%= f.label :agent_type_eq, "Agent", class: "block text-sm font-medium text-gray-700" %>
+      <%= f.select :agent_type_eq,
+        options_for_select(AgentRun::AGENT_TYPES.map { |t| [t.titleize, t] }, params.dig(:q, :agent_type_eq)),
+        { include_blank: "All Agents" },
+        class: "mt-1 block rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
+    </div>
+
+    <div>
+      <%= f.label :goal_eq, "Goal", class: "block text-sm font-medium text-gray-700" %>
+      <% goal_labels = {
+        "create_pr" => "Create PR",
+        "create_issue" => "Create Issue",
+        "review" => "PR Code Review"
+      } %>
+      <%= f.select :goal_eq,
+        options_for_select(AgentRun::GOALS.map { |g| [goal_labels.fetch(g, g.titleize), g] }, params.dig(:q, :goal_eq)),
+        { include_blank: "All Goals" },
+        class: "mt-1 block rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
+    </div>
+
+    <% if local_assigns[:runner_options]&.any? %>
+      <div>
+        <%= f.label :effective_runner_eq, "Runner", class: "block text-sm font-medium text-gray-700" %>
+        <%= f.select :effective_runner_eq,
+          options_for_select(runner_options.map { |option| [option[:label], option[:value]] }, params.dig(:q, :effective_runner_eq)),
+          { include_blank: "All Runners" },
+          class: "mt-1 block rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
+      </div>
+    <% end %>
+
+    <div>
+      <%= label_tag :sort, "Sort", class: "block text-sm font-medium text-gray-700" %>
+      <%= select_tag :sort,
+        options_for_select([
+          ["Newest first", "newest"],
+          ["Queue priority (approximate)", "queue"]
+        ], params[:sort].presence || "newest"),
+        id: :sort,
+        class: "mt-1 block rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
+    </div>
+
+    <div class="flex items-end gap-2">
+      <%= f.submit "Filter",
+        class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      <%= link_to "Clear",
+        request.path,
+        class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+    </div>
+  <% end %>
+</div>
