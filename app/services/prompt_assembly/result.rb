@@ -12,19 +12,17 @@ module PromptAssembly
   class Result
     attr_reader :text, :sections, :skipped
 
+    # Stable SHA-256 digest over the assembled section keys and content, for
+    # configuration-bundle and run provenance fingerprinting. Two assemblies
+    # that reached the agent with identical sections produce the same digest.
+    attr_reader :digest
+
     def initialize(text:, sections:, skipped: [])
       @text = text.to_s
       @sections = sections.freeze
       @skipped = skipped.freeze
       @digest = Digest::SHA256.hexdigest(fingerprint_source)
       freeze
-    end
-
-    # Stable SHA-256 digest over the assembled section keys and content, for
-    # configuration-bundle and run provenance fingerprinting. Two assemblies
-    # that reached the agent with identical sections produce the same digest.
-    def digest
-      @digest
     end
 
     # Section-level provenance: which sections reached the prompt (key, source,
