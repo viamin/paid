@@ -3441,7 +3441,7 @@ module Activities
       false
     end
 
-    # @spec PROMPT-ASSEMBLY-005
+    # @spec PROMPT-ASSEMBLY-008, PROMPT-ASSEMBLY-009
     # Routes every agent-run goal through PromptAssembly so the migrated goal
     # wrappers (create-issue, review, enhance-issue, interactive verification)
     # are contributed as required Sections rather than appended as raw strings.

@@ -8,7 +8,7 @@ module PromptAssembly
   # +skipped+ records excluded or disabled sections as counts/provenance only —
   # never bodies — so untrusted content cannot leak through the result.
   #
-  # @spec PROMPT-ASSEMBLY-004
+  # @spec PROMPT-ASSEMBLY-004, PROMPT-ASSEMBLY-010
   class Result
     attr_reader :text, :sections, :skipped
 

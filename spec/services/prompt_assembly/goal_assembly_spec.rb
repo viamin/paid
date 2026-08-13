@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec PROMPT-ASSEMBLY-004, PROMPT-ASSEMBLY-005, PROMPT-ASSEMBLY-006
+# @spec PROMPT-ASSEMBLY-005, PROMPT-ASSEMBLY-008, PROMPT-ASSEMBLY-010
 RSpec.describe PromptAssembly::GoalAssembly do
   let(:project) { create(:project) }
   let(:base_prompt) { "Implement the feature described above." }

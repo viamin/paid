@@ -19,7 +19,7 @@ module PromptAssembly
   # interactive verification is appended as a separate +verification.interactive+
   # section. Goals without a migrated wrapper contribute only the base section.
   #
-  # @spec PROMPT-ASSEMBLY-005, PROMPT-ASSEMBLY-006
+  # @spec PROMPT-ASSEMBLY-008
   class GoalAssembly
     SECTION_KEYS = {
       "create_issue" => :"goal.create_issue",

@@ -44,6 +44,7 @@ class RunProvenanceBuilder
     }
   end
 
+  # @spec PROMPT-ASSEMBLY-010
   def prompt_provenance
     prompt_version = agent_run.prompt_version
     custom_prompt = agent_run.custom_prompt

@@ -1365,7 +1365,7 @@ RSpec.describe Activities::RunAgentActivity do
     end
   end
 
-  # @spec PROMPT-ASSEMBLY-004, PROMPT-ASSEMBLY-005, PROMPT-ASSEMBLY-006
+  # @spec PROMPT-ASSEMBLY-008, PROMPT-ASSEMBLY-009, PROMPT-ASSEMBLY-010
   describe "#augment_prompt_for_goal assembly routing" do
     before do
       allow(Prompt).to receive(:resolve).and_return(nil)

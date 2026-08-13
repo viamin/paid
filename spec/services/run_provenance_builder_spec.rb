@@ -88,6 +88,7 @@ RSpec.describe RunProvenanceBuilder do
     expect(provenance[:prompt][:service_environment_prompt_blocks]).to eq(service_environment_prompt_blocks)
   end
 
+  # @spec PROMPT-ASSEMBLY-010
   it "surfaces prompt assembly provenance recorded on the run" do
     assembly = { "digest" => "abc123", "sections" => [ { "key" => "goal.review" } ] }
     agent_run.update!(external_metadata: (agent_run.external_metadata || {}).merge("prompt_assembly" => assembly))

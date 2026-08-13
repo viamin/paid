@@ -2252,7 +2252,7 @@ class AgentRun < ApplicationRecord
   # sections reached the agent. Bodies are never included — only keys, sources,
   # trust levels, and inclusion reasons.
   #
-  # @spec PROMPT-ASSEMBLY-004
+  # @spec PROMPT-ASSEMBLY-010
   def record_prompt_assembly!(provenance)
     return if provenance.blank?
 
