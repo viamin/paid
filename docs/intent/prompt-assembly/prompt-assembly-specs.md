@@ -73,3 +73,20 @@
   prepare_pr_prompt phase so the agent run's audit trail shows which
   sections reached the agent and which untrusted content was rejected.
   *Code:* `Prompts::BuildForPr`, `Activities::PreparePrPromptActivity`.
+
+- [x] **PROMPT-ASSEMBLY-012** — When a create_pr run builds its
+  issue-implementation prompt, the system SHALL assemble it through
+  `PromptAssembly::Build` via `PromptAssembly::BuildIssuePrompt` — ordered,
+  provenance-tracked section providers — and SHALL persist the assembly
+  provenance (digest, included section keys, sources, trust levels, required
+  flags, plus skipped counts/reasons) on the run's `external_metadata`.
+  *Code:* `PromptAssembly::BuildIssuePrompt`, `AgentRun#prompt_for_issue`,
+  `AgentRun#persist_prompt_assembly_provenance!`.
+
+- [x] **PROMPT-ASSEMBLY-013** — The non-negotiable safety rules SHALL be
+  contributed as a required section (`required: true`) so the assembler always
+  includes them and never suppresses them; the rules SHALL appear exactly once
+  in the assembled prompt and SHALL NOT be embedded in the DB-stored
+  issue-implementation template.
+  *Code:* `PromptAssembly::Sections::SafetyRules`,
+  `PromptAssembly::BuildIssuePrompt`, `Prompts::BuildForIssue`.

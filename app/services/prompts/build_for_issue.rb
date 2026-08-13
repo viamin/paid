@@ -112,6 +112,7 @@ module Prompts
       )
       with_conventions = ProjectConventions::InjectIntoPrompt.call(prompt: with_style_guides, project: project)
       with_lid = Lid::InjectIntoPrompt.call(prompt: with_conventions, project: project, goal: agent_run&.goal)
+      # @spec PROMPT-ASSEMBLY-013
       [ with_lid, PromptAssembly::Sections::SafetyRules::SAFETY_RULES ].join("\n\n")
     end
 

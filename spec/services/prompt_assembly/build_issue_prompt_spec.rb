@@ -3,6 +3,7 @@
 require "rails_helper"
 require "ostruct"
 
+# @spec PROMPT-ASSEMBLY-012, PROMPT-ASSEMBLY-013
 RSpec.describe PromptAssembly::BuildIssuePrompt do
   let(:configured_containers) { [] }
 

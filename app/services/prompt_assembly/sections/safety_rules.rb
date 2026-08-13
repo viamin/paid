@@ -3,6 +3,8 @@
 # The non-negotiable safety rules that every create_pr prompt must carry.
 # This is a required section so the assembler always includes it and never
 # suppresses it — even if the DB-stored template is modified to drop them.
+#
+# @spec PROMPT-ASSEMBLY-013
 class PromptAssembly::Sections::SafetyRules
   include PromptAssembly::Sections::Base
 
