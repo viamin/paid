@@ -63,3 +63,13 @@
   be persisted in provenance.
   *Code:* `PromptAssembly::Result#provenance`, `AgentRun#record_prompt_assembly!`,
   `RunProvenanceBuilder#prompt_provenance`.
+
+- [x] **PROMPT-ASSEMBLY-011** — When PR follow-up runs build their prompt,
+  the system SHALL assemble sections through `PromptAssembly::Build`,
+  classify PR review thread comments and PR conversation comments by
+  author trust, exclude untrusted comments from the prompt text, and
+  persist the section provenance (included section keys, sources, trust
+  levels, required flags, plus excluded counts/reasons) on the
+  prepare_pr_prompt phase so the agent run's audit trail shows which
+  sections reached the agent and which untrusted content was rejected.
+  *Code:* `Prompts::BuildForPr`, `Activities::PreparePrPromptActivity`.
