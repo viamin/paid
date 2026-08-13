@@ -533,6 +533,7 @@ export default class extends Controller {
   }
 
   scrollToBottom() {
+    if (!this.hasContainerTarget) return
     if (!this.autoScroll) return
 
     const streamController = this.application.getControllerForElementAndIdentifier(this.containerTarget, "chat-stream")
@@ -548,6 +549,7 @@ export default class extends Controller {
   }
 
   scrollToInput() {
+    if (!this.hasContainerTarget) return
     this.smoothScrollTo(this.containerTarget.scrollHeight)
   }
 
