@@ -282,10 +282,16 @@ module ExecutionRunners
     # - +:proxy_only+        — Paid secrets proxy + DNS.
     # - +:git_plus_proxy+    — adds GitHub CIDR ranges.
     # - +:approved_services+ — adds service container IPs (current default).
+    #
+    # Service container IPs (+service.firewall_service_destinations+) are only
+    # added for the +:approved_services+ intent; the narrower restricted
+    # intents exclude them so their allowlist matches the RDR-056 mapping
+    # table. Caller-supplied +allow_destinations+ are always honored.
     def apply_firewall!(service:, backend:, policy:)
       return unless policy.firewall?
 
-      destinations = policy.allow_destinations.map { |dest| { ip: dest.fetch(:host), port: dest.fetch(:port) } } + service.firewall_service_destinations
+      destinations = policy.allow_destinations.map { |dest| { ip: dest.fetch(:host), port: dest.fetch(:port) } }
+      destinations += service.firewall_service_destinations if policy.approved_services?
       github_ips = github_ranges_for(policy)
 
       NetworkPolicy.apply_firewall_rules(

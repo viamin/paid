@@ -390,6 +390,14 @@ module ExecutionRunners
       mode == :no_outbound
     end
 
+    # +true+ when the intent includes service container IPs in its allowlist.
+    # Only the approved-services intent (and its +:proxy_restricted+ alias)
+    # grants service containers; the narrower restricted intents do not
+    # (RDR-056 mapping table).
+    def approved_services?
+      canonical_mode == :approved_services
+    end
+
     # Returns the canonical intent mode. The three backward-compatible modes
     # (:proxy_restricted, :subscription_auth, :direct_outbound) are normalized
     # to their new-intent names so downstream translation paths only see the

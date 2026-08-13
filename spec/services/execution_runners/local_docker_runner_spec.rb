@@ -270,6 +270,48 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       runner.provision(spec: git_proxy_spec)
     end
 
+    it "excludes service container IPs from the firewall for :no_outbound even when services are provisioned" do
+      no_outbound_spec = ExecutionRunners::RunSpec.new(
+        **run_spec.to_h.merge(
+          networking_policy: ExecutionRunners::NetworkingPolicy.no_outbound
+        )
+      )
+      allow(NetworkPolicy).to receive(:contract_for_policy)
+        .and_return(double(network: NetworkPolicy::NETWORK_NAME))
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      allow(provision_service).to receive_messages(
+        provision: Containers::Provision::Result.success(container_id: "abc123", container_host: "local"),
+        firewall_service_destinations: [ { ip: "192.0.2.10", port: 5432 } ]
+      )
+
+      expect(NetworkPolicy).to receive(:apply_firewall_rules)
+        .with(started_container, github_ips: [], proxy_host: false,
+              service_destinations: [], backend: backend)
+
+      runner.provision(spec: no_outbound_spec)
+    end
+
+    it "excludes service container IPs from the firewall for :git_plus_proxy even when services are provisioned" do
+      git_proxy_spec = ExecutionRunners::RunSpec.new(
+        **run_spec.to_h.merge(
+          networking_policy: ExecutionRunners::NetworkingPolicy.git_plus_proxy
+        )
+      )
+      allow(NetworkPolicy).to receive(:contract_for_policy)
+        .and_return(double(network: NetworkPolicy::NETWORK_NAME))
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      allow(provision_service).to receive_messages(
+        provision: Containers::Provision::Result.success(container_id: "abc123", container_host: "local"),
+        firewall_service_destinations: [ { ip: "192.0.2.10", port: 5432 } ]
+      )
+
+      expect(NetworkPolicy).to receive(:apply_firewall_rules)
+        .with(started_container, github_ips: NetworkPolicy::DEFAULT_GITHUB_IPS,
+              proxy_host: nil, service_destinations: [], backend: backend)
+
+      runner.provision(spec: git_proxy_spec)
+    end
+
     it "skips NetworkPolicy firewall application when the policy is unrestricted" do
       direct_outbound_spec = ExecutionRunners::RunSpec.new(
         **run_spec.to_h.merge(

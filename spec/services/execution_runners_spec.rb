@@ -276,6 +276,12 @@ RSpec.describe ExecutionRunners do
         expect(policy.canonical_mode).to eq(:approved_services)
       end
 
+      it "treats the :proxy_restricted alias as approved_services" do
+        policy = described_class.proxy_restricted
+
+        expect(policy).to be_approved_services
+      end
+
       it "treats :model_direct as unrestricted and firewall-free" do
         policy = described_class.model_direct
 
