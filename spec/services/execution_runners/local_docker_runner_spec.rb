@@ -729,6 +729,16 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     it "returns false when the policy is nil" do
       expect(described_class.supports_policy?(nil)).to be(false)
     end
+
+    it "returns false for an unknown policy mode" do
+      policy = ExecutionRunners::NetworkingPolicy.new(
+        mode: :unknown_mode,
+        firewall: true,
+        allow_destinations: []
+      )
+
+      expect(described_class.supports_policy?(policy)).to be(false)
+    end
   end
 
   describe ".ping" do

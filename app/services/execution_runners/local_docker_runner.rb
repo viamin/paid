@@ -199,7 +199,7 @@ module ExecutionRunners
     # before any provision attempt.
     # @spec CONTAINER-RUNTIME-018
     def self.supports_policy?(policy)
-      policy.present?
+      policy.present? && ExecutionRunners::NETWORKING_POLICY_KNOWN_MODES.include?(policy.mode)
     end
 
     def self.ping
