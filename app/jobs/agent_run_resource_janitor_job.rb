@@ -22,8 +22,10 @@ class AgentRunResourceJanitorJob < ApplicationJob
     return unless agent_run.finished?
     return if agent_run.container_retained?
 
+    tracked_resource = ExecutionResource.schedule_cleanup_for!(agent_run: agent_run)
     container_cleaned = cleanup_container(agent_run)
     volume_cleaned = cleanup_volume(agent_run)
+    ExecutionResource.mark_cleaned_for!(agent_run: agent_run) if tracked_resource&.active? || container_cleaned || volume_cleaned
 
     Rails.logger.info(
       message: "container_manager.janitor_complete",
@@ -33,6 +35,9 @@ class AgentRunResourceJanitorJob < ApplicationJob
       container_cleaned: container_cleaned,
       volume_cleaned: volume_cleaned
     )
+  rescue Docker::Error::DockerError => e
+    ExecutionResource.record_cleanup_failure_for!(agent_run: agent_run, error: e) if agent_run
+    raise
   end
 
   private

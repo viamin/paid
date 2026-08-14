@@ -169,6 +169,11 @@ Rails.application.configure do
       class: "ServiceContainerReconciliationJob",
       description: "Reconcile service container DB records against Docker state"
     },
+    execution_resource_reconciliation: {
+      cron: "4-59/5 * * * *",
+      class: "ExecutionResourceReconciliationJob",
+      description: "Reconcile execution resource ledger rows against runner/provider state"
+    },
     container_pool_replenishment: {
       cron: "4-59/5 * * * *",
       class: "PoolReplenishmentJob",

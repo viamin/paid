@@ -148,6 +148,29 @@ module ExecutionRunners
       nil
     end
 
+    def supports_resource_listing?
+      true
+    end
+
+    def list_resources(host: nil)
+      backend = Containers.backend_for(host)
+
+      list_environment_resources(backend:) + list_workspace_resources(backend:)
+    end
+
+    def cleanup_resource(resource:)
+      backend = Containers.backend_for(resource.host)
+
+      case resource.resource_type.to_s
+      when "environment"
+        cleanup_environment_resource(backend:, identifier: resource.identifier)
+      when "workspace"
+        cleanup_workspace_resource(backend:, identifier: resource.identifier, host: resource.host)
+      else
+        raise ProvisionError, "Unsupported tracked resource type #{resource.resource_type.inspect}"
+      end
+    end
+
     # Removes the named Docker workspace volume for an agent run when it exists.
     # Used as the orphan-volume safety net: a worker killed mid-provision may
     # have created the volume without ever recording a container_id, so cleanup
@@ -322,6 +345,65 @@ module ExecutionRunners
           environment_running: result[:container_running]
         )
       end
+    end
+
+    def list_environment_resources(backend:)
+      backend.list_containers(all: true, filters: { label: [ "paid.agent_run_id" ] }.to_json).map do |container|
+        labels = container.info["Labels"] || container.info.dig("Config", "Labels") || {}
+        ExecutionRunners::TrackedResource.new(
+          runner_type: RUNNER_TYPE,
+          resource_type: "environment",
+          identifier: container.id,
+          host: backend.identifier.to_s,
+          workspace_ref: nil,
+          tags: labels,
+          metadata: {}
+        )
+      end
+    rescue Docker::Error::DockerError => e
+      raise ProvisionError, e.message
+    end
+
+    def list_workspace_resources(backend:)
+      backend.list_volumes.filter_map do |volume|
+        labels = volume.info["Labels"] || {}
+        next unless labels["paid.resource"] == "workspace_volume"
+        next if labels["paid.container_pool_entry_id"].present?
+
+        ExecutionRunners::TrackedResource.new(
+          runner_type: RUNNER_TYPE,
+          resource_type: "workspace",
+          identifier: volume.id,
+          host: backend.identifier.to_s,
+          workspace_ref: volume.id,
+          tags: labels,
+          metadata: {}
+        )
+      end
+    rescue Docker::Error::DockerError => e
+      raise ProvisionError, e.message
+    end
+
+    def cleanup_environment_resource(backend:, identifier:)
+      container = backend.get_container(identifier)
+      begin
+        backend.stop_container(container, timeout: 10)
+      rescue Docker::Error::NotFoundError, Docker::Error::ClientError
+        nil
+      end
+      backend.delete_container(container, force: true, v: true)
+    rescue Docker::Error::NotFoundError
+      nil
+    rescue Docker::Error::DockerError => e
+      raise ProvisionError, e.message
+    end
+
+    def cleanup_workspace_resource(backend:, identifier:, host:)
+      backend.delete_volume(backend.get_volume(identifier, host: host))
+    rescue Docker::Error::NotFoundError
+      nil
+    rescue Docker::Error::DockerError => e
+      raise ProvisionError, e.message
     end
   end
 end

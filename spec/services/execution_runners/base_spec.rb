@@ -55,6 +55,30 @@ RSpec.describe ExecutionRunners::Base do
       expect { described_class.new.cleanup(handle: handle, force: true) }
         .to raise_error(NotImplementedError, /cleanup/)
     end
+
+    it "returns false for #supports_resource_listing?" do
+      expect(described_class.new.supports_resource_listing?).to be(false)
+    end
+
+    it "raises NotImplementedError for #list_resources" do
+      expect { described_class.new.list_resources(host: "local") }
+        .to raise_error(NotImplementedError, /list_resources/)
+    end
+
+    it "raises NotImplementedError for #cleanup_resource" do
+      resource = ExecutionRunners::TrackedResource.new(
+        runner_type: :local_docker,
+        resource_type: "environment",
+        identifier: "resource-1",
+        host: "local",
+        workspace_ref: nil,
+        tags: {},
+        metadata: {}
+      )
+
+      expect { described_class.new.cleanup_resource(resource: resource) }
+        .to raise_error(NotImplementedError, /cleanup_resource/)
+    end
   end
 
   describe "abstract class methods" do
@@ -72,7 +96,10 @@ RSpec.describe ExecutionRunners::Base do
     it "exposes only the domain lifecycle methods, none referencing Docker concepts" do
       instance_methods = described_class.instance_methods(false)
 
-      expect(instance_methods).to contain_exactly(:provision, :start, :running?, :reconnect, :status, :cancel, :cleanup)
+      expect(instance_methods).to contain_exactly(
+        :provision, :start, :running?, :reconnect, :status, :cancel, :cleanup,
+        :supports_resource_listing?, :list_resources, :cleanup_resource
+      )
 
       forbidden = %w[docker container_id bind_mount exec_in_container network_name]
       instance_methods.each do |method|
