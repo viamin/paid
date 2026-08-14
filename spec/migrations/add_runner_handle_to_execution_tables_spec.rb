@@ -75,6 +75,9 @@ RSpec.describe AddRunnerHandleToExecutionTables, :aggregate_failures do
   def truncate_agent_run_data
     connection.execute("DELETE FROM agent_run_logs")
     connection.execute("DELETE FROM agent_runs")
+    connection.execute("DELETE FROM project_service_containers")
+    connection.execute("DELETE FROM service_container_metrics")
+    connection.execute("DELETE FROM service_containers")
     connection.execute("DELETE FROM issues")
     connection.execute("DELETE FROM projects")
     connection.execute("DELETE FROM runners")
