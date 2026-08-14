@@ -1374,6 +1374,32 @@ RSpec.describe Runner do
       { "zai-coding-plan" => { "models" => { model_id => { "name" => model_id } } } }
     end
 
+    def create_opencode_runner(api_provider:, api_service_type:, api_key:, model:)
+      provider_api_key = create(:provider_api_key, user: user, api_service_type: api_service_type, api_key: api_key)
+      create(
+        :runner,
+        user: user,
+        runner_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: provider_api_key,
+        config: { "opencode" => { "api_provider" => api_provider, "model" => model } }
+      )
+    end
+
+    def expect_unset_env(runtime, *keys)
+      expect(runtime.unset_env).to include(*keys)
+    end
+
+    def expect_minimax_runtime(runtime, model:, api_key:)
+      expect(runtime.model).to eq("minimax/#{model}")
+      expect(runtime.env).to include(
+        "ANTHROPIC_API_KEY" => api_key,
+        "ANTHROPIC_BASE_URL" => "https://api.minimax.io/anthropic/v1"
+      )
+      expect(runtime.env).not_to have_key("OPENAI_BASE_URL")
+      expect(runtime.metadata[:config]["provider"]).to eq(expected_minimax_provider(model))
+    end
+
     it "builds runner runtime inputs instead of a local bootstrap wrapper" do
       runtime = runner.agent_harness_runner_runtime
 
@@ -1384,22 +1410,24 @@ RSpec.describe Runner do
         "OPENROUTER_API_KEY" => "sk-openrouter-secret",
         "OPENAI_BASE_URL" => "https://openrouter.ai/api/v1"
       )
-      expect(runtime.unset_env).to include("OPENAI_HEADER_X_AGENT_RUN_ID", "OPENAI_HEADER_X_PROXY_TOKEN")
+      expect_unset_env(
+        runtime,
+        "OPENAI_API_KEY",
+        "OPENAI_HEADER_X_AGENT_RUN_ID",
+        "OPENAI_HEADER_X_PROXY_TOKEN",
+        "ANTHROPIC_API_KEY",
+        "GEMINI_API_KEY"
+      )
       expect(runtime.metadata[:config]).not_to have_key("provider")
     end
 
     it "extends opencode's built-in zai-coding-plan provider with the configured glm model" do
-      zai_key = create(:provider_api_key, user: user, api_service_type: "zai_coding", api_key: "sk-zai-secret")
-      zai_provider = create(
-        :runner,
-        user: user,
-        runner_key: "opencode",
-        auth_type: "api_key",
-        provider_api_key: zai_key,
-        config: { "opencode" => { "api_provider" => "zai_coding", "model" => "glm-5.1" } }
-      )
-
-      runtime = zai_provider.agent_harness_runner_runtime
+      runtime = create_opencode_runner(
+        api_provider: "zai_coding",
+        api_service_type: "zai_coding",
+        api_key: "sk-zai-secret",
+        model: "glm-5.1"
+      ).agent_harness_runner_runtime
 
       # opencode's built-in provider id is hyphenated; glm-5.x is declared as an
       # extension to that built-in provider (its catalog tops out at glm-4.x).
@@ -1409,89 +1437,79 @@ RSpec.describe Runner do
       expect(runtime.env).to include("ZHIPU_API_KEY" => "sk-zai-secret")
       expect(runtime.env).not_to have_key("OPENAI_BASE_URL")
       expect(runtime.metadata[:config]["provider"]).to eq(expected_zai_coding_plan_provider("glm-5.1"))
-      expect(runtime.unset_env).to include("OPENAI_HEADER_X_AGENT_RUN_ID", "OPENAI_HEADER_X_PROXY_TOKEN")
+      expect_unset_env(
+        runtime,
+        "OPENAI_API_KEY",
+        "OPENAI_BASE_URL",
+        "OPENAI_HEADER_X_AGENT_RUN_ID",
+        "OPENAI_HEADER_X_PROXY_TOKEN",
+        "ANTHROPIC_API_KEY",
+        "GEMINI_API_KEY"
+      )
     end
 
     it "qualifies zai models with runner prefix" do
-      zai_key = create(:provider_api_key, user: user, api_service_type: "zai", api_key: "sk-zai-secret")
-      zai_provider = create(
-        :runner,
-        user: user,
-        runner_key: "opencode",
-        auth_type: "api_key",
-        provider_api_key: zai_key,
-        config: { "opencode" => { "api_provider" => "zai", "model" => "glm-5.1-zai" } }
-      )
-
-      runtime = zai_provider.agent_harness_runner_runtime
+      runtime = create_opencode_runner(
+        api_provider: "zai",
+        api_service_type: "zai",
+        api_key: "sk-zai-secret",
+        model: "glm-5.1-zai"
+      ).agent_harness_runner_runtime
 
       expect(runtime.model).to eq("zai/glm-5.1-zai")
     end
 
     it "configures MiniMax through the Anthropic SDK provider config" do
-      minimax_key = create(:provider_api_key, user: user, api_service_type: "minimax", api_key: "sk-minimax-secret")
-      minimax_runner = create(
-        :runner,
-        user: user,
-        runner_key: "opencode",
-        auth_type: "api_key",
-        provider_api_key: minimax_key,
-        config: { "opencode" => { "api_provider" => "minimax", "model" => "MiniMax-M2.7" } }
-      )
+      runtime = create_opencode_runner(
+        api_provider: "minimax",
+        api_service_type: "minimax",
+        api_key: "sk-minimax-secret",
+        model: "MiniMax-M2.7"
+      ).agent_harness_runner_runtime
 
-      runtime = minimax_runner.agent_harness_runner_runtime
-
-      expect(runtime.model).to eq("minimax/MiniMax-M2.7")
-      expect(runtime.env).to include(
-        "ANTHROPIC_API_KEY" => "sk-minimax-secret",
-        "ANTHROPIC_BASE_URL" => "https://api.minimax.io/anthropic/v1"
-      )
-      expect(runtime.env).not_to have_key("OPENAI_BASE_URL")
-      expect(runtime.metadata[:config]["provider"]).to eq(expected_minimax_provider("MiniMax-M2.7"))
+      expect_minimax_runtime(runtime, model: "MiniMax-M2.7", api_key: "sk-minimax-secret")
       # Paid proxy headers must be stripped so the per-run token never reaches MiniMax.
-      expect(runtime.unset_env).to include("ANTHROPIC_HEADER_X_AGENT_RUN_ID", "ANTHROPIC_HEADER_X_PROXY_TOKEN")
+      expect_unset_env(
+        runtime,
+        "OPENAI_API_KEY",
+        "OPENAI_BASE_URL",
+        "ANTHROPIC_HEADER_X_AGENT_RUN_ID",
+        "ANTHROPIC_HEADER_X_PROXY_TOKEN",
+        "GEMINI_API_KEY"
+      )
     end
 
     it "configures the native Anthropic provider through the @ai-sdk/anthropic SDK" do
-      anthropic_key = create(:provider_api_key, user: user, api_service_type: "anthropic", api_key: "sk-ant-secret")
-      anthropic_runner = create(
-        :runner,
-        user: user,
-        runner_key: "opencode",
-        auth_type: "api_key",
-        provider_api_key: anthropic_key,
-        config: { "opencode" => { "api_provider" => "anthropic", "model" => "claude-sonnet-4-5" } }
-      )
-
-      runtime = anthropic_runner.agent_harness_runner_runtime
+      runtime = create_opencode_runner(
+        api_provider: "anthropic",
+        api_service_type: "anthropic",
+        api_key: "sk-ant-secret",
+        model: "claude-sonnet-4-5"
+      ).agent_harness_runner_runtime
 
       expect(runtime.model).to eq("anthropic/claude-sonnet-4-5")
       expect(runtime.env).to include("ANTHROPIC_API_KEY" => "sk-ant-secret", "ANTHROPIC_BASE_URL" => "https://api.anthropic.com")
       expect(runtime.env).not_to have_key("OPENAI_BASE_URL")
       expect(runtime.metadata[:config]["provider"]).to eq({ "anthropic" => { "npm" => "@ai-sdk/anthropic" } })
-      expect(runtime.unset_env).to include("ANTHROPIC_HEADER_X_PROXY_TOKEN")
+      expect_unset_env(
+        runtime,
+        "OPENAI_API_KEY",
+        "OPENAI_BASE_URL",
+        "ANTHROPIC_HEADER_X_AGENT_RUN_ID",
+        "ANTHROPIC_HEADER_X_PROXY_TOKEN",
+        "GEMINI_API_KEY"
+      )
     end
 
     it "qualifies MiniMax highspeed models with the minimax provider prefix" do
-      minimax_key = create(:provider_api_key, user: user, api_service_type: "minimax", api_key: "sk-minimax-hs")
-      minimax_runner = create(
-        :runner,
-        user: user,
-        runner_key: "opencode",
-        auth_type: "api_key",
-        provider_api_key: minimax_key,
-        config: { "opencode" => { "api_provider" => "minimax", "model" => "MiniMax-M2.7-highspeed" } }
-      )
+      runtime = create_opencode_runner(
+        api_provider: "minimax",
+        api_service_type: "minimax",
+        api_key: "sk-minimax-hs",
+        model: "MiniMax-M2.7-highspeed"
+      ).agent_harness_runner_runtime
 
-      runtime = minimax_runner.agent_harness_runner_runtime
-
-      expect(runtime.model).to eq("minimax/MiniMax-M2.7-highspeed")
-      expect(runtime.env).to include(
-        "ANTHROPIC_API_KEY" => "sk-minimax-hs",
-        "ANTHROPIC_BASE_URL" => "https://api.minimax.io/anthropic/v1"
-      )
-      expect(runtime.env).not_to have_key("OPENAI_BASE_URL")
-      expect(runtime.metadata[:config]["provider"]).to eq(expected_minimax_provider("MiniMax-M2.7-highspeed"))
+      expect_minimax_runtime(runtime, model: "MiniMax-M2.7-highspeed", api_key: "sk-minimax-hs")
     end
 
     it "declares newly released MiniMax models so opencode accepts them" do

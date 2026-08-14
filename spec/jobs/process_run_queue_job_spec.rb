@@ -232,6 +232,7 @@ RSpec.describe ProcessRunQueueJob do
       expect(queued_run.reload.container_host).to be_nil
       expect(queued_run.reload.external_metadata["planned_container_host"]).to eq("aws-runner-1")
       expect(queued_run.temporal_workflow_id).to be_present
+      expect(AgentRun.active_count_for_host("aws-runner-1")).to eq(1)
       expect(captured_input[:container_host]).to eq("aws-runner-1")
     end
 
