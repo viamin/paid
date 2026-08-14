@@ -196,6 +196,23 @@ RSpec.describe PromptAssembly::Build, :no_db do
       expect(result.profile_fingerprint).to eq(profile.fingerprint)
     end
 
+    it "includes prompt assembly metadata in provenance" do
+      profile = PromptAssembly::Profile.new(budgets: { knowledge: { tokens: 2000 } })
+      result = described_class.call(
+        profile: profile,
+        sections: [ section(key: :knowledge, content: "Knowledge") ]
+      )
+
+      expect(result.provenance).to include(
+        digest: result.digest,
+        prompt_digest: result.prompt_digest,
+        profile_fingerprint: result.profile_fingerprint,
+        budget_decisions: [
+          hash_including(section: "knowledge", budget: { "tokens" => 2000 })
+        ]
+      )
+    end
+
     it "counts included and skipped sections" do
       result = described_class.call(
         sections: [

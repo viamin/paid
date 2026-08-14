@@ -58,6 +58,9 @@ RSpec.describe AgentRun do
       provenance = agent_run.external_metadata["prompt_assembly"]
       expect(provenance).to be_present
       expect(provenance["digest"]).to match(/\A[0-9a-f]{64}\z/)
+      expect(provenance["prompt_digest"]).to match(/\A[0-9a-f]{64}\z/)
+      expect(provenance["profile_fingerprint"]).to match(/\A[0-9a-f]{64}\z/)
+      expect(provenance["budget_decisions"]).to be_an(Array)
       expect(provenance["sections"]).to be_an(Array)
     end
 
