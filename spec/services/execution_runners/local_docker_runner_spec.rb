@@ -356,6 +356,24 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
         .to raise_error(ExecutionRunners::ProvisionError, /Network setup failed/)
     end
 
+    it "rejects an unsupported networking policy before any Docker side effects" do
+      unsupported_spec = ExecutionRunners::RunSpec.new(
+        **run_spec.to_h.merge(
+          networking_policy: ExecutionRunners::NetworkingPolicy.new(
+            mode: :unknown_mode,
+            firewall: true,
+            allow_destinations: []
+          )
+        )
+      )
+
+      expect(NetworkPolicy).not_to receive(:ensure_network!)
+      expect(Containers::Provision).not_to receive(:new)
+
+      expect { runner.provision(spec: unsupported_spec) }
+        .to raise_error(ExecutionRunners::ProvisionError, /does not support networking policy :unknown_mode/)
+    end
+
     it "cleans up the provisioned container when firewall application fails in production" do
       allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new("production"))
       allow(Containers::Provision).to receive(:new).and_return(provision_service)

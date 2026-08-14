@@ -36,6 +36,7 @@ module ExecutionRunners
       backend = backend_for(spec)
       policy = spec.networking_policy
       raise ProvisionError, "RunSpec requires a NetworkingPolicy" if policy.nil?
+      raise ProvisionError, unsupported_policy_message(policy) unless self.class.supports_policy?(policy)
 
       ensure_agent_network!(backend: backend, policy: policy)
       service = Containers::Provision.new(
@@ -255,6 +256,10 @@ module ExecutionRunners
 
     def backend_for(spec)
       Containers.backend_for(spec.agent_run&.workspace_volume_host)
+    end
+
+    def unsupported_policy_message(policy)
+      "Runner does not support networking policy #{policy.mode.inspect}"
     end
 
     # Translates the runner-level +NetworkingPolicy+ into the Docker side
