@@ -198,8 +198,8 @@ module ExecutionRunners
     # primitives cannot implement so the queue scheduler rejects the spec
     # before any provision attempt.
     # @spec CONTAINER-RUNTIME-018
-    def self.supports_policy?(_policy)
-      true
+    def self.supports_policy?(policy)
+      policy.present?
     end
 
     def self.ping

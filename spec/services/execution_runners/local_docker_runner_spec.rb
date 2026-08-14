@@ -703,6 +703,17 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
         expect(result.compatible).to be(true), "expected #{mode} policy to be compatible, got #{result.error_message}"
       end
     end
+
+    it "rejects a spec with no networking policy before provisioning" do
+      allow(Containers::Provision).to receive(:compatibility_for)
+        .and_return(Containers::Provision::CompatibilityResult.new(compatible: true, error_message: nil))
+      spec = ExecutionRunners::RunSpec.new(**run_spec.to_h.merge(networking_policy: nil))
+
+      result = described_class.compatible?(spec: spec, backend: backend)
+
+      expect(result.compatible).to be(false)
+      expect(result.error_message).to include("networking policy nil")
+    end
   end
 
   describe ".supports_policy?" do
@@ -713,6 +724,10 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
 
         expect(described_class.supports_policy?(policy)).to be(true), "expected #{mode} policy to be supported"
       end
+    end
+
+    it "returns false when the policy is nil" do
+      expect(described_class.supports_policy?(nil)).to be(false)
     end
   end
 
