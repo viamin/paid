@@ -259,7 +259,7 @@ module ExecutionRunners
     end
 
     def unsupported_policy_message(policy)
-      "Runner does not support networking policy #{policy.mode.inspect}"
+      "Runner does not support networking policy #{policy&.mode.inspect}"
     end
 
     # Translates the runner-level +NetworkingPolicy+ into the Docker side
