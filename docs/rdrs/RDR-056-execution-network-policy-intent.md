@@ -116,20 +116,22 @@ rather than silently downgraded.
 
 ### Existing behavior is preserved
 
-The three backward-compatible constructors are thin aliases that normalize
-to their canonical intent, so existing callers keep the same restricted /
-unrestricted behavior while downstream translation paths only see the
-canonical six-intent set:
-
-- `.proxy_restricted` returns `mode = :approved_services`, `firewall = true`.
-- `.subscription_auth` returns `mode = :model_direct`, `firewall = false`.
-- `.direct_outbound` returns `mode = :model_direct`, `firewall = false`.
+The three backward-compatible constructors keep `mode` set to their legacy
+symbol — `.proxy_restricted` returns `mode = :proxy_restricted`,
+`.subscription_auth` returns `mode = :subscription_auth`, and
+`.direct_outbound` returns `mode = :direct_outbound` — so the data shape a
+policy carries does not silently change under existing callers that check
+`policy.mode` against one of those symbols. `firewall` is unchanged
+(`true` for `.proxy_restricted`, `false` for the other two).
 
 `#canonical_mode` normalizes any legacy mode symbol (`:proxy_restricted`,
-`:subscription_auth`, `:direct_outbound`) to its canonical equivalent, so
-callers that receive a policy from an older code path still resolve the
-right intent. The old factories keep compiling so existing callers do not
-break, while encouraging new code to use the named intent factories.
+`:subscription_auth`, `:direct_outbound`) to its canonical equivalent
+(`:approved_services` / `:model_direct`), so downstream translation paths
+(`LocalDockerRunner`, `NetworkPolicy.contract_for_policy`,
+`ContractRunner.supports_policy?`) resolve the right intent regardless of
+whether the policy came from a legacy or canonical constructor. The old
+factories keep compiling so existing callers do not break, while
+encouraging new code to use the named intent factories.
 
 ## Issue Plan
 
@@ -163,11 +165,17 @@ Each carries:
 
 Backward-compatible constructors stay:
 
-- `.proxy_restricted(allow_destinations: [])` — alias for
-  `.approved_services(allow_destinations:)`.
-- `.subscription_auth` — alias for `.model_direct` (kept as a named
-  constructor for the existing subscription-auth call sites).
-- `.direct_outbound` — alias for `.model_direct`.
+- `.proxy_restricted(allow_destinations: [])` — same shape as
+  `.approved_services(allow_destinations:)` (`firewall = true`), but keeps
+  `mode = :proxy_restricted`; `#canonical_mode` resolves it to
+  `:approved_services`.
+- `.subscription_auth` — same shape as `.model_direct` (`firewall = false`),
+  but keeps `mode = :subscription_auth` (kept as a named constructor for the
+  existing subscription-auth call sites); `#canonical_mode` resolves it to
+  `:model_direct`.
+- `.direct_outbound` — same shape as `.model_direct`, but keeps
+  `mode = :direct_outbound`; `#canonical_mode` resolves it to
+  `:model_direct`.
 
 `restricted?` returns true for the four firewall-required modes.
 `firewall?` returns true for the four firewall-required modes.

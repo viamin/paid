@@ -300,10 +300,11 @@ RSpec.describe ExecutionRunners do
         expect(policy).not_to be_model_direct
       end
 
-      it "preserves the backward-compatible :proxy_restricted alias for :approved_services" do
+      it "preserves the legacy :proxy_restricted mode value while normalizing canonical_mode" do
         policy = described_class.proxy_restricted
 
-        expect(policy.mode).to eq(:approved_services)
+        expect(policy.mode).to eq(:proxy_restricted)
+        expect(policy.canonical_mode).to eq(:approved_services)
         expect(policy).to be_restricted
       end
 

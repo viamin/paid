@@ -107,7 +107,7 @@ class NetworkPolicy
         )
       else
         NetworkContract.new(
-          mode: policy.mode,
+          mode: policy.canonical_mode,
           network: INFRA_NETWORK_NAME,
           restricted: false,
           firewall: false

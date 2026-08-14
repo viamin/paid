@@ -339,24 +339,30 @@ module ExecutionRunners
       new(mode: :approved_services, firewall: true, allow_destinations: allow_destinations)
     end
 
-    # Backward-compatible alias for {.approved_services}.
+    # Backward-compatible alias for {.approved_services}. Keeps +mode+ set to
+    # the legacy +:proxy_restricted+ symbol (rather than delegating to
+    # {.approved_services}) so existing callers checking
+    # +policy.mode == :proxy_restricted+ see no change in behavior;
+    # {#canonical_mode} performs the normalization instead.
     def self.proxy_restricted(allow_destinations: [])
-      approved_services(allow_destinations: allow_destinations)
+      new(mode: :proxy_restricted, firewall: true, allow_destinations: allow_destinations)
     end
 
     def self.model_direct(allow_destinations: [])
       new(mode: :model_direct, firewall: false, allow_destinations: allow_destinations)
     end
 
-    # Backward-compatible alias for {.model_direct}; preserved as the named
-    # constructor for subscription-auth call sites.
+    # Backward-compatible alias for {.model_direct}. Keeps +mode+ set to the
+    # legacy +:subscription_auth+ symbol so {#canonical_mode} normalizes it
+    # rather than the constructor silently swapping the mode.
     def self.subscription_auth
-      model_direct
+      new(mode: :subscription_auth, firewall: false, allow_destinations: [])
     end
 
-    # Backward-compatible alias for {.model_direct}.
+    # Backward-compatible alias for {.model_direct}. Keeps +mode+ set to the
+    # legacy +:direct_outbound+ symbol so {#canonical_mode} normalizes it.
     def self.direct_outbound
-      model_direct
+      new(mode: :direct_outbound, firewall: false, allow_destinations: [])
     end
 
     def self.explicit_internet
