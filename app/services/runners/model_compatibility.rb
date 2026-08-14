@@ -232,7 +232,7 @@ module Runners
       unknown_result("paid_catalog")
     end
 
-    def codex_subscription_check
+    def codex_subscription_check # @spec MODEL-SELECTION-005
       return unless runner_key == "codex" && auth_type == "subscription"
       return unless CODEX_SUBSCRIPTION_UNSUPPORTED_MODELS.include?(model_id)
 

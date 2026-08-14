@@ -4346,7 +4346,7 @@ RSpec.describe Containers::Provision do
       expect(result).to eq("model = \"gpt-5.1\"\n")
     end
 
-    it "uses subscription-safe Codex defaults for subscription-auth Codex runners" do
+    it "uses subscription-safe Codex defaults for subscription-auth Codex runners" do # @spec MODEL-SELECTION-005
       codex_runner = create(:runner, user: project.created_by, runner_key: "codex", auth_type: "subscription")
       agent_run.update!(runner: codex_runner)
       create(:llm_model, :openai, model_id: "gpt-5.6", tier: "mid", capability_score: 9.9)

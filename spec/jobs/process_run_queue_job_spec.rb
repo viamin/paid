@@ -353,7 +353,7 @@ RSpec.describe ProcessRunQueueJob do
       expect_capacity_aware_decision(queued_run, planned_host: "elguapo", decision_mode: "capacity_aware_fallback")
     end
 
-    it "starts the oldest queued run when capacity is available" do
+    it "starts the oldest queued run when capacity is available" do # @spec TEMPORAL-ORCHESTRATION-005
       queued_run = create(:agent_run, :queued, created_at: 2.minutes.ago)
       create(:agent_run, :queued, created_at: 1.minute.ago)
 

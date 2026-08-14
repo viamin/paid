@@ -887,6 +887,8 @@ class ProcessRunQueueJob < ApplicationJob
     # would be charged to the local bucket (via its blank container_host) and
     # not to the remote host, allowing the queue to over-admit remotes while
     # starving the local host in a single pass.
+    # @spec TEMPORAL-ORCHESTRATION-005 — admission flips the run to running so
+    # provisioning/setup/preflight counts as active execution.
     update_attributes = {
       temporal_workflow_id: workflow_id,
       status: "running",

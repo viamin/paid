@@ -107,7 +107,7 @@ RSpec.describe Runners::ModelCompatibility do
         end
       end
 
-      context "with subscription auth and a known ChatGPT-Codex-incompatible model" do
+      context "with subscription auth and a known ChatGPT-Codex-incompatible model" do # @spec MODEL-SELECTION-005
         let(:model_id) { "gpt-5.6" }
 
         it "returns unsupported before dispatch can preflight the bad model", :aggregate_failures do

@@ -2163,7 +2163,7 @@ expect(container_service).to receive(:execute).with(
         activity.execute(agent_run_id: agent_run.id)
       end
 
-      it "marks the run running before runner setup and preflight" do
+      it "marks the run running before runner setup and preflight" do # @spec TEMPORAL-ORCHESTRATION-005
         allow(git_ops).to receive(:has_changes_since?).and_return(false)
         allow(Containers::TokenOptimization).to receive(:rtk_init_for_runner) do
           expect(agent_run.reload.status).to eq("running")
