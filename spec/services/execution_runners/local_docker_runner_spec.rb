@@ -357,13 +357,10 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     end
 
     it "rejects an unsupported networking policy before any Docker side effects" do
+      unsupported_policy = Struct.new(:mode).new(:unknown_mode)
       unsupported_spec = ExecutionRunners::RunSpec.new(
         **run_spec.to_h.merge(
-          networking_policy: ExecutionRunners::NetworkingPolicy.new(
-            mode: :unknown_mode,
-            firewall: true,
-            allow_destinations: []
-          )
+          networking_policy: unsupported_policy
         )
       )
 
@@ -759,11 +756,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     end
 
     it "returns false for an unknown policy mode" do
-      policy = ExecutionRunners::NetworkingPolicy.new(
-        mode: :unknown_mode,
-        firewall: true,
-        allow_destinations: []
-      )
+      policy = Struct.new(:mode).new(:unknown_mode)
 
       expect(described_class.supports_policy?(policy)).to be(false)
     end

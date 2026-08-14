@@ -322,6 +322,18 @@ module ExecutionRunners
     RESTRICTED_MODES = ExecutionRunners::NETWORKING_POLICY_RESTRICTED_MODES
     UNRESTRICTED_MODES = ExecutionRunners::NETWORKING_POLICY_UNRESTRICTED_MODES
     KNOWN_MODES = ExecutionRunners::NETWORKING_POLICY_KNOWN_MODES
+    ALLOW_DESTINATION_REQUIRED_KEYS = %i[host port].freeze
+
+    def initialize(mode:, firewall:, allow_destinations:)
+      normalized_mode = mode&.to_sym
+      normalized_destinations = normalize_allow_destinations(Array(allow_destinations))
+
+      validate_mode!(normalized_mode)
+      validate_firewall!(normalized_mode, firewall)
+      validate_allow_destinations!(normalized_destinations)
+
+      super(mode: normalized_mode, firewall: firewall, allow_destinations: normalized_destinations)
+    end
 
     def self.no_outbound(allow_destinations: [])
       new(mode: :no_outbound, firewall: true, allow_destinations: allow_destinations)
@@ -413,6 +425,42 @@ module ExecutionRunners
       when :proxy_restricted then :approved_services
       when :subscription_auth, :direct_outbound then :model_direct
       else mode
+      end
+    end
+
+    private
+
+    def validate_mode!(mode)
+      return if KNOWN_MODES.include?(mode)
+
+      raise ArgumentError, "Unknown networking policy mode: #{mode.inspect}"
+    end
+
+    def validate_firewall!(mode, firewall)
+      expected_firewall = RESTRICTED_MODES.include?(mode)
+      return if firewall == expected_firewall
+
+      raise ArgumentError, "Networking policy #{mode.inspect} requires firewall=#{expected_firewall}"
+    end
+
+    def validate_allow_destinations!(destinations)
+      destinations.each do |destination|
+        unless destination.is_a?(Hash)
+          raise ArgumentError, "Allow destinations must be hashes with :host and :port"
+        end
+
+        missing_keys = ALLOW_DESTINATION_REQUIRED_KEYS.reject { |key| destination[key].present? }
+        next if missing_keys.empty?
+
+        raise ArgumentError, "Allow destination is missing keys: #{missing_keys.join(', ')}"
+      end
+    end
+
+    def normalize_allow_destinations(destinations)
+      destinations.map do |destination|
+        next destination unless destination.is_a?(Hash)
+
+        { host: destination[:host] || destination["host"], port: destination[:port] || destination["port"] }
       end
     end
   end

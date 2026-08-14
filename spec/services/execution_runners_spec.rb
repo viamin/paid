@@ -323,6 +323,30 @@ RSpec.describe ExecutionRunners do
           expect(policy.canonical_mode).to eq(mode), "expected canonical_mode for #{mode}"
         end
       end
+
+      it "rejects unknown networking policy modes at construction time" do
+        expect {
+          described_class.new(mode: :unknown_mode, firewall: true, allow_destinations: [])
+        }.to raise_error(ArgumentError, /Unknown networking policy mode/)
+      end
+
+      it "rejects firewall settings that conflict with the mode" do
+        expect {
+          described_class.new(mode: :model_direct, firewall: true, allow_destinations: [])
+        }.to raise_error(ArgumentError, /requires firewall=false/)
+      end
+
+      it "rejects allow destinations without host and port keys" do
+        expect {
+          described_class.proxy_only(allow_destinations: [ { host: "10.0.0.1" } ])
+        }.to raise_error(ArgumentError, /missing keys: port/)
+      end
+
+      it "normalizes allow destinations with string keys" do
+        policy = described_class.proxy_only(allow_destinations: [ { "host" => "10.0.0.1", "port" => 5432 } ])
+
+        expect(policy.allow_destinations).to eq([ { host: "10.0.0.1", port: 5432 } ])
+      end
     end
   end
 
