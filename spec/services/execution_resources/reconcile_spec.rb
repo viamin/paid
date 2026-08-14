@@ -90,6 +90,17 @@ RSpec.describe ExecutionResources::Reconcile do
     expect(adopted.adopted_at).to be_present
   end
 
+  it "does not adopt a tagged provider resource for an unfinished agent run" do
+    agent_run.update!(status: "running")
+    runner.resources = [ orphaned_workspace_resource ]
+
+    result = reconcile(scope: ExecutionResource.none)
+
+    expect(result.adopted).to eq(0)
+    expect(runner.cleaned_identifiers).to be_empty
+    expect(ExecutionResource.find_by(identifier: "paid-workspace-orphan")).to be_nil
+  end
+
   it "retries cleanup_pending resources with durable backoff when cleanup fails" do
     resource = create(:execution_resource, project: project, agent_run: agent_run,
       identifier: handle.identifier, host: handle.host, runner_handle: handle.to_storage,

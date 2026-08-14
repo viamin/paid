@@ -229,11 +229,12 @@
   runner/provider state when the provider supports tag/list inventory, and
   SHALL degrade to handle-based cleanup with `reduced_confidence` when it does
   not. The reconciliation matrix SHALL cover: active-ledger/provider-missing
-  (mark cleaned), provider-tagged/no-active-ledger (adopt into the ledger and
-  clean up), cleanup-pending/provider-present (retry cleanup with durable
-  backoff), and provider-cannot-list (use the persisted `runner_handle` only
-  and surface reduced confidence). Existing Docker janitors SHALL remain
-  active during the migration.
+  (mark cleaned), provider-tagged/no-active-ledger orphans for missing or
+  finished runs (adopt into the ledger and clean up),
+  cleanup-pending/provider-present (retry cleanup with durable backoff), and
+  provider-cannot-list (use the persisted `runner_handle` only and surface
+  reduced confidence). Existing Docker janitors SHALL remain active during the
+  migration.
   *Tests:* `spec/services/execution_resources/reconcile_spec.rb`,
   `spec/config/good_job_configuration_spec.rb`
   *Code:* `ExecutionResources::Reconcile`,

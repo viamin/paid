@@ -145,9 +145,16 @@ module ExecutionResources
       tags = listed_resource.tags || {}
       return false if tags["paid.service_container"] == "true"
       return false if tags["paid.container_pool"] == "true"
+      return false unless orphaned_run?(tags["paid.agent_run_id"])
 
       listed_resource.resource_type == "environment" ||
         (listed_resource.resource_type == "workspace" && tags["paid.resource"] == "workspace_volume")
+    end
+
+    def orphaned_run?(agent_run_id)
+      return true if agent_run_id.blank?
+
+      AgentRun.find_by(id: agent_run_id)&.finished? != false
     end
 
     def provider_key(resource)
