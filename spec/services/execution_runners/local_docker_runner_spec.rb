@@ -362,6 +362,37 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     end
   end
 
+  # @spec CONTAINER-RUNTIME-019
+  describe "degradation when listing is unsupported (RDR-058)" do
+    let(:unlisting_runner) do
+      Class.new(described_class) { def supports_listing?; false; end }.new
+    end
+
+    before do
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      allow(provision_service).to receive(:provision).and_return(
+        Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
+      )
+    end
+
+    it "still provisions and records the explicit listing degradation on the ledger row" do
+      expect { unlisting_runner.provision(spec: run_spec) }.not_to raise_error
+
+      intent = ProvisioningIntent.order(:id).last
+      expect(intent.ownership_tags).to include("paid.run" => agent_run.id.to_s)
+      expect(intent.metadata).to include("listing_degraded" => true)
+      expect(intent.metadata.fetch("reason")).to include("runner_or_provider_cannot_list")
+    end
+
+    it "emits a warning so the degradation is observable" do
+      expect(Rails.logger).to receive(:warn).with(
+        hash_including(message: "execution_runners.listing_unsupported_degraded")
+      )
+
+      unlisting_runner.provision(spec: run_spec)
+    end
+  end
+
   describe "#start" do
     let(:handle) do
       ExecutionRunners::RunnerHandle.new(

@@ -265,7 +265,8 @@ module ExecutionRunners
         runner_type: RUNNER_TYPE,
         resource_kind: resource_kind,
         environment: provisioning_environment,
-        supports_tagging: supports_tagging?
+        supports_tagging: supports_tagging?,
+        supports_listing: supports_listing?
       )
     end
 

@@ -22,11 +22,13 @@ module ExecutionRunners
     #   disables the ledger because the runner cannot attribute a created resource
     # @param environment [String] Paid deployment identifier (ownership tag)
     # @param supports_tagging [Boolean] whether the runner/provider can tag
-    def initialize(runner_type:, resource_kind:, environment:, supports_tagging:)
+    # @param supports_listing [Boolean] whether the runner/provider can list
+    def initialize(runner_type:, resource_kind:, environment:, supports_tagging:, supports_listing:)
       @runner_type = runner_type.to_s
       @resource_kind = resource_kind.to_s.presence
       @environment = environment.to_s
       @supports_tagging = supports_tagging
+      @supports_listing = supports_listing
     end
 
     # Whether this ledger records anything. A runner that cannot identify a
@@ -55,7 +57,7 @@ module ExecutionRunners
     def record_intent(agent_run:, attempt: 0)
       return unless recording?
 
-      warn_tagging_degradation if tagging_degraded?
+      warn_capability_degradations
       ProvisioningIntent.create!(
         runner_type: @runner_type,
         resource_kind: @resource_kind,
@@ -118,6 +120,10 @@ module ExecutionRunners
       !@supports_tagging
     end
 
+    def listing_degraded?
+      !@supports_listing
+    end
+
     # The ownership tags for a resource, or nil when the runner cannot tag (so
     # no tags are recorded or applied). Single source of truth for both the
     # provider labels and the ledger row.
@@ -130,18 +136,46 @@ module ExecutionRunners
 
     # Metadata recording an explicit degradation when the runner cannot tag.
     def degradation_metadata
-      return {} unless tagging_degraded?
+      metadata = {}
+      metadata["tagging_degraded"] = true if tagging_degraded?
+      metadata["listing_degraded"] = true if listing_degraded?
+      metadata["reason"] = degradation_reason if metadata.any?
+      metadata
+    end
 
-      { "tagging_degraded" => true, "reason" => "runner_or_provider_cannot_tag" }
+    def degradation_reason
+      reasons = []
+      reasons << "runner_or_provider_cannot_tag" if tagging_degraded?
+      reasons << "runner_or_provider_cannot_list" if listing_degraded?
+      reasons.join(",")
+    end
+
+    def warn_capability_degradations
+      warn_tagging_degradation if tagging_degraded?
+      warn_listing_degradation if listing_degraded?
     end
 
     def warn_tagging_degradation
-      Rails.logger.warn(
+      log_capability_degradation(
         message: "execution_runners.tagging_unsupported_degraded",
+        hint: "Ownership tags were not applied to the provider resource; reconciliation cannot locate orphans by tag."
+      )
+    end
+
+    def warn_listing_degradation
+      log_capability_degradation(
+        message: "execution_runners.listing_unsupported_degraded",
+        hint: "Runner cannot list provider resources; reconciliation must rely on direct handles or external provider visibility."
+      )
+    end
+
+    def log_capability_degradation(message:, hint:)
+      Rails.logger.warn(
+        message: message,
         runner_type: @runner_type,
         resource_kind: @resource_kind,
         environment: @environment,
-        hint: "Ownership tags were not applied to the provider resource; reconciliation cannot locate orphans by tag."
+        hint: hint
       )
     end
 
