@@ -45,6 +45,16 @@ RSpec.describe "Projects::PreCommitRequirements" do
         get project_pre_commit_requirements_path(project)
         expect(response).to have_http_status(:ok)
       end
+
+      it "does not render management controls" do
+        create(:pre_commit_requirement, account: account, project: project, name: "lint")
+
+        get project_pre_commit_requirements_path(project)
+
+        expect(response.body).not_to include("Save Mutation Testing")
+        expect(response.body).not_to include("Add Requirement")
+        expect(response.body).not_to include("Delete")
+      end
     end
   end
 
@@ -172,7 +182,24 @@ RSpec.describe "Projects::PreCommitRequirements" do
 
         expect(response).to have_http_status(:unprocessable_content)
         expect(response.body).to include(%(action="#{project_pre_commit_requirement_path(project, requirement)}"))
-        expect(response.body).not_to include(%(action="#{project_pre_commit_requirements_path(project)}"))
+      end
+
+      it "keeps mutation test errors out of the generic requirement form" do
+        mutation_requirement = create(:pre_commit_requirement,
+          account: account,
+          project: project,
+          name: "mutation_test",
+          check_type: "mutation_test",
+          command: PreCommitRequirement::MUTATION_TEST_DEFAULT_COMMAND)
+
+        patch project_pre_commit_requirement_path(project, mutation_requirement),
+          params: { pre_commit_requirement: { command: "" } }
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.body).to include("prevented mutation testing from being saved")
+        expect(response.body).to include("Save Mutation Testing")
+        expect(response.body).to include("Add Requirement")
+        expect(response.body).not_to include("Update Requirement")
       end
     end
 
