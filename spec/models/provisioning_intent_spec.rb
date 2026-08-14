@@ -74,6 +74,8 @@ RSpec.describe ProvisioningIntent do
     it "returns created intents that carry a provider resource id" do
       orphan = create(:provisioning_intent, status: "created", provider_resource_id: "abc123")
       create(:provisioning_intent, status: "pending")
+      create(:provisioning_intent, status: "created", provider_resource_id: "ghi",
+                                  runner_handle: { "runner_type" => "local_docker" })
       create(:provisioning_intent, status: "linked", provider_resource_id: "def",
                                   runner_handle: { "runner_type" => "local_docker" })
 

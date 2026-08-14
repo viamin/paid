@@ -56,7 +56,7 @@ class ProvisioningIntent < ApplicationRecord
   validates :attempt, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
 
   scope :reconcileable, -> { where(status: RECONCILEABLE_STATUSES) }
-  scope :orphans, -> { where(status: STATUS_CREATED).where.not(provider_resource_id: nil) }
+  scope :orphans, -> { where(status: STATUS_CREATED, runner_handle: nil).where.not(provider_resource_id: nil) }
 
   def pending?
     status == STATUS_PENDING
