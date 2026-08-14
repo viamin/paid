@@ -107,6 +107,20 @@ RSpec.describe Runners::ModelCompatibility do
         end
       end
 
+      context "with subscription auth and a known ChatGPT-Codex-incompatible model" do
+        let(:model_id) { "gpt-5.6" }
+
+        it "returns unsupported before dispatch can preflight the bad model", :aggregate_failures do
+          expect(result).to have_attributes(
+            supported: false,
+            incompatibility_type: :auth_mode_gated_for_model,
+            replacement_model_id: "gpt-5.2-codex",
+            source: "paid_static_contract"
+          )
+          expect(result.reason).to include("Codex subscription")
+        end
+      end
+
       context "with api_key auth and a model not in the CLI-gated list" do
         let(:model_id) { "gpt-5.4" }
         let(:auth_type) { "api_key" }

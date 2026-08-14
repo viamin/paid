@@ -57,6 +57,12 @@ currently eligible candidate pool. The candidate pool is constrained by:
 - project exclusions,
 - and the initial tier derived from the rules-based complexity estimate.
 
+Codex subscription runners also apply Paid's compatibility denylist for
+catalog models observed to be unavailable to ChatGPT Codex accounts. This
+guard runs before default tier selection so a newly synced or manually seeded
+OpenAI model cannot become the highest-scored default merely because it exists
+in the catalog.
+
 When only one candidate remains, the selector skips the LLM round trip and
 returns that candidate directly.
 

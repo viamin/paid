@@ -1556,6 +1556,8 @@ module Activities
 
       raise RunnerExecutionError, "Agent run already finished with status #{agent_run.status}" if agent_run.finished?
 
+      agent_run.start! unless agent_run.running?
+
       Containers::TokenOptimization.rtk_init_for_runner(container_service: container_service, runner_key: runner)
 
       pre_agent_sha = capture_head_sha(container_service, agent_run)
@@ -1567,9 +1569,6 @@ module Activities
         runner: runner,
         execution_env: command_env
       )
-
-      # Only start! on first runner attempt.
-      agent_run.start! unless agent_run.running?
 
       agent_run.log!("system", "Starting #{runner} agent in container")
       agent_run.log!("system", "Prompt: #{prompt.truncate(500)}")

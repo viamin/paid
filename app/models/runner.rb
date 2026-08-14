@@ -1750,20 +1750,23 @@ class Runner < ApplicationRecord
     AgentHarness::ProviderRuntime.new(
       model: model_id,
       env: env,
-      # Strip the Paid secrets-proxy headers that provision.rb seeds as baseline
-      # env. A direct-outbound runtime talks to the provider's own endpoint, so
-      # forwarding the per-run proxy token would leak it to a third party. The
-      # ANTHROPIC_* pair matters once ANTHROPIC_BASE_URL is redirected to a
-      # direct @ai-sdk/anthropic endpoint (e.g. MiniMax); OPENAI_* is the same
-      # concern for the OpenAI-compatible providers.
-      unset_env: %w[
-        OPENAI_HEADER_X_AGENT_RUN_ID OPENAI_HEADER_X_PROXY_TOKEN
-        ANTHROPIC_HEADER_X_AGENT_RUN_ID ANTHROPIC_HEADER_X_PROXY_TOKEN
-      ],
+      unset_env: opencode_direct_outbound_unset_env(env),
       metadata: {
         config: metadata_config
       }
     )
+  end
+
+  # Strip Paid proxy credentials that provision.rb seeds as baseline env. Keep
+  # variables explicitly set by the direct-outbound runtime because those hold
+  # the real upstream key/base URL for the selected provider.
+  def opencode_direct_outbound_unset_env(runtime_env)
+    %w[
+      OPENAI_API_KEY OPENAI_BASE_URL OPENAI_HEADER_X_AGENT_RUN_ID OPENAI_HEADER_X_PROXY_TOKEN
+      ANTHROPIC_API_KEY ANTHROPIC_BASE_URL ANTHROPIC_HEADER_X_AGENT_RUN_ID ANTHROPIC_HEADER_X_PROXY_TOKEN
+      GEMINI_API_KEY GOOGLE_API_KEY GOOGLE_GEMINI_BASE_URL GOOGLE_GENAI_BASE_URL
+      GOOGLE_HEADER_X_AGENT_RUN_ID GOOGLE_HEADER_X_PROXY_TOKEN
+    ] - runtime_env.keys
   end
 
   # True for Anthropic-SDK providers that are NOT the native Anthropic endpoint

@@ -1527,8 +1527,8 @@ class AgentRun < ApplicationRecord
   end
 
   # Atomically claims a queued run by setting temporal_workflow_id inside a
-  # transaction with FOR UPDATE SKIP LOCKED. The status stays "queued" — the
-  # run transitions to "running" only when RunAgentActivity#start! is called.
+  # transaction with FOR UPDATE SKIP LOCKED. ProcessRunQueueJob transitions the
+  # run to "running" once the workflow is admitted.
   # Returns nil if the run is no longer unclaimed or another process already
   # claimed it.
   #
@@ -1536,8 +1536,8 @@ class AgentRun < ApplicationRecord
   #   prior peek_next_queued_run call)
   #
   # Note: if the transaction commits but the subsequent workflow start fails,
-  # the run stays "queued" with a claimed marker. StaleRunDetectorJob handles
-  # this by clearing the claim after STALE_CLAIMED_TIMEOUT.
+  # ProcessRunQueueJob leaves the workflow id in place when it marks the run
+  # failed so StaleRunDetectorJob can cancel a potentially orphaned workflow.
   def self.claim_next_queued_run(target_id:)
     transaction do
       run = unclaimed.where(id: target_id).lock("FOR UPDATE SKIP LOCKED").first

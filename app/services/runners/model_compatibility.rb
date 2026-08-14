@@ -40,6 +40,13 @@ module Runners
       gpt-5.5
       gpt-5.5-pro
     ].freeze
+    CODEX_SUBSCRIPTION_UNSUPPORTED_MODELS = %w[
+      gpt-5.6
+      gpt-5.6-luna
+      gpt-5.6-sol
+      gpt-5.6-terra
+    ].freeze
+    CODEX_SUBSCRIPTION_REPLACEMENT_MODEL_ID = "gpt-5.2-codex"
 
     def self.call(runner_key:, model_id:, auth_type:, provider_runtime: nil)
       new(
@@ -165,6 +172,9 @@ module Runners
       catalog_result = catalog_provider_check
       return catalog_result if catalog_result
 
+      codex_subscription_result = codex_subscription_check
+      return codex_subscription_result if codex_subscription_result
+
       return harness_compat_result if harness_provider_supports_compat_api?
 
       case runner_key
@@ -220,6 +230,19 @@ module Runners
       return unknown_result("paid_catalog") if model.blank?
 
       unknown_result("paid_catalog")
+    end
+
+    def codex_subscription_check
+      return unless runner_key == "codex" && auth_type == "subscription"
+      return unless CODEX_SUBSCRIPTION_UNSUPPORTED_MODELS.include?(model_id)
+
+      Result.new(
+        supported: false,
+        reason: "'#{model_id}' is not available under Codex subscription auth",
+        incompatibility_type: :auth_mode_gated_for_model,
+        replacement_model_id: CODEX_SUBSCRIPTION_REPLACEMENT_MODEL_ID,
+        source: "paid_static_contract"
+      )
     end
 
     def unknown_result(source)

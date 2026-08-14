@@ -887,10 +887,15 @@ class ProcessRunQueueJob < ApplicationJob
     # would be charged to the local bucket (via its blank container_host) and
     # not to the remote host, allowing the queue to over-admit remotes while
     # starving the local host in a single pass.
-    update_columns = { temporal_workflow_id: workflow_id }
+    update_attributes = {
+      temporal_workflow_id: workflow_id,
+      status: "running",
+      started_at: Time.current,
+      completed_at: nil
+    }
     if planned_container_host.present?
-      update_columns[:container_host] = nil
-      update_columns[:external_metadata] = agent_run.external_metadata.merge({
+      update_attributes[:container_host] = nil
+      update_attributes[:external_metadata] = agent_run.external_metadata.merge({
         "planned_container_host" => planned_container_host
       }).tap do |metadata|
         metadata["host_placement_decision"] = serialize_host_placement_decision(host_placement_decision) if host_placement_decision.present?
@@ -900,7 +905,7 @@ class ProcessRunQueueJob < ApplicationJob
     # Write the planned workflow_id before starting the workflow so
     # StaleRunDetectorJob can cancel an orphaned workflow even if the
     # process crashes between start_workflow and the DB write.
-    agent_run.update_columns(**update_columns)
+    agent_run.update!(**update_attributes)
 
     # Keep temporal_workflow_id set on failure — if start_workflow raises
     # due to a network timeout, the workflow may have started server-side.
