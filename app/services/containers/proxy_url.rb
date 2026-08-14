@@ -26,6 +26,8 @@ module Containers
     # @param restricted [Boolean, nil] legacy boolean form. Ignored when
     #   +policy+ is supplied; required when +policy+ is nil.
     # @return [String]
+    # @spec CONTAINER-RUNTIME-017
+    # @spec CONTAINER-RUNTIME-018
     def resolve(backend:, policy: nil, restricted: nil)
       effective_restricted = if policy
         policy.restricted?
