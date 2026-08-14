@@ -1583,7 +1583,8 @@ module Containers
     end
 
     def codex_container_auth_type
-      agent_run&.runner&.runner_key == "codex" && agent_run.runner.subscription? ? "subscription" : Runners::DefaultTierModelIds::DEFAULT_AUTH_TYPE
+      subscription_runner = agent_run&.runner&.runner_key == "codex" && agent_run.runner.subscription?
+      subscription_runner || codex_subscription_auth? ? "subscription" : Runners::DefaultTierModelIds::DEFAULT_AUTH_TYPE
     end
 
     def toml_string_escape(value)

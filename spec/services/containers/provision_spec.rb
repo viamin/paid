@@ -4356,6 +4356,16 @@ RSpec.describe Containers::Provision do
 
       expect(result).to eq("model = \"gpt-5.2-codex\"\n")
     end
+
+    it "uses subscription-safe Codex defaults when subscription auth is active without a bound runner" do # @spec MODEL-SELECTION-005
+      create(:llm_model, :openai, model_id: "gpt-5.6", tier: "mid", capability_score: 9.9)
+      create(:llm_model, :openai, model_id: "gpt-5.2-codex", tier: "mid", capability_score: 9.0)
+      allow(service).to receive(:codex_subscription_auth?).and_return(true)
+
+      result = service.send(:sanitize_codex_host_config, "model = \"gpt-5.6\"\n")
+
+      expect(result).to eq("model = \"gpt-5.2-codex\"\n")
+    end
   end
 
   describe "#codex_model_config_line" do
