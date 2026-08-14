@@ -22,15 +22,15 @@ RSpec.describe "Project mutation testing toggle", system_driver: :rack_test, typ
     Warden.test_reset!
   end
 
-  describe "project edit page" do
+  describe "project pre-commit requirements page" do
     it "renders the mutation testing section" do
-      visit edit_project_path(project)
+      visit project_pre_commit_requirements_path(project)
       expect(page).to have_content("Mutation Testing")
       expect(page).to have_content("Enable mutation testing")
     end
 
     it "shows the default command as a hint" do
-      visit edit_project_path(project)
+      visit project_pre_commit_requirements_path(project)
       expect(page).to have_content(PreCommitRequirement::MUTATION_TEST_DEFAULT_COMMAND)
     end
   end
@@ -38,14 +38,14 @@ RSpec.describe "Project mutation testing toggle", system_driver: :rack_test, typ
   describe "toggling mutation testing on" do
     context "when no mutation_test requirement exists" do
       it "creates an enabled requirement" do
-        visit edit_project_path(project)
+        visit project_pre_commit_requirements_path(project)
 
         check "Enable mutation testing"
-        fill_in "mutation_test[command]", with: "bundle exec mutant run --since HEAD~1 --use rspec"
-        select "Warn (log result, do not block)", from: "mutation_test[failure_behavior]"
-        click_button "Save Changes"
+        fill_in "mutation_test_command", with: "bundle exec mutant run --since HEAD~1 --use rspec"
+        select "Warn (log result, do not block)", from: "mutation_test_failure_behavior"
+        click_button "Save Mutation Testing"
 
-        expect(page).to have_content("Project was successfully updated")
+        expect(page).to have_content("Pre-commit requirement created")
 
         req = project.pre_commit_requirements.find_by(check_type: "mutation_test")
         expect(req).to be_present
@@ -62,10 +62,10 @@ RSpec.describe "Project mutation testing toggle", system_driver: :rack_test, typ
       end
 
       it "enables the existing requirement" do
-        visit edit_project_path(project)
+        visit project_pre_commit_requirements_path(project)
 
         check "Enable mutation testing"
-        click_button "Save Changes"
+        click_button "Save Mutation Testing"
 
         requirement.reload
         expect(requirement).to be_enabled
@@ -80,13 +80,13 @@ RSpec.describe "Project mutation testing toggle", system_driver: :rack_test, typ
     end
 
     it "disables the requirement" do
-      visit edit_project_path(project)
+      visit project_pre_commit_requirements_path(project)
 
       expect(page).to have_checked_field("Enable mutation testing")
       uncheck "Enable mutation testing"
-      click_button "Save Changes"
+      click_button "Save Mutation Testing"
 
-      expect(page).to have_content("Project was successfully updated")
+      expect(page).to have_content("Pre-commit requirement updated")
       requirement.reload
       expect(requirement).not_to be_enabled
     end
@@ -99,10 +99,10 @@ RSpec.describe "Project mutation testing toggle", system_driver: :rack_test, typ
     end
 
     it "saves the updated command" do
-      visit edit_project_path(project)
+      visit project_pre_commit_requirements_path(project)
 
-      fill_in "mutation_test[command]", with: "bundle exec mutant run --jobs 4"
-      click_button "Save Changes"
+      fill_in "mutation_test_command", with: "bundle exec mutant run --jobs 4"
+      click_button "Save Mutation Testing"
 
       requirement.reload
       expect(requirement.command).to eq("bundle exec mutant run --jobs 4")
