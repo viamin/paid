@@ -3,6 +3,8 @@
 module ChatSessions
   class BuildLlmClient
     ANTHROPIC_SERVICE_TYPE = "anthropic"
+    ZAI_SERVICE_TYPES = %w[zai zai_coding].freeze
+    ZAI_MAX_TOKENS = 16_384
 
     def self.call(chat_session:)
       new(chat_session: chat_session).call
@@ -78,7 +80,12 @@ module ChatSessions
         model: model
       )
 
-      HttpClient.new(transport: transport, model: model, provider_type: :openai_compatible)
+      HttpClient.new(
+        transport: transport,
+        model: model,
+        provider_type: :openai_compatible,
+        max_tokens: max_tokens_for(service_type)
+      )
     end
 
     def missing_runner_message
@@ -102,13 +109,18 @@ module ChatSessions
       self.class.default_model_for_service_type(service_type)
     end
 
+    def max_tokens_for(service_type)
+      ZAI_MAX_TOKENS if ZAI_SERVICE_TYPES.include?(service_type)
+    end
+
     class HttpClient
       attr_reader :model
 
-      def initialize(transport:, model:, provider_type:)
+      def initialize(transport:, model:, provider_type:, max_tokens: nil)
         @transport = transport
         @model = model
         @provider_type = provider_type
+        @max_tokens = max_tokens
       end
 
       def call(conversation, tools: nil, on_chunk: nil)
@@ -118,9 +130,9 @@ module ChatSessions
         stream_callback = build_stream_callback(on_chunk) if on_chunk
 
         response = if stream_callback
-          @transport.chat(messages: messages, model: model, tools: formatted_tools, stream: true, &stream_callback)
+          @transport.chat(**chat_kwargs(messages, formatted_tools, true), &stream_callback)
         else
-          @transport.chat(messages: messages, model: model, tools: formatted_tools, stream: false)
+          @transport.chat(**chat_kwargs(messages, formatted_tools, false))
         end
 
         {
@@ -133,6 +145,12 @@ module ChatSessions
       end
 
       private
+
+      def chat_kwargs(messages, tools, stream)
+        { messages:, model:, tools:, stream: }.tap do |kwargs|
+          kwargs[:max_tokens] = @max_tokens if @max_tokens
+        end
+      end
 
       def build_stream_callback(on_chunk)
         proc { |event| on_chunk.call(event[:content]) if event[:type] == :text }

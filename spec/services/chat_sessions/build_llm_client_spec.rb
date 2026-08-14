@@ -41,6 +41,26 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
         expect(client).to be_a(described_class::HttpClient)
         expect(client.model).to eq("moonshotai/kimi-k2")
       end
+
+      it "raises the z.ai chat output cap above the transport default" do
+        api_key_record = create(:provider_api_key, user: user, api_key: "sk-zai-test-key", api_service_type: "zai_coding")
+        runner = create(:runner, :api_key,
+          user: user,
+          runner_key: "opencode",
+          provider_api_key: api_key_record,
+          config: { "opencode" => { "api_provider" => "zai_coding", "model" => "glm-5.3" } }
+        )
+        chat_session = create(:chat_session, account: account, created_by: user, runner: runner, model: "glm-5.3")
+
+        client = described_class.call(chat_session: chat_session)
+        transport = client.instance_variable_get(:@transport)
+        response = instance_double(AgentHarness::Response, output: "Done", model: "glm-5.3", input_tokens: 1, output_tokens: 1, metadata: {})
+        allow(transport).to receive(:chat).and_return(response)
+
+        client.call([ { role: "user", content: "What did you find?" } ])
+
+        expect(transport).to have_received(:chat).with(hash_including(max_tokens: 16_384))
+      end
     end
 
     context "with an integration credential-backed API key runner" do
@@ -363,6 +383,7 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
           expect(kwargs[:tools]).to eq(expected_tools)
           expect(kwargs[:model]).to eq(model)
           expect(kwargs[:stream]).to be(false)
+          expect(kwargs).not_to have_key(:max_tokens)
         end
       end
 
@@ -393,6 +414,20 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
         client.call(conversation, tools: nil)
 
         expect(transport).to have_received(:chat).with(hash_including(tools: nil))
+      end
+
+      it "passes configured max_tokens to the transport" do
+        client = described_class.new(
+          transport: transport,
+          model: model,
+          provider_type: :openai_compatible,
+          max_tokens: 16_384
+        )
+        allow(transport).to receive(:chat).and_return(response)
+
+        client.call(conversation)
+
+        expect(transport).to have_received(:chat).with(hash_including(max_tokens: 16_384))
       end
     end
   end
