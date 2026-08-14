@@ -33,6 +33,21 @@ RSpec.describe AgentRun do
 
       expect(agent_run.instance_variable_get(:@prompt_assembly_result)).to be_a(PromptAssembly::Result)
     end
+
+    it "renders the stored prompt version when one was selected at queue time" do
+      prompt_record = create(:prompt, :global, slug: "coding.issue_implementation")
+      prompt_record.create_version!(
+        template: 'Queued template for {{title}} (#{{issue_number}})' \
+          "\n\nLint: {{lint_command}}",
+        variables: []
+      )
+      agent_run.update!(prompt_version: prompt_record.current_version)
+
+      prompt = agent_run.prompt_for_issue
+
+      expect(prompt).to include("Queued template for Fix login redirect (#42)")
+      expect(prompt).to include("Lint: bundle exec rubocop")
+    end
   end
 
   describe "#effective_prompt provenance persistence" do

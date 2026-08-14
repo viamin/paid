@@ -41,42 +41,17 @@ module Activities
       }
       provider_id, agent_type = resolve_and_validate_runner_selection!(**runner_selection_options)
 
-      # Resolve and render prompt version if no custom prompt is provided.
-      # Skip for untrusted issues to match the safety behavior in AgentRun#prompt_for_issue.
+      # Resolve the create_pr issue template version when no custom prompt is
+      # provided. The queued run records the chosen PromptVersion for audit,
+      # but leaves custom_prompt blank so runner-time PromptAssembly can build
+      # the issue prompt with provenance.
       prompt_version = nil
       service_environment_prompt_blocks = []
-      if custom_prompt.blank? && issue.present? && issue.trusted?
+      if goal == "create_pr" && custom_prompt.blank? && issue.present? && issue.trusted?
         prompt_version = Prompts::Resolve.call(slug: "coding.issue_implementation", project: project)
         if prompt_version
-          # The activity appends a full `# Service Environment` section after
-          # the rendered template (see below), so we suppress the inline
-          # `{{setup_database_instruction}}` slot to avoid duplicating the
-          # database setup line. BuildForIssue uses the opposite split: it
-          # fills the inline slot and skips the header in the appended block.
-          rendered_prompt = prompt_version.render(
-            title: issue.title,
-            issue_number: issue.github_number.to_s,
-            body: issue.body.to_s,
-            test_command: test_command_for(project),
-            lint_command: lint_command_for(project),
-            setup_database_instruction: ""
-          )
           service_environment = Prompts::BuildForIssue.service_environment_section_render_for(project: project)
           service_environment_prompt_blocks = service_environment.prompt_blocks
-
-          custom_prompt = [
-            rendered_prompt,
-            # Append trusted issue comments so they reach the agent even when
-            # the rendered PromptVersion is stored as custom_prompt (which
-            # bypasses BuildForIssue in effective_prompt).
-            Prompts::BuildForIssue.conversation_section_for(
-              project: project, issue: issue,
-              github_client: project.github_token&.client
-            ),
-            service_environment.content,
-            # @spec PROMPT-ASSEMBLY-015
-            PromptAssembly::Sections::SafetyRules::SAFETY_RULES
-          ].reject(&:blank?).join("\n\n")
         end
       end
 

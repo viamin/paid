@@ -35,6 +35,8 @@ class PromptAssembly::Sections::IssueTask
   private
 
   def build_section
+    return selected_prompt_version.render(variables) if selected_prompt_version
+
     Prompts::Render.call(
       slug: PROMPT_SLUG,
       project: project,
@@ -60,6 +62,13 @@ class PromptAssembly::Sections::IssueTask
       test_command: test_command,
       setup_database_instruction: setup_database_instruction
     }
+  end
+
+  def selected_prompt_version
+    version = agent_run&.prompt_version
+    return unless version&.prompt&.slug == PROMPT_SLUG
+
+    version
   end
 
   def lint_command
