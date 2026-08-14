@@ -5088,6 +5088,22 @@ RSpec.describe AgentRun do
         agent_run.update!(branch_name: "feature/test")
       }.not_to have_enqueued_job(ContainerMetricsCollectionJob)
     end
+
+    it "enqueues when a container is assigned to an already-running run" do # @spec TEMPORAL-ORCHESTRATION-005
+      agent_run = create(:agent_run, :running, container_id: nil)
+
+      expect {
+        agent_run.update!(container_id: "abc123", container_host: "docker")
+      }.to have_enqueued_job(ContainerMetricsCollectionJob).with(agent_run.id)
+    end
+
+    it "does not enqueue when a container is released from a running run" do
+      agent_run = create(:agent_run, :running, container_id: "abc123")
+
+      expect {
+        agent_run.update!(container_id: nil)
+      }.not_to have_enqueued_job(ContainerMetricsCollectionJob)
+    end
   end
 
   describe "failure recovery callback" do

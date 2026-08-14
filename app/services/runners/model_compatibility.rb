@@ -40,6 +40,9 @@ module Runners
       gpt-5.5
       gpt-5.5-pro
     ].freeze
+    # Short-term guard that applies regardless of harness age: models observed
+    # to be unavailable to ChatGPT Codex subscription accounts. Remove when the
+    # equivalent contract lands upstream in agent-harness.
     CODEX_SUBSCRIPTION_UNSUPPORTED_MODELS = %w[
       gpt-5.6
       gpt-5.6-luna

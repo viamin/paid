@@ -236,7 +236,7 @@ class AgentRun < ApplicationRecord
   after_commit :enqueue_quality_metrics_collection, on: :update, if: :real_run_just_finished?
   after_commit :enqueue_anomaly_detection, on: :update, if: :real_run_just_finished?
   after_commit :enqueue_resource_profile_refresh, on: :update, if: :real_run_just_finished?
-  after_commit :enqueue_container_metrics_collection, on: :update, if: :just_started_running?
+  after_commit :enqueue_container_metrics_collection, on: :update, if: :container_metrics_seed_due?
   after_commit :enqueue_issue_goal_timeout_retry, on: :update, if: :just_timed_out_issue_goal?
   after_commit :enqueue_failure_recovery_decision, on: :update, if: :recovery_decision_required?
   after_commit :record_dispatch_circuit_breaker_outcome, on: :update, if: :real_run_just_finished?
@@ -3389,6 +3389,15 @@ class AgentRun < ApplicationRecord
 
   def just_started_running?
     previous_changes.key?("status") && status == "running"
+  end
+
+  # @spec TEMPORAL-ORCHESTRATION-005 — admission flips a run to running before
+  # any container exists, so metrics seeding must also fire when provisioning
+  # later assigns a container to an already-running run.
+  def container_metrics_seed_due?
+    return false unless container_id.present?
+
+    just_started_running? || (previous_changes.key?("container_id") && running?)
   end
 
   private :explicit_user_max_tokens_per_run, :explicit_user_max_execution_seconds
