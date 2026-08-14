@@ -104,6 +104,8 @@
                      data-dropdown-target="menu">
                   <%= link_to "Quality", quality_dashboard_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close" } %>
                   <%= link_to "Prompts", prompts_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close" } %>
+                  <%= link_to "Prompt Reviews", prompt_reviews_queue_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close" } %>
+                  <%= link_to "Plan Reviews", plan_reviews_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close" } %>
                   <%= link_to "Knowledge", knowledge_search_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close" } %>
                 </div>
               </div>
@@ -133,6 +135,9 @@
                     <%= link_to "Services", service_containers_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close" } %>
                   <% end %>
                   <%= link_to "Integrations", integrations_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close" } %>
+                  <% if policy(CodexLoginSession.new(account: current_account)).new? %>
+                    <%= link_to "Codex Login", new_codex_login_session_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close" } %>
+                  <% end %>
                   <% if policy(ExceptionIncident).index? %>
                     <%= link_to "Exception incidents", exception_incidents_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close" } %>
                   <% end %>
@@ -234,6 +239,8 @@
             <p class="<%= mobile_heading_class %>">Insights</p>
             <%= link_to "Quality", quality_dashboard_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
             <%= link_to "Prompts", prompts_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
+            <%= link_to "Prompt Reviews", prompt_reviews_queue_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
+            <%= link_to "Plan Reviews", plan_reviews_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
             <%= link_to "Knowledge", knowledge_search_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
 
             <p class="<%= mobile_heading_class %>">Operations</p>
@@ -242,6 +249,9 @@
               <%= link_to "Services", service_containers_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
             <% end %>
             <%= link_to "Integrations", integrations_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
+            <% if policy(CodexLoginSession.new(account: current_account)).new? %>
+              <%= link_to "Codex Login", new_codex_login_session_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
+            <% end %>
             <% if policy(ExceptionIncident).index? %>
               <%= link_to "Exception incidents", exception_incidents_path, data: { action: "mobile-menu#close", testid: "mobile-exception-incidents-link" }, class: mobile_link_class %>
             <% end %>
