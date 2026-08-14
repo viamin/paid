@@ -25,6 +25,32 @@ module ExecutionRunners
   # @abstract Subclass and override every method.
   # @spec CONTAINER-RUNTIME-007
   class Base
+    # The kind of execution resource this runner provisions (e.g. "container"),
+    # or nil when the runner cannot identify a resource kind. A runner that
+    # returns nil skips the provisioning-intent ledger (CONTAINER-RUNTIME-018)
+    # because it cannot attribute a created resource back to its Paid origin.
+    # @return [String, nil]
+    # @spec CONTAINER-RUNTIME-018
+    def resource_kind
+      nil
+    end
+
+    # Whether this runner/provider can apply ownership tags to a provisioned
+    # resource. Defaults to false (conservative) so a remote runner that cannot
+    # tag degrades explicitly instead of silently losing attribution
+    # (CONTAINER-RUNTIME-019).
+    # @return [Boolean]
+    def supports_tagging?
+      false
+    end
+
+    # Whether this runner/provider can list provisioned resources (for
+    # reconciliation). Defaults to false (conservative).
+    # @return [Boolean]
+    def supports_listing?
+      false
+    end
+
     # Provision the execution environment (workspace, network, services, secrets).
     #
     # @param spec [RunSpec] immutable description of what to execute

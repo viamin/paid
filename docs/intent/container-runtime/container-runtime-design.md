@@ -206,12 +206,54 @@ default workspace strategy (named volumes with in-container clone), host
 bind-mount support, and all provision-side workspace/heartbeat tests are
 preserved until the deferred specs land.
 
+## Provisioning-intent ledger and ownership tags (RDR-058)
+
+Every execution resource a runner creates is reconcileable to its Paid origin
+even when the runner process dies between provider creation and handle
+persistence. RDR-058 wires runner provisioning into an execution-resource
+ledger and a stable ownership-tag set.
+
+- `ProvisioningIntent` is the ledger row. A runner records one in the `pending`
+  state BEFORE it issues the provider create call, capturing the runner type,
+  resource kind, environment, account, project, run, attempt, and the ownership
+  tags. When the create succeeds the runner captures the provider resource
+  identifier (status `created`); when the handle is built it links the
+  serialized `RunnerHandle` (status `linked`). A runner that cannot identify a
+  resource kind provisions without recording a ledger row.
+- `ExecutionRunners::OwnershipTags` is the stable Paid ownership-tag set
+  (environment, account, project, run, attempt, resource kind). The Docker
+  runner translates it to `paid.*` Docker labels via the provisioner's
+  `ownership_labels:` option so the live resource carries the same attribution
+  as the ledger row.
+- `ExecutionRunners::ProvisioningLedger` owns the ledger lifecycle (record,
+  link-created, link-handle, mark-failed) so each runner's `#provision` stays
+  thin. Recording is required before the create call; the post-create
+  transitions are best-effort so a ledger UPDATE can never mask a successful
+  handle return.
+- Runner capabilities (`#resource_kind`, `#supports_tagging?`,
+  `#supports_listing?`) are declared on `ExecutionRunners::Base` with
+  conservative defaults (no resource kind, no tagging, no listing) so a future
+  remote runner that cannot tag or list degrades explicitly: it still records
+  the ledger row with `tagging_supported: false` and emits a warning instead of
+  failing provisioning.
+- The crash window is reconcileable by design: a ledger row left in the
+  `created` state with a provider resource identifier, plus the ownership tags
+  burned into the live resource, lets a reconciliation scan locate the orphan
+  without the persisted `runner_handle`.
+
+`LocalDockerRunner` populates ledger data while preserving its existing
+cleanup behavior (firewall failure still cleans up the live container). The
+ledger is append-only for the provision lifecycle; cleanup does not delete the
+ledger row, so a full provision → cleanup history remains for auditing.
+
 ## References
 
 - `app/services/containers/provision.rb`
 - `app/services/execution_runners.rb`
 - `app/services/execution_runners/base.rb`
 - `app/services/execution_runners/local_docker_runner.rb`
+- `app/services/execution_runners/provisioning_ledger.rb`
+- `app/models/provisioning_intent.rb`
 - `app/services/containers/resolve_host_for_run.rb`
 - `app/services/containers/backend_scheduler.rb`
 - `app/services/containers/service_provisioner.rb`
@@ -222,6 +264,7 @@ preserved until the deferred specs land.
 - `spec/services/execution_runners_spec.rb`
 - `spec/services/execution_runners/base_spec.rb`
 - `spec/services/execution_runners/local_docker_runner_spec.rb`
+- `spec/models/provisioning_intent_spec.rb`
 - `spec/support/shared_examples/execution_runner_contract.rb`
 - `spec/services/containers/service_provisioner_spec.rb`
 - `spec/services/capacity/docker_snapshot_spec.rb`

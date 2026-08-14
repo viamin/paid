@@ -72,7 +72,10 @@ RSpec.describe ExecutionRunners::Base do
     it "exposes only the domain lifecycle methods, none referencing Docker concepts" do
       instance_methods = described_class.instance_methods(false)
 
-      expect(instance_methods).to contain_exactly(:provision, :start, :running?, :reconnect, :status, :cancel, :cleanup)
+      expect(instance_methods).to contain_exactly(
+        :provision, :start, :running?, :reconnect, :status, :cancel, :cleanup,
+        :resource_kind, :supports_tagging?, :supports_listing?
+      )
 
       forbidden = %w[docker container_id bind_mount exec_in_container network_name]
       instance_methods.each do |method|

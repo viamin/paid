@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_12_124601) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_14_072312) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2145,6 +2145,32 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_12_124601) do
     t.index ["user_id"], name: "index_provider_api_keys_on_user_id"
   end
 
+  create_table "provisioning_intents", comment: "Execution-resource provisioning-intent ledger rows recording runner intent before provider create calls so orphaned resources remain reconcileable (RDR-058).", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Owning account (ownership tag 'account')."
+    t.bigint "agent_run_id", comment: "Agent run the resource was provisioned for (ownership tag 'run')."
+    t.integer "attempt", default: 0, null: false, comment: "Provision attempt ordinal for this run/resource kind (ownership tag 'attempt')."
+    t.datetime "created_at", null: false
+    t.string "environment", limit: 100, null: false, comment: "Paid deployment environment the resource belongs to (ownership tag 'environment')."
+    t.jsonb "metadata", default: {}, null: false, comment: "Additional structured context (degradation reasons, reconciliation notes)."
+    t.jsonb "ownership_tags", default: {}, null: false, comment: "Stable Paid ownership tag map (paid.* labels) applied to the live resource for reconciliation."
+    t.bigint "project_id", comment: "Owning project (ownership tag 'project')."
+    t.string "provider_resource_host", limit: 200, comment: "Backend host owning the provider resource (e.g. container_host)."
+    t.string "provider_resource_id", limit: 200, comment: "Provider resource identifier captured once the create call succeeds (e.g. Docker container id)."
+    t.datetime "reconciled_at", comment: "When a reconciliation process resolved this ledger row (e.g. reclaimed an orphan)."
+    t.string "resource_kind", limit: 100, null: false, comment: "Kind of execution resource the runner intends to create (e.g. 'container', 'workspace_volume')."
+    t.jsonb "runner_handle", comment: "Serialized ExecutionRunners::RunnerHandle linked once the runner builds the handle."
+    t.string "runner_type", limit: 50, null: false, comment: "Runner type that recorded the intent (matches RunnerHandle#runner_type, e.g. 'local_docker')."
+    t.string "status", limit: 50, default: "pending", null: false, comment: "Ledger lifecycle state: pending | created | linked | failed."
+    t.boolean "tagging_supported", default: true, null: false, comment: "Whether the runner/provider could apply ownership tags; false records an explicit degradation."
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_provisioning_intents_on_account_id"
+    t.index ["agent_run_id", "resource_kind", "attempt"], name: "index_provisioning_intents_on_run_kind_attempt"
+    t.index ["agent_run_id"], name: "index_provisioning_intents_on_agent_run_id"
+    t.index ["project_id"], name: "index_provisioning_intents_on_project_id"
+    t.index ["provider_resource_id"], name: "index_provisioning_intents_on_provider_resource_id", where: "(provider_resource_id IS NOT NULL)"
+    t.index ["status", "created_at"], name: "index_provisioning_intents_on_status_and_created_at"
+  end
+
   create_table "quality_gate_events", comment: "Records each threshold breach and recovery observed by the quality gate system.", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "event_type", limit: 20, null: false, comment: "Quality gate transition being recorded: trigger or recovery."
@@ -3140,6 +3166,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_12_124601) do
   add_foreign_key "prompts", "projects", on_delete: :cascade
   add_foreign_key "prompts", "prompt_versions", column: "current_version_id", on_delete: :nullify
   add_foreign_key "provider_api_keys", "users", on_delete: :cascade
+  add_foreign_key "provisioning_intents", "accounts"
+  add_foreign_key "provisioning_intents", "agent_runs"
+  add_foreign_key "provisioning_intents", "projects"
   add_foreign_key "quality_gate_events", "projects"
   add_foreign_key "quality_gate_events", "quality_gate_thresholds"
   add_foreign_key "quality_gate_events", "quality_metrics"

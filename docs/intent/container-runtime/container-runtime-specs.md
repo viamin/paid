@@ -208,3 +208,45 @@
   `ExecutionRunners::LocalDockerRunner`,
   `Containers::Provision.networking_policy_for`,
   `Containers::ProxyUrl.resolve`
+
+- [x] **CONTAINER-RUNTIME-018** — When an execution runner provisions a
+  resource whose kind it can identify (`#resource_kind` present), the system
+  SHALL create a provisioning-intent ledger row (status `pending`) recording
+  the runner type, resource kind, environment, account, project, run, attempt,
+  and ownership tags BEFORE the runner issues the provider create call. When the
+  provider create call succeeds, the system SHALL capture the provider resource
+  identifier on the ledger row (status `created`), and when the runner builds
+  the handle it SHALL link the serialized runner handle to the ledger row
+  (status `linked`). A runner that cannot identify a resource kind SHALL
+  provision without recording a ledger row.
+  *Tests:* `spec/services/execution_runners/local_docker_runner_spec.rb`,
+  `spec/models/provisioning_intent_spec.rb`,
+  `spec/support/shared_examples/execution_runner_contract.rb`
+  *Code:* `ExecutionRunners::ProvisioningLedger`,
+  `ExecutionRunners::LocalDockerRunner#provision`, `ProvisioningIntent`
+
+- [x] **CONTAINER-RUNTIME-019** — When a runner provisions a resource it SHALL
+  apply the stable Paid ownership tags — environment, account, project, run,
+  attempt, and resource kind — to the provider resource (Docker labels for the
+  Docker runner) so an orphaned resource can be attributed back to its Paid
+  origin. When a runner or provider cannot apply tags or list resources
+  (`#supports_tagging?` / `#supports_listing?` false), the system SHALL degrade
+  explicitly: record the unsupported capability on the ledger row and emit a
+  warning instead of failing provisioning.
+  *Tests:* `spec/services/execution_runners/local_docker_runner_spec.rb`,
+  `spec/support/shared_examples/execution_runner_contract.rb`
+  *Code:* `ExecutionRunners::OwnershipTags`,
+  `ExecutionRunners::LocalDockerRunner#provision`,
+  `Containers::Provision#container_labels`
+
+- [x] **CONTAINER-RUNTIME-020** — When a crash occurs after the provider create
+  call returns a resource identifier but before the runner handle is persisted,
+  the system SHALL leave enough information for reconciliation: a
+  provisioning-intent ledger row in the `created` state carrying the provider
+  resource identifier, plus the ownership tags applied to the live resource.
+  Reconciliation SHALL be able to locate the orphaned resource by ledger row or
+  by ownership tag without the persisted runner handle.
+  *Tests:* `spec/services/execution_runners/local_docker_runner_spec.rb`,
+  `spec/models/provisioning_intent_spec.rb`
+  *Code:* `ExecutionRunners::ProvisioningLedger`,
+  `ProvisioningIntent`

@@ -268,6 +268,52 @@ module ExecutionRunners
     end
   end
 
+  # Stable Paid ownership-tag set applied to every provisioned execution
+  # resource so a leaked/orphaned resource can be attributed and reconciled
+  # back to its Paid origin (RDR-058). A runner translates this to its native
+  # provider tag mechanism (Docker labels for the Docker runner).
+  #
+  # The six tag names are the contract every Paid-managed execution resource
+  # carries: environment, account, project, run, attempt, and resource kind.
+  # @spec CONTAINER-RUNTIME-019
+  OwnershipTags = Data.define(:environment, :account_id, :project_id, :run_id, :attempt, :resource_kind) do
+    LABEL_PREFIX = "paid."
+    REQUIRED_TAG_NAMES = %w[environment account project run attempt resource].freeze
+
+    # Builds the ownership tags from an agent-run context. The environment is
+    # the Paid deployment identifier (caller-supplied so deployments without a
+    # Rails.env concept can still attribute resources). Returns nil when no
+    # resource kind is supplied, signalling the runner cannot attribute the
+    # resource and must skip the ledger.
+    def self.for(agent_run:, resource_kind:, environment:, attempt: 0)
+      return nil if resource_kind.blank?
+
+      project = agent_run&.project
+      new(
+        environment: environment.to_s,
+        account_id: project&.account_id,
+        project_id: project&.id,
+        run_id: agent_run&.id,
+        attempt: Integer(attempt || 0),
+        resource_kind: resource_kind.to_s
+      )
+    end
+
+    # The tags as a provider-label map (the Docker runner merges this into the
+    # container/volume labels). Keys carry the shared `paid.*` prefix so a
+    # reconciliation scan can list resources by label regardless of runner.
+    def to_label_map
+      {
+        "#{LABEL_PREFIX}environment" => environment.to_s,
+        "#{LABEL_PREFIX}account" => account_id.to_s,
+        "#{LABEL_PREFIX}project" => project_id.to_s,
+        "#{LABEL_PREFIX}run" => run_id.to_s,
+        "#{LABEL_PREFIX}attempt" => attempt.to_s,
+        "#{LABEL_PREFIX}resource" => resource_kind.to_s
+      }
+    end
+  end
+
   # Provider-neutral networking policy, replacing Docker network names.
   # Adapted from +NetworkPolicy::NetworkContract+ but drops the Docker-specific
   # +network+ name and derives restriction from +mode+. A runner implementation

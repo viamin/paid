@@ -26,29 +26,65 @@ module ExecutionRunners
   class LocalDockerRunner < Base
     RUNNER_TYPE = :local_docker
 
+    # The kind of execution resource this runner provisions, recorded on the
+    # provisioning-intent ledger (RDR-058).
+    RESOURCE_KIND = "container"
+
     # Prefix for per-run Docker named volumes. Volume-name construction lives
     # here (inside the runner) so no orchestration code or domain model builds
     # Docker volume names (RDR-054).
     WORKSPACE_VOLUME_PREFIX = "paid-workspace"
 
+    # @spec CONTAINER-RUNTIME-018
+    def resource_kind
+      RESOURCE_KIND
+    end
+
+    # Docker supports container/volume labels, so the runner can apply the
+    # stable Paid ownership tags to every provisioned resource.
+    # @spec CONTAINER-RUNTIME-019
+    def supports_tagging?
+      true
+    end
+
+    # Docker can list containers/volumes, so reconciliation can locate orphans.
+    def supports_listing?
+      true
+    end
+
+    # @spec CONTAINER-RUNTIME-018
+    # @spec CONTAINER-RUNTIME-019
+    # @spec CONTAINER-RUNTIME-020
     def provision(spec:)
       backend = backend_for(spec)
       policy = spec.networking_policy
       raise ProvisionError, "RunSpec requires a NetworkingPolicy" if policy.nil?
 
       ensure_agent_network!(backend: backend, policy: policy)
+      ledger = provisioning_ledger
+      intent = ledger.record_intent(agent_run: spec.agent_run)
       service = Containers::Provision.new(
         agent_run: spec.agent_run,
         project: spec.project,
         worktree_path: self.class.worktree_path_for(spec),
         backend: backend,
         networking_policy: policy,
+        ownership_labels: ledger.ownership_labels_for(agent_run: spec.agent_run),
         **provision_options(spec)
       )
       result = service.provision
+      # Capture the provider resource identifier immediately so a crash between
+      # here and handle persistence still leaves a reconcileable ledger row
+      # (CONTAINER-RUNTIME-020).
+      ledger.link_created(intent, provider_resource_id: result[:container_id], host: result[:container_host])
       apply_firewall!(service: service, backend: backend, policy: policy)
-      handle_for(spec: spec, result: result)
+      handle = handle_for(spec: spec, result: result)
+      ledger.link_handle(intent, handle)
+      handle
     rescue Containers::Provision::ProvisionError => e
+      # Provider create failed; Containers::Provision cleaned up. No live
+      # resource to reconcile — record the failure and surface the error.
+      ledger&.mark_failed(intent)
       raise ProvisionError, e.message
     rescue ProvisionError
       # The container is already provisioned and running by the time the
@@ -64,6 +100,7 @@ module ExecutionRunners
       rescue StandardError
         # Surface the original provisioning error, not the cleanup error.
       end
+      ledger&.mark_failed(intent)
       raise
     end
 
@@ -219,6 +256,24 @@ module ExecutionRunners
     end
 
     private
+
+    # Builds the provisioning-intent ledger from this runner's declared
+    # capabilities (RDR-058). The runner owns the environment identifier so a
+    # future remote runner can substitute a deployment-specific value.
+    def provisioning_ledger
+      ProvisioningLedger.new(
+        runner_type: RUNNER_TYPE,
+        resource_kind: resource_kind,
+        environment: provisioning_environment,
+        supports_tagging: supports_tagging?
+      )
+    end
+
+    # Paid deployment identifier burned into the ownership tags so resources
+    # are attributed to the deployment that created them.
+    def provisioning_environment
+      Rails.env.to_s
+    end
 
     # Maps the raw Docker state inspection to an ExecutionStatus state:
     # a running workload wins over OOM (a container can show OOMKilled=true

@@ -254,6 +254,7 @@ module Containers
       @preview_tunnel_option = options.delete(:preview_tunnel)
       @pool_mode = options.delete(:pool_mode) { false }
       @networking_policy = networking_policy
+      @ownership_labels = options.delete(:ownership_labels) { {} }
       @raw_options = options
       @backend = backend
       @container = nil
@@ -2440,7 +2441,7 @@ module Containers
       labels["paid.container_pool_entry_id"] = pool_entry.id.to_s if pool_entry
 
       {
-        "Labels" => labels
+        "Labels" => labels.merge(@ownership_labels)
       }
     end
 
@@ -2463,7 +2464,7 @@ module Containers
         labels[Previews::TunnelManager::PREVIEW_SERVICE_NAME_LABEL] = preview_tunnel.service_name
         labels[Previews::TunnelManager::PREVIEW_TUNNEL_PORT_LABEL] = preview_tunnel.tunnel_port.to_s
       end
-      labels
+      labels.merge(@ownership_labels)
     end
 
     def create_container

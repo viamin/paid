@@ -21,6 +21,11 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
   end
   let(:provision_service) { instance_double(Containers::Provision, container: instance_double(Docker::Container)) }
   let(:started_container) { instance_double(Docker::Container) }
+  let(:ownership_label_map) do
+    ExecutionRunners::OwnershipTags.for(
+      agent_run: agent_run, resource_kind: "container", environment: "test"
+    ).to_label_map
+  end
 
   before do
     allow(Containers).to receive(:backend_for).and_return(backend)
@@ -37,7 +42,8 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       expect(Containers::Provision).to receive(:new).with(
         agent_run: agent_run, project: agent_run.project, worktree_path: nil, backend: backend,
         networking_policy: run_spec.networking_policy,
-        image: "paid/agent:latest", memory_bytes: 1024, cpu_quota: 100_000, pids_limit: 50
+        image: "paid/agent:latest", memory_bytes: 1024, cpu_quota: 100_000, pids_limit: 50,
+        ownership_labels: ownership_label_map
       ).and_return(provision_service)
       allow(provision_service).to receive(:provision).and_return(
         Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
@@ -237,6 +243,122 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
 
       expect { runner.provision(spec: run_spec) }
         .to raise_error(ExecutionRunners::ProvisionError, /Firewall setup failed/)
+    end
+  end
+
+  # @spec CONTAINER-RUNTIME-018
+  # @spec CONTAINER-RUNTIME-019
+  # @spec CONTAINER-RUNTIME-020
+  describe "provisioning ledger integration (RDR-058)" do
+    before do
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      allow(provision_service).to receive(:provision).and_return(
+        Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
+      )
+    end
+
+    it "records a pending intent before the create call, then links the resource and handle" do
+      intents_at_create = []
+      allow(provision_service).to receive(:provision) do
+        intents_at_create.concat(ProvisioningIntent.where(status: "pending").to_a)
+        Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
+      end
+
+      handle = runner.provision(spec: run_spec)
+
+      expect(intents_at_create).not_to be_empty
+      expect(intents_at_create.first).to be_pending
+      intent = ProvisioningIntent.order(:id).last
+      expect(intent.status).to eq("linked")
+      expect(intent.provider_resource_id).to eq("abc123")
+      expect(intent.runner_handle).to eq(handle.to_storage)
+      expect(intent.runner_type).to eq("local_docker")
+      expect(intent.resource_kind).to eq("container")
+      expect(intent.tagging_supported).to be(true)
+    end
+
+    it "passes the stable Paid ownership labels through to Containers::Provision" do
+      expect(Containers::Provision).to receive(:new).with(
+        hash_including(ownership_labels: ownership_label_map)
+      ).and_return(provision_service)
+
+      runner.provision(spec: run_spec)
+    end
+
+    it "marks the intent failed when the provider create call fails" do
+      allow(provision_service).to receive(:provision)
+        .and_raise(Containers::Provision::ProvisionError, "Docker error: no space left")
+
+      expect { runner.provision(spec: run_spec) }
+        .to raise_error(ExecutionRunners::ProvisionError, /no space left/)
+
+      intent = ProvisioningIntent.order(:id).last
+      expect(intent.status).to eq("failed")
+      expect(intent.provider_resource_id).to be_nil
+    end
+  end
+
+  # @spec CONTAINER-RUNTIME-020
+  describe "crash-window reconciliation (RDR-058)" do
+    it "leaves a created ledger row with the resource id when the process dies after provider creation" do
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      allow(provision_service).to receive(:provision).and_return(
+        Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
+      )
+      # A fresh runner instance simulates a worker crash after the provider
+      # resource is created but before the runner handle is built/persisted.
+      crashing_runner = described_class.new
+      allow(crashing_runner).to receive(:handle_for).and_raise(StandardError, "worker killed mid-provision")
+
+      expect { crashing_runner.provision(spec: run_spec) }.to raise_error(StandardError, /worker killed/)
+
+      intent = ProvisioningIntent.order(:id).last
+      expect(intent.status).to eq("created")
+      expect(intent.provider_resource_id).to eq("abc123")
+      expect(intent.provider_resource_host).to eq("local")
+      expect(intent.runner_handle).to be_blank
+      expect(intent).to be_orphaned
+      # Reconciliation can locate the live resource by tag even without the
+      # persisted runner handle.
+      expect(intent.ownership_tags).to include(
+        "paid.run" => agent_run.id.to_s,
+        "paid.resource" => "container"
+      )
+    end
+  end
+
+  # @spec CONTAINER-RUNTIME-019
+  describe "degradation when tagging is unsupported (RDR-058)" do
+    let(:untagging_runner) do
+      Class.new(described_class) { def supports_tagging?; false; end }.new
+    end
+
+    before do
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      allow(provision_service).to receive(:provision).and_return(
+        Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
+      )
+    end
+
+    it "still provisions, records tagging_supported=false, and applies no ownership labels" do
+      expect(Containers::Provision).to receive(:new).with(
+        hash_including(ownership_labels: {})
+      ).and_return(provision_service)
+
+      expect { untagging_runner.provision(spec: run_spec) }.not_to raise_error
+
+      intent = ProvisioningIntent.order(:id).last
+      expect(intent.tagging_supported).to be(false)
+      expect(intent.metadata).to include("tagging_degraded" => true)
+      expect(intent.ownership_tags).to be_empty
+    end
+
+    it "emits a warning so the degradation is observable" do
+      expect(Rails.logger).to receive(:warn).with(
+        hash_including(message: "execution_runners.tagging_unsupported_degraded")
+      )
+
+      untagging_runner.provision(spec: run_spec)
     end
   end
 
