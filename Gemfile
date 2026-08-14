@@ -30,7 +30,7 @@ gem "devise"
 
 # Authorization [https://github.com/varvet/pundit]
 gem "pundit"
-gem "avo", "4.1.3"
+gem "avo", "4.1.6"
 
 # Soft-delete for low-volume reference records
 gem "discard"
