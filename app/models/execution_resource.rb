@@ -209,9 +209,9 @@ class ExecutionResource < ApplicationRecord
   private_class_method :normalize_provider_host
 
   def self.safe_agent_run_id(agent_run)
+    return nil unless agent_run.respond_to?(:id)
+
     agent_run.id
-  rescue NoMethodError
-    nil
   end
   private_class_method :safe_agent_run_id
 end

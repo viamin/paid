@@ -260,8 +260,6 @@ module ExecutionRunners
       return nil if stored_handle.blank?
 
       from_json(stored_handle)
-    rescue NoMethodError
-      nil
     end
 
     # Serializes the handle to a JSON-native hash suitable for persisting in a
