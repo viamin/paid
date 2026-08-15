@@ -69,6 +69,7 @@ module ChatSessions
     end
 
     def openai_compatible_client(provider, api_key)
+      # @spec CHAT-API-007
       service_type = provider_service_type(provider)
       config = Runner::DIRECT_OUTBOUND_API_PROVIDERS.values.find { |c| c[:service_type] == service_type }
       base_url = config&.dig(:base_url) || "https://api.openai.com/v1"
@@ -109,6 +110,7 @@ module ChatSessions
       self.class.default_model_for_service_type(service_type)
     end
 
+    # @spec CHAT-API-007
     def max_tokens_for(service_type)
       ZAI_MAX_TOKENS if ZAI_SERVICE_TYPES.include?(service_type)
     end
@@ -146,6 +148,7 @@ module ChatSessions
 
       private
 
+      # @spec CHAT-API-007
       def chat_kwargs(messages, tools, stream)
         { messages:, model:, tools:, stream: }.tap do |kwargs|
           kwargs[:max_tokens] = @max_tokens if @max_tokens
