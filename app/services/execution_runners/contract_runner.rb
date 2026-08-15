@@ -24,8 +24,9 @@ module ExecutionRunners
   # - +status_result:+ — {ExecutionStatus} returned from {#status}.
   #
   # The runner records calls into +provision_calls+, +start_calls+,
-  # +cancel_calls+, and +cleanup_calls+ so specs can assert the runner was
-  # exercised the expected number of times with the expected arguments.
+  # +running_calls+, +status_calls+, +reconnect_calls+, +cancel_calls+, and
+  # +cleanup_calls+ so specs can assert the runner was exercised the
+  # expected number of times with the expected arguments.
   # @spec CONTAINER-RUNTIME-018
   class ContractRunner < Base
     RUNNER_TYPE = :contract
