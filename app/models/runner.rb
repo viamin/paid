@@ -1760,11 +1760,11 @@ class Runner < ApplicationRecord
   # Strip Paid proxy credentials that provision.rb seeds as baseline env. Keep
   # variables explicitly set by the direct-outbound runtime because those hold
   # the real upstream key/base URL for the selected provider.
-  def opencode_direct_outbound_unset_env(runtime_env)
+  def opencode_direct_outbound_unset_env(runtime_env) # @spec AGENT-HARNESS-004
     %w[
       OPENAI_API_KEY OPENAI_BASE_URL OPENAI_HEADER_X_AGENT_RUN_ID OPENAI_HEADER_X_PROXY_TOKEN
       ANTHROPIC_API_KEY ANTHROPIC_BASE_URL ANTHROPIC_HEADER_X_AGENT_RUN_ID ANTHROPIC_HEADER_X_PROXY_TOKEN
-      GEMINI_API_KEY GOOGLE_API_KEY GOOGLE_GEMINI_BASE_URL GOOGLE_GENAI_BASE_URL
+      GEMINI_API_KEY GEMINI_CLI_CUSTOM_HEADERS GOOGLE_API_KEY GOOGLE_GEMINI_BASE_URL GOOGLE_GENAI_BASE_URL
       GOOGLE_HEADER_X_AGENT_RUN_ID GOOGLE_HEADER_X_PROXY_TOKEN
     ] - runtime_env.keys
   end

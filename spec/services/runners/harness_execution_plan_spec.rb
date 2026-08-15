@@ -179,11 +179,12 @@ RSpec.describe Runners::HarnessExecutionPlan do
         "OPENAI_BASE_URL" => "https://openrouter.ai/api/v1",
         "OPENAI_API_KEY" => nil,
         "ANTHROPIC_API_KEY" => nil,
-        "GEMINI_API_KEY" => nil
+        "GEMINI_API_KEY" => nil,
+        "GEMINI_CLI_CUSTOM_HEADERS" => nil
       )
     end
 
-    it "clears proxy env for opencode z.ai coding-plan runs" do
+    it "clears proxy env for opencode z.ai coding-plan runs" do # @spec AGENT-HARNESS-004
       runner = create_opencode_runner(
         api_provider: "zai_coding",
         model: "glm-5.2",
@@ -199,7 +200,8 @@ RSpec.describe Runners::HarnessExecutionPlan do
         "OPENAI_BASE_URL" => nil,
         "ANTHROPIC_API_KEY" => nil,
         "ANTHROPIC_BASE_URL" => nil,
-        "GEMINI_API_KEY" => nil
+        "GEMINI_API_KEY" => nil,
+        "GEMINI_CLI_CUSTOM_HEADERS" => nil
       )
     end
 

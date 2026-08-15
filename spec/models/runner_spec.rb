@@ -1400,7 +1400,7 @@ RSpec.describe Runner do
       expect(runtime.metadata[:config]["provider"]).to eq(expected_minimax_provider(model))
     end
 
-    it "builds runner runtime inputs instead of a local bootstrap wrapper" do
+    it "builds runner runtime inputs instead of a local bootstrap wrapper" do # @spec AGENT-HARNESS-004
       runtime = runner.agent_harness_runner_runtime
 
       expect(runtime.model).to eq("openrouter/moonshotai/kimi-k2-0905")
@@ -1416,7 +1416,8 @@ RSpec.describe Runner do
         "OPENAI_HEADER_X_AGENT_RUN_ID",
         "OPENAI_HEADER_X_PROXY_TOKEN",
         "ANTHROPIC_API_KEY",
-        "GEMINI_API_KEY"
+        "GEMINI_API_KEY",
+        "GEMINI_CLI_CUSTOM_HEADERS"
       )
       expect(runtime.metadata[:config]).not_to have_key("provider")
     end
@@ -1444,7 +1445,8 @@ RSpec.describe Runner do
         "OPENAI_HEADER_X_AGENT_RUN_ID",
         "OPENAI_HEADER_X_PROXY_TOKEN",
         "ANTHROPIC_API_KEY",
-        "GEMINI_API_KEY"
+        "GEMINI_API_KEY",
+        "GEMINI_CLI_CUSTOM_HEADERS"
       )
     end
 
@@ -1459,7 +1461,7 @@ RSpec.describe Runner do
       expect(runtime.model).to eq("zai/glm-5.1-zai")
     end
 
-    it "configures MiniMax through the Anthropic SDK provider config" do
+    it "configures MiniMax through the Anthropic SDK provider config" do # @spec AGENT-HARNESS-004
       runtime = create_opencode_runner(
         api_provider: "minimax",
         api_service_type: "minimax",
@@ -1475,7 +1477,8 @@ RSpec.describe Runner do
         "OPENAI_BASE_URL",
         "ANTHROPIC_HEADER_X_AGENT_RUN_ID",
         "ANTHROPIC_HEADER_X_PROXY_TOKEN",
-        "GEMINI_API_KEY"
+        "GEMINI_API_KEY",
+        "GEMINI_CLI_CUSTOM_HEADERS"
       )
     end
 
@@ -1497,7 +1500,8 @@ RSpec.describe Runner do
         "OPENAI_BASE_URL",
         "ANTHROPIC_HEADER_X_AGENT_RUN_ID",
         "ANTHROPIC_HEADER_X_PROXY_TOKEN",
-        "GEMINI_API_KEY"
+        "GEMINI_API_KEY",
+        "GEMINI_CLI_CUSTOM_HEADERS"
       )
     end
 
