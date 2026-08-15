@@ -35,7 +35,7 @@ module ExecutionRunners
     DEFAULT_SUPPORTED_MODES = ExecutionRunners::NETWORKING_POLICY_KNOWN_MODES
 
     attr_reader :provision_calls, :start_calls, :running_calls, :status_calls,
-                :cancel_calls, :cleanup_calls, :supported_modes
+                :reconnect_calls, :cancel_calls, :cleanup_calls, :supported_modes
 
     def initialize(supports: nil,
                    provision_result: nil,
@@ -48,6 +48,7 @@ module ExecutionRunners
       @start_calls = []
       @running_calls = []
       @status_calls = []
+      @reconnect_calls = []
       @cancel_calls = []
       @cleanup_calls = []
       @default_provision_result = provision_result
@@ -77,6 +78,14 @@ module ExecutionRunners
       @running_result
     end
 
+    # The contract runner keeps no external state, so the reconnected
+    # "service" is the runner itself — lifecycle calls continue to work from
+    # the handle without a real platform round-trip.
+    def reconnect(handle:)
+      @reconnect_calls << handle
+      self
+    end
+
     def status(handle:)
       @status_calls << handle
       @status_result || ExecutionStatus.not_found
@@ -95,7 +104,7 @@ module ExecutionRunners
     def self.compatible?(spec:, backend:, supported_modes: nil)
       return CompatibilityResult.new(compatible: false, error_message: "Backend is not supported") if backend.nil?
 
-      modes = supported_modes || new.supported_modes
+      modes = supported_modes || DEFAULT_SUPPORTED_MODES
       if supports_policy?(spec.networking_policy, supported_modes: modes)
         CompatibilityResult.new(compatible: true, error_message: nil)
       else

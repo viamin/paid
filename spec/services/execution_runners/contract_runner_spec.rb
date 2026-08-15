@@ -140,6 +140,16 @@ RSpec.describe ExecutionRunners::ContractRunner do
     end
   end
 
+  describe "#reconnect" do
+    let(:handle) { ExecutionRunners::RunnerHandle.new(runner_type: :contract, identifier: "x", host: "contract", workspace_ref: "x", metadata: {}) }
+    let(:supported_modes) { [ :model_direct ] }
+
+    it "returns the runner itself and records the call" do
+      expect(runner.reconnect(handle: handle)).to be(runner)
+      expect(runner.reconnect_calls).to eq([ handle ])
+    end
+  end
+
   describe "#running?" do
     let(:handle) { ExecutionRunners::RunnerHandle.new(runner_type: :contract, identifier: "x", host: "contract", workspace_ref: "x", metadata: {}) }
     let(:supported_modes) { [ :model_direct ] }

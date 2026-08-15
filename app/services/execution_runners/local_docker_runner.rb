@@ -36,7 +36,7 @@ module ExecutionRunners
       backend = backend_for(spec)
       policy = spec.networking_policy
       raise ProvisionError, "RunSpec requires a NetworkingPolicy" if policy.nil?
-      raise ProvisionError, unsupported_policy_message(policy) unless self.class.supports_policy?(policy)
+      raise ProvisionError, self.class.unsupported_policy_message(policy) unless self.class.supports_policy?(policy)
 
       ensure_agent_network!(backend: backend, policy: policy)
       service = Containers::Provision.new(
@@ -185,11 +185,18 @@ module ExecutionRunners
       unless supports_policy?(policy)
         return CompatibilityResult.new(
           compatible: false,
-          error_message: "Runner does not support networking policy #{policy&.mode.inspect}"
+          error_message: unsupported_policy_message(policy)
         )
       end
 
       CompatibilityResult.new(compatible: true, error_message: nil)
+    end
+
+    # Single source of truth for the unsupported-policy error message, shared
+    # by +.compatible?+ (rejects before scheduling) and +#provision+ (rejects
+    # before any Docker side effect).
+    def self.unsupported_policy_message(policy)
+      "Runner does not support networking policy #{policy&.mode.inspect}"
     end
 
     # Docker supports every RDR-056 networking intent: the four restricted
@@ -256,10 +263,6 @@ module ExecutionRunners
 
     def backend_for(spec)
       Containers.backend_for(spec.agent_run&.workspace_volume_host)
-    end
-
-    def unsupported_policy_message(policy)
-      "Runner does not support networking policy #{policy&.mode.inspect}"
     end
 
     # Translates the runner-level +NetworkingPolicy+ into the Docker side
