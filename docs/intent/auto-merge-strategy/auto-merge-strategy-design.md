@@ -42,7 +42,11 @@ resolved dependencies.
 Execution is incremental rather than umbrella-driven. The dedicated
 `DependabotAutoMergeJob` evaluates candidate PRs, merges at most one green PR
 per pass, labels/comment-tags successful merges, and treats expected merge
-rejections as logged no-ops rather than crashes.
+rejections as logged no-ops rather than crashes. App-backed projects that have
+a PAT push fallback configured reuse that fallback when a Dependabot merge is
+rejected for a missing workflow permission. Terminal workflow-permission
+failures reuse the PR row's merge-permission cooldown so Paid does not retry
+the same permanent failure every poll cycle.
 
 ## What this is not
 
