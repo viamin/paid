@@ -25,6 +25,11 @@
   dependency auto-merge mode, the system SHALL merge only eligible Dependabot
   PRs, SHALL stop after the first successful merge in a batch, and SHALL add
   the Paid merge label/comment while treating expected merge conflicts or stale
-  mergeability failures as logged non-fatal outcomes.
+  mergeability failures as logged non-fatal outcomes. When the GitHub App
+  merge is rejected for a missing workflow permission and the project has a PAT
+  push fallback configured, it SHALL retry the merge with that fallback client.
+  Terminal workflow-permission merge rejections SHALL mark the synced PR row
+  for the existing merge-permission cooldown and clear that marker after a
+  later successful merge.
   *Code:* `app/jobs/dependabot_auto_merge_job.rb`.
   *Test:* `spec/jobs/dependabot_auto_merge_job_spec.rb`.

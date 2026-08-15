@@ -48,6 +48,7 @@ class DependabotAutoMergeJob < ApplicationJob
     return unless pr_data
 
     return if skip_auto_merge_label?(project, pr_data)
+    return if skip_merge_permission_cooldown?(project, pr_data)
     return if skip_unmergeable?(client, project, pr_data)
 
     merge_dependabot_pr(client, project, pr_data)
@@ -63,6 +64,7 @@ class DependabotAutoMergeJob < ApplicationJob
       next unless pr_data
 
       next if skip_auto_merge_label?(project, pr_data)
+      next if skip_merge_permission_cooldown?(project, pr_data)
       next if skip_unmergeable?(client, project, pr_data)
 
       merged = merge_dependabot_pr(client, project, pr_data)
@@ -118,6 +120,19 @@ class DependabotAutoMergeJob < ApplicationJob
     false
   end
 
+  def skip_merge_permission_cooldown?(project, pr_data)
+    pr_num = pr_number_from(pr_data)
+    issue = pull_request_issue(project, pr_num)
+    return false unless issue&.merge_permission_rejected? && !issue.merge_permission_retry_due?
+
+    Rails.logger.info(
+      message: "dependabot_auto_merge.merge_permission_cooldown",
+      project_id: project.id,
+      pr_number: pr_num
+    )
+    true
+  end
+
   def fetch_pr(client, project, pr_number)
     pr_data = client.pull_request(project.full_name, pr_number)
     return nil unless pr_data && dependabot_pr?(pr_data) && !merged?(pr_data)
@@ -165,11 +180,46 @@ class DependabotAutoMergeJob < ApplicationJob
   def merge_dependabot_pr(client, project, pr_data)
     pr_number = pr_number_from(pr_data)
 
+    merge_dependabot_pr_with(client, project, pr_number)
+  rescue GithubClient::ApiError => e
+    fallback_client = workflow_permission_rejection?(e) && project.git_push_fallback_client
+    if fallback_client
+      Rails.logger.info(
+        message: "dependabot_auto_merge.retrying_with_pat_fallback",
+        project_id: project.id,
+        pr_number: pr_number
+      )
+      begin
+        return merge_dependabot_pr_with(fallback_client, project, pr_number)
+      rescue GithubClient::ApiError => fallback_error
+        return handle_expected_merge_failure(project, pr_number, fallback_error, message: "dependabot_auto_merge.pat_fallback_failed")
+      end
+    end
+
+    handle_expected_merge_failure(project, pr_number, e, message: "dependabot_auto_merge.merge_failed_expected")
+  end
+
+  def handle_expected_merge_failure(project, pr_number, error, message:)
+    raise unless expected_merge_failure?(error)
+
+    record_merge_permission_rejection(project, pr_number, error.message) if workflow_permission_rejection?(error)
+
+    Rails.logger.warn(
+      message: message,
+      project_id: project.id,
+      pr_number: pr_number,
+      status: error.status,
+      error: error.message
+    )
+    false
+  end
+
+  def merge_dependabot_pr_with(client, project, pr_number)
     client.merge_pull_request(
       project.full_name, pr_number,
       merge_method: project.merge_method
     )
-
+    clear_merge_permission_rejection(project, pr_number)
     add_label(client, project, pr_number)
     add_comment(client, project, pr_number)
 
@@ -179,17 +229,31 @@ class DependabotAutoMergeJob < ApplicationJob
       pr_number: pr_number
     )
     true
-  rescue GithubClient::ApiError => e
-    raise unless EXPECTED_MERGE_STATUSES.include?(e.status)
+  end
 
-    Rails.logger.warn(
-      message: "dependabot_auto_merge.merge_failed_expected",
-      project_id: project.id,
-      pr_number: pr_number,
-      status: e.status,
-      error: e.message
-    )
-    false
+  def workflow_permission_rejection?(error)
+    return false if error.respond_to?(:status) && error.status != 403
+
+    AgentRun::PUSH_PERMISSION_REJECTION_KEYWORDS.any? { |keyword| error.message.include?(keyword) }
+  end
+
+  def expected_merge_failure?(error)
+    EXPECTED_MERGE_STATUSES.include?(error.status) || workflow_permission_rejection?(error)
+  end
+
+  def record_merge_permission_rejection(project, pr_number, reason)
+    pull_request_issue(project, pr_number)&.record_merge_permission_rejection!(reason: reason)
+  end
+
+  def clear_merge_permission_rejection(project, pr_number)
+    issue = pull_request_issue(project, pr_number)
+    return unless issue&.merge_permission_rejected?
+
+    issue.update!(merge_permission_rejected_at: nil, merge_permission_rejection_reason: nil)
+  end
+
+  def pull_request_issue(project, pr_number)
+    project.issues.find_by(github_number: pr_number, is_pull_request: true)
   end
 
   def add_label(client, project, pr_number)

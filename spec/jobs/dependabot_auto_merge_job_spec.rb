@@ -236,6 +236,120 @@ RSpec.describe DependabotAutoMergeJob do
       expect { described_class.perform_now(project.id) }.not_to raise_error
     end
 
+    context "with a configured PAT fallback" do
+      let(:project) { create(:project, :with_github_installation, auto_merge_mode: "dependabot_only") }
+      let(:fallback_token) { create(:github_token, :with_workflow_scope, account: project.account) }
+      let(:fallback_client) { instance_double(GithubClient) }
+
+      before do
+        project.update!(git_push_pat_fallback_enabled: true, git_push_fallback_token: fallback_token)
+        allow(Github::AppInstallation).to receive(:token_for).and_return("ghs_app_token")
+        allow(GithubClient).to receive(:new) do |token:, **|
+          token == fallback_token.token ? fallback_client : client
+        end
+        allow(fallback_client).to receive(:merge_pull_request)
+        allow(fallback_client).to receive(:add_labels_to_issue)
+        allow(fallback_client).to receive(:add_comment)
+      end
+
+      it "retries workflow-permission merge failures with the fallback client" do
+        allow(client).to receive(:merge_pull_request).and_raise(
+          GithubClient::ApiError.new(
+            "refusing to allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows` permission",
+            status: 403
+          )
+        )
+
+        described_class.perform_now(project.id)
+
+        expect(fallback_client).to have_received(:merge_pull_request).with(
+          project.full_name, 42, merge_method: project.merge_method
+        )
+        expect(fallback_client).to have_received(:add_labels_to_issue).with(
+          project.full_name, 42, [ "paid-auto-merged-dependabot" ]
+        )
+        expect(fallback_client).to have_received(:add_comment)
+      end
+
+      it "handles terminal fallback merge rejection without raising" do
+        rejection = "refusing to allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows` permission"
+        allow(client).to receive(:merge_pull_request).and_raise(
+          GithubClient::ApiError.new(rejection, status: 403)
+        )
+        allow(fallback_client).to receive(:merge_pull_request).and_raise(
+          GithubClient::ApiError.new(rejection, status: 403)
+        )
+
+        expect { described_class.perform_now(project.id) }.not_to raise_error
+      end
+
+      it "records terminal fallback merge rejection on the synced PR row" do
+        issue = create(:issue, :pull_request, project: project, github_number: 42)
+        rejection = "refusing to allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows` permission"
+        allow(client).to receive(:merge_pull_request).and_raise(
+          GithubClient::ApiError.new(rejection, status: 403)
+        )
+        allow(fallback_client).to receive(:merge_pull_request).and_raise(
+          GithubClient::ApiError.new(rejection, status: 403)
+        )
+
+        described_class.perform_now(project.id)
+
+        expect(issue.reload).to be_merge_permission_rejected
+        expect(issue.merge_permission_rejection_reason).to eq(rejection)
+      end
+
+      it "skips merge attempts while a permission rejection is cooling down" do
+        create(
+          :issue,
+          :pull_request,
+          project: project,
+          github_number: 42,
+          merge_permission_rejected_at: 1.hour.ago,
+          merge_permission_rejection_reason: "missing workflows permission"
+        )
+
+        described_class.perform_now(project.id)
+
+        expect(client).not_to have_received(:check_runs_for_ref)
+        expect(client).not_to have_received(:merge_pull_request)
+        expect(fallback_client).not_to have_received(:merge_pull_request)
+      end
+
+      it "clears stale permission rejection after a successful fallback merge" do
+        issue = create(
+          :issue,
+          :pull_request,
+          project: project,
+          github_number: 42,
+          merge_permission_rejected_at: 7.hours.ago,
+          merge_permission_rejection_reason: "missing workflows permission"
+        )
+        allow(client).to receive(:merge_pull_request).and_raise(
+          GithubClient::ApiError.new(
+            "refusing to allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows` permission",
+            status: 403
+          )
+        )
+
+        described_class.perform_now(project.id)
+
+        expect(issue.reload).not_to be_merge_permission_rejected
+      end
+
+      it "does not use the fallback client for non-permission API failures" do
+        allow(client).to receive(:merge_pull_request).and_raise(
+          GithubClient::ApiError.new(
+            "server error mentioning `.github/workflows/ci.yml` without `workflows` permission",
+            status: 500
+          )
+        )
+
+        expect { described_class.perform_now(project.id) }.to raise_error(GithubClient::ApiError)
+        expect(fallback_client).not_to have_received(:merge_pull_request)
+      end
+    end
+
     it "skips when project is not found" do
       result = described_class.perform_now(999_999)
 
