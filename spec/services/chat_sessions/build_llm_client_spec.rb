@@ -6,6 +6,27 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
   let(:account) { create(:account) }
   let(:user) { create(:user, :owner, account: account) }
 
+  def build_openai_runner(user:, credential_source:, service_type:, model:, runner_key: "opencode")
+    create(:runner,
+      user: user,
+      runner_key: runner_key,
+      auth_type: "api_key",
+      provider_api_key: credential_source[:provider_api_key],
+      integration_credential: credential_source[:integration_credential],
+      config: { runner_key => { "api_provider" => service_type, "model" => model } }
+    )
+  end
+
+  def expect_chat_max_tokens(client, model:, max_tokens:)
+    transport = client.instance_variable_get(:@transport)
+    response = instance_double(AgentHarness::Response, output: "Done", model: model, input_tokens: 1, output_tokens: 1, metadata: {})
+    allow(transport).to receive(:chat).and_return(response)
+
+    client.call([ { role: "user", content: "What did you find?" } ])
+
+    expect(transport).to have_received(:chat).with(hash_including(max_tokens: max_tokens))
+  end
+
   describe ".call" do
     context "with an Anthropic API key runner" do
       it "returns an HttpClient with TextTransport" do
@@ -46,23 +67,37 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
         it "raises the z.ai chat output cap above the transport default for #{service_type} runners" do
           # @spec CHAT-API-007
           api_key_record = create(:provider_api_key, user: user, api_key: "sk-zai-test-key", api_service_type: service_type)
-          runner = create(:runner, :api_key,
+          runner = build_openai_runner(
             user: user,
-            runner_key: "opencode",
-            provider_api_key: api_key_record,
-            config: { "opencode" => { "api_provider" => service_type, "model" => "glm-5.3" } }
+            credential_source: { provider_api_key: api_key_record, integration_credential: nil },
+            service_type: service_type,
+            model: "glm-5.3"
           )
           chat_session = create(:chat_session, account: account, created_by: user, runner: runner, model: "glm-5.3")
 
           client = described_class.call(chat_session: chat_session)
-          transport = client.instance_variable_get(:@transport)
-          response = instance_double(AgentHarness::Response, output: "Done", model: "glm-5.3", input_tokens: 1, output_tokens: 1, metadata: {})
-          allow(transport).to receive(:chat).and_return(response)
-
-          client.call([ { role: "user", content: "What did you find?" } ])
-
-          expect(transport).to have_received(:chat).with(hash_including(max_tokens: 16_384))
+          expect_chat_max_tokens(client, model: "glm-5.3", max_tokens: 16_384)
         end
+      end
+
+      it "uses the runner service type when an OpenAI-compatible z.ai runner is backed by an integration credential" do
+        # @spec CHAT-API-007
+        integration_credential = create(:integration_credential,
+          account: account,
+          created_by: user,
+          service_key: "opencode",
+          secret: "sk-integration-test-key"
+        )
+        runner = build_openai_runner(
+          user: user,
+          credential_source: { provider_api_key: nil, integration_credential: integration_credential },
+          service_type: "zai_coding",
+          model: "glm-5.3"
+        )
+        chat_session = create(:chat_session, account: account, created_by: user, runner: runner, model: "glm-5.3")
+
+        client = described_class.call(chat_session: chat_session)
+        expect_chat_max_tokens(client, model: "glm-5.3", max_tokens: 16_384)
       end
     end
 
