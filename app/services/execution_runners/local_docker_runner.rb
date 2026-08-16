@@ -96,12 +96,14 @@ module ExecutionRunners
       # on the restricted network. Cleanup is best-effort — a partially-started
       # container may resist removal, and that must not mask the original
       # error.
+      cleanup_succeeded = false
       begin
         service.cleanup if service
+        cleanup_succeeded = true
       rescue StandardError
         # Surface the original provisioning error, not the cleanup error.
       end
-      ledger&.mark_failed(intent)
+      ledger&.mark_failed(intent) if cleanup_succeeded
       raise
     end
 

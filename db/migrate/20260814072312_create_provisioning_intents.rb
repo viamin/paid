@@ -52,15 +52,22 @@ class CreateProvisioningIntents < ActiveRecord::Migration[8.1]
         t.timestamps
       end
 
-    add_index :provisioning_intents, :provider_resource_id,
-      where: "provider_resource_id IS NOT NULL", name: "index_provisioning_intents_on_provider_resource_id",
-      unless: index_exists?(:provisioning_intents, :provider_resource_id, name: "index_provisioning_intents_on_provider_resource_id")
-    add_index :provisioning_intents, [ :status, :created_at ],
-      name: "index_provisioning_intents_on_status_and_created_at",
-      unless: index_exists?(:provisioning_intents, [ :status, :created_at ], name: "index_provisioning_intents_on_status_and_created_at")
-    add_index :provisioning_intents, [ :agent_run_id, :resource_kind, :attempt ],
-      name: "index_provisioning_intents_on_run_kind_attempt",
-      unless: index_exists?(:provisioning_intents, [ :agent_run_id, :resource_kind, :attempt ], name: "index_provisioning_intents_on_run_kind_attempt")
+    add_index_unless_exists(
+      :provisioning_intents,
+      :provider_resource_id,
+      where: "provider_resource_id IS NOT NULL",
+      name: "index_provisioning_intents_on_provider_resource_id"
+    )
+    add_index_unless_exists(
+      :provisioning_intents,
+      [ :status, :created_at ],
+      name: "index_provisioning_intents_on_status_and_created_at"
+    )
+    add_index_unless_exists(
+      :provisioning_intents,
+      [ :agent_run_id, :resource_kind, :attempt ],
+      name: "index_provisioning_intents_on_run_kind_attempt"
+    )
 
     # RLS is the documented exception to the Rails-helper rule (AGENTS.md):
     # PostgreSQL row-level security and CREATE POLICY have no equivalent
@@ -130,5 +137,13 @@ class CreateProvisioningIntents < ActiveRecord::Migration[8.1]
     end
 
     drop_table :provisioning_intents, if_exists: true
+  end
+
+  private
+
+  def add_index_unless_exists(table, columns, **options)
+    return if index_exists?(table, columns, **options.slice(:name, :unique, :where))
+
+    add_index(table, columns, **options)
   end
 end

@@ -308,6 +308,22 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       expect(intent.status).to eq("failed")
       expect(intent.provider_resource_id).to be_nil
     end
+
+    it "keeps the intent reconcileable when cleanup also fails after a post-create runner error" do
+      allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new("production"))
+      allow(NetworkPolicy).to receive(:apply_firewall_rules)
+        .and_raise(NetworkPolicy::Error, "iptables not available")
+      allow(provision_service).to receive_messages(agent_run: agent_run, cleanup: nil)
+      allow(provision_service).to receive(:cleanup).and_raise(StandardError, "docker daemon unavailable")
+
+      expect { runner.provision(spec: run_spec) }
+        .to raise_error(ExecutionRunners::ProvisionError, /Firewall setup failed/)
+
+      intent = ProvisioningIntent.order(:id).last
+      expect(intent.status).to eq("created")
+      expect(intent.provider_resource_id).to eq("abc123")
+      expect(intent).to be_orphaned
+    end
   end
 
   # @spec CONTAINER-RUNTIME-020
