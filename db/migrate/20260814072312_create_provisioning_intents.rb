@@ -105,6 +105,15 @@ class CreateProvisioningIntents < ActiveRecord::Migration[8.1]
                     AND projects.account_id = paid_current_account_id()
                 )
               )
+              AND (
+                provisioning_intents.agent_run_id IS NULL
+                OR EXISTS (
+                  SELECT 1 FROM agent_runs
+                  INNER JOIN projects ON projects.id = agent_runs.project_id
+                  WHERE agent_runs.id = provisioning_intents.agent_run_id
+                    AND projects.account_id = paid_current_account_id()
+                )
+              )
             )
           );
       SQL

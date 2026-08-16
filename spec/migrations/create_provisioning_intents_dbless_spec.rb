@@ -83,6 +83,9 @@ RSpec.describe CreateProvisioningIntents, :no_db do
     expect(recorded_sql.join("\n")).to include("ALTER TABLE provisioning_intents ENABLE ROW LEVEL SECURITY;")
     expect(recorded_sql.join("\n")).to include("ALTER TABLE provisioning_intents FORCE ROW LEVEL SECURITY;")
     expect(recorded_sql.join("\n")).to include("CREATE POLICY tenant_isolation ON provisioning_intents")
+    expect(recorded_sql.join("\n")).to match(
+      /WITH CHECK \(.+provisioning_intents\.agent_run_id IS NULL.+agent_runs\.id = provisioning_intents\.agent_run_id/m
+    )
   end
 
   it "drops the policy only when the table exists" do
