@@ -196,12 +196,12 @@ for later phases:
   `service_environment_section_render_for`) are reused by the assembly section
   providers and `CreateAgentRunActivity`, so comment trust-classification and
   service-environment rendering stay single-sourced.
-- `CreateAgentRunActivity` queue-time materialization renders the
-  `coding.issue_implementation` prompt version into `custom_prompt` and appends
-  the trusted conversation section, service environment, and safety rules
-  directly. The base text it produces is captured by the assembly at runner
-  time, but the queue-time inputs themselves are not yet expressed as assembly
-  sections.
+- `CreateAgentRunActivity` still resolves and records the selected
+  `coding.issue_implementation` prompt version at queue time, but it no longer
+  materializes a `create_pr` issue prompt into `custom_prompt`. The queued run
+  carries the chosen prompt version for audit and the runner-time assembly
+  renders the issue task, comments, service environment, and safety rules as
+  explicit sections instead.
 - `Lid::InjectIntoPrompt`, `StyleGuides::InjectIntoPrompt`, and
   `ProjectConventions::InjectIntoPrompt` remain call-site injectors. The
   assembly section providers (`LidWorkflow`, `StyleGuides`,
