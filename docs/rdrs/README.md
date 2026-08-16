@@ -214,6 +214,10 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 
 Use the template at the [RDR repository](https://github.com/cwensel/rdr/blob/main/TEMPLATE.md) as a starting point.
 
+Before assigning a number, check both merged RDRs and open PRs that add or rename
+`docs/rdrs/RDR-*.md` files. Use the next number after the highest reserved number across
+`origin/main` and open PRs so parallel RDR work does not collide.
+
 Key sections:
 
 - **Problem Statement**: What challenge are we addressing?
