@@ -63,3 +63,13 @@
   `ScanPaidPrsActivity::FOCUS_RESOLUTION_ATTRIBUTION_FOCUSES`.
   *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`,
   `spec/temporal/activities/scan_paid_prs_activity_focus_resolution_spec.rb`.
+
+## Follow-up loop breaker
+
+- [x] **FOCUSED-RUN-006** — When PR scan lifecycle signals show a
+  create-pr follow-up loop is stuck with no meaningful progress, the
+  auto-continue strategy SHALL escalate instead of queueing another
+  create-pr follow-up for the same unresolved review/CI/comment trigger;
+  pending review-run triggers SHALL still be allowed to proceed.
+  *Code:* `Automation::Strategies::AutoContinue#escalation_candidate?`.
+  *Test:* `spec/services/automation/strategies/auto_continue_spec.rb`.

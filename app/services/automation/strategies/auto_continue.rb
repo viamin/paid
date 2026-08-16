@@ -41,14 +41,9 @@ module Automation
     class AutoContinue
       include Automation::Strategy
 
-      REVIEW_FOLLOWUP_TRIGGER_TYPES = %w[
-        changes_requested
+      REVIEW_RUN_TRIGGER_TYPES = %w[
         paid_agent_review_pending
-        review_bot_comments
-        review_bot_review_pending
-        review_bot_threads
         review_goal_retry
-        review_threads
       ].freeze
 
       # @param context [Automation::Context]
@@ -121,13 +116,13 @@ module Automation
         return false unless signals.no_progress_stuck
         return true if signals.review_goal_retry_limit_requires_escalation
         return false unless signals.failure_streak_limit_reached
-        return false if review_followup_pending?(signals)
+        return false if review_run_pending?(signals) # @spec FOCUSED-RUN-006
 
         true
       end
 
-      def review_followup_pending?(signals)
-        scan_trigger_types(signals).any? { |type| REVIEW_FOLLOWUP_TRIGGER_TYPES.include?(type) }
+      def review_run_pending?(signals)
+        scan_trigger_types(signals).any? { |type| REVIEW_RUN_TRIGGER_TYPES.include?(type) }
       end
 
       def dismiss_escalation_pending?(signals)
