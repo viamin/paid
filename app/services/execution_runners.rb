@@ -279,7 +279,7 @@ module ExecutionRunners
   # knows the underlying network and firewall mechanism; orchestration code
   # names intent, never implementation.
   #
-  # +mode+ values (RDR-056):
+  # +mode+ values (RDR-062):
   #   :no_outbound       — air-gapped; only loopback traffic allowed.
   #   :proxy_only        — restricted; only Paid secrets proxy + DNS.
   #   :git_plus_proxy    — restricted; adds GitHub CIDR ranges.
@@ -288,7 +288,7 @@ module ExecutionRunners
   #   :model_direct      — unrestricted; provider CLI reaches upstream APIs.
   #   :explicit_internet — unrestricted; operator opt-in for full egress.
   #
-  # The three backward-compatible constructors from before RDR-056
+  # The three backward-compatible constructors from before RDR-062
   # (+:proxy_restricted+, +:subscription_auth+, +:direct_outbound+) remain
   # valid and map onto the new intent vocabulary without changing behavior.
   #
@@ -412,7 +412,7 @@ module ExecutionRunners
     # +true+ when the intent includes service container IPs in its allowlist.
     # Only the approved-services intent (and its +:proxy_restricted+ alias)
     # grants service containers; the narrower restricted intents do not
-    # (RDR-056 mapping table).
+    # (RDR-062 mapping table).
     def approved_services?
       canonical_mode == :approved_services
     end

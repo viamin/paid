@@ -243,7 +243,7 @@ RSpec.describe ExecutionRunners do
       expect(policy.canonical_mode).to eq(:model_direct)
     end
 
-    describe "new RDR-056 intents" do
+    describe "new RDR-062 intents" do
       it "treats :no_outbound as restricted and firewall-required with no egress" do
         policy = described_class.no_outbound
 

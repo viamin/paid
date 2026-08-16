@@ -4,13 +4,13 @@ module ExecutionRunners
   # In-memory test double that satisfies the {ExecutionRunners::Base}
   # contract. Used by specs to verify that capability checks, lifecycle
   # transitions, and policy translations behave consistently across runners
-  # without spinning up real Docker or remote backends (RDR-056).
+  # without spinning up real Docker or remote backends (RDR-062).
   #
   # The runner advertises the set of networking intents it supports via the
   # +supports:+ keyword (a list of policy mode symbols). Any policy whose
   # +mode+ is not in the supported set is rejected by {.compatible?} and
   # raises {ProvisionError} from {#provision}. The default supported set
-  # covers all six RDR-056 intents so a fresh instance behaves like a fully
+  # covers all six RDR-062 intents so a fresh instance behaves like a fully
   # capable runner; specs that need to exercise capability rejection pass
   # a smaller set via +supports:+.
   #
@@ -31,7 +31,7 @@ module ExecutionRunners
   class ContractRunner < Base
     RUNNER_TYPE = :contract
 
-    # Default set of supported modes — the six canonical RDR-056 intents.
+    # Default set of supported modes — the six canonical RDR-062 intents.
     # Legacy aliases remain accepted via +NetworkingPolicy#canonical_mode+.
     # Use +supports:+ to narrow this for capability-rejection specs.
     DEFAULT_SUPPORTED_MODES = [
@@ -127,7 +127,7 @@ module ExecutionRunners
     # Capability check: the contract runner only honors policies whose mode
     # appears in the supplied supported_modes list. A real remote runner
     # would derive its supported set from the platform's egress primitives
-    # (RDR-056). A +nil+ policy is always rejected — there is no networking
+    # (RDR-062). A +nil+ policy is always rejected — there is no networking
     # intent to honor.
     def self.supports_policy?(policy, supported_modes: nil)
       return false if policy.nil?

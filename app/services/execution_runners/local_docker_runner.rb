@@ -199,7 +199,7 @@ module ExecutionRunners
       "Runner does not support networking policy #{policy&.mode.inspect}"
     end
 
-    # Docker supports every RDR-056 networking intent: the four restricted
+    # Docker supports every RDR-062 networking intent: the four restricted
     # intents use the existing +paid_agent+ network + iptables allowlist and
     # the two unrestricted intents use +paid_internal+ with no firewall. A
     # future remote runner returns +false+ for the intents its native egress
@@ -284,7 +284,7 @@ module ExecutionRunners
     # shape, so entries are normalized to +{ip:, port:}+ to match
     # +NetworkPolicy.build_firewall_script+, which reads +dest[:ip]+.
     #
-    # The four restricted RDR-056 intents determine which default
+    # The four restricted RDR-062 intents determine which default
     # destinations the firewall allows:
     #
     # - +:no_outbound+       — nothing; loopback + DNS only.
@@ -294,7 +294,7 @@ module ExecutionRunners
     #
     # Service container IPs (+service.firewall_service_destinations+) are only
     # added for the +:approved_services+ intent; the narrower restricted
-    # intents exclude them so their allowlist matches the RDR-056 mapping
+    # intents exclude them so their allowlist matches the RDR-062 mapping
     # table. Caller-supplied +allow_destinations+ are always honored.
     def apply_firewall!(service:, backend:, policy:)
       return unless policy.firewall?
@@ -336,7 +336,7 @@ module ExecutionRunners
 
     # Returns the proxy host the firewall should allow. +false+ tells
     # +NetworkPolicy.apply_firewall_rules+ to omit the proxy allow rule
-    # entirely, which is what the RDR-056 :no_outbound intent demands.
+    # entirely, which is what the RDR-062 :no_outbound intent demands.
     def proxy_host_for(policy)
       return false if policy.no_outbound?
 

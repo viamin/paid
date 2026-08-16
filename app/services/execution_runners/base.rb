@@ -137,7 +137,7 @@ module ExecutionRunners
     # Capability check: does this runner implement the given networking
     # policy intent? A runner that cannot honor a policy returns +false+
     # here so +.compatible?+ can reject the spec before any
-    # container/workload is provisioned (RDR-056). The intent is coarse —
+    # container/workload is provisioned (RDR-062). The intent is coarse —
     # the runner does not need to support every flavor of every mode, only
     # the named intents its native primitives can express.
     #

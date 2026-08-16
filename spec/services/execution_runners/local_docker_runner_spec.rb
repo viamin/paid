@@ -714,7 +714,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       expect(result.compatible).to be(true)
     end
 
-    it "supports every RDR-056 networking intent (Docker implements every shape)" do
+    it "supports every RDR-062 networking intent (Docker implements every shape)" do
       allow(Containers::Provision).to receive(:compatibility_for)
         .and_return(Containers::Provision::CompatibilityResult.new(compatible: true, error_message: nil))
 
@@ -742,7 +742,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
   end
 
   describe ".supports_policy?" do
-    it "returns true for every RDR-056 networking intent" do
+    it "returns true for every RDR-062 networking intent" do
       %i[no_outbound proxy_only git_plus_proxy approved_services
          model_direct explicit_internet subscription_auth direct_outbound].each do |mode|
         policy = ExecutionRunners::NetworkingPolicy.public_send(mode)

@@ -28,7 +28,7 @@ class NetworkPolicy
   # ExecutionRunners::NetworkingPolicy#mode (:model_direct,
   # :explicit_internet, :subscription_auth, :direct_outbound). Set by
   # {NetworkPolicy.contract_for_policy} during the runner-contract
-  # translation (RDR-054, RDR-056).
+  # translation (RDR-054, RDR-062).
   NetworkContract = Struct.new(:mode, :network, :restricted, :firewall, keyword_init: true) do
     def restricted?
       restricted
@@ -85,9 +85,9 @@ class NetworkPolicy
     # the Docker-specific +NetworkContract+. The mapping is the only place
     # that knows which Docker network name corresponds to which runner-level
     # mode, keeping +paid_agent+ / +paid_internal+ out of the policy and the
-    # runner (RDR-054, RDR-056).
+    # runner (RDR-054, RDR-062).
     #
-    # All four restricted intents (RDR-056: +:no_outbound+, +:proxy_only+,
+    # All four restricted intents (RDR-062: +:no_outbound+, +:proxy_only+,
     # +:git_plus_proxy+, +:approved_services+) share the +paid_agent+ Docker
     # network; the runner translates the intent to a firewall allowlist that
     # is narrower than the legacy approved-services default. The two
@@ -162,14 +162,14 @@ class NetworkPolicy
     # outbound traffic. The firewall script always allows loopback, DNS, and
     # established/related responses. The secrets-proxy allow and GitHub CIDR
     # allow are independent — pass +proxy_host:+ or +github_ips:+ explicitly
-    # when the policy intent allows them (RDR-056: :no_outbound omits both,
+    # when the policy intent allows them (RDR-062: :no_outbound omits both,
     # :proxy_only omits GitHub, :approved_services includes both plus
     # service container IPs).
     #
     # When +github_ips+ is +nil+ the caller's intent is "default GitHub
     # allowlist" (the legacy +DEFAULT_GITHUB_IPS+); pass +[]+ to omit
-    # GitHub entirely (RDR-056 :no_outbound or :proxy_only). Pass
-    # +proxy_host: false+ to omit the proxy allow rule entirely (RDR-056
+    # GitHub entirely (RDR-062 :no_outbound or :proxy_only). Pass
+    # +proxy_host: false+ to omit the proxy allow rule entirely (RDR-062
     # :no_outbound).
     #
     # Requires NET_RAW capability on the container.
@@ -180,7 +180,7 @@ class NetworkPolicy
     #   entirely.
     # @param proxy_host [String, false, nil] hostname or IPv4 address of the
     #   secrets proxy; +false+ omits the proxy allow rule entirely
-    #   (RDR-056 :no_outbound), +nil+ uses the default proxy destination.
+    #   (RDR-062 :no_outbound), +nil+ uses the default proxy destination.
     # @param service_destinations [Array<Hash>] service containers to allow,
     #   each with :ip and :port keys (e.g., { ip: "172.28.0.5", port: 5432 })
     # @return [void]
@@ -443,7 +443,7 @@ class NetworkPolicy
       proxy_rule = if proxy_host && proxy_port
         "iptables -A OUTPUT -d #{proxy_host} -p tcp --dport #{proxy_port} -j ACCEPT"
       else
-        "# Secrets proxy omitted by RDR-056 :no_outbound intent"
+        "# Secrets proxy omitted by RDR-062 :no_outbound intent"
       end
 
       <<~SCRIPT
