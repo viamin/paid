@@ -282,3 +282,6 @@ contract mismatch.
 - Test-writing runs fail pre-commit if they alter implementation code.
 - Test-fixing and refactor runs fail pre-commit if they alter tests without returning the
   PR to test review.
+- When project mutation testing is enabled, mutation checks run after the green phase, not
+  during the red test-review gate; mutation-driven implementation or refactor fixes must
+  not alter approved tests unless the PR returns to test review.
