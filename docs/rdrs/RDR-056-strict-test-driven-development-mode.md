@@ -138,6 +138,22 @@ Add a project-level TDD mode setting with three values:
 
 All PRs that include tests get a test-outline section in their PR description.
 
+### Run-scoped write guards
+
+Both strict and non-strict TDD require pre-commit checks that enforce what each run type is
+allowed to change:
+
+| Run type | Allowed changes | Forbidden changes |
+|---|---|---|
+| Test-writing | Tests, and LID docs when applicable | Implementation code |
+| Test-fixing | Implementation code | Tests, unless the run returns the PR to test review |
+| Refactor | Implementation code | Tests |
+
+If a test-fixing run discovers that the approved tests are wrong or incomplete, it may edit
+tests only by removing `paid-tests-approved`, adding `paid-tests-ready-for-review`, and
+returning the PR to the test-review gate. It must not change tests and continue as though
+the prior approval still holds.
+
 ### Strict TDD workflow
 
 1. Paid starts a test-writing agent run for the issue.
@@ -246,9 +262,11 @@ contract mismatch.
 3. Add a test-writing run path that creates draft PRs with tests and no implementation.
 4. Add queue rules that block implementation until `paid-tests-approved`.
 5. Add `test_review` agent runs for non-strict mode.
-6. Add PR-description test-outline rendering for every PR with tests.
-7. Add LID-aware prompt clauses so strict review covers changed LID docs and tests together.
-8. Add refactor-step prompting that freezes tests and requires the suite to stay green.
+6. Add run-scoped pre-commit checks that block forbidden file changes for test-writing,
+   test-fixing, and refactor runs.
+7. Add PR-description test-outline rendering for every PR with tests.
+8. Add LID-aware prompt clauses so strict review covers changed LID docs and tests together.
+9. Add refactor-step prompting that freezes tests and requires the suite to stay green.
 
 ## Validation
 
@@ -261,3 +279,6 @@ contract mismatch.
 - Every PR with tests includes a documentation-style test outline.
 - LID projects show changed LID docs, coherence status, and test outline before
   implementation starts.
+- Test-writing runs fail pre-commit if they alter implementation code.
+- Test-fixing and refactor runs fail pre-commit if they alter tests without returning the
+  PR to test review.
