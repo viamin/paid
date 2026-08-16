@@ -1,4 +1,4 @@
-# RDR-057: Immutable Agent Runtime Images
+# RDR-059: Immutable Agent Runtime Images
 
 > Revise during planning; lock at implementation. If wrong, abandon code and iterate RDR.
 
@@ -121,4 +121,4 @@ Mutable tags may remain defaults for development, but a production runner must n
 
 ## Relationship to Existing Work
 
-RDR-046 decides which language profile a run needs. This RDR decides how that profile becomes an immutable production runtime identity. The runner extraction effort (#3336) should carry that identity in `RunSpec`; RDR-055 records it in the execution result/manifest.
+RDR-046 decides which language profile a run needs. This RDR decides how that profile becomes an immutable production runtime identity. The runner extraction effort (#3336) should carry that identity in `RunSpec`; RDR-057 records it in the execution result/manifest.

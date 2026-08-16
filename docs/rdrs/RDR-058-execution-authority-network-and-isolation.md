@@ -1,4 +1,4 @@
-# RDR-056: Execution Authority, Network Policy, and Isolation
+# RDR-058: Execution Authority, Network Policy, and Isolation
 
 > Revise during planning; lock at implementation. If wrong, abandon code and iterate RDR.
 

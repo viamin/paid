@@ -1,4 +1,4 @@
-# RDR-055: Remote Execution Data Contract
+# RDR-057: Remote Execution Data Contract
 
 > Revise during planning; lock at implementation. If wrong, abandon code and iterate RDR.
 
@@ -96,7 +96,7 @@ The runner interface should pass a `RunSpec` that includes repository identity/r
 | Execution spec | Runner API / `RunSpec` | Immutable per attempt; includes goal, command, resources, network policy, services, image identity. |
 | Prompt/context | Inline when small; object storage or Paid API when large | Knowledge snapshots and prompt assembly should be referenced by ID or artifact key when they exceed normal payload size. |
 | Configuration | `RunSpec` env + Paid API | Non-secret config can be env or structured spec. |
-| Scoped credentials | Credential lane | See RDR-056; no bulk object staging of secrets. |
+| Scoped credentials | Credential lane | See RDR-058; no bulk object staging of secrets. |
 | Knowledge/context artifacts | Paid API or object storage | Use object storage for large binary/opaque context, DB/API for structured records. |
 | Service requirements | `ServiceDeclaration` | Runner translates to sidecars, managed services, or rejection by capability. |
 | Optional existing artifacts | Object storage keys | Runner receives references, not host paths. |

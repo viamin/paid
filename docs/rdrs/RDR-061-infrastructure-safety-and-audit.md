@@ -1,4 +1,4 @@
-# RDR-059: Infrastructure Safety Rails and Execution Audit Events
+# RDR-061: Infrastructure Safety Rails and Execution Audit Events
 
 > Revise during planning; lock at implementation. If wrong, abandon code and iterate RDR.
 

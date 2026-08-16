@@ -121,11 +121,11 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
-| [RDR-055](RDR-055-remote-execution-data-contract.md) | Remote Execution Data Contract | Draft | P1 |
-| [RDR-056](RDR-056-execution-authority-network-and-isolation.md) | Execution Authority, Network Policy, and Isolation | Draft | P1 |
-| [RDR-057](RDR-057-immutable-agent-runtime-images.md) | Immutable Agent Runtime Images | Draft | P1 |
-| [RDR-058](RDR-058-external-execution-resource-ledger.md) | External Execution Resource Ledger | Draft | P1 |
-| [RDR-059](RDR-059-infrastructure-safety-and-audit.md) | Infrastructure Safety Rails and Execution Audit Events | Draft | P1 |
+| [RDR-057](RDR-057-remote-execution-data-contract.md) | Remote Execution Data Contract | Draft | P1 |
+| [RDR-058](RDR-058-execution-authority-network-and-isolation.md) | Execution Authority, Network Policy, and Isolation | Draft | P1 |
+| [RDR-059](RDR-059-immutable-agent-runtime-images.md) | Immutable Agent Runtime Images | Draft | P1 |
+| [RDR-060](RDR-060-external-execution-resource-ledger.md) | External Execution Resource Ledger | Draft | P1 |
+| [RDR-061](RDR-061-infrastructure-safety-and-audit.md) | Infrastructure Safety Rails and Execution Audit Events | Draft | P1 |
 
 ### Runner Intelligence
 

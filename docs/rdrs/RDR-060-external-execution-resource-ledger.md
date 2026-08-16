@@ -1,4 +1,4 @@
-# RDR-058: External Execution Resource Ledger
+# RDR-060: External Execution Resource Ledger
 
 > Revise during planning; lock at implementation. If wrong, abandon code and iterate RDR.
 
