@@ -222,7 +222,7 @@
   factories (`:proxy_restricted`, `:subscription_auth`, `:direct_outbound`)
   SHALL remain valid constructors and normalize to their canonical
   intent via `#canonical_mode`. `LocalDockerRunner` SHALL translate each
-  intent to a Docker network + firewall shape that matches the RDR-056
+  intent to a Docker network + firewall shape that matches the RDR-062
   mapping table (`:no_outbound` omits both proxy and GitHub allow rules;
   `:proxy_only` allows the proxy but not GitHub; `:approved_services` is
   the previous restricted behavior; the two unrestricted intents use the
