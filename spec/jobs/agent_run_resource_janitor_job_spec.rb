@@ -103,6 +103,7 @@ RSpec.describe AgentRunResourceJanitorJob do
         described_class.new.perform(agent_run.id)
 
         expect(backend).not_to have_received(:get_volume)
+        expect(resource.reload).to be_cleaned
       end
     end
 
