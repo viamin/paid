@@ -323,6 +323,7 @@ module ExecutionRunners
     UNRESTRICTED_MODES = ExecutionRunners::NETWORKING_POLICY_UNRESTRICTED_MODES
     KNOWN_MODES = ExecutionRunners::NETWORKING_POLICY_KNOWN_MODES
     ALLOW_DESTINATION_REQUIRED_KEYS = %i[host port].freeze
+    ALLOW_DESTINATION_HOST_PATTERN = /\A[a-zA-Z0-9.\-]+\z/
 
     def initialize(mode:, firewall:, allow_destinations:)
       normalized_mode = mode&.to_sym
@@ -454,14 +455,40 @@ module ExecutionRunners
 
         raise ArgumentError, "Allow destination is missing keys: #{missing_keys.join(', ')}"
       end
+
+      destinations.each do |destination|
+        validate_allow_destination_host!(destination[:host])
+        validate_allow_destination_port!(destination[:port])
+      end
     end
 
     def normalize_allow_destinations(destinations)
       destinations.map do |destination|
         next destination unless destination.is_a?(Hash)
 
-        { host: destination[:host] || destination["host"], port: destination[:port] || destination["port"] }
+        {
+          host: destination[:host] || destination["host"],
+          port: normalize_allow_destination_port(destination[:port] || destination["port"])
+        }
       end
+    end
+
+    def validate_allow_destination_host!(host)
+      return if host.is_a?(String) && host.match?(ALLOW_DESTINATION_HOST_PATTERN)
+
+      raise ArgumentError, "Allow destination host is invalid: #{host.inspect}"
+    end
+
+    def validate_allow_destination_port!(port)
+      return if port.is_a?(Integer) && port.between?(1, 65_535)
+
+      raise ArgumentError, "Allow destination port is invalid: #{port.inspect}"
+    end
+
+    def normalize_allow_destination_port(port)
+      Integer(port)
+    rescue ArgumentError, TypeError
+      port
     end
   end
 

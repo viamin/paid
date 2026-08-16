@@ -347,6 +347,24 @@ RSpec.describe ExecutionRunners do
 
         expect(policy.allow_destinations).to eq([ { host: "10.0.0.1", port: 5432 } ])
       end
+
+      it "normalizes string ports to integers" do
+        policy = described_class.proxy_only(allow_destinations: [ { "host" => "10.0.0.1", "port" => "5432" } ])
+
+        expect(policy.allow_destinations).to eq([ { host: "10.0.0.1", port: 5432 } ])
+      end
+
+      it "rejects allow destinations with an invalid host value" do
+        expect {
+          described_class.proxy_only(allow_destinations: [ { host: "bad host", port: 5432 } ])
+        }.to raise_error(ArgumentError, /host is invalid/)
+      end
+
+      it "rejects allow destinations with an invalid port value" do
+        expect {
+          described_class.proxy_only(allow_destinations: [ { host: "10.0.0.1", port: 70_000 } ])
+        }.to raise_error(ArgumentError, /port is invalid/)
+      end
     end
   end
 
