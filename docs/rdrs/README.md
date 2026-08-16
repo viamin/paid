@@ -115,6 +115,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | [RDR-047](RDR-047-work-category-queue-priority.md) | Work-Category-Aware Queue Priority — PR Continuation Over Fresh Issues | Implemented | P1 |
 | [RDR-049](RDR-049-configuration-health-checks.md) | Configuration Health Checks | Implemented | P1 |
 | [RDR-050](RDR-050-account-queue-fairness-mode.md) | Account-Level Queue Fairness Mode — Strict Priority vs. Cross-Project Fair Share | Implemented | P1 |
+| [RDR-056](RDR-056-strict-test-driven-development-mode.md) | Test-Driven Development Modes with Human Test Review | Draft | P1 |
 
 ### Runner Intelligence
 
@@ -212,6 +213,10 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 ## Creating New RDRs
 
 Use the template at the [RDR repository](https://github.com/cwensel/rdr/blob/main/TEMPLATE.md) as a starting point.
+
+Before assigning a number, check both merged RDRs and open PRs that add or rename
+`docs/rdrs/RDR-*.md` files. Use the next number after the highest reserved number across
+`origin/main` and open PRs so parallel RDR work does not collide.
 
 Key sections:
 

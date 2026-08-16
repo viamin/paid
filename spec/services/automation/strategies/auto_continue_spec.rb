@@ -215,6 +215,44 @@ RSpec.describe Automation::Strategies::AutoContinue do
         expect(decision_types(result)).to eq([ "queue_create_pr_run", "record_pr_followup" ])
       end
 
+      it "escalates instead of queuing another create_pr follow-up once review feedback is stuck" do # @spec FOCUSED-RUN-006
+        result = evaluate(
+          lifecycle: base_lifecycle.merge(
+            failure_streak_limit_reached: true,
+            no_progress_stuck: true,
+            consecutive_unsuccessful_automatic_runs: 3,
+            escalation_reason: "Automatic PR failure streak reached"
+          ),
+          scan: {
+            issue_id: pull_request.id,
+            pr_number: 42,
+            phase: "ready",
+            triggers: [ { type: "changes_requested" } ]
+          }
+        )
+
+        expect(result.to_h[:decisions].first).to include(type: "escalate")
+      end
+
+      it "still delegates when a review run is pending" do
+        result = evaluate(
+          lifecycle: base_lifecycle.merge(
+            failure_streak_limit_reached: true,
+            no_progress_stuck: true,
+            consecutive_unsuccessful_automatic_runs: 3,
+            escalation_reason: "Automatic PR failure streak reached"
+          ),
+          scan: {
+            issue_id: pull_request.id,
+            pr_number: 42,
+            phase: "ready",
+            triggers: [ { type: "paid_agent_review_pending" } ]
+          }
+        )
+
+        expect(decision_types(result)).to eq([ "queue_review_run" ])
+      end
+
       it "delegates to AutoReview when no unified gate is active" do
         result = evaluate(
           lifecycle: base_lifecycle,
