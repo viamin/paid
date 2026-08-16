@@ -27,6 +27,18 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
     expect(transport).to have_received(:chat).with(hash_including(max_tokens: max_tokens))
   end
 
+  def expect_chat_without_max_tokens(client, model:)
+    transport = client.instance_variable_get(:@transport)
+    response = instance_double(AgentHarness::Response, output: "Done", model: model, input_tokens: 1, output_tokens: 1, metadata: {})
+    allow(transport).to receive(:chat).and_return(response)
+
+    client.call([ { role: "user", content: "What did you find?" } ])
+
+    expect(transport).to have_received(:chat) do |**kwargs|
+      expect(kwargs).not_to have_key(:max_tokens)
+    end
+  end
+
   describe ".call" do
     context "with an Anthropic API key runner" do
       it "returns an HttpClient with TextTransport" do
@@ -61,6 +73,21 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
 
         expect(client).to be_a(described_class::HttpClient)
         expect(client.model).to eq("moonshotai/kimi-k2")
+      end
+
+      it "keeps the transport default output cap for non-z.ai runners" do
+        # @spec CHAT-API-007
+        api_key_record = create(:provider_api_key, user: user, api_key: "sk-or-test-key", api_service_type: "openrouter")
+        runner = build_openai_runner(
+          user: user,
+          credential_source: { provider_api_key: api_key_record, integration_credential: nil },
+          service_type: "openrouter",
+          model: "moonshotai/kimi-k2"
+        )
+        chat_session = create(:chat_session, account: account, created_by: user, runner: runner, model: "moonshotai/kimi-k2")
+
+        client = described_class.call(chat_session: chat_session)
+        expect_chat_without_max_tokens(client, model: "moonshotai/kimi-k2")
       end
 
       %w[zai zai_coding].each do |service_type|
