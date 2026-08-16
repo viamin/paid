@@ -195,7 +195,7 @@ RSpec.describe ExecutionRunners::ContractRunner do
   end
 
   describe "shared runner contract" do
-    let(:supported_modes) { ExecutionRunners::NETWORKING_POLICY_KNOWN_MODES }
+    let(:supported_modes) { described_class::DEFAULT_SUPPORTED_MODES }
     let(:networking_policy) { ExecutionRunners::NetworkingPolicy.model_direct }
     let(:backend) { instance_double(Containers::Backends::Base, identifier: "local") }
     let(:valid_handle) do

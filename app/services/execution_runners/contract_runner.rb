@@ -31,9 +31,17 @@ module ExecutionRunners
   class ContractRunner < Base
     RUNNER_TYPE = :contract
 
-    # Default set of supported modes — every RDR-056 intent. Use +supports:+
-    # to narrow this for capability-rejection specs.
-    DEFAULT_SUPPORTED_MODES = ExecutionRunners::NETWORKING_POLICY_KNOWN_MODES
+    # Default set of supported modes — the six canonical RDR-056 intents.
+    # Legacy aliases remain accepted via +NetworkingPolicy#canonical_mode+.
+    # Use +supports:+ to narrow this for capability-rejection specs.
+    DEFAULT_SUPPORTED_MODES = [
+      :no_outbound,
+      :proxy_only,
+      :git_plus_proxy,
+      :approved_services,
+      :model_direct,
+      :explicit_internet
+    ].freeze
 
     attr_reader :provision_calls, :start_calls, :running_calls, :status_calls,
                 :reconnect_calls, :cancel_calls, :cleanup_calls, :supported_modes
