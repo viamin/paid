@@ -62,14 +62,15 @@ module ExecutionRunners
 
       ensure_agent_network!(backend: backend, policy: policy)
       ledger = provisioning_ledger
-      intent = ledger.record_intent(agent_run: spec.agent_run)
+      attempt = ledger.next_attempt_for(agent_run: spec.agent_run)
+      intent = ledger.record_intent(agent_run: spec.agent_run, attempt: attempt)
       service = Containers::Provision.new(
         agent_run: spec.agent_run,
         project: spec.project,
         worktree_path: self.class.worktree_path_for(spec),
         backend: backend,
         networking_policy: policy,
-        ownership_labels: ledger.ownership_labels_for(agent_run: spec.agent_run),
+        ownership_labels: ledger.ownership_labels_for(agent_run: spec.agent_run, attempt: attempt),
         **provision_options(spec)
       )
       result = service.provision

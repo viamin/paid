@@ -37,6 +37,19 @@ module ExecutionRunners
       @resource_kind.present?
     end
 
+    # The next per-run/resource attempt ordinal for a provisioning intent.
+    # Counts persisted ledger rows so retries/reprovisions advance the
+    # ownership-tag attempt instead of always reusing 0.
+    # @param agent_run [AgentRun, nil]
+    # @return [Integer]
+    def next_attempt_for(agent_run:)
+      return 0 unless recording? && agent_run
+
+      ProvisioningIntent
+        .where(agent_run_id: agent_run.id, resource_kind: @resource_kind)
+        .count
+    end
+
     # The ownership labels a tagging-capable runner applies to the provider
     # resource. Empty (and the runner is expected to degrade explicitly) when
     # the runner cannot tag or the ledger is disabled.

@@ -285,6 +285,18 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       runner.provision(spec: run_spec)
     end
 
+    it "increments the provisioning attempt ordinal across repeated provisions for the same run" do
+      first_handle = runner.provision(spec: run_spec)
+      second_handle = runner.provision(spec: run_spec)
+
+      intents = ProvisioningIntent.order(:id).last(2)
+
+      expect(first_handle.identifier).to eq("abc123")
+      expect(second_handle.identifier).to eq("abc123")
+      expect(intents.map(&:attempt)).to eq([ 0, 1 ])
+      expect(intents.map { |intent| intent.ownership_tags.fetch("paid.attempt") }).to eq(%w[0 1])
+    end
+
     it "marks the intent failed when the provider create call fails" do
       allow(provision_service).to receive(:provision)
         .and_raise(Containers::Provision::ProvisionError, "Docker error: no space left")
