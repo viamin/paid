@@ -107,24 +107,26 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
         end
       end
 
-      it "uses the runner service type when an OpenAI-compatible z.ai runner is backed by an integration credential" do
-        # @spec CHAT-API-007
-        integration_credential = create(:integration_credential,
-          account: account,
-          created_by: user,
-          service_key: "opencode",
-          secret: "sk-integration-test-key"
-        )
-        runner = build_openai_runner(
-          user: user,
-          credential_source: { provider_api_key: nil, integration_credential: integration_credential },
-          service_type: "zai_coding",
-          model: "glm-5.3"
-        )
-        chat_session = create(:chat_session, account: account, created_by: user, runner: runner, model: "glm-5.3")
+      %w[zai zai_coding].each do |service_type|
+        it "uses the runner service type when an OpenAI-compatible #{service_type} runner is backed by an integration credential" do
+          # @spec CHAT-API-007
+          integration_credential = create(:integration_credential,
+            account: account,
+            created_by: user,
+            service_key: "opencode",
+            secret: "sk-integration-test-key"
+          )
+          runner = build_openai_runner(
+            user: user,
+            credential_source: { provider_api_key: nil, integration_credential: integration_credential },
+            service_type: service_type,
+            model: "glm-5.3"
+          )
+          chat_session = create(:chat_session, account: account, created_by: user, runner: runner, model: "glm-5.3")
 
-        client = described_class.call(chat_session: chat_session)
-        expect_chat_max_tokens(client, model: "glm-5.3", max_tokens: 16_384)
+          client = described_class.call(chat_session: chat_session)
+          expect_chat_max_tokens(client, model: "glm-5.3", max_tokens: 16_384)
+        end
       end
     end
 
