@@ -222,6 +222,8 @@ class ExecutionResource < ApplicationRecord
     return nil unless agent_run.respond_to?(:id)
 
     agent_run.id
+  rescue NoMethodError
+    nil
   end
   private_class_method :safe_agent_run_id
 end

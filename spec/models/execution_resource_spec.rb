@@ -33,6 +33,13 @@ RSpec.describe ExecutionResource do
       )
     end
 
+    it "returns nil when the run id cannot be read yet" do
+      agent_run = Object.new
+      agent_run.define_singleton_method(:id) { raise NoMethodError, "not initialized" }
+
+      expect(described_class.track_environment!(agent_run: agent_run)).to be_nil
+    end
+
     it "reactivates a previously cleanup-pending environment and clears stale retry metadata" do
       described_class.track_environment!(agent_run: agent_run, handle: handle)
 
