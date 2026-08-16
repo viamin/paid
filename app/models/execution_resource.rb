@@ -52,7 +52,7 @@ class ExecutionResource < ApplicationRecord
       },
       metadata: (resource.metadata || {}).merge("agent_run_status" => agent_run.status)
     )
-    resource.state = "active" if resource.cleaned? || resource.state.blank?
+    resource.reactivate!
     resource.reduced_confidence = false if resource.reduced_confidence?
     resource.save!
     resource
@@ -154,6 +154,16 @@ class ExecutionResource < ApplicationRecord
       last_cleanup_failed_at: nil
     )
     clear_agent_run_references!
+  end
+
+  def reactivate!
+    self.state = "active"
+    self.cleaned_at = nil
+    self.next_cleanup_at = nil
+    self.cleanup_attempts = 0
+    self.last_cleanup_error = nil
+    self.last_cleanup_error_class = nil
+    self.last_cleanup_failed_at = nil
   end
 
   private
