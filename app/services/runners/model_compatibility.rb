@@ -43,12 +43,7 @@ module Runners
     # Short-term guard that applies regardless of harness age: models observed
     # to be unavailable to ChatGPT Codex subscription accounts. Remove when the
     # equivalent contract lands upstream in agent-harness.
-    CODEX_SUBSCRIPTION_UNSUPPORTED_MODELS = %w[
-      gpt-5.6
-      gpt-5.6-luna
-      gpt-5.6-sol
-      gpt-5.6-terra
-    ].freeze
+    CODEX_SUBSCRIPTION_UNSUPPORTED_PREFIXES = %w[gpt-5.6].freeze
     CODEX_SUBSCRIPTION_REPLACEMENT_MODEL_ID = "gpt-5.2-codex"
 
     def self.call(runner_key:, model_id:, auth_type:, provider_runtime: nil)
@@ -237,7 +232,7 @@ module Runners
 
     def codex_subscription_check # @spec MODEL-SELECTION-005
       return unless runner_key == "codex" && auth_type == "subscription"
-      return unless CODEX_SUBSCRIPTION_UNSUPPORTED_MODELS.include?(model_id)
+      return unless CODEX_SUBSCRIPTION_UNSUPPORTED_PREFIXES.any? { |prefix| model_id.start_with?(prefix) }
 
       Result.new(
         supported: false,

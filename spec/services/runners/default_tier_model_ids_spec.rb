@@ -91,7 +91,7 @@ RSpec.describe Runners::DefaultTierModelIds do
 
     context "when the highest-capability mid-tier Codex model is subscription-incompatible" do # @spec MODEL-SELECTION-005
       before do
-        create(:llm_model, :openai, model_id: "gpt-5.6", tier: "mid", capability_score: 9.9)
+        create(:llm_model, :openai, model_id: "gpt-5.6-preview", tier: "mid", capability_score: 9.9)
         create(:llm_model, :openai, model_id: "gpt-5.2-codex", tier: "mid", capability_score: 9.0)
       end
 
