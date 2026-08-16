@@ -44,10 +44,21 @@ class PromptAssembly::BuildIssuePrompt
       issue_comments: fetched_comments
     )
 
-    PromptAssembly::Build.call(sections: sections_for(context))
+    PromptAssembly::Build.call(
+      sections: sections_for(context),
+      profile: resolved_profile
+    )
   end
 
   private
+
+  def resolved_profile
+    PromptAssembly::ProfileResolution.resolve(
+      project: project,
+      account: project&.account,
+      goal: agent_run&.goal || "create_pr"
+    )
+  end
 
   def sections_for(context)
     [

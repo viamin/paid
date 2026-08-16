@@ -15,6 +15,7 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
   let(:project) do
     OpenStruct.new(
       full_name: "owner-1/repo-1",
+      account: OpenStruct.new(id: 7),
       allowed_github_usernames: [ "viamin" ],
       service_containers: service_containers_relation,
       lid_mode: nil
@@ -49,10 +50,36 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
   end
 
   describe ".call" do
+    it "resolves the create_pr assembly profile for the project path" do
+      profile = PromptAssembly::Profile.new(disabled_sections: [ :trusted_comments ])
+      allow(PromptAssembly::ProfileResolution).to receive(:resolve).and_return(profile)
+
+      described_class.call(issue: issue, project: project)
+
+      expect(PromptAssembly::ProfileResolution).to have_received(:resolve).with(
+        project: project,
+        account: project.account,
+        goal: "create_pr"
+      )
+    end
+
     it "returns a PromptAssembly::Result" do
       result = described_class.call(issue: issue, project: project)
 
       expect(result).to be_a(PromptAssembly::Result)
+    end
+
+    it "passes the resolved profile into PromptAssembly::Build" do
+      profile = PromptAssembly::Profile.new(disabled_sections: [ :trusted_comments ])
+      allow(PromptAssembly::ProfileResolution).to receive(:resolve).and_return(profile)
+      allow(PromptAssembly::Build).to receive(:call).and_call_original
+
+      described_class.call(issue: issue, project: project)
+
+      expect(PromptAssembly::Build).to have_received(:call).with(
+        sections: kind_of(Array),
+        profile: profile
+      )
     end
 
     it "includes the issue title and number in the prompt" do
