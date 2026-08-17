@@ -1447,6 +1447,30 @@ RSpec.describe Activities::RunAgentActivity do
 
       expect(run.reload.prompt_assembly_provenance.to_s).not_to include("CREATE A GITHUB ISSUE")
     end
+
+    it "preserves issue prompt provenance when goal-level assembly is recorded later" do
+      goal_issue = create(
+        :issue,
+        project: project,
+        title: "Preserve prompt provenance",
+        github_number: issue.github_number + 1,
+        github_creator_login: issue.github_creator_login,
+        body: issue.body
+      )
+      run = create(:agent_run, project: project, issue: goal_issue, goal: "create_pr")
+      github_client = instance_double(GithubClient, issue_comments: [])
+      allow(GithubClient).to receive(:new).and_return(github_client)
+
+      run.effective_prompt
+      issue_provenance = run.reload.issue_prompt_assembly_provenance
+
+      prompt, fallback = activity.send(:augment_prompt_for_goal, run, run.effective_prompt)
+
+      expect(fallback).to be_nil
+      expect(prompt).to be_present
+      expect(run.reload.issue_prompt_assembly_provenance).to eq(issue_provenance)
+      expect(run.prompt_assembly_provenance["sections"].map { |s| s["key"] }).to eq([ "task.base" ])
+    end
   end
 
   describe "#build_runner_order" do

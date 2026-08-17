@@ -2170,7 +2170,7 @@ class AgentRun < ApplicationRecord
   end
 
   # Agent execution integration methods.
-  # These delegate to AgentRuns::Execute and Prompts::BuildForIssue services.
+  # These delegate to AgentRuns::Execute and PromptAssembly services.
 
   # Executes the agent for this run using agent-harness.
   #
@@ -2185,13 +2185,26 @@ class AgentRun < ApplicationRecord
     AgentRuns::Execute.call(**args)
   end
 
-  # Builds a prompt for this run's issue using the PromptBuilder.
+  # Builds a prompt for this run's issue using PromptAssembly.
+  #
+  # For create_pr runs the prompt is assembled from ordered, provenance-tracked
+  # section providers via {PromptAssembly::BuildIssuePrompt}. The assembly
+  # result is memoized so {#effective_prompt} can record provenance and avoid
+  # double-injecting marketplace content.
+  #
+  # @spec PROMPT-ASSEMBLY-014
   #
   # @return [String, nil] The built prompt, or nil if no issue is attached
   def prompt_for_issue
     return nil unless issue
 
-    Prompts::BuildForIssue.call(issue: issue, project: project, github_client: project.github_token&.client, agent_run: self)
+    @prompt_assembly_result = PromptAssembly::BuildIssuePrompt.call(
+      issue: issue,
+      project: project,
+      github_client: project.github_token&.client,
+      agent_run: self
+    )
+    @prompt_assembly_result.text
   end
 
   # Returns the agent's stdout output joined as a single string.
@@ -2236,16 +2249,50 @@ class AgentRun < ApplicationRecord
   # Returns the prompt for this run: custom_prompt if provided,
   # otherwise delegates to goal-specific prompt builders.
   #
+  # When the create_pr path produced a PromptAssembly result that already
+  # includes marketplace content, the marketplace injection is skipped to
+  # avoid duplication. Section provenance is persisted to external_metadata.
+  #
   # @return [String, nil] The prompt to send to the agent
   def effective_prompt
     base = custom_prompt.presence || prompt_for_goal
-    return base unless agent_run_marketplace_entries.exists?
 
-    runner_key = runner&.runner_key || RunnerSupport.runner_key_for_agent_type(agent_type)
-    MarketplaceEntries::InjectIntoPrompt.call(agent_run: self, prompt: base, provider_key: runner_key)
+    unless prompt_assembly_marketplace_handled?
+      if agent_run_marketplace_entries.exists?
+        runner_key = runner&.runner_key || RunnerSupport.runner_key_for_agent_type(agent_type)
+        base = MarketplaceEntries::InjectIntoPrompt.call(agent_run: self, prompt: base, provider_key: runner_key)
+      end
+    end
+
+    persist_prompt_assembly_provenance!
+    base
+  end
+
+  # Whether the PromptAssembly result already included marketplace content,
+  # so {#effective_prompt} can skip the separate injection step.
+  #
+  # @spec PROMPT-ASSEMBLY-014
+  def prompt_assembly_marketplace_handled?
+    @prompt_assembly_result&.sections&.any? { |section| section.key == :marketplace_attachments }
+  end
+
+  # Persists section provenance from the memoized PromptAssembly result into
+  # external_metadata. Uses update_columns to avoid triggering lifecycle
+  # callbacks — this is a metadata-only audit record, not a state change.
+  #
+  # @spec PROMPT-ASSEMBLY-014
+  def persist_prompt_assembly_provenance!
+    return unless @prompt_assembly_result
+    return unless persisted?
+
+    current = external_metadata.is_a?(Hash) ? external_metadata : {}
+    update_columns(
+      external_metadata: current.merge(ISSUE_PROMPT_ASSEMBLY_KEY => @prompt_assembly_result.provenance)
+    )
   end
 
   PROMPT_ASSEMBLY_KEY = "prompt_assembly"
+  ISSUE_PROMPT_ASSEMBLY_KEY = "issue_prompt_assembly"
 
   # Persists prompt-assembly provenance (digest + section list) on the run so
   # configuration bundles and run metadata can fingerprint exactly which
@@ -2263,6 +2310,10 @@ class AgentRun < ApplicationRecord
 
   def prompt_assembly_provenance
     external_metadata.is_a?(Hash) ? external_metadata[PROMPT_ASSEMBLY_KEY] : nil
+  end
+
+  def issue_prompt_assembly_provenance
+    external_metadata.is_a?(Hash) ? external_metadata[ISSUE_PROMPT_ASSEMBLY_KEY] : nil
   end
 
   def prompt_assembly_digest

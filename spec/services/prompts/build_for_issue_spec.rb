@@ -51,6 +51,26 @@ RSpec.describe Prompts::BuildForIssue do
       )
     end
 
+    it "delegates issue prompt assembly to PromptAssembly::BuildIssuePrompt" do
+      result = instance_double(PromptAssembly::Result, text: "assembled prompt")
+      allow(PromptAssembly::BuildIssuePrompt).to receive(:call).and_return(result)
+
+      prompt = described_class.call(
+        issue: issue,
+        project: project,
+        github_client: nil,
+        agent_run: nil
+      )
+
+      expect(prompt).to eq("assembled prompt")
+      expect(PromptAssembly::BuildIssuePrompt).to have_received(:call).with(
+        issue: issue,
+        project: project,
+        github_client: nil,
+        agent_run: nil
+      )
+    end
+
     it "builds a prompt containing the issue title and number" do
       prompt = described_class.call(issue: issue, project: project)
 

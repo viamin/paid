@@ -83,6 +83,7 @@ module PromptAssembly
         key: section.key,
         source: section.source,
         trust_level: section.trust_level,
+        metadata: section.metadata,
         reason: reason
       }.compact
     end
