@@ -3,8 +3,6 @@
 module ChatSessions
   class BuildLlmClient
     ANTHROPIC_SERVICE_TYPE = "anthropic"
-    ZAI_SERVICE_TYPES = %w[zai zai_coding].freeze
-    ZAI_MAX_TOKENS = 16_384
 
     def self.call(chat_session:)
       new(chat_session: chat_session).call
@@ -85,7 +83,7 @@ module ChatSessions
         transport: transport,
         model: model,
         provider_type: :openai_compatible,
-        max_tokens: max_tokens_for(service_type)
+        max_tokens: config&.dig(:chat_max_tokens)
       )
     end
 
@@ -108,11 +106,6 @@ module ChatSessions
 
     def default_model_for_service_type(service_type)
       self.class.default_model_for_service_type(service_type)
-    end
-
-    # @spec CHAT-API-007
-    def max_tokens_for(service_type)
-      ZAI_MAX_TOKENS if ZAI_SERVICE_TYPES.include?(service_type)
     end
 
     class HttpClient

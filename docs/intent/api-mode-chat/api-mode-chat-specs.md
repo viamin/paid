@@ -90,5 +90,5 @@
   for other OpenAI-compatible providers SHALL keep the transport default.
   *Tests:* `spec/services/chat_sessions/build_llm_client_spec.rb`.
   *Code:* `ChatSessions::BuildLlmClient#openai_compatible_client`,
-  `ChatSessions::BuildLlmClient#max_tokens_for`,
+  `Runner::DIRECT_OUTBOUND_API_PROVIDERS`,
   `ChatSessions::BuildLlmClient::HttpClient#chat_kwargs`.
