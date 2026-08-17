@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_12_124601) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_17_034653) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1025,6 +1025,33 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_12_124601) do
     t.index ["account_id", "subsystem"], name: "index_exception_incidents_on_subsystem"
     t.index ["project_id"], name: "index_exception_incidents_on_project"
     t.index ["severity"], name: "index_exception_incidents_on_severity"
+  end
+
+  create_table "execution_controls", comment: "Execution disable controls for global, account, project, runner, and backend scopes.", force: :cascade do |t|
+    t.bigint "account_id", comment: "Account target when scope=account."
+    t.datetime "created_at", null: false
+    t.datetime "disabled_at", comment: "When the control was last cleared."
+    t.bigint "docker_host_id", comment: "Docker host target when scope=backend."
+    t.boolean "enabled", default: false, null: false, comment: "Whether new execution is currently disabled for the scope."
+    t.datetime "enabled_at", comment: "When the control last became active."
+    t.jsonb "metadata", default: {}, null: false, comment: "Structured metadata for audit context and affected-run tracking."
+    t.string "mode", default: "capacity", null: false, comment: "Disable mode: emergency cancels active runs; capacity parks them."
+    t.bigint "project_id", comment: "Project target when scope=project."
+    t.text "reason", comment: "Operator-supplied reason for the current disable state."
+    t.bigint "runner_id", comment: "Runner target when scope=runner."
+    t.string "scope", null: false, comment: "Scope controlled by this row: global, account, project, runner, or backend."
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "idx_execution_controls_account_scope", unique: true, where: "((scope)::text = 'account'::text)"
+    t.index ["account_id"], name: "index_execution_controls_on_account_id"
+    t.index ["docker_host_id"], name: "idx_execution_controls_backend_scope", unique: true, where: "((scope)::text = 'backend'::text)"
+    t.index ["docker_host_id"], name: "index_execution_controls_on_docker_host_id"
+    t.index ["enabled"], name: "index_execution_controls_on_enabled"
+    t.index ["project_id"], name: "idx_execution_controls_project_scope", unique: true, where: "((scope)::text = 'project'::text)"
+    t.index ["project_id"], name: "index_execution_controls_on_project_id"
+    t.index ["runner_id"], name: "idx_execution_controls_runner_scope", unique: true, where: "((scope)::text = 'runner'::text)"
+    t.index ["runner_id"], name: "index_execution_controls_on_runner_id"
+    t.index ["scope"], name: "idx_execution_controls_global_scope_singleton", unique: true, where: "((scope)::text = 'global'::text)"
+    t.index ["scope"], name: "index_execution_controls_on_scope"
   end
 
   create_table "external_connector_events", comment: "Events ingested from external connectors (Jira, Linear, Slack, etc.) for coexistence workflows.", force: :cascade do |t|
@@ -3054,6 +3081,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_12_124601) do
   add_foreign_key "docker_hosts", "accounts"
   add_foreign_key "exception_incidents", "accounts"
   add_foreign_key "exception_incidents", "projects"
+  add_foreign_key "execution_controls", "accounts"
+  add_foreign_key "execution_controls", "docker_hosts"
+  add_foreign_key "execution_controls", "projects"
+  add_foreign_key "execution_controls", "runners"
   add_foreign_key "external_connector_events", "accounts"
   add_foreign_key "external_connector_events", "projects"
   add_foreign_key "failure_classifications", "agent_runs", on_delete: :cascade

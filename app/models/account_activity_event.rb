@@ -32,8 +32,11 @@ class AccountActivityEvent < ApplicationRecord
     "runner.codex_login_failed" => "runner",
     "self_heal.remediation_applied" => "runner",
     "self_heal.remediation_reverted" => "runner",
+    "execution_control.enabled" => "settings",
+    "execution_control.disabled" => "settings",
     "agent_run.created" => "run",
     "agent_run.cancelled" => "run",
+    "agent_run.execution_parked" => "run",
     "agent_run.retried" => "run",
     "agent_run.terminated" => "run",
     "agent_run.resumed" => "run",
@@ -145,10 +148,16 @@ class AccountActivityEvent < ApplicationRecord
       "Auto-applied #{metadata_value('remediation_action').to_s.humanize.downcase} for #{metadata_value('target_label')}"
     when "self_heal.remediation_reverted"
       "Reverted #{metadata_value('remediation_action').to_s.humanize.downcase} for #{metadata_value('target_label')}"
+    when "execution_control.enabled"
+      "Enabled #{metadata_value('execution_control_scope')} execution disable (#{metadata_value('execution_control_mode')})"
+    when "execution_control.disabled"
+      "Disabled #{metadata_value('execution_control_scope')} execution disable"
     when "agent_run.created"
       "Created agent run ##{metadata_value('agent_run_id')} on #{metadata_value('project_name')}"
     when "agent_run.cancelled"
       "Cancelled agent run ##{metadata_value('agent_run_id')}"
+    when "agent_run.execution_parked"
+      "Parked agent run ##{metadata_value('agent_run_id')}"
     when "agent_run.retried"
       "Retried agent run ##{metadata_value('agent_run_id')} -> ##{metadata_value('new_agent_run_id')}"
     when "agent_run.terminated"
@@ -192,8 +201,12 @@ class AccountActivityEvent < ApplicationRecord
       Array(metadata.to_h["details"]).compact
     when "self_heal.remediation_applied", "self_heal.remediation_reverted"
       Array(metadata.to_h["details"]).compact
+    when "execution_control.enabled", "execution_control.disabled"
+      Array(metadata.to_h["reason"]).compact
     when "agent_run.created"
       Array(metadata.to_h["details"]).compact
+    when "agent_run.execution_parked"
+      Array(metadata.to_h["result"]).compact
     when "agent_run.retried"
       Array(metadata.to_h["details"]).compact
     when "propose_pull_request.executed"

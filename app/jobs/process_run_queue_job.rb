@@ -246,6 +246,14 @@ class ProcessRunQueueJob < ApplicationJob
           next
         end
 
+        # @spec EXEC-DISABLE-002
+        execution_control = ExecutionControls::Resolver.call(agent_run: next_run)
+        if execution_control
+          park_run_for_execution_control(next_run, execution_control)
+          skipped_ids.add(next_run.id)
+          next
+        end
+
         preflight_result = check_runner_preflight(next_run, user)
         if preflight_result && !preflight_result.pass?
           log_preflight_skip(next_run, preflight_result)
@@ -431,6 +439,18 @@ class ProcessRunQueueJob < ApplicationJob
       agent_run_id: agent_run.id,
       runner_id: result.runner_id,
       reason: result.reason,
+      project_id: agent_run.project_id
+    )
+  end
+
+  def park_run_for_execution_control(agent_run, control)
+    ExecutionControls::RunImpact.new(control: control).park_run!(agent_run)
+    Rails.logger.info(
+      message: "process_run_queue.execution_disabled",
+      execution_control_id: control.id,
+      scope: control.scope,
+      mode: control.mode,
+      agent_run_id: agent_run.id,
       project_id: agent_run.project_id
     )
   end

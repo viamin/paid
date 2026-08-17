@@ -329,8 +329,10 @@ module AgentRuns
     end
 
     # @spec RUNNER-SCHED-005
+    # @spec EXEC-DISABLE-003
     def runner_runnable?(runner)
       return false if runner.blocked_by_time_window?
+      return false unless runner.execution_enabled_for_agent_runs?
       container_executable_runner_key?(runner.runner_key)
     end
 

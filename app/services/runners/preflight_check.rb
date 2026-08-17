@@ -3,6 +3,7 @@
 module Runners
   class PreflightCheck
     # @spec RUNNER-SCHED-005
+    # @spec EXEC-DISABLE-003
     # Pinned runs (manual / resume) skip RunnerResolver on first dispatch, so a
     # block-mode time-window restriction would otherwise let them start during a
     # peak-hour window. Failing preflight here closes that gap: the run is
@@ -15,6 +16,7 @@ module Runners
       runner_disabled
       runner_discarded
       runner_not_found
+      execution_disabled
       time_window_blocked
     ].freeze
 
@@ -35,6 +37,7 @@ module Runners
       return failure("runner_discarded") if runner.discarded?
 
       return failure("runner_disabled") unless runner.enabled_for_agent_runs?
+      return failure("execution_disabled") unless runner.execution_enabled_for_agent_runs?
 
       # @spec RUNNER-SCHED-005 — block-mode time-window guard for pinned runs
       # that bypass RunnerResolver on first dispatch.

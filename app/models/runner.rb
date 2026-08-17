@@ -291,6 +291,10 @@ class Runner < ApplicationRecord
     time_window_check(now: now).blocked_at?
   end
 
+  def execution_enabled_for_agent_runs?
+    !ExecutionControl.enabled.for_runner_scope(id).exists?
+  end
+
   def deprioritized_by_time_window?(now: Time.current)
     time_window_check(now: now).deprioritized_at?
   end

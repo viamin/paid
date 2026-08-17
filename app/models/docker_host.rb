@@ -72,12 +72,17 @@ class DockerHost < ApplicationRecord
     setup_state.fetch("steps", {}).fetch(key.to_s, {})
   end
 
+  # @spec EXEC-DISABLE-004
   def placement_ready?
-    enabled? && ready? && image_status == "ready" && required_network_status == "ready"
+    enabled? && ready? && image_status == "ready" && required_network_status == "ready" && execution_enabled_for_agent_runs?
   end
 
   def disable!
     update!(enabled: false)
+  end
+
+  def execution_enabled_for_agent_runs?
+    !ExecutionControl.enabled.for_backend_scope(id).exists?
   end
 
   def endpoint_label

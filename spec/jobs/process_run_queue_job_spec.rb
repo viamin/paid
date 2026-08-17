@@ -1211,6 +1211,33 @@ RSpec.describe ProcessRunQueueJob do
         expect(run.reload.status).to eq("queued")
       end
 
+      # @spec EXEC-DISABLE-002
+      it "parks queued runs when a global execution disable is enabled" do
+        run = create(:agent_run, :queued)
+        create(:execution_control, :global, :enabled, reason: "Global maintenance")
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(run.reload.status).to eq("paused")
+        expect(run.external_metadata.dig("execution_control", "scope")).to eq("global")
+      end
+
+      # @spec EXEC-DISABLE-002
+      it "parks queued runs when a project execution disable is enabled" do
+        project = create(:project)
+        run = create(:agent_run, :queued, project: project)
+        create(:execution_control, :project_scope, :enabled, project: project, reason: "Project maintenance")
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(run.reload.status).to eq("paused")
+        expect(run.external_metadata.dig("execution_control", "scope")).to eq("project")
+      end
+
       it "does not recheck a manual run even if its issue is ineligible" do
         project = create(:project)
         issue = create(:issue, project: project, github_state: "open", labels: [ "planning" ])
