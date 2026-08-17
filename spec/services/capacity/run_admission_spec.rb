@@ -78,6 +78,22 @@ RSpec.describe Capacity::RunAdmission do
     )
   end
 
+  def create_requested_run_for!(target_project, host: nil, provisioning_started_at: nil, cpu_quota: 200_000, memory_bytes: 2.gigabytes, disk_bytes: 1.gigabyte)
+    create(
+      :agent_run,
+      :running,
+      project: target_project,
+      container_host: host,
+      external_metadata: requested_resource_metadata(
+        cpu_quota: cpu_quota,
+        memory_bytes: memory_bytes,
+        disk_bytes: disk_bytes
+      ).tap do |metadata|
+        metadata["provisioning_started_at"] = provisioning_started_at if provisioning_started_at
+      end
+    )
+  end
+
   describe ".call" do
     it "counts active runs against the selected host limit only" do
       create(:agent_run, :running, project: project, container_host: "local")
@@ -181,6 +197,55 @@ RSpec.describe Capacity::RunAdmission do
         expect(result[:rate_limited_until]).to eq(Time.zone.parse("2026-08-17 12:05:00 UTC"))
         expect(result[:current_global_provisionings_per_window]).to eq(1)
         expect(result[:global_provisionings_per_window_limit]).to eq(1)
+      end
+    end
+
+    # @spec CONTAINER-RUNTIME-019
+    it "uses the matching account window when returning an account provisioning-rate denial" do
+      travel_to(Time.zone.parse("2026-08-17 12:00:00 UTC")) do
+        other_account = create(:account)
+        other_user = create(:user, account: other_account)
+        other_project = create(:project, account: other_account, created_by: other_user)
+
+        create_requested_run_for!(other_project, provisioning_started_at: 9.minutes.ago.iso8601)
+        create_requested_run!(provisioning_started_at: 4.minutes.ago.iso8601)
+
+        allow(Capacity::InfrastructureLimits).to receive(:current).and_return(
+          infra_limits.merge(
+            global_provisionings_per_window_limit: 10,
+            account_provisionings_per_window_limit: 1
+          )
+        )
+
+        result = admission_for(host: "local", limit: 8)
+
+        expect(result[:allowed]).to be false
+        expect(result[:reason]).to eq("account_provisioning_rate_limit")
+        expect(result[:rate_limited_until]).to eq(Time.zone.parse("2026-08-17 12:06:00 UTC"))
+      end
+    end
+
+    # @spec CONTAINER-RUNTIME-019
+    it "uses the matching project window when returning a project provisioning-rate denial" do
+      travel_to(Time.zone.parse("2026-08-17 12:00:00 UTC")) do
+        sibling_project = create(:project, account: account, created_by: user)
+
+        create_requested_run_for!(sibling_project, provisioning_started_at: 9.minutes.ago.iso8601)
+        create_requested_run!(provisioning_started_at: 3.minutes.ago.iso8601)
+
+        allow(Capacity::InfrastructureLimits).to receive(:current).and_return(
+          infra_limits.merge(
+            global_provisionings_per_window_limit: 10,
+            account_provisionings_per_window_limit: 10,
+            project_provisionings_per_window_limit: 1
+          )
+        )
+
+        result = admission_for(host: "local", limit: 8)
+
+        expect(result[:allowed]).to be false
+        expect(result[:reason]).to eq("project_provisioning_rate_limit")
+        expect(result[:rate_limited_until]).to eq(Time.zone.parse("2026-08-17 12:07:00 UTC"))
       end
     end
 

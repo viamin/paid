@@ -302,10 +302,14 @@ module Capacity
       return [ "global_provisioning_rate_limit", provisioning_window[:next_available_at] ] if limit.positive? && provisioning_window[:global_count] >= limit
 
       limit = infrastructure_limits[:account_provisionings_per_window_limit].to_i
-      return [ "account_provisioning_rate_limit", provisioning_window[:next_available_at] ] if limit.positive? && provisioning_window[:account_count] >= limit
+      if limit.positive? && provisioning_window[:account_count] >= limit
+        return [ "account_provisioning_rate_limit", provisioning_window[:account_next_available_at] ]
+      end
 
       limit = infrastructure_limits[:project_provisionings_per_window_limit].to_i
-      return [ "project_provisioning_rate_limit", provisioning_window[:next_available_at] ] if limit.positive? && provisioning_window[:project_count] >= limit
+      if limit.positive? && provisioning_window[:project_count] >= limit
+        return [ "project_provisioning_rate_limit", provisioning_window[:project_next_available_at] ]
+      end
 
       nil
     end

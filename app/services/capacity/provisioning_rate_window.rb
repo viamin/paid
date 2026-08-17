@@ -17,12 +17,17 @@ module Capacity
 
     def call
       starts = recent_starts
+      global_count = starts.size
+      account_starts = matching_account_starts(starts)
+      project_starts = matching_project_starts(starts)
 
       {
-        global_count: starts.size,
-        account_count: starts.count { |entry| entry[:account_id] == account&.id },
-        project_count: starts.count { |entry| entry[:project_id] == project&.id },
-        next_available_at: starts.min_by { |entry| entry[:started_at] }&.fetch(:started_at)&.+(window_seconds)
+        global_count: global_count,
+        account_count: account_starts.size,
+        project_count: project_starts.size,
+        next_available_at: next_available_at_for(starts),
+        account_next_available_at: next_available_at_for(account_starts),
+        project_next_available_at: next_available_at_for(project_starts)
       }
     end
 
@@ -34,19 +39,32 @@ module Capacity
       cutoff = now - window_seconds.seconds
 
       TenantContext.with_system_access do
-        AgentRun.includes(:project)
+        AgentRun.left_outer_joins(:project)
           .where.not("COALESCE(external_metadata ->> 'provisioning_started_at', '') = ''")
-          .filter_map do |run|
-            started_at = Time.zone.parse(run.external_metadata["provisioning_started_at"].to_s)
+          .pluck(Arel.sql("projects.account_id"), :project_id, Arel.sql("external_metadata ->> 'provisioning_started_at'"))
+          .filter_map do |account_id, project_id, raw_started_at|
+            started_at = Time.zone.parse(raw_started_at.to_s)
             next unless started_at && started_at >= cutoff
 
             {
-              account_id: run.project&.account_id,
-              project_id: run.project_id,
+              account_id: account_id,
+              project_id: project_id,
               started_at: started_at
             }
           end
       end
+    end
+
+    def matching_account_starts(starts)
+      starts.select { |entry| entry[:account_id] == account&.id }
+    end
+
+    def matching_project_starts(starts)
+      starts.select { |entry| entry[:project_id] == project&.id }
+    end
+
+    def next_available_at_for(starts)
+      starts.min_by { |entry| entry[:started_at] }&.fetch(:started_at)&.+(window_seconds)
     end
   end
 end
