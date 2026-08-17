@@ -28,14 +28,8 @@ module Activities
       # labels coexist on the same PR.
       remove_ready_label(client, project, issue)
       add_phase_label(client, project, issue.github_number, PAID_ESCALATED_LABEL)
-      # @spec FOCUSED-RUN-008
-      issue.update!(
-        pr_review_phase: "escalated",
-        pr_escalation_reason: resolve_escalation_reason(input),
-        auto_continue_paused: true,
-        labels: escalated_labels(issue)
-      )
       reason_key = resolve_escalation_reason(input)
+      # @spec FOCUSED-RUN-008
       issue.update!(
         pr_review_phase: "escalated",
         pr_escalation_reason: reason_key,

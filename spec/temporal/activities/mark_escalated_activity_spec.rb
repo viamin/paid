@@ -131,6 +131,18 @@ RSpec.describe Activities::MarkEscalatedActivity do
         expect(issue.reload.pr_escalation_reason).to eq("operational_failures")
       end
 
+      it "persists the escalation state with a single issue update" do
+        create_operational_failures!(issue)
+        allow(Issue).to receive(:find_by).with(id: issue.id).and_return(issue)
+        expect(issue).to receive(:update!).once.and_call_original
+
+        activity.execute(
+          issue_id: issue.id,
+          reason_key: "operational_failures",
+          reason: "anything human-facing"
+        )
+      end
+
       it "prefers the explicit reason key over the human-facing reason text" do
         activity.execute(
           issue_id: issue.id,
