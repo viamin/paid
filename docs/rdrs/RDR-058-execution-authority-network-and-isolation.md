@@ -21,7 +21,9 @@ This RDR combines three inseparable decisions:
 2. What network access it is allowed.
 3. What isolation boundaries must hold between tenants, projects, and runs.
 
-## Current Implementation
+## Context
+
+### Current Implementation
 
 - `Api::ContainerAuthentication` authenticates run-scoped calls with `AgentRun#proxy_token`.
 - `Api::SecretsProxyController` injects provider API keys server-side and tracks token usage.
@@ -31,7 +33,7 @@ This RDR combines three inseparable decisions:
 - `NetworkPolicy` currently maps `:proxy`, `:subscription_auth`, and `:direct_outbound` to Docker networks and firewall behavior.
 - RDR-045 preview work uses an outbound tunnel and Rails reverse proxy for human ingress instead of making containers publicly reachable.
 
-## Forces and Constraints
+### Forces and Constraints
 
 - Least privilege is required even for the first single-user cloud deployment.
 - Third-party CLIs may require OAuth state or native credential files inside the environment.
@@ -39,33 +41,14 @@ This RDR combines three inseparable decisions:
 - Runners vary: some can enforce egress policies, some can only choose coarse networking modes.
 - Do not design a generic firewall DSL before requirements justify it.
 
-## Options Considered
+## Research Findings
 
-### Broad per-environment secrets
+- The current Docker implementation already separates proxy-mode from broader outbound modes, so the architectural need is a provider-neutral intent model, not a new security philosophy.
+- Subscription-auth and direct-outbound workflows are real requirements, but they are materially weaker than proxy mode and need to remain explicit exceptions.
+- Cloud runners differ sharply in what they can enforce at the network boundary, which means capability checks must become a first-class scheduling concern.
+- The preview and browser work already establishes the right ingress pattern: outbound tunnel plus Paid-mediated access rather than public inbound exposure.
 
-Give every execution environment cloud credentials, GitHub tokens, and provider keys through env vars.
-
-- **Pros**: Easy for provider CLIs.
-- **Cons**: Maximum blast radius; conflicts with RDR-006.
-- **Decision**: Reject.
-
-### Proxy-only for every run
-
-Force all model, GitHub, MCP, and artifact traffic through Paid.
-
-- **Pros**: Strongest audit and revocation.
-- **Cons**: Some subscription CLIs cannot operate through the proxy; browser/previews and approved MCP endpoints need more nuanced access.
-- **Decision**: Default, not universal.
-
-### Capability-scoped authority plus coarse network policies
-
-Grant only the credential classes a run needs and pair them with one of a small set of network policies.
-
-- **Pros**: Least privilege without building a firewall language.
-- **Cons**: Runners with weak network enforcement may be ineligible for sensitive workloads.
-- **Decision**: Adopt.
-
-## Decision
+## Proposed Solution
 
 Paid will model execution authority as a per-run grant set and execution networking as a small, provider-neutral policy.
 
@@ -120,6 +103,32 @@ Paid should preserve these even before full external-customer multi-tenancy:
 - Network policies are per run, not per host.
 - A runner that cannot provide required isolation is ineligible for that run.
 
+## Alternatives Considered
+
+### Broad per-environment secrets
+
+Give every execution environment cloud credentials, GitHub tokens, and provider keys through env vars.
+
+- **Pros**: Easy for provider CLIs.
+- **Cons**: Maximum blast radius; conflicts with RDR-006.
+- **Decision**: Reject.
+
+### Proxy-only for every run
+
+Force all model, GitHub, MCP, and artifact traffic through Paid.
+
+- **Pros**: Strongest audit and revocation.
+- **Cons**: Some subscription CLIs cannot operate through the proxy; browser/previews and approved MCP endpoints need more nuanced access.
+- **Decision**: Default, not universal.
+
+### Capability-scoped authority plus coarse network policies
+
+Grant only the credential classes a run needs and pair them with one of a small set of network policies.
+
+- **Pros**: Least privilege without building a firewall language.
+- **Cons**: Runners with weak network enforcement may be ineligible for sensitive workloads.
+- **Decision**: Adopt.
+
 ## Security Implications
 
 - Proxy-mode keeps RDR-006's strongest property: provider API keys remain control-plane held.
@@ -139,11 +148,26 @@ Paid should preserve these even before full external-customer multi-tenancy:
 - RDR-045 preview tunnel remains the ingress implementation.
 - Host-forwarded subscription credentials stay supported for local Docker only unless a managed remote-safe materializer exists.
 
-## Consequences and Trade-offs
+## Trade-offs and Consequences
 
 - Some provider experiments may fail capability validation before useful benchmarks; that is cheaper than weakening isolation.
 - The policy list is intentionally coarse. If real MCP/service requirements outgrow it, add named destinations before building a firewall DSL.
 - Direct internet remains possible, but it is an exception that carries audit and scheduling consequences.
+
+## Implementation Plan
+
+1. Evolve `ExecutionRunners::NetworkingPolicy` into the documented intent-level policy set and keep Docker-specific enforcement details inside runner adapters.
+2. Extend `RunSpec` and runner capability metadata so credential classes, network policy, and isolation requirements are declared before scheduling.
+3. Reject runner assignments that cannot enforce the requested network or isolation guarantees instead of silently approximating them.
+4. Keep preview ingress on the outbound-tunnel-plus-Paid-proxy path and treat any debugging ingress as an audited operator exception.
+5. Surface proxy mode, subscription-auth materialization, and direct-internet exceptions clearly in UI, logs, and audit events.
+
+## Validation
+
+- Verify proxy-mode runs receive only run-scoped Paid credentials and no model-provider secrets in workload-visible env or files.
+- Verify runner scheduling fails before provisioning when the selected runner cannot enforce the requested policy or isolation level.
+- Verify preview and browser flows operate without public inbound endpoints on the execution environment.
+- Verify subscription-auth and `:internet` exceptions emit distinct audit-visible state compared with ordinary proxy-mode runs.
 
 ## Open Questions
 

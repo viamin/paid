@@ -17,7 +17,9 @@ Cloud execution turns scheduler bugs, retry storms, leaked credentials, and runa
 
 This is distinct from customer billing. It is an operator safety and audit decision.
 
-## Current Implementation
+## Context
+
+### Current Implementation
 
 - `Capacity::RunAdmission` enforces per-user, per-project, per-host, and account create-PR ceilings; #3353 adds global/per-runner limits.
 - `AgentRun` has statuses, timestamps, duration, token limit status, peak memory, runner handle, external metadata, and logs.
@@ -26,7 +28,7 @@ This is distinct from customer billing. It is an operator safety and audit decis
 - `ContainerMetric` samples Docker resource usage; #3355 proposes infra usage/cost records.
 - Configuration and credential models often use Logidze, but there is no dedicated execution-security audit event stream.
 
-## Forces and Constraints
+### Forces and Constraints
 
 - Provider-level quotas/budgets are necessary but not enough; Paid should fail closed before creating resources.
 - Paid must preserve local Docker development without forcing cloud-only cost APIs.
@@ -34,33 +36,14 @@ This is distinct from customer billing. It is an operator safety and audit decis
 - Operational telemetry and security audit history serve different readers and retention needs.
 - Avoid customer billing scope.
 
-## Options Considered
+## Research Findings
 
-### Rely only on provider quotas
+- Existing concurrency and dispatch controls provide a base, but they do not cover aggregate resource requests, provisioning rate, or explicit cloud emergency shutdown.
+- Operational logs and usage metrics are useful telemetry, yet they are not a durable security-grade explanation of who authorized infrastructure actions.
+- Provider quotas and billing alarms are necessary backstops, but they fail too late to be the primary product safety model.
+- Infra cost accounting and customer billing are adjacent concerns, not substitutes for execution-safety gates and audit events.
 
-- **Pros**: No Paid implementation.
-- **Cons**: Late failure, provider-specific, poor per-account/project attribution.
-- **Decision**: Reject as sole control.
-
-### Use only existing concurrency limits
-
-- **Pros**: Already mostly implemented.
-- **Cons**: Does not cover provisioning rate, aggregate requested resources, emergency disable, or spend thresholds.
-- **Decision**: Keep, but extend.
-
-### Build a full billing/rating engine
-
-- **Pros**: Eventually useful.
-- **Cons**: Out of scope; would delay safety controls.
-- **Decision**: Reject.
-
-### Add operational safety rails plus append-only audit events
-
-- **Pros**: Smallest production-safe layer; complements #3353 and #3355.
-- **Cons**: Requires careful event schema and retention.
-- **Decision**: Adopt.
-
-## Decision
+## Proposed Solution
 
 Paid should enforce infrastructure safety rails before provisioning and record security-relevant execution events in a distinct append-only audit model.
 
@@ -115,6 +98,32 @@ Minimum fields:
 - correlation IDs: Temporal workflow ID, runner handle ID, request ID;
 - metadata without secrets.
 
+## Alternatives Considered
+
+### Rely only on provider quotas
+
+- **Pros**: No Paid implementation.
+- **Cons**: Late failure, provider-specific, poor per-account/project attribution.
+- **Decision**: Reject as sole control.
+
+### Use only existing concurrency limits
+
+- **Pros**: Already mostly implemented.
+- **Cons**: Does not cover provisioning rate, aggregate requested resources, emergency disable, or spend thresholds.
+- **Decision**: Keep, but extend.
+
+### Build a full billing/rating engine
+
+- **Pros**: Eventually useful.
+- **Cons**: Out of scope; would delay safety controls.
+- **Decision**: Reject.
+
+### Add operational safety rails plus append-only audit events
+
+- **Pros**: Smallest production-safe layer; complements #3353 and #3355.
+- **Cons**: Requires careful event schema and retention.
+- **Decision**: Adopt.
+
 ## Security Implications
 
 - Audit events make direct network access, subscription-auth materialization, and policy exceptions visible after the fact.
@@ -135,11 +144,26 @@ Minimum fields:
 - Existing structured logs remain telemetry; they do not replace audit events.
 - Local Docker can use permissive defaults, but production should require explicit ceilings.
 
-## Consequences and Trade-offs
+## Trade-offs and Consequences
 
 - Some runs will queue or fail before reaching the agent; that is correct when infrastructure policy is the blocker.
 - Audit records add storage volume but avoid reconstructing security history from mutable logs and scattered metadata.
 - Spend thresholds based on estimates will be imperfect until provider-reported cost exists.
+
+## Implementation Plan
+
+1. Extend admission and scheduling checks so provider-neutral duration, concurrency, resource, retry, and provisioning-rate limits are enforced before provisioning.
+2. Add emergency disable controls at global, account, project, and runner scopes with immediate dispatch stop and cleanup/cancel behavior.
+3. Introduce a distinct append-only execution audit event model that records actor, authority, policy, image, runner, and resource identifiers without secrets.
+4. Integrate resource-ledger, image-identity, and network-policy decisions so the audit stream can explain what infrastructure existed, with what authority, and why.
+5. Layer infra cost thresholds onto the same safety path once #3355 cost records exist.
+
+## Validation
+
+- Verify runs are rejected or queued before provider provisioning when concurrency, aggregate resource, provisioning-rate, or policy limits are exceeded.
+- Verify emergency disable prevents new dispatch immediately and drives cleanup or cancellation for affected active runs.
+- Verify audit events are append-only at the application level and queryable by run, project, account, runner, image, and resource identifiers.
+- Verify audit events record credential classes and policy exceptions without storing secret values or relying on mutable operational logs.
 
 ## Open Questions
 

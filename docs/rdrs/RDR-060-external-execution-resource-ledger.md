@@ -17,7 +17,9 @@ Paid already has idempotent Docker provisioning, runner handles, stale-run clean
 
 The question is whether Paid needs a distinct resource registry. The answer is yes, but it should be a narrow execution resource ledger, not a generic infrastructure CMDB.
 
-## Current Implementation
+## Context
+
+### Current Implementation
 
 - `AgentRun` stores `container_id`, `container_host`, and `runner_handle`.
 - `Containers::Provision` labels Docker containers and workspace volumes with project/run/pool identifiers.
@@ -26,7 +28,7 @@ The question is whether Paid needs a distinct resource registry. The answer is y
 - `AgentRuns::CleanupStale`, `DockerOrphanCleanupJob`, service cleanup, MCP cleanup, and workspace cleanup reconcile known Docker resources.
 - Issue #3352 already proposes stable tags, pre-provision intent, orphan reconciliation, cleanup retry, and a failure-window matrix.
 
-## Forces and Constraints
+### Forces and Constraints
 
 - Do not duplicate the runner handle; the ledger complements it.
 - Support resources that are not Docker containers: jobs, machines, tasks, disks, networks, tunnels, temporary storage.
@@ -34,7 +36,43 @@ The question is whether Paid needs a distinct resource registry. The answer is y
 - Providers differ in tag support and list APIs.
 - Keep the first version small.
 
-## Options Considered
+## Research Findings
+
+- The existing `runner_handle` is necessary for active control, but it is not sufficient to recover from crash windows before the handle is durably persisted.
+- Stable provider-side tags already exist conceptually in the current Docker cleanup model and are the only practical recovery hook across provider restarts and worker crashes.
+- Cloud execution broadens the resource surface beyond containers, so Docker-specific identifiers cannot remain the only durable ownership record.
+- Reconciliation must be a first-class capability because the ledger can drift from provider reality under partial failures.
+
+## Proposed Solution
+
+Paid should record every externally provisioned execution resource in an execution resource ledger. The ledger records ownership and lifecycle, while `RunnerHandle` remains the opaque handle used for active runner operations.
+
+Minimum fields:
+
+- account_id, project_id, agent_run_id;
+- execution attempt identifier;
+- runner/backend key;
+- resource kind (`primary_environment`, `service`, `browser`, `mcp_sidecar`, `workspace`, `network`, `preview_tunnel`, `temporary_storage`);
+- provider resource ID and provider region/location when applicable;
+- stable Paid tags applied to the provider resource;
+- status (`provisioning`, `active`, `cleanup_pending`, `deleted`, `orphaned`, `cleanup_failed`);
+- created_at, observed_at, deleted_at;
+- cleanup error and retry metadata;
+- runner handle reference when known.
+
+### Ownership and Lifecycle Semantics
+
+- A provisioning intent row is created before the provider create call when the runner can identify the intended resource kind.
+- Provider resources are tagged with stable Paid identifiers: environment, account, project, agent run, attempt, resource kind.
+- When provider creation succeeds, the ledger row records provider ID and links to the runner handle.
+- Cleanup moves resources through `cleanup_pending` to `deleted`; transient failures remain durable for retry.
+- Reconciliation compares ledger rows and provider-listed tagged resources:
+  - ledger active + provider missing => mark observed gone, clear active handle if appropriate;
+  - provider tagged + no active run/ledger => adopt as orphan and cleanup;
+  - ledger cleanup_pending + provider present => retry cleanup;
+  - provider cannot list tags => handle-based cleanup only, runner capability reflects the limitation.
+
+## Alternatives Considered
 
 ### Only persist `RunnerHandle`
 
@@ -60,35 +98,6 @@ The question is whether Paid needs a distinct resource registry. The answer is y
 - **Cons**: Adds one durable model and runner contract requirements.
 - **Decision**: Adopt.
 
-## Decision
-
-Paid should record every externally provisioned execution resource in an execution resource ledger. The ledger records ownership and lifecycle, while `RunnerHandle` remains the opaque handle used for active runner operations.
-
-Minimum fields:
-
-- account_id, project_id, agent_run_id;
-- execution attempt identifier;
-- runner/backend key;
-- resource kind (`primary_environment`, `service`, `browser`, `mcp_sidecar`, `workspace`, `network`, `preview_tunnel`, `temporary_storage`);
-- provider resource ID and provider region/location when applicable;
-- stable Paid tags applied to the provider resource;
-- status (`provisioning`, `active`, `cleanup_pending`, `deleted`, `orphaned`, `cleanup_failed`);
-- created_at, observed_at, deleted_at;
-- cleanup error and retry metadata;
-- runner handle reference when known.
-
-## Ownership and Lifecycle Semantics
-
-- A provisioning intent row is created before the provider create call when the runner can identify the intended resource kind.
-- Provider resources are tagged with stable Paid identifiers: environment, account, project, agent run, attempt, resource kind.
-- When provider creation succeeds, the ledger row records provider ID and links to the runner handle.
-- Cleanup moves resources through `cleanup_pending` to `deleted`; transient failures remain durable for retry.
-- Reconciliation compares ledger rows and provider-listed tagged resources:
-  - ledger active + provider missing => mark observed gone, clear active handle if appropriate;
-  - provider tagged + no active run/ledger => adopt as orphan and cleanup;
-  - ledger cleanup_pending + provider present => retry cleanup;
-  - provider cannot list tags => handle-based cleanup only, runner capability reflects the limitation.
-
 ## Security Implications
 
 - Tags must not contain secret values.
@@ -107,11 +116,26 @@ Minimum fields:
 - Existing `container_id`/`container_host` stay for compatibility until the runner extraction effort removes Docker leakage from higher layers.
 - Issue #3352 remains the implementation vehicle for failure windows; this RDR supplies the durable resource concept.
 
-## Consequences and Trade-offs
+## Trade-offs and Consequences
 
 - A ledger is extra state that can drift, so reconciliation is mandatory.
 - It avoids a provider-specific resource table per backend.
 - It creates the substrate for infra cost accounting without becoming customer billing.
+
+## Implementation Plan
+
+1. Introduce a narrow execution resource ledger model keyed by account, project, run, attempt, runner, and resource kind.
+2. Create provisioning intent rows before provider create calls whenever the runner can identify the resource being requested.
+3. Require runners to apply stable Paid ownership tags to provider resources and to report provider IDs back into the ledger.
+4. Add reconciliation and cleanup retry flows that compare ledger state with provider-listed tagged resources.
+5. Keep existing Docker janitors and `runner_handle` behavior during migration while backfilling ledger rows for current runner-managed resources.
+
+## Validation
+
+- Verify a worker crash after provider creation but before handle persistence still leaves enough ledger and tag state to reconcile and clean up the resource.
+- Verify duplicate Temporal retries do not leak billable resources without a durable ledger row or orphan-adoption path.
+- Verify provider resources can be queried and traced back to account, project, run, attempt, and resource kind without exposing secrets.
+- Verify reconciliation correctly handles missing-provider, orphaned-provider, and cleanup-pending cases across supported runners.
 
 ## Open Questions
 

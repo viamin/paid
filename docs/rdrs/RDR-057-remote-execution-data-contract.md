@@ -23,7 +23,9 @@ Paid control plane -> runner -> isolated execution environment -> durable output
 
 without shared host storage.
 
-## Current Implementation
+## Context
+
+### Current Implementation
 
 - `AgentExecutionWorkflow` provisions services, MCP servers, browser sidecars, the primary environment, then clones, runs, pushes, screenshots, and cleans up through Temporal activities.
 - `ExecutionRunners::RunSpec` and `WorkspaceStrategy` already isolate workspace shape from Docker volumes in `app/services/execution_runners.rb`.
@@ -32,7 +34,7 @@ without shared host storage.
 - Durable binary artifacts use `ArtifactStorage` and `Screenshots::Storage`; the inventory is in `docs/ARTIFACT_STORAGE.md`.
 - `AgentRunLog`, `TokenUsage`, run state, PR URLs, result commits, and trace metadata live in PostgreSQL.
 
-## Forces and Constraints
+### Forces and Constraints
 
 - Preserve local Docker as a runner.
 - Do not require a shared filesystem between Rails/Temporal workers and the execution environment.
@@ -41,7 +43,51 @@ without shared host storage.
 - Do not force all providers to expose `exec`, bind mounts, or Docker volume primitives.
 - The contract must be narrow enough for a first remote runner to implement.
 
-## Options Considered
+## Research Findings
+
+- The current runner extraction already separates workspace shape from higher-level orchestration, which means the missing decision is the transport contract, not a new workflow model.
+- Existing product behavior already uses different durable stores for different artifact classes: Git for code, PostgreSQL for structured state, and object storage for screenshots and traces.
+- The main cloud-readiness gap is that local Docker conveniences still leak into the mental model even where the implementation has begun to abstract them away.
+- A provider-neutral contract is more valuable than a provider-specific optimization because the immediate goal is cloud execution portability.
+
+## Proposed Solution
+
+Paid will define a runner data contract with four lanes:
+
+1. **Git lane**: repository input and code output.
+2. **Control-plane API lane**: structured execution spec, run status, logs/events, result summaries, and small manifests.
+3. **Object-storage lane**: durable binary/user-visible artifacts.
+4. **Credential lane**: scoped runtime authority brokered by Paid, never staged as general artifacts.
+
+The runner interface should pass a `RunSpec` that includes repository identity/ref, command/goal, prompt/context references or inline small payloads, workspace strategy, services, network policy, resources, and credential classes required. It should return an `ExecutionResult` plus an output manifest that references durable artifacts by URL/key and code changes by commit/branch/PR identity.
+
+### Contract Details
+
+### Inputs
+
+| Input | Transport | Notes |
+|---|---|---|
+| Repository + ref/commit | Git | Runner clones/fetches in its workspace using Paid-brokered Git credentials. |
+| Execution spec | Runner API / `RunSpec` | Immutable per attempt; includes goal, command, resources, network policy, services, image identity. |
+| Prompt/context | Inline when small; object storage or Paid API when large | Knowledge snapshots and prompt assembly should be referenced by ID or artifact key when they exceed normal payload size. |
+| Configuration | `RunSpec` env + Paid API | Non-secret config can be env or structured spec. |
+| Scoped credentials | Credential lane | See RDR-058; no bulk object staging of secrets. |
+| Knowledge/context artifacts | Paid API or object storage | Use object storage for large binary/opaque context, DB/API for structured records. |
+| Service requirements | `ServiceDeclaration` | Runner translates to sidecars, managed services, or rejection by capability. |
+| Optional existing artifacts | Object storage keys | Runner receives references, not host paths. |
+
+### Outputs
+
+| Output | Transport | Notes |
+|---|---|---|
+| Code changes | Git | Branch/commit/PR is the authoritative output. |
+| Structured execution result | Runner API -> PostgreSQL | Exit code, status, OOM/timeout, summary, timings. |
+| stdout/stderr/logs | Streaming API/events -> PostgreSQL | Keep `AgentRunLog` as durable queryable record; large raw logs may later use object storage with DB index. |
+| Screenshots, traces, videos, generated binaries | Object storage via `ArtifactStorage` | The manifest stores keys, URLs, content type, size, checksum when available. |
+| Verification results | PostgreSQL + optional artifact links | Store pass/fail and trace links, not only free text. |
+| Generated files not committed to git | Object storage | Only for user-visible artifacts; implementation files should be committed. |
+
+## Alternatives Considered
 
 ### Shared filesystem
 
@@ -75,43 +121,6 @@ Use the smallest durable transport for each artifact class.
 - **Cons**: Requires a documented manifest so outputs are not scattered.
 - **Decision**: Adopt.
 
-## Decision
-
-Paid will define a runner data contract with four lanes:
-
-1. **Git lane**: repository input and code output.
-2. **Control-plane API lane**: structured execution spec, run status, logs/events, result summaries, and small manifests.
-3. **Object-storage lane**: durable binary/user-visible artifacts.
-4. **Credential lane**: scoped runtime authority brokered by Paid, never staged as general artifacts.
-
-The runner interface should pass a `RunSpec` that includes repository identity/ref, command/goal, prompt/context references or inline small payloads, workspace strategy, services, network policy, resources, and credential classes required. It should return an `ExecutionResult` plus an output manifest that references durable artifacts by URL/key and code changes by commit/branch/PR identity.
-
-## Contract Details
-
-### Inputs
-
-| Input | Transport | Notes |
-|---|---|---|
-| Repository + ref/commit | Git | Runner clones/fetches in its workspace using Paid-brokered Git credentials. |
-| Execution spec | Runner API / `RunSpec` | Immutable per attempt; includes goal, command, resources, network policy, services, image identity. |
-| Prompt/context | Inline when small; object storage or Paid API when large | Knowledge snapshots and prompt assembly should be referenced by ID or artifact key when they exceed normal payload size. |
-| Configuration | `RunSpec` env + Paid API | Non-secret config can be env or structured spec. |
-| Scoped credentials | Credential lane | See RDR-058; no bulk object staging of secrets. |
-| Knowledge/context artifacts | Paid API or object storage | Use object storage for large binary/opaque context, DB/API for structured records. |
-| Service requirements | `ServiceDeclaration` | Runner translates to sidecars, managed services, or rejection by capability. |
-| Optional existing artifacts | Object storage keys | Runner receives references, not host paths. |
-
-### Outputs
-
-| Output | Transport | Notes |
-|---|---|---|
-| Code changes | Git | Branch/commit/PR is the authoritative output. |
-| Structured execution result | Runner API -> PostgreSQL | Exit code, status, OOM/timeout, summary, timings. |
-| stdout/stderr/logs | Streaming API/events -> PostgreSQL | Keep `AgentRunLog` as durable queryable record; large raw logs may later use object storage with DB index. |
-| Screenshots, traces, videos, generated binaries | Object storage via `ArtifactStorage` | The manifest stores keys, URLs, content type, size, checksum when available. |
-| Verification results | PostgreSQL + optional artifact links | Store pass/fail and trace links, not only free text. |
-| Generated files not committed to git | Object storage | Only for user-visible artifacts; implementation files should be committed. |
-
 ## Security Implications
 
 - Secrets are excluded from artifact lanes.
@@ -131,11 +140,26 @@ The runner interface should pass a `RunSpec` that includes repository identity/r
 - Git branch fallback for screenshots can remain a compatibility path, but not the preferred production artifact lane.
 - Runner conformance should verify clone, log streaming, artifact upload, result manifest, and cleanup without shared host paths.
 
-## Consequences and Trade-offs
+## Trade-offs and Consequences
 
 - The manifest adds one explicit artifact index, but avoids inventing a generic filesystem abstraction.
 - Git remains required for code outputs; providers that cannot perform Git operations inside the workload are not suitable for normal create-PR runs.
 - Large generated artifacts become durable only when explicitly uploaded and referenced.
+
+## Implementation Plan
+
+1. Extend `ExecutionRunners::RunSpec` and runner result types so each artifact lane is explicit at the contract boundary.
+2. Define a durable output manifest shape that references Git outputs, structured results, and uploaded artifacts without host-path assumptions.
+3. Keep local Docker compatibility inside `WorkspaceStrategy` while rejecting new shared-filesystem assumptions in remote runner work.
+4. Add runner conformance coverage for clone, log streaming, artifact upload, result manifests, and cleanup behavior.
+5. Gate production cloud readiness on durable artifact storage for screenshots, traces, and other user-visible binaries.
+
+## Validation
+
+- Verify a local Docker runner still passes the contract with named-volume workspaces and no shared host-path requirement at the orchestration boundary.
+- Verify a remote-capable runner can clone from Git, stream logs, upload durable artifacts, and return a manifest without `docker exec` or bind mounts.
+- Verify secrets never appear in artifact manifests, durable object keys, or structured result payloads.
+- Verify screenshot, trace, and generated-binary retrieval works entirely through Paid-authorized artifact references.
 
 ## Open Questions
 

@@ -15,7 +15,9 @@
 
 Production executions must be reproducible months later. Today the default image identity is usually `paid-agent:latest`, and language-specific images resolve to mutable tags such as `paid-agent:elixir-node-python-ruby`. That is fine for local development, but not authoritative enough for production cloud execution or security audit.
 
-## Current Implementation
+## Context
+
+### Current Implementation
 
 - `Containers::ImageResolver::BASE_IMAGE` is `paid-agent:latest`.
 - `Containers::Provision::DEFAULTS[:image]` uses that base image unless project languages resolve to a combo tag.
@@ -24,7 +26,7 @@ Production executions must be reproducible months later. Today the default image
 - `.github/workflows/agent-image.yml` builds and smoke-tests `paid-agent:latest`.
 - `ContainerPoolEntry#image` stores an image tag, but `AgentRun` does not record an immutable image digest as the execution identity.
 
-## Forces and Constraints
+### Forces and Constraints
 
 - Preserve `paid-agent:latest` for local Docker development.
 - Production runs need immutable image identity, including architecture.
@@ -32,7 +34,40 @@ Production executions must be reproducible months later. Today the default image
 - Runners may cache images, but cache hits must still refer to a digest.
 - Avoid provider-specific registry assumptions.
 
-## Options Considered
+## Research Findings
+
+- The current image workflow already distinguishes local development defaults from production concerns, but it does not record an authoritative runtime identity for an executed run.
+- Mutable tags are convenient operator labels, yet they are insufficient evidence for security investigation or reproducibility.
+- Multi-architecture support makes digest-only recording incomplete unless platform identity is recorded alongside the digest.
+- The existing CI image pipeline provides a natural place to publish and validate immutable image identities before runner activation.
+
+## Proposed Solution
+
+Production agent executions must resolve an image tag/profile to an immutable image digest before provisioning. Paid records both:
+
+- **Requested image reference**: human-facing tag/profile requested by config (`paid-agent:standard`, `paid-agent:elixir-node-python-ruby`, etc.).
+- **Resolved image identity**: registry, repository, digest, architecture, and optional provenance metadata used for the actual run.
+
+Mutable tags may remain defaults for development, but a production runner must not treat `latest` as the authoritative execution identity.
+
+### Recommended Direction
+
+1. Introduce an `AgentImage` or equivalent registry record with:
+   - logical name/profile;
+   - tag;
+   - digest;
+   - architecture;
+   - registry/repository;
+   - built from Paid commit SHA and `Gemfile.lock`/`agent-harness` identity;
+   - build timestamp and CI provenance URL when available;
+   - status (`active`, `deprecated`, `blocked`).
+2. `Containers::ImageResolver` resolves a project to a logical profile; production runner selection resolves that profile to an active digest for the target architecture.
+3. `RunSpec` carries the resolved immutable image identity.
+4. `AgentRun` records the resolved image identity and architecture for every attempt.
+5. Rollback means selecting a previous active digest, not moving `latest`.
+6. Runner/provider image caches are optimization only; cache contents must be validated against the requested digest.
+
+## Alternatives Considered
 
 ### Continue using mutable tags
 
@@ -62,32 +97,6 @@ Use `registry.example.com/paid-agent@sha256:...`.
 - **Cons**: Slow, costly, harder to audit supply chain.
 - **Decision**: Reject.
 
-## Decision
-
-Production agent executions must resolve an image tag/profile to an immutable image digest before provisioning. Paid records both:
-
-- **Requested image reference**: human-facing tag/profile requested by config (`paid-agent:standard`, `paid-agent:elixir-node-python-ruby`, etc.).
-- **Resolved image identity**: registry, repository, digest, architecture, and optional provenance metadata used for the actual run.
-
-Mutable tags may remain defaults for development, but a production runner must not treat `latest` as the authoritative execution identity.
-
-## Recommended Direction
-
-1. Introduce an `AgentImage` or equivalent registry record with:
-   - logical name/profile;
-   - tag;
-   - digest;
-   - architecture;
-   - registry/repository;
-   - built from Paid commit SHA and `Gemfile.lock`/`agent-harness` identity;
-   - build timestamp and CI provenance URL when available;
-   - status (`active`, `deprecated`, `blocked`).
-2. `Containers::ImageResolver` resolves a project to a logical profile; production runner selection resolves that profile to an active digest for the target architecture.
-3. `RunSpec` carries the resolved immutable image identity.
-4. `AgentRun` records the resolved image identity and architecture for every attempt.
-5. Rollback means selecting a previous active digest, not moving `latest`.
-6. Runner/provider image caches are optimization only; cache contents must be validated against the requested digest.
-
 ## Security Implications
 
 - Digest pinning reduces supply-chain ambiguity and supports incident response.
@@ -107,11 +116,26 @@ Mutable tags may remain defaults for development, but a production runner must n
 - Backfill historical runs with tag-only identity where digest was not recorded; mark as non-reproducible rather than guessing.
 - First cloud runner can start with one architecture if the lack of another architecture is declared as a capability limitation.
 
-## Consequences and Trade-offs
+## Trade-offs and Consequences
 
 - Operators must manage image activation, but the model avoids accidental tag drift.
 - A digest-first model makes provider comparisons fairer: benchmark results can point to the same runtime bits.
 - Image cleanup needs a retention policy so rollback digests are not deleted too early.
+
+## Implementation Plan
+
+1. Add an image registry record or equivalent configuration source that maps logical profiles to active immutable image digests per architecture.
+2. Resolve production `RunSpec` image references to a digest before provisioning and persist that resolved identity on `AgentRun`.
+3. Update CI/publish flows so built images emit digest, platform, and provenance metadata before they can be marked active.
+4. Keep mutable tags such as `paid-agent:latest` as local-development defaults only, not authoritative production identities.
+5. Define retention and blocking workflows so rollback digests remain available and vulnerable digests can be prevented from scheduling.
+
+## Validation
+
+- Verify every production-bound run records both the requested image profile and the resolved digest plus architecture.
+- Verify runner provisioning fails closed when a production profile cannot resolve to an active digest.
+- Verify rollback selects a prior active digest without moving a mutable tag.
+- Verify CI smoke tests and provenance data attach to the same digest later used by runners.
 
 ## Open Questions
 
