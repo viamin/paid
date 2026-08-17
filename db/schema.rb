@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_13_024216) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_17_210528) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -229,6 +229,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_024216) do
     t.string "adoption_mode_snapshot", comment: "Project adoption mode captured when an external execution was ingested."
     t.string "agent_type", limit: 50, null: false
     t.string "auth_provider", limit: 50
+    t.jsonb "authority_grants", default: {}, null: false, comment: "Secret-free execution authority grant snapshot for the run"
     t.boolean "auto_pick", default: false, null: false
     t.float "avg_cpu_percent"
     t.decimal "avg_memory_bytes", precision: 20, scale: 4

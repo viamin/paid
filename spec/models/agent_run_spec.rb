@@ -2365,6 +2365,25 @@ RSpec.describe AgentRun do
 
           expect(captured_spec).to be_a(ExecutionRunners::RunSpec)
           expect(captured_spec.networking_policy).to be_a(ExecutionRunners::NetworkingPolicy)
+          expect(captured_spec.authority_grants.grants).to include(
+            hash_including("kind" => "paid_api_proxy_token")
+          )
+        end
+
+        it "persists secret-free authority grants before runner provisioning" do
+          agent_run = create(:agent_run, worktree_path: worktree_path)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          allow(Containers::PoolManager).to receive(:new)
+            .with(project: agent_run.project)
+            .and_return(instance_double(Containers::PoolManager, acquire: nil))
+
+          agent_run.provision_container
+
+          persisted = agent_run.reload.authority_grants
+          expect(persisted.fetch("grants")).to include(
+            hash_including("kind" => "model_provider_credentials")
+          )
+          expect(persisted.to_json).not_to include(agent_run.proxy_token)
         end
 
         it "persists runner_handle alongside container_id when provisioning via the runner" do
