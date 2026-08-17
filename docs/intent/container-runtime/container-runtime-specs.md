@@ -208,3 +208,22 @@
   `ExecutionRunners::LocalDockerRunner`,
   `Containers::Provision.networking_policy_for`,
   `Containers::ProxyUrl.resolve`
+
+- [x] **CONTAINER-RUNTIME-018** — The system SHALL define provider-neutral
+  remote-execution manifests for the control-plane/runner boundary:
+  `ExecutionInputManifest` (derived from `RunSpec`) and
+  `ExecutionOutputManifest` (derived from `ExecutionResult` + `AgentRun`).
+  The input manifest SHALL carry repository/ref, execution spec,
+  prompt/context references, service declarations, and explicit lane refs for
+  Git, control-plane API, object storage, and credentials. The output manifest
+  SHALL carry result summaries, log references, verification results, durable
+  binary artifact references, and git output identity, and SHALL distinguish
+  code outputs from durable binary artifacts and structured results. Secret
+  values SHALL be excluded by construction: credential lanes and service
+  declarations may carry only identifiers or env keys, never secret payloads
+  or host paths.
+  *Tests:* `spec/services/execution_runners_spec.rb`
+  *Code:* `ExecutionRunners::ExecutionInputManifest`,
+  `ExecutionRunners::ExecutionOutputManifest`,
+  `ExecutionRunners::RunSpec#input_manifest`,
+  `ExecutionRunners::ExecutionResult#output_manifest`
