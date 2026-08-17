@@ -35,14 +35,7 @@ class PromptAssembly::Sections::IssueTask
   private
 
   def build_section
-    return selected_prompt_version.render(variables) if selected_prompt_version
-
-    Prompts::Render.call(
-      slug: PROMPT_SLUG,
-      project: project,
-      variables: variables,
-      fallback: -> { Prompts::Render.interpolate(FALLBACK_PROMPT, variables) }
-    )
+    PromptAssembly::Sections::SafetyRules.strip_legacy_suffix(render_task_template)
   end
 
   def required
@@ -69,6 +62,17 @@ class PromptAssembly::Sections::IssueTask
     return unless version&.prompt&.slug == PROMPT_SLUG
 
     version
+  end
+
+  def render_task_template
+    return selected_prompt_version.render(variables) if selected_prompt_version
+
+    Prompts::Render.call(
+      slug: PROMPT_SLUG,
+      project: project,
+      variables: variables,
+      fallback: -> { Prompts::Render.interpolate(FALLBACK_PROMPT, variables) }
+    )
   end
 
   def lint_command

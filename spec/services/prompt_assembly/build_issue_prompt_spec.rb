@@ -110,6 +110,33 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
       expect(result.text.scan("# Rules").length).to eq(1)
     end
 
+    it "strips a legacy embedded rules suffix from the queued prompt version before appending safety rules" do
+      prompt_record = create(:prompt, :global, slug: "coding.issue_implementation")
+      prompt_record.create_version!(
+        template: <<~TEMPLATE,
+          # Task
+
+          Implement {{title}}.
+
+          When you're done, commit all your changes. Do not push.
+
+          # Rules — you MUST follow these
+
+          - Old rule one
+          - Old rule two
+        TEMPLATE
+        variables: []
+      )
+      agent_run = create(:agent_run, goal: "create_pr", prompt_version: prompt_record.current_version)
+
+      result = described_class.call(issue: issue, project: project, agent_run: agent_run)
+
+      expect(result.text.scan("When you're done, commit all your changes. Do not push.").length).to eq(1)
+      expect(result.text.scan("# Rules — you MUST follow these").length).to eq(1)
+      expect(result.text).not_to include("Old rule one")
+      expect(result.text).not_to include("Old rule two")
+    end
+
     it "includes test and lint commands" do
       result = described_class.call(issue: issue, project: project)
 

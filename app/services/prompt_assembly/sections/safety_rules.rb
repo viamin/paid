@@ -22,6 +22,20 @@ class PromptAssembly::Sections::SafetyRules
     When you're done, commit all your changes. Do not push.
   RULES
 
+  LEGACY_RULES_SUFFIX = /
+    \n{2,}
+    (?:When\ you're\ done,\ commit\ all\ your\ changes\.\ Do\ not\ push\.\n{2,})?
+    \#\ Rules\ —\ you\ MUST\ follow\ these
+    \n{2,}
+    (?:- .*(?:\n|$))+
+    \s*
+    \z
+  /x.freeze
+
+  def self.strip_legacy_suffix(text)
+    text.to_s.sub(LEGACY_RULES_SUFFIX, "").rstrip
+  end
+
   private
 
   def build_section

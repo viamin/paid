@@ -2287,11 +2287,12 @@ class AgentRun < ApplicationRecord
 
     current = external_metadata.is_a?(Hash) ? external_metadata : {}
     update_columns(
-      external_metadata: current.merge(PROMPT_ASSEMBLY_KEY => @prompt_assembly_result.provenance)
+      external_metadata: current.merge(ISSUE_PROMPT_ASSEMBLY_KEY => @prompt_assembly_result.provenance)
     )
   end
 
   PROMPT_ASSEMBLY_KEY = "prompt_assembly"
+  ISSUE_PROMPT_ASSEMBLY_KEY = "issue_prompt_assembly"
 
   # Persists prompt-assembly provenance (digest + section list) on the run so
   # configuration bundles and run metadata can fingerprint exactly which
@@ -2309,6 +2310,10 @@ class AgentRun < ApplicationRecord
 
   def prompt_assembly_provenance
     external_metadata.is_a?(Hash) ? external_metadata[PROMPT_ASSEMBLY_KEY] : nil
+  end
+
+  def issue_prompt_assembly_provenance
+    external_metadata.is_a?(Hash) ? external_metadata[ISSUE_PROMPT_ASSEMBLY_KEY] : nil
   end
 
   def prompt_assembly_digest

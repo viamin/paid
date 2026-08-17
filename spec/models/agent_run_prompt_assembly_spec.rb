@@ -55,7 +55,7 @@ RSpec.describe AgentRun do
       agent_run.effective_prompt
 
       agent_run.reload
-      provenance = agent_run.external_metadata["prompt_assembly"]
+      provenance = agent_run.external_metadata["issue_prompt_assembly"]
       expect(provenance).to be_present
       expect(provenance["digest"]).to match(/\A[0-9a-f]{64}\z/)
       expect(provenance["prompt_digest"]).to match(/\A[0-9a-f]{64}\z/)
@@ -68,7 +68,7 @@ RSpec.describe AgentRun do
       agent_run.effective_prompt
 
       agent_run.reload
-      sections = agent_run.external_metadata["prompt_assembly"]["sections"]
+      sections = agent_run.external_metadata["issue_prompt_assembly"]["sections"]
       keys = sections.map { |s| s["key"] }
       expect(keys).to include("issue_task", "safety_rules")
     end
@@ -129,7 +129,7 @@ RSpec.describe AgentRun do
       agent_run.effective_prompt
 
       agent_run.reload
-      expect(agent_run.external_metadata["prompt_assembly"]).to be_present
+      expect(agent_run.external_metadata["issue_prompt_assembly"]).to be_present
     end
   end
 end
