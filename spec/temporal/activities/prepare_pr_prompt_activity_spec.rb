@@ -135,6 +135,25 @@ RSpec.describe Activities::PreparePrPromptActivity do
       expect(provenance["budget_decisions"]).to be_an(Array)
     end
 
+    it "records style guide, convention, and LID sections when they reach the final prompt" do
+      create(:style_guide,
+        :global,
+        name: "Seeded Ruby Guide",
+        raw_content: "Prefer small methods.",
+        compressed_content: nil)
+      project.update!(lid_mode: "full")
+
+      activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
+
+      phase = agent_run.reload.agent_run_phases.find_by!(phase_key: "prepare_pr_prompt")
+      keys = phase.metadata.fetch("prompt_assembly").fetch("sections").map { |section| section.fetch("key") }
+
+      expect(agent_run.custom_prompt).to include("# Style Guide")
+      expect(agent_run.custom_prompt).to include("## Repository Automation Conventions")
+      expect(agent_run.custom_prompt).to include("## LID-Aware Workflow")
+      expect(keys).to include("style_guides", "project_conventions", "lid_workflow")
+    end
+
     it "passes explicit focus through to the prompt builder" do
       allow(github_client).to receive(:check_runs_for_ref)
         .with(project.full_name, "abc123")

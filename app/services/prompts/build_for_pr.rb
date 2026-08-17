@@ -143,16 +143,7 @@ module Prompts
     # Returns the assembled prompt text. Existing callers (PreparePrPromptActivity,
     # scripts, and tests) continue to receive a plain string.
     def build
-      base = build_result.text.delete("\x00")
-
-      with_style_guides = StyleGuides::InjectIntoPrompt.call(
-        prompt: base,
-        project: project,
-        agent_run: agent_run,
-        source: self.class.name
-      )
-      with_conventions = ProjectConventions::InjectIntoPrompt.call(prompt: with_style_guides, project: project)
-      Lid::InjectIntoPrompt.call(prompt: with_conventions, project: project, goal: agent_run&.goal)
+      build_result.text.delete("\x00")
     end
 
     # Returns the full assembly result: prompt text plus section provenance.
@@ -197,7 +188,10 @@ module Prompts
         *conversation_section_with_excluded,
         other_issues_section,
         instructions_and_rules_shell,
-        service_environment_section
+        service_environment_section,
+        style_guides_section,
+        project_conventions_section,
+        lid_workflow_section
       ].flatten.compact
     end
 
@@ -245,6 +239,25 @@ module Prompts
         trust_level: :trusted,
         required: true,
         inclusion_reason: "service container guardrails"
+      )
+    end
+
+    def style_guides_section
+      PromptAssembly::Sections::StyleGuides.call(prompt_assembly_context)
+    end
+
+    def project_conventions_section
+      PromptAssembly::Sections::ProjectConventions.call(prompt_assembly_context)
+    end
+
+    def lid_workflow_section
+      PromptAssembly::Sections::LidWorkflow.call(prompt_assembly_context)
+    end
+
+    def prompt_assembly_context
+      @prompt_assembly_context ||= PromptAssembly::Context.new(
+        project: project,
+        agent_run: agent_run
       )
     end
 
