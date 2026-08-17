@@ -14,8 +14,8 @@ module ExecutionRunners
   # The ledger is append-only across the provision lifecycle; cleanup does not
   # delete the row, so a full provision history remains for auditing.
   #
-  # @spec CONTAINER-RUNTIME-018
-  # @spec CONTAINER-RUNTIME-020
+  # @spec CONTAINER-RUNTIME-019
+  # @spec CONTAINER-RUNTIME-021
   class ProvisioningLedger
     # @param runner_type [String, Symbol] runner type (matches RunnerHandle#runner_type)
     # @param resource_kind [String, nil] resource kind the runner provisions; nil
@@ -56,7 +56,7 @@ module ExecutionRunners
     # @param agent_run [AgentRun, nil]
     # @param attempt [Integer]
     # @return [Hash{String=>String}] provider label map
-    # @spec CONTAINER-RUNTIME-019
+    # @spec CONTAINER-RUNTIME-020
     def ownership_labels_for(agent_run:, attempt: 0)
       ownership_tags_for(agent_run, attempt: attempt)&.to_label_map || {}
     end
@@ -66,7 +66,7 @@ module ExecutionRunners
     # disabled. Raises on persistence failure so a runner never proceeds to
     # create a resource it cannot reconcile.
     # @return [ProvisioningIntent, nil]
-    # @spec CONTAINER-RUNTIME-018
+    # @spec CONTAINER-RUNTIME-019
     def record_intent(agent_run:, attempt: 0)
       return unless recording?
 
@@ -94,8 +94,8 @@ module ExecutionRunners
     # advancing the row to +created+. Best-effort: a failure here must not mask
     # the successful creation. The row is already pending with the ownership
     # tags, so reconciliation still has attribution even if this update drops.
-    # @spec CONTAINER-RUNTIME-018
-    # @spec CONTAINER-RUNTIME-020
+    # @spec CONTAINER-RUNTIME-019
+    # @spec CONTAINER-RUNTIME-021
     def link_created(intent, provider_resource_id:, host:)
       return if intent.nil?
 

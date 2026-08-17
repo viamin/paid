@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "digest"
 require "json"
 
 # ExecutionRunners defines the domain-oriented runner contract that will
@@ -18,6 +19,25 @@ require "json"
 #
 # @see ExecutionRunners::Base
 module ExecutionRunners
+  MANIFEST_SCHEMA_VERSION = "remote_execution.v1"
+
+  def self.json_value(value)
+    case value
+    when Array
+      value.map { |entry| json_value(entry) }
+    when Hash
+      value.each_with_object({}) do |(key, entry), result|
+        result[key.to_s] = json_value(entry)
+      end
+    else
+      if value.class.name&.start_with?("ExecutionRunners::") && value.respond_to?(:to_h)
+        json_value(value.to_h)
+      else
+        value
+      end
+    end
+  end
+
   # Resolves the concrete runner for a backend/runner descriptor. All current
   # backends (local Docker, remote Docker, Swarm) are Docker transports, so
   # they all resolve to {LocalDockerRunner} today; a future non-Docker runner
@@ -210,6 +230,11 @@ module ExecutionRunners
       WorkspaceStrategy.named_volume
     end
     private_class_method :workspace_strategy_for
+
+    # @spec CONTAINER-RUNTIME-018
+    def input_manifest
+      ExecutionInputManifest.from_run_spec(self)
+    end
   end
 
   # Opaque reference to a launched environment, returned by +#provision+ and
@@ -275,7 +300,7 @@ module ExecutionRunners
   #
   # The six tag names are the contract every Paid-managed execution resource
   # carries: environment, account, project, run, attempt, and resource kind.
-  # @spec CONTAINER-RUNTIME-019
+  # @spec CONTAINER-RUNTIME-020
   OwnershipTags = Data.define(:environment, :account_id, :project_id, :run_id, :attempt, :resource_kind) do
     LABEL_PREFIX = "paid."
     REQUIRED_TAG_NAMES = %w[environment account project run attempt resource].freeze
@@ -372,6 +397,196 @@ module ExecutionRunners
   # @spec CONTAINER-RUNTIME-009
   ServiceDeclaration = Data.define(:name, :image, :port, :env, :type)
 
+  # Provider-neutral manifest that crosses the control-plane/runner boundary
+  # before execution starts. It carries only references and declarative spec
+  # data: repo/ref, execution settings, prompt/context references, services,
+  # and the four transfer lanes (git, control-plane API, object storage,
+  # credentials). Secret values are excluded by construction — credential lane
+  # entries only name sources/keys, never values.
+  # @spec CONTAINER-RUNTIME-018
+  ExecutionInputManifest = Data.define(
+    :schema_version,
+    :repository,
+    :execution,
+    :prompt_refs,
+    :context_refs,
+    :services,
+    :artifact_refs,
+    :lanes
+  ) do
+    def self.from_run_spec(spec)
+      agent_run = spec.agent_run
+      project = spec.project
+      prompt_refs = build_prompt_refs(agent_run)
+      context_refs = build_context_refs(agent_run)
+
+      new(
+        schema_version: MANIFEST_SCHEMA_VERSION,
+        repository: {
+          "provider" => "github",
+          "repo_full_name" => project&.full_name,
+          "repository_url" => project&.github_url,
+          "ref" => {
+            "branch_name" => agent_run&.branch_name,
+            "base_commit_sha" => agent_run&.base_commit_sha,
+            "source_pull_request_number" => agent_run&.source_pull_request_number
+          }.compact
+        }.compact,
+        execution: {
+          "agent_run_id" => agent_run&.id,
+          "goal" => agent_run&.goal,
+          "execution_origin" => agent_run&.execution_origin,
+          "image" => spec.image,
+          "command" => spec.command,
+          "resources" => ExecutionRunners.json_value(spec.resources&.to_h || {}),
+          "workspace" => {
+            "mode" => spec.workspace&.mode&.to_s,
+            "mount_point" => spec.workspace&.mount_point
+          }.compact,
+          "networking" => {
+            "mode" => spec.networking_policy&.mode&.to_s,
+            "firewall" => spec.networking_policy&.firewall?,
+            "allow_destinations" => ExecutionRunners.json_value(spec.networking_policy&.allow_destinations || [])
+          }.compact
+        }.compact,
+        prompt_refs: prompt_refs,
+        context_refs: context_refs,
+        services: build_services(spec.services),
+        artifact_refs: [],
+        lanes: {
+          "git" => build_git_lane(project, agent_run),
+          "control_plane_api" => prompt_refs + context_refs,
+          "object_storage" => [],
+          "credentials" => build_credential_lane(spec)
+        }
+      )
+    end
+
+    def as_json(*)
+      {
+        "schema_version" => schema_version,
+        "repository" => ExecutionRunners.json_value(repository),
+        "execution" => ExecutionRunners.json_value(execution),
+        "prompt_refs" => ExecutionRunners.json_value(prompt_refs),
+        "context_refs" => ExecutionRunners.json_value(context_refs),
+        "services" => ExecutionRunners.json_value(services),
+        "artifact_refs" => ExecutionRunners.json_value(artifact_refs),
+        "lanes" => ExecutionRunners.json_value(lanes)
+      }
+    end
+
+    def to_json(*args)
+      as_json.to_json(*args)
+    end
+
+    def self.from_json(payload)
+      data = payload.is_a?(String) ? JSON.parse(payload) : ExecutionRunners.json_value(payload)
+
+      new(
+        schema_version: data["schema_version"],
+        repository: data["repository"] || {},
+        execution: data["execution"] || {},
+        prompt_refs: data["prompt_refs"] || [],
+        context_refs: data["context_refs"] || [],
+        services: data["services"] || [],
+        artifact_refs: data["artifact_refs"] || [],
+        lanes: data["lanes"] || {}
+      )
+    end
+
+    def self.build_prompt_refs(agent_run)
+      refs = []
+      if agent_run&.prompt_version_id.present?
+        refs << {
+          "lane" => "control_plane_api",
+          "kind" => "prompt_version",
+          "locator" => { "prompt_version_id" => agent_run.prompt_version_id }
+        }
+      end
+      if agent_run&.custom_prompt.present?
+        refs << {
+          "lane" => "control_plane_api",
+          "kind" => "custom_prompt",
+          "locator" => {
+            "agent_run_id" => agent_run.id,
+            "sha256" => Digest::SHA256.hexdigest(agent_run.custom_prompt)
+          }
+        }
+      end
+      refs
+    end
+
+    def self.build_context_refs(agent_run)
+      refs = []
+      if agent_run&.issue_id.present?
+        refs << {
+          "lane" => "control_plane_api",
+          "kind" => "issue",
+          "locator" => { "issue_id" => agent_run.issue_id }
+        }
+      end
+      refs
+    end
+
+    def self.build_services(services)
+      Array(services).map do |service|
+        {
+          "name" => service.name,
+          "image" => service.image,
+          "port" => service.port,
+          "type" => service.type&.to_s,
+          "env_keys" => Array(service.env).map(&:first).map(&:to_s).sort
+        }.compact
+      end
+    end
+
+    def self.build_git_lane(project, agent_run)
+      [
+        {
+          "lane" => "git",
+          "kind" => "repository_checkout",
+          "locator" => {
+            "repo_full_name" => project&.full_name,
+            "branch_name" => agent_run&.branch_name,
+            "base_commit_sha" => agent_run&.base_commit_sha,
+            "source_pull_request_number" => agent_run&.source_pull_request_number
+          }.compact
+        }
+      ]
+    end
+
+    def self.build_credential_lane(spec)
+      env_refs = Array(spec.environment).map do |key, _value|
+        {
+          "lane" => "credentials",
+          "kind" => "environment_variable",
+          "locator" => { "name" => key.to_s },
+          "source" => "run_spec.environment"
+        }
+      end
+      service_refs = Array(spec.services).flat_map do |service|
+        Array(service.env).map do |key, _value|
+          {
+            "lane" => "credentials",
+            "kind" => "service_environment_variable",
+            "locator" => { "name" => key.to_s, "service" => service.name },
+            "source" => "service_declaration.env"
+          }
+        end
+      end
+      secret_config_refs = Array(spec.secrets_config).map do |key, _value|
+        {
+          "lane" => "credentials",
+          "kind" => "secrets_config_entry",
+          "locator" => { "name" => key.to_s },
+          "source" => "run_spec.secrets_config"
+        }
+      end
+
+      (env_refs + service_refs + secret_config_refs).uniq
+    end
+  end
+
   # Result of {ExecutionRunners::Base.compatible?}. Mirrors the shape of
   # +Containers::Provision::CompatibilityResult+ but lives in the
   # provider-neutral namespace so the abstract interface never references a
@@ -411,6 +626,158 @@ module ExecutionRunners
       new(success: false, stdout: stdout, stderr: stderr, exit_code: exit_code,
           oom_killed: oom_killed, memory_limit_bytes: memory_limit_bytes,
           environment_running: environment_running)
+    end
+
+    # @spec CONTAINER-RUNTIME-018
+    def output_manifest(agent_run:, binary_artifacts: nil, structured_results: nil, log_refs: nil)
+      ExecutionOutputManifest.from_result(
+        execution_result: self,
+        agent_run: agent_run,
+        binary_artifacts: binary_artifacts,
+        structured_results: structured_results,
+        log_refs: log_refs
+      )
+    end
+  end
+
+  # Provider-neutral manifest emitted after execution completes. It separates
+  # code outputs (git identity), durable binary artifacts (object-storage refs),
+  # and structured results (verification payloads, summaries) while keeping log
+  # access as references. Credential values are never emitted in outputs.
+  # @spec CONTAINER-RUNTIME-018
+  ExecutionOutputManifest = Data.define(
+    :schema_version,
+    :execution,
+    :result_summary,
+    :artifacts,
+    :log_refs,
+    :verification,
+    :git_output,
+    :lanes
+  ) do
+    def self.from_result(execution_result:, agent_run:, binary_artifacts: nil, structured_results: nil, log_refs: nil)
+      binary_refs = binary_artifacts || build_binary_artifact_refs(agent_run)
+      verification = ExecutionRunners.json_value(agent_run.verification_result.presence || {})
+      git_output = {
+        "repo_full_name" => agent_run.project&.full_name,
+        "branch_name" => agent_run.branch_name,
+        "result_commit_sha" => agent_run.result_commit_sha,
+        "pull_request_number" => agent_run.pull_request_number,
+        "pull_request_url" => agent_run.pull_request_url,
+        "review_url" => agent_run.review_url
+      }.compact
+      output_log_refs = log_refs || default_log_refs(agent_run)
+      structured = structured_results || build_structured_results(verification)
+
+      new(
+        schema_version: MANIFEST_SCHEMA_VERSION,
+        execution: {
+          "agent_run_id" => agent_run.id,
+          "status" => agent_run.status,
+          "goal" => agent_run.goal,
+          "execution_origin" => agent_run.execution_origin
+        }.compact,
+        result_summary: {
+          "success" => execution_result.success?,
+          "exit_code" => execution_result.exit_code,
+          "oom_killed" => execution_result.oom_killed,
+          "environment_running" => execution_result.environment_running,
+          "stdout_bytes" => execution_result.stdout.to_s.bytesize,
+          "stderr_bytes" => execution_result.stderr.to_s.bytesize
+        },
+        artifacts: {
+          "code_outputs" => git_output.present? ? [ git_output ] : [],
+          "binary_artifacts" => binary_refs,
+          "structured_results" => structured
+        },
+        log_refs: output_log_refs,
+        verification: verification,
+        git_output: git_output,
+        lanes: {
+          "git" => git_output.present? ? [ { "lane" => "git", "kind" => "git_output", "locator" => git_output } ] : [],
+          "control_plane_api" => output_log_refs + build_verification_refs(agent_run, verification),
+          "object_storage" => binary_refs,
+          "credentials" => []
+        }
+      )
+    end
+
+    def as_json(*)
+      {
+        "schema_version" => schema_version,
+        "execution" => ExecutionRunners.json_value(execution),
+        "result_summary" => ExecutionRunners.json_value(result_summary),
+        "artifacts" => ExecutionRunners.json_value(artifacts),
+        "log_refs" => ExecutionRunners.json_value(log_refs),
+        "verification" => ExecutionRunners.json_value(verification),
+        "git_output" => ExecutionRunners.json_value(git_output),
+        "lanes" => ExecutionRunners.json_value(lanes)
+      }
+    end
+
+    def to_json(*args)
+      as_json.to_json(*args)
+    end
+
+    def self.from_json(payload)
+      data = payload.is_a?(String) ? JSON.parse(payload) : ExecutionRunners.json_value(payload)
+
+      new(
+        schema_version: data["schema_version"],
+        execution: data["execution"] || {},
+        result_summary: data["result_summary"] || {},
+        artifacts: data["artifacts"] || {},
+        log_refs: data["log_refs"] || [],
+        verification: data["verification"] || {},
+        git_output: data["git_output"] || {},
+        lanes: data["lanes"] || {}
+      )
+    end
+
+    def self.build_binary_artifact_refs(agent_run)
+      Array(agent_run.verification_result["artifacts"]).filter_map do |artifact|
+        next unless artifact.is_a?(Hash) && artifact["url"].present?
+
+        {
+          "lane" => "object_storage",
+          "kind" => artifact["kind"].presence || "artifact",
+          "locator" => { "url" => artifact["url"] },
+          "metadata" => { "note" => artifact["note"] }.compact
+        }
+      end
+    end
+
+    def self.build_structured_results(verification)
+      return [] if verification.blank?
+
+      [
+        {
+          "kind" => "verification_result",
+          "value" => verification
+        }
+      ]
+    end
+
+    def self.default_log_refs(agent_run)
+      [
+        {
+          "lane" => "control_plane_api",
+          "kind" => "agent_run_logs",
+          "locator" => { "agent_run_id" => agent_run.id }
+        }
+      ]
+    end
+
+    def self.build_verification_refs(agent_run, verification)
+      return [] if verification.blank?
+
+      [
+        {
+          "lane" => "control_plane_api",
+          "kind" => "verification_result",
+          "locator" => { "agent_run_id" => agent_run.id }
+        }
+      ]
     end
   end
 

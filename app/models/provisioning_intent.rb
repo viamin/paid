@@ -28,8 +28,8 @@
 # call so a crash between provider creation and runner-handle persistence
 # leaves enough information to reconcile the orphaned resource.
 #
-# @spec CONTAINER-RUNTIME-018
-# @spec CONTAINER-RUNTIME-020
+# @spec CONTAINER-RUNTIME-019
+# @spec CONTAINER-RUNTIME-021
 class ProvisioningIntent < ApplicationRecord
   # Ledger lifecycle states.
   #   pending  — intent recorded, provider create call not yet issued

@@ -209,7 +209,26 @@
   `Containers::Provision.networking_policy_for`,
   `Containers::ProxyUrl.resolve`
 
-- [x] **CONTAINER-RUNTIME-018** — When an execution runner provisions a
+- [x] **CONTAINER-RUNTIME-018** — The system SHALL define provider-neutral
+  remote-execution manifests for the control-plane/runner boundary:
+  `ExecutionInputManifest` (derived from `RunSpec`) and
+  `ExecutionOutputManifest` (derived from `ExecutionResult` + `AgentRun`).
+  The input manifest SHALL carry repository/ref, execution spec,
+  prompt/context references, service declarations, and explicit lane refs for
+  Git, control-plane API, object storage, and credentials. The output manifest
+  SHALL carry result summaries, log references, verification results, durable
+  binary artifact references, and git output identity, and SHALL distinguish
+  code outputs from durable binary artifacts and structured results. Secret
+  values SHALL be excluded by construction: credential lanes and service
+  declarations may carry only identifiers or env keys, never secret payloads
+  or host paths.
+  *Tests:* `spec/services/execution_runners_spec.rb`
+  *Code:* `ExecutionRunners::ExecutionInputManifest`,
+  `ExecutionRunners::ExecutionOutputManifest`,
+  `ExecutionRunners::RunSpec#input_manifest`,
+  `ExecutionRunners::ExecutionResult#output_manifest`
+
+- [x] **CONTAINER-RUNTIME-019** — When an execution runner provisions a
   resource whose kind it can identify (`#resource_kind` present), the system
   SHALL create a provisioning-intent ledger row (status `pending`) recording
   the runner type, resource kind, environment, account, project, run, attempt,
@@ -225,7 +244,7 @@
   *Code:* `ExecutionRunners::ProvisioningLedger`,
   `ExecutionRunners::LocalDockerRunner#provision`, `ProvisioningIntent`
 
-- [x] **CONTAINER-RUNTIME-019** — When a runner provisions a resource it SHALL
+- [x] **CONTAINER-RUNTIME-020** — When a runner provisions a resource it SHALL
   apply the stable Paid ownership tags — environment, account, project, run,
   attempt, and resource kind — to the provider resource (Docker labels for the
   Docker runner) so an orphaned resource can be attributed back to its Paid
@@ -239,7 +258,7 @@
   `ExecutionRunners::LocalDockerRunner#provision`,
   `Containers::Provision#container_labels`
 
-- [x] **CONTAINER-RUNTIME-020** — When a crash occurs after the provider create
+- [x] **CONTAINER-RUNTIME-021** — When a crash occurs after the provider create
   call returns a resource identifier but before the runner handle is persisted,
   the system SHALL leave enough information for reconciliation: a
   provisioning-intent ledger row in the `created` state carrying the provider

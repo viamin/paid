@@ -2,8 +2,8 @@
 
 require "rails_helper"
 
-# @spec CONTAINER-RUNTIME-018
-# @spec CONTAINER-RUNTIME-020
+# @spec CONTAINER-RUNTIME-019
+# @spec CONTAINER-RUNTIME-021
 RSpec.describe ProvisioningIntent do
   describe "associations" do
     it { is_expected.to belong_to(:account) }
