@@ -176,6 +176,29 @@ RSpec.describe Activities::PreparePrPromptActivity do
       expect(agent_run.custom_prompt).not_to include("Code Review Comments")
     end
 
+    it "fails before storing a review-feedback prompt when all review threads are excluded" do
+      agent_run.update!(focus: "review_feedback")
+      allow(github_client).to receive(:review_threads)
+        .with(project.full_name, 42)
+        .and_return([
+          { id: "thread_1", is_resolved: false, comments: [ { body: "Needs a fix", path: "app/models/user.rb", line: 42, author: "drive-by" } ] }
+        ])
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("ReviewFeedbackContextBlocked")
+        expect(error.non_retryable).to be(true)
+      }
+
+      expect(agent_run.reload.custom_prompt).to eq("placeholder")
+      phase = agent_run.agent_run_phases.find_by!(phase_key: "prepare_pr_prompt")
+      expect(phase.status).to eq("failed")
+      expect(phase.metadata.dig("prompt_assembly", "skipped")).to include(
+        hash_including("key" => "review_thread", "login" => "drive-by", "reason" => "author_not_in_allowlist")
+      )
+    end
+
     it "passes rebase_succeeded through to the prompt builder" do
       activity.execute(agent_run_id: agent_run.id, rebase_succeeded: false)
 

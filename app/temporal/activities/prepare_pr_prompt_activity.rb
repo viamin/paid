@@ -49,12 +49,14 @@ module Activities
           agent_run: agent_run
         )
         result = prompt_builder.build_result
+        phase_metadata[:prompt_assembly] = build_prompt_assembly_provenance(result)
+        raise_review_feedback_context_blocked! if prompt_builder.review_feedback_context_blocked?
+
         prompt = prompt_builder.build
         includes_review_threads = prompt_builder.includes_review_threads?
         review_thread_ids = prompt_builder.unresolved_review_thread_ids
 
         agent_run.update!(custom_prompt: prompt, prompt_version: prompt_version)
-        phase_metadata[:prompt_assembly] = build_prompt_assembly_provenance(result)
 
         logger.info(
           message: "agent_execution.prepare_pr_prompt",
@@ -85,6 +87,14 @@ module Activities
     end
 
     private
+
+    def raise_review_feedback_context_blocked!
+      raise Temporalio::Error::ApplicationError.new(
+        "Review feedback follow-up has unresolved review threads but no prompt-eligible review comments",
+        type: "ReviewFeedbackContextBlocked",
+        non_retryable: true
+      )
+    end
 
     # Serializes a PromptAssembly::Result into a JSON-safe hash for the
     # agent_run_phases.metadata["prompt_assembly"] column. The assembler

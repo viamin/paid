@@ -140,6 +140,12 @@ module Prompts
       trusted_review_threads.filter_map { |thread| thread[:id] }
     end
 
+    def review_feedback_context_blocked?
+      focus == "review_feedback" &&
+        unresolved_threads.any? &&
+        trusted_review_threads.empty?
+    end
+
     # Returns the assembled prompt text. Existing callers (PreparePrPromptActivity,
     # scripts, and tests) continue to receive a plain string.
     def build
@@ -789,8 +795,7 @@ module Prompts
     end
 
     def trusted_review_thread_author?(login)
-      PromptAssembly::Trust.human_trusted?(project, login) ||
-        project.enabled_review_bot_logins.include?(login.to_s.downcase)
+      PromptAssembly::Trust.review_thread_author_trusted?(project, login)
     end
 
     def trusted_comments
