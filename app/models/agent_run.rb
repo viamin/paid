@@ -2489,7 +2489,7 @@ class AgentRun < ApplicationRecord
     networking_policy = Containers::Provision.networking_policy_for(
       agent_run: self, project: project
     )
-    persist_execution_authority_grants!(networking_policy: networking_policy)
+    persist_execution_authority_grants!(networking_policy: networking_policy) if authority_grants.blank? || authority_grants["grants"].blank?
 
     if execution_runner_enabled?
       return provision_via_runner(networking_policy: networking_policy, **options)

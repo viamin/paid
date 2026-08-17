@@ -2273,6 +2273,34 @@ RSpec.describe AgentRun do
           )
         end
 
+        def persisted_retry_authority_grants
+          {
+            "schema_version" => 1,
+            "grants" => [
+              { "kind" => "original_grant", "delivery" => "proxy_mode", "scope" => "run", "metadata" => {} }
+            ]
+          }
+        end
+
+        def changed_retry_authority_grants
+          ExecutionRunners::AuthorityGrantSet.new(
+            schema_version: 1,
+            grants: [
+              { "kind" => "changed_grant", "delivery" => "direct_outbound", "scope" => "runner", "metadata" => {} }
+            ]
+          )
+        end
+
+        def persisted_runner_handle_for(agent_run)
+          ExecutionRunners::RunnerHandle.new(
+            runner_type: :local_docker,
+            identifier: "runner-container-123",
+            host: "local",
+            workspace_ref: "paid-workspace-#{agent_run.id}",
+            metadata: { "agent_run_id" => agent_run.id, "worktree_path" => nil, "environment" => {} }
+          )
+        end
+
         it "routes through the runner when the feature flag is enabled" do
           agent_run = create(:agent_run, worktree_path: worktree_path)
           FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
@@ -2384,6 +2412,22 @@ RSpec.describe AgentRun do
             hash_including("kind" => "model_provider_credentials")
           )
           expect(persisted.to_json).not_to include(agent_run.proxy_token)
+        end
+
+        it "preserves the first authority grant snapshot on provisioning retry" do
+          agent_run = create(:agent_run, worktree_path: worktree_path,
+                             container_id: "runner-container-123", container_host: "local")
+          agent_run.update!(
+            runner_handle: persisted_runner_handle_for(agent_run).to_storage,
+            authority_grants: persisted_retry_authority_grants
+          )
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          allow(mock_runner).to receive_messages(running?: true, cleanup: nil)
+          allow(agent_run).to receive(:execution_authority_grants).and_return(changed_retry_authority_grants)
+
+          agent_run.provision_container
+
+          expect(agent_run.reload.authority_grants).to eq(persisted_retry_authority_grants)
         end
 
         it "persists runner_handle alongside container_id when provisioning via the runner" do
