@@ -3,16 +3,46 @@
 - **RDR**: [RDR-058: Execution Authority, Network Policy, and Isolation](RDR-058-execution-authority-network-and-isolation.md)
 - **Audit date**: 2026-08-17
 - **Closeout issue**: [#3418](https://github.com/viamin/paid/issues/3418)
-- **Conclusion**: Partially Implemented — core authority, network, and isolation invariants are shipped and tested; tenant-configurable egress allowlisting (criterion 7) is deferred to RDR-055.
+- **Conclusion**: Partially Implemented — core authority, network, and isolation invariants are shipped and covered by passing spec suites (see [Validation Evidence](#validation-evidence)); tenant-configurable egress allowlisting (criterion 7) is deferred to RDR-055.
+
+## Validation Evidence
+
+Executed during the 2026-08-17 closeout under issue
+[#3418](https://github.com/viamin/paid/issues/3418). Both batches passed in
+full; no failures, no pending examples.
+
+```console
+$ bin/rspec spec/services/network_policy_spec.rb \
+    spec/services/execution_runners_spec.rb \
+    spec/services/execution_runners/ \
+    spec/models/runner_credential_spec.rb \
+    spec/models/runner_auth_attempt_spec.rb \
+    spec/requests/runner_credentials_spec.rb \
+    spec/policies/runner_credential_policy_spec.rb \
+    spec/services/containers/provision_runner_auth_attempt_telemetry_2960_spec.rb \
+    spec/services/containers/provision_managed_subscription_auth_2964_spec.rb
+281 examples, 0 failures
+
+$ bin/rspec spec/models/preview_session_spec.rb \
+    spec/policies/preview_session_policy_spec.rb \
+    spec/requests/previews_spec.rb
+74 examples, 0 failures
+```
+
+The first batch covers criteria 1, 2, 3, 5, and 6 (network policy, runner
+contract, credential/auth-attempt models and requests, subscription-auth
+materialization telemetry). The second batch covers criterion 4
+(preview-session scoping). Criterion 7 has no tests to run — the feature is
+not shipped (see below).
 
 ## Acceptance Criteria vs. Shipped Implementation
 
-### Criterion 1: Per-run authority grants are explicit and secret-free
+### Criterion 1: Per-run authority grants are explicit and secret-free by default
 
 **Shipped**:
 
-- `proxy_token` on `agent_runs` is generated at run creation as a unique random token. Containers receive the token; the proxy adds provider API keys server-side. Raw keys never appear in container environment variables.
-- `Containers::Provision#derived_networking_policy` selects exactly one of three modes (`proxy_restricted`, `subscription_auth`, `direct_outbound`) before container launch. The mode is stored on the provisioned `RunnerHandle`.
+- `proxy_token` on `agent_runs` is generated at run creation as a unique random token. Containers receive the token; the proxy adds provider API keys server-side. In `proxy_restricted` and `subscription_auth` mode no raw provider API keys appear in container environment variables.
+- `Containers::Provision#derived_networking_policy` selects exactly one of three modes (`proxy_restricted`, `subscription_auth`, `direct_outbound`) before container launch. The mode is stored on the provisioned `RunnerHandle`. The documented `direct_outbound` mode is the explicit exception: it injects user-provided API keys via environment variables for runners that must reach providers directly.
 - Subscription-auth credential materialization goes through `Runners::SubscriptionAuthMaterializers`, which writes native credential files (`.credentials.json`, `auth.json`, etc.) into the container filesystem. No token values appear in environment variables or startup command lines.
 - `RunnerAuthAttempt` records telemetry for every materialization attempt without storing secret values. The `secret_like?` guard rejects metadata keys whose names or values match known credential patterns.
 
@@ -24,7 +54,7 @@
 - `app/models/runner_auth_attempt.rb:109-148` — `FORBIDDEN_METADATA_KEYS`, `SECRET_VALUE_PATTERNS`, `secret_like?`
 - `app/controllers/api/secrets_proxy_controller.rb` — proxy-mode key injection
 
-**Tests**:
+**Tests** (executed — see [Validation Evidence](#validation-evidence)):
 
 - `spec/models/runner_auth_attempt_spec.rb` — secret metadata rejection, stage/source/mode tracking
 - `spec/models/runner_credential_spec.rb` — encrypted storage, active/revoked/expired state
@@ -52,7 +82,7 @@
 - `app/services/containers/provision.rb:379-392` — `derived_networking_policy`
 - `app/services/network_policy.rb:27-80` — `NetworkContract` and network selection
 
-**Tests**:
+**Tests** (executed — see [Validation Evidence](#validation-evidence)):
 
 - `spec/services/execution_runners_spec.rb` — `NetworkingPolicy` factory methods, `RunSpec` construction
 - `spec/services/network_policy_spec.rb` — network mode selection, firewall rule application
@@ -77,7 +107,7 @@
 - `app/services/network_policy.rb:400-439` — `build_firewall_script` with explicit allowlist and final `iptables -P OUTPUT DROP`
 - `app/services/execution_runners/local_docker_runner.rb` — no port publish in create options
 
-**Tests**:
+**Tests** (executed — see [Validation Evidence](#validation-evidence)):
 
 - `spec/services/network_policy_spec.rb` — `ensure_network!`, `build_firewall_script`, GitHub IP fetching
 
@@ -100,9 +130,11 @@
 - `app/models/preview_provision_state.rb` — per-run tunnel state for verification-launched previews
 - `db/schema.rb` — `preview_sessions` table documents `agent_run_id` as an optional originating run
 
-**Tests**:
+**Tests** (executed — see [Validation Evidence](#validation-evidence)):
 
-- Preview session and project request specs cover preview-session creation and scoping through the project-owned preview flow.
+- `spec/models/preview_session_spec.rb` — project-owned session creation, optional `agent_run` linkage
+- `spec/policies/preview_session_policy_spec.rb` — preview-session authorization boundaries
+- `spec/requests/previews_spec.rb` — preview request flow through the project-owned preview path
 
 **Verdict**: Satisfied.
 
@@ -125,7 +157,7 @@
 - `app/models/runner_auth_attempt.rb` — `account_id`, `project_id`, `agent_run_id` associations
 - `app/controllers/api/secrets_proxy_controller.rb` — `proxy_token` lookup
 
-**Tests**:
+**Tests** (executed — see [Validation Evidence](#validation-evidence)):
 
 - `spec/requests/runner_credentials_spec.rb` — tenant scoping of credential access
 - `spec/policies/runner_credential_policy_spec.rb` — authorization boundaries
@@ -149,7 +181,7 @@
 - `app/services/network_policy.rb:72-80` — mode-to-network mapping; default is `paid_agent` with firewall
 - `app/services/feature_flags.rb` — `managed_subscription_runner_auth` flag definition
 
-**Tests**:
+**Tests** (executed — see [Validation Evidence](#validation-evidence)):
 
 - `spec/services/network_policy_spec.rb` — proxy mode is the default; subscription_auth and direct_outbound require explicit conditions
 - `spec/services/execution_runners_spec.rb` — `NetworkingPolicy` factory methods preserve mode isolation

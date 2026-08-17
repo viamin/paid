@@ -21,7 +21,7 @@ in Draft status.
 
 | Criterion | Status | Evidence |
 |-----------|--------|----------|
-| Per-run authority grants are explicit and secret-free | Implemented | `app/models/agent_run.rb` `proxy_token`; `app/controllers/api/secrets_proxy_controller.rb`; RDR-006 |
+| Per-run authority grants are explicit and secret-free by default (`direct_outbound` is the documented exception) | Implemented | `app/models/agent_run.rb` `proxy_token`; `app/controllers/api/secrets_proxy_controller.rb`; RDR-006 |
 | Network policy is provider-neutral and runner-validated before provisioning | Implemented | `app/services/execution_runners.rb` `NetworkingPolicy`; `app/services/containers/provision.rb` `derived_networking_policy`; `app/services/network_policy.rb` |
 | Execution environments have no public ingress by default | Implemented | `app/services/network_policy.rb` — `paid_agent` network is `internal: true`; no container ports exposed; `spec/services/network_policy_spec.rb` |
 | Preview/debug ingress exceptions are scoped | Implemented | `preview_sessions` and `PreviewProvisionState` — tunnel creation requires an explicit project-owned `preview_session` record; `app/models/preview_session.rb` |
@@ -104,8 +104,9 @@ implicitly:
 | `direct_outbound` | User-provided API keys via environment | `paid_internal`, unrestricted egress |
 
 The `proxy_token` column on `agent_runs` is the per-run authentication handle for
-the secrets proxy. It is generated at run creation, stored hashed, and never logged.
-Containers receive only the token, not provider API keys.
+the secrets proxy. It is generated at run creation, stored as a unique random
+token on the run record, and never logged. Containers receive only the token,
+not provider API keys.
 
 Subscription-auth materialization goes through `Runners::SubscriptionAuthMaterializers`
 and is recorded as a `RunnerAuthAttempt` with telemetry but no secret values.
@@ -129,6 +130,7 @@ policy as an immutable value.
 ### Layer 3 — Container and Tenant Isolation
 
 Container isolation (RDR-004):
+
 - Non-root execution (`agent` user, UID 1000)
 - Dropped capabilities (`--cap-drop=all`, `NET_RAW` added back only for iptables)
 - Read-only root filesystem except tmpfs writable areas (`/tmp` 1 GB, `/home/agent/.cache` 512 MB)
@@ -138,6 +140,7 @@ Container isolation (RDR-004):
 - No published container ports
 
 Tenant isolation (RDR-024):
+
 - Row-level security on `agent_runs`, `projects`, and related tables
 - `TenantContext.with_system_access` required for cross-tenant queries
 - Per-run `proxy_token` scope — the secrets proxy rejects requests for any run other
@@ -146,6 +149,7 @@ Tenant isolation (RDR-024):
 ### Layer 4 — Egress Policy (Planned — RDR-055)
 
 The current firewall allows a fixed set of destinations:
+
 - GitHub (TCP 443 and 22, from a fetched CIDR list with static fallback)
 - Secrets proxy host (TCP on `SECRETS_PROXY_PORT`)
 - DNS (UDP/TCP 53)
@@ -158,11 +162,14 @@ required and runner-required destinations; no per-tenant extension is possible.
 
 ## Acceptance Criteria
 
-1. **Per-run authority grants are explicit and secret-free**: Every container launch
-   derives its network mode from `Containers::Provision#derived_networking_policy`,
-   which is always one of `proxy_restricted`, `subscription_auth`, or
-   `direct_outbound`. No raw provider API keys appear in container environment
-   variables or startup scripts.
+1. **Per-run authority grants are explicit and secret-free by default**: Every
+   container launch derives its network mode from
+   `Containers::Provision#derived_networking_policy`, which is always one of
+   `proxy_restricted`, `subscription_auth`, or `direct_outbound`. In
+   `proxy_restricted` and `subscription_auth` mode, no raw provider API keys
+   appear in container environment variables or startup scripts; the documented
+   `direct_outbound` mode remains the explicit exception that injects
+   user-provided API keys for runners that must reach providers directly.
 
 2. **Network policy is provider-neutral and runner-validated before provisioning**:
    `RunSpec` carries an `ExecutionRunners::NetworkingPolicy` value object. The runner
