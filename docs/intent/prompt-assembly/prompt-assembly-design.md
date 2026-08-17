@@ -152,25 +152,61 @@ Because the assembly runs after `effective_prompt` resolves the base text, a
 queue-time custom prompt cannot bypass the required goal sections — they are
 applied here regardless of how the base text was produced.
 
-## Remaining Direct Prompt Builders (intentionally out of scope for #3379)
+## Issue-Prompt Assembly (#3377)
 
-The full RDR-054 migration is phased. The goal-wrapper move (#3379) covers the
-four runner-time wrappers above. These direct builders remain and are tracked
+The create_pr issue-implementation prompt — previously assembled by
+`Prompts::BuildForIssue` via string concatenation — now flows through
+`PromptAssembly::Build` at runner time. `AgentRun#prompt_for_issue` delegates to
+`PromptAssembly::BuildIssuePrompt`, which pre-fetches the issue comment thread
+once and assembles ordered, provenance-tracked sections:
+
+- `issue_task` (required) — the rendered `coding.issue_implementation` template
+  (title, body, and instructions).
+- `trusted_comments` — collaborator comments, trust-classified via
+  `Prompts::BuildForIssue.fetch_trusted_comments`; untrusted authors are
+  excluded.
+- `clarified_requirements` — trusted clarifying-question answers.
+- `service_environment` — available services and database setup constraints.
+- `knowledge_context` (quarantined) — the knowledge-base codebase context.
+- `style_guides`, `project_conventions`, `lid_workflow` — the migrated
+  injector call-sites, each now contributing an explicit section.
+- `marketplace_attachments` — marketplace prompt attachments, assembled so
+  `effective_prompt` skips the separate injection and never double-injects.
+- `safety_rules` (required) — the non-negotiable safety rules, always present
+  and never duplicated.
+
+`effective_prompt` persists the result's provenance to
+`external_metadata["prompt_assembly"]` via
+`AgentRun#persist_prompt_assembly_provenance!` and skips marketplace
+re-injection when the assembly already handled it. The safety rules were
+extracted from the DB-stored template into
+`PromptAssembly::Sections::SafetyRules`; a migration syncs the seeded template
+so the rules are no longer embedded (and therefore never duplicated).
+
+## Remaining Direct Prompt Builders
+
+The full RDR-054 migration is phased. The runner-time goal wrappers (#3379),
+PR follow-up prompts (#3378), and create_pr issue prompts (#3377) now assemble
+through `PromptAssembly::Build`. These direct builders remain and are tracked
 for later phases:
 
-- `Prompts::BuildForIssue` and `Prompts::BuildForPr` still compose sections by
-  string concatenation rather than through `PromptAssembly::Build`. Routing
-  their internal sections (task, comments, CI failures, review threads,
-  knowledge, style guides, conventions, LID, marketplace) through the section
-  registry is the #3377/#3378 migration, tracked separately.
-- `CreateAgentRunActivity` queue-time materialization renders the
-  `coding.issue_implementation` prompt version into `custom_prompt` and injects
-  style guides and conventions directly. The base text it produces is captured
-  by the assembly's `task.base` section and digest at runner time, but the
-  queue-time inputs themselves are not yet expressed as assembly sections.
+- `Prompts::BuildForIssue#build` remains a legacy string-concatenation builder,
+  no longer the runner-time create_pr path. Its class methods
+  (`conversation_section_for`, `fetch_trusted_comments`,
+  `service_environment_section_render_for`) are reused by the assembly section
+  providers and `CreateAgentRunActivity`, so comment trust-classification and
+  service-environment rendering stay single-sourced.
+- `CreateAgentRunActivity` still resolves and records the selected
+  `coding.issue_implementation` prompt version at queue time, but it no longer
+  materializes a `create_pr` issue prompt into `custom_prompt`. The queued run
+  carries the chosen prompt version for audit and the runner-time assembly
+  renders the issue task, comments, service environment, and safety rules as
+  explicit sections instead.
 - `Lid::InjectIntoPrompt`, `StyleGuides::InjectIntoPrompt`, and
-  `ProjectConventions::InjectIntoPrompt` remain call-site injectors invoked
-  inside the existing builders rather than registered providers.
+  `ProjectConventions::InjectIntoPrompt` remain call-site injectors. The
+  assembly section providers (`LidWorkflow`, `StyleGuides`,
+  `ProjectConventions`) wrap them rather than reimplement their logic, so one
+  implementation is shared between the legacy builder and the assembly path.
 
 Splitting the goal-wrapper templates so the base prompt and goal instructions
 become truly separate sections (per the RDR-054 registry's `task.*` +
