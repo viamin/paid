@@ -1,7 +1,51 @@
 # RDR-057: Remote Execution Data Contract
 
-Date: 2026-08-17
-Status: Accepted
+## Metadata
+
+- **Date**: 2026-08-17
+- **Status**: Implemented
+- **Type**: Architecture
+- **Priority**: P1
+- **Related Issues**: #3417 (closeout audit), #3399, #3400, #3401, #3336, #3342, #3350, #3358
+- **Related RDRs**:
+  - [RDR-019](RDR-019-remote-container-execution.md) (Remote Container Execution)
+  - [RDR-048](RDR-048-multi-host-docker-backend-support.md) (Multi-Host Docker Backend Support)
+
+## Implementation Status
+
+Implemented as of 2026-08-17. Paid ships provider-neutral
+`ExecutionInputManifest` and `ExecutionOutputManifest` value objects under
+`ExecutionRunners`, both using schema version `remote_execution.v1`, with
+coverage in the container-runtime LLD/specs and execution-runner test suite.
+The shipped contract:
+
+- carries explicit Git, control-plane API, object-storage, and credential lane
+  references;
+- keeps normal execution workspace description declarative and host-path-free;
+- represents durable binary artifacts as object-storage manifest entries; and
+- remains compatible with local Docker development through
+  `ExecutionRunners::LocalDockerRunner`.
+
+See [audit-report-2026-08-17-rdr-057.md](audit-report-2026-08-17-rdr-057.md).
+
+## 2026-08-17 Closeout
+
+Issue [#3417](https://github.com/viamin/paid/issues/3417) audited the shipped
+implementation against this RDR and found no remaining gaps in the accepted
+scope. The closeout confirmed:
+
+- `ExecutionInputManifest` carries repository/ref, execution settings,
+  prompt/context references, service declarations, and all four transfer lanes.
+- `ExecutionOutputManifest` carries result summaries, log references,
+  verification payloads, git output identity, and durable binary artifact
+  references separated from structured results.
+- Secret values and host paths are excluded by construction, while normal
+  execution uses a declarative named-volume workspace contract instead of a
+  shared host-storage requirement.
+- Local Docker remains a supported runner path through
+  `ExecutionRunners::LocalDockerRunner`.
+
+No follow-up gap issues were required, so the RDR closes as fully implemented.
 
 ## Context
 
