@@ -8,6 +8,7 @@ require "rails_helper"
 # @spec CONTAINER-RUNTIME-010
 # @spec CONTAINER-RUNTIME-011
 # @spec CONTAINER-RUNTIME-017
+# @spec CONTAINER-RUNTIME-018
 RSpec.describe ExecutionRunners do
   describe ".resolve" do
     it "returns a LocalDockerRunner for the current Docker-only backends" do
@@ -20,7 +21,7 @@ RSpec.describe ExecutionRunners do
   end
 
   describe ExecutionRunners::ComputeRequirements do
-    # @spec CONTAINER-RUNTIME-020
+    # @spec CONTAINER-RUNTIME-021
     it "is an immutable Data object with cpu, memory, disk, and pids fields" do
       requirements = described_class.new(
         cpu_quota: 200_000,
@@ -39,10 +40,27 @@ RSpec.describe ExecutionRunners do
   describe ExecutionRunners::RunSpec do
     subject(:spec) { described_class.new(**spec_args) }
 
+    let(:agent_run) do
+      instance_double(
+        AgentRun,
+        id: 123,
+        branch_name: "agent-run-branch",
+        base_commit_sha: "deadbeef",
+        source_pull_request_number: 7,
+        goal: "create_pr",
+        execution_origin: "paid_native",
+        prompt_version_id: nil,
+        custom_prompt: nil,
+        issue_id: nil
+      )
+    end
+    let(:project) do
+      instance_double(Project, full_name: "acme/widgets", github_url: "https://github.com/acme/widgets")
+    end
     let(:spec_args) do
       {
-        agent_run: instance_double(AgentRun),
-        project: instance_double(Project),
+        agent_run: agent_run,
+        project: project,
         image: "paid/agent:latest",
         command: "claude code",
         resources: ExecutionRunners::ComputeRequirements.new(cpu_quota: 1, memory_bytes: 2, disk_bytes: 3, pids_limit: 4),
@@ -72,6 +90,14 @@ RSpec.describe ExecutionRunners do
 
     it "embeds a WorkspaceStrategy as the workspace contract" do
       expect(spec.workspace).to be_a(ExecutionRunners::WorkspaceStrategy)
+    end
+
+    it "builds a redacted input manifest for the runner boundary" do
+      manifest = spec.input_manifest
+
+      expect(manifest).to be_a(ExecutionRunners::ExecutionInputManifest)
+      expect(manifest.repository.dig("ref", "branch_name")).to eq("agent-run-branch")
+      expect(manifest.execution.dig("workspace", "mode")).to eq("named_volume")
     end
   end
 
@@ -279,6 +305,138 @@ RSpec.describe ExecutionRunners do
         expect(result.memory_limit_bytes).to eq(1024)
         expect(result.environment_running).to be(false)
       end
+    end
+
+    describe "#output_manifest" do
+      let(:project) { create(:project, owner: "acme", repo: "widgets") }
+      let(:agent_run) do
+        create(
+          :agent_run,
+          project: project,
+          branch_name: "feature/remote-contract",
+          result_commit_sha: "abc123",
+          pull_request_number: 42,
+          pull_request_url: "https://example.test/pr/42",
+          review_url: "https://example.test/review/42",
+          verification_result: {
+            "status" => "passed",
+            "artifacts" => [
+              { "kind" => "trace", "url" => "https://artifacts.test/trace.zip", "note" => "Playwright trace" }
+            ]
+          }
+        )
+      end
+
+      it "builds an output manifest that separates code, binary, and structured outputs" do
+        manifest = described_class.success(stdout: "ok", exit_code: 0).output_manifest(agent_run:)
+
+        expect(manifest).to be_a(ExecutionRunners::ExecutionOutputManifest)
+        expect(manifest.artifacts["code_outputs"].first["result_commit_sha"]).to eq("abc123")
+        expect(manifest.artifacts["binary_artifacts"].first["lane"]).to eq("object_storage")
+        expect(manifest.artifacts["structured_results"].first["kind"]).to eq("verification_result")
+        expect(manifest.git_output["pull_request_number"]).to eq(42)
+      end
+    end
+  end
+
+  describe ExecutionRunners::ExecutionInputManifest do
+    let(:project) { create(:project, owner: "acme", repo: "widgets") }
+    let(:agent_run) do
+      create(
+        :agent_run,
+        project: project,
+        branch_name: "feature/remote-contract",
+        base_commit_sha: "deadbeef",
+        source_pull_request_number: 7,
+        custom_prompt: "Build the thing",
+        prompt_version: create(:prompt_version),
+        issue: create(:issue, project:)
+      )
+    end
+    let(:services) do
+      [
+        ExecutionRunners::ServiceDeclaration.new(
+          name: "postgres",
+          image: "postgres:16",
+          port: 5432,
+          env: { "POSTGRES_PASSWORD" => "super-secret" },
+          type: :database
+        )
+      ]
+    end
+    let(:run_spec) do
+      ExecutionRunners::RunSpec.new(
+        agent_run: agent_run,
+        project: project,
+        image: "paid/agent:latest",
+        command: "claude code",
+        resources: ExecutionRunners::ComputeRequirements.new(cpu_quota: 100_000, memory_bytes: 1024, disk_bytes: 2048, pids_limit: 50),
+        environment: { "DATABASE_URL" => "postgres://secret@db", "API_TOKEN" => "shh" },
+        networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted,
+        workspace: ExecutionRunners::WorkspaceStrategy.named_volume,
+        services: services,
+        secrets_config: { "github_token" => "top-secret" }
+      )
+    end
+
+    it "serializes and round-trips through JSON" do
+      manifest = described_class.from_run_spec(run_spec)
+      restored = described_class.from_json(manifest.to_json)
+
+      expect(restored).to eq(manifest)
+    end
+
+    it "keeps secret values and host paths out of the manifest by construction" do
+      manifest_json = described_class.from_run_spec(run_spec).to_json
+
+      expect(manifest_json).not_to include("postgres://secret@db")
+      expect(manifest_json).not_to include("super-secret")
+      expect(manifest_json).not_to include("top-secret")
+      expect(manifest_json).not_to include("/var/paid/worktrees")
+      expect(manifest_json).to include("DATABASE_URL")
+      expect(manifest_json).to include("POSTGRES_PASSWORD")
+    end
+  end
+
+  describe ExecutionRunners::ExecutionOutputManifest do
+    let(:project) { create(:project, owner: "acme", repo: "widgets") }
+    let(:agent_run) do
+      create(
+        :agent_run,
+        project: project,
+        branch_name: "feature/remote-contract",
+        result_commit_sha: "abc123",
+        pull_request_number: 42,
+        pull_request_url: "https://example.test/pr/42",
+        verification_result: {
+          "status" => "passed",
+          "summary" => "Verified",
+          "artifacts" => [
+            { "kind" => "trace", "url" => "https://artifacts.test/trace.zip", "note" => "Playwright trace" }
+          ]
+        }
+      )
+    end
+
+    it "serializes and round-trips through JSON" do
+      manifest = described_class.from_result(
+        execution_result: ExecutionRunners::ExecutionResult.success(stdout: "ok", exit_code: 0),
+        agent_run: agent_run
+      )
+
+      expect(described_class.from_json(manifest.to_json)).to eq(manifest)
+    end
+
+    it "records log, verification, git, and object-storage references" do
+      manifest = described_class.from_result(
+        execution_result: ExecutionRunners::ExecutionResult.success(stdout: "ok", exit_code: 0),
+        agent_run: agent_run
+      )
+
+      expect(manifest.log_refs.first["kind"]).to eq("agent_run_logs")
+      expect(manifest.lanes["object_storage"].first.dig("locator", "url")).to eq("https://artifacts.test/trace.zip")
+      expect(manifest.lanes["git"].first["kind"]).to eq("git_output")
+      expect(manifest.verification["status"]).to eq("passed")
     end
   end
 

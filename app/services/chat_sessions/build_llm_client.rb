@@ -67,6 +67,7 @@ module ChatSessions
     end
 
     def openai_compatible_client(provider, api_key)
+      # @spec CHAT-API-007
       service_type = provider_service_type(provider)
       config = Runner::DIRECT_OUTBOUND_API_PROVIDERS.values.find { |c| c[:service_type] == service_type }
       base_url = config&.dig(:base_url) || "https://api.openai.com/v1"
@@ -78,7 +79,12 @@ module ChatSessions
         model: model
       )
 
-      HttpClient.new(transport: transport, model: model, provider_type: :openai_compatible)
+      HttpClient.new(
+        transport: transport,
+        model: model,
+        provider_type: :openai_compatible,
+        max_tokens: config&.dig(:chat_max_tokens)
+      )
     end
 
     def missing_runner_message
@@ -105,10 +111,11 @@ module ChatSessions
     class HttpClient
       attr_reader :model
 
-      def initialize(transport:, model:, provider_type:)
+      def initialize(transport:, model:, provider_type:, max_tokens: nil)
         @transport = transport
         @model = model
         @provider_type = provider_type
+        @max_tokens = max_tokens
       end
 
       def call(conversation, tools: nil, on_chunk: nil)
@@ -118,9 +125,9 @@ module ChatSessions
         stream_callback = build_stream_callback(on_chunk) if on_chunk
 
         response = if stream_callback
-          @transport.chat(messages: messages, model: model, tools: formatted_tools, stream: true, &stream_callback)
+          @transport.chat(**chat_kwargs(messages, formatted_tools, true), &stream_callback)
         else
-          @transport.chat(messages: messages, model: model, tools: formatted_tools, stream: false)
+          @transport.chat(**chat_kwargs(messages, formatted_tools, false))
         end
 
         {
@@ -133,6 +140,13 @@ module ChatSessions
       end
 
       private
+
+      # @spec CHAT-API-007
+      def chat_kwargs(messages, tools, stream)
+        { messages:, model:, tools:, stream: }.tap do |kwargs|
+          kwargs[:max_tokens] = @max_tokens if @max_tokens
+        end
+      end
 
       def build_stream_callback(on_chunk)
         proc { |event| on_chunk.call(event[:content]) if event[:type] == :text }
