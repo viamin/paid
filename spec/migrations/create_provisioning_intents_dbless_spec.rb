@@ -105,6 +105,7 @@ RSpec.describe CreateProvisioningIntents, :no_db do
   it "creates the provisioning-intents tenant-isolation policy" do
     recorded_sql = []
 
+    allow(migration).to receive(:table_exists?).with(:provisioning_intents).and_return(false)
     allow(migration).to receive(:create_table).and_yield(table)
     allow(migration).to receive(:index_exists?).and_return(false)
     allow(migration).to receive(:add_index)
