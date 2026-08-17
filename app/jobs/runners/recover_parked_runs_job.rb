@@ -23,7 +23,7 @@ module Runners
     good_job_control_concurrency_with(
       total_limit: 1,
       enqueue_limit: 1,
-      key: ->(user_id) { "runners_recover_parked_runs/#{user_id}" }
+      key: -> { "runners_recover_parked_runs/#{arguments.first}" }
     )
 
     def self.parked_runs_for(user)

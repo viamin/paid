@@ -21,6 +21,16 @@ RSpec.describe Runners::RecoverParkedRunsJob do
     ActiveJob::Base.queue_adapter = original_adapter
   end
 
+  describe "GoodJob concurrency" do
+    it "deduplicates recovery work per user" do
+      config = described_class.good_job_concurrency_config
+
+      expect(config[:total_limit]).to eq(1)
+      expect(config[:enqueue_limit]).to eq(1)
+      expect(described_class.new(user.id).good_job_concurrency_key).to eq("runners_recover_parked_runs/#{user.id}")
+    end
+  end
+
   it "makes the user's parked rate_limited runs due and enqueues the stale detector" do
     parked = create(:agent_run, :rate_limited, project: project, issue: issue,
       rate_limited_until: 2.days.from_now)
