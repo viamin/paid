@@ -24,7 +24,7 @@ in Draft status.
 | Per-run authority grants are explicit and secret-free | Implemented | `app/models/agent_run.rb` `proxy_token`; `app/controllers/api/secrets_proxy_controller.rb`; RDR-006 |
 | Network policy is provider-neutral and runner-validated before provisioning | Implemented | `app/services/execution_runners.rb` `NetworkingPolicy`; `app/services/containers/provision.rb` `derived_networking_policy`; `app/services/network_policy.rb` |
 | Execution environments have no public ingress by default | Implemented | `app/services/network_policy.rb` — `paid_agent` network is `internal: true`; no container ports exposed; `spec/services/network_policy_spec.rb` |
-| Preview/debug ingress exceptions are scoped | Implemented | `preview_sessions` and `PreviewProvisionState` — tunnel creation requires explicit `preview_session` record scoped to `agent_run`; `app/models/preview_session.rb` |
+| Preview/debug ingress exceptions are scoped | Implemented | `preview_sessions` and `PreviewProvisionState` — tunnel creation requires an explicit project-owned `preview_session` record; `app/models/preview_session.rb` |
 | Tenant/project/run isolation invariants are tested | Implemented | Row-level security on `agent_runs`, `projects`; per-run `proxy_token` scope; per-run named workspace volumes; `spec/services/network_policy_spec.rb` |
 | Subscription-auth and direct-outbound remain explicit exceptions | Implemented | `NetworkPolicy` defaults to `:proxy` mode; subscription-auth and direct-outbound require explicit `subscription_auth?` / `direct_outbound_runner?` predicates; `spec/services/network_policy_spec.rb` |
 | Tenant-configurable egress allowlisting | **Gap** | RDR-055 is Draft; no per-tenant domain allowlist enforcement shipped; follow-on via RDR-055 implementation |
@@ -174,8 +174,9 @@ required and runner-required destinations; no per-tenant extension is possible.
    a `PreviewSession` record is created explicitly.
 
 4. **Preview/debug ingress exceptions are scoped**: Preview tunnel creation requires
-   an explicit `preview_session` record with an `agent_run_id` foreign key. There is
-   no mechanism to open ingress without an associated run record.
+   an explicit `preview_session` record tied to a `project`, with optional
+   `agent_run` linkage when the preview reuses a run-owned branch/container. There is
+   no mechanism to open ingress without an associated preview-session record.
 
 5. **Tenant/project/run isolation invariants are tested**: Database-level RLS, per-run
    `proxy_token` scope, and per-run workspace volumes all have test coverage. Cross-

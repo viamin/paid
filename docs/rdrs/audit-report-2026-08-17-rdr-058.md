@@ -89,18 +89,20 @@
 
 **Shipped**:
 
-- Preview tunnel creation is gated on the existence of a `preview_session` record with an `agent_run_id` foreign key. `PreviewProvisionState` records the current tunnel state per run.
+- Preview tunnel creation is gated on the existence of an explicit `preview_session` record tied to a `project`. Some sessions are also associated with an `agent_run`, but that link is optional.
+- `PreviewProvisionState` records tunnel/provision lifecycle state for previews that are launched from agent-run verification flows.
 - No code path in the provisioning layer opens ingress ports outside of an explicit `preview_session`.
 
 **Evidence**:
 
-- `app/models/preview_session.rb` — belongs_to `:agent_run`; `agent_run_id` foreign key
-- `app/models/preview_provision_state.rb` — per-run tunnel state
-- `db/schema.rb` — `preview_sessions` table with `agent_run_id` not-null foreign key
+- `app/models/preview_session.rb` — `belongs_to :project`; `belongs_to :agent_run, optional: true`; `build_for(...)` accepts `agent_run: nil`
+- `app/controllers/projects_controller.rb` — `queue_preview_provision!` creates and provisions a preview session without requiring an `agent_run`
+- `app/models/preview_provision_state.rb` — per-run tunnel state for verification-launched previews
+- `db/schema.rb` — `preview_sessions` table documents `agent_run_id` as an optional originating run
 
 **Tests**:
 
-- Preview session specs cover the `agent_run` association and scoping.
+- Preview session and project request specs cover preview-session creation and scoping through the project-owned preview flow.
 
 **Verdict**: Satisfied.
 
