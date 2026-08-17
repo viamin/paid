@@ -2603,6 +2603,31 @@ RSpec.describe Containers::Provision do
         )
       end
 
+      it "yields normalized stdout and stderr chunks to the caller block in stream order" do
+        raw_stdout = "out\x00put\n".b
+        raw_stderr = "bad\xFF\n".b
+
+        expect(Containers.backend).to receive(:exec_in_container) do |container, command, **_opts, &block|
+          expect(container).to eq(mock_container)
+          expect(command).to eq([ "sh", "-c", "echo 'hello'" ])
+
+          block.call(:stdout, raw_stdout)
+          block.call(:stderr, raw_stderr)
+
+          [ [ raw_stdout ], [ raw_stderr ], 0 ]
+        end
+        allow(mock_container).to receive(:info).and_return({ "State" => { "Running" => true, "ExitCode" => 0 } })
+
+        streamed = []
+        result = service.execute("echo 'hello'") { |stream, chunk| streamed << [ stream, chunk ] }
+
+        expect(result).to be_success
+        expect(streamed).to eq([
+          [ :stdout, "output\n" ],
+          [ :stderr, "bad\uFFFD\n" ]
+        ])
+      end
+
       it "fails the command and invalidates the container when preparation cleanup exits non-zero" do
         preparation = build_preparation
         allow(agent_run).to receive(:log!)

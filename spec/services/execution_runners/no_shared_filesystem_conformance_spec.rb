@@ -32,6 +32,62 @@ RSpec.describe NoSharedFilesystemConformance do
   end
   let(:host_worktree) { "/var/paid/worktrees/#{conformance_run.id}" }
 
+  describe "provider-neutral manifest and contract invariants" do
+    it "derives a host-path-free workspace strategy for the canonical create-PR scenario" do
+      expect(conformance_run.worktree_path).to be_nil
+      expect(conformance_spec.workspace).not_to be_bind_mount
+      expect(conformance_spec.workspace.reference).to be_nil
+    end
+
+    it "clones over the Git lane with a declarative workspace and no host reference" do
+      manifest = conformance_spec.input_manifest
+
+      checkout = manifest.lanes.fetch("git").find { |ref| ref["kind"] == "repository_checkout" }
+      expect(checkout).to be_present
+      expect(checkout.fetch("locator")).to include(
+        "repo_full_name" => conformance_run.project.full_name,
+        "branch_name" => conformance_run.branch_name,
+        "base_commit_sha" => conformance_run.base_commit_sha
+      )
+      expect(manifest.execution.fetch("workspace")).to eq(
+        "mode" => conformance_spec.workspace.mode.to_s,
+        "mount_point" => conformance_spec.workspace.mount_point
+      )
+      expect(described_class.host_path_strings(
+        manifest.as_json, allowed: [ conformance_spec.workspace.mount_point ]
+      )).to be_empty
+    end
+
+    it "emits artifacts through object storage and logs through the control-plane API" do
+      manifest = ExecutionRunners::ExecutionResult.success(stdout: "conformance", exit_code: 0)
+                                        .output_manifest(agent_run: conformance_run)
+
+      binary = manifest.artifacts.fetch("binary_artifacts")
+      expect(binary).to be_present
+      expect(binary).to all(include("lane" => "object_storage"))
+      expect(binary.map { |entry| entry.dig("locator", "url") }).to all(be_present)
+      expect(manifest.lanes.fetch("object_storage")).to be_present
+
+      expect(manifest.log_refs).to include(
+        hash_including("lane" => "control_plane_api", "kind" => "agent_run_logs")
+      )
+      expect(manifest.lanes.fetch("git")).to include(hash_including("kind" => "git_output"))
+      expect(manifest.artifacts.fetch("code_outputs")).to contain_exactly(manifest.git_output)
+      expect(manifest.git_output).to include(
+        "branch_name" => conformance_run.branch_name,
+        "result_commit_sha" => conformance_run.result_commit_sha
+      )
+      expect(manifest.lanes.fetch("credentials")).to be_empty
+      expect(described_class.host_path_strings(manifest.as_json)).to be_empty
+    end
+
+    it "keeps Docker exec and bind-mount concepts off the runner contract" do
+      tokens = described_class.contract_surface_tokens
+
+      expect(described_class.forbidden_surface_tokens(tokens)).to be_empty
+    end
+  end
+
   describe "a runner that requires shared host storage" do
     let(:bind_mount_only_runner) do
       Class.new(ExecutionRunners::Base) do
@@ -112,10 +168,10 @@ RSpec.describe NoSharedFilesystemConformance do
 
   describe "a contract surface that speaks Docker exec or bind mounts" do
     it "flags the forbidden tokens" do
-      tokens = %w[provision exec_in_container bind_mount_path start]
+      tokens = %w[provision exec_in_container bind_mount_path worktree shared_dir mount_source start]
 
       expect(described_class.forbidden_surface_tokens(tokens))
-        .to contain_exactly("exec_in_container", "bind_mount_path")
+        .to contain_exactly("exec_in_container", "bind_mount_path", "worktree", "shared_dir", "mount_source")
     end
 
     it "does not flag provider-neutral lifecycle vocabulary" do
@@ -141,6 +197,17 @@ RSpec.describe NoSharedFilesystemConformance do
       }
 
       expect(described_class.host_path_strings(payload)).to be_empty
+    end
+
+    it "flags embedded host paths instead of only whole-string paths" do
+      payload = {
+        "command" => "cd #{host_worktree} && paid-conformance-agent",
+        "artifact_locator" => "file://#{host_worktree}/diff.patch",
+        "mount" => "--mount type=bind,source=#{host_worktree},target=/workspace"
+      }
+
+      expect(described_class.host_path_strings(payload, allowed: [ "/workspace" ]))
+        .to contain_exactly(host_worktree, "#{host_worktree}/diff.patch")
     end
   end
 end

@@ -239,15 +239,21 @@
   output manifests SHALL carry no host filesystem paths. The suite SHALL
   verify Git is the only code transport (input-manifest Git lane with a
   declarative workspace carrying no host reference) and that durable outputs
-  travel on the object-storage and control-plane API lanes. The runner
-  contract surface (interface methods, parameters, and value-object members)
-  SHALL NOT reference Docker `exec`, bind mounts, shared directories, or
-  host-visible workspace paths. `LocalDockerRunner` SHALL pass the suite as
+  travel on the object-storage and control-plane API lanes. Logs SHALL cross
+  the runner boundary as streamed stdout/stderr chunks yielded through the
+  `ExecutionRunners::Base#start` block rather than through shared host files.
+  The runner contract surface (interface methods, parameters, and value-object
+  members) SHALL NOT reference Docker `exec`, bind mounts, shared directories,
+  or host-visible workspace paths. `LocalDockerRunner` SHALL pass the suite as
   the baseline without weakening local Docker development (legacy bind-mount
   runs remain a compatibility path outside the conformance scenario), and
   negative controls SHALL prove the suite rejects host-storage-requiring
-  runners, handles, manifests, and contract surfaces.
+  runners, handles, manifests, streamed output plumbing, and contract
+  surfaces.
   *Tests:* `spec/services/execution_runners/no_shared_filesystem_conformance_spec.rb`,
   `spec/services/execution_runners/local_docker_runner_spec.rb`
-  *Code:* `spec/support/no_shared_filesystem_conformance.rb`,
+  *Code:* `app/services/containers/provision.rb`,
+  `app/services/execution_runners/base.rb`,
+  `app/services/execution_runners/local_docker_runner.rb`,
+  `spec/support/no_shared_filesystem_conformance.rb`,
   `spec/support/shared_examples/no_shared_filesystem_conformance.rb`

@@ -364,8 +364,11 @@ module Containers
     #   "still working" and avoid startup/idle timeouts.
     # @yieldparam stream_type [Symbol] +:stdout+ or +:stderr+
     # @yieldparam chunk [String] output chunk forwarded as the container
-    #   exec stream emits it (after buffering for the watchdog/streaming
-    #   pipeline)
+    #   exec stream emits it, after UTF-8/null-byte normalization. The block
+    #   runs inside the backend streaming callback alongside the watchdog
+    #   bookkeeping, so it must stay fast; a slow consumer throttles output
+    #   pumping and the shared timeout checks. Exceptions raised by the block
+    #   propagate out of +#execute+ and abort the run.
     # @return [Result] Result with stdout, stderr, and exit_code
     # @raise [StartupTimeoutError] when no output is received within +startup_timeout+ seconds
     # @raise [IdleTimeoutError] when output stops for more than +idle_timeout+ seconds

@@ -8,10 +8,11 @@
 #
 # @spec CONTAINER-RUNTIME-019
 module NoSharedFilesystemConformance
-  # An absolute filesystem path: the shape a host-storage assumption takes
-  # when it leaks across the control-plane/runner boundary. URLs and opaque
-  # runner references (volume names, machine identifiers) do not match.
-  HOST_PATH_PATTERN = %r{\A/}
+  # Absolute-path substrings: the shape a host-storage assumption takes when
+  # it leaks across the control-plane/runner boundary. Scans within strings so
+  # embedded host paths in shell snippets, mount flags, or file:// locators
+  # are caught, while ordinary URLs and opaque runner references do not match.
+  HOST_PATH_PATTERN = %r{(?:(?<=file://)|(?<![\w:/]))(/[\w.-]+(?:/[\w.-]+)*)}
 
   # Tokens naming the Docker exec / bind-mount / shared-directory concepts the
   # runner contract must not carry (RDR-057). Matched against interface method
@@ -19,7 +20,8 @@ module NoSharedFilesystemConformance
   # allowed; the target is Docker's exec transport, not the word family.
   FORBIDDEN_SURFACE_PATTERN = /
     container_id | bind_mount | network_name | host_path |
-    worktree_path | volume_name | docker | exec(?!ution)
+    worktree(?:_path)? | volume_name | docker |
+    shared_dir | host_dir | mount_source | exec(?!ution)
   /x
 
   CONTRACT_VALUE_OBJECTS = [
@@ -44,7 +46,8 @@ module NoSharedFilesystemConformance
       strings = []
       collect_strings(payload, strings)
       strings.uniq
-             .select { |value| value.match?(HOST_PATH_PATTERN) }
+             .flat_map { |value| value.scan(HOST_PATH_PATTERN).flatten }
+             .uniq
              .reject { |value| allowed.include?(value) }
     end
 
