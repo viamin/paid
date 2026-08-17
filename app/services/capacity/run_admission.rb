@@ -454,13 +454,20 @@ module Capacity
       @host_requested_resources ||= if selected_host.blank?
         Capacity::RequestedResources.zero
       else
-        scope = TenantContext.with_system_access do
-          AgentRun.capacity_inflight.where(
-            "COALESCE(NULLIF(container_host, ''), COALESCE(external_metadata->>'planned_container_host', '')) IN (:scope)",
-            scope: selected_host_scope
+        # A host is a shared physical resource spanning all tenants, and
+        # agent_runs has FORCE ROW LEVEL SECURITY, so the aggregate must be
+        # loaded inside the bypass block. Building the relation inside and
+        # summing after the block exits would let the lazy load run RLS-scoped
+        # to the calling tenant and undercount the host. See
+        # AgentRun.active_count_for_host for the same concern.
+        TenantContext.with_system_access do
+          Capacity::RequestedResources.sum_for(
+            AgentRun.capacity_inflight.where(
+              "COALESCE(NULLIF(container_host, ''), COALESCE(external_metadata->>'planned_container_host', '')) IN (:scope)",
+              scope: selected_host_scope
+            )
           )
         end
-        Capacity::RequestedResources.sum_for(scope)
       end
     end
 

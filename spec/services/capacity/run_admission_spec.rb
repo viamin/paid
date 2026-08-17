@@ -94,6 +94,19 @@ RSpec.describe Capacity::RunAdmission do
     )
   end
 
+  # Records TenantContext.bypass_enabled? at the moment each host-aggregate
+  # agent_runs query executes, so specs can assert the load happened inside
+  # the RLS bypass even though the privileged spec connection cannot rely on
+  # row-level security itself to filter rows.
+  def host_aggregate_bypass_observer(states)
+    lambda do |*, payload|
+      sql = payload[:sql]
+      return unless sql.include?('FROM "agent_runs"') && sql.include?("COALESCE(NULLIF(container_host")
+
+      states << TenantContext.bypass_enabled?
+    end
+  end
+
   describe ".call" do
     it "counts active runs against the selected host limit only" do
       create(:agent_run, :running, project: project, container_host: "local")
@@ -179,6 +192,36 @@ RSpec.describe Capacity::RunAdmission do
       expect(result[:reason]).to eq("host_requested_cpu_ceiling")
       expect(result[:current_host_requested_cpu_quota]).to eq(400_000)
       expect(result[:host_requested_cpu_quota_limit]).to eq(500_000)
+    end
+
+    # @spec CONTAINER-RUNTIME-019
+    # Admission runs tenant-scoped in production (e.g. CheckRunCapacityActivity
+    # under TenantContext.with(account)), while agent_runs has FORCE ROW LEVEL
+    # SECURITY. The host aggregate must therefore be loaded while system access
+    # is active — a relation that only escapes the bypass block before being
+    # loaded would run RLS-scoped to the calling tenant and undercount the
+    # shared host. The spec connection is privileged, so RLS itself cannot
+    # filter rows here; observe the bypass state at query time instead.
+    # reserved_agent_memory_bytes is passed so the reserved-memory rescan
+    # (its own host-scoped agent_runs load) adds no unrelated samples.
+    it "loads the host aggregate with system access even when admission runs tenant-scoped", :tenant_isolation do
+      other_account = create(:account)
+      other_project = create(:project, account: other_account, created_by: create(:user, account: other_account))
+      TenantContext.with_system_access do
+        create(:agent_run, :running, project: other_project, container_host: "elguapo",
+          external_metadata: requested_resource_metadata(cpu_quota: 200_000, memory_bytes: 2.gigabytes, disk_bytes: 1.gigabyte))
+      end
+
+      bypass_states = []
+      result = ActiveSupport::Notifications.subscribed(host_aggregate_bypass_observer(bypass_states), "sql.active_record") do
+        TenantContext.with(account) do
+          described_class.call(user: user, project: project, docker_snapshot: docker_snapshot,
+            selected_host: "elguapo", selected_host_limit: 8, reserved_agent_memory_bytes: 12.gigabytes)
+        end
+      end
+
+      expect(result[:current_host_requested_cpu_quota]).to eq(200_000)
+      expect(bypass_states).to all(be(true))
     end
 
     # @spec CONTAINER-RUNTIME-020
