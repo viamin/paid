@@ -445,11 +445,15 @@ module Activities
     # --- Draft phase scanning ---
 
     def draft_review_limit_reached?(project, issue)
-      issue.draft_phase? && no_progress_stuck?(project, issue)
+      return false unless issue.draft_phase?
+      return false if project.max_draft_review_rounds.to_i <= 0
+
+      issue.draft_review_count >= project.max_draft_review_rounds
     end
 
     def scan_draft_pr(project, client, issue, pr_data: nil)
       check_rate_budget!(client)
+      return escalate_trigger(issue) if draft_review_limit_reached?(project, issue)
 
       if third_party_bot_author?(project, issue.github_creator_login)
         return scan_bot_authored_draft_pr(project, client, issue, pr_data: pr_data)
@@ -1156,6 +1160,9 @@ module Activities
     end
 
     def pr_auto_continue_token_limit_breach(project, issue)
+      return if issue.respond_to?(:pr_auto_continue_token_limit_overridden_at) &&
+        issue.pr_auto_continue_token_limit_overridden_at.present?
+
       limit = project.max_pr_auto_continue_tokens.to_i
       used = pr_auto_continue_tokens_used(project, issue)
       return if used < limit

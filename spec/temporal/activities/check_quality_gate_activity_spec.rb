@@ -49,6 +49,22 @@ RSpec.describe Activities::CheckQualityGateActivity do # @spec QUALITY-LOOPS-005
   end
 
   # @spec FOCUSED-RUN-007
+  it "allows automatic PR automation over the token cap after owner override" do
+    project.update!(quality_gate_settings: { "enabled" => false }, max_pr_auto_continue_tokens: 50_000)
+    pull_request = create(:issue, :pull_request, project: project, github_number: 42,
+      pr_auto_continue_token_limit_overridden_at: Time.current)
+    create(:agent_run, project: project, issue: pull_request,
+      source_pull_request_number: 42,
+      trigger_type: "automatic",
+      tokens_input: 50_000)
+
+    result = activity.execute(project_id: project.id, issue_id: pull_request.id, source_pull_request_number: 42)
+
+    expect(result).to include(allowed: true, blocked: false)
+    expect(result[:breaches]).to be_empty
+  end
+
+  # @spec FOCUSED-RUN-007
   it "bypasses manual PR runs even when the per-PR token cap is reached" do
     project.update!(max_pr_auto_continue_tokens: 50_000)
     pull_request = create(:issue, :pull_request, project: project, github_number: 42)

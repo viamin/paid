@@ -298,6 +298,7 @@ class Issue < ApplicationRecord
   end
 
   def dismiss_escalation!(draft:)
+    token_limit_override = pr_escalation_reason == PR_ESCALATION_REASON_PR_AUTO_CONTINUE_TOKEN_LIMIT
     attrs = {
       labels: labels - %w[paid-escalated paid-dismiss-escalation],
       pr_review_phase: draft ? "restarted" : "ready",
@@ -306,6 +307,7 @@ class Issue < ApplicationRecord
       auto_continue_paused: false,
       ci_retry_requested_at: nil
     }
+    attrs[:pr_auto_continue_token_limit_overridden_at] = Time.current if token_limit_override
 
     update!(attrs)
   end

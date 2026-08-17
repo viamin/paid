@@ -70,15 +70,23 @@
   create-pr follow-up loop is stuck with no meaningful progress, the
   auto-continue strategy SHALL escalate instead of queueing another
   create-pr follow-up for the same unresolved review/CI/comment trigger;
-  pending review-run triggers SHALL still be allowed to proceed.
-  *Code:* `Automation::Strategies::AutoContinue#escalation_candidate?`.
-  *Test:* `spec/services/automation/strategies/auto_continue_spec.rb`.
+  pending review-run triggers SHALL still be allowed to proceed. Draft and
+  restarted PRs SHALL also treat `max_draft_review_rounds` as a hard attempt
+  cap: once `draft_review_count` reaches that configured limit, the scanner
+  SHALL escalate instead of queueing another draft follow-up even if recent
+  commits would otherwise reset the no-progress heuristic.
+  *Code:* `Automation::Strategies::AutoContinue#escalation_candidate?`,
+  `ScanPaidPrsActivity#draft_review_limit_reached?`.
+  *Test:* `spec/services/automation/strategies/auto_continue_spec.rb`,
+  `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.
 
 - [x] **FOCUSED-RUN-007** — When automatic PR automation for one pull request
   has already consumed at least the project's `max_pr_auto_continue_tokens`,
   the poll workflow SHALL skip queueing another automatic create-pr or review
   run for that PR and SHALL escalate the PR to the owner instead, even when an
-  existing queued automatic PR run is still active.
+  existing queued automatic PR run is still active. If the owner dismisses a
+  token-cap escalation, the system SHALL record that override on the PR and
+  SHALL allow future automatic PR runs for that PR to exceed the token cap.
   *Code:* `CheckQualityGateActivity#pr_auto_continue_token_limit_result`,
   `GitHubPollWorkflow#handle_quality_gate_block`,
   `ScanPaidPrsActivity#pr_auto_continue_token_limit_breach`,

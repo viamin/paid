@@ -54,6 +54,21 @@ RSpec.describe Activities::DismissEscalationActivity do
         expect(issue.reload.auto_continue_paused).to be(false)
       end
 
+      it "does not record a token-cap override for unrelated escalations" do
+        activity.execute(issue_id: issue.id)
+
+        expect(issue.reload.pr_auto_continue_token_limit_overridden_at).to be_nil
+      end
+
+      # @spec FOCUSED-RUN-007
+      it "records a token-cap override when dismissing a token-cap escalation" do
+        issue.update!(pr_escalation_reason: Issue::PR_ESCALATION_REASON_PR_AUTO_CONTINUE_TOKEN_LIMIT)
+
+        activity.execute(issue_id: issue.id)
+
+        expect(issue.reload.pr_auto_continue_token_limit_overridden_at).to be_present
+      end
+
       it "returns dismissed: true" do
         result = activity.execute(issue_id: issue.id)
 
