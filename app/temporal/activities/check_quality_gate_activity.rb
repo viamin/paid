@@ -13,6 +13,7 @@ module Activities
       @agent_run = input[:agent_run_id] ? AgentRun.find_by(id: input[:agent_run_id]) : nil
       @issue = input[:issue_id] ? Issue.find_by(id: input[:issue_id]) : nil
       @source_pull_request_number = input[:source_pull_request_number]
+      @source_pull_request = nil
       @settings = nil
 
       result = evaluate(input)
@@ -115,7 +116,7 @@ module Activities
     end
 
     def source_pull_request
-      project.issues.find_by(
+      @source_pull_request ||= project.issues.find_by(
         github_number: source_pull_request_number,
         is_pull_request: true
       )
