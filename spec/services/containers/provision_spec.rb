@@ -182,6 +182,35 @@ RSpec.describe Containers::Provision do
     FileUtils.rm_rf(worktree_path) if worktree_path && Dir.exist?(worktree_path)
   end
 
+  describe ".compatibility_for" do
+    # @spec EXEC-INGRESS-001
+    it "rejects unsupported inbound exposure before backend compatibility work" do
+      run = create(:agent_run, external_metadata: {
+        AgentRun::EXECUTION_INGRESS_METADATA_KEY => {
+          "public_inbound" => false,
+          "capabilities" => [
+            {
+              "kind" => "callback",
+              "scope" => "public_listener",
+              "expires_at" => "2026-08-17T12:00:00Z",
+              "authentication" => { "required" => true, "type" => "signed_token" },
+              "granted_at" => "2026-08-17T11:00:00Z",
+              "granted_by" => "user:42"
+            }
+          ]
+        }
+      })
+      backend = instance_double(Containers::Backends::Base)
+
+      expect(described_class).not_to receive(:new)
+
+      result = described_class.compatibility_for(agent_run: run, backend:)
+
+      expect(result.compatible).to be(false)
+      expect(result.error_message).to eq("Unsupported inbound exposure requested: callback.")
+    end
+  end
+
   describe "constants" do
     it "defines default memory limit of 4GB" do
       expect(described_class::DEFAULTS[:memory_bytes]).to eq(4 * 1024 * 1024 * 1024)

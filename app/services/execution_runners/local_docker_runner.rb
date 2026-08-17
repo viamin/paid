@@ -35,6 +35,7 @@ module ExecutionRunners
       backend = backend_for(spec)
       policy = spec.networking_policy
       raise ProvisionError, "RunSpec requires a NetworkingPolicy" if policy.nil?
+      spec.ingress_policy&.validate_supported!(environment: Rails.env)
 
       ensure_agent_network!(backend: backend, policy: policy)
       service = Containers::Provision.new(

@@ -7,27 +7,58 @@ RSpec.describe PreviewSessions::ProvisionJob do
   let(:account) { create(:account) }
   let(:project) { create(:project, account:) }
   let(:user) { create(:user, :admin, account:) }
+  let(:repo_path) { "/tmp/paid-preview-session-spec" }
 
-  it "creates an internal agent run and invokes the real preview provisioner" do
-    preview_session = create(:preview_session, :provisioning, project:, account:, created_by: user, branch_name: "feature/live-preview")
-    provision = instance_double(Previews::Provision, call: true)
-
-    allow(Dir).to receive(:mktmpdir).and_yield("/tmp/paid-preview-session-spec")
+  def stub_preview_provision(provision)
+    allow(Dir).to receive(:mktmpdir).and_yield(repo_path)
     allow(Previews::Provision).to receive(:new).and_return(provision)
+  end
 
-    expect { described_class.perform_now(preview_session.id) }.to change(AgentRun, :count).by(1)
+  def expect_preview_ingress_grant(agent_run)
+    ingress_capabilities = agent_run.external_metadata.dig(AgentRun::EXECUTION_INGRESS_METADATA_KEY, "capabilities")
 
-    agent_run = preview_session.reload.agent_run
-    expect(agent_run).to be_present
-    expect(agent_run.agent_type).to eq("internal_agent")
+    expect(agent_run).to have_attributes(
+      agent_type: "internal_agent",
+      branch_name: "feature/live-preview"
+    )
     expect(agent_run).to be_synthetic
     expect(agent_run.preview_provisioning?).to be(true)
     expect(agent_run.external_metadata).to include(AgentRun::PREVIEW_SESSION_EXTERNAL_METADATA_KEY => true)
-    expect(agent_run.branch_name).to eq("feature/live-preview")
+    expect(agent_run.external_metadata.dig(AgentRun::EXECUTION_INGRESS_METADATA_KEY, "public_inbound")).to be(false)
+    expect(ingress_capabilities).to contain_exactly(
+      hash_including(
+        "kind" => "preview",
+        "scope" => "paid_mediated_tunnel",
+        "authentication" => { "required" => true, "type" => "signed_token" },
+        "granted_by" => "user:#{user.id}"
+      )
+    )
+  end
+
+  it "creates an internal preview run with an explicit ingress grant" do
+    preview_session = create(:preview_session, :provisioning, project:, account:, created_by: user, branch_name: "feature/live-preview")
+    provision = instance_double(Previews::Provision, call: true)
+
+    stub_preview_provision(provision)
+
+    expect { described_class.perform_now(preview_session.id) }.to change(AgentRun, :count).by(1)
+
+    expect_preview_ingress_grant(preview_session.reload.agent_run)
+  end
+
+  it "invokes the preview provisioner and completes the synthetic run" do
+    preview_session = create(:preview_session, :provisioning, project:, account:, created_by: user, branch_name: "feature/live-preview")
+    provision = instance_double(Previews::Provision, call: true)
+
+    stub_preview_provision(provision)
+
+    described_class.perform_now(preview_session.id)
+
+    agent_run = preview_session.reload.agent_run
     expect(agent_run.status).to eq("completed")
     expect(Previews::Provision).to have_received(:new).with(
       agent_run: agent_run,
-      repo_path: "/tmp/paid-preview-session-spec",
+      repo_path: repo_path,
       preview_session: have_attributes(id: preview_session.id),
       logger: Rails.logger
     )
@@ -39,8 +70,7 @@ RSpec.describe PreviewSessions::ProvisionJob do
     expect(preview_session).to be_pending
     provision = instance_double(Previews::Provision, call: true)
 
-    allow(Dir).to receive(:mktmpdir).and_yield("/tmp/paid-preview-session-spec")
-    allow(Previews::Provision).to receive(:new).and_return(provision)
+    stub_preview_provision(provision)
 
     described_class.perform_now(preview_session.id)
 
@@ -53,8 +83,7 @@ RSpec.describe PreviewSessions::ProvisionJob do
     error = StandardError.new("preview boot failed")
     provision = instance_double(Previews::Provision, call: nil, cleanup!: true)
 
-    allow(Dir).to receive(:mktmpdir).and_yield("/tmp/paid-preview-session-spec")
-    allow(Previews::Provision).to receive(:new).and_return(provision)
+    stub_preview_provision(provision)
     allow(provision).to receive(:call).and_raise(error)
 
     expect {
@@ -82,8 +111,7 @@ RSpec.describe PreviewSessions::ProvisionJob do
     preview_session = create(:preview_session, :provisioning, project:, account:, created_by: user, branch_name: "feature/live-preview")
     provision = instance_double(Previews::Provision, call: true)
 
-    allow(Dir).to receive(:mktmpdir).and_yield("/tmp/paid-preview-session-spec")
-    allow(Previews::Provision).to receive(:new).and_return(provision)
+    stub_preview_provision(provision)
 
     described_class.perform_now(preview_session.id)
 
@@ -101,8 +129,7 @@ RSpec.describe PreviewSessions::ProvisionJob do
     preview_session = create(:preview_session, :provisioning, project:, account:, created_by: user)
     provision = instance_double(Previews::Provision, cleanup!: true)
 
-    allow(Dir).to receive(:mktmpdir).and_yield("/tmp/paid-preview-session-spec")
-    allow(Previews::Provision).to receive(:new).and_return(provision)
+    stub_preview_provision(provision)
     allow(provision).to receive(:call) do
       preview_session.mark_stopped!
     end

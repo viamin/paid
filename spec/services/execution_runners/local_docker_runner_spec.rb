@@ -5,6 +5,8 @@ require "rails_helper"
 # @spec CONTAINER-RUNTIME-010
 # @spec CONTAINER-RUNTIME-011
 # @spec CONTAINER-RUNTIME-017
+# @spec EXEC-INGRESS-001
+# @spec EXEC-INGRESS-002
 RSpec.describe ExecutionRunners::LocalDockerRunner do
   subject(:runner) { described_class.new }
 
@@ -16,6 +18,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       agent_run: agent_run, project: agent_run.project, image: "paid/agent:latest", command: "claude code",
       resources: resources, environment: { "FOO" => "bar" },
       networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted,
+      ingress_policy: ExecutionRunners::IngressPolicy.default_deny,
       workspace: ExecutionRunners::WorkspaceStrategy.named_volume, services: [], secrets_config: nil
     )
   end
@@ -221,6 +224,30 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
 
       expect { runner.provision(spec: run_spec) }
         .to raise_error(ExecutionRunners::ProvisionError, /Network setup failed/)
+    end
+
+    it "rejects unsupported inbound exposure before provisioning" do
+      debug_spec = ExecutionRunners::RunSpec.new(
+        **run_spec.to_h.merge(
+          ingress_policy: ExecutionRunners::IngressPolicy.default_deny(
+            capabilities: [
+              ExecutionRunners::IngressCapability.build(
+                kind: "debug",
+                scope: "public_listener",
+                expires_at: "2026-08-17T12:00:00Z",
+                authentication: { required: true, type: "signed_token" },
+                granted_at: "2026-08-17T11:00:00Z",
+                granted_by: "user:42"
+              )
+            ]
+          )
+        )
+      )
+
+      expect(Containers::Provision).not_to receive(:new)
+
+      expect { runner.provision(spec: debug_spec) }
+        .to raise_error(ExecutionRunners::ProvisionError, "Unsupported inbound exposure requested: debug.")
     end
 
     it "cleans up the provisioned container when firewall application fails in production" do
