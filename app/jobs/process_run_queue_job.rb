@@ -46,6 +46,7 @@ class ProcessRunQueueJob < ApplicationJob
     issue_p3: 5,
     auto_pick: 5
   }.freeze
+  QUEUE_PARKING_EXECUTION_CONTROL_SCOPES = %w[global account project].freeze
 
   def perform
     # Use a PostgreSQL advisory lock to ensure only one job processes the queue at a time.
@@ -246,8 +247,7 @@ class ProcessRunQueueJob < ApplicationJob
           next
         end
 
-        # @spec EXEC-DISABLE-002
-        execution_control = ExecutionControls::Resolver.call(agent_run: next_run)
+        execution_control = queue_parking_execution_control_for(next_run)
         if execution_control
           park_run_for_execution_control(next_run, execution_control)
           skipped_ids.add(next_run.id)
@@ -346,6 +346,16 @@ class ProcessRunQueueJob < ApplicationJob
     return nil unless runner
 
     Runners::PreflightCheck.call(runner: runner, user: user)
+  end
+
+  # @spec EXEC-DISABLE-002 — only global/account/project controls park queued
+  # runs before claim. Runner/backend controls are enforced later in the
+  # preflight and placement paths so reroute/late-binding semantics still apply.
+  def queue_parking_execution_control_for(agent_run)
+    control = ExecutionControls::Resolver.call(agent_run: agent_run)
+    return unless control
+
+    control if QUEUE_PARKING_EXECUTION_CONTROL_SCOPES.include?(control.scope)
   end
 
   # Reroutes a run whose pinned/bound runner is unavailable to a healthy

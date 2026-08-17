@@ -47,4 +47,13 @@ RSpec.describe DockerHost, type: :model do
     expect(host.client_tls_material_present?).to be(true)
     expect(host.reload.read_attribute_before_type_cast("client_private_key_pem")).not_to include("BEGIN PRIVATE KEY")
   end
+
+  # @spec EXEC-DISABLE-004
+  it "excludes backend-disabled hosts from placement-ready relations" do
+    enabled_host = create(:docker_host)
+    disabled_host = create(:docker_host, account: enabled_host.account)
+    create(:execution_control, :backend_scope, :enabled, docker_host: disabled_host)
+
+    expect(enabled_host.account.docker_hosts.placement_ready_for_agent_runs).to contain_exactly(enabled_host)
+  end
 end

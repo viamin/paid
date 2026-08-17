@@ -1327,13 +1327,12 @@ module Projects
     end
 
     def eligible_docker_hosts_for_manual_selection(auth_source: nil)
-      current_account.docker_hosts.enabled.ordered.select do |host|
+      current_account.docker_hosts.placement_ready_for_agent_runs.ordered.select do |host|
         docker_host_eligible_for_manual_selection?(host, auth_source: auth_source)
       end
     end
 
     def docker_host_eligible_for_manual_selection?(host, auth_source: nil)
-      return false unless host.placement_ready?
       return true if auth_source.nil?
 
       subscription_auth_eligibility_for(host, auth_source: auth_source).eligible?

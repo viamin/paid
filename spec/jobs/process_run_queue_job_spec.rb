@@ -1238,6 +1238,26 @@ RSpec.describe ProcessRunQueueJob do
         expect(run.external_metadata.dig("execution_control", "scope")).to eq("project")
       end
 
+      # @spec EXEC-DISABLE-003
+      it "reroutes a pinned run when only the pinned runner has an execution disable" do
+        project = create(:project)
+        user = project.created_by
+        disabled_runner = user.runners.kept_only.find_by!(runner_key: "claude", auth_type: "subscription")
+        fallback_runner = create(:runner, user: user, runner_key: "codex")
+        run = create(:agent_run, :queued, project: project, runner: disabled_runner)
+        create(:execution_control, :runner_scope, :enabled, runner: disabled_runner, reason: "Runner maintenance")
+
+        expect(temporal_client).to receive(:start_workflow).once.and_return(workflow_handle)
+
+        described_class.new.perform
+
+        run.reload
+        expect(run.runner_id).to eq(fallback_runner.id)
+        expect(run.status).to eq("queued")
+        expect(run.temporal_workflow_id).to be_present
+        expect(run.external_metadata).not_to have_key("execution_control")
+      end
+
       it "does not recheck a manual run even if its issue is ineligible" do
         project = create(:project)
         issue = create(:issue, project: project, github_state: "open", labels: [ "planning" ])

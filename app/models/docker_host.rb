@@ -19,6 +19,11 @@ class DockerHost < ApplicationRecord
 
   scope :enabled, -> { where(enabled: true) }
   scope :ordered, -> { order(enabled: :desc, display_name: :asc, identifier: :asc) }
+  scope :placement_ready_for_agent_runs, lambda {
+    enabled
+      .where(readiness_status: "ready", image_status: "ready", required_network_status: "ready")
+      .where.not(id: ExecutionControl.enabled.where(scope: "backend").select(:docker_host_id))
+  }
 
   before_validation :normalize_fields
   before_validation :sync_disabled_state
@@ -74,15 +79,11 @@ class DockerHost < ApplicationRecord
 
   # @spec EXEC-DISABLE-004
   def placement_ready?
-    enabled? && ready? && image_status == "ready" && required_network_status == "ready" && execution_enabled_for_agent_runs?
+    enabled? && ready? && image_status == "ready" && required_network_status == "ready"
   end
 
   def disable!
     update!(enabled: false)
-  end
-
-  def execution_enabled_for_agent_runs?
-    !ExecutionControl.enabled.for_backend_scope(id).exists?
   end
 
   def endpoint_label
