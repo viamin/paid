@@ -368,6 +368,41 @@ RSpec.describe ExecutionRunners do
 
     describe "#output_manifest" do
       let(:project) { create(:project, owner: "acme", repo: "widgets") }
+      let(:report_artifact) do
+        {
+          "kind" => "generated_report",
+          "content_type" => "application/pdf",
+          "storage_key" => "reports/acme/widgets/pr-42/abc123/summary.pdf",
+          "url" => "https://artifacts.test/summary.pdf",
+          "context" => {
+            "account_id" => project.account_id,
+            "project_id" => project.id,
+            "agent_run_id" => 999_999
+          },
+          "metadata" => {
+            "note" => "Summary report"
+          }
+        }
+      end
+      let(:expected_binary_artifact) do
+        {
+          "lane" => "object_storage",
+          "kind" => "generated_report",
+          "content_type" => "application/pdf",
+          "locator" => {
+            "key" => "reports/acme/widgets/pr-42/abc123/summary.pdf",
+            "url" => "https://artifacts.test/summary.pdf"
+          },
+          "context" => {
+            "account_id" => project.account_id,
+            "project_id" => project.id,
+            "agent_run_id" => 999_999
+          },
+          "metadata" => {
+            "note" => "Summary report"
+          }
+        }
+      end
       let(:agent_run) do
         create(
           :agent_run,
@@ -379,9 +414,7 @@ RSpec.describe ExecutionRunners do
           review_url: "https://example.test/review/42",
           verification_result: {
             "status" => "passed",
-            "artifacts" => [
-              { "kind" => "trace", "url" => "https://artifacts.test/trace.zip", "note" => "Playwright trace" }
-            ]
+            "artifacts" => [ report_artifact ]
           }
         )
       end
@@ -391,7 +424,7 @@ RSpec.describe ExecutionRunners do
 
         expect(manifest).to be_a(ExecutionRunners::ExecutionOutputManifest)
         expect(manifest.artifacts["code_outputs"].first["result_commit_sha"]).to eq("abc123")
-        expect(manifest.artifacts["binary_artifacts"].first["lane"]).to eq("object_storage")
+        expect(manifest.artifacts["binary_artifacts"].first).to include(expected_binary_artifact)
         expect(manifest.artifacts["structured_results"].first["kind"]).to eq("verification_result")
         expect(manifest.git_output["pull_request_number"]).to eq(42)
       end

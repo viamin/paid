@@ -24,6 +24,7 @@ module Screenshots
       :changed_files,
       :ui_files,
       :screenshot_paths,
+      :artifacts,
       :published,
       :screenshots_url,
       :error,
@@ -48,6 +49,7 @@ module Screenshots
       @config = nil
       @network = nil
       @published_url = nil
+      @artifact_manifest = []
       @hints = {}
       @trace_path = nil
       @video_path = nil
@@ -85,7 +87,7 @@ module Screenshots
         start_chrome!
         @preview_provision.boot!(start_tunnel: false, allow_seed: true)
         screenshot_paths = run_capture!(ui_files)
-        publish_result!(screenshot_paths)
+        artifact_manifest = publish_result!(screenshot_paths)
 
         update_status(
           "captured",
@@ -98,6 +100,7 @@ module Screenshots
           changed_files: changed_files,
           ui_files: ui_files,
           screenshot_paths: screenshot_paths,
+          artifacts: artifact_manifest,
           published: @published_url.present?,
           screenshots_url: @published_url,
           error: nil
@@ -106,19 +109,19 @@ module Screenshots
     rescue Screenshots::ConfigError => e
       log_skip("config_error", e.message)
       update_status("config_error")
-      Result.new(status: "config_error", changed_files: [], ui_files: [], screenshot_paths: [], published: false, screenshots_url: nil, error: e.message)
+      Result.new(status: "config_error", changed_files: [], ui_files: [], screenshot_paths: [], artifacts: [], published: false, screenshots_url: nil, error: e.message)
     rescue Containers::Provision::TimeoutError => e
       screenshot_paths = collected_screenshots
       log_skip("capture_timeout", e.message, screenshot_count: screenshot_paths.size)
       refresh_pr_comment("capture_failed")
       update_status("capture_timeout", screenshot_count: screenshot_paths.size)
-      Result.new(status: "capture_timeout", changed_files: [], ui_files: [], screenshot_paths: screenshot_paths, published: false, screenshots_url: nil, error: e.message)
+      Result.new(status: "capture_timeout", changed_files: [], ui_files: [], screenshot_paths: screenshot_paths, artifacts: [], published: false, screenshots_url: nil, error: e.message)
     rescue StandardError => e
       screenshot_paths = collected_screenshots
       log_skip("capture_failed", e.message, error_class: e.class.name, screenshot_count: screenshot_paths.size)
       refresh_pr_comment("capture_failed")
       update_status("capture_failed", screenshot_count: screenshot_paths.size)
-      Result.new(status: "capture_failed", changed_files: [], ui_files: [], screenshot_paths: screenshot_paths, published: false, screenshots_url: nil, error: e.message)
+      Result.new(status: "capture_failed", changed_files: [], ui_files: [], screenshot_paths: screenshot_paths, artifacts: [], published: false, screenshots_url: nil, error: e.message)
     ensure
       cleanup!
     end
@@ -182,6 +185,7 @@ module Screenshots
         changed_files: changed_files,
         ui_files: ui_files,
         screenshot_paths: [],
+        artifacts: [],
         published: false,
         screenshots_url: nil,
         error: nil
@@ -248,13 +252,13 @@ module Screenshots
     end
 
     def publish_result!(screenshot_paths)
-      return if screenshot_paths.empty?
-      return unless Screenshots::Storage.configured?
+      return [] if screenshot_paths.empty?
+      return [] unless Screenshots::Storage.configured?
 
       storage = Screenshots::Storage.new
       uploaded = screenshot_paths.map { |path| upload_screenshot(storage, path) }
-      trace_url = upload_trace_artifact(storage)
-      video_url = upload_video_artifact(storage)
+      trace_artifact = upload_trace_artifact(storage)
+      video_artifact = upload_video_artifact(storage)
 
       previous_artifacts = storage.previous_artifacts(
         org: project.owner,
@@ -270,18 +274,39 @@ module Screenshots
         commit_sha: commit_sha,
         screenshots: uploaded,
         previous_screenshots: previous_artifacts.transform_values { |formats| formats[:png] }.compact,
-        trace_url: trace_url,
-        video_url: video_url
+        trace_url: trace_artifact&.dig("locator", "url"),
+        video_url: video_artifact&.dig("locator", "url")
       )
 
       @published_url = uploaded.first&.fetch(:url, nil)
+      @artifact_manifest = build_artifact_manifest(uploaded, trace_artifact:, video_artifact:)
+      persist_artifact_manifest!
+      @artifact_manifest
     end
 
     def upload_screenshot(storage, path)
       route_name = File.basename(path, ".png")
+      key = storage.object_key(
+        org: project.owner,
+        repo: project.repo,
+        pr_number: agent_run.pull_request_number,
+        commit_sha: commit_sha,
+        route_name: route_name
+      )
       screenshot = {
         route_name: route_name,
         summary: @hints.dig(route_name, "summary"),
+        artifact: build_artifact_entry(
+          kind: "screenshot",
+          content_type: Screenshots::Storage::PNG_CONTENT_TYPE,
+          key: key,
+          url: nil,
+          metadata: {
+            "route_name" => route_name,
+            "filename" => "#{route_name}.png",
+            "summary" => @hints.dig(route_name, "summary")
+          }
+        ),
         url: storage.upload(
           file_path: path,
           org: project.owner,
@@ -291,6 +316,7 @@ module Screenshots
           route_name: route_name
         )
       }
+      screenshot[:artifact]["locator"]["url"] = screenshot[:url]
 
       screenshot.merge(
         Screenshots::TraceArtifactExporter.call(
@@ -314,12 +340,28 @@ module Screenshots
     def upload_trace_artifact(storage)
       return nil if @trace_path.blank?
 
-      storage.upload_trace(
+      key = storage.trace_object_key(
+        org: project.owner,
+        repo: project.repo,
+        pr_number: agent_run.pull_request_number,
+        commit_sha: commit_sha
+      )
+      url = storage.upload_trace(
         file_path: @trace_path,
         org: project.owner,
         repo: project.repo,
         pr_number: agent_run.pull_request_number,
         commit_sha: commit_sha
+      )
+      build_artifact_entry(
+        kind: "playwright_trace",
+        content_type: "application/zip",
+        key: key,
+        url: url,
+        metadata: {
+          "filename" => "trace.zip",
+          "note" => "Playwright trace"
+        }
       )
     rescue Screenshots::Storage::StorageError => e
       logger.warn(
@@ -334,12 +376,27 @@ module Screenshots
     def upload_video_artifact(storage)
       return nil if @video_path.blank?
 
-      storage.upload_video(
+      key = storage.video_object_key(
+        org: project.owner,
+        repo: project.repo,
+        pr_number: agent_run.pull_request_number,
+        commit_sha: commit_sha
+      )
+      url = storage.upload_video(
         file_path: @video_path,
         org: project.owner,
         repo: project.repo,
         pr_number: agent_run.pull_request_number,
         commit_sha: commit_sha
+      )
+      build_artifact_entry(
+        kind: "capture_video",
+        content_type: Screenshots::Storage::WEBM_CONTENT_TYPE,
+        key: key,
+        url: url,
+        metadata: {
+          "filename" => "capture.webm"
+        }
       )
     rescue Screenshots::Storage::StorageError => e
       logger.warn(
@@ -524,6 +581,46 @@ module Screenshots
 
     def commit_sha
       agent_run.result_commit_sha || agent_run.base_commit_sha || agent_run.branch_name
+    end
+
+    def build_artifact_manifest(uploaded, trace_artifact:, video_artifact:)
+      screenshot_artifacts = uploaded.flat_map do |entry|
+        [ entry[:artifact], entry[:gif_artifact], entry[:video_artifact] ]
+      end
+
+      (screenshot_artifacts + [ trace_artifact, video_artifact ]).compact.map do |artifact|
+        artifact.merge(
+          "context" => artifact_context.merge(artifact.fetch("context", {}))
+        )
+      end
+    end
+
+    def build_artifact_entry(kind:, content_type:, key:, url:, metadata:)
+      {
+        "lane" => "object_storage",
+        "kind" => kind,
+        "content_type" => content_type,
+        "locator" => {
+          "key" => key,
+          "url" => url
+        }.compact,
+        "context" => artifact_context,
+        "metadata" => metadata.compact
+      }
+    end
+
+    def artifact_context
+      {
+        "account_id" => project.account_id,
+        "project_id" => project.id,
+        "agent_run_id" => agent_run.id
+      }
+    end
+
+    def persist_artifact_manifest!
+      metadata = agent_run.external_metadata.deep_dup
+      metadata["artifact_manifest"] = @artifact_manifest
+      agent_run.update!(external_metadata: metadata)
     end
 
     def update_status(status, screenshot_count: 0, screenshots_url: nil)

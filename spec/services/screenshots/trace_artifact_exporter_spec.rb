@@ -20,6 +20,40 @@ RSpec.describe Screenshots::TraceArtifactExporter do
 
   let(:storage) { instance_double(Screenshots::Storage) }
   let(:logger) { instance_double(ActiveSupport::Logger, warn: true) }
+  let(:gif_artifact) do
+    {
+      "kind" => "trace_gif",
+      "content_type" => "image/gif",
+      "locator" => {
+        "key" => "screenshots/acme/web/pr-42/abc1234def5678/homepage.gif",
+        "url" => "https://s3.example.com/homepage.gif"
+      },
+      "metadata" => {
+        "route_name" => "homepage",
+        "filename" => "homepage.gif"
+      }
+    }
+  end
+  let(:video_artifact) do
+    {
+      "kind" => "trace_video",
+      "content_type" => "video/webm",
+      "locator" => {
+        "key" => "screenshots/acme/web/pr-42/abc1234def5678/homepage.webm",
+        "url" => "https://s3.example.com/homepage.webm"
+      },
+      "metadata" => {
+        "route_name" => "homepage",
+        "filename" => "homepage.webm"
+      }
+    }
+  end
+
+  before do
+    allow(storage).to receive(:artifact_key) do |route_name:, extension:, **|
+      "screenshots/acme/web/pr-42/abc1234def5678/#{route_name}#{extension}"
+    end
+  end
 
   describe "#call" do
     context "with a single static screenshot frame" do
@@ -62,8 +96,10 @@ RSpec.describe Screenshots::TraceArtifactExporter do
       it "exports and uploads GIF and video artifacts" do
         expect(service.call).to eq(
           gif_url: "https://s3.example.com/homepage.gif",
+          gif_artifact: gif_artifact,
           video_url: "https://s3.example.com/homepage.webm",
-          video_filename: "homepage.webm"
+          video_filename: "homepage.webm",
+          video_artifact: video_artifact
         )
 
         expect(Screenshots::TraceToVideo).to have_received(:call).with(
@@ -112,8 +148,10 @@ RSpec.describe Screenshots::TraceArtifactExporter do
       it "exports and uploads GIF and video artifacts from the trace" do
         expect(export_from_trace).to eq(
           gif_url: "https://s3.example.com/homepage.gif",
+          gif_artifact: gif_artifact,
           video_url: "https://s3.example.com/homepage.webm",
-          video_filename: "homepage.webm"
+          video_filename: "homepage.webm",
+          video_artifact: video_artifact
         )
       end
 
@@ -177,7 +215,8 @@ RSpec.describe Screenshots::TraceArtifactExporter do
       it "keeps the uploaded video artifact and logs the GIF failure" do
         expect(service.call).to eq(
           video_url: "https://s3.example.com/homepage.webm",
-          video_filename: "homepage.webm"
+          video_filename: "homepage.webm",
+          video_artifact: video_artifact
         )
 
         expect(storage).to have_received(:upload_artifact).once

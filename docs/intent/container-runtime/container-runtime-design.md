@@ -247,6 +247,10 @@ is explicit value-object data, not ad hoc hashes.
   carries result summaries, log references, verification results, durable
   binary artifact references, and git output identity (`branch_name`,
   `result_commit_sha`, PR/review identity).
+- Durable binary artifact references are object-storage-first records with a
+  content type, storage locator (`key` and/or presigned `url`), and run
+  context (`account_id`, `project_id`, `agent_run_id`) so the control plane
+  never needs runner-local files after cleanup.
 - The manifest shape is deliberately host-path-free. Workspace translation and
   container/worktree identifiers remain runner-local implementation details;
   the manifest only carries repo/ref and declarative workspace mode.

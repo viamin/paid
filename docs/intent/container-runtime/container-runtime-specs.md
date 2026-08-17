@@ -218,10 +218,12 @@
   Git, control-plane API, object storage, and credentials. The output manifest
   SHALL carry result summaries, log references, verification results, durable
   binary artifact references, and git output identity, and SHALL distinguish
-  code outputs from durable binary artifacts and structured results. Secret
-  values SHALL be excluded by construction: credential lanes and service
-  declarations may carry only identifiers or env keys, never secret payloads
-  or host paths.
+  code outputs from durable binary artifacts and structured results. Durable
+  binary artifact references SHALL include content type, object-storage key
+  and/or URL, and run context (`account_id`, `project_id`, `agent_run_id`).
+  Secret values SHALL be excluded by construction: credential lanes and
+  service declarations may carry only identifiers or env keys, never secret
+  payloads or host paths.
   *Tests:* `spec/services/execution_runners_spec.rb`
   *Code:* `ExecutionRunners::ExecutionInputManifest`,
   `ExecutionRunners::ExecutionOutputManifest`,

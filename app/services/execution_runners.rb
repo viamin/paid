@@ -748,16 +748,63 @@ module ExecutionRunners
     end
 
     def self.build_binary_artifact_refs(agent_run)
-      Array(agent_run.verification_result["artifacts"]).filter_map do |artifact|
-        next unless artifact.is_a?(Hash) && artifact["url"].present?
+      manifest_artifacts = Array(agent_run.external_metadata["artifact_manifest"])
+      verification_artifacts = Array(agent_run.verification_result["artifacts"])
 
+      (manifest_artifacts + verification_artifacts).filter_map do |artifact|
+        normalize_binary_artifact_ref(artifact, agent_run: agent_run)
+      end
+    end
+
+    def self.normalize_binary_artifact_ref(artifact, agent_run:)
+      return unless artifact.is_a?(Hash)
+
+      normalized = artifact.deep_stringify_keys
+      locator = normalized_locator(normalized)
+      return if locator.blank?
+
+      {
+        "lane" => "object_storage",
+        "kind" => normalized["kind"].presence || "artifact",
+        "content_type" => normalized["content_type"].presence,
+        "locator" => locator,
+        "context" => normalized_context(normalized, agent_run: agent_run),
+        "metadata" => normalized_metadata(normalized)
+      }.compact
+    end
+
+    def self.normalized_locator(artifact)
+      locator = if artifact["locator"].is_a?(Hash)
+        artifact["locator"].deep_stringify_keys.slice("key", "url")
+      else
         {
-          "lane" => "object_storage",
-          "kind" => artifact["kind"].presence || "artifact",
-          "locator" => { "url" => artifact["url"] },
-          "metadata" => { "note" => artifact["note"] }.compact
+          "key" => artifact["storage_key"].presence,
+          "url" => artifact["url"].presence
         }
       end
+
+      locator.compact.presence
+    end
+
+    def self.normalized_context(artifact, agent_run:)
+      context = if artifact["context"].is_a?(Hash)
+        artifact["context"].deep_stringify_keys.slice("account_id", "project_id", "agent_run_id")
+      else
+        {}
+      end
+
+      context["account_id"] ||= agent_run.project&.account_id
+      context["project_id"] ||= agent_run.project_id
+      context["agent_run_id"] ||= agent_run.id
+      context.compact.presence
+    end
+
+    def self.normalized_metadata(artifact)
+      raw_metadata = artifact["metadata"]
+      metadata = raw_metadata.is_a?(Hash) ? raw_metadata.deep_stringify_keys : {}
+      metadata["note"] ||= artifact["note"].presence
+      metadata["path"] ||= artifact["path"].presence
+      metadata.compact.presence
     end
 
     def self.build_structured_results(verification)
