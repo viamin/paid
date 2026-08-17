@@ -433,7 +433,8 @@ RSpec.describe ExecutionRunners do
         source_pull_request_number: 7,
         custom_prompt: "Build the thing",
         prompt_version: create(:prompt_version),
-        issue: create(:issue, project:)
+        issue: create(:issue, project:),
+        service_environment: { "DATABASE_URL" => "postgres://secret@db", "API_TOKEN" => "shh" }
       )
     end
     let(:services) do
@@ -554,6 +555,18 @@ RSpec.describe ExecutionRunners do
       expect(manifest.lanes["credentials"]).to match_array(expected_credential_refs)
       expect(manifest.execution.dig("authority_grants", "grants")).to include(
         hash_including("kind" => "service_credentials")
+      )
+    end
+
+    it "defaults authority grants to proxy delivery when networking policy is absent" do
+      manifest = described_class.from_run_spec(run_spec.with(networking_policy: nil))
+
+      expect(manifest.execution.dig("authority_grants", "grants")).to include(
+        hash_including(
+          "kind" => "model_provider_credentials",
+          "delivery" => "proxy_mode",
+          "metadata" => hash_including("network_mode" => "")
+        )
       )
     end
 

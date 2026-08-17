@@ -281,7 +281,7 @@ module ExecutionRunners
         grant("paid_api_proxy_token", delivery: "run_proxy_token", scope: "run"),
         grant("github_authority", delivery: "control_plane_proxy", scope: "project"),
         grant("model_provider_credentials", delivery: delivery, scope: "runner",
-              metadata: { "runner_key" => runner_key_for(agent_run), "network_mode" => networking_policy.mode.to_s })
+              metadata: { "runner_key" => runner_key_for(agent_run), "network_mode" => networking_policy&.mode.to_s })
       ]
 
       if delivery == "subscription_auth"
@@ -320,7 +320,7 @@ module ExecutionRunners
     private_class_method :grant
 
     def self.provider_delivery_for(networking_policy)
-      case networking_policy.mode
+      case networking_policy&.mode
       when :subscription_auth then "subscription_auth"
       when :direct_outbound then "direct_outbound"
       else "proxy_mode"
