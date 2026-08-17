@@ -8,7 +8,7 @@
 - **Status**: Draft
 - **Type**: Operations + Security Architecture
 - **Priority**: P1
-- **Related RDRs**: [RDR-011](RDR-011-observability.md), [RDR-018a](RDR-018a-billing-aggregation.md), [RDR-025a](RDR-025a-runner-quota-tracking.md), [RDR-033](RDR-033-worker-pool-scaling-algorithm.md), [RDR-049](RDR-049-configuration-health-checks.md), [RDR-050](RDR-050-account-queue-fairness-mode.md), [RDR-055](RDR-055-remote-execution-data-contract.md) (data movement audit), [RDR-056](RDR-056-execution-authority-network-and-isolation.md) (network policy and authority audit), [RDR-057](RDR-057-immutable-agent-runtime-images.md) (image digest in audit), [RDR-058](RDR-058-external-execution-resource-ledger.md) (resource ledger IDs in audit events)
+- **Related RDRs**: [RDR-011](RDR-011-observability.md), [RDR-018a](RDR-018a-billing-aggregation.md), [RDR-025a](RDR-025a-runner-quota-tracking.md), [RDR-033](RDR-033-worker-pool-scaling-algorithm.md), [RDR-049](RDR-049-configuration-health-checks.md), [RDR-050](RDR-050-account-queue-fairness-mode.md), [RDR-057](RDR-057-remote-execution-data-contract.md) (data movement audit), [RDR-058](RDR-058-execution-authority-network-and-isolation.md) (network policy and authority audit), [RDR-059](RDR-059-immutable-agent-runtime-images.md) (image digest in audit), [RDR-060](RDR-060-external-execution-resource-ledger.md) (resource ledger IDs in audit events)
 - **Related Issues**: #3353 (execution concurrency), #3354 (resource requirements), #3355 (infra cost accounting), #3357 (health/shutdown), #3359 (production readiness)
 
 ## Problem Statement

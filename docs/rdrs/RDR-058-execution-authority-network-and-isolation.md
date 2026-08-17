@@ -8,7 +8,7 @@
 - **Status**: Draft
 - **Type**: Security Architecture
 - **Priority**: P1
-- **Related RDRs**: [RDR-004](RDR-004-container-isolation.md), [RDR-006](RDR-006-secrets-proxy.md), [RDR-010](RDR-010-multi-tenancy-rbac.md), [RDR-024](RDR-024-multi-tenancy-isolation-strategy.md), [RDR-041](RDR-041-subscription-runner-auth-lifecycle.md), [RDR-045](RDR-045-live-web-app-preview-agent-verification.md), [RDR-055](RDR-055-remote-execution-data-contract.md) (credential lane transport), [RDR-059](RDR-059-infrastructure-safety-and-audit.md) (network policy audit)
+- **Related RDRs**: [RDR-004](RDR-004-container-isolation.md), [RDR-006](RDR-006-secrets-proxy.md), [RDR-010](RDR-010-multi-tenancy-rbac.md), [RDR-024](RDR-024-multi-tenancy-isolation-strategy.md), [RDR-041](RDR-041-subscription-runner-auth-lifecycle.md), [RDR-045](RDR-045-live-web-app-preview-agent-verification.md), [RDR-057](RDR-057-remote-execution-data-contract.md) (credential lane transport), [RDR-061](RDR-061-infrastructure-safety-and-audit.md) (network policy audit)
 - **Related Issues**: #3336, #3341 (networking policy), #3343 (services/sidecars), #3356 (runner capabilities)
 
 ## Problem Statement

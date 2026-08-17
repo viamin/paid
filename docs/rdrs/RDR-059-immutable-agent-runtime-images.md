@@ -8,7 +8,7 @@
 - **Status**: Draft
 - **Type**: Architecture + Operations
 - **Priority**: P1
-- **Related RDRs**: [RDR-007](RDR-007-agent-cli-abstraction.md), [RDR-038](RDR-038-free-models-catalog-and-runner.md), [RDR-040](RDR-040-runner-model-compatibility-contracts.md), [RDR-046](RDR-046-polyglot-language-detection-and-test-execution.md), [RDR-048](RDR-048-multi-host-docker-backend-support.md), [RDR-055](RDR-055-remote-execution-data-contract.md) (image identity in RunSpec and execution manifest), [RDR-059](RDR-059-infrastructure-safety-and-audit.md) (image digest in audit events)
+- **Related RDRs**: [RDR-007](RDR-007-agent-cli-abstraction.md), [RDR-038](RDR-038-free-models-catalog-and-runner.md), [RDR-040](RDR-040-runner-model-compatibility-contracts.md), [RDR-046](RDR-046-polyglot-language-detection-and-test-execution.md), [RDR-048](RDR-048-multi-host-docker-backend-support.md), [RDR-057](RDR-057-remote-execution-data-contract.md) (image identity in RunSpec and execution manifest), [RDR-061](RDR-061-infrastructure-safety-and-audit.md) (image digest in audit events)
 - **Related Issues**: #3336, #3354, #3358
 
 ## Problem Statement
