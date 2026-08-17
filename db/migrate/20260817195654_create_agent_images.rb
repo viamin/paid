@@ -66,5 +66,27 @@ class CreateAgentImages < ActiveRecord::Migration[8.1]
       where: "status <> 'active'",
       name: "idx_agent_images_inactive",
       comment: "Partial index over non-active images so audit and rollback queries against deprecated/blocked rows stay fast as the active set grows."
+
+    reversible do |dir|
+      dir.up do
+        safety_assured do
+          execute <<~SQL
+            ALTER TABLE agent_images ENABLE ROW LEVEL SECURITY;
+            ALTER TABLE agent_images FORCE ROW LEVEL SECURITY;
+            CREATE POLICY tenant_isolation ON agent_images
+              USING (paid_tenant_bypass() OR account_id = paid_current_account_id())
+              WITH CHECK (paid_tenant_bypass() OR account_id = paid_current_account_id());
+          SQL
+        end
+      end
+
+      dir.down do
+        safety_assured do
+          execute "DROP POLICY IF EXISTS tenant_isolation ON agent_images"
+          execute "ALTER TABLE agent_images NO FORCE ROW LEVEL SECURITY"
+          execute "ALTER TABLE agent_images DISABLE ROW LEVEL SECURITY"
+        end
+      end
+    end
   end
 end

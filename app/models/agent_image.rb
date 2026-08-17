@@ -27,6 +27,11 @@
 # @see docs/intent/container-runtime/container-runtime-specs.md
 class AgentImage < ApplicationRecord
   STATUSES = %w[active deprecated blocked].freeze
+  ALLOWED_STATUS_TRANSITIONS = {
+    "active" => %w[deprecated blocked],
+    "deprecated" => %w[blocked],
+    "blocked" => []
+  }.freeze
   ARCHITECTURES = %w[amd64 arm64 386 arm ppc64le s390x].freeze
   SHA256_HEX_LENGTH = 64
   DEFAULT_REGISTRY = "docker.io"
@@ -61,6 +66,8 @@ class AgentImage < ApplicationRecord
   validates :built_at, presence: true
   validate :identity_unique_within_account, on: :create
   validate :immutable_identity_after_creation, on: :update
+  validate :status_transition_is_allowed, on: :update
+  validate :status_audit_fields_present
 
   before_validation :normalize_fields
 
@@ -183,5 +190,32 @@ class AgentImage < ApplicationRecord
     return unless (changes.keys & IMMUTABLE_ATTRIBUTES).any?
 
     errors.add(:base, "agent image identity fields are immutable after creation")
+  end
+
+  def status_transition_is_allowed
+    return unless will_save_change_to_status?
+
+    from_status, to_status = status_change_to_be_saved
+    return if from_status == to_status
+    return if ALLOWED_STATUS_TRANSITIONS.fetch(from_status, []).include?(to_status)
+
+    errors.add(:status, "cannot transition from #{from_status} to #{to_status}")
+  end
+
+  def status_audit_fields_present
+    case status
+    when "deprecated"
+      require_lifecycle_field(:deprecated_at, "must be present when status is deprecated")
+      require_lifecycle_field(:deprecation_reason, "must be present when status is deprecated")
+    when "blocked"
+      require_lifecycle_field(:blocked_at, "must be present when status is blocked")
+      require_lifecycle_field(:blocked_reason, "must be present when status is blocked")
+    end
+  end
+
+  def require_lifecycle_field(attribute, message)
+    return if public_send(attribute).present?
+
+    errors.add(attribute, message)
   end
 end

@@ -243,6 +243,29 @@ RSpec.describe AgentImage, type: :model do # @spec CONTAINER-RUNTIME-019
       image = create(:agent_image, :blocked)
       expect { image.deprecate!(reason: "irrelevant") }.to raise_error(ArgumentError)
     end
+
+    it "rejects direct status updates without the deprecation audit fields" do
+      image = create(:agent_image)
+
+      expect { image.update!(status: "deprecated") }
+        .to raise_error(ActiveRecord::RecordInvalid, /Deprecated at must be present/)
+    end
+
+    it "allows a direct status update when the deprecation audit fields are supplied" do
+      image = create(:agent_image)
+      freeze_time = Time.current
+
+      travel_to(freeze_time) do
+        image.update!(
+          status: "deprecated",
+          deprecated_at: freeze_time,
+          deprecation_reason: "superseded by paid-agent:latest-amd64-2026.08.17"
+        )
+      end
+
+      expect(image.reload).to be_deprecated
+      expect(image.deprecated_at).to be_within(1.second).of(freeze_time)
+    end
   end
 
   describe "blocking" do # @spec CONTAINER-RUNTIME-022
@@ -269,6 +292,25 @@ RSpec.describe AgentImage, type: :model do # @spec CONTAINER-RUNTIME-019
       image = create(:agent_image)
       expect { image.block!(reason: nil) }.to raise_error(ArgumentError)
       expect { image.block!(reason: "") }.to raise_error(ArgumentError)
+    end
+
+    it "rejects direct status updates without the blocking audit fields" do
+      image = create(:agent_image)
+
+      expect { image.update!(status: "blocked") }
+        .to raise_error(ActiveRecord::RecordInvalid, /Blocked at must be present/)
+    end
+
+    it "rejects an illegal blocked -> deprecated status transition" do
+      image = create(:agent_image, :blocked)
+
+      expect do
+        image.update!(
+          status: "deprecated",
+          deprecated_at: Time.current,
+          deprecation_reason: "rollback"
+        )
+      end.to raise_error(ActiveRecord::RecordInvalid, /Status cannot transition from blocked to deprecated/)
     end
   end
 
