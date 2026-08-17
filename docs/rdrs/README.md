@@ -49,6 +49,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | [RDR-007](RDR-007-agent-cli-abstraction.md) | Agent CLI Abstraction (agent-harness gem) | Implemented | High |
 | [RDR-008](RDR-008-model-selection.md) | Model Selection Strategy | Implemented | Medium |
 | [RDR-034](RDR-034-tier-based-runner-fallback.md) | Tier-Based Runner Fallback | Implemented | P1 |
+| [RDR-059](RDR-059-immutable-agent-runtime-images.md) | Immutable Agent Runtime Images | Implemented | P1 |
 
 ### Intelligence
 

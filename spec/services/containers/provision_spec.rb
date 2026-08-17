@@ -100,6 +100,18 @@ RSpec.describe Containers::Provision do
     allow(provision).to receive(:apply_network_restrictions!)
   end
 
+  def runtime_image_selection_metadata(digest: "#{'1' * 64}")
+    {
+      "requested_image" => "paid-agent:latest",
+      "resolved_image" => "ghcr.io/acme/paid-agent@sha256:#{digest}",
+      "digest" => "sha256:#{digest}",
+      "architecture" => "amd64",
+      "registry" => "ghcr.io",
+      "repository" => "acme/paid-agent",
+      "provenance_reference" => "base-amd64-2026-08-17"
+    }
+  end
+
   def build_remote_backend_without_host_paths(container, &create_container)
     backend = instance_double(
       Containers::Backends::Base,
@@ -286,6 +298,27 @@ RSpec.describe Containers::Provision do
       svc = described_class.new(agent_run: agent_run, worktree_path: worktree_path, image: "custom:latest")
 
       expect(svc.options[:image]).to eq("custom:latest")
+    end
+
+    it "records immutable runtime image metadata for production selections" do
+      provision_project = build_stubbed(:project)
+      provision_run = build_stubbed(:agent_run, project: provision_project)
+      selection_metadata = runtime_image_selection_metadata
+
+      allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("production"))
+      allow(Containers::RuntimeImageSelector).to receive(:select).and_return(
+        instance_double(
+          Containers::RuntimeImageSelector::Result,
+          image: "ghcr.io/acme/paid-agent@sha256:#{'1' * 64}",
+          metadata: selection_metadata
+        )
+      )
+      expect(provision_run).to receive(:record_runtime_image_selection!).with(hash_including(selection_metadata))
+
+      svc = described_class.new(agent_run: provision_run, worktree_path: worktree_path)
+      allow(svc).to receive(:resolve_user_setting_overrides).and_return({})
+
+      expect(svc.options[:image]).to eq("ghcr.io/acme/paid-agent@sha256:#{'1' * 64}")
     end
 
     it "applies container_memory_bytes from user settings" do

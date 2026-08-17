@@ -2293,6 +2293,7 @@ class AgentRun < ApplicationRecord
 
   PROMPT_ASSEMBLY_KEY = "prompt_assembly"
   ISSUE_PROMPT_ASSEMBLY_KEY = "issue_prompt_assembly"
+  RUNTIME_IMAGE_KEY = "runtime_image"
 
   # Persists prompt-assembly provenance (digest + section list) on the run so
   # configuration bundles and run metadata can fingerprint exactly which
@@ -2318,6 +2319,24 @@ class AgentRun < ApplicationRecord
 
   def prompt_assembly_digest
     prompt_assembly_provenance&.dig("digest")
+  end
+
+  def record_runtime_image_selection!(selection)
+    # @spec IMMUTABLE-IMAGE-002
+    return if selection.blank?
+
+    metadata = external_metadata.is_a?(Hash) ? external_metadata.dup : {}
+    metadata[RUNTIME_IMAGE_KEY] = selection
+
+    if persisted?
+      update_columns(external_metadata: metadata)
+    else
+      self.external_metadata = metadata
+    end
+  end
+
+  def runtime_image_selection
+    external_metadata.is_a?(Hash) ? external_metadata[RUNTIME_IMAGE_KEY] : nil
   end
 
   # Returns the base prompt for the review goal.

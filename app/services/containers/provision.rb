@@ -268,7 +268,14 @@ module Containers
     # and image resolution cost (DB queries plus profile lookups) that only
     # provisioning actually needs.
     def options
-      @options ||= DEFAULTS.merge(resolve_user_setting_overrides).merge(resolve_project_image).merge(@raw_options)
+      @options ||= begin
+        base_options = DEFAULTS.merge(resolve_user_setting_overrides)
+        image_selection = resolve_runtime_image_selection(default_image: base_options[:image])
+
+        base_options
+          .merge(image: image_selection.image)
+          .merge(@raw_options.except(:image))
+      end
     end
 
     # Provisions a new container with security hardening.
@@ -1283,17 +1290,27 @@ module Containers
       overrides
     end
 
-    # Resolves the language-appropriate agent image from the project's detected
-    # runtime profile (RDR-046 / POLYGLOT-TEST-004). Sits between user-setting
-    # overrides and caller-supplied options, so an explicit +image:+ (e.g. pool
-    # reconnect, credential maintenance) still wins. Returns an empty hash when
-    # there is no project or the project resolves to the base image, leaving
-    # +DEFAULTS[:image]+ as the effective default.
-    def resolve_project_image
-      return {} unless project
+    # The existing language-aware resolver still chooses the requested
+    # runtime/image profile (RDR-046). RDR-059 layers on the final selection:
+    # development/test keep mutable tags for local iteration, while production
+    # resolves the requested tag to an immutable digest and persists the
+    # selection metadata on the run.
+    def resolve_runtime_image_selection(default_image:)
+      # @spec IMMUTABLE-IMAGE-001, IMMUTABLE-IMAGE-002, IMMUTABLE-IMAGE-003
+      requested_image = @raw_options[:image].presence || resolve_requested_project_image || default_image
+      selection = Containers::RuntimeImageSelector.select(
+        project: project,
+        requested_image: requested_image,
+        environment: Rails.env
+      )
+      agent_run&.record_runtime_image_selection!(selection.metadata)
+      selection
+    end
 
-      resolved = Containers::ImageResolver.resolve(project)
-      resolved == Containers::ImageResolver::BASE_IMAGE ? {} : { image: resolved }
+    def resolve_requested_project_image
+      return unless project
+
+      Containers::ImageResolver.resolve(project)
     end
 
     # In manual mode the memory limit comes straight from
