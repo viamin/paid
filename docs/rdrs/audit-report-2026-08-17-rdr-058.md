@@ -2,7 +2,7 @@
 
 - **RDR**: [RDR-058: Execution Authority, Network Policy, and Isolation](RDR-058-execution-authority-network-and-isolation.md)
 - **Audit date**: 2026-08-17
-- **Closeout issue**: [#3418](https://github.com/viamin/paid/issues/3418)
+- **Umbrella issue**: [#3418](https://github.com/viamin/paid/issues/3418) (remains open pending the remaining RDR-058 gaps)
 - **Conclusion**: Partially Implemented. The enforcement machinery for the
   default authority, network, and isolation invariants is shipped and covered by
   passing spec suites (see [Validation Evidence](#validation-evidence)). The
@@ -18,9 +18,10 @@
 
 ## Validation Evidence
 
-Executed during the 2026-08-17 closeout under issue
-[#3418](https://github.com/viamin/paid/issues/3418). Both batches passed in
-full; no failures, no pending examples.
+Executed during the 2026-08-17 closeout audit recorded against umbrella issue
+[#3418](https://github.com/viamin/paid/issues/3418). The umbrella remains open
+because the remaining RDR-058 gaps are still tracked in its blocking
+dependencies. Both batches passed in full; no failures, no pending examples.
 
 ```console
 $ bin/rspec spec/services/network_policy_spec.rb \

@@ -31,7 +31,8 @@ in Draft status.
 
 ### 2026-08-17 Closeout
 
-Audit completed under issue [#3418](https://github.com/viamin/paid/issues/3418). See
+Audit recorded against umbrella issue
+[#3418](https://github.com/viamin/paid/issues/3418) without closing it. See
 [`audit-report-2026-08-17-rdr-058.md`](audit-report-2026-08-17-rdr-058.md) for
 full criterion-by-criterion evidence and gap analysis, and a per-dependency
 reconciliation of the six blocking children of #3418.
