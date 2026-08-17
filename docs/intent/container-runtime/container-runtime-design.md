@@ -10,7 +10,9 @@ prefix: CONTAINER-RUNTIME
 > [RDR-019](../../rdrs/RDR-019-remote-container-execution.md),
 > [RDR-020](../../rdrs/RDR-020-service-container-architecture.md),
 > [RDR-043](../../rdrs/RDR-043-zero-config-docker-capacity-autoscaling.md), and
-> [RDR-048](../../rdrs/RDR-048-multi-host-docker-backend-support.md). This
+> [RDR-048](../../rdrs/RDR-048-multi-host-docker-backend-support.md), and
+> [RDR-057](../../rdrs/RDR-057-remote-execution-data-contract.md), and
+> [RDR-062](../../rdrs/RDR-062-execution-network-policy-intent.md). This
 > segment also records the still-shipped legacy residue from superseded
 > [RDR-005](../../rdrs/RDR-005-git-worktree-management.md).
 
@@ -205,6 +207,48 @@ heartbeat ownership, pool workspace through the runner.
 default workspace strategy (named volumes with in-container clone), host
 bind-mount support, and all provision-side workspace/heartbeat tests are
 preserved until the deferred specs land.
+
+### Remote execution manifests (RDR-057)
+
+`ExecutionRunners` now also defines the provider-neutral manifests that cross
+the control-plane/runner boundary for remote execution. The manifest contract
+is explicit value-object data, not ad hoc hashes.
+
+- `ExecutionInputManifest` is derived from `RunSpec` and carries repository/ref,
+  execution spec, prompt/context references, service declarations, and the four
+  transfer lanes from RDR-057: Git, control-plane API, object storage, and
+  credentials.
+- `ExecutionOutputManifest` is derived from `ExecutionResult` + `AgentRun` and
+  carries result summaries, log references, verification results, durable
+  binary artifact references, and git output identity (`branch_name`,
+  `result_commit_sha`, PR/review identity).
+- The manifest shape is deliberately host-path-free. Workspace translation and
+  container/worktree identifiers remain runner-local implementation details;
+  the manifest only carries repo/ref and declarative workspace mode.
+- Secrets are excluded by construction. Credential lanes carry only references
+  (variable names, service names, config keys) and never secret values; service
+  declarations expose `env_keys`, not `env` payloads.
+
+### Provider-neutral networking intent (RDR-062)
+
+`ExecutionRunners::NetworkingPolicy` now names six coarse egress intents
+instead of leaking Docker network names across the runner boundary:
+`:no_outbound`, `:proxy_only`, `:git_plus_proxy`, `:approved_services`,
+`:model_direct`, and `:explicit_internet`.
+
+- The three legacy constructors (`:proxy_restricted`, `:subscription_auth`,
+  `:direct_outbound`) remain valid for compatibility, but
+  `NetworkingPolicy#canonical_mode` normalizes them to the canonical intent
+  names so runner-side translation paths only need to understand one
+  vocabulary.
+- `ExecutionRunners::Base.supports_policy?` is part of the runner contract.
+  `LocalDockerRunner.compatible?` rejects specs whose networking intent the
+  runner cannot implement before any provision-side effects occur.
+- `LocalDockerRunner` remains the only place that translates intent into
+  Docker implementation details. The four restricted intents use the
+  restricted `paid_agent` network plus an allowlist firewall whose scope
+  depends on the intent; the two unrestricted intents use the infrastructure
+  network without a firewall.
 
 ## References
 

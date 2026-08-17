@@ -27,7 +27,7 @@ module ExecutionRunners
   # +running_calls+, +status_calls+, +reconnect_calls+, +cancel_calls+, and
   # +cleanup_calls+ so specs can assert the runner was exercised the
   # expected number of times with the expected arguments.
-  # @spec CONTAINER-RUNTIME-018
+  # @spec CONTAINER-RUNTIME-019
   class ContractRunner < Base
     RUNNER_TYPE = :contract
 

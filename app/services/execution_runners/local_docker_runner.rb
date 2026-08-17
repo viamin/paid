@@ -23,7 +23,7 @@ module ExecutionRunners
   # @spec CONTAINER-RUNTIME-013
   # @spec CONTAINER-RUNTIME-014
   # @spec CONTAINER-RUNTIME-017
-  # @spec CONTAINER-RUNTIME-018
+  # @spec CONTAINER-RUNTIME-019
   class LocalDockerRunner < Base
     RUNNER_TYPE = :local_docker
 
@@ -205,7 +205,7 @@ module ExecutionRunners
     # future remote runner returns +false+ for the intents its native egress
     # primitives cannot implement so the queue scheduler rejects the spec
     # before any provision attempt.
-    # @spec CONTAINER-RUNTIME-018
+    # @spec CONTAINER-RUNTIME-019
     def self.supports_policy?(policy)
       policy.present? && ExecutionRunners::NETWORKING_POLICY_KNOWN_MODES.include?(policy.mode)
     end
