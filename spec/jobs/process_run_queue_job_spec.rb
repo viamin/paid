@@ -881,6 +881,20 @@ RSpec.describe ProcessRunQueueJob do
       expect(DashboardBroadcastJob).to have_been_enqueued.with(failing_run.project.account_id)
     end
 
+    it "admits a claimed run even when unrelated validations drift after queueing" do
+      queued_run = create(:agent_run, :queued)
+      other_user = create(:user)
+      queued_run.update_columns(initiating_user_id: other_user.id)
+      allow(ConfigurationBundles::AssignToRun).to receive(:call)
+
+      result = job.send(:start_claimed_run, queued_run)
+
+      expect(result).to be(true)
+      expect(queued_run.reload.status).to eq("running")
+      expect(queued_run.temporal_workflow_id).to be_present
+      expect(queued_run.started_at).to be_nil
+    end
+
     it "fails run when project owner cannot be resolved" do
       job = described_class.new
       project = create(:project)

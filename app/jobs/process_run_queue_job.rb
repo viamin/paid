@@ -909,7 +909,11 @@ class ProcessRunQueueJob < ApplicationJob
     # Write the planned workflow_id before starting the workflow so
     # StaleRunDetectorJob can cancel an orphaned workflow even if the
     # process crashes between start_workflow and the DB write.
-    agent_run.update!(**update_attributes)
+    # Queue admission is an infrastructure transition, so skip unrelated
+    # validations that may have drifted since the run was created while
+    # still saving normally to fire after_commit broadcasts/followups.
+    agent_run.assign_attributes(**update_attributes)
+    agent_run.save!(validate: false)
 
     # Keep temporal_workflow_id set on failure — if start_workflow raises
     # due to a network timeout, the workflow may have started server-side.
