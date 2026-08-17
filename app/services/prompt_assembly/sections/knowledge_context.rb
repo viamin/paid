@@ -12,15 +12,15 @@ class PromptAssembly::Sections::KnowledgeContext
 
   # @spec KNOWLEDGE-005
   def build_section
-    bundle = Knowledge::ContextBundle::Build.call(
+    @bundle = Knowledge::ContextBundle::Build.call(
       issue: issue,
       project: project,
       agent_run: agent_run,
       agent_run_id: agent_run&.id
     )
-    return "" if bundle[:content].blank?
+    return "" if @bundle[:content].blank?
 
-    unwrap_quarantine(bundle[:content])
+    unwrap_quarantine(@bundle[:content])
   end
 
   def trust_level
@@ -33,6 +33,16 @@ class PromptAssembly::Sections::KnowledgeContext
 
   def skip_reason
     "no_knowledge_context"
+  end
+
+  def section_metadata
+    return if @bundle.blank?
+
+    {
+      sections: @bundle[:sections],
+      total_tokens: @bundle[:total_tokens],
+      queries_made: @bundle[:queries_made]
+    }.compact
   end
 
   # Knowledge::ContextBundle::Build already frames its output with the

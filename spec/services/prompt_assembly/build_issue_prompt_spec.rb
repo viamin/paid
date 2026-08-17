@@ -216,6 +216,24 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
       expect(comments_section.trust_level).to eq(:trusted)
     end
 
+    it "records comments metadata from the same capped set that was rendered" do
+      settings = OpenStruct.new(max_prompt_comments: 1, max_comment_length: 2000)
+      allow(AgentRuns::UserSettingsResolver).to receive(:call).and_return(settings)
+
+      result = described_class.call(
+        issue: issue,
+        project: project,
+        github_client: github_client
+      )
+
+      comments_provenance = result.provenance[:sections].find { |section| section[:key] == :trusted_comments }
+      expect(comments_provenance[:metadata]).to include(
+        comment_count: 1,
+        untrusted_excluded: 1
+      )
+      expect(result.text.scan("- **viamin**:").length).to eq(1)
+    end
+
     it "downloads comments only once across sections" do
       described_class.call(
         issue: issue, project: project, github_client: github_client
@@ -289,6 +307,17 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
 
       knowledge_section = result.sections.find { |s| s.key == :knowledge_context }
       expect(knowledge_section.trust_level).to eq(:quarantined)
+    end
+
+    it "records knowledge bundle provenance metadata" do
+      result = described_class.call(issue: issue, project: project)
+
+      knowledge_provenance = result.provenance[:sections].find { |section| section[:key] == :knowledge_context }
+      expect(knowledge_provenance[:metadata]).to include(
+        sections: [ :routes ],
+        total_tokens: 50,
+        queries_made: 5
+      )
     end
   end
 

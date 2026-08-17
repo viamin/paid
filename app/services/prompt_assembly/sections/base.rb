@@ -35,7 +35,8 @@ module PromptAssembly
             source: section_source,
             content: "",
             trust_level: :excluded,
-            exclusion_reason: skip_reason || "empty"
+            exclusion_reason: skip_reason || "empty",
+            metadata: section_metadata
           )
         else
           PromptAssembly::Section.new(
@@ -44,7 +45,8 @@ module PromptAssembly
             content: content,
             trust_level: trust_level,
             required: required,
-            inclusion_reason: inclusion_reason
+            inclusion_reason: inclusion_reason,
+            metadata: section_metadata
           )
         end
       end
@@ -76,6 +78,11 @@ module PromptAssembly
 
       # @return [String, nil] reason when the section is empty (override for context)
       def skip_reason
+        nil
+      end
+
+      # @return [Hash, nil] optional structured metadata persisted in provenance
+      def section_metadata
         nil
       end
 

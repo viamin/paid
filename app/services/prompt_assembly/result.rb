@@ -68,7 +68,8 @@ module PromptAssembly
         source: section.source,
         trust_level: section.trust_level,
         required: section.required?,
-        inclusion_reason: section.inclusion_reason
+        inclusion_reason: section.inclusion_reason,
+        metadata: section.metadata
       }.compact
     end
   end
