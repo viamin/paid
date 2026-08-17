@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_17_195654) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_17_205029) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -140,6 +140,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_17_195654) do
     t.datetime "deprecated_at", comment: "Timestamp the image was transitioned to deprecated. Preserved for historical queries; not the same as blocked."
     t.text "deprecation_reason", comment: "Free-text reason captured when the image was deprecated (e.g. the successor image reference)."
     t.string "digest", null: false, comment: "Immutable content-addressed identity, accepted as sha256:<64-hex> or 64-hex characters. The digest is the production source of truth for what image runs."
+    t.jsonb "log_data", comment: "Logidze change history for image lifecycle transitions and provenance/metadata edits."
     t.jsonb "metadata", default: {}, null: false, comment: "Extensible observability and operations metadata (build log URL, runbook link, signing identity). Mutable without affecting the image identity."
     t.string "name", null: false, comment: "Logical image profile name (e.g. base, elixir-node, ruby) used for ImageResolver / scheduling decisions."
     t.jsonb "provenance", default: {}, null: false, comment: "Build provenance such as the GitHub Actions run id, repository, ref, and commit SHA that produced the image. Mutable for late-arriving provenance updates."
@@ -4021,6 +4022,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_17_195654) do
        LANGUAGE sql
        STABLE
       AS $function$
+        -- @spec POSTGRESQL-PERSISTENCE-007
+        -- version: 1
         SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
       $function$
   SQL
@@ -4031,6 +4034,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_17_195654) do
        LANGUAGE sql
        STABLE
       AS $function$
+        -- @spec POSTGRESQL-PERSISTENCE-007
+        -- version: 1
         SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
       $function$
   SQL
@@ -4041,6 +4046,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_17_195654) do
 
   create_trigger :logidze_on_accounts, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_accounts BEFORE INSERT OR UPDATE ON public.accounts FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :logidze_on_agent_images, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_agent_images BEFORE INSERT OR UPDATE ON public.agent_images FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
   create_trigger :logidze_on_billing_invoices, sql_definition: <<-SQL

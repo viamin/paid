@@ -19,14 +19,19 @@
 # a fresh image is blocked before any deprecation window. Transitions are
 # idempotent so retrying an Avo action or job does not double-stamp timestamps.
 #
+# @spec CONTAINER-RUNTIME-019
+# @spec CONTAINER-RUNTIME-020
+# @spec CONTAINER-RUNTIME-021
+# @spec CONTAINER-RUNTIME-022
 # @see docs/rdrs/RDR-059-immutable-agent-runtime-images.md
-# @see docs/intent/container-runtime/container-runtime-specs.md (CONTAINER-RUNTIME-019..)
+# @see docs/intent/container-runtime/container-runtime-specs.md
 class AgentImage < ApplicationRecord
   STATUSES = %w[active deprecated blocked].freeze
   ARCHITECTURES = %w[amd64 arm64 386 arm ppc64le s390x].freeze
   SHA256_HEX_LENGTH = 64
   DEFAULT_REGISTRY = "docker.io"
   SHA256_PREFIX = "sha256:"
+  DIGEST_FORMAT = /\A#{SHA256_PREFIX}[0-9a-f]{#{SHA256_HEX_LENGTH}}\z/
 
   # Identity fields. Once a row is persisted these are immutable: a different
   # digest, architecture, or repository is a different image, so the right
@@ -44,11 +49,13 @@ class AgentImage < ApplicationRecord
 
   belongs_to :account
 
+  has_logidze
+
   validates :name, presence: true, length: { maximum: 100 }
   validates :tag, presence: true, length: { maximum: 255 }
   validates :registry, presence: true, length: { maximum: 255 }
   validates :repository, presence: true, length: { maximum: 255 }
-  validates :digest, presence: true, format: { with: /\A(sha256:)?[0-9a-f]{64}\z/, message: "must be a 64-character hex sha256 digest, optionally prefixed with 'sha256:'" }
+  validates :digest, presence: true, format: { with: DIGEST_FORMAT, message: "must be a 64-character hex sha256 digest, optionally prefixed with 'sha256:'" }
   validates :architecture, presence: true, inclusion: { in: ARCHITECTURES }
   validates :status, inclusion: { in: STATUSES }
   validates :built_at, presence: true
@@ -139,8 +146,19 @@ class AgentImage < ApplicationRecord
     self.tag = tag.to_s.strip
     self.registry = (registry.to_s.strip.presence || DEFAULT_REGISTRY).downcase
     self.repository = repository.to_s.strip.downcase
-    self.digest = digest.to_s.strip.downcase
+    self.digest = canonical_digest(digest)
     self.architecture = (architecture.to_s.strip.presence || "amd64").downcase
+  end
+
+  # Digests are canonicalized to +sha256:<hex>+ on write. Bare hex input is
+  # accepted per CONTAINER-RUNTIME-019, but storing both forms would let the
+  # same image register twice (identity uniqueness compares raw strings) and
+  # would emit an invalid OCI reference from +#digest_reference+.
+  def canonical_digest(value)
+    normalized = value.to_s.strip.downcase
+    return normalized if normalized.blank? || normalized.start_with?(SHA256_PREFIX)
+
+    "#{SHA256_PREFIX}#{normalized}"
   end
 
   def identity_unique_within_account

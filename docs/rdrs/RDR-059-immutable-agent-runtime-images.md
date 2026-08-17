@@ -136,7 +136,8 @@ AgentImage
   tag           string   not null   # upstream tag at the time the image was recorded
   registry      string   not null   # docker.io (default), ghcr.io, registry.example.test
   repository    string   not null   # paid-agent, paid-agent-extra, organization/paid-agent
-  digest        string   not null   # sha256:<64-hex> or 64-hex
+  digest        string   not null   # accepted as sha256:<64-hex> or bare 64-hex,
+                                    # stored canonicalized as sha256:<64-hex>
   architecture  string   not null   # amd64 (default), arm64, …
   built_at      datetime not null   # wall-clock from the build pipeline
   status        string   not null   # active (default), deprecated, blocked
@@ -146,9 +147,18 @@ AgentImage
   blocked_reason text               # free-text reason captured at blocking (CVE id, …)
   provenance    jsonb    not null   # build provenance (git SHA, workflow run id, …)
   metadata      jsonb    not null   # operations metadata (build log URL, runbook)
+  log_data      jsonb               # logidze change history (who/what/when)
   created_at    datetime not null
   updated_at    datetime not null
 ```
+
+Digests are canonicalized to `sha256:<hex>` before validation so a bare-hex
+registration and its prefixed form resolve to one identity row, and
+`#digest_reference` always emits a valid OCI digest reference.
+
+`log_data` follows the `docker_hosts` precedent: the audit columns record
+what changed and when for lifecycle transitions, but `provenance` and
+`metadata` are mutable and logidze is what records *who* edited them.
 
 Indexes:
 

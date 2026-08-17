@@ -234,7 +234,10 @@
   architecture)`. Identity fields (`name`, `tag`, `registry`, `repository`,
   `digest`, `architecture`, `account_id`, `built_at`) SHALL be immutable after
   creation: a new build produces a new digest, which is a new row. The digest
-  SHALL be a 64-character hex sha256, optionally prefixed with `sha256:`.
+  SHALL be accepted as a 64-character hex sha256, optionally prefixed with
+  `sha256:`, and SHALL be stored canonicalized as `sha256:<hex>` so both input
+  forms resolve to one identity and every emitted reference is a valid OCI
+  digest reference.
   Local development and single-backend deployments SHALL continue to use the
   literal `paid-agent:latest` reference; the registry is the system of record
   for what image actually runs in production, not the
@@ -262,7 +265,9 @@
   recorded independently by different accounts. The `provenance` and
   `metadata` jsonb fields SHALL be mutable so late-arriving build
   metadata and runbook links can be added without affecting the
-  immutable identity.
+  immutable identity, and their changes SHALL be tracked (logidze) so mutable
+  provenance/metadata edits and lifecycle transitions leave an audit trail of
+  who changed what and when.
   *Tests:* `spec/models/agent_image_spec.rb`
   *Code:* `AgentImage`, `idx_agent_images_identity`
 

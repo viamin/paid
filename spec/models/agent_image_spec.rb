@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe AgentImage, type: :model do
+RSpec.describe AgentImage, type: :model do # @spec CONTAINER-RUNTIME-019
   describe "associations" do
     it { is_expected.to belong_to(:account) }
   end
@@ -31,15 +31,22 @@ RSpec.describe AgentImage, type: :model do
     end
   end
 
-  describe "digest format" do
+  describe "digest format" do # @spec CONTAINER-RUNTIME-019
     it "accepts a sha256 digest in canonical sha256:<hex> form" do
       image = build(:agent_image, digest: "sha256:" + "a" * 64)
       expect(image).to be_valid
     end
 
-    it "accepts a bare 64-character hex sha256 digest" do
+    it "accepts a bare 64-character hex sha256 digest and canonicalizes the prefix" do
       image = build(:agent_image, digest: "b" * 64)
       expect(image).to be_valid
+      expect(image.digest).to eq("sha256:" + "b" * 64)
+    end
+
+    it "emits a valid OCI digest reference for bare hex input" do
+      image = build(:agent_image, repository: "paid-agent", digest: "b" * 64)
+      image.valid?
+      expect(image.digest_reference).to eq("paid-agent@sha256:" + "b" * 64)
     end
 
     it "rejects a digest that is not a sha256 hash" do
@@ -77,7 +84,7 @@ RSpec.describe AgentImage, type: :model do
     end
   end
 
-  describe "immutability" do
+  describe "immutability" do # @spec CONTAINER-RUNTIME-020
     it "prevents digest changes after creation" do
       image = create(:agent_image, digest: "sha256:" + "a" * 64)
       image.digest = "sha256:" + "b" * 64
@@ -128,7 +135,7 @@ RSpec.describe AgentImage, type: :model do
     end
   end
 
-  describe "uniqueness" do
+  describe "uniqueness" do # @spec CONTAINER-RUNTIME-021
     it "rejects a duplicate image identity within the same account" do
       identity = {
         account: create(:account),
@@ -155,11 +162,32 @@ RSpec.describe AgentImage, type: :model do
       expect(other).to be_valid
     end
 
+    it "rejects the bare hex form of a digest already registered in prefixed form" do
+      identity = {
+        account: create(:account),
+        registry: "docker.io",
+        repository: "paid-agent",
+        architecture: "amd64"
+      }
+      create(:agent_image, digest: "sha256:" + "a" * 64, **identity)
+      duplicate = build(:agent_image, digest: "a" * 64, **identity)
+      expect(duplicate).not_to be_valid
+      expect(duplicate.errors[:digest]).to be_present
+    end
+
     it "allows the same digest with a different architecture" do
       digest = "sha256:" + "a" * 64
       create(:agent_image, registry: "docker.io", repository: "paid-agent", digest: digest, architecture: "amd64")
       other = build(:agent_image, registry: "docker.io", repository: "paid-agent", digest: digest, architecture: "arm64")
       expect(other).to be_valid
+    end
+  end
+
+  describe "change tracking" do # @spec CONTAINER-RUNTIME-021
+    it "records a logidze history entry when mutable metadata changes" do
+      image = create(:agent_image)
+      image.update!(metadata: { "runbook_url" => "https://example.test/runbook" })
+      expect(image.reload.log_data.versions.size).to be >= 2
     end
   end
 
@@ -189,7 +217,7 @@ RSpec.describe AgentImage, type: :model do
     end
   end
 
-  describe "deprecation" do
+  describe "deprecation" do # @spec CONTAINER-RUNTIME-022
     it "transitions active -> deprecated and stamps deprecated_at" do
       image = create(:agent_image)
       freeze_time = Time.current
@@ -217,7 +245,7 @@ RSpec.describe AgentImage, type: :model do
     end
   end
 
-  describe "blocking" do
+  describe "blocking" do # @spec CONTAINER-RUNTIME-022
     it "transitions active -> blocked and stamps blocked_at" do
       image = create(:agent_image)
       freeze_time = Time.current

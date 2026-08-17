@@ -261,7 +261,13 @@ operations/runbook links, the upstream `built_at` timestamp, and a lifecycle
 - Uniqueness is enforced on `(account_id, registry, repository, digest,
   architecture)`. The same digest on a different architecture is a separate
   image record (multi-arch images register one row per architecture). The
-  same identity may be recorded independently by different accounts.
+  same identity may be recorded independently by different accounts. Digests
+  are accepted in bare-hex or `sha256:`-prefixed form and stored
+  canonicalized as `sha256:<hex>`, so the two input forms cannot register as
+  two rows and the digest-pinned reference is always a valid OCI reference.
+- Change history is tracked with logidze (`log_data`), following the
+  `docker_hosts` precedent: lifecycle timestamps capture what and when, and
+  logidze captures who edited the mutable `provenance`/`metadata` fields.
 - A partial index over non-active rows keeps audit and rollback queries
   fast as the active set grows; a `(account_id, name, architecture)`
   index supports the (profile, architecture) scheduling decision.
