@@ -395,12 +395,13 @@ The final audited implementation is validated by:
 
 ## Follow-up Boundary
 
-`RDR-054` is implemented for the prompt paths migrated in issues #3375 through
-#3380. Legacy helper/build methods may remain as internal compatibility layers
-where they are still reused by section providers, but the migrated runtime
-paths now assemble through `PromptAssembly`. Any future prompt contexts or UI
-surfaces that extend assembly beyond this scope should be handled in new
-follow-up issues/RDRs rather than by reopening this design decision.
+`RDR-054` is implemented for the prompt paths migrated in issues #3375
+through #3380. Legacy helper/build methods may remain as internal
+compatibility layers where they are still reused by section providers, but
+the migrated runtime paths now assemble through `PromptAssembly`. Any future
+prompt contexts or UI surfaces that extend assembly beyond this scope should
+be handled in new follow-up issues/RDRs rather than by reopening this design
+decision.
 
 ## References
 
