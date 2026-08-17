@@ -75,6 +75,13 @@ RSpec.describe Activities::MarkEscalatedActivity do
         expect(issue.reload.pr_review_phase).to eq("escalated")
       end
 
+      # @spec FOCUSED-RUN-008
+      it "pauses auto-continue followups" do
+        activity.execute(issue_id: issue.id)
+
+        expect(issue.reload.auto_continue_paused).to be(true)
+      end
+
       it "stores the default escalation reason as a failure streak" do
         activity.execute(issue_id: issue.id)
 
@@ -99,6 +106,17 @@ RSpec.describe Activities::MarkEscalatedActivity do
         )
 
         expect(issue.reload.pr_escalation_reason).to eq("review_goal_retry_limit")
+      end
+
+      # @spec FOCUSED-RUN-007
+      it "stores PR token-limit escalations separately" do
+        activity.execute(
+          issue_id: issue.id,
+          reason_key: "pr_auto_continue_token_limit",
+          reason: "PR auto-continue token limit reached (50000000/50000000 recorded tokens)"
+        )
+
+        expect(issue.reload.pr_escalation_reason).to eq("pr_auto_continue_token_limit")
       end
 
       it "persists the explicit reason key when provided" do

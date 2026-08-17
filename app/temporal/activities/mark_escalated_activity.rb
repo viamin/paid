@@ -28,9 +28,11 @@ module Activities
       # labels coexist on the same PR.
       remove_ready_label(client, project, issue)
       add_phase_label(client, project, issue.github_number, PAID_ESCALATED_LABEL)
+      # @spec FOCUSED-RUN-008
       issue.update!(
         pr_review_phase: "escalated",
         pr_escalation_reason: resolve_escalation_reason(input),
+        auto_continue_paused: true,
         labels: escalated_labels(issue)
       )
       post_escalation_comment(client, project, issue, input[:reason], phase_before:)
@@ -185,6 +187,8 @@ module Activities
       lines << "- **Approve** this PR to allow auto-merge (if enabled)"
       lines << "- **Remove the `paid-escalated` label** to dismiss escalation and let automation try again"
       lines << "- **Convert to draft** on GitHub to restart the automated review cycle"
+      lines << ""
+      lines << "Auto-continue follow-ups are paused until the escalation is dismissed."
       lines.join("\n")
     end
 
@@ -221,6 +225,7 @@ module Activities
         return Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES
       end
       return Issue::PR_ESCALATION_REASON_REVIEW_GOAL_RETRY_LIMIT if reason&.start_with?("Review-goal retry budget exhausted")
+      return Issue::PR_ESCALATION_REASON_PR_AUTO_CONTINUE_TOKEN_LIMIT if reason&.include?("PR auto-continue token limit")
 
       Issue::PR_ESCALATION_REASON_FAILURE_STREAK
     end

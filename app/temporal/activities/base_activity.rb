@@ -11,6 +11,10 @@ module Activities
   # Temporal serializes inputs through JSON, converting symbol keys to strings.
   # InputNormalizer ensures subclasses always receive symbol-keyed hashes.
   class BaseActivity < Temporalio::Activity::Definition
+    RECORDABLE_DRAFT_REVIEW_STATUSES = %w[
+      completed no_output failed timeout token_budget_exceeded auth_expired rate_limited
+    ].freeze
+
     module InputNormalizer
       def execute(input)
         normalized_input = input.is_a?(Hash) ? input.deep_symbolize_keys : input
@@ -266,10 +270,9 @@ module Activities
           "agent_run #{agent_run.id} is tracking a draft review round without expected_draft_review_count"
       end
 
-      # Only record for successful completions (completed / no_output).
-      # Now that this method is called after complete!, the status is already
-      # set so this positive check reliably skips failed / cancelled / timed-out runs.
-      return unless %w[completed no_output].include?(agent_run.status)
+      # Draft follow-up attempts consume the review budget whether they produce
+      # changes or fail; otherwise provider/timeout failures can requeue forever.
+      return unless RECORDABLE_DRAFT_REVIEW_STATUSES.include?(agent_run.status)
 
       Activities::RecordDraftReviewActivity.new.execute(
         issue_id: agent_run.issue_id,

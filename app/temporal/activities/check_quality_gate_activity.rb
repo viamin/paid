@@ -6,6 +6,7 @@ module Activities
 
     DEFAULT_WINDOW_SIZE = 5
     DEFAULT_MIN_RECENT_RUNS = 3
+    PR_AUTO_CONTINUE_TOKEN_LIMIT_REASON = "pr_auto_continue_token_limit_exceeded"
 
     def execute(input)
       @project = Project.find(input[:project_id])
@@ -26,6 +27,9 @@ module Activities
     attr_reader :project, :agent_run, :issue, :source_pull_request_number
 
     def evaluate(input) # @spec QUALITY-LOOPS-005
+      token_limit_result = pr_auto_continue_token_limit_result
+      return token_limit_result if token_limit_result
+
       bypass_reason = bypass_reason(input)
       return allowed_result(reason: bypass_reason, bypassed: true) if bypass_reason
       return allowed_result(reason: "quality_gates_disabled") unless project.quality_gates_enabled?
@@ -72,6 +76,39 @@ module Activities
 
       labels = Array(source_pull_request&.labels)
       labels.intersect?(project.priority_label_names)
+    end
+
+    # @spec FOCUSED-RUN-007
+    def pr_auto_continue_token_limit_result
+      return if source_pull_request_number.blank?
+
+      limit = project.max_pr_auto_continue_tokens.to_i
+      used = pr_auto_continue_tokens_used
+      return if used < limit
+
+      {
+        allowed: false,
+        blocked: true,
+        bypassed: false,
+        reason: PR_AUTO_CONTINUE_TOKEN_LIMIT_REASON,
+        issue_id: source_pull_request&.id,
+        breaches: [
+          breach_hash(
+            metric: "pr_auto_continue_tokens",
+            current: used,
+            threshold: limit,
+            severity: "critical"
+          )
+        ],
+        evaluated_at: Time.current.iso8601
+      }
+    end
+
+    def pr_auto_continue_tokens_used
+      project.agent_runs
+        .where(source_pull_request_number: source_pull_request_number, trigger_type: "automatic")
+        .pick(Arel.sql("COALESCE(SUM(COALESCE(tokens_input, 0) + COALESCE(tokens_output, 0)), 0)"))
+        .to_i
     end
 
     def source_pull_request

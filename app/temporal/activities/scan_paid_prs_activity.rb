@@ -221,9 +221,12 @@ module Activities
       no_progress_stuck = no_progress_stuck?(project, issue, progress_state)
       failure_limit = failure_streak_limit_reached?(project, issue, progress_state)
       retry_escalation = review_goal_retry_limit_requires_escalation?(project, issue, progress_state:)
+      token_limit_breach = pr_auto_continue_token_limit_breach(project, issue)
 
       reason, reason_key = if op_breaker
         [ operational_failure_reason, Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES ]
+      elsif token_limit_breach
+        [ pr_auto_continue_token_limit_reason(token_limit_breach), Issue::PR_ESCALATION_REASON_PR_AUTO_CONTINUE_TOKEN_LIMIT ]
       elsif no_progress_stuck && retry_escalation
         [ review_goal_retry_escalation_reason(project, issue, progress_state:), Issue::PR_ESCALATION_REASON_REVIEW_GOAL_RETRY_LIMIT ]
       elsif no_progress_stuck && failure_limit
@@ -236,6 +239,9 @@ module Activities
         phase: issue.pr_review_phase,
         active_run_exists: active_run_exists?(project, issue),
         operational_failure_breaker: op_breaker,
+        pr_auto_continue_token_limit_reached: token_limit_breach.present?,
+        pr_auto_continue_tokens_used: token_limit_breach&.fetch(:used, nil).to_i,
+        pr_auto_continue_token_limit: token_limit_breach&.fetch(:limit, nil).to_i,
         no_progress_stuck: no_progress_stuck,
         failure_streak_limit_reached: failure_limit,
         review_goal_retry_limit_requires_escalation: retry_escalation,
@@ -1147,6 +1153,26 @@ module Activities
         .where(status: AgentRun::UNFINISHED_STATUSES)
         .where(goal: "create_pr")
         .exists?
+    end
+
+    def pr_auto_continue_token_limit_breach(project, issue)
+      limit = project.max_pr_auto_continue_tokens.to_i
+      used = pr_auto_continue_tokens_used(project, issue)
+      return if used < limit
+
+      { used: used, limit: limit }
+    end
+
+    def pr_auto_continue_tokens_used(project, issue)
+      pr_run_history_scope(project, issue)
+        .where(trigger_type: "automatic")
+        .pick(Arel.sql("COALESCE(SUM(COALESCE(tokens_input, 0) + COALESCE(tokens_output, 0)), 0)"))
+        .to_i
+    end
+
+    def pr_auto_continue_token_limit_reason(breach)
+      "PR auto-continue token limit reached " \
+        "(#{breach[:used].to_i}/#{breach[:limit].to_i} recorded tokens)"
     end
 
     def pr_progress_state(project, issue, current_head_sha: nil, current_head_updated_at: nil,

@@ -236,6 +236,29 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(signals[:escalation_reason_key]).to eq(Issue::PR_ESCALATION_REASON_FAILURE_STREAK)
     end
 
+    # @spec FOCUSED-RUN-007
+    it "reports token cap escalation even when an active PR run exists", :aggregate_failures do
+      project.update!(max_pr_auto_continue_tokens: 50_000)
+      create(:agent_run, project: project, issue: pr_issue,
+        source_pull_request_number: pr_issue.github_number,
+        trigger_type: "automatic",
+        tokens_input: 50_000,
+        status: "completed")
+      create(:agent_run, project: project, issue: pr_issue,
+        source_pull_request_number: pr_issue.github_number,
+        trigger_type: "automatic",
+        status: "queued")
+      allow(activity).to receive(:active_run_exists?).with(project, pr_issue).and_return(true)
+
+      signals = activity.send(:build_lifecycle_signals, project, pr_issue)
+
+      expect(signals[:active_run_exists]).to be(true)
+      expect(signals[:pr_auto_continue_token_limit_reached]).to be(true)
+      expect(signals[:pr_auto_continue_tokens_used]).to eq(50_000)
+      expect(signals[:pr_auto_continue_token_limit]).to eq(50_000)
+      expect(signals[:escalation_reason_key]).to eq(Issue::PR_ESCALATION_REASON_PR_AUTO_CONTINUE_TOKEN_LIMIT)
+    end
+
     it "resets the confirmation count when progress clears the stuck state", :aggregate_failures do
       2.times { activity.send(:build_lifecycle_signals, project, pr_issue) }
       expect(pr_issue.reload.stuck_confirmation_count).to eq(2)

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_12_124601) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_17_050509) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2029,6 +2029,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_12_124601) do
     t.integer "max_enhance_issue_reevaluation_rounds", default: 3, null: false
     t.integer "max_execution_seconds", default: 7200, null: false
     t.integer "max_issue_runner_failures", comment: "Per-project override for the per-issue per-provider retry cap. When nil, the account-level agent setting (default 10) applies. After a provider fails this many times for a single issue it is excluded from scheduling for that issue."
+    t.integer "max_pr_auto_continue_tokens", default: 50000000, null: false, comment: "Maximum recorded tokens automatic PR automation may spend on one pull request before escalation pauses follow-ups."
     t.integer "max_pr_followup_runs", default: 8, null: false
     t.integer "max_tokens_per_run"
     t.string "merge_method", default: "squash", null: false

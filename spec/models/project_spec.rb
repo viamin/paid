@@ -1351,6 +1351,38 @@ RSpec.describe Project do
       end
     end
 
+    describe "#ensure_paid_reviewer_bot_allowlisted" do
+      it "adds the paid reviewer bot login when paid agent reviews are enabled" do
+        project = build(:project,
+          allowed_github_usernames: [ "viamin" ],
+          review_settings: {
+            "enabled" => true,
+            "methods" => { "paid_agent" => { "enabled" => true } }
+          })
+
+        project.valid?
+
+        expect(project.allowed_github_usernames).to include(
+          "viamin",
+          "paid-code-reviewer[bot]"
+        )
+        expect(project.allowed_github_usernames).not_to include("paid-code-reviewer")
+      end
+
+      it "does not add paid reviewer logins when paid agent reviews are disabled" do
+        project = build(:project,
+          allowed_github_usernames: [ "viamin" ],
+          review_settings: {
+            "enabled" => true,
+            "methods" => { "paid_agent" => { "enabled" => false } }
+          })
+
+        project.valid?
+
+        expect(project.allowed_github_usernames).to eq([ "viamin" ])
+      end
+    end
+
     describe "#enabled_review_methods" do
       it "returns empty array by default" do
         project = build(:project)

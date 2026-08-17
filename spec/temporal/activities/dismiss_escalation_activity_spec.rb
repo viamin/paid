@@ -12,6 +12,7 @@ RSpec.describe Activities::DismissEscalationActivity do
           pr_review_phase: "escalated",
           pr_followup_count: 2,
           review_goal_retry_count: 3,
+          auto_continue_paused: true,
           operational_failure_reset_at: 2.hours.ago,
           labels: [ "paid-generated", "paid-escalated", "paid-dismiss-escalation" ])
       end
@@ -44,6 +45,13 @@ RSpec.describe Activities::DismissEscalationActivity do
         activity.execute(issue_id: issue.id)
 
         expect(issue.reload.labels).not_to include("paid-escalated", "paid-dismiss-escalation")
+      end
+
+      # @spec FOCUSED-RUN-008
+      it "resumes auto-continue followups" do
+        activity.execute(issue_id: issue.id)
+
+        expect(issue.reload.auto_continue_paused).to be(false)
       end
 
       it "returns dismissed: true" do

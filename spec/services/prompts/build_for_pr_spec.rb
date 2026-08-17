@@ -31,6 +31,24 @@ RSpec.describe Prompts::BuildForPr do
     OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: body)
   end
 
+  def enable_paid_agent_reviews(project)
+    allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
+    project.update!(review_settings: {
+      "enabled" => true,
+      "methods" => { "paid_agent" => { "enabled" => true } }
+    })
+  end
+
+  def paid_review_thread(body:)
+    {
+      id: "thread_1",
+      is_resolved: false,
+      comments: [
+        { body: body, path: "app/models/user.rb", line: 42, author: "paid-code-reviewer[bot]" }
+      ]
+    }
+  end
+
   def expect_prompt_to_exclude_sections(prompt, *section_names)
     section_names.each do |section_name|
       expect(prompt).not_to include(section_name)
@@ -285,6 +303,45 @@ RSpec.describe Prompts::BuildForPr do
 
       expect(builder.unresolved_review_thread_ids).to eq([ "thread_1" ])
     end
+
+    # @spec FOCUSED-RUN-009
+    it "returns unresolved thread ids from enabled review bots" do
+      enable_paid_agent_reviews(project)
+      allow(github_client).to receive(:review_threads)
+        .with(project.full_name, 42)
+        .and_return([
+          { id: "thread_1", is_resolved: false, comments: [ { body: "Server scope is missing", author: "paid-code-reviewer[bot]" } ] }
+        ])
+
+      builder = described_class.new(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true
+      )
+
+      expect(builder.unresolved_review_thread_ids).to eq([ "thread_1" ])
+    end
+
+    # @spec FOCUSED-RUN-009
+    it "returns unresolved thread ids from the enabled review bot's bare GitHub app login" do
+      enable_paid_agent_reviews(project)
+      allow(github_client).to receive(:review_threads)
+        .with(project.full_name, 42)
+        .and_return([
+          { id: "thread_1", is_resolved: false, comments: [ { body: "Server scope is missing", author: "paid-code-reviewer" } ] }
+        ])
+
+      builder = described_class.new(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true
+      )
+
+      expect(project.allowed_github_usernames).not_to include("paid-code-reviewer")
+      expect(builder.unresolved_review_thread_ids).to eq([ "thread_1" ])
+    end
   end
 
   describe "merge conflicts section" do
@@ -481,6 +538,25 @@ RSpec.describe Prompts::BuildForPr do
       )
 
       expect(prompt).not_to include("Already fixed")
+    end
+
+    # @spec FOCUSED-RUN-009
+    it "includes unresolved review threads from enabled review bots" do
+      enable_paid_agent_reviews(project)
+      allow(github_client).to receive(:review_threads)
+        .with(project.full_name, 42)
+        .and_return([ paid_review_thread(body: "Server scope is missing") ])
+
+      prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true
+      )
+
+      expect(prompt).to include("Code Review Comments")
+      expect(prompt).to include("Server scope is missing")
+      expect(prompt).to include("paid-code-reviewer[bot]")
     end
   end
 

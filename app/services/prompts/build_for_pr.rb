@@ -751,13 +751,14 @@ module Prompts
     end
 
     # Filters unresolved review threads to only include comments authored by
-    # allowlisted collaborators. Comments from non-allowlisted authors are
-    # excluded so they cannot be treated as instructions; their provenance
-    # is captured via excluded_review_thread_inputs.
+    # allowlisted collaborators or enabled review bots. GitHub's review-thread
+    # API can report app authors without "[bot]", so the review-thread path
+    # admits the configured bot-login set without broadening comment trust.
+    # @spec FOCUSED-RUN-009
     def trusted_review_threads
       threads = unresolved_threads.filter_map do |thread|
         kept_comments = thread[:comments].select do |comment|
-          PromptAssembly::Trust.human_trusted?(project, comment[:author])
+          trusted_review_thread_author?(comment[:author])
         end
         next nil if kept_comments.empty?
 
@@ -773,7 +774,7 @@ module Prompts
     def excluded_review_thread_inputs
       unresolved_threads.flat_map do |thread|
         thread[:comments].filter_map do |comment|
-          next if PromptAssembly::Trust.human_trusted?(project, comment[:author])
+          next if trusted_review_thread_author?(comment[:author])
 
           PromptAssembly::TrustedInput.new(
             kind: :review,
@@ -785,6 +786,11 @@ module Prompts
           )
         end
       end
+    end
+
+    def trusted_review_thread_author?(login)
+      PromptAssembly::Trust.human_trusted?(project, login) ||
+        project.enabled_review_bot_logins.include?(login.to_s.downcase)
     end
 
     def trusted_comments
