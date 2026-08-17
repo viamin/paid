@@ -61,7 +61,7 @@ module ExecutionRunners
     # @raise [OutputAbortError] fatal output pattern matched
     # @raise [ExecutionError] workload failed to execute
     def start(handle:, command:, timeout:, startup_timeout:, idle_timeout:,
-              abort_patterns:, preparation:, heartbeat_path:)
+              abort_patterns:, preparation:, heartbeat_path:, &block)
       raise NotImplementedError, "#{self.class} must implement ##{__method__}"
     end
 

@@ -647,11 +647,14 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
         .and_return(provision_service)
       allow(provision_service).to receive_messages(
         provision: Containers::Provision::Result.success(container_id: "conf123", container_host: "local"),
-        execute: Containers::Provision::Result.success(stdout: "conformance output\n", stderr: "", exit_code: 0),
         container_running?: false,
         container_status: { running: false, exit_code: 0, oom_killed: false, memory_limit_bytes: 1024 },
         cleanup: nil
       )
+      allow(provision_service).to receive(:execute) do |_, **_, &block|
+        block&.call(:stdout, "conformance output\n")
+        Containers::Provision::Result.success(stdout: "conformance output\n", stderr: "", exit_code: 0)
+      end
     end
   end
 end

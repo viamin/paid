@@ -362,14 +362,18 @@ module Containers
     #   long, silent LLM inference. Agents can touch this file (e.g. via
     #   Claude Code +PostToolUse+ or Codex +notify+ hooks) to signal
     #   "still working" and avoid startup/idle timeouts.
+    # @yieldparam stream_type [Symbol] +:stdout+ or +:stderr+
+    # @yieldparam chunk [String] output chunk forwarded as the container
+    #   exec stream emits it (after buffering for the watchdog/streaming
+    #   pipeline)
     # @return [Result] Result with stdout, stderr, and exit_code
     # @raise [StartupTimeoutError] when no output is received within +startup_timeout+ seconds
     # @raise [IdleTimeoutError] when output stops for more than +idle_timeout+ seconds
     # @raise [TimeoutError] when total wall-clock +timeout+ is exceeded
-    def execute(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil, heartbeat_path: nil, abort_patterns: nil)
+    def execute(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil, heartbeat_path: nil, abort_patterns: nil, &block)
       raise ProvisionError, "Container not provisioned" unless container
 
-      with_codex_auth_lock(command) { execute_unlocked(command, timeout:, startup_timeout:, idle_timeout:, stream:, env:, preparation:, heartbeat_path:, abort_patterns:) }
+      with_codex_auth_lock(command) { execute_unlocked(command, timeout:, startup_timeout:, idle_timeout:, stream:, env:, preparation:, heartbeat_path:, abort_patterns:, &block) }
     end
 
     def network_name
@@ -493,7 +497,7 @@ module Containers
       ].find(&:present?)
     end
 
-    private def execute_unlocked(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil, heartbeat_path: nil, abort_patterns: nil)
+    private def execute_unlocked(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil, heartbeat_path: nil, abort_patterns: nil, &block)
       timeout ||= options[:timeout_seconds]
       cmd_array = close_stdin_for_codex_exec(command)
       cmd_array = cmd_array.is_a?(Array) ? cmd_array : [ "sh", "-c", cmd_array ]
@@ -598,6 +602,8 @@ module Containers
             stderr_buffer << normalized_chunk
             log_output(:stderr, normalized_chunk) if stream
           end
+
+          block.call(stream_type, normalized_chunk) if block
 
           # Check both stdout and stderr against abort patterns — if the CLI
           # emits a fatal error but hangs instead of exiting, stop the container

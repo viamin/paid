@@ -53,15 +53,13 @@ RSpec.shared_examples "a no-shared-filesystem runner" do
       handle = runner.provision(spec: conformance_spec)
       expect(handle).to be_a(ExecutionRunners::RunnerHandle)
 
-      streamed = []
       result = runner.start(handle: handle, command: conformance_command, timeout: 60,
         startup_timeout: 30, idle_timeout: 30, abort_patterns: nil, preparation: nil,
-        heartbeat_path: nil) { |stream, chunk| streamed << [ stream, chunk ] }
+        heartbeat_path: nil)
 
       expect(result).to be_success
       # Logs cross the boundary through the contract, not shared files.
       expect(result.stdout).to be_present
-      expect(streamed).to all(satisfy { |stream, chunk| %i[stdout stderr].include?(stream) && chunk.is_a?(String) })
 
       manifest = result.output_manifest(agent_run: conformance_run)
       expect(manifest).to be_a(ExecutionRunners::ExecutionOutputManifest)
@@ -76,6 +74,21 @@ RSpec.shared_examples "a no-shared-filesystem runner" do
         runner.cleanup(handle: handle, force: true)
         runner.cleanup(handle: handle, force: true)
       }.not_to raise_error
+    end
+
+    it "yields at least one streamed chunk through the start block" do
+      handle = runner.provision(spec: conformance_spec)
+
+      streamed = []
+      runner.start(handle: handle, command: conformance_command, timeout: 60,
+        startup_timeout: 30, idle_timeout: 30, abort_patterns: nil, preparation: nil,
+        heartbeat_path: nil) { |stream, chunk| streamed << [ stream, chunk ] }
+
+      # The runner must yield at least one chunk; an empty stream would mean
+      # the runner is buffering (or worse, dropping) output that should travel
+      # on the control-plane API lane, not through shared host storage.
+      expect(streamed).not_to be_empty
+      expect(streamed).to all(satisfy { |stream, chunk| %i[stdout stderr].include?(stream) && chunk.is_a?(String) })
     end
 
     it "keeps host filesystem paths out of the persisted handle" do
