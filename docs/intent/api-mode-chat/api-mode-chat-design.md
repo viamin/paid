@@ -73,6 +73,9 @@ What ships today:
   mutations
 - `ChatSessions::ResolveToolCall` atomically resolves pending confirmations and
   resumes the loop only when the final pending confirmation has been settled
+- `ChatSessions::BuildLlmClient` raises the OpenAI-compatible transport
+  `max_tokens` cap to 16,384 for direct-provider z.ai chat runners so GLM
+  responses are not truncated by the transport default
 - token usage for chat turns is recorded on `token_usages` and surfaced back
   through the chat UI/API totals
 
