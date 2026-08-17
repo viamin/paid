@@ -98,6 +98,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | [RDR-033](RDR-033-worker-pool-scaling-algorithm.md) | Worker Pool Scaling Algorithm | Implemented | Medium |
 | [RDR-043](RDR-043-zero-config-docker-capacity-autoscaling.md) | Zero-Config Docker Capacity Autoscaling | Implemented | Medium |
 | [RDR-048](RDR-048-multi-host-docker-backend-support.md) | Multi-Host Docker Backend Support | Implemented | P1 |
+| [RDR-057](RDR-057-remote-execution-data-contract.md) | Remote Execution Data Contract | Implemented | P1 |
 
 ### Quality & Automation
 
