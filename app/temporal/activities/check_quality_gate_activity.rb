@@ -27,11 +27,13 @@ module Activities
     attr_reader :project, :agent_run, :issue, :source_pull_request_number
 
     def evaluate(input) # @spec QUALITY-LOOPS-005
+      bypass = bypass_reason(input)
+      return allowed_result(reason: bypass, bypassed: true) if bypass && bypass != "priority_run"
+
       token_limit_result = pr_auto_continue_token_limit_result
       return token_limit_result if token_limit_result
 
-      bypass_reason = bypass_reason(input)
-      return allowed_result(reason: bypass_reason, bypassed: true) if bypass_reason
+      return allowed_result(reason: "priority_run", bypassed: true) if bypass == "priority_run"
       return allowed_result(reason: "quality_gates_disabled") unless project.quality_gates_enabled?
 
       metrics = recent_metrics
@@ -105,10 +107,11 @@ module Activities
     end
 
     def pr_auto_continue_tokens_used
-      project.agent_runs
-        .where(source_pull_request_number: source_pull_request_number, trigger_type: "automatic")
-        .pick(Arel.sql("COALESCE(SUM(COALESCE(tokens_input, 0) + COALESCE(tokens_output, 0)), 0)"))
-        .to_i
+      AgentRun.pr_auto_continue_tokens_used(
+        project: project,
+        pr_number: source_pull_request_number,
+        issue: source_pull_request
+      )
     end
 
     def source_pull_request

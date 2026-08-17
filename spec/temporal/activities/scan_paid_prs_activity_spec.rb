@@ -186,6 +186,24 @@ RSpec.describe Activities::ScanPaidPrsActivity do
   end
 
   describe "scan-confirmation escalation gate (downtime-immune)" do
+    def create_token_limit_runs!(project:, pr_issue:)
+      original_issue = create(:issue, project: project)
+      create(:agent_run, project: project, issue: original_issue,
+        pull_request_number: pr_issue.github_number,
+        trigger_type: "automatic",
+        tokens_input: 20_000,
+        status: "completed")
+      create(:agent_run, project: project, issue: pr_issue,
+        source_pull_request_number: pr_issue.github_number,
+        trigger_type: "automatic",
+        tokens_input: 30_000,
+        status: "completed")
+      create(:agent_run, project: project, issue: pr_issue,
+        source_pull_request_number: pr_issue.github_number,
+        trigger_type: "automatic",
+        status: "queued")
+    end
+
     let(:pr_issue) do
       create(:issue, :pull_request,
         project: project,
@@ -239,15 +257,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     # @spec FOCUSED-RUN-007
     it "reports token cap escalation even when an active PR run exists", :aggregate_failures do
       project.update!(max_pr_auto_continue_tokens: 50_000)
-      create(:agent_run, project: project, issue: pr_issue,
-        source_pull_request_number: pr_issue.github_number,
-        trigger_type: "automatic",
-        tokens_input: 50_000,
-        status: "completed")
-      create(:agent_run, project: project, issue: pr_issue,
-        source_pull_request_number: pr_issue.github_number,
-        trigger_type: "automatic",
-        status: "queued")
+      create_token_limit_runs!(project:, pr_issue:)
       allow(activity).to receive(:active_run_exists?).with(project, pr_issue).and_return(true)
 
       signals = activity.send(:build_lifecycle_signals, project, pr_issue)

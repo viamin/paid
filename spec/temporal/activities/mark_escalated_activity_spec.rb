@@ -219,6 +219,21 @@ RSpec.describe Activities::MarkEscalatedActivity do
           .with(anything, anything, a_string_including("Remove the `paid-escalated` label"))
       end
 
+      it "adds token-cap-specific recovery guidance for PR token-limit escalations" do
+        activity.execute(
+          issue_id: issue.id,
+          reason_key: "pr_auto_continue_token_limit",
+          reason: "PR auto-continue token limit reached (50000000/50000000 recorded tokens)"
+        )
+
+        expect(github_client).to have_received(:add_comment)
+          .with(anything, anything, a_string_including("Raise `Max PR Auto-Continue Tokens`"))
+        expect(github_client).to have_received(:add_comment)
+          .with(anything, anything, a_string_including("after raising the limit"))
+        expect(github_client).not_to have_received(:add_comment)
+          .with(anything, anything, a_string_including("Convert to draft"))
+      end
+
       it "includes the hidden comment marker for future identification" do
         activity.execute(issue_id: issue.id)
 

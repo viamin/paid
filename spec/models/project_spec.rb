@@ -1381,6 +1381,19 @@ RSpec.describe Project do
 
         expect(project.allowed_github_usernames).to eq([ "viamin" ])
       end
+
+      it "removes the managed bot login when paid agent reviews are disabled" do
+        project = build(:project,
+          allowed_github_usernames: [ "viamin", "paid-code-reviewer[bot]" ],
+          review_settings: {
+            "enabled" => true,
+            "methods" => { "paid_agent" => { "enabled" => false } }
+          })
+
+        project.valid?
+
+        expect(project.allowed_github_usernames).to eq([ "viamin" ])
+      end
     end
 
     describe "#enabled_review_methods" do

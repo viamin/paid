@@ -1164,10 +1164,11 @@ module Activities
     end
 
     def pr_auto_continue_tokens_used(project, issue)
-      pr_run_history_scope(project, issue)
-        .where(trigger_type: "automatic")
-        .pick(Arel.sql("COALESCE(SUM(COALESCE(tokens_input, 0) + COALESCE(tokens_output, 0)), 0)"))
-        .to_i
+      AgentRun.pr_auto_continue_tokens_used(
+        project: project,
+        issue: issue,
+        pr_number: issue.github_number
+      )
     end
 
     def pr_auto_continue_token_limit_reason(breach)
@@ -1431,11 +1432,7 @@ module Activities
     end
 
     def pr_run_history_scope(project, issue)
-      project.agent_runs.where(
-        "issue_id = :issue_id OR source_pull_request_number = :pr_num OR pull_request_number = :pr_num",
-        issue_id: issue.id,
-        pr_num: issue.github_number
-      )
+      AgentRun.pr_history_scope(project:, issue:, pr_number: issue.github_number)
     end
 
     def latest_completed_focused_run(project, issue)

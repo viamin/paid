@@ -1048,12 +1048,17 @@ class Project < ApplicationRecord
 
   # @spec FOCUSED-RUN-009
   def ensure_paid_reviewer_bot_allowlisted
-    return unless paid_agent_review_config_enabled?
-
     current = Array(allowed_github_usernames).filter_map { |login| login.to_s.presence }
-    current_downcased = current.map(&:downcase)
-    additions = PAID_AGENT_REVIEW_BOT_ALLOWLIST_LOGINS.reject { |login| current_downcased.include?(login.downcase) }
-    self.allowed_github_usernames = current + additions if additions.any?
+    managed_logins = PAID_AGENT_REVIEW_BOT_ALLOWLIST_LOGINS
+
+    if paid_agent_review_config_enabled?
+      current_downcased = current.map(&:downcase)
+      additions = managed_logins.reject { |login| current_downcased.include?(login.downcase) }
+      self.allowed_github_usernames = current + additions if additions.any?
+    else
+      pruned = current.reject { |login| managed_logins.any? { |managed| managed.casecmp?(login) } }
+      self.allowed_github_usernames = pruned if pruned.size != current.size
+    end
   end
 
   def effective_review_settings
