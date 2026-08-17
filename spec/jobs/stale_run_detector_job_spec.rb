@@ -173,6 +173,18 @@ RSpec.describe StaleRunDetectorJob do
         allow(Paid).to receive(:temporal_client).and_return(temporal_client)
       end
 
+      def create_admitted_stale_run
+        create(:agent_run,
+          status: "running",
+          started_at: nil,
+          temporal_workflow_id: "test-workflow-id",
+          queue_entered_at: 3.hours.ago).tap do |run|
+          run.update_columns(updated_at: (claimed_threshold + 60).seconds.ago,
+            completed_at: 2.minutes.ago,
+            duration_seconds: 12)
+        end
+      end
+
       it "requeues a stale claimed run that has not exhausted requeue budget" do
         stale_run = create(:agent_run,
           status: "queued",
@@ -189,6 +201,25 @@ RSpec.describe StaleRunDetectorJob do
         stale_run.reload
         expect(stale_run.status).to eq("queued")
         expect(stale_run.queue_entered_at).to be_within(1.second).of(frozen_now)
+        expect(stale_run.temporal_workflow_id).to be_nil
+        expect(stale_run.stale_requeue_count).to eq(1)
+      end
+
+      it "requeues an admitted running run that never started execution" do
+        stale_run = create_admitted_stale_run
+        frozen_now = nil
+
+        freeze_time do
+          frozen_now = Time.current
+          described_class.perform_now
+        end
+
+        stale_run.reload
+        expect(stale_run.status).to eq("queued")
+        expect(stale_run.queue_entered_at).to be_within(1.second).of(frozen_now)
+        expect(stale_run.started_at).to be_nil
+        expect(stale_run.completed_at).to be_nil
+        expect(stale_run.duration_seconds).to be_nil
         expect(stale_run.temporal_workflow_id).to be_nil
         expect(stale_run.stale_requeue_count).to eq(1)
       end

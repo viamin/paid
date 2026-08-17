@@ -278,7 +278,7 @@ RSpec.describe AgentRun do
       it "returns only claimed (queued with temporal_workflow_id) runs" do
         claimed_run = create(:agent_run, :queued, temporal_workflow_id: "claimed")
         create(:agent_run, :queued)
-        create(:agent_run, :running)
+        create(:agent_run, :running, temporal_workflow_id: "workflow-123", started_at: nil)
 
         expect(described_class.claimed).to include(claimed_run)
         expect(described_class.claimed.count).to eq(1)
@@ -356,14 +356,16 @@ RSpec.describe AgentRun do
     end
 
     describe ".stale_claimed" do
-      it "returns only claimed runs older than the stale cutoff" do
-        stale_run = create(:agent_run, :queued, temporal_workflow_id: "claimed")
-        stale_run.update_column(:updated_at, described_class.stale_claimed_cutoff - 1.minute)
+      it "returns queued claimed and admitted-not-started runs older than the stale cutoff" do
+        stale_queued_run = create(:agent_run, :queued, temporal_workflow_id: "claimed")
+        stale_queued_run.update_column(:updated_at, described_class.stale_claimed_cutoff - 1.minute)
+        stale_admitted_run = create(:agent_run, status: "running", temporal_workflow_id: "workflow-123", started_at: nil)
+        stale_admitted_run.update_column(:updated_at, described_class.stale_claimed_cutoff - 1.minute)
         fresh_run = create(:agent_run, :queued, temporal_workflow_id: "claimed")
         fresh_run.update_column(:updated_at, described_class.stale_claimed_cutoff + 1.minute)
         create(:agent_run, :running, started_at: described_class.stale_running_cutoff - 1.minute)
 
-        expect(described_class.stale_claimed).to contain_exactly(stale_run)
+        expect(described_class.stale_claimed).to contain_exactly(stale_queued_run, stale_admitted_run)
       end
     end
 
@@ -372,9 +374,11 @@ RSpec.describe AgentRun do
         stale_running = create(:agent_run, :running, started_at: described_class.stale_running_cutoff - 1.minute)
         stale_claimed = create(:agent_run, :queued, temporal_workflow_id: "claimed")
         stale_claimed.update_column(:updated_at, described_class.stale_claimed_cutoff - 1.minute)
+        stale_admitted = create(:agent_run, status: "running", temporal_workflow_id: "workflow-123", started_at: nil)
+        stale_admitted.update_column(:updated_at, described_class.stale_claimed_cutoff - 1.minute)
         create(:agent_run, :running, started_at: described_class.stale_running_cutoff + 1.minute)
 
-        expect(described_class.stale_for_cleanup).to contain_exactly(stale_running, stale_claimed)
+        expect(described_class.stale_for_cleanup).to contain_exactly(stale_running, stale_claimed, stale_admitted)
       end
     end
 

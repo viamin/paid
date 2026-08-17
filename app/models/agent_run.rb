@@ -333,6 +333,7 @@ class AgentRun < ApplicationRecord
   scope :queued, -> { where(status: "queued") }
   scope :waiting, -> { queued.where(temporal_workflow_id: nil) }
   scope :claimed, -> { queued.where.not(temporal_workflow_id: nil) }
+  scope :admitted_not_started, -> { running.where.not(temporal_workflow_id: nil).where(started_at: nil) }
   scope :unclaimed, -> { waiting }
   scope :running, -> { where(status: "running") }
   scope :completed, -> { where(status: "completed") }
@@ -392,7 +393,7 @@ class AgentRun < ApplicationRecord
   scope :started_before, ->(time) { where("started_at < ?", time) }
   scope :updated_before, ->(time) { where("updated_at < ?", time) }
   scope :stale_running, -> { running.where(stale_running_condition_sql(now: Time.current)) }
-  scope :stale_claimed, -> { claimed.updated_before(stale_claimed_cutoff) }
+  scope :stale_claimed, -> { claimed.or(admitted_not_started).updated_before(stale_claimed_cutoff) }
   scope :stale_for_cleanup, -> { stale_running.or(stale_claimed) }
   scope :search_by_goal, lambda { |query|
     normalized_query = query.to_s.strip
@@ -854,6 +855,13 @@ class AgentRun < ApplicationRecord
     agent_run.status == "running" &&
       agent_run.started_at.present? &&
       agent_run.started_at < stale_running_cutoff(goal: agent_run.goal, now: now)
+  end
+
+  def self.stale_claimed?(agent_run, now: Time.current)
+    agent_run.temporal_workflow_id.present? &&
+      agent_run.updated_at.present? &&
+      agent_run.updated_at < stale_claimed_cutoff(now: now) &&
+      (agent_run.status == "queued" || (agent_run.status == "running" && agent_run.started_at.nil?))
   end
 
   def should_refresh_queue_entered_at?
