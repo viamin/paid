@@ -20,11 +20,18 @@ RSpec.describe ExecutionRunners do
   end
 
   describe ExecutionRunners::ComputeRequirements do
-    it "is an immutable Data object with cpu, memory, and pids fields" do
-      requirements = described_class.new(cpu_quota: 200_000, memory_bytes: 4 * 1024 ** 3, pids_limit: 500)
+    # @spec CONTAINER-RUNTIME-020
+    it "is an immutable Data object with cpu, memory, disk, and pids fields" do
+      requirements = described_class.new(
+        cpu_quota: 200_000,
+        memory_bytes: 4 * 1024 ** 3,
+        disk_bytes: 2 * 1024 ** 3,
+        pids_limit: 500
+      )
 
       expect(requirements.cpu_quota).to eq(200_000)
       expect(requirements.memory_bytes).to eq(4_294_967_296)
+      expect(requirements.disk_bytes).to eq(2_147_483_648)
       expect(requirements.pids_limit).to eq(500)
     end
   end
@@ -38,7 +45,7 @@ RSpec.describe ExecutionRunners do
         project: instance_double(Project),
         image: "paid/agent:latest",
         command: "claude code",
-        resources: ExecutionRunners::ComputeRequirements.new(cpu_quota: 1, memory_bytes: 2, pids_limit: 3),
+        resources: ExecutionRunners::ComputeRequirements.new(cpu_quota: 1, memory_bytes: 2, disk_bytes: 3, pids_limit: 4),
         environment: { "FOO" => "bar" },
         networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted,
         workspace: ExecutionRunners::WorkspaceStrategy.named_volume,

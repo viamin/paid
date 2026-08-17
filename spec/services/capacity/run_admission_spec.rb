@@ -15,6 +15,23 @@ RSpec.describe Capacity::RunAdmission do
       docker_memory_bytes: 32.gigabytes
     }
   end
+  let(:infra_limits) do
+    {
+      global_requested_cpu_quota_limit: 2_000_000,
+      host_requested_cpu_quota_limit: 1_000_000,
+      global_requested_memory_bytes_limit: 64.gigabytes,
+      host_requested_memory_bytes_limit: 32.gigabytes,
+      global_requested_disk_bytes_limit: 24.gigabytes,
+      host_requested_disk_bytes_limit: 12.gigabytes,
+      max_execution_cpu_quota_limit: 400_000,
+      max_execution_memory_bytes_limit: 16.gigabytes,
+      max_execution_disk_bytes_limit: 4.gigabytes,
+      provisioning_rate_window_seconds: 600,
+      global_provisionings_per_window_limit: 10,
+      account_provisionings_per_window_limit: 5,
+      project_provisionings_per_window_limit: 3
+    }
+  end
 
   before do
     user.settings.update!(
@@ -22,6 +39,7 @@ RSpec.describe Capacity::RunAdmission do
       max_concurrent_runs: nil,
       container_memory_bytes: 6.gigabytes
     )
+    allow(Capacity::InfrastructureLimits).to receive(:current).and_return(infra_limits)
   end
 
   def admission_for(host:, limit:)
@@ -31,6 +49,32 @@ RSpec.describe Capacity::RunAdmission do
       docker_snapshot: docker_snapshot,
       selected_host: host,
       selected_host_limit: limit
+    )
+  end
+
+  def requested_resource_metadata(cpu_quota:, memory_bytes:, disk_bytes:)
+    {
+      "requested_resources" => {
+        "cpu_quota" => cpu_quota,
+        "memory_bytes" => memory_bytes,
+        "disk_bytes" => disk_bytes
+      }
+    }
+  end
+
+  def create_requested_run!(host: nil, provisioning_started_at: nil, cpu_quota: 200_000, memory_bytes: 2.gigabytes, disk_bytes: 1.gigabyte)
+    create(
+      :agent_run,
+      :running,
+      project: project,
+      container_host: host,
+      external_metadata: requested_resource_metadata(
+        cpu_quota: cpu_quota,
+        memory_bytes: memory_bytes,
+        disk_bytes: disk_bytes
+      ).tap do |metadata|
+        metadata["provisioning_started_at"] = provisioning_started_at if provisioning_started_at
+      end
     )
   end
 
@@ -87,6 +131,77 @@ RSpec.describe Capacity::RunAdmission do
       expect(result[:selected_host]).to eq("elguapo")
       expect(result[:host_active_count]).to eq(4)
       expect(result[:host_available_slots]).to eq(0)
+    end
+
+    # @spec CONTAINER-RUNTIME-018
+    it "denies when the projected global requested memory would exceed the aggregate ceiling" do
+      allow(Capacity::InfrastructureLimits).to receive(:current).and_return(
+        infra_limits.merge(global_requested_memory_bytes_limit: 16.gigabytes)
+      )
+
+      2.times { create_requested_run!(memory_bytes: 6.gigabytes) }
+
+      result = admission_for(host: "local", limit: 8)
+
+      expect(result[:allowed]).to be false
+      expect(result[:reason]).to eq("global_requested_memory_ceiling")
+      expect(result[:current_global_requested_memory_bytes]).to eq(12.gigabytes)
+      expect(result[:global_requested_memory_bytes_limit]).to eq(16.gigabytes)
+    end
+
+    # @spec CONTAINER-RUNTIME-018
+    it "denies when the projected selected-host requested cpu would exceed the backend ceiling" do
+      allow(Capacity::InfrastructureLimits).to receive(:current).and_return(
+        infra_limits.merge(host_requested_cpu_quota_limit: 500_000)
+      )
+
+      2.times { create_requested_run!(host: "elguapo") }
+
+      result = admission_for(host: "elguapo", limit: 8)
+
+      expect(result[:allowed]).to be false
+      expect(result[:reason]).to eq("host_requested_cpu_ceiling")
+      expect(result[:current_host_requested_cpu_quota]).to eq(400_000)
+      expect(result[:host_requested_cpu_quota_limit]).to eq(500_000)
+    end
+
+    # @spec CONTAINER-RUNTIME-019
+    it "returns a provisioning-rate denial with the next eligible timestamp" do
+      travel_to(Time.zone.parse("2026-08-17 12:00:00 UTC")) do
+        create_requested_run!(provisioning_started_at: 5.minutes.ago.iso8601)
+
+        allow(Capacity::InfrastructureLimits).to receive(:current).and_return(
+          infra_limits.merge(global_provisionings_per_window_limit: 1)
+        )
+
+        result = admission_for(host: "local", limit: 8)
+
+        expect(result[:allowed]).to be false
+        expect(result[:reason]).to eq("global_provisioning_rate_limit")
+        expect(result[:rate_limited_until]).to eq(Time.zone.parse("2026-08-17 12:05:00 UTC"))
+        expect(result[:current_global_provisionings_per_window]).to eq(1)
+        expect(result[:global_provisionings_per_window_limit]).to eq(1)
+      end
+    end
+
+    # @spec CONTAINER-RUNTIME-020
+    it "denies when the requested execution disk exceeds the configured maximum" do
+      allow(Capacity::InfrastructureLimits).to receive(:current).and_return(
+        infra_limits.merge(max_execution_disk_bytes_limit: 1.gigabyte)
+      )
+
+      result = described_class.call(
+        user: user,
+        project: project,
+        docker_snapshot: docker_snapshot,
+        selected_host: "local",
+        selected_host_limit: 8
+      )
+
+      expect(result[:allowed]).to be false
+      expect(result[:reason]).to eq("execution_disk_limit_exceeded")
+      expect(result[:requested_disk_bytes]).to be > 1.gigabyte
+      expect(result[:max_execution_disk_bytes_limit]).to eq(1.gigabyte)
     end
 
     it "still enforces user guardrails across all hosts" do

@@ -90,6 +90,7 @@ module Config
           container_backend: ENV.fetch("CONTAINER_BACKEND", "local"),
           docker_socket_present: ENV["DOCKER_HOST"].present? || File.exist?(DEFAULT_DOCKER_SOCKET),
           screenshots_configured: Screenshots::Storage.configured?,
+          infrastructure_limit_errors: Capacity::InfrastructureLimits.production_errors(env: ENV),
           logger: logger
         )
       end
@@ -123,6 +124,7 @@ module Config
       container_backend:,
       docker_socket_present:,
       screenshots_configured:,
+      infrastructure_limit_errors:,
       logger:
     )
       @database_url = database_url
@@ -136,6 +138,7 @@ module Config
       @container_backend = container_backend
       @docker_socket_present = docker_socket_present
       @screenshots_configured = screenshots_configured
+      @infrastructure_limit_errors = Array(infrastructure_limit_errors)
       @logger = logger
       @errors = []
       @warnings = []
@@ -160,12 +163,15 @@ module Config
     attr_reader :database_url, :database_password, :temporal_address, :redis_url,
                 :qdrant_url, :qdrant_api_key, :workspace_root, :workspace_writable,
                 :container_backend, :docker_socket_present, :screenshots_configured,
-                :logger
+                :infrastructure_limit_errors, :logger
 
     def validate_required
       # @spec PROD-CONFIG-002
       add_error(:database, "database connection (set DATABASE_URL or PAID_DATABASE_PASSWORD)") unless database_configured?
       add_error(:qdrant_api_key, "QDRANT_API_KEY (or qdrant.api_key credential)") if qdrant_api_key.blank?
+      infrastructure_limit_errors.each do |detail|
+        add_error(:infrastructure_limits, detail)
+      end
     end
 
     def collect_warnings

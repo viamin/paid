@@ -60,6 +60,10 @@ RSpec.describe Metrics::PrometheusCollector do # @spec OBSERVABILITY-002
       expect(output).to include("paid_capacity_global_concurrent_limit")
       expect(output).to include("paid_capacity_host_concurrent_executions")
       expect(output).to include("paid_capacity_host_concurrent_limit")
+      expect(output).to include("paid_capacity_global_requested_memory_bytes")
+      expect(output).to include("paid_capacity_global_requested_memory_bytes_limit")
+      expect(output).to include("paid_capacity_host_requested_cpu_quota")
+      expect(output).to include("paid_capacity_host_requested_cpu_quota_limit")
     end
 
     context "with agent runs in various statuses" do

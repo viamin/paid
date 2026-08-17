@@ -206,6 +206,11 @@ class ProcessRunQueueJob < ApplicationJob
             blocked_project_ids.add(next_run.project_id)
           when "create_pr_hard_ceiling"
             blocked_account_create_pr_ids.add(next_run.project.account_id)
+          when "global_provisioning_rate_limit"
+            park_run_for_capacity(next_run, admission[:rate_limited_until], admission[:reason])
+            break
+          when "account_provisioning_rate_limit", "project_provisioning_rate_limit"
+            park_run_for_capacity(next_run, admission[:rate_limited_until], admission[:reason])
           else
             # Exclude the whole owner for the rest of this pass so a deep
             # backlog for a saturated user cannot consume the iteration budget
@@ -490,11 +495,34 @@ class ProcessRunQueueJob < ApplicationJob
     end
   end
 
+  def park_run_for_capacity(agent_run, available_at, reason)
+    return if available_at.blank?
+
+    count = AgentRun.where(id: agent_run.id, status: "queued", temporal_workflow_id: nil)
+      .update_all(
+        status: "rate_limited",
+        rate_limited_until: available_at,
+        external_metadata: agent_run.external_metadata.merge("capacity_park_reason" => reason),
+        updated_at: Time.current
+      )
+
+    return unless count.positive?
+
+    Rails.logger.info(
+      message: "process_run_queue.capacity_parked",
+      agent_run_id: agent_run.id,
+      project_id: agent_run.project_id,
+      reason: reason,
+      rate_limited_until: available_at.iso8601
+    )
+  end
+
   def run_admission_for(agent_run, user, mode:, docker_snapshot:, reserved_agent_memory_bytes:, selected_host:, selected_host_limit:)
     Capacity::RunAdmission.call(
       user: user,
       project: agent_run.project,
       goal: agent_run.goal,
+      agent_run: agent_run,
       mode: mode,
       docker_snapshot: docker_snapshot,
       reserved_agent_memory_bytes: reserved_agent_memory_bytes,
@@ -740,6 +768,28 @@ class ProcessRunQueueJob < ApplicationJob
       available_memory_bytes: admission[:available_memory_bytes],
       estimated_memory_per_run_bytes: admission[:estimated_memory_per_run_bytes],
       reserved_agent_memory_bytes: admission[:reserved_agent_memory_bytes],
+      requested_cpu_quota: admission[:requested_cpu_quota],
+      requested_memory_bytes: admission[:requested_memory_bytes],
+      requested_disk_bytes: admission[:requested_disk_bytes],
+      current_global_requested_cpu_quota: admission[:current_global_requested_cpu_quota],
+      current_global_requested_memory_bytes: admission[:current_global_requested_memory_bytes],
+      current_global_requested_disk_bytes: admission[:current_global_requested_disk_bytes],
+      global_requested_cpu_quota_limit: admission[:global_requested_cpu_quota_limit],
+      global_requested_memory_bytes_limit: admission[:global_requested_memory_bytes_limit],
+      global_requested_disk_bytes_limit: admission[:global_requested_disk_bytes_limit],
+      current_host_requested_cpu_quota: admission[:current_host_requested_cpu_quota],
+      current_host_requested_memory_bytes: admission[:current_host_requested_memory_bytes],
+      current_host_requested_disk_bytes: admission[:current_host_requested_disk_bytes],
+      host_requested_cpu_quota_limit: admission[:host_requested_cpu_quota_limit],
+      host_requested_memory_bytes_limit: admission[:host_requested_memory_bytes_limit],
+      host_requested_disk_bytes_limit: admission[:host_requested_disk_bytes_limit],
+      current_global_provisionings_per_window: admission[:current_global_provisionings_per_window],
+      current_account_provisionings_per_window: admission[:current_account_provisionings_per_window],
+      current_project_provisionings_per_window: admission[:current_project_provisionings_per_window],
+      global_provisionings_per_window_limit: admission[:global_provisionings_per_window_limit],
+      account_provisionings_per_window_limit: admission[:account_provisionings_per_window_limit],
+      project_provisionings_per_window_limit: admission[:project_provisionings_per_window_limit],
+      rate_limited_until: admission[:rate_limited_until]&.iso8601,
       snapshot_backend_identifier: admission[:snapshot_backend_identifier],
       docker_degraded_reasons: admission[:docker_degraded_reasons],
       docker_reason: admission[:docker_reason],
@@ -887,10 +937,16 @@ class ProcessRunQueueJob < ApplicationJob
     # would be charged to the local bucket (via its blank container_host) and
     # not to the remote host, allowing the queue to over-admit remotes while
     # starving the local host in a single pass.
-    update_columns = { temporal_workflow_id: workflow_id }
+    update_columns = {
+      temporal_workflow_id: workflow_id,
+      external_metadata: agent_run.external_metadata.merge(
+        "provisioning_started_at" => Time.current.iso8601,
+        "requested_resources" => Capacity::RequestedResources.persistable_for(agent_run)
+      )
+    }
     if planned_container_host.present?
       update_columns[:container_host] = nil
-      update_columns[:external_metadata] = agent_run.external_metadata.merge({
+      update_columns[:external_metadata] = update_columns[:external_metadata].merge({
         "planned_container_host" => planned_container_host
       }).tap do |metadata|
         metadata["host_placement_decision"] = serialize_host_placement_decision(host_placement_decision) if host_placement_decision.present?

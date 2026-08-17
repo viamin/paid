@@ -11,16 +11,18 @@ module Capacity
       end
     end
 
-    def initialize(user:, project: nil, goal: nil, docker_snapshot: nil, reserved_agent_memory_bytes: nil, mode: nil,
-      selected_host: nil, selected_host_limit: nil)
+    def initialize(user:, project: nil, goal: nil, agent_run: nil, docker_snapshot: nil, reserved_agent_memory_bytes: nil, mode: nil,
+      selected_host: nil, selected_host_limit: nil, now: Time.current)
       @user = user
       @project = project
       @goal = goal
+      @agent_run = agent_run
       @docker_snapshot = docker_snapshot
       @reserved_agent_memory_bytes = reserved_agent_memory_bytes
       @mode = mode
       @selected_host = selected_host
       @selected_host_limit = selected_host_limit
+      @now = now
     end
 
     def call
@@ -28,14 +30,19 @@ module Capacity
       return owner_missing_result unless user
 
       mode = @mode || user.settings.run_concurrency_mode
-      return manual_result(mode: mode) unless mode == UserSetting::RUN_CONCURRENCY_MODE_AUTO
+      decision = if mode == UserSetting::RUN_CONCURRENCY_MODE_AUTO
+        auto_result
+      else
+        manual_result(mode: mode)
+      end
 
-      auto_result
+      decorate_capacity_state(decision)
+      apply_infrastructure_safety_rails(decision)
     end
 
     private
 
-    attr_reader :docker_snapshot, :goal, :project, :reserved_agent_memory_bytes, :selected_host, :selected_host_limit, :user
+    attr_reader :agent_run, :docker_snapshot, :goal, :now, :project, :reserved_agent_memory_bytes, :selected_host, :selected_host_limit, :user
 
     def owner_missing_result
       {
@@ -57,7 +64,8 @@ module Capacity
         available_memory_bytes: nil,
         estimated_memory_per_run_bytes: nil,
         reserved_agent_memory_bytes: nil,
-        snapshot_available: false
+        snapshot_available: false,
+        rate_limited_until: nil
       }
     end
 
@@ -83,7 +91,8 @@ module Capacity
         available_memory_bytes: nil,
         estimated_memory_per_run_bytes: candidate_memory_bytes,
         reserved_agent_memory_bytes: nil,
-        snapshot_available: false
+        snapshot_available: false,
+        rate_limited_until: nil
       }
     end
 
@@ -134,7 +143,8 @@ module Capacity
         snapshot_backend_identifier: snapshot[:backend_identifier],
         docker_confidence: snapshot[:confidence],
         docker_memory_bytes: snapshot[:docker_memory_bytes],
-        docker_degraded_reasons: snapshot[:degraded_reasons]
+        docker_degraded_reasons: snapshot[:degraded_reasons],
+        rate_limited_until: nil
       }
 
       # The capacity-blocked annotation only matters when Docker memory is
@@ -203,8 +213,101 @@ module Capacity
         docker_error_class: snapshot[:error_class],
         docker_error_message: snapshot[:error_message],
         docker_agent_container_count: snapshot[:agent_container_count].to_i,
-        degraded: true
+        degraded: true,
+        rate_limited_until: nil
       }
+    end
+
+    def decorate_capacity_state(decision)
+      requested = requested_resources
+      global_requested = global_requested_resources
+      host_requested = host_requested_resources
+      provisioning = provisioning_window
+
+      decision.merge!(
+        requested_cpu_quota: requested[:cpu_quota],
+        requested_memory_bytes: requested[:memory_bytes],
+        requested_disk_bytes: requested[:disk_bytes],
+        current_global_requested_cpu_quota: global_requested[:cpu_quota],
+        current_global_requested_memory_bytes: global_requested[:memory_bytes],
+        current_global_requested_disk_bytes: global_requested[:disk_bytes],
+        current_host_requested_cpu_quota: host_requested[:cpu_quota],
+        current_host_requested_memory_bytes: host_requested[:memory_bytes],
+        current_host_requested_disk_bytes: host_requested[:disk_bytes],
+        global_requested_cpu_quota_limit: infrastructure_limits[:global_requested_cpu_quota_limit],
+        host_requested_cpu_quota_limit: infrastructure_limits[:host_requested_cpu_quota_limit],
+        global_requested_memory_bytes_limit: infrastructure_limits[:global_requested_memory_bytes_limit],
+        host_requested_memory_bytes_limit: infrastructure_limits[:host_requested_memory_bytes_limit],
+        global_requested_disk_bytes_limit: infrastructure_limits[:global_requested_disk_bytes_limit],
+        host_requested_disk_bytes_limit: infrastructure_limits[:host_requested_disk_bytes_limit],
+        max_execution_cpu_quota_limit: infrastructure_limits[:max_execution_cpu_quota_limit],
+        max_execution_memory_bytes_limit: infrastructure_limits[:max_execution_memory_bytes_limit],
+        max_execution_disk_bytes_limit: infrastructure_limits[:max_execution_disk_bytes_limit],
+        current_global_provisionings_per_window: provisioning[:global_count],
+        current_account_provisionings_per_window: provisioning[:account_count],
+        current_project_provisionings_per_window: provisioning[:project_count],
+        global_provisionings_per_window_limit: infrastructure_limits[:global_provisionings_per_window_limit],
+        account_provisionings_per_window_limit: infrastructure_limits[:account_provisionings_per_window_limit],
+        project_provisionings_per_window_limit: infrastructure_limits[:project_provisionings_per_window_limit]
+      )
+    end
+
+    def apply_infrastructure_safety_rails(decision)
+      return decision unless decision[:allowed]
+
+      reason, rate_limited_until = infrastructure_denial
+      return decision unless reason
+
+      decision[:allowed] = false
+      decision[:reason] = reason
+      decision[:available_slots] = 0
+      decision[:rate_limited_until] = rate_limited_until
+      decision
+    end
+
+    def infrastructure_denial
+      execution_resource_denial ||
+        aggregate_requested_resource_denial ||
+        provisioning_rate_denial
+    end
+
+    def execution_resource_denial
+      return [ "execution_cpu_limit_exceeded", nil ] if requested_resources[:cpu_quota] > infrastructure_limits[:max_execution_cpu_quota_limit].to_i
+      return [ "execution_memory_limit_exceeded", nil ] if requested_resources[:memory_bytes] > infrastructure_limits[:max_execution_memory_bytes_limit].to_i
+      return [ "execution_disk_limit_exceeded", nil ] if requested_resources[:disk_bytes] > infrastructure_limits[:max_execution_disk_bytes_limit].to_i
+
+      nil
+    end
+
+    def aggregate_requested_resource_denial
+      checks = [
+        [ "global_requested_cpu_ceiling", current_global_requested_cpu_quota, infrastructure_limits[:global_requested_cpu_quota_limit], requested_resources[:cpu_quota] ],
+        [ "global_requested_memory_ceiling", current_global_requested_memory_bytes, infrastructure_limits[:global_requested_memory_bytes_limit], requested_resources[:memory_bytes] ],
+        [ "global_requested_disk_ceiling", current_global_requested_disk_bytes, infrastructure_limits[:global_requested_disk_bytes_limit], requested_resources[:disk_bytes] ],
+        [ "host_requested_cpu_ceiling", current_host_requested_cpu_quota, infrastructure_limits[:host_requested_cpu_quota_limit], requested_resources[:cpu_quota] ],
+        [ "host_requested_memory_ceiling", current_host_requested_memory_bytes, infrastructure_limits[:host_requested_memory_bytes_limit], requested_resources[:memory_bytes] ],
+        [ "host_requested_disk_ceiling", current_host_requested_disk_bytes, infrastructure_limits[:host_requested_disk_bytes_limit], requested_resources[:disk_bytes] ]
+      ]
+
+      checks.each do |reason, current, limit, requested|
+        next if limit.to_i <= 0
+        return [ reason, nil ] if current + requested > limit.to_i
+      end
+
+      nil
+    end
+
+    def provisioning_rate_denial
+      limit = infrastructure_limits[:global_provisionings_per_window_limit].to_i
+      return [ "global_provisioning_rate_limit", provisioning_window[:next_available_at] ] if limit.positive? && provisioning_window[:global_count] >= limit
+
+      limit = infrastructure_limits[:account_provisionings_per_window_limit].to_i
+      return [ "account_provisioning_rate_limit", provisioning_window[:next_available_at] ] if limit.positive? && provisioning_window[:account_count] >= limit
+
+      limit = infrastructure_limits[:project_provisionings_per_window_limit].to_i
+      return [ "project_provisioning_rate_limit", provisioning_window[:next_available_at] ] if limit.positive? && provisioning_window[:project_count] >= limit
+
+      nil
     end
 
     def denial_reason(remaining_memory_slots:)
@@ -327,6 +430,54 @@ module Capacity
 
     def candidate_memory_bytes
       user.settings.container_memory_bytes.presence || DEFAULT_ESTIMATED_MEMORY_BYTES
+    end
+
+    def requested_resources
+      @requested_resources ||= Capacity::RequestedResources.for_context(
+        user: user,
+        project: project,
+        external_metadata: agent_run&.external_metadata
+      )
+    end
+
+    def global_requested_resources
+      @global_requested_resources ||= TenantContext.with_system_access do
+        Capacity::RequestedResources.sum_for(AgentRun.capacity_inflight)
+      end
+    end
+
+    def host_requested_resources
+      @host_requested_resources ||= if selected_host.blank?
+        Capacity::RequestedResources.zero
+      else
+        scope = TenantContext.with_system_access do
+          AgentRun.capacity_inflight.where(
+            "COALESCE(NULLIF(container_host, ''), COALESCE(external_metadata->>'planned_container_host', '')) IN (:scope)",
+            scope: selected_host_scope
+          )
+        end
+        Capacity::RequestedResources.sum_for(scope)
+      end
+    end
+
+    def current_global_requested_cpu_quota = global_requested_resources[:cpu_quota]
+    def current_global_requested_memory_bytes = global_requested_resources[:memory_bytes]
+    def current_global_requested_disk_bytes = global_requested_resources[:disk_bytes]
+    def current_host_requested_cpu_quota = host_requested_resources[:cpu_quota]
+    def current_host_requested_memory_bytes = host_requested_resources[:memory_bytes]
+    def current_host_requested_disk_bytes = host_requested_resources[:disk_bytes]
+
+    def infrastructure_limits
+      @infrastructure_limits ||= Capacity::InfrastructureLimits.current(host: selected_host)
+    end
+
+    def provisioning_window
+      @provisioning_window ||= Capacity::ProvisioningRateWindow.call(
+        account: user.account,
+        project: project,
+        window_seconds: infrastructure_limits[:provisioning_rate_window_seconds],
+        now: now
+      )
     end
 
     def total_agent_budget_bytes(snapshot)

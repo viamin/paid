@@ -194,6 +194,38 @@ RSpec.describe ProcessRunQueueJob do
     expect(queued_run.reload.external_metadata.dig("host_placement_decision", "decision_mode")).to eq(decision_mode)
   end
 
+  def provisioning_rate_denied_admission(available_at:)
+    {
+      allowed: false,
+      reason: "global_provisioning_rate_limit",
+      mode: "auto",
+      selected_host: "local",
+      host_active_count: 0,
+      host_max_concurrent_runs: 2,
+      host_available_slots: 2,
+      available_slots: 0,
+      global_active_count: 0,
+      global_max_concurrent_executions: 50,
+      global_available_slots: 50,
+      effective_max_concurrent_runs: 5,
+      available_memory_bytes: 16.gigabytes,
+      estimated_memory_per_run_bytes: 4.gigabytes,
+      reserved_agent_memory_bytes: 0,
+      rate_limited_until: available_at
+    }
+  end
+
+  def default_local_host_selection_result
+    Containers::BackendScheduler::Result.new(
+      candidate_hosts: [ "local" ],
+      fallback_policy: "disabled",
+      selection_source: "default",
+      requested_host: "local",
+      compatibility_failures: {},
+      health_failures: {}
+    )
+  end
+
   def stub_unavailable_fallback_hosts(run, registry_bundle)
     disallowed = Containers::Provision::CompatibilityResult.new(
       compatible: false,
@@ -2041,6 +2073,29 @@ RSpec.describe ProcessRunQueueJob do
             reasons: include("docker_sampling_budget_exceeded")
           )
         )
+      end
+
+      # @spec CONTAINER-RUNTIME-019
+      it "parks provisioning-rate-limited runs until the admission window reopens" do
+        queued_run = create_queued_run_with_policy(max_concurrent_runs: 5)
+        queued_run.project.created_by.settings.update!(run_concurrency_mode: "auto")
+        stub_policy_decision(local_auto_decision)
+        allow(Rails.logger).to receive(:info)
+        available_at = Time.utc(2026, 8, 17, 12, 5, 0)
+        allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(auto_mode_snapshot)
+        allow(Containers::BackendScheduler).to receive(:call).and_return(default_local_host_selection_result)
+        allow(Capacity::RunAdmission).to receive(:call).and_return(
+          provisioning_rate_denied_admission(available_at: available_at)
+        )
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        queued_run.reload
+        expect(queued_run.status).to eq("rate_limited")
+        expect(queued_run.rate_limited_until).to eq(available_at)
+        expect(queued_run.external_metadata["capacity_park_reason"]).to eq("global_provisioning_rate_limit")
       end
     end
   end
