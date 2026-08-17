@@ -116,6 +116,24 @@ RSpec.describe ExecutionResources::Reconcile do
     expect(resource.next_cleanup_at).to be > Time.current
   end
 
+  it "does not retry cleanup_pending resources before their next_cleanup_at" do
+    resource = create(:execution_resource, project: project, agent_run: agent_run,
+      identifier: handle.identifier, host: handle.host, runner_handle: handle.to_storage,
+      state: "cleanup_pending", next_cleanup_at: 10.minutes.from_now, cleanup_attempts: 1)
+    runner.resources = [ tracked_resource(resource_type: "environment", identifier: handle.identifier) ]
+    runner.fail_handle_cleanup = true
+
+    result = reconcile(scope: ExecutionResource.where(id: resource.id))
+
+    expect(result.failures).to eq(0)
+    expect(runner.cleaned_handles).to be_empty
+    expect(resource.reload).to have_attributes(
+      state: "cleanup_pending",
+      cleanup_attempts: 1
+    )
+    expect(resource.next_cleanup_at).to be > Time.current
+  end
+
   it "degrades to handle-based cleanup with reduced confidence when the provider cannot list" do
     resource = create(:execution_resource, project: project, agent_run: agent_run,
       identifier: handle.identifier, host: handle.host, runner_handle: handle.to_storage,

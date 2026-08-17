@@ -68,7 +68,7 @@ module ExecutionResources
         counts[:checked] += 1
         resource.mark_reconciled!(reduced_confidence: true)
         counts[:reduced_confidence] += 1
-        next unless resource.cleanup_pending?
+        next unless resource.cleanup_pending? && due_for_cleanup?(resource)
 
         cleanup_via_handle(resource:, runner:, counts:)
       end
@@ -82,12 +82,17 @@ module ExecutionResources
       end
 
       if resource.cleanup_pending?
+        return resource.mark_reconciled! unless due_for_cleanup?(resource)
         return cleanup_via_handle(resource:, runner:, counts:) if resource.environment? && resource.runner_handle_object
 
         return cleanup_via_resource(resource:, listed_resource:, runner:, counts:)
       end
 
       resource.mark_reconciled!
+    end
+
+    def due_for_cleanup?(resource)
+      resource.next_cleanup_at.nil? || resource.next_cleanup_at <= Time.current
     end
 
     def cleanup_via_resource(resource:, listed_resource:, runner:, counts:)

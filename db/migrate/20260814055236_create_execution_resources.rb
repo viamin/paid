@@ -52,5 +52,43 @@ class CreateExecutionResources < ActiveRecord::Migration[8.1]
       name: "idx_execution_resources_agent_run_resource_type"
     add_index :execution_resources, [ :state, :next_cleanup_at ],
       name: "idx_execution_resources_cleanup_schedule"
+
+    # RLS is the documented exception to the Rails-helper rule (AGENTS.md):
+    # PostgreSQL row-level security and CREATE POLICY have no equivalent
+    # helper, so the SQL stays minimal and isolated to this block. account_id
+    # is nullable (rows can be adopted from provider inventory before a
+    # matching account/project is resolved), so NULL rows pass through like
+    # agent_run_resource_profiles.
+    reversible do |dir|
+      dir.up do
+        safety_assured do
+          execute <<~SQL
+            ALTER TABLE execution_resources ENABLE ROW LEVEL SECURITY;
+            ALTER TABLE execution_resources FORCE ROW LEVEL SECURITY;
+            CREATE POLICY tenant_isolation ON execution_resources
+              USING (
+                paid_tenant_bypass() OR (
+                  execution_resources.account_id IS NULL
+                  OR execution_resources.account_id = paid_current_account_id()
+                )
+              )
+              WITH CHECK (
+                paid_tenant_bypass() OR (
+                  execution_resources.account_id IS NULL
+                  OR execution_resources.account_id = paid_current_account_id()
+                )
+              );
+          SQL
+        end
+      end
+
+      dir.down do
+        safety_assured do
+          execute "DROP POLICY IF EXISTS tenant_isolation ON execution_resources"
+          execute "ALTER TABLE execution_resources NO FORCE ROW LEVEL SECURITY"
+          execute "ALTER TABLE execution_resources DISABLE ROW LEVEL SECURITY"
+        end
+      end
+    end
   end
 end
