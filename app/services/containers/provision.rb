@@ -2441,7 +2441,7 @@ module Containers
       labels["paid.container_pool_entry_id"] = pool_entry.id.to_s if pool_entry
 
       {
-        "Labels" => labels.merge(@ownership_labels)
+        "Labels" => labels.merge(@ownership_labels.except("paid.resource"))
       }
     end
 

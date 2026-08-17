@@ -79,9 +79,9 @@ RSpec.shared_examples "an ExecutionRunner implementation" do
       runner.provision(spec: run_spec)
 
       intent = ProvisioningIntent.order(:id).last
-      expect(intent.ownership_tags).to include(
-        "paid.environment", "paid.account", "paid.project", "paid.run", "paid.attempt", "paid.resource"
-      )
+      expected_tag_names = ExecutionRunners::REQUIRED_OWNERSHIP_TAG_NAMES.map { |name| "paid.#{name}" }
+
+      expect(intent.ownership_tags).to include(*expected_tag_names)
     end
 
     it "declares whether it can tag and list resources" do

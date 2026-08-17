@@ -20,6 +20,7 @@ require "json"
 # @see ExecutionRunners::Base
 module ExecutionRunners
   MANIFEST_SCHEMA_VERSION = "remote_execution.v1"
+  REQUIRED_OWNERSHIP_TAG_NAMES = %w[environment account project run attempt resource].freeze
 
   def self.json_value(value)
     case value
@@ -303,7 +304,6 @@ module ExecutionRunners
   # @spec CONTAINER-RUNTIME-020
   OwnershipTags = Data.define(:environment, :account_id, :project_id, :run_id, :attempt, :resource_kind) do
     LABEL_PREFIX = "paid."
-    REQUIRED_TAG_NAMES = %w[environment account project run attempt resource].freeze
 
     # Builds the ownership tags from an agent-run context. The environment is
     # the Paid deployment identifier (caller-supplied so deployments without a
@@ -328,14 +328,18 @@ module ExecutionRunners
     # container/volume labels). Keys carry the shared `paid.*` prefix so a
     # reconciliation scan can list resources by label regardless of runner.
     def to_label_map
-      {
-        "#{LABEL_PREFIX}environment" => environment.to_s,
-        "#{LABEL_PREFIX}account" => account_id.to_s,
-        "#{LABEL_PREFIX}project" => project_id.to_s,
-        "#{LABEL_PREFIX}run" => run_id.to_s,
-        "#{LABEL_PREFIX}attempt" => attempt.to_s,
-        "#{LABEL_PREFIX}resource" => resource_kind.to_s
+      values_by_name = {
+        "environment" => environment,
+        "account" => account_id,
+        "project" => project_id,
+        "run" => run_id,
+        "attempt" => attempt,
+        "resource" => resource_kind
       }
+
+      ExecutionRunners::REQUIRED_OWNERSHIP_TAG_NAMES.to_h do |name|
+        [ "#{LABEL_PREFIX}#{name}", values_by_name.fetch(name).to_s ]
+      end
     end
   end
 
