@@ -228,6 +228,44 @@ is explicit value-object data, not ad hoc hashes.
   (variable names, service names, config keys) and never secret values; service
   declarations expose `env_keys`, not `env` payloads.
 
+### Immutable agent image registry (RDR-059)
+
+`AgentImage` is the system of record for what image actually runs in
+production. The model records the immutable production identity
+`(account_id, registry, repository, digest, architecture)` — the OCI
+content-addressed tuple — alongside the logical profile name used by
+`Containers::ImageResolver` (e.g. `base`, `elixir-node`, `ruby`), a mutable
+`provenance` jsonb for build metadata, a mutable `metadata` jsonb for
+operations/runbook links, the upstream `built_at` timestamp, and a lifecycle
+`status` of `active`, `deprecated`, or `blocked`.
+
+- Identity fields are immutable after creation. A new build produces a new
+  digest, which is a new row. This is the only safe way to keep history
+  accurate: editing an existing row would silently rewrite what the registry
+  claims was running on a prior run.
+- `status` is the only mutating lifecycle surface. The state machine allows
+  `active -> deprecated -> blocked` and `active -> blocked`; transitions are
+  idempotent so retrying an Avo action or job does not double-stamp
+  timestamps or replace the recorded reason. Records are never deleted, so
+  audit and rollback queries see the full history.
+- The `schedulable?` predicate is the single gate for new placements. Today
+  it is `active?`, but exposing the predicate means future states (e.g.
+  `quarantined`) do not have to be repeated at every call site.
+- Local development and single-backend deployments continue to use the
+  literal `paid-agent:latest` constant in `Containers::ImageResolver`; the
+  registry is the production source of truth, not a replacement for the
+  resolver. The two layers compose: the resolver decides which logical
+  profile a run needs, the registry records which content-addressed image
+  the production host pulled, and a future `ImageResolver#resolve!` will
+  cross-check the resolver output against the active registry rows.
+- Uniqueness is enforced on `(account_id, registry, repository, digest,
+  architecture)`. The same digest on a different architecture is a separate
+  image record (multi-arch images register one row per architecture). The
+  same identity may be recorded independently by different accounts.
+- A partial index over non-active rows keeps audit and rollback queries
+  fast as the active set grows; a `(account_id, name, architecture)`
+  index supports the (profile, architecture) scheduling decision.
+
 ## References
 
 - `app/services/containers/provision.rb`
@@ -240,7 +278,10 @@ is explicit value-object data, not ad hoc hashes.
 - `app/services/capacity/docker_snapshot.rb`
 - `app/services/capacity/run_admission.rb`
 - `app/models/agent_run.rb`
+- `app/models/agent_image.rb`
+- `db/migrate/20260817195654_create_agent_images.rb`
 - `spec/services/containers/provision_spec.rb`
+- `spec/models/agent_image_spec.rb`
 - `spec/services/execution_runners_spec.rb`
 - `spec/services/execution_runners/base_spec.rb`
 - `spec/services/execution_runners/local_docker_runner_spec.rb`
