@@ -81,6 +81,7 @@ class ProcessRunQueueJob < ApplicationJob
       reroute_cache = {}
       blocked_account_create_pr_ids = Set.new
       blocked_account_dispatch_ids = Set.new
+      execution_control_snapshot = execution_control_snapshot_for_queue
       docker_snapshots_by_host = {}
       base_reserved_agent_memory_bytes_by_host = {}
       started_reserved_agent_memory_bytes_by_host = Hash.new(0)
@@ -224,7 +225,11 @@ class ProcessRunQueueJob < ApplicationJob
         # agent-run-enabled runners). Weighting/preference is a soft preference
         # — availability is a hard filter that never blocks work from running.
         if next_run.runner_unbound?
-          bound_runner = AgentRuns::BindRunner.call(agent_run: next_run, exclude_runner_ids: blocked_runner_ids)
+          bound_runner = AgentRuns::BindRunner.call(
+            agent_run: next_run,
+            exclude_runner_ids: blocked_runner_ids,
+            disabled_runner_ids: execution_control_snapshot[:disabled_runner_ids]
+          )
           unless bound_runner
             # @spec RUNNER-SCHED-008: when all eligible runners are blocked by
             # time-window restrictions, park the run until the earliest window
@@ -247,7 +252,7 @@ class ProcessRunQueueJob < ApplicationJob
           next
         end
 
-        execution_control = queue_parking_execution_control_for(next_run)
+        execution_control = queue_parking_execution_control_for(next_run, execution_control_snapshot)
         if execution_control
           park_run_for_execution_control(next_run, execution_control)
           skipped_ids.add(next_run.id)
@@ -351,11 +356,26 @@ class ProcessRunQueueJob < ApplicationJob
   # @spec EXEC-DISABLE-002 — only global/account/project controls park queued
   # runs before claim. Runner/backend controls are enforced later in the
   # preflight and placement paths so reroute/late-binding semantics still apply.
-  def queue_parking_execution_control_for(agent_run)
-    control = ExecutionControls::Resolver.call(agent_run: agent_run)
+  def queue_parking_execution_control_for(agent_run, execution_control_snapshot)
+    control = [
+      execution_control_snapshot[:global],
+      execution_control_snapshot[:accounts][agent_run.project.account_id],
+      execution_control_snapshot[:projects][agent_run.project_id]
+    ].compact.max_by(&:priority)
     return unless control
 
     control if QUEUE_PARKING_EXECUTION_CONTROL_SCOPES.include?(control.scope)
+  end
+
+  def execution_control_snapshot_for_queue
+    controls = ExecutionControl.enabled.where(scope: ExecutionControl::SCOPES).to_a
+
+    {
+      global: controls.find { |control| control.scope == "global" },
+      accounts: controls.select { |control| control.scope == "account" }.index_by(&:account_id),
+      projects: controls.select { |control| control.scope == "project" }.index_by(&:project_id),
+      disabled_runner_ids: controls.filter_map { |control| control.runner_id if control.scope == "runner" }.to_set
+    }
   end
 
   # Reroutes a run whose pinned/bound runner is unavailable to a healthy

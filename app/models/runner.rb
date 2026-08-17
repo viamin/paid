@@ -291,7 +291,9 @@ class Runner < ApplicationRecord
     time_window_check(now: now).blocked_at?
   end
 
-  def execution_enabled_for_agent_runs?
+  def execution_enabled_for_agent_runs?(disabled_runner_ids: nil)
+    return !disabled_runner_ids.include?(id) if disabled_runner_ids
+
     !ExecutionControl.enabled.for_runner_scope(id).exists?
   end
 

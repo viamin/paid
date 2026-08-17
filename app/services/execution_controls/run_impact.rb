@@ -19,7 +19,7 @@ module ExecutionControls
     def disable!
       record_control_event!("execution_control.disabled")
       log_control_event("execution_control.disabled")
-      resume_parked_runs! if control.capacity?
+      resume_parked_runs!
     end
 
     def park_run!(agent_run)
@@ -96,13 +96,14 @@ module ExecutionControls
       parked_runs.find_each do |agent_run|
         next unless parked_by_control?(agent_run)
 
+        changed = false
         agent_run.with_lock do
           next unless agent_run.paused?
           next unless parked_by_control?(agent_run)
 
           metadata = agent_run.external_metadata.deep_dup
           metadata.delete(ExecutionControl::PARK_MARKER_KEY)
-          agent_run.update!(
+          changed = agent_run.update!(
             status: "queued",
             paused_at: nil,
             external_metadata: metadata,
@@ -110,13 +111,20 @@ module ExecutionControls
           )
         end
 
+        next unless changed
+
         record_run_event!("agent_run.resumed", agent_run, result: "execution_control_cleared")
         log_run_event("execution_control.run_resumed", agent_run)
       end
     end
 
     def affected_runs
-      scope = case control.scope
+      scope = scoped_runs
+      active_runs_scope(scope).includes(project: :account)
+    end
+
+    def scoped_runs
+      case control.scope
       when "global"
         AgentRun.where(status: AgentRun::UNFINISHED_STATUSES)
       when "account"
@@ -126,20 +134,27 @@ module ExecutionControls
       when "runner"
         AgentRun.where(runner_id: control.runner_id, status: AgentRun::UNFINISHED_STATUSES)
       when "backend"
-        host = control.docker_host&.identifier.to_s
-        AgentRun.where(status: AgentRun::UNFINISHED_STATUSES)
+        host = control.docker_host
+        return AgentRun.none unless host
+
+        AgentRun.joins(:project)
+          .where(projects: { account_id: host.account_id }, status: AgentRun::UNFINISHED_STATUSES)
           .where(
             "COALESCE(NULLIF(container_host, ''), COALESCE(external_metadata->>'planned_container_host', '')) = ?",
-            host
+            host.identifier
           )
       else
         AgentRun.none
       end
-      scope.includes(project: :account)
+    end
+
+    def active_runs_scope(scope)
+      scope.where(status: AgentRun::ACTIVE_STATUSES)
+        .or(scope.where(status: "queued").where.not(temporal_workflow_id: nil))
     end
 
     def parked_runs
-      affected_runs.where(status: "paused")
+      scoped_runs.where(status: "paused").includes(project: :account)
     end
 
     def parked_by_control?(agent_run)
@@ -157,6 +172,7 @@ module ExecutionControls
         action: action,
         actor: actor,
         subject: control.target,
+        account: control_account,
         metadata: {
           execution_control_id: control.id,
           execution_control_scope: control.scope,
@@ -211,6 +227,10 @@ module ExecutionControls
         agent_run_id: agent_run.id,
         project_id: agent_run.project_id
       )
+    end
+
+    def control_account
+      control.account || control.project&.account || control.runner&.user&.account || control.docker_host&.account
     end
   end
 end

@@ -1229,6 +1229,7 @@ RSpec.describe ProcessRunQueueJob do
         project = create(:project)
         run = create(:agent_run, :queued, project: project)
         create(:execution_control, :project_scope, :enabled, project: project, reason: "Project maintenance")
+        expect(ExecutionControls::Resolver).not_to receive(:call)
 
         expect(temporal_client).not_to receive(:start_workflow)
 

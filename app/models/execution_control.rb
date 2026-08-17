@@ -18,6 +18,8 @@ class ExecutionControl < ApplicationRecord
   belongs_to :runner, class_name: "Runner", optional: true
   belongs_to :docker_host, optional: true
 
+  after_commit :apply_run_impact_on_enabled_change, on: [ :create, :update ], if: :saved_change_to_enabled?
+
   validates :scope, presence: true, inclusion: { in: SCOPES }
   validates :mode, presence: true, inclusion: { in: MODES }
   validate :target_matches_scope
@@ -51,6 +53,11 @@ class ExecutionControl < ApplicationRecord
   end
 
   private
+
+  def apply_run_impact_on_enabled_change
+    impact = ExecutionControls::RunImpact.new(control: self)
+    enabled? ? impact.enable! : impact.disable!
+  end
 
   def target_matches_scope
     expected = {
