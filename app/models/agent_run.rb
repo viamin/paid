@@ -1902,6 +1902,8 @@ class AgentRun < ApplicationRecord
         raise ActiveRecord::RecordInvalid, self
       end
 
+      return self if running? && started_at.present?
+
       update!(status: "running", started_at: Time.current, completed_at: nil)
     end
   end

@@ -2175,6 +2175,20 @@ expect(container_service).to receive(:execute).with(
         activity.execute(agent_run_id: agent_run.id)
       end
 
+      it "stamps started_at when an admitted run begins execution" do
+        allow(git_ops).to receive(:has_changes_since?).and_return(false)
+        agent_run.update!(status: "running", started_at: nil)
+
+        allow(Containers::TokenOptimization).to receive(:rtk_init_for_runner) do
+          expect(agent_run.reload.started_at).to be_present
+        end
+        allow(activity).to receive(:run_runner_preflight!) do
+          expect(agent_run.reload.started_at).to be_present
+        end
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
       it "persists the pre-run head SHA for existing PR runs" do
         agent_run.update!(source_pull_request_number: 42)
         allow(git_ops).to receive(:has_changes_since?).and_return(false)
@@ -5334,6 +5348,18 @@ expect(container_service).to receive(:execute).with(
       expect(container_service).to receive(:execute).with(
         anything,
         hash_including(timeout: a_value <= 300)
+      ).and_return(exec_success)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "uses the full execution budget when admission happened before execution started" do
+      project.update!(max_execution_seconds: 60)
+      agent_run.update!(status: "running", started_at: nil)
+
+      expect(container_service).to receive(:execute).with(
+        anything,
+        hash_including(timeout: 60)
       ).and_return(exec_success)
 
       activity.execute(agent_run_id: agent_run.id)

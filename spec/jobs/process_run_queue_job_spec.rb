@@ -371,6 +371,7 @@ RSpec.describe ProcessRunQueueJob do
 
       queued_run.reload
       expect(queued_run.status).to eq("running")
+      expect(queued_run.started_at).to be_nil
       expect(queued_run.temporal_workflow_id).to be_present
       expect(LiveDashboardBroadcastJob).to have_been_enqueued.with(
         queued_run.project.account_id,

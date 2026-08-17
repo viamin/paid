@@ -888,11 +888,13 @@ class ProcessRunQueueJob < ApplicationJob
     # not to the remote host, allowing the queue to over-admit remotes while
     # starving the local host in a single pass.
     # @spec TEMPORAL-ORCHESTRATION-005 — admission flips the run to running so
-    # provisioning/setup/preflight counts as active execution.
+    # provisioning/setup/preflight counts as active execution for visibility
+    # and capacity accounting. Keep started_at tied to actual agent execution
+    # in RunAgentActivity so max_execution_seconds and stale-running thresholds
+    # do not start burning down during Temporal admission/provisioning.
     update_attributes = {
       temporal_workflow_id: workflow_id,
       status: "running",
-      started_at: Time.current,
       completed_at: nil
     }
     if planned_container_host.present?

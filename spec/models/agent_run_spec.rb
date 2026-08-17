@@ -1355,6 +1355,28 @@ RSpec.describe AgentRun do
 
         expect(agent_run.completed_at).to be_nil
       end
+
+      it "fills started_at for an already-running admitted run" do
+        agent_run = create(:agent_run, status: "running", started_at: nil)
+
+        freeze_time do
+          agent_run.start!
+
+          expect(agent_run.status).to eq("running")
+          expect(agent_run.started_at).to eq(Time.current)
+        end
+      end
+
+      it "does not reset started_at for an already-started run" do
+        started_at = 5.minutes.ago.change(usec: 0)
+        agent_run = create(:agent_run, status: "running", started_at: started_at)
+
+        freeze_time do
+          agent_run.start!
+
+          expect(agent_run.started_at).to eq(started_at)
+        end
+      end
     end
 
     describe "#complete!" do

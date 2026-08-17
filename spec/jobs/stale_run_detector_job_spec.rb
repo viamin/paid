@@ -36,6 +36,14 @@ RSpec.describe StaleRunDetectorJob do
       expect(recent_run.reload.status).to eq("running")
     end
 
+    it "does not touch admitted running runs before execution has started" do
+      admitted_run = create(:agent_run, status: "running", started_at: nil, updated_at: 2.days.ago)
+
+      described_class.perform_now
+
+      expect(admitted_run.reload.status).to eq("running")
+    end
+
     it "does not touch completed or failed runs" do
       create(:agent_run, :completed, started_at: 2.days.ago)
       create(:agent_run, :failed, started_at: 2.days.ago)
