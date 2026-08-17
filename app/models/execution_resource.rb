@@ -219,11 +219,9 @@ class ExecutionResource < ApplicationRecord # @spec CONTAINER-RUNTIME-019
   private_class_method :normalize_provider_host
 
   def self.safe_agent_run_id(agent_run)
-    return nil unless agent_run.respond_to?(:id)
+    return nil unless agent_run.is_a?(AgentRun)
 
     agent_run.id
-  rescue NoMethodError
-    nil
   end
   private_class_method :safe_agent_run_id
 end
