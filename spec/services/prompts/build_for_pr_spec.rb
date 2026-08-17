@@ -1479,6 +1479,20 @@ RSpec.describe Prompts::BuildForPr do
       expect(result.sections.map(&:key)).to include(:style_guides, :project_conventions, :lid_workflow)
     end
 
+    it "resolves the review goal profile when no agent run is supplied" do
+      profile = PromptAssembly::Profile.new(disabled_sections: [ :project_conventions ])
+      allow(PromptAssembly::ProfileResolution).to receive(:resolve).and_return(profile)
+
+      result = build_pr_builder.build_result
+
+      expect(PromptAssembly::ProfileResolution).to have_received(:resolve).with(
+        project: project,
+        account: project.account,
+        goal: "review"
+      )
+      expect(result.text).not_to include("## Repository Automation Conventions")
+    end
+
     it "records excluded review comments as excluded sections, not in the text" do
       allow(github_client).to receive(:review_threads)
         .with(project.full_name, 42)

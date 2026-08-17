@@ -169,7 +169,7 @@ module Prompts
       @resolved_profile ||= PromptAssembly::ProfileResolution.resolve(
         project: project,
         account: project.account,
-        goal: agent_run&.goal
+        goal: effective_goal
       )
     end
 
@@ -256,9 +256,15 @@ module Prompts
 
     def prompt_assembly_context
       @prompt_assembly_context ||= PromptAssembly::Context.new(
+        issue: issue,
         project: project,
+        github_client: github_client,
         agent_run: agent_run
       )
+    end
+
+    def effective_goal
+      agent_run&.goal || "review"
     end
 
     def priority_list
