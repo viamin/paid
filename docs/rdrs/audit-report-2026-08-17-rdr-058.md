@@ -3,7 +3,18 @@
 - **RDR**: [RDR-058: Execution Authority, Network Policy, and Isolation](RDR-058-execution-authority-network-and-isolation.md)
 - **Audit date**: 2026-08-17
 - **Closeout issue**: [#3418](https://github.com/viamin/paid/issues/3418)
-- **Conclusion**: Partially Implemented — core authority, network, and isolation invariants are shipped and covered by passing spec suites (see [Validation Evidence](#validation-evidence)); tenant-configurable egress allowlisting (criterion 7) is deferred to RDR-055.
+- **Conclusion**: Partially Implemented. The enforcement machinery for the
+  default authority, network, and isolation invariants is shipped and covered by
+  passing spec suites (see [Validation Evidence](#validation-evidence)). The
+  per-criterion verdicts below qualify *what is currently enforced*; several
+  open blocking dependencies ([#3402](https://github.com/viamin/paid/issues/3402),
+  [#3356](https://github.com/viamin/paid/issues/3356),
+  [#3404](https://github.com/viamin/paid/issues/3404),
+  [#3405](https://github.com/viamin/paid/issues/3405)) describe modeled
+  structures and pre-provision validation that is *not* yet implemented — see
+  [Blocking Dependencies Reconciliation](#blocking-dependencies-reconciliation).
+  Tenant-configurable egress allowlisting (criterion 7) is deferred to
+  [RDR-055](RDR-055-agent-container-egress-allowlisting.md).
 
 ## Validation Evidence
 
@@ -72,7 +83,7 @@ not shipped (see below).
 - `ExecutionRunners::NetworkingPolicy` is a Data value object with three factory methods (`proxy_restricted`, `subscription_auth`, `direct_outbound`) and two predicates (`restricted?`, `firewall?`). It carries no Docker-specific identifiers.
 - `ExecutionRunners::RunSpec` holds the resolved `networking_policy` as an immutable field. The spec is built from `AgentRun` data before any runner is invoked.
 - `LocalDockerRunner#provision` reads `run_spec.networking_policy` and delegates firewall and network selection to `NetworkPolicy`. Docker network names (`paid_agent`, `paid_internal`) exist only inside `NetworkPolicy`, not in the runner contract.
-- `Containers::Provision#derived_networking_policy` returns a `NetworkingPolicy` value based on `subscription_auth?` and `direct_outbound_runner?` predicates. This derivation happens before `ensure_network!` and `apply_firewall_rules`.
+- `Containers::Provision#derived_networking_policy` returns a `NetworkingPolicy` value based on `subscription_auth?` and `direct_outbound_runner?` predicates. This derivation happens before `ensure_network!` and `apply_network_restrictions!` (which delegates to `NetworkPolicy.apply_firewall_rules`).
 
 **Evidence**:
 
@@ -97,13 +108,13 @@ not shipped (see below).
 **Shipped**:
 
 - The `paid_agent` Docker network is created with `internal: true`, which prevents the Docker bridge from adding a default route to the host network. Containers on this network cannot initiate outbound connections except through the configured firewall rules.
-- `NetworkPolicy#build_network_create_opts` sets `"Internal" => true` for the `paid_agent` network in production.
+- `NetworkPolicy.create_network` sets `"Internal" => true` for the `paid_agent` network in production.
 - No container ports are published in the Docker `create` call. The `LocalDockerRunner` creates containers without `-p` / `--publish` flags.
 - The default iptables OUTPUT policy inside containers is `DROP`; only the explicitly listed destinations (GitHub, secrets proxy, DNS, service containers, loopback, established) are allowed.
 
 **Evidence**:
 
-- `app/services/network_policy.rb:329-353` — `build_network_create_opts` with `"Internal" => true`
+- `app/services/network_policy.rb:329-353` — `create_network` with `"Internal" => true`
 - `app/services/network_policy.rb:400-439` — `build_firewall_script` with explicit allowlist and final `iptables -P OUTPUT DROP`
 - `app/services/execution_runners/local_docker_runner.rb` — no port publish in create options
 
@@ -190,7 +201,7 @@ not shipped (see below).
 
 ---
 
-### Criterion 7: Tenant-configurable egress allowlisting _(gap)_
+### Criterion 7: Tenant-configurable egress allowlisting *(gap)*
 
 **Status**: Not shipped.
 
@@ -215,13 +226,103 @@ reflects that the work has not started.
 
 ## Gaps
 
-One gap remains:
+The following gaps remain after this audit. Each is owned by an open issue or
+RDR — none is "implicitly satisfied" by the shipped code, and each is
+documented here so the umbrella closeout does not overstate the state of its
+children.
 
-1. **Tenant-configurable egress allowlisting** — tracked in
-   [RDR-055](RDR-055-agent-container-egress-allowlisting.md). No new child issue
-   is filed; RDR-055 already covers this gap completely.
+1. **Structured per-run authority-grant model** — covered by the open
+   [issue #3402](https://github.com/viamin/paid/issues/3402). Today the
+   authority boundary is enforced (secrets proxy, default-restricted networking,
+   subscription-auth materialization) but the authority is implicit in
+   `proxy_token` + `derived_networking_policy` rather than modeled as a
+   structured grant object that callers can inspect for credential class
+   (proxy, GitHub, provider-proxy, provider-direct, subscription-auth, MCP,
+   artifact-upload, services). `ExecutionRunners::RunSpec#secrets_config` is
+   `nil` in every `from_agent_run` construction path. Building the grant model
+   is the remaining scope of #3402; this audit cannot close it.
+2. **Runner capability declarations and pre-provisioning validation** —
+   covered by the open
+   [issue #3356](https://github.com/viamin/paid/issues/3356). The current
+   `Containers::Backends::Base` carries only minimal capability signaling
+   (`supports_host_paths?`, `remote?`, `owns_host?`); there is no structured
+   capability declaration the orchestrator can consult to reject a run
+   requesting an unsupported feature (e.g. browser sidecar, ARM64) before
+   provisioning. The criterion-1 verdict above is honest about the *enforced*
+   default boundary but does not cover the pre-provision validation #3356
+   describes. #3404 and #3405 depend on #3356 and remain open for the same
+   reason.
+3. **Pre-provision enforcement of no-public-ingress with scoped exceptions** —
+   covered by the open
+   [issue #3404](https://github.com/viamin/paid/issues/3404). The shipped
+   enforcement is correct (no published ports, `internal: true` in
+   production, preview ingress scoped to `preview_session` records), but the
+   runner/pre-provision validation that would *reject* a run asking for
+   unsupported inbound exposure is not implemented. This is a sibling of #3356
+   and unblocks when capability modeling lands.
+4. **Automated isolation invariant checks for execution resources** — covered
+   by the open
+   [issue #3405](https://github.com/viamin/paid/issues/3405). Some isolation
+   invariants are tested today (RLS, per-run `proxy_token` scope, per-run
+   workspace volumes, secret metadata rejection), but the broader set from
+   #3405 — covering tenant/project/run/storage/log/secret/service isolation
+   end-to-end — is not. The criterion-5 verdict above lists what is currently
+   tested; #3405 is the remaining scope.
+5. **Tenant-configurable egress allowlisting** — tracked in
+   [RDR-055](RDR-055-agent-container-egress-allowlisting.md). No new child
+   issue is filed; RDR-055 already covers this gap completely.
+
+Items 1–4 are tracked in their respective issues; this audit does not file
+new child issues for them because each already names the RDR-058 work item.
+The umbrella status of [RDR-058](RDR-058-execution-authority-network-and-isolation.md)
+remains **Partially Implemented** as long as any of these gaps is open.
 
 ## Child Issues
 
-None filed. The only gap (egress allowlisting) is fully covered by the existing
-RDR-055 Draft and its planned implementation issues.
+None filed by this audit. Existing blocking dependencies on the closeout
+issue [#3418](https://github.com/viamin/paid/issues/3418) are:
+
+- [#3402](https://github.com/viamin/paid/issues/3402) — Model per-run
+  execution authority grants. **Open**. See gap 1 above.
+- [#3404](https://github.com/viamin/paid/issues/3404) — Enforce no-public-
+  ingress default with scoped exceptions. **Open**. See gap 3 above.
+- [#3405](https://github.com/viamin/paid/issues/3405) — Add isolation
+  invariant checks for execution resources. **Open**. See gap 4 above.
+- [#3341](https://github.com/viamin/paid/issues/3341) — Isolate networking
+  policy from Docker network implementation. **Closed**. Its work
+  (`ExecutionRunners::NetworkingPolicy`, the runner-boundary translation in
+  `NetworkPolicy`) is the shipped evidence for criterion 2.
+- [#3343](https://github.com/viamin/paid/issues/3343) — Abstract supporting
+  services and sidecars behind the runner boundary. **Open**, but this is
+  RDR-054 scope (services and sidecars, not the primary agent container's
+  authority/network/isolation invariants). The RDR-058 closeout does not
+  block on #3343; the two RDRs cover different boundaries.
+- [#3356](https://github.com/viamin/paid/issues/3356) — Runner capability
+  modeling for pre-provisioning validation. **Open**. See gap 2 above.
+  This is the load-bearing gap: #3404 and #3405 are blocked behind it.
+
+## Blocking Dependencies Reconciliation
+
+The closeout issue [#3418](https://github.com/viamin/paid/issues/3418) lists
+six blocking dependencies. This section reconciles each against the
+2026-08-17 audit, so the "Partially Implemented" verdict reflects the
+real remainder rather than a five-criterion pass.
+
+| Dependency | State | Reconciliation |
+|------------|-------|----------------|
+| [#3341](https://github.com/viamin/paid/issues/3341) — isolate networking policy from Docker | Closed | Satisfied. The shipped `ExecutionRunners::NetworkingPolicy` and `NetworkPolicy` translation are the evidence cited under criterion 2. |
+| [#3343](https://github.com/viamin/paid/issues/3343) — abstract services and sidecars behind the runner boundary | Open | Out of RDR-058 scope. RDR-058 audits the primary agent container's authority, network, and isolation invariants; service/sidecar abstraction is a separate RDR-054 workstream. The RDR-058 closeout does not block on #3343 because the two RDRs cover different boundaries. |
+| [#3356](https://github.com/viamin/paid/issues/3356) — runner capability modeling | Open | Remaining RDR-058 scope (gap 2). Capability declarations and pre-provisioning rejection are not implemented. This is the load-bearing gap: #3404 and #3405 are blocked behind it. |
+| [#3402](https://github.com/viamin/paid/issues/3402) — model per-run execution authority grants | Open | Remaining RDR-058 scope (gap 1). The shipped enforcement is the *transport* and *application* of a default-restricted authority boundary; the *modeled grant object* #3402 requires is not implemented (`RunSpec#secrets_config` is `nil` in every `from_agent_run` path). |
+| [#3404](https://github.com/viamin/paid/issues/3404) — enforce no-public-ingress default with scoped exceptions | Open | Partially satisfied. The shipped network policy and `preview_session` scoping enforce the default; the runner/pre-provision *validation* that rejects unsupported inbound exposure is not implemented (depends on #3356). |
+| [#3405](https://github.com/viamin/paid/issues/3405) — isolation invariant checks for execution resources | Open | Partially satisfied. The isolation invariants that *are* implemented (RLS, `proxy_token` scope, per-run workspace volumes, secret metadata rejection) have spec coverage and are reported under criterion 5. The full set from #3405 is the remaining scope. |
+
+Because five of the six blocking dependencies are open and four of those
+five represent remaining RDR-058 scope (#3356, #3402, #3404, #3405), the
+"Partially Implemented" verdict is load-bearing rather than advisory: the
+shipped code closes the *enforcement* layer of RDR-058, but the *modeled
+grants*, *capability validation*, *pre-provision enforcement*, and
+*end-to-end isolation invariant tests* the children describe are not
+complete. Closing the umbrella while children stay open is therefore
+premature; this audit recommends keeping the umbrella open and re-running
+the closeout after the remaining gaps land.

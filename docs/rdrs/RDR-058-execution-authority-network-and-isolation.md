@@ -23,7 +23,7 @@ in Draft status.
 |-----------|--------|----------|
 | Per-run authority grants are explicit and secret-free by default (`direct_outbound` is the documented exception) | Implemented | `app/models/agent_run.rb` `proxy_token`; `app/controllers/api/secrets_proxy_controller.rb`; RDR-006 |
 | Network policy is provider-neutral and runner-validated before provisioning | Implemented | `app/services/execution_runners.rb` `NetworkingPolicy`; `app/services/containers/provision.rb` `derived_networking_policy`; `app/services/network_policy.rb` |
-| Execution environments have no public ingress by default | Implemented | `app/services/network_policy.rb` — `paid_agent` network is `internal: true`; no container ports exposed; `spec/services/network_policy_spec.rb` |
+| Execution environments have no public ingress by default | Implemented | `app/services/network_policy.rb` — `paid_agent` network is `internal: true` in production (see `NetworkPolicy.create_network`); no container ports exposed; in other environments egress isolation relies on the in-container iptables firewall; `spec/services/network_policy_spec.rb` |
 | Preview/debug ingress exceptions are scoped | Implemented | `preview_sessions` and `PreviewProvisionState` — tunnel creation requires an explicit project-owned `preview_session` record; `app/models/preview_session.rb` |
 | Tenant/project/run isolation invariants are tested | Implemented | Row-level security on `agent_runs`, `projects`; per-run `proxy_token` scope; per-run named workspace volumes; `spec/services/network_policy_spec.rb` |
 | Subscription-auth and direct-outbound remain explicit exceptions | Implemented | `NetworkPolicy` defaults to `:proxy` mode; subscription-auth and direct-outbound require explicit `subscription_auth?` / `direct_outbound_runner?` predicates; `spec/services/network_policy_spec.rb` |
@@ -33,11 +33,42 @@ in Draft status.
 
 Audit completed under issue [#3418](https://github.com/viamin/paid/issues/3418). See
 [`audit-report-2026-08-17-rdr-058.md`](audit-report-2026-08-17-rdr-058.md) for
-full criterion-by-criterion evidence and gap analysis.
+full criterion-by-criterion evidence and gap analysis, and a per-dependency
+reconciliation of the six blocking children of #3418.
 
-The shipped implementation satisfies all five checklist items from the closeout issue
-except for tenant-configurable egress allowlisting (RDR-055). That gap is tracked
-separately in the RDR-055 Draft and its planned implementation issues.
+The closeout is **partial**. The shipped implementation provides the
+*enforcement* layer for the per-run authority boundary, the default-restricted
+network mode, the in-production `internal: true` network (with in-container
+iptables firewall fallback in other environments), the preview-session
+scoped ingress exceptions, the per-run workspace volume isolation, and the
+`proxy_token`-scoped secrets proxy. These correspond to the first five
+checklist items from the closeout issue, with the qualifier that the
+*enforcement* is shipped but several *modeled* and *pre-provision-validated*
+counterparts are not:
+
+- The structured per-run authority-grant model from
+  [#3402](https://github.com/viamin/paid/issues/3402) is not built
+  (`RunSpec#secrets_config` is `nil` in every `from_agent_run` path; authority
+  is currently implicit in `proxy_token` + `derived_networking_policy`).
+- Runner capability modeling and pre-provisioning rejection from
+  [#3356](https://github.com/viamin/paid/issues/3356) is not built.
+- Pre-provision enforcement of the no-public-ingress default from
+  [#3404](https://github.com/viamin/paid/issues/3404) is not built (it
+  depends on #3356).
+- The full isolation invariant test surface from
+  [#3405](https://github.com/viamin/paid/issues/3405) is partial; RLS,
+  `proxy_token` scope, per-run workspace volumes, and secret metadata
+  rejection are covered, but the broader tenant/project/run/storage/log/secret/service
+  matrix is not.
+
+The remaining gap is tenant-configurable egress allowlisting (RDR-055),
+tracked in the RDR-055 Draft and its planned implementation issues.
+
+Because five of the six blocking dependencies on #3418 remain open and four
+of those five represent remaining RDR-058 scope (#3356, #3402, #3404, #3405),
+the umbrella status of RDR-058 stays **Partially Implemented**. Closing the
+umbrella while children stay open is premature; the closeout should be
+re-run after the remaining gaps land.
 
 ## Problem Statement
 
@@ -122,10 +153,13 @@ no Docker network names, no iptables syntax.
 - `proxy_restricted` → `paid_agent` network + in-container iptables default-deny
 - `subscription_auth` / `direct_outbound` → `paid_internal` network, no firewall
 
-The translation happens inside `Containers::Provision#apply_firewall_rules`, which is
-called after container creation and before the agent command is started. Runners
-validate the networking policy before provisioning; the `RunSpec` carries the resolved
-policy as an immutable value.
+The translation happens inside the private `Containers::Provision#apply_network_restrictions!`,
+which is called after container creation and before the agent command is started. That
+method delegates to the public `NetworkPolicy.apply_firewall_rules` (a public
+`apply_firewall_rules` also exists on `ExecutionRunners::LocalDockerRunner` for
+non-provisioning paths such as embedding runs). Runners validate the networking
+policy before provisioning; the `RunSpec` carries the resolved policy as an
+immutable value.
 
 ### Layer 3 — Container and Tenant Isolation
 
@@ -136,7 +170,8 @@ Container isolation (RDR-004):
 - Read-only root filesystem except tmpfs writable areas (`/tmp` 1 GB, `/home/agent/.cache` 512 MB)
 - Resource limits: 4 GB RAM, 2 CPU quota, 500 PIDs
 - Per-run workspace via named Docker volume (`paid-workspace-{agent_run_id}`)
-- Internal-only `paid_agent` network (no public ingress)
+- Internal-only `paid_agent` network in production (no public ingress); in other
+  environments egress isolation relies on the in-container iptables firewall
 - No published container ports
 
 Tenant isolation (RDR-024):
@@ -177,8 +212,10 @@ required and runner-required destinations; no per-tenant extension is possible.
    Docker network names or iptables rules directly.
 
 3. **Execution environments have no public ingress by default**: The `paid_agent`
-   network is configured with `internal: true`. No container ports are published unless
-   a `PreviewSession` record is created explicitly.
+   network is configured with `internal: true` in production (see
+   `NetworkPolicy.create_network`); in other environments egress isolation relies on
+   the in-container firewall. No container ports are published unless a
+   `PreviewSession` record is created explicitly.
 
 4. **Preview/debug ingress exceptions are scoped**: Preview tunnel creation requires
    an explicit `preview_session` record tied to a `project`, with optional
@@ -194,7 +231,7 @@ required and runner-required destinations; no per-tenant extension is possible.
    `subscription_auth` or `direct_outbound` requires the runner to pass an explicit
    predicate (`subscription_auth?` or `direct_outbound_runner?`).
 
-7. **Tenant-configurable egress allowlisting** _(gap — deferred to RDR-055)_:
+7. **Tenant-configurable egress allowlisting** *(gap — deferred to RDR-055)*:
    Production tenants can add project/account-specific destinations to the egress
    allowlist beyond the platform-required set. The policy snapshot for each run is
    stored for audit.
