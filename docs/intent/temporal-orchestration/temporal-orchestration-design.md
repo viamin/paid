@@ -33,6 +33,11 @@ polling does not compete with broader execution throughput.
 GoodJob still exists beside Temporal, but only for lightweight Rails job work.
 Temporal owns the durable multi-step orchestration paths.
 
+Agent execution rows move from `queued` to `running` when the queue admits the
+Temporal workflow. Provisioning, setup, and preflight consume worker/container
+capacity, so operators and capacity controls must see that work as active
+rather than as ordinary waiting queue depth.
+
 ## Worker Capacity Model
 
 Temporal worker configuration derives the minimum Active Record pool size from

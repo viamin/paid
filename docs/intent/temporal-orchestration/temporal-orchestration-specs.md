@@ -29,6 +29,15 @@
   *Tests:* `spec/temporal/workflows/agent_execution_workflow_spec.rb`, `spec/config/good_job_configuration_spec.rb`.
   *Code:* `app/temporal/workflows/agent_execution_workflow.rb`, `config/initializers/good_job.rb`.
 
+- [x] **TEMPORAL-ORCHESTRATION-005** — When the queue admits an agent
+  execution workflow, the system SHALL mark the agent run `running` so
+  provisioning/setup/preflight work appears as active execution rather than
+  queued backlog.
+  *Tests:* `spec/jobs/process_run_queue_job_spec.rb`,
+  `spec/temporal/activities/run_agent_activity_spec.rb`.
+  *Code:* `ProcessRunQueueJob`, `Activities::RunAgentActivity`,
+  `AgentRun#start!`.
+
 - [D] **TEMPORAL-ORCHESTRATION-004** — When deployment requirements justify a
   hosted Temporal topology, the orchestration layer SHALL update this segment to
   describe the shipped operational model and its verification evidence.

@@ -234,12 +234,12 @@ class StaleRunDetectorJob < ApplicationJob
     AgentRun.stale_running
   end
 
-  # Claimed queued runs (temporal_workflow_id set, status "queued") whose
-  # last update was before the threshold. Uses updated_at to approximate
-  # when the run was claimed, since a run may have spent a long time in
-  # "queued" before being claimed.
+  # Claimed runs whose last update was before the threshold. This includes
+  # legacy queued+claimed rows and admitted running rows that have not set
+  # started_at yet, because both states represent work claimed by Temporal
+  # that never reached real agent execution.
   def stale_claimed_runs(threshold)
-    AgentRun.claimed.where("updated_at < ?", threshold)
+    AgentRun.stale_claimed.where("updated_at < ?", threshold)
   end
 
   # Runs stuck in "paused" whose pause timestamp is before the threshold.
@@ -375,7 +375,7 @@ class StaleRunDetectorJob < ApplicationJob
     agent_run.with_lock do
       agent_run.reload
       return skip_requeue(agent_run, "finished") if agent_run.finished?
-      return skip_requeue(agent_run, "status_changed") unless agent_run.status == policy.fetch(:status)
+      return skip_requeue(agent_run, "status_changed") unless policy.fetch(:statuses).include?(agent_run.status)
       if policy[:claimed]
         return skip_requeue(agent_run, "no_longer_claimed") unless agent_run.temporal_workflow_id.present?
       end
@@ -416,10 +416,14 @@ class StaleRunDetectorJob < ApplicationJob
 
   def claimed_requeue_policy
     {
-      status: "queued",
+      statuses: %w[queued running],
       stale_attribute: :updated_at,
       threshold: CLAIMED_TIMEOUT.ago,
-      reset_attributes: {},
+      reset_attributes: {
+        started_at: nil,
+        completed_at: nil,
+        duration_seconds: nil
+      },
       claimed: true,
       log_action: "unclaimed"
     }
@@ -427,7 +431,7 @@ class StaleRunDetectorJob < ApplicationJob
 
   def paused_requeue_policy
     {
-      status: "paused",
+      statuses: [ "paused" ],
       stale_attribute: :paused_at,
       threshold: PAUSED_TIMEOUT.ago,
       reset_attributes: {

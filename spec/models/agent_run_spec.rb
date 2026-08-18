@@ -278,7 +278,7 @@ RSpec.describe AgentRun do
       it "returns only claimed (queued with temporal_workflow_id) runs" do
         claimed_run = create(:agent_run, :queued, temporal_workflow_id: "claimed")
         create(:agent_run, :queued)
-        create(:agent_run, :running)
+        create(:agent_run, :running, temporal_workflow_id: "workflow-123", started_at: nil)
 
         expect(described_class.claimed).to include(claimed_run)
         expect(described_class.claimed.count).to eq(1)
@@ -356,14 +356,16 @@ RSpec.describe AgentRun do
     end
 
     describe ".stale_claimed" do
-      it "returns only claimed runs older than the stale cutoff" do
-        stale_run = create(:agent_run, :queued, temporal_workflow_id: "claimed")
-        stale_run.update_column(:updated_at, described_class.stale_claimed_cutoff - 1.minute)
+      it "returns queued claimed and admitted-not-started runs older than the stale cutoff" do
+        stale_queued_run = create(:agent_run, :queued, temporal_workflow_id: "claimed")
+        stale_queued_run.update_column(:updated_at, described_class.stale_claimed_cutoff - 1.minute)
+        stale_admitted_run = create(:agent_run, status: "running", temporal_workflow_id: "workflow-123", started_at: nil)
+        stale_admitted_run.update_column(:updated_at, described_class.stale_claimed_cutoff - 1.minute)
         fresh_run = create(:agent_run, :queued, temporal_workflow_id: "claimed")
         fresh_run.update_column(:updated_at, described_class.stale_claimed_cutoff + 1.minute)
         create(:agent_run, :running, started_at: described_class.stale_running_cutoff - 1.minute)
 
-        expect(described_class.stale_claimed).to contain_exactly(stale_run)
+        expect(described_class.stale_claimed).to contain_exactly(stale_queued_run, stale_admitted_run)
       end
     end
 
@@ -372,9 +374,11 @@ RSpec.describe AgentRun do
         stale_running = create(:agent_run, :running, started_at: described_class.stale_running_cutoff - 1.minute)
         stale_claimed = create(:agent_run, :queued, temporal_workflow_id: "claimed")
         stale_claimed.update_column(:updated_at, described_class.stale_claimed_cutoff - 1.minute)
+        stale_admitted = create(:agent_run, status: "running", temporal_workflow_id: "workflow-123", started_at: nil)
+        stale_admitted.update_column(:updated_at, described_class.stale_claimed_cutoff - 1.minute)
         create(:agent_run, :running, started_at: described_class.stale_running_cutoff + 1.minute)
 
-        expect(described_class.stale_for_cleanup).to contain_exactly(stale_running, stale_claimed)
+        expect(described_class.stale_for_cleanup).to contain_exactly(stale_running, stale_claimed, stale_admitted)
       end
     end
 
@@ -1354,6 +1358,28 @@ RSpec.describe AgentRun do
         agent_run.start!
 
         expect(agent_run.completed_at).to be_nil
+      end
+
+      it "fills started_at for an already-running admitted run" do
+        agent_run = create(:agent_run, status: "running", started_at: nil)
+
+        freeze_time do
+          agent_run.start!
+
+          expect(agent_run.status).to eq("running")
+          expect(agent_run.started_at).to eq(Time.current)
+        end
+      end
+
+      it "does not reset started_at for an already-started run" do
+        started_at = 5.minutes.ago.change(usec: 0)
+        agent_run = create(:agent_run, status: "running", started_at: started_at)
+
+        freeze_time do
+          agent_run.start!
+
+          expect(agent_run.started_at).to eq(started_at)
+        end
       end
     end
 
@@ -5086,6 +5112,22 @@ RSpec.describe AgentRun do
 
       expect {
         agent_run.update!(branch_name: "feature/test")
+      }.not_to have_enqueued_job(ContainerMetricsCollectionJob)
+    end
+
+    it "enqueues when a container is assigned to an already-running run" do # @spec TEMPORAL-ORCHESTRATION-005
+      agent_run = create(:agent_run, :running, container_id: nil)
+
+      expect {
+        agent_run.update!(container_id: "abc123", container_host: "docker")
+      }.to have_enqueued_job(ContainerMetricsCollectionJob).with(agent_run.id)
+    end
+
+    it "does not enqueue when a container is released from a running run" do
+      agent_run = create(:agent_run, :running, container_id: "abc123")
+
+      expect {
+        agent_run.update!(container_id: nil)
       }.not_to have_enqueued_job(ContainerMetricsCollectionJob)
     end
   end

@@ -146,20 +146,29 @@ RSpec.describe Runners::HarnessExecutionPlan do
       end
     end
 
-    it "builds the OpenCode execution contract through agent-harness" do
+    def create_opencode_runner(api_provider:, model:, api_service_type:, api_key:)
       user = create(
         :user,
         email: "harness-execution-plan-#{SecureRandom.hex(6)}@example.com",
         account: create(:account, slug: "harness-execution-plan-#{SecureRandom.hex(6)}")
       )
-      api_key = create(:runner_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret")
-      runner = create(
+      runner_api_key = create(:runner_api_key, user: user, api_service_type: api_service_type, api_key: api_key)
+      create(
         :runner,
         user: user,
         runner_key: "opencode",
         auth_type: "api_key",
-        provider_api_key: api_key,
-        config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } }
+        provider_api_key: runner_api_key,
+        config: { "opencode" => { "api_provider" => api_provider, "model" => model } }
+      )
+    end
+
+    it "builds the OpenCode execution contract through agent-harness" do
+      runner = create_opencode_runner(
+        api_provider: "openrouter",
+        model: "moonshotai/kimi-k2-0905",
+        api_service_type: "openrouter",
+        api_key: "sk-openrouter-secret"
       )
 
       plan = described_class.call(runner: runner, prompt: "ping")
@@ -167,7 +176,32 @@ RSpec.describe Runners::HarnessExecutionPlan do
       expect(plan.command).to eq(%w[opencode run ping])
       expect(plan.env).to include(
         "OPENROUTER_API_KEY" => "sk-openrouter-secret",
-        "OPENAI_BASE_URL" => "https://openrouter.ai/api/v1"
+        "OPENAI_BASE_URL" => "https://openrouter.ai/api/v1",
+        "OPENAI_API_KEY" => nil,
+        "ANTHROPIC_API_KEY" => nil,
+        "GEMINI_API_KEY" => nil,
+        "GEMINI_CLI_CUSTOM_HEADERS" => nil
+      )
+    end
+
+    it "clears proxy env for opencode z.ai coding-plan runs" do # @spec AGENT-HARNESS-004
+      runner = create_opencode_runner(
+        api_provider: "zai_coding",
+        model: "glm-5.2",
+        api_service_type: "zai_coding",
+        api_key: "sk-zai-secret"
+      )
+
+      plan = described_class.call(runner: runner, prompt: "ping")
+
+      expect(plan.env).to include(
+        "ZHIPU_API_KEY" => "sk-zai-secret",
+        "OPENAI_API_KEY" => nil,
+        "OPENAI_BASE_URL" => nil,
+        "ANTHROPIC_API_KEY" => nil,
+        "ANTHROPIC_BASE_URL" => nil,
+        "GEMINI_API_KEY" => nil,
+        "GEMINI_CLI_CUSTOM_HEADERS" => nil
       )
     end
 

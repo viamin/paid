@@ -61,6 +61,27 @@ RSpec.describe AgentRuns::CleanupStale do
       expect(stale_run.temporal_run_id).to be_nil
     end
 
+    it "requeues admitted running runs that never started execution" do
+      stale_run = create(:agent_run,
+        status: "running",
+        started_at: nil,
+        project: project,
+        temporal_workflow_id: "test-workflow",
+        completed_at: 2.minutes.ago,
+        duration_seconds: 12)
+      stale_run.update_column(:updated_at, AgentRun.stale_claimed_cutoff - 1.minute)
+
+      described_class.call(project: project)
+
+      stale_run.reload
+      expect(stale_run.status).to eq("queued")
+      expect(stale_run.stale_requeue_count).to eq(1)
+      expect(stale_run.temporal_workflow_id).to be_nil
+      expect(stale_run.temporal_run_id).to be_nil
+      expect(stale_run.completed_at).to be_nil
+      expect(stale_run.duration_seconds).to be_nil
+    end
+
     it "times out stale claimed runs that exhausted the requeue budget" do
       stale_run = create(:agent_run, status: "queued", project: project, temporal_workflow_id: "test-workflow", stale_requeue_count: AgentRun::MAX_STALE_REQUEUES)
       stale_run.update_column(:updated_at, AgentRun.stale_claimed_cutoff - 1.minute)
