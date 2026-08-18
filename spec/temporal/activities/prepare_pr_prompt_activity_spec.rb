@@ -222,6 +222,33 @@ RSpec.describe Activities::PreparePrPromptActivity do
       expect(phase.metadata["prompt_builder"]).to eq("legacy_prompt_builder")
     end
 
+    it "continues review-feedback prompt preparation for bot-authored unresolved threads" do
+      agent_run.update!(focus: "review_feedback")
+      allow(github_client).to receive(:review_threads)
+        .with(project.full_name, 42)
+        .and_return([
+          { id: "thread_1", is_resolved: false, comments: [ { body: "Needs a fix", path: "app/models/user.rb", line: 42, author: "copilot-pull-request-reviewer[bot]" } ] }
+        ])
+
+      result = activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
+
+      expect(result[:prompt_length]).to be > 0
+      expect(agent_run.reload.custom_prompt).to include("Priority order:")
+      expect(agent_run.custom_prompt).not_to include("Code Review Comments")
+    end
+
+    it "does not fail the run when prompt-builder metadata recording fails" do
+      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+      allow(agent_run).to receive(:record_prompt_builder!)
+        .and_raise(ActiveRecord::ActiveRecordError, "write failed")
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
+      }.not_to raise_error
+
+      expect(agent_run.reload.custom_prompt).to include("Fix the bug")
+    end
+
     it "passes rebase_succeeded through to the prompt builder" do
       activity.execute(agent_run_id: agent_run.id, rebase_succeeded: false)
 

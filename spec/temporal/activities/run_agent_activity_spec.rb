@@ -1424,6 +1424,31 @@ RSpec.describe Activities::RunAgentActivity do
       expect(goal_section["required"]).to be true
     end
 
+    it "does not fail legacy augmentation when prompt-builder metadata recording fails" do
+      run = create(:agent_run, :create_issue_goal, project: project, issue: issue)
+      allow(run).to receive(:record_prompt_builder!)
+        .and_raise(ActiveRecord::ActiveRecordError, "write failed")
+
+      expect {
+        prompt, fallback = activity.send(:augment_prompt_for_goal, run, "Create the issue")
+        expect(fallback).to be_nil
+        expect(prompt).to include("CREATE A GITHUB ISSUE")
+      }.not_to raise_error
+    end
+
+    it "does not fail PromptAssembly augmentation when prompt-builder metadata recording fails" do
+      FeatureFlags.enable!(:prompt_assembly, project: project)
+      run = create(:agent_run, :create_issue_goal, project: project, issue: issue)
+      allow(run).to receive(:record_prompt_builder!)
+        .and_raise(ActiveRecord::ActiveRecordError, "write failed")
+
+      expect {
+        prompt, fallback = activity.send(:augment_prompt_for_goal, run, "Create the issue")
+        expect(fallback).to be_nil
+        expect(prompt).to include("CREATE A GITHUB ISSUE")
+      }.not_to raise_error
+    end
+
     it "routes review through PromptAssembly and records provenance" do
       FeatureFlags.enable!(:prompt_assembly, project: project)
       run = create(:agent_run, :review_goal, project: project)

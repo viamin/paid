@@ -126,3 +126,12 @@
   byte counts, capped samples, and match status on the `prepare_pr_prompt`
   phase metadata.
   *Code:* `Activities::PreparePrPromptActivity`, `FeatureFlags`.
+
+- [x] **PROMPT-ASSEMBLY-018** — For `review_feedback` PR follow-up runs, the
+  system SHALL treat bot-authored unresolved review threads as actionable
+  follow-up context rather than blocking prompt preparation solely because the
+  bot comments are excluded from prompt instructions. Prompt preparation SHALL
+  raise `ReviewFeedbackContextBlocked` only when at least one unresolved
+  human-authored review thread exists and none of its comments are
+  prompt-eligible.
+  *Code:* `Prompts::BuildForPr`, `Activities::PreparePrPromptActivity`.

@@ -3456,7 +3456,7 @@ module Activities
         verification_text: verification_text
       )
       record_prompt_assembly(agent_run, result)
-      agent_run.record_prompt_builder!(prompt_builder)
+      record_prompt_builder(agent_run, prompt_builder)
       [ result.text, verification_fallback ]
     end
 
@@ -3493,7 +3493,7 @@ module Activities
     end
 
     def legacy_augmented_prompt(agent_run, prompt, goal_text, verification_text, verification_fallback)
-      agent_run.record_prompt_builder!(Prompts::BuildForPr::LEGACY_PROMPT_BUILDER)
+      record_prompt_builder(agent_run, Prompts::BuildForPr::LEGACY_PROMPT_BUILDER)
       return [ goal_text, verification_fallback ] if goal_text.present?
       return [ prompt, verification_fallback ] if verification_text.blank?
 
@@ -3516,6 +3516,18 @@ module Activities
       logger.warn(
         message: "agent_execution.prompt_assembly_record_failed",
         agent_run_id: agent_run.id,
+        error_class: e.class.name,
+        error: e.message
+      )
+    end
+
+    def record_prompt_builder(agent_run, builder)
+      agent_run.record_prompt_builder!(builder)
+    rescue => e
+      logger.warn(
+        message: "agent_execution.prompt_builder_record_failed",
+        agent_run_id: agent_run.id,
+        prompt_builder: builder,
         error_class: e.class.name,
         error: e.message
       )

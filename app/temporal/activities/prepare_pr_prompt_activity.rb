@@ -72,7 +72,7 @@ module Activities
         review_thread_ids = prompt_builder.unresolved_review_thread_ids
 
         agent_run.update!(custom_prompt: prompt, prompt_version: prompt_version)
-        agent_run.record_prompt_builder!(prompt_builder_path)
+        record_prompt_builder(agent_run, prompt_builder_path)
 
         logger.info(
           message: "agent_execution.prepare_pr_prompt",
@@ -204,6 +204,18 @@ module Activities
           decision.transform_keys(&:to_s)
         end
       }
+    end
+
+    def record_prompt_builder(agent_run, builder)
+      agent_run.record_prompt_builder!(builder)
+    rescue => e
+      logger.warn(
+        message: "agent_execution.prompt_builder_record_failed",
+        agent_run_id: agent_run.id,
+        prompt_builder: builder,
+        error_class: e.class.name,
+        error: e.message
+      )
     end
   end
 end

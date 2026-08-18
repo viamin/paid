@@ -186,6 +186,15 @@ inside the flagged path, a queue-time custom prompt cannot bypass required goal
 sections for enabled cohorts. Legacy cohorts keep the previous raw string
 augmentation behavior.
 
+For `review_feedback` follow-up runs, "no actionable review context" is
+deliberately narrower than "unresolved review threads exist but none are
+allowlisted." The prepare activity blocks only when at least one unresolved
+thread is human-authored and there are no prompt-eligible human review
+comments. Bot-authored unresolved threads (for example Copilot or other review
+bots) still build and execute a follow-up prompt because those runs are queued
+specifically to respond to bot feedback, even though bot thread comments are
+excluded from prompt instructions.
+
 ## Issue-Prompt Assembly (#3377)
 
 The create_pr issue-implementation prompt — previously assembled by

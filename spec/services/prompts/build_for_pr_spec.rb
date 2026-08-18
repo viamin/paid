@@ -287,6 +287,44 @@ RSpec.describe Prompts::BuildForPr do
     end
   end
 
+  describe "#review_feedback_context_blocked?" do
+    it "blocks review-feedback runs when unresolved human review threads have no trusted comments" do
+      allow(github_client).to receive(:review_threads)
+        .with(project.full_name, 42)
+        .and_return([
+          { id: "thread_1", is_resolved: false, comments: [ { body: "Needs a fix", author: "drive-by" } ] }
+        ])
+
+      builder = described_class.new(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true,
+        focus: "review_feedback"
+      )
+
+      expect(builder.review_feedback_context_blocked?).to be(true)
+    end
+
+    it "does not block review-feedback runs for bot-authored unresolved threads" do
+      allow(github_client).to receive(:review_threads)
+        .with(project.full_name, 42)
+        .and_return([
+          { id: "thread_1", is_resolved: false, comments: [ { body: "Needs a fix", author: "copilot-pull-request-reviewer[bot]" } ] }
+        ])
+
+      builder = described_class.new(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true,
+        focus: "review_feedback"
+      )
+
+      expect(builder.review_feedback_context_blocked?).to be(false)
+    end
+  end
+
   describe "merge conflicts section" do
     it "includes merge conflicts instructions when rebase failed" do
       prompt = described_class.call(

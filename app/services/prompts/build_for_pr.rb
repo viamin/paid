@@ -143,7 +143,7 @@ module Prompts
 
     def review_feedback_context_blocked?
       focus == "review_feedback" &&
-        unresolved_threads.any? &&
+        human_review_threads_present? &&
         trusted_review_threads.empty?
     end
 
@@ -776,6 +776,19 @@ module Prompts
       rescue GithubClient::Error
         []
       end
+    end
+
+    def human_review_threads_present?
+      unresolved_threads.any? do |thread|
+        thread[:comments].any? { |comment| human_review_comment?(comment) }
+      end
+    end
+
+    def human_review_comment?(comment)
+      login = comment[:author].to_s.downcase
+      login.present? &&
+        !project.paid_bot_author?(login) &&
+        !RunnerSupport.runner_bot_username?(login)
     end
 
     # Filters unresolved review threads to only include comments authored by
