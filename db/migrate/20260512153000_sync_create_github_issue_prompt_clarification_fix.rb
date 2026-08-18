@@ -71,17 +71,25 @@ class SyncCreateGithubIssuePromptClarificationFix < ActiveRecord::Migration[8.1]
     {{decomposition_instructions}}
   TEMPLATE
 
+  # Global prompts carry no account_id, so the tenant_isolation_update policy on
+  # `prompts` never admits them. Prompt#create_version! locks the row before
+  # promoting the new version, and PostgreSQL evaluates SELECT ... FOR UPDATE
+  # against that write policy — without system access the lock finds no row.
+  #
+  # @spec POSTGRESQL-PERSISTENCE-008
   def up
-    prompt = Prompt.global.find_by(slug: PROMPT_SLUG)
-    return unless prompt
-    return if synced?(prompt.current_version)
+    TenantContext.with_system_access do
+      prompt = Prompt.global.find_by(slug: PROMPT_SLUG)
+      next unless prompt
+      next if synced?(prompt.current_version)
 
-    prompt.create_version!(
-      template: TEMPLATE,
-      variables: VARIABLES,
-      created_by: "migration",
-      change_notes: CHANGE_NOTES
-    )
+      prompt.create_version!(
+        template: TEMPLATE,
+        variables: VARIABLES,
+        created_by: "migration",
+        change_notes: CHANGE_NOTES
+      )
+    end
   end
 
   def down
