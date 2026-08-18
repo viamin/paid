@@ -1447,6 +1447,30 @@ RSpec.describe Activities::RunAgentActivity do
 
       expect(run.reload.prompt_assembly_provenance.to_s).not_to include("CREATE A GITHUB ISSUE")
     end
+
+    it "preserves issue prompt provenance when goal-level assembly is recorded later" do
+      goal_issue = create(
+        :issue,
+        project: project,
+        title: "Preserve prompt provenance",
+        github_number: issue.github_number + 1,
+        github_creator_login: issue.github_creator_login,
+        body: issue.body
+      )
+      run = create(:agent_run, project: project, issue: goal_issue, goal: "create_pr")
+      github_client = instance_double(GithubClient, issue_comments: [])
+      allow(GithubClient).to receive(:new).and_return(github_client)
+
+      run.effective_prompt
+      issue_provenance = run.reload.issue_prompt_assembly_provenance
+
+      prompt, fallback = activity.send(:augment_prompt_for_goal, run, run.effective_prompt)
+
+      expect(fallback).to be_nil
+      expect(prompt).to be_present
+      expect(run.reload.issue_prompt_assembly_provenance).to eq(issue_provenance)
+      expect(run.prompt_assembly_provenance["sections"].map { |s| s["key"] }).to eq([ "task.base" ])
+    end
   end
 
   describe "#build_runner_order" do
@@ -2135,6 +2159,32 @@ expect(container_service).to receive(:execute).with(
 
         expect(Containers::TokenOptimization).to receive(:rtk_init_for_runner)
           .with(container_service: container_service, runner_key: anything)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "marks the run running before runner setup and preflight" do # @spec TEMPORAL-ORCHESTRATION-005
+        allow(git_ops).to receive(:has_changes_since?).and_return(false)
+        allow(Containers::TokenOptimization).to receive(:rtk_init_for_runner) do
+          expect(agent_run.reload.status).to eq("running")
+        end
+        allow(activity).to receive(:run_runner_preflight!) do
+          expect(agent_run.reload.status).to eq("running")
+        end
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "stamps started_at when an admitted run begins execution" do
+        allow(git_ops).to receive(:has_changes_since?).and_return(false)
+        agent_run.update!(status: "running", started_at: nil)
+
+        allow(Containers::TokenOptimization).to receive(:rtk_init_for_runner) do
+          expect(agent_run.reload.started_at).to be_present
+        end
+        allow(activity).to receive(:run_runner_preflight!) do
+          expect(agent_run.reload.started_at).to be_present
+        end
 
         activity.execute(agent_run_id: agent_run.id)
       end
@@ -5298,6 +5348,18 @@ expect(container_service).to receive(:execute).with(
       expect(container_service).to receive(:execute).with(
         anything,
         hash_including(timeout: a_value <= 300)
+      ).and_return(exec_success)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "uses the full execution budget when admission happened before execution started" do
+      project.update!(max_execution_seconds: 60)
+      agent_run.update!(status: "running", started_at: nil)
+
+      expect(container_service).to receive(:execute).with(
+        anything,
+        hash_including(timeout: 60)
       ).and_return(exec_success)
 
       activity.execute(agent_run_id: agent_run.id)

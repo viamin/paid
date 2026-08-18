@@ -364,6 +364,81 @@ RSpec.describe ExecutionRunners do
         )
       ]
     end
+    let(:expected_git_lane) do
+      [
+        {
+          "lane" => "git",
+          "kind" => "repository_checkout",
+          "locator" => {
+            "repo_full_name" => "acme/widgets",
+            "branch_name" => "feature/remote-contract",
+            "base_commit_sha" => "deadbeef",
+            "source_pull_request_number" => 7
+          }
+        }
+      ]
+    end
+    let(:expected_control_plane_refs) do
+      [
+        {
+          "lane" => "control_plane_api",
+          "kind" => "prompt_version",
+          "locator" => { "prompt_version_id" => agent_run.prompt_version_id }
+        },
+        {
+          "lane" => "control_plane_api",
+          "kind" => "custom_prompt",
+          "locator" => {
+            "agent_run_id" => agent_run.id,
+            "sha256" => Digest::SHA256.hexdigest("Build the thing")
+          }
+        },
+        {
+          "lane" => "control_plane_api",
+          "kind" => "issue",
+          "locator" => { "issue_id" => agent_run.issue_id }
+        }
+      ]
+    end
+    let(:expected_credential_refs) do
+      [
+        {
+          "lane" => "credentials",
+          "kind" => "environment_variable",
+          "locator" => { "name" => "DATABASE_URL" },
+          "source" => "run_spec.environment"
+        },
+        {
+          "lane" => "credentials",
+          "kind" => "environment_variable",
+          "locator" => { "name" => "API_TOKEN" },
+          "source" => "run_spec.environment"
+        },
+        {
+          "lane" => "credentials",
+          "kind" => "service_environment_variable",
+          "locator" => { "name" => "POSTGRES_PASSWORD", "service" => "postgres" },
+          "source" => "service_declaration.env"
+        },
+        {
+          "lane" => "credentials",
+          "kind" => "secrets_config_entry",
+          "locator" => { "name" => "github_token" },
+          "source" => "run_spec.secrets_config"
+        }
+      ]
+    end
+    let(:expected_service_manifest) do
+      [
+        {
+          "name" => "postgres",
+          "image" => "postgres:16",
+          "port" => 5432,
+          "type" => "database",
+          "env_keys" => [ "POSTGRES_PASSWORD" ]
+        }
+      ]
+    end
     let(:run_spec) do
       ExecutionRunners::RunSpec.new(
         agent_run: agent_run,
@@ -384,6 +459,32 @@ RSpec.describe ExecutionRunners do
       restored = described_class.from_json(manifest.to_json)
 
       expect(restored).to eq(manifest)
+    end
+
+    it "records all four transfer lanes with provider-neutral references" do
+      manifest = described_class.from_run_spec(run_spec)
+
+      expect(manifest.lanes.keys).to contain_exactly("git", "control_plane_api", "object_storage", "credentials")
+      expect(manifest.lanes["git"]).to eq(expected_git_lane)
+      expect(manifest.lanes["control_plane_api"]).to match_array(expected_control_plane_refs)
+      expect(manifest.lanes["object_storage"]).to eq([])
+      expect(manifest.lanes["credentials"]).to match_array(expected_credential_refs)
+    end
+
+    it "describes normal execution without requiring shared host storage" do
+      manifest = described_class.from_run_spec(run_spec)
+
+      expect(manifest.execution["workspace"]).to eq(
+        "mode" => "named_volume",
+        "mount_point" => "/workspace"
+      )
+      expect(manifest.execution["workspace"]).not_to have_key("reference")
+      expect(manifest.repository).to include(
+        "provider" => "github",
+        "repo_full_name" => "acme/widgets",
+        "repository_url" => "https://github.com/acme/widgets"
+      )
+      expect(manifest.services).to eq(expected_service_manifest)
     end
 
     it "keeps secret values and host paths out of the manifest by construction" do
@@ -417,6 +518,16 @@ RSpec.describe ExecutionRunners do
         }
       )
     end
+    let(:expected_binary_artifacts) do
+      [
+        {
+          "lane" => "object_storage",
+          "kind" => "trace",
+          "locator" => { "url" => "https://artifacts.test/trace.zip" },
+          "metadata" => { "note" => "Playwright trace" }
+        }
+      ]
+    end
 
     it "serializes and round-trips through JSON" do
       manifest = described_class.from_result(
@@ -437,6 +548,23 @@ RSpec.describe ExecutionRunners do
       expect(manifest.lanes["object_storage"].first.dig("locator", "url")).to eq("https://artifacts.test/trace.zip")
       expect(manifest.lanes["git"].first["kind"]).to eq("git_output")
       expect(manifest.verification["status"]).to eq("passed")
+    end
+
+    it "represents durable binary artifacts as object-storage manifest entries" do
+      manifest = described_class.from_result(
+        execution_result: ExecutionRunners::ExecutionResult.success(stdout: "ok", exit_code: 0),
+        agent_run: agent_run
+      )
+
+      expect(manifest.artifacts["binary_artifacts"]).to eq(expected_binary_artifacts)
+      expect(manifest.artifacts["code_outputs"]).to contain_exactly(manifest.git_output)
+      expect(manifest.artifacts["structured_results"]).to contain_exactly(
+        {
+          "kind" => "verification_result",
+          "value" => manifest.verification
+        }
+      )
+      expect(manifest.lanes["credentials"]).to eq([])
     end
   end
 

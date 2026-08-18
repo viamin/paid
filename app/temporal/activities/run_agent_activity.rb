@@ -1556,6 +1556,11 @@ module Activities
 
       raise RunnerExecutionError, "Agent run already finished with status #{agent_run.status}" if agent_run.finished?
 
+      # @spec TEMPORAL-ORCHESTRATION-005 — queue-admitted runs are already
+      # marked running for visibility, but started_at stays reserved for actual
+      # execution start so timeout/staleness semantics still begin here.
+      agent_run.start! if !agent_run.running? || agent_run.started_at.blank?
+
       Containers::TokenOptimization.rtk_init_for_runner(container_service: container_service, runner_key: runner)
 
       pre_agent_sha = capture_head_sha(container_service, agent_run)
@@ -1567,9 +1572,6 @@ module Activities
         runner: runner,
         execution_env: command_env
       )
-
-      # Only start! on first runner attempt.
-      agent_run.start! unless agent_run.running?
 
       agent_run.log!("system", "Starting #{runner} agent in container")
       agent_run.log!("system", "Prompt: #{prompt.truncate(500)}")

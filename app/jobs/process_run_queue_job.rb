@@ -937,16 +937,26 @@ class ProcessRunQueueJob < ApplicationJob
     # would be charged to the local bucket (via its blank container_host) and
     # not to the remote host, allowing the queue to over-admit remotes while
     # starving the local host in a single pass.
-    update_columns = {
+    # @spec TEMPORAL-ORCHESTRATION-005 — admission flips the run to running so
+    # provisioning/setup/preflight counts as active execution for visibility
+    # and capacity accounting. Keep started_at tied to actual agent execution
+    # in RunAgentActivity so max_execution_seconds and stale-running thresholds
+    # do not start burning down during Temporal admission/provisioning.
+    # @spec OBSERVABILITY-002 — record provisioning_started_at and
+    # requested_resources so admission telemetry can correlate rate-limited
+    # runs with the exact resource envelope they were admitted against.
+    update_attributes = {
       temporal_workflow_id: workflow_id,
+      status: "running",
+      completed_at: nil,
       external_metadata: agent_run.external_metadata.merge(
         "provisioning_started_at" => Time.current.iso8601,
         "requested_resources" => Capacity::RequestedResources.persistable_for(agent_run)
       )
     }
     if planned_container_host.present?
-      update_columns[:container_host] = nil
-      update_columns[:external_metadata] = update_columns[:external_metadata].merge({
+      update_attributes[:container_host] = nil
+      update_attributes[:external_metadata] = update_attributes[:external_metadata].merge({
         "planned_container_host" => planned_container_host
       }).tap do |metadata|
         metadata["host_placement_decision"] = serialize_host_placement_decision(host_placement_decision) if host_placement_decision.present?
@@ -956,7 +966,11 @@ class ProcessRunQueueJob < ApplicationJob
     # Write the planned workflow_id before starting the workflow so
     # StaleRunDetectorJob can cancel an orphaned workflow even if the
     # process crashes between start_workflow and the DB write.
-    agent_run.update_columns(**update_columns)
+    # Queue admission is an infrastructure transition, so skip unrelated
+    # validations that may have drifted since the run was created while
+    # still saving normally to fire after_commit broadcasts/followups.
+    agent_run.assign_attributes(**update_attributes)
+    agent_run.save!(validate: false)
 
     # Keep temporal_workflow_id set on failure — if start_workflow raises
     # due to a network timeout, the workflow may have started server-side.
