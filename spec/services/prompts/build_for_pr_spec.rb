@@ -287,6 +287,82 @@ RSpec.describe Prompts::BuildForPr do
     end
   end
 
+  # @spec PROMPT-ASSEMBLY-018
+  describe "#review_feedback_context_blocked?" do
+    it "blocks review-feedback runs when unresolved human review threads have no trusted comments" do
+      allow(github_client).to receive(:review_threads)
+        .with(project.full_name, 42)
+        .and_return([
+          { id: "thread_1", is_resolved: false, comments: [ { body: "Needs a fix", author: "drive-by" } ] }
+        ])
+
+      builder = described_class.new(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true,
+        focus: "review_feedback"
+      )
+
+      expect(builder.review_feedback_context_blocked?).to be(true)
+    end
+
+    it "does not block review-feedback runs for bot-authored unresolved threads" do
+      allow(github_client).to receive(:review_threads)
+        .with(project.full_name, 42)
+        .and_return([
+          { id: "thread_1", is_resolved: false, comments: [ { body: "Needs a fix", author: "copilot-pull-request-reviewer[bot]" } ] }
+        ])
+
+      builder = described_class.new(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true,
+        focus: "review_feedback"
+      )
+
+      expect(builder.review_feedback_context_blocked?).to be(false)
+    end
+
+    it "does not block review-feedback runs for generic non-runner bot-authored unresolved threads" do
+      allow(github_client).to receive(:review_threads)
+        .with(project.full_name, 42)
+        .and_return([
+          { id: "thread_1", is_resolved: false, comments: [ { body: "Coverage went down", author: "codecov[bot]" } ] }
+        ])
+
+      builder = described_class.new(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true,
+        focus: "review_feedback"
+      )
+
+      expect(builder.review_feedback_context_blocked?).to be(false)
+    end
+
+    it "blocks when a human-authored unresolved thread exists alongside bot threads" do
+      allow(github_client).to receive(:review_threads)
+        .with(project.full_name, 42)
+        .and_return([
+          { id: "thread_1", is_resolved: false, comments: [ { body: "Coverage went down", author: "codecov[bot]" } ] },
+          { id: "thread_2", is_resolved: false, comments: [ { body: "Needs a fix", author: "drive-by" } ] }
+        ])
+
+      builder = described_class.new(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true,
+        focus: "review_feedback"
+      )
+
+      expect(builder.review_feedback_context_blocked?).to be(true)
+    end
+  end
+
   describe "merge conflicts section" do
     it "includes merge conflicts instructions when rebase failed" do
       prompt = described_class.call(
@@ -1415,6 +1491,42 @@ RSpec.describe Prompts::BuildForPr do
       c = comment(login: "trusteduser", body: "third")
       result = described_class.select_trusted_comments([ a, b, c ], project: project)
       expect(result).to eq([ a, c ])
+    end
+  end
+
+  # @spec PROMPT-ASSEMBLY-016
+  describe "prompt builder rollout path" do
+    it "uses the legacy string builder by default" do
+      builder = described_class.new(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true
+      )
+
+      expect(PromptAssembly::Build).not_to receive(:call)
+      prompt = builder.build
+
+      expect(builder.prompt_builder).to eq("legacy_prompt_builder")
+      expect(prompt).to include("# Task")
+      expect(prompt).to include("# Instructions")
+    end
+
+    it "uses PromptAssembly when explicitly selected" do
+      builder = described_class.new(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true,
+        prompt_builder: "prompt_assembly"
+      )
+
+      expect(PromptAssembly::Build).to receive(:call).and_call_original
+      prompt = builder.build
+
+      expect(builder.prompt_builder).to eq("prompt_assembly")
+      expect(prompt).to include("# Task")
+      expect(prompt).to include("# Instructions")
     end
   end
 
