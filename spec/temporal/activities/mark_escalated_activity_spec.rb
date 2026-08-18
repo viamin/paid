@@ -75,6 +75,13 @@ RSpec.describe Activities::MarkEscalatedActivity do
         expect(issue.reload.pr_review_phase).to eq("escalated")
       end
 
+      # @spec FOCUSED-RUN-008
+      it "pauses auto-continue followups" do
+        activity.execute(issue_id: issue.id)
+
+        expect(issue.reload.auto_continue_paused).to be(true)
+      end
+
       it "stores the default escalation reason as a failure streak" do
         activity.execute(issue_id: issue.id)
 
@@ -101,6 +108,17 @@ RSpec.describe Activities::MarkEscalatedActivity do
         expect(issue.reload.pr_escalation_reason).to eq("review_goal_retry_limit")
       end
 
+      # @spec FOCUSED-RUN-007
+      it "stores PR token-limit escalations separately" do
+        activity.execute(
+          issue_id: issue.id,
+          reason_key: "pr_auto_continue_token_limit",
+          reason: "PR auto-continue token limit reached (50000000/50000000 recorded tokens)"
+        )
+
+        expect(issue.reload.pr_escalation_reason).to eq("pr_auto_continue_token_limit")
+      end
+
       it "persists the explicit reason key when provided" do
         create_operational_failures!(issue)
 
@@ -111,6 +129,18 @@ RSpec.describe Activities::MarkEscalatedActivity do
         )
 
         expect(issue.reload.pr_escalation_reason).to eq("operational_failures")
+      end
+
+      it "persists the escalation state with a single issue update" do
+        create_operational_failures!(issue)
+        allow(Issue).to receive(:find_by).with(id: issue.id).and_return(issue)
+        expect(issue).to receive(:update!).once.and_call_original
+
+        activity.execute(
+          issue_id: issue.id,
+          reason_key: "operational_failures",
+          reason: "anything human-facing"
+        )
       end
 
       it "prefers the explicit reason key over the human-facing reason text" do
@@ -199,6 +229,21 @@ RSpec.describe Activities::MarkEscalatedActivity do
 
         expect(github_client).to have_received(:add_comment)
           .with(anything, anything, a_string_including("Remove the `paid-escalated` label"))
+      end
+
+      it "adds token-cap-specific recovery guidance for PR token-limit escalations" do
+        activity.execute(
+          issue_id: issue.id,
+          reason_key: "pr_auto_continue_token_limit",
+          reason: "PR auto-continue token limit reached (50000000/50000000 recorded tokens)"
+        )
+
+        expect(github_client).to have_received(:add_comment)
+          .with(anything, anything, a_string_including("Raise `Max PR Auto-Continue Tokens`"))
+        expect(github_client).to have_received(:add_comment)
+          .with(anything, anything, a_string_including("after raising the limit"))
+        expect(github_client).not_to have_received(:add_comment)
+          .with(anything, anything, a_string_including("Convert to draft"))
       end
 
       it "includes the hidden comment marker for future identification" do

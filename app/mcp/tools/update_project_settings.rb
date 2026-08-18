@@ -37,6 +37,7 @@ module Tools
       plan_review_timeout_hours
       max_draft_review_rounds
       max_pr_followup_runs
+      max_pr_auto_continue_tokens
       token_limit_warning_threshold
       poll_interval_seconds
     ].freeze

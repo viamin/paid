@@ -614,7 +614,31 @@ module Workflows
         reason: result[:reason],
         breach_count: Array(result[:breaches]).size
       )
+      handle_quality_gate_block(project_id, data, result)
       false
+    end
+
+    # @spec FOCUSED-RUN-007
+    def handle_quality_gate_block(project_id, data, result)
+      return unless result[:reason] == Activities::CheckQualityGateActivity::PR_AUTO_CONTINUE_TOKEN_LIMIT_REASON
+
+      breach = Array(result[:breaches]).find { |item| item[:metric] == "pr_auto_continue_tokens" } || {}
+      issue_id = data[:issue_id] || result[:issue_id]
+      unless issue_id
+        Temporalio::Workflow.logger.warn(
+          message: "quality_gate.pr_token_cap_escalation_skipped",
+          project_id: project_id,
+          pr_number: data[:source_pull_request_number] || data[:pr_number]
+        )
+        return
+      end
+
+      run_activity(Activities::MarkEscalatedActivity, {
+        issue_id: issue_id,
+        reason: "PR auto-continue token limit reached " \
+          "(#{breach[:current].to_i}/#{breach[:threshold].to_i} recorded tokens)",
+        reason_key: Issue::PR_ESCALATION_REASON_PR_AUTO_CONTINUE_TOKEN_LIMIT
+      }, timeout: 30)
     end
 
     def current_workflow_id(project_id)

@@ -21,7 +21,10 @@
   comment directly but fails to emit parseable structured output, the system
   SHALL recover only when it can parse and persist the questions, then apply the
   enhance-issue needs-input label and move the issue to `paid_state:
-  "needs_input"` rather than leaving it auto-pick eligible.
+  "needs_input"` rather than leaving it auto-pick eligible. If recovery is not
+  possible, the run SHALL still fail non-retryably but the issue SHALL move to
+  `paid_state: "needs_input"` so automatic picking does not loop on the same
+  malformed enhancement attempt.
   *Tests:* `spec/temporal/activities/enhance_issue_activity_spec.rb`.
   *Code:* `app/temporal/activities/enhance_issue_activity.rb#enhance_issue_post_run`,
   `app/temporal/activities/enhance_issue_activity.rb#recover_paid_question_comment!`,

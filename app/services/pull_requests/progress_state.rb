@@ -192,13 +192,8 @@ module PullRequests
     end
 
     def load_runs
-      project.agent_runs
+      AgentRun.pr_history_scope(project:, issue:, pr_number: issue.github_number)
         .where(goal: GOALS)
-        .where(
-          "issue_id = :issue_id OR source_pull_request_number = :pr_num OR pull_request_number = :pr_num",
-          issue_id: issue.id,
-          pr_num: issue.github_number
-        )
         .finished
         .where.not(status: "retried")
     end

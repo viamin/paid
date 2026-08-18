@@ -73,6 +73,31 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
       expect(issue.reload.paid_state).to eq("failed")
     end
 
+    # @spec FOCUSED-RUN-006
+    it "increments draft_review_count for tracked failed draft followups" do
+      issue = create(:issue, :pull_request, project: project, pr_review_phase: "draft", draft_review_count: 2)
+      agent_run = create(:agent_run, :running, project: project, issue: issue,
+        count_toward_draft_review_round: true,
+        expected_draft_review_count: 2)
+
+      activity.execute(agent_run_id: agent_run.id, error: "All runners exhausted")
+
+      expect(issue.reload.draft_review_count).to eq(3)
+    end
+
+    # @spec FOCUSED-RUN-006
+    it "increments draft_review_count for tracked timeout draft followups" do
+      issue = create(:issue, :pull_request, project: project, pr_review_phase: "draft", draft_review_count: 2)
+      agent_run = create(:agent_run, :running, project: project, issue: issue,
+        count_toward_draft_review_round: true,
+        expected_draft_review_count: 2)
+      agent_run.timeout!(error: "guardrail: time_limit")
+
+      activity.execute(agent_run_id: agent_run.id, error: "Activity task failed")
+
+      expect(issue.reload.draft_review_count).to eq(3)
+    end
+
     it "does not overwrite completed status or update issue" do
       issue = create(:issue, :in_progress, project: project)
       agent_run = create(:agent_run, :running, project: project, issue: issue)

@@ -760,6 +760,7 @@ RSpec.describe Issue do
           .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
           .and_return(progress_state)
         issue.define_singleton_method(:labels) { %w[paid-escalated paid-dismiss-escalation] }
+        issue.define_singleton_method(:pr_escalation_reason) { nil }
         allow(issue).to receive(:update!).and_return(true)
 
         issue.dismiss_escalation!(draft: false)
@@ -773,6 +774,7 @@ RSpec.describe Issue do
         )
         expect(issue).not_to have_received(:update!).with(hash_including(:review_goal_retry_reset_at))
         expect(issue).not_to have_received(:update!).with(hash_including(:operational_failure_reset_at))
+        expect(issue).not_to have_received(:update!).with(hash_including(:pr_auto_continue_token_limit_overridden_at))
       end
     end
 

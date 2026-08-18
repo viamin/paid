@@ -68,7 +68,8 @@ module PromptAssembly
         trust_level: trust,
         required: required,
         inclusion_reason: inclusion_reason,
-        exclusion_reason: exclusion_reason
+        exclusion_reason: exclusion_reason,
+        login: login
       )
     end
 

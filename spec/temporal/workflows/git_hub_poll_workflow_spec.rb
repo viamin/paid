@@ -628,6 +628,14 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
   describe "#quality_gate_allows_run?" do
     let(:project_id) { 1 }
+    let(:pr_token_cap_block) do
+      {
+        allowed: false,
+        reason: "pr_auto_continue_token_limit_exceeded",
+        issue_id: 10,
+        breaches: [ { metric: "pr_auto_continue_tokens", current: 50_000_000, threshold: 50_000_000 } ]
+      }
+    end
 
     before do
       allow(workflow).to receive(:quality_gate_allows_run?).and_call_original
@@ -644,6 +652,30 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       expect(result).to be(false)
       expect(workflow).to have_received(:run_activity)
         .with(Activities::CheckQualityGateActivity, hash_including(issue_id: 10, goal: "create_pr"), timeout: 30)
+    end
+
+    # @spec FOCUSED-RUN-007
+    it "escalates the PR when the per-PR token cap blocks the run" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::CheckQualityGateActivity, anything, timeout: anything)
+        .and_return(pr_token_cap_block)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::MarkEscalatedActivity, anything, timeout: anything)
+        .and_return({ updated: true })
+
+      result = workflow.send(:quality_gate_allows_run?, project_id,
+        { source_pull_request_number: 42 }, goal: "create_pr")
+
+      expect(result).to be(false)
+      expect(workflow).to have_received(:run_activity).with(
+        Activities::MarkEscalatedActivity,
+        hash_including(
+          issue_id: 10,
+          reason_key: "pr_auto_continue_token_limit",
+          reason: "PR auto-continue token limit reached (50000000/50000000 recorded tokens)"
+        ),
+        timeout: 30
+      )
     end
   end
 

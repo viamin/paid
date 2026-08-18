@@ -6,12 +6,14 @@ module Activities
 
     DEFAULT_WINDOW_SIZE = 5
     DEFAULT_MIN_RECENT_RUNS = 3
+    PR_AUTO_CONTINUE_TOKEN_LIMIT_REASON = "pr_auto_continue_token_limit_exceeded"
 
     def execute(input)
       @project = Project.find(input[:project_id])
       @agent_run = input[:agent_run_id] ? AgentRun.find_by(id: input[:agent_run_id]) : nil
       @issue = input[:issue_id] ? Issue.find_by(id: input[:issue_id]) : nil
       @source_pull_request_number = input[:source_pull_request_number]
+      @source_pull_request = nil
       @settings = nil
 
       result = evaluate(input)
@@ -26,8 +28,13 @@ module Activities
     attr_reader :project, :agent_run, :issue, :source_pull_request_number
 
     def evaluate(input) # @spec QUALITY-LOOPS-005
-      bypass_reason = bypass_reason(input)
-      return allowed_result(reason: bypass_reason, bypassed: true) if bypass_reason
+      bypass = bypass_reason(input)
+      return allowed_result(reason: bypass, bypassed: true) if bypass && bypass != "priority_run"
+
+      token_limit_result = pr_auto_continue_token_limit_result
+      return token_limit_result if token_limit_result
+
+      return allowed_result(reason: "priority_run", bypassed: true) if bypass == "priority_run"
       return allowed_result(reason: "quality_gates_disabled") unless project.quality_gates_enabled?
 
       metrics = recent_metrics
@@ -74,8 +81,43 @@ module Activities
       labels.intersect?(project.priority_label_names)
     end
 
+    # @spec FOCUSED-RUN-007
+    def pr_auto_continue_token_limit_result
+      return if source_pull_request_number.blank?
+      return if source_pull_request&.pr_auto_continue_token_limit_overridden_at.present?
+
+      limit = project.max_pr_auto_continue_tokens.to_i
+      used = pr_auto_continue_tokens_used
+      return if used < limit
+
+      {
+        allowed: false,
+        blocked: true,
+        bypassed: false,
+        reason: PR_AUTO_CONTINUE_TOKEN_LIMIT_REASON,
+        issue_id: source_pull_request&.id,
+        breaches: [
+          breach_hash(
+            metric: "pr_auto_continue_tokens",
+            current: used,
+            threshold: limit,
+            severity: "critical"
+          )
+        ],
+        evaluated_at: Time.current.iso8601
+      }
+    end
+
+    def pr_auto_continue_tokens_used
+      AgentRun.pr_auto_continue_tokens_used(
+        project: project,
+        pr_number: source_pull_request_number,
+        issue: source_pull_request
+      )
+    end
+
     def source_pull_request
-      project.issues.find_by(
+      @source_pull_request ||= project.issues.find_by(
         github_number: source_pull_request_number,
         is_pull_request: true
       )

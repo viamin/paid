@@ -102,6 +102,27 @@ RSpec.describe Automation::Strategies::AutoContinue do
 
         expect(decision_types(result)).to eq([ "noop" ])
       end
+
+      # @spec FOCUSED-RUN-007
+      it "escalates when the PR token cap is reached" do
+        result = evaluate(
+          lifecycle: base_lifecycle.merge(
+            active_run_exists: true,
+            pr_auto_continue_token_limit_reached: true,
+            pr_auto_continue_tokens_used: 154_385_596,
+            pr_auto_continue_token_limit: 50_000_000,
+            escalation_reason: "PR auto-continue token limit reached (154385596/50000000 recorded tokens)",
+            escalation_reason_key: "pr_auto_continue_token_limit"
+          )
+        )
+
+        expect(result.to_h[:decisions].first).to include(
+          type: "escalate",
+          issue_id: pull_request.id,
+          reason_key: "pr_auto_continue_token_limit",
+          reason: "PR auto-continue token limit reached (154385596/50000000 recorded tokens)"
+        )
+      end
     end
 
     context "when operational failure breaker trips" do

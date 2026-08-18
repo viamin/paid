@@ -24,6 +24,27 @@ RSpec.describe PromptAssembly::Trust, :no_db do
     end
   end
 
+  describe ".review_thread_author_trusted?" do
+    it "trusts allowlisted humans" do
+      allow(project).to receive(:enabled_review_bot_logins).and_return(Set.new)
+
+      expect(described_class.review_thread_author_trusted?(project, "viamin")).to be true
+    end
+
+    it "trusts enabled review-bot logins" do
+      allow(project).to receive(:enabled_review_bot_logins)
+        .and_return(Set["paid-code-reviewer", "paid-code-reviewer[bot]"])
+
+      expect(described_class.review_thread_author_trusted?(project, "paid-code-reviewer")).to be true
+    end
+
+    it "rejects other authors" do
+      allow(project).to receive(:enabled_review_bot_logins).and_return(Set.new)
+
+      expect(described_class.review_thread_author_trusted?(project, "drive-by")).to be false
+    end
+  end
+
   describe ".comment_trusted?" do
     it "trusts allowlisted humans regardless of content" do
       expect(described_class.comment_trusted?(project, comment(login: "viamin"))).to be true

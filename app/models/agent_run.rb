@@ -1513,6 +1513,21 @@ class AgentRun < ApplicationRecord
     latest_pr_run.trigger_type == "manual" ? "manual" : "automatic"
   end
 
+  def self.pr_history_scope(project:, pr_number:, issue: nil)
+    project.agent_runs.where(
+      "issue_id = :issue_id OR source_pull_request_number = :pr_num OR pull_request_number = :pr_num",
+      issue_id: issue&.id,
+      pr_num: pr_number
+    )
+  end
+
+  def self.pr_auto_continue_tokens_used(project:, pr_number:, issue: nil)
+    pr_history_scope(project:, pr_number:, issue:)
+      .where(trigger_type: "automatic")
+      .pick(Arel.sql("COALESCE(SUM(COALESCE(tokens_input, 0) + COALESCE(tokens_output, 0)), 0)"))
+      .to_i
+  end
+
   # @spec LID-RUNS-004
   # Finds the lid_planning run that opened a given Planning PR, if any.
   # Used by the review-goal prompt path to detect that a PR is a Planning PR

@@ -221,9 +221,12 @@ module Activities
       no_progress_stuck = no_progress_stuck?(project, issue, progress_state)
       failure_limit = failure_streak_limit_reached?(project, issue, progress_state)
       retry_escalation = review_goal_retry_limit_requires_escalation?(project, issue, progress_state:)
+      token_limit_breach = pr_auto_continue_token_limit_breach(project, issue)
 
       reason, reason_key = if op_breaker
         [ operational_failure_reason, Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES ]
+      elsif token_limit_breach
+        [ pr_auto_continue_token_limit_reason(token_limit_breach), Issue::PR_ESCALATION_REASON_PR_AUTO_CONTINUE_TOKEN_LIMIT ]
       elsif no_progress_stuck && retry_escalation
         [ review_goal_retry_escalation_reason(project, issue, progress_state:), Issue::PR_ESCALATION_REASON_REVIEW_GOAL_RETRY_LIMIT ]
       elsif no_progress_stuck && failure_limit
@@ -236,6 +239,9 @@ module Activities
         phase: issue.pr_review_phase,
         active_run_exists: active_run_exists?(project, issue),
         operational_failure_breaker: op_breaker,
+        pr_auto_continue_token_limit_reached: token_limit_breach.present?,
+        pr_auto_continue_tokens_used: token_limit_breach&.fetch(:used, nil).to_i,
+        pr_auto_continue_token_limit: token_limit_breach&.fetch(:limit, nil).to_i,
         no_progress_stuck: no_progress_stuck,
         failure_streak_limit_reached: failure_limit,
         review_goal_retry_limit_requires_escalation: retry_escalation,
@@ -439,7 +445,10 @@ module Activities
     # --- Draft phase scanning ---
 
     def draft_review_limit_reached?(project, issue)
-      issue.draft_phase? && no_progress_stuck?(project, issue)
+      return false unless issue.draft_phase?
+      return false if project.max_draft_review_rounds.to_i <= 0
+
+      issue.draft_review_count >= project.max_draft_review_rounds
     end
 
     def scan_draft_pr(project, client, issue, pr_data: nil)
@@ -447,6 +456,19 @@ module Activities
 
       if third_party_bot_author?(project, issue.github_creator_login)
         return scan_bot_authored_draft_pr(project, client, issue, pr_data: pr_data)
+      end
+
+      # Hard cap: when the draft round counter is at the project limit and
+      # there are no actionable human review threads to address, escalate
+      # instead of queuing another follow-up that would just increment the
+      # counter again. Unresolved review threads take priority because the
+      # follow-up can still address them; escalation only fires when nothing
+      # else is actionable.
+      if draft_review_limit_reached?(project, issue)
+        early_unresolved_threads = fetch_unresolved_threads(client, project, issue)
+        if human_review_thread_triggers(project, early_unresolved_threads).empty?
+          return escalate_trigger(issue)
+        end
       end
 
       skip_comment_signals = project.max_draft_review_rounds.zero?
@@ -1149,6 +1171,30 @@ module Activities
         .exists?
     end
 
+    def pr_auto_continue_token_limit_breach(project, issue)
+      return if issue.respond_to?(:pr_auto_continue_token_limit_overridden_at) &&
+        issue.pr_auto_continue_token_limit_overridden_at.present?
+
+      limit = project.max_pr_auto_continue_tokens.to_i
+      used = pr_auto_continue_tokens_used(project, issue)
+      return if used < limit
+
+      { used: used, limit: limit }
+    end
+
+    def pr_auto_continue_tokens_used(project, issue)
+      AgentRun.pr_auto_continue_tokens_used(
+        project: project,
+        issue: issue,
+        pr_number: issue.github_number
+      )
+    end
+
+    def pr_auto_continue_token_limit_reason(breach)
+      "PR auto-continue token limit reached " \
+        "(#{breach[:used].to_i}/#{breach[:limit].to_i} recorded tokens)"
+    end
+
     def pr_progress_state(project, issue, current_head_sha: nil, current_head_updated_at: nil,
       current_head_resolved: nil)
       @pr_progress_states ||= {}
@@ -1405,11 +1451,7 @@ module Activities
     end
 
     def pr_run_history_scope(project, issue)
-      project.agent_runs.where(
-        "issue_id = :issue_id OR source_pull_request_number = :pr_num OR pull_request_number = :pr_num",
-        issue_id: issue.id,
-        pr_num: issue.github_number
-      )
+      AgentRun.pr_history_scope(project:, issue:, pr_number: issue.github_number)
     end
 
     def latest_completed_focused_run(project, issue)

@@ -138,6 +138,7 @@ module Activities
     # comment. A non-retryable error surfaces the problem for investigation
     # without marking the issue enhanced with unparseable content.
     def raise_parse_error!(agent_run, detail)
+      agent_run.issue&.update!(paid_state: "needs_input")
       agent_run.log!("stderr", "Failed to parse agent output: #{detail}")
       raise Temporalio::Error::ApplicationError.new(
         "EnhanceIssue agent produced unparseable structured output: #{detail}",

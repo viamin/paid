@@ -263,8 +263,25 @@ jobs:
           # GitHub's Ubuntu runners sometimes ship unrelated Microsoft sources
           # that transiently 403 and break apt-get update before PGDG installs.
           sudo find /etc/apt/sources.list.d -maxdepth 1 -type f -print0 | xargs -0 --no-run-if-empty grep -lZ 'packages.microsoft.com' | sudo xargs -0 --no-run-if-empty rm -f
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client-16
+          # Ubuntu archive downloads also stall mid-transfer on some runners; apt
+          # then waits forever and the job dies at its overall timeout. Bound each
+          # apt command and retry so a stalled mirror costs minutes, not the run.
+          apt_with_retry() {
+            local attempt
+            for attempt in 1 2 3; do
+              if sudo timeout 5m apt-get \
+                -o Acquire::http::Timeout=30 \
+                -o Acquire::https::Timeout=30 \
+                -o Acquire::Retries=3 "$@"; then
+                return 0
+              fi
+              echo "::warning::apt-get $* timed out or failed (attempt $attempt/3); retrying"
+              sleep "$((attempt * 10))"
+            done
+            return 1
+          }
+          apt_with_retry update
+          apt_with_retry install -y postgresql-client-16
 
       - name: Build assets
         run: yarn build && yarn build:css
@@ -462,8 +479,25 @@ jobs:
           # GitHub's Ubuntu runners sometimes ship unrelated Microsoft sources
           # that transiently 403 and break apt-get update before PGDG installs.
           sudo find /etc/apt/sources.list.d -maxdepth 1 -type f -print0 | xargs -0 --no-run-if-empty grep -lZ 'packages.microsoft.com' | sudo xargs -0 --no-run-if-empty rm -f
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client-16
+          # Ubuntu archive downloads also stall mid-transfer on some runners; apt
+          # then waits forever and the job dies at its overall timeout. Bound each
+          # apt command and retry so a stalled mirror costs minutes, not the run.
+          apt_with_retry() {
+            local attempt
+            for attempt in 1 2 3; do
+              if sudo timeout 5m apt-get \
+                -o Acquire::http::Timeout=30 \
+                -o Acquire::https::Timeout=30 \
+                -o Acquire::Retries=3 "$@"; then
+                return 0
+              fi
+              echo "::warning::apt-get $* timed out or failed (attempt $attempt/3); retrying"
+              sleep "$((attempt * 10))"
+            done
+            return 1
+          }
+          apt_with_retry update
+          apt_with_retry install -y postgresql-client-16
 
       - name: Set up database
         run: bin/rails db:create db:schema:load
