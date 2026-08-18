@@ -38,4 +38,12 @@ RSpec.describe CodeqlWorkflowFile, :no_db do
       "config-file" => "./.github/codeql/codeql-config.yml"
     )
   end
+
+  it "uses the GitHub runner toolcache for the CodeQL bundle" do
+    init_step = analyze_job.fetch("steps").find { |step| step["name"] == "Initialize CodeQL" }
+
+    expect(init_step.fetch("with")).to include(
+      "tools" => "toolcache"
+    )
+  end
 end
