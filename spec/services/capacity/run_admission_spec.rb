@@ -68,6 +68,7 @@ RSpec.describe Capacity::RunAdmission do
       :running,
       project: project,
       container_host: host,
+      provisioning_started_at: provisioning_started_at,
       external_metadata: requested_resource_metadata(
         cpu_quota: cpu_quota,
         memory_bytes: memory_bytes,
@@ -84,6 +85,7 @@ RSpec.describe Capacity::RunAdmission do
       :running,
       project: target_project,
       container_host: host,
+      provisioning_started_at: provisioning_started_at,
       external_metadata: requested_resource_metadata(
         cpu_quota: cpu_quota,
         memory_bytes: memory_bytes,
@@ -252,7 +254,7 @@ RSpec.describe Capacity::RunAdmission do
         statements = []
         subscriber = lambda do |*, payload|
           sql = payload[:sql]
-          next unless sql.include?('external_metadata ->> \'provisioning_started_at\'')
+          next unless sql.include?('"agent_runs"."provisioning_started_at"')
 
           statements << sql
         end
@@ -262,7 +264,7 @@ RSpec.describe Capacity::RunAdmission do
         end
 
         expect(result[:current_global_provisionings_per_window]).to eq(1)
-        expect(statements).to include(a_string_including("::timestamptz >= "))
+        expect(statements).to include(a_string_including('"agent_runs"."provisioning_started_at"'))
       end
     end
 

@@ -2118,6 +2118,19 @@ RSpec.describe ProcessRunQueueJob do
         expect(queued_run.rate_limited_until).to eq(available_at)
         expect(queued_run.external_metadata["capacity_park_reason"]).to eq("global_provisioning_rate_limit")
       end
+
+      it "preserves unrelated external metadata when parking for capacity" do
+        queued_run = create(:agent_run, :queued, external_metadata: { "keep" => "value" })
+        allow(Rails.logger).to receive(:info)
+
+        job.send(:park_run_for_capacity, queued_run, Time.utc(2026, 8, 17, 12, 5, 0), "project_provisioning_rate_limit")
+
+        queued_run.reload
+        expect(queued_run.external_metadata).to include(
+          "keep" => "value",
+          "capacity_park_reason" => "project_provisioning_rate_limit"
+        )
+      end
     end
   end
 

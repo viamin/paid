@@ -19,7 +19,11 @@ module Capacity
       end
 
       def sum_for(scope)
-        scope.includes(project: { created_by: :user_setting }).to_a.each_with_object(zero) do |run, totals|
+        sum_runs(scope.includes(project: { created_by: :user_setting }).to_a)
+      end
+
+      def sum_runs(runs)
+        runs.each_with_object(zero) do |run, totals|
           add!(totals, for_agent_run(run))
         end
       end

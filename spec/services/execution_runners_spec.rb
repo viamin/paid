@@ -99,6 +99,24 @@ RSpec.describe ExecutionRunners do
       expect(manifest.repository.dig("ref", "branch_name")).to eq("agent-run-branch")
       expect(manifest.execution.dig("workspace", "mode")).to eq("named_volume")
     end
+
+    # @spec CONTAINER-RUNTIME-022
+    it "reuses the requested-resource envelope when building from an agent run" do
+      project = create(:project)
+      run = create(:agent_run, project: project, external_metadata: {
+        "requested_resources" => {
+          "cpu_quota" => 123_000,
+          "memory_bytes" => 5.gigabytes,
+          "disk_bytes" => 2.gigabytes
+        }
+      })
+
+      built = described_class.from_agent_run(run, memory_bytes: 0)
+
+      expect(built.resources.cpu_quota).to eq(123_000)
+      expect(built.resources.memory_bytes).to eq(5.gigabytes)
+      expect(built.resources.disk_bytes).to eq(2.gigabytes)
+    end
   end
 
   describe ExecutionRunners::WritableDir do

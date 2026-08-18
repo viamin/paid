@@ -6,17 +6,35 @@ module Capacity
       def call(...)
         new(...).call
       end
+
+      def recent_starts(window_seconds:, now: Time.current)
+        cutoff = now - window_seconds.to_i.seconds
+
+        TenantContext.with_system_access do
+          AgentRun.left_outer_joins(:project)
+            .where(provisioning_started_at: cutoff..)
+            .pluck(Arel.sql("projects.account_id"), :project_id, :provisioning_started_at)
+            .map do |account_id, project_id, started_at|
+              {
+                account_id: account_id,
+                project_id: project_id,
+                started_at: started_at.in_time_zone
+              }
+            end
+        end
+      end
     end
 
-    def initialize(account:, project:, window_seconds:, now: Time.current)
+    def initialize(account:, project:, window_seconds:, starts: nil, now: Time.current)
       @account = account
       @project = project
       @window_seconds = window_seconds.to_i
+      @starts = starts
       @now = now
     end
 
     def call
-      starts = recent_starts
+      starts = @starts || self.class.recent_starts(window_seconds:, now:)
       global_count = starts.size
       account_starts = matching_account_starts(starts)
       project_starts = matching_project_starts(starts)
@@ -34,24 +52,6 @@ module Capacity
     private
 
     attr_reader :account, :now, :project, :window_seconds
-
-    def recent_starts
-      cutoff = now - window_seconds.seconds
-      started_at_sql = "NULLIF(external_metadata ->> 'provisioning_started_at', '')::timestamptz"
-
-      TenantContext.with_system_access do
-        AgentRun.left_outer_joins(:project)
-          .where("#{started_at_sql} >= ?", cutoff)
-          .pluck(Arel.sql("projects.account_id"), :project_id, Arel.sql(started_at_sql))
-          .map do |account_id, project_id, started_at|
-            {
-              account_id: account_id,
-              project_id: project_id,
-              started_at: started_at.in_time_zone
-            }
-          end
-      end
-    end
 
     def matching_account_starts(starts)
       starts.select { |entry| entry[:account_id] == account&.id }

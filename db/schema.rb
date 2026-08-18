@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_13_024216) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_18_135438) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -279,6 +279,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_024216) do
     t.string "priority_tier", limit: 10
     t.bigint "project_id", null: false
     t.bigint "prompt_version_id"
+    t.timestamptz "provisioning_started_at", comment: "When queue admission started provisioning this attempt for provisioning-rate enforcement."
     t.string "proxy_token", limit: 64
     t.integer "pull_request_number"
     t.string "pull_request_url", limit: 500
@@ -332,6 +333,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_024216) do
     t.index ["project_id"], name: "idx_agent_runs_unique_active_lid_planning", unique: true, where: "(((goal)::text = 'lid_planning'::text) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('rate_limited'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text])))"
     t.index ["project_id"], name: "index_agent_runs_on_project_id"
     t.index ["prompt_version_id"], name: "index_agent_runs_on_prompt_version_id"
+    t.index ["provisioning_started_at"], name: "index_agent_runs_on_provisioning_started_at", where: "(provisioning_started_at IS NOT NULL)"
     t.index ["proxy_token"], name: "index_agent_runs_on_proxy_token", unique: true
     t.index ["runner_id"], name: "index_agent_runs_on_runner_id"
     t.index ["status", "completed_at"], name: "index_agent_runs_on_status_completed_at"

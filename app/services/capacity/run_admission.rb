@@ -12,7 +12,7 @@ module Capacity
     end
 
     def initialize(user:, project: nil, goal: nil, agent_run: nil, docker_snapshot: nil, reserved_agent_memory_bytes: nil, mode: nil,
-      selected_host: nil, selected_host_limit: nil, now: Time.current)
+      selected_host: nil, selected_host_limit: nil, admission_snapshot: nil, now: Time.current)
       @user = user
       @project = project
       @goal = goal
@@ -22,6 +22,7 @@ module Capacity
       @mode = mode
       @selected_host = selected_host
       @selected_host_limit = selected_host_limit
+      @admission_snapshot = admission_snapshot
       @now = now
     end
 
@@ -42,7 +43,7 @@ module Capacity
 
     private
 
-    attr_reader :agent_run, :docker_snapshot, :goal, :now, :project, :reserved_agent_memory_bytes, :selected_host, :selected_host_limit, :user
+    attr_reader :admission_snapshot, :agent_run, :docker_snapshot, :goal, :now, :project, :reserved_agent_memory_bytes, :selected_host, :selected_host_limit, :user
 
     def owner_missing_result
       {
@@ -445,14 +446,20 @@ module Capacity
     end
 
     def global_requested_resources
-      @global_requested_resources ||= TenantContext.with_system_access do
-        Capacity::RequestedResources.sum_for(AgentRun.capacity_inflight)
+      @global_requested_resources ||= if admission_snapshot
+        admission_snapshot.global_requested_resources
+      else
+        TenantContext.with_system_access do
+          Capacity::RequestedResources.sum_for(AgentRun.capacity_inflight)
+        end
       end
     end
 
     def host_requested_resources
       @host_requested_resources ||= if selected_host.blank?
         Capacity::RequestedResources.zero
+      elsif admission_snapshot
+        admission_snapshot.host_requested_resources(selected_host)
       else
         # A host is a shared physical resource spanning all tenants, and
         # agent_runs has FORCE ROW LEVEL SECURITY, so the aggregate must be
@@ -478,12 +485,16 @@ module Capacity
     end
 
     def provisioning_window
-      @provisioning_window ||= Capacity::ProvisioningRateWindow.call(
-        account: user.account,
-        project: project,
-        window_seconds: infrastructure_limits[:provisioning_rate_window_seconds],
-        now: now
-      )
+      @provisioning_window ||= if admission_snapshot
+        admission_snapshot.provisioning_window(account: user.account, project: project)
+      else
+        Capacity::ProvisioningRateWindow.call(
+          account: user.account,
+          project: project,
+          window_seconds: infrastructure_limits[:provisioning_rate_window_seconds],
+          now: now
+        )
+      end
     end
 
     def total_agent_budget_bytes(snapshot)

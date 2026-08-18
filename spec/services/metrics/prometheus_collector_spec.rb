@@ -352,6 +352,26 @@ RSpec.describe Metrics::PrometheusCollector do # @spec OBSERVABILITY-002
         expect(output).to include(%(paid_capacity_host_requested_memory_bytes{host="local"} #{expected[:memory_bytes]}))
         expect(output).to include(%(paid_capacity_host_requested_disk_bytes{host="local"} #{expected[:disk_bytes]}))
       end
+
+      it "includes the shared blank-host local rows in local requested-resource gauges" do
+        create(
+          :agent_run,
+          :running,
+          container_host: nil,
+          external_metadata: {
+            "planned_container_host" => "local",
+            "requested_resources" => {
+              "cpu_quota" => 200_000,
+              "memory_bytes" => 2.gigabytes,
+              "disk_bytes" => 1.gigabyte
+            }
+          }
+        )
+
+        expect(output).to include('paid_capacity_host_requested_cpu_quota{host="local"} 600000')
+        expect(output).to include('paid_capacity_host_requested_memory_bytes{host="local"} 10737418240')
+        expect(output).to include('paid_capacity_host_requested_disk_bytes{host="local"} 4294967296')
+      end
     end
 
     it "follows Prometheus text exposition format with TYPE and HELP lines" do

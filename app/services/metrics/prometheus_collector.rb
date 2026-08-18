@@ -189,11 +189,12 @@ module Metrics
     end
 
     def collect_capacity_metrics(lines)
+      admission_snapshot = Capacity::AdmissionSnapshot.capture(
+        window_seconds: Capacity::InfrastructureLimits.current[:provisioning_rate_window_seconds]
+      )
       global_active = AgentRun.active_count_global
       global_limit = Capacity::GlobalLimit.max_concurrent_executions
-      global_requested = TenantContext.with_system_access do
-        Capacity::RequestedResources.sum_for(AgentRun.capacity_inflight)
-      end
+      global_requested = admission_snapshot.global_requested_resources
       global_infra_limits = Capacity::InfrastructureLimits.current
       registry = Containers.host_registry
 
@@ -228,9 +229,7 @@ module Metrics
       append_metric_header(lines, "paid_capacity_host_requested_disk_bytes_limit", "gauge", "Configured per-host requested disk ceiling.")
       registry.hosts.each do |host|
         host_active = AgentRun.active_count_for_host(host.identifier)
-        host_requested = TenantContext.with_system_access do
-          Capacity::RequestedResources.sum_for(AgentRun.capacity_inflight_for_host(host.identifier))
-        end
+        host_requested = admission_snapshot.host_requested_resources(host.identifier)
         host_infra_limits = Capacity::InfrastructureLimits.current(host: host.identifier)
         append_metric_sample(lines, "paid_capacity_host_concurrent_executions", host_active, host: host.identifier)
 

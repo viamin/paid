@@ -199,11 +199,12 @@ module ExecutionRunners
     # @return [RunSpec]
     def self.from_agent_run(agent_run, networking_policy: nil, **options)
       workspace = workspace_strategy_for(agent_run)
+      requested_resources = Capacity::RequestedResources.for_agent_run(agent_run)
       resources = ComputeRequirements.new(
-        cpu_quota: options[:cpu_quota] || Containers::Provision::DEFAULTS[:cpu_quota],
-        memory_bytes: options[:memory_bytes] || agent_run.project.effective_owner&.settings&.container_memory_bytes || Containers::Provision::DEFAULTS[:memory_bytes],
-        disk_bytes: options[:disk_bytes] || workspace.writable_dirs.sum(&:size_bytes),
-        pids_limit: options[:pids_limit] || Containers::Provision::DEFAULTS[:pids_limit]
+        cpu_quota: positive_numeric_option(options[:cpu_quota]) || requested_resources[:cpu_quota],
+        memory_bytes: positive_numeric_option(options[:memory_bytes]) || requested_resources[:memory_bytes],
+        disk_bytes: positive_numeric_option(options[:disk_bytes]) || requested_resources[:disk_bytes],
+        pids_limit: positive_numeric_option(options[:pids_limit]) || Containers::Provision::DEFAULTS[:pids_limit]
       )
 
       new(
@@ -218,6 +219,10 @@ module ExecutionRunners
         services: [],
         secrets_config: nil
       )
+    end
+
+    def self.positive_numeric_option(value)
+      value if value.to_i.positive?
     end
 
     # Derives the workspace strategy from the agent run: a legacy bind mount
