@@ -141,6 +141,7 @@ module Prompts
       trusted_review_threads.filter_map { |thread| thread[:id] }
     end
 
+    # @spec PROMPT-ASSEMBLY-018
     def review_feedback_context_blocked?
       focus == "review_feedback" &&
         human_review_threads_present? &&
@@ -784,11 +785,16 @@ module Prompts
       end
     end
 
+    # Human context excludes every bot author: Paid's own bot, GitHub App
+    # bots (logins ending in "[bot]"), and runner bots posting under bare
+    # aliases. Unlisted review bots must not be misread as human, or
+    # review-feedback runs would block on bot-authored threads even though
+    # their comments are excluded from prompt instructions.
     def human_review_comment?(comment)
       login = comment[:author].to_s.downcase
       login.present? &&
         !project.paid_bot_author?(login) &&
-        !RunnerSupport.runner_bot_username?(login)
+        !RunnerSupport.github_bot_username?(login)
     end
 
     # Filters unresolved review threads to only include comments authored by

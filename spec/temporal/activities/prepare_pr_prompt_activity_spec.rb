@@ -237,6 +237,22 @@ RSpec.describe Activities::PreparePrPromptActivity do
       expect(agent_run.custom_prompt).not_to include("Code Review Comments")
     end
 
+    # @spec PROMPT-ASSEMBLY-018
+    it "continues review-feedback prompt preparation for generic non-runner bot threads" do
+      agent_run.update!(focus: "review_feedback")
+      allow(github_client).to receive(:review_threads)
+        .with(project.full_name, 42)
+        .and_return([
+          { id: "thread_1", is_resolved: false, comments: [ { body: "Coverage went down", path: "app/models/user.rb", line: 42, author: "codecov[bot]" } ] }
+        ])
+
+      result = activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
+
+      expect(result[:prompt_length]).to be > 0
+      expect(agent_run.reload.custom_prompt).to include("Priority order:")
+      expect(agent_run.custom_prompt).not_to include("Code Review Comments")
+    end
+
     it "does not fail the run when prompt-builder metadata recording fails" do
       allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
       allow(agent_run).to receive(:record_prompt_builder!)
