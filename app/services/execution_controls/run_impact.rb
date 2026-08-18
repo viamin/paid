@@ -23,25 +23,86 @@ module ExecutionControls
     end
 
     def park_run!(agent_run)
-      changed = false
+      # Run the workflow/container teardown outside the row lock. Holding the
+      # lock across the two network calls would block every other queued run
+      # for the full duration of a global capacity disable's serial pass.
+      workflow_id = nil
+      container_id = nil
+      cleanup = nil
 
       agent_run.with_lock do
         next if agent_run.finished?
-        next if parked_by_control?(agent_run)
+        # Only suppress re-parking while the run is currently parked by this
+        # same control. The marker survives stale-detector requeue (which clears
+        # paused_at but does not touch external_metadata), so a queued run with
+        # a stale marker still needs to be re-parked — otherwise capacity
+        # disables lasting longer than STALE_PAUSED_TIMEOUT would silently
+        # bypass parking on every subsequent queue pass.
+        next if agent_run.paused? && parked_by_control?(agent_run)
 
-        if agent_run.status == "queued" && agent_run.temporal_workflow_id.blank?
-          changed = park_record!(agent_run)
+        if agent_run.status == "queued" && agent_run.temporal_workflow_id.blank? && agent_run.container_id.blank?
+          park_record!(agent_run)
           next
         end
 
-        AgentRuns::Cancel.call(agent_run: agent_run, skip_status_update: true)
-        changed = park_record!(agent_run)
+        # Snapshot the resource IDs under the lock. The park mutation below
+        # nulls them on the row, and Containers::Provision.reconnect needs the
+        # agent_run object plus the container_id to find the Docker container.
+        workflow_id = agent_run.temporal_workflow_id.presence
+        container_id = agent_run.container_id.presence
+        cleanup = -> { cleanup_in_flight_resources(agent_run, workflow_id, container_id) }
+        park_record!(agent_run)
       end
 
-      return unless changed
+      cleanup.call if cleanup
 
       record_run_event!("agent_run.execution_parked", agent_run, result: "execution_control_capacity")
       log_run_event("execution_control.run_parked", agent_run)
+    end
+
+    # Tears down the run's Temporal workflow and Docker container outside the
+    # row lock. Captures the agent_run's container_id on the in-memory object
+    # before calling cleanup so the post-park NULL on the row does not hide
+    # the container from Provision.reconnect.
+    def cleanup_in_flight_resources(agent_run, workflow_id, container_id)
+      cancel_temporal_workflow(agent_run.id, workflow_id) if workflow_id.present?
+      cleanup_container(agent_run, container_id) if container_id.present?
+    end
+
+    def cancel_temporal_workflow(agent_run_id, workflow_id)
+      return if workflow_id == AgentRun::CLAIMED_SENTINEL
+
+      handle = Paid.temporal_client.workflow_handle(workflow_id)
+      handle.cancel
+    rescue Temporalio::Error::RPCError => e
+      raise unless e.code == Temporalio::Error::RPCError::Code::NOT_FOUND
+
+      Rails.logger.info(
+        message: "execution_control.cancel_workflow_not_found",
+        agent_run_id: agent_run_id,
+        temporal_workflow_id: workflow_id
+      )
+    rescue => e
+      Rails.logger.warn(
+        message: "execution_control.cancel_workflow_failed",
+        agent_run_id: agent_run_id,
+        temporal_workflow_id: workflow_id,
+        error_class: e.class.name,
+        error: e.message
+      )
+    end
+
+    def cleanup_container(agent_run, container_id)
+      agent_run.container_id = container_id
+      agent_run.cleanup_container(force: true)
+    rescue => e
+      Rails.logger.warn(
+        message: "execution_control.container_cleanup_failed",
+        agent_run_id: agent_run.id,
+        container_id: container_id,
+        error_class: e.class.name,
+        error: e.message
+      )
     end
 
     private
@@ -87,6 +148,7 @@ module ExecutionControls
         duration_seconds: nil,
         temporal_workflow_id: nil,
         temporal_run_id: nil,
+        container_id: nil,
         external_metadata: metadata,
         error_message: control_reason
       )
