@@ -24,6 +24,7 @@ module Projects
       @runner_options = base_scope.distinct_effective_runner_options(account_id: @project.account_id, cache_key: cache_key)
     end
 
+    # @spec EXECUTION-ISOLATION-005
     def show
       authorize @agent_run
       @retry_runner_options = retry_runner_options_for(@agent_run)
