@@ -178,7 +178,10 @@ RSpec.describe NoSharedFilesystemConformance do
     end
 
     it "does not flag provider-neutral lifecycle vocabulary" do
-      tokens = %w[provision start status cancel cleanup handle spec command heartbeat_path execution]
+      tokens = %w[
+        provision start status cancel cleanup
+        handle spec command heartbeat_path execute execute_command execution
+      ]
 
       expect(described_class.forbidden_surface_tokens(tokens)).to be_empty
     end

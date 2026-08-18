@@ -17,11 +17,12 @@ module NoSharedFilesystemConformance
   # Tokens naming the Docker exec / bind-mount / shared-directory concepts the
   # runner contract must not carry (RDR-057). Matched against interface method
   # names, parameter names, and value-object member names. "execution" is
-  # allowed; the target is Docker's exec transport, not the word family.
+  # allowed, and provider-neutral "execute" lifecycle names stay allowed; the
+  # target is Docker's exec transport, not the word family.
   FORBIDDEN_SURFACE_PATTERN = /
     container_id | bind_mount | network_name | host_path |
     worktree(?:_path)? | volume_name | docker |
-    shared_dir | host_dir | mount_source | exec(?!ution)
+    shared_dir | host_dir | mount_source | exec(?!ution|ute)
   /x
 
   CONTRACT_VALUE_OBJECTS = [
