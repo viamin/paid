@@ -2,12 +2,15 @@
 
 require "rails_helper"
 
-# Negative controls for the RDR-057 no-shared-filesystem conformance suite
-# (spec/support/shared_examples/no_shared_filesystem_conformance.rb). Each
-# example feeds the conformance checks a deliberately non-conforming runner,
-# handle, manifest, or contract surface and asserts the checks reject it. If
-# one of these controls stops failing, the conformance suite has lost its
-# teeth against shared-host-storage regressions.
+# Negative controls and contract invariants for the RDR-057
+# no-shared-filesystem conformance suite
+# (spec/support/shared_examples/no_shared_filesystem_conformance.rb). The
+# "manifest and contract invariants" group asserts the production payloads
+# are host-path-free; every other example feeds the conformance checks a
+# deliberately non-conforming runner, handle, manifest, or contract surface
+# and asserts the checks reject it. If one of these controls stops failing,
+# the conformance suite has lost its teeth against shared-host-storage
+# regressions.
 #
 # @spec CONTAINER-RUNTIME-019
 RSpec.describe NoSharedFilesystemConformance do
