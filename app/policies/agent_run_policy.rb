@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+# @spec TENANT-ACCESS-001
+# @spec EXECUTION-ISOLATION-005
 class AgentRunPolicy < ApplicationPolicy
   def index?
     user_in_account?

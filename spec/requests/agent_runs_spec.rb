@@ -969,6 +969,7 @@ RSpec.describe "AgentRuns" do
       end
 
       it "does not show runs from other accounts" do
+        # @spec EXECUTION-ISOLATION-005
         other_account = create(:account)
         other_token = create(:github_token, :without_creator, account: other_account)
         other_project = create(:project, :without_creator, account: other_account, github_token: other_token)
