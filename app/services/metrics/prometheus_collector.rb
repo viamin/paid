@@ -229,12 +229,7 @@ module Metrics
       registry.hosts.each do |host|
         host_active = AgentRun.active_count_for_host(host.identifier)
         host_requested = TenantContext.with_system_access do
-          Capacity::RequestedResources.sum_for(
-            AgentRun.capacity_inflight.where(
-              "COALESCE(NULLIF(container_host, ''), COALESCE(external_metadata->>'planned_container_host', '')) = ?",
-              host.identifier.to_s
-            )
-          )
+          Capacity::RequestedResources.sum_for(AgentRun.capacity_inflight_for_host(host.identifier))
         end
         host_infra_limits = Capacity::InfrastructureLimits.current(host: host.identifier)
         append_metric_sample(lines, "paid_capacity_host_concurrent_executions", host_active, host: host.identifier)

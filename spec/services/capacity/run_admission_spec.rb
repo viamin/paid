@@ -244,6 +244,29 @@ RSpec.describe Capacity::RunAdmission do
     end
 
     # @spec CONTAINER-RUNTIME-020
+    it "filters stale provisioning starts in SQL before loading the window" do
+      travel_to(Time.zone.parse("2026-08-17 12:00:00 UTC")) do
+        create_requested_run!(provisioning_started_at: 11.minutes.ago.iso8601)
+        create_requested_run!(provisioning_started_at: 5.minutes.ago.iso8601)
+
+        statements = []
+        subscriber = lambda do |*, payload|
+          sql = payload[:sql]
+          next unless sql.include?('external_metadata ->> \'provisioning_started_at\'')
+
+          statements << sql
+        end
+
+        result = ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+          admission_for(host: "local", limit: 8)
+        end
+
+        expect(result[:current_global_provisionings_per_window]).to eq(1)
+        expect(statements).to include(a_string_including("::timestamptz >= "))
+      end
+    end
+
+    # @spec CONTAINER-RUNTIME-020
     it "uses the matching account window when returning an account provisioning-rate denial" do
       travel_to(Time.zone.parse("2026-08-17 12:00:00 UTC")) do
         other_account = create(:account)

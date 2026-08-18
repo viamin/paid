@@ -37,19 +37,17 @@ module Capacity
 
     def recent_starts
       cutoff = now - window_seconds.seconds
+      started_at_sql = "NULLIF(external_metadata ->> 'provisioning_started_at', '')::timestamptz"
 
       TenantContext.with_system_access do
         AgentRun.left_outer_joins(:project)
-          .where.not("COALESCE(external_metadata ->> 'provisioning_started_at', '') = ''")
-          .pluck(Arel.sql("projects.account_id"), :project_id, Arel.sql("external_metadata ->> 'provisioning_started_at'"))
-          .filter_map do |account_id, project_id, raw_started_at|
-            started_at = Time.zone.parse(raw_started_at.to_s)
-            next unless started_at && started_at >= cutoff
-
+          .where("#{started_at_sql} >= ?", cutoff)
+          .pluck(Arel.sql("projects.account_id"), :project_id, Arel.sql(started_at_sql))
+          .map do |account_id, project_id, started_at|
             {
               account_id: account_id,
               project_id: project_id,
-              started_at: started_at
+              started_at: started_at.in_time_zone
             }
           end
       end

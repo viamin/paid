@@ -461,12 +461,7 @@ module Capacity
         # to the calling tenant and undercount the host. See
         # AgentRun.active_count_for_host for the same concern.
         TenantContext.with_system_access do
-          Capacity::RequestedResources.sum_for(
-            AgentRun.capacity_inflight.where(
-              "COALESCE(NULLIF(container_host, ''), COALESCE(external_metadata->>'planned_container_host', '')) IN (:scope)",
-              scope: selected_host_scope
-            )
-          )
+          Capacity::RequestedResources.sum_for(AgentRun.capacity_inflight_for_host(selected_host))
         end
       end
     end
