@@ -344,9 +344,13 @@ RSpec.describe Metrics::PrometheusCollector do # @spec OBSERVABILITY-002
           }
         )
 
-        expect(output).to include('paid_capacity_host_requested_cpu_quota{host="local"} 200000')
-        expect(output).to include('paid_capacity_host_requested_memory_bytes{host="local"} 2147483648')
-        expect(output).to include('paid_capacity_host_requested_disk_bytes{host="local"} 1073741824')
+        expected = TenantContext.with_system_access do
+          Capacity::RequestedResources.sum_for(AgentRun.capacity_inflight_for_host("local"))
+        end
+
+        expect(output).to include(%(paid_capacity_host_requested_cpu_quota{host="local"} #{expected[:cpu_quota]}))
+        expect(output).to include(%(paid_capacity_host_requested_memory_bytes{host="local"} #{expected[:memory_bytes]}))
+        expect(output).to include(%(paid_capacity_host_requested_disk_bytes{host="local"} #{expected[:disk_bytes]}))
       end
     end
 

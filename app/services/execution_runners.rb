@@ -67,7 +67,7 @@ module ExecutionRunners
   # runners only consume cpu/memory/pids directly today, while disk_bytes is
   # used by infrastructure admission and future remote runners.
   # @spec CONTAINER-RUNTIME-009
-  # @spec CONTAINER-RUNTIME-021
+  # @spec CONTAINER-RUNTIME-022
   ComputeRequirements = Data.define(:cpu_quota, :memory_bytes, :disk_bytes, :pids_limit)
 
   # A writable directory inside the workload. A Docker runner translates this

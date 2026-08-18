@@ -21,7 +21,7 @@ RSpec.describe ExecutionRunners do
   end
 
   describe ExecutionRunners::ComputeRequirements do
-    # @spec CONTAINER-RUNTIME-021
+    # @spec CONTAINER-RUNTIME-022
     it "is an immutable Data object with cpu, memory, disk, and pids fields" do
       requirements = described_class.new(
         cpu_quota: 200_000,

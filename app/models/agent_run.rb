@@ -2306,6 +2306,7 @@ class AgentRun < ApplicationRecord
 
   PROMPT_ASSEMBLY_KEY = "prompt_assembly"
   ISSUE_PROMPT_ASSEMBLY_KEY = "issue_prompt_assembly"
+  PROMPT_BUILDER_KEY = "prompt_builder"
 
   # Persists prompt-assembly provenance (digest + section list) on the run so
   # configuration bundles and run metadata can fingerprint exactly which
@@ -2331,6 +2332,16 @@ class AgentRun < ApplicationRecord
 
   def prompt_assembly_digest
     prompt_assembly_provenance&.dig("digest")
+  end
+
+  def record_prompt_builder!(builder)
+    metadata = (external_metadata.is_a?(Hash) ? external_metadata.dup : {})
+    metadata[PROMPT_BUILDER_KEY] = builder.to_s
+    update!(external_metadata: metadata)
+  end
+
+  def prompt_builder
+    external_metadata.is_a?(Hash) ? external_metadata[PROMPT_BUILDER_KEY] : nil
   end
 
   # Returns the base prompt for the review goal.

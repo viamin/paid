@@ -228,7 +228,38 @@
   `ExecutionRunners::RunSpec#input_manifest`,
   `ExecutionRunners::ExecutionResult#output_manifest`
 
-- [x] **CONTAINER-RUNTIME-019** — Capacity admission SHALL enforce aggregate
+- [x] **CONTAINER-RUNTIME-019** — The system SHALL provide a provider-neutral
+  runner conformance suite that drives the complete normal create-PR
+  lifecycle — clone, run, log capture, artifact output, result manifest, and
+  cleanup — through the `ExecutionRunners` contract with no host-path
+  assumptions, deriving its `RunSpec` via `RunSpec.from_agent_run` so every
+  runner conforms to the same canonical scenario. The suite SHALL fail a
+  runner that requires shared host storage: provisioning the host-path-free
+  scenario must succeed, and the persisted `RunnerHandle` plus the input and
+  output manifests SHALL carry no host filesystem paths. The suite SHALL
+  verify Git is the only code transport (input-manifest Git lane with a
+  declarative workspace carrying no host reference) and that durable outputs
+  travel on the object-storage and control-plane API lanes. Logs SHALL cross
+  the runner boundary as streamed stdout/stderr chunks yielded through the
+  `ExecutionRunners::Base#start` block rather than through shared host files.
+  The runner contract surface (interface methods, parameters, and value-object
+  members) SHALL NOT reference Docker `exec`, bind mounts, shared directories,
+  or host-visible workspace paths. `LocalDockerRunner` SHALL pass the suite as
+  the baseline without weakening local Docker development (legacy bind-mount
+  runs remain a compatibility path outside the conformance scenario), and
+  negative controls SHALL prove the suite rejects host-storage-requiring
+  runners, handles, manifests, streamed output plumbing, and contract
+  surfaces.
+  *Tests:* `spec/services/execution_runners/no_shared_filesystem_conformance_spec.rb`,
+  `spec/services/execution_runners/local_docker_runner_spec.rb`,
+  `spec/services/containers/provision_spec.rb`
+  *Code:* `app/services/containers/provision.rb`,
+  `app/services/execution_runners/base.rb`,
+  `app/services/execution_runners/local_docker_runner.rb`,
+  `spec/support/no_shared_filesystem_conformance.rb`,
+  `spec/support/shared_examples/no_shared_filesystem_conformance.rb`
+
+- [x] **CONTAINER-RUNTIME-020** — Capacity admission SHALL enforce aggregate
   requested CPU, memory, and disk ceilings globally and per selected backend,
   using provider-neutral execution resource specs rather than Docker-only
   fields, and SHALL return a named denial reason naming the constrained scope
@@ -239,7 +270,7 @@
   *Code:* `Capacity::RunAdmission`, `Capacity::RequestedResources`,
   `Capacity::InfrastructureLimits`, `Metrics::PrometheusCollector`
 
-- [x] **CONTAINER-RUNTIME-020** — Capacity admission SHALL enforce global,
+- [x] **CONTAINER-RUNTIME-021** — Capacity admission SHALL enforce global,
   per-account, and per-project provisioning-rate limits over a configured time
   window, returning a named denial reason and a next-eligible timestamp so the
   queue can park the run until the limit window opens again.
@@ -248,7 +279,7 @@
   *Code:* `Capacity::RunAdmission`, `Capacity::ProvisioningRateWindow`,
   `ProcessRunQueueJob`
 
-- [x] **CONTAINER-RUNTIME-021** — The provider-neutral execution resource spec
+- [x] **CONTAINER-RUNTIME-022** — The provider-neutral execution resource spec
   SHALL include CPU, memory, and disk request fields, and the system SHALL
   reject a run whose requested per-execution resources exceed the configured
   infrastructure maxima before provisioning starts.
