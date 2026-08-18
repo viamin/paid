@@ -128,6 +128,21 @@ RSpec.describe ExecutionRunners do
       expect(policy.violation_message).to be_nil
     end
 
+    it "treats absent metadata as the default-deny posture" do
+      policy = described_class.from_metadata({})
+
+      expect(policy.public_inbound).to be(false)
+      expect(policy).to be_explicit
+      expect(policy.violation_message).to be_nil
+    end
+
+    it "treats nil metadata as the default-deny posture" do
+      policy = described_class.from_metadata(nil)
+
+      expect(policy.public_inbound).to be(false)
+      expect(policy).to be_explicit
+    end
+
     it "accepts an authenticated, time-bounded preview exception" do
       policy = described_class.default_deny(
         capabilities: [
@@ -143,7 +158,7 @@ RSpec.describe ExecutionRunners do
       )
 
       expect(policy.supported_for_runtime?).to be(true)
-      expect(policy.violation_message(environment: "production")).to be_nil
+      expect(policy.violation_message).to be_nil
     end
 
     it "rejects unsupported inbound exposure kinds" do
@@ -161,7 +176,7 @@ RSpec.describe ExecutionRunners do
       )
 
       expect(policy.supported_for_runtime?).to be(false)
-      expect(policy.violation_message(environment: "production")).to eq("Unsupported inbound exposure requested: debug.")
+      expect(policy.violation_message).to eq("Unsupported inbound exposure requested: debug.")
     end
   end
 

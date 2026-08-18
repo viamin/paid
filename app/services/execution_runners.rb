@@ -277,8 +277,11 @@ module ExecutionRunners
         entry.is_a?(IngressCapability) ? entry : IngressCapability.from_h(entry)
       end
 
+      raw_public_inbound = raw[:public_inbound] || raw["public_inbound"]
+      public_inbound_value = ActiveModel::Type::Boolean.new.cast(raw_public_inbound)
+
       new(
-        public_inbound: ActiveModel::Type::Boolean.new.cast(raw[:public_inbound] || raw["public_inbound"]),
+        public_inbound: public_inbound_value.nil? ? false : public_inbound_value,
         capabilities: capabilities
       )
     end
@@ -301,23 +304,19 @@ module ExecutionRunners
         capabilities.all?(&:valid_grant?)
     end
 
-    def violation_message(environment: Rails.env)
+    def violation_message
       return "Execution ingress policy must explicitly deny public inbound exposure." unless explicit?
       return nil if capabilities.empty?
       return nil if supported_for_runtime?
 
       unsupported = capabilities.reject(&:preview?).map(&:kind).uniq
-      if unsupported.any?
-        return if environment.to_s == "production" && unsupported.none?
-
-        return "Unsupported inbound exposure requested: #{unsupported.join(', ')}."
-      end
+      return "Unsupported inbound exposure requested: #{unsupported.join(', ')}." if unsupported.any?
 
       "Ingress exception grants must be authenticated, time-bounded, and explicitly recorded."
     end
 
-    def validate_supported!(environment: Rails.env)
-      message = violation_message(environment:)
+    def validate_supported!
+      message = violation_message
       raise ExecutionRunners::ProvisionError, message if message.present?
     end
 

@@ -418,6 +418,11 @@ class AgentRun < ApplicationRecord
     metadata
   end
 
+  def self.preview_granted_by(granted_by)
+    granted_by.respond_to?(:id) ? "user:#{granted_by.id}" : granted_by.to_s
+  end
+  private_class_method :preview_granted_by
+
   scope :recent, -> { order(created_at: :desc) }
   scope :started_before, ->(time) { where("started_at < ?", time) }
   scope :updated_before, ->(time) { where("updated_at < ?", time) }
@@ -445,10 +450,6 @@ class AgentRun < ApplicationRecord
     "attempt->>'runner'"
   ].freeze
 
-  def self.preview_granted_by(granted_by)
-    granted_by.respond_to?(:id) ? "user:#{granted_by.id}" : granted_by.to_s
-  end
-  private_class_method :preview_granted_by
   LEGACY_PROVIDER_NORMALIZABLE_COLUMNS = {
     "final_provider" => "final_runner",
     "NULLIF(final_provider, '')" => "NULLIF(final_runner, '')",

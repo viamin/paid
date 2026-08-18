@@ -205,7 +205,7 @@ module Containers
     end
 
     def self.compatibility_for(agent_run:, backend:, worktree_path: nil)
-      agent_run.execution_ingress_policy.validate_supported!(environment: Rails.env)
+      agent_run.execution_ingress_policy.validate_supported!
       service = new(agent_run: agent_run, worktree_path: worktree_path, backend: backend)
       # record_telemetry: false — compatibility_for is called for every candidate
       # host during queue scheduling (before any run is claimed), so skipping

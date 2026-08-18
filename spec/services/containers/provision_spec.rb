@@ -209,6 +209,23 @@ RSpec.describe Containers::Provision do
       expect(result.compatible).to be(false)
       expect(result.error_message).to eq("Unsupported inbound exposure requested: callback.")
     end
+
+    # @spec EXEC-INGRESS-001
+    it "treats an ordinary run with no ingress metadata as default-deny compatible" do
+      run = create(:agent_run, external_metadata: {})
+      backend = instance_double(Containers::Backends::Base)
+      service = instance_double(described_class)
+
+      allow(described_class).to receive(:new).with(
+        agent_run: run, worktree_path: nil, backend: backend
+      ).and_return(service)
+      allow(service).to receive(:send).with(:validate_backend_mount_support!, record_telemetry: false)
+
+      result = described_class.compatibility_for(agent_run: run, backend:)
+
+      expect(result.compatible).to be(true)
+      expect(result.error_message).to be_nil
+    end
   end
 
   describe "constants" do
