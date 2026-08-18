@@ -2603,6 +2603,7 @@ RSpec.describe Containers::Provision do
         )
       end
 
+      # @spec CONTAINER-RUNTIME-019
       it "yields normalized stdout and stderr chunks to the caller block in stream order" do
         raw_stdout = "out\x00put\n".b
         raw_stderr = "bad\xFF\n".b

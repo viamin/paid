@@ -373,6 +373,7 @@ module Containers
     # @raise [StartupTimeoutError] when no output is received within +startup_timeout+ seconds
     # @raise [IdleTimeoutError] when output stops for more than +idle_timeout+ seconds
     # @raise [TimeoutError] when total wall-clock +timeout+ is exceeded
+    # @spec CONTAINER-RUNTIME-019
     def execute(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil, heartbeat_path: nil, abort_patterns: nil, &block)
       raise ProvisionError, "Container not provisioned" unless container
 

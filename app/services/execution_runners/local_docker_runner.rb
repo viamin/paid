@@ -67,6 +67,7 @@ module ExecutionRunners
       raise
     end
 
+    # @spec CONTAINER-RUNTIME-019
     def start(handle:, command:, timeout: nil, startup_timeout: nil, idle_timeout: nil,
               abort_patterns: nil, preparation: nil, heartbeat_path: nil, &block)
       result = reconnect(handle: handle).execute(

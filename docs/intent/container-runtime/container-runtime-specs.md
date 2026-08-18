@@ -251,7 +251,8 @@
   runners, handles, manifests, streamed output plumbing, and contract
   surfaces.
   *Tests:* `spec/services/execution_runners/no_shared_filesystem_conformance_spec.rb`,
-  `spec/services/execution_runners/local_docker_runner_spec.rb`
+  `spec/services/execution_runners/local_docker_runner_spec.rb`,
+  `spec/services/containers/provision_spec.rb`
   *Code:* `app/services/containers/provision.rb`,
   `app/services/execution_runners/base.rb`,
   `app/services/execution_runners/local_docker_runner.rb`,
