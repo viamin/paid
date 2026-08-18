@@ -236,7 +236,7 @@ class AgentRun < ApplicationRecord
   after_commit :enqueue_quality_metrics_collection, on: :update, if: :real_run_just_finished?
   after_commit :enqueue_anomaly_detection, on: :update, if: :real_run_just_finished?
   after_commit :enqueue_resource_profile_refresh, on: :update, if: :real_run_just_finished?
-  after_commit :enqueue_container_metrics_collection, on: :update, if: :just_started_running?
+  after_commit :enqueue_container_metrics_collection, on: :update, if: :container_metrics_seed_due?
   after_commit :enqueue_issue_goal_timeout_retry, on: :update, if: :just_timed_out_issue_goal?
   after_commit :enqueue_failure_recovery_decision, on: :update, if: :recovery_decision_required?
   after_commit :record_dispatch_circuit_breaker_outcome, on: :update, if: :real_run_just_finished?
@@ -333,6 +333,7 @@ class AgentRun < ApplicationRecord
   scope :queued, -> { where(status: "queued") }
   scope :waiting, -> { queued.where(temporal_workflow_id: nil) }
   scope :claimed, -> { queued.where.not(temporal_workflow_id: nil) }
+  scope :admitted_not_started, -> { running.where.not(temporal_workflow_id: nil).where(started_at: nil) }
   scope :unclaimed, -> { waiting }
   scope :running, -> { where(status: "running") }
   scope :completed, -> { where(status: "completed") }
@@ -392,7 +393,7 @@ class AgentRun < ApplicationRecord
   scope :started_before, ->(time) { where("started_at < ?", time) }
   scope :updated_before, ->(time) { where("updated_at < ?", time) }
   scope :stale_running, -> { running.where(stale_running_condition_sql(now: Time.current)) }
-  scope :stale_claimed, -> { claimed.updated_before(stale_claimed_cutoff) }
+  scope :stale_claimed, -> { claimed.or(admitted_not_started).updated_before(stale_claimed_cutoff) }
   scope :stale_for_cleanup, -> { stale_running.or(stale_claimed) }
   scope :search_by_goal, lambda { |query|
     normalized_query = query.to_s.strip
@@ -854,6 +855,13 @@ class AgentRun < ApplicationRecord
     agent_run.status == "running" &&
       agent_run.started_at.present? &&
       agent_run.started_at < stale_running_cutoff(goal: agent_run.goal, now: now)
+  end
+
+  def self.stale_claimed?(agent_run, now: Time.current)
+    agent_run.temporal_workflow_id.present? &&
+      agent_run.updated_at.present? &&
+      agent_run.updated_at < stale_claimed_cutoff(now: now) &&
+      (agent_run.status == "queued" || (agent_run.status == "running" && agent_run.started_at.nil?))
   end
 
   def should_refresh_queue_entered_at?
@@ -1527,8 +1535,8 @@ class AgentRun < ApplicationRecord
   end
 
   # Atomically claims a queued run by setting temporal_workflow_id inside a
-  # transaction with FOR UPDATE SKIP LOCKED. The status stays "queued" — the
-  # run transitions to "running" only when RunAgentActivity#start! is called.
+  # transaction with FOR UPDATE SKIP LOCKED. ProcessRunQueueJob transitions the
+  # run to "running" once the workflow is admitted.
   # Returns nil if the run is no longer unclaimed or another process already
   # claimed it.
   #
@@ -1536,8 +1544,8 @@ class AgentRun < ApplicationRecord
   #   prior peek_next_queued_run call)
   #
   # Note: if the transaction commits but the subsequent workflow start fails,
-  # the run stays "queued" with a claimed marker. StaleRunDetectorJob handles
-  # this by clearing the claim after STALE_CLAIMED_TIMEOUT.
+  # ProcessRunQueueJob leaves the workflow id in place when it marks the run
+  # failed so StaleRunDetectorJob can cancel a potentially orphaned workflow.
   def self.claim_next_queued_run(target_id:)
     transaction do
       run = unclaimed.where(id: target_id).lock("FOR UPDATE SKIP LOCKED").first
@@ -1901,6 +1909,8 @@ class AgentRun < ApplicationRecord
         errors.add(:base, "cannot start a finished agent run")
         raise ActiveRecord::RecordInvalid, self
       end
+
+      return self if running? && started_at.present?
 
       update!(status: "running", started_at: Time.current, completed_at: nil)
     end
@@ -3389,6 +3399,15 @@ class AgentRun < ApplicationRecord
 
   def just_started_running?
     previous_changes.key?("status") && status == "running"
+  end
+
+  # @spec TEMPORAL-ORCHESTRATION-005 — admission flips a run to running before
+  # any container exists, so metrics seeding must also fire when provisioning
+  # later assigns a container to an already-running run.
+  def container_metrics_seed_due?
+    return false unless container_id.present?
+
+    just_started_running? || (previous_changes.key?("container_id") && running?)
   end
 
   private :explicit_user_max_tokens_per_run, :explicit_user_max_execution_seconds
