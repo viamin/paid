@@ -607,7 +607,7 @@ module Containers
             log_output(:stderr, normalized_chunk) if stream
           end
 
-          block.call(stream_type, normalized_chunk) if block
+          yield(stream_type, normalized_chunk) if block_given?
 
           # Check both stdout and stderr against abort patterns — if the CLI
           # emits a fatal error but hangs instead of exiting, stop the container
