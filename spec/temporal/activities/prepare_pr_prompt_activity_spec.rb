@@ -35,6 +35,8 @@ RSpec.describe Activities::PreparePrPromptActivity do
   end
 
   before do
+    FeatureFlags.flipper.features.each(&:remove)
+
     allow(GithubClient).to receive(:new).and_return(github_client)
 
     allow(github_client).to receive(:pull_request)
@@ -90,6 +92,7 @@ RSpec.describe Activities::PreparePrPromptActivity do
 
       expect(result[:prompt_length]).to be > 0
       expect(result[:agent_run_id]).to eq(agent_run.id)
+      expect(result[:prompt_builder]).to eq("legacy_prompt_builder")
       expect(result[:includes_review_threads]).to be(false)
       expect(result[:review_thread_ids]).to eq([])
       expect(result[:prompt_version_id]).to eq(prompt.current_version.id)
@@ -108,31 +111,87 @@ RSpec.describe Activities::PreparePrPromptActivity do
       )
     end
 
-    it "records prompt assembly provenance on the prepare_pr_prompt phase" do
+    it "records legacy prompt building on the prepare_pr_prompt phase by default" do
       result = activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
 
       phase = agent_run.reload.agent_run_phases.find_by!(phase_key: "prepare_pr_prompt")
-      provenance = phase.metadata["prompt_assembly"]
 
-      expect(provenance["sections"]).to be_an(Array)
-      keys = provenance["sections"].map { |section| section["key"] }
-      expect(keys).to include("task", "instructions_and_rules", "service_environment")
-      expect(provenance["skipped"]).to be_an(Array)
-      expect(result[:prompt_section_keys]).to include("task")
-      expect(result[:prompt_excluded_count]).to be >= 0
+      expect(phase.metadata["prompt_builder"]).to eq("legacy_prompt_builder")
+      expect(phase.metadata).not_to have_key("prompt_assembly")
+      expect(agent_run.prompt_builder).to eq("legacy_prompt_builder")
+      expect(result[:prompt_section_keys]).to eq([])
+      expect(result[:prompt_excluded_count]).to eq(0)
     end
 
-    it "records prompt digest and profile fingerprint in provenance" do
+    it "routes through PromptAssembly and records provenance when the flag is enabled" do
+      FeatureFlags.enable!(:prompt_assembly, project: project)
+
       activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
 
       phase = agent_run.reload.agent_run_phases.find_by!(phase_key: "prepare_pr_prompt")
       provenance = phase.metadata["prompt_assembly"]
 
+      expect(phase.metadata["prompt_builder"]).to eq("prompt_assembly")
+      expect(agent_run.prompt_builder).to eq("prompt_assembly")
+      expect(provenance["sections"]).to be_an(Array)
+      keys = provenance["sections"].map { |section| section["key"] }
+      expect(keys).to include("task", "instructions_and_rules", "service_environment")
+      expect(provenance["skipped"]).to be_an(Array)
       expect(provenance["prompt_digest"]).to be_a(String)
       expect(provenance["prompt_digest"].length).to eq(64)
       expect(provenance["profile_fingerprint"]).to be_a(String)
       expect(provenance["profile_fingerprint"].length).to eq(64)
       expect(provenance["budget_decisions"]).to be_an(Array)
+    end
+
+    it "records style guide, convention, and LID sections when they reach the final prompt" do
+      FeatureFlags.enable!(:prompt_assembly, project: project)
+      create(:style_guide,
+        :global,
+        name: "Seeded Ruby Guide",
+        raw_content: "Prefer small methods.",
+        compressed_content: nil)
+      project.update!(lid_mode: "full")
+
+      activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
+
+      phase = agent_run.reload.agent_run_phases.find_by!(phase_key: "prepare_pr_prompt")
+      keys = phase.metadata.fetch("prompt_assembly").fetch("sections").map { |section| section.fetch("key") }
+
+      expect(agent_run.custom_prompt).to include("# Style Guide")
+      expect(agent_run.custom_prompt).to include("## Repository Automation Conventions")
+      expect(agent_run.custom_prompt).to include("## LID-Aware Workflow")
+      expect(keys).to include("style_guides", "project_conventions", "lid_workflow")
+    end
+
+    # @spec PROMPT-ASSEMBLY-016
+    it "preserves an already-recorded prompt builder when the rollout flag changes before retry" do
+      agent_run.record_prompt_builder!("prompt_assembly")
+
+      activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
+
+      phase = agent_run.reload.agent_run_phases.find_by!(phase_key: "prepare_pr_prompt")
+      provenance = phase.metadata["prompt_assembly"]
+
+      expect(phase.metadata["prompt_builder"]).to eq("prompt_assembly")
+      expect(agent_run.prompt_builder).to eq("prompt_assembly")
+      expect(provenance["sections"]).to be_an(Array)
+    end
+
+    it "stores a data-only prompt comparison when shadow comparison is enabled" do
+      FeatureFlags.enable!(:prompt_assembly_shadow_compare, project: project)
+
+      activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
+
+      phase = agent_run.reload.agent_run_phases.find_by!(phase_key: "prepare_pr_prompt")
+      comparison = phase.metadata["prompt_builder_comparison"]
+
+      expect(comparison["served_builder"]).to eq("legacy_prompt_builder")
+      expect(comparison["legacy_prompt"]).to include("digest", "bytes", "sample")
+      expect(comparison["prompt_assembly_prompt"]).to include("digest", "bytes", "sample")
+      expect(comparison["legacy_prompt"]["sample"]).to include("# Task")
+      expect(comparison["prompt_assembly_prompt"]["sample"]).to include("# Task")
+      expect(comparison).to have_key("matched")
     end
 
     it "passes explicit focus through to the prompt builder" do
@@ -194,9 +253,50 @@ RSpec.describe Activities::PreparePrPromptActivity do
       expect(agent_run.reload.custom_prompt).to eq("placeholder")
       phase = agent_run.agent_run_phases.find_by!(phase_key: "prepare_pr_prompt")
       expect(phase.status).to eq("failed")
-      expect(phase.metadata.dig("prompt_assembly", "skipped")).to include(
-        hash_including("key" => "review_thread", "login" => "drive-by", "reason" => "author_not_in_allowlist")
-      )
+      expect(phase.metadata["prompt_builder"]).to eq("legacy_prompt_builder")
+    end
+
+    it "continues review-feedback prompt preparation for bot-authored unresolved threads" do
+      agent_run.update!(focus: "review_feedback")
+      allow(github_client).to receive(:review_threads)
+        .with(project.full_name, 42)
+        .and_return([
+          { id: "thread_1", is_resolved: false, comments: [ { body: "Needs a fix", path: "app/models/user.rb", line: 42, author: "copilot-pull-request-reviewer[bot]" } ] }
+        ])
+
+      result = activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
+
+      expect(result[:prompt_length]).to be > 0
+      expect(agent_run.reload.custom_prompt).to include("Priority order:")
+      expect(agent_run.custom_prompt).not_to include("Code Review Comments")
+    end
+
+    # @spec PROMPT-ASSEMBLY-018
+    it "continues review-feedback prompt preparation for generic non-runner bot threads" do
+      agent_run.update!(focus: "review_feedback")
+      allow(github_client).to receive(:review_threads)
+        .with(project.full_name, 42)
+        .and_return([
+          { id: "thread_1", is_resolved: false, comments: [ { body: "Coverage went down", path: "app/models/user.rb", line: 42, author: "codecov[bot]" } ] }
+        ])
+
+      result = activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
+
+      expect(result[:prompt_length]).to be > 0
+      expect(agent_run.reload.custom_prompt).to include("Priority order:")
+      expect(agent_run.custom_prompt).not_to include("Code Review Comments")
+    end
+
+    it "does not fail the run when prompt-builder metadata recording fails" do
+      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+      allow(agent_run).to receive(:record_prompt_builder!)
+        .and_raise(ActiveRecord::ActiveRecordError, "write failed")
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
+      }.not_to raise_error
+
+      expect(agent_run.reload.custom_prompt).to include("Fix the bug")
     end
 
     it "passes rebase_succeeded through to the prompt builder" do

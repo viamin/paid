@@ -76,12 +76,14 @@ upsert_global_prompt.call(
 
 # ----------------------------------------------------------------------------
 # coding.issue_implementation — Default prompt for implementing a GitHub issue
-# Used by: Prompts::BuildForIssue, Activities::CreateAgentRunActivity
+# Used by: Prompts::BuildForIssue, Activities::CreateAgentRunActivity,
+#          PromptAssembly::Sections::IssueTask
+# Safety rules are appended separately by the assembly/prompt builder paths.
 # ----------------------------------------------------------------------------
 upsert_global_prompt.call(
   slug: "coding.issue_implementation",
   name: "Issue Implementation",
-  description: "Default prompt for implementing a GitHub issue. Includes task description, instructions, and coding guidelines.",
+  description: "Default prompt for implementing a GitHub issue. Includes task description and instructions. Safety rules are appended separately.",
   category: "coding",
   template: <<~'TEMPLATE',
     # Task
@@ -105,18 +107,6 @@ upsert_global_prompt.call(
     **Important:** Git pre-commit hooks will automatically run lint and tests when you commit.
     If the commit is rejected, read the error output carefully, fix the issues, and commit again.
     Keep iterating until the commit succeeds. Do not leave uncommitted changes.
-
-    # Rules — you MUST follow these
-
-    - **Lint and tests MUST pass before every commit.** Do not commit code that fails lint or tests.
-    - **Never use `--no-verify`** or any flag that skips git hooks.
-    - **Never disable linters** (e.g. rubocop:disable, eslint-disable, noqa) to silence failures. Fix the code instead.
-    - **Fix forward** — if a check fails, fix the underlying issue. Do not bypass the check.
-    - Work within the existing codebase style and conventions
-    - Do not modify unrelated files
-    - Focus on completing the specific task in the issue
-
-    When you're done, commit all your changes. Do not push.
   TEMPLATE
   variables: [
     var.call("title", "Issue title"),

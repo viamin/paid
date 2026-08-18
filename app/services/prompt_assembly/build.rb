@@ -84,6 +84,7 @@ module PromptAssembly
         source: section.source,
         login: section.login,
         trust_level: section.trust_level,
+        metadata: section.metadata,
         reason: reason
       }.compact
     end

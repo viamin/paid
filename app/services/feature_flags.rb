@@ -28,6 +28,20 @@ class FeatureFlags
       intent: "Route AgentRun container operations through ExecutionRunners::LocalDockerRunner instead of direct Containers::Provision calls (RDR-054).",
       rollout_plan: "Opt-in per tenant via tenant_settings.features; default-off until Phase A–C migration is complete.",
       cleanup_criteria: "Remove once all orchestration callers use the runner interface and direct Containers::Provision calls are retired."
+    ),
+    prompt_assembly: Definition.new(
+      name: :prompt_assembly,
+      owner: "prompt-assembly",
+      intent: "Route PR prompt construction and runner-time goal wrappers through PromptAssembly instead of legacy prompt builders.",
+      rollout_plan: "Default-off; opt in per tenant or project, then percentage-of-actors only after completion, loop, token, failure, and merge metrics improve or match legacy.",
+      cleanup_criteria: "Remove only after measured A/B validation makes PromptAssembly the default for all tenants."
+    ),
+    prompt_assembly_shadow_compare: Definition.new(
+      name: :prompt_assembly_shadow_compare,
+      owner: "prompt-assembly",
+      intent: "Build both legacy and PromptAssembly PR prompts for the same run input and persist a capped data-only comparison without changing the served prompt.",
+      rollout_plan: "Default-off; enable only for scoped prompt investigation because it builds the alternate prompt path.",
+      cleanup_criteria: "Remove once PromptAssembly parity is proven or a dedicated prompt comparison UI exists."
     )
   }.freeze
 
