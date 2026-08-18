@@ -211,6 +211,18 @@ module RunnerSupport
     RUNNER_BOT_USERNAMES.any? { |_runner, usernames| usernames.include?(normalized) }
   end
 
+  # Returns true when +login+ belongs to a bot rather than a human: a GitHub
+  # App bot account (GitHub reports App authors under logins ending in
+  # "[bot]", which human usernames cannot contain) or a known runner bot
+  # username (some runner bots also post under bare aliases without the
+  # suffix).
+  def github_bot_username?(login)
+    return false if login.blank?
+
+    normalized = login.downcase
+    normalized.end_with?("[bot]") || runner_bot_username?(normalized)
+  end
+
   def all_bot_usernames
     RUNNER_BOT_USERNAMES.values.flatten.map(&:downcase).to_set
   end

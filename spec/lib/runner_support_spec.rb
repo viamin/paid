@@ -379,6 +379,32 @@ RSpec.describe RunnerSupport do
     end
   end
 
+  describe ".github_bot_username?" do
+    it "returns true for GitHub App bot logins not in the runner list" do
+      expect(described_class.github_bot_username?("codecov[bot]")).to be true
+      expect(described_class.github_bot_username?("github-actions[bot]")).to be true
+    end
+
+    it "returns true for known runner bot usernames, including bare aliases" do
+      expect(described_class.github_bot_username?("copilot")).to be true
+      expect(described_class.github_bot_username?("claude[bot]")).to be true
+    end
+
+    it "is case-insensitive" do
+      expect(described_class.github_bot_username?("Codecov[bot]")).to be true
+    end
+
+    it "returns false for human usernames" do
+      expect(described_class.github_bot_username?("viamin")).to be false
+      expect(described_class.github_bot_username?("bot-reviewer")).to be false
+    end
+
+    it "returns false for blank input" do
+      expect(described_class.github_bot_username?(nil)).to be false
+      expect(described_class.github_bot_username?("")).to be false
+    end
+  end
+
   describe ".runner_bot_username_for?" do
     it "returns true when login matches the specified provider" do
       expect(described_class.runner_bot_username_for?("claude", "claude[bot]")).to be true

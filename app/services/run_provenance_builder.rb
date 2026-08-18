@@ -52,6 +52,7 @@ class RunProvenanceBuilder
 
     {
       source: prompt_version ? "versioned" : (custom_prompt ? "custom" : "none"),
+      builder: agent_run.prompt_builder,
       prompt_version_id: prompt_version&.id,
       prompt_id: prompt_version&.prompt_id,
       prompt_slug: prompt_version&.prompt&.slug,

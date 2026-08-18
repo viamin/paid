@@ -38,6 +38,10 @@ A fourth concern runs across these: the Q&A must be **adaptive**, not a fixed qu
 - **LID-aware**: if `project.lid_mode` is set, the RDR feeds into LID artifacts; if not set but the user opts in, bootstrap LID first via `lid_planning`
 - **Intent-focused Q&A** in the same style as RDR-051's universal enhancement questions (problem, desired behavior, constraints, rejected alternatives, scope, done-ness)
 - **Permission**: any user with access to a project can create an RDR for it (no granular gating until RBAC matures)
+- **Rollout discipline**: large cross-cutting features must ship behind a
+  default-off feature flag and staged rollout/A-B measurement before broad use
+  when they can affect token spend, PR completion, agent loops, security, or
+  customer-facing throughput.
 
 ## Context
 
