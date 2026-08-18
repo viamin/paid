@@ -11,7 +11,7 @@ class CreateExecutionAuditEvents < ActiveRecord::Migration[8.1]
     create_table :execution_audit_events,
       comment: "Append-only execution infrastructure/security audit trail (RDR-061). " \
         "Rows are never updated after insert; secret-shaped metadata is rejected at the model layer." do |t|
-      t.references :account, null: false, foreign_key: true,
+      t.references :account, null: false, foreign_key: true, index: false,
         comment: "Owning account; the tenant scope for row-level security."
       t.references :project, null: true, foreign_key: { on_delete: :nullify },
         comment: "Owning project, when the event is project-scoped."

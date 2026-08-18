@@ -49,13 +49,14 @@ can never carry raw secret material.
   `for_correlation_id`) plus a `recent` ordering scope.
 - **Secret-free by construction.** `SecretSafeMetadata` (shared with
   `RunnerAuthAttempt`) rejects forbidden metadata key names and any
-  string value that looks secret-shaped, recursively, in `metadata`. The
-  same secret-shape check also runs against `actor_id`, `runner_key`,
-  `backend`, `image_reference`, `image_digest`, `resource_id`, and
-  `correlation_id`. Because this runs in `before_validation`, it cannot be
-  bypassed through the normal `create!`/`record!` constructors — an attempt
-  to smuggle raw credential material through any of these fields raises
-  `ActiveRecord::RecordInvalid` and persists nothing.
+  string value that looks secret-shaped, recursively, in `metadata` and
+  `network_policy`. The same secret-shape check also runs against
+  `actor_id`, `runner_key`, `backend`, `image_reference`, `image_digest`,
+  `resource_id`, and `correlation_id`. Because this runs in
+  `before_validation`/`validate`, it cannot be bypassed through the normal
+  `create!`/`record!` constructors — an attempt to smuggle raw credential
+  material through any of these fields raises `ActiveRecord::RecordInvalid`
+  and persists nothing.
 - **Retention.** `ExecutionAuditEventRetentionJob` (scheduled daily via
   GoodJob cron) deletes events older than 400 days — longer than
   operational telemetry, to support incident investigation and compliance

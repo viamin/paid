@@ -58,6 +58,18 @@ RSpec.describe ExecutionAuditEvent, type: :model do
       expect(record).not_to be_valid
       expect(record.errors[:network_policy]).to include("must be an object")
     end
+
+    it "rejects forbidden keys in network_policy" do
+      record = build(:execution_audit_event, network_policy: { token: "sk-ant-oat01-secret" })
+      expect(record).not_to be_valid
+      expect(record.errors[:network_policy].join).to include("forbidden key")
+    end
+
+    it "rejects network_policy values that look like secrets" do
+      record = build(:execution_audit_event, network_policy: { allow_destinations: [ "ghp_abcdef0123456789abcdef0123456789abcd" ] })
+      expect(record).not_to be_valid
+      expect(record.errors[:network_policy].join).to include("secret-shaped")
+    end
   end
 
   describe "account/project/run consistency (tenant scoping)" do

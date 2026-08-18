@@ -94,29 +94,31 @@ module SecretSafeMetadata
     self.metadata = stringify_metadata(metadata)
   end
 
-  # Recursively walks metadata at every key level so secret-shaped values
+  # Recursively walks a jsonb node at every key level so secret-shaped values
   # nested inside Hashes/Arrays are caught at validation time. Iterates in
   # two phases: every key is checked against the forbidden list, and every
   # leaf scalar value is checked against the secret patterns. The keys
   # themselves are matched as strings so symbol keys (the common caller
-  # convention) get the same treatment as string keys.
-  def scan_metadata_for_secrets(node, path: [])
+  # convention) get the same treatment as string keys. `attribute` lets
+  # callers scan columns other than `metadata` (e.g. ExecutionAuditEvent's
+  # `network_policy`) while attaching errors to the right field.
+  def scan_metadata_for_secrets(node, path: [], attribute: :metadata)
     case node
     when Hash
       node.each do |key, value|
         child_path = path + [ key.to_s ]
         if FORBIDDEN_METADATA_KEYS.include?(key.to_s)
-          errors.add(:metadata, "contains forbidden key #{child_path.join('.')}")
+          errors.add(attribute, "contains forbidden key #{child_path.join('.')}")
         end
-        scan_metadata_for_secrets(value, path: child_path)
+        scan_metadata_for_secrets(value, path: child_path, attribute: attribute)
       end
     when Array
       node.each_with_index do |element, index|
-        scan_metadata_for_secrets(element, path: path + [ index.to_s ])
+        scan_metadata_for_secrets(element, path: path + [ index.to_s ], attribute: attribute)
       end
     else
       if self.class.secret_like?(node)
-        errors.add(:metadata, "contains a secret-shaped value at key #{path.join('.')}")
+        errors.add(attribute, "contains a secret-shaped value at key #{path.join('.')}")
       end
     end
   end

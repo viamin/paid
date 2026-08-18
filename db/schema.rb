@@ -1049,7 +1049,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_18_163318) do
     t.integer "run_attempt", comment: "Attempt/iteration number of the agent run when the event occurred, when applicable."
     t.string "runner_key", limit: 64, comment: "Provider/runner key (claude, codex, gemini, copilot), when the event is runner-specific."
     t.index ["account_id", "created_at"], name: "idx_execution_audit_events_account_created"
-    t.index ["account_id"], name: "index_execution_audit_events_on_account_id"
     t.index ["agent_run_id"], name: "index_execution_audit_events_on_agent_run_id"
     t.index ["correlation_id"], name: "idx_execution_audit_events_correlation_id"
     t.index ["created_at"], name: "idx_execution_audit_events_created_at_brin", using: :brin

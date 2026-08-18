@@ -18,14 +18,15 @@
   *Code:* `ExecutionAuditEvent`.
 
 - [x] **EXECUTION-AUDIT-002** — An `ExecutionAuditEvent` SHALL reject
-  forbidden metadata key names and any string value (in `metadata` or in
-  `actor_id`, `runner_key`, `backend`, `image_reference`, `image_digest`,
-  `resource_id`, or `correlation_id`) that looks secret-shaped, including
-  values nested inside `metadata`, and this check SHALL run in
-  `before_validation` so it cannot be bypassed by the normal
-  `create!`/`record!` constructors.
-  *Tests:* `spec/models/execution_audit_event_spec.rb` ("secret
-  redaction").
+  forbidden metadata key names and any string value (in `metadata`,
+  `network_policy`, or in `actor_id`, `runner_key`, `backend`,
+  `image_reference`, `image_digest`, `resource_id`, or `correlation_id`)
+  that looks secret-shaped, including values nested inside `metadata` or
+  `network_policy`, and this check SHALL run in `before_validation`/
+  `validate` so it cannot be bypassed by the normal `create!`/`record!`
+  constructors.
+  *Tests:* `spec/models/execution_audit_event_spec.rb` ("validations",
+  "secret redaction").
   *Code:* `ExecutionAuditEvent`, `SecretSafeMetadata`.
 
 - [x] **EXECUTION-AUDIT-003** — `ExecutionAuditEvent` records SHALL be

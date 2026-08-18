@@ -63,6 +63,7 @@ class ExecutionAuditEvent < ApplicationRecord
   validate :metadata_is_object
   validate :credential_classes_are_valid
   validate :network_policy_is_object
+  validate :network_policy_secret_safety
   validate :project_matches_agent_run
   validate :account_matches_project
   validate :no_secret_shaped_string_attributes
@@ -113,6 +114,10 @@ class ExecutionAuditEvent < ApplicationRecord
 
   def network_policy_is_object
     errors.add(:network_policy, "must be an object") unless network_policy.is_a?(Hash)
+  end
+
+  def network_policy_secret_safety
+    scan_metadata_for_secrets(network_policy, attribute: :network_policy)
   end
 
   def project_matches_agent_run
