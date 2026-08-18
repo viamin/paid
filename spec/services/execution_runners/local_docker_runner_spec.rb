@@ -5,6 +5,7 @@ require "rails_helper"
 # @spec CONTAINER-RUNTIME-010
 # @spec CONTAINER-RUNTIME-011
 # @spec CONTAINER-RUNTIME-017
+# @spec CONTAINER-RUNTIME-019
 RSpec.describe ExecutionRunners::LocalDockerRunner do
   subject(:runner) { described_class.new }
 
@@ -612,6 +613,48 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
         container_running?: true, container: instance_double(Docker::Container), backend: backend, cleanup: nil
       )
       allow(provision_service).to receive_messages(firewall_service_destinations: [])
+    end
+  end
+
+  # RDR-057 baseline: the Docker runner passes the provider-neutral
+  # no-shared-filesystem conformance suite with its platform stubbed. The
+  # stubs constrain Containers::Provision to worktree_path: nil — the
+  # in-container clone path — so a regression that reintroduces a host
+  # worktree for normal create-PR execution fails here.
+  # @spec CONTAINER-RUNTIME-019
+  it_behaves_like "a no-shared-filesystem runner" do
+    let(:conformance_run) do
+      create(
+        :agent_run,
+        goal: "create_pr",
+        branch_name: "feature/conformance",
+        base_commit_sha: "cafebabecafebabecafebabecafebabecafebabe",
+        result_commit_sha: "f00dcafef00dcafef00dcafef00dcafef00dcafe",
+        container_host: "local",
+        verification_result: {
+          "status" => "passed",
+          "artifacts" => [ { "kind" => "trace", "url" => "https://artifacts.test/conformance.zip" } ]
+        }
+      )
+    end
+
+    before do
+      allow(Containers::Provision).to receive(:new)
+        .with(hash_including(worktree_path: nil))
+        .and_return(provision_service)
+      allow(Containers::Provision).to receive(:reconnect)
+        .with(hash_including(worktree_path: nil))
+        .and_return(provision_service)
+      allow(provision_service).to receive_messages(
+        provision: Containers::Provision::Result.success(container_id: "conf123", container_host: "local"),
+        container_running?: false,
+        container_status: { running: false, exit_code: 0, oom_killed: false, memory_limit_bytes: 1024 },
+        cleanup: nil
+      )
+      allow(provision_service).to receive(:execute) do |_, **_, &block|
+        block&.call(:stdout, "conformance output\n")
+        Containers::Provision::Result.success(stdout: "conformance output\n", stderr: "", exit_code: 0)
+      end
     end
   end
 end
