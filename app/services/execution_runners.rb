@@ -227,6 +227,7 @@ module ExecutionRunners
     def valid_grant?
       supported_kind? &&
         expires_at.present? &&
+        expires_at.future? &&
         granted_at.present? &&
         granted_by.present? &&
         authenticated?

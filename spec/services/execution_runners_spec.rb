@@ -105,9 +105,9 @@ RSpec.describe ExecutionRunners do
       capability = described_class.build(
         kind: "preview",
         scope: "paid_mediated_tunnel",
-        expires_at: "2026-08-17T12:00:00Z",
+        expires_at: 2.days.from_now.iso8601,
         authentication: { required: true, type: "signed_token" },
-        granted_at: "2026-08-17T11:00:00Z",
+        granted_at: 1.day.ago.iso8601,
         granted_by: "user:42"
       )
 
@@ -149,9 +149,9 @@ RSpec.describe ExecutionRunners do
           ExecutionRunners::IngressCapability.build(
             kind: "preview",
             scope: "paid_mediated_tunnel",
-            expires_at: "2026-08-17T12:00:00Z",
+            expires_at: 2.days.from_now.iso8601,
             authentication: { required: true, type: "signed_token" },
-            granted_at: "2026-08-17T11:00:00Z",
+            granted_at: 1.day.ago.iso8601,
             granted_by: "user:42"
           )
         ]
@@ -161,15 +161,23 @@ RSpec.describe ExecutionRunners do
       expect(policy.violation_message).to be_nil
     end
 
+    it "rejects metadata that requests public inbound exposure" do
+      policy = described_class.from_metadata("public_inbound" => true)
+
+      expect(policy.supported_for_runtime?).to be(false)
+      expect(policy.violation_message)
+        .to eq("Execution ingress policy must explicitly deny public inbound exposure.")
+    end
+
     it "rejects unsupported inbound exposure kinds" do
       policy = described_class.default_deny(
         capabilities: [
           ExecutionRunners::IngressCapability.build(
             kind: "debug",
             scope: "public_listener",
-            expires_at: "2026-08-17T12:00:00Z",
+            expires_at: 2.days.from_now.iso8601,
             authentication: { required: true, type: "signed_token" },
-            granted_at: "2026-08-17T11:00:00Z",
+            granted_at: 1.day.ago.iso8601,
             granted_by: "user:42"
           )
         ]

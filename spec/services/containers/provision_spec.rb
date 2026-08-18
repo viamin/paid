@@ -192,9 +192,9 @@ RSpec.describe Containers::Provision do
             {
               "kind" => "callback",
               "scope" => "public_listener",
-              "expires_at" => "2026-08-17T12:00:00Z",
+              "expires_at" => 2.days.from_now.iso8601,
               "authentication" => { "required" => true, "type" => "signed_token" },
-              "granted_at" => "2026-08-17T11:00:00Z",
+              "granted_at" => 1.day.ago.iso8601,
               "granted_by" => "user:42"
             }
           ]
