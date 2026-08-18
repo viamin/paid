@@ -51,7 +51,7 @@ module Runners
       end
     end
 
-    def runner_model_compatible?(model_id)
+    def runner_model_compatible?(model_id) # @spec MODEL-SELECTION-005
       result = ModelCompatibility.call(
         runner_key: runner_key,
         model_id: model_id,

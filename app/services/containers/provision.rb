@@ -1578,9 +1578,14 @@ module Containers
       tier = agent_run&.model_selection&.tier.presence ||
         agent_run&.model_selection&.llm_model&.tier.presence ||
         "mid"
-      defaults = Runners::DefaultTierModelIds.call(runner_key: "codex")
+      defaults = Runners::DefaultTierModelIds.call(runner_key: "codex", auth_type: codex_container_auth_type)
 
       [ tier, "mid", "high", "low" ].uniq.filter_map { |candidate| defaults[candidate] }.first
+    end
+
+    def codex_container_auth_type
+      subscription_runner = agent_run&.runner&.runner_key == "codex" && agent_run.runner.subscription?
+      subscription_runner || codex_subscription_auth? ? "subscription" : Runners::DefaultTierModelIds::DEFAULT_AUTH_TYPE
     end
 
     def toml_string_escape(value)

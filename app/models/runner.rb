@@ -71,7 +71,7 @@ class Runner < ApplicationRecord
     "xai" => { label: "xAI", base_url: "https://api.x.ai/v1", service_type: "xai",
                opencode_model_provider: "xai" },
     "zai" => { label: "z.ai", base_url: "https://api.z.ai/api/paas/v4", service_type: "zai",
-               opencode_model_provider: "zai" },
+               opencode_model_provider: "zai", chat_max_tokens: 16_384 },
     # Both KiloCode and OpenCode ship a built-in "zai-coding-plan" provider
     # whose availability probe checks ZHIPU_API_KEY (not ZAI_CODING_API_KEY).
     # Override the auto-derived name so the key lands where the CLIs look.
@@ -81,7 +81,7 @@ class Runner < ApplicationRecord
     # built-in provider with the configured model instead of overriding it.
     "zai_coding" => { label: "z.ai (Coding Plan)", base_url: "https://api.z.ai/api/coding/paas/v4", service_type: "zai_coding",
                       env_var: "ZHIPU_API_KEY", kilocode_provider_id: "zai-coding-plan", opencode_model_provider: "zai-coding-plan",
-                      opencode_custom: true }
+                      opencode_custom: true, chat_max_tokens: 16_384 }
   }.freeze
 
   DIRECT_OUTBOUND_SERVICE_TYPES = DIRECT_OUTBOUND_API_PROVIDERS.values.map { |c| c[:service_type] }.to_set.freeze
@@ -1750,20 +1750,23 @@ class Runner < ApplicationRecord
     AgentHarness::ProviderRuntime.new(
       model: model_id,
       env: env,
-      # Strip the Paid secrets-proxy headers that provision.rb seeds as baseline
-      # env. A direct-outbound runtime talks to the provider's own endpoint, so
-      # forwarding the per-run proxy token would leak it to a third party. The
-      # ANTHROPIC_* pair matters once ANTHROPIC_BASE_URL is redirected to a
-      # direct @ai-sdk/anthropic endpoint (e.g. MiniMax); OPENAI_* is the same
-      # concern for the OpenAI-compatible providers.
-      unset_env: %w[
-        OPENAI_HEADER_X_AGENT_RUN_ID OPENAI_HEADER_X_PROXY_TOKEN
-        ANTHROPIC_HEADER_X_AGENT_RUN_ID ANTHROPIC_HEADER_X_PROXY_TOKEN
-      ],
+      unset_env: opencode_direct_outbound_unset_env(env),
       metadata: {
         config: metadata_config
       }
     )
+  end
+
+  # Strip Paid proxy credentials that provision.rb seeds as baseline env. Keep
+  # variables explicitly set by the direct-outbound runtime because those hold
+  # the real upstream key/base URL for the selected provider.
+  def opencode_direct_outbound_unset_env(runtime_env) # @spec AGENT-HARNESS-004
+    %w[
+      OPENAI_API_KEY OPENAI_BASE_URL OPENAI_HEADER_X_AGENT_RUN_ID OPENAI_HEADER_X_PROXY_TOKEN
+      ANTHROPIC_API_KEY ANTHROPIC_BASE_URL ANTHROPIC_HEADER_X_AGENT_RUN_ID ANTHROPIC_HEADER_X_PROXY_TOKEN
+      GEMINI_API_KEY GEMINI_CLI_CUSTOM_HEADERS GOOGLE_API_KEY GOOGLE_GEMINI_BASE_URL GOOGLE_GENAI_BASE_URL
+      GOOGLE_HEADER_X_AGENT_RUN_ID GOOGLE_HEADER_X_PROXY_TOKEN
+    ] - runtime_env.keys
   end
 
   # True for Anthropic-SDK providers that are NOT the native Anthropic endpoint
