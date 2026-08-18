@@ -151,6 +151,8 @@ module Prompts
     # Returns the assembled prompt text. Existing callers (PreparePrPromptActivity,
     # scripts, and tests) continue to receive a plain string.
     def build
+      return build_result.text.delete("\x00") if prompt_assembly?
+
       base = base_prompt_text.delete("\x00")
 
       with_style_guides = StyleGuides::InjectIntoPrompt.call(
@@ -191,10 +193,15 @@ module Prompts
     # directly, while excluded untrusted inputs remain out of the prompt.
     def legacy_prompt_text
       build_sections
+        .reject { |section| legacy_injected_section?(section) }
         .reject(&:excluded?)
         .reject(&:blank?)
         .map(&:render)
         .join("\n\n")
+    end
+
+    def legacy_injected_section?(section)
+      [ :style_guides, :project_conventions, :lid_workflow ].include?(section.key)
     end
 
     # Resolves the assembly profile from project/account/global config.
@@ -207,7 +214,7 @@ module Prompts
       @resolved_profile ||= PromptAssembly::ProfileResolution.resolve(
         project: project,
         account: project.account,
-        goal: agent_run&.goal
+        goal: effective_goal
       )
     end
 
@@ -226,7 +233,10 @@ module Prompts
         *conversation_section_with_excluded,
         other_issues_section,
         instructions_and_rules_shell,
-        service_environment_section
+        service_environment_section,
+        style_guides_section,
+        project_conventions_section,
+        lid_workflow_section
       ].flatten.compact
     end
 
@@ -275,6 +285,31 @@ module Prompts
         required: true,
         inclusion_reason: "service container guardrails"
       )
+    end
+
+    def style_guides_section
+      PromptAssembly::Sections::StyleGuides.call(prompt_assembly_context)
+    end
+
+    def project_conventions_section
+      PromptAssembly::Sections::ProjectConventions.call(prompt_assembly_context)
+    end
+
+    def lid_workflow_section
+      PromptAssembly::Sections::LidWorkflow.call(prompt_assembly_context)
+    end
+
+    def prompt_assembly_context
+      @prompt_assembly_context ||= PromptAssembly::Context.new(
+        issue: issue,
+        project: project,
+        github_client: github_client,
+        agent_run: agent_run
+      )
+    end
+
+    def effective_goal
+      agent_run&.goal || "review"
     end
 
     def priority_list
