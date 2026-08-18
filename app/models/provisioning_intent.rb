@@ -1,28 +1,5 @@
 # frozen_string_literal: true
 
-# == Schema Information
-#
-# Table name: provisioning_intents
-#
-#  id                     :bigint(8)        not null, primary key
-#  account_id             :bigint(8)        not null
-#  agent_run_id           :bigint(8)
-#  attempt                :integer          default(0), not null
-#  environment            :string(100)      not null
-#  metadata               :jsonb            not null
-#  ownership_tags         :jsonb            not null
-#  project_id             :bigint(8)
-#  provider_resource_host :string(200)
-#  provider_resource_id   :string(200)
-#  runner_handle          :jsonb
-#  runner_type            :string(50)       not null
-#  reconciled_at          :datetime
-#  resource_kind          :string(100)      not null
-#  status                 :string(50)       default("pending"), not null
-#  tagging_supported      :boolean          default(TRUE), not null
-#  created_at             :datetime         not null
-#  updated_at             :datetime         not null
-#
 # Execution-resource provisioning-intent ledger row (RDR-058). Records a
 # runner's intent to create an execution resource BEFORE the provider create
 # call so a crash between provider creation and runner-handle persistence

@@ -58,6 +58,7 @@ RSpec.describe AddSyntheticToAgentRuns, :aggregate_failures do
 
   def truncate_agent_run_data
     connection.execute("DELETE FROM agent_run_logs")
+    connection.execute("DELETE FROM provisioning_intents")
     connection.execute("DELETE FROM agent_runs")
     connection.execute("DELETE FROM project_service_containers")
     connection.execute("DELETE FROM service_container_metrics")
