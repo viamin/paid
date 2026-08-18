@@ -212,7 +212,7 @@ RSpec.describe Activities::PreparePrPromptActivity do
       expect(agent_run.reload.custom_prompt).to include("CI Status: FAILING")
       expect(agent_run.custom_prompt).not_to include("Code Review Comments")
       expect(result[:includes_review_threads]).to be(false)
-      expect(result[:review_thread_ids]).to eq([])
+      expect(result[:review_thread_ids]).to eq([ "thread_1" ])
     end
 
     it "uses the agent run focus when input focus is not provided" do

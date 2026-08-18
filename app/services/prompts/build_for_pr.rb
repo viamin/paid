@@ -136,7 +136,7 @@ module Prompts
     end
 
     def unresolved_review_thread_ids
-      return [] unless includes_review_threads?
+      return [] unless trusted_review_threads.any?
 
       trusted_review_threads.filter_map { |thread| thread[:id] }
     end

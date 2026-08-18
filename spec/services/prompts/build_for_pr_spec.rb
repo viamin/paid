@@ -344,6 +344,39 @@ RSpec.describe Prompts::BuildForPr do
     end
   end
 
+  describe "#unresolved_review_thread_ids without a database", :no_db do
+    let(:project) do
+      OpenStruct.new(full_name: "owner/repo", service_containers: [], detected_language: "ruby").tap do |proj|
+        proj.define_singleton_method(:trusted_github_user?) { |login| login == "trusteduser" }
+      end
+    end
+
+    before do
+      allow(github_client).to receive(:pull_request)
+        .with(project.full_name, 42)
+        .and_return(pr_data)
+      allow(github_client).to receive(:review_threads)
+        .with(project.full_name, 42)
+        .and_return([
+          { id: "thread_1", is_resolved: false, comments: [ { body: "Needs a fix", author: "trusteduser" } ] }
+        ])
+    end
+
+    # @spec FOCUSED-RUN-009
+    it "preserves trusted unresolved thread ids for non-review focused follow-up runs" do
+      builder = described_class.new(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true,
+        focus: "ci_fix"
+      )
+
+      expect(builder.includes_review_threads?).to be(false)
+      expect(builder.unresolved_review_thread_ids).to eq([ "thread_1" ])
+    end
+  end
+
   # @spec PROMPT-ASSEMBLY-018
   describe "#review_feedback_context_blocked?" do
     it "is false when at least one review-thread comment is prompt-eligible" do
