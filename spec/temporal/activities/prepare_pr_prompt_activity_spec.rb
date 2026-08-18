@@ -144,6 +144,26 @@ RSpec.describe Activities::PreparePrPromptActivity do
       expect(provenance["budget_decisions"]).to be_an(Array)
     end
 
+    it "records style guide, convention, and LID sections when they reach the final prompt" do
+      FeatureFlags.enable!(:prompt_assembly, project: project)
+      create(:style_guide,
+        :global,
+        name: "Seeded Ruby Guide",
+        raw_content: "Prefer small methods.",
+        compressed_content: nil)
+      project.update!(lid_mode: "full")
+
+      activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
+
+      phase = agent_run.reload.agent_run_phases.find_by!(phase_key: "prepare_pr_prompt")
+      keys = phase.metadata.fetch("prompt_assembly").fetch("sections").map { |section| section.fetch("key") }
+
+      expect(agent_run.custom_prompt).to include("# Style Guide")
+      expect(agent_run.custom_prompt).to include("## Repository Automation Conventions")
+      expect(agent_run.custom_prompt).to include("## LID-Aware Workflow")
+      expect(keys).to include("style_guides", "project_conventions", "lid_workflow")
+    end
+
     # @spec PROMPT-ASSEMBLY-016
     it "preserves an already-recorded prompt builder when the rollout flag changes before retry" do
       agent_run.record_prompt_builder!("prompt_assembly")

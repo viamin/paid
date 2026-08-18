@@ -1542,16 +1542,20 @@ RSpec.describe Prompts::BuildForPr do
       )
     end
 
-    it "returns a PromptAssembly::Result whose text is a prefix of #build before downstream injectors run" do
-      builder = build_pr_builder
+    it "returns a PromptAssembly::Result whose text matches the final built prompt" do
+      builder = described_class.new(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true,
+        prompt_builder: described_class::PROMPT_ASSEMBLY_BUILDER
+      )
       result = builder.build_result
 
       expect(result).to be_a(PromptAssembly::Result)
       expect(result.text).to include("# Task")
       expect(result.text).to include("# Instructions")
-      # The downstream ProjectConventions/StyleGuides/LID injectors run
-      # only in #build; the assembly result covers the core sections.
-      expect(builder.build).to start_with(result.text.chomp)
+      expect(builder.build).to eq(result.text.delete("\x00"))
     end
 
     it "records every included section with key, source, trust level, and required flag" do
@@ -1575,6 +1579,36 @@ RSpec.describe Prompts::BuildForPr do
       review_section = result.sections.find { |section| section.key == :code_review }
       expect(review_section.trust_level).to eq(:trusted)
       expect(review_section.required?).to be(true)
+    end
+
+    it "assembles optional style, convention, and LID sections into the recorded result" do
+      project.update!(lid_mode: "full")
+      create(:style_guide,
+        :global,
+        name: "Seeded Ruby Guide",
+        raw_content: "Prefer small methods.",
+        compressed_content: nil)
+
+      result = build_pr_builder.build_result
+
+      expect(result.text).to include("# Style Guide")
+      expect(result.text).to include("## Repository Automation Conventions")
+      expect(result.text).to include("## LID-Aware Workflow")
+      expect(result.sections.map(&:key)).to include(:style_guides, :project_conventions, :lid_workflow)
+    end
+
+    it "resolves the review goal profile when no agent run is supplied" do
+      profile = PromptAssembly::Profile.new(disabled_sections: [ :project_conventions ])
+      allow(PromptAssembly::ProfileResolution).to receive(:resolve).and_return(profile)
+
+      result = build_pr_builder.build_result
+
+      expect(PromptAssembly::ProfileResolution).to have_received(:resolve).with(
+        project: project,
+        account: project.account,
+        goal: "review"
+      )
+      expect(result.text).not_to include("## Repository Automation Conventions")
     end
 
     it "records excluded review comments as excluded sections, not in the text" do
