@@ -41,9 +41,12 @@ $ bin/rspec spec/models/preview_session_spec.rb \
 74 examples, 0 failures
 ```
 
-The first batch covers criteria 1, 2, 3, 5, and 6 (network policy, runner
+The first batch covers criteria 1, 2, 3, and 6 (network policy, runner
 contract, credential/auth-attempt models and requests, subscription-auth
-materialization telemetry). The second batch covers criterion 4
+materialization telemetry) plus the credential-scoping portion of criterion 5;
+criterion 5's RLS, `proxy_token`-scope, and workspace-volume invariants are
+covered by the permanent suites listed under criterion 5 below, which were not
+part of this audit batch. The second batch covers criterion 4
 (preview-session scoping). Criterion 7 has no tests to run — the feature is
 not shipped (see below).
 
@@ -163,17 +166,25 @@ not shipped (see below).
 
 **Evidence**:
 
-- `db/schema.rb` — `agent_runs` RLS policy; `proxy_token` unique index
-- `app/models/concerns/tenant_scoped.rb` (or equivalent RLS enforcement)
+- `db/migrate/20260421162139_enable_tenant_row_level_security.rb` — `agent_runs` RLS policy (`agent_runs` is listed in `PROJECT_TABLES`; `enable_policy` issues `ENABLE`/`FORCE ROW LEVEL SECURITY` and creates the `tenant_isolation` policy — RLS policies are not dumped to the Ruby-format `db/schema.rb`)
+- `db/schema.rb` — `proxy_token` unique index
+- `app/services/tenant_context.rb` — sets the `paid.current_account_id` / `paid.bypass_tenant_rls` session config consumed by the RLS policies
 - `app/services/containers/provision.rb` — workspace volume naming
 - `app/models/runner_auth_attempt.rb` — `account_id`, `project_id`, `agent_run_id` associations
-- `app/controllers/api/secrets_proxy_controller.rb` — `proxy_token` lookup
+- `app/controllers/api/secrets_proxy_controller.rb` — `proxy_token` lookup (via the included `Api::ContainerAuthentication#verify_proxy_token` concern)
 
 **Tests** (executed — see [Validation Evidence](#validation-evidence)):
 
 - `spec/requests/runner_credentials_spec.rb` — tenant scoping of credential access
 - `spec/policies/runner_credential_policy_spec.rb` — authorization boundaries
 - `spec/models/runner_auth_attempt_spec.rb` — account/project/run scoping
+
+**Covering suites for the isolation invariants above** (permanent suite; maintained
+separately from the 2026-08-17 audit batch):
+
+- `spec/security/tenant_context_spec.rb` — database-policy filtering of `agent_runs`/`projects` across tenants (`:tenant_isolation` metadata; requires CREATE ROLE privilege)
+- `spec/requests/api/secrets_proxy_spec.rb` — per-run `proxy_token` authentication and scope
+- `spec/services/execution_runners/local_docker_runner_spec.rb` and `spec/services/containers/provision_spec.rb` — per-run `paid-workspace-{agent_run_id}` volume naming, creation, and mounting
 
 **Verdict**: Satisfied.
 
