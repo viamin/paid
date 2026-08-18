@@ -102,14 +102,13 @@ class AgentImage < ApplicationRecord
   #   +docker.io+ is omitted because Docker treats it as the implicit default;
   #   the rest keep the registry host so the reference is unambiguous.
   def reference
-    base = "#{repository}:#{tag}"
-    registry.blank? || registry == DEFAULT_REGISTRY ? base : "#{registry}/#{base}"
+    qualify_reference("#{repository}:#{tag}")
   end
 
   # @return [String] the digest-pinned +repository@digest+ reference used in
   #   production scheduling where the tag is allowed to drift upstream.
   def digest_reference
-    "#{repository}@#{digest}"
+    qualify_reference("#{repository}@#{digest}")
   end
 
   # Transitions an active image to deprecated. Idempotent: calling it on an
@@ -166,6 +165,10 @@ class AgentImage < ApplicationRecord
     return normalized if normalized.blank? || normalized.start_with?(SHA256_PREFIX)
 
     "#{SHA256_PREFIX}#{normalized}"
+  end
+
+  def qualify_reference(base)
+    registry.blank? || registry == DEFAULT_REGISTRY ? base : "#{registry}/#{base}"
   end
 
   def identity_unique_within_account

@@ -356,5 +356,11 @@ RSpec.describe AgentImage, type: :model do # @spec CONTAINER-RUNTIME-019
       image = build(:agent_image, registry: "docker.io", repository: "paid-agent", tag: "latest", digest: digest)
       expect(image.digest_reference).to eq("paid-agent@" + digest)
     end
+
+    it "includes a non-default registry in the digest-pinned reference" do
+      digest = "sha256:" + "a" * 64
+      image = build(:agent_image, registry: "ghcr.io", repository: "paid-agent", tag: "latest", digest: digest)
+      expect(image.digest_reference).to eq("ghcr.io/paid-agent@" + digest)
+    end
   end
 end
