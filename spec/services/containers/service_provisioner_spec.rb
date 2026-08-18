@@ -50,6 +50,22 @@ RSpec.describe Containers::ServiceProvisioner do
       end
     end
 
+    context "when a service container is only linked to a different project" do
+      it "does not provision it for this run" do
+        # RDR-058: service container access is scoped through the run's own
+        # project association, not shared across projects/accounts by default.
+        # @spec EXECUTION-ISOLATION-002
+        other_project = create(:project)
+        other_service_container = create(:service_container, account: other_project.account)
+        create(:project_service_container, project: other_project, service_container: other_service_container)
+
+        result = provisioner.provision(agent_run)
+
+        expect(result).to eq({})
+        expect(agent_run.reload.service_container_ids).to eq([])
+      end
+    end
+
     context "when project has service containers" do
       let(:service_container) do
         create(:service_container,

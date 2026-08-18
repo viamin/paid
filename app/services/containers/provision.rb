@@ -204,6 +204,7 @@ module Containers
       CODEX_NOTIFY_LINE
     end
 
+    # @spec EXECUTION-ISOLATION-004
     def self.compatibility_for(agent_run:, backend:, worktree_path: nil)
       service = new(agent_run: agent_run, worktree_path: worktree_path, backend: backend)
       # record_telemetry: false — compatibility_for is called for every candidate
@@ -2246,6 +2247,7 @@ module Containers
     # When a host-side worktree_path is provided, validates it exists for bind-mount.
     # When nil (or container-internal), creates a Docker named volume for in-container git clone.
     # Docker volumes live on the overlay2 disk, bypassing the VM root filesystem.
+    # @spec EXECUTION-ISOLATION-001
     def prepare_workspace!
       if host_worktree_path.present?
         unless backend.supports_host_paths?
@@ -3060,6 +3062,7 @@ module Containers
       scope.order(created_at: :desc, id: :desc).first
     end
 
+    # @spec EXECUTION-ISOLATION-003
     def managed_subscription_credential_scope_for(runner_key)
       return nil unless project.is_a?(Project)
 
