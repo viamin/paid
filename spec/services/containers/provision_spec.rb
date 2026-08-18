@@ -225,6 +225,38 @@ RSpec.describe Containers::Provision do
     end
   end
 
+  # RDR-058: runners that cannot satisfy isolation requirements are rejected
+  # by capability validation (a typed CompatibilityResult), not a generic
+  # agent failure. @spec EXECUTION-ISOLATION-004
+  describe ".compatibility_for" do
+    let(:local_backend) { instance_double(Containers::Backends::LocalDocker, supports_host_paths?: true) }
+
+    it "returns a compatible result without raising for a host-path-capable backend" do
+      result = described_class.compatibility_for(agent_run: agent_run, backend: local_backend, worktree_path: worktree_path)
+
+      expect(result).to be_a(Containers::Provision::CompatibilityResult)
+      expect(result.compatible).to be(true)
+      expect(result.error_message).to be_nil
+    end
+
+    it "returns an incompatible result, not a raised error, when the backend cannot host-bind-mount the worktree" do
+      remote_backend = instance_double(
+        Containers::Backends::RemoteDocker,
+        identifier: "worker-1",
+        remote?: true,
+        supports_host_paths?: false
+      )
+
+      result = nil
+      expect {
+        result = described_class.compatibility_for(agent_run: agent_run, backend: remote_backend, worktree_path: worktree_path)
+      }.not_to raise_error
+
+      expect(result.compatible).to be(false)
+      expect(result.error_message).to include("requires_host_bind_mount")
+    end
+  end
+
   describe "#auth_source_log_payload (RDR-041 #2959)" do
     let(:service) { described_class.new(agent_run: agent_run, project: project) }
 
@@ -1067,6 +1099,9 @@ RSpec.describe Containers::Provision do
 
     context "when worktree path is not provided" do
       it "creates workspace volume for nil path" do
+        # RDR-058: the workspace volume is named after this run's own
+        # agent_run.id, never shared with another run.
+        # @spec EXECUTION-ISOLATION-001
         service = described_class.new(agent_run: agent_run)
 
         result = service.provision
@@ -4909,6 +4944,40 @@ RSpec.describe Containers::Provision do
       expect {
         service.send(:cleanup_execution_preparation, cleanup_steps, env: {})
       }.to raise_error(Containers::Provision::ExecutionError, /Failed to restore prepared runtime state/)
+    end
+  end
+
+  # RDR-058: managed subscription credentials must never leak across accounts
+  # into another account's run. @spec EXECUTION-ISOLATION-003
+  describe "#managed_subscription_credential_scope_for" do
+    it "only resolves credentials belonging to the run's own account" do
+      own_credential = create(
+        :runner_credential,
+        account: project.account,
+        created_by: project.created_by,
+        runner_key: "claude",
+        auth_kind: "oauth_token"
+      )
+
+      other_account = create(:account)
+      other_project = create(:project, account: other_account)
+      create(
+        :runner_credential,
+        account: other_account,
+        created_by: other_project.created_by,
+        runner_key: "claude",
+        auth_kind: "oauth_token"
+      )
+
+      scope = service.send(:managed_subscription_credential_scope_for, "claude")
+
+      expect(scope).to contain_exactly(own_credential)
+    end
+
+    it "returns nil when the record's project has no account" do
+      allow(project).to receive(:account).and_return(nil)
+
+      expect(service.send(:managed_subscription_credential_scope_for, "claude")).to be_nil
     end
   end
 
