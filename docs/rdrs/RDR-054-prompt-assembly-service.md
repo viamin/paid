@@ -68,6 +68,7 @@ final prompt text, recorded provenance, and digests describe the same artifact.
 - **Trusted GitHub content is allowlist-based.** Issue and PR comments, review threads, and issue bodies are prompt-eligible only when they come from trusted project users or Paid-generated system comments that are explicitly recognized.
 - **Every section declares provenance and trust level.** The assembler rejects any section that lacks a source, trust classification, and inclusion reason.
 - **Customization can reduce optional context, not weaken safety.** Users can tune optional style, knowledge, marketplace, and verbosity sections. They cannot remove safety or policy sections required by the run context.
+- **Rollout is measured and default-off.** PromptAssembly must not become the default prompt path until it has run behind `FeatureFlags[:prompt_assembly]` with A/B evidence showing that PR completion throughput, follow-up loop count, token spend, no-output/failure rate, and time to merge/escalation are no worse than the legacy builders.
 
 ## Context
 
@@ -164,6 +165,10 @@ PromptAssembly::Result.new(
 ```
 
 Callers use `result.prompt` for execution and persist `result.provenance` into the run's prompt phase metadata and configuration bundle definition.
+
+PromptAssembly is a controlled rollout path, not the production default. PR automation and runner-time goal augmentation use the legacy prompt builders unless the `prompt_assembly` feature flag is enabled for the project/account or a percentage-of-actors cohort. Every run records `prompt_builder` as `legacy_prompt_builder` or `prompt_assembly` so the cohort can be joined to `agent_runs`, `agent_run_phases`, and `token_usages`.
+
+For prompt parity debugging, `prompt_assembly_shadow_compare` can be enabled separately. It builds both PR prompt paths for the same inputs, serves only the selected prompt, and stores capped data-only comparison output on the `prepare_pr_prompt` phase metadata. This is intentionally not a UI surface; it is for scoped investigation of prompt text and digest differences.
 
 ### Section Model
 
@@ -289,9 +294,9 @@ Expose this in the existing agent-run provenance page before adding a new UI. La
 Do not rewrite every builder in one step. Move behavior in phases:
 
 1. Add the `PromptAssembly` service with providers that call existing builders.
-2. Route one path, `create_pr` issue implementation, through the service behind tests.
-3. Route PR follow-up.
-4. Move goal wrappers from `RunAgentActivity` into assembly providers.
+2. Route one path, `create_pr` issue implementation, through the service behind the default-off `prompt_assembly` flag.
+3. Route PR follow-up only for flagged projects/accounts/cohorts.
+4. Move goal wrappers from `RunAgentActivity` into assembly providers only for flagged projects/accounts/cohorts.
 5. Replace creation-time prompt materialization with assembly snapshots where possible.
 6. Add user-editable profiles for optional section controls.
 
@@ -356,7 +361,7 @@ Create a declarative system where users or marketplace entries define arbitrary 
 ### Risks and mitigations
 
 - **Risk**: A migration changes final prompt text and harms agent behavior.
-  **Mitigation**: Start with snapshot tests comparing current and assembled prompts for representative issue, PR, review, enhance, create-issue, and LID runs.
+  **Mitigation**: Keep legacy builders as the default, gate PromptAssembly with `FeatureFlags[:prompt_assembly]`, and compare A/B cohorts before increasing rollout.
 - **Risk**: Safety sections are accidentally made optional.
   **Mitigation**: Encode `safety: true` in provider definitions and reject profiles that disable or reorder safety sections outside allowed slots.
 - **Risk**: Untrusted content reaches the prompt.
@@ -392,6 +397,12 @@ The final audited implementation is validated by:
   skipped sections, and prompt metadata are persisted without leaking prompt
   bodies from excluded content.
 - `bin/coherence-check.mjs` for LID structural integrity.
+- Rollout dashboards/queries compare `external_metadata["prompt_builder"]`
+  cohorts for PR completion/merge rate, follow-up run count per PR, token
+  usage per PR, no-output/failure rate, and time to merge/escalation.
+- Shadow-compare coverage persists capped prompt digests, byte counts, and
+  prompt samples on `prepare_pr_prompt` phase metadata when
+  `prompt_assembly_shadow_compare` is enabled.
 
 ## Follow-up Boundary
 

@@ -41,6 +41,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | [RDR-006](RDR-006-secrets-proxy.md) | Secrets Proxy Architecture | Implemented | High |
 | [RDR-041](RDR-041-subscription-runner-auth-lifecycle.md) | Subscription Runner Managed Auth Lifecycle | Implemented | P1 |
 | [RDR-055](RDR-055-agent-container-egress-allowlisting.md) | Agent Container Egress Allowlisting | Draft | P1 |
+| [RDR-058](RDR-058-execution-authority-network-and-isolation.md) | Execution Authority, Network Policy, and Isolation | Partially Implemented | P1 |
 
 ### Agent System
 
@@ -117,6 +118,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | [RDR-049](RDR-049-configuration-health-checks.md) | Configuration Health Checks | Implemented | P1 |
 | [RDR-050](RDR-050-account-queue-fairness-mode.md) | Account-Level Queue Fairness Mode — Strict Priority vs. Cross-Project Fair Share | Implemented | P1 |
 | [RDR-056](RDR-056-strict-test-driven-development-mode.md) | Test-Driven Development Modes with Human Test Review | Draft | P1 |
+| [RDR-063](RDR-063-operational-supervisor-delivery-health.md) | Operational Supervisor for Delivery Health | Draft | P1 |
 
 ### Runner Intelligence
 

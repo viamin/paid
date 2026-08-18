@@ -7,10 +7,8 @@ module Prompts
   # optionally linked issue requirements to produce a comprehensive prompt
   # that tells the agent to rebase, fix CI, address reviews, and push.
   #
-  # Sections are assembled via +PromptAssembly::Build+ so the prompt text
-  # travels with section provenance (key, source, trust level, required flag)
-  # and excluded untrusted content is recorded as counts/revenance only —
-  # never as prompt text.
+  # Uses the legacy string builder by default. PromptAssembly remains callable
+  # for controlled rollouts via the prompt_assembly feature flag.
   #
   # @example
   #   prompt = Prompts::BuildForPr.call(
@@ -27,6 +25,8 @@ module Prompts
     GITHUB_COMMENTS_PER_PAGE = 100
     MAX_RECENT_COMMENT_PAGES = 10
     ALREADY_ADDRESSED_MARKER = "PAID_REVIEW_THREADS_ALREADY_ADDRESSED"
+    LEGACY_PROMPT_BUILDER = "legacy_prompt_builder"
+    PROMPT_ASSEMBLY_BUILDER = "prompt_assembly"
 
     PROMPT_SLUG = "coding.pr_review_rebase"
 
@@ -72,11 +72,11 @@ module Prompts
 
     attr_reader :project, :pr_number, :github_client, :rebase_succeeded,
                 :lint_command, :test_command, :issue, :prompt_version, :focus,
-                :agent_run
+                :agent_run, :prompt_builder
 
     def initialize(project:, pr_number:, github_client:, rebase_succeeded:,
                    lint_command: nil, test_command: nil, issue: nil, prompt_version: nil,
-                   focus: "general", agent_run: nil)
+                   focus: "general", agent_run: nil, prompt_builder: LEGACY_PROMPT_BUILDER)
       @project = project
       @pr_number = pr_number
       @github_client = github_client
@@ -87,6 +87,7 @@ module Prompts
       @prompt_version = prompt_version
       @focus = focus.presence || "general"
       @agent_run = agent_run
+      @prompt_builder = prompt_builder.to_s
     end
 
     def self.call(...)
@@ -140,10 +141,32 @@ module Prompts
       trusted_review_threads.filter_map { |thread| thread[:id] }
     end
 
+    # @spec PROMPT-ASSEMBLY-018
+    def review_feedback_context_blocked?
+      focus == "review_feedback" &&
+        human_review_threads_present? &&
+        trusted_review_threads.empty?
+    end
+
     # Returns the assembled prompt text. Existing callers (PreparePrPromptActivity,
     # scripts, and tests) continue to receive a plain string.
     def build
-      build_result.text.delete("\x00")
+      return build_result.text.delete("\x00") if prompt_assembly?
+
+      base = base_prompt_text.delete("\x00")
+
+      with_style_guides = StyleGuides::InjectIntoPrompt.call(
+        prompt: base,
+        project: project,
+        agent_run: agent_run,
+        source: self.class.name
+      )
+      with_conventions = ProjectConventions::InjectIntoPrompt.call(prompt: with_style_guides, project: project)
+      Lid::InjectIntoPrompt.call(prompt: with_conventions, project: project, goal: agent_run&.goal)
+    end
+
+    def prompt_assembly?
+      prompt_builder == PROMPT_ASSEMBLY_BUILDER
     end
 
     # Returns the full assembly result: prompt text plus section provenance.
@@ -158,6 +181,28 @@ module Prompts
     end
 
     private
+
+    # @spec PROMPT-ASSEMBLY-016
+    def base_prompt_text
+      return build_result.text if prompt_assembly?
+
+      legacy_prompt_text
+    end
+
+    # Restores the pre-assembly behavior: included sections are concatenated
+    # directly, while excluded untrusted inputs remain out of the prompt.
+    def legacy_prompt_text
+      build_sections
+        .reject { |section| legacy_injected_section?(section) }
+        .reject(&:excluded?)
+        .reject(&:blank?)
+        .map(&:render)
+        .join("\n\n")
+    end
+
+    def legacy_injected_section?(section)
+      [ :style_guides, :project_conventions, :lid_workflow ].include?(section.key)
+    end
 
     # Resolves the assembly profile from project/account/global config.
     # Falls back to the default profile when no project is available
@@ -767,6 +812,24 @@ module Prompts
       rescue GithubClient::Error
         []
       end
+    end
+
+    def human_review_threads_present?
+      unresolved_threads.any? do |thread|
+        thread[:comments].any? { |comment| human_review_comment?(comment) }
+      end
+    end
+
+    # Human context excludes every bot author: Paid's own bot, GitHub App
+    # bots (logins ending in "[bot]"), and runner bots posting under bare
+    # aliases. Unlisted review bots must not be misread as human, or
+    # review-feedback runs would block on bot-authored threads even though
+    # their comments are excluded from prompt instructions.
+    def human_review_comment?(comment)
+      login = comment[:author].to_s.downcase
+      login.present? &&
+        !project.paid_bot_author?(login) &&
+        !RunnerSupport.github_bot_username?(login)
     end
 
     # Filters unresolved review threads to only include comments authored by
