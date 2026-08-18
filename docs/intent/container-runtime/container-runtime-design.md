@@ -228,6 +228,42 @@ is explicit value-object data, not ad hoc hashes.
   (variable names, service names, config keys) and never secret values; service
   declarations expose `env_keys`, not `env` payloads.
 
+### No-shared-filesystem conformance coverage (#3401)
+
+RDR-057's no-shared-filesystem execution model is enforced by a
+provider-neutral conformance suite that any runner implementation includes.
+The suite (`spec/support/shared_examples/no_shared_filesystem_conformance.rb`)
+drives the complete normal create-PR lifecycle — clone, run, log capture,
+artifact output, result manifest, and cleanup — through the
+`ExecutionRunners` contract only, deriving its `RunSpec` via
+`RunSpec.from_agent_run` so every runner conforms to the same canonical,
+host-path-free scenario:
+
+- Code transport is the input manifest's Git lane; the workspace stays
+  declarative (mode + mount point) with no host reference.
+- Durable outputs travel on the object-storage lane (binary artifacts) and
+  the control-plane API lane (log refs, verification), with git output
+  identity on the Git lane.
+- The persisted `RunnerHandle` and both manifests carry no host filesystem
+  paths (`NoSharedFilesystemConformance.host_path_strings` walks the
+  JSON-native payloads for absolute-path strings, allowing only the
+  declarative in-container workspace mount point).
+- The contract surface — interface methods, parameters, and value-object
+  members — carries no Docker `exec` / bind-mount / shared-directory
+  vocabulary.
+
+A runner that requires shared host storage fails the suite: it either cannot
+provision the host-path-free scenario or leaks host paths into its persisted
+handle or manifests. Negative controls
+(`spec/services/execution_runners/no_shared_filesystem_conformance_spec.rb`)
+prove the checks reject host-storage-requiring runners, handles, manifests,
+and contract surfaces, so the suite keeps its teeth against regressions.
+`LocalDockerRunner` passes as the baseline without weakening local Docker
+development: its platform is stubbed with the constraint that
+`Containers::Provision` receives `worktree_path: nil` (the in-container
+clone path), while legacy bind-mount runs remain a compatibility path
+outside the conformance scenario.
+
 ### Execution resource ledger reconciliation (#3411)
 
 Provision-time `runner_handle` persistence solves retry-time recovery for a
@@ -283,7 +319,10 @@ restarts.
 - `spec/services/execution_runners_spec.rb`
 - `spec/services/execution_runners/base_spec.rb`
 - `spec/services/execution_runners/local_docker_runner_spec.rb`
+- `spec/services/execution_runners/no_shared_filesystem_conformance_spec.rb`
+- `spec/support/no_shared_filesystem_conformance.rb`
 - `spec/support/shared_examples/execution_runner_contract.rb`
+- `spec/support/shared_examples/no_shared_filesystem_conformance.rb`
 - `spec/services/containers/service_provisioner_spec.rb`
 - `spec/services/capacity/docker_snapshot_spec.rb`
 - `spec/services/capacity/run_admission_spec.rb`

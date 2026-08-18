@@ -1556,6 +1556,11 @@ module Activities
 
       raise RunnerExecutionError, "Agent run already finished with status #{agent_run.status}" if agent_run.finished?
 
+      # @spec TEMPORAL-ORCHESTRATION-005 — queue-admitted runs are already
+      # marked running for visibility, but started_at stays reserved for actual
+      # execution start so timeout/staleness semantics still begin here.
+      agent_run.start! if !agent_run.running? || agent_run.started_at.blank?
+
       Containers::TokenOptimization.rtk_init_for_runner(container_service: container_service, runner_key: runner)
 
       pre_agent_sha = capture_head_sha(container_service, agent_run)
@@ -1567,9 +1572,6 @@ module Activities
         runner: runner,
         execution_env: command_env
       )
-
-      # Only start! on first runner attempt.
-      agent_run.start! unless agent_run.running?
 
       agent_run.log!("system", "Starting #{runner} agent in container")
       agent_run.log!("system", "Prompt: #{prompt.truncate(500)}")
@@ -3441,17 +3443,11 @@ module Activities
       false
     end
 
-    # @spec PROMPT-ASSEMBLY-008, PROMPT-ASSEMBLY-009
-    # Routes every agent-run goal through PromptAssembly so the migrated goal
-    # wrappers (create-issue, review, enhance-issue, interactive verification)
-    # are contributed as required Sections rather than appended as raw strings.
-    # The assembly is mandatory for migrated goals: a queue-time custom prompt
-    # cannot bypass it because the safety sections are applied here, after
-    # effective_prompt resolves the base text. Assembly provenance (digest +
-    # section list) is recorded on the run for configuration-bundle/run
-    # metadata.
+    # @spec PROMPT-ASSEMBLY-008, PROMPT-ASSEMBLY-009, PROMPT-ASSEMBLY-016
     def augment_prompt_for_goal(agent_run, prompt)
       goal_text, verification_text, verification_fallback = goal_prompt_inputs(agent_run, prompt)
+      prompt_builder = prompt_builder_for(agent_run)
+      return legacy_augmented_prompt(agent_run, prompt, goal_text, verification_text, verification_fallback) unless prompt_builder == Prompts::BuildForPr::PROMPT_ASSEMBLY_BUILDER
 
       result = PromptAssembly::GoalAssembly.call(
         agent_run: agent_run,
@@ -3460,6 +3456,7 @@ module Activities
         verification_text: verification_text
       )
       record_prompt_assembly(agent_run, result)
+      record_prompt_builder(agent_run, prompt_builder)
       [ result.text, verification_fallback ]
     end
 
@@ -3495,12 +3492,42 @@ module Activities
       [ section.content, section.fallback_result ]
     end
 
+    def legacy_augmented_prompt(agent_run, prompt, goal_text, verification_text, verification_fallback)
+      record_prompt_builder(agent_run, Prompts::BuildForPr::LEGACY_PROMPT_BUILDER)
+      return [ goal_text, verification_fallback ] if goal_text.present?
+      return [ prompt, verification_fallback ] if verification_text.blank?
+
+      [ [ prompt, verification_text ].join("\n\n"), verification_fallback ]
+    end
+
+    def prompt_builder_for(agent_run)
+      return agent_run.prompt_builder if agent_run.prompt_builder.present?
+
+      if FeatureFlags.enabled?(:prompt_assembly, project: agent_run.project)
+        Prompts::BuildForPr::PROMPT_ASSEMBLY_BUILDER
+      else
+        Prompts::BuildForPr::LEGACY_PROMPT_BUILDER
+      end
+    end
+
     def record_prompt_assembly(agent_run, result)
       agent_run.record_prompt_assembly!(result.provenance)
     rescue => e
       logger.warn(
         message: "agent_execution.prompt_assembly_record_failed",
         agent_run_id: agent_run.id,
+        error_class: e.class.name,
+        error: e.message
+      )
+    end
+
+    def record_prompt_builder(agent_run, builder)
+      agent_run.record_prompt_builder!(builder)
+    rescue => e
+      logger.warn(
+        message: "agent_execution.prompt_builder_record_failed",
+        agent_run_id: agent_run.id,
+        prompt_builder: builder,
         error_class: e.class.name,
         error: e.message
       )

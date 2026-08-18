@@ -733,6 +733,8 @@ RSpec.describe Activities::CreateAgentRunActivity do
     end
 
     context "with prompt versioning" do
+      let(:github_client) { instance_double(GithubClient, issue_comments: []) }
+
       let!(:prompt) do
         Prompt.find_by(slug: "coding.issue_implementation")&.destroy!
         p = create(:prompt, :global, slug: "coding.issue_implementation")
@@ -749,32 +751,40 @@ RSpec.describe Activities::CreateAgentRunActivity do
         p
       end
 
-      it "resolves and renders prompt version when no custom_prompt is provided" do
+      before do
+        project.update!(allowed_github_usernames: [ issue.github_creator_login ])
+        allow(GithubClient).to receive(:new).and_return(github_client)
+      end
+
+      it "resolves prompt version without materializing a custom prompt for create_pr" do
         result = activity.execute(project_id: project.id, issue_id: issue.id)
 
         agent_run = AgentRun.find(result[:agent_run_id])
         expect(agent_run.prompt_version).to eq(prompt.current_version)
-        expect(agent_run.custom_prompt).to include(issue.title)
-        expect(agent_run.custom_prompt).to include(issue.github_number.to_s)
+        expect(agent_run.custom_prompt).to be_nil
       end
 
-      it "renders template with correct variables" do
+      it "renders the selected prompt version at runtime with the correct variables" do
         result = activity.execute(project_id: project.id, issue_id: issue.id)
 
         agent_run = AgentRun.find(result[:agent_run_id])
-        expect(agent_run.custom_prompt).to include("Test: bundle exec rspec")
-        expect(agent_run.custom_prompt).to include("Lint: bundle exec rubocop")
+        prompt_text = agent_run.prompt_for_issue
+        expect(prompt_text).to include(issue.title)
+        expect(prompt_text).to include(issue.github_number.to_s)
+        expect(prompt_text).to include("Test: bundle exec rspec")
+        expect(prompt_text).to include("Lint: bundle exec rubocop")
       end
 
       # @spec POLYGLOT-TEST-003
-      it "renders every language's command for a polyglot project" do
+      it "renders every language's command for a polyglot project at runtime" do
         project.update!(language_profile: { "test_languages" => [ "ruby", "elixir" ] })
 
         result = activity.execute(project_id: project.id, issue_id: issue.id)
 
         agent_run = AgentRun.find(result[:agent_run_id])
-        expect(agent_run.custom_prompt).to include("Test: bundle exec rspec, then mix test")
-        expect(agent_run.custom_prompt).to include("Lint: bundle exec rubocop, then mix credo --strict")
+        prompt_text = agent_run.prompt_for_issue
+        expect(prompt_text).to include("Test: bundle exec rspec, then mix test")
+        expect(prompt_text).to include("Lint: bundle exec rubocop, then mix credo --strict")
       end
 
       it "does not assign prompt_version when custom_prompt is provided" do
@@ -843,44 +853,48 @@ RSpec.describe Activities::CreateAgentRunActivity do
         }
       end
 
-      it "appends trusted issue comments to the rendered custom_prompt" do
-        trusted_login = project.allowed_github_usernames.first
+      it "includes trusted issue comments in the assembled runtime prompt" do
+        trusted_login = "trusted-dev"
+        project.update!(allowed_github_usernames: [ issue.github_creator_login, trusted_login ])
         comment = OpenStruct.new(
           user: OpenStruct.new(login: trusted_login),
           body: "Please also update the docs"
         )
-        allow(Prompts::BuildForIssue).to receive(:conversation_section_for).and_return(
-          Prompts::BuildForIssue.format_conversation_section([ comment ])
-        )
+        allow(Prompts::BuildForIssue).to receive(:conversation_section_for).and_call_original
+        allow(github_client).to receive(:issue_comments).and_return([ comment ])
 
         result = activity.execute(project_id: project.id, issue_id: issue.id)
 
         agent_run = AgentRun.find(result[:agent_run_id])
-        expect(agent_run.custom_prompt).to include("Conversation Comments")
-        expect(agent_run.custom_prompt).to include("Please also update the docs")
+        prompt_text = agent_run.prompt_for_issue
+        expect(agent_run.custom_prompt).to be_nil
+        expect(prompt_text).to include("Conversation Comments")
+        expect(prompt_text).to include("Please also update the docs")
       end
 
-      it "injects style guides and records exposures for rendered custom prompts" do
+      it "injects style guides and records exposures for the assembled runtime prompt" do
         guide = create(:style_guide, account: project.account, project: nil, name: "Team Guide", raw_content: "Prefer small methods.")
 
         result = activity.execute(project_id: project.id, issue_id: issue.id)
 
         agent_run = AgentRun.find(result[:agent_run_id])
+        prompt_text = agent_run.effective_prompt
         exposure = agent_run.style_guide_run_exposures.find_by!(style_guide: guide)
-        expect(agent_run.custom_prompt).to include("Team Guide")
+        expect(prompt_text).to include("Team Guide")
         expect(exposure.style_guide_version).to eq(guide.current_version)
       end
 
-      it "appends service environment guidance for configured database containers" do
+      it "assembles service environment guidance for configured database containers" do
         project.service_containers << create(:service_container, account: project.account)
 
         result = activity.execute(project_id: project.id, issue_id: issue.id)
 
         agent_run = AgentRun.find(result[:agent_run_id])
-        expect(agent_run.custom_prompt).to include("Service Environment")
-        expect(agent_run.custom_prompt).to include("Run `bin/rails db:prepare`")
-        expect(agent_run.custom_prompt).to include("DATABASE_URL")
-        expect(agent_run.custom_prompt).not_to include("Environment Constraints")
+        prompt_text = agent_run.prompt_for_issue
+        expect(prompt_text).to include("Available Services")
+        expect(prompt_text).to include("Database Schema Workflow")
+        expect(prompt_text).to include("DATABASE_URL")
+        expect(prompt_text).not_to include("Environment Constraints")
       end
 
       it "records rendered service environment prompt versions in phase metadata" do
@@ -895,14 +909,14 @@ RSpec.describe Activities::CreateAgentRunActivity do
         expect(phase.metadata["service_environment_prompt_blocks"]).to eq(expected_service_environment_prompt_blocks(prompts))
       end
 
-      it "separates appended sections from a template without a trailing newline" do
+      it "separates assembled sections from a template without a trailing newline" do
         prompt.current_version.update_column(:template, "Work on {{title}}")
         project.service_containers << create(:service_container, account: project.account)
 
         result = activity.execute(project_id: project.id, issue_id: issue.id)
 
         agent_run = AgentRun.find(result[:agent_run_id])
-        expect(agent_run.custom_prompt).to include("Work on #{issue.title}\n\n# Service Environment")
+        expect(agent_run.prompt_for_issue).to include("Work on #{issue.title}\n\n# Available Services")
       end
     end
 

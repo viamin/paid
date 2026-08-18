@@ -19,3 +19,12 @@
   selection, the system SHALL call `AgentHarness.send_message` rather than a
   raw provider API client.
   *Code:* `Models::MetaAgentSelector`.
+
+- [x] **AGENT-HARNESS-004** — When a direct-outbound runner runtime (e.g.
+  OpenCode with a user provider API key) is planned for container execution,
+  the system SHALL strip the Paid secrets-proxy credentials seeded as baseline
+  container env from that runtime's process environment, keeping only the
+  variables the runtime itself sets for the selected upstream provider.
+  *Tests:* `spec/models/runner_spec.rb`,
+  `spec/services/runners/harness_execution_plan_spec.rb`.
+  *Code:* `Runner#opencode_direct_outbound_unset_env`.

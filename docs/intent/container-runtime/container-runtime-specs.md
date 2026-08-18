@@ -228,7 +228,38 @@
   `ExecutionRunners::RunSpec#input_manifest`,
   `ExecutionRunners::ExecutionResult#output_manifest`
 
-- [x] **CONTAINER-RUNTIME-019** — The system SHALL persist a durable
+- [x] **CONTAINER-RUNTIME-019** — The system SHALL provide a provider-neutral
+  runner conformance suite that drives the complete normal create-PR
+  lifecycle — clone, run, log capture, artifact output, result manifest, and
+  cleanup — through the `ExecutionRunners` contract with no host-path
+  assumptions, deriving its `RunSpec` via `RunSpec.from_agent_run` so every
+  runner conforms to the same canonical scenario. The suite SHALL fail a
+  runner that requires shared host storage: provisioning the host-path-free
+  scenario must succeed, and the persisted `RunnerHandle` plus the input and
+  output manifests SHALL carry no host filesystem paths. The suite SHALL
+  verify Git is the only code transport (input-manifest Git lane with a
+  declarative workspace carrying no host reference) and that durable outputs
+  travel on the object-storage and control-plane API lanes. Logs SHALL cross
+  the runner boundary as streamed stdout/stderr chunks yielded through the
+  `ExecutionRunners::Base#start` block rather than through shared host files.
+  The runner contract surface (interface methods, parameters, and value-object
+  members) SHALL NOT reference Docker `exec`, bind mounts, shared directories,
+  or host-visible workspace paths. `LocalDockerRunner` SHALL pass the suite as
+  the baseline without weakening local Docker development (legacy bind-mount
+  runs remain a compatibility path outside the conformance scenario), and
+  negative controls SHALL prove the suite rejects host-storage-requiring
+  runners, handles, manifests, streamed output plumbing, and contract
+  surfaces.
+  *Tests:* `spec/services/execution_runners/no_shared_filesystem_conformance_spec.rb`,
+  `spec/services/execution_runners/local_docker_runner_spec.rb`,
+  `spec/services/containers/provision_spec.rb`
+  *Code:* `app/services/containers/provision.rb`,
+  `app/services/execution_runners/base.rb`,
+  `app/services/execution_runners/local_docker_runner.rb`,
+  `spec/support/no_shared_filesystem_conformance.rb`,
+  `spec/support/shared_examples/no_shared_filesystem_conformance.rb`
+
+- [x] **CONTAINER-RUNTIME-020** — The system SHALL persist a durable
   `execution_resources` ledger for agent execution resources so cleanup state
   survives workflow retries, janitor retries, and direct provider drift. A
   successful provision SHALL upsert an `environment` ledger row for the run
@@ -244,7 +275,7 @@
   `AgentRun#cleanup_container`,
   `AgentRunResourceJanitorJob`
 
-- [x] **CONTAINER-RUNTIME-020** — Reconciliation SHALL compare ledger rows with
+- [x] **CONTAINER-RUNTIME-021** — Reconciliation SHALL compare ledger rows with
   runner/provider state when the provider supports tag/list inventory, and
   SHALL degrade to handle-based cleanup with `reduced_confidence` when it does
   not. The reconciliation matrix SHALL cover: active-ledger/provider-missing

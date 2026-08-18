@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module ExecutionResources
-  class Reconcile # @spec CONTAINER-RUNTIME-020
+  class Reconcile # @spec CONTAINER-RUNTIME-021
     Result = Data.define(:checked, :adopted, :cleaned, :failures, :reduced_confidence)
 
     def initialize(scope: ExecutionResource.active_or_pending, runner_resolver: nil, inventory_targets: nil)
