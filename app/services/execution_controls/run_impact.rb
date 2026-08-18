@@ -23,12 +23,16 @@ module ExecutionControls
     end
 
     def park_run!(agent_run)
-      # Run the workflow/container teardown outside the row lock. Holding the
-      # lock across the two network calls would block every other queued run
-      # for the full duration of a global capacity disable's serial pass.
+      # Snapshot the resource IDs under the row lock, then park (a DB-only
+      # mutation). The workflow/container teardown itself is deferred to
+      # ExecutionControlParkCleanupJob rather than run inline here — a global
+      # capacity disable can walk every active run system-wide, and running
+      # the Temporal cancel + Docker teardown network calls in the toggling
+      # process would block the caller for the full duration of that serial
+      # pass. Deferring also gets the teardown GoodJob retry semantics instead
+      # of a rescue-and-log swallow.
       workflow_id = nil
       container_id = nil
-      cleanup = nil
 
       agent_run.with_lock do
         next if agent_run.finished?
@@ -45,64 +49,20 @@ module ExecutionControls
           next
         end
 
-        # Snapshot the resource IDs under the lock. The park mutation below
-        # nulls them on the row, and Containers::Provision.reconnect needs the
-        # agent_run object plus the container_id to find the Docker container.
+        # Snapshot the resource IDs under the lock: the park mutation below
+        # nulls them on the row, and the cleanup job needs the ids the row
+        # held immediately beforehand to find the workflow/container.
         workflow_id = agent_run.temporal_workflow_id.presence
         container_id = agent_run.container_id.presence
-        cleanup = -> { cleanup_in_flight_resources(agent_run, workflow_id, container_id) }
         park_record!(agent_run)
       end
 
-      cleanup.call if cleanup
+      if workflow_id.present? || container_id.present?
+        ExecutionControlParkCleanupJob.perform_later(agent_run.id, workflow_id, container_id)
+      end
 
       record_run_event!("agent_run.execution_parked", agent_run, result: "execution_control_capacity")
       log_run_event("execution_control.run_parked", agent_run)
-    end
-
-    # Tears down the run's Temporal workflow and Docker container outside the
-    # row lock. Captures the agent_run's container_id on the in-memory object
-    # before calling cleanup so the post-park NULL on the row does not hide
-    # the container from Provision.reconnect.
-    def cleanup_in_flight_resources(agent_run, workflow_id, container_id)
-      cancel_temporal_workflow(agent_run.id, workflow_id) if workflow_id.present?
-      cleanup_container(agent_run, container_id) if container_id.present?
-    end
-
-    def cancel_temporal_workflow(agent_run_id, workflow_id)
-      return if workflow_id == AgentRun::CLAIMED_SENTINEL
-
-      handle = Paid.temporal_client.workflow_handle(workflow_id)
-      handle.cancel
-    rescue Temporalio::Error::RPCError => e
-      raise unless e.code == Temporalio::Error::RPCError::Code::NOT_FOUND
-
-      Rails.logger.info(
-        message: "execution_control.cancel_workflow_not_found",
-        agent_run_id: agent_run_id,
-        temporal_workflow_id: workflow_id
-      )
-    rescue => e
-      Rails.logger.warn(
-        message: "execution_control.cancel_workflow_failed",
-        agent_run_id: agent_run_id,
-        temporal_workflow_id: workflow_id,
-        error_class: e.class.name,
-        error: e.message
-      )
-    end
-
-    def cleanup_container(agent_run, container_id)
-      agent_run.container_id = container_id
-      agent_run.cleanup_container(force: true)
-    rescue => e
-      Rails.logger.warn(
-        message: "execution_control.container_cleanup_failed",
-        agent_run_id: agent_run.id,
-        container_id: container_id,
-        error_class: e.class.name,
-        error: e.message
-      )
     end
 
     private

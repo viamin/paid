@@ -37,17 +37,24 @@ from structured logs plus `AccountActivityEvent`.
 
 ## Resolution
 
-`ExecutionControls::Resolver` is the single read path used by dispatch code.
-It evaluates the relevant active controls for a run and returns the highest
-priority match:
+There is no single shared read path — each enforcement point reads
+`ExecutionControl` directly, scoped to what it needs, because the queue
+dispatch loop runs per-pass over many candidate runs and a per-run resolver
+call there would be an N+1 query:
 
-1. global
-2. account
-3. project
-4. runner
-5. backend
+- `ProcessRunQueueJob#execution_control_snapshot_for_queue` loads every
+  enabled global/account/project/runner control once per queue pass into an
+  in-memory snapshot, and `#queue_parking_execution_control_for` looks up the
+  highest-priority global/account/project match for a given run from that
+  snapshot.
+- `AgentRuns::RunnerResolver#runner_runnable?` and `Runners::PreflightCheck`
+  query runner-scoped controls directly.
+- `DockerHost.placement_ready_for_agent_runs` (and `#placement_ready?`)
+  exclude backend-scoped controls directly.
 
-Emergency wins over capacity when multiple controls apply.
+Across all of these, scope priority is global > account > project > runner >
+backend, and emergency wins over capacity when multiple controls apply —
+see `ExecutionControl#priority`.
 
 ## Enforcement
 
@@ -78,9 +85,17 @@ active, so host selection never places new runs onto that backend.
 `ExecutionControls::RunImpact` applies the mode-specific action to already
 active scoped runs when a control is enabled:
 
-- **emergency**: mark the run `cancelled`, enqueue cleanup, emit logs/audit
-- **capacity**: cancel workflow/container without a terminal status, then park
-  the run as `paused` with the control marker
+- **emergency**: mark the run `cancelled` synchronously, enqueue
+  `AgentRunCancellationJob` for workflow/container cleanup, emit logs/audit
+- **capacity**: park the run as `paused` with the control marker
+  synchronously, then enqueue `ExecutionControlParkCleanupJob` with the
+  workflow/container ids captured immediately beforehand (the park mutation
+  nulls them on the row) to cancel the workflow and tear down the container
+
+Both modes keep the toggling process fast and defer network teardown (Temporal
+cancel, Docker cleanup) to a background job with GoodJob retry semantics —
+this matters most for a global capacity disable, which can walk every active
+run system-wide.
 
 When a capacity control is cleared, only runs parked by that exact control are
 returned to `queued`. They do not start immediately; they re-enter the normal

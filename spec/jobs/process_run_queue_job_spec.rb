@@ -1250,7 +1250,6 @@ RSpec.describe ProcessRunQueueJob do
         project = create(:project)
         run = create(:agent_run, :queued, project: project)
         create(:execution_control, :project_scope, :enabled, project: project, reason: "Project maintenance")
-        expect(ExecutionControls::Resolver).not_to receive(:call)
 
         expect(temporal_client).not_to receive(:start_workflow)
 
@@ -1258,6 +1257,23 @@ RSpec.describe ProcessRunQueueJob do
 
         expect(run.reload.status).to eq("paused")
         expect(run.external_metadata.dig("execution_control", "scope")).to eq("project")
+      end
+
+      # @spec EXEC-DISABLE-002
+      it "parks a runner-unbound queued run before admission so it skips host/runner binding entirely" do
+        project = create(:project)
+        issue = create(:issue, project: project, github_state: "open")
+        run = create(:agent_run, :queued, :automatic, project: project, issue: issue, goal: "create_pr", auto_pick: true)
+        create(:execution_control, :project_scope, :enabled, project: project, reason: "Project maintenance")
+
+        expect(Containers::BackendScheduler).not_to receive(:call)
+        expect(AgentRuns::BindRunner).not_to receive(:call)
+
+        described_class.new.perform
+
+        run.reload
+        expect(run.status).to eq("paused")
+        expect(run.runner_id).to be_nil
       end
 
       # @spec EXEC-DISABLE-003

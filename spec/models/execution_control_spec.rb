@@ -23,10 +23,13 @@ RSpec.describe ExecutionControl do
     it "parks active project runs in capacity mode and resumes them when disabled" do
       project = create(:project)
       agent_run = create(:agent_run, :running, :with_temporal, project: project)
+      workflow_id = agent_run.temporal_workflow_id
       control = create(:execution_control, :project_scope, project: project)
       allow(AgentRuns::Cancel).to receive(:call)
 
-      control.update!(enabled: true, enabled_at: Time.current, reason: "Capacity reduction")
+      expect {
+        control.update!(enabled: true, enabled_at: Time.current, reason: "Capacity reduction")
+      }.to have_enqueued_job(ExecutionControlParkCleanupJob).with(agent_run.id, workflow_id, nil)
 
       agent_run.reload
       expect(agent_run.status).to eq("paused")

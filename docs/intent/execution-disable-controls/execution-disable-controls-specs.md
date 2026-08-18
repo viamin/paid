@@ -17,7 +17,8 @@ prefix: EXEC-DISABLE
   disable control applies to a queued run, the system SHALL stop new dispatch
   before workflow claim and SHALL park the run instead of starting execution.
   *Tests:* `spec/jobs/process_run_queue_job_spec.rb`
-  *Code:* `ExecutionControls::Resolver`, `ProcessRunQueueJob`.
+  *Code:* `ProcessRunQueueJob#execution_control_snapshot_for_queue`,
+  `ProcessRunQueueJob#queue_parking_execution_control_for`.
 
 - [x] **EXEC-DISABLE-003** — When a runner-scoped execution disable control
   applies, the system SHALL exclude that runner from late binding and SHALL
@@ -41,7 +42,7 @@ prefix: EXEC-DISABLE
   control is cleared, SHALL return only those parked runs to `queued` so they
   re-enter normal capacity and policy checks rather than bypassing them.
   *Tests:* `spec/models/execution_control_spec.rb`
-  *Code:* `ExecutionControls::RunImpact`.
+  *Code:* `ExecutionControls::RunImpact`, `ExecutionControlParkCleanupJob`.
 
 - [x] **EXEC-DISABLE-007** — The system SHALL emit structured logs and account
   audit events for execution-control enable/disable transitions and for the

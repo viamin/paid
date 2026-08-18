@@ -121,6 +121,22 @@ class ProcessRunQueueJob < ApplicationJob
           next
         end
 
+        # @spec EXEC-DISABLE-002 — global/account/project controls park
+        # unconditionally, independent of capacity, host, or runner. Checked
+        # here, before admission, so parked runs skip the entire backend
+        # scheduling / host placement / runner binding pipeline instead of
+        # paying for it only to be parked afterward. This also keeps
+        # runner-unbound runs unbound: AgentRuns::BindRunner (further down)
+        # persists a runner_id as a side effect of resolution, which would
+        # otherwise pin a parked run to a runner chosen before the control
+        # cleared rather than one re-resolved at dispatch time.
+        execution_control = queue_parking_execution_control_for(next_run, execution_control_snapshot)
+        if execution_control
+          park_run_for_execution_control(next_run, execution_control)
+          skipped_ids.add(next_run.id)
+          next
+        end
+
         # Resolve the project owner for capacity checks. If the owner
         # can't be resolved, fail the run immediately rather than
         # skipping it — a nil owner would block auto-pick for other
@@ -249,13 +265,6 @@ class ProcessRunQueueJob < ApplicationJob
           # healthy alternative without re-checking (preserves the bulk-skip
           # optimization for runs sharing one bad runner).
           reroute_unavailable_runner(next_run, blocked_runner_ids, skipped_ids, reroute_cache)
-          next
-        end
-
-        execution_control = queue_parking_execution_control_for(next_run, execution_control_snapshot)
-        if execution_control
-          park_run_for_execution_control(next_run, execution_control)
-          skipped_ids.add(next_run.id)
           next
         end
 
