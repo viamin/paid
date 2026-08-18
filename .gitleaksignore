@@ -25,3 +25,4 @@ spec/services/knowledge/redaction/scanner_spec.rb:private-key:171
 spec/temporal/activities/create_agent_run_activity_spec.rb:generic-api-key:689
 spec/requests/projects_spec.rb:github-pat:1255
 spec/requests/projects_spec.rb:github-pat:1260
+spec/models/execution_audit_event_spec.rb:github-pat:111
