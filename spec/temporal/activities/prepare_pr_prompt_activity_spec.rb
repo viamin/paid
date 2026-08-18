@@ -144,6 +144,20 @@ RSpec.describe Activities::PreparePrPromptActivity do
       expect(provenance["budget_decisions"]).to be_an(Array)
     end
 
+    # @spec PROMPT-ASSEMBLY-016
+    it "preserves an already-recorded prompt builder when the rollout flag changes before retry" do
+      agent_run.record_prompt_builder!("prompt_assembly")
+
+      activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
+
+      phase = agent_run.reload.agent_run_phases.find_by!(phase_key: "prepare_pr_prompt")
+      provenance = phase.metadata["prompt_assembly"]
+
+      expect(phase.metadata["prompt_builder"]).to eq("prompt_assembly")
+      expect(agent_run.prompt_builder).to eq("prompt_assembly")
+      expect(provenance["sections"]).to be_an(Array)
+    end
+
     it "stores a data-only prompt comparison when shadow comparison is enabled" do
       FeatureFlags.enable!(:prompt_assembly_shadow_compare, project: project)
 

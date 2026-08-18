@@ -20,7 +20,7 @@ module Activities
       agent_run = AgentRun.find(agent_run_id)
       focus = input[:focus].presence || agent_run.focus.presence || "general"
       project = agent_run.project
-      prompt_builder_path = prompt_builder_for(project)
+      prompt_builder_path = prompt_builder_for(agent_run)
       service_environment_prompt_blocks = Prompts::BuildForPr.service_environment_section_render_for(
         project: project,
         include_setup_instruction: false
@@ -120,7 +120,10 @@ module Activities
       )
     end
 
-    def prompt_builder_for(project)
+    def prompt_builder_for(agent_run)
+      return agent_run.prompt_builder if agent_run.prompt_builder.present?
+
+      project = agent_run.project
       if FeatureFlags.enabled?(:prompt_assembly, project: project)
         Prompts::BuildForPr::PROMPT_ASSEMBLY_BUILDER
       else
