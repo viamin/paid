@@ -25,9 +25,10 @@ can never carry raw secret material.
 ## Shipped Behavior
 
 - **Append-only record.** `ExecutionAuditEvent` has no `updated_at` and is
-  never modified after creation; it is not logidze-tracked (logidze is for
-  mutable config, not audit trails — see `CLAUDE.md`). Retention is
-  enforced separately (see below), not by a mutable/soft-delete state.
+  never modified or destroyed through the model lifecycle after creation;
+  it is not logidze-tracked (logidze is for mutable config, not audit
+  trails — see `CLAUDE.md`). Retention is enforced separately (see below),
+  not by a mutable/soft-delete state.
 - **Required identity fields.** Every event carries `event_name` (namespaced,
   e.g. `container.provisioned`), `event_version`, and `occurred_at`
   (auto-assigned to `Time.current` when omitted).

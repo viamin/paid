@@ -78,6 +78,10 @@ class ExecutionAuditEvent < ApplicationRecord
   scope :by_event_name, ->(event_name) { where(event_name: event_name.to_s) }
   scope :recent, -> { order(occurred_at: :desc, id: :desc) }
 
+  def readonly?
+    persisted?
+  end
+
   def self.record!(**attrs)
     create!(attrs)
   end

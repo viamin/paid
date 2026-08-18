@@ -106,6 +106,24 @@ RSpec.describe ExecutionAuditEvent, type: :model do
     end
   end
 
+  describe "immutability" do
+    it "rejects updates after insert" do
+      record = create(:execution_audit_event)
+
+      expect {
+        record.update!(event_name: "container.reused")
+      }.to raise_error(ActiveRecord::ReadOnlyRecord)
+    end
+
+    it "rejects destroys outside retention cleanup" do
+      record = create(:execution_audit_event)
+
+      expect {
+        record.destroy!
+      }.to raise_error(ActiveRecord::ReadOnlyRecord)
+    end
+  end
+
   describe "secret redaction" do
     it "rejects forbidden metadata keys" do
       record = build(:execution_audit_event, metadata: { token: "sk-ant-oat01-secret" })
