@@ -204,6 +204,7 @@ module Containers
       CODEX_NOTIFY_LINE
     end
 
+    # @spec EXECUTION-ISOLATION-004
     def self.compatibility_for(agent_run:, backend:, worktree_path: nil)
       service = new(agent_run: agent_run, worktree_path: worktree_path, backend: backend)
       # record_telemetry: false — compatibility_for is called for every candidate
@@ -362,14 +363,22 @@ module Containers
     #   long, silent LLM inference. Agents can touch this file (e.g. via
     #   Claude Code +PostToolUse+ or Codex +notify+ hooks) to signal
     #   "still working" and avoid startup/idle timeouts.
+    # @yieldparam stream_type [Symbol] +:stdout+ or +:stderr+
+    # @yieldparam chunk [String] output chunk forwarded as the container
+    #   exec stream emits it, after UTF-8/null-byte normalization. The block
+    #   runs inside the backend streaming callback alongside the watchdog
+    #   bookkeeping, so it must stay fast; a slow consumer throttles output
+    #   pumping and the shared timeout checks. Exceptions raised by the block
+    #   propagate out of +#execute+ and abort the run.
     # @return [Result] Result with stdout, stderr, and exit_code
     # @raise [StartupTimeoutError] when no output is received within +startup_timeout+ seconds
     # @raise [IdleTimeoutError] when output stops for more than +idle_timeout+ seconds
     # @raise [TimeoutError] when total wall-clock +timeout+ is exceeded
-    def execute(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil, heartbeat_path: nil, abort_patterns: nil)
+    # @spec CONTAINER-RUNTIME-019
+    def execute(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil, heartbeat_path: nil, abort_patterns: nil, &block)
       raise ProvisionError, "Container not provisioned" unless container
 
-      with_codex_auth_lock(command) { execute_unlocked(command, timeout:, startup_timeout:, idle_timeout:, stream:, env:, preparation:, heartbeat_path:, abort_patterns:) }
+      with_codex_auth_lock(command) { execute_unlocked(command, timeout:, startup_timeout:, idle_timeout:, stream:, env:, preparation:, heartbeat_path:, abort_patterns:, &block) }
     end
 
     def network_name
@@ -493,7 +502,7 @@ module Containers
       ].find(&:present?)
     end
 
-    private def execute_unlocked(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil, heartbeat_path: nil, abort_patterns: nil)
+    private def execute_unlocked(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil, heartbeat_path: nil, abort_patterns: nil, &block)
       timeout ||= options[:timeout_seconds]
       cmd_array = close_stdin_for_codex_exec(command)
       cmd_array = cmd_array.is_a?(Array) ? cmd_array : [ "sh", "-c", cmd_array ]
@@ -598,6 +607,8 @@ module Containers
             stderr_buffer << normalized_chunk
             log_output(:stderr, normalized_chunk) if stream
           end
+
+          yield(stream_type, normalized_chunk) if block_given?
 
           # Check both stdout and stderr against abort patterns — if the CLI
           # emits a fatal error but hangs instead of exiting, stop the container
@@ -2236,6 +2247,7 @@ module Containers
     # When a host-side worktree_path is provided, validates it exists for bind-mount.
     # When nil (or container-internal), creates a Docker named volume for in-container git clone.
     # Docker volumes live on the overlay2 disk, bypassing the VM root filesystem.
+    # @spec EXECUTION-ISOLATION-001
     def prepare_workspace!
       if host_worktree_path.present?
         unless backend.supports_host_paths?
@@ -3050,6 +3062,7 @@ module Containers
       scope.order(created_at: :desc, id: :desc).first
     end
 
+    # @spec EXECUTION-ISOLATION-003
     def managed_subscription_credential_scope_for(runner_key)
       return nil unless project.is_a?(Project)
 

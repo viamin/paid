@@ -24,6 +24,14 @@
   *Tests:* `spec/security/tenant_context_spec.rb`.
   *Code:* `EnableTenantRowLevelSecurity`, `TenantContext`.
 
+- [x] **POSTGRESQL-PERSISTENCE-008** — When a data migration reads or writes
+  account-less global records on tenant-scoped tables, it SHALL run under
+  `TenantContext.with_system_access` so row locks and writes are not rejected by
+  the tenant write policies that deliberately exclude global rows.
+  *Tests:* `spec/migrations/sync_issue_implementation_prompt_remove_safety_rules_spec.rb`.
+  *Code:* `SyncIssueImplementationPromptRemoveSafetyRules`,
+  `SyncCreateGithubIssuePromptClarificationFix`, `TenantContext`.
+
 ## Encrypted and Audited Credentials
 
 - [x] **POSTGRESQL-PERSISTENCE-003** — Stored GitHub tokens SHALL be encrypted
