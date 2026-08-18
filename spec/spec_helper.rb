@@ -25,9 +25,9 @@ if coverage_enabled
   require "simplecov"
   SimpleCov.start "rails" do
     minimum_coverage 80 unless SpecRunMode.focused?
-    add_filter "/spec/"
-    add_filter "/config/"
-    add_filter "/vendor/"
+    skip "/spec/"
+    skip "/config/"
+    skip "/vendor/"
   end
 end
 
