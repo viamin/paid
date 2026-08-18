@@ -130,31 +130,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_17_210528) do
     t.index ["target_agent_run_id"], name: "index_agent_coordination_signals_on_target_agent_run_id"
   end
 
-  create_table "agent_images", comment: "Immutable registry of agent container images identified by (registry, repository, digest, architecture) and tracked through active/deprecated/blocked states for audit, scheduling, and rollback.", force: :cascade do |t|
-    t.bigint "account_id", null: false, comment: "Account that owns the image registry record. Image identity is scoped per account so different accounts can record the same upstream digest independently."
-    t.string "architecture", default: "amd64", null: false, comment: "Target architecture of this image (amd64, arm64, 386, arm, ppc64le, s390x). The same digest on a different architecture is a separate image record."
-    t.datetime "blocked_at", comment: "Timestamp the image was transitioned to blocked. Distinct from deprecated: blocked images cannot be scheduled even if they are still installed."
-    t.text "blocked_reason", comment: "Free-text reason captured when the image was blocked (e.g. CVE identifier and severity)."
-    t.datetime "built_at", null: false, comment: "Wall-clock time the image was built or pushed upstream, recorded by the build pipeline."
-    t.datetime "created_at", null: false
-    t.datetime "deprecated_at", comment: "Timestamp the image was transitioned to deprecated. Preserved for historical queries; not the same as blocked."
-    t.text "deprecation_reason", comment: "Free-text reason captured when the image was deprecated (e.g. the successor image reference)."
-    t.string "digest", null: false, comment: "Immutable content-addressed identity, accepted as sha256:<64-hex> or 64-hex characters. The digest is the production source of truth for what image runs."
-    t.jsonb "log_data", comment: "Logidze change history for image lifecycle transitions and provenance/metadata edits."
-    t.jsonb "metadata", default: {}, null: false, comment: "Extensible observability and operations metadata (build log URL, runbook link, signing identity). Mutable without affecting the image identity."
-    t.string "name", null: false, comment: "Logical image profile name (e.g. base, elixir-node, ruby) used for ImageResolver / scheduling decisions."
-    t.jsonb "provenance", default: {}, null: false, comment: "Build provenance such as the GitHub Actions run id, repository, ref, and commit SHA that produced the image. Mutable for late-arriving provenance updates."
-    t.string "registry", default: "docker.io", null: false, comment: "OCI registry host the image was pulled from (docker.io, ghcr.io, registry.example.test). docker.io is the implicit default."
-    t.string "repository", null: false, comment: "OCI repository path within the registry (e.g. paid-agent, paid-agent-extra, organization/paid-agent)."
-    t.string "status", default: "active", null: false, comment: "Lifecycle state: active (schedulable), deprecated (still runnable but superseded), or blocked (excluded from future scheduling)."
-    t.string "tag", null: false, comment: "Docker tag that produced this image (e.g. latest, ruby-3.3.0). Mutable on the registry but immutable once recorded against a digest."
-    t.datetime "updated_at", null: false
-    t.index ["account_id", "name", "architecture"], name: "idx_agent_images_profile_arch", comment: "Lookup index for scheduling and image-resolver queries that need the current image for a (profile, architecture) within an account."
-    t.index ["account_id", "registry", "repository", "digest", "architecture"], name: "idx_agent_images_identity", unique: true, comment: "Uniqueness over the immutable content-addressed identity (account + registry + repository + digest + architecture)."
-    t.index ["account_id"], name: "index_agent_images_on_account_id"
-    t.index ["status"], name: "idx_agent_images_inactive", where: "((status)::text <> 'active'::text)", comment: "Partial index over non-active images so audit and rollback queries against deprecated/blocked rows stay fast as the active set grows."
-  end
-
   create_table "agent_run_anomalies", comment: "Stores statistical outliers detected when an agent run metric deviates materially from the project's historical baseline.", force: :cascade do |t|
     t.bigint "agent_run_id", null: false
     t.string "anomaly_type", limit: 50, null: false, comment: "Direction of the deviation relative to baseline, such as high_value or low_value."
@@ -2996,7 +2971,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_17_210528) do
   add_foreign_key "account_memberships", "users"
   add_foreign_key "agent_coordination_signals", "agent_runs", column: "source_agent_run_id"
   add_foreign_key "agent_coordination_signals", "agent_runs", column: "target_agent_run_id"
-  add_foreign_key "agent_images", "accounts"
   add_foreign_key "agent_run_anomalies", "agent_runs"
   add_foreign_key "agent_run_anomalies", "projects"
   add_foreign_key "agent_run_logs", "agent_runs", on_delete: :cascade
@@ -4047,10 +4021,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_17_210528) do
 
   create_trigger :logidze_on_accounts, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_accounts BEFORE INSERT OR UPDATE ON public.accounts FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
-  SQL
-
-  create_trigger :logidze_on_agent_images, sql_definition: <<-SQL
-      CREATE TRIGGER logidze_on_agent_images BEFORE INSERT OR UPDATE ON public.agent_images FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
   create_trigger :logidze_on_billing_invoices, sql_definition: <<-SQL

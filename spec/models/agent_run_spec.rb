@@ -1968,6 +1968,9 @@ RSpec.describe AgentRun do
           allow(Containers::PoolManager).to receive(:new)
             .with(project: agent_run.project)
             .and_return(instance_double(Containers::PoolManager, acquire: nil))
+          allow(Containers::Provision).to receive(:networking_policy_for)
+            .with(agent_run: agent_run, project: agent_run.project)
+            .and_return(ExecutionRunners::NetworkingPolicy.proxy_restricted)
           allow(Containers::Provision).to receive(:new).and_return(provision_service)
           allow(provision_service).to receive(:provision).and_return(result)
           allow(PoolReplenishmentJob).to receive(:perform_later)
@@ -1990,11 +1993,15 @@ RSpec.describe AgentRun do
         it "accepts optional container options" do
           agent_run = create(:agent_run, worktree_path: worktree_path)
 
+          allow(Containers::Provision).to receive(:networking_policy_for)
+            .with(agent_run: agent_run, project: agent_run.project)
+            .and_return(ExecutionRunners::NetworkingPolicy.proxy_restricted)
           expect(Containers::Provision).to receive(:new).with(
             agent_run: agent_run,
             worktree_path: worktree_path,
             backend: Containers.backend_for(agent_run.container_host),
-            memory_bytes: 1024 * 1024 * 1024
+            memory_bytes: 1024 * 1024 * 1024,
+            networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted
           ).and_call_original
 
           agent_run.provision_container(memory_bytes: 1024 * 1024 * 1024)

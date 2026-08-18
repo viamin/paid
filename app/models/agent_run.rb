@@ -2704,7 +2704,13 @@ class AgentRun < ApplicationRecord
   # runner that survived a worker restart), recovery goes through
   # +reuse_or_reconcile_via_runner+ — the runner-level reconnect path —
   # rather than the Docker-specific +reuse_or_reconcile_container+.
-  def provision_via_runner(networking_policy:, **options)
+  # +networking_policy:+ is optional so the recovery path
+  # (+reuse_or_reconcile_via_runner+ recursing back here after a stale
+  # handle is cleaned up) can re-enter without threading the policy through.
+  # Deriving it here keeps the manifest accurate for subscription-auth /
+  # direct-outbound recovery rather than defaulting to proxy_mode when a
+  # +nil+ policy falls through (RDR-058, RDR-054).
+  def provision_via_runner(networking_policy: nil, **options)
     return reuse_or_reconcile_via_runner(**options) if runner_handle.present?
 
     return reuse_or_reconcile_container(**options) if container_id.present?
@@ -2716,7 +2722,10 @@ class AgentRun < ApplicationRecord
     return pooled_result if pooled_result
 
     runner = ExecutionRunners.resolve_for(self)
-    spec = ExecutionRunners::RunSpec.from_agent_run(self, networking_policy: networking_policy, **options)
+    resolved_policy = networking_policy || Containers::Provision.networking_policy_for(
+      agent_run: self, project: project
+    )
+    spec = ExecutionRunners::RunSpec.from_agent_run(self, networking_policy: resolved_policy, **options)
     @current_handle = runner.provision(spec: spec)
     update!(container_id: @current_handle.identifier, container_host: @current_handle.host,
             runner_handle: @current_handle.to_storage)
