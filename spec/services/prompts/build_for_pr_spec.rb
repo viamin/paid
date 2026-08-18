@@ -1418,6 +1418,42 @@ RSpec.describe Prompts::BuildForPr do
     end
   end
 
+  # @spec PROMPT-ASSEMBLY-016
+  describe "prompt builder rollout path" do
+    it "uses the legacy string builder by default" do
+      builder = described_class.new(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true
+      )
+
+      expect(PromptAssembly::Build).not_to receive(:call)
+      prompt = builder.build
+
+      expect(builder.prompt_builder).to eq("legacy_prompt_builder")
+      expect(prompt).to include("# Task")
+      expect(prompt).to include("# Instructions")
+    end
+
+    it "uses PromptAssembly when explicitly selected" do
+      builder = described_class.new(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true,
+        prompt_builder: "prompt_assembly"
+      )
+
+      expect(PromptAssembly::Build).to receive(:call).and_call_original
+      prompt = builder.build
+
+      expect(builder.prompt_builder).to eq("prompt_assembly")
+      expect(prompt).to include("# Task")
+      expect(prompt).to include("# Instructions")
+    end
+  end
+
   # @spec PROMPT-ASSEMBLY-011
   describe "#build_result provenance" do
     def build_pr_builder(rebase_succeeded: true, issue: nil)

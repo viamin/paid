@@ -148,9 +148,43 @@ the run via `AgentRun#record_prompt_assembly!` (stored under
 `external_metadata["prompt_assembly"]`) and `RunProvenanceBuilder` surfaces it
 under `prompt_provenance[:assembly]`.
 
-Because the assembly runs after `effective_prompt` resolves the base text, a
-queue-time custom prompt cannot bypass the required goal sections — they are
-applied here regardless of how the base text was produced.
+## Rollout Gate
+
+The default prompt path is `legacy_prompt_builder`. PromptAssembly is enabled
+only when `FeatureFlags.enabled?(:prompt_assembly, project:)` is true. The flag
+supports tenant overrides (`tenant_settings.features["prompt_assembly"]`),
+project actor gates, and percentage-of-actors rollout through the existing
+Flipper-backed `FeatureFlags` service.
+
+`PreparePrPromptActivity` records the selected path on the prepare phase and
+on `agent_runs.external_metadata["prompt_builder"]`. `RunAgentActivity` records
+the same field when it applies runner-time goal augmentation. PromptAssembly
+provenance is persisted only for the `prompt_assembly` cohort; legacy runs keep
+the existing prompt-version, service-environment, style-guide, marketplace,
+token, status, and timing records.
+
+Before rollout increases, compare cohorts by joining `agent_runs` and
+`token_usages` on the recorded builder:
+
+- PR completion/merge rate.
+- Follow-up run count per PR.
+- Token usage and cost per PR.
+- `no_output` and terminal failure rate.
+- Time to merge or escalation.
+
+For prompt-text parity investigation, `prompt_assembly_shadow_compare` may be
+enabled separately. It builds both PR prompt paths for the same run input,
+serves only the selected builder's prompt, and stores a capped data-only
+comparison under
+`agent_run_phases.metadata["prompt_builder_comparison"]`. The comparison
+contains the served builder, SHA-256 digests, byte counts, capped prompt
+samples, and a match boolean. There is no dedicated UI; the data is inspected
+from phase metadata.
+
+Because the assembly runs after `effective_prompt` resolves the base text only
+inside the flagged path, a queue-time custom prompt cannot bypass required goal
+sections for enabled cohorts. Legacy cohorts keep the previous raw string
+augmentation behavior.
 
 ## Issue-Prompt Assembly (#3377)
 
@@ -185,10 +219,11 @@ so the rules are no longer embedded (and therefore never duplicated).
 
 ## Remaining Direct Prompt Builders
 
-The full RDR-054 migration is phased. The runner-time goal wrappers (#3379),
-PR follow-up prompts (#3378), and create_pr issue prompts (#3377) now assemble
-through `PromptAssembly::Build`. These direct builders remain and are tracked
-for later phases:
+The full RDR-054 migration is phased. The runner-time goal wrappers (#3379)
+and PR follow-up prompts (#3378) assemble through `PromptAssembly::Build` only
+for flagged rollout cohorts; create_pr issue prompts (#3377) assemble through
+`PromptAssembly::Build` at runner time. These direct builders remain and are
+tracked for later phases:
 
 - `Prompts::BuildForIssue#build` remains a legacy string-concatenation builder,
   no longer the runner-time create_pr path. Its class methods
@@ -202,6 +237,9 @@ for later phases:
   carries the chosen prompt version for audit and the runner-time assembly
   renders the issue task, comments, service environment, and safety rules as
   explicit sections instead.
+- `Prompts::BuildForPr` uses legacy string concatenation by default for PR
+  follow-up prompts, with PromptAssembly available only through the rollout
+  gate. Broad production use requires the measured rollout above.
 - `Lid::InjectIntoPrompt`, `StyleGuides::InjectIntoPrompt`, and
   `ProjectConventions::InjectIntoPrompt` remain call-site injectors. The
   assembly section providers (`LidWorkflow`, `StyleGuides`,

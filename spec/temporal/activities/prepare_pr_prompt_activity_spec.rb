@@ -35,6 +35,8 @@ RSpec.describe Activities::PreparePrPromptActivity do
   end
 
   before do
+    FeatureFlags.flipper.features.each(&:remove)
+
     allow(GithubClient).to receive(:new).and_return(github_client)
 
     allow(github_client).to receive(:pull_request)
@@ -90,6 +92,7 @@ RSpec.describe Activities::PreparePrPromptActivity do
 
       expect(result[:prompt_length]).to be > 0
       expect(result[:agent_run_id]).to eq(agent_run.id)
+      expect(result[:prompt_builder]).to eq("legacy_prompt_builder")
       expect(result[:includes_review_threads]).to be(false)
       expect(result[:review_thread_ids]).to eq([])
       expect(result[:prompt_version_id]).to eq(prompt.current_version.id)
@@ -108,31 +111,53 @@ RSpec.describe Activities::PreparePrPromptActivity do
       )
     end
 
-    it "records prompt assembly provenance on the prepare_pr_prompt phase" do
+    it "records legacy prompt building on the prepare_pr_prompt phase by default" do
       result = activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
 
       phase = agent_run.reload.agent_run_phases.find_by!(phase_key: "prepare_pr_prompt")
-      provenance = phase.metadata["prompt_assembly"]
 
-      expect(provenance["sections"]).to be_an(Array)
-      keys = provenance["sections"].map { |section| section["key"] }
-      expect(keys).to include("task", "instructions_and_rules", "service_environment")
-      expect(provenance["skipped"]).to be_an(Array)
-      expect(result[:prompt_section_keys]).to include("task")
-      expect(result[:prompt_excluded_count]).to be >= 0
+      expect(phase.metadata["prompt_builder"]).to eq("legacy_prompt_builder")
+      expect(phase.metadata).not_to have_key("prompt_assembly")
+      expect(agent_run.prompt_builder).to eq("legacy_prompt_builder")
+      expect(result[:prompt_section_keys]).to eq([])
+      expect(result[:prompt_excluded_count]).to eq(0)
     end
 
-    it "records prompt digest and profile fingerprint in provenance" do
+    it "routes through PromptAssembly and records provenance when the flag is enabled" do
+      FeatureFlags.enable!(:prompt_assembly, project: project)
+
       activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
 
       phase = agent_run.reload.agent_run_phases.find_by!(phase_key: "prepare_pr_prompt")
       provenance = phase.metadata["prompt_assembly"]
 
+      expect(phase.metadata["prompt_builder"]).to eq("prompt_assembly")
+      expect(agent_run.prompt_builder).to eq("prompt_assembly")
+      expect(provenance["sections"]).to be_an(Array)
+      keys = provenance["sections"].map { |section| section["key"] }
+      expect(keys).to include("task", "instructions_and_rules", "service_environment")
+      expect(provenance["skipped"]).to be_an(Array)
       expect(provenance["prompt_digest"]).to be_a(String)
       expect(provenance["prompt_digest"].length).to eq(64)
       expect(provenance["profile_fingerprint"]).to be_a(String)
       expect(provenance["profile_fingerprint"].length).to eq(64)
       expect(provenance["budget_decisions"]).to be_an(Array)
+    end
+
+    it "stores a data-only prompt comparison when shadow comparison is enabled" do
+      FeatureFlags.enable!(:prompt_assembly_shadow_compare, project: project)
+
+      activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
+
+      phase = agent_run.reload.agent_run_phases.find_by!(phase_key: "prepare_pr_prompt")
+      comparison = phase.metadata["prompt_builder_comparison"]
+
+      expect(comparison["served_builder"]).to eq("legacy_prompt_builder")
+      expect(comparison["legacy_prompt"]).to include("digest", "bytes", "sample")
+      expect(comparison["prompt_assembly_prompt"]).to include("digest", "bytes", "sample")
+      expect(comparison["legacy_prompt"]["sample"]).to include("# Task")
+      expect(comparison["prompt_assembly_prompt"]["sample"]).to include("# Task")
+      expect(comparison).to have_key("matched")
     end
 
     it "passes explicit focus through to the prompt builder" do
@@ -174,6 +199,27 @@ RSpec.describe Activities::PreparePrPromptActivity do
 
       expect(agent_run.reload.custom_prompt).to include("CI Status: FAILING")
       expect(agent_run.custom_prompt).not_to include("Code Review Comments")
+    end
+
+    it "fails before storing a review-feedback prompt when all review threads are excluded" do
+      agent_run.update!(focus: "review_feedback")
+      allow(github_client).to receive(:review_threads)
+        .with(project.full_name, 42)
+        .and_return([
+          { id: "thread_1", is_resolved: false, comments: [ { body: "Needs a fix", path: "app/models/user.rb", line: 42, author: "drive-by" } ] }
+        ])
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("ReviewFeedbackContextBlocked")
+        expect(error.non_retryable).to be(true)
+      }
+
+      expect(agent_run.reload.custom_prompt).to eq("placeholder")
+      phase = agent_run.agent_run_phases.find_by!(phase_key: "prepare_pr_prompt")
+      expect(phase.status).to eq("failed")
+      expect(phase.metadata["prompt_builder"]).to eq("legacy_prompt_builder")
     end
 
     it "passes rebase_succeeded through to the prompt builder" do
