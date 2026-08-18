@@ -453,10 +453,22 @@ module Activities
 
     def scan_draft_pr(project, client, issue, pr_data: nil)
       check_rate_budget!(client)
-      return escalate_trigger(issue) if draft_review_limit_reached?(project, issue)
 
       if third_party_bot_author?(project, issue.github_creator_login)
         return scan_bot_authored_draft_pr(project, client, issue, pr_data: pr_data)
+      end
+
+      # Hard cap: when the draft round counter is at the project limit and
+      # there are no actionable human review threads to address, escalate
+      # instead of queuing another follow-up that would just increment the
+      # counter again. Unresolved review threads take priority because the
+      # follow-up can still address them; escalation only fires when nothing
+      # else is actionable.
+      if draft_review_limit_reached?(project, issue)
+        early_unresolved_threads = fetch_unresolved_threads(client, project, issue)
+        if human_review_thread_triggers(project, early_unresolved_threads).empty?
+          return escalate_trigger(issue)
+        end
       end
 
       skip_comment_signals = project.max_draft_review_rounds.zero?

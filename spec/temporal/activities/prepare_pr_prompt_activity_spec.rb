@@ -195,6 +195,7 @@ RSpec.describe Activities::PreparePrPromptActivity do
     end
 
     it "passes explicit focus through to the prompt builder" do
+      project.update!(allowed_github_usernames: [ "viamin", "reviewer" ])
       allow(github_client).to receive(:check_runs_for_ref)
         .with(project.full_name, "abc123")
         .and_return([
