@@ -112,8 +112,8 @@ RSpec.describe AgentRuns::EgressPolicy::RequiredDestinations do
     # no direct-outbound mode, so its runs resolve proxy_restricted and never
     # consult provider destinations. Every other container-executable key must
     # be classified (fixed-host or config-derived) or its provider traffic
-    # would silently drop out of the audit snapshot — the exact gap flagged
-    # for openrouter_free/openrouter_pareto in #3496.
+    # would silently drop out of the audit snapshot — the gap that previously
+    # hid openrouter_free/openrouter_pareto provider hosts (EGRESS-POLICY-002).
     it "classifies every container-executable runner key" do
       proxy_only_runner_keys = %w[cursor]
 
