@@ -356,6 +356,23 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       expect(intents.map { |intent| intent.ownership_tags.fetch("paid.attempt") }).to eq(%w[0 1])
     end
 
+    it "fails loudly instead of duplicating a ledger row when two provisions race for the same attempt ordinal" do
+      # ExecutionRunners::ProvisioningLedger#next_attempt_for (count) then
+      # #record_intent (create!) is not atomic, so two concurrent retries can
+      # both observe attempt 0. The unique index on
+      # (agent_run_id, resource_kind, attempt) is the concurrency guard: the
+      # second writer must raise instead of silently persisting a duplicate.
+      first_ledger = runner.send(:provisioning_ledger)
+      second_ledger = runner.send(:provisioning_ledger)
+      attempt = first_ledger.next_attempt_for(agent_run: agent_run)
+      expect(second_ledger.next_attempt_for(agent_run: agent_run)).to eq(attempt)
+
+      first_ledger.record_intent(agent_run: agent_run, attempt: attempt)
+
+      expect { second_ledger.record_intent(agent_run: agent_run, attempt: attempt) }
+        .to raise_error(ActiveRecord::RecordNotUnique)
+    end
+
     it "marks the intent failed when the provider create call fails" do
       allow(provision_service).to receive(:provision)
         .and_raise(Containers::Provision::ProvisionError, "Docker error: no space left")

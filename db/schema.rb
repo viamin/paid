@@ -2254,7 +2254,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_013501) do
     t.boolean "tagging_supported", default: true, null: false, comment: "Whether the runner/provider could apply ownership tags; false records an explicit degradation."
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_provisioning_intents_on_account_id"
-    t.index ["agent_run_id", "resource_kind", "attempt"], name: "index_provisioning_intents_on_run_kind_attempt"
+    t.index ["agent_run_id", "resource_kind", "attempt"], name: "index_provisioning_intents_on_run_kind_attempt", unique: true
     t.index ["agent_run_id"], name: "index_provisioning_intents_on_agent_run_id"
     t.index ["project_id"], name: "index_provisioning_intents_on_project_id"
     t.index ["provider_resource_id"], name: "index_provisioning_intents_on_provider_resource_id", where: "(provider_resource_id IS NOT NULL)"

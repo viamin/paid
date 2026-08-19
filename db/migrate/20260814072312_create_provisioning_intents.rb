@@ -52,22 +52,24 @@ class CreateProvisioningIntents < ActiveRecord::Migration[8.1]
         t.timestamps
       end
 
-    add_index_unless_exists(
-      :provisioning_intents,
-      :provider_resource_id,
+    add_index :provisioning_intents, :provider_resource_id,
       where: "provider_resource_id IS NOT NULL",
-      name: "index_provisioning_intents_on_provider_resource_id"
-    )
-    add_index_unless_exists(
-      :provisioning_intents,
-      [ :status, :created_at ],
-      name: "index_provisioning_intents_on_status_and_created_at"
-    )
-    add_index_unless_exists(
-      :provisioning_intents,
-      [ :agent_run_id, :resource_kind, :attempt ],
-      name: "index_provisioning_intents_on_run_kind_attempt"
-    )
+      name: "index_provisioning_intents_on_provider_resource_id",
+      if_not_exists: true
+    add_index :provisioning_intents, [ :status, :created_at ],
+      name: "index_provisioning_intents_on_status_and_created_at",
+      if_not_exists: true
+    # unique: a runner records the intent BEFORE the provider create call, so
+    # this is the concurrency guard for the attempt ordinal. next_attempt_for
+    # (count) then record_intent (create!) is not atomic — two writers can both
+    # observe the same count under concurrent retries. The unique index makes
+    # the second writer fail loudly (RecordNotUnique) instead of silently
+    # persisting a duplicate ownership-tag attempt that reconciliation can't
+    # disambiguate.
+    add_index :provisioning_intents, [ :agent_run_id, :resource_kind, :attempt ],
+      unique: true,
+      name: "index_provisioning_intents_on_run_kind_attempt",
+      if_not_exists: true
 
     # RLS is the documented exception to the Rails-helper rule (AGENTS.md):
     # PostgreSQL row-level security and CREATE POLICY have no equivalent
@@ -79,6 +81,7 @@ class CreateProvisioningIntents < ActiveRecord::Migration[8.1]
         ALTER TABLE provisioning_intents ENABLE ROW LEVEL SECURITY;
         ALTER TABLE provisioning_intents FORCE ROW LEVEL SECURITY;
         CREATE POLICY tenant_isolation ON provisioning_intents
+          AS PERMISSIVE FOR ALL
           USING (
             paid_tenant_bypass() OR (
               provisioning_intents.account_id = paid_current_account_id()
@@ -137,13 +140,5 @@ class CreateProvisioningIntents < ActiveRecord::Migration[8.1]
     end
 
     drop_table :provisioning_intents, if_exists: true
-  end
-
-  private
-
-  def add_index_unless_exists(table, columns, **options)
-    return if index_exists?(table, columns, **options.slice(:name, :unique, :where))
-
-    add_index(table, columns, **options)
   end
 end

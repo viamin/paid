@@ -33,7 +33,6 @@ RSpec.describe CreateProvisioningIntents, :no_db do
   def run_up_with_index_doubles
     allow(migration).to receive(:table_exists?).with(:provisioning_intents).and_return(false)
     allow(migration).to receive(:create_table).and_yield(table)
-    allow(migration).to receive(:index_exists?).and_return(false)
     allow(migration).to receive(:add_index)
     allow(migration).to receive(:execute)
 
@@ -60,7 +59,8 @@ RSpec.describe CreateProvisioningIntents, :no_db do
       :provisioning_intents,
       :provider_resource_id,
       where: "provider_resource_id IS NOT NULL",
-      name: "index_provisioning_intents_on_provider_resource_id"
+      name: "index_provisioning_intents_on_provider_resource_id",
+      if_not_exists: true
     )
   end
 
@@ -70,35 +70,20 @@ RSpec.describe CreateProvisioningIntents, :no_db do
     expect(migration).to have_received(:add_index).with(
       :provisioning_intents,
       [ :status, :created_at ],
-      name: "index_provisioning_intents_on_status_and_created_at"
+      name: "index_provisioning_intents_on_status_and_created_at",
+      if_not_exists: true
     )
   end
 
-  it "creates the per-run attempt index with a rerun guard" do
+  it "creates a unique per-run attempt index with a rerun guard" do
     run_up_with_index_doubles
 
     expect(migration).to have_received(:add_index).with(
       :provisioning_intents,
       [ :agent_run_id, :resource_kind, :attempt ],
-      name: "index_provisioning_intents_on_run_kind_attempt"
-    )
-  end
-
-  it "skips an index that already exists on rerun" do
-    allow(migration).to receive(:table_exists?).with(:provisioning_intents).and_return(false)
-    allow(migration).to receive(:create_table).and_yield(table)
-    allow(migration).to receive(:index_exists?) do |_table_name, columns, **options|
-      options[:name] == "index_provisioning_intents_on_status_and_created_at" && columns == [ :status, :created_at ]
-    end
-    allow(migration).to receive(:add_index)
-    allow(migration).to receive(:execute)
-
-    migration.up
-
-    expect(migration).not_to have_received(:add_index).with(
-      :provisioning_intents,
-      [ :status, :created_at ],
-      name: "index_provisioning_intents_on_status_and_created_at"
+      unique: true,
+      name: "index_provisioning_intents_on_run_kind_attempt",
+      if_not_exists: true
     )
   end
 
@@ -107,7 +92,6 @@ RSpec.describe CreateProvisioningIntents, :no_db do
 
     allow(migration).to receive(:table_exists?).with(:provisioning_intents).and_return(false)
     allow(migration).to receive(:create_table).and_yield(table)
-    allow(migration).to receive(:index_exists?).and_return(false)
     allow(migration).to receive(:add_index)
     allow(migration).to receive(:execute) { |sql| recorded_sql << sql }
 
@@ -116,6 +100,7 @@ RSpec.describe CreateProvisioningIntents, :no_db do
     expect(recorded_sql.join("\n")).to include("ALTER TABLE provisioning_intents ENABLE ROW LEVEL SECURITY;")
     expect(recorded_sql.join("\n")).to include("ALTER TABLE provisioning_intents FORCE ROW LEVEL SECURITY;")
     expect(recorded_sql.join("\n")).to include("CREATE POLICY tenant_isolation ON provisioning_intents")
+    expect(recorded_sql.join("\n")).to include("AS PERMISSIVE FOR ALL")
     expect(recorded_sql.join("\n")).to match(
       /WITH CHECK \(.+provisioning_intents\.agent_run_id IS NULL.+agent_runs\.id = provisioning_intents\.agent_run_id/m
     )
