@@ -588,10 +588,12 @@ module Screenshots
         [ entry[:artifact], entry[:gif_artifact], entry[:video_artifact] ]
       end
 
+      # The run's `account_id`/`project_id`/`agent_run_id` are authoritative —
+      # they are derived from the run here and from the run in
+      # `ExecutionRunners::ExecutionOutputManifest.build_binary_artifact_refs`,
+      # so an artifact-supplied context can never misattribute the run.
       (screenshot_artifacts + [ trace_artifact, video_artifact ]).compact.map do |artifact|
-        artifact.merge(
-          "context" => artifact_context.merge(artifact.fetch("context", {}))
-        )
+        artifact.merge("context" => artifact_context)
       end
     end
 

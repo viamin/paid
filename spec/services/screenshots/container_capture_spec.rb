@@ -345,6 +345,7 @@ RSpec.describe Screenshots::ContainerCapture do
         video_url: "https://example.test/home.webm",
         video_filename: "home-demo.webm",
         gif_artifact: {
+          "lane" => "object_storage",
           "kind" => "trace_gif",
           "content_type" => "image/gif",
           "locator" => {
@@ -357,6 +358,7 @@ RSpec.describe Screenshots::ContainerCapture do
           }
         },
         video_artifact: {
+          "lane" => "object_storage",
           "kind" => "trace_video",
           "content_type" => "video/webm",
           "locator" => {

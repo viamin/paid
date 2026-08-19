@@ -224,7 +224,19 @@
   Artifact manifests persisted as durable records on the run (e.g.
   `AgentRun#external_metadata["artifact_manifest"]`) SHALL carry storage keys
   without presigned URLs — presigned URLs expire within the SigV4 one-week cap
-  and are ephemeral, so durable consumers re-sign from the key.
+  and are ephemeral, so durable consumers re-sign from the key. The output
+  manifest's binary artifact references SHALL distinguish trusted source lanes
+  from agent-authored ones: artifacts from
+  `AgentRun#external_metadata["artifact_manifest"]` (persisted by the runner)
+  are trusted and their storage keys are honored, while artifacts from
+  `AgentRun#verification_result["artifacts"]` (written by the agent inside the
+  container and persisted as-is by
+  `AgentRuns::VerificationResultRecorder`) are untrusted input — only `url`
+  survives so a spoofed key under another tenant's prefix cannot be re-signed
+  into a working presigned URL by a durable consumer. The run's
+  `account_id`, `project_id`, and `agent_run_id` SHALL always be the
+  authoritative context (the system already knows the real identity), so an
+  artifact-supplied context value can never override the run's identity.
   Secret values SHALL be excluded by construction: credential lanes and
   service declarations may carry only identifiers or env keys, never secret
   payloads or host paths.
@@ -233,7 +245,8 @@
   *Code:* `ExecutionRunners::ExecutionInputManifest`,
   `ExecutionRunners::ExecutionOutputManifest`,
   `ExecutionRunners::RunSpec#input_manifest`,
-  `ExecutionRunners::ExecutionResult#output_manifest`
+  `ExecutionRunners::ExecutionResult#output_manifest`,
+  `ExecutionRunners::ExecutionOutputManifest.build_binary_artifact_refs`
 
 - [x] **CONTAINER-RUNTIME-019** — The system SHALL provide a provider-neutral
   runner conformance suite that drives the complete normal create-PR

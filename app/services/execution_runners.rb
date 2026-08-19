@@ -747,20 +747,39 @@ module ExecutionRunners
       )
     end
 
+    # Binary artifact references for the output manifest.
+    #
+    # Two source lanes feed this list:
+    #
+    # 1. `external_metadata["artifact_manifest"]` — persisted by the runner, so
+    #    it is trusted: locator keys under the project's namespace are honored
+    #    and durable consumers can re-sign them.
+    # 2. `verification_result["artifacts"]` — written by the agent inside the
+    #    container (`AgentRuns::VerificationResultRecorder` persists it as-is),
+    #    so it is untrusted input. A spoofed key under another tenant's prefix
+    #    would otherwise be re-signed into a working presigned URL, so this
+    #    lane stays URL-only: only `url` (and `locator.url`) survive.
+    # @spec CONTAINER-RUNTIME-018
     def self.build_binary_artifact_refs(agent_run)
       manifest_artifacts = Array(agent_run.external_metadata["artifact_manifest"])
       verification_artifacts = Array(agent_run.verification_result["artifacts"])
 
-      (manifest_artifacts + verification_artifacts).filter_map do |artifact|
-        normalize_binary_artifact_ref(artifact, agent_run: agent_run)
+      manifest_refs = manifest_artifacts.filter_map do |artifact|
+        normalize_binary_artifact_ref(artifact, agent_run: agent_run, trusted_key: true)
       end
+      verification_refs = verification_artifacts.filter_map do |artifact|
+        normalize_binary_artifact_ref(artifact, agent_run: agent_run, trusted_key: false)
+      end
+
+      manifest_refs + verification_refs
     end
 
-    def self.normalize_binary_artifact_ref(artifact, agent_run:)
+    # @spec CONTAINER-RUNTIME-018
+    def self.normalize_binary_artifact_ref(artifact, agent_run:, trusted_key:)
       return unless artifact.is_a?(Hash)
 
       normalized = artifact.deep_stringify_keys
-      locator = normalized_locator(normalized)
+      locator = normalized_locator(normalized, trusted_key: trusted_key)
       return if locator.blank?
 
       {
@@ -773,8 +792,9 @@ module ExecutionRunners
       }.compact
     end
 
-    def self.normalized_locator(artifact)
-      locator = if artifact["locator"].is_a?(Hash)
+    # @spec CONTAINER-RUNTIME-018
+    def self.normalized_locator(artifact, trusted_key:)
+      raw_locator = if artifact["locator"].is_a?(Hash)
         artifact["locator"].deep_stringify_keys.slice("key", "url")
       else
         {
@@ -783,20 +803,28 @@ module ExecutionRunners
         }
       end
 
+      locator = trusted_key ? raw_locator : raw_locator.slice("url")
       locator.compact.presence
     end
 
+    # @spec CONTAINER-RUNTIME-018
     def self.normalized_context(artifact, agent_run:)
-      context = if artifact["context"].is_a?(Hash)
+      artifact_context = if artifact["context"].is_a?(Hash)
         artifact["context"].deep_stringify_keys.slice("account_id", "project_id", "agent_run_id")
       else
         {}
       end
 
-      context["account_id"] ||= agent_run.project&.account_id
-      context["project_id"] ||= agent_run.project_id
-      context["agent_run_id"] ||= agent_run.id
-      context.compact.presence
+      # Run identity is authoritative: the system already knows the real
+      # account/project/run, so an artifact-supplied value can never override
+      # it. Supplied values only survive where the run itself can't answer.
+      run_context = {
+        "account_id" => agent_run.project&.account_id,
+        "project_id" => agent_run.project_id,
+        "agent_run_id" => agent_run.id
+      }
+
+      artifact_context.merge(run_context).compact.presence
     end
 
     def self.normalized_metadata(artifact)

@@ -22,6 +22,7 @@ RSpec.describe Screenshots::TraceArtifactExporter do
   let(:logger) { instance_double(ActiveSupport::Logger, warn: true) }
   let(:gif_artifact) do
     {
+      "lane" => "object_storage",
       "kind" => "trace_gif",
       "content_type" => "image/gif",
       "locator" => {
@@ -36,6 +37,7 @@ RSpec.describe Screenshots::TraceArtifactExporter do
   end
   let(:video_artifact) do
     {
+      "lane" => "object_storage",
       "kind" => "trace_video",
       "content_type" => "video/webm",
       "locator" => {

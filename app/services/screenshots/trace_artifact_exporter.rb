@@ -47,6 +47,7 @@ module Screenshots
         video_url: url,
         video_filename: "#{@route_name}.webm",
         video_artifact: {
+          "lane" => "object_storage",
           "kind" => "trace_video",
           "content_type" => Screenshots::Storage::WEBM_CONTENT_TYPE,
           "locator" => { "key" => key, "url" => url },
@@ -69,6 +70,7 @@ module Screenshots
       {
         gif_url: url,
         gif_artifact: {
+          "lane" => "object_storage",
           "kind" => "trace_gif",
           "content_type" => Screenshots::Storage::GIF_CONTENT_TYPE,
           "locator" => { "key" => key, "url" => url },
