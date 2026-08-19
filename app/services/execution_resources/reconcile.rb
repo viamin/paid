@@ -76,8 +76,21 @@ module ExecutionResources
 
     def reconcile_tracked_resource(resource:, listed_resource:, runner:, counts:)
       if listed_resource.nil?
-        resource.mark_cleaned!
-        counts[:cleaned] += 1
+        # A ledger row missing from the provider listing is only authoritative
+        # proof the resource is gone when the owning agent_run is finished (or
+        # there is no owning run). For a still-running run the listing may be
+        # stale — a transient daemon gap or a race with in-flight provisioning
+        # — and marking the row cleaned would sever the live link between the
+        # agent and its container, forcing a duplicate re-provision that
+        # `clear_agent_run_references!` would have made worse. Mirror the
+        # `orphaned_run?` guard used by adoptable below.
+        if resource.agent_run.nil? || resource.agent_run.finished?
+          resource.mark_cleaned!
+          counts[:cleaned] += 1
+        else
+          resource.mark_reconciled!(reduced_confidence: true)
+          counts[:reduced_confidence] += 1
+        end
         return
       end
 

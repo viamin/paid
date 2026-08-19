@@ -327,9 +327,16 @@
 - [x] **CONTAINER-RUNTIME-022** — Reconciliation SHALL compare ledger rows with
   runner/provider state when the provider supports tag/list inventory, and
   SHALL degrade to handle-based cleanup with `reduced_confidence` when it does
-  not. The reconciliation matrix SHALL cover: active-ledger/provider-missing
-  (mark cleaned), provider-tagged/no-active-ledger orphans for missing or
-  finished runs (adopt into the ledger and clean up),
+  not. The reconciliation matrix SHALL cover:
+  active-ledger/provider-missing when the owning agent run is finished (or
+  unauthenticated) (mark cleaned — the listing gap is authoritative because
+  no live container is expected to be hanging on to the identifier),
+  active-ledger/provider-missing when the owning agent run is still in
+  progress (mark reconciled with `reduced_confidence` and leave the row
+  active so a transient listing gap cannot sever the live link between a
+  running agent and its container),
+  provider-tagged/no-active-ledger orphans for missing or finished runs
+  (adopt into the ledger and clean up),
   cleanup-pending/provider-present (retry cleanup with durable backoff), and
   provider-cannot-list (use the persisted `runner_handle` only and surface
   reduced confidence). Existing Docker janitors SHALL remain active during the

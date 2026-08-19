@@ -339,10 +339,13 @@ restarts.
 - `ExecutionResourceReconciliationJob` groups ledger rows by runner/provider and
   asks the runner for a tagged resource listing when supported. That lets Paid
   compare “what the ledger says exists” against “what the provider still
-  reports”, mark provider-missing rows cleaned, retry `cleanup_pending`
-  resources that are still present, and adopt tagged-but-untracked orphan
-  resources for missing or finished runs into the ledger before cleaning them
-  up.
+  reports”, mark provider-missing rows cleaned (only when the owning agent run
+  is finished or there is no owning run; a still-running run whose listing is
+  missing is left active with `reduced_confidence` so a transient listing gap
+  cannot sever the live link between the agent and its container), retry
+  `cleanup_pending` resources that are still present, and adopt
+  tagged-but-untracked orphan resources for missing or finished runs into the
+  ledger before cleaning them up.
 - Providers without tag/list support do not block migration. Reconciliation
   falls back to `runner_handle`-based cleanup for `cleanup_pending` rows and
   marks those passes `reduced_confidence`, because the system cannot prove the
