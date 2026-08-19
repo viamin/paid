@@ -1,0 +1,13 @@
+default: &default
+  registry: ghcr.io
+  repository: viamin/paid-agent
+  profiles: {}
+
+development:
+  <<: *default
+
+test:
+  <<: *default
+
+production:
+  <<: *default
