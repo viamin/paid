@@ -2463,6 +2463,23 @@ RSpec.describe AgentRun do
           expect(agent_run.reload.authority_grants).to eq(persisted_retry_authority_grants)
         end
 
+        it "skips networking policy derivation on retry when grants are already persisted" do # @spec EXECUTION-AUTHORITY-001
+          agent_run = create(:agent_run, worktree_path: worktree_path,
+                             container_id: "runner-container-123", container_host: "local")
+          agent_run.update!(
+            runner_handle: persisted_runner_handle_for(agent_run).to_storage,
+            authority_grants: persisted_retry_authority_grants
+          )
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          allow(mock_runner).to receive_messages(running?: true, cleanup: nil)
+          allow(Containers::Provision).to receive(:networking_policy_for)
+
+          agent_run.provision_container
+
+          expect(Containers::Provision).not_to have_received(:networking_policy_for)
+          expect(agent_run.reload.authority_grants).to eq(persisted_retry_authority_grants)
+        end
+
         it "persists runner_handle alongside container_id when provisioning via the runner" do
           agent_run = create(:agent_run, worktree_path: worktree_path)
           FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
