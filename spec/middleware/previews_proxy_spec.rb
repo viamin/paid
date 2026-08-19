@@ -376,6 +376,33 @@ RSpec.describe PreviewsProxy do
         .with(headers: safe_headers)
     end
 
+    # @spec LIVE-PREVIEW-009
+    it "strips hop-by-hop headers (Connection, Upgrade, etc.) on the plain-HTTP path" do
+      stub_request(:get, "http://127.0.0.1:#{port}/")
+        .to_return(status: 200, body: "ok")
+
+      env = {
+        "HTTP_CONNECTION" => "Upgrade, close",
+        "HTTP_KEEP_ALIVE" => "timeout=5",
+        "HTTP_TE" => "trailers",
+        "HTTP_TRAILER" => "X-Internal-Trace",
+        "HTTP_UPGRADE" => "h2c",
+        "HTTP_TRANSFER_ENCODING" => "chunked"
+      }
+      mock_request.get("/previews/s3cret-token/", env)
+
+      request = WebMock::RequestRegistry.instance.requested_signatures.hash.keys
+        .find { |signature| signature.uri.to_s == "http://127.0.0.1:#{port}/" && signature.method == :get }
+      forwarded_headers = (request&.headers || {}).transform_keys(&:downcase)
+
+      expect(forwarded_headers).not_to have_key("connection")
+      expect(forwarded_headers).not_to have_key("keep-alive")
+      expect(forwarded_headers).not_to have_key("te")
+      expect(forwarded_headers).not_to have_key("trailer")
+      expect(forwarded_headers).not_to have_key("upgrade")
+      expect(forwarded_headers).not_to have_key("transfer-encoding")
+    end
+
     it "forwards POST bodies" do
       stub_request(:post, "http://127.0.0.1:#{port}/users")
         .to_return(status: 201, body: "created")
@@ -478,6 +505,26 @@ RSpec.describe PreviewsProxy do
         expect(forwarded).not_to match(/^Cookie: /i)
         expect(forwarded).not_to match(/^Authorization: /i)
         expect(forwarded).not_to match(/^X-CSRF-Token: /i)
+
+        client_mirror.close
+        thread.join(2)
+      end
+    end
+
+    # @spec LIVE-PREVIEW-009
+    it "still forwards Connection/Upgrade on the WebSocket upgrade path" do
+      with_websocket_upstream(port) do |upstream_received|
+        client_io, client_mirror = Socket.pair(:UNIX, :STREAM, 0)
+        env = websocket_env_for(client_io)
+
+        thread = Thread.new { middleware.call(env) }
+        thread.abort_on_exception = false
+
+        expect(read_until(client_mirror, "\r\n\r\n", timeout: 2)).to include("101")
+
+        forwarded = upstream_received.call
+        expect(forwarded).to match(/^Connection: Upgrade/i)
+        expect(forwarded).to match(/^Upgrade: websocket/i)
 
         client_mirror.close
         thread.join(2)

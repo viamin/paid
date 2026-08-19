@@ -59,7 +59,7 @@ class PreviewsProxy
     proxy-authenticate
     proxy-authorization
     te
-    trailers
+    trailer
     transfer-encoding
     upgrade
   ].freeze
@@ -72,7 +72,8 @@ class PreviewsProxy
   # request envelope below, so Origin must be allowed in and forwarded through
   # the rewrite step. Connection/Upgrade and Sec-WebSocket-* remain in the
   # list because the WebSocket upgrade path needs them to complete the
-  # handshake with the upstream.
+  # handshake with the upstream; the plain-HTTP path strips them again via
+  # `HOP_BY_HOP_HEADERS` (RFC 7230 §6.1) in `collect_request_headers`.
   # @spec LIVE-PREVIEW-009
   FORWARDED_REQUEST_HEADERS = %w[
     accept
@@ -305,6 +306,7 @@ class PreviewsProxy
 
       name = key.sub(/\AHTTP_/, "").tr("_", "-").downcase
       next unless FORWARDED_REQUEST_HEADERS.include?(name)
+      next if HOP_BY_HOP_HEADERS.include?(name)
 
       headers[name] = value.to_s
     end
@@ -471,7 +473,9 @@ class PreviewsProxy
     # For WebSocket upgrades we MUST retain Connection/Upgrade and the
     # Sec-WebSocket-* headers so the upstream completes the handshake, so the
     # strict upstream-header allowlist is applied uniformly to the upgrade
-    # request. The allowlist includes those WebSocket-specific headers.
+    # request and the hop-by-hop strip from `collect_request_headers` is
+    # intentionally NOT applied here. The allowlist includes those
+    # WebSocket-specific headers.
     # @spec LIVE-PREVIEW-009
     headers = {}
     env.each do |key, value|
