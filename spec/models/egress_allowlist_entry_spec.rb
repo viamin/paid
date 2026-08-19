@@ -148,6 +148,18 @@ RSpec.describe EgressAllowlistEntry do
       expect(entry).to be_valid
     end
 
+    it "persists entries that share a host pattern but differ by scheme or port" do
+      create(:egress_allowlist_entry, account: account, host_pattern: "api.example.com", scheme: "https", port: 443)
+
+      by_port = build(:egress_allowlist_entry, account: account, host_pattern: "api.example.com", scheme: "https", port: 8443)
+      by_scheme = build(:egress_allowlist_entry, account: account, host_pattern: "api.example.com", scheme: "http", port: 443)
+
+      expect(by_port).to be_valid
+      expect { by_port.save! }.not_to raise_error
+      expect(by_scheme).to be_valid
+      expect { by_scheme.save! }.not_to raise_error
+    end
+
     it "rejects project-level entries that reference a project from a different account" do
       other_project = create(:project)
       entry = build(:egress_allowlist_entry, account: account, project: other_project)

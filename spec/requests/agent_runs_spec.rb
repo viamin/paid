@@ -832,6 +832,15 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("token fingerprint sha256:deadbeef")
       end
 
+      it "shows the total denied event count even when more events exist than the displayed table limit" do
+        agent_run = create(:agent_run, project: project)
+        create_list(:egress_security_event, 55, account: account, project: project, agent_run: agent_run)
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response.body).to include("55 events")
+      end
+
       it "shows an empty state when a policy snapshot exists but no events were recorded" do
         agent_run = create(:agent_run, :completed, project: project, external_metadata: {
           "egress_policy" => { "mode" => "enforced" }

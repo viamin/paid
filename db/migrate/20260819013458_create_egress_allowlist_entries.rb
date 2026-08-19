@@ -18,11 +18,15 @@ class CreateEgressAllowlistEntries < ActiveRecord::Migration[8.1]
       t.timestamps null: false
     end
 
-    add_index :egress_allowlist_entries, [ :account_id, :host_pattern ],
+    # Unique on (host_pattern, scheme, port) rather than host_pattern alone,
+    # matching EgressAllowlistEntry#host_pattern_uniqueness_within_scope: two
+    # entries for the same host are allowed as long as they differ by scheme
+    # or port (e.g. api.example.com on :443 and api.example.com on :8443).
+    add_index :egress_allowlist_entries, [ :account_id, :host_pattern, :scheme, :port ],
       unique: true,
       where: "project_id IS NULL",
       name: "idx_egress_allowlist_entries_account_host_unique"
-    add_index :egress_allowlist_entries, [ :project_id, :host_pattern ],
+    add_index :egress_allowlist_entries, [ :project_id, :host_pattern, :scheme, :port ],
       unique: true,
       where: "project_id IS NOT NULL",
       name: "idx_egress_allowlist_entries_project_host_unique"
