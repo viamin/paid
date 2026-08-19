@@ -122,7 +122,11 @@ confirm coverage.
   `ExecutionResult` (outcome, including OOM and timeout classification),
   `ExecutionStatus` (lifecycle status: `:running | :exited | :oom_killed |
   :not_found`, returned by `Base#status`), `NetworkingPolicy` (adapts
-  `NetworkPolicy::NetworkContract`, drops the Docker network name),
+  `NetworkPolicy::NetworkContract`, drops the Docker network name; carries
+  `mode`, `firewall?`, `allow_destinations`, and the RDR-055 `egress_profile`
+  — `:locked` (default), `:research`, or `:open` — so orchestration can
+  request a per-run egress posture without referencing Docker- or
+  network-specific concepts),
   `ServiceDeclaration`, and `ComputeRequirements`.
 - `ExecutionRunners::LocalDockerRunner` implements `Base` as a thin adapter over
   `Containers::Provision`: `#provision`/`#start`/`#running?`/`#reconnect`/`#status`/
@@ -206,6 +210,28 @@ heartbeat ownership, pool workspace through the runner.
 default workspace strategy (named volumes with in-container clone), host
 bind-mount support, and all provision-side workspace/heartbeat tests are
 preserved until the deferred specs land.
+
+### Egress profile propagation (RDR-055, this PR)
+
+`ExecutionRunners::NetworkingPolicy` now carries an `egress_profile` field so
+orchestration can request a per-run egress posture through the runner contract
+without ever naming Docker networks, iptables rules, or gateway
+implementation details.
+
+- `egress_profile` defaults to `:locked` for every factory method
+  (`proxy_restricted`, `subscription_auth`, `direct_outbound`), so existing
+  callers preserve the production default.
+- `:research` propagates through the same `RunSpec` → `Containers::Provision`
+  → `ExecutionInputManifest` chain; downstream tooling (research broker,
+  gateway) reads the profile from the manifest's networking section without
+  the runner exposing the firewall translation.
+- `:open` (operator-only break-glass) is carried through the same path; a
+  future enforcement adapter can reject the profile for production restricted
+  runs by inspecting `policy.open?` / `policy.egress_profile`.
+- The factory methods and `NetworkingPolicy#with` (Data-defined) keep the
+  profile immutable and provider-neutral: `LocalDockerRunner` only reads
+  `egress_profile` through the policy object, never reconstructs Docker-side
+  state from it.
 
 ### Remote execution manifests (RDR-057)
 
