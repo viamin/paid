@@ -293,6 +293,89 @@ RSpec.describe PreviewsProxy do
         .with(headers: { "Origin" => "http://127.0.0.1:#{port}" })
     end
 
+    # @spec LIVE-PREVIEW-009
+    it "does not forward the browser Cookie header to the preview upstream" do
+      stub_request(:get, "http://127.0.0.1:#{port}/")
+        .to_return(status: 200, body: "ok")
+
+      mock_request.get("/previews/s3cret-token/", {
+        "HTTP_COOKIE" => "_paid_session=super-secret; cable_user_id=encrypted-user-id"
+      })
+
+      expect(WebMock).not_to have_requested(:get, "http://127.0.0.1:#{port}/")
+        .with(headers: { "Cookie" => /paid_session/ })
+      expect(WebMock).not_to have_requested(:get, "http://127.0.0.1:#{port}/")
+        .with(headers: { "Cookie" => /cable_user_id/ })
+    end
+
+    # @spec LIVE-PREVIEW-009
+    it "does not forward an Authorization header to the preview upstream" do
+      stub_request(:get, "http://127.0.0.1:#{port}/")
+        .to_return(status: 200, body: "ok")
+
+      mock_request.get("/previews/s3cret-token/", {
+        "HTTP_AUTHORIZATION" => "Bearer paid-user-token"
+      })
+
+      expect(WebMock).not_to have_requested(:get, "http://127.0.0.1:#{port}/")
+        .with(headers: { "Authorization" => "Bearer paid-user-token" })
+    end
+
+    # @spec LIVE-PREVIEW-009
+    it "does not forward CSRF token headers to the preview upstream" do
+      stub_request(:post, "http://127.0.0.1:#{port}/users")
+        .to_return(status: 201, body: "created")
+
+      mock_request.post("/previews/s3cret-token/users", {
+        "HTTP_X_CSRF_TOKEN" => "csrf-token-from-paid",
+        "HTTP_X_XSRF_TOKEN" => "xsrf-token-from-paid",
+        input: "name=alice"
+      })
+
+      expect(WebMock).not_to have_requested(:post, "http://127.0.0.1:#{port}/users")
+        .with(headers: { "X-CSRF-Token" => "csrf-token-from-paid" })
+      expect(WebMock).not_to have_requested(:post, "http://127.0.0.1:#{port}/users")
+        .with(headers: { "X-XSRF-Token" => "xsrf-token-from-paid" })
+    end
+
+    # @spec LIVE-PREVIEW-009
+    it "does not forward Paid-specific credential headers to the preview upstream" do
+      stub_request(:get, "http://127.0.0.1:#{port}/")
+        .to_return(status: 200, body: "ok")
+
+      mock_request.get("/previews/s3cret-token/", {
+        "HTTP_X_PAID_SESSION" => "paid-internal-token",
+        "HTTP_X_PROXY_TOKEN" => "agent-run-proxy-token"
+      })
+
+      expect(WebMock).not_to have_requested(:get, "http://127.0.0.1:#{port}/")
+        .with(headers: { "X-Paid-Session" => "paid-internal-token" })
+      expect(WebMock).not_to have_requested(:get, "http://127.0.0.1:#{port}/")
+        .with(headers: { "X-Proxy-Token" => "agent-run-proxy-token" })
+    end
+
+    # @spec LIVE-PREVIEW-009
+    it "forwards safe browser headers to the preview upstream" do
+      stub_request(:get, "http://127.0.0.1:#{port}/")
+        .to_return(status: 200, body: "ok")
+
+      safe_headers = {
+        "Accept" => "text/html,application/xhtml+xml",
+        "Accept-Language" => "en-US,en;q=0.9",
+        "Accept-Encoding" => "gzip, deflate",
+        "User-Agent" => "Mozilla/5.0 (Paid) preview-test",
+        "Cache-Control" => "no-cache",
+        "If-None-Match" => 'W/"abc123"',
+        "Sec-Fetch-Mode" => "navigate",
+        "Sec-Ch-Ua" => '"PaidBrowser";v="1.0"'
+      }
+      env = safe_headers.transform_keys { |name| "HTTP_#{name.tr('-', '_').upcase}" }
+      mock_request.get("/previews/s3cret-token/", env)
+
+      expect(WebMock).to have_requested(:get, "http://127.0.0.1:#{port}/")
+        .with(headers: safe_headers)
+    end
+
     it "forwards POST bodies" do
       stub_request(:post, "http://127.0.0.1:#{port}/users")
         .to_return(status: 201, body: "created")
@@ -376,6 +459,30 @@ RSpec.describe PreviewsProxy do
       client_mirror.close
       thread.join(2)
     end
+
+    # @spec LIVE-PREVIEW-009
+    it "strips Paid browser credentials from the forwarded WebSocket handshake" do
+      with_websocket_upstream(port) do |upstream_received|
+        client_io, client_mirror = Socket.pair(:UNIX, :STREAM, 0)
+        env = websocket_env_for(client_io,
+          "HTTP_COOKIE" => "_paid_session=super-secret; cable_user_id=encrypted-user-id",
+          "HTTP_AUTHORIZATION" => "Bearer paid-user-token",
+          "HTTP_X_CSRF_TOKEN" => "csrf-token-from-paid")
+
+        thread = Thread.new { middleware.call(env) }
+        thread.abort_on_exception = false
+
+        expect(read_until(client_mirror, "\r\n\r\n", timeout: 2)).to include("101")
+
+        forwarded = upstream_received.call
+        expect(forwarded).not_to match(/^Cookie: /i)
+        expect(forwarded).not_to match(/^Authorization: /i)
+        expect(forwarded).not_to match(/^X-CSRF-Token: /i)
+
+        client_mirror.close
+        thread.join(2)
+      end
+    end
   end
 
   describe "request path filtering" do
@@ -396,7 +503,7 @@ RSpec.describe PreviewsProxy do
     end
   end
 
-  def websocket_env_for(client_io)
+  def websocket_env_for(client_io, extra_env = {})
     env = authorized_env_for("/previews/s3cret-token/cable",
       "HTTP_HOST" => "paid.example",
       "HTTP_CONNECTION" => "Upgrade",
@@ -404,7 +511,8 @@ RSpec.describe PreviewsProxy do
       "HTTP_UPGRADE" => "websocket",
       "HTTP_SEC_WEBSOCKET_KEY" => "dGhlIHNhbXBs" \
         "ZSBub25jZQ==",
-      "HTTP_SEC_WEBSOCKET_VERSION" => "13")
+      "HTTP_SEC_WEBSOCKET_VERSION" => "13",
+      **extra_env)
     env["rack.hijack?"] = true
     env["rack.hijack"] = -> { env["rack.hijack_io"] = client_io }
     env

@@ -59,3 +59,22 @@ agent-run trace artifact path above.
   are precisely one of the still-open gaps this segment records.
 - **Not a production-data bridge.** Preview sessions remain intended for local
   or seeded data only.
+
+## Trust Boundary: Upstream Header Allowlist
+
+The preview proxy sits between the Paid browser session and a
+repository-controlled app. Repository code is untrusted and must not receive
+Paid-origin credentials, so the middleware applies a strict allowlist of
+upstream request headers (see `LIVE-PREVIEW-009`). Specifically:
+
+- The browser `Cookie`, `Authorization`, `X-CSRF-Token`, and `X-XSRF-Token`
+  headers are dropped on the forwarded request.
+- Any Paid-specific cookie or session header (e.g. the `cable_user_id` cookie
+  stamped by `ApplicationController#stamp_cable_auth_cookie`, the Devise
+  session cookie) is dropped because it lives inside `Cookie`.
+- The proxy continues to rewrite `Host`, `X-Forwarded-*`, and `Origin` itself,
+  and it forwards a narrow set of safe-to-pass-through headers (`Accept*`,
+  `Cache-Control`, conditional-request headers, `Sec-CH-UA*`, `Sec-Fetch-*`,
+  `User-Agent`, and the WebSocket upgrade headers when applicable).
+- The same allowlist applies to WebSocket upgrades; without it, repository
+  code could read browser credentials from the WebSocket handshake request.

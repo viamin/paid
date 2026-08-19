@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "net/http"
+require "set"
 require "socket"
 require "timeout"
 require "erb"
@@ -62,6 +63,59 @@ class PreviewsProxy
     transfer-encoding
     upgrade
   ].freeze
+
+  # Strict allowlist of upstream request headers safe to forward to the
+  # preview container. Anything not on this list is dropped so that browser
+  # credentials (Cookie, Authorization, X-CSRF-Token, X-XSRF-Token) and any
+  # Paid/session-specific credential header never reach repository-controlled
+  # preview code. The proxy rewrites Host, X-Forwarded-*, and Origin from the
+  # request envelope below, so Origin must be allowed in and forwarded through
+  # the rewrite step. Connection/Upgrade and Sec-WebSocket-* remain in the
+  # list because the WebSocket upgrade path needs them to complete the
+  # handshake with the upstream.
+  # @spec LIVE-PREVIEW-009
+  FORWARDED_REQUEST_HEADERS = %w[
+    accept
+    accept-charset
+    accept-encoding
+    accept-language
+    cache-control
+    connection
+    expect
+    if-match
+    if-modified-since
+    if-none-match
+    if-range
+    if-unmodified-since
+    keep-alive
+    origin
+    pragma
+    range
+    sec-ch-ua
+    sec-ch-ua-arch
+    sec-ch-ua-bitness
+    sec-ch-ua-full-version-list
+    sec-ch-ua-mobile
+    sec-ch-ua-model
+    sec-ch-ua-platform
+    sec-ch-ua-platform-version
+    sec-fetch-dest
+    sec-fetch-mode
+    sec-fetch-site
+    sec-fetch-user
+    sec-websocket-accept
+    sec-websocket-extensions
+    sec-websocket-key
+    sec-websocket-protocol
+    sec-websocket-version
+    te
+    trailer
+    upgrade
+    user-agent
+    via
+    warning
+    x-requested-with
+  ].to_set.freeze
 
   REQUEST_CLASSES = {
     "GET" => Net::HTTP::Get,
@@ -243,13 +297,14 @@ class PreviewsProxy
   end
 
   def collect_request_headers(env)
+    # @spec LIVE-PREVIEW-009
     headers = {}
     env.each do |key, value|
       next unless key.start_with?("HTTP_")
       next if key == "HTTP_HOST"
 
       name = key.sub(/\AHTTP_/, "").tr("_", "-").downcase
-      next if HOP_BY_HOP_HEADERS.include?(name)
+      next unless FORWARDED_REQUEST_HEADERS.include?(name)
 
       headers[name] = value.to_s
     end
@@ -413,14 +468,19 @@ class PreviewsProxy
   end
 
   def collect_websocket_request_headers(env)
-    # For WebSocket upgrades we MUST retain Connection/Upgrade so the upstream
-    # completes the handshake, so hop-by-hop headers are forwarded verbatim.
+    # For WebSocket upgrades we MUST retain Connection/Upgrade and the
+    # Sec-WebSocket-* headers so the upstream completes the handshake, so the
+    # strict upstream-header allowlist is applied uniformly to the upgrade
+    # request. The allowlist includes those WebSocket-specific headers.
+    # @spec LIVE-PREVIEW-009
     headers = {}
     env.each do |key, value|
       next unless key.start_with?("HTTP_")
       next if key == "HTTP_HOST"
 
       name = key.sub(/\AHTTP_/, "").tr("_", "-").downcase
+      next unless FORWARDED_REQUEST_HEADERS.include?(name)
+
       headers[name] = value.to_s
     end
     headers["content-type"] = env["CONTENT_TYPE"].to_s if env["CONTENT_TYPE"]
