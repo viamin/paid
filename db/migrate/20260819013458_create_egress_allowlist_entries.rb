@@ -11,7 +11,6 @@ class CreateEgressAllowlistEntries < ActiveRecord::Migration[8.1]
       t.integer :port, comment: "Optional destination port. When null, applies to standard ports for the scheme."
       t.boolean :enabled, null: false, default: true
       t.text :reason, comment: "Operator-provided justification shown in audit and UI."
-      t.text :rejection_reason, comment: "Server-side validation message captured when the entry was rejected (e.g. unsafe rule)."
       t.string :source_kind, limit: 20, null: false, default: "tenant", comment: "Origin of the entry (tenant, platform, operator_override) for provenance rendering on agent runs."
       t.datetime :disabled_at
 

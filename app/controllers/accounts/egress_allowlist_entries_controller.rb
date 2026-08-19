@@ -10,7 +10,7 @@
 class Accounts::EgressAllowlistEntriesController < ApplicationController
   include AccountAdministrationPage
 
-  before_action :load_account_administration_page
+  before_action :load_account_administration_page, only: :index
   before_action :set_entry, only: [ :show, :update, :destroy ]
 
   def index
@@ -99,8 +99,6 @@ class Accounts::EgressAllowlistEntriesController < ApplicationController
       action: action,
       metadata: metadata
     )
-  rescue ActiveRecord::RecordNotFound
-    # No-op if the user has been removed since the action was queued.
   end
 
   def entry_update_notice

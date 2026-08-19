@@ -69,10 +69,6 @@ class EgressAllowlistEntry < ApplicationRecord
     host_pattern.to_s.strip.downcase
   end
 
-  def valid_pattern?
-    EgressAllowlistEntry.host_pattern_valid?(host_pattern)
-  end
-
   # Class-level helper exposed for callers that need to share the safety
   # rules without instantiating a model. Returns true only when the input
   # is a non-empty string that matches the host pattern grammar.
@@ -90,24 +86,29 @@ class EgressAllowlistEntry < ApplicationRecord
       return false if remainder.blank? || remainder.start_with?(".")
       labels = remainder.split(".")
       return false if labels.size < 2
-      return false if labels.any? { |label| label.start_with?("-") || label.end_with?("-") || label.length > 63 }
-      return false if labels.any? { |label| label !~ /\A[a-z0-9](?:[a-z0-9\-]*[a-z0-9])?\z/ }
-      return false if labels.last.length < 2
-      return false if labels.last.end_with?("-")
 
-      true
+      labels_valid?(labels)
     else
       return false if str.include?("*")
       labels = str.split(".")
       return false if labels.size < 2
-      return false if labels.any? { |label| label.start_with?("-") || label.end_with?("-") || label.length > 63 }
-      return false if labels.any? { |label| label !~ /\A[a-z0-9](?:[a-z0-9\-]*[a-z0-9])?\z/ }
-      return false if labels.last.length < 2
-      return false if labels.last.end_with?("-")
 
-      true
+      labels_valid?(labels)
     end
   end
+
+  # Shared per-label safety checks for both exact-host and wildcard
+  # patterns: label charset, leading/trailing hyphens, the 63-char label
+  # limit, and the TLD (last label) minimum length. One copy so the two
+  # grammar branches cannot drift apart.
+  def self.labels_valid?(labels)
+    return false if labels.any? { |label| label.start_with?("-") || label.end_with?("-") || label.length > 63 }
+    return false if labels.any? { |label| label !~ /\A[a-z0-9](?:[a-z0-9\-]*[a-z0-9])?\z/ }
+    return false if labels.last.length < 2
+
+    true
+  end
+  private_class_method :labels_valid?
 
   # Patterns and rationale for what counts as a safe tenant rule. Wildcard
   # TLDs, embedded paths, userinfo, IP literals, and loopback/metadata

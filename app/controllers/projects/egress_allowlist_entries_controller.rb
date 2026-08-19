@@ -98,8 +98,6 @@ module Projects
         subject: @project,
         metadata: metadata
       )
-    rescue ActiveRecord::RecordNotFound
-      # No-op if the user has been removed since the action was queued.
     end
 
     def entry_update_notice

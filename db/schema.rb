@@ -1010,7 +1010,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_013501) do
     t.integer "port", comment: "Optional destination port. When null, applies to standard ports for the scheme."
     t.bigint "project_id"
     t.text "reason", comment: "Operator-provided justification shown in audit and UI."
-    t.text "rejection_reason", comment: "Server-side validation message captured when the entry was rejected (e.g. unsafe rule)."
     t.string "scheme", limit: 10, comment: "Optional scheme filter. Allowed values: http, https. When null, applies to both."
     t.string "source_kind", limit: 20, default: "tenant", null: false, comment: "Origin of the entry (tenant, platform, operator_override) for provenance rendering on agent runs."
     t.datetime "updated_at", null: false

@@ -103,20 +103,11 @@ module ApplicationHelper
     [ (completed_at - start_time).to_i, 0 ].max
   end
 
-  # Extracts the persisted egress policy snapshot stored under
-  # `external_metadata["egress_policy"]`. The snapshot is written by the
-  # resolver before provisioning and is the authoritative record of which
-  # destinations a run was actually allowed to reach.
+  # Extracts the persisted egress policy snapshot recorded on the run before
+  # provisioning. Delegates to AgentRun#egress_policy_snapshot so controllers
+  # and views share a single extraction of the authoritative snapshot.
   def agent_run_egress_policy_snapshot(agent_run)
-    return nil unless agent_run.respond_to?(:external_metadata)
-
-    metadata = agent_run.external_metadata
-    return nil unless metadata.is_a?(Hash)
-
-    snapshot = metadata["egress_policy"]
-    return nil unless snapshot.is_a?(Hash)
-
-    snapshot
+    agent_run.egress_policy_snapshot
   end
 
   EGRESS_DESTINATION_SOURCE_KIND_BADGES = {

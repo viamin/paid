@@ -21,21 +21,7 @@ class EgressAllowlistEntryPolicy < ApplicationPolicy
     has_any_account_role?(:owner, :admin)
   end
 
-  class Scope
-    def initialize(user, scope)
-      @user = user
-      @scope = scope
-    end
-
-    def resolve
-      raise Pundit::NotAuthorizedError, "must be logged in" unless user
-
-      scope.where(account_id: user.account_id)
-    end
-
-    private
-
-    attr_reader :user, :scope
+  class Scope < ApplicationPolicy::Scope
   end
 
   private
