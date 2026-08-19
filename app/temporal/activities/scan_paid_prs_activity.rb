@@ -91,6 +91,13 @@ module Activities
     def execute(input)
       @pr_progress_states = {}
       @live_pr_states = {}
+      # Per-scan caches must be reset each execute: bin/temporal_worker builds
+      # activity instances once at boot and the temporalio SDK invokes execute
+      # on the same instance for every task, so a memo without a reset outlives
+      # the pass. A stale "not dismissed" verdict would keep re-adding the
+      # label after the owner genuinely removed it, reintroducing the silent
+      # no-op the escalated-phase-as-hold was meant to fix.
+      @escalation_label_removals = {}
 
       project_id = input[:project_id]
       project = Project.find_by(id: project_id)
@@ -1054,18 +1061,27 @@ module Activities
     # as a dismissal would grant a full counter reset and a permanent token-cap
     # override nobody asked for.
     #
+    # The replay is bounded to the current escalation cycle via
+    # `pr_escalation_started_at`: an `unlabeled` event from a previous cycle
+    # (which the owner already dismissed) must not read as a fresh owner
+    # removal on a subsequent re-escalation whose own label write failed. In
+    # that combination the PR would otherwise oscillate escalate ->
+    # auto-dismiss -> re-escalate with a fresh failure budget every cycle. When
+    # the marker is missing (older escalations that predate stamping), the
+    # bound is treated as "no dismissal" — the safer default.
+    #
     # The local label is checked first as a cheap precondition so the event
     # history is only fetched for PRs that actually look dismissed, and the
-    # result is memoized per scan pass.
+    # result is memoized per scan pass (reset in #execute).
     # @spec PR-ESCALATION-009 @spec PR-ESCALATION-019
     def escalation_label_removed_by_owner?(issue)
       return false if issue.has_label?(PAID_ESCALATED_LABEL)
-
-      @escalation_label_removals ||= {}
       return @escalation_label_removals[issue.id] if @escalation_label_removals.key?(issue.id)
+      return @escalation_label_removals[issue.id] = false if issue.pr_escalation_started_at.blank?
 
       @escalation_label_removals[issue.id] = Automation::LabelPolicy.trusted_user_removed_label?(
-        issue.project, issue, PAID_ESCALATED_LABEL
+        issue.project, issue, PAID_ESCALATED_LABEL,
+        after: issue.pr_escalation_started_at
       )
     end
 

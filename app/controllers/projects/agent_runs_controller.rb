@@ -266,7 +266,7 @@ module Projects
         return
       end
 
-      result = PullRequests::Unblock.call(pull_request: pr)
+      result = PullRequests::Unblock.call(pull_request: pr, actor: current_user)
       @project.broadcast_pull_requests_update if result.success?
 
       redirect_to dashboard_path, **unblock_flash(result, pr)

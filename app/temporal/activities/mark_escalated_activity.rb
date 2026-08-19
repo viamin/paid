@@ -33,10 +33,18 @@ module Activities
       # scan exclusion would hide the PR from the scan that detects its
       # recovery. Queued runs are left alone: the hold governs what work is
       # decided next, not what is already in flight.
-      # @spec PR-ESCALATION-002 @spec PR-ESCALATION-004
+      #
+      # `pr_escalation_started_at` bounds the paid-escalated label-event replay
+      # to this escalation cycle: without it, an `unlabeled` event from a
+      # previous cycle that the owner already dismissed can read as a fresh
+      # owner removal on a subsequent re-escalation whose own label write
+      # failed. Stamped even on same-phase re-escalations so the marker always
+      # names the current cycle.
+      # @spec PR-ESCALATION-002 @spec PR-ESCALATION-004 @spec PR-ESCALATION-019
       issue.update!(
         pr_review_phase: "escalated",
         pr_escalation_reason: reason_key,
+        pr_escalation_started_at: Time.current,
         labels: escalated_labels(issue)
       )
       post_escalation_comment(client, project, issue, input[:reason], reason_key:, phase_before:)

@@ -6813,6 +6813,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "escalated",
           pr_escalation_reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK,
+          pr_escalation_started_at: 3.hours.ago,
           last_pr_scan_at: 1.hour.ago,
           draft_review_count: 12)
       end
@@ -6900,6 +6901,56 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         types = automation_scan_results(result).flat_map { |entry| entry[:triggers] }.map { |t| t[:type] }
         expect(types).not_to include("dismiss_escalation")
         expect(pr_issue.reload.pr_review_phase).to eq("escalated")
+      end
+
+      # @spec PR-ESCALATION-019
+      # Regression: without a cycle bound, an unlabeled event from a previous
+      # escalation the owner already dismissed would satisfy the "trusted user
+      # removed the label" check on a subsequent re-escalation whose own label
+      # write failed. The PR would then oscillate escalate -> auto-dismiss ->
+      # re-escalate with a fresh failure budget every cycle.
+      it "does not dismiss when the only trusted removal predates the current escalation cycle" do
+        pr_issue.update!(pr_escalation_started_at: 30.minutes.ago)
+        # Trusted removal happened 1 hour ago — before this cycle started.
+        stub_escalation_label_events!(issue_number: 42, removed_by: "viamin")
+
+        result = activity.execute(project_id: pr_issue.project.id)
+
+        types = automation_scan_results(result).flat_map { |entry| entry[:triggers] }.map { |t| t[:type] }
+        expect(types).not_to include("dismiss_escalation")
+        expect(pr_issue.reload.pr_review_phase).to eq("escalated")
+      end
+
+      # @spec PR-ESCALATION-019
+      # Regression: @escalation_label_removals must be reset on every execute
+      # because bin/temporal_worker builds activity instances once at boot and
+      # the temporalio SDK invokes execute on the same instance for every task.
+      # An earlier "not dismissed" verdict must not shadow a later genuine
+      # removal.
+      it "does not carry a stale 'not dismissed' verdict across execute calls on the same instance" do
+        # Pass 1: label absent, no history — should not dismiss. The scan
+        # reapplies the label locally as part of its self-heal.
+        allow(github_client).to receive(:issue_events).with(project.full_name, 42).and_return([])
+        allow(github_client).to receive(:add_labels_to_issue)
+
+        activity.execute(project_id: pr_issue.project.id)
+
+        # Simulate the owner removing the label between scans, bump
+        # last_pr_scan_at so pass 2 is not skipped as unchanged, and stamp the
+        # escalation-cycle marker so the bounded replay accepts events.
+        pr_issue.reload.update!(
+          labels: pr_issue.labels - [ "paid-escalated" ],
+          last_pr_scan_at: 1.hour.ago,
+          pr_escalation_started_at: 2.hours.ago
+        )
+
+        # Pass 2: same activity instance, owner has now genuinely removed the
+        # label. Must be detected — not shadowed by the pass-1 memo.
+        stub_escalation_label_events!(issue_number: 42, removed_by: "viamin")
+        result = activity.execute(project_id: pr_issue.project.id)
+
+        types = automation_scan_results(result).flat_map { |entry| entry[:triggers] }.map { |t| t[:type] }
+        expect(types).to include("dismiss_escalation")
       end
     end
 
@@ -7674,6 +7725,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "escalated",
+          pr_escalation_started_at: 3.hours.ago,
           paid_state: "completed")
         issue.update_columns(last_pr_scan_at: 10.minutes.ago)
         stub_github_for_pr
@@ -7735,6 +7787,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "escalated",
           pr_escalation_reason: "failure_streak",
+          pr_escalation_started_at: 3.hours.ago,
           paid_state: "completed")
         issue.update_columns(last_pr_scan_at: 10.minutes.ago)
         create_stale_review_runs!(issue, statuses: %w[failed failed failed])
@@ -9522,6 +9575,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         project: project, github_number: 42,
         labels: [ "paid-generated", "paid-automation" ],
         pr_review_phase: "escalated",
+        pr_escalation_started_at: 3.hours.ago,
         pr_followup_count: 0,
         review_goal_retry_reset_at: Time.current)
     end
@@ -9919,6 +9973,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         project: project, github_number: 42,
         labels: [ "paid-generated", "paid-automation" ],
         pr_review_phase: "escalated",
+        pr_escalation_started_at: 3.hours.ago,
         paid_state: "completed")
     end
 
@@ -9985,6 +10040,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         project: project, github_number: 42,
         labels: [ "paid-generated", "paid-automation" ],
         pr_review_phase: "escalated",
+        pr_escalation_started_at: 3.hours.ago,
         paid_state: "completed")
       issue.update_columns(last_pr_scan_at: 10.minutes.ago)
       stub_github_for_pr(draft: true)

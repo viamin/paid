@@ -67,7 +67,16 @@ module Automation
 
         # Token-cap escalation is a hard spend fuse. It must outrank the active
         # run gate so stale queued runs cannot hide an already-over-budget PR.
-        return escalate_result(signals) if signals.pr_auto_continue_token_limit_reached
+        # A pending dismissal falls through so the scan-emitted dismiss reaches
+        # AutoReview: without this, an already-escalated token-cap PR would
+        # re-escalate every cycle after the owner removes the label, re-running
+        # MarkEscalatedActivity and re-adding the label the owner just removed
+        # — the very no-op the escalation comment tells the owner will work.
+        # The clearing side stamps `pr_auto_continue_token_limit_overridden_at`,
+        # so subsequent cycles no longer see the fuse.
+        if signals.pr_auto_continue_token_limit_reached && !dismiss_escalation_pending?(signals)
+          return escalate_result(signals)
+        end
 
         # Gate: active run — no decisions while an agent is running.
         return noop_result if signals.active_run_exists

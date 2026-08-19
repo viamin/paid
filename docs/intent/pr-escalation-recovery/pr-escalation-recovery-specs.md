@@ -89,24 +89,27 @@
   *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`,
   `spec/services/automation/label_policy_spec.rb`.
 
-- [ ] **PR-ESCALATION-019** — If the `paid-escalated` label is absent from an
+- [x] **PR-ESCALATION-019** — If the `paid-escalated` label is absent from an
   escalated pull request without a recorded removal by a trusted GitHub user
-  (for example the label write failed when the pull request was escalated, or
-  the label event history cannot be fetched), then the system SHALL NOT treat
-  the absence as an owner dismissal and SHALL leave the escalation in place.
+  within the current escalation cycle (for example the label write failed when
+  the pull request was escalated, the label event history cannot be fetched,
+  or the only trusted removal predates the current cycle marker), then the
+  system SHALL NOT treat the absence as an owner dismissal and SHALL leave the
+  escalation in place.
   *Code:* `ScanPaidPrsActivity#escalation_dismissed?`,
-  `Automation::LabelPolicy.trusted_user_removed_label?`.
+  `Automation::LabelPolicy.trusted_user_removed_label?`,
+  `MarkEscalatedActivity#execute`.
   *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`,
   `spec/services/automation/label_policy_spec.rb`.
 
-- [ ] **PR-ESCALATION-021** — While a pull request's review phase is
+- [x] **PR-ESCALATION-021** — While a pull request's review phase is
   `escalated` and the `paid-escalated` label is absent without a removal by a
   trusted GitHub user, the scan SHALL re-apply the label to the pull request on
   GitHub, so the label always reflects the hold rather than drifting from it.
   *Code:* `ScanPaidPrsActivity#reapply_escalation_label_if_missing`.
   *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.
 
-- [ ] **PR-ESCALATION-020** — While a pull request is escalated, the scan
+- [x] **PR-ESCALATION-020** — While a pull request is escalated, the scan
   staleness ceiling SHALL apply regardless of the pull request's author, so
   that a pull request whose GitHub `updated_at` has stopped advancing is still
   rescanned and its recovery can be detected.
