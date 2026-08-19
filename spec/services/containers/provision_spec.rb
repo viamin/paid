@@ -108,7 +108,8 @@ RSpec.describe Containers::Provision do
       "architecture" => "amd64",
       "registry" => "ghcr.io",
       "repository" => "acme/paid-agent",
-      "provenance_reference" => "base-amd64-2026-08-17"
+      "provenance_reference" => "base-amd64-2026-08-17",
+      "immutable" => true
     }
   end
 
@@ -319,6 +320,32 @@ RSpec.describe Containers::Provision do
       allow(svc).to receive(:resolve_user_setting_overrides).and_return({})
 
       expect(svc.options[:image]).to eq("ghcr.io/acme/paid-agent@sha256:#{'1' * 64}")
+    end
+
+    it "reuses the warm-time selection persisted on a claimed pool entry instead of re-resolving" do
+      # @spec IMMUTABLE-IMAGE-002
+      # Materialize records while the environment is still test so their
+      # Turbo broadcasts use the test cable adapter.
+      agent_run
+      warm_metadata = runtime_image_selection_metadata(digest: "a" * 64)
+      pool_entry = create(
+        :container_pool_entry,
+        :claimed,
+        project: project,
+        agent_run: agent_run,
+        runtime_image_metadata: warm_metadata
+      )
+      allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("production"))
+      # The catalog default may have moved (or have nothing configured) between
+      # warm and claim; the claimed container runs the warm-time digest.
+      allow(Containers::RuntimeImageSelector).to receive(:select)
+        .and_raise(Containers::RuntimeImageCatalog::UnknownProfileError, "catalog must not be consulted")
+
+      svc = described_class.new(agent_run: agent_run, project: project, pool_entry: pool_entry)
+
+      expect(svc.options[:image]).to eq("ghcr.io/acme/paid-agent@sha256:#{'a' * 64}")
+      expect(agent_run.reload.runtime_image_selection).to eq(warm_metadata)
+      expect(Containers::RuntimeImageSelector).not_to have_received(:select)
     end
 
     it "applies container_memory_bytes from user settings" do
@@ -2348,7 +2375,21 @@ RSpec.describe Containers::Provision do
 
     context "when firewall rules fail in production" do
       before do
+        # Materialize records while the environment is still test so their
+        # Turbo broadcasts use the test cable adapter, not production
+        # SolidCable (which has no database in this environment).
+        agent_run
         allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("production"))
+        # Production resolves the runtime image through the immutable catalog
+        # (RDR-059). No catalog profiles are configured in this environment, so
+        # stub the selector to keep this example focused on firewall failure.
+        allow(Containers::RuntimeImageSelector).to receive(:select).and_return(
+          instance_double(
+            Containers::RuntimeImageSelector::Result,
+            image: "ghcr.io/acme/paid-agent@sha256:#{'1' * 64}",
+            metadata: runtime_image_selection_metadata
+          )
+        )
         allow(NetworkPolicy).to receive(:apply_firewall_rules)
           .and_raise(NetworkPolicy::Error, "Permission denied")
       end

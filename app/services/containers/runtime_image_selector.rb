@@ -24,6 +24,21 @@ module Containers
           "immutable" => immutable
         }
       end
+
+      # Rebuilds a selection from persisted #metadata so a warm-time selection
+      # can be reused at claim time without re-resolving against the catalog.
+      def self.from_metadata(metadata)
+        new(
+          requested_image: metadata["requested_image"],
+          image: metadata["resolved_image"],
+          digest: metadata["digest"],
+          architecture: metadata["architecture"],
+          registry: metadata["registry"],
+          repository: metadata["repository"],
+          provenance_reference: metadata["provenance_reference"],
+          immutable: metadata["immutable"]
+        )
+      end
     end
 
     def self.select(...)

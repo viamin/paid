@@ -14,10 +14,15 @@
 - [x] **IMMUTABLE-IMAGE-002** — When a run selects its final runtime image, the
   system SHALL persist the requested image, resolved image, digest,
   architecture, registry, repository, and provenance reference on the run.
+  Warm-pool claims SHALL persist the warm-time selection of the claimed
+  container, not a later re-resolution of the catalog default.
   *Code:* `app/models/agent_run.rb`,
-  `app/services/containers/provision.rb`.
+  `app/models/container_pool_entry.rb`,
+  `app/services/containers/provision.rb`,
+  `app/services/containers/pool_manager.rb`.
   *Test:* `spec/models/agent_run_runtime_image_spec.rb`,
-  `spec/services/containers/provision_spec.rb`.
+  `spec/services/containers/provision_spec.rb`,
+  `spec/services/containers/pool_manager_spec.rb`.
 
 - [x] **IMMUTABLE-IMAGE-003** — When running in local development/test, the
   system SHALL continue allowing mutable tags such as `paid-agent:latest`

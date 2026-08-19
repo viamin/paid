@@ -33,11 +33,23 @@ Evidence:
   repository, provenance reference, and immutability flag.
 - `app/services/containers/provision.rb:1306` records that metadata on the run
   as part of option resolution.
+- Warm-pool claims attribute the digest the warmed container actually runs:
+  `app/services/containers/pool_manager.rb` persists the warm-time selection on
+  the `ContainerPoolEntry` (`runtime_image_metadata`) at warm time and copies it
+  onto the claiming run in `#acquire`; `Containers::Provision` reuses the
+  persisted selection when reconnecting to a claimed entry instead of
+  re-resolving against the catalog's current default, which may have moved
+  between warm and claim.
 
 Evidence:
 
 - `spec/models/agent_run_runtime_image_spec.rb:7`
 - `spec/services/containers/provision_spec.rb:303`
+- `spec/services/containers/provision_spec.rb` ("reuses the warm-time selection
+  persisted on a claimed pool entry instead of re-resolving")
+- `spec/services/containers/pool_manager_spec.rb` ("persists the warm-time
+  runtime image selection on the warmed entry", "records the warm-time runtime
+  image selection on the claiming run")
 
 ### 3. Local Docker development still uses mutable tags
 
@@ -78,6 +90,8 @@ Evidence:
   - `spec/models/agent_run_runtime_image_spec.rb`
   - `spec/services/containers/provision_spec.rb:303`
   - `spec/services/containers/image_resolver_spec.rb`
+  - `spec/services/containers/pool_manager_spec.rb` (warm-time persistence and
+    claim-time attribution)
 
 ## Gaps
 

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_13_024216) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_19_092242) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -700,6 +700,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_024216) do
     t.string "network", limit: 64, null: false
     t.bigint "project_id", null: false
     t.jsonb "runner_handle", comment: "Persisted ExecutionRunners::RunnerHandle for warm-pool entries (RDR-054). Stored alongside container_id/workspace_volume."
+    t.jsonb "runtime_image_metadata", comment: "Warm-time immutable runtime image selection (RDR-059) for the warmed container; copied onto the claiming run."
     t.string "status", limit: 20, null: false, comment: "Warm pool lifecycle state: warming, warm, claimed, or error."
     t.datetime "updated_at", null: false
     t.datetime "warmed_at", precision: nil, comment: "Time the container finished warming and became available for claiming."

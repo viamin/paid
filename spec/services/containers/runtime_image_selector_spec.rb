@@ -120,4 +120,20 @@ RSpec.describe Containers::RuntimeImageSelector do
       }.to raise_error(Containers::RuntimeImageCatalog::InactiveImageError, /blocked/)
     end
   end
+
+  describe "Result.from_metadata" do
+    it "round-trips persisted metadata back into an equivalent selection" do
+      selection = described_class.select(
+        requested_image: "paid-agent:latest",
+        environment: production_env,
+        catalog: catalog
+      )
+
+      rebuilt = described_class::Result.from_metadata(selection.metadata)
+
+      expect(rebuilt.metadata).to eq(selection.metadata)
+      expect(rebuilt.image).to eq(selection.image)
+      expect(rebuilt.provenance_reference).to eq(selection.provenance_reference)
+    end
+  end
 end

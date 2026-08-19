@@ -271,12 +271,19 @@ module Containers
       @options ||= begin
         base_options = DEFAULTS.merge(resolve_user_setting_overrides)
         image_selection = resolve_runtime_image_selection(default_image: base_options[:image])
+        @runtime_image_selection = image_selection
 
         base_options
           .merge(image: image_selection.image)
           .merge(@raw_options.except(:image))
       end
     end
+
+    # The runtime image selection backing #options — warm-time provenance for
+    # a claimed pool entry, a fresh selection otherwise. Nil until #options
+    # has been resolved. PoolManager persists this on the pool entry at warm
+    # time so claims attribute the digest the container actually runs.
+    attr_reader :runtime_image_selection
 
     # Provisions a new container with security hardening.
     # Ensures the selected network exists before creating the container,
@@ -1294,17 +1301,31 @@ module Containers
     # runtime/image profile (RDR-046). RDR-059 layers on the final selection:
     # development/test keep mutable tags for local iteration, while production
     # resolves the requested tag to an immutable digest and persists the
-    # selection metadata on the run.
+    # selection metadata on the run. A claimed warm-pool container instead
+    # reuses the selection persisted on its entry at warm time — the catalog's
+    # default may have moved between warm and claim, and the run's provenance
+    # must describe the container it actually executes in.
     def resolve_runtime_image_selection(default_image:)
       # @spec IMMUTABLE-IMAGE-001, IMMUTABLE-IMAGE-002, IMMUTABLE-IMAGE-003
+      selection = claimed_pool_entry_selection || resolve_catalog_selection(default_image)
+      agent_run&.record_runtime_image_selection!(selection.metadata)
+      selection
+    end
+
+    def claimed_pool_entry_selection
+      metadata = @pool_entry&.runtime_image_selection
+      return if metadata.blank?
+
+      Containers::RuntimeImageSelector::Result.from_metadata(metadata)
+    end
+
+    def resolve_catalog_selection(default_image)
       requested_image = @raw_options[:image].presence || resolve_requested_project_image || default_image
-      selection = Containers::RuntimeImageSelector.select(
+      Containers::RuntimeImageSelector.select(
         project: project,
         requested_image: requested_image,
         environment: Rails.env
       )
-      agent_run&.record_runtime_image_selection!(selection.metadata)
-      selection
     end
 
     def resolve_requested_project_image

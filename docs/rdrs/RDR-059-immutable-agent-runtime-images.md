@@ -75,6 +75,10 @@ Shipped behavior:
   and `Containers::RuntimeImageCatalog` to immutable digest references.
 - `AgentRun#record_runtime_image_selection!` persists runtime image provenance
   in `external_metadata["runtime_image"]`.
+- Warm-pool claims carry warm-time provenance: the selection the warmed
+  container was provisioned with is persisted on the `ContainerPoolEntry` and
+  copied onto the claiming run, so a catalog default that moves between warm
+  and claim never misattributes the run's image.
 - Development/test continue using mutable tags.
 - Catalog lifecycle status blocks `deprecated` and `blocked` identities.
 - Rollback is supported by selecting a prior `active` provenance reference.

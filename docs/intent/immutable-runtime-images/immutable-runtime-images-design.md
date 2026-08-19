@@ -60,3 +60,17 @@ Each catalog identity stores:
 - repository
 - provenance reference
 - whether the final reference was immutable
+
+### Warm-pool provenance
+
+Warm-pool containers are provisioned at warm time (`PoolManager#warm_one`,
+no agent run attached). The selection the warmed container was actually
+provisioned with is persisted on the `ContainerPoolEntry`
+(`runtime_image_metadata`). When a run claims the entry, that warm-time
+selection is copied onto the run in `PoolManager#acquire`, and
+`Containers::Provision` reuses it when reconnecting to the claimed container.
+Claims never re-resolve against the catalog's current default — the catalog
+default may have moved between warm and claim, and the run's provenance must
+describe the container it actually executes in. Entries warmed before this
+provenance existed (no persisted selection) keep the lazy re-resolution
+fallback.
