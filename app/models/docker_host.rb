@@ -26,6 +26,24 @@ class DockerHost < ApplicationRecord
       .where.not(id: ExecutionControl.enabled.where(scope: "backend").select(:docker_host_id))
   }
 
+  # Identifiers (scoped to a single account, since identifier is only unique
+  # per-account) of backends with an active backend-scoped execution control.
+  #
+  # @spec EXEC-DISABLE-004
+  # placement_ready_for_agent_runs only guards run creation/options
+  # (Containers::ResolveHostForRun). Queued runs carry a stored host
+  # selection (or fall through to the registry default) and are dispatched
+  # by Containers::BackendScheduler against Containers.host_registry, which
+  # has no visibility into ExecutionControl rows — so BackendScheduler must
+  # reject candidates against this set at dispatch time too, or a run queued
+  # before (or without) the control would still start on a disabled backend.
+  def self.disabled_placement_identifiers(account_id)
+    ExecutionControl.enabled.where(scope: "backend")
+      .joins(:docker_host)
+      .where(docker_hosts: { account_id: account_id })
+      .pluck("docker_hosts.identifier").to_set
+  end
+
   before_validation :normalize_fields
   before_validation :sync_disabled_state
   after_save :clear_stale_host_preferences, if: -> { saved_change_to_enabled?(from: true, to: false) }

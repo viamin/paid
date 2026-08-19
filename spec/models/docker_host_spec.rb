@@ -56,4 +56,30 @@ RSpec.describe DockerHost, type: :model do
 
     expect(enabled_host.account.docker_hosts.placement_ready_for_agent_runs).to contain_exactly(enabled_host)
   end
+
+  # @spec EXEC-DISABLE-004
+  describe ".disabled_placement_identifiers" do
+    it "returns identifiers with an active backend-scoped execution control for the given account" do
+      account = create(:account)
+      other_account = create(:account)
+      disabled_host = create(:docker_host, account: account)
+      enabled_host = create(:docker_host, account: account)
+      other_account_disabled_host = create(:docker_host, account: other_account, identifier: disabled_host.identifier)
+      create(:execution_control, :backend_scope, :enabled, docker_host: disabled_host)
+      create(:execution_control, :backend_scope, :enabled, docker_host: other_account_disabled_host)
+
+      identifiers = described_class.disabled_placement_identifiers(account.id)
+
+      expect(identifiers).to contain_exactly(disabled_host.identifier)
+      expect(identifiers).not_to include(enabled_host.identifier)
+    end
+
+    it "ignores disabled (inactive) backend execution controls" do
+      account = create(:account)
+      host = create(:docker_host, account: account)
+      create(:execution_control, :backend_scope, docker_host: host, enabled: false)
+
+      expect(described_class.disabled_placement_identifiers(account.id)).to be_empty
+    end
+  end
 end

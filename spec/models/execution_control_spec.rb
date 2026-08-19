@@ -148,5 +148,31 @@ RSpec.describe ExecutionControl do
         control.update!(mode: "emergency")
       }.not_to change(AccountActivityEvent, :count)
     end
+
+    # @spec EXEC-DISABLE-007
+    it "still cancels active runs when recording the control audit event raises" do
+      project = create(:project)
+      agent_run = create(:agent_run, :running, :with_temporal, project: project)
+      control = create(:execution_control, :project_scope, :emergency, project: project)
+      allow(Audit::RecordEvent).to receive(:call).with(hash_including(action: "execution_control.enabled")).and_raise(StandardError, "audit db down")
+      allow(Audit::RecordEvent).to receive(:call).with(hash_including(action: "agent_run.cancelled")).and_call_original
+
+      control.update!(enabled: true, reason: "Emergency shutdown")
+
+      expect(agent_run.reload.status).to eq("cancelled")
+    end
+
+    # @spec EXEC-DISABLE-006 @spec EXEC-DISABLE-007
+    it "still parks active runs when recording the control audit event raises" do
+      project = create(:project)
+      agent_run = create(:agent_run, :running, :with_temporal, project: project)
+      control = create(:execution_control, :project_scope, project: project)
+      allow(Audit::RecordEvent).to receive(:call).with(hash_including(action: "execution_control.enabled")).and_raise(StandardError, "audit db down")
+      allow(Audit::RecordEvent).to receive(:call).with(hash_including(action: "agent_run.execution_parked")).and_call_original
+
+      control.update!(enabled: true, reason: "Capacity reduction")
+
+      expect(agent_run.reload.status).to eq("paused")
+    end
   end
 end

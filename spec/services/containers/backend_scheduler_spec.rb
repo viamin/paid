@@ -90,6 +90,24 @@ RSpec.describe Containers::BackendScheduler do
     expect(elguapo_backend).not_to have_received(:ping)
   end
 
+  # @spec EXEC-DISABLE-004
+  it "excludes a candidate host that has an active backend-scoped execution control" do
+    docker_host = create(:docker_host, account: project.account, identifier: "elguapo")
+    create(:execution_control, :backend_scope, :enabled, docker_host: docker_host)
+    agent_run.update!(external_metadata: {
+      "container_host_selection" => {
+        "preferred_host" => "elguapo",
+        "fallback" => "first_healthy"
+      }
+    })
+
+    result = described_class.call(agent_run: agent_run, registry: registry)
+
+    expect(result.selection_source).to eq("preferred")
+    expect(result.candidate_hosts).to eq([ "local", "aws-runner-1" ])
+    expect(result.compatibility_failures).to include("elguapo" => "Host elguapo is disabled by an execution control")
+  end
+
   it "returns an empty candidate list when no host is configured or healthy" do
     agent_run.update!(external_metadata: {
       "container_host_selection" => {

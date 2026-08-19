@@ -202,6 +202,17 @@ module ExecutionControls
           reason: control.reason
         }
       )
+    rescue StandardError => error
+      # An audit-log failure must not prevent the enforcement half of a
+      # kill-switch toggle (affect_active_runs!/resume_parked_runs!) from
+      # running — see record_run_event! for the same rationale.
+      Rails.logger.error(
+        message: "execution_control.audit_failed",
+        action: action,
+        execution_control_id: control.id,
+        error_class: error.class.name,
+        error_message: error.message
+      )
     end
 
     def record_run_event!(action, agent_run, result:)
