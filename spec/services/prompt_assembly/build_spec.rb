@@ -39,14 +39,20 @@ RSpec.describe PromptAssembly::Build, :no_db do
     result = described_class.call(
       sections: [
         section(key: :task, content: "# Task"),
-        section(key: :comments, content: "malicious", trust_level: :excluded, exclusion_reason: "author_not_in_allowlist")
+        PromptAssembly::Section.new(
+          key: :comments,
+          content: "malicious",
+          trust_level: :excluded,
+          exclusion_reason: "author_not_in_allowlist",
+          login: "attacker"
+        )
       ]
     )
 
     expect(result.text).to eq("# Task")
     expect(result.text).not_to include("malicious")
     expect(result.skipped).to include(
-      hash_including(key: :comments, trust_level: :excluded, reason: "author_not_in_allowlist")
+      hash_including(key: :comments, login: "attacker", trust_level: :excluded, reason: "author_not_in_allowlist")
     )
     expect(result.skipped.to_s).not_to include("malicious")
   end

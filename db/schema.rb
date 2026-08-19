@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_18_092610) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_18_163318) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1027,6 +1027,38 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_18_092610) do
     t.index ["severity"], name: "index_exception_incidents_on_severity"
   end
 
+  create_table "execution_audit_events", comment: "Append-only execution infrastructure/security audit trail (RDR-061). Rows are never updated after insert; secret-shaped metadata is rejected at the model layer.", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Owning account; the tenant scope for row-level security."
+    t.string "actor_id", limit: 100, comment: "Actor identifier within actor_type; free text so system actors don't need a users row."
+    t.string "actor_type", limit: 50, comment: "Actor category: user, system, agent, job, runner."
+    t.bigint "agent_run_id", comment: "Agent run the event concerns, when the event is run-scoped."
+    t.string "backend", limit: 64, comment: "Container backend identifier that executed or was targeted by the event."
+    t.string "correlation_id", limit: 255, comment: "Cross-system correlation id (e.g. Temporal workflow id) for tracing an event across subsystems."
+    t.datetime "created_at", null: false
+    t.jsonb "credential_classes", default: [], null: false, comment: "Non-secret credential source classes involved (proxy_restricted, subscription_auth, direct_outbound), never raw credential values."
+    t.string "event_name", limit: 100, null: false, comment: "Namespaced execution/security event name, e.g. container.provisioned, credential.materialized."
+    t.integer "event_version", default: 1, null: false, comment: "Schema version of this event's payload shape."
+    t.string "image_digest", limit: 128, comment: "Content-addressable image digest (e.g. sha256:...), when resolvable."
+    t.string "image_reference", limit: 255, comment: "Container image reference (repository:tag) used for the run, when applicable."
+    t.jsonb "metadata", default: {}, null: false, comment: "Additional secret-free event context; rejected at the model layer if it contains secret-shaped keys or values."
+    t.jsonb "network_policy", default: {}, null: false, comment: "Secret-free network policy snapshot (mode, firewall, allow_destinations) applied at event time."
+    t.datetime "occurred_at", null: false, comment: "When the underlying event happened; may predate created_at for buffered telemetry."
+    t.bigint "project_id", comment: "Owning project, when the event is project-scoped."
+    t.string "resource_id", limit: 255, comment: "Identifier of the primary resource this event concerns."
+    t.string "resource_type", limit: 50, comment: "Type of the primary resource this event concerns (container, workspace_volume, service_container, network)."
+    t.integer "run_attempt", comment: "Attempt/iteration number of the agent run when the event occurred, when applicable."
+    t.string "runner_key", limit: 64, comment: "Provider/runner key (claude, codex, gemini, copilot), when the event is runner-specific."
+    t.index ["account_id", "created_at"], name: "idx_execution_audit_events_account_created"
+    t.index ["agent_run_id"], name: "index_execution_audit_events_on_agent_run_id"
+    t.index ["correlation_id"], name: "idx_execution_audit_events_correlation_id"
+    t.index ["created_at"], name: "idx_execution_audit_events_created_at_brin", using: :brin
+    t.index ["event_name"], name: "idx_execution_audit_events_event_name"
+    t.index ["image_reference"], name: "idx_execution_audit_events_image_reference"
+    t.index ["project_id"], name: "index_execution_audit_events_on_project_id"
+    t.index ["resource_type", "resource_id"], name: "idx_execution_audit_events_resource"
+    t.index ["runner_key"], name: "idx_execution_audit_events_runner_key"
+  end
+
   create_table "execution_controls", comment: "Execution disable controls for global, account, project, runner, and backend scopes.", force: :cascade do |t|
     t.bigint "account_id", comment: "Account target when scope=account."
     t.datetime "created_at", null: false
@@ -1340,6 +1372,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_18_092610) do
     t.bigint "parent_issue_id"
     t.boolean "paused", default: false, null: false, comment: "When true, mirrors the paid-paused GitHub label and excludes the issue from auto-pick. PR review/escalation automation is not yet gated by this flag."
     t.datetime "paused_at", comment: "Sync epoch: records when the pause state last transitioned (from UI or GitHub) to resolve bidirectional sync ordering."
+    t.datetime "pr_auto_continue_token_limit_overridden_at", comment: "When set, owner dismissed a PR token-cap escalation and allowed this PR to exceed the automatic PR token cap."
     t.string "pr_escalation_reason", comment: "Machine-readable cause for the current PR escalation so only operational outages can auto-dismiss."
     t.integer "pr_followup_count", default: 0, null: false
     t.string "pr_review_phase", default: "draft", null: false
@@ -2056,6 +2089,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_18_092610) do
     t.integer "max_enhance_issue_reevaluation_rounds", default: 3, null: false
     t.integer "max_execution_seconds", default: 7200, null: false
     t.integer "max_issue_runner_failures", comment: "Per-project override for the per-issue per-provider retry cap. When nil, the account-level agent setting (default 10) applies. After a provider fails this many times for a single issue it is excluded from scheduling for that issue."
+    t.integer "max_pr_auto_continue_tokens", default: 50000000, null: false, comment: "Maximum recorded tokens automatic PR automation may spend on one pull request before escalation pauses follow-ups."
     t.integer "max_pr_followup_runs", default: 8, null: false
     t.integer "max_tokens_per_run"
     t.string "merge_method", default: "squash", null: false
@@ -3081,6 +3115,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_18_092610) do
   add_foreign_key "docker_hosts", "accounts"
   add_foreign_key "exception_incidents", "accounts"
   add_foreign_key "exception_incidents", "projects"
+  add_foreign_key "execution_audit_events", "accounts"
+  add_foreign_key "execution_audit_events", "agent_runs", on_delete: :nullify
+  add_foreign_key "execution_audit_events", "projects", on_delete: :nullify
   add_foreign_key "execution_controls", "accounts"
   add_foreign_key "execution_controls", "docker_hosts"
   add_foreign_key "execution_controls", "projects"

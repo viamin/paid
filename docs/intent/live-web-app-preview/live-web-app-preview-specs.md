@@ -8,7 +8,10 @@
 - [x] **LIVE-PREVIEW-001** — When preview provisioning is invoked for an agent
   run, the system SHALL boot the app container, provision service dependencies,
   manage preview tunnel state, and restore baseline service state during
-  cleanup.
+  cleanup. The environment passed to repository-controlled setup and app
+  startup commands SHALL be built from a non-secret allowlist so host
+  credentials (`RAILS_MASTER_KEY`, `SECRET_KEY_BASE`, `RAILS_TEST_KEY`, and
+  similar) are not exposed to repo-controlled code.
   *Code:* `app/services/previews/provision.rb`.
   *Test:* `spec/services/previews/provision_spec.rb`.
 
@@ -69,3 +72,16 @@
   `app/services/containers/backends/remote_docker.rb`,
   `app/services/containers/backends/swarm.rb`.
   *Test:* `spec/services/previews/tunnel_manager_spec.rb`.
+
+- [x] **LIVE-PREVIEW-009** — When the preview proxy forwards a request to the
+  tunneled container, the system SHALL apply a strict allowlist of upstream
+  request headers so browser-attached credentials (Cookie, Authorization, and
+  any Paid/session-specific credential header) never reach
+  repository-controlled preview code. X-CSRF-Token and X-XSRF-Token SHALL be
+  forwarded rather than dropped, since browsers never attach them
+  automatically and dropping them breaks the preview app's own header-based
+  CSRF protection. The same allowlist applies to WebSocket upgrade requests
+  in addition to the Connection/Upgrade and Sec-WebSocket-* headers the
+  upstream needs to complete the handshake.
+  *Code:* `app/middleware/previews_proxy.rb`.
+  *Test:* `spec/middleware/previews_proxy_spec.rb`.

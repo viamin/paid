@@ -21,6 +21,8 @@ module Activities
           agent_run.log!("system", "Agent run failed: #{error}")
         end
       end
+      # @spec FOCUSED-RUN-006
+      record_draft_review_round_if_needed(agent_run)
 
       # Always trigger queue processing so remaining queued runs get claimed.
       # This is safe because ProcessRunQueueJob is idempotent (advisory lock +

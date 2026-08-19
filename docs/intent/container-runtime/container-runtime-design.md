@@ -122,7 +122,11 @@ confirm coverage.
   `ExecutionResult` (outcome, including OOM and timeout classification),
   `ExecutionStatus` (lifecycle status: `:running | :exited | :oom_killed |
   :not_found`, returned by `Base#status`), `NetworkingPolicy` (adapts
-  `NetworkPolicy::NetworkContract`, drops the Docker network name),
+  `NetworkPolicy::NetworkContract`, drops the Docker network name; carries
+  `mode`, `firewall?`, `allow_destinations`, and the RDR-055 `egress_profile`
+  — `:locked` (default), `:research`, or `:open` — so orchestration can
+  request a per-run egress posture without referencing Docker- or
+  network-specific concepts),
   `ServiceDeclaration`, and `ComputeRequirements`.
 - `ExecutionRunners::LocalDockerRunner` implements `Base` as a thin adapter over
   `Containers::Provision`: `#provision`/`#start`/`#running?`/`#reconnect`/`#status`/
@@ -207,6 +211,28 @@ default workspace strategy (named volumes with in-container clone), host
 bind-mount support, and all provision-side workspace/heartbeat tests are
 preserved until the deferred specs land.
 
+### Egress profile propagation (RDR-055, this PR)
+
+`ExecutionRunners::NetworkingPolicy` now carries an `egress_profile` field so
+orchestration can request a per-run egress posture through the runner contract
+without ever naming Docker networks, iptables rules, or gateway
+implementation details.
+
+- `egress_profile` defaults to `:locked` for every factory method
+  (`proxy_restricted`, `subscription_auth`, `direct_outbound`), so existing
+  callers preserve the production default.
+- `:research` propagates through the same `RunSpec` → `Containers::Provision`
+  → `ExecutionInputManifest` chain; downstream tooling (research broker,
+  gateway) reads the profile from the manifest's networking section without
+  the runner exposing the firewall translation.
+- `:open` (operator-only break-glass) is carried through the same path; a
+  future enforcement adapter can reject the profile for production restricted
+  runs by inspecting `policy.open?` / `policy.egress_profile`.
+- The factory methods and `NetworkingPolicy#with` (Data-defined) keep the
+  profile immutable and provider-neutral: `LocalDockerRunner` only reads
+  `egress_profile` through the policy object, never reconstructs Docker-side
+  state from it.
+
 ### Remote execution manifests (RDR-057)
 
 `ExecutionRunners` now also defines the provider-neutral manifests that cross
@@ -221,6 +247,33 @@ is explicit value-object data, not ad hoc hashes.
   carries result summaries, log references, verification results, durable
   binary artifact references, and git output identity (`branch_name`,
   `result_commit_sha`, PR/review identity).
+- Durable binary artifact references are object-storage-first records with a
+  content type, storage locator (`key` and/or presigned `url`), and run
+  context (`account_id`, `project_id`, `agent_run_id`) so the control plane
+  never needs runner-local files after cleanup.
+- Binary artifact references distinguish trusted source lanes from
+  agent-authored ones, and both are namespace-scoped. Artifacts persisted by
+  the runner under `AgentRun#external_metadata["artifact_manifest"]` (e.g. by
+  `Screenshots::ContainerCapture`) are runner-written, but the field is not
+  exclusively runner-written — interop ingestion
+  (`Api::Projects::ExternalAgentRunsController` → `AgentRuns::IngestExternal`)
+  persists caller-supplied `external_metadata` verbatim — so their storage
+  keys are honored only when they live under the project's own storage
+  namespace (`Screenshots::Storage.namespace_prefix`). Artifacts persisted by
+  `AgentRuns::VerificationResultRecorder` from the agent-written result file
+  inside the container are untrusted input: their locators are URL-only. In
+  both lanes a `key` under another tenant's prefix would otherwise be
+  re-signed into a working presigned URL by any durable consumer, since the
+  manifest contract says durable consumers re-sign from the key. The run's
+  `account_id`, `project_id`, and `agent_run_id` are always authoritative; an
+  artifact-supplied context value cannot override the run's identity, so a
+  run cannot misattribute its artifacts to a different tenant in the durable
+  manifest.
+- Presigned URLs are ephemeral — they expire within the SigV4 one-week cap —
+  so artifact manifests persisted as durable records on the run (e.g.
+  `AgentRun#external_metadata["artifact_manifest"]`) carry storage keys only;
+  durable consumers re-sign from the key
+  (`Screenshots::Storage#previous_artifacts` is the established pattern).
 - The manifest shape is deliberately host-path-free. Workspace translation and
   container/worktree identifiers remain runner-local implementation details;
   the manifest only carries repo/ref and declarative workspace mode.
