@@ -566,6 +566,11 @@
   <% end %>
 
   <% runner_attempts = Array(agent_run.runners_attempted) %>
+  <%= render "agent_runs/egress_policy",
+    snapshot: local_assigns.fetch(:egress_policy_snapshot, nil) || agent_run_egress_policy_snapshot(agent_run),
+    security_events: local_assigns.fetch(:egress_security_events, agent_run.egress_security_events.recent.limit(50).to_a),
+    denied_event_count: local_assigns.fetch(:egress_denied_event_count, agent_run.egress_security_events.count) %>
+
   <% if runner_attempts.any? %>
     <% attempted_runners_by_routing_key = local_assigns.fetch(:attempted_runners_by_routing_key, {}) %>
     <div class="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/30">

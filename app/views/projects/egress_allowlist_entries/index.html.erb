@@ -1,0 +1,154 @@
+<% content_for(:title) { "Egress Allowlist - #{@project.name}" } %>
+
+<div class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to edit_project_path(@project), class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+      <svg class="mr-1 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1 1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd" />
+      </svg>
+      Back to Project Settings
+    <% end %>
+  </div>
+
+  <div class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">Egress Allowlist</h1>
+        <p class="mt-2 max-w-3xl text-sm text-gray-600 dark:text-gray-300">
+          Allow additional outbound destinations that agent containers for this project can reach.
+          Project entries are merged with account-wide entries at run time. Account-required
+          destinations are always permitted and cannot be removed.
+        </p>
+      </div>
+    </div>
+
+    <% if @account_entries.any? %>
+      <div class="mt-6 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
+        <p class="font-medium">Account-wide allowlist inherited by this project:</p>
+        <ul class="mt-1 flex flex-wrap gap-2 font-mono text-xs">
+          <% @account_entries.each do |entry| %>
+            <li class="rounded bg-white px-2 py-0.5 ring-1 ring-blue-200 dark:bg-blue-950/40 dark:ring-blue-800">
+              <%= entry.host_pattern %><% if entry.port %><span class="text-blue-500">:<%= entry.port %></span><% end %>
+            </li>
+          <% end %>
+        </ul>
+      </div>
+    <% end %>
+
+    <% if @entries.any? %>
+      <div class="mt-6 overflow-hidden rounded-2xl border border-gray-200 dark:border-gray-700">
+        <table class="min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-700">
+          <thead class="bg-gray-50 dark:bg-gray-900/60">
+            <tr>
+              <th class="px-4 py-3 text-left font-medium text-gray-700 dark:text-gray-200">Host</th>
+              <th class="px-4 py-3 text-left font-medium text-gray-700 dark:text-gray-200">Scheme</th>
+              <th class="px-4 py-3 text-left font-medium text-gray-700 dark:text-gray-200">Port</th>
+              <th class="px-4 py-3 text-left font-medium text-gray-700 dark:text-gray-200">Status</th>
+              <th class="px-4 py-3 text-left font-medium text-gray-700 dark:text-gray-200">Reason</th>
+              <% if @can_manage %>
+                <th class="px-4 py-3 text-right font-medium text-gray-700 dark:text-gray-200">Actions</th>
+              <% end %>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
+            <% @entries.each do |entry| %>
+              <tr>
+                <td class="px-4 py-4 font-mono text-gray-900 dark:text-white"><%= entry.host_pattern %></td>
+                <td class="px-4 py-4 text-gray-600 dark:text-gray-300"><%= entry.scheme || "any" %></td>
+                <td class="px-4 py-4 text-gray-600 dark:text-gray-300"><%= entry.port || "any" %></td>
+                <td class="px-4 py-4">
+                  <% if entry.enabled? %>
+                    <span class="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-950/40 dark:text-green-300">Enabled</span>
+                  <% else %>
+                    <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-900 dark:text-gray-300">Disabled</span>
+                  <% end %>
+                </td>
+                <td class="px-4 py-4 text-gray-600 dark:text-gray-300"><%= entry.reason.presence || "—" %></td>
+                <% if @can_manage %>
+                  <td class="px-4 py-4 text-right">
+                    <div class="flex justify-end gap-2">
+                      <%= button_to "Toggle", project_egress_allowlist_entry_path(@project, entry),
+                        method: :patch,
+                        params: { egress_allowlist_entry: { enabled: !entry.enabled? } },
+                        class: "rounded-full border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-900" %>
+                      <%= button_to "Remove", project_egress_allowlist_entry_path(@project, entry),
+                        method: :delete,
+                        form: { data: { turbo_confirm: "Remove allowlist entry for #{entry.host_pattern}?" } },
+                        class: "rounded-full border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-950/30" %>
+                    </div>
+                  </td>
+                <% end %>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    <% else %>
+      <div class="mt-6 rounded-2xl border border-dashed border-gray-300 px-4 py-10 text-center text-sm text-gray-500 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400">
+        No project-specific allowlist entries yet. The project inherits account-wide entries plus
+        the default destinations Paid requires.
+      </div>
+    <% end %>
+
+    <% if @can_manage %>
+      <div class="mt-8 border-t border-gray-200 pt-6 dark:border-gray-700">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Add Allowlist Entry</h2>
+        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          Hostname (e.g. <code class="rounded bg-gray-100 px-1 py-0.5 text-xs">api.example.com</code>) or
+          leading-wildcard subdomain (e.g. <code class="rounded bg-gray-100 px-1 py-0.5 text-xs">*.packages.example.com</code>).
+          Broad wildcards, paths, IP literals, and loopback/metadata hosts are rejected.
+        </p>
+
+        <% new_entry = @entry&.new_record? ? @entry : @project.egress_allowlist_entries.build %>
+        <% if new_entry.errors.any? %>
+          <div class="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
+            <p class="font-medium">Could not save entry:</p>
+            <ul class="mt-2 list-disc pl-5">
+              <% new_entry.errors.full_messages.each do |msg| %>
+                <li><%= msg %></li>
+              <% end %>
+            </ul>
+          </div>
+        <% end %>
+
+        <%= form_with model: new_entry,
+          url: project_egress_allowlist_entries_path(@project),
+          local: true,
+          class: "mt-4 grid gap-4 md:grid-cols-5" do |form| %>
+          <div class="md:col-span-2">
+            <%= form.label :host_pattern, "Host pattern", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+            <%= form.text_field :host_pattern,
+              required: true,
+              placeholder: "api.example.com",
+              autocomplete: "off",
+              class: "mt-1 block w-full rounded-xl border-gray-300 px-3 py-1.5 font-mono text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+          </div>
+          <div>
+            <%= form.label :scheme, "Scheme", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+            <%= form.select :scheme,
+              options_for_select([ [ "Any", "" ], [ "http", "http" ], [ "https", "https" ] ], ""),
+              {},
+              class: "mt-1 block w-full rounded-xl border-gray-300 px-3 py-1.5 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+          </div>
+          <div>
+            <%= form.label :port, "Port", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+            <%= form.number_field :port,
+              min: 1, max: 65_535,
+              placeholder: "443",
+              class: "mt-1 block w-full rounded-xl border-gray-300 px-3 py-1.5 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+          </div>
+          <div>
+            <%= form.label :reason, "Reason", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+            <%= form.text_field :reason,
+              placeholder: "e.g. internal package registry",
+              class: "mt-1 block w-full rounded-xl border-gray-300 px-3 py-1.5 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+          </div>
+          <div class="md:col-span-5 flex justify-end">
+            <%= form.submit "Add entry",
+              class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+          </div>
+        <% end %>
+      </div>
+    <% end %>
+  </div>
+</div>

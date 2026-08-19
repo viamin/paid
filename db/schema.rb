@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_17_153542) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_19_013501) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -998,6 +998,63 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_17_153542) do
     t.index ["account_id", "fallback_eligible"], name: "index_docker_hosts_on_account_id_and_fallback_eligible"
     t.index ["account_id", "identifier"], name: "index_docker_hosts_on_account_id_and_identifier", unique: true
     t.index ["account_id"], name: "index_docker_hosts_on_account_id"
+  end
+
+  create_table "egress_allowlist_entries", comment: "Tenant-managed host allowlist entries that resolve into an agent run's egress policy snapshot.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.bigint "created_by_id"
+    t.datetime "disabled_at"
+    t.boolean "enabled", default: true, null: false
+    t.string "host_pattern", limit: 255, null: false, comment: "Hostname pattern. Supports exact hosts and leading-wildcard subdomains (e.g. *.packages.example.com)."
+    t.integer "port", comment: "Optional destination port. When null, applies to standard ports for the scheme."
+    t.bigint "project_id"
+    t.text "reason", comment: "Operator-provided justification shown in audit and UI."
+    t.text "rejection_reason", comment: "Server-side validation message captured when the entry was rejected (e.g. unsafe rule)."
+    t.string "scheme", limit: 10, comment: "Optional scheme filter. Allowed values: http, https. When null, applies to both."
+    t.string "source_kind", limit: 20, default: "tenant", null: false, comment: "Origin of the entry (tenant, platform, operator_override) for provenance rendering on agent runs."
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "enabled"], name: "idx_egress_allowlist_entries_account_enabled"
+    t.index ["account_id", "host_pattern"], name: "idx_egress_allowlist_entries_account_host_unique", unique: true, where: "(project_id IS NULL)"
+    t.index ["account_id"], name: "index_egress_allowlist_entries_on_account_id"
+    t.index ["created_by_id"], name: "index_egress_allowlist_entries_on_created_by_id"
+    t.index ["project_id", "enabled"], name: "idx_egress_allowlist_entries_project_enabled"
+    t.index ["project_id", "host_pattern"], name: "idx_egress_allowlist_entries_project_host_unique", unique: true, where: "(project_id IS NOT NULL)"
+    t.index ["project_id"], name: "index_egress_allowlist_entries_on_project_id"
+    t.check_constraint "host_pattern IS NOT NULL", name: "chk_egress_allowlist_entries_host_present"
+    t.check_constraint "port IS NULL OR port > 0 AND port <= 65535", name: "chk_egress_allowlist_entries_port_range"
+    t.check_constraint "scheme IS NULL OR (scheme::text = ANY (ARRAY['http'::character varying, 'https'::character varying]::text[]))", name: "chk_egress_allowlist_entries_scheme_valid"
+    t.check_constraint "source_kind::text = ANY (ARRAY['tenant'::character varying, 'platform'::character varying, 'operator_override'::character varying]::text[])", name: "chk_egress_allowlist_entries_source_kind_valid"
+  end
+
+  create_table "egress_security_events", comment: "Audit trail for blocked outbound traffic and redacted secret-extraction attempts captured by the agent container egress gateway.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "agent_run_id"
+    t.datetime "created_at", null: false
+    t.string "destination_host", limit: 255
+    t.integer "destination_port"
+    t.bigint "egress_allowlist_entry_id", comment: "Optional reference to the matching allowlist entry that triggered the event."
+    t.string "event_kind", limit: 40, null: false, comment: "Type of security event: denied_egress, redacted_secret_extraction, allowlist_match."
+    t.string "matched_rule", limit: 255, comment: "Free-form rule description surfaced in the agent-run audit view."
+    t.datetime "occurred_at", null: false
+    t.bigint "project_id"
+    t.text "redacted_evidence", comment: "Redacted snippet or fingerprint used to trigger the block. Never contains raw secret material."
+    t.string "scheme", limit: 10
+    t.string "severity", limit: 20, default: "info", null: false, comment: "Severity for filtering on the audit surface: info, warn, critical."
+    t.string "source_layer", limit: 40, default: "gateway", null: false, comment: "Which layer emitted the event: gateway, broker, firewall."
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "occurred_at"], name: "idx_egress_security_events_account_recent", order: { occurred_at: :desc }
+    t.index ["account_id"], name: "index_egress_security_events_on_account_id"
+    t.index ["agent_run_id", "occurred_at"], name: "idx_egress_security_events_run_recent", order: { occurred_at: :desc }
+    t.index ["agent_run_id"], name: "index_egress_security_events_on_agent_run_id"
+    t.index ["egress_allowlist_entry_id"], name: "index_egress_security_events_on_allowlist_entry"
+    t.index ["event_kind"], name: "index_egress_security_events_on_event_kind"
+    t.index ["project_id", "occurred_at"], name: "idx_egress_security_events_project_recent", order: { occurred_at: :desc }
+    t.index ["project_id"], name: "index_egress_security_events_on_project_id"
+    t.check_constraint "destination_port IS NULL OR destination_port > 0 AND destination_port <= 65535", name: "chk_egress_security_events_port_range"
+    t.check_constraint "event_kind::text = ANY (ARRAY['denied_egress'::character varying, 'redacted_secret_extraction'::character varying, 'allowlist_match'::character varying]::text[])", name: "chk_egress_security_events_kind_valid"
+    t.check_constraint "scheme IS NULL OR (scheme::text = ANY (ARRAY['http'::character varying, 'https'::character varying]::text[]))", name: "chk_egress_security_events_scheme_valid"
+    t.check_constraint "severity::text = ANY (ARRAY['info'::character varying, 'warn'::character varying, 'critical'::character varying]::text[])", name: "chk_egress_security_events_severity_valid"
   end
 
   create_table "exception_incidents", force: :cascade do |t|
@@ -3054,6 +3111,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_17_153542) do
   add_foreign_key "dispatch_circuit_breakers", "accounts"
   add_foreign_key "dispatch_circuit_breakers", "agent_runs", column: "last_probe_run_id", on_delete: :nullify, validate: false
   add_foreign_key "docker_hosts", "accounts"
+  add_foreign_key "egress_allowlist_entries", "accounts", on_delete: :cascade
+  add_foreign_key "egress_allowlist_entries", "projects", on_delete: :cascade
+  add_foreign_key "egress_allowlist_entries", "users", column: "created_by_id", on_delete: :nullify
+  add_foreign_key "egress_security_events", "accounts", on_delete: :cascade
+  add_foreign_key "egress_security_events", "agent_runs", on_delete: :cascade
+  add_foreign_key "egress_security_events", "projects", on_delete: :cascade
   add_foreign_key "exception_incidents", "accounts"
   add_foreign_key "exception_incidents", "projects"
   add_foreign_key "external_connector_events", "accounts"

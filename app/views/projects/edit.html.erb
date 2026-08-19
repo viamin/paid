@@ -898,6 +898,14 @@
             </p>
             <%= link_to "Manage pre-commit requirements", project_pre_commit_requirements_path(@project), class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
           </fieldset>
+
+          <fieldset id="egress-allowlist" class="space-y-3 rounded-md border border-gray-200 p-4">
+            <legend class="px-1 text-sm font-semibold text-gray-900">Egress Allowlist</legend>
+            <p class="text-sm text-gray-600">
+              Allow additional outbound destinations that agent containers for this project can reach beyond Paid's secrets proxy and GitHub proxy.
+            </p>
+            <%= link_to "Manage egress allowlist", project_egress_allowlist_entries_path(@project), class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+          </fieldset>
         </div>
 
         <div class="mt-6 flex items-center justify-end gap-x-4">

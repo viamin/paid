@@ -780,6 +780,68 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include(agent_run.error_message)
       end
 
+      it "shows the egress policy snapshot recorded for the run" do
+        agent_run = create(:agent_run, project: project, external_metadata: {
+          "egress_policy" => {
+            "mode" => "enforced",
+            "egress_profile" => "standard",
+            "snapshot_at" => "2026-08-19T00:00:00Z",
+            "required_destinations" => [
+              { "host" => "secrets-proxy.paid.internal", "source" => "platform" }
+            ],
+            "destinations" => [
+              { "host" => "api.example.com", "source" => "tenant", "source_kind" => "tenant_account", "entry_id" => 42 }
+            ]
+          }
+        })
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response.body).to include("Egress Policy")
+        expect(response.body).to include("Mode: Enforced")
+        expect(response.body).to include("secrets-proxy.paid.internal")
+        expect(response.body).to include("api.example.com")
+        expect(response.body).to include("entry #42")
+      end
+
+      it "shows a placeholder when a denied event exists without a policy snapshot" do
+        agent_run = create(:agent_run, project: project, external_metadata: {})
+        create(:egress_security_event, account: account, project: project, agent_run: agent_run)
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response.body).to include("Egress policy snapshot was not recorded for this run.")
+      end
+
+      it "shows denied and redacted egress security events for the run" do
+        agent_run = create(:agent_run, project: project)
+        create(:egress_security_event, :redacted_extraction,
+          account: account, project: project, agent_run: agent_run,
+          destination_host: "leaky.example.com", matched_rule: "request body contained high-entropy token")
+        create(:egress_security_event,
+          account: account, project: project, agent_run: agent_run,
+          destination_host: "blocked.example.com", matched_rule: "host not in allowlist")
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response.body).to include("Denied Egress")
+        expect(response.body).to include("2 events")
+        expect(response.body).to include("leaky.example.com")
+        expect(response.body).to include("blocked.example.com")
+        expect(response.body).to include("request body contained high-entropy token")
+        expect(response.body).to include("token fingerprint sha256:deadbeef")
+      end
+
+      it "shows an empty state when a policy snapshot exists but no events were recorded" do
+        agent_run = create(:agent_run, :completed, project: project, external_metadata: {
+          "egress_policy" => { "mode" => "enforced" }
+        })
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response.body).to include("No denied or redacted events recorded for this run.")
+      end
+
       it "shows retry runner options for configured providers" do
         allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor])
         project.effective_owner.runners.create!(runner_key: "cursor")
