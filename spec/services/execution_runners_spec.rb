@@ -659,6 +659,11 @@ RSpec.describe ExecutionRunners do
           "lane" => "object_storage",
           "kind" => "trace",
           "locator" => { "url" => "https://artifacts.test/trace.zip" },
+          "context" => {
+            "account_id" => project.account_id,
+            "project_id" => project.id,
+            "agent_run_id" => agent_run.id
+          },
           "metadata" => { "note" => "Playwright trace" }
         }
       ]
