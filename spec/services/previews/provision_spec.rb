@@ -370,7 +370,7 @@ RSpec.describe Previews::Provision do
     )
   end
 
-  it "forwards the current Rails runtime env into the preview container" do
+  it "forwards allowlisted non-secret Rails runtime env into the preview container" do
     with_runtime_env(
       "RAILS_ENV" => "test",
       "RACK_ENV" => "test",
@@ -380,9 +380,93 @@ RSpec.describe Previews::Provision do
       service.call(start_tunnel: false, allow_seed: false)
       expect_preview_runtime_env(
         "RAILS_ENV" => "test",
-        "RACK_ENV" => "test",
-        "RAILS_TEST_KEY" => "test-key",
-        "SECRET_KEY_BASE" => "test-secret"
+        "RACK_ENV" => "test"
+      )
+    end
+  end
+
+  it "strips host Rails secrets from the preview container environment for setup commands" do
+    with_runtime_env(
+      "RAILS_MASTER_KEY" => "master-secret",
+      "SECRET_KEY_BASE" => "rails-secret",
+      "RAILS_TEST_KEY" => "test-key-secret",
+      "RAILS_ENV" => "test"
+    ) do
+      service_with_setup_commands.call(start_tunnel: false, allow_seed: false)
+
+      expect(container_service).to have_received(:execute).with(
+        "bin/setup-test",
+        hash_including(
+          timeout: described_class::PROVISION_TIMEOUT_SECONDS,
+          stream: false,
+          env: satisfy { |env|
+            !env.key?("RAILS_MASTER_KEY") &&
+              !env.key?("SECRET_KEY_BASE") &&
+              !env.key?("RAILS_TEST_KEY")
+          }
+        )
+      )
+    end
+  end
+
+  it "strips host Rails secrets from the preview container environment for the app start command" do
+    with_runtime_env(
+      "RAILS_MASTER_KEY" => "master-secret",
+      "SECRET_KEY_BASE" => "rails-secret",
+      "RAILS_TEST_KEY" => "test-key-secret",
+      "RAILS_ENV" => "test"
+    ) do
+      service.call(start_tunnel: false, allow_seed: false)
+
+      expect(container_service).to have_received(:execute).with(
+        a_string_including("bundle exec bin/rails server"),
+        hash_including(
+          timeout: 30,
+          stream: false,
+          env: satisfy { |env|
+            !env.key?("RAILS_MASTER_KEY") &&
+              !env.key?("SECRET_KEY_BASE") &&
+              !env.key?("RAILS_TEST_KEY")
+          }
+        )
+      )
+    end
+  end
+
+  it "does not forward non-allowlisted host env vars to setup commands" do
+    with_runtime_env(
+      "PAID_HOST_LEAKY_TOKEN" => "should-not-leak",
+      "ANOTHER_HOST_SECRET" => "should-not-leak",
+      "RAILS_ENV" => "test"
+    ) do
+      service_with_setup_commands.call(start_tunnel: false, allow_seed: false)
+
+      expect(container_service).to have_received(:execute).with(
+        "bin/setup-test",
+        hash_including(
+          env: satisfy { |env|
+            !env.key?("PAID_HOST_LEAKY_TOKEN") && !env.key?("ANOTHER_HOST_SECRET")
+          }
+        )
+      )
+    end
+  end
+
+  it "does not forward non-allowlisted host env vars to the app start command" do
+    with_runtime_env(
+      "PAID_HOST_LEAKY_TOKEN" => "should-not-leak",
+      "ANOTHER_HOST_SECRET" => "should-not-leak",
+      "RAILS_ENV" => "test"
+    ) do
+      service_with_setup_commands.call(start_tunnel: false, allow_seed: false)
+
+      expect(container_service).to have_received(:execute).with(
+        a_string_including("bundle exec bin/rails server"),
+        hash_including(
+          env: satisfy { |env|
+            !env.key?("PAID_HOST_LEAKY_TOKEN") && !env.key?("ANOTHER_HOST_SECRET")
+          }
+        )
       )
     end
   end
@@ -583,5 +667,15 @@ RSpec.describe Previews::Provision do
         stream: false
       )
     )
+  end
+
+  def service_with_setup_commands
+    setup_config = Screenshots::Configuration.from_hash(
+      "base_url" => "http://localhost:3000",
+      "routes" => [ { "path" => "/", "name" => "home" } ],
+      "setup_commands" => [ "bin/setup-test" ]
+    )
+    allow(Screenshots::ConfigParser).to receive(:from_repo_path).and_return(setup_config)
+    service
   end
 end

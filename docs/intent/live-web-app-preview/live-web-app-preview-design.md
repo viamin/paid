@@ -59,3 +59,10 @@ agent-run trace artifact path above.
   are precisely one of the still-open gaps this segment records.
 - **Not a production-data bridge.** Preview sessions remain intended for local
   or seeded data only.
+- **Not a host-credential bridge.** Setup and app startup commands executed
+  inside the preview container run repo-controlled code, so the environment
+  handed to them is built from an explicit non-secret allowlist
+  (`Previews::Provision::PREVIEW_ENV_ALLOWLIST`). Host credentials such as
+  `RAILS_MASTER_KEY`, `SECRET_KEY_BASE`, and `RAILS_TEST_KEY` are not
+  forwarded; the only host env vars that cross the trust boundary are
+  non-secret runtime selectors (`RAILS_ENV`, `RACK_ENV`).

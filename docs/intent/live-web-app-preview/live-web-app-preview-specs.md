@@ -8,7 +8,10 @@
 - [x] **LIVE-PREVIEW-001** — When preview provisioning is invoked for an agent
   run, the system SHALL boot the app container, provision service dependencies,
   manage preview tunnel state, and restore baseline service state during
-  cleanup.
+  cleanup. The environment passed to repository-controlled setup and app
+  startup commands SHALL be built from a non-secret allowlist so host
+  credentials (`RAILS_MASTER_KEY`, `SECRET_KEY_BASE`, `RAILS_TEST_KEY`, and
+  similar) are not exposed to repo-controlled code.
   *Code:* `app/services/previews/provision.rb`.
   *Test:* `spec/services/previews/provision_spec.rb`.
 
