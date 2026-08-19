@@ -66,3 +66,33 @@ agent-run trace artifact path above.
   `RAILS_MASTER_KEY`, `SECRET_KEY_BASE`, and `RAILS_TEST_KEY` are not
   forwarded; the only host env vars that cross the trust boundary are
   non-secret runtime selectors (`RAILS_ENV`, `RACK_ENV`).
+
+## Trust Boundary: Upstream Header Allowlist
+
+The preview proxy sits between the Paid browser session and a
+repository-controlled app. Repository code is untrusted and must not receive
+Paid-origin credentials, so the middleware applies a strict allowlist of
+upstream request headers (see `LIVE-PREVIEW-009`). Specifically:
+
+- The browser `Cookie` and `Authorization` headers are dropped on the
+  forwarded request. Browsers attach these to every same-origin request
+  automatically, so forwarding them would leak the Paid session/Devise
+  cookie (and any cached HTTP-auth credential) to repository-controlled code
+  purely because the preview shares Paid's origin.
+- Any Paid-specific cookie or session header (e.g. the `cable_user_id` cookie
+  stamped by `ApplicationController#stamp_cable_auth_cookie`, the Devise
+  session cookie) is dropped because it lives inside `Cookie`.
+- `X-CSRF-Token` and `X-XSRF-Token` are forwarded, not dropped. Unlike
+  Cookie/Authorization, browsers never attach these automatically — they
+  only appear when application JS sets them explicitly, so they carry the
+  preview app's own CSRF token, not an automatically-leaked Paid credential.
+  Dropping them unconditionally broke standard Rails/JS preview apps that
+  rely on header-based CSRF protection for POST/fetch requests, violating
+  the RDR-045 "forwarded apps require zero changes" contract.
+- The proxy continues to rewrite `Host`, `X-Forwarded-*`, and `Origin` itself,
+  and it forwards a narrow set of safe-to-pass-through headers (`Accept*`,
+  `Cache-Control`, conditional-request headers, `Sec-CH-UA*`, `Sec-Fetch-*`,
+  `User-Agent`, `X-CSRF-Token`/`X-XSRF-Token`, and the WebSocket upgrade
+  headers when applicable).
+- The same allowlist applies to WebSocket upgrades; without it, repository
+  code could read browser credentials from the WebSocket handshake request.

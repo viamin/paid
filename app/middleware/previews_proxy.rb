@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "net/http"
+require "set"
 require "socket"
 require "timeout"
 require "erb"
@@ -58,10 +59,77 @@ class PreviewsProxy
     proxy-authenticate
     proxy-authorization
     te
-    trailers
+    trailer
     transfer-encoding
     upgrade
   ].freeze
+
+  # Strict allowlist of upstream request headers safe to forward to the
+  # preview container. Anything not on this list is dropped so that browser
+  # credentials the browser attaches automatically to every same-origin
+  # request (Cookie, and Authorization when the browser has cached HTTP-auth
+  # credentials for this origin) and any Paid/session-specific credential
+  # header never reach repository-controlled preview code. The proxy
+  # rewrites Host, X-Forwarded-*, and Origin from the request envelope below,
+  # so Origin must be allowed in and forwarded through the rewrite step.
+  # Connection/Upgrade and Sec-WebSocket-* remain in the list because the
+  # WebSocket upgrade path needs them to complete the handshake with the
+  # upstream; the plain-HTTP path strips them again via `HOP_BY_HOP_HEADERS`
+  # (RFC 7230 §6.1) in `collect_request_headers`.
+  #
+  # X-CSRF-Token/X-XSRF-Token are intentionally allowed through: unlike
+  # Cookie/Authorization, browsers never attach these automatically — they
+  # only appear when application JS sets them explicitly. Dropping them
+  # unconditionally broke the preview app's own header-based CSRF protection
+  # on POST/fetch requests after it sets its own session/csrf cookies (see
+  # the Set-Cookie rewrite below), which violates the RDR-045 "forwarded
+  # apps require zero changes" contract. See the code review discussion on
+  # PR #3499 for the full trust-boundary analysis.
+  # @spec LIVE-PREVIEW-009
+  FORWARDED_REQUEST_HEADERS = %w[
+    accept
+    accept-charset
+    accept-encoding
+    accept-language
+    cache-control
+    connection
+    expect
+    if-match
+    if-modified-since
+    if-none-match
+    if-range
+    if-unmodified-since
+    keep-alive
+    origin
+    pragma
+    range
+    sec-ch-ua
+    sec-ch-ua-arch
+    sec-ch-ua-bitness
+    sec-ch-ua-full-version-list
+    sec-ch-ua-mobile
+    sec-ch-ua-model
+    sec-ch-ua-platform
+    sec-ch-ua-platform-version
+    sec-fetch-dest
+    sec-fetch-mode
+    sec-fetch-site
+    sec-fetch-user
+    sec-websocket-accept
+    sec-websocket-extensions
+    sec-websocket-key
+    sec-websocket-protocol
+    sec-websocket-version
+    te
+    trailer
+    upgrade
+    user-agent
+    via
+    warning
+    x-csrf-token
+    x-requested-with
+    x-xsrf-token
+  ].to_set.freeze
 
   REQUEST_CLASSES = {
     "GET" => Net::HTTP::Get,
@@ -243,12 +311,14 @@ class PreviewsProxy
   end
 
   def collect_request_headers(env)
+    # @spec LIVE-PREVIEW-009
     headers = {}
     env.each do |key, value|
       next unless key.start_with?("HTTP_")
       next if key == "HTTP_HOST"
 
       name = key.sub(/\AHTTP_/, "").tr("_", "-").downcase
+      next unless FORWARDED_REQUEST_HEADERS.include?(name)
       next if HOP_BY_HOP_HEADERS.include?(name)
 
       headers[name] = value.to_s
@@ -413,14 +483,21 @@ class PreviewsProxy
   end
 
   def collect_websocket_request_headers(env)
-    # For WebSocket upgrades we MUST retain Connection/Upgrade so the upstream
-    # completes the handshake, so hop-by-hop headers are forwarded verbatim.
+    # For WebSocket upgrades we MUST retain Connection/Upgrade and the
+    # Sec-WebSocket-* headers so the upstream completes the handshake, so the
+    # strict upstream-header allowlist is applied uniformly to the upgrade
+    # request and the hop-by-hop strip from `collect_request_headers` is
+    # intentionally NOT applied here. The allowlist includes those
+    # WebSocket-specific headers.
+    # @spec LIVE-PREVIEW-009
     headers = {}
     env.each do |key, value|
       next unless key.start_with?("HTTP_")
       next if key == "HTTP_HOST"
 
       name = key.sub(/\AHTTP_/, "").tr("_", "-").downcase
+      next unless FORWARDED_REQUEST_HEADERS.include?(name)
+
       headers[name] = value.to_s
     end
     headers["content-type"] = env["CONTENT_TYPE"].to_s if env["CONTENT_TYPE"]

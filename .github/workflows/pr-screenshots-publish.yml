@@ -116,6 +116,7 @@ jobs:
           PR_ACTION: ${{ github.event.action }}
         run: |
           ruby <<'RUBY'
+          require "cgi"
           require "json"
           require "net/http"
           require "time"
@@ -123,10 +124,17 @@ jobs:
 
           def write_outputs(path:, run_id: "", artifact_present: false, comment_status:, error_message: nil)
             File.open(path, "a") do |file|
-              file.puts("run_id=#{run_id}")
-              file.puts("artifact_present=#{artifact_present}")
-              file.puts("comment_status=#{comment_status}")
-              file.puts("error_message=#{error_message}") if error_message
+              {
+                "run_id" => run_id,
+                "artifact_present" => artifact_present,
+                "comment_status" => comment_status,
+                "error_message" => error_message
+              }.compact.each do |key, value|
+                delimiter = "paid_#{key}_#{rand(1_000_000)}"
+                file.puts("#{key}<<#{delimiter}")
+                file.puts(value)
+                file.puts(delimiter)
+              end
             end
           end
 
@@ -143,6 +151,11 @@ jobs:
 
           def workflow_runs_url(repo, page: 1)
             "https://api.github.com/repos/#{repo}/actions/workflows/pr-screenshots.yml/runs?event=pull_request&per_page=100&page=#{page}"
+          end
+
+          def branch_workflow_runs_url(repo, head_ref, page: 1)
+            escaped_ref = CGI.escape(head_ref)
+            "https://api.github.com/repos/#{repo}/actions/workflows/pr-screenshots.yml/runs?event=pull_request&branch=#{escaped_ref}&per_page=100&page=#{page}"
           end
 
           def pull_request_match(candidate, pr_number)
@@ -197,6 +210,24 @@ jobs:
             end
           end
 
+          def first_matching_branch_run(repo, headers, head_ref, pages)
+            1.upto(pages) do |page|
+              runs = get_json(branch_workflow_runs_url(repo, head_ref, page:), headers).fetch("workflow_runs")
+              matching_run = runs.find { |candidate| yield(candidate) }
+              return matching_run if matching_run
+              break if runs.size < 100
+            end
+
+            nil
+          end
+
+          def first_completed_branch_fallback_run(repo, headers, pr_number, head_ref, pages)
+            first_matching_branch_run(repo, headers, head_ref, pages) do |candidate|
+              candidate["status"] == "completed" &&
+                fallback_run_match?(candidate, pr_number, head_ref)
+            end
+          end
+
           repo = ENV.fetch("GITHUB_REPOSITORY")
           pr_number = Integer(ENV.fetch("PR_NUMBER"))
           head_sha = ENV.fetch("HEAD_SHA")
@@ -216,6 +247,7 @@ jobs:
             "X-GitHub-Api-Version" => "2022-11-28",
             "User-Agent" => "paid-pr-screenshots-publish"
           }
+          search_deadline = pr_updated_at + recent_window_seconds
 
           begin
             run = nil
@@ -224,18 +256,18 @@ jobs:
               run = first_matching_run(repo, headers, poll_search_pages) do |candidate|
                 current_run_match?(candidate, pr_number, head_sha, head_ref, pr_updated_at, recent_window_seconds)
               end
-              fallback_run ||= first_matching_run(repo, headers, poll_search_pages) do |candidate|
-                candidate["status"] == "completed" &&
-                  fallback_run_match?(candidate, pr_number, head_ref)
+              fallback_run ||= first_matching_branch_run(repo, headers, head_ref, poll_search_pages) do |candidate|
+                candidate["status"] == "completed" && fallback_run_match?(candidate, pr_number, head_ref)
               end
 
               break if run && run["status"] == "completed"
+              break if Time.now >= search_deadline
 
               run = nil if run && run["status"] != "completed"
               sleep poll_interval_seconds
             end
 
-            fallback_run ||= first_completed_fallback_run(repo, headers, pr_number, head_ref, fallback_search_pages)
+            fallback_run ||= first_completed_branch_fallback_run(repo, headers, pr_number, head_ref, fallback_search_pages)
             run ||= fallback_run
 
             unless run
@@ -245,6 +277,16 @@ jobs:
                 error_message: "Timed out waiting for PR Screenshots capture workflow for #{head_sha}"
               )
               warn "Timed out waiting for PR Screenshots capture workflow for #{head_sha}"
+              exit 0
+            end
+
+            if fallback_run == run && !current_run_match?(run, pr_number, head_sha, head_ref, pr_updated_at, recent_window_seconds)
+              write_outputs(
+                path: output_path,
+                run_id: run.fetch("id"),
+                artifact_present: false,
+                comment_status: pr_action == "synchronize" ? "no_ui_changes" : "skip"
+              )
               exit 0
             end
 
