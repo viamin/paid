@@ -22,11 +22,19 @@ class CreateEgressAllowlistEntries < ActiveRecord::Migration[8.1]
     # matching EgressAllowlistEntry#host_pattern_uniqueness_within_scope: two
     # entries for the same host are allowed as long as they differ by scheme
     # or port (e.g. api.example.com on :443 and api.example.com on :8443).
-    add_index :egress_allowlist_entries, [ :account_id, :host_pattern, :scheme, :port ],
+    #
+    # COALESCE normalizes NULLs into sentinel values because plain unique
+    # indexes treat NULLs as distinct and would let concurrent inserts create
+    # duplicate rules when scheme or port is omitted. The sentinels cannot
+    # collide with real values: check constraints restrict scheme to
+    # ('http', 'https') and port to 1..65535.
+    add_index :egress_allowlist_entries,
+      "account_id, host_pattern, COALESCE(scheme, ''), COALESCE(port, -1)",
       unique: true,
       where: "project_id IS NULL",
       name: "idx_egress_allowlist_entries_account_host_unique"
-    add_index :egress_allowlist_entries, [ :project_id, :host_pattern, :scheme, :port ],
+    add_index :egress_allowlist_entries,
+      "project_id, host_pattern, COALESCE(scheme, ''), COALESCE(port, -1)",
       unique: true,
       where: "project_id IS NOT NULL",
       name: "idx_egress_allowlist_entries_project_host_unique"

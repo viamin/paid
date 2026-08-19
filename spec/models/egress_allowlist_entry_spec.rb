@@ -168,6 +168,25 @@ RSpec.describe EgressAllowlistEntry do
     end
   end
 
+  describe "database uniqueness enforcement" do
+    let(:account) { create(:account) }
+
+    it "rejects duplicate account-level rows with null scheme and port at the database level" do
+      create(:egress_allowlist_entry, account: account, host_pattern: "api.example.com")
+
+      duplicate = build(:egress_allowlist_entry, account: account, host_pattern: "api.example.com")
+      expect { duplicate.save(validate: false) }.to raise_error(ActiveRecord::RecordNotUnique)
+    end
+
+    it "rejects duplicate project-level rows with null scheme and port at the database level" do
+      project = create(:project, account: account)
+      create(:egress_allowlist_entry, :project_level, account: account, project: project, host_pattern: "api.example.com")
+
+      duplicate = build(:egress_allowlist_entry, :project_level, account: account, project: project, host_pattern: "api.example.com")
+      expect { duplicate.save(validate: false) }.to raise_error(ActiveRecord::RecordNotUnique)
+    end
+  end
+
   describe "#matches?" do
     let(:account) { create(:account) }
 
