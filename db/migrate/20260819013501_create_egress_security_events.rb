@@ -10,7 +10,7 @@ class CreateEgressSecurityEvents < ActiveRecord::Migration[8.1]
       t.string :destination_host, limit: 255
       t.integer :destination_port
       t.string :scheme, limit: 10
-      t.bigint :egress_allowlist_entry_id, comment: "Optional reference to the matching allowlist entry that triggered the event."
+      t.references :egress_allowlist_entry, null: true, foreign_key: { on_delete: :nullify }, comment: "Optional reference to the matching allowlist entry that triggered the event."
       t.string :matched_rule, limit: 255, comment: "Free-form rule description surfaced in the agent-run audit view."
       t.text :redacted_evidence, comment: "Redacted snippet or fingerprint used to trigger the block. Never contains raw secret material."
       t.string :severity, limit: 20, null: false, default: "info", comment: "Severity for filtering on the audit surface: info, warn, critical."
@@ -24,7 +24,6 @@ class CreateEgressSecurityEvents < ActiveRecord::Migration[8.1]
     add_index :egress_security_events, [ :agent_run_id, :occurred_at ], order: { occurred_at: :desc }, name: "idx_egress_security_events_run_recent"
     add_index :egress_security_events, [ :project_id, :occurred_at ], order: { occurred_at: :desc }, name: "idx_egress_security_events_project_recent"
     add_index :egress_security_events, [ :event_kind ], name: "index_egress_security_events_on_event_kind"
-    add_index :egress_security_events, [ :egress_allowlist_entry_id ], name: "index_egress_security_events_on_allowlist_entry"
 
     add_check_constraint :egress_security_events,
       "event_kind IN ('denied_egress', 'redacted_secret_extraction', 'allowlist_match')",

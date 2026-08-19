@@ -1047,7 +1047,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_013501) do
     t.index ["account_id"], name: "index_egress_security_events_on_account_id"
     t.index ["agent_run_id", "occurred_at"], name: "idx_egress_security_events_run_recent", order: { occurred_at: :desc }
     t.index ["agent_run_id"], name: "index_egress_security_events_on_agent_run_id"
-    t.index ["egress_allowlist_entry_id"], name: "index_egress_security_events_on_allowlist_entry"
+    t.index ["egress_allowlist_entry_id"], name: "index_egress_security_events_on_egress_allowlist_entry_id"
     t.index ["event_kind"], name: "index_egress_security_events_on_event_kind"
     t.index ["project_id", "occurred_at"], name: "idx_egress_security_events_project_recent", order: { occurred_at: :desc }
     t.index ["project_id"], name: "index_egress_security_events_on_project_id"
@@ -3116,6 +3116,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_013501) do
   add_foreign_key "egress_allowlist_entries", "users", column: "created_by_id", on_delete: :nullify
   add_foreign_key "egress_security_events", "accounts", on_delete: :cascade
   add_foreign_key "egress_security_events", "agent_runs", on_delete: :cascade
+  add_foreign_key "egress_security_events", "egress_allowlist_entries", on_delete: :nullify
   add_foreign_key "egress_security_events", "projects", on_delete: :cascade
   add_foreign_key "exception_incidents", "accounts"
   add_foreign_key "exception_incidents", "projects"

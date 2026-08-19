@@ -841,6 +841,21 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("55 events")
       end
 
+      it "excludes allowlist_match events from the displayed table and count" do
+        agent_run = create(:agent_run, project: project)
+        create(:egress_security_event,
+          account: account, project: project, agent_run: agent_run,
+          destination_host: "blocked.example.com")
+        create_list(:egress_security_event, 3, :allowlist_match,
+          account: account, project: project, agent_run: agent_run,
+          destination_host: "allowed.example.com")
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response.body).to include("1 event")
+        expect(response.body).not_to include("allowed.example.com")
+      end
+
       it "shows an empty state when a policy snapshot exists but no events were recorded" do
         agent_run = create(:agent_run, :completed, project: project, external_metadata: {
           "egress_policy" => { "mode" => "enforced" }

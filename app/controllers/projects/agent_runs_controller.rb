@@ -39,8 +39,9 @@ module Projects
       @final_runner_record = @agent_run.final_runner_record
       @attempted_runners_by_routing_key = @agent_run.attempted_runners_by_routing_key
       @egress_policy_snapshot = (@agent_run.external_metadata.is_a?(Hash) ? @agent_run.external_metadata["egress_policy"] : nil) || nil
-      @egress_security_events = @agent_run.egress_security_events.recent.limit(50).load
-      @egress_denied_event_count = @agent_run.egress_security_events.count
+      egress_audit_events = @agent_run.egress_security_events.audit_visible
+      @egress_security_events = egress_audit_events.recent.limit(50).load
+      @egress_denied_event_count = egress_audit_events.count
     end
 
     def provenance

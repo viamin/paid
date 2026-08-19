@@ -31,6 +31,7 @@ class EgressSecurityEvent < ApplicationRecord
 
   scope :denied, -> { where(event_kind: "denied_egress") }
   scope :redacted, -> { where(event_kind: "redacted_secret_extraction") }
+  scope :audit_visible, -> { where(event_kind: %w[denied_egress redacted_secret_extraction]) }
   scope :for_run, ->(agent_run) { where(agent_run: agent_run) }
   scope :for_project, ->(project) { where(project: project) }
   scope :recent, -> { order(occurred_at: :desc) }
