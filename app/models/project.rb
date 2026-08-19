@@ -19,6 +19,7 @@ class Project < ApplicationRecord
   KNOWLEDGE_STATUSES = %w[pending collecting ready failed stale].freeze
   # "none" is not a method — it is represented by enabled: false at the top level
   REVIEW_METHODS = %w[copilot paid_agent codex ci_action manual].freeze
+  PAID_AGENT_REVIEW_BOT_ALLOWLIST_LOGINS = %w[paid-code-reviewer[bot]].freeze
   GITHUB_AUTH_SOURCES = %w[app pat].freeze
   SCREENSHOT_DRIVERS = {
     "playwright" => "Best for modern browser flows and JavaScript-heavy apps.",
@@ -229,6 +230,8 @@ class Project < ApplicationRecord
   has_many :quality_gate_events, dependent: :destroy
   has_many :quality_thresholds, dependent: :destroy
   has_many :pr_templates, dependent: :destroy
+  has_many :egress_allowlist_entries, dependent: :destroy
+  has_many :egress_security_events, dependent: :destroy
   has_many :chat_session_projects, dependent: :destroy
   has_many :chat_sessions, through: :chat_session_projects
   has_many :context_intake_questions, dependent: :destroy
@@ -249,6 +252,7 @@ class Project < ApplicationRecord
   before_validation :normalize_priority_labels
   before_validation :normalize_interop_settings
   before_validation :normalize_llm_provider_routing
+  before_validation :ensure_paid_reviewer_bot_allowlisted
   before_validation :reset_git_push_pat_fallback_unless_app_backed
   after_update_commit :invalidate_relationship_parsing_on_trust_change
 
@@ -280,6 +284,8 @@ class Project < ApplicationRecord
   validates :max_tokens_per_run,
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 2_147_483_647 },
     allow_nil: true
+  validates :max_pr_auto_continue_tokens,
+    numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 2_147_483_647 }
   validates :token_budget_max_input_tokens,
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 2_147_483_647 },
     allow_nil: true
@@ -507,10 +513,10 @@ class Project < ApplicationRecord
     Knowledge::RunnerConfiguration.for_embedding_candidate_runners(project: self).present?
   end
 
-  # Whether +login+ is a trusted human collaborator on this project. Use
+  # Whether +login+ is a trusted collaborator or opted-in review bot on this project. Use
   # this for inputs that are an untrusted prompt-injection channel —
-  # issue/PR/review COMMENTS — so only operator-allowlisted humans reach the
-  # agent. Deliberately does NOT include the GitHub App bot: Paid must not
+  # issue/PR/review COMMENTS — so only operator-allowlisted authors reach the
+  # agent. Deliberately does NOT implicitly include the GitHub App bot: Paid must not
   # feed its own bot's comments back into the agent. Compare with
   # #trusted_github_author?, which is broader and covers issue/PR authorship.
   def trusted_github_user?(login)
@@ -1042,6 +1048,21 @@ class Project < ApplicationRecord
     super
   end
 
+  # @spec FOCUSED-RUN-009
+  def ensure_paid_reviewer_bot_allowlisted
+    current = Array(allowed_github_usernames).filter_map { |login| login.to_s.presence }
+    managed_logins = PAID_AGENT_REVIEW_BOT_ALLOWLIST_LOGINS
+
+    if paid_agent_review_config_enabled?
+      current_downcased = current.map(&:downcase)
+      additions = managed_logins.reject { |login| current_downcased.include?(login.downcase) }
+      self.allowed_github_usernames = current + additions if additions.any?
+    else
+      pruned = current.reject { |login| managed_logins.any? { |managed| managed.casecmp?(login) } }
+      self.allowed_github_usernames = pruned if pruned.size != current.size
+    end
+  end
+
   def effective_review_settings
     return @effective_review_settings if defined?(@effective_review_settings) && @effective_review_settings
 
@@ -1072,6 +1093,13 @@ class Project < ApplicationRecord
 
   def review_enabled?
     automation_configuration.auto_review.enabled?
+  end
+
+  def paid_agent_review_config_enabled?
+    return false unless review_settings.is_a?(Hash)
+
+    normalized = review_settings.deep_stringify_keys
+    normalized["enabled"] == true && normalized.dig("methods", "paid_agent", "enabled") == true
   end
 
   def wait_for_reviews?

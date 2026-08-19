@@ -207,6 +207,7 @@ class AgentRun < ApplicationRecord
   has_many :agent_run_anomalies, dependent: :destroy
   has_many :knowledge_usage_stats, dependent: :destroy
   has_many :agent_run_marketplace_entries, -> { order(:position) }, dependent: :destroy
+  has_many :egress_security_events, dependent: :destroy
   has_many :sent_coordination_signals,
     class_name: "AgentCoordinationSignal",
     foreign_key: :source_agent_run_id,
@@ -835,6 +836,17 @@ class AgentRun < ApplicationRecord
   def host_placement_decision
     raw = external_metadata.fetch("host_placement_decision", {})
     raw.is_a?(Hash) ? raw.stringify_keys : {}
+  end
+
+  # Extracts the persisted egress policy snapshot stored under
+  # `external_metadata["egress_policy"]`. The snapshot is written by the
+  # resolver before provisioning and is the authoritative record of which
+  # destinations a run was actually allowed to reach.
+  def egress_policy_snapshot
+    return nil unless external_metadata.is_a?(Hash)
+
+    snapshot = external_metadata["egress_policy"]
+    snapshot.is_a?(Hash) ? snapshot : nil
   end
 
   # Resolves the Docker host that owns this run's named workspace volume for
@@ -1511,6 +1523,21 @@ class AgentRun < ApplicationRecord
     return "automatic" if latest_pr_run.blank? || latest_pr_run.status == "completed"
 
     latest_pr_run.trigger_type == "manual" ? "manual" : "automatic"
+  end
+
+  def self.pr_history_scope(project:, pr_number:, issue: nil)
+    project.agent_runs.where(
+      "issue_id = :issue_id OR source_pull_request_number = :pr_num OR pull_request_number = :pr_num",
+      issue_id: issue&.id,
+      pr_num: pr_number
+    )
+  end
+
+  def self.pr_auto_continue_tokens_used(project:, pr_number:, issue: nil)
+    pr_history_scope(project:, pr_number:, issue:)
+      .where(trigger_type: "automatic")
+      .pick(Arel.sql("COALESCE(SUM(COALESCE(tokens_input, 0) + COALESCE(tokens_output, 0)), 0)"))
+      .to_i
   end
 
   # @spec LID-RUNS-004
@@ -2303,6 +2330,7 @@ class AgentRun < ApplicationRecord
 
   PROMPT_ASSEMBLY_KEY = "prompt_assembly"
   ISSUE_PROMPT_ASSEMBLY_KEY = "issue_prompt_assembly"
+  PROMPT_BUILDER_KEY = "prompt_builder"
 
   # Persists prompt-assembly provenance (digest + section list) on the run so
   # configuration bundles and run metadata can fingerprint exactly which
@@ -2328,6 +2356,16 @@ class AgentRun < ApplicationRecord
 
   def prompt_assembly_digest
     prompt_assembly_provenance&.dig("digest")
+  end
+
+  def record_prompt_builder!(builder)
+    metadata = (external_metadata.is_a?(Hash) ? external_metadata.dup : {})
+    metadata[PROMPT_BUILDER_KEY] = builder.to_s
+    update!(external_metadata: metadata)
+  end
+
+  def prompt_builder
+    external_metadata.is_a?(Hash) ? external_metadata[PROMPT_BUILDER_KEY] : nil
   end
 
   # Returns the base prompt for the review goal.

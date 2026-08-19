@@ -23,6 +23,107 @@ RSpec.describe Activities::CheckQualityGateActivity do # @spec QUALITY-LOOPS-005
     expect(result).to include(allowed: true, reason: "quality_gates_disabled")
   end
 
+  # @spec FOCUSED-RUN-007
+  it "blocks automatic PR automation when the per-PR token cap is reached" do
+    project.update!(quality_gate_settings: { "enabled" => false }, max_pr_auto_continue_tokens: 50_000)
+    pull_request = create(:issue, :pull_request, project: project, github_number: 42)
+    create(:agent_run, project: project, issue: pull_request,
+      source_pull_request_number: 42,
+      trigger_type: "automatic",
+      tokens_input: 40_000,
+      tokens_output: 10_000)
+
+    result = activity.execute(project_id: project.id, issue_id: pull_request.id, source_pull_request_number: 42)
+
+    expect(result).to include(
+      allowed: false,
+      blocked: true,
+      reason: "pr_auto_continue_token_limit_exceeded",
+      issue_id: pull_request.id
+    )
+    expect(result[:breaches]).to include(hash_including(
+      metric: "pr_auto_continue_tokens",
+      current: 50_000,
+      threshold: 50_000
+    ))
+  end
+
+  # @spec FOCUSED-RUN-007
+  it "allows automatic PR automation over the token cap after owner override" do
+    project.update!(quality_gate_settings: { "enabled" => false }, max_pr_auto_continue_tokens: 50_000)
+    pull_request = create(:issue, :pull_request, project: project, github_number: 42,
+      pr_auto_continue_token_limit_overridden_at: Time.current)
+    create(:agent_run, project: project, issue: pull_request,
+      source_pull_request_number: 42,
+      trigger_type: "automatic",
+      tokens_input: 50_000)
+
+    result = activity.execute(project_id: project.id, issue_id: pull_request.id, source_pull_request_number: 42)
+
+    expect(result).to include(allowed: true, blocked: false)
+    expect(result[:breaches]).to be_empty
+  end
+
+  # @spec FOCUSED-RUN-007
+  it "bypasses manual PR runs even when the per-PR token cap is reached" do
+    project.update!(max_pr_auto_continue_tokens: 50_000)
+    pull_request = create(:issue, :pull_request, project: project, github_number: 42)
+    manual_run = create(:agent_run, :manual, :completed, project: project, issue: pull_request,
+      source_pull_request_number: 42)
+    create(:agent_run, project: project, issue: pull_request,
+      source_pull_request_number: 42,
+      trigger_type: "automatic",
+      tokens_input: 50_000)
+
+    result = activity.execute(
+      project_id: project.id,
+      issue_id: pull_request.id,
+      agent_run_id: manual_run.id,
+      source_pull_request_number: 42
+    )
+
+    expect(result).to include(allowed: true, bypassed: true, reason: "manual_run")
+  end
+
+  # @spec FOCUSED-RUN-007
+  it "honors explicit quality-gate bypasses even when the per-PR token cap is reached" do
+    project.update!(max_pr_auto_continue_tokens: 50_000)
+    pull_request = create(:issue, :pull_request, project: project, github_number: 42)
+    create(:agent_run, project: project, issue: pull_request,
+      source_pull_request_number: 42,
+      trigger_type: "automatic",
+      tokens_input: 50_000)
+
+    result = activity.execute(
+      project_id: project.id,
+      issue_id: pull_request.id,
+      source_pull_request_number: 42,
+      bypass_quality_gate: true
+    )
+
+    expect(result).to include(allowed: true, bypassed: true, reason: "explicit_bypass")
+  end
+
+  # @spec FOCUSED-RUN-007
+  it "counts automatic PR tokens from both the follow-up and PR-creation paths" do
+    project.update!(quality_gate_settings: { "enabled" => false }, max_pr_auto_continue_tokens: 50_000)
+    pull_request = create(:issue, :pull_request, project: project, github_number: 42)
+    original_issue = create(:issue, project: project)
+    create(:agent_run, :completed, project: project, issue: original_issue,
+      pull_request_number: 42,
+      trigger_type: "automatic",
+      tokens_input: 30_000)
+    create(:agent_run, :completed, project: project, issue: pull_request,
+      source_pull_request_number: 42,
+      trigger_type: "automatic",
+      tokens_input: 20_000)
+
+    result = activity.execute(project_id: project.id, issue_id: pull_request.id, source_pull_request_number: 42)
+
+    expect(result).to include(allowed: false, blocked: true, reason: "pr_auto_continue_token_limit_exceeded")
+    expect(result[:breaches]).to include(hash_including(current: 50_000, threshold: 50_000))
+  end
+
   it "blocks automatic runs when the rolling average breaches the threshold" do
     create_metric(0.4)
     create_metric(0.5)

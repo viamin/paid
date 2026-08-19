@@ -27,10 +27,10 @@ module ExecutionRunners
   class Base
     # The kind of execution resource this runner provisions (e.g. "container"),
     # or nil when the runner cannot identify a resource kind. A runner that
-    # returns nil skips the provisioning-intent ledger (CONTAINER-RUNTIME-019)
+    # returns nil skips the provisioning-intent ledger (CONTAINER-RUNTIME-022)
     # because it cannot attribute a created resource back to its Paid origin.
     # @return [String, nil]
-    # @spec CONTAINER-RUNTIME-019
+    # @spec CONTAINER-RUNTIME-022
     def resource_kind
       nil
     end
@@ -38,7 +38,7 @@ module ExecutionRunners
     # Whether this runner/provider can apply ownership tags to a provisioned
     # resource. Defaults to false (conservative) so a remote runner that cannot
     # tag degrades explicitly instead of silently losing attribution
-    # (CONTAINER-RUNTIME-020).
+    # (CONTAINER-RUNTIME-023).
     # @return [Boolean]
     def supports_tagging?
       false
@@ -86,8 +86,9 @@ module ExecutionRunners
     # @raise [TimeoutError] wall-clock timeout exceeded
     # @raise [OutputAbortError] fatal output pattern matched
     # @raise [ExecutionError] workload failed to execute
+    # @spec CONTAINER-RUNTIME-019
     def start(handle:, command:, timeout:, startup_timeout:, idle_timeout:,
-              abort_patterns:, preparation:, heartbeat_path:)
+              abort_patterns:, preparation:, heartbeat_path:, &block)
       raise NotImplementedError, "#{self.class} must implement ##{__method__}"
     end
 

@@ -7,8 +7,8 @@
 # assume a human intentionally removed automation to take over manually and do
 # not re-add it.
 #
-# Scheduled via GoodJob cron every hour. Only inspects runs from the last 24
-# hours so query cost stays bounded as the table grows.
+# Scheduled via GoodJob cron every hour. Only inspects runs completed in the
+# last 24 hours so query cost stays bounded as the table grows.
 class RecoverMissingPullRequestLabelsJob < ApplicationJob
   include GoodJob::ActiveJobExtensions::Concurrency
 
@@ -79,15 +79,18 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
   private
 
   # Returns one AgentRun per unique (project_id, pull_request_number),
-  # bounded to the last 24 hours based on creation time. This keeps the
-  # candidate set small for the hourly job while using the indexed
-  # created_at column instead of the unindexed completed_at.
+  # bounded to runs completed in the last 24 hours. The window must track
+  # completion, not creation: pull requests are opened when a run completes,
+  # so a run older than 24h at completion (e.g. a multi-day create_pr run)
+  # would otherwise never be eligible for label recovery.
   # DISTINCT ON deduplicates in SQL so we don't need an in-memory Set.
+  # Uses the (status, completed_at) index.
+  # @spec PR-LABEL-RECOVERY-001
   def candidate_runs
     AgentRun.completed
       .where(goal: "create_pr")
       .where.not(pull_request_number: nil)
-      .where("agent_runs.created_at >= ?", CANDIDATE_WINDOW.ago)
+      .where("agent_runs.completed_at >= ?", CANDIDATE_WINDOW.ago)
       .select("DISTINCT ON (project_id, pull_request_number) agent_runs.*")
       .order(:project_id, :pull_request_number, id: :desc)
       .preload(:issue, project: :github_token)
@@ -121,6 +124,7 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
     result
   end
 
+  # @spec PR-LABEL-RECOVERY-002
   def missing_labels(project, synced_pr, agent_run)
     inherited_missing = inheritable_priority_labels(project, agent_run)
       .reject { |l| synced_pr.has_label?(l) }

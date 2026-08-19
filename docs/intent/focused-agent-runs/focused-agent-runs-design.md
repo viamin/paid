@@ -88,6 +88,20 @@ The composite score is recomputed with the focus-specific weights once the
 `focus_resolved` value lands. Attribution runs only for the focuses in
 `FOCUS_RESOLUTION_ATTRIBUTION_FOCUSES` (i.e. not `general`).
 
+## PR automation fuses
+
+Focused runs still need a hard spend fuse because a repeated PR follow-up can
+fail before resolving its focus. Each project has a
+`max_pr_auto_continue_tokens` cap for automatic runs tied to a single pull
+request. Before the poll workflow queues another automatic create-pr or review
+run for a PR, `CheckQualityGateActivity` sums recorded tokens from prior
+automatic runs on that PR. If usage has reached the cap, the workflow skips the
+new run and escalates the PR instead.
+
+Escalation also pauses `auto_continue_paused` for the PR. Dismissing escalation
+resumes it, preserving the existing "remove the escalation label to let
+automation try again" operator flow.
+
 ## What this is not
 
 - **Not parallel runs per PR.** Runs are sequential — one focused run per

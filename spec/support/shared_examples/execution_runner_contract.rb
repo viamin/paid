@@ -55,8 +55,8 @@ RSpec.shared_examples "an ExecutionRunner implementation" do
     end
   end
 
-  # @spec CONTAINER-RUNTIME-019
-  # @spec CONTAINER-RUNTIME-020
+  # @spec CONTAINER-RUNTIME-022
+  # @spec CONTAINER-RUNTIME-023
   describe "provisioning ledger and ownership tags (RDR-058)" do
     before do
       skip "runner does not identify a resource kind" unless runner.respond_to?(:resource_kind) && runner.resource_kind.present?

@@ -35,14 +35,14 @@ module ExecutionRunners
     # Docker volume names (RDR-054).
     WORKSPACE_VOLUME_PREFIX = "paid-workspace"
 
-    # @spec CONTAINER-RUNTIME-019
+    # @spec CONTAINER-RUNTIME-022
     def resource_kind
       RESOURCE_KIND
     end
 
     # Docker supports container/volume labels, so the runner can apply the
     # stable Paid ownership tags to every provisioned resource.
-    # @spec CONTAINER-RUNTIME-020
+    # @spec CONTAINER-RUNTIME-023
     def supports_tagging?
       true
     end
@@ -52,9 +52,9 @@ module ExecutionRunners
       true
     end
 
-    # @spec CONTAINER-RUNTIME-019
-    # @spec CONTAINER-RUNTIME-020
-    # @spec CONTAINER-RUNTIME-021
+    # @spec CONTAINER-RUNTIME-022
+    # @spec CONTAINER-RUNTIME-023
+    # @spec CONTAINER-RUNTIME-024
     def provision(spec:)
       backend = backend_for(spec)
       policy = spec.networking_policy
@@ -76,7 +76,7 @@ module ExecutionRunners
       result = service.provision
       # Capture the provider resource identifier immediately so a crash between
       # here and handle persistence still leaves a reconcileable ledger row
-      # (CONTAINER-RUNTIME-021).
+      # (CONTAINER-RUNTIME-024).
       ledger.link_created(intent, provider_resource_id: result[:container_id], host: result[:container_host])
       apply_firewall!(service: service, backend: backend, policy: policy)
       handle = handle_for(spec: spec, result: result)
@@ -107,12 +107,13 @@ module ExecutionRunners
       raise
     end
 
+    # @spec CONTAINER-RUNTIME-019
     def start(handle:, command:, timeout: nil, startup_timeout: nil, idle_timeout: nil,
-              abort_patterns: nil, preparation: nil, heartbeat_path: nil)
+              abort_patterns: nil, preparation: nil, heartbeat_path: nil, &block)
       result = reconnect(handle: handle).execute(
         command, timeout: timeout, startup_timeout: startup_timeout, idle_timeout: idle_timeout,
         env: handle.metadata["environment"] || {}, preparation: preparation,
-        heartbeat_path: heartbeat_path, abort_patterns: abort_patterns
+        heartbeat_path: heartbeat_path, abort_patterns: abort_patterns, &block
       )
       translate_result(result)
     rescue Containers::Provision::StartupTimeoutError => e
