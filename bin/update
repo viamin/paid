@@ -157,7 +157,9 @@ end
 
 # A registry path that no longer exists means the registry has drifted from the
 # repository. Hold the whole group and say so, rather than aborting the run —
-# one stale entry must not stop every other pin from being checked.
+# one stale entry must not stop every other pin from being checked. The hold is
+# surfaced as a warning at the end of the run so the drift is visible without
+# blocking other groups.
 #
 # @spec TOOLCHAIN-PIN-002
 def registry_drifted?(group)

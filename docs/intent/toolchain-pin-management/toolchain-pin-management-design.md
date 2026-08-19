@@ -107,9 +107,12 @@ that already govern Paid's other pins apply to every pin this segment adds.
   the version came from, so version and checksum can never disagree.
 - **Verified existence.** A resolved version is only written when the artifact
   it names is confirmed to exist upstream.
-- **Fail loud.** A pin whose registry pattern no longer matches its file is an
-  error, not a skipped entry — a silently unmatched pattern would report
-  success while leaving the environment stale.
+- **Hold, do not silently skip.** A pin whose registry pattern no longer
+  matches its file holds the whole group and surfaces as a warning at the end
+  of the run, rather than being treated as up-to-date — a silently unmatched
+  pattern would report success while leaving the environment stale. The hold
+  is deliberate rather than fatal so one stale entry cannot stop every other
+  pin from being checked.
 
 ## Reporting
 

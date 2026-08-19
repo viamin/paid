@@ -15,8 +15,10 @@
   *Code:* `scripts/lib/toolchain_pins.rb`.
 
 - [x] **TOOLCHAIN-PIN-002** — When a registry pattern fails to match the file
-  it is declared against, the update SHALL raise rather than report success, so
-  a reworded file cannot silently disable its own update path.
+  it is declared against, the update SHALL hold the whole group, surface the
+  drift as a warning at the end of the run, and continue with other groups, so
+  a reworded file cannot silently disable its own update path and one stale
+  entry cannot stop every other pin from being checked.
   *Tests:* `spec/config/toolchain_pins_spec.rb`.
   *Code:* `scripts/lib/toolchain_pins.rb`, `bin/update`.
 

@@ -39,6 +39,7 @@ module ToolchainPins
     ".devcontainer/compose.yaml",
     "docker-compose.yml",
     ".github/workflows/ci.yml",
+    ".github/workflows/claude-code-review.yml",
     ".github/workflows/system_tests.yml",
     ".github/workflows/test_prof.yml",
     ".github/workflows/pr-screenshots.yml",
@@ -63,7 +64,8 @@ module ToolchainPins
     "omp" => "@oh-my-pi/pi-coding-agent",
     "pi" => "@mariozechner/pi-coding-agent",
     "gemini" => "@google/gemini-cli",
-    "copilot" => "@github/copilot"
+    "copilot" => "@github/copilot",
+    "cursor" => "cursor-agent"
   }.freeze
 
   # The gem whose release determines every contract-owned version above.
