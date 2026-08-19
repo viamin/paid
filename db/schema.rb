@@ -1022,8 +1022,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_013501) do
     t.index ["project_id"], name: "index_egress_allowlist_entries_on_project_id"
     t.check_constraint "host_pattern IS NOT NULL", name: "chk_egress_allowlist_entries_host_present"
     t.check_constraint "port IS NULL OR port > 0 AND port <= 65535", name: "chk_egress_allowlist_entries_port_range"
-    t.check_constraint "scheme IS NULL OR (scheme::text = ANY (ARRAY['http'::character varying, 'https'::character varying]::text[]))", name: "chk_egress_allowlist_entries_scheme_valid"
-    t.check_constraint "source_kind::text = ANY (ARRAY['tenant'::character varying, 'platform'::character varying, 'operator_override'::character varying]::text[])", name: "chk_egress_allowlist_entries_source_kind_valid"
+    t.check_constraint "scheme IS NULL OR (scheme::text = ANY (ARRAY['http'::character varying::text, 'https'::character varying::text]))", name: "chk_egress_allowlist_entries_scheme_valid"
+    t.check_constraint "source_kind::text = ANY (ARRAY['tenant'::character varying::text, 'platform'::character varying::text, 'operator_override'::character varying::text])", name: "chk_egress_allowlist_entries_source_kind_valid"
   end
 
   create_table "egress_security_events", comment: "Audit trail for blocked outbound traffic and redacted secret-extraction attempts captured by the agent container egress gateway.", force: :cascade do |t|
@@ -1051,9 +1051,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_013501) do
     t.index ["project_id", "occurred_at"], name: "idx_egress_security_events_project_recent", order: { occurred_at: :desc }
     t.index ["project_id"], name: "index_egress_security_events_on_project_id"
     t.check_constraint "destination_port IS NULL OR destination_port > 0 AND destination_port <= 65535", name: "chk_egress_security_events_port_range"
-    t.check_constraint "event_kind::text = ANY (ARRAY['denied_egress'::character varying, 'redacted_secret_extraction'::character varying, 'allowlist_match'::character varying]::text[])", name: "chk_egress_security_events_kind_valid"
-    t.check_constraint "scheme IS NULL OR (scheme::text = ANY (ARRAY['http'::character varying, 'https'::character varying]::text[]))", name: "chk_egress_security_events_scheme_valid"
-    t.check_constraint "severity::text = ANY (ARRAY['info'::character varying, 'warn'::character varying, 'critical'::character varying]::text[])", name: "chk_egress_security_events_severity_valid"
+    t.check_constraint "event_kind::text = ANY (ARRAY['denied_egress'::character varying::text, 'redacted_secret_extraction'::character varying::text, 'allowlist_match'::character varying::text])", name: "chk_egress_security_events_kind_valid"
+    t.check_constraint "scheme IS NULL OR (scheme::text = ANY (ARRAY['http'::character varying::text, 'https'::character varying::text]))", name: "chk_egress_security_events_scheme_valid"
+    t.check_constraint "severity::text = ANY (ARRAY['info'::character varying::text, 'warn'::character varying::text, 'critical'::character varying::text])", name: "chk_egress_security_events_severity_valid"
   end
 
   create_table "exception_incidents", force: :cascade do |t|
