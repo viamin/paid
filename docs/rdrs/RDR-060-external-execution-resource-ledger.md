@@ -15,7 +15,7 @@
   - [RDR-057](RDR-057-remote-execution-data-contract.md) (Remote Execution Data Contract)
   - [RDR-058](RDR-058-execution-authority-network-and-isolation.md) (Execution Authority, Network Policy, and Isolation)
 - **Related Issues**: [#3420](https://github.com/viamin/paid/issues/3420) (closeout), [#3409](https://github.com/viamin/paid/issues/3409), [#3410](https://github.com/viamin/paid/issues/3410), [#3411](https://github.com/viamin/paid/issues/3411), [#3352](https://github.com/viamin/paid/issues/3352), [#3344](https://github.com/viamin/paid/issues/3344), [#3346](https://github.com/viamin/paid/issues/3346), [#3358](https://github.com/viamin/paid/issues/3358)
-- **Related Tests**: `spec/jobs/agent_run_resource_janitor_job_spec.rb`, `spec/services/execution_runners_spec.rb`, `spec/services/execution_runners/`, `spec/models/worktree_spec.rb`, `spec/models/container_pool_entry_spec.rb`
+- **Related Tests**: `spec/jobs/agent_run_resource_janitor_job_spec.rb`, `spec/services/execution_runners_spec.rb`, `spec/services/execution_runners/`, `spec/models/worktree_spec.rb`, `spec/services/containers/pool_manager_spec.rb`
 
 ## Implementation Status
 
@@ -27,7 +27,7 @@ tags, and reconciliation against provider state are not yet implemented.
 | Criterion | Status | Evidence |
 |-----------|--------|----------|
 | Externally provisioned execution resources representable in ledger | **Partial** | Resources tracked across `agent_runs` (container_id, container_host, runner_handle), `container_pool_entries`, `worktrees`, `docker_hosts` — but no unified ledger table |
-| Provider resources carry stable Paid ownership tags | **Gap** | Docker containers use `paid-workspace-{id}` volume naming but no formal ownership tags/labels on provider resources |
+| Provider resources carry stable Paid ownership tags | **Partial** | Docker containers and volumes are labeled during provisioning (`app/services/containers/provision.rb`) with `paid.managed`, `paid.resource`, `paid.project_id`, and `paid.agent_run_id`/`paid.container_pool_entry_id`, plus deterministic `paid-workspace-{id}` volume naming — but `paid.account_id`, `paid.created_at`, and `paid.resource_kind` are not yet applied |
 | Crash-window provisioning intents before provider create calls | **Gap** | `runner_handle` persisted post-provision (#3346); no pre-provision intent record |
 | Reconciliation detects ledger/provider drift and retries cleanup | **Gap** | Janitor job retries failed cleanup; no active drift detection against provider state |
 | Providers without tag/list support degrade explicitly and safely | **Gap** | No explicit degradation model for providers lacking tag/list APIs |

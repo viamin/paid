@@ -93,29 +93,36 @@ and has no single query surface for "all resources provisioned for account X."
 
 ### Criterion 2: Provider resources carry stable Paid ownership tags
 
-**Status**: Gap.
+**Status**: Partial.
 
 **Shipped**:
 
 - Docker workspace volumes use a deterministic naming convention:
-  `paid-workspace-{agent_run_id}`. This serves as an implicit ownership
-  signal but is not a formal tag/label on the provider resource.
-- Container pool entries carry agent run associations but Docker containers
-  are not labeled with Paid ownership metadata.
+  `paid-workspace-{agent_run_id}`, and are also labeled at creation time via
+  `volume_options` (`provision.rb:2450-2462`): `paid.managed`,
+  `paid.resource`, `paid.project_id`, plus `paid.agent_run_id` or
+  `paid.container_pool_entry_id`. These labels are applied through
+  `backend.create_volume(@workspace_volume, volume_options)`
+  (`provision.rb:2264`).
+- Containers are labeled via `container_labels` (`provision.rb:2464`):
+  `paid.project_id`, and either `paid.agent_run_id` or
+  `paid.container_pool_entry_id`/`paid.container_pool`, applied through
+  `"Labels" => container_labels` in the container config
+  (`provision.rb:2522`).
 
 **What is missing**:
 
-- No Docker container labels (`paid.managed`, `paid.account_id`,
-  `paid.agent_run_id`, etc.) are applied during provisioning.
-- No volume labels are applied.
+- No `paid.account_id`, `paid.created_at`, or `paid.resource_kind` labels
+  (the full RDR-060 tag set) are applied — only the subset above.
 - No tag/label strategy for future cloud providers.
 
 **Evidence**:
 
 - `app/jobs/agent_run_resource_janitor_job.rb:17` — `VOLUME_PREFIX = "paid-workspace-"` (naming convention, not a label)
-- `app/services/containers/provision.rb` — container create options do not include labels with ownership metadata
+- `app/services/containers/provision.rb:2450-2462` — `volume_options` applies ownership labels to volumes
+- `app/services/containers/provision.rb:2464-2484` — `container_labels` applies ownership labels to containers
 
-**Verdict**: Gap — deterministic naming exists but formal ownership tags are not applied.
+**Verdict**: Partial — container and volume labels are applied during provisioning, but the full RDR-060 tag set (`paid.account_id`, `paid.created_at`, `paid.resource_kind`) is not yet complete. Tracked in #3410.
 
 ---
 
@@ -265,11 +272,14 @@ none is "implicitly satisfied" by the shipped code.
    standardized lifecycle states, and the provisioning intent capability. This
    is the foundational gap that gates criteria 2-5.
 
-2. **Provider ownership tags on resources** — tracked in
+2. **Complete provider ownership tag set** — tracked in
    [#3410](https://github.com/viamin/paid/issues/3410). Docker containers and
-   volumes are not labeled with Paid ownership metadata. The deterministic
-   volume naming (`paid-workspace-{id}`) provides implicit ownership but is not
-   a formal tagging system.
+   volumes are already labeled with `paid.managed`, `paid.resource`,
+   `paid.project_id`, and `paid.agent_run_id`/`paid.container_pool_entry_id`
+   during provisioning (`app/services/containers/provision.rb`), but the full
+   RDR-060 tag set (`paid.account_id`, `paid.created_at`,
+   `paid.resource_kind`) is not yet applied, and there is no tag/label
+   strategy for future cloud providers.
 
 3. **Reconciliation against provider state** — tracked in
    [#3411](https://github.com/viamin/paid/issues/3411). No periodic drift
@@ -329,7 +339,7 @@ seven blocking dependencies. This section reconciles each against the
 | Dependency | State | Reconciliation |
 |------------|-------|----------------|
 | [#3409](https://github.com/viamin/paid/issues/3409) — ledger data model | Open | Remaining RDR-060 scope (gap 1). The foundational table, model, and state machine are not implemented. This is the load-bearing gap that gates the other four. |
-| [#3410](https://github.com/viamin/paid/issues/3410) — runner/ledger integration with provider tags | Open | Remaining RDR-060 scope (gap 2). Runner provision/cleanup paths do not write ledger entries or apply ownership tags to provider resources. |
+| [#3410](https://github.com/viamin/paid/issues/3410) — runner/ledger integration with provider tags | Open | Remaining RDR-060 scope (gap 2). Runner provision/cleanup paths do not write ledger entries, and provider resources carry only a partial ownership tag set (`paid.managed`, `paid.resource`, `paid.project_id`, `paid.agent_run_id`/`paid.container_pool_entry_id`) — missing `paid.account_id`, `paid.created_at`, `paid.resource_kind`. |
 | [#3411](https://github.com/viamin/paid/issues/3411) — reconciliation against provider state | Open | Remaining RDR-060 scope (gap 3). No periodic drift detection or orphan discovery exists. The janitor job handles per-run cleanup retries but does not reconcile against the provider's resource inventory. |
 | [#3352](https://github.com/viamin/paid/issues/3352) — idempotent execution lifecycle | Open | Remaining RDR-060 scope (gap 4). Post-provision recovery via `RunnerHandle` is shipped (#3346), but pre-provision intents and idempotent state transitions are not. |
 | [#3344](https://github.com/viamin/paid/issues/3344) — abstract logging/status/cleanup behind runner | Closed | Satisfied. The `ExecutionRunners::Base` interface and `LocalDockerRunner` implementation provide the integration surface that ledger operations will hook into. |
