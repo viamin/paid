@@ -630,7 +630,7 @@ module ExecutionRunners
             "mount_point" => spec.workspace&.mount_point
           }.compact,
           "networking" => {
-            "mode" => spec.networking_policy&.mode&.to_s,
+            "mode" => spec.networking_policy&.canonical_mode&.to_s,
             "firewall" => spec.networking_policy&.firewall?,
             "allow_destinations" => ExecutionRunners.json_value(spec.networking_policy&.allow_destinations || []),
             "egress_profile" => spec.networking_policy&.egress_profile&.to_s

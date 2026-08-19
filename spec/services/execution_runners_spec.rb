@@ -813,7 +813,7 @@ RSpec.describe ExecutionRunners do
       manifest = described_class.from_run_spec(run_spec)
 
       expect(manifest.execution["networking"]).to include(
-        "mode" => "proxy_restricted",
+        "mode" => "approved_services",
         "firewall" => true,
         "egress_profile" => "locked"
       )
@@ -837,7 +837,7 @@ RSpec.describe ExecutionRunners do
       manifest = described_class.from_run_spec(open_spec)
 
       expect(manifest.execution["networking"]).to include(
-        "mode" => "direct_outbound",
+        "mode" => "model_direct",
         "firewall" => false,
         "egress_profile" => "open"
       )
