@@ -393,6 +393,7 @@ RSpec.describe Screenshots::ContainerCapture do
 
     # @spec CONTAINER-RUNTIME-018
     it "persists a durable artifact manifest keyed by storage key, without presigned URLs" do
+      updated_at = agent_run.updated_at
       manifest = service.send(:publish_result!, [ artifacts[:screenshot_path] ])
 
       expect(manifest).to include(expected_screenshot_artifact, expected_trace_artifact, expected_capture_video_artifact)
@@ -401,6 +402,7 @@ RSpec.describe Screenshots::ContainerCapture do
         manifest.map { |artifact| artifact.merge("locator" => artifact["locator"].except("url")) }
       )
       expect(persisted).to all(include("locator" => hash_excluding("url")))
+      expect(agent_run.updated_at).to eq(updated_at)
     end
 
     it "passes previous screenshots plus trace and video links into the PR comment" do
