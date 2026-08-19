@@ -48,7 +48,24 @@ module Activities
         # provisioning work so failed provisions remain auditable, and fail
         # closed when unsafe tenant entries were rejected.
         # @spec EGRESS-POLICY-006
-        AgentRuns::EgressPolicy::Resolve.resolve_and_persist!(agent_run)
+        begin
+          AgentRuns::EgressPolicy::Resolve.resolve_and_persist!(agent_run)
+        rescue AgentRuns::EgressPolicy::Resolve::DeniedPolicyError => e
+          # The denial is deterministic (the same unsafe rows are rejected on
+          # every attempt), so retrying would just burn DEFAULT_RETRY_POLICY's
+          # 3 attempts with backoff before the workflow sees the failure. The
+          # snapshot is already persisted and the denial is already logged by
+          # +resolve_and_persist!+, so re-raising as a non-retryable
+          # ApplicationError fails fast and surfaces the denial to the
+          # workflow on the first attempt — see +clone_repo_activity.rb+
+          # (StalePullRequest) and +provision_mcp_servers_activity.rb+
+          # (McpProvisioningFailed) for the same input-driven-failure pattern.
+          raise Temporalio::Error::ApplicationError.new(
+            e.message,
+            type: "EgressPolicyDenied",
+            non_retryable: true
+          )
+        end
         provision_with_heartbeat(agent_run, planned_container_host: input[:container_host])
 
         # worktree_path is not yet populated at provision time — git clone

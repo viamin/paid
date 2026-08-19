@@ -86,10 +86,36 @@ RSpec.describe Activities::ProvisionContainerActivity do
 
       expect {
         activity.execute(agent_run_id: agent_run.id)
-      }.to raise_error(AgentRuns::EgressPolicy::Resolve::DeniedPolicyError, /wildcard/)
+      }.to raise_error(
+        Temporalio::Error::ApplicationError,
+        /wildcard/
+      ) { |error| expect(error.non_retryable).to be(true) }
 
       snapshot = AgentRuns::EgressPolicy::Snapshot.from_record(agent_run.reload)
       expect(snapshot).to be_denied
+    end
+
+    # The denial is deterministic — same unsafe rows are rejected on every
+    # attempt — so burning DEFAULT_RETRY_POLICY's 3 attempts with backoff
+    # would just delay surfacing the failure. The denial is wrapped in a
+    # non-retryable Temporalio::Error::ApplicationError (type
+    # "EgressPolicyDenied") so the workflow sees it on the first attempt.
+    # @spec EGRESS-POLICY-005
+    it "surfaces a denied policy as a non-retryable EgressPolicyDenied application error" do
+      create(:egress_allowlist_entry, account: project.account, host_pattern: "api.partner.com")
+        .tap { |entry| entry.update_columns(host_pattern: "169.254.169.254") } # bypass write-time validation
+
+      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+      allow(agent_run).to receive(:ensure_proxy_token!).and_return("token")
+
+      error = nil
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |raised| error = raised }
+
+      expect(error.type).to eq("EgressPolicyDenied")
+      expect(error.non_retryable).to be(true)
+      expect(error.message).to include('IP literal')
     end
 
     it "does not create a second container when retried against a live container" do
