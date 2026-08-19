@@ -368,6 +368,56 @@ RSpec.describe ExecutionRunners do
 
     describe "#output_manifest" do
       let(:project) { create(:project, owner: "acme", repo: "widgets") }
+      # Verification-result artifacts are agent-authored input. The
+      # consumption contract only honors URLs from this lane — a spoofed
+      # `storage_key` under another tenant's prefix would otherwise be
+      # re-signed into a working presigned URL by any durable consumer.
+      let(:report_artifact) do
+        {
+          "kind" => "generated_report",
+          "content_type" => "application/pdf",
+          "storage_key" => "reports/acme/widgets/pr-42/abc123/summary.pdf",
+          "url" => "https://artifacts.test/summary.pdf",
+          "context" => {
+            "account_id" => 9_999,
+            "project_id" => 9_999,
+            "agent_run_id" => 999_999
+          },
+          "metadata" => {
+            "note" => "Summary report"
+          }
+        }
+      end
+      let(:expected_binary_artifact) do
+        {
+          "lane" => "object_storage",
+          "kind" => "generated_report",
+          "content_type" => "application/pdf",
+          "locator" => { "url" => "https://artifacts.test/summary.pdf" },
+          "context" => {
+            "account_id" => project.account_id,
+            "project_id" => project.id,
+            "agent_run_id" => agent_run.id
+          },
+          "metadata" => {
+            "note" => "Summary report"
+          }
+        }
+      end
+      let(:persisted_manifest_artifact) do
+        {
+          "lane" => "object_storage",
+          "kind" => "screenshot",
+          "content_type" => "image/png",
+          "locator" => { "key" => "screenshots/acme/widgets/pr-42/abc123/home.png" },
+          "context" => {
+            "account_id" => project.account_id,
+            "project_id" => project.id,
+            "agent_run_id" => agent_run.id
+          },
+          "metadata" => { "route_name" => "home" }
+        }
+      end
       let(:agent_run) do
         create(
           :agent_run,
@@ -379,9 +429,7 @@ RSpec.describe ExecutionRunners do
           review_url: "https://example.test/review/42",
           verification_result: {
             "status" => "passed",
-            "artifacts" => [
-              { "kind" => "trace", "url" => "https://artifacts.test/trace.zip", "note" => "Playwright trace" }
-            ]
+            "artifacts" => [ report_artifact ]
           }
         )
       end
@@ -391,9 +439,85 @@ RSpec.describe ExecutionRunners do
 
         expect(manifest).to be_a(ExecutionRunners::ExecutionOutputManifest)
         expect(manifest.artifacts["code_outputs"].first["result_commit_sha"]).to eq("abc123")
-        expect(manifest.artifacts["binary_artifacts"].first["lane"]).to eq("object_storage")
+        expect(manifest.artifacts["binary_artifacts"].first).to include(expected_binary_artifact)
         expect(manifest.artifacts["structured_results"].first["kind"]).to eq("verification_result")
         expect(manifest.git_output["pull_request_number"]).to eq(42)
+      end
+
+      # @spec CONTAINER-RUNTIME-018
+      it "forwards persisted artifact-manifest keys without inventing presigned URLs" do
+        agent_run.update!(external_metadata: { "artifact_manifest" => [ persisted_manifest_artifact ] })
+
+        manifest = described_class.success(stdout: "ok", exit_code: 0).output_manifest(agent_run:)
+
+        expect(manifest.artifacts["binary_artifacts"]).to include(
+          hash_including(
+            "kind" => "screenshot",
+            "locator" => { "key" => "screenshots/acme/widgets/pr-42/abc123/home.png" }
+          )
+        )
+      end
+
+      # @spec CONTAINER-RUNTIME-018
+      # Verification artifacts are agent-authored input. A spoofed `storage_key`
+      # under another tenant's prefix must not survive into the durable manifest,
+      # because durable consumers re-sign keys into presigned URLs.
+      it "drops verification-artifact storage keys and locator keys" do
+        spoofed_key = "screenshots/other-org/other-repo/pr-1/abc/home.png"
+        artifact = {
+          "kind" => "spoofed_artifact",
+          "url" => "https://artifacts.test/spoofed.png",
+          "storage_key" => spoofed_key,
+          "locator" => { "key" => spoofed_key, "url" => "https://artifacts.test/spoofed.png" }
+        }
+        agent_run.update!(verification_result: { "status" => "passed", "artifacts" => [ artifact ] })
+
+        manifest = described_class.success(stdout: "ok", exit_code: 0).output_manifest(agent_run:)
+        entry = manifest.artifacts["binary_artifacts"].first
+
+        expect(entry["locator"]).to eq({ "url" => "https://artifacts.test/spoofed.png" })
+        expect(entry["locator"]).not_to have_key("key")
+        expect(entry.to_s).not_to include(spoofed_key)
+      end
+
+      # @spec CONTAINER-RUNTIME-018
+      # `external_metadata` is not exclusively runner-written: interop callers
+      # can persist arbitrary `artifact_manifest` entries
+      # (`Api::Projects::ExternalAgentRunsController` →
+      # `AgentRuns::IngestExternal` stores `external_metadata` verbatim). A key
+      # planted under another tenant's prefix must therefore degrade to
+      # URL-only even on the trusted lane, because durable consumers re-sign
+      # keys into presigned URLs.
+      it "drops trusted-lane locator keys outside the project's storage namespace" do
+        planted_key = "screenshots/other-org/other-repo/pr-1/abc/home.png"
+        artifact = {
+          "kind" => "screenshot",
+          "storage_key" => planted_key,
+          "url" => "https://artifacts.test/planted.png",
+          "locator" => { "key" => planted_key, "url" => "https://artifacts.test/planted.png" }
+        }
+        agent_run.update!(external_metadata: { "artifact_manifest" => [ artifact ] })
+
+        manifest = described_class.success(stdout: "ok", exit_code: 0).output_manifest(agent_run:)
+        entry = manifest.artifacts["binary_artifacts"].first
+
+        expect(entry["locator"]).to eq({ "url" => "https://artifacts.test/planted.png" })
+        expect(entry.to_s).not_to include(planted_key)
+      end
+
+      # @spec CONTAINER-RUNTIME-018
+      # The system always knows the run's real account/project/run identity;
+      # the artifact must never be allowed to misattribute itself to a
+      # different tenant.
+      it "makes the run's identity authoritative over artifact-supplied context" do
+        manifest = described_class.success(stdout: "ok", exit_code: 0).output_manifest(agent_run:)
+        entry = manifest.artifacts["binary_artifacts"].first
+
+        expect(entry["context"]).to eq(
+          "account_id" => project.account_id,
+          "project_id" => project.id,
+          "agent_run_id" => agent_run.id
+        )
       end
     end
   end
@@ -626,6 +750,11 @@ RSpec.describe ExecutionRunners do
           "lane" => "object_storage",
           "kind" => "trace",
           "locator" => { "url" => "https://artifacts.test/trace.zip" },
+          "context" => {
+            "account_id" => project.account_id,
+            "project_id" => project.id,
+            "agent_run_id" => agent_run.id
+          },
           "metadata" => { "note" => "Playwright trace" }
         }
       ]
