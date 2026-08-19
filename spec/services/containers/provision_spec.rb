@@ -348,6 +348,25 @@ RSpec.describe Containers::Provision do
       expect(Containers::RuntimeImageSelector).not_to have_received(:select)
     end
 
+    it "reuses the recorded runtime image selection on a non-pool reconnect instead of re-resolving" do
+      # @spec IMMUTABLE-IMAGE-002
+      # A Temporal retry/worker failover reconnects to an already-provisioned
+      # container through Containers::Provision.reconnect (no pool_entry).
+      # Re-resolving #options against the catalog would overwrite the
+      # recorded provenance with a digest the running container does not use.
+      agent_run.record_runtime_image_selection!(runtime_image_selection_metadata(digest: "b" * 64))
+      allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("production"))
+      # The catalog default may have moved since the original provision.
+      allow(Containers::RuntimeImageSelector).to receive(:select)
+        .and_raise(Containers::RuntimeImageCatalog::UnknownProfileError, "catalog must not be consulted")
+
+      svc = described_class.new(agent_run: agent_run, worktree_path: worktree_path)
+
+      expect(svc.options[:image]).to eq("ghcr.io/acme/paid-agent@sha256:#{'b' * 64}")
+      expect(agent_run.reload.runtime_image_selection).to include("digest" => "sha256:#{'b' * 64}")
+      expect(Containers::RuntimeImageSelector).not_to have_received(:select)
+    end
+
     it "applies container_memory_bytes from user settings" do
       create(:user_setting, user: project.created_by, container_memory_bytes: 2 * 1024 * 1024 * 1024)
 

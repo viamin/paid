@@ -40,13 +40,25 @@ Evidence:
   persisted selection when reconnecting to a claimed entry instead of
   re-resolving against the catalog's current default, which may have moved
   between warm and claim.
+- Non-pool reconnects reuse the selection already recorded on the run:
+  `Containers::Provision#resolve_runtime_image_selection` falls back to
+  `recorded_run_selection` (the persisted `external_metadata["runtime_image"]`)
+  when no `pool_entry` is supplied, so a Temporal retry/worker failover that
+  goes through `LocalDockerRunner#reconnect` cannot overwrite provenance with
+  a catalog default that has moved in the meantime.
+- Replacement containers provisioned from scratch clear the recorded
+  selection in `AgentRun#reconcile_stale_container!`, so the next option
+  resolution records the current catalog default on the new container instead
+  of inheriting provenance from a container that no longer exists.
 
 Evidence:
 
 - `spec/models/agent_run_runtime_image_spec.rb:7`
 - `spec/services/containers/provision_spec.rb:303`
 - `spec/services/containers/provision_spec.rb` ("reuses the warm-time selection
-  persisted on a claimed pool entry instead of re-resolving")
+  persisted on a claimed pool entry instead of re-resolving", "reuses the
+  recorded runtime image selection on a non-pool reconnect instead of
+  re-resolving")
 - `spec/services/containers/pool_manager_spec.rb` ("persists the warm-time
   runtime image selection on the warmed entry", "records the warm-time runtime
   image selection on the claiming run")
@@ -87,6 +99,7 @@ Evidence:
   reverse-orphan/staleness findings unrelated to RDR-059
 - Focused runtime-image specs passed:
   - `spec/services/containers/runtime_image_selector_spec.rb`
+  - `spec/services/containers/runtime_image_catalog_spec.rb`
   - `spec/models/agent_run_runtime_image_spec.rb`
   - `spec/services/containers/provision_spec.rb:303`
   - `spec/services/containers/image_resolver_spec.rb`

@@ -79,6 +79,14 @@ Shipped behavior:
   container was provisioned with is persisted on the `ContainerPoolEntry` and
   copied onto the claiming run, so a catalog default that moves between warm
   and claim never misattributes the run's image.
+- Non-pool reconnects (Temporal retries / worker failovers that go through
+  `LocalDockerRunner#reconnect`) reuse the selection already recorded on the
+  run, so a catalog default that moves between provision and reconnect never
+  overwrites the running container's provenance.
+- Replacement containers provisioned from scratch clear the recorded
+  selection in `AgentRun#reconcile_stale_container!`, so the new container
+  records the current catalog default instead of inheriting provenance from
+  a container that no longer exists.
 - Development/test continue using mutable tags.
 - Catalog lifecycle status blocks `deprecated` and `blocked` identities.
 - Rollback is supported by selecting a prior `active` provenance reference.

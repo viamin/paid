@@ -15,7 +15,11 @@
   system SHALL persist the requested image, resolved image, digest,
   architecture, registry, repository, and provenance reference on the run.
   Warm-pool claims SHALL persist the warm-time selection of the claimed
-  container, not a later re-resolution of the catalog default.
+  container, not a later re-resolution of the catalog default. Non-pool
+  reconnects SHALL reuse the selection already recorded on the run rather
+  than overwriting provenance with a fresh catalog resolution, and a
+  replacement container provisioned from scratch SHALL clear the recorded
+  selection so the current catalog default is recorded on the new container.
   *Code:* `app/models/agent_run.rb`,
   `app/models/container_pool_entry.rb`,
   `app/services/containers/provision.rb`,

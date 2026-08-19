@@ -2339,6 +2339,20 @@ class AgentRun < ApplicationRecord
     external_metadata.is_a?(Hash) ? external_metadata[RUNTIME_IMAGE_KEY] : nil
   end
 
+  # Clears any runtime image selection previously recorded on this run. Used
+  # on the fresh-reprovision path so a replacement container records the
+  # current catalog resolution rather than the dead container's digest — the
+  # complement to Provision#recorded_run_selection, which reuses the recorded
+  # selection across reconnects (RDR-059 / IMMUTABLE-IMAGE-002).
+  def clear_runtime_image_selection!
+    return unless external_metadata.is_a?(Hash) && external_metadata.key?(RUNTIME_IMAGE_KEY)
+
+    metadata = external_metadata.dup
+    metadata.delete(RUNTIME_IMAGE_KEY)
+
+    update_columns(external_metadata: metadata)
+  end
+
   # Returns the base prompt for the review goal.
   # The review_goal_requires_pull_request validation ensures
   # source_pull_request_number is always present for review goals.
@@ -2829,12 +2843,16 @@ class AgentRun < ApplicationRecord
   end
 
   # Clears persisted container reference columns after a stale runner handle is
-  # cleaned up, so a subsequent provision starts from a clean slate. Uses
-  # +update_columns+ to bypass validations (the run may be in an inconsistent
-  # state mid-reconciliation).
+  # cleaned up, so a subsequent provision starts from a clean slate. Also
+  # clears the recorded runtime image selection so a replacement container
+  # records the current catalog resolution instead of inheriting provenance
+  # from a container that no longer exists (RDR-059 / IMMUTABLE-IMAGE-002).
+  # Uses +update_columns+ to bypass validations (the run may be in an
+  # inconsistent state mid-reconciliation).
   def clear_runner_reference!
     @current_handle = nil
     update_columns(container_id: nil, runner_handle: nil)
+    clear_runtime_image_selection!
   end
 
   def set_initiating_user_from_current_user
@@ -3226,6 +3244,10 @@ class AgentRun < ApplicationRecord
   # Cleans up a recorded container that is no longer usable (dead or missing)
   # so a fresh one can be provisioned. Handles both pooled and freshly
   # provisioned containers and guarantees the stale container_id is cleared.
+  # Also clears the recorded runtime image selection so the replacement
+  # container records the current catalog resolution instead of inheriting
+  # provenance from a container that no longer exists (RDR-059 /
+  # IMMUTABLE-IMAGE-002).
   def reconcile_stale_container!(service)
     @container_service = service
     cleanup_container(force: true)
@@ -3239,6 +3261,7 @@ class AgentRun < ApplicationRecord
   ensure
     @container_service = nil
     update_column(:container_id, nil) if container_id.present?
+    clear_runtime_image_selection!
   end
 
   def self.host_scope_for(container_host)

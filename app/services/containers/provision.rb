@@ -1301,19 +1301,33 @@ module Containers
     # runtime/image profile (RDR-046). RDR-059 layers on the final selection:
     # development/test keep mutable tags for local iteration, while production
     # resolves the requested tag to an immutable digest and persists the
-    # selection metadata on the run. A claimed warm-pool container instead
-    # reuses the selection persisted on its entry at warm time — the catalog's
-    # default may have moved between warm and claim, and the run's provenance
-    # must describe the container it actually executes in.
+    # selection metadata on the run. The resolution order mirrors the audit
+    # trail: a claimed warm-pool container reuses the selection persisted on
+    # its entry at warm time, an already-provisioned non-pool run reuses its
+    # own recorded selection across reconnects, and only then does a fresh
+    # catalog resolution win. The catalog's default may have moved between
+    # warm and claim (or between reconnect and re-execute), and the run's
+    # provenance must describe the container it actually executes in.
     def resolve_runtime_image_selection(default_image:)
       # @spec IMMUTABLE-IMAGE-001, IMMUTABLE-IMAGE-002, IMMUTABLE-IMAGE-003
-      selection = claimed_pool_entry_selection || resolve_catalog_selection(default_image)
+      selection = claimed_pool_entry_selection || recorded_run_selection || resolve_catalog_selection(default_image)
       agent_run&.record_runtime_image_selection!(selection.metadata)
       selection
     end
 
     def claimed_pool_entry_selection
       metadata = @pool_entry&.runtime_image_selection
+      return if metadata.blank?
+
+      Containers::RuntimeImageSelector::Result.from_metadata(metadata)
+    end
+
+    # A non-pool run that already provisioned keeps its recorded selection.
+    # Reconnects resolve #options each time, and re-resolving against the
+    # catalog can overwrite provenance with a digest the running container
+    # does not use — the same warm/claim drift fixed for pool entries.
+    def recorded_run_selection
+      metadata = agent_run&.runtime_image_selection
       return if metadata.blank?
 
       Containers::RuntimeImageSelector::Result.from_metadata(metadata)

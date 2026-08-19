@@ -76,7 +76,10 @@ module Containers
 
     def parsed_env_profiles
       raw = ENV.fetch(ENV_DIGESTS_KEY, "{}")
-      JSON.parse(raw)
+      parsed = JSON.parse(raw)
+      raise Error, "#{ENV_DIGESTS_KEY} must be a JSON object" unless parsed.is_a?(Hash)
+
+      parsed
     rescue JSON::ParserError => e
       raise Error, "Invalid #{ENV_DIGESTS_KEY}: #{e.message}"
     end

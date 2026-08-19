@@ -74,3 +74,24 @@ default may have moved between warm and claim, and the run's provenance must
 describe the container it actually executes in. Entries warmed before this
 provenance existed (no persisted selection) keep the lazy re-resolution
 fallback.
+
+### Reconnect and re-provision provenance
+
+`Containers::Provision#resolve_runtime_image_selection` resolves a runtime
+image selection in three tiers:
+
+1. the warm-time selection persisted on a claimed `ContainerPoolEntry`
+2. the selection already recorded on the `AgentRun` itself
+3. a fresh catalog resolution
+
+Tier 2 covers non-pool reconnects: a Temporal retry or worker failover that
+goes through `LocalDockerRunner#reconnect` reaches `Containers::Provision`
+without a `pool_entry`, but the run already carries the digest the running
+container was provisioned with. Reusing the recorded selection avoids
+overwriting provenance with a catalog default that has moved in the meantime.
+
+When an existing container is reconciled away (dead or missing) and a
+replacement container is provisioned from scratch, `AgentRun#reconcile_stale_container!`
+clears the recorded selection so the next `#options` resolution records the
+current catalog default on the replacement container instead of inheriting
+provenance from a container that no longer exists.
