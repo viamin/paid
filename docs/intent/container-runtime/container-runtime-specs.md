@@ -218,15 +218,40 @@
   Git, control-plane API, object storage, and credentials. The output manifest
   SHALL carry result summaries, log references, verification results, durable
   binary artifact references, and git output identity, and SHALL distinguish
-  code outputs from durable binary artifacts and structured results. Secret
-  values SHALL be excluded by construction: credential lanes and service
-  declarations may carry only identifiers or env keys, never secret payloads
-  or host paths.
-  *Tests:* `spec/services/execution_runners_spec.rb`
+  code outputs from durable binary artifacts and structured results. Durable
+  binary artifact references SHALL include content type, object-storage key
+  and/or URL, and run context (`account_id`, `project_id`, `agent_run_id`).
+  Artifact manifests persisted as durable records on the run (e.g.
+  `AgentRun#external_metadata["artifact_manifest"]`) SHALL carry storage keys
+  without presigned URLs — presigned URLs expire within the SigV4 one-week cap
+  and are ephemeral, so durable consumers re-sign from the key. The output
+  manifest's binary artifact references SHALL distinguish trusted source lanes
+  from agent-authored ones: artifacts from
+  `AgentRun#external_metadata["artifact_manifest"]` (persisted by the runner,
+  or by interop ingestion — `Api::Projects::ExternalAgentRunsController`
+  persists caller-supplied `external_metadata` verbatim via
+  `AgentRuns::IngestExternal`) have their storage keys honored only when the
+  key lives under the project's own storage namespace
+  (`Screenshots::Storage.namespace_prefix`, i.e. `screenshots/<owner>/<repo>/`);
+  any other key degrades to URL-only. Artifacts from
+  `AgentRun#verification_result["artifacts"]` (written by the agent inside the
+  container and persisted as-is by
+  `AgentRuns::VerificationResultRecorder`) are untrusted input — only `url`
+  survives so a spoofed key under another tenant's prefix cannot be re-signed
+  into a working presigned URL by a durable consumer. The run's
+  `account_id`, `project_id`, and `agent_run_id` SHALL always be the
+  authoritative context (the system already knows the real identity), so an
+  artifact-supplied context value can never override the run's identity.
+  Secret values SHALL be excluded by construction: credential lanes and
+  service declarations may carry only identifiers or env keys, never secret
+  payloads or host paths.
+  *Tests:* `spec/services/execution_runners_spec.rb`,
+  `spec/services/screenshots/container_capture_spec.rb`
   *Code:* `ExecutionRunners::ExecutionInputManifest`,
   `ExecutionRunners::ExecutionOutputManifest`,
   `ExecutionRunners::RunSpec#input_manifest`,
-  `ExecutionRunners::ExecutionResult#output_manifest`
+  `ExecutionRunners::ExecutionResult#output_manifest`,
+  `ExecutionRunners::ExecutionOutputManifest.build_binary_artifact_refs`
 
 - [x] **CONTAINER-RUNTIME-019** — The system SHALL provide a provider-neutral
   runner conformance suite that drives the complete normal create-PR
@@ -259,7 +284,31 @@
   `spec/support/no_shared_filesystem_conformance.rb`,
   `spec/support/shared_examples/no_shared_filesystem_conformance.rb`
 
-- [x] **CONTAINER-RUNTIME-020** — Capacity admission SHALL enforce aggregate
+- [x] **CONTAINER-RUNTIME-020** — The system SHALL carry an
+  `ExecutionRunners::NetworkingPolicy#egress_profile` value (`:locked` (default
+  for production), `:research`, or `:open`) through `RunSpec` and the
+  `ExecutionInputManifest#networking` section so orchestration code can request
+  a per-run egress posture without referencing Docker network names, iptables
+  rules, or gateway implementation details. The factory methods
+  `proxy_restricted`, `subscription_auth`, and `direct_outbound` SHALL default
+  the profile to `:locked`; `:research` and `:open` SHALL be selectable via the
+  same factory methods. The profile SHALL be exposed via `locked?`, `research?`,
+  and `open?` predicates on `NetworkingPolicy` so future enforcement adapters
+  can reject unsupported production runs without inspecting implementation
+  details. The runner contract surface (interface methods, parameters, and
+  value-object members) SHALL remain free of Docker `exec`, bind mounts,
+  shared directories, and host-visible workspace paths, and the
+  `ExecutionInputManifest`'s networking section SHALL NOT serialize Docker
+  bridge names, internal network names, or iptables syntax.
+  *Tests:* `spec/services/execution_runners_spec.rb`,
+  `spec/services/execution_runners/local_docker_runner_spec.rb`,
+  `spec/services/containers/provision_spec.rb`
+  *Code:* `ExecutionRunners::NetworkingPolicy`,
+  `ExecutionRunners::ExecutionInputManifest`,
+  `ExecutionRunners::RunSpec`,
+  `Containers::Provision.networking_policy_for`
+
+- [x] **CONTAINER-RUNTIME-021** — Capacity admission SHALL enforce aggregate
   requested CPU, memory, and disk ceilings globally and per selected backend,
   using provider-neutral execution resource specs rather than Docker-only
   fields, and SHALL return a named denial reason naming the constrained scope
@@ -270,7 +319,7 @@
   *Code:* `Capacity::RunAdmission`, `Capacity::RequestedResources`,
   `Capacity::InfrastructureLimits`, `Metrics::PrometheusCollector`
 
-- [x] **CONTAINER-RUNTIME-021** — Capacity admission SHALL enforce global,
+- [x] **CONTAINER-RUNTIME-022** — Capacity admission SHALL enforce global,
   per-account, and per-project provisioning-rate limits over a configured time
   window, returning a named denial reason and a next-eligible timestamp so the
   queue can park the run until the limit window opens again.
@@ -279,7 +328,7 @@
   *Code:* `Capacity::RunAdmission`, `Capacity::ProvisioningRateWindow`,
   `ProcessRunQueueJob`
 
-- [x] **CONTAINER-RUNTIME-022** — The provider-neutral execution resource spec
+- [x] **CONTAINER-RUNTIME-023** — The provider-neutral execution resource spec
   SHALL include CPU, memory, and disk request fields, and the system SHALL
   reject a run whose requested per-execution resources exceed the configured
   infrastructure maxima before provisioning starts.

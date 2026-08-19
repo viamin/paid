@@ -67,7 +67,7 @@ module ExecutionRunners
   # runners only consume cpu/memory/pids directly today, while disk_bytes is
   # used by infrastructure admission and future remote runners.
   # @spec CONTAINER-RUNTIME-009
-  # @spec CONTAINER-RUNTIME-022
+  # @spec CONTAINER-RUNTIME-023
   ComputeRequirements = Data.define(:cpu_quota, :memory_bytes, :disk_bytes, :pids_limit)
 
   # A writable directory inside the workload. A Docker runner translates this
@@ -324,21 +324,67 @@ module ExecutionRunners
   #                          preview-tunnel destinations, so the underlying
   #                          policy implementation never has to inspect Docker
   #                          network state.
+  #
+  # +egress_profile+ (symbol) — the per-run egress posture from RDR-055:
+  #   :locked    — required destinations plus tenant-allowlisted destinations
+  #                only. The runner still applies the firewall and the runner-
+  #                specific enforcement translation.
+  #   :research  — brokered fetch/search access through Paid (resolved by a
+  #                downstream broker) plus the locked destinations. The runner
+  #                still applies the firewall and may extend it for the
+  #                broker endpoint. The profile is opt-in per run.
+  #   :open      — broad outbound access (operator-only break-glass). Disabled
+  #                for managed production by default; a runner that cannot
+  #                enforce it must reject the run for production restricted
+  #                flows. The profile is opt-in per run.
+  #
+  # The profile is carried through +RunSpec+ and surfaced in the
+  # {ExecutionInputManifest}'s networking section so the runner and downstream
+  # tooling can read it without any Docker-specific vocabulary. Defaults to
+  # +:locked+ (the safe production default). The factories raise
+  # +ArgumentError+ for any value outside the closed +EGRESS_PROFILES+ enum,
+  # so typos or foreign values (e.g. a string instead of a symbol) fail at
+  # construction instead of silently serializing into the manifest.
   # @spec CONTAINER-RUNTIME-009
   # @spec CONTAINER-RUNTIME-017
-  NetworkingPolicy = Data.define(:mode, :firewall, :allow_destinations) do
+  # @spec CONTAINER-RUNTIME-020
+  NetworkingPolicy = Data.define(:mode, :firewall, :allow_destinations, :egress_profile) do
     RESTRICTED_MODE = :proxy_restricted
+    LOCKED_PROFILE = :locked
+    RESEARCH_PROFILE = :research
+    OPEN_PROFILE = :open
+    EGRESS_PROFILES = [ LOCKED_PROFILE, RESEARCH_PROFILE, OPEN_PROFILE ].freeze
 
-    def self.proxy_restricted(allow_destinations: [])
-      new(mode: RESTRICTED_MODE, firewall: true, allow_destinations: allow_destinations)
+    def initialize(mode:, firewall:, allow_destinations:, egress_profile:)
+      super(mode:, firewall:, allow_destinations:, egress_profile: self.class.validate_egress_profile!(egress_profile))
     end
 
-    def self.subscription_auth
-      new(mode: :subscription_auth, firewall: false, allow_destinations: [])
+    def self.proxy_restricted(allow_destinations: [], egress_profile: LOCKED_PROFILE)
+      new(mode: RESTRICTED_MODE, firewall: true, allow_destinations: allow_destinations, egress_profile: egress_profile)
     end
 
-    def self.direct_outbound
-      new(mode: :direct_outbound, firewall: false, allow_destinations: [])
+    def self.subscription_auth(egress_profile: LOCKED_PROFILE)
+      new(mode: :subscription_auth, firewall: false, allow_destinations: [], egress_profile: egress_profile)
+    end
+
+    def self.direct_outbound(egress_profile: LOCKED_PROFILE)
+      new(mode: :direct_outbound, firewall: false, allow_destinations: [], egress_profile: egress_profile)
+    end
+
+    # Validates that +egress_profile+ is one of the closed RDR-055 enum
+    # values. Shared by every construction path, including direct +.new+ and
+    # +#with+, so invalid values fail before they can silently serialize into
+    # the runner manifest.
+    def self.validate_egress_profile!(egress_profile)
+      unless EGRESS_PROFILES.include?(egress_profile)
+        raise ArgumentError, "Invalid egress_profile: #{egress_profile.inspect}"
+      end
+
+      egress_profile
+    end
+
+    def with(**kwargs)
+      super.tap { |updated| self.class.validate_egress_profile!(updated.egress_profile) }
     end
 
     def restricted?
@@ -347,6 +393,18 @@ module ExecutionRunners
 
     def firewall?
       firewall
+    end
+
+    def locked?
+      egress_profile == LOCKED_PROFILE
+    end
+
+    def research?
+      egress_profile == RESEARCH_PROFILE
+    end
+
+    def open?
+      egress_profile == OPEN_PROFILE
     end
   end
 
@@ -406,7 +464,8 @@ module ExecutionRunners
           "networking" => {
             "mode" => spec.networking_policy&.mode&.to_s,
             "firewall" => spec.networking_policy&.firewall?,
-            "allow_destinations" => ExecutionRunners.json_value(spec.networking_policy&.allow_destinations || [])
+            "allow_destinations" => ExecutionRunners.json_value(spec.networking_policy&.allow_destinations || []),
+            "egress_profile" => spec.networking_policy&.egress_profile&.to_s
           }.compact
         }.compact,
         prompt_refs: prompt_refs,
@@ -694,17 +753,119 @@ module ExecutionRunners
       )
     end
 
+    # Binary artifact references for the output manifest.
+    #
+    # Two source lanes feed this list:
+    #
+    # 1. `external_metadata["artifact_manifest"]` — usually persisted by the
+    #    runner, but not exclusively: interop callers can persist arbitrary
+    #    `external_metadata` (`Api::Projects::ExternalAgentRunsController` →
+    #    `AgentRuns::IngestExternal` stores it verbatim). Locator keys are
+    #    therefore honored only under the project's own storage namespace
+    #    (`Screenshots::Storage.namespace_prefix`); any other key degrades to
+    #    URL-only, so durable consumers can re-sign keys only within the
+    #    run's own tenant namespace.
+    # 2. `verification_result["artifacts"]` — written by the agent inside the
+    #    container (`AgentRuns::VerificationResultRecorder` persists it as-is),
+    #    so it is untrusted input. A spoofed key under another tenant's prefix
+    #    would otherwise be re-signed into a working presigned URL, so this
+    #    lane stays URL-only: only `url` (and `locator.url`) survive.
+    # @spec CONTAINER-RUNTIME-018
     def self.build_binary_artifact_refs(agent_run)
-      Array(agent_run.verification_result["artifacts"]).filter_map do |artifact|
-        next unless artifact.is_a?(Hash) && artifact["url"].present?
+      manifest_artifacts = Array(agent_run.external_metadata["artifact_manifest"])
+      verification_artifacts = Array(agent_run.verification_result["artifacts"])
 
+      manifest_refs = manifest_artifacts.filter_map do |artifact|
+        normalize_binary_artifact_ref(artifact, agent_run: agent_run, trusted_key: true)
+      end
+      verification_refs = verification_artifacts.filter_map do |artifact|
+        normalize_binary_artifact_ref(artifact, agent_run: agent_run, trusted_key: false)
+      end
+
+      manifest_refs + verification_refs
+    end
+
+    # @spec CONTAINER-RUNTIME-018
+    def self.normalize_binary_artifact_ref(artifact, agent_run:, trusted_key:)
+      return unless artifact.is_a?(Hash)
+
+      normalized = artifact.deep_stringify_keys
+      locator = normalized_locator(normalized, agent_run: agent_run, trusted_key: trusted_key)
+      return if locator.blank?
+
+      {
+        "lane" => "object_storage",
+        "kind" => normalized["kind"].presence || "artifact",
+        "content_type" => normalized["content_type"].presence,
+        "locator" => locator,
+        "context" => normalized_context(normalized, agent_run: agent_run),
+        "metadata" => normalized_metadata(normalized)
+      }.compact
+    end
+
+    # @spec CONTAINER-RUNTIME-018
+    def self.normalized_locator(artifact, agent_run:, trusted_key:)
+      raw_locator = if artifact["locator"].is_a?(Hash)
+        artifact["locator"].deep_stringify_keys.slice("key", "url")
+      else
         {
-          "lane" => "object_storage",
-          "kind" => artifact["kind"].presence || "artifact",
-          "locator" => { "url" => artifact["url"] },
-          "metadata" => { "note" => artifact["note"] }.compact
+          "key" => artifact["storage_key"].presence,
+          "url" => artifact["url"].presence
         }
       end
+
+      locator = trusted_key ? raw_locator : raw_locator.slice("url")
+      locator = locator.slice("url") unless key_within_project_namespace?(locator["key"], agent_run)
+      locator.compact.presence
+    end
+
+    # A locator key survives only under the run's own project storage
+    # namespace: durable consumers re-sign keys into presigned URLs, so a key
+    # planted under another tenant's prefix must degrade to URL-only — on the
+    # trusted lane too, because interop ingestion can persist caller-supplied
+    # `external_metadata` verbatim.
+    # @spec CONTAINER-RUNTIME-018
+    def self.key_within_project_namespace?(key, agent_run)
+      return true if key.blank?
+      return false unless key.is_a?(String)
+
+      prefix = project_namespace_prefix(agent_run)
+      prefix.present? && key.start_with?(prefix)
+    end
+
+    def self.project_namespace_prefix(agent_run)
+      project = agent_run.project
+      return unless project&.owner.present? && project&.repo.present?
+
+      Screenshots::Storage.namespace_prefix(org: project.owner, repo: project.repo)
+    end
+
+    # @spec CONTAINER-RUNTIME-018
+    def self.normalized_context(artifact, agent_run:)
+      artifact_context = if artifact["context"].is_a?(Hash)
+        artifact["context"].deep_stringify_keys.slice("account_id", "project_id", "agent_run_id")
+      else
+        {}
+      end
+
+      # Run identity is authoritative: the system already knows the real
+      # account/project/run, so an artifact-supplied value can never override
+      # it. Supplied values only survive where the run itself can't answer.
+      run_context = {
+        "account_id" => agent_run.project&.account_id,
+        "project_id" => agent_run.project_id,
+        "agent_run_id" => agent_run.id
+      }.compact
+
+      artifact_context.merge(run_context).compact.presence
+    end
+
+    def self.normalized_metadata(artifact)
+      raw_metadata = artifact["metadata"]
+      metadata = raw_metadata.is_a?(Hash) ? raw_metadata.deep_stringify_keys : {}
+      metadata["note"] ||= artifact["note"].presence
+      metadata["path"] ||= artifact["path"].presence
+      metadata.compact.presence
     end
 
     def self.build_structured_results(verification)

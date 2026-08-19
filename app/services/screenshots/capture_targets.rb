@@ -117,6 +117,12 @@ module Screenshots
       account_operations_dashboard: Target.new(slug: "account_operations_dashboard", path_builder: "/account_operations_dashboard", requires_auth: true),
       account_compliance_dashboard: Target.new(slug: "account_compliance_dashboard", path_builder: "/account_compliance_dashboard", requires_auth: true),
       account_audit_logs: Target.new(slug: "account_audit_logs", path_builder: "/account_audit_logs", requires_auth: true),
+      account_egress_allowlist: Target.new(slug: "account_egress_allowlist", path_builder: "/account_egress_allowlist_entries", requires_auth: true),
+      project_egress_allowlist: Target.new(
+        slug: "project_egress_allowlist",
+        path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/egress_allowlist_entries" },
+        requires_auth: true
+      ),
       remediation_decision_show: Target.new(
         slug: "remediation_decision_show",
         path_builder: ->(seed_data) { "/remediation_decisions/#{seed_data.fetch(:remediation_decision).id}" },
@@ -314,6 +320,8 @@ module Screenshots
       "accounts/compliance_dashboards_controller.rb" => [ :account_compliance_dashboard ],
       "accounts/operations_dashboards_controller.rb" => [ :account_operations_dashboard ],
       "accounts/roi_dashboards_controller.rb" => [ :account_roi_dashboard ],
+      "accounts/egress_allowlist_entries_controller.rb" => [ :account_egress_allowlist ],
+      "projects/egress_allowlist_entries_controller.rb" => [ :project_egress_allowlist ],
       "projects/agent_runs_controller.rb" => %i[project_agent_runs project_agent_run_new project_agent_run_show project_agent_run_provenance],
       "projects/bundle_performance_dashboards_controller.rb" => [ :project_bundle_performance_dashboard ],
       "projects/cost_dashboards_controller.rb" => [ :project_cost_dashboard ],
@@ -550,6 +558,7 @@ module Screenshots
       when /\Aaccounts\/compliance_dashboards\// then [ :account_compliance_dashboard ]
       when /\Aaccounts\/operations_dashboards\// then [ :account_operations_dashboard ]
       when /\Aaccounts\/roi_dashboards\// then [ :account_roi_dashboard ]
+      when /\Aaccounts\/egress_allowlist_entries\// then [ :account_egress_allowlist ]
       when /\Aaccounts\// then [ :account ]
       when /\Aaccount_audit_logs\// then [ :account_audit_logs ]
       when /\Aremediation_decisions\// then [ :remediation_decision_show ]
@@ -591,6 +600,7 @@ module Screenshots
       when /\Aprojects\/knowledge_recommendations\// then [ :project_knowledge_recommendations ]
       when /\Apreviews\// then [ :preview_session_show ]
       when /\Aprojects\/health_check\// then [ :project_health_check ]
+      when /\Aprojects\/egress_allowlist_entries\// then [ :project_egress_allowlist ]
       when /\Aprojects\// then projects_targets(relative_path.delete_prefix("projects/"))
       else
         []

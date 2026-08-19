@@ -228,6 +228,7 @@ module Containers
     # per call (`Containers::ServiceProvisioner.new`), which keeps the
     # pattern safe in practice. Do not share instances across threads.
 
+    # @spec EXECUTION-ISOLATION-002
     def selected_service_containers(project, service_names)
       scope = project.service_containers
       names = Array(service_names).map(&:to_s).map(&:strip).reject(&:blank?).uniq

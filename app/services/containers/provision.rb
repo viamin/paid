@@ -195,15 +195,20 @@ module Containers
     # does not pay the user-setting/image resolution cost of a full provision
     # (RDR-054).
     #
+    # @param egress_profile [Symbol, nil] optional egress profile from RDR-055
+    #   (:locked | :research | :open). When nil, the policy defaults to
+    #   +:locked+ (the safe production default).
     # @return [ExecutionRunners::NetworkingPolicy]
-    def self.networking_policy_for(agent_run:, project:)
-      new(agent_run: agent_run, project: project).derived_networking_policy
+    def self.networking_policy_for(agent_run:, project:, egress_profile: nil)
+      service = new(agent_run: agent_run, project: project)
+      service.networking_policy_with_egress_profile(egress_profile)
     end
 
     def self.codex_notify_line
       CODEX_NOTIFY_LINE
     end
 
+    # @spec EXECUTION-ISOLATION-004
     def self.compatibility_for(agent_run:, backend:, worktree_path: nil)
       service = new(agent_run: agent_run, worktree_path: worktree_path, backend: backend)
       # record_telemetry: false — compatibility_for is called for every candidate
@@ -386,7 +391,7 @@ module Containers
 
     # Derives the provider-neutral +ExecutionRunners::NetworkingPolicy+ for
     # this provision using the subscription-auth / direct-outbound heuristics
-    # (the same source of truth as the legacy +network_contract+ path). Public
+    # (the same source of truth as the legacy +#network_contract+ path). Public
     # so +networking_policy_for+ can compute the policy without reaching into
     # private detection methods.
     def derived_networking_policy
@@ -397,6 +402,19 @@ module Containers
       else
         ExecutionRunners::NetworkingPolicy.proxy_restricted
       end
+    end
+
+    # Returns a policy derived from {#derived_networking_policy} with the given
+    # RDR-055 egress profile applied. The profile is carried through
+    # +ExecutionRunners::NetworkingPolicy+ so orchestration code does not need
+    # to reference Docker- or network-specific concepts to set it. Defaults to
+    # +:locked+ when +egress_profile+ is nil.
+    # @spec CONTAINER-RUNTIME-020
+    def networking_policy_with_egress_profile(egress_profile)
+      base = derived_networking_policy
+      return base if egress_profile.nil?
+
+      base.with(egress_profile: egress_profile)
     end
 
     private def abort_pattern_candidates(stream_type, normalized_chunk, stdout_buffer:)
@@ -2246,6 +2264,7 @@ module Containers
     # When a host-side worktree_path is provided, validates it exists for bind-mount.
     # When nil (or container-internal), creates a Docker named volume for in-container git clone.
     # Docker volumes live on the overlay2 disk, bypassing the VM root filesystem.
+    # @spec EXECUTION-ISOLATION-001
     def prepare_workspace!
       if host_worktree_path.present?
         unless backend.supports_host_paths?
@@ -3060,6 +3079,7 @@ module Containers
       scope.order(created_at: :desc, id: :desc).first
     end
 
+    # @spec EXECUTION-ISOLATION-003
     def managed_subscription_credential_scope_for(runner_key)
       return nil unless project.is_a?(Project)
 

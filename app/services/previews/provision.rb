@@ -16,6 +16,16 @@ module Previews
     STARTUP_TIMEOUT_SECONDS = Screenshots::ContainerCapture::STARTUP_TIMEOUT_SECONDS
     PROVISION_TIMEOUT_SECONDS = Screenshots::ContainerCapture::CAPTURE_TIMEOUT_SECONDS
 
+    # Non-secret allowlist of host env vars that may be forwarded into the
+    # preview container, which then executes repository-controlled setup
+    # and app startup commands. Rails credentials (`RAILS_MASTER_KEY`,
+    # `SECRET_KEY_BASE`, `RAILS_TEST_KEY`, etc.) MUST stay out of this map
+    # — exposing them lets repo-controlled code exfiltrate host secrets.
+    PREVIEW_ENV_ALLOWLIST = %w[
+      RAILS_ENV
+      RACK_ENV
+    ].freeze
+
     Result = Struct.new(
       :container_service,
       :config,
@@ -326,17 +336,11 @@ module Previews
     end
 
     def preview_env
-      @service_environment.merge(runtime_env_overrides).merge("CI" => "1")
+      @service_environment.merge(safe_runtime_env_overrides).merge("CI" => "1")
     end
 
-    def runtime_env_overrides
-      %w[
-        RAILS_ENV
-        RACK_ENV
-        RAILS_TEST_KEY
-        RAILS_MASTER_KEY
-        SECRET_KEY_BASE
-      ].each_with_object({}) do |key, env|
+    def safe_runtime_env_overrides
+      PREVIEW_ENV_ALLOWLIST.each_with_object({}) do |key, env|
         value = ENV[key]
         env[key] = value if value.present?
       end
