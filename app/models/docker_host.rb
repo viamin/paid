@@ -19,6 +19,7 @@ class DockerHost < ApplicationRecord
 
   scope :enabled, -> { where(enabled: true) }
   scope :ordered, -> { order(enabled: :desc, display_name: :asc, identifier: :asc) }
+  # @spec EXEC-DISABLE-004
   scope :placement_ready_for_agent_runs, lambda {
     enabled
       .where(readiness_status: "ready", image_status: "ready", required_network_status: "ready")
@@ -77,7 +78,6 @@ class DockerHost < ApplicationRecord
     setup_state.fetch("steps", {}).fetch(key.to_s, {})
   end
 
-  # @spec EXEC-DISABLE-004
   def placement_ready?
     enabled? && ready? && image_status == "ready" && required_network_status == "ready"
   end

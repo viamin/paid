@@ -29,7 +29,7 @@ prefix: EXEC-DISABLE
 
 - [x] **EXEC-DISABLE-004** — When a backend-scoped execution disable control
   applies, the system SHALL treat that backend as ineligible for new placement.
-  *Code:* `DockerHost#placement_ready?`.
+  *Code:* `DockerHost.placement_ready_for_agent_runs`.
 
 - [x] **EXEC-DISABLE-005** — When an emergency execution disable control is
   enabled for a scope, the system SHALL cancel active scoped runs and enqueue

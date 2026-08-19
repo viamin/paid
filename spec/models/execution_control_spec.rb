@@ -3,6 +3,47 @@
 require "rails_helper"
 
 RSpec.describe ExecutionControl do
+  describe "audit timestamps" do
+    it "stamps enabled_at automatically when toggled to true" do
+      project = create(:project)
+      control = create(:execution_control, :project_scope, project: project)
+
+      expect(control.enabled_at).to be_nil
+      expect(control.disabled_at).to be_nil
+
+      before = Time.current
+      control.update!(enabled: true)
+      after = Time.current
+
+      expect(control.reload.enabled_at).to be_between(before, after)
+      expect(control.reload.disabled_at).to be_nil
+    end
+
+    it "stamps disabled_at automatically when toggled to false" do
+      project = create(:project)
+      control = create(:execution_control, :project_scope, :enabled, project: project)
+
+      expect(control.enabled_at).to be_present
+
+      before = Time.current
+      control.update!(enabled: false)
+      after = Time.current
+
+      expect(control.reload.disabled_at).to be_between(before, after)
+    end
+
+    it "does not stamp timestamps when enabled is unchanged" do
+      project = create(:project)
+      control = create(:execution_control, :project_scope, :enabled, project: project)
+      original_enabled_at = control.enabled_at
+
+      control.update!(reason: "Operator notes")
+
+      expect(control.reload.enabled_at).to be_within(1.second).of(original_enabled_at)
+      expect(control.reload.disabled_at).to be_nil
+    end
+  end
+
   describe "run impact" do
     # @spec EXEC-DISABLE-005
     it "cancels active project runs when emergency mode is enabled and records audit events" do
@@ -11,7 +52,7 @@ RSpec.describe ExecutionControl do
       control = create(:execution_control, :project_scope, :emergency, project: project)
 
       expect {
-        control.update!(enabled: true, enabled_at: Time.current, reason: "Emergency shutdown")
+        control.update!(enabled: true, reason: "Emergency shutdown")
       }.to have_enqueued_job(AgentRunCancellationJob).with(agent_run.id)
         .and change(AccountActivityEvent, :count).by(2)
 
@@ -28,14 +69,14 @@ RSpec.describe ExecutionControl do
       allow(AgentRuns::Cancel).to receive(:call)
 
       expect {
-        control.update!(enabled: true, enabled_at: Time.current, reason: "Capacity reduction")
+        control.update!(enabled: true, reason: "Capacity reduction")
       }.to have_enqueued_job(ExecutionControlParkCleanupJob).with(agent_run.id, workflow_id, nil)
 
       agent_run.reload
       expect(agent_run.status).to eq("paused")
       expect(agent_run.external_metadata.dig("execution_control", "control_id")).to eq(control.id)
 
-      control.update!(enabled: false, disabled_at: Time.current)
+      control.update!(enabled: false)
 
       expect(agent_run.reload.status).to eq("queued")
       expect(agent_run.external_metadata).not_to have_key("execution_control")
@@ -53,8 +94,8 @@ RSpec.describe ExecutionControl do
         }
       })
 
-      control.update_columns(enabled: true, enabled_at: Time.current)
-      control.update!(enabled: false, disabled_at: Time.current)
+      control.update_columns(enabled: true)
+      control.update!(enabled: false)
 
       expect(agent_run.reload.status).to eq("queued")
       expect(agent_run.external_metadata).not_to have_key("execution_control")
@@ -73,10 +114,39 @@ RSpec.describe ExecutionControl do
 
       control = create(:execution_control, :backend_scope, :emergency, docker_host: host)
 
-      control.update!(enabled: true, enabled_at: Time.current, reason: "Backend failure")
+      control.update!(enabled: true, reason: "Backend failure")
 
       expect(local_run.reload.status).to eq("cancelled")
       expect(other_run.reload.status).to eq("running")
+    end
+
+    it "re-applies impact when mode escalates from capacity to emergency while enabled" do
+      project = create(:project)
+      parked_run = create(:agent_run, :running, :with_temporal, project: project)
+      control = create(:execution_control, :project_scope, project: project)
+
+      control.update!(enabled: true, reason: "Capacity reduction")
+      expect(parked_run.reload.status).to eq("paused")
+
+      new_run = create(:agent_run, :running, :with_temporal, project: project)
+
+      expect {
+        control.update!(mode: "emergency")
+      }.to have_enqueued_job(AgentRunCancellationJob).with(new_run.id)
+        .and change(AccountActivityEvent, :count).by(2)
+
+      expect(new_run.reload.status).to eq("cancelled")
+      expect(parked_run.reload.status).to eq("paused")
+    end
+
+    it "does not re-apply impact when mode changes while disabled" do
+      project = create(:project)
+      create(:agent_run, :running, :with_temporal, project: project)
+      control = create(:execution_control, :project_scope, project: project)
+
+      expect {
+        control.update!(mode: "emergency")
+      }.not_to change(AccountActivityEvent, :count)
     end
   end
 end

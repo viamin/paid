@@ -49,8 +49,8 @@ call there would be an N+1 query:
   snapshot.
 - `AgentRuns::RunnerResolver#runner_runnable?` and `Runners::PreflightCheck`
   query runner-scoped controls directly.
-- `DockerHost.placement_ready_for_agent_runs` (and `#placement_ready?`)
-  exclude backend-scoped controls directly.
+- `DockerHost.placement_ready_for_agent_runs` excludes backend-scoped
+  controls directly.
 
 Across all of these, scope priority is global > account > project > runner >
 backend, and emergency wins over capacity when multiple controls apply —
@@ -77,8 +77,9 @@ Runner-scoped controls are enforced in two places:
 ### Backend placement
 
 Backend-scoped controls piggyback on Docker host eligibility:
-`DockerHost#placement_ready?` returns false when a backend-scoped control is
-active, so host selection never places new runs onto that backend.
+`DockerHost.placement_ready_for_agent_runs` excludes hosts whose
+backend-scoped control is active, so host selection never places new runs
+onto that backend.
 
 ## Active-run behavior
 

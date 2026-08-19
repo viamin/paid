@@ -18,7 +18,10 @@ class ExecutionControl < ApplicationRecord
   belongs_to :runner, class_name: "Runner", optional: true
   belongs_to :docker_host, optional: true
 
-  after_commit :apply_run_impact_on_enabled_change, on: [ :create, :update ], if: :saved_change_to_enabled?
+  before_save :stamp_enabled_at, if: -> { will_save_change_to_enabled?(to: true) }
+  before_save :stamp_disabled_at, if: -> { will_save_change_to_enabled?(to: false) }
+  after_commit :apply_run_impact_on_enabled_change, on: [ :create, :update ],
+    if: -> { saved_change_to_enabled? || (enabled? && saved_change_to_mode?) }
 
   validates :scope, presence: true, inclusion: { in: SCOPES }
   validates :mode, presence: true, inclusion: { in: MODES }
@@ -57,6 +60,14 @@ class ExecutionControl < ApplicationRecord
   def apply_run_impact_on_enabled_change
     impact = ExecutionControls::RunImpact.new(control: self)
     enabled? ? impact.enable! : impact.disable!
+  end
+
+  def stamp_enabled_at
+    self.enabled_at = Time.current
+  end
+
+  def stamp_disabled_at
+    self.disabled_at = Time.current
   end
 
   def target_matches_scope
