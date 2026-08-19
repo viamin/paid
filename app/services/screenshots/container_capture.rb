@@ -617,9 +617,19 @@ module Screenshots
       }
     end
 
+    # The persisted manifest is the durable record of the run's artifacts, so
+    # each locator carries the storage key only: presigned URLs expire within
+    # `ArtifactStorage::MAX_URL_TTL` (the SigV4 one-week cap) and would 403 for
+    # any later reader, with no expiry signal to distinguish live from dead.
+    # Durable consumers re-sign from the key
+    # (`Screenshots::Storage#previous_artifacts` is the established pattern).
+    # Live URLs stay on the in-memory `@artifact_manifest` returned via
+    # `Result.artifacts`.
     def persist_artifact_manifest!
       metadata = agent_run.external_metadata.deep_dup
-      metadata["artifact_manifest"] = @artifact_manifest
+      metadata["artifact_manifest"] = @artifact_manifest.map do |artifact|
+        artifact.merge("locator" => artifact["locator"]&.except("url"))
+      end
       agent_run.update!(external_metadata: metadata)
     end
 

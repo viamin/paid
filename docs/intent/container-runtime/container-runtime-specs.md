@@ -221,10 +221,15 @@
   code outputs from durable binary artifacts and structured results. Durable
   binary artifact references SHALL include content type, object-storage key
   and/or URL, and run context (`account_id`, `project_id`, `agent_run_id`).
+  Artifact manifests persisted as durable records on the run (e.g.
+  `AgentRun#external_metadata["artifact_manifest"]`) SHALL carry storage keys
+  without presigned URLs — presigned URLs expire within the SigV4 one-week cap
+  and are ephemeral, so durable consumers re-sign from the key.
   Secret values SHALL be excluded by construction: credential lanes and
   service declarations may carry only identifiers or env keys, never secret
   payloads or host paths.
-  *Tests:* `spec/services/execution_runners_spec.rb`
+  *Tests:* `spec/services/execution_runners_spec.rb`,
+  `spec/services/screenshots/container_capture_spec.rb`
   *Code:* `ExecutionRunners::ExecutionInputManifest`,
   `ExecutionRunners::ExecutionOutputManifest`,
   `ExecutionRunners::RunSpec#input_manifest`,

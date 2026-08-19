@@ -251,6 +251,11 @@ is explicit value-object data, not ad hoc hashes.
   content type, storage locator (`key` and/or presigned `url`), and run
   context (`account_id`, `project_id`, `agent_run_id`) so the control plane
   never needs runner-local files after cleanup.
+- Presigned URLs are ephemeral — they expire within the SigV4 one-week cap —
+  so artifact manifests persisted as durable records on the run (e.g.
+  `AgentRun#external_metadata["artifact_manifest"]`) carry storage keys only;
+  durable consumers re-sign from the key
+  (`Screenshots::Storage#previous_artifacts` is the established pattern).
 - The manifest shape is deliberately host-path-free. Workspace translation and
   container/worktree identifiers remain runner-local implementation details;
   the manifest only carries repo/ref and declarative workspace mode.

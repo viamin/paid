@@ -403,6 +403,20 @@ RSpec.describe ExecutionRunners do
           }
         }
       end
+      let(:persisted_manifest_artifact) do
+        {
+          "lane" => "object_storage",
+          "kind" => "screenshot",
+          "content_type" => "image/png",
+          "locator" => { "key" => "screenshots/acme/widgets/pr-42/abc123/home.png" },
+          "context" => {
+            "account_id" => project.account_id,
+            "project_id" => project.id,
+            "agent_run_id" => agent_run.id
+          },
+          "metadata" => { "route_name" => "home" }
+        }
+      end
       let(:agent_run) do
         create(
           :agent_run,
@@ -427,6 +441,20 @@ RSpec.describe ExecutionRunners do
         expect(manifest.artifacts["binary_artifacts"].first).to include(expected_binary_artifact)
         expect(manifest.artifacts["structured_results"].first["kind"]).to eq("verification_result")
         expect(manifest.git_output["pull_request_number"]).to eq(42)
+      end
+
+      # @spec CONTAINER-RUNTIME-018
+      it "forwards persisted artifact-manifest keys without inventing presigned URLs" do
+        agent_run.update!(external_metadata: { "artifact_manifest" => [ persisted_manifest_artifact ] })
+
+        manifest = described_class.success(stdout: "ok", exit_code: 0).output_manifest(agent_run:)
+
+        expect(manifest.artifacts["binary_artifacts"]).to include(
+          hash_including(
+            "kind" => "screenshot",
+            "locator" => { "key" => "screenshots/acme/widgets/pr-42/abc123/home.png" }
+          )
+        )
       end
     end
   end
