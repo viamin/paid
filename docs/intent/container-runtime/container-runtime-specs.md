@@ -258,3 +258,27 @@
   `app/services/execution_runners/local_docker_runner.rb`,
   `spec/support/no_shared_filesystem_conformance.rb`,
   `spec/support/shared_examples/no_shared_filesystem_conformance.rb`
+
+- [x] **CONTAINER-RUNTIME-020** — The system SHALL carry an
+  `ExecutionRunners::NetworkingPolicy#egress_profile` value (`:locked` (default
+  for production), `:research`, or `:open`) through `RunSpec` and the
+  `ExecutionInputManifest#networking` section so orchestration code can request
+  a per-run egress posture without referencing Docker network names, iptables
+  rules, or gateway implementation details. The factory methods
+  `proxy_restricted`, `subscription_auth`, and `direct_outbound` SHALL default
+  the profile to `:locked`; `:research` and `:open` SHALL be selectable via the
+  same factory methods. The profile SHALL be exposed via `locked?`, `research?`,
+  and `open?` predicates on `NetworkingPolicy` so future enforcement adapters
+  can reject unsupported production runs without inspecting implementation
+  details. The runner contract surface (interface methods, parameters, and
+  value-object members) SHALL remain free of Docker `exec`, bind mounts,
+  shared directories, and host-visible workspace paths, and the
+  `ExecutionInputManifest`'s networking section SHALL NOT serialize Docker
+  bridge names, internal network names, or iptables syntax.
+  *Tests:* `spec/services/execution_runners_spec.rb`,
+  `spec/services/execution_runners/local_docker_runner_spec.rb`,
+  `spec/services/containers/provision_spec.rb`
+  *Code:* `ExecutionRunners::NetworkingPolicy`,
+  `ExecutionRunners::ExecutionInputManifest`,
+  `ExecutionRunners::RunSpec`,
+  `Containers::Provision.networking_policy_for`
