@@ -66,7 +66,8 @@ RSpec.describe ExecutionAuditEvent, type: :model do
     end
 
     it "rejects network_policy values that look like secrets" do
-      record = build(:execution_audit_event, network_policy: { allow_destinations: [ "ghp_abcdef0123456789abcdef0123456789abcd" ] })
+      github_pat = "ghp_" + ("a" * 36)
+      record = build(:execution_audit_event, network_policy: { allow_destinations: [ github_pat ] })
       expect(record).not_to be_valid
       expect(record.errors[:network_policy].join).to include("secret-shaped")
     end
@@ -138,7 +139,8 @@ RSpec.describe ExecutionAuditEvent, type: :model do
     end
 
     it "walks nested hashes for secret-looking values" do
-      record = build(:execution_audit_event, metadata: { details: { trace: "ghp_abcdef0123456789abcdef0123456789abcd" } })
+      github_pat = "ghp_" + ("a" * 36)
+      record = build(:execution_audit_event, metadata: { details: { trace: github_pat } })
       expect(record).not_to be_valid
       expect(record.errors[:metadata].join).to include("secret-shaped")
     end
