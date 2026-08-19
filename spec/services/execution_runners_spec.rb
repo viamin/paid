@@ -309,6 +309,15 @@ RSpec.describe ExecutionRunners do
 
       expect(members).to contain_exactly(:mode, :firewall, :allow_destinations, :egress_profile)
     end
+
+    it "rejects an egress_profile outside the closed :locked/:research/:open enum" do
+      expect { described_class.proxy_restricted(egress_profile: :reserach) }
+        .to raise_error(ArgumentError, /Invalid egress_profile/)
+      expect { described_class.subscription_auth(egress_profile: "research") }
+        .to raise_error(ArgumentError, /Invalid egress_profile/)
+      expect { described_class.direct_outbound(egress_profile: nil) }
+        .to raise_error(ArgumentError, /Invalid egress_profile/)
+    end
   end
 
   describe ExecutionRunners::ServiceDeclaration do

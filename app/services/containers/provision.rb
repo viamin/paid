@@ -413,7 +413,7 @@ module Containers
       base = derived_networking_policy
       return base if egress_profile.nil?
 
-      base.with(egress_profile: egress_profile)
+      base.with(egress_profile: ExecutionRunners::NetworkingPolicy.validate_egress_profile!(egress_profile))
     end
 
     private def abort_pattern_candidates(stream_type, normalized_chunk, stdout_buffer:)

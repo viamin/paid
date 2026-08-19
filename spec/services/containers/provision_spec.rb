@@ -239,6 +239,12 @@ RSpec.describe Containers::Provision do
       expect(policy.egress_profile).to eq(:research)
       expect(policy.mode).to eq(:proxy_restricted)
     end
+
+    it "rejects an egress_profile outside the closed :locked/:research/:open enum" do
+      expect {
+        described_class.networking_policy_for(agent_run: agent_run, project: project, egress_profile: :reserach)
+      }.to raise_error(ArgumentError, /Invalid egress_profile/)
+    end
   end
 
   # RDR-058: runners that cannot satisfy isolation requirements are rejected

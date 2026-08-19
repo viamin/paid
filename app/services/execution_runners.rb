@@ -335,7 +335,10 @@ module ExecutionRunners
   # The profile is carried through +RunSpec+ and surfaced in the
   # {ExecutionInputManifest}'s networking section so the runner and downstream
   # tooling can read it without any Docker-specific vocabulary. Defaults to
-  # +:locked+ (the safe production default).
+  # +:locked+ (the safe production default). The factories raise
+  # +ArgumentError+ for any value outside the closed +EGRESS_PROFILES+ enum,
+  # so typos or foreign values (e.g. a string instead of a symbol) fail at
+  # construction instead of silently serializing into the manifest.
   # @spec CONTAINER-RUNTIME-009
   # @spec CONTAINER-RUNTIME-017
   # @spec CONTAINER-RUNTIME-020
@@ -344,20 +347,33 @@ module ExecutionRunners
     LOCKED_PROFILE = :locked
     RESEARCH_PROFILE = :research
     OPEN_PROFILE = :open
+    EGRESS_PROFILES = [ LOCKED_PROFILE, RESEARCH_PROFILE, OPEN_PROFILE ].freeze
 
     def self.proxy_restricted(allow_destinations: [], egress_profile: LOCKED_PROFILE)
       new(mode: RESTRICTED_MODE, firewall: true, allow_destinations: allow_destinations,
-          egress_profile: egress_profile)
+          egress_profile: validate_egress_profile!(egress_profile))
     end
 
     def self.subscription_auth(egress_profile: LOCKED_PROFILE)
       new(mode: :subscription_auth, firewall: false, allow_destinations: [],
-          egress_profile: egress_profile)
+          egress_profile: validate_egress_profile!(egress_profile))
     end
 
     def self.direct_outbound(egress_profile: LOCKED_PROFILE)
       new(mode: :direct_outbound, firewall: false, allow_destinations: [],
-          egress_profile: egress_profile)
+          egress_profile: validate_egress_profile!(egress_profile))
+    end
+
+    # Validates that +egress_profile+ is one of the closed RDR-055 enum
+    # values. Shared by the three factories above and by callers (e.g.
+    # +Containers::Provision#networking_policy_with_egress_profile+) that
+    # build a policy via +Data#with+, which bypasses the factories entirely.
+    def self.validate_egress_profile!(egress_profile)
+      unless EGRESS_PROFILES.include?(egress_profile)
+        raise ArgumentError, "Invalid egress_profile: #{egress_profile.inspect}"
+      end
+
+      egress_profile
     end
 
     def restricted?
