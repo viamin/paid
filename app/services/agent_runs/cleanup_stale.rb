@@ -70,10 +70,7 @@ module AgentRuns
     end
 
     def stale_claimed?(agent_run)
-      agent_run.status == "queued" &&
-        agent_run.temporal_workflow_id.present? &&
-        agent_run.updated_at &&
-        agent_run.updated_at < AgentRun.stale_claimed_cutoff
+      AgentRun.stale_claimed?(agent_run)
     end
 
     def resolve_stale_run(agent_run)
@@ -101,7 +98,12 @@ module AgentRuns
         return false unless cancel_temporal_workflow(agent_run)
 
         agent_run.update!(
+          status: "queued",
+          queue_entered_at: Time.current,
           stale_requeue_count: agent_run.stale_requeue_count + 1,
+          started_at: nil,
+          completed_at: nil,
+          duration_seconds: nil,
           temporal_workflow_id: nil,
           temporal_run_id: nil,
           service_environment: nil,

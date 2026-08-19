@@ -217,12 +217,66 @@ RSpec.describe Containers::Provision do
   end
 
   describe ".networking_policy_for" do
+    # @spec CONTAINER-RUNTIME-020
     it "derives the proxy-restricted policy for a run with no subscription auth or direct-outbound runner" do
       policy = described_class.networking_policy_for(agent_run: agent_run, project: project)
 
       expect(policy.mode).to eq(:proxy_restricted)
       expect(policy).to be_restricted
       expect(policy.canonical_mode).to eq(:approved_services)
+    end
+
+    it "defaults the egress_profile to :locked when none is supplied" do
+      policy = described_class.networking_policy_for(agent_run: agent_run, project: project)
+
+      expect(policy.egress_profile).to eq(:locked)
+    end
+
+    it "threads a non-default egress_profile through without changing the mode" do
+      policy = described_class.networking_policy_for(
+        agent_run: agent_run, project: project, egress_profile: :research
+      )
+
+      expect(policy.egress_profile).to eq(:research)
+      expect(policy.mode).to eq(:proxy_restricted)
+    end
+
+    it "rejects an egress_profile outside the closed :locked/:research/:open enum" do
+      expect {
+        described_class.networking_policy_for(agent_run: agent_run, project: project, egress_profile: :reserach)
+      }.to raise_error(ArgumentError, /Invalid egress_profile/)
+    end
+  end
+
+  # RDR-058: runners that cannot satisfy isolation requirements are rejected
+  # by capability validation (a typed CompatibilityResult), not a generic
+  # agent failure. @spec EXECUTION-ISOLATION-004
+  describe ".compatibility_for" do
+    let(:local_backend) { instance_double(Containers::Backends::LocalDocker, supports_host_paths?: true) }
+
+    it "returns a compatible result without raising for a host-path-capable backend" do
+      result = described_class.compatibility_for(agent_run: agent_run, backend: local_backend, worktree_path: worktree_path)
+
+      expect(result).to be_a(Containers::Provision::CompatibilityResult)
+      expect(result.compatible).to be(true)
+      expect(result.error_message).to be_nil
+    end
+
+    it "returns an incompatible result, not a raised error, when the backend cannot host-bind-mount the worktree" do
+      remote_backend = instance_double(
+        Containers::Backends::RemoteDocker,
+        identifier: "worker-1",
+        remote?: true,
+        supports_host_paths?: false
+      )
+
+      result = nil
+      expect {
+        result = described_class.compatibility_for(agent_run: agent_run, backend: remote_backend, worktree_path: worktree_path)
+      }.not_to raise_error
+
+      expect(result.compatible).to be(false)
+      expect(result.error_message).to include("requires_host_bind_mount")
     end
   end
 
@@ -1068,6 +1122,9 @@ RSpec.describe Containers::Provision do
 
     context "when worktree path is not provided" do
       it "creates workspace volume for nil path" do
+        # RDR-058: the workspace volume is named after this run's own
+        # agent_run.id, never shared with another run.
+        # @spec EXECUTION-ISOLATION-001
         service = described_class.new(agent_run: agent_run)
 
         result = service.provision
@@ -2602,6 +2659,32 @@ RSpec.describe Containers::Provision do
           "container.execute.start",
           metadata: hash_including(command: satisfy { |command| !command.include?("super-secret") })
         )
+      end
+
+      # @spec CONTAINER-RUNTIME-019
+      it "yields normalized stdout and stderr chunks to the caller block in stream order" do
+        raw_stdout = "out\x00put\n".b
+        raw_stderr = "bad\xFF\n".b
+
+        expect(Containers.backend).to receive(:exec_in_container) do |container, command, **_opts, &block|
+          expect(container).to eq(mock_container)
+          expect(command).to eq([ "sh", "-c", "echo 'hello'" ])
+
+          block.call(:stdout, raw_stdout)
+          block.call(:stderr, raw_stderr)
+
+          [ [ raw_stdout ], [ raw_stderr ], 0 ]
+        end
+        allow(mock_container).to receive(:info).and_return({ "State" => { "Running" => true, "ExitCode" => 0 } })
+
+        streamed = []
+        result = service.execute("echo 'hello'") { |stream, chunk| streamed << [ stream, chunk ] }
+
+        expect(result).to be_success
+        expect(streamed).to eq([
+          [ :stdout, "output\n" ],
+          [ :stderr, "bad\uFFFD\n" ]
+        ])
       end
 
       it "fails the command and invalidates the container when preparation cleanup exits non-zero" do
@@ -4346,6 +4429,27 @@ RSpec.describe Containers::Provision do
 
       expect(result).to eq("model = \"gpt-5.1\"\n")
     end
+
+    it "uses subscription-safe Codex defaults for subscription-auth Codex runners" do # @spec MODEL-SELECTION-005
+      codex_runner = create(:runner, user: project.created_by, runner_key: "codex", auth_type: "subscription")
+      agent_run.update!(runner: codex_runner)
+      create(:llm_model, :openai, model_id: "gpt-5.6-preview", tier: "mid", capability_score: 9.9)
+      create(:llm_model, :openai, model_id: "gpt-5.2-codex", tier: "mid", capability_score: 9.0)
+
+      result = service.send(:sanitize_codex_host_config, "model = \"gpt-5.6-preview\"\n")
+
+      expect(result).to eq("model = \"gpt-5.2-codex\"\n")
+    end
+
+    it "uses subscription-safe Codex defaults when subscription auth is active without a bound runner" do # @spec MODEL-SELECTION-005
+      create(:llm_model, :openai, model_id: "gpt-5.6-preview", tier: "mid", capability_score: 9.9)
+      create(:llm_model, :openai, model_id: "gpt-5.2-codex", tier: "mid", capability_score: 9.0)
+      allow(service).to receive(:codex_subscription_auth?).and_return(true)
+
+      result = service.send(:sanitize_codex_host_config, "model = \"gpt-5.6-preview\"\n")
+
+      expect(result).to eq("model = \"gpt-5.2-codex\"\n")
+    end
   end
 
   describe "#codex_model_config_line" do
@@ -4863,6 +4967,40 @@ RSpec.describe Containers::Provision do
       expect {
         service.send(:cleanup_execution_preparation, cleanup_steps, env: {})
       }.to raise_error(Containers::Provision::ExecutionError, /Failed to restore prepared runtime state/)
+    end
+  end
+
+  # RDR-058: managed subscription credentials must never leak across accounts
+  # into another account's run. @spec EXECUTION-ISOLATION-003
+  describe "#managed_subscription_credential_scope_for" do
+    it "only resolves credentials belonging to the run's own account" do
+      own_credential = create(
+        :runner_credential,
+        account: project.account,
+        created_by: project.created_by,
+        runner_key: "claude",
+        auth_kind: "oauth_token"
+      )
+
+      other_account = create(:account)
+      other_project = create(:project, account: other_account)
+      create(
+        :runner_credential,
+        account: other_account,
+        created_by: other_project.created_by,
+        runner_key: "claude",
+        auth_kind: "oauth_token"
+      )
+
+      scope = service.send(:managed_subscription_credential_scope_for, "claude")
+
+      expect(scope).to contain_exactly(own_credential)
+    end
+
+    it "returns nil when the record's project has no account" do
+      allow(project).to receive(:account).and_return(nil)
+
+      expect(service.send(:managed_subscription_credential_scope_for, "claude")).to be_nil
     end
   end
 

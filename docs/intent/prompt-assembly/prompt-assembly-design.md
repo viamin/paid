@@ -148,29 +148,112 @@ the run via `AgentRun#record_prompt_assembly!` (stored under
 `external_metadata["prompt_assembly"]`) and `RunProvenanceBuilder` surfaces it
 under `prompt_provenance[:assembly]`.
 
-Because the assembly runs after `effective_prompt` resolves the base text, a
-queue-time custom prompt cannot bypass the required goal sections — they are
-applied here regardless of how the base text was produced.
+## Rollout Gate
 
-## Remaining Direct Prompt Builders (intentionally out of scope for #3379)
+The default prompt path is `legacy_prompt_builder`. PromptAssembly is enabled
+only when `FeatureFlags.enabled?(:prompt_assembly, project:)` is true. The flag
+supports tenant overrides (`tenant_settings.features["prompt_assembly"]`),
+project actor gates, and percentage-of-actors rollout through the existing
+Flipper-backed `FeatureFlags` service.
 
-The full RDR-054 migration is phased. The goal-wrapper move (#3379) covers the
-four runner-time wrappers above. These direct builders remain and are tracked
-for later phases:
+`PreparePrPromptActivity` records the selected path on the prepare phase and
+on `agent_runs.external_metadata["prompt_builder"]`. `RunAgentActivity` records
+the same field when it applies runner-time goal augmentation. PromptAssembly
+provenance is persisted only for the `prompt_assembly` cohort; legacy runs keep
+the existing prompt-version, service-environment, style-guide, marketplace,
+token, status, and timing records.
 
-- `Prompts::BuildForIssue` and `Prompts::BuildForPr` still compose sections by
-  string concatenation rather than through `PromptAssembly::Build`. Routing
-  their internal sections (task, comments, CI failures, review threads,
-  knowledge, style guides, conventions, LID, marketplace) through the section
-  registry is the #3377/#3378 migration, tracked separately.
-- `CreateAgentRunActivity` queue-time materialization renders the
-  `coding.issue_implementation` prompt version into `custom_prompt` and injects
-  style guides and conventions directly. The base text it produces is captured
-  by the assembly's `task.base` section and digest at runner time, but the
-  queue-time inputs themselves are not yet expressed as assembly sections.
+Before rollout increases, compare cohorts by joining `agent_runs` and
+`token_usages` on the recorded builder:
+
+- PR completion/merge rate.
+- Follow-up run count per PR.
+- Token usage and cost per PR.
+- `no_output` and terminal failure rate.
+- Time to merge or escalation.
+
+For prompt-text parity investigation, `prompt_assembly_shadow_compare` may be
+enabled separately. It builds both PR prompt paths for the same run input,
+serves only the selected builder's prompt, and stores a capped data-only
+comparison under
+`agent_run_phases.metadata["prompt_builder_comparison"]`. The comparison
+contains the served builder, SHA-256 digests, byte counts, capped prompt
+samples, and a match boolean. There is no dedicated UI; the data is inspected
+from phase metadata.
+
+Because the assembly runs after `effective_prompt` resolves the base text only
+inside the flagged path, a queue-time custom prompt cannot bypass required goal
+sections for enabled cohorts. Legacy cohorts keep the previous raw string
+augmentation behavior.
+
+For `review_feedback` follow-up runs, "no actionable review context" is
+deliberately narrower than "unresolved review threads exist but none are
+allowlisted." The prepare activity blocks only when at least one unresolved
+thread is human-authored and there are no prompt-eligible human review
+comments. Bot-authored unresolved threads (for example Copilot or other review
+bots) still build and execute a follow-up prompt because those runs are queued
+specifically to respond to bot feedback, even though bot thread comments are
+excluded from prompt instructions.
+
+## Issue-Prompt Assembly (#3377)
+
+The create_pr issue-implementation prompt — previously assembled by
+`Prompts::BuildForIssue` via string concatenation — now flows through
+`PromptAssembly::Build` at runner time. `AgentRun#prompt_for_issue` delegates to
+`PromptAssembly::BuildIssuePrompt`, which pre-fetches the issue comment thread
+once and assembles ordered, provenance-tracked sections:
+
+- `issue_task` (required) — the rendered `coding.issue_implementation` template
+  (title, body, and instructions).
+- `trusted_comments` — collaborator comments, trust-classified via
+  `Prompts::BuildForIssue.fetch_trusted_comments`; untrusted authors are
+  excluded.
+- `clarified_requirements` — trusted clarifying-question answers.
+- `service_environment` — available services and database setup constraints.
+- `knowledge_context` (quarantined) — the knowledge-base codebase context.
+- `style_guides`, `project_conventions`, `lid_workflow` — the migrated
+  injector call-sites, each now contributing an explicit section.
+- `marketplace_attachments` — marketplace prompt attachments, assembled so
+  `effective_prompt` skips the separate injection and never double-injects.
+- `safety_rules` (required) — the non-negotiable safety rules, always present
+  and never duplicated.
+
+`effective_prompt` persists the result's provenance to
+`external_metadata["prompt_assembly"]` via
+`AgentRun#persist_prompt_assembly_provenance!` and skips marketplace
+re-injection when the assembly already handled it. The safety rules were
+extracted from the DB-stored template into
+`PromptAssembly::Sections::SafetyRules`; a migration syncs the seeded template
+so the rules are no longer embedded (and therefore never duplicated).
+
+## Remaining Direct Prompt Builders
+
+The full RDR-054 migration is phased. The runner-time goal wrappers (#3379)
+and PR follow-up prompts (#3378) assemble through `PromptAssembly::Build` only
+for flagged rollout cohorts; create_pr issue prompts (#3377) assemble through
+`PromptAssembly::Build` at runner time. These direct builders remain and are
+tracked for later phases:
+
+- `Prompts::BuildForIssue#build` remains a legacy string-concatenation builder,
+  no longer the runner-time create_pr path. Its class methods
+  (`conversation_section_for`, `fetch_trusted_comments`,
+  `service_environment_section_render_for`) are reused by the assembly section
+  providers and `CreateAgentRunActivity`, so comment trust-classification and
+  service-environment rendering stay single-sourced.
+- `CreateAgentRunActivity` still resolves and records the selected
+  `coding.issue_implementation` prompt version at queue time, but it no longer
+  materializes a `create_pr` issue prompt into `custom_prompt`. The queued run
+  carries the chosen prompt version for audit and the runner-time assembly
+  renders the issue task, comments, service environment, and safety rules as
+  explicit sections instead.
+- `Prompts::BuildForPr` uses legacy string concatenation by default for PR
+  follow-up prompts, with PromptAssembly available only through the rollout
+  gate. Broad production use requires the measured rollout above.
 - `Lid::InjectIntoPrompt`, `StyleGuides::InjectIntoPrompt`, and
-  `ProjectConventions::InjectIntoPrompt` remain call-site injectors invoked
-  inside the existing builders rather than registered providers.
+  `ProjectConventions::InjectIntoPrompt` remain call-site injectors. The
+  assembly section providers (`LidWorkflow`, `StyleGuides`,
+  `ProjectConventions`) wrap them rather than reimplement their logic, so one
+  implementation is shared between the legacy builder and the assembly path.
 
 Splitting the goal-wrapper templates so the base prompt and goal instructions
 become truly separate sections (per the RDR-054 registry's `task.*` +

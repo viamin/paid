@@ -218,17 +218,97 @@
   Git, control-plane API, object storage, and credentials. The output manifest
   SHALL carry result summaries, log references, verification results, durable
   binary artifact references, and git output identity, and SHALL distinguish
-  code outputs from durable binary artifacts and structured results. Secret
-  values SHALL be excluded by construction: credential lanes and service
-  declarations may carry only identifiers or env keys, never secret payloads
-  or host paths.
-  *Tests:* `spec/services/execution_runners_spec.rb`
+  code outputs from durable binary artifacts and structured results. Durable
+  binary artifact references SHALL include content type, object-storage key
+  and/or URL, and run context (`account_id`, `project_id`, `agent_run_id`).
+  Artifact manifests persisted as durable records on the run (e.g.
+  `AgentRun#external_metadata["artifact_manifest"]`) SHALL carry storage keys
+  without presigned URLs — presigned URLs expire within the SigV4 one-week cap
+  and are ephemeral, so durable consumers re-sign from the key. The output
+  manifest's binary artifact references SHALL distinguish trusted source lanes
+  from agent-authored ones: artifacts from
+  `AgentRun#external_metadata["artifact_manifest"]` (persisted by the runner,
+  or by interop ingestion — `Api::Projects::ExternalAgentRunsController`
+  persists caller-supplied `external_metadata` verbatim via
+  `AgentRuns::IngestExternal`) have their storage keys honored only when the
+  key lives under the project's own storage namespace
+  (`Screenshots::Storage.namespace_prefix`, i.e. `screenshots/<owner>/<repo>/`);
+  any other key degrades to URL-only. Artifacts from
+  `AgentRun#verification_result["artifacts"]` (written by the agent inside the
+  container and persisted as-is by
+  `AgentRuns::VerificationResultRecorder`) are untrusted input — only `url`
+  survives so a spoofed key under another tenant's prefix cannot be re-signed
+  into a working presigned URL by a durable consumer. The run's
+  `account_id`, `project_id`, and `agent_run_id` SHALL always be the
+  authoritative context (the system already knows the real identity), so an
+  artifact-supplied context value can never override the run's identity.
+  Secret values SHALL be excluded by construction: credential lanes and
+  service declarations may carry only identifiers or env keys, never secret
+  payloads or host paths.
+  *Tests:* `spec/services/execution_runners_spec.rb`,
+  `spec/services/screenshots/container_capture_spec.rb`
   *Code:* `ExecutionRunners::ExecutionInputManifest`,
   `ExecutionRunners::ExecutionOutputManifest`,
   `ExecutionRunners::RunSpec#input_manifest`,
-  `ExecutionRunners::ExecutionResult#output_manifest`
+  `ExecutionRunners::ExecutionResult#output_manifest`,
+  `ExecutionRunners::ExecutionOutputManifest.build_binary_artifact_refs`
 
-- [x] **CONTAINER-RUNTIME-019** — The system SHALL expose a coarse,
+- [x] **CONTAINER-RUNTIME-019** — The system SHALL provide a provider-neutral
+  runner conformance suite that drives the complete normal create-PR
+  lifecycle — clone, run, log capture, artifact output, result manifest, and
+  cleanup — through the `ExecutionRunners` contract with no host-path
+  assumptions, deriving its `RunSpec` via `RunSpec.from_agent_run` so every
+  runner conforms to the same canonical scenario. The suite SHALL fail a
+  runner that requires shared host storage: provisioning the host-path-free
+  scenario must succeed, and the persisted `RunnerHandle` plus the input and
+  output manifests SHALL carry no host filesystem paths. The suite SHALL
+  verify Git is the only code transport (input-manifest Git lane with a
+  declarative workspace carrying no host reference) and that durable outputs
+  travel on the object-storage and control-plane API lanes. Logs SHALL cross
+  the runner boundary as streamed stdout/stderr chunks yielded through the
+  `ExecutionRunners::Base#start` block rather than through shared host files.
+  The runner contract surface (interface methods, parameters, and value-object
+  members) SHALL NOT reference Docker `exec`, bind mounts, shared directories,
+  or host-visible workspace paths. `LocalDockerRunner` SHALL pass the suite as
+  the baseline without weakening local Docker development (legacy bind-mount
+  runs remain a compatibility path outside the conformance scenario), and
+  negative controls SHALL prove the suite rejects host-storage-requiring
+  runners, handles, manifests, streamed output plumbing, and contract
+  surfaces.
+  *Tests:* `spec/services/execution_runners/no_shared_filesystem_conformance_spec.rb`,
+  `spec/services/execution_runners/local_docker_runner_spec.rb`,
+  `spec/services/containers/provision_spec.rb`
+  *Code:* `app/services/containers/provision.rb`,
+  `app/services/execution_runners/base.rb`,
+  `app/services/execution_runners/local_docker_runner.rb`,
+  `spec/support/no_shared_filesystem_conformance.rb`,
+  `spec/support/shared_examples/no_shared_filesystem_conformance.rb`
+
+- [x] **CONTAINER-RUNTIME-020** — The system SHALL carry an
+  `ExecutionRunners::NetworkingPolicy#egress_profile` value (`:locked` (default
+  for production), `:research`, or `:open`) through `RunSpec` and the
+  `ExecutionInputManifest#networking` section so orchestration code can request
+  a per-run egress posture without referencing Docker network names, iptables
+  rules, or gateway implementation details. The factory methods
+  `proxy_restricted`, `subscription_auth`, and `direct_outbound` SHALL default
+  the profile to `:locked`; `:research` and `:open` SHALL be selectable via the
+  same factory methods. The profile SHALL be exposed via `locked?`, `research?`,
+  and `open?` predicates on `NetworkingPolicy` so future enforcement adapters
+  can reject unsupported production runs without inspecting implementation
+  details. The runner contract surface (interface methods, parameters, and
+  value-object members) SHALL remain free of Docker `exec`, bind mounts,
+  shared directories, and host-visible workspace paths, and the
+  `ExecutionInputManifest`'s networking section SHALL NOT serialize Docker
+  bridge names, internal network names, or iptables syntax.
+  *Tests:* `spec/services/execution_runners_spec.rb`,
+  `spec/services/execution_runners/local_docker_runner_spec.rb`,
+  `spec/services/containers/provision_spec.rb`
+  *Code:* `ExecutionRunners::NetworkingPolicy`,
+  `ExecutionRunners::ExecutionInputManifest`,
+  `ExecutionRunners::RunSpec`,
+  `Containers::Provision.networking_policy_for`
+
+- [x] **CONTAINER-RUNTIME-021** — The system SHALL expose a coarse,
   provider-neutral networking intent vocabulary on
   `ExecutionRunners::NetworkingPolicy` with six intents:
   `:no_outbound` (air-gapped; loopback + DNS only),

@@ -69,12 +69,13 @@ module ExecutionRunners
       raise
     end
 
+    # @spec CONTAINER-RUNTIME-019
     def start(handle:, command:, timeout: nil, startup_timeout: nil, idle_timeout: nil,
-              abort_patterns: nil, preparation: nil, heartbeat_path: nil)
+              abort_patterns: nil, preparation: nil, heartbeat_path: nil, &block)
       result = reconnect(handle: handle).execute(
         command, timeout: timeout, startup_timeout: startup_timeout, idle_timeout: idle_timeout,
         env: handle.metadata["environment"] || {}, preparation: preparation,
-        heartbeat_path: heartbeat_path, abort_patterns: abort_patterns
+        heartbeat_path: heartbeat_path, abort_patterns: abort_patterns, &block
       )
       translate_result(result)
     rescue Containers::Provision::StartupTimeoutError => e
