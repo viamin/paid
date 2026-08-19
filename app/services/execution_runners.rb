@@ -305,7 +305,7 @@ module ExecutionRunners
   # names intent, never implementation.
   #
   # +mode+ values (RDR-062):
-  #   :no_outbound       — air-gapped; only loopback traffic allowed.
+  #   :no_outbound       — air-gapped; loopback + DNS only.
   #   :proxy_only        — restricted; only Paid secrets proxy + DNS.
   #   :git_plus_proxy    — restricted; adds GitHub CIDR ranges.
   #   :approved_services — restricted; adds service container IPs.

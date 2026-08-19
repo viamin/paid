@@ -32,9 +32,11 @@ vocabulary and the runner capability-validation contract land in this PR:
   unrestricted behavior is preserved for `:subscription_auth` /
   `:direct_outbound`.
 - `ExecutionRunners::ContractRunner` provides an in-memory implementation
-  with a caller-set supported mode list, so the runner contract specs
-  can assert that capability mismatches surface in `.compatible?` and
-  `#provision` rather than silently downgrading.
+  whose supported intent set is a class-level concern, narrowed via the
+  `ContractRunner.supporting([...])` factory (which returns a subclass), so
+  `.compatible?` and `#provision` consult the same source and the runner
+  contract specs can assert that capability mismatches surface in
+  `.compatible?` rather than silently downgrading.
 
 ## Problem Statement
 
@@ -79,7 +81,7 @@ The six intents:
 
 | Intent | Allowlist | Firewall | Network choice | Existing analog |
 |--------|-----------|----------|----------------|-----------------|
-| `:no_outbound` | none | yes (default-deny, loopback only) | none | new |
+| `:no_outbound` | DNS only | yes (default-deny, loopback + DNS only) | none | new |
 | `:proxy_only` | Paid secrets proxy + DNS | yes | restricted | new |
 | `:git_plus_proxy` | Paid secrets proxy + DNS + GitHub ranges | yes | restricted | new |
 | `:approved_services` | Paid secrets proxy + DNS + GitHub ranges + service container IPs | yes | restricted | current `:proxy_restricted` |
@@ -147,7 +149,7 @@ Implementation is tracked by a small chain:
 
 `ExecutionRunners::NetworkingPolicy` adds six intent constructors:
 
-- `.no_outbound` — air-gapped; only loopback traffic.
+- `.no_outbound` — air-gapped; loopback + DNS only.
 - `.proxy_only(allow_destinations: [])` — secrets proxy + DNS only.
 - `.git_plus_proxy(allow_destinations: [])` — adds GitHub CIDR ranges.
 - `.approved_services(allow_destinations: [])` — adds service container IPs
@@ -207,8 +209,10 @@ rejects the candidate rather than the runner failing late during provision.
 
 A `ContractRunner` (defined under `app/services/execution_runners/`)
 implements the abstract interface for testing: it supports only a
-configured subset of intents and raises `ProvisionError` when a spec
-asks for an unsupported intent. The shared `it_behaves_like "an
+configured subset of intents — pinned at the class level via the
+`ContractRunner.supporting` factory so `.compatible?` and `#provision`
+consult the same source — and raises `ProvisionError` when a spec asks
+for an unsupported intent. The shared `it_behaves_like "an
 ExecutionRunner implementation"` example exercises the contract; new tests
 exercise capability rejection and per-policy translation.
 

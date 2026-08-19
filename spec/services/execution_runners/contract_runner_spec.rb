@@ -4,8 +4,10 @@ require "rails_helper"
 
 # @spec CONTAINER-RUNTIME-021
 RSpec.describe ExecutionRunners::ContractRunner do
-  subject(:runner) { described_class.new(supports: supported_modes) }
+  subject(:runner) { runner_class.new }
 
+  let(:runner_class) { described_class.supporting(supported_modes) }
+  let(:supported_modes) { described_class::DEFAULT_SUPPORTED_MODES }
   let(:agent_run) { create(:agent_run, container_host: "local") }
   let(:backend) { instance_double(Containers::Backends::Base, identifier: "local") }
   let(:networking_policy) { ExecutionRunners::NetworkingPolicy.approved_services }
@@ -18,32 +20,42 @@ RSpec.describe ExecutionRunners::ContractRunner do
     )
   end
 
+  describe ".supporting" do
+    it "returns a narrowed ContractRunner subclass" do
+      narrowed = described_class.supporting([ :model_direct ])
+
+      expect(narrowed).to be < described_class
+      expect(narrowed.supported_modes).to eq([ :model_direct ])
+      expect(narrowed.new.supported_modes).to eq([ :model_direct ])
+    end
+
+    it "raises ArgumentError for unknown modes" do
+      expect { described_class.supporting([ :model_direct, :bogus ]) }
+        .to raise_error(ArgumentError, /bogus/)
+    end
+  end
+
   describe ".supports_policy?" do
     it "rejects a nil policy when the runner supports no policies" do
-      runner = described_class.new(supports: [])
-
-      expect(runner.class.supports_policy?(nil, supported_modes: runner.supported_modes)).to be(false)
+      expect(described_class.supporting([]).supports_policy?(nil)).to be(false)
     end
 
     it "accepts a policy whose mode is in the supported set" do
-      runner = described_class.new(supports: [ :approved_services ])
       policy = ExecutionRunners::NetworkingPolicy.approved_services
 
-      expect(runner.class.supports_policy?(policy, supported_modes: runner.supported_modes)).to be(true)
+      expect(described_class.supporting([ :approved_services ]).supports_policy?(policy)).to be(true)
     end
 
     it "rejects a policy whose mode is outside the supported set" do
-      runner = described_class.new(supports: [ :model_direct ])
       policy = ExecutionRunners::NetworkingPolicy.approved_services
 
-      expect(runner.class.supports_policy?(policy, supported_modes: runner.supported_modes)).to be(false)
+      expect(described_class.supporting([ :model_direct ]).supports_policy?(policy)).to be(false)
     end
 
     it "accepts a backward-compatible alias when its canonical mode is supported" do
-      runner = described_class.new(supports: [ :approved_services ])
       policy = ExecutionRunners::NetworkingPolicy.proxy_restricted
 
-      expect(runner.class.supports_policy?(policy, supported_modes: runner.supported_modes)).to be(true)
+      expect(described_class.supporting([ :approved_services ]).supports_policy?(policy)).to be(true)
     end
   end
 
@@ -55,7 +67,7 @@ RSpec.describe ExecutionRunners::ContractRunner do
         networking_policy: ExecutionRunners::NetworkingPolicy.approved_services
       ))
 
-      result = described_class.compatible?(spec: spec, backend: backend, supported_modes: supported_modes)
+      result = runner_class.compatible?(spec: spec, backend: backend)
 
       expect(result.compatible).to be(false)
       expect(result.error_message).to include("approved_services")
@@ -66,7 +78,7 @@ RSpec.describe ExecutionRunners::ContractRunner do
         networking_policy: ExecutionRunners::NetworkingPolicy.model_direct
       ))
 
-      result = described_class.compatible?(spec: spec, backend: backend, supported_modes: supported_modes)
+      result = runner_class.compatible?(spec: spec, backend: backend)
 
       expect(result.compatible).to be(true)
       expect(result.error_message).to be_nil
@@ -77,10 +89,20 @@ RSpec.describe ExecutionRunners::ContractRunner do
         networking_policy: ExecutionRunners::NetworkingPolicy.model_direct
       ))
 
-      result = described_class.compatible?(spec: spec, backend: nil, supported_modes: supported_modes)
+      result = runner_class.compatible?(spec: spec, backend: nil)
 
       expect(result.compatible).to be(false)
       expect(result.error_message).to include("Backend is not supported")
+    end
+
+    it "rejects an unsupported spec through the standard Base signature, matching #provision" do
+      spec = ExecutionRunners::RunSpec.new(**run_spec.to_h.merge(
+        networking_policy: ExecutionRunners::NetworkingPolicy.approved_services
+      ))
+
+      expect(runner_class.compatible?(spec: spec, backend: backend).compatible).to be(false)
+      expect { runner.provision(spec: spec) }
+        .to raise_error(ExecutionRunners::ProvisionError, /approved_services/)
     end
   end
 
@@ -122,7 +144,7 @@ RSpec.describe ExecutionRunners::ContractRunner do
 
     it "returns the configured execute_result" do
       result_value = ExecutionRunners::ExecutionResult.success(stdout: "hi", exit_code: 0)
-      runner = described_class.new(supports: supported_modes, execute_result: result_value)
+      runner = runner_class.new(execute_result: result_value)
 
       result = runner.start(handle: handle, command: "echo hi", timeout: 60, startup_timeout: 30,
                             idle_timeout: 30, abort_patterns: nil, preparation: nil, heartbeat_path: nil)
@@ -131,8 +153,6 @@ RSpec.describe ExecutionRunners::ContractRunner do
     end
 
     it "defaults to a successful result when no execute_result is configured" do
-      runner = described_class.new(supports: supported_modes)
-
       result = runner.start(handle: handle, command: "echo hi", timeout: 60, startup_timeout: 30,
                             idle_timeout: 30, abort_patterns: nil, preparation: nil, heartbeat_path: nil)
 
@@ -155,7 +175,7 @@ RSpec.describe ExecutionRunners::ContractRunner do
     let(:supported_modes) { [ :model_direct ] }
 
     it "returns the configured running_result" do
-      runner = described_class.new(supports: supported_modes, running_result: false)
+      runner = runner_class.new(running_result: false)
 
       expect(runner.running?(handle: handle)).to be(false)
     end
@@ -167,7 +187,7 @@ RSpec.describe ExecutionRunners::ContractRunner do
 
     it "returns the configured status_result" do
       status = ExecutionRunners::ExecutionStatus.new(state: :exited, exit_code: 0, oom_killed: false, memory_limit: nil)
-      runner = described_class.new(supports: supported_modes, status_result: status)
+      runner = runner_class.new(status_result: status)
 
       expect(runner.status(handle: handle)).to eq(status)
     end
@@ -195,7 +215,7 @@ RSpec.describe ExecutionRunners::ContractRunner do
   end
 
   describe "shared runner contract" do
-    let(:supported_modes) { described_class::DEFAULT_SUPPORTED_MODES }
+    let(:runner_class) { described_class }
     let(:networking_policy) { ExecutionRunners::NetworkingPolicy.model_direct }
     let(:backend) { instance_double(Containers::Backends::Base, identifier: "local") }
     let(:valid_handle) do

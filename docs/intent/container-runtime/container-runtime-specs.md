@@ -331,9 +331,12 @@
   can implement, and `LocalDockerRunner.compatible?` SHALL call
   `supports_policy?` to reject unsupported specs before any provision
   attempt. `ExecutionRunners::ContractRunner` SHALL provide a configurable
-  in-memory implementation whose `.supports_policy?` honors a caller-set
-  list of modes so the runner contract specs can assert that capability
-  mismatches surface in `.compatible?` rather than silently downgrading.
+  in-memory implementation whose supported intent set is declared at the
+  class level (narrowed via the `ContractRunner.supporting` factory, which
+  returns a subclass) so `.supports_policy?`, `.compatible?`, and
+  `#provision` all consult the same source and the runner contract specs
+  can assert that capability mismatches surface in `.compatible?` rather
+  than silently downgrading.
   *Tests:* `spec/services/execution_runners_spec.rb`,
   `spec/services/execution_runners/base_spec.rb`,
   `spec/services/execution_runners/local_docker_runner_spec.rb`,
