@@ -206,6 +206,23 @@ RSpec.describe AgentRuns::EgressPolicy::Resolve do
         resolve(egress_profile: "wild-west")
       }.to raise_error(ArgumentError, /egress_profile/)
     end
+
+    # @spec EGRESS-POLICY-006
+    it "falls back to the networking policy's profile when no egress_profile kwarg is given" do
+      policy = ExecutionRunners::NetworkingPolicy.proxy_restricted(egress_profile: :research)
+
+      snapshot = resolve(policy: policy)
+
+      expect(snapshot.egress_profile).to eq("research")
+    end
+
+    it "prefers an explicit egress_profile kwarg over the networking policy's profile" do
+      policy = ExecutionRunners::NetworkingPolicy.proxy_restricted(egress_profile: :research)
+
+      snapshot = resolve(policy: policy, egress_profile: "open")
+
+      expect(snapshot.egress_profile).to eq("open")
+    end
   end
 
   describe "policy derivation" do

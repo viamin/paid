@@ -25,7 +25,7 @@ module AgentRuns
 
       DIRECT_PROVIDER_MODES = %w[subscription_auth direct_outbound].freeze
 
-      def self.call(agent_run:, networking_policy: nil, egress_profile: Snapshot::DEFAULT_PROFILE,
+      def self.call(agent_run:, networking_policy: nil, egress_profile: nil,
         preview_destination: nil, platform_destinations: nil)
         new(
           agent_run: agent_run,
@@ -76,8 +76,17 @@ module AgentRuns
         policy.mode.to_s
       end
 
+      # An explicit +egress_profile:+ kwarg wins; otherwise fall back to the
+      # profile carried by the resolved networking policy (see
+      # {Containers::Provision#networking_policy_with_egress_profile}), and
+      # only default to {Snapshot::DEFAULT_PROFILE} when neither is present.
+      # Falling back to the default unconditionally would misreport a
+      # research/open policy's posture as locked in the audit snapshot.
       def effective_profile
-        egress_profile.to_s.presence || Snapshot::DEFAULT_PROFILE
+        explicit = egress_profile.to_s.presence
+        return explicit if explicit
+
+        policy.egress_profile.to_s.presence || Snapshot::DEFAULT_PROFILE
       end
 
       def policy

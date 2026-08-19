@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_19_003626) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_19_075130) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1006,6 +1006,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_003626) do
     t.bigint "created_by_id", comment: "User who created the entry, for audit."
     t.boolean "enabled", default: true, null: false, comment: "Disabled entries are skipped by policy resolution without deleting the rule."
     t.string "host_pattern", limit: 253, null: false, comment: "Exact public hostname or leading-wildcard subdomain pattern (*.api.example.com)."
+    t.jsonb "log_data"
     t.integer "port", comment: "Optional destination port (1-65535). Blank means any allowed port for the host."
     t.bigint "project_id", comment: "Optional project scope. Project entries extend, never replace, account entries."
     t.text "reason", comment: "Human-readable justification recorded in the run's policy snapshot provenance."
@@ -4058,6 +4059,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_003626) do
 
   create_trigger :logidze_on_docker_hosts, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_docker_hosts BEFORE INSERT OR UPDATE ON public.docker_hosts FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :logidze_on_egress_allowlist_entries, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_egress_allowlist_entries BEFORE INSERT OR UPDATE ON public.egress_allowlist_entries FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
   create_trigger :logidze_on_exception_incidents, sql_definition: <<-SQL

@@ -7,6 +7,7 @@
 # and wildcard TLDs.
 # @spec EGRESS-POLICY-001
 class EgressAllowlistEntry < ApplicationRecord
+  has_logidze
   belongs_to :account
   belongs_to :project, optional: true
   belongs_to :created_by, class_name: "User", optional: true
