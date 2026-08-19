@@ -39,6 +39,46 @@ RSpec.describe Automation::Strategies::AutoContinue do
     expect(described_class.ancestors).to include(Automation::Strategy)
   end
 
+  describe "an already-escalated PR" do
+    # @spec PR-ESCALATION-001
+    it "decides nothing when the scan reports no recovery signal" do
+      signals = {
+        issue_id: 1,
+        pr_number: 42,
+        phase: "escalated",
+        pr_auto_continue_token_limit_reached: true,
+        failure_streak_limit_reached: true,
+        no_progress_stuck: true,
+        escalation_reason: "Token cap reached",
+        escalation_reason_key: Issue::PR_ESCALATION_REASON_PR_AUTO_CONTINUE_TOKEN_LIMIT
+      }
+      context = Automation::Context.new(record: nil, project: project, metadata: { lifecycle: signals })
+
+      result = described_class.new.evaluate(context)
+
+      expect(result.decisions.map(&:type)).to eq([ "noop" ])
+    end
+
+    # @spec PR-ESCALATION-009
+    it "still acts on a recovery signal from the scan" do
+      signals = {
+        issue_id: 1,
+        pr_number: 42,
+        phase: "escalated",
+        draft: false,
+        scan: { triggers: [ { type: "dismiss_escalation", owner_initiated: true } ] }
+      }
+      context = Automation::Context.new(record: nil, project: project, metadata: {
+        lifecycle: signals,
+        scan: { triggers: [ { type: "dismiss_escalation", owner_initiated: true } ] }
+      })
+
+      result = described_class.new.evaluate(context)
+
+      expect(result.decisions.map(&:type)).to include("dismiss_escalation")
+    end
+  end
+
   describe "backwards compatibility" do
     it "selects auto-review through Automation::Strategies::Select when lifecycle signals are absent" do
       selected_strategy = instance_double(Automation::Strategies::AutoReview)
@@ -287,7 +327,8 @@ RSpec.describe Automation::Strategies::AutoContinue do
     context "when in escalated phase" do
       let(:escalated_lifecycle) { base_lifecycle.merge(phase: "escalated") }
 
-      it "escalates when the unified failure streak limit is reached" do
+      # @spec PR-ESCALATION-001
+      it "does not re-escalate a PR that is already escalated" do
         result = evaluate(
           lifecycle: escalated_lifecycle.merge(
             failure_streak_limit_reached: true,
@@ -297,16 +338,17 @@ RSpec.describe Automation::Strategies::AutoContinue do
           )
         )
 
-        expect(result.to_h[:decisions].first).to include(type: "escalate")
+        expect(decision_types(result)).to eq([ "noop" ])
       end
 
-      it "delegates to AutoReview when no unified gate is active" do
+      # @spec PR-ESCALATION-001
+      it "queues no follow-up work when the scan reports no recovery trigger" do
         result = evaluate(
           lifecycle: escalated_lifecycle,
           scan: { issue_id: pull_request.id, pr_number: 42, phase: "escalated", triggers: [] }
         )
 
-        expect(decision_types(result)).to eq([ "queue_create_pr_run", "record_pr_followup" ])
+        expect(decision_types(result)).to eq([ "noop" ])
       end
     end
   end

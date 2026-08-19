@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-08-07
+last_updated: 2026-08-19
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -240,6 +240,14 @@ arrows:
     taxonomy: automation
     status: OK
     audited: 2026-08-04
+  pr-escalation-recovery:
+    title: PR Escalation Recovery
+    path: docs/intent/pr-escalation-recovery/pr-escalation-recovery-design.md
+    specs: docs/intent/pr-escalation-recovery/pr-escalation-recovery-specs.md
+    parent: PAID
+    taxonomy: automation
+    status: OK
+    audited: 2026-08-19
   eager-queue-seeding:
     title: Eager Queue Seeding
     path: docs/intent/eager-queue-seeding/eager-queue-seeding-design.md

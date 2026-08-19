@@ -2144,6 +2144,78 @@ RSpec.describe "AgentRuns" do
     end
   end
 
+  describe "POST /projects/:project_id/agent_runs/unblock_escalation" do
+    let(:escalated_pr) do
+      create(:issue, :pull_request,
+        project: project,
+        github_number: 88,
+        title: "Fix flaky specs",
+        pr_review_phase: "escalated",
+        pr_escalation_reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK,
+        labels: [ "paid-generated", "paid-automation", "paid-escalated" ],
+        draft_review_count: 12,
+        pr_followup_count: 4)
+    end
+
+    context "when not authenticated" do
+      # @spec PR-ESCALATION-017
+      it "redirects to the sign in page" do
+        post unblock_escalation_project_agent_runs_path(project), params: { pull_request_id: escalated_pr.id }
+
+        expect(response).to redirect_to(new_user_session_path)
+        expect(escalated_pr.reload.pr_review_phase).to eq("escalated")
+      end
+    end
+
+    context "when authenticated without permission to run agents" do
+      let(:outsider) { create(:user) }
+
+      before { sign_in outsider }
+
+      # @spec PR-ESCALATION-017
+      it "refuses the unblock" do
+        post unblock_escalation_project_agent_runs_path(project), params: { pull_request_id: escalated_pr.id }
+
+        expect(response).not_to have_http_status(:ok)
+        expect(escalated_pr.reload.pr_review_phase).to eq("escalated")
+      end
+    end
+
+    context "when authenticated" do
+      before do
+        sign_in user
+        stub_request(:delete, %r{https://api\.github\.com/repos/.+/issues/88/labels/paid-escalated})
+          .to_return(status: 200, body: "[]", headers: { "Content-Type" => "application/json" })
+      end
+
+      # @spec PR-ESCALATION-014
+      it "clears the escalation without enqueueing a run" do
+        expect {
+          post unblock_escalation_project_agent_runs_path(project), params: { pull_request_id: escalated_pr.id }
+        }.not_to change(AgentRun, :count)
+
+        escalated_pr.reload
+        expect(escalated_pr.pr_review_phase).to eq("ready")
+        expect(escalated_pr.pr_escalation_reason).to be_nil
+        expect(escalated_pr.draft_review_count).to eq(0)
+        expect(response).to redirect_to(dashboard_path)
+        expect(flash[:notice]).to include("unblocked")
+      end
+
+      # @spec PR-ESCALATION-015
+      it "refuses to unblock a closed pull request" do
+        escalated_pr.update!(github_state: "closed")
+
+        post unblock_escalation_project_agent_runs_path(project), params: { pull_request_id: escalated_pr.id }
+
+        escalated_pr.reload
+        expect(escalated_pr.pr_review_phase).to eq("escalated")
+        expect(escalated_pr.draft_review_count).to eq(12)
+        expect(flash[:alert]).to be_present
+      end
+    end
+  end
+
   describe "POST /projects/:project_id/agent_runs/toggle_auto_continue_pause" do
     context "when not authenticated" do
       it "redirects to the sign in page" do

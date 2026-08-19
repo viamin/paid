@@ -54,6 +54,28 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     })
   end
 
+  # Label history showing paid-escalated applied by automation and then removed
+  # by +removed_by+ — the signal that distinguishes an owner dismissal from a
+  # label that never landed on GitHub.
+  def stub_escalation_label_events!(issue_number:, removed_by:, proj: project)
+    allow(github_client).to receive(:issue_events)
+      .with(proj.full_name, issue_number)
+      .and_return([
+        OpenStruct.new(
+          event: "labeled",
+          actor: OpenStruct.new(login: "paid-bot"),
+          label: OpenStruct.new(name: "paid-escalated"),
+          created_at: 2.hours.ago
+        ),
+        OpenStruct.new(
+          event: "unlabeled",
+          actor: OpenStruct.new(login: removed_by),
+          label: OpenStruct.new(name: "paid-escalated"),
+          created_at: 1.hour.ago
+        )
+      ])
+  end
+
   def stub_automation_label_events!(issue_number:, actor_login: "viamin", proj: project, label_name: nil)
     allow(github_client).to receive(:issue_events)
       .with(proj.full_name, issue_number)
@@ -93,6 +115,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive_messages(rate_limit_remaining!: 100, check_run_log: "")
     allow(github_client).to receive(:remove_label_from_issue)
+    # Default: no label history. Escalation dismissal is driven by a trusted
+    # user's removal *event* (PR-ESCALATION-009/019), so any escalated PR whose
+    # label is locally absent consults this. Specific tests override it.
+    allow(github_client).to receive(:issue_events).and_return([])
+    # Escalated PRs reconcile a missing paid-escalated label back onto GitHub
+    # (PR-ESCALATION-021), so the scan may add labels on any escalated fixture.
+    allow(github_client).to receive(:add_labels_to_issue)
     allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
   end
 
@@ -6745,13 +6774,186 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
 
-      it "detects triggers in escalated phase" do
+      # @spec PR-ESCALATION-001
+      it "collects no work triggers while the PR is escalated" do
         result = activity.execute(project_id: project.id)
 
-        expect(automation_scan_results(result).size).to eq(1)
+        expect(automation_scan_results(result)).to eq([])
+      end
+    end
+
+    context "when an escalated PR has unresolved review threads and a merge conflict" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation", "paid-escalated" ],
+          pr_review_phase: "escalated",
+          paid_state: "completed")
+        stub_github_for_pr(
+          mergeable: false,
+          checks: [ { name: "rspec", conclusion: "failure" } ],
+          review_threads: [
+            { id: "RT_1", is_resolved: false, author: "viamin", body: "please fix this" }
+          ]
+        )
+      end
+
+      # @spec PR-ESCALATION-001
+      it "queues no follow-up work for the owner's PR" do
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to eq([])
+      end
+    end
+
+    context "when an escalated PR's paid-escalated label has been removed" do
+      let(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "escalated",
+          pr_escalation_reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK,
+          last_pr_scan_at: 1.hour.ago,
+          draft_review_count: 12)
+      end
+
+      before { stub_github_for_pr }
+
+      # @spec PR-ESCALATION-009
+      it "emits an owner-initiated dismissal when a trusted user removed the label" do
+        stub_escalation_label_events!(issue_number: 42, removed_by: "viamin")
+
+        result = activity.execute(project_id: pr_issue.project.id)
+
         trigger = automation_scan_results(result).first
-        expect(trigger[:phase]).to eq("escalated")
-        expect(trigger[:triggers].first[:type]).to eq("ci_failure")
+        expect(trigger[:issue_id]).to eq(pr_issue.id)
+        expect(trigger[:triggers].first[:type]).to eq("dismiss_escalation")
+        expect(trigger[:triggers].first[:owner_initiated]).to be(true)
+      end
+
+      # @spec PR-ESCALATION-019
+      it "does not dismiss when the label was never applied on GitHub" do
+        allow(github_client).to receive(:issue_events)
+          .with(project.full_name, 42)
+          .and_return([])
+
+        result = activity.execute(project_id: pr_issue.project.id)
+
+        types = automation_scan_results(result).flat_map { |entry| entry[:triggers] }.map { |t| t[:type] }
+        expect(types).not_to include("dismiss_escalation")
+        expect(pr_issue.reload.pr_review_phase).to eq("escalated")
+      end
+
+      # @spec PR-ESCALATION-021
+      it "re-applies the label when an untrusted user removed it" do
+        stub_escalation_label_events!(issue_number: 42, removed_by: "drive-by-contributor")
+        allow(github_client).to receive(:add_labels_to_issue)
+
+        activity.execute(project_id: pr_issue.project.id)
+
+        expect(github_client).to have_received(:add_labels_to_issue)
+          .with(project.full_name, 42, [ "paid-escalated" ])
+        expect(pr_issue.reload.labels).to include("paid-escalated")
+        expect(pr_issue.pr_review_phase).to eq("escalated")
+      end
+
+      # @spec PR-ESCALATION-021
+      it "re-applies the label when it was never applied on GitHub" do
+        allow(github_client).to receive(:issue_events).with(project.full_name, 42).and_return([])
+        allow(github_client).to receive(:add_labels_to_issue)
+
+        activity.execute(project_id: pr_issue.project.id)
+
+        expect(github_client).to have_received(:add_labels_to_issue)
+          .with(project.full_name, 42, [ "paid-escalated" ])
+      end
+
+      # @spec PR-ESCALATION-021
+      it "does not re-apply the label when a trusted user removed it" do
+        stub_escalation_label_events!(issue_number: 42, removed_by: "viamin")
+        allow(github_client).to receive(:add_labels_to_issue)
+
+        activity.execute(project_id: pr_issue.project.id)
+
+        expect(github_client).not_to have_received(:add_labels_to_issue)
+      end
+
+      # @spec PR-ESCALATION-019
+      it "does not dismiss when an untrusted user removed the label" do
+        stub_escalation_label_events!(issue_number: 42, removed_by: "drive-by-contributor")
+
+        result = activity.execute(project_id: pr_issue.project.id)
+
+        types = automation_scan_results(result).flat_map { |entry| entry[:triggers] }.map { |t| t[:type] }
+        expect(types).not_to include("dismiss_escalation")
+        expect(pr_issue.reload.pr_review_phase).to eq("escalated")
+      end
+
+      # @spec PR-ESCALATION-019
+      it "does not dismiss when the label history cannot be fetched" do
+        allow(github_client).to receive(:issue_events)
+          .with(project.full_name, 42)
+          .and_raise(GithubClient::ApiError.new("500"))
+
+        result = activity.execute(project_id: pr_issue.project.id)
+
+        types = automation_scan_results(result).flat_map { |entry| entry[:triggers] }.map { |t| t[:type] }
+        expect(types).not_to include("dismiss_escalation")
+        expect(pr_issue.reload.pr_review_phase).to eq("escalated")
+      end
+    end
+
+    context "when an operational escalation's failure signals have recovered" do
+      let(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation", "paid-escalated" ],
+          pr_review_phase: "escalated",
+          pr_escalation_reason: Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES,
+          last_pr_scan_at: 1.hour.ago,
+          draft_review_count: 12)
+      end
+
+      before { stub_github_for_pr }
+
+      # @spec PR-ESCALATION-008
+      it "emits a dismissal that is not owner-initiated" do
+        result = activity.execute(project_id: pr_issue.project.id)
+
+        trigger = automation_scan_results(result).first
+        expect(trigger[:issue_id]).to eq(pr_issue.id)
+        expect(trigger[:triggers].first[:type]).to eq("dismiss_escalation")
+        expect(trigger[:triggers].first[:owner_initiated]).to be(false)
+      end
+    end
+
+    context "when deciding which pull requests to scan" do
+      before { stub_github_for_pr }
+
+      # @spec PR-ESCALATION-003
+      it "scans an escalated pull request" do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation", "paid-escalated" ],
+          pr_review_phase: "escalated",
+          last_pr_scan_at: 1.hour.ago)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:pr_issue_ids]).to be_present
+      end
+
+      # @spec PR-ESCALATION-003
+      it "does not scan a pull request the operator paused" do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          auto_continue_paused: true)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:pr_issue_ids]).to eq([])
       end
     end
 
@@ -7478,6 +7680,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       it "returns dismiss_escalation trigger" do
+        # The owner's removal is now read from the label event history, not
+        # from the label's absence (PR-ESCALATION-009).
+        stub_escalation_label_events!(issue_number: 42, removed_by: "viamin")
+
         result = activity.execute(project_id: project.id)
 
         expect(automation_scan_results(result).size).to eq(1)
@@ -7536,6 +7742,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       it "dismisses escalation instead of immediately re-escalating on the same scan tick" do
+        # The owner's removal is now read from the label event history, not
+        # from the label's absence (PR-ESCALATION-009).
+        stub_escalation_label_events!(issue_number: 42, removed_by: "viamin")
+
         result = activity.execute(project_id: project.id)
 
         trigger = automation_scan_results(result).first
@@ -7546,7 +7756,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         issue = project.issues.find_by!(github_number: 42)
         # Simulate what DismissEscalationActivity + handle_dismiss_escalation
         # do on the workflow side: dismiss to ready, then queue a follow-up run.
-        issue.dismiss_escalation!(draft: false)
+        issue.clear_escalation!(draft: false)
         issue.update_columns(last_pr_scan_at: 10.minutes.ago)
         create(:agent_run,
           project: project, issue: issue, source_pull_request_number: 42,
@@ -7786,6 +7996,23 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(unchanged_pr.reload.last_pr_scan_at).to be > 10.seconds.ago
       end
 
+      # @spec PR-ESCALATION-020
+      it "rescans stale escalated PRs authored by a third-party bot" do
+        ceiling = described_class::SCAN_STALENESS_MULTIPLIER * project.poll_interval_seconds
+        project.update!(auto_merge_mode: "off")
+        unchanged_pr.update!(pr_review_phase: "escalated", github_creator_login: "dependabot[bot]")
+        unchanged_pr.update_columns(
+          github_updated_at: (ceiling + 60).seconds.ago,
+          last_pr_scan_at: (ceiling + 30).seconds.ago
+        )
+        stub_automation_label_events!(issue_number: 42)
+        stub_github_for_pr(author_login: "dependabot[bot]")
+
+        activity.execute(project_id: project.id)
+
+        expect(unchanged_pr.reload.last_pr_scan_at).to be > 10.seconds.ago
+      end
+
       it "rescans stale bot-authored ready PRs when Dependabot auto-merge is enabled" do
         ceiling = described_class::SCAN_STALENESS_MULTIPLIER * project.poll_interval_seconds
         project.update!(auto_merge_mode: "dependabot_only")
@@ -7924,20 +8151,15 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
 
-      it "scans escalated PRs for merge conflicts when auto-fix is enabled" do
+      # @spec PR-ESCALATION-001
+      it "does not scan escalated PRs for merge conflicts even when auto-fix is enabled" do
         project.update!(auto_fix_merge_conflicts: true)
         unchanged_pr.update!(pr_review_phase: "escalated")
         stub_github_for_pr(mergeable: false)
 
         result = activity.execute(project_id: project.id)
 
-        expect(automation_scan_results(result)).to contain_exactly(
-          hash_including(
-            pr_number: 42,
-            phase: "escalated",
-            triggers: include(hash_including(type: "merge_conflicts"))
-          )
-        )
+        expect(automation_scan_results(result)).to eq([])
       end
 
       it "still skips draft PRs when auto-fix is enabled" do
@@ -9313,6 +9535,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
 
     it "returns a dismiss trigger instead of re-escalating" do
+      # The owner's removal is now read from the label event history, not
+      # from the label's absence (PR-ESCALATION-009).
+      stub_escalation_label_events!(issue_number: 42, removed_by: "viamin")
+
       result = activity.execute(project_id: project.id)
 
       expect(automation_scan_results(result).size).to eq(1)
@@ -9704,6 +9930,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
 
     it "still dismisses instead of getting stuck behind the retry limit" do
+      # The owner's removal is now read from the label event history, not
+      # from the label's absence (PR-ESCALATION-009).
+      stub_escalation_label_events!(issue_number: 42, removed_by: "viamin")
+
       result = activity.execute(project_id: project.id)
 
       expect(automation_scan_results(result).size).to eq(1)
@@ -9761,6 +9991,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
 
     it "detects dismissal before the draft restart path" do
+      # The owner's removal is now read from the label event history, not
+      # from the label's absence (PR-ESCALATION-009).
+      stub_escalation_label_events!(issue_number: 42, removed_by: "viamin")
+
       result = activity.execute(project_id: project.id)
 
       expect(automation_scan_results(result)).to contain_exactly(

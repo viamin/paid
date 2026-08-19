@@ -282,6 +282,7 @@ module Activities
       }.compact
     end
 
+    # @spec PR-ESCALATION-003
     def find_paid_prs(project)
       candidate_prs = project.issues
         .pull_requests_only
@@ -400,10 +401,14 @@ module Activities
           # same conditions against the same memoized progress state, so the
           # details lookup always returns a non-nil string here.
           dismissal_details = escalation_dismissal_details(issue, progress_state:)
-          dismiss_escalation_trigger(issue, draft: pr_data.draft == true, details: dismissal_details)
+          dismiss_escalation_trigger(issue,
+            draft: pr_data.draft == true,
+            details: dismissal_details,
+            owner_initiated: escalation_label_removed_by_owner?(issue))
         elsif maybe_restart_draft(project, issue, pr_data)
           scan_draft_pr(project, client, issue, pr_data: pr_data)
         else
+          reapply_escalation_label_if_missing(project, client, issue)
           scan_escalated_pr(project, client, issue, pr_data: pr_data)
         end
       end
@@ -798,50 +803,37 @@ module Activities
 
     # --- Escalated phase scanning ---
 
+    # Recovery detection only. An escalated PR is the owner's problem until
+    # they clear the escalation, so no CI, review-thread, merge-conflict, or
+    # conversation triggers are collected and no follow-up run is queued.
+    # Dismissal and draft-restart detection run ahead of this method in
+    # scan_pr. Owner approval is checked here because it is an owner action
+    # clearing the way to merge, not automation continuing on its own.
+    # @spec PR-ESCALATION-001
     def scan_escalated_pr(project, client, issue, pr_data: nil)
+      return nil unless project.auto_merge_enabled?
+
       pr_data ||= fetch_pr_data(client, project, issue)
+      return nil if pr_data.blank?
 
-      bot_authored = third_party_bot_author?(project, issue.github_creator_login)
-      checks = fetch_check_runs(client, project, pr_data) if pr_data.present?
-      reviews = fetch_reviews(client, project, issue) if pr_data.present? && !bot_authored
-      unresolved_threads = fetch_unresolved_threads(client, project, issue) if pr_data.present?
+      return owner_approved_trigger(issue) if owner_approval_clears_merge?(project, client, issue, pr_data)
 
-      # Owner approval on an escalated PR unblocks auto-merge.
-      if project.auto_merge_enabled? && pr_data.present?
-        if bot_authored
-          if auto_merge_eligible_bot?(project, client, issue,
-               checks: checks, mergeable: pr_data[:mergeable])
-            return owner_approved_trigger(issue)
-          end
-        else
-          if auto_merge_eligible?(project, client, issue,
-               pr_data: pr_data, checks: checks, reviews: reviews,
-               unresolved_threads: unresolved_threads)
-            return owner_approved_trigger(issue)
-          end
-        end
+      nil
+    end
+
+    def owner_approval_clears_merge?(project, client, issue, pr_data)
+      checks = fetch_check_runs(client, project, pr_data)
+
+      if third_party_bot_author?(project, issue.github_creator_login)
+        return auto_merge_eligible_bot?(project, client, issue,
+          checks: checks, mergeable: pr_data[:mergeable])
       end
 
-      triggers = detect_ready_triggers(project, client, issue,
-        pr_data: pr_data, checks: checks, reviews: reviews, unresolved_threads: unresolved_threads)
-      return :skipped if triggers.nil?
-      return nil if triggers.empty?
-
-      # Hard gate: once the follow-up limit is hit on an escalated PR, stop
-      # queuing additional create_pr runs (#3271).
-      return nil if total_followup_limit_reached?(project, issue)
-
-      log_triggers(project, issue, triggers)
-
-      {
-        focus: focus_for(project, triggers),
-        issue_id: issue.id,
-        pr_number: issue.github_number,
-        triggers: triggers,
-        phase: "escalated",
-        labels_to_remove: extract_actionable_labels(triggers),
-        current_followup_count: issue.pr_followup_count
-      }
+      auto_merge_eligible?(project, client, issue,
+        pr_data: pr_data,
+        checks: checks,
+        reviews: fetch_reviews(client, project, issue),
+        unresolved_threads: fetch_unresolved_threads(client, project, issue))
     end
 
     # --- Special trigger builders ---
@@ -874,14 +866,17 @@ module Activities
       }
     end
 
-    def dismiss_escalation_trigger(issue, draft:, details:)
+    # @spec PR-ESCALATION-008 @spec PR-ESCALATION-009
+    def dismiss_escalation_trigger(issue, draft:, details:, owner_initiated: true)
       log_triggers(issue.project, issue, [ { type: "dismiss_escalation" } ])
 
+      trigger = { type: "dismiss_escalation", details: details, owner_initiated: owner_initiated }
+
       {
-        focus: focus_for(issue.project, [ { type: "dismiss_escalation", details: details } ]),
+        focus: focus_for(issue.project, [ trigger ]),
         issue_id: issue.id,
         pr_number: issue.github_number,
-        triggers: [ { type: "dismiss_escalation", details: details } ],
+        triggers: [ trigger ],
         phase: "escalated",
         draft: draft == true,
         owner_reviewer_login: issue.project.owner_reviewer_login
@@ -984,22 +979,31 @@ module Activities
     # Detect when a user converts a ready/escalated PR back to draft on GitHub.
     # Reset counts and transition to "restarted" phase so the scanner treats it
     # like a fresh draft PR. Returns true if the phase was restarted.
+    # @spec PR-ESCALATION-005
     def maybe_restart_draft(project, issue, pr_data)
       return false unless pr_data&.draft
 
       had_escalated_label = issue.has_label?(PAID_ESCALATED_LABEL)
-      reset_at = Time.current
-      issue.update!(
-        pr_review_phase: "restarted",
-        pr_escalation_reason: nil,
-        draft_review_count: 0,
-        pr_followup_count: 0,
-        review_goal_retry_count: 0,
-        review_goal_retry_reset_at: reset_at,
-        operational_failure_reset_at: reset_at,
-        ci_retry_requested_at: nil,
-        labels: issue.labels - [ PAID_ESCALATED_LABEL ]
-      )
+
+      if issue.escalated_phase?
+        # Converting an escalated PR to draft is one of the owner-initiated
+        # clearing paths, so it goes through the single clearing operation
+        # rather than a parallel reset that could drift from it.
+        issue.clear_escalation!(draft: true)
+      else
+        reset_at = Time.current
+        issue.update!(
+          pr_review_phase: "restarted",
+          pr_escalation_reason: nil,
+          draft_review_count: 0,
+          pr_followup_count: 0,
+          review_goal_retry_count: 0,
+          review_goal_retry_reset_at: reset_at,
+          operational_failure_reset_at: reset_at,
+          ci_retry_requested_at: nil,
+          labels: issue.labels - [ PAID_ESCALATED_LABEL ]
+        )
+      end
 
       remove_escalated_label_from_github(project, issue) if had_escalated_label
       invalidate_pr_progress_state(issue)
@@ -1016,7 +1020,7 @@ module Activities
 
     def escalation_dismissal_details(issue, progress_state:)
       return unless issue.escalated_phase?
-      return "Owner dismissed escalation by removing paid-escalated" unless issue.has_label?(PAID_ESCALATED_LABEL)
+      return "Owner dismissed escalation by removing paid-escalated" if escalation_label_removed_by_owner?(issue)
       return unless issue.pr_escalation_reason == Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES
       return unless progress_state.consecutive_operational_failures.zero?
 
@@ -1035,10 +1039,62 @@ module Activities
     def escalation_dismissed?(issue)
       return false unless issue.escalated_phase?
       return false if escalation_transition_pending?(issue)
-      return true unless issue.has_label?(PAID_ESCALATED_LABEL)
+      return true if escalation_label_removed_by_owner?(issue)
+      return false unless issue.has_label?(PAID_ESCALATED_LABEL)
       return false unless issue.pr_escalation_reason == Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES
 
       pr_progress_state(issue.project, issue).consecutive_operational_failures.zero?
+    end
+
+    # The dismissal signal is a trusted user's *removal event*, not the label's
+    # absence. Absence has two causes that look identical on the PR: the owner
+    # removed it, or it never landed — MarkEscalatedActivity logs and continues
+    # when the GitHub label write fails, and the next sync overwrites the local
+    # labels from GitHub, erasing a label that was only ever local. Reading that
+    # as a dismissal would grant a full counter reset and a permanent token-cap
+    # override nobody asked for.
+    #
+    # The local label is checked first as a cheap precondition so the event
+    # history is only fetched for PRs that actually look dismissed, and the
+    # result is memoized per scan pass.
+    # @spec PR-ESCALATION-009 @spec PR-ESCALATION-019
+    def escalation_label_removed_by_owner?(issue)
+      return false if issue.has_label?(PAID_ESCALATED_LABEL)
+
+      @escalation_label_removals ||= {}
+      return @escalation_label_removals[issue.id] if @escalation_label_removals.key?(issue.id)
+
+      @escalation_label_removals[issue.id] = Automation::LabelPolicy.trusted_user_removed_label?(
+        issue.project, issue, PAID_ESCALATED_LABEL
+      )
+    end
+
+    # The label is a projection of the hold, so it is reconciled rather than
+    # trusted. A PR can be escalated with the label absent two ways: the write
+    # failed when it escalated, or someone without permission removed it.
+    # Neither is a dismissal, and leaving the label off would hold the PR while
+    # GitHub showed nothing — the invisible stop this segment exists to
+    # prevent. The local mirror is only updated when GitHub accepts the write,
+    # so a failure is retried on the next scan instead of being papered over.
+    # @spec PR-ESCALATION-021
+    def reapply_escalation_label_if_missing(project, client, issue)
+      return if issue.has_label?(PAID_ESCALATED_LABEL)
+      return if escalation_label_removed_by_owner?(issue)
+
+      client.add_labels_to_issue(project.full_name, issue.github_number, [ PAID_ESCALATED_LABEL ])
+      issue.update!(labels: issue.labels + [ PAID_ESCALATED_LABEL ])
+      logger.info(
+        message: "pr_review.escalation_label_reapplied",
+        project_id: project.id,
+        pr_number: issue.github_number
+      )
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "pr_review.escalation_label_reapply_failed",
+        project_id: project.id,
+        pr_number: issue.github_number,
+        error: e.message
+      )
     end
 
     def escalation_transition_pending?(issue)
@@ -1108,10 +1164,15 @@ module Activities
       bot_ready_for_merge = issue.pr_review_phase == "ready" &&
         third_party_bot_author?(project, issue.github_creator_login) &&
         project.auto_merge_dependabot?
-      human_ready_or_escalated = issue.pr_review_phase.in?(%w[ready escalated]) &&
+      human_ready = issue.pr_review_phase == "ready" &&
         !third_party_bot_author?(project, issue.github_creator_login)
+      # Escalated PRs qualify regardless of author: recovery is only ever
+      # detected inside the scan, so a PR whose GitHub updated_at has stopped
+      # advancing would otherwise be skipped forever and never recover.
+      # @spec PR-ESCALATION-020
+      escalated = issue.escalated_phase?
 
-      return false unless draft_or_restarted || bot_ready_for_merge || human_ready_or_escalated
+      return false unless draft_or_restarted || bot_ready_for_merge || human_ready || escalated
 
       ceiling = SCAN_STALENESS_MULTIPLIER * project.poll_interval_seconds
       stale = issue.last_pr_scan_at < ceiling.seconds.ago
@@ -1129,9 +1190,13 @@ module Activities
       stale
     end
 
+    # Escalated PRs are excluded: this branch bypasses scan_pr entirely, so
+    # including them would queue create_pr follow-ups on a PR that is being
+    # held for its owner — the runaway loop the escalated phase now prevents.
+    # @spec PR-ESCALATION-001
     def merge_conflict_rescan_needed?(project, issue)
       project.auto_fix_merge_conflicts &&
-        issue.pr_review_phase.in?(%w[ready escalated]) &&
+        issue.pr_review_phase == "ready" &&
         !followup_limit_reached?(project, issue) &&
         !total_followup_limit_reached?(project, issue)
     end
