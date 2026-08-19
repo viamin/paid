@@ -28,13 +28,15 @@ module Activities
       # labels coexist on the same PR.
       remove_ready_label(client, project, issue)
       add_phase_label(client, project, issue.github_number, PAID_ESCALATED_LABEL)
+      reason_key = resolve_escalation_reason(input)
+      # @spec FOCUSED-RUN-008
       issue.update!(
         pr_review_phase: "escalated",
-        pr_escalation_reason: resolve_escalation_reason(input),
+        pr_escalation_reason: reason_key,
+        auto_continue_paused: true,
         labels: escalated_labels(issue)
       )
-      post_escalation_comment(client, project, issue, input[:reason], phase_before:)
-
+      post_escalation_comment(client, project, issue, input[:reason], reason_key:, phase_before:)
       logger.info(
         message: "pr_review.marked_escalated",
         issue_id: issue.id,
@@ -134,10 +136,10 @@ module Activities
     # recent 100 comments. On very long-lived PRs with 100+ comments after the
     # escalation note, a retry could post a duplicate. Acceptable because
     # escalation is rare and full pagination would waste API rate limit.
-    def post_escalation_comment(client, project, issue, reason, phase_before:)
+    def post_escalation_comment(client, project, issue, reason, reason_key:, phase_before:)
       return if escalation_comment_exists?(client, project, issue)
 
-      body = build_escalation_comment(reason, project, issue, phase_before:)
+      body = build_escalation_comment(reason, project, issue, reason_key:, phase_before:)
       client.add_comment(project.full_name, issue.github_number, body)
     rescue GithubClient::Error => e
       logger.warn(
@@ -173,7 +175,7 @@ module Activities
       false
     end
 
-    def build_escalation_comment(reason, project, issue, phase_before:)
+    def build_escalation_comment(reason, project, issue, reason_key:, phase_before:)
       reason = default_reason(project, issue, phase_before:) if reason.blank?
       owner = project.owner_reviewer_login
 
@@ -183,9 +185,24 @@ module Activities
       lines << ""
       lines << "**How to resolve:**"
       lines << "- **Approve** this PR to allow auto-merge (if enabled)"
-      lines << "- **Remove the `paid-escalated` label** to dismiss escalation and let automation try again"
-      lines << "- **Convert to draft** on GitHub to restart the automated review cycle"
+      lines.concat(escalation_resolution_steps(reason_key))
+      lines << ""
+      lines << "Auto-continue follow-ups are paused until the escalation is dismissed."
       lines.join("\n")
+    end
+
+    def escalation_resolution_steps(reason_key)
+      if reason_key == Issue::PR_ESCALATION_REASON_PR_AUTO_CONTINUE_TOKEN_LIMIT
+        return [
+          "- **Raise `Max PR Auto-Continue Tokens`** in project settings to resume automatic follow-ups",
+          "- **Remove the `paid-escalated` label** after raising the limit to let automation try again"
+        ]
+      end
+
+      [
+        "- **Remove the `paid-escalated` label** to dismiss escalation and let automation try again",
+        "- **Convert to draft** on GitHub to restart the automated review cycle"
+      ]
     end
 
     def default_reason(project, issue, phase_before: nil)
@@ -221,6 +238,7 @@ module Activities
         return Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES
       end
       return Issue::PR_ESCALATION_REASON_REVIEW_GOAL_RETRY_LIMIT if reason&.start_with?("Review-goal retry budget exhausted")
+      return Issue::PR_ESCALATION_REASON_PR_AUTO_CONTINUE_TOKEN_LIMIT if reason&.include?("PR auto-continue token limit")
 
       Issue::PR_ESCALATION_REASON_FAILURE_STREAK
     end

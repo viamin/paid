@@ -67,7 +67,7 @@ RSpec.describe Runners::ModelCompatibility do
           expect(result).to have_attributes(
             supported: false,
             incompatibility_type: :auth_mode_gated_for_model,
-            replacement_model_id: "gpt-5-codex",
+            replacement_model_id: "gpt-5.2-codex",
             source: "agent_harness"
           )
           expect(result.reason).to include("gpt-5.5-pro").and include("api_key")
@@ -101,9 +101,23 @@ RSpec.describe Runners::ModelCompatibility do
           create(:llm_model, :openai, model_id: "gpt-5.2-codex")
         end
 
-        it "returns unknown (not unsupported) — subscription entitlements vary" do
-          expect(result).to be_unknown
+        it "returns supported under the current Codex subscription contract" do
+          expect(result).to be_supported
           expect(result.source).to eq("agent_harness")
+        end
+      end
+
+      context "with subscription auth and a gpt-5.6-family model" do # @spec MODEL-SELECTION-005
+        let(:model_id) { "gpt-5.6-orbit" }
+
+        it "returns unsupported before dispatch can preflight the bad model", :aggregate_failures do
+          expect(result).to have_attributes(
+            supported: false,
+            incompatibility_type: :auth_mode_gated_for_model,
+            replacement_model_id: "gpt-5.2-codex",
+            source: "paid_static_contract"
+          )
+          expect(result.reason).to include("Codex subscription")
         end
       end
 

@@ -9,6 +9,7 @@ require "rails_helper"
 # @spec CONTAINER-RUNTIME-011
 # @spec CONTAINER-RUNTIME-017
 # @spec CONTAINER-RUNTIME-018
+# @spec CONTAINER-RUNTIME-020
 RSpec.describe ExecutionRunners do
   describe ".resolve" do
     it "returns a LocalDockerRunner for the current Docker-only backends" do
@@ -264,6 +265,71 @@ RSpec.describe ExecutionRunners do
       expect(policy).not_to be_restricted
       expect(policy).not_to be_firewall
     end
+
+    it "defaults the egress_profile to :locked for every factory method" do
+      expect(described_class.proxy_restricted.egress_profile).to eq(:locked)
+      expect(described_class.subscription_auth.egress_profile).to eq(:locked)
+      expect(described_class.direct_outbound.egress_profile).to eq(:locked)
+    end
+
+    it "exposes :locked, :research, and :open egress profiles through the factory methods" do
+      expect(described_class.proxy_restricted(egress_profile: :research)).to be_research
+      expect(described_class.subscription_auth(egress_profile: :open)).to be_open
+      expect(described_class.direct_outbound(egress_profile: :locked)).to be_locked
+    end
+
+    it "treats :locked as the production-default profile" do
+      policy = described_class.proxy_restricted
+
+      expect(policy).to be_locked
+      expect(policy).not_to be_research
+      expect(policy).not_to be_open
+    end
+
+    it "propagates :research for runs that need brokered web evidence" do
+      policy = described_class.proxy_restricted(
+        allow_destinations: [ { host: "research-gateway", port: 8443 } ],
+        egress_profile: :research
+      )
+
+      expect(policy).to be_research
+      expect(policy.allow_destinations).to eq([ { host: "research-gateway", port: 8443 } ])
+      expect(policy).to be_firewall
+    end
+
+    it "propagates :open for operator-only break-glass runs" do
+      policy = described_class.direct_outbound(egress_profile: :open)
+
+      expect(policy).to be_open
+      expect(policy).not_to be_firewall
+    end
+
+    it "never references Docker-specific concepts on the policy surface" do
+      members = described_class.members
+
+      expect(members).to contain_exactly(:mode, :firewall, :allow_destinations, :egress_profile)
+    end
+
+    it "rejects an egress_profile outside the closed :locked/:research/:open enum" do
+      expect { described_class.proxy_restricted(egress_profile: :reserach) }
+        .to raise_error(ArgumentError, /Invalid egress_profile/)
+      expect { described_class.subscription_auth(egress_profile: "research") }
+        .to raise_error(ArgumentError, /Invalid egress_profile/)
+      expect { described_class.direct_outbound(egress_profile: nil) }
+        .to raise_error(ArgumentError, /Invalid egress_profile/)
+    end
+
+    it "rejects invalid egress_profile values for direct .new and #with construction paths" do
+      expect {
+        described_class.new(mode: :proxy_restricted, firewall: true, allow_destinations: [], egress_profile: :reserach)
+      }.to raise_error(ArgumentError, /Invalid egress_profile/)
+
+      policy = described_class.proxy_restricted
+
+      expect {
+        policy.with(egress_profile: "research")
+      }.to raise_error(ArgumentError, /Invalid egress_profile/)
+    end
   end
 
   describe ExecutionRunners::ServiceDeclaration do
@@ -302,6 +368,56 @@ RSpec.describe ExecutionRunners do
 
     describe "#output_manifest" do
       let(:project) { create(:project, owner: "acme", repo: "widgets") }
+      # Verification-result artifacts are agent-authored input. The
+      # consumption contract only honors URLs from this lane — a spoofed
+      # `storage_key` under another tenant's prefix would otherwise be
+      # re-signed into a working presigned URL by any durable consumer.
+      let(:report_artifact) do
+        {
+          "kind" => "generated_report",
+          "content_type" => "application/pdf",
+          "storage_key" => "reports/acme/widgets/pr-42/abc123/summary.pdf",
+          "url" => "https://artifacts.test/summary.pdf",
+          "context" => {
+            "account_id" => 9_999,
+            "project_id" => 9_999,
+            "agent_run_id" => 999_999
+          },
+          "metadata" => {
+            "note" => "Summary report"
+          }
+        }
+      end
+      let(:expected_binary_artifact) do
+        {
+          "lane" => "object_storage",
+          "kind" => "generated_report",
+          "content_type" => "application/pdf",
+          "locator" => { "url" => "https://artifacts.test/summary.pdf" },
+          "context" => {
+            "account_id" => project.account_id,
+            "project_id" => project.id,
+            "agent_run_id" => agent_run.id
+          },
+          "metadata" => {
+            "note" => "Summary report"
+          }
+        }
+      end
+      let(:persisted_manifest_artifact) do
+        {
+          "lane" => "object_storage",
+          "kind" => "screenshot",
+          "content_type" => "image/png",
+          "locator" => { "key" => "screenshots/acme/widgets/pr-42/abc123/home.png" },
+          "context" => {
+            "account_id" => project.account_id,
+            "project_id" => project.id,
+            "agent_run_id" => agent_run.id
+          },
+          "metadata" => { "route_name" => "home" }
+        }
+      end
       let(:agent_run) do
         create(
           :agent_run,
@@ -313,9 +429,7 @@ RSpec.describe ExecutionRunners do
           review_url: "https://example.test/review/42",
           verification_result: {
             "status" => "passed",
-            "artifacts" => [
-              { "kind" => "trace", "url" => "https://artifacts.test/trace.zip", "note" => "Playwright trace" }
-            ]
+            "artifacts" => [ report_artifact ]
           }
         )
       end
@@ -325,9 +439,85 @@ RSpec.describe ExecutionRunners do
 
         expect(manifest).to be_a(ExecutionRunners::ExecutionOutputManifest)
         expect(manifest.artifacts["code_outputs"].first["result_commit_sha"]).to eq("abc123")
-        expect(manifest.artifacts["binary_artifacts"].first["lane"]).to eq("object_storage")
+        expect(manifest.artifacts["binary_artifacts"].first).to include(expected_binary_artifact)
         expect(manifest.artifacts["structured_results"].first["kind"]).to eq("verification_result")
         expect(manifest.git_output["pull_request_number"]).to eq(42)
+      end
+
+      # @spec CONTAINER-RUNTIME-018
+      it "forwards persisted artifact-manifest keys without inventing presigned URLs" do
+        agent_run.update!(external_metadata: { "artifact_manifest" => [ persisted_manifest_artifact ] })
+
+        manifest = described_class.success(stdout: "ok", exit_code: 0).output_manifest(agent_run:)
+
+        expect(manifest.artifacts["binary_artifacts"]).to include(
+          hash_including(
+            "kind" => "screenshot",
+            "locator" => { "key" => "screenshots/acme/widgets/pr-42/abc123/home.png" }
+          )
+        )
+      end
+
+      # @spec CONTAINER-RUNTIME-018
+      # Verification artifacts are agent-authored input. A spoofed `storage_key`
+      # under another tenant's prefix must not survive into the durable manifest,
+      # because durable consumers re-sign keys into presigned URLs.
+      it "drops verification-artifact storage keys and locator keys" do
+        spoofed_key = "screenshots/other-org/other-repo/pr-1/abc/home.png"
+        artifact = {
+          "kind" => "spoofed_artifact",
+          "url" => "https://artifacts.test/spoofed.png",
+          "storage_key" => spoofed_key,
+          "locator" => { "key" => spoofed_key, "url" => "https://artifacts.test/spoofed.png" }
+        }
+        agent_run.update!(verification_result: { "status" => "passed", "artifacts" => [ artifact ] })
+
+        manifest = described_class.success(stdout: "ok", exit_code: 0).output_manifest(agent_run:)
+        entry = manifest.artifacts["binary_artifacts"].first
+
+        expect(entry["locator"]).to eq({ "url" => "https://artifacts.test/spoofed.png" })
+        expect(entry["locator"]).not_to have_key("key")
+        expect(entry.to_s).not_to include(spoofed_key)
+      end
+
+      # @spec CONTAINER-RUNTIME-018
+      # `external_metadata` is not exclusively runner-written: interop callers
+      # can persist arbitrary `artifact_manifest` entries
+      # (`Api::Projects::ExternalAgentRunsController` →
+      # `AgentRuns::IngestExternal` stores `external_metadata` verbatim). A key
+      # planted under another tenant's prefix must therefore degrade to
+      # URL-only even on the trusted lane, because durable consumers re-sign
+      # keys into presigned URLs.
+      it "drops trusted-lane locator keys outside the project's storage namespace" do
+        planted_key = "screenshots/other-org/other-repo/pr-1/abc/home.png"
+        artifact = {
+          "kind" => "screenshot",
+          "storage_key" => planted_key,
+          "url" => "https://artifacts.test/planted.png",
+          "locator" => { "key" => planted_key, "url" => "https://artifacts.test/planted.png" }
+        }
+        agent_run.update!(external_metadata: { "artifact_manifest" => [ artifact ] })
+
+        manifest = described_class.success(stdout: "ok", exit_code: 0).output_manifest(agent_run:)
+        entry = manifest.artifacts["binary_artifacts"].first
+
+        expect(entry["locator"]).to eq({ "url" => "https://artifacts.test/planted.png" })
+        expect(entry.to_s).not_to include(planted_key)
+      end
+
+      # @spec CONTAINER-RUNTIME-018
+      # The system always knows the run's real account/project/run identity;
+      # the artifact must never be allowed to misattribute itself to a
+      # different tenant.
+      it "makes the run's identity authoritative over artifact-supplied context" do
+        manifest = described_class.success(stdout: "ok", exit_code: 0).output_manifest(agent_run:)
+        entry = manifest.artifacts["binary_artifacts"].first
+
+        expect(entry["context"]).to eq(
+          "account_id" => project.account_id,
+          "project_id" => project.id,
+          "agent_run_id" => agent_run.id
+        )
       end
     end
   end
@@ -357,6 +547,81 @@ RSpec.describe ExecutionRunners do
         )
       ]
     end
+    let(:expected_git_lane) do
+      [
+        {
+          "lane" => "git",
+          "kind" => "repository_checkout",
+          "locator" => {
+            "repo_full_name" => "acme/widgets",
+            "branch_name" => "feature/remote-contract",
+            "base_commit_sha" => "deadbeef",
+            "source_pull_request_number" => 7
+          }
+        }
+      ]
+    end
+    let(:expected_control_plane_refs) do
+      [
+        {
+          "lane" => "control_plane_api",
+          "kind" => "prompt_version",
+          "locator" => { "prompt_version_id" => agent_run.prompt_version_id }
+        },
+        {
+          "lane" => "control_plane_api",
+          "kind" => "custom_prompt",
+          "locator" => {
+            "agent_run_id" => agent_run.id,
+            "sha256" => Digest::SHA256.hexdigest("Build the thing")
+          }
+        },
+        {
+          "lane" => "control_plane_api",
+          "kind" => "issue",
+          "locator" => { "issue_id" => agent_run.issue_id }
+        }
+      ]
+    end
+    let(:expected_credential_refs) do
+      [
+        {
+          "lane" => "credentials",
+          "kind" => "environment_variable",
+          "locator" => { "name" => "DATABASE_URL" },
+          "source" => "run_spec.environment"
+        },
+        {
+          "lane" => "credentials",
+          "kind" => "environment_variable",
+          "locator" => { "name" => "API_TOKEN" },
+          "source" => "run_spec.environment"
+        },
+        {
+          "lane" => "credentials",
+          "kind" => "service_environment_variable",
+          "locator" => { "name" => "POSTGRES_PASSWORD", "service" => "postgres" },
+          "source" => "service_declaration.env"
+        },
+        {
+          "lane" => "credentials",
+          "kind" => "secrets_config_entry",
+          "locator" => { "name" => "github_token" },
+          "source" => "run_spec.secrets_config"
+        }
+      ]
+    end
+    let(:expected_service_manifest) do
+      [
+        {
+          "name" => "postgres",
+          "image" => "postgres:16",
+          "port" => 5432,
+          "type" => "database",
+          "env_keys" => [ "POSTGRES_PASSWORD" ]
+        }
+      ]
+    end
     let(:run_spec) do
       ExecutionRunners::RunSpec.new(
         agent_run: agent_run,
@@ -379,6 +644,32 @@ RSpec.describe ExecutionRunners do
       expect(restored).to eq(manifest)
     end
 
+    it "records all four transfer lanes with provider-neutral references" do
+      manifest = described_class.from_run_spec(run_spec)
+
+      expect(manifest.lanes.keys).to contain_exactly("git", "control_plane_api", "object_storage", "credentials")
+      expect(manifest.lanes["git"]).to eq(expected_git_lane)
+      expect(manifest.lanes["control_plane_api"]).to match_array(expected_control_plane_refs)
+      expect(manifest.lanes["object_storage"]).to eq([])
+      expect(manifest.lanes["credentials"]).to match_array(expected_credential_refs)
+    end
+
+    it "describes normal execution without requiring shared host storage" do
+      manifest = described_class.from_run_spec(run_spec)
+
+      expect(manifest.execution["workspace"]).to eq(
+        "mode" => "named_volume",
+        "mount_point" => "/workspace"
+      )
+      expect(manifest.execution["workspace"]).not_to have_key("reference")
+      expect(manifest.repository).to include(
+        "provider" => "github",
+        "repo_full_name" => "acme/widgets",
+        "repository_url" => "https://github.com/acme/widgets"
+      )
+      expect(manifest.services).to eq(expected_service_manifest)
+    end
+
     it "keeps secret values and host paths out of the manifest by construction" do
       manifest_json = described_class.from_run_spec(run_spec).to_json
 
@@ -388,6 +679,49 @@ RSpec.describe ExecutionRunners do
       expect(manifest_json).not_to include("/var/paid/worktrees")
       expect(manifest_json).to include("DATABASE_URL")
       expect(manifest_json).to include("POSTGRES_PASSWORD")
+    end
+
+    it "carries the locked egress profile on the manifest by default" do
+      manifest = described_class.from_run_spec(run_spec)
+
+      expect(manifest.execution["networking"]).to include(
+        "mode" => "proxy_restricted",
+        "firewall" => true,
+        "egress_profile" => "locked"
+      )
+    end
+
+    it "propagates a research egress profile through the manifest" do
+      research_spec = run_spec.with(
+        networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted(egress_profile: :research)
+      )
+      manifest = described_class.from_run_spec(research_spec)
+
+      expect(manifest.execution["networking"]).to include(
+        "egress_profile" => "research"
+      )
+    end
+
+    it "propagates an open / break-glass egress profile through the manifest" do
+      open_spec = run_spec.with(
+        networking_policy: ExecutionRunners::NetworkingPolicy.direct_outbound(egress_profile: :open)
+      )
+      manifest = described_class.from_run_spec(open_spec)
+
+      expect(manifest.execution["networking"]).to include(
+        "mode" => "direct_outbound",
+        "firewall" => false,
+        "egress_profile" => "open"
+      )
+    end
+
+    it "never serializes Docker network names or iptables into the manifest" do
+      manifest = described_class.from_run_spec(run_spec)
+      manifest_json = manifest.to_json
+
+      expect(manifest_json).not_to include("paid_agent")
+      expect(manifest_json).not_to include("paid_internal")
+      expect(manifest_json).not_to include("iptables")
     end
   end
 
@@ -410,6 +744,21 @@ RSpec.describe ExecutionRunners do
         }
       )
     end
+    let(:expected_binary_artifacts) do
+      [
+        {
+          "lane" => "object_storage",
+          "kind" => "trace",
+          "locator" => { "url" => "https://artifacts.test/trace.zip" },
+          "context" => {
+            "account_id" => project.account_id,
+            "project_id" => project.id,
+            "agent_run_id" => agent_run.id
+          },
+          "metadata" => { "note" => "Playwright trace" }
+        }
+      ]
+    end
 
     it "serializes and round-trips through JSON" do
       manifest = described_class.from_result(
@@ -430,6 +779,23 @@ RSpec.describe ExecutionRunners do
       expect(manifest.lanes["object_storage"].first.dig("locator", "url")).to eq("https://artifacts.test/trace.zip")
       expect(manifest.lanes["git"].first["kind"]).to eq("git_output")
       expect(manifest.verification["status"]).to eq("passed")
+    end
+
+    it "represents durable binary artifacts as object-storage manifest entries" do
+      manifest = described_class.from_result(
+        execution_result: ExecutionRunners::ExecutionResult.success(stdout: "ok", exit_code: 0),
+        agent_run: agent_run
+      )
+
+      expect(manifest.artifacts["binary_artifacts"]).to eq(expected_binary_artifacts)
+      expect(manifest.artifacts["code_outputs"]).to contain_exactly(manifest.git_output)
+      expect(manifest.artifacts["structured_results"]).to contain_exactly(
+        {
+          "kind" => "verification_result",
+          "value" => manifest.verification
+        }
+      )
+      expect(manifest.lanes["credentials"]).to eq([])
     end
   end
 
