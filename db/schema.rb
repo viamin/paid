@@ -1027,6 +1027,38 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_042625) do
     t.index ["severity"], name: "index_exception_incidents_on_severity"
   end
 
+  create_table "execution_audit_events", comment: "Append-only execution infrastructure/security audit trail (RDR-061). Rows are never updated after insert; secret-shaped metadata is rejected at the model layer.", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Owning account; the tenant scope for row-level security."
+    t.string "actor_id", limit: 100, comment: "Actor identifier within actor_type; free text so system actors don't need a users row."
+    t.string "actor_type", limit: 50, comment: "Actor category: user, system, agent, job, runner."
+    t.bigint "agent_run_id", comment: "Agent run the event concerns, when the event is run-scoped."
+    t.string "backend", limit: 64, comment: "Container backend identifier that executed or was targeted by the event."
+    t.string "correlation_id", limit: 255, comment: "Cross-system correlation id (e.g. Temporal workflow id) for tracing an event across subsystems."
+    t.datetime "created_at", null: false
+    t.jsonb "credential_classes", default: [], null: false, comment: "Non-secret credential source classes involved (proxy_restricted, subscription_auth, direct_outbound), never raw credential values."
+    t.string "event_name", limit: 100, null: false, comment: "Namespaced execution/security event name, e.g. container.provisioned, credential.materialized."
+    t.integer "event_version", default: 1, null: false, comment: "Schema version of this event's payload shape."
+    t.string "image_digest", limit: 128, comment: "Content-addressable image digest (e.g. sha256:...), when resolvable."
+    t.string "image_reference", limit: 255, comment: "Container image reference (repository:tag) used for the run, when applicable."
+    t.jsonb "metadata", default: {}, null: false, comment: "Additional secret-free event context; rejected at the model layer if it contains secret-shaped keys or values."
+    t.jsonb "network_policy", default: {}, null: false, comment: "Secret-free network policy snapshot (mode, firewall, allow_destinations) applied at event time."
+    t.datetime "occurred_at", null: false, comment: "When the underlying event happened; may predate created_at for buffered telemetry."
+    t.bigint "project_id", comment: "Owning project, when the event is project-scoped."
+    t.string "resource_id", limit: 255, comment: "Identifier of the primary resource this event concerns."
+    t.string "resource_type", limit: 50, comment: "Type of the primary resource this event concerns (container, workspace_volume, service_container, network)."
+    t.integer "run_attempt", comment: "Attempt/iteration number of the agent run when the event occurred, when applicable."
+    t.string "runner_key", limit: 64, comment: "Provider/runner key (claude, codex, gemini, copilot), when the event is runner-specific."
+    t.index ["account_id", "created_at"], name: "idx_execution_audit_events_account_created"
+    t.index ["agent_run_id"], name: "index_execution_audit_events_on_agent_run_id"
+    t.index ["correlation_id"], name: "idx_execution_audit_events_correlation_id"
+    t.index ["created_at"], name: "idx_execution_audit_events_created_at_brin", using: :brin
+    t.index ["event_name"], name: "idx_execution_audit_events_event_name"
+    t.index ["image_reference"], name: "idx_execution_audit_events_image_reference"
+    t.index ["project_id"], name: "index_execution_audit_events_on_project_id"
+    t.index ["resource_type", "resource_id"], name: "idx_execution_audit_events_resource"
+    t.index ["runner_key"], name: "idx_execution_audit_events_runner_key"
+  end
+
   create_table "external_connector_events", comment: "Events ingested from external connectors (Jira, Linear, Slack, etc.) for coexistence workflows.", force: :cascade do |t|
     t.bigint "account_id", null: false, comment: "Account this connector event belongs to."
     t.string "connector_key", null: false, comment: "Connector source key from Interop::Catalog (e.g. jira, linear, slack)."
@@ -3056,6 +3088,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_042625) do
   add_foreign_key "docker_hosts", "accounts"
   add_foreign_key "exception_incidents", "accounts"
   add_foreign_key "exception_incidents", "projects"
+  add_foreign_key "execution_audit_events", "accounts"
+  add_foreign_key "execution_audit_events", "agent_runs", on_delete: :nullify
+  add_foreign_key "execution_audit_events", "projects", on_delete: :nullify
   add_foreign_key "external_connector_events", "accounts"
   add_foreign_key "external_connector_events", "projects"
   add_foreign_key "failure_classifications", "agent_runs", on_delete: :cascade
@@ -3956,26 +3991,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_042625) do
       $function$
   SQL
 
-  create_function :paid_current_account_id, sql_definition: <<-'SQL'
-      CREATE OR REPLACE FUNCTION public.paid_current_account_id()
-       RETURNS bigint
-       LANGUAGE sql
-       STABLE
-      AS $function$
-        SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
-      $function$
-  SQL
-
-  create_function :paid_tenant_bypass, sql_definition: <<-'SQL'
-      CREATE OR REPLACE FUNCTION public.paid_tenant_bypass()
-       RETURNS boolean
-       LANGUAGE sql
-       STABLE
-      AS $function$
-        SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
-      $function$
-  SQL
-
   create_function :validate_orchestration_decision_strategy_version_scope, sql_definition: <<-'SQL'
       CREATE OR REPLACE FUNCTION public.validate_orchestration_decision_strategy_version_scope()
        RETURNS trigger
@@ -4009,6 +4024,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_042625) do
 
         RAISE EXCEPTION 'strategy_version_id must reference a global or same-tenant strategy version';
       END;
+      $function$
+  SQL
+
+  create_function :paid_current_account_id, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.paid_current_account_id()
+       RETURNS bigint
+       LANGUAGE sql
+       STABLE
+      AS $function$
+        -- @spec POSTGRESQL-PERSISTENCE-007
+        -- version: 1
+        SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
+      $function$
+  SQL
+
+  create_function :paid_tenant_bypass, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.paid_tenant_bypass()
+       RETURNS boolean
+       LANGUAGE sql
+       STABLE
+      AS $function$
+        -- @spec POSTGRESQL-PERSISTENCE-007
+        -- version: 1
+        SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
       $function$
   SQL
 
