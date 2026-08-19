@@ -264,7 +264,8 @@ class ProcessRunQueueJob < ApplicationJob
           # Runner already failed preflight earlier this pass — reroute to a
           # healthy alternative without re-checking (preserves the bulk-skip
           # optimization for runs sharing one bad runner).
-          reroute_unavailable_runner(next_run, blocked_runner_ids, skipped_ids, reroute_cache)
+          reroute_unavailable_runner(next_run, blocked_runner_ids, skipped_ids, reroute_cache,
+            disabled_runner_ids: execution_control_snapshot[:disabled_runner_ids])
           next
         end
 
@@ -272,7 +273,8 @@ class ProcessRunQueueJob < ApplicationJob
         if preflight_result && !preflight_result.pass?
           log_preflight_skip(next_run, preflight_result)
           blocked_runner_ids.add(preflight_result.runner_id) if preflight_result.runner_id
-          reroute_unavailable_runner(next_run, blocked_runner_ids, skipped_ids, reroute_cache)
+          reroute_unavailable_runner(next_run, blocked_runner_ids, skipped_ids, reroute_cache,
+            disabled_runner_ids: execution_control_snapshot[:disabled_runner_ids])
           next
         end
 
@@ -405,7 +407,7 @@ class ProcessRunQueueJob < ApplicationJob
   # instead of being restored and churned on every queue pass. The parked_until
   # time is cached alongside reroute resolutions so runs sharing a reroute
   # context park without another resolver call.
-  def reroute_unavailable_runner(agent_run, blocked_runner_ids, skipped_ids, reroute_cache)
+  def reroute_unavailable_runner(agent_run, blocked_runner_ids, skipped_ids, reroute_cache, disabled_runner_ids: nil)
     original_id = agent_run.runner_id
     cache_key = reroute_cache_key(agent_run, original_id)
 
@@ -417,7 +419,8 @@ class ProcessRunQueueJob < ApplicationJob
     end
 
     agent_run.update_columns(runner_id: nil)
-    if AgentRuns::BindRunner.call(agent_run: agent_run, exclude_runner_ids: blocked_runner_ids)
+    if AgentRuns::BindRunner.call(agent_run: agent_run, exclude_runner_ids: blocked_runner_ids,
+                                    disabled_runner_ids: disabled_runner_ids)
       cache_reroute_resolution(agent_run, original_id, cache_key, reroute_cache)
     else
       # @spec RUNNER-SCHED-008: when every alternative is time-window-blocked,
