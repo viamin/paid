@@ -349,31 +349,36 @@ module ExecutionRunners
     OPEN_PROFILE = :open
     EGRESS_PROFILES = [ LOCKED_PROFILE, RESEARCH_PROFILE, OPEN_PROFILE ].freeze
 
+    def initialize(mode:, firewall:, allow_destinations:, egress_profile:)
+      super(mode:, firewall:, allow_destinations:, egress_profile: self.class.validate_egress_profile!(egress_profile))
+    end
+
     def self.proxy_restricted(allow_destinations: [], egress_profile: LOCKED_PROFILE)
-      new(mode: RESTRICTED_MODE, firewall: true, allow_destinations: allow_destinations,
-          egress_profile: validate_egress_profile!(egress_profile))
+      new(mode: RESTRICTED_MODE, firewall: true, allow_destinations: allow_destinations, egress_profile: egress_profile)
     end
 
     def self.subscription_auth(egress_profile: LOCKED_PROFILE)
-      new(mode: :subscription_auth, firewall: false, allow_destinations: [],
-          egress_profile: validate_egress_profile!(egress_profile))
+      new(mode: :subscription_auth, firewall: false, allow_destinations: [], egress_profile: egress_profile)
     end
 
     def self.direct_outbound(egress_profile: LOCKED_PROFILE)
-      new(mode: :direct_outbound, firewall: false, allow_destinations: [],
-          egress_profile: validate_egress_profile!(egress_profile))
+      new(mode: :direct_outbound, firewall: false, allow_destinations: [], egress_profile: egress_profile)
     end
 
     # Validates that +egress_profile+ is one of the closed RDR-055 enum
-    # values. Shared by the three factories above and by callers (e.g.
-    # +Containers::Provision#networking_policy_with_egress_profile+) that
-    # build a policy via +Data#with+, which bypasses the factories entirely.
+    # values. Shared by every construction path, including direct +.new+ and
+    # +#with+, so invalid values fail before they can silently serialize into
+    # the runner manifest.
     def self.validate_egress_profile!(egress_profile)
       unless EGRESS_PROFILES.include?(egress_profile)
         raise ArgumentError, "Invalid egress_profile: #{egress_profile.inspect}"
       end
 
       egress_profile
+    end
+
+    def with(**kwargs)
+      super.tap { |updated| self.class.validate_egress_profile!(updated.egress_profile) }
     end
 
     def restricted?

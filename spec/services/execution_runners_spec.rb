@@ -318,6 +318,18 @@ RSpec.describe ExecutionRunners do
       expect { described_class.direct_outbound(egress_profile: nil) }
         .to raise_error(ArgumentError, /Invalid egress_profile/)
     end
+
+    it "rejects invalid egress_profile values for direct .new and #with construction paths" do
+      expect {
+        described_class.new(mode: :proxy_restricted, firewall: true, allow_destinations: [], egress_profile: :reserach)
+      }.to raise_error(ArgumentError, /Invalid egress_profile/)
+
+      policy = described_class.proxy_restricted
+
+      expect {
+        policy.with(egress_profile: "research")
+      }.to raise_error(ArgumentError, /Invalid egress_profile/)
+    end
   end
 
   describe ExecutionRunners::ServiceDeclaration do

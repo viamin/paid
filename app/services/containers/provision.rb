@@ -409,11 +409,12 @@ module Containers
     # +ExecutionRunners::NetworkingPolicy+ so orchestration code does not need
     # to reference Docker- or network-specific concepts to set it. Defaults to
     # +:locked+ when +egress_profile+ is nil.
+    # @spec CONTAINER-RUNTIME-020
     def networking_policy_with_egress_profile(egress_profile)
       base = derived_networking_policy
       return base if egress_profile.nil?
 
-      base.with(egress_profile: ExecutionRunners::NetworkingPolicy.validate_egress_profile!(egress_profile))
+      base.with(egress_profile: egress_profile)
     end
 
     private def abort_pattern_candidates(stream_type, normalized_chunk, stdout_buffer:)
