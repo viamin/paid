@@ -227,8 +227,13 @@
   and are ephemeral, so durable consumers re-sign from the key. The output
   manifest's binary artifact references SHALL distinguish trusted source lanes
   from agent-authored ones: artifacts from
-  `AgentRun#external_metadata["artifact_manifest"]` (persisted by the runner)
-  are trusted and their storage keys are honored, while artifacts from
+  `AgentRun#external_metadata["artifact_manifest"]` (persisted by the runner,
+  or by interop ingestion — `Api::Projects::ExternalAgentRunsController`
+  persists caller-supplied `external_metadata` verbatim via
+  `AgentRuns::IngestExternal`) have their storage keys honored only when the
+  key lives under the project's own storage namespace
+  (`Screenshots::Storage.namespace_prefix`, i.e. `screenshots/<owner>/<repo>/`);
+  any other key degrades to URL-only. Artifacts from
   `AgentRun#verification_result["artifacts"]` (written by the agent inside the
   container and persisted as-is by
   `AgentRuns::VerificationResultRecorder`) are untrusted input — only `url`

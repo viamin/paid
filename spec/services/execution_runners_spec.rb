@@ -481,6 +481,31 @@ RSpec.describe ExecutionRunners do
       end
 
       # @spec CONTAINER-RUNTIME-018
+      # `external_metadata` is not exclusively runner-written: interop callers
+      # can persist arbitrary `artifact_manifest` entries
+      # (`Api::Projects::ExternalAgentRunsController` →
+      # `AgentRuns::IngestExternal` stores `external_metadata` verbatim). A key
+      # planted under another tenant's prefix must therefore degrade to
+      # URL-only even on the trusted lane, because durable consumers re-sign
+      # keys into presigned URLs.
+      it "drops trusted-lane locator keys outside the project's storage namespace" do
+        planted_key = "screenshots/other-org/other-repo/pr-1/abc/home.png"
+        artifact = {
+          "kind" => "screenshot",
+          "storage_key" => planted_key,
+          "url" => "https://artifacts.test/planted.png",
+          "locator" => { "key" => planted_key, "url" => "https://artifacts.test/planted.png" }
+        }
+        agent_run.update!(external_metadata: { "artifact_manifest" => [ artifact ] })
+
+        manifest = described_class.success(stdout: "ok", exit_code: 0).output_manifest(agent_run:)
+        entry = manifest.artifacts["binary_artifacts"].first
+
+        expect(entry["locator"]).to eq({ "url" => "https://artifacts.test/planted.png" })
+        expect(entry.to_s).not_to include(planted_key)
+      end
+
+      # @spec CONTAINER-RUNTIME-018
       # The system always knows the run's real account/project/run identity;
       # the artifact must never be allowed to misattribute itself to a
       # different tenant.

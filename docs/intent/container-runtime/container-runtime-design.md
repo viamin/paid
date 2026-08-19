@@ -252,18 +252,23 @@ is explicit value-object data, not ad hoc hashes.
   context (`account_id`, `project_id`, `agent_run_id`) so the control plane
   never needs runner-local files after cleanup.
 - Binary artifact references distinguish trusted source lanes from
-  agent-authored ones. Artifacts persisted by the runner under
-  `AgentRun#external_metadata["artifact_manifest"]` (e.g. by
-  `Screenshots::ContainerCapture`) are trusted and their storage keys are
-  honored. Artifacts persisted by `AgentRuns::VerificationResultRecorder`
-  from the agent-written result file inside the container are untrusted
-  input: their locators are URL-only — a spoofed `key` under another
-  tenant's prefix would otherwise be re-signed into a working presigned URL
-  by any durable consumer, since the manifest contract says durable
-  consumers re-sign from the key. The run's `account_id`, `project_id`,
-  and `agent_run_id` are always authoritative; an artifact-supplied context
-  value cannot override the run's identity, so a run cannot misattribute
-  its artifacts to a different tenant in the durable manifest.
+  agent-authored ones, and both are namespace-scoped. Artifacts persisted by
+  the runner under `AgentRun#external_metadata["artifact_manifest"]` (e.g. by
+  `Screenshots::ContainerCapture`) are runner-written, but the field is not
+  exclusively runner-written — interop ingestion
+  (`Api::Projects::ExternalAgentRunsController` → `AgentRuns::IngestExternal`)
+  persists caller-supplied `external_metadata` verbatim — so their storage
+  keys are honored only when they live under the project's own storage
+  namespace (`Screenshots::Storage.namespace_prefix`). Artifacts persisted by
+  `AgentRuns::VerificationResultRecorder` from the agent-written result file
+  inside the container are untrusted input: their locators are URL-only. In
+  both lanes a `key` under another tenant's prefix would otherwise be
+  re-signed into a working presigned URL by any durable consumer, since the
+  manifest contract says durable consumers re-sign from the key. The run's
+  `account_id`, `project_id`, and `agent_run_id` are always authoritative; an
+  artifact-supplied context value cannot override the run's identity, so a
+  run cannot misattribute its artifacts to a different tenant in the durable
+  manifest.
 - Presigned URLs are ephemeral — they expire within the SigV4 one-week cap —
   so artifact manifests persisted as durable records on the run (e.g.
   `AgentRun#external_metadata["artifact_manifest"]`) carry storage keys only;

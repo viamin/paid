@@ -751,9 +751,14 @@ module ExecutionRunners
     #
     # Two source lanes feed this list:
     #
-    # 1. `external_metadata["artifact_manifest"]` — persisted by the runner, so
-    #    it is trusted: locator keys under the project's namespace are honored
-    #    and durable consumers can re-sign them.
+    # 1. `external_metadata["artifact_manifest"]` — usually persisted by the
+    #    runner, but not exclusively: interop callers can persist arbitrary
+    #    `external_metadata` (`Api::Projects::ExternalAgentRunsController` →
+    #    `AgentRuns::IngestExternal` stores it verbatim). Locator keys are
+    #    therefore honored only under the project's own storage namespace
+    #    (`Screenshots::Storage.namespace_prefix`); any other key degrades to
+    #    URL-only, so durable consumers can re-sign keys only within the
+    #    run's own tenant namespace.
     # 2. `verification_result["artifacts"]` — written by the agent inside the
     #    container (`AgentRuns::VerificationResultRecorder` persists it as-is),
     #    so it is untrusted input. A spoofed key under another tenant's prefix
@@ -779,7 +784,7 @@ module ExecutionRunners
       return unless artifact.is_a?(Hash)
 
       normalized = artifact.deep_stringify_keys
-      locator = normalized_locator(normalized, trusted_key: trusted_key)
+      locator = normalized_locator(normalized, agent_run: agent_run, trusted_key: trusted_key)
       return if locator.blank?
 
       {
@@ -793,7 +798,7 @@ module ExecutionRunners
     end
 
     # @spec CONTAINER-RUNTIME-018
-    def self.normalized_locator(artifact, trusted_key:)
+    def self.normalized_locator(artifact, agent_run:, trusted_key:)
       raw_locator = if artifact["locator"].is_a?(Hash)
         artifact["locator"].deep_stringify_keys.slice("key", "url")
       else
@@ -804,7 +809,29 @@ module ExecutionRunners
       end
 
       locator = trusted_key ? raw_locator : raw_locator.slice("url")
+      locator = locator.slice("url") unless key_within_project_namespace?(locator["key"], agent_run)
       locator.compact.presence
+    end
+
+    # A locator key survives only under the run's own project storage
+    # namespace: durable consumers re-sign keys into presigned URLs, so a key
+    # planted under another tenant's prefix must degrade to URL-only — on the
+    # trusted lane too, because interop ingestion can persist caller-supplied
+    # `external_metadata` verbatim.
+    # @spec CONTAINER-RUNTIME-018
+    def self.key_within_project_namespace?(key, agent_run)
+      return true if key.blank?
+      return false unless key.is_a?(String)
+
+      prefix = project_namespace_prefix(agent_run)
+      prefix.present? && key.start_with?(prefix)
+    end
+
+    def self.project_namespace_prefix(agent_run)
+      project = agent_run.project
+      return unless project&.owner.present? && project&.repo.present?
+
+      Screenshots::Storage.namespace_prefix(org: project.owner, repo: project.repo)
     end
 
     # @spec CONTAINER-RUNTIME-018
@@ -822,7 +849,7 @@ module ExecutionRunners
         "account_id" => agent_run.project&.account_id,
         "project_id" => agent_run.project_id,
         "agent_run_id" => agent_run.id
-      }
+      }.compact
 
       artifact_context.merge(run_context).compact.presence
     end
