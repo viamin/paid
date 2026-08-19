@@ -19,7 +19,7 @@ module Runners
   #
   # Anything that smells like a secret — token, refresh token, auth code, native
   # credential JSON, etc. — is rejected before persistence (see
-  # RunnerAuthAttempt::FORBIDDEN_METADATA_KEYS and SECRET_VALUE_PATTERNS).
+  # SecretSafeMetadata::FORBIDDEN_METADATA_KEYS and SECRET_VALUE_PATTERNS).
   class AuthAttemptRecorder
     FEATURE_FLAG_NAME = :managed_subscription_runner_auth
 

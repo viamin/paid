@@ -1348,6 +1348,7 @@ Consider implementing data retention policies:
 | ab_test_assignments | Until test completion + 30 days | Analysis only |
 | workflow_states | 30 days | Operational data |
 | knowledge_audit_events | 90 days | Operational audit trail; `KnowledgeAuditRetentionJob` handles pruning |
+| execution_audit_events | 400 days | Security/infrastructure audit trail (RDR-061), kept longer than operational telemetry to support incident investigation and compliance review; `ExecutionAuditEventRetentionJob` handles pruning |
 
 Implement via `pg_partman` or application-level cleanup jobs.
 

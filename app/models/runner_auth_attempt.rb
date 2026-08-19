@@ -12,6 +12,8 @@
 # provider, auth_source, and container_host without scanning a free-form JSON
 # payload.
 class RunnerAuthAttempt < ApplicationRecord
+  include SecretSafeMetadata
+
   STAGE_ELIGIBILITY = "eligibility".freeze
   STAGE_MATERIALIZATION = "materialization".freeze
   STAGE_REFRESH = "refresh".freeze
@@ -103,50 +105,6 @@ class RunnerAuthAttempt < ApplicationRecord
   FLAG_UNREGISTERED = "unregistered".freeze
   FLAG_STATES = [ FLAG_ENABLED, FLAG_DISABLED, FLAG_UNREGISTERED ].freeze
 
-  # Reserved metadata keys that callers are forbidden from passing because they
-  # could leak credentials. Keep this list narrow and explicit so future callers
-  # fail fast rather than silently storing secret-shaped data.
-  FORBIDDEN_METADATA_KEYS = %w[
-    token
-    refresh_token
-    access_token
-    api_key
-    authorization_code
-    auth_code
-    code
-    client_secret
-    secret
-    bearer
-    password
-    passwd
-    pwd
-    cookie
-    session
-    credentials
-    credential
-    native_credentials
-    native_credential
-    native_credentials_json
-    native_credential_json
-    auth_json
-    credentials_json
-  ].freeze
-
-  # Patterns that look like secret material. If a metadata value matches one of
-  # these (after trimming), the recorder raises rather than persisting the row.
-  # GitHub token formats mirror GithubToken::GITHUB_TOKEN_PATTERN so a
-  # `github_pat_` fine-grained PAT is rejected with the same shape the rest of
-  # the app uses to recognize them (classic `ghp_`, fine-grained `github_pat_`,
-  # OAuth `gho_`, user-to-server `ghu_`, server-to-server `ghs_`, refresh `ghr_`).
-  SECRET_VALUE_PATTERNS = [
-    /\Ask-[A-Za-z0-9_-]{8,}\z/,                # Anthropic / OpenAI style bearer tokens
-    /\A(ghp_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,}|gh[ours]_[A-Za-z0-9]{36,})\z/, # GitHub PATs
-    /\Axox[abprs]-[A-Za-z0-9-]{8,}\z/,         # Slack tokens
-    /\Aya29\.[A-Za-z0-9_-]{8,}\z/,             # Google OAuth bearer
-    /\ABearer\s+/i,                            # Authorization header prefix
-    /\ABasic\s+[A-Za-z0-9+\/=]{8,}\z/i         # HTTP Basic auth header
-  ].freeze
-
   belongs_to :account
   belongs_to :project
   belongs_to :agent_run, optional: true
@@ -155,7 +113,7 @@ class RunnerAuthAttempt < ApplicationRecord
   before_validation :assign_project_from_agent_run
   before_validation :assign_account_from_project
   before_validation :assign_attempted_at
-  before_validation :enforce_secret_safety
+  before_validation :enforce_metadata_secret_safety
   before_validation :strip_unknown_metadata
 
   validates :runner_key, presence: true, length: { maximum: 64 }
@@ -210,20 +168,6 @@ class RunnerAuthAttempt < ApplicationRecord
     create!(attrs)
   end
 
-  # Returns true if `value` looks like a secret that must never be persisted
-  # in runner auth telemetry. Exposed so callers (and tests) can preflight
-  # metadata before passing it in. Expects a scalar; structured values are
-  # walked recursively by `enforce_secret_safety` before this is called, so
-  # treating a Hash/Array as "secret-like" would mask scalars nested inside.
-  def self.secret_like?(value)
-    return false if value.nil?
-
-    text = value.to_s
-    return false if text.empty?
-
-    SECRET_VALUE_PATTERNS.any? { |pattern| text.match?(pattern) }
-  end
-
   private
 
   def assign_project_from_agent_run
@@ -243,74 +187,12 @@ class RunnerAuthAttempt < ApplicationRecord
     self.attempted_at ||= Time.current
   end
 
-  def metadata_is_object
-    errors.add(:metadata, "must be an object") unless metadata.is_a?(Hash)
-  end
-
   def failure_reason_safe
     return if failure_reason.blank?
 
     if self.class.secret_like?(failure_reason) || failure_reason.length > 64
       errors.add(:failure_reason, "must be a short non-secret reason code")
     end
-  end
-
-  def enforce_secret_safety
-    scan_metadata(metadata)
-  end
-
-  def strip_unknown_metadata
-    return unless metadata.is_a?(Hash)
-
-    self.metadata = stringify_metadata(metadata)
-  end
-
-  # Recursively walks metadata at every key level so secret-shaped values
-  # nested inside Hashes/Arrays are caught at validation time. Iterates in two
-  # phases: every key is checked against the forbidden list, and every leaf
-  # scalar value is checked against the secret patterns. The keys themselves
-  # are matched as strings so symbol keys (the common caller convention) get
-  # the same treatment as string keys.
-  def scan_metadata(node, path: [])
-    case node
-    when Hash
-      node.each do |key, value|
-        child_path = path + [ key.to_s ]
-        if FORBIDDEN_METADATA_KEYS.include?(key.to_s)
-          errors.add(:metadata, "contains forbidden key #{format_path(child_path)}")
-        end
-        scan_metadata(value, path: child_path)
-      end
-    when Array
-      node.each_with_index do |element, index|
-        child_path = path + [ index.to_s ]
-        scan_metadata(element, path: child_path)
-      end
-    else
-      if self.class.secret_like?(node)
-        errors.add(:metadata, "contains a secret-shaped value at key #{format_path(path)}")
-      end
-    end
-  end
-
-  # Recursively stringifies metadata keys, preserving the original Hash/Array
-  # shape so nested structures round-trip unchanged. Mirrors `scan_metadata` so
-  # the two passes never disagree about what counts as a leaf.
-  def stringify_metadata(node)
-    case node
-    when Hash
-      node.each_with_object({}) do |(key, value), memo|
-        memo[key.to_s] = stringify_metadata(value)
-      end
-    when Array
-      node.map { |element| stringify_metadata(element) }
-    else
-      node
-    end
-  end
-
-  def format_path(path)
-    path.join(".")
   end
 
   def project_matches_agent_run
