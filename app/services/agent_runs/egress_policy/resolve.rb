@@ -107,8 +107,27 @@ module AgentRuns
         safe_entries.map { |entry| entry_destination(entry) }
       end
 
+      # Excludes unsafe entries (see {entry_unsafe_reason}) and entries whose
+      # host is already required. A tenant entry can otherwise carry a
+      # different (or absent, meaning "any") port than the required
+      # destination, dodging the host+port dedupe key in {dedupe} and
+      # widening a required destination's port restriction. Dropping the
+      # entry here — rather than merging it — keeps EGRESS-POLICY-004 true:
+      # a required destination can never be shadowed or extended by tenant
+      # configuration.
+      # @spec EGRESS-POLICY-004
       def safe_entries
-        (account_entries + project_entries).select { |entry| entry_unsafe_reason(entry).nil? }
+        (account_entries + project_entries).select do |entry|
+          entry_unsafe_reason(entry).nil? && !required_host?(entry)
+        end
+      end
+
+      def required_host?(entry)
+        required_destination_hosts.include?(entry.host_pattern.to_s.strip.downcase)
+      end
+
+      def required_destination_hosts
+        @required_destination_hosts ||= required_destinations.map { |destination| destination["host"].to_s.downcase }
       end
 
       def entry_destination(entry)

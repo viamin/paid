@@ -123,10 +123,21 @@ RSpec.describe AgentRuns::EgressPolicy::Resolve do
     it "keeps required destinations when a tenant entry matches the same host" do
       create(:egress_allowlist_entry, account: account, project: project, host_pattern: "github.com")
 
-      github = resolve.destinations.find { |d| d["host"] == "github.com" }
+      destinations = resolve.destinations
+      github = destinations.find { |d| d["host"] == "github.com" }
 
+      expect(destinations.count { |d| d["host"] == "github.com" }).to eq(1)
       expect(github["source"]).to eq("platform")
       expect(github).not_to have_key("entry_id")
+    end
+
+    it "drops a tenant entry with no port (any port) that matches a required host, rather than widening it" do
+      create(:egress_allowlist_entry, account: account, host_pattern: "github.com", port: nil)
+
+      destinations = resolve.destinations
+
+      expect(destinations.count { |d| d["host"] == "github.com" }).to eq(1)
+      expect(destinations.find { |d| d["host"] == "github.com" }).to include("source" => "platform", "port" => 443)
     end
   end
 
