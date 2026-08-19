@@ -281,11 +281,11 @@ is explicit value-object data, not ad hoc hashes.
   (variable names, service names, config keys) and never secret values; service
   declarations expose `env_keys`, not `env` payloads.
 
-## Provisioning-intent ledger and ownership tags (RDR-058)
+## Provisioning-intent ledger and ownership tags (RDR-060)
 
 Every execution resource a runner creates is reconcileable to its Paid origin
 even when the runner process dies between provider creation and handle
-persistence. RDR-058 wires runner provisioning into an execution-resource
+persistence. RDR-060 wires runner provisioning into an execution-resource
 ledger and a stable ownership-tag set.
 
 - `ProvisioningIntent` is the ledger row. A runner records one in the `pending`

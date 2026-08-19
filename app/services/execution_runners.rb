@@ -296,7 +296,7 @@ module ExecutionRunners
 
   # Stable Paid ownership-tag set applied to every provisioned execution
   # resource so a leaked/orphaned resource can be attributed and reconciled
-  # back to its Paid origin (RDR-058). A runner translates this to its native
+  # back to its Paid origin (RDR-060). A runner translates this to its native
   # provider tag mechanism (Docker labels for the Docker runner).
   #
   # The six tag names are the contract every Paid-managed execution resource

@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Execution-resource provisioning-intent ledger for RDR-058. Each row records a
+# Execution-resource provisioning-intent ledger for RDR-060. Each row records a
 # runner's intent to create an execution resource (container, workspace volume,
 # …) BEFORE the provider create call is issued, so a crash between provider
 # creation and runner-handle persistence leaves enough information to
@@ -16,7 +16,7 @@ class CreateProvisioningIntents < ActiveRecord::Migration[8.1]
     return if table_exists?(:provisioning_intents)
 
     create_table :provisioning_intents,
-      comment: "Execution-resource provisioning-intent ledger rows recording runner intent before provider create calls so orphaned resources remain reconcileable (RDR-058)." do |t|
+      comment: "Execution-resource provisioning-intent ledger rows recording runner intent before provider create calls so orphaned resources remain reconcileable (RDR-060)." do |t|
         t.references :account, null: false, foreign_key: true,
           comment: "Owning account (ownership tag 'account')."
         t.references :project, null: true, foreign_key: true,

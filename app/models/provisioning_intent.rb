@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Execution-resource provisioning-intent ledger row (RDR-058). Records a
+# Execution-resource provisioning-intent ledger row (RDR-060). Records a
 # runner's intent to create an execution resource BEFORE the provider create
 # call so a crash between provider creation and runner-handle persistence
 # leaves enough information to reconcile the orphaned resource.

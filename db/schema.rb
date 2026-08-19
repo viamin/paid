@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_19_013501) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_19_232912) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2235,7 +2235,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_013501) do
     t.index ["user_id"], name: "index_provider_api_keys_on_user_id"
   end
 
-  create_table "provisioning_intents", comment: "Execution-resource provisioning-intent ledger rows recording runner intent before provider create calls so orphaned resources remain reconcileable (RDR-058).", force: :cascade do |t|
+  create_table "provisioning_intents", comment: "Execution-resource provisioning-intent ledger rows recording runner intent before provider create calls so orphaned resources remain reconcileable (RDR-060).", force: :cascade do |t|
     t.bigint "account_id", null: false, comment: "Owning account (ownership tag 'account')."
     t.bigint "agent_run_id", comment: "Agent run the resource was provisioned for (ownership tag 'run')."
     t.integer "attempt", default: 0, null: false, comment: "Provision attempt ordinal for this run/resource kind (ownership tag 'attempt')."

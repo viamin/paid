@@ -27,7 +27,7 @@ module ExecutionRunners
     RUNNER_TYPE = :local_docker
 
     # The kind of execution resource this runner provisions, recorded on the
-    # provisioning-intent ledger (RDR-058).
+    # provisioning-intent ledger (RDR-060).
     RESOURCE_KIND = "container"
 
     # Prefix for per-run Docker named volumes. Volume-name construction lives
@@ -262,7 +262,7 @@ module ExecutionRunners
     private
 
     # Builds the provisioning-intent ledger from this runner's declared
-    # capabilities (RDR-058). The runner owns the environment identifier so a
+    # capabilities (RDR-060). The runner owns the environment identifier so a
     # future remote runner can substitute a deployment-specific value.
     def provisioning_ledger
       ProvisioningLedger.new(

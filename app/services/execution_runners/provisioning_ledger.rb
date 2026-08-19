@@ -2,7 +2,7 @@
 
 module ExecutionRunners
   # Owns the provisioning-intent ledger lifecycle so each runner's +#provision+
-  # stays thin (RDR-058). A runner builds a ledger from its declared capabilities
+  # stays thin (RDR-060). A runner builds a ledger from its declared capabilities
   # and calls {#record_intent} BEFORE the provider create call, then
   # {#link_created}, {#link_handle}, or {#mark_failed} as the provision advances.
   #

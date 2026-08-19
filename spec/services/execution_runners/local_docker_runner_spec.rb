@@ -308,7 +308,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
   # @spec CONTAINER-RUNTIME-022
   # @spec CONTAINER-RUNTIME-023
   # @spec CONTAINER-RUNTIME-024
-  describe "provisioning ledger integration (RDR-058)" do
+  describe "provisioning ledger integration (RDR-060)" do
     before do
       allow(Containers::Provision).to receive(:new).and_return(provision_service)
       allow(provision_service).to receive(:provision).and_return(
@@ -403,7 +403,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
   end
 
   # @spec CONTAINER-RUNTIME-024
-  describe "crash-window reconciliation (RDR-058)" do
+  describe "crash-window reconciliation (RDR-060)" do
     it "leaves a created ledger row with the resource id when the process dies after provider creation" do
       allow(Containers::Provision).to receive(:new).and_return(provision_service)
       allow(provision_service).to receive(:provision).and_return(
@@ -432,7 +432,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
   end
 
   # @spec CONTAINER-RUNTIME-023
-  describe "degradation when tagging is unsupported (RDR-058)" do
+  describe "degradation when tagging is unsupported (RDR-060)" do
     let(:untagging_runner) do
       Class.new(described_class) { def supports_tagging?; false; end }.new
     end
@@ -467,7 +467,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
   end
 
   # @spec CONTAINER-RUNTIME-023
-  describe "degradation when listing is unsupported (RDR-058)" do
+  describe "degradation when listing is unsupported (RDR-060)" do
     let(:unlisting_runner) do
       Class.new(described_class) { def supports_listing?; false; end }.new
     end
