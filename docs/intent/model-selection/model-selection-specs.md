@@ -25,3 +25,9 @@
   persisted, the system SHALL require `tier` even when `llm_model` is nil so
   later execution paths can treat the tier as the durable routing contract.
   *Code:* `ModelSelection`.
+
+- [x] **MODEL-SELECTION-005** — When Codex subscription auth is used, the
+  system SHALL filter known ChatGPT-Codex-incompatible catalog models before
+  default tier selection so queued runs do not dispatch a model the Codex CLI
+  rejects at preflight.
+  *Code:* `Runners::ModelCompatibility`, `Runners::DefaultTierModelIds`.

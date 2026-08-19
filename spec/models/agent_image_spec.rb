@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe AgentImage, type: :model do # @spec CONTAINER-RUNTIME-019
+RSpec.describe AgentImage, type: :model do # @spec CONTAINER-RUNTIME-021
   describe "associations" do
     it { is_expected.to belong_to(:account) }
   end
@@ -31,7 +31,7 @@ RSpec.describe AgentImage, type: :model do # @spec CONTAINER-RUNTIME-019
     end
   end
 
-  describe "digest format" do # @spec CONTAINER-RUNTIME-019
+  describe "digest format" do # @spec CONTAINER-RUNTIME-021
     it "accepts a sha256 digest in canonical sha256:<hex> form" do
       image = build(:agent_image, digest: "sha256:" + "a" * 64)
       expect(image).to be_valid
@@ -84,7 +84,7 @@ RSpec.describe AgentImage, type: :model do # @spec CONTAINER-RUNTIME-019
     end
   end
 
-  describe "immutability" do # @spec CONTAINER-RUNTIME-020
+  describe "immutability" do # @spec CONTAINER-RUNTIME-022
     it "prevents digest changes after creation" do
       image = create(:agent_image, digest: "sha256:" + "a" * 64)
       image.digest = "sha256:" + "b" * 64
@@ -135,7 +135,7 @@ RSpec.describe AgentImage, type: :model do # @spec CONTAINER-RUNTIME-019
     end
   end
 
-  describe "uniqueness" do # @spec CONTAINER-RUNTIME-021
+  describe "uniqueness" do # @spec CONTAINER-RUNTIME-023
     it "rejects a duplicate image identity within the same account" do
       identity = {
         account: create(:account),
@@ -183,7 +183,7 @@ RSpec.describe AgentImage, type: :model do # @spec CONTAINER-RUNTIME-019
     end
   end
 
-  describe "change tracking" do # @spec CONTAINER-RUNTIME-021
+  describe "change tracking" do # @spec CONTAINER-RUNTIME-023
     it "records a logidze history entry when mutable metadata changes" do
       image = create(:agent_image)
       image.update!(metadata: { "runbook_url" => "https://example.test/runbook" })
@@ -217,7 +217,7 @@ RSpec.describe AgentImage, type: :model do # @spec CONTAINER-RUNTIME-019
     end
   end
 
-  describe "deprecation" do # @spec CONTAINER-RUNTIME-022
+  describe "deprecation" do # @spec CONTAINER-RUNTIME-024
     it "transitions active -> deprecated and stamps deprecated_at" do
       image = create(:agent_image)
       freeze_time = Time.current
@@ -268,7 +268,7 @@ RSpec.describe AgentImage, type: :model do # @spec CONTAINER-RUNTIME-019
     end
   end
 
-  describe "blocking" do # @spec CONTAINER-RUNTIME-022
+  describe "blocking" do # @spec CONTAINER-RUNTIME-024
     it "transitions active -> blocked and stamps blocked_at" do
       image = create(:agent_image)
       freeze_time = Time.current

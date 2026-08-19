@@ -34,6 +34,18 @@ records and runner keys to `agent_harness` providers. It:
 This contract is used both for persisted `Runner` records and for app-level
 runner keys that do not require a per-user `Runner` row.
 
+### Direct-outbound credential isolation
+
+Provisioning seeds baseline container env with Paid secrets-proxy credentials
+(per-run proxy tokens and proxy base URLs for each provider family). A
+direct-outbound runtime — e.g. OpenCode configured with a user provider API
+key — talks to the upstream provider directly, so those proxy credentials are
+unused and must not ride along in the runner process environment.
+`Runner#opencode_direct_outbound_unset_env` lists the proxy-credential
+variables to unset, minus whatever the runtime itself sets for the selected
+provider (the real upstream key and base URL), so the runner process carries
+only provider credentials that are actually its own.
+
 ### Container execution
 
 `Containers::HarnessExecutor` is the execution-side adapter. It takes the

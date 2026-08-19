@@ -19,10 +19,10 @@
 # a fresh image is blocked before any deprecation window. Transitions are
 # idempotent so retrying an Avo action or job does not double-stamp timestamps.
 #
-# @spec CONTAINER-RUNTIME-019
-# @spec CONTAINER-RUNTIME-020
 # @spec CONTAINER-RUNTIME-021
 # @spec CONTAINER-RUNTIME-022
+# @spec CONTAINER-RUNTIME-023
+# @spec CONTAINER-RUNTIME-024
 # @see docs/rdrs/RDR-059-immutable-agent-runtime-images.md
 # @see docs/intent/container-runtime/container-runtime-specs.md
 class AgentImage < ApplicationRecord
@@ -157,7 +157,7 @@ class AgentImage < ApplicationRecord
   end
 
   # Digests are canonicalized to +sha256:<hex>+ on write. Bare hex input is
-  # accepted per CONTAINER-RUNTIME-019, but storing both forms would let the
+  # accepted per CONTAINER-RUNTIME-021, but storing both forms would let the
   # same image register twice (identity uniqueness compares raw strings) and
   # would emit an invalid OCI reference from +#digest_reference+.
   def canonical_digest(value)

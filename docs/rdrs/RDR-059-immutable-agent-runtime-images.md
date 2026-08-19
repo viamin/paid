@@ -226,7 +226,7 @@ The implementation is complete when:
 - [x] `Containers::ImageResolver::BASE_IMAGE` (`paid-agent:latest`)
       continues to flow unchanged through local development.
 - [x] Tests cover validation, activation, and blocked-image behavior.
-- [x] EARS specs `CONTAINER-RUNTIME-019` through `CONTAINER-RUNTIME-022`
+- [x] EARS specs `CONTAINER-RUNTIME-021` through `CONTAINER-RUNTIME-024`
       are added to `docs/intent/container-runtime/container-runtime-specs.md`
       with `@spec` annotations on the implementation and tests.
 
@@ -247,7 +247,7 @@ The implementation is complete when:
 - `spec/factories/agent_images.rb`
 - `docs/intent/container-runtime/container-runtime-design.md`
 - `docs/intent/container-runtime/container-runtime-specs.md`
-  (CONTAINER-RUNTIME-019..-022)
+  (CONTAINER-RUNTIME-021..-024)
 - `app/services/containers/image_resolver.rb`
 - `app/services/containers/provision.rb`
 - `app/models/docker_host.rb`

@@ -133,6 +133,22 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "account_audit_logs" ])
     end
 
+    it "maps the account and project egress allowlist controllers to their screenshot targets" do
+      account_targets = described_class.call(changed_files: [ "app/controllers/accounts/egress_allowlist_entries_controller.rb" ])
+      project_targets = described_class.call(changed_files: [ "app/controllers/projects/egress_allowlist_entries_controller.rb" ])
+
+      expect(account_targets.map(&:slug)).to eq([ "account_egress_allowlist" ])
+      expect(project_targets.map(&:slug)).to eq([ "project_egress_allowlist" ])
+    end
+
+    it "maps the account and project egress allowlist views to their screenshot targets" do
+      account_targets = described_class.call(changed_files: [ "app/views/accounts/egress_allowlist_entries/index.html.erb" ])
+      project_targets = described_class.call(changed_files: [ "app/views/projects/egress_allowlist_entries/index.html.erb" ])
+
+      expect(account_targets.map(&:slug)).to eq([ "account_egress_allowlist" ])
+      expect(project_targets.map(&:slug)).to eq([ "project_egress_allowlist" ])
+    end
+
     it "maps remediation decision views to the remediation decision screenshot target" do
       targets = described_class.call(changed_files: [ "app/views/remediation_decisions/show.html.erb" ])
 
