@@ -33,6 +33,27 @@ module AgentRuns
       # additional required host (base URL of the selected provider).
       DIRECT_OUTBOUND_PROVIDER_KEYS = %w[opencode kilocode pi omp].freeze
 
+      # Pi/OMP select their upstream provider via Runner::PI_API_PROVIDERS /
+      # OMP_API_PROVIDERS (a service_type + env_var map with no base_url of
+      # its own -- the Pi/OMP CLIs resolve the host internally). This map is
+      # deliberately keyed off that registry's keyspace rather than
+      # Runner::DIRECT_OUTBOUND_API_PROVIDERS (which drives OpenCode/KiloCode
+      # base-URL routing and happens to share most, but not all, keys --
+      # notably it has no "google" entry). Keep these hosts in sync with
+      # Runner::PI_API_PROVIDER_KEYS; a spec asserts the keyspaces match.
+      PI_OMP_PROVIDER_HOSTS = {
+        "anthropic" => "api.anthropic.com",
+        "openai" => "api.openai.com",
+        "deepseek" => "api.deepseek.com",
+        "google" => "generativelanguage.googleapis.com",
+        "mistral" => "api.mistral.ai",
+        "minimax" => "api.minimax.io",
+        "xai" => "api.x.ai",
+        "zai" => "api.z.ai",
+        "openrouter" => "openrouter.ai"
+      }.freeze
+      PI_OMP_RUNNER_KEYS = %w[pi omp].freeze
+
       module_function
 
       # Platform-required destinations for every agent run.
@@ -77,11 +98,26 @@ module AgentRuns
         provider_key = runner.public_send("#{key}_api_provider").presence
         return [] if provider_key.blank?
 
-        config = Runner::DIRECT_OUTBOUND_API_PROVIDERS.fetch(provider_key, nil)
-        host = config && URI.parse(config.fetch(:base_url)).host
+        host = PI_OMP_RUNNER_KEYS.include?(key) ? pi_omp_provider_host(provider_key) : base_url_host(provider_key)
         host ? [ host ] : []
+      end
+
+      # Raises when a provider key passed Runner's PI_API_PROVIDER_KEYS /
+      # OMP_API_PROVIDER_KEYS validation but has no entry here -- that means
+      # PI_OMP_PROVIDER_HOSTS has drifted out of sync with the Runner
+      # registry, which is a code bug, not a runtime condition to swallow.
+      def pi_omp_provider_host(provider_key)
+        PI_OMP_PROVIDER_HOSTS.fetch(provider_key) do
+          raise KeyError, "no required-destination host mapped for pi/omp provider #{provider_key.inspect}; " \
+            "update AgentRuns::EgressPolicy::RequiredDestinations::PI_OMP_PROVIDER_HOSTS"
+        end
+      end
+
+      def base_url_host(provider_key)
+        config = Runner::DIRECT_OUTBOUND_API_PROVIDERS.fetch(provider_key, nil)
+        config && URI.parse(config.fetch(:base_url)).host
       rescue URI::InvalidURIError
-        []
+        nil
       end
 
       def default_proxy_port

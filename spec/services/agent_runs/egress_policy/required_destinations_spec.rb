@@ -65,9 +65,26 @@ RSpec.describe AgentRuns::EgressPolicy::RequiredDestinations do
       expect(hosts).to contain_exactly("api.anthropic.com")
     end
 
+    it "derives the configured API provider host for pi/omp runners, including google" do
+      pi_runner = build(:runner, runner_key: "pi", config: { "pi" => { "api_provider" => "google" } })
+      omp_runner = build(:runner, runner_key: "omp", config: { "omp" => { "api_provider" => "google" } })
+
+      expect(described_class.provider(runner: pi_runner).map { |d| d["host"] })
+        .to contain_exactly("generativelanguage.googleapis.com")
+      expect(described_class.provider(runner: omp_runner).map { |d| d["host"] })
+        .to contain_exactly("generativelanguage.googleapis.com")
+    end
+
     it "returns an empty list for unknown runners" do
       expect(described_class.provider(runner: build(:runner, runner_key: "cursor"))).to eq([])
       expect(described_class.provider(runner: nil, agent_type: nil)).to eq([])
+    end
+  end
+
+  describe "PI_OMP_PROVIDER_HOSTS" do
+    it "covers every provider key Runner accepts for pi/omp" do
+      expect(described_class::PI_OMP_PROVIDER_HOSTS.keys.sort).to eq(Runner::PI_API_PROVIDER_KEYS.sort)
+      expect(Runner::OMP_API_PROVIDER_KEYS).to eq(Runner::PI_API_PROVIDER_KEYS)
     end
   end
 end

@@ -125,5 +125,17 @@ RSpec.describe EgressAllowlistEntry do
       entry = build(:egress_allowlist_entry, host_pattern: "169.254.169.254")
       expect(entry.unsafe_reason).to eq("must not be an IP literal")
     end
+
+    it "returns the rejection reason for a port that bypassed write-time validation" do
+      entry = create(:egress_allowlist_entry)
+      entry.update_column(:port, 70_000)
+      expect(entry.unsafe_reason).to eq("port must be between 1 and 65535")
+    end
+
+    it "returns the rejection reason for a scheme that bypassed write-time validation" do
+      entry = create(:egress_allowlist_entry)
+      entry.update_column(:scheme, "ftp")
+      expect(entry.unsafe_reason).to eq("scheme must be http or https")
+    end
   end
 end

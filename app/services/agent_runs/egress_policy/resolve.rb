@@ -118,7 +118,7 @@ module AgentRuns
       # @spec EGRESS-POLICY-004
       def safe_entries
         (account_entries + project_entries).select do |entry|
-          entry_unsafe_reason(entry).nil? && !required_host?(entry)
+          entry.unsafe_reason.nil? && !required_host?(entry)
         end
       end
 
@@ -167,24 +167,15 @@ module AgentRuns
       end
 
       def unsafe_entries
-        (account_entries + project_entries).reject { |entry| entry_unsafe_reason(entry).nil? }
+        (account_entries + project_entries).reject { |entry| entry.unsafe_reason.nil? }
       end
 
       def entry_rejection(entry)
-        "#{scope_label(entry)} entry #{entry.id} (#{entry.host_pattern}): #{entry_unsafe_reason(entry)}"
+        "#{scope_label(entry)} entry #{entry.id} (#{entry.host_pattern}): #{entry.unsafe_reason}"
       end
 
       def scope_label(entry)
         entry.project_id ? "project" : "account"
-      end
-
-      def entry_unsafe_reason(entry)
-        reason = HostPattern.invalid_reason(entry.host_pattern)
-        return reason if reason
-        return "port must be between 1 and 65535" if entry.port.present? && !entry.port.to_i.between?(1, 65_535)
-        return "scheme must be http or https" if entry.scheme.present? && %w[http https].exclude?(entry.scheme.to_s)
-
-        nil
       end
 
       def run_local_destinations
