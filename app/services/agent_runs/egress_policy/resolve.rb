@@ -26,13 +26,14 @@ module AgentRuns
       DIRECT_PROVIDER_MODES = %w[subscription_auth direct_outbound].freeze
 
       def self.call(agent_run:, networking_policy: nil, egress_profile: nil,
-        preview_destination: nil, platform_destinations: nil)
+        preview_destination: nil, platform_destinations: nil, container_host: nil)
         new(
           agent_run: agent_run,
           networking_policy: networking_policy,
           egress_profile: egress_profile,
           preview_destination: preview_destination,
-          platform_destinations: platform_destinations
+          platform_destinations: platform_destinations,
+          container_host: container_host
         ).call
       end
 
@@ -49,12 +50,13 @@ module AgentRuns
         snapshot
       end
 
-      def initialize(agent_run:, networking_policy:, egress_profile:, preview_destination:, platform_destinations:)
+      def initialize(agent_run:, networking_policy:, egress_profile:, preview_destination:, platform_destinations:, container_host: nil)
         @agent_run = agent_run
         @networking_policy = networking_policy
         @egress_profile = egress_profile
         @preview_destination = preview_destination
         @platform_destinations = platform_destinations
+        @container_host = container_host
       end
 
       def call
@@ -70,7 +72,7 @@ module AgentRuns
 
       private
 
-      attr_reader :agent_run, :networking_policy, :egress_profile, :preview_destination, :platform_destinations
+      attr_reader :agent_run, :networking_policy, :egress_profile, :preview_destination, :platform_destinations, :container_host
 
       def mode
         policy.mode.to_s
@@ -97,9 +99,29 @@ module AgentRuns
 
       def required_destinations
         @required_destinations ||=
-          (platform_destinations || RequiredDestinations.platform) +
+          (platform_destinations || platform_destinations_for_backend) +
           RequiredDestinations.github +
           provider_destinations
+      end
+
+      # The secrets-proxy destination is host/port as seen from the run's
+      # container, which is only +paid-proxy:<port>+ for a restricted run on a
+      # local backend: unrestricted runs reach the proxy at the +web+ service
+      # hostname and remote backends at the configured external proxy URL.
+      # {RequiredDestinations.platform}'s default encodes just the
+      # restricted-local view, so resolve the actual endpoint with the same
+      # resolver provisioning uses ({Containers::ProxyUrl}) instead of
+      # recording +paid-proxy+ for every run's audit snapshot.
+      def platform_destinations_for_backend
+        proxy_uri = URI.parse(Containers::ProxyUrl.resolve(backend: backend, policy: policy))
+        RequiredDestinations.platform(proxy_host: proxy_uri.host, proxy_port: proxy_uri.port)
+      end
+
+      # Mirrors the backend selection provisioning performs: the planned
+      # container host (RDR-048 — the run's container_host column stays nil
+      # until a backend owns a real resource) wins over the persisted column.
+      def backend
+        Containers.backend_for(container_host.presence || agent_run.container_host)
       end
 
       def provider_destinations

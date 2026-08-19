@@ -20,13 +20,19 @@ module AgentRuns
 
       GITHUB_HOSTS = %w[github.com api.github.com].freeze
 
-      # Subscription-auth provider CLIs that must reach their upstream APIs
-      # directly from the container.
-      SUBSCRIPTION_PROVIDER_HOSTS = {
+      # Runner keys whose upstream provider host set is fixed by the runner
+      # itself, not chosen through runner config: subscription-auth CLIs
+      # (claude/codex/gemini/copilot) and the OpenRouter-backed runners
+      # (openrouter_free/openrouter_pareto, which always target openrouter.ai
+      # via their execution plans). These hosts must be reachable directly
+      # from the container in subscription_auth/direct_outbound modes.
+      FIXED_HOST_PROVIDER_RUNNERS = {
         "claude" => %w[api.anthropic.com claude.ai],
         "codex" => %w[chatgpt.com api.openai.com auth.openai.com],
         "gemini" => %w[generativelanguage.googleapis.com oauth2.googleapis.com accounts.google.com cloudcode-pa.googleapis.com],
-        "copilot" => %w[api.githubcopilot.com copilot-proxy.githubusercontent.com api.github.com]
+        "copilot" => %w[api.githubcopilot.com copilot-proxy.githubusercontent.com api.github.com],
+        "openrouter_free" => %w[openrouter.ai],
+        "openrouter_pareto" => %w[openrouter.ai]
       }.freeze
 
       # Direct-outbound runner keys whose configured API provider supplies an
@@ -56,7 +62,10 @@ module AgentRuns
 
       module_function
 
-      # Platform-required destinations for every agent run.
+      # Platform-required destinations for every agent run. The default
+      # proxy host/port encodes the restricted-local view; callers resolving
+      # policies for unrestricted or remote runs must pass the endpoint the
+      # container actually reaches (see Containers::ProxyUrl.resolve).
       # @param proxy_host [String] secrets-proxy hostname as seen from the container
       # @param proxy_port [Integer] secrets-proxy port
       # @return [Array<Hash>]
@@ -89,7 +98,7 @@ module AgentRuns
         key = Runner.runner_key_for_agent_type(agent_type) if key.blank? && agent_type.present?
         return [] if key.blank?
 
-        SUBSCRIPTION_PROVIDER_HOSTS.fetch(key) { direct_outbound_provider_hosts(runner, key) }
+        FIXED_HOST_PROVIDER_RUNNERS.fetch(key) { direct_outbound_provider_hosts(runner, key) }
       end
 
       def direct_outbound_provider_hosts(runner, key)

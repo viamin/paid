@@ -55,10 +55,14 @@ RSpec.describe Activities::ProvisionContainerActivity do
       activity.execute(agent_run_id: agent_run.id)
 
       snapshot = AgentRuns::EgressPolicy::Snapshot.from_record(agent_run.reload)
-      derived_mode = Containers::Provision.networking_policy_for(agent_run: agent_run, project: project).mode.to_s
+      derived_policy = Containers::Provision.networking_policy_for(agent_run: agent_run, project: project)
+      # The snapshot's secrets-proxy host must match the endpoint the
+      # provisioned container will actually use (paid-proxy restricted-local,
+      # web unrestricted-local, external URL remote) — never a hardcoded host.
+      proxy_host = URI.parse(Containers::ProxyUrl.resolve(backend: Containers.backend_for(nil), policy: derived_policy)).host
       expect(snapshot).not_to be_nil
-      expect(snapshot.mode).to eq(derived_mode)
-      expect(snapshot.destinations.map { |destination| destination["host"] }).to include("egress-gateway", "paid-proxy")
+      expect(snapshot.mode).to eq(derived_policy.mode.to_s)
+      expect(snapshot.destinations.map { |destination| destination["host"] }).to include("egress-gateway", proxy_host)
     end
 
     # @spec EGRESS-POLICY-006
@@ -73,6 +77,25 @@ RSpec.describe Activities::ProvisionContainerActivity do
       }.to raise_error(Containers::Provision::ProvisionError)
 
       expect(AgentRuns::EgressPolicy::Snapshot.from_record(agent_run.reload)).not_to be_nil
+    end
+
+    # @spec EGRESS-POLICY-006
+    it "resolves the snapshot's secrets proxy against the planned container host" do
+      remote_backend = instance_double(Containers::Backends::Base, remote?: true, identifier: "remote-worker-1")
+      Containers::Backends::Resolver.register("remote-worker-1", -> { remote_backend })
+      ENV["PAID_PROXY_EXTERNAL_URL"] = "https://proxy.example.test:3443"
+      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+      allow(agent_run).to receive(:ensure_proxy_token!).and_return("token")
+      allow(agent_run).to receive(:provision_container)
+
+      activity.execute(agent_run_id: agent_run.id, container_host: "remote-worker-1")
+
+      snapshot = AgentRuns::EgressPolicy::Snapshot.from_record(agent_run.reload)
+      proxy = snapshot.required_destinations.find { |destination| destination["reason"] == "secrets_proxy" }
+      expect(proxy).to include("host" => "proxy.example.test", "port" => 3443)
+    ensure
+      Containers::Backends::Resolver.reset!("remote-worker-1")
+      ENV.delete("PAID_PROXY_EXTERNAL_URL")
     end
 
     # @spec EGRESS-POLICY-005

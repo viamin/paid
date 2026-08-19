@@ -49,7 +49,10 @@ module Activities
         # closed when unsafe tenant entries were rejected.
         # @spec EGRESS-POLICY-006
         begin
-          AgentRuns::EgressPolicy::Resolve.resolve_and_persist!(agent_run)
+          # The planned container host pins the backend the snapshot's
+          # secrets-proxy destination is resolved against (restricted-local
+          # paid-proxy, unrestricted web, or the remote external proxy URL).
+          AgentRuns::EgressPolicy::Resolve.resolve_and_persist!(agent_run, container_host: input[:container_host])
         rescue AgentRuns::EgressPolicy::Resolve::DeniedPolicyError => e
           # The denial is deterministic (the same unsafe rows are rejected on
           # every attempt), so retrying would just burn DEFAULT_RETRY_POLICY's

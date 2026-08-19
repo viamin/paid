@@ -17,10 +17,15 @@
 
 - [x] **EGRESS-POLICY-002** — The system SHALL provide a code-owned
   required-destination registry exposing platform destinations (egress
-  gateway, secrets proxy), GitHub destinations (github.com, api.github.com),
-  and runner/provider destinations, where provider hosts are resolved from
-  the run's runner key (claude → Anthropic, codex → OpenAI, gemini → Google,
-  copilot → GitHub Copilot) or its configured direct-outbound API provider.
+  gateway, secrets proxy resolved from the run's backend and networking
+  policy via `Containers::ProxyUrl`), GitHub destinations (github.com,
+  api.github.com), and runner/provider destinations, where provider hosts are
+  resolved from the run's runner key (claude → Anthropic, codex → OpenAI,
+  gemini → Google, copilot → GitHub Copilot, openrouter_free /
+  openrouter_pareto → OpenRouter) or its configured direct-outbound API
+  provider, and every container-executable runner key SHALL be classified
+  (fixed-host, config-derived, or explicitly proxy-only) so direct-egress
+  runner traffic never silently drops out of the registry.
   *Tests:* `spec/services/agent_runs/egress_policy/required_destinations_spec.rb`
   *Code:* `AgentRuns::EgressPolicy::RequiredDestinations`
 
@@ -57,7 +62,10 @@
   `agent_runs.external_metadata["egress_policy"]` before provisioning starts,
   so a run whose provisioning fails still carries an auditable record of the
   intended policy, including mode, egress profile, destinations, required
-  destinations, and resolution timestamp.
+  destinations, and resolution timestamp. The secrets-proxy required
+  destination SHALL be resolved against the run's planned container host and
+  networking policy (restricted-local `paid-proxy`, unrestricted-local `web`,
+  or the remote backend's external proxy URL), never hardcoded.
   *Tests:* `spec/temporal/activities/provision_container_activity_spec.rb`,
   `spec/services/agent_runs/egress_policy/resolve_spec.rb`
   *Code:* `AgentRuns::EgressPolicy::Snapshot`,

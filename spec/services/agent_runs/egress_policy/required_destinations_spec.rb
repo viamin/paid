@@ -75,6 +75,14 @@ RSpec.describe AgentRuns::EgressPolicy::RequiredDestinations do
         .to contain_exactly("generativelanguage.googleapis.com")
     end
 
+    it "maps the openrouter_free and openrouter_pareto runners to OpenRouter" do
+      free = build(:runner, runner_key: "openrouter_free")
+      pareto = build(:runner, runner_key: "openrouter_pareto")
+
+      expect(described_class.provider(runner: free).map { |d| d["host"] }).to contain_exactly("openrouter.ai")
+      expect(described_class.provider(runner: pareto).map { |d| d["host"] }).to contain_exactly("openrouter.ai")
+    end
+
     it "returns an empty list for unknown runners" do
       expect(described_class.provider(runner: build(:runner, runner_key: "cursor"))).to eq([])
       expect(described_class.provider(runner: nil, agent_type: nil)).to eq([])
@@ -85,6 +93,24 @@ RSpec.describe AgentRuns::EgressPolicy::RequiredDestinations do
     it "covers every provider key Runner accepts for pi/omp" do
       expect(described_class::PI_OMP_PROVIDER_HOSTS.keys.sort).to eq(Runner::PI_API_PROVIDER_KEYS.sort)
       expect(Runner::OMP_API_PROVIDER_KEYS).to eq(Runner::PI_API_PROVIDER_KEYS)
+    end
+  end
+
+  describe "runner key classification" do
+    # Cursor is the only container-executable runner that never calls a
+    # provider directly: it has no subscription-auth credential detection and
+    # no direct-outbound mode, so its runs resolve proxy_restricted and never
+    # consult provider destinations. Every other container-executable key must
+    # be classified (fixed-host or config-derived) or its provider traffic
+    # would silently drop out of the audit snapshot — the exact gap flagged
+    # for openrouter_free/openrouter_pareto in #3496.
+    it "classifies every container-executable runner key" do
+      proxy_only_runner_keys = %w[cursor]
+
+      classified = described_class::FIXED_HOST_PROVIDER_RUNNERS.keys +
+        described_class::DIRECT_OUTBOUND_PROVIDER_KEYS + proxy_only_runner_keys
+
+      expect(classified.sort).to eq(RunnerSupport::CONTAINER_EXECUTABLE_RUNNER_KEYS.to_a.sort)
     end
   end
 end

@@ -52,13 +52,18 @@ Required destinations come from code (`AgentRuns::EgressPolicy::RequiredDestinat
 never tenant settings:
 
 - **platform** — egress gateway (`egress-gateway:3128`) and the secrets proxy,
-  for every agent run;
+  for every agent run. The secrets-proxy host/port is the endpoint as seen
+  from the run's container, resolved through `Containers::ProxyUrl` from the
+  run's backend and networking policy: `paid-proxy:<port>` for restricted
+  runs on a local backend, `web:<port>` for unrestricted local runs, and the
+  configured external proxy URL for remote backends;
 - **github** — `github.com` and `api.github.com` for repo checkout and PR
   operations, for every agent run;
 - **runner provider** — subscription provider hosts (Anthropic, OpenAI,
-  Google, GitHub Copilot) or the configured direct-outbound API provider host,
-  only when the run's network mode is `subscription_auth` or
-  `direct_outbound`.
+  Google, GitHub Copilot), the fixed OpenRouter host for the
+  `openrouter_free`/`openrouter_pareto` runners, or the configured
+  direct-outbound API provider host, only when the run's network mode is
+  `subscription_auth` or `direct_outbound`.
 
 ## Resolution
 
@@ -86,7 +91,9 @@ raises `DeniedPolicyError` before any provisioning runs.
 The resolved `AgentRuns::EgressPolicy::Snapshot` (mode, `egress_profile`
 defaulting to `locked`, destinations, required destinations, `denied_reason`,
 `resolved_at`) is persisted to `agent_runs.external_metadata["egress_policy"]`
-by `ProvisionContainerActivity` before provisioning starts, so a failed
+by `ProvisionContainerActivity` before provisioning starts — threading the
+planned container host into resolution so the secrets-proxy destination
+matches the backend that will actually provision the run — so a failed
 provision still leaves the intended policy auditable. Enforcement wiring into
 `NetworkingPolicy#allow_destinations` (RDR-055 step 4) will consume this
 snapshot.

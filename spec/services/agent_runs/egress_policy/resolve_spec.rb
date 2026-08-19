@@ -60,6 +60,59 @@ RSpec.describe AgentRuns::EgressPolicy::Resolve do
     end
   end
 
+  describe "secrets proxy destination" do
+    let(:proxy_port) { Rails.application.config.x.paid_proxy_port }
+
+    def secrets_proxy_destination(snapshot)
+      snapshot.required_destinations.find { |destination| destination["reason"] == "secrets_proxy" }
+    end
+
+    it "records the restricted-local paid-proxy host for proxy-restricted runs" do
+      proxy = secrets_proxy_destination(resolve)
+
+      expect(proxy).to include("host" => "paid-proxy", "port" => proxy_port, "source" => "platform")
+    end
+
+    it "records the web host for unrestricted runs on a local backend" do
+      proxy = secrets_proxy_destination(resolve(policy: ExecutionRunners::NetworkingPolicy.subscription_auth))
+
+      expect(proxy).to include("host" => "web", "port" => proxy_port)
+    end
+
+    it "records the external proxy URL host and port for remote backends" do
+      remote_backend = instance_double(Containers::Backends::Base, remote?: true, identifier: "remote-worker-1")
+      Containers::Backends::Resolver.register("remote-worker-1", -> { remote_backend })
+      ENV["PAID_PROXY_EXTERNAL_URL"] = "https://proxy.example.test:3443"
+
+      proxy = secrets_proxy_destination(resolve(container_host: "remote-worker-1"))
+
+      expect(proxy).to include("host" => "proxy.example.test", "port" => 3443)
+    ensure
+      Containers::Backends::Resolver.reset!("remote-worker-1")
+      ENV.delete("PAID_PROXY_EXTERNAL_URL")
+    end
+
+    it "falls back to the run's persisted container_host when no planned host is given" do
+      remote_backend = instance_double(Containers::Backends::Base, remote?: true, identifier: "remote-worker-1")
+      Containers::Backends::Resolver.register("remote-worker-1", -> { remote_backend })
+      agent_run.update!(container_host: "remote-worker-1")
+      ENV["PAID_PROXY_EXTERNAL_URL"] = "https://proxy.example.test:3443"
+
+      proxy = secrets_proxy_destination(resolve)
+
+      expect(proxy).to include("host" => "proxy.example.test", "port" => 3443)
+    ensure
+      Containers::Backends::Resolver.reset!("remote-worker-1")
+      ENV.delete("PAID_PROXY_EXTERNAL_URL")
+    end
+
+    it "still honors an explicit platform_destinations override" do
+      snapshot = resolve(platform_destinations: [ { "host" => "custom-proxy", "port" => 9999, "source" => "platform", "reason" => "secrets_proxy" } ])
+
+      expect(secrets_proxy_destination(snapshot)).to include("host" => "custom-proxy", "port" => 9999)
+    end
+  end
+
   describe "tenant allowlist merge" do
     it "includes enabled account-wide entries (account inheritance)" do
       entry = create(:egress_allowlist_entry, account: account, host_pattern: "api.partner.com", port: 443)
