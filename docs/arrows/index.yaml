@@ -200,6 +200,14 @@ arrows:
     taxonomy: runtime
     status: OK
     audited: 2026-08-04
+  container-egress-allowlisting:
+    title: Container Egress Allowlisting
+    path: docs/intent/container-egress-allowlisting/container-egress-allowlisting-design.md
+    specs: docs/intent/container-egress-allowlisting/container-egress-allowlisting-specs.md
+    parent: PAID
+    taxonomy: security
+    status: OK
+    audited: 2026-08-19
   github-sync-and-auth:
     title: GitHub Sync and Auth
     path: docs/intent/github-sync-and-auth/github-sync-and-auth-design.md

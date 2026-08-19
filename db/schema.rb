@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_17_153542) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_19_003626) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -998,6 +998,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_17_153542) do
     t.index ["account_id", "fallback_eligible"], name: "index_docker_hosts_on_account_id_and_fallback_eligible"
     t.index ["account_id", "identifier"], name: "index_docker_hosts_on_account_id_and_identifier", unique: true
     t.index ["account_id"], name: "index_docker_hosts_on_account_id"
+  end
+
+  create_table "egress_allowlist_entries", comment: "Tenant-managed egress allowlist entries resolved into per-run egress policy snapshots (RDR-055).", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Owning account. Entries with a null project_id apply account-wide."
+    t.datetime "created_at", null: false
+    t.bigint "created_by_id", comment: "User who created the entry, for audit."
+    t.boolean "enabled", default: true, null: false, comment: "Disabled entries are skipped by policy resolution without deleting the rule."
+    t.string "host_pattern", limit: 253, null: false, comment: "Exact public hostname or leading-wildcard subdomain pattern (*.api.example.com)."
+    t.integer "port", comment: "Optional destination port (1-65535). Blank means any allowed port for the host."
+    t.bigint "project_id", comment: "Optional project scope. Project entries extend, never replace, account entries."
+    t.text "reason", comment: "Human-readable justification recorded in the run's policy snapshot provenance."
+    t.string "scheme", comment: "Optional scheme restriction: http or https."
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "project_id"], name: "index_egress_allowlist_entries_on_account_id_and_project_id", comment: "Account/project scope lookup used by per-run egress policy resolution."
+    t.index ["account_id"], name: "index_egress_allowlist_entries_on_account_id"
+    t.index ["created_by_id"], name: "index_egress_allowlist_entries_on_created_by_id"
+    t.index ["project_id"], name: "index_egress_allowlist_entries_on_project_id"
   end
 
   create_table "exception_incidents", force: :cascade do |t|
@@ -3054,6 +3071,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_17_153542) do
   add_foreign_key "dispatch_circuit_breakers", "accounts"
   add_foreign_key "dispatch_circuit_breakers", "agent_runs", column: "last_probe_run_id", on_delete: :nullify, validate: false
   add_foreign_key "docker_hosts", "accounts"
+  add_foreign_key "egress_allowlist_entries", "accounts", on_delete: :cascade
+  add_foreign_key "egress_allowlist_entries", "projects", on_delete: :cascade
+  add_foreign_key "egress_allowlist_entries", "users", column: "created_by_id", on_delete: :nullify
   add_foreign_key "exception_incidents", "accounts"
   add_foreign_key "exception_incidents", "projects"
   add_foreign_key "external_connector_events", "accounts"

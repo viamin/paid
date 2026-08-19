@@ -50,6 +50,48 @@ RSpec.describe Activities::ProvisionContainerActivity do
       }.to raise_error(ActiveRecord::RecordNotFound)
     end
 
+    # @spec EGRESS-POLICY-006
+    it "snapshots the resolved egress policy on the run before provisioning" do
+      activity.execute(agent_run_id: agent_run.id)
+
+      snapshot = AgentRuns::EgressPolicy::Snapshot.from_record(agent_run.reload)
+      derived_mode = Containers::Provision.networking_policy_for(agent_run: agent_run, project: project).mode.to_s
+      expect(snapshot).not_to be_nil
+      expect(snapshot.mode).to eq(derived_mode)
+      expect(snapshot.destinations.map { |destination| destination["host"] }).to include("egress-gateway", "paid-proxy")
+    end
+
+    # @spec EGRESS-POLICY-006
+    it "keeps the egress policy snapshot auditable when provisioning fails" do
+      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+      allow(agent_run).to receive(:ensure_proxy_token!).and_return("token")
+      allow(agent_run).to receive(:provision_container)
+        .and_raise(Containers::Provision::ProvisionError, "provision exploded")
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Containers::Provision::ProvisionError)
+
+      expect(AgentRuns::EgressPolicy::Snapshot.from_record(agent_run.reload)).not_to be_nil
+    end
+
+    # @spec EGRESS-POLICY-005
+    it "fails closed before provisioning when an unsafe allowlist entry is rejected" do
+      entry = create(:egress_allowlist_entry, account: project.account, host_pattern: "api.partner.com")
+      entry.update_columns(host_pattern: "*") # bypass write-time validation
+
+      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+      allow(agent_run).to receive(:ensure_proxy_token!).and_return("token")
+      expect(agent_run).not_to receive(:provision_container)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(AgentRuns::EgressPolicy::Resolve::DeniedPolicyError, /wildcard/)
+
+      snapshot = AgentRuns::EgressPolicy::Snapshot.from_record(agent_run.reload)
+      expect(snapshot).to be_denied
+    end
+
     it "does not create a second container when retried against a live container" do
       run = create(:agent_run, project: project, worktree_path: worktree_path, container_id: "existing-container")
       existing = instance_double(

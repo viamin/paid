@@ -214,6 +214,7 @@ class Project < ApplicationRecord
   has_many :knowledge_chunks, through: :knowledge_artifacts
   has_many :project_service_containers, dependent: :destroy
   has_many :service_containers, through: :project_service_containers
+  has_many :egress_allowlist_entries, dependent: :destroy
   has_many :decision_records, dependent: :destroy
   has_many :change_intents, dependent: :destroy
   has_many :orchestration_decisions, dependent: :destroy

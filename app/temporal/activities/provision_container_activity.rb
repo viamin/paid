@@ -44,6 +44,11 @@ module Activities
       agent_run = AgentRun.find(agent_run_id)
       track_phase(agent_run_id: agent_run_id, phase_key: "provision_container", phase_group: "setup", agent_run: agent_run) do
         agent_run.ensure_proxy_token!
+        # RDR-055: resolve and snapshot the egress policy before any
+        # provisioning work so failed provisions remain auditable, and fail
+        # closed when unsafe tenant entries were rejected.
+        # @spec EGRESS-POLICY-006
+        AgentRuns::EgressPolicy::Resolve.resolve_and_persist!(agent_run)
         provision_with_heartbeat(agent_run, planned_container_host: input[:container_host])
 
         # worktree_path is not yet populated at provision time — git clone
