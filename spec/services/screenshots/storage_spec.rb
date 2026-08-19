@@ -73,6 +73,25 @@ RSpec.describe Screenshots::Storage, :no_db do
     end
   end
 
+  # @spec CONTAINER-RUNTIME-018
+  # The durable output manifest only honors trusted-lane locator keys under
+  # this namespace, so every key builder must stay rooted at it.
+  describe ".namespace_prefix" do
+    it "scopes every artifact key under the org/repo namespace" do
+      prefix = described_class.namespace_prefix(org: "acme", repo: "web")
+
+      expect(prefix).to eq("screenshots/acme/web/")
+      expect(storage.object_key(org: "acme", repo: "web", pr_number: 42, commit_sha: "abc1234", route_name: "home"))
+        .to start_with(prefix)
+      expect(storage.artifact_key(org: "acme", repo: "web", pr_number: 42, commit_sha: "abc1234", route_name: "home", extension: ".gif"))
+        .to start_with(prefix)
+      expect(storage.trace_object_key(org: "acme", repo: "web", pr_number: 42, commit_sha: "abc1234"))
+        .to start_with(prefix)
+      expect(storage.video_object_key(org: "acme", repo: "web", pr_number: 42, commit_sha: "abc1234"))
+        .to start_with(prefix)
+    end
+  end
+
   describe "#trace_object_key" do
     it "builds the trace S3 key path" do
       expect(storage.trace_object_key(org: "acme", repo: "web", pr_number: 42, commit_sha: "abc1234"))

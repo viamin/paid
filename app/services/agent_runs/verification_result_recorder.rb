@@ -78,10 +78,33 @@ module AgentRuns
       Array(value).filter_map do |artifact|
         next unless artifact.is_a?(Hash)
 
-        normalized = artifact.deep_stringify_keys.slice("kind", "path", "url", "note")
+        normalized = artifact.deep_stringify_keys.slice(
+          "lane",
+          "kind",
+          "path",
+          "url",
+          "storage_key",
+          "content_type",
+          "note"
+        )
+        normalized["locator"] = normalize_nested_hash(artifact["locator"], allowed_keys: %w[key url])
+        normalized["context"] = normalize_nested_hash(artifact["context"], allowed_keys: %w[account_id project_id agent_run_id])
+        normalized["metadata"] = normalize_metadata_hash(artifact["metadata"])
         normalized.compact!
         normalized.presence
       end.first(10)
+    end
+
+    def normalize_nested_hash(value, allowed_keys:)
+      return unless value.is_a?(Hash)
+
+      value.deep_stringify_keys.slice(*allowed_keys).presence
+    end
+
+    def normalize_metadata_hash(value)
+      return unless value.is_a?(Hash)
+
+      ExecutionRunners.json_value(value.deep_stringify_keys).presence
     end
 
     def invalid_json_result(error)

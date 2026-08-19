@@ -58,6 +58,18 @@ module Screenshots
       ".webm" => WEBM_CONTENT_TYPE
     }.freeze
 
+    # The S3 key namespace every artifact key builder below writes under.
+    # The durable output manifest's trusted lane
+    # (`ExecutionRunners::ExecutionOutputManifest`) only honors persisted
+    # locator keys under this prefix for the run's own project, so a key
+    # planted under another tenant's namespace can never be re-signed into a
+    # working presigned URL.
+    # @spec CONTAINER-RUNTIME-018
+    # @return [String]
+    def self.namespace_prefix(org:, repo:)
+      "screenshots/#{org}/#{repo}/"
+    end
+
     def initialize(bucket: nil, region: nil, url_ttl: nil)
       @artifact_storage = ArtifactStorage.new(bucket: bucket, region: region, url_ttl: url_ttl)
     end
@@ -292,7 +304,7 @@ module Screenshots
     #
     # @return [String]
     def object_key(org:, repo:, pr_number:, commit_sha:, route_name:)
-      "screenshots/#{org}/#{repo}/pr-#{pr_number}/#{commit_sha}/#{route_name}.png"
+      "#{namespace_prefix(org:, repo:)}pr-#{pr_number}/#{commit_sha}/#{route_name}.png"
     end
 
     # Builds the S3 object key for a trace-derived artifact (PNG/GIF/WebM).
@@ -300,18 +312,22 @@ module Screenshots
     # @param extension [String] File extension including leading dot
     # @return [String]
     def artifact_key(org:, repo:, pr_number:, commit_sha:, route_name:, extension:)
-      "screenshots/#{org}/#{repo}/pr-#{pr_number}/#{commit_sha}/#{route_name}#{extension}"
+      "#{namespace_prefix(org:, repo:)}pr-#{pr_number}/#{commit_sha}/#{route_name}#{extension}"
     end
 
     def trace_object_key(org:, repo:, pr_number:, commit_sha:)
-      "screenshots/#{org}/#{repo}/pr-#{pr_number}/#{commit_sha}/trace.zip"
+      "#{namespace_prefix(org:, repo:)}pr-#{pr_number}/#{commit_sha}/trace.zip"
     end
 
     def video_object_key(org:, repo:, pr_number:, commit_sha:)
-      "screenshots/#{org}/#{repo}/pr-#{pr_number}/#{commit_sha}/capture.webm"
+      "#{namespace_prefix(org:, repo:)}pr-#{pr_number}/#{commit_sha}/capture.webm"
     end
 
     private
+
+    def namespace_prefix(org:, repo:)
+      self.class.namespace_prefix(org:, repo:)
+    end
 
     def put_object(file_path:, key:, content_type:)
       File.open(file_path, "rb") do |file|
