@@ -1345,6 +1345,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_18_163318) do
     t.bigint "parent_issue_id"
     t.boolean "paused", default: false, null: false, comment: "When true, mirrors the paid-paused GitHub label and excludes the issue from auto-pick. PR review/escalation automation is not yet gated by this flag."
     t.datetime "paused_at", comment: "Sync epoch: records when the pause state last transitioned (from UI or GitHub) to resolve bidirectional sync ordering."
+    t.datetime "pr_auto_continue_token_limit_overridden_at", comment: "When set, owner dismissed a PR token-cap escalation and allowed this PR to exceed the automatic PR token cap."
     t.string "pr_escalation_reason", comment: "Machine-readable cause for the current PR escalation so only operational outages can auto-dismiss."
     t.integer "pr_followup_count", default: 0, null: false
     t.string "pr_review_phase", default: "draft", null: false
@@ -2061,6 +2062,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_18_163318) do
     t.integer "max_enhance_issue_reevaluation_rounds", default: 3, null: false
     t.integer "max_execution_seconds", default: 7200, null: false
     t.integer "max_issue_runner_failures", comment: "Per-project override for the per-issue per-provider retry cap. When nil, the account-level agent setting (default 10) applies. After a provider fails this many times for a single issue it is excluded from scheduling for that issue."
+    t.integer "max_pr_auto_continue_tokens", default: 50000000, null: false, comment: "Maximum recorded tokens automatic PR automation may spend on one pull request before escalation pauses follow-ups."
     t.integer "max_pr_followup_runs", default: 8, null: false
     t.integer "max_tokens_per_run"
     t.string "merge_method", default: "squash", null: false

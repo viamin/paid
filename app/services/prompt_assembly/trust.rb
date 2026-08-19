@@ -30,6 +30,17 @@ module PromptAssembly
       project.trusted_github_user?(login)
     end
 
+    # Whether a PR review-thread author is prompt-eligible. Review threads can
+    # report GitHub App authors as the bare app slug, so use the project's
+    # enabled review-bot login set in addition to the human allowlist.
+    def review_thread_author_trusted?(project, login)
+      return false if login.blank?
+
+      human_trusted?(project, login) ||
+        project.respond_to?(:enabled_review_bot_logins) &&
+          project.enabled_review_bot_logins.include?(login.to_s.downcase)
+    end
+
     # Whether +login+ is Paid's own GitHub App bot identity.
     def paid_bot?(project, login)
       project.paid_bot_author?(login)
