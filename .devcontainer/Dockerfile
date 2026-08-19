@@ -32,7 +32,7 @@ RUN set -e; \
   && . /etc/os-release \
   && printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nArchitectures: %s\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' "$VERSION_CODENAME" "$(dpkg --print-architecture)" > /etc/apt/sources.list.d/pgdg.sources \
   && apt-get update -qq \
-  && apt-get install -y build-essential cmake python3-pip shellcheck tmux libpq-dev postgresql-client-16=16.14-1.pgdg12+1 \
+  && apt-get install -y build-essential cmake python3-pip shellcheck tmux libpq-dev postgresql-client-16=16.15-1.pgdg12+2 \
   && rm -rf /var/lib/apt/lists/*
 
 # Install chromium separately for better layer caching (updates more frequently)
@@ -47,12 +47,12 @@ RUN corepack enable && corepack prepare yarn@1.22.22 --activate
 # Keep this inline instead of COPYing a repo script: the devcontainer image is
 # often rebuilt from a minimal or noisy workspace context, and BuildKit has
 # intermittently failed to resolve bin/install-ast-grep from that context.
-ARG AST_GREP_VERSION=0.45.0
+ARG AST_GREP_VERSION=0.45.1
 RUN set -eu; \
   arch="$(dpkg --print-architecture)"; \
   case "$arch" in \
-    amd64) rust_triple="x86_64-unknown-linux-gnu"; checksum="78931ae35ebac33d9a72b3aecea3e3d62d6e5b0b718ac8bbedfbe69d68421e41" ;; \
-    arm64) rust_triple="aarch64-unknown-linux-gnu"; checksum="62b60892dafacfa76d6de87157659f880bbf85ff38bdab52db12f1f14ec60f94" ;; \
+    amd64) rust_triple="x86_64-unknown-linux-gnu"; checksum="76fb6555be6734fb5057dba8d2fb756430f374bb9e1af694cf1ce00e13238d63" ;; \
+    arm64) rust_triple="aarch64-unknown-linux-gnu"; checksum="9ee7ec49aada3dc05135d21977af089a33fc3154ada25bab102daca90b5098f2" ;; \
     *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
   esac; \
   zipfile="app-${rust_triple}.zip"; \
@@ -103,12 +103,12 @@ RUN set -eu; \
 # rtk intercepts shell commands from AI agents and compresses the output 60-90%,
 # reducing context window consumption.
 # https://github.com/rtk-ai/rtk/releases
-ARG RTK_VERSION=0.43.0
+ARG RTK_VERSION=0.45.0
 RUN set -eu; \
   arch="$(dpkg --print-architecture)"; \
   case "$arch" in \
-    amd64) asset="rtk-x86_64-unknown-linux-musl.tar.gz"; checksum="ff8a1e7766496e175291a85aeca1dc97c9ff6df33e51e5893d1fbc78fea2a609" ;; \
-    arm64) asset="rtk-aarch64-unknown-linux-gnu.tar.gz"; checksum="5519f7ca12e5c143a609f0d28a0a77b97413a8dce31c2681f1a41c24519a8731" ;; \
+    amd64) asset="rtk-x86_64-unknown-linux-musl.tar.gz"; checksum="c4c036fbf181fc55ef329786c8c17e0d427972b053b825944d968a6aafef1ba4" ;; \
+    arm64) asset="rtk-aarch64-unknown-linux-gnu.tar.gz"; checksum="80a746dd305ef944ff50ef011ae4ce3878dd5ba88dfe35d859d05498191637c3" ;; \
     *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
   esac; \
   tmpdir="$(mktemp -d)"; \

@@ -90,7 +90,7 @@ RUN install -d /usr/share/postgresql-common/pgdg \
 # Keep client tools on the exact Postgres version shipped by the pinned server image.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
-    postgresql-client-16=16.14-1.pgdg24.04+1 \
+    postgresql-client-16=16.15-1.pgdg24.04+2 \
     shellcheck \
     python3 \
     python3-pip \
@@ -172,11 +172,11 @@ RUN mkdir -p "$COREPACK_HOME" \
 
 # Install ast-grep (AST-based code search/lint)
 # https://github.com/ast-grep/ast-grep/releases
-RUN AST_GREP_VERSION=0.45.0 \
+RUN AST_GREP_VERSION=0.45.1 \
     && DEB_ARCH="$(dpkg --print-architecture)" \
     && case "$DEB_ARCH" in \
-        amd64) RUST_TRIPLE="x86_64-unknown-linux-gnu"; EXPECTED_CHECKSUM="78931ae35ebac33d9a72b3aecea3e3d62d6e5b0b718ac8bbedfbe69d68421e41" ;; \
-        arm64) RUST_TRIPLE="aarch64-unknown-linux-gnu"; EXPECTED_CHECKSUM="62b60892dafacfa76d6de87157659f880bbf85ff38bdab52db12f1f14ec60f94" ;; \
+        amd64) RUST_TRIPLE="x86_64-unknown-linux-gnu"; EXPECTED_CHECKSUM="76fb6555be6734fb5057dba8d2fb756430f374bb9e1af694cf1ce00e13238d63" ;; \
+        arm64) RUST_TRIPLE="aarch64-unknown-linux-gnu"; EXPECTED_CHECKSUM="9ee7ec49aada3dc05135d21977af089a33fc3154ada25bab102daca90b5098f2" ;; \
         *) echo "Unsupported architecture: $DEB_ARCH" >&2; exit 1 ;; \
     esac \
     && ZIPFILE="app-${RUST_TRIPLE}.zip" \
@@ -221,11 +221,11 @@ RUN RATHOLE_VERSION=0.5.0 \
 # rtk intercepts shell commands from AI agents and compresses the output 60-90%,
 # reducing context window consumption.
 # https://github.com/rtk-ai/rtk/releases
-RUN RTK_VERSION=0.43.0 \
+RUN RTK_VERSION=0.45.0 \
     && DEB_ARCH="$(dpkg --print-architecture)" \
     && case "$DEB_ARCH" in \
-        amd64) RTK_ASSET="rtk-x86_64-unknown-linux-musl.tar.gz"; EXPECTED_CHECKSUM="ff8a1e7766496e175291a85aeca1dc97c9ff6df33e51e5893d1fbc78fea2a609" ;; \
-        arm64) RTK_ASSET="rtk-aarch64-unknown-linux-gnu.tar.gz"; EXPECTED_CHECKSUM="5519f7ca12e5c143a609f0d28a0a77b97413a8dce31c2681f1a41c24519a8731" ;; \
+        amd64) RTK_ASSET="rtk-x86_64-unknown-linux-musl.tar.gz"; EXPECTED_CHECKSUM="c4c036fbf181fc55ef329786c8c17e0d427972b053b825944d968a6aafef1ba4" ;; \
+        arm64) RTK_ASSET="rtk-aarch64-unknown-linux-gnu.tar.gz"; EXPECTED_CHECKSUM="80a746dd305ef944ff50ef011ae4ce3878dd5ba88dfe35d859d05498191637c3" ;; \
         *) echo "Unsupported architecture: $DEB_ARCH" >&2; exit 1 ;; \
     esac \
     && TARBALL="${RTK_ASSET}" \

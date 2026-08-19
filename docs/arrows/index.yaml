@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-08-07
+last_updated: 2026-08-19
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -66,6 +66,14 @@ arrows:
     specs: docs/intent/chat-pr-proposal/chat-pr-proposal-specs.md
     parent: PAID
     taxonomy: chat
+  toolchain-pin-management:
+    title: Toolchain Pin Management
+    path: docs/intent/toolchain-pin-management/toolchain-pin-management-design.md
+    specs: docs/intent/toolchain-pin-management/toolchain-pin-management-specs.md
+    parent: PAID
+    taxonomy: security
+    status: OK
+    audited: 2026-08-19
   repo-secret-scan:
     title: Repo Secret Scan
     path: docs/intent/repo-secret-scan/repo-secret-scan-design.md

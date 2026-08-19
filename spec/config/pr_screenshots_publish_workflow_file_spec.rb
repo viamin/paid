@@ -7,12 +7,21 @@ class PrScreenshotsPublishWorkflowFile < Pathname
 end
 
 RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
+  # Derived from docker-compose.yml so a PostgreSQL bump does not require a spec
+  # edit; see spec/config/toolchain_pins_spec.rb for the group-wide guard.
+  #
+  # @spec TOOLCHAIN-PIN-020
   subject(:workflow) do
     Psych.safe_load_file(
       Rails.root.join(".github/workflows/pr-screenshots-publish.yml"),
       aliases: true
     )
   end
+
+  let(:pinned_postgres_version) do
+    Rails.root.join("docker-compose.yml").read[/image:\s*postgres:(\S+)/, 1]
+  end
+
 
   def job
     workflow.fetch("jobs").fetch("publish")
@@ -61,7 +70,7 @@ RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
   it "boots Rails in test mode against the workflow postgres service before publishing" do
     expect(job).to include("runs-on" => "ubuntu-24.04")
     expect(job.fetch("services").fetch("postgres")).to include(
-      "image" => "postgres:16.14",
+      "image" => "postgres:#{pinned_postgres_version}",
       "ports" => [ "5432:5432" ]
     )
 

@@ -101,7 +101,7 @@ jobs:
       postgres:
         # Use the Docker Official Images ECR Public mirror to avoid Docker Hub
         # pull timeouts during service initialization on GitHub-hosted runners.
-        image: public.ecr.aws/docker/library/postgres:16.14
+        image: public.ecr.aws/docker/library/postgres:16.15
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres

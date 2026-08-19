@@ -14,6 +14,11 @@ RSpec.describe PrScreenshotsWorkflowFile, :no_db do
     )
   end
 
+  let(:pinned_postgres_version) do
+    Rails.root.join("docker-compose.yml").read[/image:\s*postgres:(\S+)/, 1]
+  end
+
+
   def capture_steps
     workflow.fetch("jobs").fetch("capture").fetch("steps")
   end
@@ -64,9 +69,15 @@ RSpec.describe PrScreenshotsWorkflowFile, :no_db do
     )
   end
 
+  # The version is derived from docker-compose.yml rather than hardcoded: it is
+  # the source the CI consistency check treats as canonical, and bin/update moves
+  # every pin in that group together. Hardcoding it here would turn each
+  # PostgreSQL bump into a spec edit while asserting nothing extra.
+  #
+  # @spec TOOLCHAIN-PIN-020
   it "pulls Postgres from the ECR Public mirror to avoid Docker Hub init failures" do
     expect(workflow.fetch("jobs").fetch("capture").fetch("services").fetch("postgres")).to include(
-      "image" => "public.ecr.aws/docker/library/postgres:16.14"
+      "image" => "public.ecr.aws/docker/library/postgres:#{pinned_postgres_version}"
     )
   end
 
