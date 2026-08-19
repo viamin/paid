@@ -122,11 +122,13 @@ module AgentRuns
         end
       end
 
+      # A malformed base_url in the frozen, code-owned
+      # DIRECT_OUTBOUND_API_PROVIDERS registry is a code bug: raise at
+      # resolution instead of silently dropping a required destination from
+      # every affected run's snapshot.
       def base_url_host(provider_key)
         config = Runner::DIRECT_OUTBOUND_API_PROVIDERS.fetch(provider_key, nil)
         config && URI.parse(config.fetch(:base_url)).host
-      rescue URI::InvalidURIError
-        nil
       end
 
       def default_proxy_port

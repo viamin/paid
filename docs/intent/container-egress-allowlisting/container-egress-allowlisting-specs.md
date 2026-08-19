@@ -25,7 +25,10 @@
   openrouter_pareto → OpenRouter) or its configured direct-outbound API
   provider, and every container-executable runner key SHALL be classified
   (fixed-host, config-derived, or explicitly proxy-only) so direct-egress
-  runner traffic never silently drops out of the registry.
+  runner traffic never silently drops out of the registry. Registry drift
+  (a pi/omp provider key with no mapped host, or a malformed
+  direct-outbound `base_url`) SHALL raise at resolution rather than
+  silently omitting required destinations from the snapshot.
   *Tests:* `spec/services/agent_runs/egress_policy/required_destinations_spec.rb`
   *Code:* `AgentRuns::EgressPolicy::RequiredDestinations`
 

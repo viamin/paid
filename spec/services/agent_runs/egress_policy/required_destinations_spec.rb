@@ -65,6 +65,16 @@ RSpec.describe AgentRuns::EgressPolicy::RequiredDestinations do
       expect(hosts).to contain_exactly("api.anthropic.com")
     end
 
+    it "raises on a malformed registry base_url instead of silently dropping the destination" do
+      runner = build(:runner, runner_key: "opencode", config: { "opencode" => { "api_provider" => "anthropic" } })
+      malformed = Runner::DIRECT_OUTBOUND_API_PROVIDERS.deep_dup
+      malformed["anthropic"] = malformed["anthropic"].merge(base_url: "not a url")
+      stub_const("Runner::DIRECT_OUTBOUND_API_PROVIDERS", malformed)
+
+      expect { described_class.provider(runner: runner) }
+        .to raise_error(URI::InvalidURIError, /not a url/)
+    end
+
     it "derives the configured API provider host for pi/omp runners, including google" do
       pi_runner = build(:runner, runner_key: "pi", config: { "pi" => { "api_provider" => "google" } })
       omp_runner = build(:runner, runner_key: "omp", config: { "omp" => { "api_provider" => "google" } })
