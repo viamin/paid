@@ -2,35 +2,25 @@
 # frozen_string_literal: true
 
 require "json"
-require "net/http"
+require "open3"
 require "pathname"
 require "time"
-require "uri"
 
 APP_ROOT = Pathname(__dir__).join("..").expand_path
-AGENT_DOCKERFILE_PATH = APP_ROOT.join("docker/agent/Dockerfile")
-DEVCONTAINER_DOCKERFILE_PATH = APP_ROOT.join(".devcontainer/Dockerfile")
-INSTALL_AST_GREP_PATH = APP_ROOT.join("bin/install-ast-grep")
+
+require_relative "../scripts/lib/agent_contract_versions"
+require_relative "../scripts/lib/package_quarantine"
+require_relative "../scripts/lib/toolchain_pins"
+require_relative "../scripts/lib/upstream_registries"
+
 PACKAGE_JSON_PATH = APP_ROOT.join("package.json")
+GEMFILE_PATH = APP_ROOT.join("Gemfile")
 GEMFILE_LOCK_PATH = APP_ROOT.join("Gemfile.lock")
 YARN_LOCK_PATH = APP_ROOT.join("yarn.lock")
 CLAUDE_MD_PATH = APP_ROOT.join("CLAUDE.md")
-
-YARN_PATTERNS = {
-  AGENT_DOCKERFILE_PATH => /^(\s*&& corepack prepare yarn@)([^\s]+)( --activate\s*)$/,
-  DEVCONTAINER_DOCKERFILE_PATH => /^(RUN corepack enable && corepack prepare yarn@)([^\s]+)( --activate\s*)$/
-}.freeze
-
-BINARY_RELEASES = {
-  "ast-grep" => {
-    repo: "ast-grep/ast-grep",
-    strip_leading_v: false
-  },
-  "scc" => {
-    repo: "boyter/scc",
-    strip_leading_v: true
-  }
-}.freeze
+INSTALL_AST_GREP_PATH = APP_ROOT.join("bin/install-ast-grep")
+TOOL_VERSIONS_PATH = APP_ROOT.join(ToolchainPins::TOOL_VERSIONS_FILE)
+OH_MY_PI_INSTALLER_PATH = APP_ROOT.join(ToolchainPins::OH_MY_PI_INSTALLER)
 
 # Vendored LID reference (docs/lid/ + bin/coherence-check.mjs). bin/update
 # reports drift against upstream but does NOT auto-apply — re-syncing requires
@@ -45,103 +35,62 @@ LID_PLUGIN_VERSION_URL =
 # bin/update will adopt it. This quarantine period reduces exposure to supply
 # chain attacks that are typically detected and yanked within hours.
 # Override with MIN_PACKAGE_AGE_HOURS env var. Skip entirely with --skip-age-check.
+#
+# @spec TOOLCHAIN-PIN-050
 MIN_PACKAGE_AGE_HOURS = Integer(ENV.fetch("MIN_PACKAGE_AGE_HOURS", 72))
+
+# Collects everything a run changed or deliberately did not change, so a
+# check-only run is a complete answer and needs no second manual sweep.
+#
+# @spec TOOLCHAIN-PIN-051
+class Report
+  attr_reader :updates, :held_back, :notices
+
+  def initialize
+    @updates = []
+    @held_back = []
+    @notices = []
+  end
+
+  def updated(entries) = @updates.concat(Array(entries))
+  def hold(reason) = @held_back << reason
+  def notice(message) = @notices << message
+end
+
+REPORT = Report.new
 
 def system!(*args)
   system(*args, exception: true)
 end
 
-def fetch_json(uri_string, headers: {})
-  uri = URI(uri_string)
-  request = Net::HTTP::Get.new(uri)
-  headers.each { |key, value| request[key] = value }
-
-  response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true, open_timeout: 10, read_timeout: 15) do |http|
-    http.request(request)
-  end
-  raise "Failed to fetch #{uri}: #{response.code}" unless response.is_a?(Net::HTTPSuccess)
-
-  JSON.parse(response.body)
+# Bundler's own cooldown defaults to unset, so `bundle update` would otherwise
+# resolve to a gem published minutes ago — the exact exposure the quarantine
+# exists to prevent. Passing it explicitly turns the age check from a report
+# issued after the lockfile was already rewritten into a constraint the
+# resolver honours while rewriting it.
+#
+# Cooldown filtering depends on the gem server publishing a per-version
+# created_at, and versions lacking it stay resolvable, so check_lockfile_ages
+# remains a backstop rather than becoming redundant.
+#
+# @spec TOOLCHAIN-PIN-052
+def bundler_cooldown_args
+  [ "--cooldown", $quarantine.cooldown_days.to_s ]
 end
 
-def fetch_npm_registry(package_name)
-  @npm_registry_cache ||= {}
-  @npm_registry_cache[package_name] ||= begin
-    escaped = package_name.gsub("/", "%2F")
-    fetch_json("https://registry.npmjs.org/#{escaped}")
-  end
+def relative(path)
+  Pathname(path).absolute? ? Pathname(path).relative_path_from(APP_ROOT).to_s : path.to_s
 end
 
-def fetch_npm_version_info(package_name)
-  data = fetch_npm_registry(package_name)
-  latest = data.dig("dist-tags", "latest")
-  published_at = Time.parse(data.dig("time", latest))
-  [ latest, published_at ]
-end
+# A release inside the quarantine window is reported and skipped, never applied.
+#
+# @spec TOOLCHAIN-PIN-050
+def quarantined?(label, version, published_at)
+  reason = $quarantine.hold_reason(label, version, published_at)
+  return false if reason.nil?
 
-def fetch_github_release(package_name)
-  @github_release_cache ||= {}
-  @github_release_cache[package_name] ||= begin
-    repo = BINARY_RELEASES.fetch(package_name).fetch(:repo)
-    fetch_json(
-      "https://api.github.com/repos/#{repo}/releases/latest",
-      headers: { "Accept" => "application/vnd.github+json" }
-    )
-  end
-end
-
-def fetch_binary_version_info(package_name)
-  release = fetch_github_release(package_name)
-  version = release.fetch("tag_name")
-  version = version.delete_prefix("v") if BINARY_RELEASES.fetch(package_name).fetch(:strip_leading_v)
-  [ version, Time.parse(release.fetch("published_at")) ]
-end
-
-def fetch_release_asset_digest(package_name, asset_name)
-  release = fetch_github_release(package_name)
-  asset = release.fetch("assets").find { |item| item.fetch("name") == asset_name }
-  raise "Asset #{asset_name} not found in #{package_name} release" unless asset
-
-  digest = asset.fetch("digest")
-  digest.delete_prefix("sha256:")
-end
-
-def fetch_gem_publish_time(gem_name, version)
-  data = fetch_json("https://rubygems.org/api/v2/rubygems/#{gem_name}/versions/#{version}.json")
-  Time.parse(data.fetch("created_at"))
-rescue StandardError
-  nil
-end
-
-def fetch_npm_publish_time(package_name, version)
-  data = fetch_npm_registry(package_name)
-  time_str = data.dig("time", version)
-  time_str ? Time.parse(time_str) : nil
-rescue StandardError
-  nil
-end
-
-def fetch_lid_latest_version
-  fetch_json(LID_PLUGIN_VERSION_URL).fetch("version")
-end
-
-def pinned_lid_version
-  # Read only the `## LID` block so a stray `- Version:` elsewhere in CLAUDE.md
-  # (e.g., a Bundler/tool-config section) can't be mistaken for the LID pin.
-  block = +""
-  in_block = false
-  CLAUDE_MD_PATH.each_line do |line|
-    if line.start_with?("## ")
-      in_block = line.strip == "## LID"
-      next
-    end
-    block << line if in_block
-  end
-  block[/^- Version:\s*(\S+)\s*$/, 1]
-end
-
-def age_hours(published_at)
-  ((Time.now - published_at) / 3600).round(1)
+  REPORT.hold(reason)
+  true
 end
 
 def replace_version(contents, pattern, new_version)
@@ -173,19 +122,148 @@ def plan_file_replacements(path, replacements)
     applied << replacement.fetch(:label) if changed
   end
 
-  {
-    path: path,
-    contents: contents,
-    updates: applied
-  }
+  { path: path, contents: contents, updates: applied }
 end
 
 def apply_planned_updates(planned_updates)
   planned_updates.each do |entry|
     next if entry.fetch(:updates).empty?
 
-    entry.fetch(:path).write(entry.fetch(:contents))
+    entry.fetch(:path).write(entry.fetch(:contents)) unless $check_only
   end
+
+  planned_updates.flat_map { |entry| entry.fetch(:updates) }
+end
+
+# Rewrites every file in a consistency group from one registry declaration, so
+# the group can never be updated in one image and missed in another.
+#
+# @spec TOOLCHAIN-PIN-002
+# @spec TOOLCHAIN-PIN-003
+def plan_group_updates(group, &value_for)
+  group.entries.group_by(&:path).map do |path, entries|
+    plan_file_replacements(
+      APP_ROOT.join(path),
+      entries.map do |entry|
+        {
+          pattern: entry.pattern,
+          value: value_for.call(entry),
+          label: "#{path} #{group.name} #{entry.label}"
+        }
+      end
+    )
+  end
+end
+
+# A registry path that no longer exists means the registry has drifted from the
+# repository. Hold the whole group and say so, rather than aborting the run —
+# one stale entry must not stop every other pin from being checked.
+#
+# @spec TOOLCHAIN-PIN-002
+def registry_drifted?(group)
+  missing = group.missing_paths(APP_ROOT)
+  unmatched = group.unmatched_entries(APP_ROOT).map { |entry| "#{entry.path} (#{entry.label})" }
+  drifted = missing + unmatched
+  return false if drifted.empty?
+
+  puts "  #{group.name} — held: registry no longer matches #{drifted.size} location(s)"
+  REPORT.hold("#{group.name} (registry no longer matches: #{drifted.join(", ")})")
+  REPORT.notice(
+    "scripts/lib/toolchain_pins.rb no longer matches #{drifted.join(", ")}. " \
+    "Reconcile the registry (or restore the file) so the #{group.name} group can update again."
+  )
+  true
+end
+
+# Resolving a checksum the release does not publish costs a full asset download
+# — megabytes on every run, to reconfirm a pin that cannot have moved. Skip it
+# only when nothing could have changed: upstream is on the pinned version and
+# every file in the group already agrees with itself. Where the release does
+# publish a digest the comparison is free and always runs, and the image build
+# verifies the pinned checksum for real either way.
+def unchanged_and_costly_to_reverify?(group, release)
+  return false unless group.current_versions(APP_ROOT).values.uniq == [ release.version ]
+  return false unless group.checksum_entries.any? { |entry| published_digest(group, release, entry.arch).empty? }
+
+  group.current_checksums(APP_ROOT).all? do |arch, values|
+    next false unless values.values.uniq.one?
+
+    published = published_digest(group, release, arch)
+    published.empty? || values.values.first == published
+  end
+end
+
+def published_digest(group, release, arch)
+  release.assets.dig(group.assets[arch], :digest).to_s
+end
+
+def resolve_release(group)
+  source = group.source
+
+  case source.fetch(:type)
+  when :npm
+    UpstreamRegistries.npm(source.fetch(:package))
+  when :github_release
+    UpstreamRegistries.github_release(
+      source.fetch(:repo),
+      strip_leading_v: source.fetch(:strip_leading_v, false)
+    )
+  else
+    raise "Group #{group.name} has no directly resolvable source"
+  end
+end
+
+# @spec TOOLCHAIN-PIN-010
+# @spec TOOLCHAIN-PIN-011
+def update_binary_group(group)
+  return if registry_drifted?(group)
+
+  release = resolve_release(group)
+  current = group.current_version(APP_ROOT)
+
+  if unchanged_and_costly_to_reverify?(group, release)
+    puts "  #{group.name} #{current} — up to date"
+    return
+  end
+
+  # Quarantine governs adopting a *new* version. Repairing a checksum for the
+  # version already pinned adopts nothing, so it must not be gated on it.
+  version_moved = current != release.version
+  if version_moved
+    puts "  #{group.name} #{current} -> #{release.version} available"
+    return if quarantined?(group.name, release.version, release.published_at)
+  end
+
+  planned = plan_group_updates(group) do |entry|
+    if entry.kind == :checksum
+      release.checksum_for(group.assets.fetch(entry.arch))
+    else
+      release.version
+    end
+  end
+
+  planned << plan_package_manager_update(release.version) if group.name == "yarn"
+  if group.name == "ast-grep"
+    planned << plan_install_ast_grep_update(
+      release.version,
+      release.checksum_for(group.assets.fetch(:amd64)),
+      release.checksum_for(group.assets.fetch(:arm64))
+    )
+  end
+
+  applied = apply_planned_updates(planned)
+  REPORT.updated(applied)
+
+  unless version_moved
+    status = if applied.empty?
+      "up to date"
+    else
+      "version current, realigning #{applied.size} drifted pin(s)"
+    end
+    puts "  #{group.name} #{current} — #{status}"
+  end
+rescue StandardError => error
+  raise "Failed to update #{group.name}: #{error.message}"
 end
 
 def plan_package_manager_update(latest_yarn)
@@ -201,87 +279,8 @@ def plan_package_manager_update(latest_yarn)
   }
 end
 
-def usage
-  puts "Usage: bin/update [--lockfiles] [--skip-age-check]"
-  puts "Updates supported pinned tool binaries."
-  puts ""
-  puts "Options:"
-  puts "  --lockfiles       Also update Ruby gems and JavaScript lockfiles"
-  puts "  --skip-age-check  Skip the package age quarantine check"
-  puts ""
-  puts "Environment:"
-  puts "  MIN_PACKAGE_AGE_HOURS  Minimum hours since publish (default: 72)"
-end
-
-def update_yarn(version)
-  planned_updates = [ plan_package_manager_update(version) ]
-
-  YARN_PATTERNS.each do |path, pattern|
-    planned_updates << plan_file_replacements(
-      path,
-      [
-        {
-          pattern: pattern,
-          value: version,
-          label: "#{path.relative_path_from(APP_ROOT)} -> yarn@#{version}"
-        }
-      ]
-    )
-  end
-
-  apply_planned_updates(planned_updates)
-  planned_updates.flat_map { |entry| entry.fetch(:updates) }
-end
-
-def update_ast_grep(version, amd64_checksum, arm64_checksum)
-  planned_updates = [
-    {
-      path: AGENT_DOCKERFILE_PATH,
-      replacements: [
-        {
-          pattern: /^(RUN AST_GREP_VERSION=)([^\s]+)( \\\s*)$/,
-          value: version,
-          label: "#{AGENT_DOCKERFILE_PATH.relative_path_from(APP_ROOT)} AST_GREP_VERSION"
-        },
-        {
-          pattern: /^(\s*amd64\) RUST_TRIPLE="x86_64-unknown-linux-gnu"; EXPECTED_CHECKSUM=")([0-9a-f]+)(".*)$/,
-          value: amd64_checksum,
-          label: "#{AGENT_DOCKERFILE_PATH.relative_path_from(APP_ROOT)} ast-grep amd64 checksum"
-        },
-        {
-          pattern: /^(\s*arm64\) RUST_TRIPLE="aarch64-unknown-linux-gnu"; EXPECTED_CHECKSUM=")([0-9a-f]+)(".*)$/,
-          value: arm64_checksum,
-          label: "#{AGENT_DOCKERFILE_PATH.relative_path_from(APP_ROOT)} ast-grep arm64 checksum"
-        }
-      ]
-    },
-    {
-      path: DEVCONTAINER_DOCKERFILE_PATH,
-      replacements: [
-        {
-          pattern: /^(ARG AST_GREP_VERSION=)([^\s]+)(\s*)$/,
-          value: version,
-          label: "#{DEVCONTAINER_DOCKERFILE_PATH.relative_path_from(APP_ROOT)} AST_GREP_VERSION"
-        },
-        {
-          pattern: /^(\s*amd64\) rust_triple="x86_64-unknown-linux-gnu"; checksum=")([0-9a-f]+)(".*)$/,
-          value: amd64_checksum,
-          label: "#{DEVCONTAINER_DOCKERFILE_PATH.relative_path_from(APP_ROOT)} ast-grep amd64 checksum"
-        },
-        {
-          pattern: /^(\s*arm64\) rust_triple="aarch64-unknown-linux-gnu"; checksum=")([0-9a-f]+)(".*)$/,
-          value: arm64_checksum,
-          label: "#{DEVCONTAINER_DOCKERFILE_PATH.relative_path_from(APP_ROOT)} ast-grep arm64 checksum"
-        }
-      ]
-    }
-  ].map { |entry| plan_file_replacements(entry.fetch(:path), entry.fetch(:replacements)) }
-
-  planned_updates << plan_install_ast_grep_update(version, amd64_checksum, arm64_checksum)
-  apply_planned_updates(planned_updates)
-  planned_updates.flat_map { |entry| entry.fetch(:updates) }
-end
-
+# bin/install-ast-grep keeps a version-keyed checksum table rather than a single
+# pinned pair, so its rewrite retains older entries instead of replacing them.
 def plan_install_ast_grep_update(version, amd64_checksum, arm64_checksum)
   lines = INSTALL_AST_GREP_PATH.readlines
   original = lines.join
@@ -320,74 +319,304 @@ def plan_install_ast_grep_update(version, amd64_checksum, arm64_checksum)
     end
   end
 
-  raise "Failed to update default version in #{INSTALL_AST_GREP_PATH.relative_path_from(APP_ROOT)}" unless default_matched
-  raise "Failed to update amd64 checksum in #{INSTALL_AST_GREP_PATH.relative_path_from(APP_ROOT)}" unless amd64_matched
-  raise "Failed to update arm64 checksum in #{INSTALL_AST_GREP_PATH.relative_path_from(APP_ROOT)}" unless arm64_matched
+  path_label = relative(INSTALL_AST_GREP_PATH)
+  raise "Failed to update default version in #{path_label}" unless default_matched
+  raise "Failed to update amd64 checksum in #{path_label}" unless amd64_matched
+  raise "Failed to update arm64 checksum in #{path_label}" unless arm64_matched
 
   updated = rewritten.join
   updates = if updated == original
     []
   else
     [
-      "#{INSTALL_AST_GREP_PATH.relative_path_from(APP_ROOT)} AST_GREP_VERSION=#{version}",
-      "#{INSTALL_AST_GREP_PATH.relative_path_from(APP_ROOT)} ast-grep amd64 checksum",
-      "#{INSTALL_AST_GREP_PATH.relative_path_from(APP_ROOT)} ast-grep arm64 checksum"
+      "#{path_label} AST_GREP_VERSION=#{version}",
+      "#{path_label} ast-grep amd64 checksum",
+      "#{path_label} ast-grep arm64 checksum"
     ]
   end
 
-  {
-    path: INSTALL_AST_GREP_PATH,
-    contents: updated,
-    updates: updates
-  }
+  { path: INSTALL_AST_GREP_PATH, contents: updated, updates: updates }
 end
 
-def update_scc(version, amd64_checksum, arm64_checksum)
-  planned_updates = [
-    {
-      path: AGENT_DOCKERFILE_PATH,
-      replacements: [
-        {
-          pattern: /^(RUN SCC_VERSION=)([^\s]+)( \\\s*)$/,
-          value: version,
-          label: "#{AGENT_DOCKERFILE_PATH.relative_path_from(APP_ROOT)} SCC_VERSION"
-        },
-        {
-          pattern: /^(\s*amd64\) SCC_ARCH="x86_64"; EXPECTED_CHECKSUM=")([0-9a-f]+)(".*)$/,
-          value: amd64_checksum,
-          label: "#{AGENT_DOCKERFILE_PATH.relative_path_from(APP_ROOT)} scc amd64 checksum"
-        },
-        {
-          pattern: /^(\s*arm64\) SCC_ARCH="arm64"; EXPECTED_CHECKSUM=")([0-9a-f]+)(".*)$/,
-          value: arm64_checksum,
-          label: "#{AGENT_DOCKERFILE_PATH.relative_path_from(APP_ROOT)} scc arm64 checksum"
-        }
-      ]
-    },
-    {
-      path: DEVCONTAINER_DOCKERFILE_PATH,
-      replacements: [
-        {
-          pattern: /^(ARG SCC_VERSION=)([^\s]+)(\s*)$/,
-          value: version,
-          label: "#{DEVCONTAINER_DOCKERFILE_PATH.relative_path_from(APP_ROOT)} SCC_VERSION"
-        },
-        {
-          pattern: /^(\s*amd64\) scc_arch="x86_64"; checksum=")([0-9a-f]+)(".*)$/,
-          value: amd64_checksum,
-          label: "#{DEVCONTAINER_DOCKERFILE_PATH.relative_path_from(APP_ROOT)} scc amd64 checksum"
-        },
-        {
-          pattern: /^(\s*arm64\) scc_arch="arm64"; checksum=")([0-9a-f]+)(".*)$/,
-          value: arm64_checksum,
-          label: "#{DEVCONTAINER_DOCKERFILE_PATH.relative_path_from(APP_ROOT)} scc arm64 checksum"
-        }
-      ]
-    }
-  ].map { |entry| plan_file_replacements(entry.fetch(:path), entry.fetch(:replacements)) }
+# PostgreSQL couples a server image pin to a client package pin whose PGDG
+# revision cannot be constructed from the version, so the client package is
+# resolved per distribution and the whole group moves together or not at all.
+#
+# @spec TOOLCHAIN-PIN-020
+# @spec TOOLCHAIN-PIN-021
+# @spec TOOLCHAIN-PIN-022
+# @spec TOOLCHAIN-PIN-023
+def update_postgresql
+  group = ToolchainPins.group("postgresql")
+  return if registry_drifted?(group)
 
-  apply_planned_updates(planned_updates)
-  planned_updates.flat_map { |entry| entry.fetch(:updates) }
+  current = group.current_versions(APP_ROOT).values.uniq
+  newest = current.max_by { |version| version.split(".").map(&:to_i) }
+  major = newest.split(".").first
+  repository = group.source.fetch(:repository)
+
+  report_newer_postgres_majors(repository, major)
+
+  available = UpstreamRegistries.docker_hub_versions(repository, major: major)
+  latest, published_at = available.to_a.last
+  return if latest.nil?
+
+  if current == [ latest ]
+    puts "  postgresql #{latest} — up to date within the #{major}.x line"
+    return
+  end
+
+  if current.size > 1
+    # Resolving PGDG packages costs several megabytes, so this path is only
+    # taken when something actually needs writing. A group that disagrees with
+    # itself qualifies: comparing upstream against one collapsed value would
+    # call it up to date and leave the stragglers behind forever.
+    puts "  postgresql pins disagree (#{current.sort.join(", ")}) — realigning on #{latest}"
+  else
+    puts "  postgresql #{current.first} -> #{latest} available"
+  end
+
+  return if quarantined?("postgresql", latest, published_at)
+
+  clients = resolve_postgres_clients(group, major, latest)
+  return if clients.nil?
+
+  planned = plan_group_updates(group) do |entry|
+    entry.kind == :client_package ? clients.fetch(entry.path) : latest
+  end
+
+  REPORT.updated(apply_planned_updates(planned))
+rescue StandardError => error
+  raise "Failed to update postgresql: #{error.message}"
+end
+
+# A major upgrade renames the client package and needs a data migration, so it
+# stays a human decision.
+#
+# @spec TOOLCHAIN-PIN-023
+def report_newer_postgres_majors(repository, major)
+  newer = begin
+    UpstreamRegistries.docker_hub_majors(repository).select { |value| value > major.to_i }
+  rescue StandardError
+    []
+  end
+  return if newer.empty?
+
+  REPORT.notice(
+    "PostgreSQL #{newer.join(", ")} available (pinned major: #{major}). " \
+    "A major upgrade renames the client package and requires a data migration; not applied."
+  )
+end
+
+# @spec TOOLCHAIN-PIN-022
+def resolve_postgres_clients(group, major, version)
+  resolved = group.client_package_entries.to_h do |entry|
+    [
+      entry.path,
+      UpstreamRegistries.pgdg_client_version(
+        distribution: entry.distribution, major: major, upstream_version: version
+      )
+    ]
+  end
+
+  missing = resolved.select { |_path, value| value.nil? }.keys
+  return resolved if missing.empty?
+
+  REPORT.hold(
+    "postgresql #{version} (no PGDG client package for #{missing.map { |path| relative(path) }.join(", ")})"
+  )
+  nil
+end
+
+# Agent CLI versions are declared by agent-harness contracts and read at build
+# time, so the gem release is the only version lever Paid controls.
+#
+# @spec TOOLCHAIN-PIN-031
+# @spec TOOLCHAIN-PIN-033
+def report_agent_contract_versions
+  contracts = agent_contracts.versions
+
+  unless agent_contracts.readable?
+    REPORT.notice(
+      "Agent CLI contract versions could not be read (is `bundle install` current?); check skipped."
+    )
+    puts "  Skipped — could not read agent-harness install contracts."
+    return
+  end
+
+  lagging = []
+  ToolchainPins.contract_packages.each do |provider, package|
+    pinned = contracts[provider]
+    upstream = latest_npm_version(package)
+
+    status = case pinned
+    when nil then "contract unreadable"
+    when AgentContractVersions::UNPINNED then "unpinned — installs latest#{" (#{upstream})" if upstream}"
+    when upstream then "up to date"
+    else
+      if upstream.nil?
+        "upstream unknown"
+      else
+        lagging << "#{provider} #{pinned} -> #{upstream}"
+        "BEHIND #{upstream}"
+      end
+    end
+
+    displayed = pinned == AgentContractVersions::UNPINNED ? "-" : pinned
+    puts format("  %-10s %-28s %-14s %s", provider, package, displayed, status)
+  end
+
+  return if lagging.empty?
+
+  REPORT.notice(
+    "agent-harness contracts lag upstream for: #{lagging.join(", ")}. " \
+    "Paid cannot pin these directly — file upstream at github.com/viamin/agent-harness."
+  )
+end
+
+def agent_contracts
+  @agent_contracts ||= AgentContractVersions.new(
+    providers: ToolchainPins.contract_packages.keys,
+    runner: AgentContractVersions.bundler_runner(APP_ROOT)
+  )
+end
+
+def latest_npm_version(package)
+  UpstreamRegistries.npm(package).version
+rescue StandardError
+  nil
+end
+
+# The gem is pinned to an exact version, so `bundle update` cannot move it —
+# only rewriting the pin can. That means the rewrite leaves Gemfile.lock behind
+# until something reinstalls, which is why a run that already owns the lockfile
+# reconciles it here instead of leaving a broken bundle for the next command.
+#
+# @spec TOOLCHAIN-PIN-032
+def update_agent_harness_pin(reconcile_lockfile:)
+  release = UpstreamRegistries.rubygems(ToolchainPins::AGENT_HARNESS_GEM)
+  pinned = GEMFILE_PATH.read[ToolchainPins::AGENT_HARNESS_PATTERN, 2]
+
+  if pinned.nil?
+    REPORT.notice("Could not read the agent-harness version pin from Gemfile; skipped.")
+    return false
+  end
+
+  if pinned == release.version
+    puts "  agent-harness #{pinned} — gem pin is up to date"
+    return false
+  end
+
+  puts "  agent-harness #{pinned} -> #{release.version} available"
+  return false if quarantined?("agent-harness", release.version, release.published_at)
+
+  planned = [ plan_file_replacements(
+    GEMFILE_PATH,
+    [ {
+      pattern: ToolchainPins::AGENT_HARNESS_PATTERN,
+      value: release.version,
+      label: "Gemfile -> agent-harness #{release.version}"
+    } ]
+  ) ]
+
+  applied = apply_planned_updates(planned)
+  return false if applied.empty?
+
+  REPORT.updated(applied)
+  if reconcile_lockfile
+    puts "  Reconciling Gemfile.lock with agent-harness #{release.version}"
+    system! "bundle", "install", *bundler_cooldown_args
+  else
+    REPORT.notice("agent-harness pin moved — run `bundle install` to update Gemfile.lock.")
+  end
+  true
+end
+
+# The devcontainer installer runs before bundler is available, so it carries
+# defaults that duplicate the contract. Reconcile them against the contract
+# rather than upstream so both environments install the same versions.
+#
+# @spec TOOLCHAIN-PIN-034
+def sync_oh_my_pi_defaults
+  contract = agent_contracts.oh_my_pi_runtime
+  if contract.nil?
+    REPORT.notice("Oh My Pi contract unavailable; devcontainer defaults not verified.")
+    return
+  end
+
+  planned = [ plan_file_replacements(
+    OH_MY_PI_INSTALLER_PATH,
+    [
+      {
+        pattern: ToolchainPins::OH_MY_PI_PACKAGE_PATTERN,
+        value: contract.fetch(:version),
+        label: "#{ToolchainPins::OH_MY_PI_INSTALLER} OMP_PACKAGE -> #{contract[:version]}"
+      },
+      {
+        pattern: ToolchainPins::OH_MY_PI_BUN_PATTERN,
+        value: contract.fetch(:bun_version),
+        label: "#{ToolchainPins::OH_MY_PI_INSTALLER} BUN_VERSION -> #{contract[:bun_version]}"
+      }
+    ]
+  ) ]
+
+  applied = apply_planned_updates(planned)
+  if applied.empty?
+    puts "  devcontainer Oh My Pi defaults match the contract " \
+      "(omp #{contract[:version]}, bun #{contract[:bun_version]})"
+  else
+    REPORT.updated(applied)
+  end
+end
+
+# Language runtimes are reported, never rewritten: moving them is a migration
+# with build, gem, and CI consequences no automated rewrite should decide.
+#
+# @spec TOOLCHAIN-PIN-040
+def report_runtime_versions
+  pinned = TOOL_VERSIONS_PATH.read.lines.to_h do |line|
+    name, version = line.split(/\s+/, 2)
+    [ name.to_s.strip, version.to_s.strip ]
+  end
+
+  ToolchainPins::REPORT_ONLY_RUNTIMES.each do |runtime|
+    report_runtime(runtime, pinned[runtime]) { |version| latest_runtime(runtime, version) }
+  end
+end
+
+def latest_runtime(runtime, version)
+  case runtime
+  when "ruby" then UpstreamRegistries.ruby_versions(series: minor_series(version)).last
+  when "nodejs" then UpstreamRegistries.node_versions(major: version.split(".").first).last
+  when "golang" then UpstreamRegistries.go_versions(series: minor_series(version)).last
+  end
+end
+
+def minor_series(version)
+  version.split(".").first(2).join(".")
+end
+
+def report_runtime(name, version)
+  return puts("  #{name} — not pinned in #{ToolchainPins::TOOL_VERSIONS_FILE}") if version.nil?
+
+  # Report-only, so a release index being unreachable must not discard the
+  # updates this run already applied.
+  latest = begin
+    yield(version)
+  rescue StandardError => error
+    puts "  #{name} #{version} — could not reach the release index (#{error.message})"
+    return
+  end
+  if latest.nil? || latest == version
+    puts "  #{name} #{version} — up to date"
+    return
+  end
+
+  puts "  #{name} #{version} -> #{latest} available"
+  REPORT.notice(
+    "#{name} #{latest} is available (pinned: #{version}). " \
+    "Runtime upgrades are a deliberate migration; not applied."
+  )
 end
 
 def parse_yarn_lock_versions
@@ -433,16 +662,64 @@ def check_lockfile_ages(before_versions, after_versions, &fetch_time)
     next if before_versions[name] == version
 
     checked += 1
-    published_at = fetch_time.call(name, version)
-    next unless published_at
-
-    hours = age_hours(published_at)
-    if hours < MIN_PACKAGE_AGE_HOURS
-      quarantined << "  #{name}@#{version} (#{hours}h old, minimum: #{MIN_PACKAGE_AGE_HOURS}h)"
-    end
+    reason = $quarantine.hold_reason(name, version, fetch_time.call(name, version))
+    quarantined << reason if reason
   end
 
   [ quarantined, checked ]
+end
+
+def pinned_lid_version
+  # Read only the `## LID` block so a stray `- Version:` elsewhere in CLAUDE.md
+  # (e.g., a Bundler/tool-config section) can't be mistaken for the LID pin.
+  block = +""
+  in_block = false
+  CLAUDE_MD_PATH.each_line do |line|
+    if line.start_with?("## ")
+      in_block = line.strip == "## LID"
+      next
+    end
+    block << line if in_block
+  end
+  block[/^- Version:\s*(\S+)\s*$/, 1]
+end
+
+def check_lid_reference
+  pinned = pinned_lid_version
+  if pinned.nil?
+    warn "  ⚠ Could not read - Version: from CLAUDE.md (## LID block); skipping LID check."
+    return
+  end
+
+  latest = UpstreamRegistries.json(LID_PLUGIN_VERSION_URL).fetch("version")
+  if latest == pinned
+    puts "  LID v#{pinned} — vendored reference is up to date ✓"
+    return
+  end
+
+  warn "  ⚠ LID is out of date: CLAUDE.md pins v#{pinned}, upstream is v#{latest}."
+  warn "    Three surfaces to reconcile:"
+  warn "      1. Vendored docs/lid/ + bin/coherence-check.mjs — re-sync per docs/lid/README.md § Sync policy."
+  warn "      2. CLAUDE.md (## LID - Version:) — bump to v#{latest}."
+  warn "      3. Installed Claude plugin in devcontainers — rebuild containers; install-lid.sh currently"
+  warn "         pulls latest, so verify the installed version matches the pin."
+  warn "    (bin/update reports only; it does not auto-apply any of these.)"
+rescue StandardError => error
+  warn "  ⚠ Could not check LID for updates: #{error.message}"
+end
+
+def usage
+  puts "Usage: bin/update [--check] [--lockfiles] [--skip-age-check]"
+  puts "Updates supported pinned tool versions across the devcontainer, the agent"
+  puts "image, the production image, and GitHub Actions."
+  puts ""
+  puts "Options:"
+  puts "  --check           Report available updates without writing any files"
+  puts "  --lockfiles       Also update Ruby gems and JavaScript lockfiles"
+  puts "  --skip-age-check  Skip the package age quarantine check"
+  puts ""
+  puts "Environment:"
+  puts "  MIN_PACKAGE_AGE_HOURS  Minimum hours since publish (default: 72)"
 end
 
 if ARGV.any? { |arg| %w[-h --help].include?(arg) }
@@ -450,8 +727,17 @@ if ARGV.any? { |arg| %w[-h --help].include?(arg) }
   exit 0
 end
 
-skip_age_check = ARGV.delete("--skip-age-check") || MIN_PACKAGE_AGE_HOURS.zero?
+$check_only = ARGV.delete("--check") ? true : false
+$quarantine = PackageQuarantine.new(
+  minimum_age_hours: MIN_PACKAGE_AGE_HOURS,
+  skip: ARGV.delete("--skip-age-check") ? true : false
+)
 update_lockfiles = ARGV.delete("--lockfiles")
+
+if update_lockfiles && $check_only
+  warn "--check cannot be combined with --lockfiles (bundle/yarn write their own lockfiles)."
+  exit 1
+end
 
 if ARGV.any?
   warn "Unknown arguments: #{ARGV.join(" ")}"
@@ -460,12 +746,14 @@ if ARGV.any?
 end
 
 Dir.chdir(APP_ROOT) do
+  puts "== Report only (no files will be written) ==\n\n" if $check_only
+
   gem_versions_before = update_lockfiles ? parse_gemfile_lock_versions : {}
   yarn_versions_before = update_lockfiles ? parse_yarn_lock_versions : {}
 
   if update_lockfiles
     puts "== Updating Ruby gems =="
-    system! "bundle", "update"
+    system! "bundle", "update", "--all", *bundler_cooldown_args
 
     puts "\n== Updating JavaScript packages =="
     system! "yarn", "upgrade"
@@ -476,116 +764,73 @@ Dir.chdir(APP_ROOT) do
   end
 
   puts "\n== Updating pinned tool binaries =="
-  updates = []
-  skipped_too_new = []
+  ToolchainPins.paid_owned_groups.each do |group|
+    next if group.name == "postgresql"
 
-  yarn_version, yarn_published_at = fetch_npm_version_info("yarn")
-  yarn_hours = age_hours(yarn_published_at)
-  if !skip_age_check && yarn_hours < MIN_PACKAGE_AGE_HOURS
-    skipped_too_new << "  yarn@#{yarn_version} (#{yarn_hours}h old, minimum: #{MIN_PACKAGE_AGE_HOURS}h)"
+    update_binary_group(group)
+  end
+
+  puts "\n== Checking PostgreSQL =="
+  update_postgresql
+
+  puts "\n== Checking agent CLI versions (owned by agent-harness) =="
+  report_agent_contract_versions
+  update_agent_harness_pin(reconcile_lockfile: update_lockfiles)
+  sync_oh_my_pi_defaults
+
+  puts "\n== Checking language runtimes (report only) =="
+  report_runtime_versions
+
+  if REPORT.updates.empty?
+    puts "\nNo pinned tool versions changed."
   else
-    begin
-      updates.concat(update_yarn(yarn_version))
-    rescue StandardError => error
-      raise "Failed to update yarn: #{error.message}"
-    end
+    puts "\n#{$check_only ? "Would update" : "Updated"}:"
+    REPORT.updates.each { |update| puts "  #{update}" }
   end
 
-  BINARY_RELEASES.each_key do |package_name|
-    version, published_at = fetch_binary_version_info(package_name)
-    hours = age_hours(published_at)
-    if !skip_age_check && hours < MIN_PACKAGE_AGE_HOURS
-      skipped_too_new << "  #{package_name}@#{version} (#{hours}h old, minimum: #{MIN_PACKAGE_AGE_HOURS}h)"
-      next
-    end
-
-    binary_updates = case package_name
-    when "ast-grep"
-      update_ast_grep(
-        version,
-        fetch_release_asset_digest(package_name, "app-x86_64-unknown-linux-gnu.zip"),
-        fetch_release_asset_digest(package_name, "app-aarch64-unknown-linux-gnu.zip")
-      )
-    when "scc"
-      update_scc(
-        version,
-        fetch_release_asset_digest(package_name, "scc_Linux_x86_64.tar.gz"),
-        fetch_release_asset_digest(package_name, "scc_Linux_arm64.tar.gz")
-      )
-    else
-      []
-    end
-
-    updates.concat(binary_updates)
-  rescue StandardError => error
-    raise "Failed to update #{package_name}: #{error.message}"
-  end
-
-  if updates.empty?
-    puts "No pinned tool versions changed."
-  else
-    updates.each { |update| puts "Updated #{update}" }
-  end
-
-  unless skip_age_check
+  unless $quarantine.skip?
     puts "\n== Checking package ages (quarantine: #{MIN_PACKAGE_AGE_HOURS}h) =="
-    all_quarantined = skipped_too_new.dup
 
     if update_lockfiles
       gem_quarantined, gem_checked = check_lockfile_ages(
         gem_versions_before, parse_gemfile_lock_versions
-      ) { |name, version| fetch_gem_publish_time(name, version) }
+      ) { |name, version| UpstreamRegistries.gem_publish_time(name, version) }
       puts "  Checked #{gem_checked} updated gem(s)"
 
       yarn_quarantined, yarn_checked = check_lockfile_ages(
         yarn_versions_before, parse_yarn_lock_versions
-      ) { |name, version| fetch_npm_publish_time(name, version) }
+      ) { |name, version| UpstreamRegistries.npm_publish_time(name, version) }
       puts "  Checked #{yarn_checked} updated npm package(s)"
 
-      all_quarantined.concat(gem_quarantined).concat(yarn_quarantined)
+      (gem_quarantined + yarn_quarantined).each { |entry| REPORT.hold(entry.strip) }
     else
-      puts "  Checked pinned tool binaries only"
+      puts "  Checked pinned tool versions only"
     end
 
-    if all_quarantined.any?
-      warn "\n⚠ WARNING: #{all_quarantined.size} package(s) are newer than the " \
-        "#{MIN_PACKAGE_AGE_HOURS}h quarantine period:"
-      all_quarantined.each { |entry| warn entry }
-      warn "\nPinned tool binaries were NOT updated to quarantined versions."
+    if REPORT.held_back.empty?
+      puts "  All resolved versions are older than #{MIN_PACKAGE_AGE_HOURS}h ✓"
+    else
+      warn "\n⚠ WARNING: #{REPORT.held_back.size} version(s) were held back:"
+      REPORT.held_back.each { |entry| warn "  #{entry}" }
+      warn "\nPinned tool versions were NOT updated to quarantined releases."
       if update_lockfiles
         warn "Lockfile packages (gems/npm) were updated by bundle/yarn — review the diff"
         warn "carefully before committing, or revert with: git checkout Gemfile.lock yarn.lock"
       end
-    else
-      puts "  All updated packages are older than #{MIN_PACKAGE_AGE_HOURS}h ✓"
     end
   end
 
   puts "\n== Checking vendored LID reference =="
-  begin
-    pinned = pinned_lid_version
-    if pinned.nil?
-      warn "  ⚠ Could not read - Version: from CLAUDE.md (## LID block); skipping LID check."
-    else
-      latest = fetch_lid_latest_version
-      if latest == pinned
-        puts "  LID v#{pinned} — vendored reference is up to date ✓"
-      else
-        warn "  ⚠ LID is out of date: CLAUDE.md pins v#{pinned}, upstream is v#{latest}."
-        warn "    Three surfaces to reconcile:"
-        warn "      1. Vendored docs/lid/ + bin/coherence-check.mjs — re-sync per docs/lid/README.md § Sync policy."
-        warn "      2. CLAUDE.md (## LID - Version:) — bump to v#{latest}."
-        warn "      3. Installed Claude plugin in devcontainers — rebuild containers; install-lid.sh currently"
-        warn "         pulls latest, so verify the installed version matches the pin."
-        warn "    (bin/update reports only; it does not auto-apply any of these.)"
-      end
-    end
-  rescue StandardError => error
-    warn "  ⚠ Could not check LID for updates: #{error.message}"
+  check_lid_reference
+
+  if REPORT.notices.any?
+    puts "\n== Needs a human decision =="
+    REPORT.notices.each { |notice| puts "  • #{notice}" }
   end
 
   puts "\n== Skipped pinned binary installs =="
-  puts "Skipped Node.js and Ruby because they still require manual checksum-aware release updates."
+  puts "Skipped Node.js and Ruby toolchain installs because they still require"
+  puts "manual checksum-aware release updates."
 
   puts "\n== Update complete =="
 end

@@ -87,6 +87,8 @@ jobs:
         # and CI. Docker images pin the exact client package version because they
         # build once, while GitHub-hosted workflow jobs install the matching
         # major client package from PGDG at runtime.
+        #
+        # @spec TOOLCHAIN-PIN-024
         run: |
           check_contains() {
             local file="$1"
@@ -94,6 +96,17 @@ jobs:
             local message="$3"
 
             if ! grep -Fq "$expected" "$file"; then
+              echo "::error file=$file::$message"
+              exit 1
+            fi
+          }
+
+          check_matches() {
+            local file="$1"
+            local pattern="$2"
+            local message="$3"
+
+            if ! grep -Eq "$pattern" "$file"; then
               echo "::error file=$file::$message"
               exit 1
             fi
@@ -115,22 +128,30 @@ jobs:
           systest=$(extract_postgres_image .github/workflows/system_tests.yml)
           test_prof=$(extract_postgres_image .github/workflows/test_prof.yml)
           screenshots=$(extract_postgres_image .github/workflows/pr-screenshots.yml)
+          screenshots_publish=$(extract_postgres_image .github/workflows/pr-screenshots-publish.yml)
           ephemeral=$(extract_postgres_image .github/workflows/ephemeral_tests.yml)
-          claude_review=$(extract_postgres_image .github/workflows/claude-code-review.yml)
           dev_version=$(postgres_version "$dev")
           compose_version=$(postgres_version "$compose")
           ci_version=$(postgres_version "$ci")
           systest_version=$(postgres_version "$systest")
           test_prof_version=$(postgres_version "$test_prof")
           screenshots_version=$(postgres_version "$screenshots")
+          screenshots_publish_version=$(postgres_version "$screenshots_publish")
           ephemeral_version=$(postgres_version "$ephemeral")
-          claude_review_version=$(postgres_version "$claude_review")
           version="$compose_version"
           major=${version%%.*}
           workflow_client="postgresql-client-${major}"
-          bookworm_client="postgresql-client-${major}=${version}-1.pgdg12+1"
-          trixie_client="postgresql-client-${major}=${version}-1.pgdg13+1"
-          noble_client="postgresql-client-${major}=${version}-1.pgdg24.04+1"
+          escaped_version="${version//./\\.}"
+          # PGDG's package revision is not derivable from the upstream version --
+          # the same release ships as +1 for one version and +2 for the next -- so
+          # match the revision rather than assuming it. bin/update resolves the
+          # real value from the PGDG package index.
+          client_pattern() {
+            printf 'postgresql-client-%s=%s-[0-9]+\\.pgdg%s\\+[0-9]+' "$major" "$escaped_version" "$1"
+          }
+          bookworm_client="$(client_pattern 12)"
+          trixie_client="$(client_pattern 13)"
+          noble_client="$(client_pattern 24\\.04)"
 
           echo "devcontainer/compose.yaml:       ${dev:-<none>}"
           echo "docker-compose.yml:              ${compose:-<none>}"
@@ -138,23 +159,23 @@ jobs:
           echo ".github/workflows/system_tests:  ${systest:-<none>}"
           echo ".github/workflows/test_prof.yml: ${test_prof:-<none>}"
           echo ".github/workflows/pr-screenshots:${screenshots:-<none>}"
+          echo ".github/workflows/screenshots-publish: ${screenshots_publish:-<none>}"
           echo ".github/workflows/ephemeral:     ${ephemeral:-<none>}"
-          echo ".github/workflows/claude-review: ${claude_review:-<none>}"
           echo "expected workflow client:        ${workflow_client}"
-          echo "expected Bookworm client:        ${bookworm_client}"
-          echo "expected Trixie client:          ${trixie_client}"
-          echo "expected Noble client:           ${noble_client}"
-          if [ -z "$dev" ] || [ -z "$compose" ] || [ -z "$ci" ] || [ -z "$systest" ] || [ -z "$test_prof" ] || [ -z "$screenshots" ] || [ -z "$ephemeral" ] || [ -z "$claude_review" ]; then
+          echo "expected Bookworm client match:  ${bookworm_client}"
+          echo "expected Trixie client match:    ${trixie_client}"
+          echo "expected Noble client match:     ${noble_client}"
+          if [ -z "$dev" ] || [ -z "$compose" ] || [ -z "$ci" ] || [ -z "$systest" ] || [ -z "$test_prof" ] || [ -z "$screenshots" ] || [ -z "$screenshots_publish" ] || [ -z "$ephemeral" ]; then
             echo "::error::Postgres image pin missing in one or more files"
             exit 1
           fi
-          if [ "$dev_version" != "$compose_version" ] || [ "$compose_version" != "$ci_version" ] || [ "$ci_version" != "$systest_version" ] || [ "$systest_version" != "$test_prof_version" ] || [ "$test_prof_version" != "$screenshots_version" ] || [ "$screenshots_version" != "$ephemeral_version" ] || [ "$ephemeral_version" != "$claude_review_version" ]; then
+          if [ "$dev_version" != "$compose_version" ] || [ "$compose_version" != "$ci_version" ] || [ "$ci_version" != "$systest_version" ] || [ "$systest_version" != "$test_prof_version" ] || [ "$test_prof_version" != "$screenshots_version" ] || [ "$screenshots_version" != "$screenshots_publish_version" ] || [ "$screenshots_publish_version" != "$ephemeral_version" ]; then
             echo "::error::Postgres image pins are out of sync. Update all workflow and compose references together."
             exit 1
           fi
-          check_contains .devcontainer/Dockerfile "$bookworm_client" ".devcontainer/Dockerfile is not pinned to $bookworm_client"
-          check_contains Dockerfile "$trixie_client" "Dockerfile is not pinned to $trixie_client"
-          check_contains docker/agent/Dockerfile "$noble_client" "docker/agent/Dockerfile is not pinned to $noble_client"
+          check_matches .devcontainer/Dockerfile "$bookworm_client" ".devcontainer/Dockerfile does not pin a Bookworm client built from PostgreSQL $version"
+          check_matches Dockerfile "$trixie_client" "Dockerfile does not pin a Trixie client built from PostgreSQL $version"
+          check_matches docker/agent/Dockerfile "$noble_client" "docker/agent/Dockerfile does not pin a Noble client built from PostgreSQL $version"
           check_contains docker/agent/Dockerfile "apt.postgresql.org/pub/repos/apt" "docker/agent/Dockerfile must install from PGDG"
           check_contains Dockerfile "apt.postgresql.org/pub/repos/apt" "Dockerfile must install from PGDG"
           check_contains .github/workflows/ci.yml "apt.postgresql.org/pub/repos/apt" ".github/workflows/ci.yml must install PostgreSQL client tools from PGDG"
@@ -178,7 +199,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16.14
+        image: postgres:16.15
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -314,7 +335,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16.14
+        image: postgres:16.15
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -400,7 +421,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16.14
+        image: postgres:16.15
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres

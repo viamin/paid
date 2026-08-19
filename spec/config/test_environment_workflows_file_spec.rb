@@ -10,7 +10,6 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
   let(:workflow_paths) do
     %w[
       .github/workflows/ci.yml
-      .github/workflows/claude-code-review.yml
       .github/workflows/pr-screenshots.yml
       .github/workflows/pr-screenshots-publish.yml
       .github/workflows/system_tests.yml
