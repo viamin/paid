@@ -174,5 +174,37 @@ RSpec.describe ExecutionControl do
 
       expect(agent_run.reload.status).to eq("paused")
     end
+
+    # @spec EXEC-DISABLE-007
+    it "records an audit event per affected account for a global control toggle" do
+      project_a = create(:project)
+      project_b = create(:project)
+      create(:agent_run, :running, :with_temporal, project: project_a)
+      create(:agent_run, :running, :with_temporal, project: project_b)
+      control = create(:execution_control, :global, :emergency)
+
+      expect {
+        control.update!(enabled: true, reason: "Global emergency shutdown")
+      }.to change(AccountActivityEvent, :count).by_at_least(2)
+
+      global_events = AccountActivityEvent.where(action: "execution_control.enabled")
+      expect(global_events.pluck(:account_id)).to contain_exactly(project_a.account_id, project_b.account_id)
+      expect(global_events.pluck(:subject_id).uniq).to eq([ control.id ])
+    end
+
+    # @spec EXEC-DISABLE-007
+    it "does not raise when recording a global control audit event fails for one account" do
+      project_a = create(:project)
+      project_b = create(:project)
+      create(:agent_run, :running, :with_temporal, project: project_a)
+      create(:agent_run, :running, :with_temporal, project: project_b)
+      control = create(:execution_control, :global, :emergency)
+      allow(Audit::RecordEvent).to receive(:call).and_call_original
+      allow(Audit::RecordEvent).to receive(:call).with(hash_including(action: "execution_control.enabled", account: project_a.account)).and_raise(StandardError, "audit db down")
+
+      expect { control.update!(enabled: true, reason: "Global emergency shutdown") }.not_to raise_error
+
+      expect(AccountActivityEvent.where(action: "execution_control.enabled", account: project_b.account)).to be_present
+    end
   end
 end

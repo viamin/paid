@@ -81,5 +81,27 @@ RSpec.describe ExecutionControlParkCleanupJob, type: :job do
     it "does not raise when the agent run is not found" do
       expect { described_class.perform_now(-1, nil, nil) }.not_to raise_error
     end
+
+    it "tears down the stale container without clobbering a container_id the run picked up via redispatch" do
+      # Simulates the control being cleared and the run re-dispatched to a
+      # new container while this job's teardown of the OLD container was
+      # still pending/retrying.
+      agent_run.update!(status: "queued", paused_at: nil, container_id: "new-container-456")
+
+      container = double(id: "container-123")
+      volume = double
+      allow(container).to receive(:refresh!)
+      allow(container).to receive(:info).and_return("State" => { "Running" => true })
+      allow(container).to receive(:stop)
+      allow(container).to receive(:delete)
+      allow(Docker::Container).to receive(:get).with("container-123").and_return(container)
+      allow(Docker::Volume).to receive(:get).with("paid-workspace-#{agent_run.id}").and_return(volume)
+      allow(volume).to receive(:remove)
+
+      described_class.perform_now(agent_run.id, nil, "container-123")
+
+      expect(container).to have_received(:delete)
+      expect(agent_run.reload.container_id).to eq("new-container-456")
+    end
   end
 end

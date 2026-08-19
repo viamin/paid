@@ -188,24 +188,59 @@ module ExecutionControls
     end
 
     def record_control_event!(action)
-      return if control.scope == "global"
+      return record_global_control_events!(action) if control.scope == "global"
 
       Audit::RecordEvent.call(
         action: action,
         actor: actor,
         subject: control.target,
         account: control_account,
-        metadata: {
-          execution_control_id: control.id,
-          execution_control_scope: control.scope,
-          execution_control_mode: control.mode,
-          reason: control.reason
-        }
+        metadata: control_event_metadata
       )
     rescue StandardError => error
       # An audit-log failure must not prevent the enforcement half of a
       # kill-switch toggle (affect_active_runs!/resume_parked_runs!) from
       # running — see record_run_event! for the same rationale.
+      log_control_audit_failure(action, error)
+    end
+
+    # A global control has no natural account (belongs_to :account is nil for
+    # scope == "global"), but EXEC-DISABLE-007 requires enable/disable
+    # transitions to leave a queryable audit trail, not just the structured
+    # log line from log_control_event. Attribute one event per account with
+    # runs the toggle is about to affect -- the same run sets
+    # affect_active_runs!/resume_parked_runs! act on -- so a global kill
+    # switch shows up in every affected account's activity feed instead of
+    # nowhere queryable.
+    def record_global_control_events!(action)
+      global_audit_accounts(action).each do |account|
+        Audit::RecordEvent.call(
+          action: action,
+          actor: actor,
+          subject: control,
+          account: account,
+          metadata: control_event_metadata
+        )
+      rescue StandardError => error
+        log_control_audit_failure(action, error)
+      end
+    end
+
+    def global_audit_accounts(action)
+      runs = (action == "execution_control.disabled") ? scoped_runs.where(status: "paused") : active_runs_scope(scoped_runs)
+      Account.where(id: runs.joins(:project).select("projects.account_id")).distinct
+    end
+
+    def control_event_metadata
+      {
+        execution_control_id: control.id,
+        execution_control_scope: control.scope,
+        execution_control_mode: control.mode,
+        reason: control.reason
+      }
+    end
+
+    def log_control_audit_failure(action, error)
       Rails.logger.error(
         message: "execution_control.audit_failed",
         action: action,
