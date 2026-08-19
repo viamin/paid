@@ -7,10 +7,12 @@ class Issue < ApplicationRecord
     operational_failures
     failure_streak
     review_goal_retry_limit
+    pr_auto_continue_token_limit
   ].freeze
   PR_ESCALATION_REASON_OPERATIONAL_FAILURES = "operational_failures"
   PR_ESCALATION_REASON_FAILURE_STREAK = "failure_streak"
   PR_ESCALATION_REASON_REVIEW_GOAL_RETRY_LIMIT = "review_goal_retry_limit"
+  PR_ESCALATION_REASON_PR_AUTO_CONTINUE_TOKEN_LIMIT = "pr_auto_continue_token_limit"
 
   # Default per-issue per-provider retry cap: after a single provider fails this
   # many times for one issue, it is excluded from scheduling for that issue. Used
@@ -296,12 +298,16 @@ class Issue < ApplicationRecord
   end
 
   def dismiss_escalation!(draft:)
+    token_limit_override = pr_escalation_reason == PR_ESCALATION_REASON_PR_AUTO_CONTINUE_TOKEN_LIMIT
     attrs = {
       labels: labels - %w[paid-escalated paid-dismiss-escalation],
       pr_review_phase: draft ? "restarted" : "ready",
       pr_escalation_reason: nil,
+      # @spec FOCUSED-RUN-008
+      auto_continue_paused: false,
       ci_retry_requested_at: nil
     }
+    attrs[:pr_auto_continue_token_limit_overridden_at] = Time.current if token_limit_override
 
     update!(attrs)
   end

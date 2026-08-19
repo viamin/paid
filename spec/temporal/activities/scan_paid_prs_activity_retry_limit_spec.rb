@@ -3,9 +3,20 @@
 require "rails_helper"
 
 RSpec.describe Activities::ScanPaidPrsActivity do
+  before do
+    allow(AgentRun).to receive(:pr_auto_continue_tokens_used).and_return(0)
+  end
+
   describe "#scan_pr retry-limit phase handling", :no_db do
     let(:activity) { described_class.new }
-    let(:project) { instance_double(ProjectDouble, owner_reviewer_login: "viamin", github_author_login: nil) }
+    let(:project) do
+      instance_double(
+        ProjectDouble,
+        owner_reviewer_login: "viamin",
+        github_author_login: nil,
+        max_pr_auto_continue_tokens: 50_000
+      )
+    end
     let(:client) { instance_double(GithubClientDouble) }
     let(:progress_state) do
       instance_double(
@@ -620,31 +631,25 @@ RSpec.describe Activities::ScanPaidPrsActivity do
   end
 
   describe "#pr_run_history_scope", :no_db do
-    before do
-      stub_const("PrRunHistoryProjectStub", Class.new)
-      stub_const("PrRunHistoryIssueStub", Class.new)
-      stub_const("PrRunHistoryScopeStub", Class.new)
-    end
-
     let(:activity) { described_class.new }
-    let(:scope) { instance_double(PrRunHistoryScopeStub) }
-    let(:project) { instance_double(PrRunHistoryProjectStub, agent_runs: scope) }
-    let(:issue) { instance_double(PrRunHistoryIssueStub, id: 7, github_number: 42) }
+    let(:project) { instance_double(Project) }
+    let(:issue) { instance_double(Issue, github_number: 42) }
+    let(:scope) { instance_double(ActiveRecord::Relation) }
 
     it "matches runs by direct issue association as well as PR number" do
-      allow(scope).to receive(:where).with(
-        "issue_id = :issue_id OR source_pull_request_number = :pr_num OR pull_request_number = :pr_num",
-        issue_id: 7,
-        pr_num: 42
+      allow(AgentRun).to receive(:pr_history_scope).with(
+        project: project,
+        issue: issue,
+        pr_number: 42
       ).and_return(scope)
 
       result = activity.send(:pr_run_history_scope, project, issue)
 
       expect(result).to eq(scope)
-      expect(scope).to have_received(:where).with(
-        "issue_id = :issue_id OR source_pull_request_number = :pr_num OR pull_request_number = :pr_num",
-        issue_id: 7,
-        pr_num: 42
+      expect(AgentRun).to have_received(:pr_history_scope).with(
+        project: project,
+        issue: issue,
+        pr_number: 42
       )
     end
   end
@@ -723,6 +728,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         account: account,
         github_token: github_token,
         max_draft_review_rounds: 3,
+        max_pr_auto_continue_tokens: 50_000,
         owner_reviewer_login: "viamin",
         review_enabled?: false
       )
@@ -931,7 +937,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
 
     let(:activity) { described_class.new }
-    let(:project) { instance_double(LifecycleSignalsProjectStub, owner_reviewer_login: "alice") }
+    let(:project) do
+      instance_double(
+        LifecycleSignalsProjectStub,
+        owner_reviewer_login: "alice",
+        max_pr_auto_continue_tokens: 50_000
+      )
+    end
     let(:issue) do
       instance_double(
         LifecycleSignalsIssueStub,

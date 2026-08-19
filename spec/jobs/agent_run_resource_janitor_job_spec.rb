@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe AgentRunResourceJanitorJob do # @spec CONTAINER-RUNTIME-020
+RSpec.describe AgentRunResourceJanitorJob do # @spec CONTAINER-RUNTIME-021
   let(:backend) { instance_double(Containers::Backends::Base) }
 
   before do

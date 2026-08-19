@@ -207,6 +207,7 @@ class AgentRun < ApplicationRecord
   has_many :agent_run_anomalies, dependent: :destroy
   has_many :knowledge_usage_stats, dependent: :destroy
   has_many :agent_run_marketplace_entries, -> { order(:position) }, dependent: :destroy
+  has_many :egress_security_events, dependent: :destroy
   has_many :sent_coordination_signals,
     class_name: "AgentCoordinationSignal",
     foreign_key: :source_agent_run_id,
@@ -835,6 +836,17 @@ class AgentRun < ApplicationRecord
   def host_placement_decision
     raw = external_metadata.fetch("host_placement_decision", {})
     raw.is_a?(Hash) ? raw.stringify_keys : {}
+  end
+
+  # Extracts the persisted egress policy snapshot stored under
+  # `external_metadata["egress_policy"]`. The snapshot is written by the
+  # resolver before provisioning and is the authoritative record of which
+  # destinations a run was actually allowed to reach.
+  def egress_policy_snapshot
+    return nil unless external_metadata.is_a?(Hash)
+
+    snapshot = external_metadata["egress_policy"]
+    snapshot.is_a?(Hash) ? snapshot : nil
   end
 
   # Resolves the Docker host that owns this run's named workspace volume for
@@ -1511,6 +1523,21 @@ class AgentRun < ApplicationRecord
     return "automatic" if latest_pr_run.blank? || latest_pr_run.status == "completed"
 
     latest_pr_run.trigger_type == "manual" ? "manual" : "automatic"
+  end
+
+  def self.pr_history_scope(project:, pr_number:, issue: nil)
+    project.agent_runs.where(
+      "issue_id = :issue_id OR source_pull_request_number = :pr_num OR pull_request_number = :pr_num",
+      issue_id: issue&.id,
+      pr_num: pr_number
+    )
+  end
+
+  def self.pr_auto_continue_tokens_used(project:, pr_number:, issue: nil)
+    pr_history_scope(project:, pr_number:, issue:)
+      .where(trigger_type: "automatic")
+      .pick(Arel.sql("COALESCE(SUM(COALESCE(tokens_input, 0) + COALESCE(tokens_output, 0)), 0)"))
+      .to_i
   end
 
   # @spec LID-RUNS-004
@@ -2303,6 +2330,7 @@ class AgentRun < ApplicationRecord
 
   PROMPT_ASSEMBLY_KEY = "prompt_assembly"
   ISSUE_PROMPT_ASSEMBLY_KEY = "issue_prompt_assembly"
+  RUNTIME_IMAGE_KEY = "runtime_image"
   PROMPT_BUILDER_KEY = "prompt_builder"
 
   # Persists prompt-assembly provenance (digest + section list) on the run so
@@ -2329,6 +2357,38 @@ class AgentRun < ApplicationRecord
 
   def prompt_assembly_digest
     prompt_assembly_provenance&.dig("digest")
+  end
+
+  def record_runtime_image_selection!(selection)
+    # @spec IMMUTABLE-IMAGE-002
+    return if selection.blank?
+
+    metadata = external_metadata.is_a?(Hash) ? external_metadata.dup : {}
+    metadata[RUNTIME_IMAGE_KEY] = selection
+
+    if persisted?
+      update_columns(external_metadata: metadata)
+    else
+      self.external_metadata = metadata
+    end
+  end
+
+  def runtime_image_selection
+    external_metadata.is_a?(Hash) ? external_metadata[RUNTIME_IMAGE_KEY] : nil
+  end
+
+  # Clears any runtime image selection previously recorded on this run. Used
+  # on the fresh-reprovision path so a replacement container records the
+  # current catalog resolution rather than the dead container's digest — the
+  # complement to Provision#recorded_run_selection, which reuses the recorded
+  # selection across reconnects (RDR-059 / IMMUTABLE-IMAGE-002).
+  def clear_runtime_image_selection!
+    return unless external_metadata.is_a?(Hash) && external_metadata.key?(RUNTIME_IMAGE_KEY)
+
+    metadata = external_metadata.dup
+    metadata.delete(RUNTIME_IMAGE_KEY)
+
+    update_columns(external_metadata: metadata)
   end
 
   def record_prompt_builder!(builder)
@@ -2840,12 +2900,16 @@ class AgentRun < ApplicationRecord
   end
 
   # Clears persisted container reference columns after a stale runner handle is
-  # cleaned up, so a subsequent provision starts from a clean slate. Uses
-  # +update_columns+ to bypass validations (the run may be in an inconsistent
-  # state mid-reconciliation).
+  # cleaned up, so a subsequent provision starts from a clean slate. Also
+  # clears the recorded runtime image selection so a replacement container
+  # records the current catalog resolution instead of inheriting provenance
+  # from a container that no longer exists (RDR-059 / IMMUTABLE-IMAGE-002).
+  # Uses +update_columns+ to bypass validations (the run may be in an
+  # inconsistent state mid-reconciliation).
   def clear_runner_reference!
     @current_handle = nil
     update_columns(container_id: nil, runner_handle: nil)
+    clear_runtime_image_selection!
   end
 
   def set_initiating_user_from_current_user
@@ -3243,6 +3307,10 @@ class AgentRun < ApplicationRecord
   # Cleans up a recorded container that is no longer usable (dead or missing)
   # so a fresh one can be provisioned. Handles both pooled and freshly
   # provisioned containers and guarantees the stale container_id is cleared.
+  # Also clears the recorded runtime image selection so the replacement
+  # container records the current catalog resolution instead of inheriting
+  # provenance from a container that no longer exists (RDR-059 /
+  # IMMUTABLE-IMAGE-002).
   def reconcile_stale_container!(service)
     @container_service = service
     cleanup_container(force: true)
@@ -3256,6 +3324,7 @@ class AgentRun < ApplicationRecord
   ensure
     @container_service = nil
     update_column(:container_id, nil) if container_id.present?
+    clear_runtime_image_selection!
   end
 
   def self.host_scope_for(container_host)

@@ -100,6 +100,19 @@ RSpec.describe Containers::Provision do
     allow(provision).to receive(:apply_network_restrictions!)
   end
 
+  def runtime_image_selection_metadata(digest: "#{'1' * 64}")
+    {
+      "requested_image" => "paid-agent:latest",
+      "resolved_image" => "ghcr.io/acme/paid-agent@sha256:#{digest}",
+      "digest" => "sha256:#{digest}",
+      "architecture" => "amd64",
+      "registry" => "ghcr.io",
+      "repository" => "acme/paid-agent",
+      "provenance_reference" => "base-amd64-2026-08-17",
+      "immutable" => true
+    }
+  end
+
   def build_remote_backend_without_host_paths(container, &create_container)
     backend = instance_double(
       Containers::Backends::Base,
@@ -217,11 +230,33 @@ RSpec.describe Containers::Provision do
   end
 
   describe ".networking_policy_for" do
+    # @spec CONTAINER-RUNTIME-020
     it "derives the proxy-restricted policy for a run with no subscription auth or direct-outbound runner" do
       policy = described_class.networking_policy_for(agent_run: agent_run, project: project)
 
       expect(policy.mode).to eq(:proxy_restricted)
       expect(policy).to be_restricted
+    end
+
+    it "defaults the egress_profile to :locked when none is supplied" do
+      policy = described_class.networking_policy_for(agent_run: agent_run, project: project)
+
+      expect(policy.egress_profile).to eq(:locked)
+    end
+
+    it "threads a non-default egress_profile through without changing the mode" do
+      policy = described_class.networking_policy_for(
+        agent_run: agent_run, project: project, egress_profile: :research
+      )
+
+      expect(policy.egress_profile).to eq(:research)
+      expect(policy.mode).to eq(:proxy_restricted)
+    end
+
+    it "rejects an egress_profile outside the closed :locked/:research/:open enum" do
+      expect {
+        described_class.networking_policy_for(agent_run: agent_run, project: project, egress_profile: :reserach)
+      }.to raise_error(ArgumentError, /Invalid egress_profile/)
     end
   end
 
@@ -318,6 +353,72 @@ RSpec.describe Containers::Provision do
       svc = described_class.new(agent_run: agent_run, worktree_path: worktree_path, image: "custom:latest")
 
       expect(svc.options[:image]).to eq("custom:latest")
+    end
+
+    it "records immutable runtime image metadata for production selections" do
+      provision_project = build_stubbed(:project)
+      provision_run = build_stubbed(:agent_run, project: provision_project)
+      selection_metadata = runtime_image_selection_metadata
+
+      allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("production"))
+      allow(Containers::RuntimeImageSelector).to receive(:select).and_return(
+        instance_double(
+          Containers::RuntimeImageSelector::Result,
+          image: "ghcr.io/acme/paid-agent@sha256:#{'1' * 64}",
+          metadata: selection_metadata
+        )
+      )
+      expect(provision_run).to receive(:record_runtime_image_selection!).with(hash_including(selection_metadata))
+
+      svc = described_class.new(agent_run: provision_run, worktree_path: worktree_path)
+      allow(svc).to receive(:resolve_user_setting_overrides).and_return({})
+
+      expect(svc.options[:image]).to eq("ghcr.io/acme/paid-agent@sha256:#{'1' * 64}")
+    end
+
+    it "reuses the warm-time selection persisted on a claimed pool entry instead of re-resolving" do
+      # @spec IMMUTABLE-IMAGE-002
+      # Materialize records while the environment is still test so their
+      # Turbo broadcasts use the test cable adapter.
+      agent_run
+      warm_metadata = runtime_image_selection_metadata(digest: "a" * 64)
+      pool_entry = create(
+        :container_pool_entry,
+        :claimed,
+        project: project,
+        agent_run: agent_run,
+        runtime_image_metadata: warm_metadata
+      )
+      allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("production"))
+      # The catalog default may have moved (or have nothing configured) between
+      # warm and claim; the claimed container runs the warm-time digest.
+      allow(Containers::RuntimeImageSelector).to receive(:select)
+        .and_raise(Containers::RuntimeImageCatalog::UnknownProfileError, "catalog must not be consulted")
+
+      svc = described_class.new(agent_run: agent_run, project: project, pool_entry: pool_entry)
+
+      expect(svc.options[:image]).to eq("ghcr.io/acme/paid-agent@sha256:#{'a' * 64}")
+      expect(agent_run.reload.runtime_image_selection).to eq(warm_metadata)
+      expect(Containers::RuntimeImageSelector).not_to have_received(:select)
+    end
+
+    it "reuses the recorded runtime image selection on a non-pool reconnect instead of re-resolving" do
+      # @spec IMMUTABLE-IMAGE-002
+      # A Temporal retry/worker failover reconnects to an already-provisioned
+      # container through Containers::Provision.reconnect (no pool_entry).
+      # Re-resolving #options against the catalog would overwrite the
+      # recorded provenance with a digest the running container does not use.
+      agent_run.record_runtime_image_selection!(runtime_image_selection_metadata(digest: "b" * 64))
+      allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("production"))
+      # The catalog default may have moved since the original provision.
+      allow(Containers::RuntimeImageSelector).to receive(:select)
+        .and_raise(Containers::RuntimeImageCatalog::UnknownProfileError, "catalog must not be consulted")
+
+      svc = described_class.new(agent_run: agent_run, worktree_path: worktree_path)
+
+      expect(svc.options[:image]).to eq("ghcr.io/acme/paid-agent@sha256:#{'b' * 64}")
+      expect(agent_run.reload.runtime_image_selection).to include("digest" => "sha256:#{'b' * 64}")
+      expect(Containers::RuntimeImageSelector).not_to have_received(:select)
     end
 
     it "applies container_memory_bytes from user settings" do
@@ -2350,7 +2451,21 @@ RSpec.describe Containers::Provision do
 
     context "when firewall rules fail in production" do
       before do
+        # Materialize records while the environment is still test so their
+        # Turbo broadcasts use the test cable adapter, not production
+        # SolidCable (which has no database in this environment).
+        agent_run
         allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("production"))
+        # Production resolves the runtime image through the immutable catalog
+        # (RDR-059). No catalog profiles are configured in this environment, so
+        # stub the selector to keep this example focused on firewall failure.
+        allow(Containers::RuntimeImageSelector).to receive(:select).and_return(
+          instance_double(
+            Containers::RuntimeImageSelector::Result,
+            image: "ghcr.io/acme/paid-agent@sha256:#{'1' * 64}",
+            metadata: runtime_image_selection_metadata
+          )
+        )
         allow(NetworkPolicy).to receive(:apply_firewall_rules)
           .and_raise(NetworkPolicy::Error, "Permission denied")
       end

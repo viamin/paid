@@ -50,6 +50,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | [RDR-007](RDR-007-agent-cli-abstraction.md) | Agent CLI Abstraction (agent-harness gem) | Implemented | High |
 | [RDR-008](RDR-008-model-selection.md) | Model Selection Strategy | Implemented | Medium |
 | [RDR-034](RDR-034-tier-based-runner-fallback.md) | Tier-Based Runner Fallback | Implemented | P1 |
+| [RDR-059](RDR-059-immutable-agent-runtime-images.md) | Immutable Agent Runtime Images | Implemented | P1 |
 
 ### Intelligence
 
@@ -100,6 +101,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | [RDR-043](RDR-043-zero-config-docker-capacity-autoscaling.md) | Zero-Config Docker Capacity Autoscaling | Implemented | Medium |
 | [RDR-048](RDR-048-multi-host-docker-backend-support.md) | Multi-Host Docker Backend Support | Implemented | P1 |
 | [RDR-057](RDR-057-remote-execution-data-contract.md) | Remote Execution Data Contract | Implemented | P1 |
+| [RDR-060](RDR-060-external-execution-resource-ledger.md) | External Execution Resource Ledger | Partially Implemented | P1 |
 
 ### Quality & Automation
 
