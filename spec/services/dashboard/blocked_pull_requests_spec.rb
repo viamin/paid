@@ -28,17 +28,35 @@ RSpec.describe Dashboard::BlockedPullRequests do
   # @spec PR-ESCALATION-011
   it "lists escalated open pull requests for the account, longest-stopped first" do
     recent = escalated_pr(number: 2, reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK,
+      draft_review_count: 10, pr_escalation_started_at: 2.hours.ago)
+    # No start marker: escalations that predate the column fall back to
+    # updated_at for both the sort and the displayed age.
+    middle = escalated_pr(number: 3, reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK,
       draft_review_count: 10)
+    middle.update_column(:updated_at, 30.hours.ago)
     older = escalated_pr(number: 1, reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK,
-      draft_review_count: 12)
-    older.update_column(:updated_at, 3.days.ago)
-    recent.update_column(:updated_at, 2.hours.ago)
+      draft_review_count: 12, pr_escalation_started_at: 3.days.ago)
 
     entries = described_class.call(account: account)
 
-    expect(entries.map(&:pull_request)).to eq([ older, recent ])
+    expect(entries.map(&:pull_request)).to eq([ older, middle, recent ])
     expect(entries.first.reason).to eq(Issue::PR_ESCALATION_REASON_FAILURE_STREAK)
     expect(entries.first.blocked_since).to be_within(1.minute).of(3.days.ago)
+  end
+
+  # @spec PR-ESCALATION-011
+  it "keeps the stopped age stable when unrelated writes touch the PR" do
+    pull_request = escalated_pr(number: 1,
+      reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK,
+      draft_review_count: 10,
+      pr_escalation_started_at: 2.days.ago)
+    # Label syncs and the escalation-label reapply bump updated_at without
+    # changing when the PR stopped.
+    pull_request.update_column(:updated_at, 5.minutes.ago)
+
+    entry = described_class.call(account: account).first
+
+    expect(entry.blocked_since).to be_within(1.minute).of(2.days.ago)
   end
 
   # @spec PR-ESCALATION-011

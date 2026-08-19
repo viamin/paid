@@ -40,14 +40,18 @@ module Dashboard
         .where(is_pull_request: true, github_state: "open", pr_review_phase: "escalated")
         .excluding_body
         .preload(project: { account: :tenant_setting })
-        .order(updated_at: :asc)
+        # `updated_at` is a shared touch timestamp — label syncs and the
+        # escalation-label reapply bump it without changing when the PR
+        # stopped — so age and ordering follow the escalation-start marker,
+        # falling back for escalations that predate the column.
+        .order(Arel.sql("COALESCE(issues.pr_escalation_started_at, issues.updated_at) ASC"))
     end
 
     def build_entry(pull_request, runs_pool)
       Entry.new(
         pull_request: pull_request,
         reason: pull_request.pr_escalation_reason,
-        blocked_since: pull_request.updated_at,
+        blocked_since: pull_request.pr_escalation_started_at || pull_request.updated_at,
         counters: tripped_counters(pull_request),
         last_progress_at: last_progress_at(pull_request, runs_pool),
         operator_paused: pull_request.auto_continue_paused?
@@ -104,9 +108,12 @@ module Dashboard
       operational = blocked.select { |pr| pr.pr_escalation_reason == Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES }
       return [] if operational.empty?
 
+      # Slim columns only: ProgressState reads status/goal/timestamps/shas
+      # from these runs, never the transcript or diagnostic payloads.
       AgentRun.where(goal: PullRequests::ProgressState::GOALS)
         .finished
         .where.not(status: "retried")
+        .excluding_list_payload
         .where(
           [ operational.map { OPERATIONAL_RUN_SQL }.join(" OR "),
             *operational.flat_map { |pr| [ pr.project_id, pr.id, pr.github_number, pr.github_number ] } ]

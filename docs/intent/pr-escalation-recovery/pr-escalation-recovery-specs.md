@@ -86,8 +86,7 @@
   `Automation::LabelPolicy.trusted_user_removed_label?`,
   `ScanPaidPrsActivity#dismiss_escalation_trigger`,
   `Automation::Strategies::AutoReview#evaluate`.
-  *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`,
-  `spec/services/automation/label_policy_spec.rb`.
+  *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.
 
 - [x] **PR-ESCALATION-019** — If the `paid-escalated` label is absent from an
   escalated pull request without a recorded removal by a trusted GitHub user
@@ -99,8 +98,7 @@
   *Code:* `ScanPaidPrsActivity#escalation_dismissed?`,
   `Automation::LabelPolicy.trusted_user_removed_label?`,
   `MarkEscalatedActivity#execute`.
-  *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`,
-  `spec/services/automation/label_policy_spec.rb`.
+  *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.
 
 - [x] **PR-ESCALATION-021** — While a pull request's review phase is
   `escalated` and the `paid-escalated` label is absent without a removal by a
