@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec CONTAINER-RUNTIME-019
+# @spec CONTAINER-RUNTIME-021
 RSpec.describe ExecutionRunners::ContractRunner do
   subject(:runner) { described_class.new(supports: supported_modes) }
 
