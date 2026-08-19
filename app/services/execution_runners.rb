@@ -318,21 +318,67 @@ module ExecutionRunners
   #                          preview-tunnel destinations, so the underlying
   #                          policy implementation never has to inspect Docker
   #                          network state.
+  #
+  # +egress_profile+ (symbol) — the per-run egress posture from RDR-055:
+  #   :locked    — required destinations plus tenant-allowlisted destinations
+  #                only. The runner still applies the firewall and the runner-
+  #                specific enforcement translation.
+  #   :research  — brokered fetch/search access through Paid (resolved by a
+  #                downstream broker) plus the locked destinations. The runner
+  #                still applies the firewall and may extend it for the
+  #                broker endpoint. The profile is opt-in per run.
+  #   :open      — broad outbound access (operator-only break-glass). Disabled
+  #                for managed production by default; a runner that cannot
+  #                enforce it must reject the run for production restricted
+  #                flows. The profile is opt-in per run.
+  #
+  # The profile is carried through +RunSpec+ and surfaced in the
+  # {ExecutionInputManifest}'s networking section so the runner and downstream
+  # tooling can read it without any Docker-specific vocabulary. Defaults to
+  # +:locked+ (the safe production default). The factories raise
+  # +ArgumentError+ for any value outside the closed +EGRESS_PROFILES+ enum,
+  # so typos or foreign values (e.g. a string instead of a symbol) fail at
+  # construction instead of silently serializing into the manifest.
   # @spec CONTAINER-RUNTIME-009
   # @spec CONTAINER-RUNTIME-017
-  NetworkingPolicy = Data.define(:mode, :firewall, :allow_destinations) do
+  # @spec CONTAINER-RUNTIME-020
+  NetworkingPolicy = Data.define(:mode, :firewall, :allow_destinations, :egress_profile) do
     RESTRICTED_MODE = :proxy_restricted
+    LOCKED_PROFILE = :locked
+    RESEARCH_PROFILE = :research
+    OPEN_PROFILE = :open
+    EGRESS_PROFILES = [ LOCKED_PROFILE, RESEARCH_PROFILE, OPEN_PROFILE ].freeze
 
-    def self.proxy_restricted(allow_destinations: [])
-      new(mode: RESTRICTED_MODE, firewall: true, allow_destinations: allow_destinations)
+    def initialize(mode:, firewall:, allow_destinations:, egress_profile:)
+      super(mode:, firewall:, allow_destinations:, egress_profile: self.class.validate_egress_profile!(egress_profile))
     end
 
-    def self.subscription_auth
-      new(mode: :subscription_auth, firewall: false, allow_destinations: [])
+    def self.proxy_restricted(allow_destinations: [], egress_profile: LOCKED_PROFILE)
+      new(mode: RESTRICTED_MODE, firewall: true, allow_destinations: allow_destinations, egress_profile: egress_profile)
     end
 
-    def self.direct_outbound
-      new(mode: :direct_outbound, firewall: false, allow_destinations: [])
+    def self.subscription_auth(egress_profile: LOCKED_PROFILE)
+      new(mode: :subscription_auth, firewall: false, allow_destinations: [], egress_profile: egress_profile)
+    end
+
+    def self.direct_outbound(egress_profile: LOCKED_PROFILE)
+      new(mode: :direct_outbound, firewall: false, allow_destinations: [], egress_profile: egress_profile)
+    end
+
+    # Validates that +egress_profile+ is one of the closed RDR-055 enum
+    # values. Shared by every construction path, including direct +.new+ and
+    # +#with+, so invalid values fail before they can silently serialize into
+    # the runner manifest.
+    def self.validate_egress_profile!(egress_profile)
+      unless EGRESS_PROFILES.include?(egress_profile)
+        raise ArgumentError, "Invalid egress_profile: #{egress_profile.inspect}"
+      end
+
+      egress_profile
+    end
+
+    def with(**kwargs)
+      super.tap { |updated| self.class.validate_egress_profile!(updated.egress_profile) }
     end
 
     def restricted?
@@ -341,6 +387,18 @@ module ExecutionRunners
 
     def firewall?
       firewall
+    end
+
+    def locked?
+      egress_profile == LOCKED_PROFILE
+    end
+
+    def research?
+      egress_profile == RESEARCH_PROFILE
+    end
+
+    def open?
+      egress_profile == OPEN_PROFILE
     end
   end
 
@@ -400,7 +458,8 @@ module ExecutionRunners
           "networking" => {
             "mode" => spec.networking_policy&.mode&.to_s,
             "firewall" => spec.networking_policy&.firewall?,
-            "allow_destinations" => ExecutionRunners.json_value(spec.networking_policy&.allow_destinations || [])
+            "allow_destinations" => ExecutionRunners.json_value(spec.networking_policy&.allow_destinations || []),
+            "egress_profile" => spec.networking_policy&.egress_profile&.to_s
           }.compact
         }.compact,
         prompt_refs: prompt_refs,

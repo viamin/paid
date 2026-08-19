@@ -217,11 +217,33 @@ RSpec.describe Containers::Provision do
   end
 
   describe ".networking_policy_for" do
+    # @spec CONTAINER-RUNTIME-020
     it "derives the proxy-restricted policy for a run with no subscription auth or direct-outbound runner" do
       policy = described_class.networking_policy_for(agent_run: agent_run, project: project)
 
       expect(policy.mode).to eq(:proxy_restricted)
       expect(policy).to be_restricted
+    end
+
+    it "defaults the egress_profile to :locked when none is supplied" do
+      policy = described_class.networking_policy_for(agent_run: agent_run, project: project)
+
+      expect(policy.egress_profile).to eq(:locked)
+    end
+
+    it "threads a non-default egress_profile through without changing the mode" do
+      policy = described_class.networking_policy_for(
+        agent_run: agent_run, project: project, egress_profile: :research
+      )
+
+      expect(policy.egress_profile).to eq(:research)
+      expect(policy.mode).to eq(:proxy_restricted)
+    end
+
+    it "rejects an egress_profile outside the closed :locked/:research/:open enum" do
+      expect {
+        described_class.networking_policy_for(agent_run: agent_run, project: project, egress_profile: :reserach)
+      }.to raise_error(ArgumentError, /Invalid egress_profile/)
     end
   end
 

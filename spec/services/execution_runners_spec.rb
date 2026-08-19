@@ -9,6 +9,7 @@ require "rails_helper"
 # @spec CONTAINER-RUNTIME-011
 # @spec CONTAINER-RUNTIME-017
 # @spec CONTAINER-RUNTIME-018
+# @spec CONTAINER-RUNTIME-020
 RSpec.describe ExecutionRunners do
   describe ".resolve" do
     it "returns a LocalDockerRunner for the current Docker-only backends" do
@@ -264,6 +265,71 @@ RSpec.describe ExecutionRunners do
       expect(policy).not_to be_restricted
       expect(policy).not_to be_firewall
     end
+
+    it "defaults the egress_profile to :locked for every factory method" do
+      expect(described_class.proxy_restricted.egress_profile).to eq(:locked)
+      expect(described_class.subscription_auth.egress_profile).to eq(:locked)
+      expect(described_class.direct_outbound.egress_profile).to eq(:locked)
+    end
+
+    it "exposes :locked, :research, and :open egress profiles through the factory methods" do
+      expect(described_class.proxy_restricted(egress_profile: :research)).to be_research
+      expect(described_class.subscription_auth(egress_profile: :open)).to be_open
+      expect(described_class.direct_outbound(egress_profile: :locked)).to be_locked
+    end
+
+    it "treats :locked as the production-default profile" do
+      policy = described_class.proxy_restricted
+
+      expect(policy).to be_locked
+      expect(policy).not_to be_research
+      expect(policy).not_to be_open
+    end
+
+    it "propagates :research for runs that need brokered web evidence" do
+      policy = described_class.proxy_restricted(
+        allow_destinations: [ { host: "research-gateway", port: 8443 } ],
+        egress_profile: :research
+      )
+
+      expect(policy).to be_research
+      expect(policy.allow_destinations).to eq([ { host: "research-gateway", port: 8443 } ])
+      expect(policy).to be_firewall
+    end
+
+    it "propagates :open for operator-only break-glass runs" do
+      policy = described_class.direct_outbound(egress_profile: :open)
+
+      expect(policy).to be_open
+      expect(policy).not_to be_firewall
+    end
+
+    it "never references Docker-specific concepts on the policy surface" do
+      members = described_class.members
+
+      expect(members).to contain_exactly(:mode, :firewall, :allow_destinations, :egress_profile)
+    end
+
+    it "rejects an egress_profile outside the closed :locked/:research/:open enum" do
+      expect { described_class.proxy_restricted(egress_profile: :reserach) }
+        .to raise_error(ArgumentError, /Invalid egress_profile/)
+      expect { described_class.subscription_auth(egress_profile: "research") }
+        .to raise_error(ArgumentError, /Invalid egress_profile/)
+      expect { described_class.direct_outbound(egress_profile: nil) }
+        .to raise_error(ArgumentError, /Invalid egress_profile/)
+    end
+
+    it "rejects invalid egress_profile values for direct .new and #with construction paths" do
+      expect {
+        described_class.new(mode: :proxy_restricted, firewall: true, allow_destinations: [], egress_profile: :reserach)
+      }.to raise_error(ArgumentError, /Invalid egress_profile/)
+
+      policy = described_class.proxy_restricted
+
+      expect {
+        policy.with(egress_profile: "research")
+      }.to raise_error(ArgumentError, /Invalid egress_profile/)
+    end
   end
 
   describe ExecutionRunners::ServiceDeclaration do
@@ -489,6 +555,49 @@ RSpec.describe ExecutionRunners do
       expect(manifest_json).not_to include("/var/paid/worktrees")
       expect(manifest_json).to include("DATABASE_URL")
       expect(manifest_json).to include("POSTGRES_PASSWORD")
+    end
+
+    it "carries the locked egress profile on the manifest by default" do
+      manifest = described_class.from_run_spec(run_spec)
+
+      expect(manifest.execution["networking"]).to include(
+        "mode" => "proxy_restricted",
+        "firewall" => true,
+        "egress_profile" => "locked"
+      )
+    end
+
+    it "propagates a research egress profile through the manifest" do
+      research_spec = run_spec.with(
+        networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted(egress_profile: :research)
+      )
+      manifest = described_class.from_run_spec(research_spec)
+
+      expect(manifest.execution["networking"]).to include(
+        "egress_profile" => "research"
+      )
+    end
+
+    it "propagates an open / break-glass egress profile through the manifest" do
+      open_spec = run_spec.with(
+        networking_policy: ExecutionRunners::NetworkingPolicy.direct_outbound(egress_profile: :open)
+      )
+      manifest = described_class.from_run_spec(open_spec)
+
+      expect(manifest.execution["networking"]).to include(
+        "mode" => "direct_outbound",
+        "firewall" => false,
+        "egress_profile" => "open"
+      )
+    end
+
+    it "never serializes Docker network names or iptables into the manifest" do
+      manifest = described_class.from_run_spec(run_spec)
+      manifest_json = manifest.to_json
+
+      expect(manifest_json).not_to include("paid_agent")
+      expect(manifest_json).not_to include("paid_internal")
+      expect(manifest_json).not_to include("iptables")
     end
   end
 

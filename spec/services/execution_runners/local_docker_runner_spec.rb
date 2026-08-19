@@ -6,6 +6,7 @@ require "rails_helper"
 # @spec CONTAINER-RUNTIME-011
 # @spec CONTAINER-RUNTIME-017
 # @spec CONTAINER-RUNTIME-019
+# @spec CONTAINER-RUNTIME-020
 RSpec.describe ExecutionRunners::LocalDockerRunner do
   subject(:runner) { described_class.new }
 
@@ -214,6 +215,60 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       expect(NetworkPolicy).not_to receive(:apply_firewall_rules)
 
       runner.provision(spec: direct_outbound_spec)
+    end
+
+    it "threads the locked egress profile through to Containers::Provision without inspecting it" do
+      expect(Containers::Provision).to receive(:new)
+        .with(hash_including(networking_policy: run_spec.networking_policy))
+        .and_return(provision_service)
+      allow(provision_service).to receive(:provision).and_return(
+        Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
+      )
+
+      expect { runner.provision(spec: run_spec) }.not_to raise_error
+    end
+
+    it "threads the research egress profile through the portable contract" do
+      research_spec = ExecutionRunners::RunSpec.new(
+        **run_spec.to_h.merge(
+          networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted(
+            allow_destinations: [ { host: "research-gateway", port: 8443 } ],
+            egress_profile: :research
+          )
+        )
+      )
+      expect(Containers::Provision).to receive(:new)
+        .with(hash_including(networking_policy: research_spec.networking_policy))
+        .and_return(provision_service)
+      allow(provision_service).to receive(:provision).and_return(
+        Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
+      )
+
+      runner.provision(spec: research_spec)
+
+      expect(research_spec.networking_policy).to be_research
+      expect(research_spec.networking_policy.allow_destinations).to eq([ { host: "research-gateway", port: 8443 } ])
+    end
+
+    it "threads the open / break-glass egress profile through the portable contract" do
+      open_spec = ExecutionRunners::RunSpec.new(
+        **run_spec.to_h.merge(
+          networking_policy: ExecutionRunners::NetworkingPolicy.direct_outbound(egress_profile: :open)
+        )
+      )
+      allow(NetworkPolicy).to receive(:contract_for_policy)
+        .and_return(double(network: NetworkPolicy::INFRA_NETWORK_NAME))
+      expect(Containers::Provision).to receive(:new)
+        .with(hash_including(networking_policy: open_spec.networking_policy))
+        .and_return(provision_service)
+      allow(provision_service).to receive(:provision).and_return(
+        Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
+      )
+
+      runner.provision(spec: open_spec)
+
+      expect(open_spec.networking_policy).to be_open
+      expect(open_spec.networking_policy).not_to be_firewall
     end
 
     it "raises ProvisionError when network setup fails" do
