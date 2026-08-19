@@ -5865,6 +5865,28 @@ RSpec.describe AgentRun do
       end
     end
 
+    describe "#egress_policy_snapshot" do
+      it "returns the snapshot hash recorded before provisioning" do
+        snapshot = { "mode" => "enforced", "destinations" => [] }
+        agent_run = create(:agent_run, external_metadata: { "egress_policy" => snapshot })
+
+        expect(agent_run.egress_policy_snapshot).to eq(snapshot)
+      end
+
+      it "returns nil when no snapshot was recorded" do
+        agent_run = create(:agent_run, external_metadata: {})
+
+        expect(agent_run.egress_policy_snapshot).to be_nil
+      end
+
+      it "returns nil when the recorded snapshot is not a Hash" do
+        agent_run = create(:agent_run)
+        agent_run.update_columns(external_metadata: { "egress_policy" => "enforced" })
+
+        expect(agent_run.egress_policy_snapshot).to be_nil
+      end
+    end
+
     describe "#workspace_volume_host" do
       it "returns the persisted container_host when present" do
         agent_run = create(:agent_run, container_host: "remote",

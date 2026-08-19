@@ -130,6 +130,11 @@ Rails.application.routes.draw do
   # Account-level pre-commit requirements (defaults inherited by all projects)
   resources :account_pre_commit_requirements, only: [ :index, :show, :create, :update, :destroy ]
 
+  # Account-level egress allowlist entries (defaults inherited by all projects)
+  resources :account_egress_allowlist_entries,
+    only: [ :index, :show, :create, :update, :destroy ],
+    controller: "accounts/egress_allowlist_entries"
+
   # User-level pre-commit requirements (per-user overrides)
   resources :user_pre_commit_requirements, only: [ :index, :show, :create, :update, :destroy ]
 
@@ -263,6 +268,9 @@ Rails.application.routes.draw do
     end
     resources :pre_commit_requirements, only: [ :index, :show, :create, :update, :destroy ],
       controller: "projects/pre_commit_requirements"
+    resources :egress_allowlist_entries,
+      only: [ :index, :show, :create, :update, :destroy ],
+      controller: "projects/egress_allowlist_entries"
     resources :pr_templates, only: [ :index, :show, :create, :update, :destroy ],
       controller: "projects/pr_templates"
     resources :project_service_containers, only: [ :create, :destroy ], controller: "projects/service_containers"

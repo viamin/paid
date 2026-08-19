@@ -1,0 +1,145 @@
+<%
+  snapshot = local_assigns.fetch(:snapshot, nil)
+  security_events = local_assigns.fetch(:security_events, [])
+  denied_event_count = local_assigns.fetch(:denied_event_count, security_events.count)
+%>
+
+<% if snapshot.present? || security_events.any? %>
+  <div class="mt-6 rounded-lg bg-white p-4 shadow dark:bg-gray-800">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-100">Egress Policy</h2>
+        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          Outbound destinations recorded for this run before provisioning, plus any denied or redacted events captured by the gateway or research broker.
+        </p>
+      </div>
+      <% if snapshot.present? && snapshot["mode"].present? %>
+        <span class="inline-flex items-center rounded-full bg-indigo-100 px-3 py-1 text-xs font-medium text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
+          Mode: <%= snapshot["mode"].to_s.humanize %>
+        </span>
+      <% end %>
+    </div>
+
+    <% if snapshot.present? %>
+      <dl class="mt-3 divide-y divide-gray-200 dark:divide-gray-700">
+        <% if snapshot["egress_profile"].present? %>
+          <div class="flex justify-between py-2">
+            <dt class="text-sm text-gray-500 dark:text-gray-400">Egress profile</dt>
+            <dd class="text-sm font-medium text-gray-900 dark:text-gray-100"><%= snapshot["egress_profile"].to_s.humanize %></dd>
+          </div>
+        <% end %>
+        <% if snapshot["snapshot_at"].present? %>
+          <div class="flex justify-between py-2">
+            <dt class="text-sm text-gray-500 dark:text-gray-400">Snapshot recorded</dt>
+            <dd class="text-sm text-gray-900 dark:text-gray-100"><%= snapshot["snapshot_at"] %></dd>
+          </div>
+        <% end %>
+        <% required_destinations = Array(snapshot["required_destinations"]) %>
+        <% allowed_destinations = Array(snapshot["destinations"]) %>
+        <div class="py-2">
+          <dt class="text-sm text-gray-500 dark:text-gray-400">Required destinations (<%= required_destinations.size %>)</dt>
+          <dd class="mt-2">
+            <% if required_destinations.any? %>
+              <ul class="space-y-1">
+                <% required_destinations.each do |destination| %>
+                  <li class="text-sm">
+                    <code class="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs dark:bg-gray-900"><%= destination["host"] %></code>
+                    <% if destination["port"].present? %><span class="text-gray-500 dark:text-gray-400">:<%= destination["port"] %></span><% end %>
+                    <span class="ml-2 inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-900 dark:text-gray-300"><%= destination["source"].to_s.humanize %></span>
+                  </li>
+                <% end %>
+              </ul>
+            <% else %>
+              <p class="text-sm text-gray-500 dark:text-gray-400">No required destinations recorded.</p>
+            <% end %>
+          </dd>
+        </div>
+        <div class="py-2">
+          <dt class="text-sm text-gray-500 dark:text-gray-400">Allowed destinations (<%= allowed_destinations.size %>)</dt>
+          <dd class="mt-2">
+            <% if allowed_destinations.any? %>
+              <ul class="space-y-1">
+                <% allowed_destinations.each do |destination| %>
+                  <li class="text-sm">
+                    <code class="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs dark:bg-gray-900"><%= destination["host"] %></code>
+                    <% if destination["port"].present? %><span class="text-gray-500 dark:text-gray-400">:<%= destination["port"] %></span><% end %>
+                    <span class="ml-2 inline-flex items-center rounded-full <%= source_kind_badge_classes(destination["source_kind"]) %> px-2 py-0.5 text-xs font-medium">
+                      <%= (destination["source"] || destination["source_kind"]).to_s.humanize %>
+                    </span>
+                    <% if destination["entry_id"].present? %>
+                      <span class="ml-1 text-xs text-gray-500 dark:text-gray-400">entry #<%= destination["entry_id"] %></span>
+                    <% end %>
+                  </li>
+                <% end %>
+              </ul>
+            <% else %>
+              <p class="text-sm text-gray-500 dark:text-gray-400">No tenant-approved destinations beyond the required set.</p>
+            <% end %>
+          </dd>
+        </div>
+      </dl>
+    <% else %>
+      <p class="mt-3 text-sm text-gray-500 dark:text-gray-400">
+        Egress policy snapshot was not recorded for this run.
+      </p>
+    <% end %>
+  </div>
+
+  <div class="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/30">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <h2 class="text-sm font-semibold text-amber-800 dark:text-amber-200">Denied Egress &amp; Redacted Events</h2>
+        <p class="mt-1 text-sm text-amber-700 dark:text-amber-300">
+          Outbound attempts blocked by the egress gateway and brokered-research requests blocked for secret extraction.
+        </p>
+      </div>
+      <span class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+        <%= denied_event_count %> <%= "event".pluralize(denied_event_count) %>
+      </span>
+    </div>
+
+    <% if security_events.any? %>
+      <div class="mt-3 overflow-hidden overflow-x-auto rounded-lg border border-amber-200 dark:border-amber-800">
+        <table class="min-w-full divide-y divide-amber-200 text-sm dark:divide-amber-800">
+          <thead class="bg-amber-50 dark:bg-amber-900/40">
+            <tr>
+              <th class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-amber-800 dark:text-amber-200">Time</th>
+              <th class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-amber-800 dark:text-amber-200">Event</th>
+              <th class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-amber-800 dark:text-amber-200">Destination</th>
+              <th class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-amber-800 dark:text-amber-200">Rule</th>
+              <th class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-amber-800 dark:text-amber-200">Redacted evidence</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-amber-100 bg-white dark:divide-amber-900 dark:bg-amber-950/20">
+            <% security_events.each do |event| %>
+              <tr>
+                <td class="whitespace-nowrap px-4 py-2 text-xs text-amber-700 dark:text-amber-300"><%= event.occurred_at&.strftime("%Y-%m-%d %H:%M:%S UTC") %></td>
+                <td class="px-4 py-2 text-xs text-amber-800 dark:text-amber-200">
+                  <span class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"><%= event.event_kind.humanize %></span>
+                  <span class="ml-1 inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"><%= event.severity.humanize %></span>
+                </td>
+                <td class="px-4 py-2 text-xs text-amber-700 dark:text-amber-300">
+                  <% if event.destination_host.present? %>
+                    <code class="rounded bg-amber-50 px-1 py-0.5 font-mono text-xs dark:bg-amber-950/40"><%= event.destination_host %></code>
+                    <% if event.destination_port.present? %><span class="text-amber-700 dark:text-amber-300">:<%= event.destination_port %></span><% end %>
+                    <% if event.scheme.present? %><span class="ml-1 text-amber-600 dark:text-amber-400"><%= event.scheme %></span><% end %>
+                  <% else %>
+                    <span class="text-amber-500 dark:text-amber-500">—</span>
+                  <% end %>
+                </td>
+                <td class="px-4 py-2 text-xs text-amber-700 dark:text-amber-300"><%= event.matched_rule.presence || "—" %></td>
+                <td class="px-4 py-2 text-xs text-amber-700 dark:text-amber-300"><%= event.redacted_evidence.presence || "—" %></td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    <% else %>
+      <p class="mt-3 text-sm text-amber-700 dark:text-amber-300">
+        No denied or redacted events recorded for this run.
+      </p>
+    <% end %>
+  </div>
+<% else %>
+  <%# Placeholder for run detail so the layout stays stable when there is no policy. %>
+<% end %>

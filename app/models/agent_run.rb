@@ -207,6 +207,7 @@ class AgentRun < ApplicationRecord
   has_many :agent_run_anomalies, dependent: :destroy
   has_many :knowledge_usage_stats, dependent: :destroy
   has_many :agent_run_marketplace_entries, -> { order(:position) }, dependent: :destroy
+  has_many :egress_security_events, dependent: :destroy
   has_many :sent_coordination_signals,
     class_name: "AgentCoordinationSignal",
     foreign_key: :source_agent_run_id,
@@ -835,6 +836,17 @@ class AgentRun < ApplicationRecord
   def host_placement_decision
     raw = external_metadata.fetch("host_placement_decision", {})
     raw.is_a?(Hash) ? raw.stringify_keys : {}
+  end
+
+  # Extracts the persisted egress policy snapshot stored under
+  # `external_metadata["egress_policy"]`. The snapshot is written by the
+  # resolver before provisioning and is the authoritative record of which
+  # destinations a run was actually allowed to reach.
+  def egress_policy_snapshot
+    return nil unless external_metadata.is_a?(Hash)
+
+    snapshot = external_metadata["egress_policy"]
+    snapshot.is_a?(Hash) ? snapshot : nil
   end
 
   # Resolves the Docker host that owns this run's named workspace volume for

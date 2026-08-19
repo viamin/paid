@@ -230,6 +230,8 @@ class Project < ApplicationRecord
   has_many :quality_gate_events, dependent: :destroy
   has_many :quality_thresholds, dependent: :destroy
   has_many :pr_templates, dependent: :destroy
+  has_many :egress_allowlist_entries, dependent: :destroy
+  has_many :egress_security_events, dependent: :destroy
   has_many :chat_session_projects, dependent: :destroy
   has_many :chat_sessions, through: :chat_session_projects
   has_many :context_intake_questions, dependent: :destroy
