@@ -322,20 +322,20 @@ RSpec.describe PreviewsProxy do
     end
 
     # @spec LIVE-PREVIEW-009
-    it "does not forward CSRF token headers to the preview upstream" do
+    it "forwards CSRF token headers set by the preview app's own JS" do
       stub_request(:post, "http://127.0.0.1:#{port}/users")
         .to_return(status: 201, body: "created")
 
       mock_request.post("/previews/s3cret-token/users", {
-        "HTTP_X_CSRF_TOKEN" => "csrf-token-from-paid",
-        "HTTP_X_XSRF_TOKEN" => "xsrf-token-from-paid",
+        "HTTP_X_CSRF_TOKEN" => "csrf-token-from-app",
+        "HTTP_X_XSRF_TOKEN" => "xsrf-token-from-app",
         input: "name=alice"
       })
 
-      expect(WebMock).not_to have_requested(:post, "http://127.0.0.1:#{port}/users")
-        .with(headers: { "X-CSRF-Token" => "csrf-token-from-paid" })
-      expect(WebMock).not_to have_requested(:post, "http://127.0.0.1:#{port}/users")
-        .with(headers: { "X-XSRF-Token" => "xsrf-token-from-paid" })
+      expect(WebMock).to have_requested(:post, "http://127.0.0.1:#{port}/users")
+        .with(headers: { "X-CSRF-Token" => "csrf-token-from-app" })
+      expect(WebMock).to have_requested(:post, "http://127.0.0.1:#{port}/users")
+        .with(headers: { "X-XSRF-Token" => "xsrf-token-from-app" })
     end
 
     # @spec LIVE-PREVIEW-009
@@ -493,8 +493,7 @@ RSpec.describe PreviewsProxy do
         client_io, client_mirror = Socket.pair(:UNIX, :STREAM, 0)
         env = websocket_env_for(client_io,
           "HTTP_COOKIE" => "_paid_session=super-secret; cable_user_id=encrypted-user-id",
-          "HTTP_AUTHORIZATION" => "Bearer paid-user-token",
-          "HTTP_X_CSRF_TOKEN" => "csrf-token-from-paid")
+          "HTTP_AUTHORIZATION" => "Bearer paid-user-token")
 
         thread = Thread.new { middleware.call(env) }
         thread.abort_on_exception = false
@@ -504,7 +503,25 @@ RSpec.describe PreviewsProxy do
         forwarded = upstream_received.call
         expect(forwarded).not_to match(/^Cookie: /i)
         expect(forwarded).not_to match(/^Authorization: /i)
-        expect(forwarded).not_to match(/^X-CSRF-Token: /i)
+
+        client_mirror.close
+        thread.join(2)
+      end
+    end
+
+    # @spec LIVE-PREVIEW-009
+    it "forwards the preview app's CSRF token header on the WebSocket handshake" do
+      with_websocket_upstream(port) do |upstream_received|
+        client_io, client_mirror = Socket.pair(:UNIX, :STREAM, 0)
+        env = websocket_env_for(client_io, "HTTP_X_CSRF_TOKEN" => "csrf-token-from-app")
+
+        thread = Thread.new { middleware.call(env) }
+        thread.abort_on_exception = false
+
+        expect(read_until(client_mirror, "\r\n\r\n", timeout: 2)).to include("101")
+
+        forwarded = upstream_received.call
+        expect(forwarded).to match(/^X-Csrf-Token: csrf-token-from-app/i)
 
         client_mirror.close
         thread.join(2)

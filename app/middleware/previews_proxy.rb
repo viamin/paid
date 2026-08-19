@@ -66,14 +66,25 @@ class PreviewsProxy
 
   # Strict allowlist of upstream request headers safe to forward to the
   # preview container. Anything not on this list is dropped so that browser
-  # credentials (Cookie, Authorization, X-CSRF-Token, X-XSRF-Token) and any
-  # Paid/session-specific credential header never reach repository-controlled
-  # preview code. The proxy rewrites Host, X-Forwarded-*, and Origin from the
-  # request envelope below, so Origin must be allowed in and forwarded through
-  # the rewrite step. Connection/Upgrade and Sec-WebSocket-* remain in the
-  # list because the WebSocket upgrade path needs them to complete the
-  # handshake with the upstream; the plain-HTTP path strips them again via
-  # `HOP_BY_HOP_HEADERS` (RFC 7230 §6.1) in `collect_request_headers`.
+  # credentials the browser attaches automatically to every same-origin
+  # request (Cookie, and Authorization when the browser has cached HTTP-auth
+  # credentials for this origin) and any Paid/session-specific credential
+  # header never reach repository-controlled preview code. The proxy
+  # rewrites Host, X-Forwarded-*, and Origin from the request envelope below,
+  # so Origin must be allowed in and forwarded through the rewrite step.
+  # Connection/Upgrade and Sec-WebSocket-* remain in the list because the
+  # WebSocket upgrade path needs them to complete the handshake with the
+  # upstream; the plain-HTTP path strips them again via `HOP_BY_HOP_HEADERS`
+  # (RFC 7230 §6.1) in `collect_request_headers`.
+  #
+  # X-CSRF-Token/X-XSRF-Token are intentionally allowed through: unlike
+  # Cookie/Authorization, browsers never attach these automatically — they
+  # only appear when application JS sets them explicitly. Dropping them
+  # unconditionally broke the preview app's own header-based CSRF protection
+  # on POST/fetch requests after it sets its own session/csrf cookies (see
+  # the Set-Cookie rewrite below), which violates the RDR-045 "forwarded
+  # apps require zero changes" contract. See the code review discussion on
+  # PR #3499 for the full trust-boundary analysis.
   # @spec LIVE-PREVIEW-009
   FORWARDED_REQUEST_HEADERS = %w[
     accept
@@ -115,7 +126,9 @@ class PreviewsProxy
     user-agent
     via
     warning
+    x-csrf-token
     x-requested-with
+    x-xsrf-token
   ].to_set.freeze
 
   REQUEST_CLASSES = {
