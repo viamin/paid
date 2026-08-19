@@ -556,14 +556,19 @@ RSpec.describe PullRequests::ProgressState, :no_db do
 
   it "loads runs linked directly to the PR issue as well as by PR number" do
     scope = fake_run_scope({})
-    allow(project).to receive(:agent_runs).and_return(scope)
+    allow(AgentRun).to receive(:pr_history_scope).with(
+      project: project,
+      issue: issue,
+      pr_number: 42
+    ).and_return(scope)
 
     described_class.call(project: project, issue: issue)
 
+    expect(AgentRun).to have_received(:pr_history_scope).with(
+      project: project,
+      issue: issue,
+      pr_number: 42
+    )
     expect(scope.where_calls).to include([ goal: described_class::GOALS ])
-    expect(scope.where_calls).to include([
-      "issue_id = :issue_id OR source_pull_request_number = :pr_num OR pull_request_number = :pr_num",
-      { issue_id: 7, pr_num: 42 }
-    ])
   end
 end

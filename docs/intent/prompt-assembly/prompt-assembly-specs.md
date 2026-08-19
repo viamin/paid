@@ -43,17 +43,18 @@
   allowlist policy.
   *Code:* `PromptAssembly::Trust`.
 
-- [x] **PROMPT-ASSEMBLY-008** — The migrated runner-time goal wrappers
+- [x] **PROMPT-ASSEMBLY-008** — When the `prompt_assembly` feature flag is
+  enabled for a run's project, the migrated runner-time goal wrappers
   (create-issue, review, enhance-issue, interactive verification) SHALL be
-  contributed as explicit `PromptAssembly::Section`s with trust metadata and
-  SHALL NOT be appended to the prompt as raw strings outside assembly.
+  contributed as explicit `PromptAssembly::Section`s with trust metadata.
   *Code:* `PromptAssembly::GoalAssembly`,
   `Activities::RunAgentActivity#augment_prompt_for_goal`.
 
-- [x] **PROMPT-ASSEMBLY-009** — A queue-time custom prompt SHALL NOT bypass
-  required safety sections: the goal-wrapper assembly runs after
-  `effective_prompt` resolves the base text and marks the migrated goal
-  sections `required`, so customization cannot suppress them.
+- [x] **PROMPT-ASSEMBLY-009** — When the `prompt_assembly` feature flag is
+  enabled, a queue-time custom prompt SHALL NOT bypass required safety
+  sections: the goal-wrapper assembly runs after `effective_prompt` resolves
+  the base text and marks the migrated goal sections `required`, so
+  customization cannot suppress them.
   *Code:* `Activities::RunAgentActivity#augment_prompt_for_goal`,
   `PromptAssembly::GoalAssembly`, `PromptAssembly::Profile`.
 
@@ -64,14 +65,12 @@
   *Code:* `PromptAssembly::Result#provenance`, `AgentRun#record_prompt_assembly!`,
   `RunProvenanceBuilder#prompt_provenance`.
 
-- [x] **PROMPT-ASSEMBLY-011** — When PR follow-up runs build their prompt,
-  the system SHALL assemble sections through `PromptAssembly::Build`,
-  classify PR review thread comments and PR conversation comments by
-  author trust, exclude untrusted comments from the prompt text, and
-  persist the section provenance (included section keys, sources, trust
-  levels, required flags, plus excluded counts/reasons) on the
-  prepare_pr_prompt phase so the agent run's audit trail shows which
-  sections reached the agent and which untrusted content was rejected.
+- [x] **PROMPT-ASSEMBLY-011** — When PR follow-up runs build their prompt with
+  the `prompt_assembly` feature flag enabled, the system SHALL assemble
+  sections through `PromptAssembly::Build`, classify PR review thread comments
+  and PR conversation comments by author trust, exclude untrusted comments from
+  the prompt text, and persist section provenance on the `prepare_pr_prompt`
+  phase.
   *Code:* `Prompts::BuildForPr`, `Activities::PreparePrPromptActivity`.
 
 - [x] **PROMPT-ASSEMBLY-012** — The system SHALL resolve assembly profiles
@@ -86,10 +85,10 @@
 
 - [x] **PROMPT-ASSEMBLY-013** — The system SHALL record a content-addressable
   fingerprint of the resolved profile and a SHA-256 digest of the final
-  prompt text in the assembly result and in the agent-run provenance. The
-  provenance SHALL display ordered included and skipped sections with
-  their trust levels, source records, trusted/excluded content counts,
-  and budget decisions.
+  prompt text in the assembly result and in the agent-run provenance for the
+  `prompt_assembly` cohort. The provenance SHALL display ordered included and
+  skipped sections with their trust levels, source records, trusted/excluded
+  content counts, and budget decisions.
   *Code:* `PromptAssembly::Result`, `PromptAssembly::Build`,
   `RunProvenanceBuilder`, `Activities::PreparePrPromptActivity`.
 
@@ -109,3 +108,30 @@
   issue-implementation template.
   *Code:* `PromptAssembly::Sections::SafetyRules`,
   `PromptAssembly::BuildIssuePrompt`, `Prompts::BuildForIssue`.
+
+- [x] **PROMPT-ASSEMBLY-016** — Unless `FeatureFlags.enabled?(:prompt_assembly,
+  project:)` is true, PR prompt construction and runner-time goal augmentation
+  SHALL use the legacy prompt builder path and SHALL record
+  `legacy_prompt_builder` on run metadata/provenance; enabled projects SHALL
+  record `prompt_assembly`.
+  *Code:* `FeatureFlags`, `Prompts::BuildForPr`,
+  `Activities::PreparePrPromptActivity`, `Activities::RunAgentActivity`,
+  `AgentRun#record_prompt_builder!`, `RunProvenanceBuilder#prompt_provenance`.
+
+- [x] **PROMPT-ASSEMBLY-017** — When
+  `FeatureFlags.enabled?(:prompt_assembly_shadow_compare, project:)` is true
+  for a PR prompt preparation run, the system SHALL build both the legacy and
+  PromptAssembly PR prompts for the same inputs, SHALL serve only the selected
+  prompt-builder path, and SHALL persist a data-only comparison with digests,
+  byte counts, capped samples, and match status on the `prepare_pr_prompt`
+  phase metadata.
+  *Code:* `Activities::PreparePrPromptActivity`, `FeatureFlags`.
+
+- [x] **PROMPT-ASSEMBLY-018** — For `review_feedback` PR follow-up runs, the
+  system SHALL treat bot-authored unresolved review threads as actionable
+  follow-up context rather than blocking prompt preparation solely because the
+  bot comments are excluded from prompt instructions. Prompt preparation SHALL
+  raise `ReviewFeedbackContextBlocked` only when at least one unresolved
+  human-authored review thread exists and none of its comments are
+  prompt-eligible.
+  *Code:* `Prompts::BuildForPr`, `Activities::PreparePrPromptActivity`.

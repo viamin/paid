@@ -232,6 +232,7 @@ RSpec.describe ProcessRunQueueJob do
       expect(queued_run.reload.container_host).to be_nil
       expect(queued_run.reload.external_metadata["planned_container_host"]).to eq("aws-runner-1")
       expect(queued_run.temporal_workflow_id).to be_present
+      expect(AgentRun.active_count_for_host("aws-runner-1")).to eq(1)
       expect(captured_input[:container_host]).to eq("aws-runner-1")
     end
 
@@ -353,7 +354,7 @@ RSpec.describe ProcessRunQueueJob do
       expect_capacity_aware_decision(queued_run, planned_host: "elguapo", decision_mode: "capacity_aware_fallback")
     end
 
-    it "starts the oldest queued run when capacity is available" do
+    it "starts the oldest queued run when capacity is available" do # @spec TEMPORAL-ORCHESTRATION-005
       queued_run = create(:agent_run, :queued, created_at: 2.minutes.ago)
       create(:agent_run, :queued, created_at: 1.minute.ago)
 
@@ -369,8 +370,14 @@ RSpec.describe ProcessRunQueueJob do
       job.perform
 
       queued_run.reload
-      expect(queued_run.status).to eq("queued")
+      expect(queued_run.status).to eq("running")
+      expect(queued_run.started_at).to be_nil
       expect(queued_run.temporal_workflow_id).to be_present
+      expect(LiveDashboardBroadcastJob).to have_been_enqueued.with(
+        queued_run.project.account_id,
+        queued_run.id,
+        refresh_queue_preview: true
+      )
     end
 
     it "starts multiple queued runs up to user capacity" do
@@ -383,8 +390,8 @@ RSpec.describe ProcessRunQueueJob do
 
       described_class.new.perform
 
-      expect(older.reload.status).to eq("queued")
-      expect(newer.reload.status).to eq("queued")
+      expect(older.reload.status).to eq("running")
+      expect(newer.reload.status).to eq("running")
     end
 
     it "keeps auto-mode runs queued when Docker capacity is insufficient" do
@@ -626,7 +633,7 @@ RSpec.describe ProcessRunQueueJob do
       described_class.new.perform
 
       expect(started_ids).to eq([ older.id ])
-      expect(older.reload.status).to eq("queued")
+      expect(older.reload.status).to eq("running")
       expect(newer.reload.status).to eq("queued")
     end
 
@@ -645,7 +652,7 @@ RSpec.describe ProcessRunQueueJob do
       described_class.new.perform
 
       expect(started_ids).to eq([ manual.id ])
-      expect(manual.reload.status).to eq("queued")
+      expect(manual.reload.status).to eq("running")
       expect(auto.reload.status).to eq("queued")
     end
 
@@ -666,7 +673,7 @@ RSpec.describe ProcessRunQueueJob do
       described_class.new.perform
 
       expect(started_ids).to eq([ manual.id ])
-      expect(manual.reload.status).to eq("queued")
+      expect(manual.reload.status).to eq("running")
       expect(auto_continue.reload.status).to eq("queued")
     end
 
@@ -859,7 +866,7 @@ RSpec.describe ProcessRunQueueJob do
       # (e.g. when start_workflow raises due to a network timeout but
       # the workflow actually started server-side).
       expect(failing_run.reload.temporal_workflow_id).to be_present
-      expect(good_run.reload.status).to eq("queued")
+      expect(good_run.reload.status).to eq("running")
     end
 
     it "enqueues finished-run followups when workflow start fails" do
@@ -872,6 +879,20 @@ RSpec.describe ProcessRunQueueJob do
       expect(QualityMetricsCollectionJob).to have_been_enqueued.with(failing_run.id)
       expect(AnomalyDetectionJob).to have_been_enqueued.with(failing_run.id)
       expect(DashboardBroadcastJob).to have_been_enqueued.with(failing_run.project.account_id)
+    end
+
+    it "admits a claimed run even when unrelated validations drift after queueing" do
+      queued_run = create(:agent_run, :queued)
+      other_user = create(:user)
+      queued_run.update_columns(initiating_user_id: other_user.id)
+      allow(ConfigurationBundles::AssignToRun).to receive(:call)
+
+      result = job.send(:start_claimed_run, queued_run)
+
+      expect(result).to be(true)
+      expect(queued_run.reload.status).to eq("running")
+      expect(queued_run.temporal_workflow_id).to be_present
+      expect(queued_run.started_at).to be_nil
     end
 
     it "fails run when project owner cannot be resolved" do
@@ -947,7 +968,7 @@ RSpec.describe ProcessRunQueueJob do
       described_class.new.perform
 
       expect(started_ids).to eq([ active_run.id ])
-      expect(active_run.reload.status).to eq("queued")
+      expect(active_run.reload.status).to eq("running")
       expect(paused_run.reload.status).to eq("queued")
     end
 
@@ -966,7 +987,7 @@ RSpec.describe ProcessRunQueueJob do
       described_class.new.perform
 
       expect(blocked_run.reload.status).to eq("queued")
-      expect(eligible_run.reload.status).to eq("queued")
+      expect(eligible_run.reload.status).to eq("running")
     end
 
     it "bulk-skips a blocked owner's backlog so later runnable owners are still reached" do
@@ -1103,7 +1124,7 @@ RSpec.describe ProcessRunQueueJob do
 
       described_class.new.perform
 
-      expect(manual_run.reload.status).to eq("queued")
+      expect(manual_run.reload.status).to eq("running")
     end
 
     it "fails a budget-blocked run without consuming capacity or counting as a failure" do
@@ -1125,7 +1146,7 @@ RSpec.describe ProcessRunQueueJob do
 
       expect(blocked_run.reload.status).to eq("failed")
       expect(blocked_run.error_message).to include("Budget enforcement")
-      expect(normal_run.reload.status).to eq("queued")
+      expect(normal_run.reload.status).to eq("running")
     end
 
     context "with RDR-032 dequeue-time eligibility recheck" do
@@ -1208,7 +1229,7 @@ RSpec.describe ProcessRunQueueJob do
         described_class.new.perform
 
         expect(run.reload.temporal_workflow_id).to be_present
-        expect(run.reload.status).to eq("queued")
+        expect(run.reload.status).to eq("running")
       end
 
       it "does not recheck a manual run even if its issue is ineligible" do
@@ -1221,7 +1242,7 @@ RSpec.describe ProcessRunQueueJob do
 
         described_class.new.perform
 
-        expect(run.reload.status).to eq("queued")
+        expect(run.reload.status).to eq("running")
         expect(run.reload.temporal_workflow_id).to be_present
       end
     end
@@ -1401,7 +1422,7 @@ RSpec.describe ProcessRunQueueJob do
         described_class.new.perform
 
         expect(blocked_run.reload.status).to eq("queued")
-        expect(other_run.reload.status).to eq("queued")
+        expect(other_run.reload.status).to eq("running")
         expect(other_run.reload.temporal_workflow_id).to be_present
       end
 
@@ -1436,7 +1457,7 @@ RSpec.describe ProcessRunQueueJob do
         described_class.new.perform
 
         queued_run.reload
-        expect(queued_run.status).to eq("queued")
+        expect(queued_run.status).to eq("running")
         expect(queued_run.runner_id).to eq(codex_runner.id)
         expect(queued_run.agent_type).to eq("codex")
         expect(queued_run.temporal_workflow_id).to be_present

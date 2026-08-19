@@ -1365,19 +1365,58 @@ RSpec.describe Activities::RunAgentActivity do
     end
   end
 
-  # @spec PROMPT-ASSEMBLY-008, PROMPT-ASSEMBLY-009, PROMPT-ASSEMBLY-010
+  # @spec PROMPT-ASSEMBLY-008, PROMPT-ASSEMBLY-009, PROMPT-ASSEMBLY-010, PROMPT-ASSEMBLY-016
   describe "#augment_prompt_for_goal assembly routing" do
     before do
+      FeatureFlags.flipper.features.each(&:remove)
       allow(Prompt).to receive(:resolve).and_return(nil)
     end
 
-    it "routes create-issue through PromptAssembly and records provenance with a digest" do
+    it "uses legacy goal augmentation by default" do
       run = create(:agent_run, :create_issue_goal, project: project, issue: issue)
 
       prompt, fallback = activity.send(:augment_prompt_for_goal, run, "Create the issue")
 
       expect(fallback).to be_nil
       expect(prompt).to include("CREATE A GITHUB ISSUE")
+      expect(run.reload.prompt_builder).to eq("legacy_prompt_builder")
+      expect(run.prompt_assembly_provenance).to be_nil
+    end
+
+    it "preserves a prepared legacy cohort when the flag is enabled before execution" do
+      FeatureFlags.enable!(:prompt_assembly, project: project)
+      run = create(:agent_run, :create_issue_goal, project: project, issue: issue)
+      run.record_prompt_builder!("legacy_prompt_builder")
+
+      prompt, fallback = activity.send(:augment_prompt_for_goal, run, "Create the issue")
+
+      expect(fallback).to be_nil
+      expect(prompt).to include("CREATE A GITHUB ISSUE")
+      expect(run.reload.prompt_builder).to eq("legacy_prompt_builder")
+      expect(run.prompt_assembly_provenance).to be_nil
+    end
+
+    it "preserves a prepared PromptAssembly cohort when the flag is disabled before execution" do
+      run = create(:agent_run, :create_issue_goal, project: project, issue: issue)
+      run.record_prompt_builder!("prompt_assembly")
+
+      prompt, fallback = activity.send(:augment_prompt_for_goal, run, "Create the issue")
+
+      expect(fallback).to be_nil
+      expect(prompt).to include("CREATE A GITHUB ISSUE")
+      expect(run.reload.prompt_builder).to eq("prompt_assembly")
+      expect(run.prompt_assembly_provenance["sections"].map { |s| s["key"] }).to include("goal.create_issue")
+    end
+
+    it "routes create-issue through PromptAssembly and records provenance with a digest when enabled" do
+      FeatureFlags.enable!(:prompt_assembly, project: project)
+      run = create(:agent_run, :create_issue_goal, project: project, issue: issue)
+
+      prompt, fallback = activity.send(:augment_prompt_for_goal, run, "Create the issue")
+
+      expect(fallback).to be_nil
+      expect(prompt).to include("CREATE A GITHUB ISSUE")
+      expect(run.reload.prompt_builder).to eq("prompt_assembly")
       provenance = run.reload.prompt_assembly_provenance
       expect(provenance["digest"]).to match(/\A[0-9a-f]{64}\z/)
       expect(provenance["sections"].map { |s| s["key"] }).to include("goal.create_issue")
@@ -1385,7 +1424,33 @@ RSpec.describe Activities::RunAgentActivity do
       expect(goal_section["required"]).to be true
     end
 
+    it "does not fail legacy augmentation when prompt-builder metadata recording fails" do
+      run = create(:agent_run, :create_issue_goal, project: project, issue: issue)
+      allow(run).to receive(:record_prompt_builder!)
+        .and_raise(ActiveRecord::ActiveRecordError, "write failed")
+
+      expect {
+        prompt, fallback = activity.send(:augment_prompt_for_goal, run, "Create the issue")
+        expect(fallback).to be_nil
+        expect(prompt).to include("CREATE A GITHUB ISSUE")
+      }.not_to raise_error
+    end
+
+    it "does not fail PromptAssembly augmentation when prompt-builder metadata recording fails" do
+      FeatureFlags.enable!(:prompt_assembly, project: project)
+      run = create(:agent_run, :create_issue_goal, project: project, issue: issue)
+      allow(run).to receive(:record_prompt_builder!)
+        .and_raise(ActiveRecord::ActiveRecordError, "write failed")
+
+      expect {
+        prompt, fallback = activity.send(:augment_prompt_for_goal, run, "Create the issue")
+        expect(fallback).to be_nil
+        expect(prompt).to include("CREATE A GITHUB ISSUE")
+      }.not_to raise_error
+    end
+
     it "routes review through PromptAssembly and records provenance" do
+      FeatureFlags.enable!(:prompt_assembly, project: project)
       run = create(:agent_run, :review_goal, project: project)
 
       prompt, fallback = activity.send(:augment_prompt_for_goal, run, "Review the branch")
@@ -1397,6 +1462,7 @@ RSpec.describe Activities::RunAgentActivity do
     end
 
     it "routes enhance-issue through PromptAssembly and records provenance" do
+      FeatureFlags.enable!(:prompt_assembly, project: project)
       run = create(:agent_run, :enhance_issue_goal, project: project, issue: issue)
       allow(Knowledge::ContextBundle::Build).to receive(:call)
         .with(issue: issue, project: project, agent_run: run, agent_run_id: run.id)
@@ -1411,6 +1477,7 @@ RSpec.describe Activities::RunAgentActivity do
     end
 
     it "routes interactive verification through PromptAssembly as a separate section" do
+      FeatureFlags.enable!(:prompt_assembly, project: project)
       run = create(:agent_run, :with_git_context, project: project)
       allow(AgentRuns::VerificationPrompt).to receive(:call).and_return(
         AgentRuns::VerificationPrompt::Section.new(
@@ -1430,6 +1497,7 @@ RSpec.describe Activities::RunAgentActivity do
     end
 
     it "records provenance for goals without a migrated wrapper" do
+      FeatureFlags.enable!(:prompt_assembly, project: project)
       run = create(:agent_run, :create_feature_goal, project: project)
 
       prompt, fallback = activity.send(:augment_prompt_for_goal, run, "Build the feature")
@@ -1441,6 +1509,7 @@ RSpec.describe Activities::RunAgentActivity do
     end
 
     it "does not leak section bodies into recorded provenance" do
+      FeatureFlags.enable!(:prompt_assembly, project: project)
       run = create(:agent_run, :create_issue_goal, project: project, issue: issue)
 
       activity.send(:augment_prompt_for_goal, run, "Create the issue")
@@ -1449,6 +1518,7 @@ RSpec.describe Activities::RunAgentActivity do
     end
 
     it "preserves issue prompt provenance when goal-level assembly is recorded later" do
+      FeatureFlags.enable!(:prompt_assembly, project: project)
       goal_issue = create(
         :issue,
         project: project,
@@ -2159,6 +2229,32 @@ expect(container_service).to receive(:execute).with(
 
         expect(Containers::TokenOptimization).to receive(:rtk_init_for_runner)
           .with(container_service: container_service, runner_key: anything)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "marks the run running before runner setup and preflight" do # @spec TEMPORAL-ORCHESTRATION-005
+        allow(git_ops).to receive(:has_changes_since?).and_return(false)
+        allow(Containers::TokenOptimization).to receive(:rtk_init_for_runner) do
+          expect(agent_run.reload.status).to eq("running")
+        end
+        allow(activity).to receive(:run_runner_preflight!) do
+          expect(agent_run.reload.status).to eq("running")
+        end
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "stamps started_at when an admitted run begins execution" do
+        allow(git_ops).to receive(:has_changes_since?).and_return(false)
+        agent_run.update!(status: "running", started_at: nil)
+
+        allow(Containers::TokenOptimization).to receive(:rtk_init_for_runner) do
+          expect(agent_run.reload.started_at).to be_present
+        end
+        allow(activity).to receive(:run_runner_preflight!) do
+          expect(agent_run.reload.started_at).to be_present
+        end
 
         activity.execute(agent_run_id: agent_run.id)
       end
@@ -5322,6 +5418,18 @@ expect(container_service).to receive(:execute).with(
       expect(container_service).to receive(:execute).with(
         anything,
         hash_including(timeout: a_value <= 300)
+      ).and_return(exec_success)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "uses the full execution budget when admission happened before execution started" do
+      project.update!(max_execution_seconds: 60)
+      agent_run.update!(status: "running", started_at: nil)
+
+      expect(container_service).to receive(:execute).with(
+        anything,
+        hash_including(timeout: 60)
       ).and_return(exec_success)
 
       activity.execute(agent_run_id: agent_run.id)
