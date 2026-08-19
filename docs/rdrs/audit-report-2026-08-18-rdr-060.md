@@ -71,6 +71,14 @@ resource types into a single queryable model with standardized lifecycle
 states. The current distributed tracking requires joining multiple tables
 and has no single query surface for "all resources provisioned for account X."
 
+This gap also extends beyond the main agent container/workspace volume path:
+MCP sidecar containers (`app/services/containers/mcp_provisioner.rb`) are
+provisioned on the same external Docker infrastructure but are tracked only
+via `AgentRun#mcp_sidecar_container_ids`, and shared service containers
+(`app/services/containers/service_provisioner.rb`) are tracked only via
+`ServiceContainer#docker_container_id`/`AgentRun#service_container_ids`.
+Neither resource type has any ledger-equivalent representation today.
+
 **Evidence**:
 
 - `app/models/agent_run.rb` — `container_id`, `container_host`, `runner_handle` columns
@@ -78,7 +86,9 @@ and has no single query surface for "all resources provisioned for account X."
 - `app/models/worktree.rb` — worktree lifecycle tracking
 - `app/models/docker_host.rb` — multi-backend host registry
 - `app/services/execution_runners.rb:249-285` — `RunnerHandle` Data class with `from_record`/`from_json` recovery
-- `db/schema.rb` — table definitions for all four models
+- `app/services/containers/mcp_provisioner.rb` — sidecar containers tracked via `AgentRun#mcp_sidecar_container_ids`, no ledger entry
+- `app/services/containers/service_provisioner.rb` — service containers tracked via `ServiceContainer#docker_container_id`/`AgentRun#service_container_ids`, no ledger entry
+- `db/schema.rb` — table definitions for all models
 
 **Tests** (executed — see [Validation Evidence](#validation-evidence)):
 
@@ -115,14 +125,27 @@ and has no single query surface for "all resources provisioned for account X."
 - No `paid.account_id`, `paid.created_at`, or `paid.resource_kind` labels
   (the full RDR-060 tag set) are applied — only the subset above.
 - No tag/label strategy for future cloud providers.
+- MCP sidecar containers and shared service containers carry an even
+  narrower, provisioner-specific label pair rather than the shared ownership
+  tag set: `McpProvisioner#create_sidecar_container`
+  (`app/services/containers/mcp_provisioner.rb:223-226`) applies only
+  `paid.mcp_sidecar`/`paid.agent_run_id`, and
+  `ServiceProvisioner#create_docker_container`
+  (`app/services/containers/service_provisioner.rb:458-461`) applies only
+  `paid.service_container`/`paid.service_container_id`. Neither applies
+  `paid.managed`, `paid.project_id`, `paid.account_id`, `paid.created_at`,
+  or `paid.resource_kind`, so these container types are not distinguishable
+  as Paid-managed by a reconciler using the RDR-060 tag contract.
 
 **Evidence**:
 
 - `app/jobs/agent_run_resource_janitor_job.rb:17` — `VOLUME_PREFIX = "paid-workspace-"` (naming convention, not a label)
 - `app/services/containers/provision.rb:2450-2462` — `volume_options` applies ownership labels to volumes
 - `app/services/containers/provision.rb:2464-2484` — `container_labels` applies ownership labels to containers
+- `app/services/containers/mcp_provisioner.rb:223-226` — MCP sidecar containers labeled with only `paid.mcp_sidecar`/`paid.agent_run_id`
+- `app/services/containers/service_provisioner.rb:458-461` — service containers labeled with only `paid.service_container`/`paid.service_container_id`
 
-**Verdict**: Partial — container and volume labels are applied during provisioning, but the full RDR-060 tag set (`paid.account_id`, `paid.created_at`, `paid.resource_kind`) is not yet complete. Tracked in #3410.
+**Verdict**: Partial — container and volume labels are applied during provisioning, but the full RDR-060 tag set (`paid.account_id`, `paid.created_at`, `paid.resource_kind`) is not yet complete, and MCP sidecar/service containers use a narrower, non-conformant label set entirely. Tracked in #3410.
 
 ---
 
@@ -270,7 +293,12 @@ none is "implicitly satisfied" by the shipped code.
    tracking across `agent_runs`, `container_pool_entries`, `worktrees`, and
    `docker_hosts` provides the necessary data but lacks a single query surface,
    standardized lifecycle states, and the provisioning intent capability. This
-   is the foundational gap that gates criteria 2-5.
+   is the foundational gap that gates criteria 2-5. MCP sidecar containers
+   (`app/services/containers/mcp_provisioner.rb`) and shared service
+   containers (`app/services/containers/service_provisioner.rb`) are also
+   provisioned on external infrastructure but are entirely outside this
+   tracking today, tracked only via `AgentRun#mcp_sidecar_container_ids`,
+   `ServiceContainer#docker_container_id`, and `AgentRun#service_container_ids`.
 
 2. **Complete provider ownership tag set** — tracked in
    [#3410](https://github.com/viamin/paid/issues/3410). Docker containers and
@@ -279,7 +307,15 @@ none is "implicitly satisfied" by the shipped code.
    during provisioning (`app/services/containers/provision.rb`), but the full
    RDR-060 tag set (`paid.account_id`, `paid.created_at`,
    `paid.resource_kind`) is not yet applied, and there is no tag/label
-   strategy for future cloud providers.
+   strategy for future cloud providers. MCP sidecar containers
+   (`McpProvisioner#create_sidecar_container`) and service containers
+   (`ServiceProvisioner#create_docker_container`) are further behind: they
+   apply only a provisioner-specific label pair (`paid.mcp_sidecar`/
+   `paid.agent_run_id` and `paid.service_container`/
+   `paid.service_container_id`, respectively) with none of the shared
+   ownership tags, so they need to be brought into the same tagging
+   convention as the main container/volume path, not just extended with the
+   three missing tags.
 
 3. **Reconciliation against provider state** — tracked in
    [#3411](https://github.com/viamin/paid/issues/3411). No periodic drift
