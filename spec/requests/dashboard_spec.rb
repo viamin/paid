@@ -203,11 +203,13 @@ RSpec.describe "Dashboard" do
         expect(chart).to be_present
       end
 
+      # @spec DASHBOARD-FRAME-CACHE-005
       it "renders deferred turbo frame sources for dashboard widgets", :aggregate_failures do
         get dashboard_path
 
         doc = Nokogiri::HTML(response.body)
         expect(doc.at_css("[data-controller~='dashboard-frames']")).to be_present
+        expect(doc.at_css("[data-controller~='dashboard-frames'][data-dashboard-frames-cache-scope-value='#{account.id}:#{user.id}']")).to be_present
         expect(doc.at_css("turbo-frame#dashboard-queue-preview[src]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-metrics[data-dashboard-frames-src='#{dashboard_metrics_path(time_range: "cumulative")}']")).to be_present
         expect(doc.at_css("turbo-frame#dashboard-performance[data-dashboard-frames-src='#{dashboard_performance_path(time_range: "cumulative", status: "all", goal: "all")}']")).to be_present
