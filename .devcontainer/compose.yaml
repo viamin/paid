@@ -47,7 +47,7 @@ services:
         condition: service_healthy
 
   postgres:
-    image: postgres:16.14
+    image: postgres:16.15
     # This single container is shared by Temporal (temporal/temporal_visibility),
     # the app, the GoodJob worker, the temporal worker, and every active git
     # worktree's databases. The default max_connections=100 is exhausted under

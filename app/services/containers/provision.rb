@@ -274,8 +274,22 @@ module Containers
     # and image resolution cost (DB queries plus profile lookups) that only
     # provisioning actually needs.
     def options
-      @options ||= DEFAULTS.merge(resolve_user_setting_overrides).merge(resolve_project_image).merge(@raw_options)
+      @options ||= begin
+        base_options = DEFAULTS.merge(resolve_user_setting_overrides)
+        image_selection = resolve_runtime_image_selection(default_image: base_options[:image])
+        @runtime_image_selection = image_selection
+
+        base_options
+          .merge(image: image_selection.image)
+          .merge(@raw_options.except(:image))
+      end
     end
+
+    # The runtime image selection backing #options — warm-time provenance for
+    # a claimed pool entry, a fresh selection otherwise. Nil until #options
+    # has been resolved. PoolManager persists this on the pool entry at warm
+    # time so claims attribute the digest the container actually runs.
+    attr_reader :runtime_image_selection
 
     # Provisions a new container with security hardening.
     # Ensures the selected network exists before creating the container,
@@ -1312,17 +1326,55 @@ module Containers
       overrides
     end
 
-    # Resolves the language-appropriate agent image from the project's detected
-    # runtime profile (RDR-046 / POLYGLOT-TEST-004). Sits between user-setting
-    # overrides and caller-supplied options, so an explicit +image:+ (e.g. pool
-    # reconnect, credential maintenance) still wins. Returns an empty hash when
-    # there is no project or the project resolves to the base image, leaving
-    # +DEFAULTS[:image]+ as the effective default.
-    def resolve_project_image
-      return {} unless project
+    # The existing language-aware resolver still chooses the requested
+    # runtime/image profile (RDR-046). RDR-059 layers on the final selection:
+    # development/test keep mutable tags for local iteration, while production
+    # resolves the requested tag to an immutable digest and persists the
+    # selection metadata on the run. The resolution order mirrors the audit
+    # trail: a claimed warm-pool container reuses the selection persisted on
+    # its entry at warm time, an already-provisioned non-pool run reuses its
+    # own recorded selection across reconnects, and only then does a fresh
+    # catalog resolution win. The catalog's default may have moved between
+    # warm and claim (or between reconnect and re-execute), and the run's
+    # provenance must describe the container it actually executes in.
+    def resolve_runtime_image_selection(default_image:)
+      # @spec IMMUTABLE-IMAGE-001, IMMUTABLE-IMAGE-002, IMMUTABLE-IMAGE-003
+      selection = claimed_pool_entry_selection || recorded_run_selection || resolve_catalog_selection(default_image)
+      agent_run&.record_runtime_image_selection!(selection.metadata)
+      selection
+    end
 
-      resolved = Containers::ImageResolver.resolve(project)
-      resolved == Containers::ImageResolver::BASE_IMAGE ? {} : { image: resolved }
+    def claimed_pool_entry_selection
+      metadata = @pool_entry&.runtime_image_selection
+      return if metadata.blank?
+
+      Containers::RuntimeImageSelector::Result.from_metadata(metadata)
+    end
+
+    # A non-pool run that already provisioned keeps its recorded selection.
+    # Reconnects resolve #options each time, and re-resolving against the
+    # catalog can overwrite provenance with a digest the running container
+    # does not use — the same warm/claim drift fixed for pool entries.
+    def recorded_run_selection
+      metadata = agent_run&.runtime_image_selection
+      return if metadata.blank?
+
+      Containers::RuntimeImageSelector::Result.from_metadata(metadata)
+    end
+
+    def resolve_catalog_selection(default_image)
+      requested_image = @raw_options[:image].presence || resolve_requested_project_image || default_image
+      Containers::RuntimeImageSelector.select(
+        project: project,
+        requested_image: requested_image,
+        environment: Rails.env
+      )
+    end
+
+    def resolve_requested_project_image
+      return unless project
+
+      Containers::ImageResolver.resolve(project)
     end
 
     # In manual mode the memory limit comes straight from
