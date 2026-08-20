@@ -195,6 +195,52 @@ RSpec.describe Containers::Provision do
     FileUtils.rm_rf(worktree_path) if worktree_path && Dir.exist?(worktree_path)
   end
 
+  describe ".compatibility_for with execution ingress validation" do
+    # @spec EXEC-INGRESS-001
+    it "rejects unsupported inbound exposure before backend compatibility work" do
+      run = create(:agent_run, external_metadata: {
+        AgentRun::EXECUTION_INGRESS_METADATA_KEY => {
+          "public_inbound" => false,
+          "capabilities" => [
+            {
+              "kind" => "callback",
+              "scope" => "public_listener",
+              "expires_at" => 2.days.from_now.iso8601,
+              "authentication" => { "required" => true, "type" => "signed_token" },
+              "granted_at" => 1.day.ago.iso8601,
+              "granted_by" => "user:42"
+            }
+          ]
+        }
+      })
+      backend = instance_double(Containers::Backends::Base)
+
+      expect(described_class).not_to receive(:new)
+
+      result = described_class.compatibility_for(agent_run: run, backend:)
+
+      expect(result.compatible).to be(false)
+      expect(result.error_message).to eq("Unsupported inbound exposure requested: callback.")
+    end
+
+    # @spec EXEC-INGRESS-001
+    it "treats an ordinary run with no ingress metadata as default-deny compatible" do
+      run = create(:agent_run, external_metadata: {})
+      backend = instance_double(Containers::Backends::Base)
+      service = instance_double(described_class)
+
+      allow(described_class).to receive(:new).with(
+        agent_run: run, worktree_path: nil, backend: backend
+      ).and_return(service)
+      allow(service).to receive(:send).with(:validate_backend_mount_support!, record_telemetry: false)
+
+      result = described_class.compatibility_for(agent_run: run, backend:)
+
+      expect(result.compatible).to be(true)
+      expect(result.error_message).to be_nil
+    end
+  end
+
   describe "constants" do
     it "defines default memory limit of 4GB" do
       expect(described_class::DEFAULTS[:memory_bytes]).to eq(4 * 1024 * 1024 * 1024)
@@ -264,7 +310,7 @@ RSpec.describe Containers::Provision do
   # RDR-058: runners that cannot satisfy isolation requirements are rejected
   # by capability validation (a typed CompatibilityResult), not a generic
   # agent failure. @spec EXECUTION-ISOLATION-004
-  describe ".compatibility_for" do
+  describe ".compatibility_for with workspace compatibility" do
     let(:local_backend) { instance_double(Containers::Backends::LocalDocker, supports_host_paths?: true) }
 
     it "returns a compatible result without raising for a host-path-capable backend" do

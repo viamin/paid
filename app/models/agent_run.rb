@@ -177,6 +177,7 @@ class AgentRun < ApplicationRecord
   # circuit-breaker counters on its behalf.
   STALE_CLEANUP_ERROR_PREFIX = "Marked stale on startup"
   PREVIEW_SESSION_EXTERNAL_METADATA_KEY = "preview_session".freeze
+  EXECUTION_INGRESS_METADATA_KEY = "execution_ingress".freeze
 
   STALE_DETECTOR_ERROR_PREFIX = "Stale run detected"
 
@@ -406,6 +407,39 @@ class AgentRun < ApplicationRecord
     ActiveModel::Type::Boolean.new.cast(external_metadata&.[](PREVIEW_SESSION_EXTERNAL_METADATA_KEY))
   end
 
+  # @spec EXEC-INGRESS-002
+  def execution_ingress_policy
+    ExecutionRunners::IngressPolicy.from_metadata(
+      external_metadata.is_a?(Hash) ? external_metadata[EXECUTION_INGRESS_METADATA_KEY] : {}
+    )
+  end
+
+  # @spec EXEC-INGRESS-002
+  def self.preview_execution_metadata(preview_session:, granted_by:)
+    metadata = {
+      PREVIEW_SESSION_EXTERNAL_METADATA_KEY => true,
+      EXECUTION_INGRESS_METADATA_KEY => ExecutionRunners::IngressPolicy.default_deny(
+        capabilities: [
+          ExecutionRunners::IngressCapability.build(
+            kind: "preview",
+            scope: "paid_mediated_tunnel",
+            expires_at: preview_session.expires_at || 1.hour.from_now,
+            authentication: { required: true, type: "authenticated_proxy" },
+            granted_at: Time.current,
+            granted_by: preview_granted_by(granted_by)
+          )
+        ]
+      ).to_h
+    }
+
+    metadata
+  end
+
+  def self.preview_granted_by(granted_by)
+    granted_by.respond_to?(:id) ? "user:#{granted_by.id}" : granted_by.to_s
+  end
+  private_class_method :preview_granted_by
+
   scope :recent, -> { order(created_at: :desc) }
   scope :started_before, ->(time) { where("started_at < ?", time) }
   scope :updated_before, ->(time) { where("updated_at < ?", time) }
@@ -432,6 +466,7 @@ class AgentRun < ApplicationRecord
     "NULLIF(final_runner, '')",
     "attempt->>'runner'"
   ].freeze
+
   LEGACY_PROVIDER_NORMALIZABLE_COLUMNS = {
     "final_provider" => "final_runner",
     "NULLIF(final_provider, '')" => "NULLIF(final_runner, '')",

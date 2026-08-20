@@ -210,6 +210,7 @@ module Containers
 
     # @spec EXECUTION-ISOLATION-004
     def self.compatibility_for(agent_run:, backend:, worktree_path: nil)
+      agent_run.execution_ingress_policy.validate_supported!
       service = new(agent_run: agent_run, worktree_path: worktree_path, backend: backend)
       # record_telemetry: false — compatibility_for is called for every candidate
       # host during queue scheduling (before any run is claimed), so skipping
@@ -218,7 +219,7 @@ module Containers
       # recorded during the actual provision call.
       service.send(:validate_backend_mount_support!, record_telemetry: false)
       CompatibilityResult.new(compatible: true, error_message: nil)
-    rescue ProvisionError => e
+    rescue ProvisionError, ExecutionRunners::ProvisionError => e
       CompatibilityResult.new(compatible: false, error_message: e.message)
     end
 
@@ -303,6 +304,7 @@ module Containers
     #
     # @return [Result] Result object with success/failure status
     def provision
+      agent_run&.execution_ingress_policy&.validate_supported!
       log_system("container.provision.start", image: options[:image], backend: backend.identifier)
 
       validate_backend_mount_support!
