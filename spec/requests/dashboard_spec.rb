@@ -35,6 +35,20 @@ RSpec.describe "Dashboard" do
         expect(response.body).to include("Unblock")
       end
 
+      # @spec PR-ESCALATION-022
+      it "names the project in the unblock confirmation prompt" do
+        pr = create(:issue, :pull_request,
+          project: project,
+          github_number: 91,
+          pr_review_phase: "escalated",
+          pr_escalation_reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK,
+          draft_review_count: 12)
+
+        get dashboard_path
+
+        expect(response.body).to include(CGI.escapeHTML("#{project.full_name}##{pr.github_number}"))
+      end
+
       it "renders the dashboard" do
         get dashboard_path
         expect(response).to have_http_status(:ok)
