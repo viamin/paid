@@ -16,6 +16,7 @@ RSpec.describe ExecutionRunners::ContractRunner do
       agent_run: agent_run, project: agent_run.project, image: "paid/agent:latest", command: "claude code",
       resources: nil, environment: {},
       networking_policy: networking_policy,
+      ingress_policy: ExecutionRunners::IngressPolicy.default_deny,
       workspace: ExecutionRunners::WorkspaceStrategy.named_volume, services: [], secrets_config: nil
     )
   end

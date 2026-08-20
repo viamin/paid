@@ -11,6 +11,8 @@ require "rails_helper"
 # @spec CONTAINER-RUNTIME-018
 # @spec CONTAINER-RUNTIME-020
 # @spec CONTAINER-RUNTIME-028
+# @spec EXEC-INGRESS-001
+# @spec EXEC-INGRESS-002
 RSpec.describe ExecutionRunners do
   describe ".resolve" do
     it "returns a LocalDockerRunner for the current Docker-only backends" do
@@ -53,7 +55,8 @@ RSpec.describe ExecutionRunners do
         execution_origin: "paid_native",
         prompt_version_id: nil,
         custom_prompt: nil,
-        issue_id: nil
+        issue_id: nil,
+        execution_ingress_policy: ExecutionRunners::IngressPolicy.default_deny
       )
     end
     let(:project) do
@@ -68,6 +71,7 @@ RSpec.describe ExecutionRunners do
         resources: ExecutionRunners::ComputeRequirements.new(cpu_quota: 1, memory_bytes: 2, disk_bytes: 3, pids_limit: 4),
         environment: { "FOO" => "bar" },
         networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted,
+        ingress_policy: ExecutionRunners::IngressPolicy.default_deny,
         workspace: ExecutionRunners::WorkspaceStrategy.named_volume,
         services: [ ExecutionRunners::ServiceDeclaration.new(name: "postgres", image: "pg", port: 5432, env: {}, type: :database) ],
         secrets_config: { "auth" => "proxy" }
@@ -87,6 +91,7 @@ RSpec.describe ExecutionRunners do
     it "embeds the resource, networking, and service declarations" do
       expect(spec.resources).to be_a(ExecutionRunners::ComputeRequirements)
       expect(spec.networking_policy).to be_a(ExecutionRunners::NetworkingPolicy)
+      expect(spec.ingress_policy).to be_a(ExecutionRunners::IngressPolicy)
       expect(spec.services.first).to be_a(ExecutionRunners::ServiceDeclaration)
     end
 
@@ -100,6 +105,7 @@ RSpec.describe ExecutionRunners do
       expect(manifest).to be_a(ExecutionRunners::ExecutionInputManifest)
       expect(manifest.repository.dig("ref", "branch_name")).to eq("agent-run-branch")
       expect(manifest.execution.dig("workspace", "mode")).to eq("named_volume")
+      expect(manifest.execution.dig("ingress", "public_inbound")).to be(false)
     end
 
     # @spec CONTAINER-RUNTIME-027
@@ -118,6 +124,114 @@ RSpec.describe ExecutionRunners do
       expect(built.resources.cpu_quota).to eq(123_000)
       expect(built.resources.memory_bytes).to eq(5.gigabytes)
       expect(built.resources.disk_bytes).to eq(2.gigabytes)
+    end
+  end
+
+  describe ExecutionRunners::IngressCapability do
+    it "normalizes a scoped authenticated preview grant" do
+      capability = described_class.build(
+        kind: "preview",
+        scope: "paid_mediated_tunnel",
+        expires_at: 2.days.from_now.iso8601,
+        authentication: { required: true, type: "authenticated_proxy" },
+        granted_at: 1.day.ago.iso8601,
+        granted_by: "user:42"
+      )
+
+      expect(capability).to be_preview
+      expect(capability).to be_supported_kind
+      expect(capability).to be_authenticated
+      expect(capability).to be_valid_grant
+      expect(capability.to_h["granted_by"]).to eq("user:42")
+    end
+  end
+
+  describe ExecutionRunners::IngressPolicy do
+    it "defaults to no public inbound endpoint" do
+      policy = described_class.default_deny
+
+      expect(policy.public_inbound).to be(false)
+      expect(policy.capabilities).to eq([])
+      expect(policy.violation_message).to be_nil
+    end
+
+    it "treats absent metadata as the default-deny posture" do
+      policy = described_class.from_metadata({})
+
+      expect(policy.public_inbound).to be(false)
+      expect(policy).to be_explicit
+      expect(policy.violation_message).to be_nil
+    end
+
+    it "treats nil metadata as the default-deny posture" do
+      policy = described_class.from_metadata(nil)
+
+      expect(policy.public_inbound).to be(false)
+      expect(policy).to be_explicit
+    end
+
+    it "rejects a preview exception whose grant has expired" do
+      policy = described_class.from_metadata(
+        "public_inbound" => false,
+        "capabilities" => [
+          {
+            "kind" => "preview",
+            "scope" => "paid_mediated_tunnel",
+            "expires_at" => 1.hour.ago.iso8601,
+            "authentication" => { "required" => true, "type" => "authenticated_proxy" },
+            "granted_at" => 2.hours.ago.iso8601,
+            "granted_by" => "user:42"
+          }
+        ]
+      )
+
+      expect(policy.supported_for_runtime?).to be(false)
+      expect(policy.violation_message)
+        .to eq("Ingress exception grants must be authenticated, time-bounded, and explicitly recorded.")
+    end
+
+    it "accepts an authenticated, time-bounded preview exception" do
+      policy = described_class.default_deny(
+        capabilities: [
+          ExecutionRunners::IngressCapability.build(
+            kind: "preview",
+            scope: "paid_mediated_tunnel",
+            expires_at: 2.days.from_now.iso8601,
+            authentication: { required: true, type: "authenticated_proxy" },
+            granted_at: 1.day.ago.iso8601,
+            granted_by: "user:42"
+          )
+        ]
+      )
+
+      expect(policy.supported_for_runtime?).to be(true)
+      expect(policy.violation_message).to be_nil
+    end
+
+    it "rejects metadata that requests public inbound exposure" do
+      policy = described_class.from_metadata("public_inbound" => true)
+
+      expect(policy.supported_for_runtime?).to be(false)
+      expect(policy.violation_message)
+        .to eq("Execution ingress policy must explicitly deny public inbound exposure.")
+    end
+
+    it "rejects unsupported inbound exposure kinds" do
+      policy = described_class.default_deny(
+        capabilities: [
+          ExecutionRunners::IngressCapability.build(
+            kind: "debug",
+            scope: "public_listener",
+            expires_at: 2.days.from_now.iso8601,
+            authentication: { required: true, type: "signed_token" },
+            granted_at: 1.day.ago.iso8601,
+            granted_by: "user:42"
+          )
+        ]
+      )
+
+      expect(policy.supported_for_runtime?).to be(false)
+      expect(policy.violation_message).to eq("Unsupported inbound exposure requested: debug.")
     end
   end
 
@@ -784,6 +898,7 @@ RSpec.describe ExecutionRunners do
         resources: ExecutionRunners::ComputeRequirements.new(cpu_quota: 100_000, memory_bytes: 1024, disk_bytes: 2048, pids_limit: 50),
         environment: { "DATABASE_URL" => "postgres://secret@db", "API_TOKEN" => "shh" },
         networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted,
+        ingress_policy: ExecutionRunners::IngressPolicy.default_deny,
         workspace: ExecutionRunners::WorkspaceStrategy.named_volume,
         services: services,
         secrets_config: { "github_token" => "top-secret" }

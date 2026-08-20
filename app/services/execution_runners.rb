@@ -172,6 +172,160 @@ module ExecutionRunners
     end
   end
 
+  # Provider-neutral inbound exposure exception. Execution environments are
+  # default-deny for public ingress; any exception must be explicit, scoped,
+  # authenticated, and time-bounded.
+  # @spec EXEC-INGRESS-001
+  # @spec EXEC-INGRESS-002
+  IngressCapability = Data.define(
+    :kind,
+    :scope,
+    :expires_at,
+    :authentication,
+    :granted_at,
+    :granted_by
+  ) do
+    SUPPORTED_KINDS = %w[preview browser debug callback].freeze
+    PREVIEW_KIND = "preview".freeze
+    AUTHENTICATED_AUTH_TYPES = %w[signed_token authenticated_proxy].freeze
+
+    def self.build(kind:, scope:, expires_at:, authentication:, granted_at:, granted_by:)
+      new(
+        kind: kind.to_s,
+        scope: scope.to_s,
+        expires_at: normalize_time(expires_at),
+        authentication: normalize_authentication(authentication),
+        granted_at: normalize_time(granted_at),
+        granted_by: granted_by.to_s
+      )
+    end
+
+    def self.from_h(payload)
+      data = payload.respond_to?(:to_h) ? payload.to_h : {}
+      build(
+        kind: data[:kind] || data["kind"],
+        scope: data[:scope] || data["scope"],
+        expires_at: data[:expires_at] || data["expires_at"],
+        authentication: data[:authentication] || data["authentication"],
+        granted_at: data[:granted_at] || data["granted_at"],
+        granted_by: data[:granted_by] || data["granted_by"]
+      )
+    end
+
+    def preview?
+      kind == PREVIEW_KIND
+    end
+
+    def supported_kind?
+      kind.in?(SUPPORTED_KINDS)
+    end
+
+    def authenticated?
+      authentication.fetch("required", false) == true &&
+        AUTHENTICATED_AUTH_TYPES.include?(authentication["type"])
+    end
+
+    def valid_grant?
+      supported_kind? &&
+        expires_at.present? &&
+        expires_at.future? &&
+        granted_at.present? &&
+        granted_by.present? &&
+        authenticated?
+    end
+
+    def to_h
+      {
+        "kind" => kind,
+        "scope" => scope,
+        "expires_at" => expires_at&.iso8601,
+        "authentication" => authentication,
+        "granted_at" => granted_at&.iso8601,
+        "granted_by" => granted_by
+      }
+    end
+
+    class << self
+      private
+
+      def normalize_time(value)
+        return value if value.is_a?(Time) || value.is_a?(ActiveSupport::TimeWithZone)
+        return if value.blank?
+
+        Time.zone.parse(value.to_s)
+      end
+
+      def normalize_authentication(value)
+        auth = value.respond_to?(:to_h) ? value.to_h : {}
+        {
+          "required" => ActiveModel::Type::Boolean.new.cast(auth[:required] || auth["required"]),
+          "type" => (auth[:type] || auth["type"]).to_s
+        }
+      end
+    end
+  end
+
+  # Provider-neutral ingress policy carried on the run contract.
+  # @spec EXEC-INGRESS-001
+  # @spec EXEC-INGRESS-002
+  IngressPolicy = Data.define(:public_inbound, :capabilities) do
+    def self.default_deny(capabilities: [])
+      new(public_inbound: false, capabilities: Array(capabilities))
+    end
+
+    def self.from_metadata(metadata)
+      raw = metadata.respond_to?(:to_h) ? metadata.to_h : {}
+      capabilities = Array(raw[:capabilities] || raw["capabilities"]).map do |entry|
+        entry.is_a?(IngressCapability) ? entry : IngressCapability.from_h(entry)
+      end
+
+      raw_public_inbound = raw[:public_inbound] || raw["public_inbound"]
+      public_inbound_value = ActiveModel::Type::Boolean.new.cast(raw_public_inbound)
+
+      new(
+        public_inbound: public_inbound_value.nil? ? false : public_inbound_value,
+        capabilities: capabilities
+      )
+    end
+
+    def explicit?
+      public_inbound == false
+    end
+
+    def preview_only?
+      capabilities.all?(&:preview?)
+    end
+
+    def supported_for_runtime?
+      explicit? &&
+        preview_only? &&
+        capabilities.all?(&:valid_grant?)
+    end
+
+    def violation_message
+      return "Execution ingress policy must explicitly deny public inbound exposure." unless explicit?
+      return nil if capabilities.empty?
+      return nil if supported_for_runtime?
+
+      unsupported = capabilities.reject(&:preview?).map(&:kind).uniq
+      return "Unsupported inbound exposure requested: #{unsupported.join(', ')}." if unsupported.any?
+
+      "Ingress exception grants must be authenticated, time-bounded, and explicitly recorded."
+    end
+
+    def validate_supported!
+      message = violation_message
+      raise ExecutionRunners::ProvisionError, message if message.present?
+    end
+
+    def to_h
+      {
+        "public_inbound" => public_inbound == true,
+        "capabilities" => capabilities.map(&:to_h)
+      }
+    end
+  end
+
   # Immutable description of what to execute. Built by orchestration from the
   # +AgentRun+/+Project+ context and handed to {ExecutionRunners::Base#provision}.
   # @spec CONTAINER-RUNTIME-009
@@ -184,6 +338,7 @@ module ExecutionRunners
     :resources,          # ComputeRequirements (cpu, memory, pids)
     :environment,        # Hash of env vars
     :networking_policy,  # NetworkingPolicy (restricted vs. direct)
+    :ingress_policy,     # IngressPolicy (default deny + scoped exceptions)
     :workspace,          # WorkspaceStrategy (named_volume | bind_mount | ephemeral)
     :services,           # Array<ServiceDeclaration>
     :secrets_config      # Auth/credential configuration
@@ -216,6 +371,7 @@ module ExecutionRunners
         environment: agent_run.service_environment || {},
         networking_policy: networking_policy,
         workspace: workspace,
+        ingress_policy: agent_run.execution_ingress_policy,
         services: [],
         secrets_config: nil
       )
@@ -634,6 +790,10 @@ module ExecutionRunners
           "workspace" => {
             "mode" => spec.workspace&.mode&.to_s,
             "mount_point" => spec.workspace&.mount_point
+          }.compact,
+          "ingress" => {
+            "public_inbound" => spec.ingress_policy&.public_inbound == true,
+            "capabilities" => ExecutionRunners.json_value(spec.ingress_policy&.capabilities&.map(&:to_h) || [])
           }.compact,
           "networking" => {
             "mode" => spec.networking_policy&.canonical_mode&.to_s,

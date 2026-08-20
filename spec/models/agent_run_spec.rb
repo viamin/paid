@@ -2336,6 +2336,31 @@ RSpec.describe AgentRun do
           expect(result[:container_id]).to eq("abc123container")
         end
 
+        # @spec EXEC-INGRESS-001
+        it "rejects unsupported ingress on the legacy path when the runner flag is disabled" do
+          agent_run = create(:agent_run, worktree_path: worktree_path, external_metadata: {
+            AgentRun::EXECUTION_INGRESS_METADATA_KEY => {
+              "public_inbound" => false,
+              "capabilities" => [
+                {
+                  "kind" => "callback",
+                  "scope" => "public_listener",
+                  "expires_at" => 2.days.from_now.iso8601,
+                  "authentication" => { "required" => true, "type" => "signed_token" },
+                  "granted_at" => 1.day.ago.iso8601,
+                  "granted_by" => "user:42"
+                }
+              ]
+            }
+          })
+          FeatureFlags.disable!(:execution_runner_enabled)
+
+          expect {
+            agent_run.provision_container
+          }.to raise_error(ExecutionRunners::ProvisionError, "Unsupported inbound exposure requested: callback.")
+          expect(Docker::Container).not_to have_received(:create)
+        end
+
         it "reuses an existing container even when runner flag is enabled" do
           agent_run = create(:agent_run, worktree_path: worktree_path, container_id: "existing-container")
           existing = instance_double(

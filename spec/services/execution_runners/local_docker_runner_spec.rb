@@ -8,6 +8,8 @@ require "rails_helper"
 # @spec CONTAINER-RUNTIME-019
 # @spec CONTAINER-RUNTIME-020
 # @spec CONTAINER-RUNTIME-028
+# @spec EXEC-INGRESS-001
+# @spec EXEC-INGRESS-002
 RSpec.describe ExecutionRunners::LocalDockerRunner do
   subject(:runner) { described_class.new }
 
@@ -19,6 +21,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       agent_run: agent_run, project: agent_run.project, image: "paid/agent:latest", command: "claude code",
       resources: resources, environment: { "FOO" => "bar" },
       networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted,
+      ingress_policy: ExecutionRunners::IngressPolicy.default_deny,
       workspace: ExecutionRunners::WorkspaceStrategy.named_volume, services: [], secrets_config: nil
     )
   end
@@ -142,6 +145,13 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
 
       expect { runner.provision(spec: run_spec) }
         .to raise_error(ExecutionRunners::ProvisionError, "Docker error: no space left")
+    end
+
+    it "fails closed when the run spec omits an ingress policy" do
+      spec_without_ingress = ExecutionRunners::RunSpec.new(**run_spec.to_h.merge(ingress_policy: nil))
+
+      expect { runner.provision(spec: spec_without_ingress) }
+        .to raise_error(ExecutionRunners::ProvisionError, "RunSpec requires an IngressPolicy")
     end
 
     it "ensures the network from the NetworkingPolicy before delegating to Containers::Provision" do
@@ -410,6 +420,30 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
 
       expect { runner.provision(spec: run_spec) }
         .to raise_error(ExecutionRunners::ProvisionError, /Network setup failed/)
+    end
+
+    it "rejects unsupported inbound exposure before provisioning" do
+      debug_spec = ExecutionRunners::RunSpec.new(
+        **run_spec.to_h.merge(
+          ingress_policy: ExecutionRunners::IngressPolicy.default_deny(
+            capabilities: [
+              ExecutionRunners::IngressCapability.build(
+                kind: "debug",
+                scope: "public_listener",
+                expires_at: 2.days.from_now.iso8601,
+                authentication: { required: true, type: "signed_token" },
+                granted_at: 1.day.ago.iso8601,
+                granted_by: "user:42"
+              )
+            ]
+          )
+        )
+      )
+
+      expect(Containers::Provision).not_to receive(:new)
+
+      expect { runner.provision(spec: debug_spec) }
+        .to raise_error(ExecutionRunners::ProvisionError, "Unsupported inbound exposure requested: debug.")
     end
 
     it "rejects an unsupported networking policy before any Docker side effects" do
