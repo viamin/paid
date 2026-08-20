@@ -1912,11 +1912,12 @@ module Activities
     end
 
     # @spec RUNNER-FALLBACK-004
-    # Runs the runner smoke exec. When opencode dies at startup because its
-    # state tmpfs filled up (a long sibling attempt sharing the container can
-    # exhaust it — see CONTAINER-RUNTIME-029), wipes and re-seeds the state
-    # dir once, then retries the smoke. Session data from the failed attempt
-    # is disposable: stdout/JSONL remains the source of truth.
+    # Runs the runner smoke exec. When an OpenCode-engine CLI (OpenCode,
+    # Kilocode fork) dies at startup because its state tmpfs filled up (a long
+    # sibling attempt sharing the container can exhaust it — see
+    # CONTAINER-RUNTIME-029), wipes and re-seeds the state dir once, then
+    # retries the smoke. Session data from the failed attempt is disposable:
+    # stdout/JSONL remains the source of truth.
     def execute_smoke_with_state_repair(agent_run:, container_service:, command_context:, runner:, preflight_timeout:, prompt:)
       command = build_command(command_context, prompt, agent_run: agent_run)
       env = command_env_for(command_context, prompt)
@@ -1932,32 +1933,39 @@ module Activities
           preparation: preparation,
           abort_patterns: aggregated_abort_patterns
         )
-        return result if result.success? || attempt >= 2 || !opencode_storage_failure?(runner, smoke_output(result, prompt))
+        return result if result.success? || attempt >= 2 || !runner_storage_failure?(runner, smoke_output(result, prompt))
 
-        repair_opencode_state_dir!(container_service, agent_run: agent_run, runner: runner)
+        repair_runner_state_dir!(container_service, agent_run: agent_run, runner: runner)
       end
     end
 
     # @spec RUNNER-FALLBACK-004
-    # opencode's local SQLite state lives on a size-capped tmpfs; once full,
-    # every subsequent opencode start in the container fails on WAL checkpoint.
-    OPENCODE_STORAGE_FAILURE_PATTERN = /Failed query: PRAGMA wal_checkpoint/
+    # OpenCode-engine CLIs keep local SQLite state on a size-capped tmpfs; once
+    # full, every subsequent start in the container fails on WAL checkpoint.
+    STORAGE_FAILURE_PATTERN = /Failed query: PRAGMA wal_checkpoint/
 
-    def opencode_storage_failure?(runner, output)
-      runner.to_s == "opencode" && output.to_s.match?(OPENCODE_STORAGE_FAILURE_PATTERN)
+    # runner_key => [state dir, image seed dir] for repairable state dirs.
+    RUNNER_STATE_DIRS = {
+      "opencode" => [ "/home/agent/.local/share/opencode", "/opt/opencode-seed" ],
+      "kilocode" => [ "/home/agent/.local/share/kilo", "/opt/kilo-seed" ]
+    }.freeze
+
+    def runner_storage_failure?(runner, output)
+      RUNNER_STATE_DIRS.key?(runner.to_s) && output.to_s.match?(STORAGE_FAILURE_PATTERN)
     end
 
     # @spec RUNNER-FALLBACK-004
-    def repair_opencode_state_dir!(container_service, agent_run:, runner:)
+    def repair_runner_state_dir!(container_service, agent_run:, runner:)
+      state_dir, seed_dir = RUNNER_STATE_DIRS.fetch(runner.to_s)
       logger.warn(
-        message: "agent_execution.preflight_opencode_state_repaired",
+        message: "agent_execution.preflight_runner_state_repaired",
         agent_run_id: agent_run.id,
         runner: runner.to_s
       )
       container_service.execute(
         [ "sh", "-c",
-         "rm -rf /home/agent/.local/share/opencode && mkdir -p /home/agent/.local/share/opencode && " \
-         "if [ -d /opt/opencode-seed ]; then cp -a /opt/opencode-seed/. /home/agent/.local/share/opencode/; fi" ],
+         "rm -rf #{state_dir} && mkdir -p #{state_dir} && " \
+         "if [ -d #{seed_dir} ]; then cp -a #{seed_dir}/. #{state_dir}/; fi" ],
         timeout: 30,
         stream: false
       )

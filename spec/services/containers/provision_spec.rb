@@ -950,6 +950,20 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
+      it "configures a writable tmpfs for Kilocode CLI data" do
+        expect(Docker::Container).to receive(:create) do |config|
+          tmpfs = config["HostConfig"]["Tmpfs"]
+          expect(tmpfs).to have_key("/home/agent/.local/share/kilo")
+          expect(tmpfs["/home/agent/.local/share/kilo"]).to include("mode=0700")
+          # @spec CONTAINER-RUNTIME-029 — Kilocode is an OpenCode fork with the
+          # same SQLite/WAL state layout and the identical ENOSPC failure.
+          expect(tmpfs["/home/agent/.local/share/kilo"]).to include("size=#{256 * 1024 * 1024}")
+          mock_container
+        end
+
+        service.provision
+      end
+
       it "configures a writable tmpfs for GitHub Copilot CLI config" do
         expect(Docker::Container).to receive(:create) do |config|
           tmpfs = config["HostConfig"]["Tmpfs"]

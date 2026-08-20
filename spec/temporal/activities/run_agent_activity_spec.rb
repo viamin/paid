@@ -113,6 +113,20 @@ RSpec.describe Activities::RunAgentActivity do
       })
   end
 
+  def create_kilocode_provider_for(user)
+    api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+    create(:provider, :api_key,
+      user: user,
+      provider_key: "kilocode",
+      provider_api_key: api_key,
+      config: {
+        "kilocode" => {
+          "model" => "moonshotai/kimi-k2",
+          "api_provider" => "openrouter"
+        }
+      })
+  end
+
   def create_runner_backed_agent_run(project:, runner:)
     create(
       :agent_run,
@@ -3367,6 +3381,31 @@ expect(container_service).to receive(:execute).with(
           /Failed query: PRAGMA wal_checkpoint/
         )
 
+        expect(container_service).to have_received(:execute).exactly(3).times
+      end
+
+      # @spec RUNNER-FALLBACK-004 — Kilocode is an OpenCode fork with the
+      # identical WAL-checkpoint ENOSPC failure signature.
+      it "repairs the kilocode state tmpfs and retries when preflight fails on a WAL checkpoint error" do
+        kilocode_provider = create_kilocode_provider_for(user)
+        checkpoint_failure = wal_checkpoint_preflight_failure
+        repair_success = Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0)
+        allow(container_service).to receive(:execute).and_return(checkpoint_failure, repair_success, exec_success)
+
+        expect {
+          run_direct_outbound_preflight(
+            activity: activity,
+            agent_run: agent_run,
+            container_service: container_service,
+            provider: kilocode_provider,
+            user: user
+          )
+        }.not_to raise_error
+
+        expect(container_service).to have_received(:execute).with(
+          array_including("sh", "-c", /kilo-seed/),
+          hash_including(timeout: kind_of(Numeric))
+        )
         expect(container_service).to have_received(:execute).exactly(3).times
       end
 

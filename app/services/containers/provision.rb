@@ -2578,7 +2578,7 @@ module Containers
     #   /home/agent/.cursor-agent - tmpfs (64MB, for Cursor agent CLI config/session data)
     #   /home/agent/.kilocode - tmpfs (64MB, for Kilocode CLI plugin/session data)
     #   /home/agent/.config/kilocode - tmpfs (64MB, for Kilocode CLI config)
-    #   /home/agent/.local/share/kilo - tmpfs (64MB, for Kilocode CLI data)
+    #   /home/agent/.local/share/kilo - tmpfs (256MB, for Kilocode CLI data)
     #   /home/agent/.config/opencode         - tmpfs (64MB, for OpenCode CLI config)
     #   /home/agent/.local/share/opencode    - tmpfs (256MB, for OpenCode CLI data)
     #   /home/agent/.copilot                 - tmpfs (64MB, for GitHub Copilot CLI config)
@@ -2696,9 +2696,13 @@ module Containers
       tmpfs["/home/agent/.kilocode"] = "size=#{64 * 1024 * 1024},mode=0700"
 
       # Kilocode CLI stores config under ~/.config/kilocode (kilo.json) and data
-      # under ~/.local/share/kilo (auth.json, kilo.db).
+      # under ~/.local/share/kilo (auth.json, kilo.db). Kilocode is an OpenCode
+      # fork with the same SQLite/WAL + session storage layout, so its data
+      # tmpfs gets the same 256MB — the ENOSPC failure mode is identical
+      # (see the OpenCode note above).
       tmpfs["/home/agent/.config/kilocode"] = "size=#{64 * 1024 * 1024},mode=0700"
-      tmpfs["/home/agent/.local/share/kilo"] = "size=#{64 * 1024 * 1024},mode=0700"
+      # @spec CONTAINER-RUNTIME-029
+      tmpfs["/home/agent/.local/share/kilo"] = "size=#{256 * 1024 * 1024},mode=0700"
 
       # OpenCode CLI stores config under ~/.config/opencode and data under
       # ~/.local/share/opencode. Ownership is fixed by
