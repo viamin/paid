@@ -354,7 +354,7 @@ module ExecutionRunners
   # @spec CONTAINER-RUNTIME-009
   # @spec CONTAINER-RUNTIME-017
   # @spec CONTAINER-RUNTIME-020
-  # @spec CONTAINER-RUNTIME-021
+  # @spec CONTAINER-RUNTIME-025
 
   # The set of canonical intent modes and their restricted/unrestricted
   # classification. Defined on the module so callers and the {NetworkingPolicy}

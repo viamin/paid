@@ -27,7 +27,7 @@ module Containers
     #   +policy+ is supplied; required when +policy+ is nil.
     # @return [String]
     # @spec CONTAINER-RUNTIME-017
-    # @spec CONTAINER-RUNTIME-021
+    # @spec CONTAINER-RUNTIME-025
     def resolve(backend:, policy: nil, restricted: nil)
       effective_restricted = if policy
         policy.restricted?

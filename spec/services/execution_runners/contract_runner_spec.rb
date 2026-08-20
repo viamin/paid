@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec CONTAINER-RUNTIME-021
+# @spec CONTAINER-RUNTIME-025
 RSpec.describe ExecutionRunners::ContractRunner do
   subject(:runner) { runner_class.new }
 

@@ -7,7 +7,7 @@ require "rails_helper"
 # @spec CONTAINER-RUNTIME-017
 # @spec CONTAINER-RUNTIME-019
 # @spec CONTAINER-RUNTIME-020
-# @spec CONTAINER-RUNTIME-021
+# @spec CONTAINER-RUNTIME-025
 RSpec.describe ExecutionRunners::LocalDockerRunner do
   subject(:runner) { described_class.new }
 

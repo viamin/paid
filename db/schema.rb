@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_18_163318) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_19_092242) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -128,6 +128,31 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_18_163318) do
     t.index ["source_agent_run_id"], name: "index_agent_coordination_signals_on_source_agent_run_id"
     t.index ["target_agent_run_id", "signal_type"], name: "idx_coordination_signals_target_type"
     t.index ["target_agent_run_id"], name: "index_agent_coordination_signals_on_target_agent_run_id"
+  end
+
+  create_table "agent_images", comment: "Immutable registry of agent container images identified by (registry, repository, digest, architecture) and tracked through active/deprecated/blocked states for audit, scheduling, and rollback.", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Account that owns the image registry record. Image identity is scoped per account so different accounts can record the same upstream digest independently."
+    t.string "architecture", default: "amd64", null: false, comment: "Target architecture of this image (amd64, arm64, 386, arm, ppc64le, s390x). The same digest on a different architecture is a separate image record."
+    t.datetime "blocked_at", comment: "Timestamp the image was transitioned to blocked. Distinct from deprecated: blocked images cannot be scheduled even if they are still installed."
+    t.text "blocked_reason", comment: "Free-text reason captured when the image was blocked (e.g. CVE identifier and severity)."
+    t.datetime "built_at", null: false, comment: "Wall-clock time the image was built or pushed upstream, recorded by the build pipeline."
+    t.datetime "created_at", null: false
+    t.datetime "deprecated_at", comment: "Timestamp the image was transitioned to deprecated. Preserved for historical queries; not the same as blocked."
+    t.text "deprecation_reason", comment: "Free-text reason captured when the image was deprecated (e.g. the successor image reference)."
+    t.string "digest", null: false, comment: "Immutable content-addressed identity, accepted as sha256:<64-hex> or 64-hex characters. The digest is the production source of truth for what image runs."
+    t.jsonb "log_data", comment: "Logidze change history for image lifecycle transitions and provenance/metadata edits."
+    t.jsonb "metadata", default: {}, null: false, comment: "Extensible observability and operations metadata (build log URL, runbook link, signing identity). Mutable without affecting the image identity."
+    t.string "name", null: false, comment: "Logical image profile name (e.g. base, elixir-node, ruby) used for ImageResolver / scheduling decisions."
+    t.jsonb "provenance", default: {}, null: false, comment: "Build provenance such as the GitHub Actions run id, repository, ref, and commit SHA that produced the image. Mutable for late-arriving provenance updates."
+    t.string "registry", default: "docker.io", null: false, comment: "OCI registry host the image was pulled from (docker.io, ghcr.io, registry.example.test). docker.io is the implicit default."
+    t.string "repository", null: false, comment: "OCI repository path within the registry (e.g. paid-agent, paid-agent-extra, organization/paid-agent)."
+    t.string "status", default: "active", null: false, comment: "Lifecycle state: active (schedulable), deprecated (still runnable but superseded), or blocked (excluded from future scheduling)."
+    t.string "tag", null: false, comment: "Docker tag that produced this image (e.g. latest, ruby-3.3.0). Mutable on the registry but immutable once recorded against a digest."
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "name", "architecture"], name: "idx_agent_images_profile_arch", comment: "Lookup index for scheduling and image-resolver queries that need the current image for a (profile, architecture) within an account."
+    t.index ["account_id", "registry", "repository", "digest", "architecture"], name: "idx_agent_images_identity", unique: true, comment: "Uniqueness over the immutable content-addressed identity (account + registry + repository + digest + architecture)."
+    t.index ["account_id"], name: "index_agent_images_on_account_id"
+    t.index ["status"], name: "idx_agent_images_inactive", where: "((status)::text <> 'active'::text)", comment: "Partial index over non-active images so audit and rollback queries against deprecated/blocked rows stay fast as the active set grows."
   end
 
   create_table "agent_run_anomalies", comment: "Stores statistical outliers detected when an agent run metric deviates materially from the project's historical baseline.", force: :cascade do |t|
@@ -700,6 +725,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_18_163318) do
     t.string "network", limit: 64, null: false
     t.bigint "project_id", null: false
     t.jsonb "runner_handle", comment: "Persisted ExecutionRunners::RunnerHandle for warm-pool entries (RDR-054). Stored alongside container_id/workspace_volume."
+    t.jsonb "runtime_image_metadata", comment: "Warm-time immutable runtime image selection (RDR-059) for the warmed container; copied onto the claiming run."
     t.string "status", limit: 20, null: false, comment: "Warm pool lifecycle state: warming, warm, claimed, or error."
     t.datetime "updated_at", null: false
     t.datetime "warmed_at", precision: nil, comment: "Time the container finished warming and became available for claiming."
@@ -998,6 +1024,62 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_18_163318) do
     t.index ["account_id", "fallback_eligible"], name: "index_docker_hosts_on_account_id_and_fallback_eligible"
     t.index ["account_id", "identifier"], name: "index_docker_hosts_on_account_id_and_identifier", unique: true
     t.index ["account_id"], name: "index_docker_hosts_on_account_id"
+  end
+
+  create_table "egress_allowlist_entries", comment: "Tenant-managed host allowlist entries that resolve into an agent run's egress policy snapshot.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.bigint "created_by_id"
+    t.datetime "disabled_at"
+    t.boolean "enabled", default: true, null: false
+    t.string "host_pattern", limit: 255, null: false, comment: "Hostname pattern. Supports exact hosts and leading-wildcard subdomains (e.g. *.packages.example.com)."
+    t.integer "port", comment: "Optional destination port. When null, applies to standard ports for the scheme."
+    t.bigint "project_id"
+    t.text "reason", comment: "Operator-provided justification shown in audit and UI."
+    t.string "scheme", limit: 10, comment: "Optional scheme filter. Allowed values: http, https. When null, applies to both."
+    t.string "source_kind", limit: 20, default: "tenant", null: false, comment: "Origin of the entry (tenant, platform, operator_override) for provenance rendering on agent runs."
+    t.datetime "updated_at", null: false
+    t.index "account_id, host_pattern, COALESCE(scheme, ''::character varying), COALESCE(port, '-1'::integer)", name: "idx_egress_allowlist_entries_account_host_unique", unique: true, where: "(project_id IS NULL)"
+    t.index "project_id, host_pattern, COALESCE(scheme, ''::character varying), COALESCE(port, '-1'::integer)", name: "idx_egress_allowlist_entries_project_host_unique", unique: true, where: "(project_id IS NOT NULL)"
+    t.index ["account_id", "enabled"], name: "idx_egress_allowlist_entries_account_enabled"
+    t.index ["account_id"], name: "index_egress_allowlist_entries_on_account_id"
+    t.index ["created_by_id"], name: "index_egress_allowlist_entries_on_created_by_id"
+    t.index ["project_id", "enabled"], name: "idx_egress_allowlist_entries_project_enabled"
+    t.index ["project_id"], name: "index_egress_allowlist_entries_on_project_id"
+    t.check_constraint "host_pattern IS NOT NULL", name: "chk_egress_allowlist_entries_host_present"
+    t.check_constraint "port IS NULL OR port > 0 AND port <= 65535", name: "chk_egress_allowlist_entries_port_range"
+    t.check_constraint "scheme IS NULL OR (scheme::text = ANY (ARRAY['http'::character varying::text, 'https'::character varying::text]))", name: "chk_egress_allowlist_entries_scheme_valid"
+    t.check_constraint "source_kind::text = ANY (ARRAY['tenant'::character varying::text, 'platform'::character varying::text, 'operator_override'::character varying::text])", name: "chk_egress_allowlist_entries_source_kind_valid"
+  end
+
+  create_table "egress_security_events", comment: "Audit trail for blocked outbound traffic and redacted secret-extraction attempts captured by the agent container egress gateway.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "agent_run_id"
+    t.datetime "created_at", null: false
+    t.string "destination_host", limit: 255
+    t.integer "destination_port"
+    t.bigint "egress_allowlist_entry_id", comment: "Optional reference to the matching allowlist entry that triggered the event."
+    t.string "event_kind", limit: 40, null: false, comment: "Type of security event: denied_egress, redacted_secret_extraction, allowlist_match."
+    t.string "matched_rule", limit: 255, comment: "Free-form rule description surfaced in the agent-run audit view."
+    t.datetime "occurred_at", null: false
+    t.bigint "project_id"
+    t.text "redacted_evidence", comment: "Redacted snippet or fingerprint used to trigger the block. Never contains raw secret material."
+    t.string "scheme", limit: 10
+    t.string "severity", limit: 20, default: "info", null: false, comment: "Severity for filtering on the audit surface: info, warn, critical."
+    t.string "source_layer", limit: 40, default: "gateway", null: false, comment: "Which layer emitted the event: gateway, broker, firewall."
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "occurred_at"], name: "idx_egress_security_events_account_recent", order: { occurred_at: :desc }
+    t.index ["account_id"], name: "index_egress_security_events_on_account_id"
+    t.index ["agent_run_id", "occurred_at"], name: "idx_egress_security_events_run_recent", order: { occurred_at: :desc }
+    t.index ["agent_run_id"], name: "index_egress_security_events_on_agent_run_id"
+    t.index ["egress_allowlist_entry_id"], name: "index_egress_security_events_on_egress_allowlist_entry_id"
+    t.index ["event_kind"], name: "index_egress_security_events_on_event_kind"
+    t.index ["project_id", "occurred_at"], name: "idx_egress_security_events_project_recent", order: { occurred_at: :desc }
+    t.index ["project_id"], name: "index_egress_security_events_on_project_id"
+    t.check_constraint "destination_port IS NULL OR destination_port > 0 AND destination_port <= 65535", name: "chk_egress_security_events_port_range"
+    t.check_constraint "event_kind::text = ANY (ARRAY['denied_egress'::character varying::text, 'redacted_secret_extraction'::character varying::text, 'allowlist_match'::character varying::text])", name: "chk_egress_security_events_kind_valid"
+    t.check_constraint "scheme IS NULL OR (scheme::text = ANY (ARRAY['http'::character varying::text, 'https'::character varying::text]))", name: "chk_egress_security_events_scheme_valid"
+    t.check_constraint "severity::text = ANY (ARRAY['info'::character varying::text, 'warn'::character varying::text, 'critical'::character varying::text])", name: "chk_egress_security_events_severity_valid"
   end
 
   create_table "exception_incidents", force: :cascade do |t|
@@ -3004,6 +3086,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_18_163318) do
   add_foreign_key "account_memberships", "users"
   add_foreign_key "agent_coordination_signals", "agent_runs", column: "source_agent_run_id"
   add_foreign_key "agent_coordination_signals", "agent_runs", column: "target_agent_run_id"
+  add_foreign_key "agent_images", "accounts"
   add_foreign_key "agent_run_anomalies", "agent_runs"
   add_foreign_key "agent_run_anomalies", "projects"
   add_foreign_key "agent_run_logs", "agent_runs", on_delete: :cascade
@@ -3086,6 +3169,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_18_163318) do
   add_foreign_key "dispatch_circuit_breakers", "accounts"
   add_foreign_key "dispatch_circuit_breakers", "agent_runs", column: "last_probe_run_id", on_delete: :nullify, validate: false
   add_foreign_key "docker_hosts", "accounts"
+  add_foreign_key "egress_allowlist_entries", "accounts", on_delete: :cascade
+  add_foreign_key "egress_allowlist_entries", "projects", on_delete: :cascade
+  add_foreign_key "egress_allowlist_entries", "users", column: "created_by_id", on_delete: :nullify
+  add_foreign_key "egress_security_events", "accounts", on_delete: :cascade
+  add_foreign_key "egress_security_events", "agent_runs", on_delete: :cascade
+  add_foreign_key "egress_security_events", "egress_allowlist_entries", on_delete: :nullify
+  add_foreign_key "egress_security_events", "projects", on_delete: :cascade
   add_foreign_key "exception_incidents", "accounts"
   add_foreign_key "exception_incidents", "projects"
   add_foreign_key "execution_audit_events", "accounts"
@@ -4057,6 +4147,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_18_163318) do
 
   create_trigger :logidze_on_accounts, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_accounts BEFORE INSERT OR UPDATE ON public.accounts FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :logidze_on_agent_images, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_agent_images BEFORE INSERT OR UPDATE ON public.agent_images FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
   create_trigger :logidze_on_billing_invoices, sql_definition: <<-SQL
