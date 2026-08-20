@@ -109,7 +109,18 @@ class Issue < ApplicationRecord
   scope :sub_issues_only, -> { where.not(parent_issue_id: nil) }
   scope :issues_only, -> { where(is_pull_request: false) }
   scope :pull_requests_only, -> { where(is_pull_request: true) }
-  scope :auto_continue_active, -> { where(auto_continue_paused: false) } # @spec QUEUE-TIER-006
+  # List surfaces (blocked PRs, retry-limited issues, recent activity) never
+  # render the issue body; skipping it keeps the largest TEXT column off
+  # list queries. Raises MissingAttributeError if a view starts using body —
+  # then drop this scope from that query.
+  scope :excluding_body, -> {
+    select((column_names - %w[body]).map { |c| "#{table_name}.#{c}" })
+  }
+  # The operator's own per-PR hold, and the only thing that removes a PR from
+  # the scan. The system never sets it: every recovery path is detected inside
+  # the scan, so a system-set exclusion would hide the PR from its own recovery.
+  # @spec QUEUE-TIER-006 @spec PR-ESCALATION-003
+  scope :auto_continue_active, -> { where(auto_continue_paused: false) }
   scope :ready_for_work, ->(project) {
     # Match blocking_issues / lifecycle_statuses semantics: open dependencies
     # excluding recommend_close (treated as effectively resolved pending
@@ -234,10 +245,10 @@ class Issue < ApplicationRecord
   # and +current_head_updated_at+ (the live PR head commit timestamp) to
   # enable the "new PR head commit" reset condition. Without those
   # parameters, only explicit reset markers and successful-run resets apply.
-  def pr_progress_state(current_head_sha: nil, current_head_updated_at: nil)
+  def pr_progress_state(runs: nil, current_head_sha: nil, current_head_updated_at: nil)
     PullRequests::ProgressState.call(
       project:, issue: self,
-      current_head_sha:, current_head_updated_at:
+      runs:, current_head_sha:, current_head_updated_at:
     )
   end
 
@@ -297,16 +308,24 @@ class Issue < ApplicationRecord
     pr_review_phase == "merged"
   end
 
-  def dismiss_escalation!(draft:)
+  # Releases the escalation hold and returns the PR to an automation-managed
+  # phase. Owner-initiated clearings also restart the attempt counters: they
+  # measure attempts since the owner last looked, and escalation is the moment
+  # the owner looks. An escalation that clears itself (operational failures
+  # recovering) passes +reset_counters: false+ — nobody looked, so the PR does
+  # not earn a fresh failure budget.
+  #
+  # @spec PR-ESCALATION-005 @spec PR-ESCALATION-006 @spec PR-ESCALATION-007
+  # @spec PR-ESCALATION-008
+  def clear_escalation!(draft:, reset_counters: true)
     token_limit_override = pr_escalation_reason == PR_ESCALATION_REASON_PR_AUTO_CONTINUE_TOKEN_LIMIT
     attrs = {
       labels: labels - %w[paid-escalated paid-dismiss-escalation],
       pr_review_phase: draft ? "restarted" : "ready",
       pr_escalation_reason: nil,
-      # @spec FOCUSED-RUN-008
-      auto_continue_paused: false,
       ci_retry_requested_at: nil
     }
+    attrs.merge!(escalation_counter_reset_attributes) if reset_counters
     attrs[:pr_auto_continue_token_limit_overridden_at] = Time.current if token_limit_override
 
     update!(attrs)
@@ -507,6 +526,21 @@ class Issue < ApplicationRecord
   end
 
   private
+
+  # Every counter an escalation accumulated, plus the markers that tell
+  # PullRequests::ProgressState to stop counting failures from before the
+  # owner intervened.
+  def escalation_counter_reset_attributes
+    reset_at = Time.current
+    {
+      draft_review_count: 0,
+      pr_followup_count: 0,
+      review_goal_retry_count: 0,
+      stuck_confirmation_count: 0,
+      review_goal_retry_reset_at: reset_at,
+      operational_failure_reset_at: reset_at
+    }
+  end
 
   CLOSING_KEYWORD_RE = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b/i
   CLOSING_REF_RE = /\G\s*(?:,\s*)?(?:and\s+)?(?:([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)|(?<!\w))#(\d+)/

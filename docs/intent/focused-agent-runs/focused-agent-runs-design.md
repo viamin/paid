@@ -98,9 +98,9 @@ run for a PR, `CheckQualityGateActivity` sums recorded tokens from prior
 automatic runs on that PR. If usage has reached the cap, the workflow skips the
 new run and escalates the PR instead.
 
-Escalation also pauses `auto_continue_paused` for the PR. Dismissing escalation
-resumes it, preserving the existing "remove the escalation label to let
-automation try again" operator flow.
+Escalation hands the PR to the owner. What holds it there, how the owner sees
+it, and how it is cleared belong to `pr-escalation-recovery`; this segment ends
+at the decision to escalate.
 
 ## What this is not
 

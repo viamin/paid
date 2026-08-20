@@ -56,10 +56,11 @@
       </div>
 
       <div class="mt-6">
-        <%= render "dashboard/queue_preview_frame",
-          queue_preview: @queue_preview,
-          paused_projects: @quality_paused_projects,
-          queue_fairness_mode: @queue_fairness_mode %>
+        <turbo-frame id="dashboard-queue-preview"
+          data-dashboard-frames-target="frame"
+          data-dashboard-frames-src="<%= dashboard_queue_preview_path %>">
+          <div class="animate-pulse rounded-lg bg-gray-100 h-48"></div>
+        </turbo-frame>
       </div>
 
       <turbo-frame id="dashboard-eligibility-breakdown"
@@ -70,6 +71,7 @@
       </turbo-frame>
 
       <div class="mt-6">
+        <%= render "dashboard/blocked_pull_requests", blocked_pull_requests: @blocked_pull_requests %>
         <%= render "dashboard/retry_limited_issues", retry_limited_issues: @retry_limited_issues %>
       </div>
 
@@ -174,9 +176,13 @@
       Recent Activity
     </summary>
     <div class="mt-4">
-      <div id="activity-stream">
-        <%= render "dashboard/activity_stream", activity_items: @recent_activity %>
-      </div>
+      <turbo-frame id="dashboard-recent-activity"
+        data-dashboard-frames-target="frame"
+        data-dashboard-frames-src="<%= dashboard_recent_activity_path %>">
+        <div id="activity-stream">
+          <div class="animate-pulse rounded-lg bg-gray-100 h-48"></div>
+        </div>
+      </turbo-frame>
     </div>
   </details>
 </div>

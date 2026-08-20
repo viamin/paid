@@ -1126,6 +1126,7 @@ class Project < ApplicationRecord
     automation_configuration.auto_review.method_for(method)
   end
 
+
   # Returns the set of bot GitHub logins (downcased) for all enabled review
   # methods that have a known bot account (copilot, codex, etc.), plus the
   # project's author-bot identity if using GitHub App auth.

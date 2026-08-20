@@ -63,9 +63,11 @@
 
 - [x] **QUEUE-TIER-006** — The ordering layer SHALL NOT re-check whether a
   queued PR-continuation run is workable, because CI-pending PRs never
-  queue a run, paused PRs are excluded at the scan source
-  (`Issue.auto_continue_active`), and `QueueAgentRunActivity#find_existing_run`
-  row-locks so an active PR cannot double-queue.
+  queue a run, operator-paused PRs are excluded at the scan source
+  (`Issue.auto_continue_active`), escalated PRs remain in the scan but have no
+  work queued for them (`PR-ESCALATION-001`), and
+  `QueueAgentRunActivity#find_existing_run` row-locks so an active PR cannot
+  double-queue.
   *Code:* `ScanPaidPrsActivity` (scan gating), `Issue.auto_continue_active`,
   `QueueAgentRunActivity#find_existing_run`.
   *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.

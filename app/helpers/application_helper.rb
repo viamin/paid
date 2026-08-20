@@ -1,6 +1,26 @@
 # frozen_string_literal: true
 
 module ApplicationHelper
+  ESCALATION_REASON_LABELS = {
+    "failure_streak" => "Failure streak",
+    "review_goal_retry_limit" => "Retry limit",
+    "pr_auto_continue_token_limit" => "Token cap",
+    "operational_failures" => "Infrastructure failures"
+  }.freeze
+
+  ESCALATION_COUNTER_LABELS = {
+    draft_review_count: "Draft rounds",
+    pr_followup_count: "Follow-up runs",
+    review_goal_retry_count: "Review retries"
+  }.freeze
+
+  def escalation_reason_label(reason)
+    ESCALATION_REASON_LABELS.fetch(reason.to_s, "Stopped")
+  end
+
+  def escalation_counter_label(name)
+    ESCALATION_COUNTER_LABELS.fetch(name.to_sym, name.to_s.humanize)
+  end
   MISSING_RUNNER_ENTRY_LABEL = "Deleted runner entry"
   MISSING_PROVIDER_ENTRY_LABEL = MISSING_RUNNER_ENTRY_LABEL
 

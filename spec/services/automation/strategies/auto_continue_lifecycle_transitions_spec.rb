@@ -167,16 +167,18 @@ RSpec.describe Automation::Strategies::AutoContinue do
   end
 
   describe "escalated phase gates" do
-    it "delegates to AutoReview when no unified gate is active" do
+    # @spec PR-ESCALATION-001
+    it "queues no follow-up work when the scan reports no recovery trigger" do
       result = evaluate(
         lifecycle: base_lifecycle(phase: "escalated"),
         scan: { issue_id: pull_request.id, pr_number: 42, phase: "escalated", triggers: [] }
       )
 
-      expect(decision_types(result)).to eq([ "queue_create_pr_run", "record_pr_followup" ])
+      expect(decision_types(result)).to eq([ "noop" ])
     end
 
-    it "escalates on the unified failure streak limit" do
+    # @spec PR-ESCALATION-001
+    it "does not re-escalate a PR that is already escalated" do
       result = evaluate(
         lifecycle: base_lifecycle(
           phase: "escalated",
@@ -187,7 +189,7 @@ RSpec.describe Automation::Strategies::AutoContinue do
         )
       )
 
-      expect(result.to_h[:decisions].first[:type]).to eq("escalate")
+      expect(decision_types(result)).to eq([ "noop" ])
     end
   end
 

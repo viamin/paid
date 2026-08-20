@@ -374,6 +374,22 @@ class AgentRun < ApplicationRecord
   # (AgentRuns::IngestExternal). See `synthetic_operational_run?`.
   scope :excluding_synthetic, -> { where(synthetic: false) }
 
+  # Transcript/diagnostic payload columns are never rendered by list views
+  # (dashboard cards, queue preview, activity stream); skipping them keeps
+  # fat JSON/TEXT columns off list queries. custom_prompt is deliberately
+  # KEPT by default: agent_run_context uses it as the context fallback for
+  # runs without an issue or PR link. Call sites that never render context
+  # (recent activity) pass extra: %w[custom_prompt].
+  LIST_PAYLOAD_EXCLUDED_COLUMNS = %w[
+    streaming_turns_data external_metadata mcp_server_snapshot
+    mcp_provisioned_servers screenshot_hints review_proxy_diagnostics
+  ].freeze
+
+  scope :excluding_list_payload, ->(extra: []) {
+    excluded = LIST_PAYLOAD_EXCLUDED_COLUMNS + Array(extra)
+    select((column_names - excluded).map { |c| "#{table_name}.#{c}" })
+  }
+
   def update_columns(attributes)
     super(attributes)
   end

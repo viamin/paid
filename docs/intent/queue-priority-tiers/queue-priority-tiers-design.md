@@ -86,9 +86,11 @@ manual fresh-issue run; it is retained, scoped in comments to that one case.
 
 This ordering does not re-check whether a PR is actually workable. That is
 already guaranteed before a queued run exists: CI-pending PRs never queue a
-run; paused PRs are excluded at the scan source (`Issue.auto_continue_active`);
-and `QueueAgentRunActivity#find_existing_run` row-locks so an active PR
-cannot double-queue. The ordering layer trusts that candidate set.
+run; operator-paused PRs are excluded at the scan source
+(`Issue.auto_continue_active`); escalated PRs stay in the scan but the scan
+decides no work for them (see `pr-escalation-recovery`); and
+`QueueAgentRunActivity#find_existing_run` row-locks so an active PR cannot
+double-queue. The ordering layer trusts that candidate set.
 
 ## What this is not
 

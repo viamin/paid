@@ -7,19 +7,19 @@ class DashboardController < ApplicationController
   before_action :set_live_agent_run, only: :cancel_run
 
   def show
-    @queue_fairness_mode = current_account.tenant_setting!.resolved_queue_fairness_mode
     @time_range = valid_time_range
     @status_filter = valid_status_filter
     @goal_filter = valid_goal_filter
     @live_stats = Dashboard::LiveStats.call(account: current_account)
-    @queue_preview = Dashboard::QueuePreview.call(user: current_user, queue_fairness_mode: @queue_fairness_mode)
-    @active_runs = live_agent_runs.active.includes(:runner, :issue, :model_selection, project: [ :created_by, :account ])
+    @active_runs = live_agent_runs.active.excluding_list_payload
+      .preload(:runner, :issue, :model_selection, project: [ :created_by, :account ])
       .order("agent_runs.created_at DESC")
       .limit(20)
     AgentRun.preload_final_runner_records(@active_runs)
     AgentRun.preload_source_pull_requests(@active_runs)
     AgentRun.preload_created_issue_records(@active_runs)
-    @paused_runs = live_agent_runs.paused.includes(:runner, :issue, :model_selection, project: [ :created_by, :account ])
+    @paused_runs = live_agent_runs.paused.excluding_list_payload
+      .preload(:runner, :issue, :model_selection, project: [ :created_by, :account ])
       .order(paused_at: :desc, created_at: :desc)
       .limit(20)
       .to_a
@@ -33,11 +33,17 @@ class DashboardController < ApplicationController
     @retry_limited_issues = Issue.joins(:project)
       .where(projects: { account_id: current_account.id })
       .where.not(runner_retry_abandoned_at: nil)
-      .includes(:project)
+      .excluding_body
+      .preload(:project)
       .order(runner_retry_abandoned_at: :desc)
       .limit(20)
       .to_a
+    @blocked_pull_requests = Dashboard::BlockedPullRequests.call(account: current_account)
+  end
+
+  def recent_activity
     @recent_activity = Dashboard::RecentActivity.call(account: current_account)
+    render partial: "dashboard/recent_activity_frame", locals: { activity_items: @recent_activity }
   end
 
   def eligibility_breakdown

@@ -484,7 +484,11 @@ module Workflows
 
     def handle_dismiss_escalation(project_id, pr_data)
       result = run_activity(Activities::DismissEscalationActivity,
-        { issue_id: pr_data[:issue_id], draft: pr_data[:draft] == true },
+        {
+          issue_id: pr_data[:issue_id],
+          draft: pr_data[:draft] == true,
+          owner_initiated: pr_data[:owner_initiated] != false
+        },
         timeout: 30)
       return unless result[:dismissed]
 

@@ -695,7 +695,7 @@ RSpec.describe Issue do
 
       it "recomputes progress state across helper calls" do
         allow(PullRequests::ProgressState).to receive(:call)
-          .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
+          .with(project:, issue:, runs: nil, current_head_sha: nil, current_head_updated_at: nil)
           .and_return(progress_state)
 
         expect(issue.consecutive_unsuccessful_pr_runs).to eq(3)
@@ -712,7 +712,7 @@ RSpec.describe Issue do
           consecutive_unsuccessful_automatic_runs: 0
         )
         allow(PullRequests::ProgressState).to receive(:call)
-          .with(project:, issue:, current_head_sha: "abc123", current_head_updated_at: anything)
+          .with(project:, issue:, runs: nil, current_head_sha: "abc123", current_head_updated_at: anything)
           .and_return(head_aware_state)
 
         expect(issue.consecutive_unsuccessful_pr_runs(current_head_sha: "abc123", current_head_updated_at: Time.current)).to eq(0)
@@ -726,10 +726,10 @@ RSpec.describe Issue do
         fetched_at = Time.zone.parse("2026-05-15 12:00:00")
 
         allow(PullRequests::ProgressState).to receive(:call)
-          .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
+          .with(project:, issue:, runs: nil, current_head_sha: nil, current_head_updated_at: nil)
           .and_return(progress_state, progress_state)
         allow(PullRequests::ProgressState).to receive(:call)
-          .with(project:, issue:, current_head_sha: "abc123", current_head_updated_at: fetched_at)
+          .with(project:, issue:, runs: nil, current_head_sha: "abc123", current_head_updated_at: fetched_at)
           .and_return(head_aware_state)
 
         expect(issue.consecutive_unsuccessful_pr_runs).to eq(3)
@@ -744,37 +744,98 @@ RSpec.describe Issue do
         )
 
         allow(PullRequests::ProgressState).to receive(:call)
-          .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
+          .with(project:, issue:, runs: nil, current_head_sha: nil, current_head_updated_at: nil)
           .and_return(progress_state, progress_state)
         allow(PullRequests::ProgressState).to receive(:call)
-          .with(project:, issue:, current_head_sha: "abc123", current_head_updated_at: nil)
+          .with(project:, issue:, runs: nil, current_head_sha: "abc123", current_head_updated_at: nil)
           .and_return(partial_head_state)
 
         expect(issue.consecutive_unsuccessful_pr_runs).to eq(3)
         expect(issue.consecutive_unsuccessful_pr_runs(current_head_sha: "abc123", current_head_updated_at: nil)).to eq(1)
         expect(issue.consecutive_unsuccessful_pr_runs).to eq(3)
       end
+    end
 
-      it "does not rewrite progress reset markers when dismissing escalation" do
-        allow(PullRequests::ProgressState).to receive(:call)
-          .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
-          .and_return(progress_state)
-        issue.define_singleton_method(:labels) { %w[paid-escalated paid-dismiss-escalation] }
-        issue.define_singleton_method(:pr_escalation_reason) { nil }
-        allow(issue).to receive(:update!).and_return(true)
+    describe "#clear_escalation!" do
+      let(:escalation_project) { create(:project) }
+      let(:escalated_pr) do
+        create(:issue, :pull_request,
+          project: escalation_project,
+          github_number: 42,
+          pr_review_phase: "escalated",
+          pr_escalation_reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK,
+          labels: %w[paid-generated paid-automation paid-escalated],
+          draft_review_count: 12,
+          pr_followup_count: 4,
+          review_goal_retry_count: 3,
+          stuck_confirmation_count: 2,
+          ci_retry_requested_at: 1.hour.ago)
+      end
 
-        issue.dismiss_escalation!(draft: false)
+      # @spec PR-ESCALATION-005
+      it "clears the escalation and zeroes every counter the escalation counted" do
+        freeze_time do
+          escalated_pr.clear_escalation!(draft: false)
 
-        expect(issue).to have_received(:update!).with(
-          hash_including(
-            pr_review_phase: "ready",
-            pr_escalation_reason: nil,
-            ci_retry_requested_at: nil
-          )
-        )
-        expect(issue).not_to have_received(:update!).with(hash_including(:review_goal_retry_reset_at))
-        expect(issue).not_to have_received(:update!).with(hash_including(:operational_failure_reset_at))
-        expect(issue).not_to have_received(:update!).with(hash_including(:pr_auto_continue_token_limit_overridden_at))
+          escalated_pr.reload
+          expect(escalated_pr.pr_escalation_reason).to be_nil
+          expect(escalated_pr.labels).not_to include("paid-escalated")
+          expect(escalated_pr.draft_review_count).to eq(0)
+          expect(escalated_pr.pr_followup_count).to eq(0)
+          expect(escalated_pr.review_goal_retry_count).to eq(0)
+          expect(escalated_pr.stuck_confirmation_count).to eq(0)
+          expect(escalated_pr.ci_retry_requested_at).to be_nil
+          expect(escalated_pr.review_goal_retry_reset_at).to be_within(1.second).of(Time.current)
+          expect(escalated_pr.operational_failure_reset_at).to be_within(1.second).of(Time.current)
+        end
+      end
+
+      # @spec PR-ESCALATION-006
+      it "returns a draft pull request to the restarted phase" do
+        escalated_pr.clear_escalation!(draft: true)
+
+        expect(escalated_pr.reload.pr_review_phase).to eq("restarted")
+      end
+
+      # @spec PR-ESCALATION-006
+      it "returns a non-draft pull request to the ready phase" do
+        escalated_pr.clear_escalation!(draft: false)
+
+        expect(escalated_pr.reload.pr_review_phase).to eq("ready")
+      end
+
+      # @spec PR-ESCALATION-007
+      it "records a standing token-cap override when clearing a token-cap escalation" do
+        escalated_pr.update!(pr_escalation_reason: Issue::PR_ESCALATION_REASON_PR_AUTO_CONTINUE_TOKEN_LIMIT)
+
+        freeze_time do
+          escalated_pr.clear_escalation!(draft: false)
+
+          expect(escalated_pr.reload.pr_auto_continue_token_limit_overridden_at)
+            .to be_within(1.second).of(Time.current)
+        end
+      end
+
+      # @spec PR-ESCALATION-007
+      it "does not record a token-cap override for other escalation reasons" do
+        escalated_pr.clear_escalation!(draft: false)
+
+        expect(escalated_pr.reload.pr_auto_continue_token_limit_overridden_at).to be_nil
+      end
+
+      # @spec PR-ESCALATION-008
+      it "releases the hold without zeroing counters when the clearing is not owner-initiated" do
+        escalated_pr.update!(pr_escalation_reason: Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES)
+
+        escalated_pr.clear_escalation!(draft: false, reset_counters: false)
+
+        escalated_pr.reload
+        expect(escalated_pr.pr_review_phase).to eq("ready")
+        expect(escalated_pr.pr_escalation_reason).to be_nil
+        expect(escalated_pr.draft_review_count).to eq(12)
+        expect(escalated_pr.pr_followup_count).to eq(4)
+        expect(escalated_pr.review_goal_retry_count).to eq(3)
+        expect(escalated_pr.stuck_confirmation_count).to eq(2)
       end
     end
 

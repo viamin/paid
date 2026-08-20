@@ -2,6 +2,87 @@
 
 module Automation
   module LabelPolicy
+    # Module-level label-history questions, for callers that are not mixin
+    # hosts (the PR scanner). Both replay the pull request's label events
+    # rather than reading the current label set, because a label's absence
+    # does not say who removed it — or whether it was ever applied.
+    class << self
+      def trusted_user_added_label?(project, record, label)
+        state = replay_label_events(project, record, label)
+        return false unless state
+
+        state[:present] && project.trusted_github_user?(state[:added_by])
+      end
+
+      # +after+ bounds the replay to events at or after the given time — used
+      # by escalation-dismissal detection to ignore label events from a prior
+      # escalation cycle. Without it, an owner's `unlabeled` event from a
+      # previous cycle satisfies this check on a subsequent re-escalation whose
+      # own label write failed, granting a full counter reset (and, for
+      # token-cap escalations, the permanent waiver) that the owner never asked
+      # for. Callers with no cycle marker pass +nil+ and get the unbounded
+      # replay.
+      # @spec PR-ESCALATION-009 @spec PR-ESCALATION-019
+      def trusted_user_removed_label?(project, record, label, after: nil)
+        state = replay_label_events(project, record, label, after: after)
+        return false unless state
+
+        !state[:present] && project.trusted_github_user?(state[:removed_by])
+      end
+
+      # Replays the labeled/unlabeled history for one label and reports the
+      # final state plus who put it there or took it away. Returns nil when the
+      # history cannot be read, so callers treat "unknown" as "no evidence"
+      # rather than inferring intent from a missing label. +after+ restricts
+      # the replay to events at or after that timestamp.
+      def replay_label_events(project, record, label, after: nil)
+        events = project.client.issue_events(project.full_name, record.github_number)
+        relevant = Array(events).select do |event|
+          (event.event == "labeled" || event.event == "unlabeled") &&
+            event_label_name(event) == label &&
+            event_after?(event, after)
+        end
+        return { present: false, added_by: nil, removed_by: nil } if relevant.empty?
+
+        relevant
+          .sort_by { |event| event.respond_to?(:created_at) && event.created_at ? event.created_at : Time.at(0) }
+          .each_with_object({ present: false, added_by: nil, removed_by: nil }) do |event, state|
+            if event.event == "labeled"
+              state[:present] = true
+              state[:added_by] = event.actor&.login
+              state[:removed_by] = nil
+            else
+              state[:present] = false
+              state[:removed_by] = event.actor&.login
+              state[:added_by] = nil
+            end
+          end
+      rescue GithubClient::RateLimitError
+        raise
+      rescue => e
+        Rails.logger.warn(
+          message: "github_sync.issue_events_fetch_failed",
+          project_id: project.id,
+          issue_id: record.id,
+          error: e.message
+        )
+        nil
+      end
+
+      def event_label_name(event)
+        event.respond_to?(:label) && event.label ? event.label.name : nil
+      end
+
+      # Events without a timestamp are treated as "before any bound" so a
+      # missing +created_at+ cannot be mistaken for a fresh cycle event.
+      def event_after?(event, after)
+        return true unless after
+        return false unless event.respond_to?(:created_at) && event.created_at
+
+        event.created_at >= after
+      end
+    end
+
     private
 
     def actionable_state?(record)

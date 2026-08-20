@@ -39,7 +39,8 @@ module Dashboard
         .finished
         .where.not(completed_at: nil)
         .where("agent_runs.completed_at > ?", activity_cutoff)
-        .includes(:project, :issue)
+        .excluding_list_payload(extra: %w[custom_prompt])
+        .preload(:project, :issue)
         .order(completed_at: :desc)
         .limit(limit)
         .to_a
@@ -51,7 +52,8 @@ module Dashboard
         .finished
         .where(completed_at: nil)
         .where("agent_runs.created_at > ?", activity_cutoff)
-        .includes(:project, :issue)
+        .excluding_list_payload(extra: %w[custom_prompt])
+        .preload(:project, :issue)
         .order(created_at: :desc)
         .limit(limit)
         .to_a
@@ -62,7 +64,8 @@ module Dashboard
         .where(projects: { account_id: account.id })
         .where(is_pull_request: true, pr_review_phase: "merged")
         .where("issues.github_updated_at > ?", activity_cutoff)
-        .includes(:project)
+        .excluding_body
+        .preload(:project)
         .order(github_updated_at: :desc)
         .limit(limit)
         .to_a

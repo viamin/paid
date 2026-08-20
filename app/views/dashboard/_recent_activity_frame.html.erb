@@ -1,0 +1,5 @@
+<%= turbo_frame_tag "dashboard-recent-activity" do %>
+  <div id="activity-stream">
+    <%= render "dashboard/activity_stream", activity_items: activity_items %>
+  </div>
+<% end %>
