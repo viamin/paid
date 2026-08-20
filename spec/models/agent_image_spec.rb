@@ -244,6 +244,12 @@ RSpec.describe AgentImage, type: :model do # @spec CONTAINER-RUNTIME-021
       expect { image.deprecate!(reason: "irrelevant") }.to raise_error(ArgumentError)
     end
 
+    it "requires a reason when deprecating" do
+      image = create(:agent_image)
+      expect { image.deprecate!(reason: nil) }.to raise_error(ArgumentError)
+      expect { image.deprecate!(reason: "") }.to raise_error(ArgumentError)
+    end
+
     it "rejects direct status updates without the deprecation audit fields" do
       image = create(:agent_image)
 

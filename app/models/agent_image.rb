@@ -117,12 +117,15 @@ class AgentImage < ApplicationRecord
   def deprecate!(reason:)
     raise ArgumentError, "cannot deprecate a blocked image" if blocked?
 
+    reason_text = reason.to_s.strip
+    raise ArgumentError, "deprecation reason is required" if reason_text.blank?
+
     return self if deprecated?
 
     assign_attributes(
       status: "deprecated",
       deprecated_at: Time.current,
-      deprecation_reason: reason.to_s.presence
+      deprecation_reason: reason_text
     )
     save!
     self
