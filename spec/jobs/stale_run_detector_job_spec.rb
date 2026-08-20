@@ -713,6 +713,21 @@ RSpec.describe StaleRunDetectorJob do
         expect(run.reload.status).to eq("rate_limited")
       end
 
+      it "re-queues a capacity-parked run without burning the rate-limited retry budget" do
+        run = create(:agent_run, :rate_limited,
+          rate_limited_until: 1.minute.ago,
+          stale_requeue_count: AgentRun::MAX_RATE_LIMITED_REQUEUES,
+          external_metadata: { "capacity_park_reason" => "global_provisioning_rate_limit", "keep" => "value" })
+
+        described_class.perform_now
+
+        run.reload
+        expect(run.status).to eq("queued")
+        expect(run.stale_requeue_count).to eq(AgentRun::MAX_RATE_LIMITED_REQUEUES)
+        expect(run.external_metadata).to include("keep" => "value")
+        expect(run.external_metadata).not_to have_key("capacity_park_reason")
+      end
+
       it "leaves the issue in_progress when re-queuing (does not arm re-enqueue)" do
         issue = create(:issue, :in_progress, project: project)
         create(:agent_run, :rate_limited, project: project, issue: issue, rate_limited_until: 1.minute.ago)

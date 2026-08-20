@@ -189,8 +189,14 @@ module Metrics
     end
 
     def collect_capacity_metrics(lines)
+      admission_snapshot = Capacity::AdmissionSnapshot.capture(
+        window_seconds: Capacity::InfrastructureLimits.current[:provisioning_rate_window_seconds]
+      )
       global_active = AgentRun.active_count_global
       global_limit = Capacity::GlobalLimit.max_concurrent_executions
+      global_requested = admission_snapshot.global_requested_resources
+      global_infra_limits = Capacity::InfrastructureLimits.current
+      registry = Containers.host_registry
 
       append_metric_header(lines, "paid_capacity_global_concurrent_executions", "gauge", "Currently capacity-inflight agent runs across all accounts, hosts, and projects.")
       append_metric_sample(lines, "paid_capacity_global_concurrent_executions", global_active)
@@ -198,15 +204,43 @@ module Metrics
       append_metric_header(lines, "paid_capacity_global_concurrent_limit", "gauge", "Configured global concurrent execution limit (MAX_GLOBAL_CONCURRENT_EXECUTIONS).")
       append_metric_sample(lines, "paid_capacity_global_concurrent_limit", global_limit)
 
-      registry = Containers.host_registry
+      append_metric_header(lines, "paid_capacity_global_requested_cpu_quota", "gauge", "Currently requested CPU quota across capacity-inflight runs.")
+      append_metric_sample(lines, "paid_capacity_global_requested_cpu_quota", global_requested[:cpu_quota])
+      append_metric_header(lines, "paid_capacity_global_requested_cpu_quota_limit", "gauge", "Configured global requested CPU quota ceiling.")
+      append_metric_sample(lines, "paid_capacity_global_requested_cpu_quota_limit", global_infra_limits[:global_requested_cpu_quota_limit])
+
+      append_metric_header(lines, "paid_capacity_global_requested_memory_bytes", "gauge", "Currently requested memory bytes across capacity-inflight runs.")
+      append_metric_sample(lines, "paid_capacity_global_requested_memory_bytes", global_requested[:memory_bytes])
+      append_metric_header(lines, "paid_capacity_global_requested_memory_bytes_limit", "gauge", "Configured global requested memory ceiling.")
+      append_metric_sample(lines, "paid_capacity_global_requested_memory_bytes_limit", global_infra_limits[:global_requested_memory_bytes_limit])
+
+      append_metric_header(lines, "paid_capacity_global_requested_disk_bytes", "gauge", "Currently requested disk bytes across capacity-inflight runs.")
+      append_metric_sample(lines, "paid_capacity_global_requested_disk_bytes", global_requested[:disk_bytes])
+      append_metric_header(lines, "paid_capacity_global_requested_disk_bytes_limit", "gauge", "Configured global requested disk ceiling.")
+      append_metric_sample(lines, "paid_capacity_global_requested_disk_bytes_limit", global_infra_limits[:global_requested_disk_bytes_limit])
+
       append_metric_header(lines, "paid_capacity_host_concurrent_executions", "gauge", "Capacity-inflight runs attributed to a specific host.")
       append_metric_header(lines, "paid_capacity_host_concurrent_limit", "gauge", "Declared per-host concurrent execution limit. A value of 0 means unlimited.")
+      append_metric_header(lines, "paid_capacity_host_requested_cpu_quota", "gauge", "Currently requested CPU quota attributed to a specific host.")
+      append_metric_header(lines, "paid_capacity_host_requested_cpu_quota_limit", "gauge", "Configured per-host requested CPU quota ceiling.")
+      append_metric_header(lines, "paid_capacity_host_requested_memory_bytes", "gauge", "Currently requested memory bytes attributed to a specific host.")
+      append_metric_header(lines, "paid_capacity_host_requested_memory_bytes_limit", "gauge", "Configured per-host requested memory ceiling.")
+      append_metric_header(lines, "paid_capacity_host_requested_disk_bytes", "gauge", "Currently requested disk bytes attributed to a specific host.")
+      append_metric_header(lines, "paid_capacity_host_requested_disk_bytes_limit", "gauge", "Configured per-host requested disk ceiling.")
       registry.hosts.each do |host|
         host_active = AgentRun.active_count_for_host(host.identifier)
+        host_requested = admission_snapshot.host_requested_resources(host.identifier)
+        host_infra_limits = Capacity::InfrastructureLimits.current(host: host.identifier)
         append_metric_sample(lines, "paid_capacity_host_concurrent_executions", host_active, host: host.identifier)
 
         host_limit = host.max_concurrent_runs
         append_metric_sample(lines, "paid_capacity_host_concurrent_limit", host_limit || 0, host: host.identifier)
+        append_metric_sample(lines, "paid_capacity_host_requested_cpu_quota", host_requested[:cpu_quota], host: host.identifier)
+        append_metric_sample(lines, "paid_capacity_host_requested_cpu_quota_limit", host_infra_limits[:host_requested_cpu_quota_limit], host: host.identifier)
+        append_metric_sample(lines, "paid_capacity_host_requested_memory_bytes", host_requested[:memory_bytes], host: host.identifier)
+        append_metric_sample(lines, "paid_capacity_host_requested_memory_bytes_limit", host_infra_limits[:host_requested_memory_bytes_limit], host: host.identifier)
+        append_metric_sample(lines, "paid_capacity_host_requested_disk_bytes", host_requested[:disk_bytes], host: host.identifier)
+        append_metric_sample(lines, "paid_capacity_host_requested_disk_bytes_limit", host_infra_limits[:host_requested_disk_bytes_limit], host: host.identifier)
       end
     end
 

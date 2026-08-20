@@ -36,6 +36,7 @@ RSpec.describe Config::ProductionValidator do
       container_backend: "remote",
       docker_socket_present: true,
       screenshots_configured: true,
+      infrastructure_limit_errors: [],
       logger: logger
     }
   end
@@ -97,6 +98,16 @@ RSpec.describe Config::ProductionValidator do
             expect(error.message).to include("docs/PRODUCTION_CONFIG.md")
           end
         end
+      end
+
+      # @spec PROD-CONFIG-006
+      it "fails fast when infrastructure safety limits are unset or unsafe" do
+        expect {
+          validator(infrastructure_limit_errors: [ "MAX_GLOBAL_REQUESTED_CPU_QUOTA must be set to a positive integer" ]).validate!
+        }.to raise_error(
+          described_class::ConfigurationError,
+          /infrastructure_limits: MAX_GLOBAL_REQUESTED_CPU_QUOTA/
+        )
       end
     end
 
@@ -247,6 +258,7 @@ RSpec.describe Config::ProductionValidator do
         temporal_address: "temporal.internal:7233",
         qdrant_url: "http://qdrant.internal:6333"
       )
+      allow(Capacity::InfrastructureLimits).to receive(:production_errors).and_return([])
       allow(Rails.application.config.x).to receive(:workspace_root).and_return(writable_dir)
       allow(Rails.application.credentials).to receive(:dig).with(:qdrant, :api_key).and_return(nil)
       allow(Screenshots::Storage).to receive(:configured?).and_return(true)

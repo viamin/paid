@@ -60,6 +60,10 @@ RSpec.describe Metrics::PrometheusCollector do # @spec OBSERVABILITY-002
       expect(output).to include("paid_capacity_global_concurrent_limit")
       expect(output).to include("paid_capacity_host_concurrent_executions")
       expect(output).to include("paid_capacity_host_concurrent_limit")
+      expect(output).to include("paid_capacity_global_requested_memory_bytes")
+      expect(output).to include("paid_capacity_global_requested_memory_bytes_limit")
+      expect(output).to include("paid_capacity_host_requested_cpu_quota")
+      expect(output).to include("paid_capacity_host_requested_cpu_quota_limit")
     end
 
     context "with agent runs in various statuses" do
@@ -323,6 +327,50 @@ RSpec.describe Metrics::PrometheusCollector do # @spec OBSERVABILITY-002
         expect(output.scan("# TYPE paid_capacity_host_concurrent_limit gauge\n").size).to eq(1)
         expect(output.scan(/^# HELP paid_capacity_host_concurrent_executions /).size).to eq(1)
         expect(output.scan(/^# HELP paid_capacity_host_concurrent_limit /).size).to eq(1)
+      end
+
+      it "uses the same host scope for requested-resource gauges as admission" do
+        create(
+          :agent_run,
+          :running,
+          container_host: nil,
+          external_metadata: {
+            "planned_container_host" => "local",
+            "requested_resources" => {
+              "cpu_quota" => 200_000,
+              "memory_bytes" => 2.gigabytes,
+              "disk_bytes" => 1.gigabyte
+            }
+          }
+        )
+
+        expected = TenantContext.with_system_access do
+          Capacity::RequestedResources.sum_for(AgentRun.capacity_inflight_for_host("local"))
+        end
+
+        expect(output).to include(%(paid_capacity_host_requested_cpu_quota{host="local"} #{expected[:cpu_quota]}))
+        expect(output).to include(%(paid_capacity_host_requested_memory_bytes{host="local"} #{expected[:memory_bytes]}))
+        expect(output).to include(%(paid_capacity_host_requested_disk_bytes{host="local"} #{expected[:disk_bytes]}))
+      end
+
+      it "includes the shared blank-host local rows in local requested-resource gauges" do
+        create(
+          :agent_run,
+          :running,
+          container_host: nil,
+          external_metadata: {
+            "planned_container_host" => "local",
+            "requested_resources" => {
+              "cpu_quota" => 200_000,
+              "memory_bytes" => 2.gigabytes,
+              "disk_bytes" => 1.gigabyte
+            }
+          }
+        )
+
+        expect(output).to include('paid_capacity_host_requested_cpu_quota{host="local"} 600000')
+        expect(output).to include('paid_capacity_host_requested_memory_bytes{host="local"} 10737418240')
+        expect(output).to include('paid_capacity_host_requested_disk_bytes{host="local"} 4294967296')
       end
     end
 

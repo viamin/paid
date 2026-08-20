@@ -759,18 +759,21 @@ class AgentRun < ApplicationRecord
   # (their count stays 0 during the claim window) while starving the local
   # host with runs admitted elsewhere. Once container_host is set by a real
   # provision/pool result it is authoritative and the planned value is ignored.
+  def self.capacity_inflight_for_host(container_host)
+    capacity_inflight.where(
+      "COALESCE(NULLIF(container_host, ''), " \
+      "COALESCE(external_metadata->>'planned_container_host', '')) IN (:scope)",
+      scope: host_scope_for(container_host)
+    )
+  end
+
   def self.active_count_for_host(container_host)
     # A host is a shared physical resource that runs workloads for multiple
     # accounts, so the count must span all tenants — otherwise RunAdmission
     # (tenant-scoped) undercounts and the unauthenticated Prometheus path
     # reads zero. See active_count_global for the same RLS concern.
-    scope = host_scope_for(container_host)
     TenantContext.with_system_access do
-      capacity_inflight.where(
-        "COALESCE(NULLIF(container_host, ''), " \
-        "COALESCE(external_metadata->>'planned_container_host', '')) IN (:scope)",
-        scope: scope
-      ).count
+      capacity_inflight_for_host(container_host).count
     end
   end
 
