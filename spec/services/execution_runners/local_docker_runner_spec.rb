@@ -146,6 +146,13 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
         .to raise_error(ExecutionRunners::ProvisionError, "Docker error: no space left")
     end
 
+    it "fails closed when the run spec omits an ingress policy" do
+      spec_without_ingress = ExecutionRunners::RunSpec.new(**run_spec.to_h.merge(ingress_policy: nil))
+
+      expect { runner.provision(spec: spec_without_ingress) }
+        .to raise_error(ExecutionRunners::ProvisionError, "RunSpec requires an IngressPolicy")
+    end
+
     it "ensures the network from the NetworkingPolicy before delegating to Containers::Provision" do
       expect(NetworkPolicy).to receive(:ensure_network!)
         .with(network: NetworkPolicy::NETWORK_NAME, backend: backend)

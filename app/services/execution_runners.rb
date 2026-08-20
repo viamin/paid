@@ -292,10 +292,6 @@ module ExecutionRunners
       public_inbound == false
     end
 
-    def preview_capability
-      capabilities.find(&:preview?)
-    end
-
     def preview_only?
       capabilities.all?(&:preview?)
     end
