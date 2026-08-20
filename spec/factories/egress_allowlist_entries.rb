@@ -3,20 +3,37 @@
 FactoryBot.define do
   factory :egress_allowlist_entry do
     account
-    host_pattern { "api.example.com" }
+    project { nil }
+    sequence(:host_pattern) { |n| "host#{n}.example.com" }
+    scheme { nil }
+    port { nil }
     enabled { true }
-    reason { "Package registry for the monorepo" }
+    source_kind { "tenant" }
+    reason { "internal package registry" }
+
+    trait :account_level do
+      project { nil }
+    end
+
+    trait :project_level do
+      project { association :project, account: account }
+    end
 
     trait :disabled do
       enabled { false }
+      disabled_at { Time.current }
+    end
+
+    trait :with_scheme do
+      scheme { "https" }
+    end
+
+    trait :with_port do
+      port { 8443 }
     end
 
     trait :wildcard do
-      host_pattern { "*.packages.example.com" }
-    end
-
-    trait :project_scoped do
-      project { association :project, account: account }
+      sequence(:host_pattern) { |n| "*.packages#{n}.example.com" }
     end
   end
 end

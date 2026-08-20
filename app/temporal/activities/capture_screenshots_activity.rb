@@ -21,13 +21,15 @@ module Activities
           message: "screenshots.capture_activity_completed",
           agent_run_id: agent_run.id,
           status: result.status,
-          screenshot_count: result.screenshot_paths.size
+          screenshot_count: result.screenshot_paths.size,
+          artifact_count: result.artifacts.size
         )
 
         {
           agent_run_id: agent_run.id,
           status: result.status,
           screenshot_count: result.screenshot_paths.size,
+          artifacts: result.artifacts,
           screenshots_url: result.screenshots_url,
           error: result.error
         }

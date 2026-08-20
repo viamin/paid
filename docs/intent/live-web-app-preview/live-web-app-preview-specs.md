@@ -72,3 +72,16 @@
   `app/services/containers/backends/remote_docker.rb`,
   `app/services/containers/backends/swarm.rb`.
   *Test:* `spec/services/previews/tunnel_manager_spec.rb`.
+
+- [x] **LIVE-PREVIEW-009** — When the preview proxy forwards a request to the
+  tunneled container, the system SHALL apply a strict allowlist of upstream
+  request headers so browser-attached credentials (Cookie, Authorization, and
+  any Paid/session-specific credential header) never reach
+  repository-controlled preview code. X-CSRF-Token and X-XSRF-Token SHALL be
+  forwarded rather than dropped, since browsers never attach them
+  automatically and dropping them breaks the preview app's own header-based
+  CSRF protection. The same allowlist applies to WebSocket upgrade requests
+  in addition to the Connection/Upgrade and Sec-WebSocket-* headers the
+  upstream needs to complete the handshake.
+  *Code:* `app/middleware/previews_proxy.rb`.
+  *Test:* `spec/middleware/previews_proxy_spec.rb`.

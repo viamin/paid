@@ -218,15 +218,40 @@
   Git, control-plane API, object storage, and credentials. The output manifest
   SHALL carry result summaries, log references, verification results, durable
   binary artifact references, and git output identity, and SHALL distinguish
-  code outputs from durable binary artifacts and structured results. Secret
-  values SHALL be excluded by construction: credential lanes and service
-  declarations may carry only identifiers or env keys, never secret payloads
-  or host paths.
-  *Tests:* `spec/services/execution_runners_spec.rb`
+  code outputs from durable binary artifacts and structured results. Durable
+  binary artifact references SHALL include content type, object-storage key
+  and/or URL, and run context (`account_id`, `project_id`, `agent_run_id`).
+  Artifact manifests persisted as durable records on the run (e.g.
+  `AgentRun#external_metadata["artifact_manifest"]`) SHALL carry storage keys
+  without presigned URLs — presigned URLs expire within the SigV4 one-week cap
+  and are ephemeral, so durable consumers re-sign from the key. The output
+  manifest's binary artifact references SHALL distinguish trusted source lanes
+  from agent-authored ones: artifacts from
+  `AgentRun#external_metadata["artifact_manifest"]` (persisted by the runner,
+  or by interop ingestion — `Api::Projects::ExternalAgentRunsController`
+  persists caller-supplied `external_metadata` verbatim via
+  `AgentRuns::IngestExternal`) have their storage keys honored only when the
+  key lives under the project's own storage namespace
+  (`Screenshots::Storage.namespace_prefix`, i.e. `screenshots/<owner>/<repo>/`);
+  any other key degrades to URL-only. Artifacts from
+  `AgentRun#verification_result["artifacts"]` (written by the agent inside the
+  container and persisted as-is by
+  `AgentRuns::VerificationResultRecorder`) are untrusted input — only `url`
+  survives so a spoofed key under another tenant's prefix cannot be re-signed
+  into a working presigned URL by a durable consumer. The run's
+  `account_id`, `project_id`, and `agent_run_id` SHALL always be the
+  authoritative context (the system already knows the real identity), so an
+  artifact-supplied context value can never override the run's identity.
+  Secret values SHALL be excluded by construction: credential lanes and
+  service declarations may carry only identifiers or env keys, never secret
+  payloads or host paths.
+  *Tests:* `spec/services/execution_runners_spec.rb`,
+  `spec/services/screenshots/container_capture_spec.rb`
   *Code:* `ExecutionRunners::ExecutionInputManifest`,
   `ExecutionRunners::ExecutionOutputManifest`,
   `ExecutionRunners::RunSpec#input_manifest`,
-  `ExecutionRunners::ExecutionResult#output_manifest`
+  `ExecutionRunners::ExecutionResult#output_manifest`,
+  `ExecutionRunners::ExecutionOutputManifest.build_binary_artifact_refs`
 
 - [x] **CONTAINER-RUNTIME-019** — The system SHALL provide a provider-neutral
   runner conformance suite that drives the complete normal create-PR
@@ -282,3 +307,59 @@
   `ExecutionRunners::ExecutionInputManifest`,
   `ExecutionRunners::RunSpec`,
   `Containers::Provision.networking_policy_for`
+
+- [x] **CONTAINER-RUNTIME-021** — The system SHALL persist an `AgentImage`
+  registry record that represents the immutable production identity of an
+  agent container image as `(account_id, registry, repository, digest,
+  architecture)`. Identity fields (`name`, `tag`, `registry`, `repository`,
+  `digest`, `architecture`, `account_id`, `built_at`) SHALL be immutable after
+  creation: a new build produces a new digest, which is a new row. The digest
+  SHALL be accepted as a 64-character hex sha256, optionally prefixed with
+  `sha256:`, and SHALL be stored canonicalized as `sha256:<hex>` so both input
+  forms resolve to one identity and every emitted reference is a valid OCI
+  digest reference.
+  Local development and single-backend deployments SHALL continue to use the
+  literal `paid-agent:latest` reference; the registry is the system of record
+  for what image actually runs in production, not the
+  `Containers::ImageResolver::BASE_IMAGE` constant.
+  *Tests:* `spec/models/agent_image_spec.rb`
+  *Code:* `AgentImage`
+
+- [x] **CONTAINER-RUNTIME-022** — The `AgentImage` record SHALL support a
+  status state machine with three values: `active` (schedulable),
+  `deprecated` (still runnable but superseded, retained for rollback), and
+  `blocked` (excluded from future scheduling, retained for audit and to
+  explain prior run outcomes). Transitions SHALL be idempotent:
+  `active -> deprecated -> blocked` and `active -> blocked` are allowed,
+  re-applying the same transition SHALL NOT re-stamp the timestamp or
+  replace the recorded reason. The `AgentImage` record SHALL never be
+  deleted; historical records are retained for audit and rollback.
+  *Tests:* `spec/models/agent_image_spec.rb`
+  *Code:* `AgentImage#deprecate!`, `AgentImage#block!`, `AgentImage#schedulable?`
+
+- [x] **CONTAINER-RUNTIME-023** — The `AgentImage` registry SHALL enforce
+  uniqueness on the immutable production identity `(account_id, registry,
+  repository, digest, architecture)`. The same digest on a different
+  architecture SHALL be a separate image record (multi-arch images are
+  registered as one row per architecture). The same identity MAY be
+  recorded independently by different accounts. The `provenance` and
+  `metadata` jsonb fields SHALL be mutable so late-arriving build
+  metadata and runbook links can be added without affecting the
+  immutable identity, and their changes SHALL be tracked (logidze) so mutable
+  provenance/metadata edits and lifecycle transitions leave an audit trail of
+  who changed what and when.
+  *Tests:* `spec/models/agent_image_spec.rb`
+  *Code:* `AgentImage`, `idx_agent_images_identity`
+
+- [x] **CONTAINER-RUNTIME-024** — The `AgentImage` record SHALL expose
+  scheduling-relevant query scopes: `AgentImage.active` /
+  `AgentImage.schedulable` (only `active` rows), `AgentImage.deprecated`,
+  `AgentImage.blocked`, and `AgentImage.historical` (the
+  `deprecated`+`blocked` union for audit and rollback). A partial index
+  over non-active rows SHALL keep audit queries fast as the active set
+  grows, and a `(account_id, name, architecture)` lookup index SHALL
+  support the (profile, architecture) scheduling decision.
+  *Tests:* `spec/models/agent_image_spec.rb`
+  *Code:* `AgentImage.active`, `AgentImage.schedulable`,
+  `AgentImage.historical`, `idx_agent_images_inactive`,
+  `idx_agent_images_profile_arch`

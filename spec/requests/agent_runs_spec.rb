@@ -780,6 +780,92 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include(agent_run.error_message)
       end
 
+      it "shows the egress policy snapshot recorded for the run" do
+        agent_run = create(:agent_run, project: project, external_metadata: {
+          "egress_policy" => {
+            "mode" => "enforced",
+            "egress_profile" => "standard",
+            "snapshot_at" => "2026-08-19T00:00:00Z",
+            "required_destinations" => [
+              { "host" => "secrets-proxy.paid.internal", "source" => "platform" }
+            ],
+            "destinations" => [
+              { "host" => "api.example.com", "source" => "tenant", "source_kind" => "tenant_account", "entry_id" => 42 }
+            ]
+          }
+        })
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response.body).to include("Egress Policy")
+        expect(response.body).to include("Mode: Enforced")
+        expect(response.body).to include("secrets-proxy.paid.internal")
+        expect(response.body).to include("api.example.com")
+        expect(response.body).to include("entry #42")
+      end
+
+      it "shows a placeholder when a denied event exists without a policy snapshot" do
+        agent_run = create(:agent_run, project: project, external_metadata: {})
+        create(:egress_security_event, account: account, project: project, agent_run: agent_run)
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response.body).to include("Egress policy snapshot was not recorded for this run.")
+      end
+
+      it "shows denied and redacted egress security events for the run" do
+        agent_run = create(:agent_run, project: project)
+        create(:egress_security_event, :redacted_extraction,
+          account: account, project: project, agent_run: agent_run,
+          destination_host: "leaky.example.com", matched_rule: "request body contained high-entropy token")
+        create(:egress_security_event,
+          account: account, project: project, agent_run: agent_run,
+          destination_host: "blocked.example.com", matched_rule: "host not in allowlist")
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response.body).to include("Denied Egress")
+        expect(response.body).to include("2 events")
+        expect(response.body).to include("leaky.example.com")
+        expect(response.body).to include("blocked.example.com")
+        expect(response.body).to include("request body contained high-entropy token")
+        expect(response.body).to include("token fingerprint sha256:deadbeef")
+      end
+
+      it "shows the total denied event count even when more events exist than the displayed table limit" do
+        agent_run = create(:agent_run, project: project)
+        create_list(:egress_security_event, 55, account: account, project: project, agent_run: agent_run)
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response.body).to include("55 events")
+      end
+
+      it "excludes allowlist_match events from the displayed table and count" do
+        agent_run = create(:agent_run, project: project)
+        create(:egress_security_event,
+          account: account, project: project, agent_run: agent_run,
+          destination_host: "blocked.example.com")
+        create_list(:egress_security_event, 3, :allowlist_match,
+          account: account, project: project, agent_run: agent_run,
+          destination_host: "allowed.example.com")
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response.body).to include("1 event")
+        expect(response.body).not_to include("allowed.example.com")
+      end
+
+      it "shows an empty state when a policy snapshot exists but no events were recorded" do
+        agent_run = create(:agent_run, :completed, project: project, external_metadata: {
+          "egress_policy" => { "mode" => "enforced" }
+        })
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response.body).to include("No denied or redacted events recorded for this run.")
+      end
+
       it "shows retry runner options for configured providers" do
         allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor])
         project.effective_owner.runners.create!(runner_key: "cursor")
@@ -1187,6 +1273,21 @@ RSpec.describe "AgentRuns" do
 
         expect(identifiers).to include("", "remote-host")
         expect(labels.first).to eq("Inherit saved placement preference")
+      end
+
+      # @spec EXEC-DISABLE-004
+      it "omits backend-disabled hosts from the returned options" do
+        disabled_host = create_placement_ready_remote_host(project: project, identifier: "disabled-host")
+        create_placement_ready_remote_host(project: project, identifier: "healthy-host")
+        codex = configure_codex_create_pr_default!(project)
+        create(:execution_control, :backend_scope, :enabled, docker_host: disabled_host)
+
+        get docker_host_options_project_agent_runs_path(project, runner: codex.routing_key, format: :json)
+
+        expect(response).to have_http_status(:ok)
+        identifiers = JSON.parse(response.body).fetch("options").map(&:last)
+        expect(identifiers).to include("", "healthy-host")
+        expect(identifiers).not_to include("disabled-host")
       end
 
       it "reports the project/account preferred host when it is eligible for the runner" do

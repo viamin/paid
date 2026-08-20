@@ -28,13 +28,14 @@ module AgentRuns
     # nil; in that case the tenant-preference branch is skipped because no
     # runner_key has been chosen yet.
     def initialize(project:, goal:, requested_agent_type: nil, requested_runner_id: nil, respect_requested: true,
-                   exclude_runner_ids: [], effective_runner: nil, logger: nil)
+                   exclude_runner_ids: [], disabled_runner_ids: nil, effective_runner: nil, logger: nil)
       @project = project
       @goal = goal
       @requested_agent_type = requested_agent_type
       @requested_runner_id = requested_runner_id
       @respect_requested = respect_requested
       @exclude_runner_ids = Array(exclude_runner_ids)
+      @disabled_runner_ids = disabled_runner_ids
       @effective_runner = effective_runner
       @logger = logger
     end
@@ -55,7 +56,7 @@ module AgentRuns
     private
 
     attr_reader :project, :goal, :requested_agent_type, :requested_runner_id, :respect_requested, :exclude_runner_ids,
-                :effective_runner, :logger
+                :disabled_runner_ids, :effective_runner, :logger
 
     # True when this runner instance already failed preflight during the
     # current dequeue pass and must not be re-selected.
@@ -329,8 +330,10 @@ module AgentRuns
     end
 
     # @spec RUNNER-SCHED-005
+    # @spec EXEC-DISABLE-003
     def runner_runnable?(runner)
       return false if runner.blocked_by_time_window?
+      return false unless runner.execution_enabled_for_agent_runs?(disabled_runner_ids: disabled_runner_ids)
       container_executable_runner_key?(runner.runner_key)
     end
 
