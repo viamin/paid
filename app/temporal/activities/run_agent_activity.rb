@@ -1957,18 +1957,30 @@ module Activities
     # @spec RUNNER-FALLBACK-004
     def repair_runner_state_dir!(container_service, agent_run:, runner:)
       state_dir, seed_dir = RUNNER_STATE_DIRS.fetch(runner.to_s)
-      logger.warn(
-        message: "agent_execution.preflight_runner_state_repaired",
-        agent_run_id: agent_run.id,
-        runner: runner.to_s
-      )
-      container_service.execute(
+      # The state dir is a tmpfs mountpoint (CONTAINER-RUNTIME-029), so it
+      # cannot be rm -rf'd — removing the contents works but rmdir of the
+      # mountpoint fails EBUSY, which would short-circuit the seed restore.
+      result = container_service.execute(
         [ "sh", "-c",
-         "rm -rf #{state_dir} && mkdir -p #{state_dir} && " \
+         "find #{state_dir} -mindepth 1 -delete && " \
          "if [ -d #{seed_dir} ]; then cp -a #{seed_dir}/. #{state_dir}/; fi" ],
         timeout: 30,
         stream: false
       )
+      if result.success?
+        logger.warn(
+          message: "agent_execution.preflight_runner_state_repaired",
+          agent_run_id: agent_run.id,
+          runner: runner.to_s
+        )
+      else
+        logger.error(
+          message: "agent_execution.preflight_runner_state_repair_failed",
+          agent_run_id: agent_run.id,
+          runner: runner.to_s,
+          exit_code: result[:exit_code]
+        )
+      end
     end
 
     def smoke_output(result, prompt)

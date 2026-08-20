@@ -3354,10 +3354,41 @@ expect(container_service).to receive(:execute).with(
           )
         }.not_to raise_error
 
+        # The state dir is a tmpfs mountpoint: the repair must wipe its
+        # contents in place (rm -rf on the mountpoint fails EBUSY and would
+        # short-circuit the seed restore) and re-seed from the image.
         expect(container_service).to have_received(:execute).with(
-          array_including("sh", "-c", /opencode-seed/),
-          hash_including(timeout: kind_of(Numeric))
+          [ "sh", "-c",
+           "find /home/agent/.local/share/opencode -mindepth 1 -delete && " \
+           "if [ -d /opt/opencode-seed ]; then cp -a /opt/opencode-seed/. /home/agent/.local/share/opencode/; fi" ],
+          hash_including(timeout: 30, stream: false)
         )
+        expect(container_service).to have_received(:execute).exactly(3).times
+      end
+
+      # @spec RUNNER-FALLBACK-004 — the repair exec result must not be
+      # silently discarded: a non-zero exit is logged and the bounded retry
+      # still runs.
+      it "logs a repair failure and still retries the smoke once when the repair command fails" do
+        opencode_provider = create_opencode_provider_for(user)
+        repair_failure = Containers::Provision::Result.failure(error: "exit 1", stdout: "", stderr: "cannot delete", exit_code: 1)
+        logger = instance_double(ActiveSupport::Logger, debug: nil, info: nil, warn: nil, error: nil)
+        allow(activity).to receive(:logger).and_return(logger)
+        allow(container_service).to receive(:execute).and_return(wal_checkpoint_preflight_failure, repair_failure, exec_success)
+
+        expect {
+          run_direct_outbound_preflight(
+            activity: activity,
+            agent_run: agent_run,
+            container_service: container_service,
+            provider: opencode_provider,
+            user: user
+          )
+        }.not_to raise_error
+
+        expect(logger).to have_received(:error).with(hash_including(
+          message: "agent_execution.preflight_runner_state_repair_failed", agent_run_id: agent_run.id, runner: "opencode", exit_code: 1))
+        expect(logger).not_to have_received(:warn).with(hash_including(message: "agent_execution.preflight_runner_state_repaired"))
         expect(container_service).to have_received(:execute).exactly(3).times
       end
 
@@ -3403,8 +3434,10 @@ expect(container_service).to receive(:execute).with(
         }.not_to raise_error
 
         expect(container_service).to have_received(:execute).with(
-          array_including("sh", "-c", /kilo-seed/),
-          hash_including(timeout: kind_of(Numeric))
+          [ "sh", "-c",
+           "find /home/agent/.local/share/kilo -mindepth 1 -delete && " \
+           "if [ -d /opt/kilo-seed ]; then cp -a /opt/kilo-seed/. /home/agent/.local/share/kilo/; fi" ],
+          hash_including(timeout: 30, stream: false)
         )
         expect(container_service).to have_received(:execute).exactly(3).times
       end
