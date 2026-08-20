@@ -355,7 +355,7 @@ module ExecutionRunners
           runner_type: RUNNER_TYPE,
           resource_type: "environment",
           identifier: container.id,
-          host: backend.identifier.to_s,
+          host: backend.container_host_for(container),
           workspace_ref: nil,
           tags: labels,
           metadata: {}

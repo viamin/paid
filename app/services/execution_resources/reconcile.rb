@@ -15,6 +15,15 @@ module ExecutionResources
 
       grouped_inventory.each do |(runner_type, host), resources|
         reconcile_group(runner_type:, host:, resources:, counts:)
+      rescue StandardError => e
+        counts[:failures] += 1
+        Rails.logger.warn(
+          message: "container_manager.execution_resource_reconcile_group_failed",
+          runner_type: runner_type,
+          host: host,
+          error_class: e.class.name,
+          error: e.message
+        )
       end
 
       Result.new(**counts)
@@ -204,7 +213,8 @@ module ExecutionResources
     def orphaned_run?(agent_run_id)
       return true if agent_run_id.blank?
 
-      AgentRun.find_by(id: agent_run_id)&.finished? != false
+      run = AgentRun.find_by(id: agent_run_id)
+      run.nil? || (run.finished? && !run.container_retained?)
     end
 
     def provider_key(resource)

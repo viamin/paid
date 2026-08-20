@@ -142,6 +142,17 @@ RSpec.describe ExecutionResources::Reconcile do
     expect(ExecutionResource.find_by(identifier: "paid-workspace-orphan")).to be_nil
   end
 
+  it "does not adopt or destroy a tagged provider resource for a finished but retained agent run" do
+    agent_run.update!(container_retained_until: 2.hours.from_now)
+    runner.resources = [ orphaned_workspace_resource ]
+
+    result = reconcile(scope: ExecutionResource.none)
+
+    expect(result.adopted).to eq(0)
+    expect(runner.cleaned_identifiers).to be_empty
+    expect(ExecutionResource.find_by(identifier: "paid-workspace-orphan")).to be_nil
+  end
+
   it "adopts an orphan without linking agent_run when the run already owns a ledger row of that type, and still cleans it up" do
     create(:execution_resource, project: project, agent_run: agent_run,
       resource_type: "environment", state: "cleaned", identifier: "known-container", host: "local")
@@ -225,6 +236,34 @@ RSpec.describe ExecutionResources::Reconcile do
     expect(runner.cleaned_handles).to eq([ handle.identifier ])
     expect(resource.reload).to be_cleaned
     expect(resource.reduced_confidence).to be(true)
+  end
+
+  it "isolates a group whose listing raises so other groups still reconcile" do
+    other_project = create(:project, account: account)
+    other_agent_run = create(:agent_run, :completed, project: other_project)
+    healthy_resource = create(:execution_resource, project: other_project, agent_run: other_agent_run,
+      identifier: "healthy-container", host: "other-host")
+
+    failing_runner = runner_class.new
+    failing_runner.define_singleton_method(:list_resources) { |host: nil| raise ExecutionRunners::ProvisionError, "listing failed" }
+    healthy_runner = runner_class.new
+
+    resolver = lambda { |runner_type:, host:| host == "local" ? failing_runner : healthy_runner }
+    targets = [ { runner_type: "local_docker", host: "local" }, { runner_type: "local_docker", host: "other-host" } ]
+
+    resource = create(:execution_resource, project: project, agent_run: agent_run,
+      identifier: handle.identifier, host: "local", runner_handle: handle.to_storage)
+
+    result = described_class.new(
+      scope: ExecutionResource.where(id: [ resource.id, healthy_resource.id ]),
+      runner_resolver: resolver,
+      inventory_targets: targets
+    ).call
+
+    expect(result.failures).to eq(1)
+    expect(result.checked).to eq(1)
+    expect(healthy_resource.reload).to be_cleaned
+    expect(resource.reload).to be_active
   end
 
   def tracked_resource(resource_type:, identifier:, tags: nil)
