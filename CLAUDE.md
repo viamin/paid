@@ -81,6 +81,11 @@ bin/dev                      # Start dev server with Foreman (Rails + JS + CSS w
 bin/rails server             # Start Rails server only
 bin/rails console            # Rails console
 
+# Dependency Updates
+bin/update --check           # Report available updates without writing files
+bin/update                   # Apply the updates Paid owns (pinned tools, PostgreSQL)
+bin/update --lockfiles       # Also run bundle update / yarn upgrade
+
 # Code Quality
 bin/lint                     # Run linters (RuboCop, ESLint, markdownlint, ShellCheck)
 bin/lint -a                  # Run linters with safe auto-fix
@@ -291,6 +296,32 @@ record.at(time: 1.day.ago)               # snapshot as of a point in time
 record.log_data.versions                  # array of version entries
 record.diff_from(version: 2)             # diff between versions
 ```
+
+## Dependency Pin Ownership
+
+Third-party version pins fall into three classes, and `bin/update` treats them
+differently. See `docs/intent/toolchain-pin-management/` for the full design.
+
+- **Paid-owned** — `yarn`, `ast-grep`, `scc`, `rathole`, `rtk`, `codegraph`, and
+  the PostgreSQL server image plus its client packages live in Paid's own files.
+  `bin/update` resolves upstream and rewrites every file in the consistency
+  group. Pin locations are declared in `scripts/lib/toolchain_pins.rb`; add new
+  pins there rather than teaching `bin/update` about individual files.
+- **Contract-owned** — agent CLI versions (Claude Code, Codex, OpenCode,
+  Kilocode, Gemini, Copilot, Oh My Pi, `pi`, Cursor) and Oh My Pi's Bun runtime
+  are declared by `agent-harness` installation contracts and read at build time
+  by `scripts/extract-provider-install-contract.rb`. **Never pin these in
+  Paid** — a Paid-side override diverges from the version `agent-harness` was
+  tested against. The only lever is the `agent-harness` gem version; when a
+  contract lags real upstream, file it against `viamin/agent-harness`.
+- **Report-only** — Ruby, Node, and Go in `.tool-versions`. `bin/update` reports
+  newer releases but never applies them; runtime upgrades are deliberate
+  migrations.
+
+PostgreSQL is the tightest coupling: the server image version determines the
+client package every image installs, and the PGDG package revision is **not**
+derivable from the upstream version (16.14 shipped as `+1`, 16.15 as `+2`), so
+it must be resolved from the PGDG package index rather than constructed.
 
 ## Release Management
 

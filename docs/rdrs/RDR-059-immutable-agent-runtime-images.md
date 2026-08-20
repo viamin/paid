@@ -8,7 +8,9 @@
 - **Status**: Implemented
 - **Type**: Architecture + Data
 - **Priority**: P1
-- **Related Issues**: #3406 (this issue), #3336 (RD-057 prerequisite), RDR-059 follow-ups TBD
+- **Related Issues**: #3406 (this issue), #3336 (RD-057 prerequisite), #3419, #3407,
+  #3408, #3354, #3358 (`Containers::RuntimeImageSelector`/`RuntimeImageCatalog`
+  closeout, PR #3482)
 - **Related RDRs**:
   - [RDR-004](RDR-004-container-isolation.md) (Container Isolation)
   - [RDR-019](RDR-019-remote-container-execution.md) (Remote Container Execution)
@@ -205,10 +207,62 @@ the single-host readiness check input. The new layer is a parallel system
 of record that future changes can build on without forcing an immediate
 cascading edit through every caller.
 
-A future change (out of scope here) will add an `ImageResolver#resolve!`
-that crosses the resolver output with the active registry rows and fails
-loudly when the resolver asks for an image the registry has never seen
-or has already blocked.
+A future change (out of scope here) will add a resolver-facing check that
+crosses the requested tag/profile against the active registry rows and
+fails loudly when the resolver asks for an image the registry has never
+seen or has already blocked. `Containers::RuntimeImageSelector` and
+`Containers::RuntimeImageCatalog` (see "Runtime Image Selector Closeout"
+below) already ship that resolution behavior in production today, backed
+by a checked-in/env-supplied config catalog rather than the `AgentImage`
+table; unifying the two behind one authority is tracked as follow-up work.
+
+## Runtime Image Selector Closeout (#3482)
+
+While this RDR's `AgentImage` registry was in flight, a parallel effort
+(issue #3419, closing out #3406/#3407/#3408/#3354/#3358) shipped the
+production-facing resolution half of the same problem: turning a
+requested tag/profile into an immutable digest reference at provision
+time, and persisting that provenance on the run. The two pieces of work
+are complementary, not competing — `AgentImage` is a durable, queryable
+audit table; `RuntimeImageCatalog` is the config-driven authority actually
+consulted by `Containers::Provision` today. They are not yet wired
+together (see the composition note above).
+
+Shipped behavior:
+
+- `Containers::ImageResolver` remains the requested tag/profile resolver.
+- `Containers::RuntimeImageSelector` turns that request into the final
+  image reference for a run.
+- `Containers::RuntimeImageCatalog` is the immutable authority for
+  production digests and lifecycle state, sourced from
+  `config/agent_runtime_images.yml` with deployments able to inject
+  concrete digest data via `PAID_AGENT_RUNTIME_DIGESTS` so production
+  does not depend on checked-in mutable tags.
+- Production image requests resolve to `registry/repository@sha256:...`;
+  `deprecated` and `blocked` identities are rejected for new runs; rollback
+  to a prior `active` provenance reference is supported.
+- `AgentRun#record_runtime_image_selection!` persists runtime image
+  provenance in `external_metadata["runtime_image"]`.
+- Warm-pool claims carry warm-time provenance on `ContainerPoolEntry` and
+  copy it onto the claiming run, so a catalog default that moves between
+  warm and claim never misattributes the run's image.
+- Non-pool reconnects (Temporal retries / worker failovers through
+  `LocalDockerRunner#reconnect`) reuse the selection already recorded on
+  the run, so a catalog default that moves between provision and reconnect
+  never overwrites the running container's provenance.
+- Replacement containers provisioned from scratch clear the recorded
+  selection in `AgentRun#reconcile_stale_container!`, so the new container
+  records the current catalog default instead of inheriting provenance
+  from a container that no longer exists.
+- Local development/test continue using mutable tags such as
+  `paid-agent:latest`.
+
+Validated by:
+
+- `spec/services/containers/runtime_image_selector_spec.rb`
+- `spec/services/containers/runtime_image_catalog_spec.rb`
+- `spec/models/agent_run_runtime_image_spec.rb`
+- `spec/services/containers/provision_spec.rb`
 
 ## Acceptance Criteria
 
@@ -251,3 +305,9 @@ The implementation is complete when:
 - `app/services/containers/image_resolver.rb`
 - `app/services/containers/provision.rb`
 - `app/models/docker_host.rb`
+- `app/services/containers/runtime_image_selector.rb`
+- `app/services/containers/runtime_image_catalog.rb`
+- `config/agent_runtime_images.yml`
+- `docs/intent/immutable-runtime-images/immutable-runtime-images-design.md`
+- `docs/intent/immutable-runtime-images/immutable-runtime-images-specs.md`
+  (IMMUTABLE-IMAGE-001..-005)
