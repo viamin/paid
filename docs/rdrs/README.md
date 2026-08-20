@@ -122,6 +122,17 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | [RDR-056](RDR-056-strict-test-driven-development-mode.md) | Test-Driven Development Modes with Human Test Review | Draft | P1 |
 | [RDR-063](RDR-063-operational-supervisor-delivery-health.md) | Operational Supervisor for Delivery Health | Draft | P1 |
 
+### Cloud Execution Readiness
+
+RDR-057, RDR-058, RDR-059, and RDR-060 were drafted alongside RDR-061 as a
+set of cloud-execution-readiness decisions, but have since been implemented
+(see their entries under Security & Isolation, Agent System, and Scaling &
+Distribution above). RDR-061 remains the open decision in this set.
+
+| RDR | Title | Status | Priority |
+|-----|-------|--------|----------|
+| [RDR-061](RDR-061-infrastructure-safety-and-audit.md) | Infrastructure Safety Rails and Execution Audit Events | Draft | P1 |
+
 ### Runner Intelligence
 
 | RDR | Title | Status | Priority |
