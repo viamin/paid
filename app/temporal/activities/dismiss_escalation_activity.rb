@@ -1,10 +1,12 @@
 # frozen_string_literal: true
 
 module Activities
-  # Returns an escalated PR back into an automation-managed phase after the
-  # owner dismisses escalation by removing the paid-escalated label. This
-  # preserves the existing failure streak; only real progress clears stuck
-  # state.
+  # Returns an escalated PR back into an automation-managed phase once the
+  # escalation clears. Owner-initiated dismissals restart the attempt counters;
+  # an escalation that cleared itself (operational failures recovering) keeps
+  # them, because no owner looked at the PR.
+  #
+  # @spec PR-ESCALATION-005 @spec PR-ESCALATION-008
   class DismissEscalationActivity < BaseActivity
     activity_name "DismissEscalation"
 
@@ -31,7 +33,8 @@ module Activities
         return { dismissed: false }
       end
 
-      issue.dismiss_escalation!(draft: input[:draft] == true)
+      owner_initiated = input[:owner_initiated] != false
+      issue.clear_escalation!(draft: input[:draft] == true, reset_counters: owner_initiated)
 
       logger.info(
         message: "pr_review.escalation_dismissed",

@@ -113,7 +113,12 @@ module Automation
         end
 
         if trigger_types.include?("dismiss_escalation")
-          decisions << Automation::Decision.dismiss_escalation(issue_id: signals.issue_id, draft: signals.draft)
+          # @spec PR-ESCALATION-008
+          decisions << Automation::Decision.dismiss_escalation(
+            issue_id: signals.issue_id,
+            draft: signals.draft,
+            owner_initiated: dismissal_owner_initiated?(signals)
+          )
           return decisions
         end
 
@@ -311,6 +316,14 @@ module Automation
             )
           ]
         end
+      end
+
+      # A dismissal the scan attributed to the owner (they removed the
+      # escalation label) restarts the attempt counters; an escalation that
+      # cleared itself does not. Absent attribution, treat it as owner-initiated
+      # so a dismissal never silently preserves a limit the owner cleared.
+      def dismissal_owner_initiated?(signals)
+        signals.trigger("dismiss_escalation")&.fetch(:owner_initiated, true) != false
       end
 
       def escalate_decision(signals)
