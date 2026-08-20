@@ -301,7 +301,7 @@ module ExecutionRunners
   #
   # The six tag names are the contract every Paid-managed execution resource
   # carries: environment, account, project, run, attempt, and resource kind.
-  # @spec CONTAINER-RUNTIME-023
+  # @spec CONTAINER-RUNTIME-026
   OwnershipTags = Data.define(:environment, :account_id, :project_id, :run_id, :attempt, :resource_kind) do
     LABEL_PREFIX = "paid."
 

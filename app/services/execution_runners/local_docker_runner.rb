@@ -35,14 +35,14 @@ module ExecutionRunners
     # Docker volume names (RDR-054).
     WORKSPACE_VOLUME_PREFIX = "paid-workspace"
 
-    # @spec CONTAINER-RUNTIME-022
+    # @spec CONTAINER-RUNTIME-025
     def resource_kind
       RESOURCE_KIND
     end
 
     # Docker supports container/volume labels, so the runner can apply the
     # stable Paid ownership tags to every provisioned resource.
-    # @spec CONTAINER-RUNTIME-023
+    # @spec CONTAINER-RUNTIME-026
     def supports_tagging?
       true
     end
@@ -52,9 +52,9 @@ module ExecutionRunners
       true
     end
 
-    # @spec CONTAINER-RUNTIME-022
-    # @spec CONTAINER-RUNTIME-023
-    # @spec CONTAINER-RUNTIME-024
+    # @spec CONTAINER-RUNTIME-025
+    # @spec CONTAINER-RUNTIME-026
+    # @spec CONTAINER-RUNTIME-027
     def provision(spec:)
       backend = backend_for(spec)
       policy = spec.networking_policy
@@ -76,7 +76,7 @@ module ExecutionRunners
       result = service.provision
       # Capture the provider resource identifier immediately so a crash between
       # here and handle persistence still leaves a reconcileable ledger row
-      # (CONTAINER-RUNTIME-024).
+      # (CONTAINER-RUNTIME-027).
       ledger.link_created(intent, provider_resource_id: result[:container_id], host: result[:container_host])
       apply_firewall!(service: service, backend: backend, policy: policy)
       handle = handle_for(spec: spec, result: result)

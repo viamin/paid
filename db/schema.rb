@@ -130,6 +130,31 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_232912) do
     t.index ["target_agent_run_id"], name: "index_agent_coordination_signals_on_target_agent_run_id"
   end
 
+  create_table "agent_images", comment: "Immutable registry of agent container images identified by (registry, repository, digest, architecture) and tracked through active/deprecated/blocked states for audit, scheduling, and rollback.", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Account that owns the image registry record. Image identity is scoped per account so different accounts can record the same upstream digest independently."
+    t.string "architecture", default: "amd64", null: false, comment: "Target architecture of this image (amd64, arm64, 386, arm, ppc64le, s390x). The same digest on a different architecture is a separate image record."
+    t.datetime "blocked_at", comment: "Timestamp the image was transitioned to blocked. Distinct from deprecated: blocked images cannot be scheduled even if they are still installed."
+    t.text "blocked_reason", comment: "Free-text reason captured when the image was blocked (e.g. CVE identifier and severity)."
+    t.datetime "built_at", null: false, comment: "Wall-clock time the image was built or pushed upstream, recorded by the build pipeline."
+    t.datetime "created_at", null: false
+    t.datetime "deprecated_at", comment: "Timestamp the image was transitioned to deprecated. Preserved for historical queries; not the same as blocked."
+    t.text "deprecation_reason", comment: "Free-text reason captured when the image was deprecated (e.g. the successor image reference)."
+    t.string "digest", null: false, comment: "Immutable content-addressed identity, accepted as sha256:<64-hex> or 64-hex characters. The digest is the production source of truth for what image runs."
+    t.jsonb "log_data", comment: "Logidze change history for image lifecycle transitions and provenance/metadata edits."
+    t.jsonb "metadata", default: {}, null: false, comment: "Extensible observability and operations metadata (build log URL, runbook link, signing identity). Mutable without affecting the image identity."
+    t.string "name", null: false, comment: "Logical image profile name (e.g. base, elixir-node, ruby) used for ImageResolver / scheduling decisions."
+    t.jsonb "provenance", default: {}, null: false, comment: "Build provenance such as the GitHub Actions run id, repository, ref, and commit SHA that produced the image. Mutable for late-arriving provenance updates."
+    t.string "registry", default: "docker.io", null: false, comment: "OCI registry host the image was pulled from (docker.io, ghcr.io, registry.example.test). docker.io is the implicit default."
+    t.string "repository", null: false, comment: "OCI repository path within the registry (e.g. paid-agent, paid-agent-extra, organization/paid-agent)."
+    t.string "status", default: "active", null: false, comment: "Lifecycle state: active (schedulable), deprecated (still runnable but superseded), or blocked (excluded from future scheduling)."
+    t.string "tag", null: false, comment: "Docker tag that produced this image (e.g. latest, ruby-3.3.0). Mutable on the registry but immutable once recorded against a digest."
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "name", "architecture"], name: "idx_agent_images_profile_arch", comment: "Lookup index for scheduling and image-resolver queries that need the current image for a (profile, architecture) within an account."
+    t.index ["account_id", "registry", "repository", "digest", "architecture"], name: "idx_agent_images_identity", unique: true, comment: "Uniqueness over the immutable content-addressed identity (account + registry + repository + digest + architecture)."
+    t.index ["account_id"], name: "index_agent_images_on_account_id"
+    t.index ["status"], name: "idx_agent_images_inactive", where: "((status)::text <> 'active'::text)", comment: "Partial index over non-active images so audit and rollback queries against deprecated/blocked rows stay fast as the active set grows."
+  end
+
   create_table "agent_run_anomalies", comment: "Stores statistical outliers detected when an agent run metric deviates materially from the project's historical baseline.", force: :cascade do |t|
     t.bigint "agent_run_id", null: false
     t.string "anomaly_type", limit: 50, null: false, comment: "Direction of the deviation relative to baseline, such as high_value or low_value."
@@ -1116,6 +1141,33 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_232912) do
     t.index ["runner_key"], name: "idx_execution_audit_events_runner_key"
   end
 
+  create_table "execution_controls", comment: "Execution disable controls for global, account, project, runner, and backend scopes.", force: :cascade do |t|
+    t.bigint "account_id", comment: "Account target when scope=account."
+    t.datetime "created_at", null: false
+    t.datetime "disabled_at", comment: "When the control was last cleared."
+    t.bigint "docker_host_id", comment: "Docker host target when scope=backend."
+    t.boolean "enabled", default: false, null: false, comment: "Whether new execution is currently disabled for the scope."
+    t.datetime "enabled_at", comment: "When the control last became active."
+    t.jsonb "metadata", default: {}, null: false, comment: "Structured metadata for audit context and affected-run tracking."
+    t.string "mode", default: "capacity", null: false, comment: "Disable mode: emergency cancels active runs; capacity parks them."
+    t.bigint "project_id", comment: "Project target when scope=project."
+    t.text "reason", comment: "Operator-supplied reason for the current disable state."
+    t.bigint "runner_id", comment: "Runner target when scope=runner."
+    t.string "scope", null: false, comment: "Scope controlled by this row: global, account, project, runner, or backend."
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "idx_execution_controls_account_scope", unique: true, where: "((scope)::text = 'account'::text)"
+    t.index ["account_id"], name: "index_execution_controls_on_account_id"
+    t.index ["docker_host_id"], name: "idx_execution_controls_backend_scope", unique: true, where: "((scope)::text = 'backend'::text)"
+    t.index ["docker_host_id"], name: "index_execution_controls_on_docker_host_id"
+    t.index ["enabled"], name: "index_execution_controls_on_enabled"
+    t.index ["project_id"], name: "idx_execution_controls_project_scope", unique: true, where: "((scope)::text = 'project'::text)"
+    t.index ["project_id"], name: "index_execution_controls_on_project_id"
+    t.index ["runner_id"], name: "idx_execution_controls_runner_scope", unique: true, where: "((scope)::text = 'runner'::text)"
+    t.index ["runner_id"], name: "index_execution_controls_on_runner_id"
+    t.index ["scope"], name: "idx_execution_controls_global_scope_singleton", unique: true, where: "((scope)::text = 'global'::text)"
+    t.index ["scope"], name: "index_execution_controls_on_scope"
+  end
+
   create_table "external_connector_events", comment: "Events ingested from external connectors (Jira, Linear, Slack, etc.) for coexistence workflows.", force: :cascade do |t|
     t.bigint "account_id", null: false, comment: "Account this connector event belongs to."
     t.string "connector_key", null: false, comment: "Connector source key from Interop::Catalog (e.g. jira, linear, slack)."
@@ -1404,6 +1456,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_232912) do
     t.datetime "paused_at", comment: "Sync epoch: records when the pause state last transitioned (from UI or GitHub) to resolve bidirectional sync ordering."
     t.datetime "pr_auto_continue_token_limit_overridden_at", comment: "When set, owner dismissed a PR token-cap escalation and allowed this PR to exceed the automatic PR token cap."
     t.string "pr_escalation_reason", comment: "Machine-readable cause for the current PR escalation so only operational outages can auto-dismiss."
+    t.datetime "pr_escalation_started_at", comment: "Timestamp when this PR entered the escalated phase. Bounds the paid-escalated label-event replay so an unlabeled event from a prior escalation cycle cannot read as a fresh owner dismissal."
     t.integer "pr_followup_count", default: 0, null: false
     t.string "pr_review_phase", default: "draft", null: false
     t.bigint "project_id", null: false
@@ -3087,6 +3140,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_232912) do
   add_foreign_key "account_memberships", "users"
   add_foreign_key "agent_coordination_signals", "agent_runs", column: "source_agent_run_id"
   add_foreign_key "agent_coordination_signals", "agent_runs", column: "target_agent_run_id"
+  add_foreign_key "agent_images", "accounts"
   add_foreign_key "agent_run_anomalies", "agent_runs"
   add_foreign_key "agent_run_anomalies", "projects"
   add_foreign_key "agent_run_logs", "agent_runs", on_delete: :cascade
@@ -3181,6 +3235,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_232912) do
   add_foreign_key "execution_audit_events", "accounts"
   add_foreign_key "execution_audit_events", "agent_runs", on_delete: :nullify
   add_foreign_key "execution_audit_events", "projects", on_delete: :nullify
+  add_foreign_key "execution_controls", "accounts"
+  add_foreign_key "execution_controls", "docker_hosts"
+  add_foreign_key "execution_controls", "projects"
+  add_foreign_key "execution_controls", "runners"
   add_foreign_key "external_connector_events", "accounts"
   add_foreign_key "external_connector_events", "projects"
   add_foreign_key "failure_classifications", "agent_runs", on_delete: :cascade
@@ -4266,5 +4324,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_232912) do
 
   create_trigger :logidze_on_users, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_users BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{encrypted_password,reset_password_token,reset_password_sent_at,remember_created_at}')
+  SQL
+
+  create_trigger :logidze_on_agent_images, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_agent_images BEFORE INSERT OR UPDATE ON public.agent_images FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 end
