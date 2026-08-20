@@ -9,8 +9,6 @@ module StyleGuides
   #   result = StyleGuides::Extract.call(project: project)
   #   result.style_guides  # => [#<StyleGuide>, ...]
   #   result.languages     # => ["ruby", "typescript"]
-  class ExtractionError < StandardError; end
-
   class Extract
     DEFAULT_MODEL = "claude-sonnet-4-6"
     TIMEOUT = 120

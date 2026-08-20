@@ -141,6 +141,7 @@ Distribution above). RDR-061 remains the open decision in this set.
 | [RDR-025](RDR-025-provider-quota-tracking.md) | Provider Quota Tracking and Quota-Aware Routing | Superseded | Medium |
 | [RDR-038](RDR-038-free-models-catalog-and-runner.md) | Free Models Catalog and Runner | Implemented | P1 |
 | [RDR-040](RDR-040-runner-model-compatibility-contracts.md) | Runner Model Compatibility Contracts | Implemented | P1 |
+| [RDR-062](RDR-062-execution-network-policy-intent.md) | Provider-Neutral Execution Network Policy Intent | Implemented | P1 |
 
 ### Semantic Understanding
 

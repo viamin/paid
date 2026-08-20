@@ -236,6 +236,7 @@ RSpec.describe Containers::Provision do
 
       expect(policy.mode).to eq(:proxy_restricted)
       expect(policy).to be_restricted
+      expect(policy.canonical_mode).to eq(:approved_services)
     end
 
     it "defaults the egress_profile to :locked when none is supplied" do
