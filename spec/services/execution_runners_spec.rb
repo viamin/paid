@@ -169,6 +169,26 @@ RSpec.describe ExecutionRunners do
       expect(policy).to be_explicit
     end
 
+    it "rejects a preview exception whose grant has expired" do
+      policy = described_class.from_metadata(
+        "public_inbound" => false,
+        "capabilities" => [
+          {
+            "kind" => "preview",
+            "scope" => "paid_mediated_tunnel",
+            "expires_at" => 1.hour.ago.iso8601,
+            "authentication" => { "required" => true, "type" => "authenticated_proxy" },
+            "granted_at" => 2.hours.ago.iso8601,
+            "granted_by" => "user:42"
+          }
+        ]
+      )
+
+      expect(policy.supported_for_runtime?).to be(false)
+      expect(policy.violation_message)
+        .to eq("Ingress exception grants must be authenticated, time-bounded, and explicitly recorded.")
+    end
+
     it "accepts an authenticated, time-bounded preview exception" do
       policy = described_class.default_deny(
         capabilities: [
