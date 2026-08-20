@@ -142,6 +142,44 @@ RSpec.describe ExecutionResources::Reconcile do
     expect(ExecutionResource.find_by(identifier: "paid-workspace-orphan")).to be_nil
   end
 
+  it "adopts an orphan without linking agent_run when the run already owns a ledger row of that type, and still cleans it up" do
+    create(:execution_resource, project: project, agent_run: agent_run,
+      resource_type: "environment", state: "cleaned", identifier: "known-container", host: "local")
+    leaked = tracked_resource(resource_type: "environment", identifier: "leaked-container")
+    runner.resources = [ leaked ]
+
+    result = reconcile(scope: ExecutionResource.none)
+
+    leaked_resource = ExecutionResource.find_by(identifier: "leaked-container")
+    expect(result.adopted).to eq(1)
+    expect(result.failures).to eq(0)
+    expect(leaked_resource).to be_cleaned
+    expect(leaked_resource.agent_run_id).to be_nil
+    expect(runner.cleaned_identifiers).to include("leaked-container")
+  end
+
+  it "keeps reconciling remaining orphans when adopting one races into a RecordNotUnique conflict" do
+    create(:execution_resource, project: project, agent_run: agent_run,
+      resource_type: "environment", state: "cleaned", identifier: "known-container", host: "local")
+    leaked = tracked_resource(resource_type: "environment", identifier: "leaked-container")
+    runner.resources = [ leaked, orphaned_workspace_resource ]
+
+    reconciler = described_class.new(scope: ExecutionResource.none, runner_resolver: runner_resolver, inventory_targets: inventory_targets)
+    # Force the TOCTOU race the rescue defends against: adoptable_agent_run's
+    # exists? check can pass and still lose to a concurrent reconciliation
+    # pass inserting the conflicting row before this save! runs.
+    allow(reconciler).to receive(:adoptable_agent_run).and_wrap_original do |original, run:, resource:, resource_type:|
+      resource_type == "environment" ? run : original.call(run:, resource:, resource_type:)
+    end
+
+    result = reconciler.call
+
+    expect(result.failures).to eq(1)
+    expect(result.adopted).to eq(1)
+    expect(ExecutionResource.find_by(identifier: "leaked-container")).to be_nil
+    expect(ExecutionResource.find_by(identifier: "paid-workspace-orphan")).to be_cleaned
+  end
+
   it "retries cleanup_pending resources with durable backoff when cleanup fails" do
     resource = create(:execution_resource, project: project, agent_run: agent_run,
       identifier: handle.identifier, host: handle.host, runner_handle: handle.to_storage,

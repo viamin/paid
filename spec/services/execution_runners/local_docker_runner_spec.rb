@@ -564,6 +564,38 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     end
   end
 
+  describe "#list_resources" do
+    before do
+      allow(backend).to receive(:list_containers).and_return([])
+    end
+
+    it "extracts labels from a plain Docker::Volume-like object and uses the backend identifier as host" do
+      volume = instance_double(Docker::Volume, id: "vol-1", info: { "Labels" => { "paid.resource" => "workspace_volume" } })
+      allow(backend).to receive(:list_volumes).and_return([ volume ])
+
+      resources = runner.list_resources(host: "local")
+
+      expect(resources.length).to eq(1)
+      expect(resources.first).to have_attributes(
+        identifier: "vol-1", host: "local", tags: { "paid.resource" => "workspace_volume" }
+      )
+    end
+
+    it "uses a multi-host volume handle's own labels and host instead of the backend identifier" do
+      # Mirrors Containers::Backends::Swarm::VolumeHandle, which carries the
+      # owning node hostname and labels directly (it has no `#info` method).
+      swarm_volume_handle = Struct.new(:id, :host, :labels).new("vol-2", "worker-1", { "paid.resource" => "workspace_volume" })
+      allow(backend).to receive(:list_volumes).and_return([ swarm_volume_handle ])
+
+      resources = runner.list_resources(host: "swarm")
+
+      expect(resources.length).to eq(1)
+      expect(resources.first).to have_attributes(
+        identifier: "vol-2", host: "worker-1", tags: { "paid.resource" => "workspace_volume" }
+      )
+    end
+  end
+
   describe ".workspace_volume_name_for" do
     it "constructs the per-run Docker named-volume name" do
       expect(described_class.workspace_volume_name_for(42)).to eq("paid-workspace-42")

@@ -4,11 +4,11 @@ class CreateExecutionResources < ActiveRecord::Migration[8.1]
   def change
     create_table :execution_resources,
       comment: "Durable execution-resource ledger rows tracked against provider state for reconciliation and cleanup retry." do |t|
-      t.references :account, foreign_key: true,
+      t.references :account, foreign_key: { on_delete: :nullify },
         comment: "Owning account for resources linked to a known Paid account."
-      t.references :project, foreign_key: true,
+      t.references :project, foreign_key: { on_delete: :nullify },
         comment: "Owning project for resources linked to a known Paid project."
-      t.references :agent_run, foreign_key: true,
+      t.references :agent_run, foreign_key: { on_delete: :nullify },
         comment: "Agent run that owns the tracked environment when the resource is tied to a specific run."
       t.string :resource_type, null: false,
         comment: "Tracked execution resource type: environment or workspace."

@@ -367,7 +367,7 @@ module ExecutionRunners
 
     def list_workspace_resources(backend:)
       backend.list_volumes.filter_map do |volume|
-        labels = volume.info["Labels"] || {}
+        labels = volume_labels(volume)
         next unless labels["paid.resource"] == "workspace_volume"
         next if labels["paid.container_pool_entry_id"].present?
 
@@ -375,7 +375,7 @@ module ExecutionRunners
           runner_type: RUNNER_TYPE,
           resource_type: "workspace",
           identifier: volume.id,
-          host: backend.identifier.to_s,
+          host: volume_host(volume, backend:),
           workspace_ref: volume.id,
           tags: labels,
           metadata: {}
@@ -383,6 +383,26 @@ module ExecutionRunners
       end
     rescue Docker::Error::DockerError => e
       raise ProvisionError, e.message
+    end
+
+    # Multi-host backends (e.g. Swarm) return a volume handle carrying its own
+    # per-node labels/host instead of a plain Docker::Volume with `#info` -
+    # fall back to `#info` for single-host backends where the volume object
+    # is the real docker-api client object.
+    def volume_labels(volume)
+      return volume.labels || {} if volume.respond_to?(:labels)
+
+      volume.info["Labels"] || {}
+    end
+
+    # A leaked volume must be tracked under the node host that actually owns
+    # it, not the backend's generic identifier - Swarm's `get_volume(host:)`
+    # looks up the node by that host, so a wrong value makes later cleanup
+    # silently no-op against a nonexistent node instead of removing the volume.
+    def volume_host(volume, backend:)
+      return volume.host.to_s if volume.respond_to?(:host) && volume.host.present?
+
+      backend.identifier.to_s
     end
 
     def cleanup_environment_resource(backend:, identifier:)

@@ -57,10 +57,27 @@ module ExecutionResources
       listed_index.each_value do |listed_resource|
         next unless adoptable?(listed_resource)
 
-        adopted = adopt_resource(listed_resource)
-        counts[:adopted] += 1
-        cleanup_via_resource(resource: adopted, listed_resource:, runner:, counts:)
+        adopt_and_cleanup(listed_resource:, runner:, counts:)
       end
+    end
+
+    def adopt_and_cleanup(listed_resource:, runner:, counts:)
+      adopted = adopt_resource(listed_resource)
+      counts[:adopted] += 1
+      cleanup_via_resource(resource: adopted, listed_resource:, runner:, counts:)
+    rescue ActiveRecord::RecordNotUnique => e
+      # Expected when the run already owns an `environment` ledger row (e.g. a
+      # retained `cleaned` row from `mark_cleaned!`) and the listing also
+      # contains a second, leaked container tagged with that run - exactly the
+      # mid-provision-crash leak this reconciler targets. Log and move on so
+      # one conflicting orphan doesn't wedge the whole reconciliation pass.
+      Rails.logger.warn(
+        message: "container_manager.execution_resource_adopt_conflict",
+        identifier: listed_resource.identifier,
+        error_class: e.class.name,
+        error: e.message
+      )
+      counts[:failures] += 1
     end
 
     def reconcile_without_listing(resources:, runner:, counts:)
@@ -137,6 +154,7 @@ module ExecutionResources
       tags = listed_resource.tags || {}
       run = AgentRun.find_by(id: tags["paid.agent_run_id"])
       project = run&.project || Project.find_by(id: tags["paid.project_id"])
+      resource_type = listed_resource.resource_type.to_s
       resource = ExecutionResource.find_or_initialize_by(
         runner_type: listed_resource.runner_type.to_s,
         host: listed_resource.host.to_s,
@@ -145,8 +163,8 @@ module ExecutionResources
       resource.assign_attributes(
         account: run&.project&.account || project&.account,
         project: project,
-        agent_run: run,
-        resource_type: listed_resource.resource_type.to_s,
+        agent_run: adoptable_agent_run(run:, resource:, resource_type:),
+        resource_type: resource_type,
         tags: tags,
         workspace_ref: listed_resource.workspace_ref,
         metadata: listed_resource.metadata || {},
@@ -157,6 +175,20 @@ module ExecutionResources
       )
       resource.save!
       resource
+    end
+
+    # The (agent_run_id, resource_type) unique index allows only one ledger
+    # row per run per resource type. A second, leaked resource tagged with a
+    # run that already owns a row of this type (e.g. a retained `cleaned`
+    # row) must still adopt under its own provider-identity key so it can be
+    # tracked and cleaned up - just without the agent_run link, which would
+    # otherwise collide with the existing row on every reconciliation pass.
+    def adoptable_agent_run(run:, resource:, resource_type:)
+      return run if run.nil?
+
+      scope = ExecutionResource.where(agent_run_id: run.id, resource_type: resource_type)
+      scope = scope.where.not(id: resource.id) if resource.persisted?
+      scope.exists? ? nil : run
     end
 
     def adoptable?(listed_resource)

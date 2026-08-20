@@ -39,6 +39,18 @@ RSpec.describe ExecutionResource do
     end
   end
 
+  describe "project deletion" do
+    it "nullifies rather than blocking project destroy, since ledger rows are designed to outlive their runs" do
+      project = create(:project)
+      agent_run = create(:agent_run, :completed, project: project)
+      resource = create(:execution_resource, project: project, agent_run: agent_run, state: "cleaned")
+
+      expect { project.destroy! }.not_to raise_error
+
+      expect(resource.reload).to have_attributes(project_id: nil, agent_run_id: nil)
+    end
+  end
+
   describe ".track_environment!" do
     let(:project) { create(:project) }
     let(:agent_run) { create(:agent_run, :running, project: project) }

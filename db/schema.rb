@@ -3187,9 +3187,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_092242) do
   add_foreign_key "execution_audit_events", "accounts"
   add_foreign_key "execution_audit_events", "agent_runs", on_delete: :nullify
   add_foreign_key "execution_audit_events", "projects", on_delete: :nullify
-  add_foreign_key "execution_resources", "accounts"
-  add_foreign_key "execution_resources", "agent_runs"
-  add_foreign_key "execution_resources", "projects"
+  add_foreign_key "execution_resources", "accounts", on_delete: :nullify
+  add_foreign_key "execution_resources", "agent_runs", on_delete: :nullify
+  add_foreign_key "execution_resources", "projects", on_delete: :nullify
   add_foreign_key "external_connector_events", "accounts"
   add_foreign_key "external_connector_events", "projects"
   add_foreign_key "failure_classifications", "agent_runs", on_delete: :cascade
