@@ -107,7 +107,7 @@ RSpec.describe ExecutionRunners do
         kind: "preview",
         scope: "paid_mediated_tunnel",
         expires_at: 2.days.from_now.iso8601,
-        authentication: { required: true, type: "signed_token" },
+        authentication: { required: true, type: "authenticated_proxy" },
         granted_at: 1.day.ago.iso8601,
         granted_by: "user:42"
       )
@@ -151,7 +151,7 @@ RSpec.describe ExecutionRunners do
             kind: "preview",
             scope: "paid_mediated_tunnel",
             expires_at: 2.days.from_now.iso8601,
-            authentication: { required: true, type: "signed_token" },
+            authentication: { required: true, type: "authenticated_proxy" },
             granted_at: 1.day.ago.iso8601,
             granted_by: "user:42"
           )

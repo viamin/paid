@@ -29,7 +29,7 @@ RSpec.describe PreviewSessions::ProvisionJob do
       hash_including(
         "kind" => "preview",
         "scope" => "paid_mediated_tunnel",
-        "authentication" => { "required" => true, "type" => "signed_token" },
+        "authentication" => { "required" => true, "type" => "authenticated_proxy" },
         "granted_by" => "user:#{user.id}"
       )
     )

@@ -408,7 +408,7 @@ class AgentRun < ApplicationRecord
             kind: "preview",
             scope: "paid_mediated_tunnel",
             expires_at: preview_session.expires_at || 1.hour.from_now,
-            authentication: { required: true, type: "signed_token" },
+            authentication: { required: true, type: "authenticated_proxy" },
             granted_at: Time.current,
             granted_by: preview_granted_by(granted_by)
           )
