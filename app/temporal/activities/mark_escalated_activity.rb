@@ -29,11 +29,22 @@ module Activities
       remove_ready_label(client, project, issue)
       add_phase_label(client, project, issue.github_number, PAID_ESCALATED_LABEL)
       reason_key = resolve_escalation_reason(input)
-      # @spec FOCUSED-RUN-008
+      # The escalated phase is the whole hold — no pause flag. A system-set
+      # scan exclusion would hide the PR from the scan that detects its
+      # recovery. Queued runs are left alone: the hold governs what work is
+      # decided next, not what is already in flight.
+      #
+      # `pr_escalation_started_at` bounds the paid-escalated label-event replay
+      # to this escalation cycle: without it, an `unlabeled` event from a
+      # previous cycle that the owner already dismissed can read as a fresh
+      # owner removal on a subsequent re-escalation whose own label write
+      # failed. Stamped even on same-phase re-escalations so the marker always
+      # names the current cycle.
+      # @spec PR-ESCALATION-002 @spec PR-ESCALATION-004 @spec PR-ESCALATION-019
       issue.update!(
         pr_review_phase: "escalated",
         pr_escalation_reason: reason_key,
-        auto_continue_paused: true,
+        pr_escalation_started_at: Time.current,
         labels: escalated_labels(issue)
       )
       post_escalation_comment(client, project, issue, input[:reason], reason_key:, phase_before:)

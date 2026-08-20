@@ -144,7 +144,7 @@ module ExecutionRunners
     #
     # @param policy [NetworkingPolicy, nil]
     # @return [Boolean]
-    # @spec CONTAINER-RUNTIME-025
+    # @spec CONTAINER-RUNTIME-028
     def self.supports_policy?(policy)
       raise NotImplementedError, "#{name} must implement .#{__method__}"
     end

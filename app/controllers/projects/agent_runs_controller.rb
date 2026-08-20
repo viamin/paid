@@ -260,6 +260,22 @@ module Projects
       redirect_to project_path(@project), notice: "Priority bumped for PR ##{pr.github_number}."
     end
 
+    # @spec PR-ESCALATION-014 @spec PR-ESCALATION-015 @spec PR-ESCALATION-017
+    def unblock_escalation
+      authorize @project, :run_agent?
+
+      pr = resolve_pull_request_record
+      unless pr
+        redirect_to dashboard_path, alert: "Please select a pull request."
+        return
+      end
+
+      result = PullRequests::Unblock.call(pull_request: pr, actor: current_user)
+      @project.broadcast_pull_requests_update if result.success?
+
+      redirect_to dashboard_path, **unblock_flash(result, pr)
+    end
+
     def toggle_auto_continue_pause
       authorize @project, :run_agent?
 
@@ -689,6 +705,21 @@ module Projects
 
       pr = @project.issues.pull_requests_only.find(params[:pull_request_id])
       pr.github_number
+    end
+
+    def unblock_flash(result, pull_request)
+      if result.success?
+        return { notice: "PR ##{pull_request.github_number} unblocked, but auto-continue is still paused for it." } if pull_request.auto_continue_paused?
+
+        return { notice: "PR ##{pull_request.github_number} unblocked. Paid picks it up on the next scan." }
+      end
+
+      case result.error
+      when :not_open
+        { alert: "PR ##{pull_request.github_number} is no longer open." }
+      else
+        { alert: "PR ##{pull_request.github_number} is not blocked." }
+      end
     end
 
     def resolve_pull_request_record
@@ -1332,13 +1363,12 @@ module Projects
     end
 
     def eligible_docker_hosts_for_manual_selection(auth_source: nil)
-      current_account.docker_hosts.enabled.ordered.select do |host|
+      current_account.docker_hosts.placement_ready_for_agent_runs.ordered.select do |host|
         docker_host_eligible_for_manual_selection?(host, auth_source: auth_source)
       end
     end
 
     def docker_host_eligible_for_manual_selection?(host, auth_source: nil)
-      return false unless host.placement_ready?
       return true if auth_source.nil?
 
       subscription_auth_eligibility_for(host, auth_source: auth_source).eligible?

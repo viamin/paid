@@ -364,7 +364,36 @@
   `AgentImage.historical`, `idx_agent_images_inactive`,
   `idx_agent_images_profile_arch`
 
-- [x] **CONTAINER-RUNTIME-025** — The system SHALL expose a coarse,
+- [x] **CONTAINER-RUNTIME-025** — Capacity admission SHALL enforce aggregate
+  requested CPU, memory, and disk ceilings globally and per selected backend,
+  using provider-neutral execution resource specs rather than Docker-only
+  fields, and SHALL return a named denial reason naming the constrained scope
+  and resource dimension.
+  *Tests:* `spec/services/capacity/run_admission_spec.rb`,
+  `spec/jobs/process_run_queue_job_spec.rb`,
+  `spec/services/metrics/prometheus_collector_spec.rb`
+  *Code:* `Capacity::RunAdmission`, `Capacity::RequestedResources`,
+  `Capacity::InfrastructureLimits`, `Metrics::PrometheusCollector`
+
+- [x] **CONTAINER-RUNTIME-026** — Capacity admission SHALL enforce global,
+  per-account, and per-project provisioning-rate limits over a configured time
+  window, returning a named denial reason and a next-eligible timestamp so the
+  queue can park the run until the limit window opens again.
+  *Tests:* `spec/services/capacity/run_admission_spec.rb`,
+  `spec/jobs/process_run_queue_job_spec.rb`
+  *Code:* `Capacity::RunAdmission`, `Capacity::ProvisioningRateWindow`,
+  `ProcessRunQueueJob`
+
+- [x] **CONTAINER-RUNTIME-027** — The provider-neutral execution resource spec
+  SHALL include CPU, memory, and disk request fields, and the system SHALL
+  reject a run whose requested per-execution resources exceed the configured
+  infrastructure maxima before provisioning starts.
+  *Tests:* `spec/services/execution_runners_spec.rb`,
+  `spec/services/capacity/run_admission_spec.rb`
+  *Code:* `ExecutionRunners::ComputeRequirements`,
+  `ExecutionRunners::RunSpec`, `Capacity::RunAdmission`
+
+- [x] **CONTAINER-RUNTIME-028** — The system SHALL expose a coarse,
   provider-neutral networking intent vocabulary on
   `ExecutionRunners::NetworkingPolicy` with six intents:
   `:no_outbound` (air-gapped; loopback + DNS only),

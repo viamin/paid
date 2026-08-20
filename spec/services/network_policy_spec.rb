@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec CONTAINER-RUNTIME-025
+# @spec CONTAINER-RUNTIME-028
 RSpec.describe NetworkPolicy, :no_db do
   let(:backend) { Containers.backend }
   let(:mock_network) do

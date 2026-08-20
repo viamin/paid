@@ -40,3 +40,12 @@
   *Code:* `Config::ProductionValidator.build_command?`,
   `config/initializers/production_config.rb`.
   *Test:* `spec/services/config/production_validator_spec.rb`.
+
+- [x] **PROD-CONFIG-006** — In production, the startup validator SHALL fail
+  boot when any required infrastructure-safety limit for aggregate requested
+  resources, provisioning-rate windows, or per-execution resource maxima is
+  unset or non-positive, so capacity admission fails closed rather than
+  silently using development defaults.
+  *Code:* `app/services/config/production_validator.rb`,
+  `app/services/capacity/infrastructure_limits.rb`
+  *Test:* `spec/services/config/production_validator_spec.rb`.

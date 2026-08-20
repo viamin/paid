@@ -30,7 +30,7 @@ module ExecutionRunners
   # +running_calls+, +status_calls+, +reconnect_calls+, +cancel_calls+, and
   # +cleanup_calls+ so specs can assert the runner was exercised the
   # expected number of times with the expected arguments.
-  # @spec CONTAINER-RUNTIME-025
+  # @spec CONTAINER-RUNTIME-028
   class ContractRunner < Base
     RUNNER_TYPE = :contract
 
@@ -93,7 +93,7 @@ module ExecutionRunners
     # appears in {.supported_modes}. A real remote runner derives its
     # supported set from the platform's egress primitives (RDR-062). A +nil+
     # policy is always rejected — there is no networking intent to honor.
-    # @spec CONTAINER-RUNTIME-025
+    # @spec CONTAINER-RUNTIME-028
     def self.supports_policy?(policy)
       return false if policy.nil?
 

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_19_092242) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_19_165503) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -304,6 +304,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_092242) do
     t.string "priority_tier", limit: 10
     t.bigint "project_id", null: false
     t.bigint "prompt_version_id"
+    t.timestamptz "provisioning_started_at", comment: "When queue admission started provisioning this attempt for provisioning-rate enforcement."
     t.string "proxy_token", limit: 64
     t.integer "pull_request_number"
     t.string "pull_request_url", limit: 500
@@ -357,6 +358,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_092242) do
     t.index ["project_id"], name: "idx_agent_runs_unique_active_lid_planning", unique: true, where: "(((goal)::text = 'lid_planning'::text) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('rate_limited'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text])))"
     t.index ["project_id"], name: "index_agent_runs_on_project_id"
     t.index ["prompt_version_id"], name: "index_agent_runs_on_prompt_version_id"
+    t.index ["provisioning_started_at"], name: "index_agent_runs_on_provisioning_started_at", where: "(provisioning_started_at IS NOT NULL)"
     t.index ["proxy_token"], name: "index_agent_runs_on_proxy_token", unique: true
     t.index ["runner_id"], name: "index_agent_runs_on_runner_id"
     t.index ["status", "completed_at"], name: "index_agent_runs_on_status_completed_at"
@@ -1141,6 +1143,33 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_092242) do
     t.index ["runner_key"], name: "idx_execution_audit_events_runner_key"
   end
 
+  create_table "execution_controls", comment: "Execution disable controls for global, account, project, runner, and backend scopes.", force: :cascade do |t|
+    t.bigint "account_id", comment: "Account target when scope=account."
+    t.datetime "created_at", null: false
+    t.datetime "disabled_at", comment: "When the control was last cleared."
+    t.bigint "docker_host_id", comment: "Docker host target when scope=backend."
+    t.boolean "enabled", default: false, null: false, comment: "Whether new execution is currently disabled for the scope."
+    t.datetime "enabled_at", comment: "When the control last became active."
+    t.jsonb "metadata", default: {}, null: false, comment: "Structured metadata for audit context and affected-run tracking."
+    t.string "mode", default: "capacity", null: false, comment: "Disable mode: emergency cancels active runs; capacity parks them."
+    t.bigint "project_id", comment: "Project target when scope=project."
+    t.text "reason", comment: "Operator-supplied reason for the current disable state."
+    t.bigint "runner_id", comment: "Runner target when scope=runner."
+    t.string "scope", null: false, comment: "Scope controlled by this row: global, account, project, runner, or backend."
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "idx_execution_controls_account_scope", unique: true, where: "((scope)::text = 'account'::text)"
+    t.index ["account_id"], name: "index_execution_controls_on_account_id"
+    t.index ["docker_host_id"], name: "idx_execution_controls_backend_scope", unique: true, where: "((scope)::text = 'backend'::text)"
+    t.index ["docker_host_id"], name: "index_execution_controls_on_docker_host_id"
+    t.index ["enabled"], name: "index_execution_controls_on_enabled"
+    t.index ["project_id"], name: "idx_execution_controls_project_scope", unique: true, where: "((scope)::text = 'project'::text)"
+    t.index ["project_id"], name: "index_execution_controls_on_project_id"
+    t.index ["runner_id"], name: "idx_execution_controls_runner_scope", unique: true, where: "((scope)::text = 'runner'::text)"
+    t.index ["runner_id"], name: "index_execution_controls_on_runner_id"
+    t.index ["scope"], name: "idx_execution_controls_global_scope_singleton", unique: true, where: "((scope)::text = 'global'::text)"
+    t.index ["scope"], name: "index_execution_controls_on_scope"
+  end
+
   create_table "external_connector_events", comment: "Events ingested from external connectors (Jira, Linear, Slack, etc.) for coexistence workflows.", force: :cascade do |t|
     t.bigint "account_id", null: false, comment: "Account this connector event belongs to."
     t.string "connector_key", null: false, comment: "Connector source key from Interop::Catalog (e.g. jira, linear, slack)."
@@ -1429,6 +1458,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_092242) do
     t.datetime "paused_at", comment: "Sync epoch: records when the pause state last transitioned (from UI or GitHub) to resolve bidirectional sync ordering."
     t.datetime "pr_auto_continue_token_limit_overridden_at", comment: "When set, owner dismissed a PR token-cap escalation and allowed this PR to exceed the automatic PR token cap."
     t.string "pr_escalation_reason", comment: "Machine-readable cause for the current PR escalation so only operational outages can auto-dismiss."
+    t.datetime "pr_escalation_started_at", comment: "Timestamp when this PR entered the escalated phase. Bounds the paid-escalated label-event replay so an unlabeled event from a prior escalation cycle cannot read as a fresh owner dismissal."
     t.integer "pr_followup_count", default: 0, null: false
     t.string "pr_review_phase", default: "draft", null: false
     t.bigint "project_id", null: false
@@ -3181,6 +3211,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_092242) do
   add_foreign_key "execution_audit_events", "accounts"
   add_foreign_key "execution_audit_events", "agent_runs", on_delete: :nullify
   add_foreign_key "execution_audit_events", "projects", on_delete: :nullify
+  add_foreign_key "execution_controls", "accounts"
+  add_foreign_key "execution_controls", "docker_hosts"
+  add_foreign_key "execution_controls", "projects"
+  add_foreign_key "execution_controls", "runners"
   add_foreign_key "external_connector_events", "accounts"
   add_foreign_key "external_connector_events", "projects"
   add_foreign_key "failure_classifications", "agent_runs", on_delete: :cascade

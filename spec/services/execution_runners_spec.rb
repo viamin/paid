@@ -10,7 +10,7 @@ require "rails_helper"
 # @spec CONTAINER-RUNTIME-017
 # @spec CONTAINER-RUNTIME-018
 # @spec CONTAINER-RUNTIME-020
-# @spec CONTAINER-RUNTIME-025
+# @spec CONTAINER-RUNTIME-028
 RSpec.describe ExecutionRunners do
   describe ".resolve" do
     it "returns a LocalDockerRunner for the current Docker-only backends" do
@@ -23,11 +23,18 @@ RSpec.describe ExecutionRunners do
   end
 
   describe ExecutionRunners::ComputeRequirements do
-    it "is an immutable Data object with cpu, memory, and pids fields" do
-      requirements = described_class.new(cpu_quota: 200_000, memory_bytes: 4 * 1024 ** 3, pids_limit: 500)
+    # @spec CONTAINER-RUNTIME-027
+    it "is an immutable Data object with cpu, memory, disk, and pids fields" do
+      requirements = described_class.new(
+        cpu_quota: 200_000,
+        memory_bytes: 4 * 1024 ** 3,
+        disk_bytes: 2 * 1024 ** 3,
+        pids_limit: 500
+      )
 
       expect(requirements.cpu_quota).to eq(200_000)
       expect(requirements.memory_bytes).to eq(4_294_967_296)
+      expect(requirements.disk_bytes).to eq(2_147_483_648)
       expect(requirements.pids_limit).to eq(500)
     end
   end
@@ -58,7 +65,7 @@ RSpec.describe ExecutionRunners do
         project: project,
         image: "paid/agent:latest",
         command: "claude code",
-        resources: ExecutionRunners::ComputeRequirements.new(cpu_quota: 1, memory_bytes: 2, pids_limit: 3),
+        resources: ExecutionRunners::ComputeRequirements.new(cpu_quota: 1, memory_bytes: 2, disk_bytes: 3, pids_limit: 4),
         environment: { "FOO" => "bar" },
         networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted,
         workspace: ExecutionRunners::WorkspaceStrategy.named_volume,
@@ -93,6 +100,24 @@ RSpec.describe ExecutionRunners do
       expect(manifest).to be_a(ExecutionRunners::ExecutionInputManifest)
       expect(manifest.repository.dig("ref", "branch_name")).to eq("agent-run-branch")
       expect(manifest.execution.dig("workspace", "mode")).to eq("named_volume")
+    end
+
+    # @spec CONTAINER-RUNTIME-027
+    it "reuses the requested-resource envelope when building from an agent run" do
+      project = create(:project)
+      run = create(:agent_run, project: project, external_metadata: {
+        "requested_resources" => {
+          "cpu_quota" => 123_000,
+          "memory_bytes" => 5.gigabytes,
+          "disk_bytes" => 2.gigabytes
+        }
+      })
+
+      built = described_class.from_agent_run(run, memory_bytes: 0)
+
+      expect(built.resources.cpu_quota).to eq(123_000)
+      expect(built.resources.memory_bytes).to eq(5.gigabytes)
+      expect(built.resources.disk_bytes).to eq(2.gigabytes)
     end
   end
 
@@ -756,7 +781,7 @@ RSpec.describe ExecutionRunners do
         project: project,
         image: "paid/agent:latest",
         command: "claude code",
-        resources: ExecutionRunners::ComputeRequirements.new(cpu_quota: 100_000, memory_bytes: 1024, pids_limit: 50),
+        resources: ExecutionRunners::ComputeRequirements.new(cpu_quota: 100_000, memory_bytes: 1024, disk_bytes: 2048, pids_limit: 50),
         environment: { "DATABASE_URL" => "postgres://secret@db", "API_TOKEN" => "shh" },
         networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted,
         workspace: ExecutionRunners::WorkspaceStrategy.named_volume,

@@ -7,13 +7,13 @@ require "rails_helper"
 # @spec CONTAINER-RUNTIME-017
 # @spec CONTAINER-RUNTIME-019
 # @spec CONTAINER-RUNTIME-020
-# @spec CONTAINER-RUNTIME-025
+# @spec CONTAINER-RUNTIME-028
 RSpec.describe ExecutionRunners::LocalDockerRunner do
   subject(:runner) { described_class.new }
 
   let(:agent_run) { create(:agent_run, container_host: "local") }
   let(:backend) { instance_double(Containers::Backends::Base, identifier: "local") }
-  let(:resources) { ExecutionRunners::ComputeRequirements.new(cpu_quota: 100_000, memory_bytes: 1024, pids_limit: 50) }
+  let(:resources) { ExecutionRunners::ComputeRequirements.new(cpu_quota: 100_000, memory_bytes: 1024, disk_bytes: 2048, pids_limit: 50) }
   let(:run_spec) do
     ExecutionRunners::RunSpec.new(
       agent_run: agent_run, project: agent_run.project, image: "paid/agent:latest", command: "claude code",

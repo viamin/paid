@@ -94,14 +94,12 @@ module Containers
     end
 
     def eligible_docker_hosts(auth_source)
-      account.docker_hosts.enabled.ordered.select do |host|
+      account.docker_hosts.placement_ready_for_agent_runs.ordered.select do |host|
         docker_host_eligible?(host, auth_source)
       end
     end
 
     def docker_host_eligible?(host, auth_source)
-      return false unless host.placement_ready?
-
       return true if auth_source.nil?
 
       subscription_auth_eligible?(host, auth_source).eligible?
