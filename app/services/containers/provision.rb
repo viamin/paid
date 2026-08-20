@@ -304,6 +304,7 @@ module Containers
     #
     # @return [Result] Result object with success/failure status
     def provision
+      agent_run&.execution_ingress_policy&.validate_supported!
       log_system("container.provision.start", image: options[:image], backend: backend.identifier)
 
       validate_backend_mount_support!
