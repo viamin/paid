@@ -15,6 +15,23 @@ RSpec.describe Capacity::RunAdmission do
       docker_memory_bytes: 32.gigabytes
     }
   end
+  let(:infra_limits) do
+    {
+      global_requested_cpu_quota_limit: 2_000_000,
+      host_requested_cpu_quota_limit: 1_000_000,
+      global_requested_memory_bytes_limit: 64.gigabytes,
+      host_requested_memory_bytes_limit: 32.gigabytes,
+      global_requested_disk_bytes_limit: 24.gigabytes,
+      host_requested_disk_bytes_limit: 12.gigabytes,
+      max_execution_cpu_quota_limit: 400_000,
+      max_execution_memory_bytes_limit: 16.gigabytes,
+      max_execution_disk_bytes_limit: 4.gigabytes,
+      provisioning_rate_window_seconds: 600,
+      global_provisionings_per_window_limit: 10,
+      account_provisionings_per_window_limit: 5,
+      project_provisionings_per_window_limit: 3
+    }
+  end
 
   before do
     user.settings.update!(
@@ -22,6 +39,7 @@ RSpec.describe Capacity::RunAdmission do
       max_concurrent_runs: nil,
       container_memory_bytes: 6.gigabytes
     )
+    allow(Capacity::InfrastructureLimits).to receive(:current).and_return(infra_limits)
   end
 
   def admission_for(host:, limit:)
@@ -32,6 +50,63 @@ RSpec.describe Capacity::RunAdmission do
       selected_host: host,
       selected_host_limit: limit
     )
+  end
+
+  def requested_resource_metadata(cpu_quota:, memory_bytes:, disk_bytes:)
+    {
+      "requested_resources" => {
+        "cpu_quota" => cpu_quota,
+        "memory_bytes" => memory_bytes,
+        "disk_bytes" => disk_bytes
+      }
+    }
+  end
+
+  def create_requested_run!(host: nil, provisioning_started_at: nil, cpu_quota: 200_000, memory_bytes: 2.gigabytes, disk_bytes: 1.gigabyte)
+    create(
+      :agent_run,
+      :running,
+      project: project,
+      container_host: host,
+      provisioning_started_at: provisioning_started_at,
+      external_metadata: requested_resource_metadata(
+        cpu_quota: cpu_quota,
+        memory_bytes: memory_bytes,
+        disk_bytes: disk_bytes
+      ).tap do |metadata|
+        metadata["provisioning_started_at"] = provisioning_started_at if provisioning_started_at
+      end
+    )
+  end
+
+  def create_requested_run_for!(target_project, host: nil, provisioning_started_at: nil, cpu_quota: 200_000, memory_bytes: 2.gigabytes, disk_bytes: 1.gigabyte)
+    create(
+      :agent_run,
+      :running,
+      project: target_project,
+      container_host: host,
+      provisioning_started_at: provisioning_started_at,
+      external_metadata: requested_resource_metadata(
+        cpu_quota: cpu_quota,
+        memory_bytes: memory_bytes,
+        disk_bytes: disk_bytes
+      ).tap do |metadata|
+        metadata["provisioning_started_at"] = provisioning_started_at if provisioning_started_at
+      end
+    )
+  end
+
+  # Records TenantContext.bypass_enabled? at the moment each host-aggregate
+  # agent_runs query executes, so specs can assert the load happened inside
+  # the RLS bypass even though the privileged spec connection cannot rely on
+  # row-level security itself to filter rows.
+  def host_aggregate_bypass_observer(states)
+    lambda do |*, payload|
+      sql = payload[:sql]
+      return unless sql.include?('FROM "agent_runs"') && sql.include?("COALESCE(NULLIF(container_host")
+
+      states << TenantContext.bypass_enabled?
+    end
   end
 
   describe ".call" do
@@ -87,6 +162,179 @@ RSpec.describe Capacity::RunAdmission do
       expect(result[:selected_host]).to eq("elguapo")
       expect(result[:host_active_count]).to eq(4)
       expect(result[:host_available_slots]).to eq(0)
+    end
+
+    # @spec CONTAINER-RUNTIME-025
+    it "denies when the projected global requested memory would exceed the aggregate ceiling" do
+      allow(Capacity::InfrastructureLimits).to receive(:current).and_return(
+        infra_limits.merge(global_requested_memory_bytes_limit: 16.gigabytes)
+      )
+
+      2.times { create_requested_run!(memory_bytes: 6.gigabytes) }
+
+      result = admission_for(host: "local", limit: 8)
+
+      expect(result[:allowed]).to be false
+      expect(result[:reason]).to eq("global_requested_memory_ceiling")
+      expect(result[:current_global_requested_memory_bytes]).to eq(12.gigabytes)
+      expect(result[:global_requested_memory_bytes_limit]).to eq(16.gigabytes)
+    end
+
+    # @spec CONTAINER-RUNTIME-025
+    it "denies when the projected selected-host requested cpu would exceed the backend ceiling" do
+      allow(Capacity::InfrastructureLimits).to receive(:current).and_return(
+        infra_limits.merge(host_requested_cpu_quota_limit: 500_000)
+      )
+
+      2.times { create_requested_run!(host: "elguapo") }
+
+      result = admission_for(host: "elguapo", limit: 8)
+
+      expect(result[:allowed]).to be false
+      expect(result[:reason]).to eq("host_requested_cpu_ceiling")
+      expect(result[:current_host_requested_cpu_quota]).to eq(400_000)
+      expect(result[:host_requested_cpu_quota_limit]).to eq(500_000)
+    end
+
+    # @spec CONTAINER-RUNTIME-025
+    # Admission runs tenant-scoped in production (e.g. CheckRunCapacityActivity
+    # under TenantContext.with(account)), while agent_runs has FORCE ROW LEVEL
+    # SECURITY. The host aggregate must therefore be loaded while system access
+    # is active — a relation that only escapes the bypass block before being
+    # loaded would run RLS-scoped to the calling tenant and undercount the
+    # shared host. The spec connection is privileged, so RLS itself cannot
+    # filter rows here; observe the bypass state at query time instead.
+    # reserved_agent_memory_bytes is passed so the reserved-memory rescan
+    # (its own host-scoped agent_runs load) adds no unrelated samples.
+    it "loads the host aggregate with system access even when admission runs tenant-scoped", :tenant_isolation do
+      other_account = create(:account)
+      other_project = create(:project, account: other_account, created_by: create(:user, account: other_account))
+      TenantContext.with_system_access do
+        create(:agent_run, :running, project: other_project, container_host: "elguapo",
+          external_metadata: requested_resource_metadata(cpu_quota: 200_000, memory_bytes: 2.gigabytes, disk_bytes: 1.gigabyte))
+      end
+
+      bypass_states = []
+      result = ActiveSupport::Notifications.subscribed(host_aggregate_bypass_observer(bypass_states), "sql.active_record") do
+        TenantContext.with(account) do
+          described_class.call(user: user, project: project, docker_snapshot: docker_snapshot,
+            selected_host: "elguapo", selected_host_limit: 8, reserved_agent_memory_bytes: 12.gigabytes)
+        end
+      end
+
+      expect(result[:current_host_requested_cpu_quota]).to eq(200_000)
+      expect(bypass_states).to all(be(true))
+    end
+
+    # @spec CONTAINER-RUNTIME-026
+    it "returns a provisioning-rate denial with the next eligible timestamp" do
+      travel_to(Time.zone.parse("2026-08-17 12:00:00 UTC")) do
+        create_requested_run!(provisioning_started_at: 5.minutes.ago.iso8601)
+
+        allow(Capacity::InfrastructureLimits).to receive(:current).and_return(
+          infra_limits.merge(global_provisionings_per_window_limit: 1)
+        )
+
+        result = admission_for(host: "local", limit: 8)
+
+        expect(result[:allowed]).to be false
+        expect(result[:reason]).to eq("global_provisioning_rate_limit")
+        expect(result[:rate_limited_until]).to eq(Time.zone.parse("2026-08-17 12:05:00 UTC"))
+        expect(result[:current_global_provisionings_per_window]).to eq(1)
+        expect(result[:global_provisionings_per_window_limit]).to eq(1)
+      end
+    end
+
+    # @spec CONTAINER-RUNTIME-026
+    it "filters stale provisioning starts in SQL before loading the window" do
+      travel_to(Time.zone.parse("2026-08-17 12:00:00 UTC")) do
+        create_requested_run!(provisioning_started_at: 11.minutes.ago.iso8601)
+        create_requested_run!(provisioning_started_at: 5.minutes.ago.iso8601)
+
+        statements = []
+        subscriber = lambda do |*, payload|
+          sql = payload[:sql]
+          next unless sql.include?('"agent_runs"."provisioning_started_at"')
+
+          statements << sql
+        end
+
+        result = ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+          admission_for(host: "local", limit: 8)
+        end
+
+        expect(result[:current_global_provisionings_per_window]).to eq(1)
+        expect(statements).to include(a_string_including('"agent_runs"."provisioning_started_at"'))
+      end
+    end
+
+    # @spec CONTAINER-RUNTIME-026
+    it "uses the matching account window when returning an account provisioning-rate denial" do
+      travel_to(Time.zone.parse("2026-08-17 12:00:00 UTC")) do
+        other_account = create(:account)
+        other_user = create(:user, account: other_account)
+        other_project = create(:project, account: other_account, created_by: other_user)
+
+        create_requested_run_for!(other_project, provisioning_started_at: 9.minutes.ago.iso8601)
+        create_requested_run!(provisioning_started_at: 4.minutes.ago.iso8601)
+
+        allow(Capacity::InfrastructureLimits).to receive(:current).and_return(
+          infra_limits.merge(
+            global_provisionings_per_window_limit: 10,
+            account_provisionings_per_window_limit: 1
+          )
+        )
+
+        result = admission_for(host: "local", limit: 8)
+
+        expect(result[:allowed]).to be false
+        expect(result[:reason]).to eq("account_provisioning_rate_limit")
+        expect(result[:rate_limited_until]).to eq(Time.zone.parse("2026-08-17 12:06:00 UTC"))
+      end
+    end
+
+    # @spec CONTAINER-RUNTIME-026
+    it "uses the matching project window when returning a project provisioning-rate denial" do
+      travel_to(Time.zone.parse("2026-08-17 12:00:00 UTC")) do
+        sibling_project = create(:project, account: account, created_by: user)
+
+        create_requested_run_for!(sibling_project, provisioning_started_at: 9.minutes.ago.iso8601)
+        create_requested_run!(provisioning_started_at: 3.minutes.ago.iso8601)
+
+        allow(Capacity::InfrastructureLimits).to receive(:current).and_return(
+          infra_limits.merge(
+            global_provisionings_per_window_limit: 10,
+            account_provisionings_per_window_limit: 10,
+            project_provisionings_per_window_limit: 1
+          )
+        )
+
+        result = admission_for(host: "local", limit: 8)
+
+        expect(result[:allowed]).to be false
+        expect(result[:reason]).to eq("project_provisioning_rate_limit")
+        expect(result[:rate_limited_until]).to eq(Time.zone.parse("2026-08-17 12:07:00 UTC"))
+      end
+    end
+
+    # @spec CONTAINER-RUNTIME-027
+    it "denies when the requested execution disk exceeds the configured maximum" do
+      allow(Capacity::InfrastructureLimits).to receive(:current).and_return(
+        infra_limits.merge(max_execution_disk_bytes_limit: 1.gigabyte)
+      )
+
+      result = described_class.call(
+        user: user,
+        project: project,
+        docker_snapshot: docker_snapshot,
+        selected_host: "local",
+        selected_host_limit: 8
+      )
+
+      expect(result[:allowed]).to be false
+      expect(result[:reason]).to eq("execution_disk_limit_exceeded")
+      expect(result[:requested_disk_bytes]).to be > 1.gigabyte
+      expect(result[:max_execution_disk_bytes_limit]).to eq(1.gigabyte)
     end
 
     it "still enforces user guardrails across all hosts" do

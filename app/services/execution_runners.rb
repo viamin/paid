@@ -63,12 +63,13 @@ module ExecutionRunners
     resolve(backend: nil)
   end
 
-  # Compute resource limits for a workload. Mirrors the fields
-  # +Containers::Provision::DEFAULTS+ actually consumes (memory_bytes,
-  # cpu_quota, pids_limit). Runners translate these to their native
-  # resource controls (cgroups, Fly machine size, etc.).
+  # Compute resource limits for a workload. Mirrors the provider-neutral
+  # execution request that admission and observability reason about; Docker
+  # runners only consume cpu/memory/pids directly today, while disk_bytes is
+  # used by infrastructure admission and future remote runners.
   # @spec CONTAINER-RUNTIME-009
-  ComputeRequirements = Data.define(:cpu_quota, :memory_bytes, :pids_limit)
+  # @spec CONTAINER-RUNTIME-027
+  ComputeRequirements = Data.define(:cpu_quota, :memory_bytes, :disk_bytes, :pids_limit)
 
   # A writable directory inside the workload. A Docker runner translates this
   # to a tmpfs mount; a remote runner translates it to ephemeral disk or
@@ -198,13 +199,14 @@ module ExecutionRunners
     # @param options [Hash] container options (memory_bytes, cpu_quota, etc.)
     # @return [RunSpec]
     def self.from_agent_run(agent_run, networking_policy: nil, **options)
-      resources = if options[:memory_bytes] || options[:cpu_quota] || options[:pids_limit]
-                    ComputeRequirements.new(
-                      cpu_quota: options[:cpu_quota],
-                      memory_bytes: options[:memory_bytes],
-                      pids_limit: options[:pids_limit]
-                    )
-      end
+      workspace = workspace_strategy_for(agent_run)
+      requested_resources = Capacity::RequestedResources.for_agent_run(agent_run)
+      resources = ComputeRequirements.new(
+        cpu_quota: positive_numeric_option(options[:cpu_quota]) || requested_resources[:cpu_quota],
+        memory_bytes: positive_numeric_option(options[:memory_bytes]) || requested_resources[:memory_bytes],
+        disk_bytes: positive_numeric_option(options[:disk_bytes]) || requested_resources[:disk_bytes],
+        pids_limit: positive_numeric_option(options[:pids_limit]) || Containers::Provision::DEFAULTS[:pids_limit]
+      )
 
       new(
         agent_run: agent_run,
@@ -214,10 +216,14 @@ module ExecutionRunners
         resources: resources,
         environment: agent_run.service_environment || {},
         networking_policy: networking_policy,
-        workspace: workspace_strategy_for(agent_run),
+        workspace: workspace,
         services: [],
         secrets_config: nil
       )
+    end
+
+    def self.positive_numeric_option(value)
+      value if value.to_i.positive?
     end
 
     # Derives the workspace strategy from the agent run: a legacy bind mount
