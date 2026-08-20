@@ -256,6 +256,14 @@ arrows:
     taxonomy: automation
     status: OK
     audited: 2026-08-04
+  pr-escalation-recovery:
+    title: PR Escalation Recovery
+    path: docs/intent/pr-escalation-recovery/pr-escalation-recovery-design.md
+    specs: docs/intent/pr-escalation-recovery/pr-escalation-recovery-specs.md
+    parent: PAID
+    taxonomy: automation
+    status: OK
+    audited: 2026-08-19
   eager-queue-seeding:
     title: Eager Queue Seeding
     path: docs/intent/eager-queue-seeding/eager-queue-seeding-design.md
