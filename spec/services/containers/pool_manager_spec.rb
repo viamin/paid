@@ -104,6 +104,7 @@ RSpec.describe Containers::PoolManager do
         agent_run: agent_run,
         container_host: "worker-1"
       )
+      agent_run.update!(container_id: entry.container_id)
       allow(Containers).to receive(:backend_for).with("worker-1").and_return(remote_backend)
 
       expect(described_class.cleanup_claimed_container(agent_run: agent_run, force: true)).to be(true)
@@ -113,6 +114,20 @@ RSpec.describe Containers::PoolManager do
       expect(remote_backend).to have_received(:get_volume).with(entry.workspace_volume, host: "worker-1")
       expect(remote_backend).to have_received(:delete_volume).with(volume)
       expect(ContainerPoolEntry.exists?(entry.id)).to be(false)
+    end
+
+    it "does not tear down a newly claimed entry when the run has moved on to a different container" do
+      entry = create(
+        :container_pool_entry,
+        :claimed,
+        project: project,
+        agent_run: agent_run,
+        container_host: "worker-1"
+      )
+      agent_run.update!(container_id: "stale-container-id")
+
+      expect(described_class.cleanup_claimed_container(agent_run: agent_run, force: true)).to be(false)
+      expect(ContainerPoolEntry.exists?(entry.id)).to be(true)
     end
   end
 

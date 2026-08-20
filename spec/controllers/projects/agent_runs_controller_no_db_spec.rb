@@ -261,8 +261,8 @@ RSpec.describe Projects::AgentRunsController, :no_db do
     let(:host) { instance_double(DockerHost) }
     let(:runner) { instance_double(Runner, subscription?: true, id: 42) }
     let(:eligible_hosts_scope) { [ host ] }
-    let(:enabled_scope) { double(ordered: eligible_hosts_scope) }
-    let(:docker_hosts) { double(enabled: enabled_scope) }
+    let(:placement_ready_scope) { double(ordered: eligible_hosts_scope) }
+    let(:docker_hosts) { double(placement_ready_for_agent_runs: placement_ready_scope) }
     let(:account) { instance_double(Account, docker_hosts:) }
 
     before do

@@ -13,6 +13,7 @@ RSpec.describe ApplicationJob, :no_db do
         DependabotAutoMergeJob
         DiagnoseErrorJob
         DispatchCircuitBreakerOutcomeJob
+        ExecutionControlParkCleanupJob
         FailureRecoveryDecisionJob
         GithubTokenValidationJob
         HandleExceptionJob

@@ -20,7 +20,12 @@ module Containers
     end
 
     def self.cleanup_claimed_container(agent_run:, force: false)
-      entry = ContainerPoolEntry.claimed.find_by(agent_run: agent_run)
+      # Scoped by container_id, not just agent_run: if the run has since been
+      # re-dispatched (e.g. a stale-snapshot cleanup racing with
+      # ExecutionControls::RunImpact#resume_parked_runs!), a newly claimed
+      # entry can share the same agent_run association with a different
+      # container_id. Matching on both prevents tearing down that new entry.
+      entry = ContainerPoolEntry.claimed.find_by(agent_run: agent_run, container_id: agent_run.container_id)
       return false unless entry
 
       # @container_host is intentionally ignored by remove_entry — it resolves

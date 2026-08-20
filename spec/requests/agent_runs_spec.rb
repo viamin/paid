@@ -1275,6 +1275,21 @@ RSpec.describe "AgentRuns" do
         expect(labels.first).to eq("Inherit saved placement preference")
       end
 
+      # @spec EXEC-DISABLE-004
+      it "omits backend-disabled hosts from the returned options" do
+        disabled_host = create_placement_ready_remote_host(project: project, identifier: "disabled-host")
+        create_placement_ready_remote_host(project: project, identifier: "healthy-host")
+        codex = configure_codex_create_pr_default!(project)
+        create(:execution_control, :backend_scope, :enabled, docker_host: disabled_host)
+
+        get docker_host_options_project_agent_runs_path(project, runner: codex.routing_key, format: :json)
+
+        expect(response).to have_http_status(:ok)
+        identifiers = JSON.parse(response.body).fetch("options").map(&:last)
+        expect(identifiers).to include("", "healthy-host")
+        expect(identifiers).not_to include("disabled-host")
+      end
+
       it "reports the project/account preferred host when it is eligible for the runner" do
         create_placement_ready_remote_host(project: project, identifier: "preferred-host")
         codex = configure_codex_create_pr_default!(project)

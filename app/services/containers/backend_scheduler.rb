@@ -103,6 +103,16 @@ module Containers
       skip_health_check = fallback_policy == HostRegistry::FALLBACK_DISABLED
 
       candidates.filter do |host|
+        # @spec EXEC-DISABLE-004
+        # placement_ready_for_agent_runs (checked at run creation) is not
+        # consulted here, so a backend-scoped execution control enabled
+        # after the run was queued — or a run whose stored selection/default
+        # never went through that scope — must be rejected at dispatch too.
+        if disabled_backend_identifiers.include?(host)
+          compatibility_failures[host] = "Host #{host} is disabled by an execution control"
+          next false
+        end
+
         compatibility = backend_compatibility_for(host)
         unless compatibility[:compatible]
           compatibility_failures[host] = compatibility[:error]
@@ -124,6 +134,10 @@ module Containers
           false
         end
       end
+    end
+
+    def disabled_backend_identifiers
+      @disabled_backend_identifiers ||= DockerHost.disabled_placement_identifiers(agent_run.project.account_id)
     end
 
     def backend_compatibility_for(host)

@@ -57,6 +57,37 @@ RSpec.describe Runners::PreflightCheck do
       end
     end
 
+    context "when execution is disabled for the runner" do
+      let(:runner) { user.runners.find_or_create_by!(runner_key: "claude", auth_type: "subscription") }
+
+      # @spec EXEC-DISABLE-003
+      it "fails with execution_disabled" do
+        create(:execution_control, :runner_scope, :enabled, runner: runner)
+
+        result = described_class.call(runner: runner, user: user)
+
+        expect(result).to have_attributes(pass?: false, reason: "execution_disabled")
+      end
+
+      # @spec EXEC-DISABLE-003
+      it "fails with execution_disabled using a pre-fetched disabled_runner_ids snapshot without querying ExecutionControl" do
+        expect(ExecutionControl).not_to receive(:enabled)
+
+        result = described_class.call(runner: runner, user: user, disabled_runner_ids: Set[runner.id])
+
+        expect(result).to have_attributes(pass?: false, reason: "execution_disabled")
+      end
+
+      # @spec EXEC-DISABLE-003
+      it "passes when a disabled_runner_ids snapshot is given and does not include the runner" do
+        create(:execution_control, :runner_scope, :enabled, runner: runner)
+
+        result = described_class.call(runner: runner, user: user, disabled_runner_ids: Set.new)
+
+        expect(result).to have_attributes(pass?: true)
+      end
+    end
+
     # @spec RUNNER-SCHED-005
     context "when runner is blocked by a time-window restriction" do
       let(:runner) { user.runners.find_or_create_by!(runner_key: "claude", auth_type: "subscription") }
