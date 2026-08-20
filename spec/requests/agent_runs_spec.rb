@@ -2314,6 +2314,33 @@ RSpec.describe "AgentRuns" do
         expect(escalated_pr.draft_review_count).to eq(12)
         expect(flash[:alert]).to be_present
       end
+
+      # @spec PR-ESCALATION-022
+      it "names the project in the unblock confirmation" do
+        post unblock_escalation_project_agent_runs_path(project), params: { pull_request_id: escalated_pr.id }
+
+        expect(flash[:notice]).to include("#{project.full_name}#88")
+      end
+
+      # @spec PR-ESCALATION-022 @spec PR-ESCALATION-023
+      it "names the project and where to release the pause when the pull request stays operator-paused" do
+        escalated_pr.update!(auto_continue_paused: true)
+
+        post unblock_escalation_project_agent_runs_path(project), params: { pull_request_id: escalated_pr.id }
+
+        expect(flash[:notice]).to include("#{project.full_name}#88")
+        expect(flash[:notice]).to include("auto-continue is still paused")
+        expect(flash[:notice]).to include("project page")
+      end
+
+      # @spec PR-ESCALATION-022
+      it "names the project when refusing the unblock" do
+        escalated_pr.update!(github_state: "closed")
+
+        post unblock_escalation_project_agent_runs_path(project), params: { pull_request_id: escalated_pr.id }
+
+        expect(flash[:alert]).to include("#{project.full_name}#88")
+      end
     end
   end
 
