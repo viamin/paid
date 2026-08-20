@@ -51,6 +51,7 @@ RSpec.describe ExecutionRunners do
         issue_id: nil,
         agent_type: "claude_code",
         runner: nil,
+        authority_grants: nil,
         project: project,
         mcp_server_snapshot: [],
         mcp_provisioned_servers: {},

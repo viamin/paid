@@ -236,8 +236,18 @@ module ExecutionRunners
       ExecutionInputManifest.from_run_spec(self)
     end
 
+    # Prefers the persisted authority-grant snapshot on +agent_run+ when one
+    # exists, so a provision retry that re-derives +networking_policy+ (e.g.
+    # +reuse_or_reconcile_via_runner+ recursing back into +provision_via_runner+)
+    # cannot disagree with the snapshot already recorded on the run and
+    # audited by operators. Falls back to fresh derivation only when no
+    # snapshot has been persisted yet (RDR-058).
     # @spec EXECUTION-AUTHORITY-002
     def authority_grants
+      if agent_run.authority_grants.is_a?(Hash) && agent_run.authority_grants["grants"].present?
+        return AuthorityGrantSet.from_json(agent_run.authority_grants)
+      end
+
       AuthorityGrantSet.from_agent_run(agent_run, networking_policy: networking_policy)
     end
   end
@@ -330,8 +340,6 @@ module ExecutionRunners
 
     def self.runner_key_for(agent_run)
       agent_run.runner&.runner_key || RunnerSupport.runner_key_for_agent_type(agent_run.agent_type)
-    rescue KeyError
-      agent_run.agent_type.to_s
     end
     private_class_method :runner_key_for
 
