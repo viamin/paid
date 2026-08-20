@@ -4,6 +4,41 @@ require "rails_helper"
 
 # @spec CONTAINER-RUNTIME-021
 RSpec.describe ExecutionResource do
+  describe "#mark_cleanup_pending!" do
+    let(:project) { create(:project) }
+    let(:agent_run) { create(:agent_run, :completed, project: project) }
+    let(:resource) { create(:execution_resource, project: project, agent_run: agent_run) }
+
+    it "defaults next_cleanup_at into the future on first transition" do
+      resource.mark_cleanup_pending!
+
+      expect(resource.reload).to have_attributes(
+        state: "cleanup_pending",
+        cleaned_at: nil
+      )
+      # A future offset closes the race window with the cron reconciler: while
+      # AgentRun#cleanup_container / AgentRunResourceJanitorJob are between
+      # schedule_cleanup_for! and mark_cleaned_for!, the reconciler would
+      # otherwise re-enter provider cleanup against an already-in-flight call.
+      expect(resource.next_cleanup_at).to be > Time.current
+      expect(resource.next_cleanup_at).to be <= Time.current + described_class::CLEANUP_BASE_DELAY + 1.second
+    end
+
+    it "preserves an existing next_cleanup_at set by a prior failure" do
+      resource.update!(
+        state: "cleanup_pending",
+        next_cleanup_at: 30.minutes.from_now,
+        cleanup_attempts: 2
+      )
+
+      resource.mark_cleanup_pending!
+
+      # record_cleanup_failure! already wrote a future backoff — preserve it
+      # instead of resetting the schedule on every transition.
+      expect(resource.reload.next_cleanup_at).to be_within(1.second).of(30.minutes.from_now)
+    end
+  end
+
   describe ".track_environment!" do
     let(:project) { create(:project) }
     let(:agent_run) { create(:agent_run, :running, project: project) }

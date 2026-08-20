@@ -123,7 +123,20 @@ class ExecutionResource < ApplicationRecord # @spec CONTAINER-RUNTIME-021
   end
 
   def mark_cleanup_pending!
-    update!(state: "cleanup_pending", next_cleanup_at: next_cleanup_at || Time.current, cleaned_at: nil)
+    # Default to a small future offset on first transition so a concurrent
+    # reconcile cron tick does not see the row as `due_for_cleanup?` while the
+    # caller is still in the middle of provider cleanup (AgentRun#cleanup_container
+    # and AgentRunResourceJanitorJob both schedule → cleanup → mark_cleaned
+    # without holding the row lock, and the runner's `cleanup` is otherwise
+    # re-entered — a Docker::Error::NotFoundError on the second pass would race
+    # with the imminent `mark_cleaned!` via `record_cleanup_failure!`).
+    # `record_cleanup_failure!` always writes its own backoff, so subsequent
+    # retries are unaffected.
+    update!(
+      state: "cleanup_pending",
+      next_cleanup_at: next_cleanup_at || (Time.current + CLEANUP_BASE_DELAY),
+      cleaned_at: nil
+    )
   end
 
   def record_cleanup_failure!(error:)
