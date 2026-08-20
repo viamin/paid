@@ -22,7 +22,7 @@ RSpec.describe ExecutionRunners do
   end
 
   describe ExecutionRunners::ComputeRequirements do
-    # @spec CONTAINER-RUNTIME-023
+    # @spec CONTAINER-RUNTIME-027
     it "is an immutable Data object with cpu, memory, disk, and pids fields" do
       requirements = described_class.new(
         cpu_quota: 200_000,
@@ -101,7 +101,7 @@ RSpec.describe ExecutionRunners do
       expect(manifest.execution.dig("workspace", "mode")).to eq("named_volume")
     end
 
-    # @spec CONTAINER-RUNTIME-023
+    # @spec CONTAINER-RUNTIME-027
     it "reuses the requested-resource envelope when building from an agent run" do
       project = create(:project)
       run = create(:agent_run, project: project, external_metadata: {

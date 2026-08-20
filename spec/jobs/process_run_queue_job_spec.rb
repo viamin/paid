@@ -1264,6 +1264,70 @@ RSpec.describe ProcessRunQueueJob do
         expect(run.reload.status).to eq("running")
       end
 
+      # @spec EXEC-DISABLE-002
+      it "parks queued runs when a global execution disable is enabled" do
+        run = create(:agent_run, :queued)
+        create(:execution_control, :global, :enabled, reason: "Global maintenance")
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(run.reload.status).to eq("paused")
+        expect(run.external_metadata.dig("execution_control", "scope")).to eq("global")
+      end
+
+      # @spec EXEC-DISABLE-002
+      it "parks queued runs when a project execution disable is enabled" do
+        project = create(:project)
+        run = create(:agent_run, :queued, project: project)
+        create(:execution_control, :project_scope, :enabled, project: project, reason: "Project maintenance")
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(run.reload.status).to eq("paused")
+        expect(run.external_metadata.dig("execution_control", "scope")).to eq("project")
+      end
+
+      # @spec EXEC-DISABLE-002
+      it "parks a runner-unbound queued run before admission so it skips host/runner binding entirely" do
+        project = create(:project)
+        issue = create(:issue, project: project, github_state: "open")
+        run = create(:agent_run, :queued, :automatic, project: project, issue: issue, goal: "create_pr", auto_pick: true)
+        create(:execution_control, :project_scope, :enabled, project: project, reason: "Project maintenance")
+
+        expect(Containers::BackendScheduler).not_to receive(:call)
+        expect(AgentRuns::BindRunner).not_to receive(:call)
+
+        described_class.new.perform
+
+        run.reload
+        expect(run.status).to eq("paused")
+        expect(run.runner_id).to be_nil
+      end
+
+      # @spec EXEC-DISABLE-003
+      it "reroutes a pinned run when only the pinned runner has an execution disable" do
+        project = create(:project)
+        user = project.created_by
+        disabled_runner = user.runners.kept_only.find_by!(runner_key: "claude", auth_type: "subscription")
+        fallback_runner = create(:runner, user: user, runner_key: "codex")
+        run = create(:agent_run, :queued, project: project, runner: disabled_runner)
+        create(:execution_control, :runner_scope, :enabled, runner: disabled_runner, reason: "Runner maintenance")
+
+        expect(temporal_client).to receive(:start_workflow).once.and_return(workflow_handle)
+
+        described_class.new.perform
+
+        run.reload
+        expect(run.runner_id).to eq(fallback_runner.id)
+        expect(run.status).to eq("running")
+        expect(run.temporal_workflow_id).to be_present
+        expect(run.external_metadata).not_to have_key("execution_control")
+      end
+
       it "does not recheck a manual run even if its issue is ineligible" do
         project = create(:project)
         issue = create(:issue, project: project, github_state: "open", labels: [ "planning" ])
@@ -1423,7 +1487,7 @@ RSpec.describe ProcessRunQueueJob do
 
         allow(Runners::PreflightCheck).to receive(:call).and_call_original
         allow(Runners::PreflightCheck).to receive(:call)
-          .with(runner: runner, user: user)
+          .with(hash_including(runner: runner, user: user))
           .and_return(Runners::PreflightCheck::Result.new(pass?: false, reason: "missing_api_key", runner_id: runner.id))
 
         expect(temporal_client).to receive(:start_workflow).once.and_return(workflow_handle)
@@ -2096,7 +2160,7 @@ RSpec.describe ProcessRunQueueJob do
         )
       end
 
-      # @spec CONTAINER-RUNTIME-022
+      # @spec CONTAINER-RUNTIME-026
       it "parks provisioning-rate-limited runs until the admission window reopens" do
         queued_run = create_queued_run_with_policy(max_concurrent_runs: 5)
         queued_run.project.created_by.settings.update!(run_concurrency_mode: "auto")

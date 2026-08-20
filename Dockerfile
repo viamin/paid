@@ -14,7 +14,7 @@ FROM docker.io/library/ruby:$RUBY_VERSION-slim AS base
 # Rails app lives here
 WORKDIR /rails
 
-ARG PGDG_POSTGRESQL_CLIENT_16_PACKAGE=postgresql-client-16=16.14-1.pgdg13+1
+ARG PGDG_POSTGRESQL_CLIENT_16_PACKAGE=postgresql-client-16=16.15-1.pgdg13+2
 ARG RATHOLE_VERSION=0.5.0
 
 # Install base packages

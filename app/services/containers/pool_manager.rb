@@ -20,7 +20,12 @@ module Containers
     end
 
     def self.cleanup_claimed_container(agent_run:, force: false)
-      entry = ContainerPoolEntry.claimed.find_by(agent_run: agent_run)
+      # Scoped by container_id, not just agent_run: if the run has since been
+      # re-dispatched (e.g. a stale-snapshot cleanup racing with
+      # ExecutionControls::RunImpact#resume_parked_runs!), a newly claimed
+      # entry can share the same agent_run association with a different
+      # container_id. Matching on both prevents tearing down that new entry.
+      entry = ContainerPoolEntry.claimed.find_by(agent_run: agent_run, container_id: agent_run.container_id)
       return false unless entry
 
       # @container_host is intentionally ignored by remove_entry — it resolves
@@ -91,6 +96,7 @@ module Containers
         **options.slice(*RECONNECT_OPTIONS)
       )
       PoolReplenishmentJob.perform_later(project.id)
+      record_runtime_image_selection(entry, agent_run)
       Provision::Result.success(
         container_id: entry.container_id,
         container_host: entry.container_host,
@@ -211,12 +217,23 @@ module Containers
         warmed_at: Time.current,
         last_error: nil
       )
+      entry.record_runtime_image_selection!(service.runtime_image_selection&.metadata)
       entry
     rescue ApplicationJob::PerformTimeoutError
       raise
     rescue StandardError => e
       remove_failed_provision(entry, service, e.message)
       nil
+    end
+
+    # Copies the warm-time runtime image selection persisted on the entry onto
+    # the claiming run so provenance is deterministic at claim time instead of
+    # depending on lazy option re-resolution (RDR-059 / IMMUTABLE-IMAGE-002).
+    def record_runtime_image_selection(entry, agent_run)
+      # @spec IMMUTABLE-IMAGE-002
+      return if entry.runtime_image_selection.blank?
+
+      agent_run.record_runtime_image_selection!(entry.runtime_image_selection)
     end
 
     def cleanup_claimed_finished_runs

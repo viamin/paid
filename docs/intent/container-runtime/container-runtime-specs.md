@@ -308,7 +308,63 @@
   `ExecutionRunners::RunSpec`,
   `Containers::Provision.networking_policy_for`
 
-- [x] **CONTAINER-RUNTIME-021** — Capacity admission SHALL enforce aggregate
+- [x] **CONTAINER-RUNTIME-021** — The system SHALL persist an `AgentImage`
+  registry record that represents the immutable production identity of an
+  agent container image as `(account_id, registry, repository, digest,
+  architecture)`. Identity fields (`name`, `tag`, `registry`, `repository`,
+  `digest`, `architecture`, `account_id`, `built_at`) SHALL be immutable after
+  creation: a new build produces a new digest, which is a new row. The digest
+  SHALL be accepted as a 64-character hex sha256, optionally prefixed with
+  `sha256:`, and SHALL be stored canonicalized as `sha256:<hex>` so both input
+  forms resolve to one identity and every emitted reference is a valid OCI
+  digest reference.
+  Local development and single-backend deployments SHALL continue to use the
+  literal `paid-agent:latest` reference; the registry is the system of record
+  for what image actually runs in production, not the
+  `Containers::ImageResolver::BASE_IMAGE` constant.
+  *Tests:* `spec/models/agent_image_spec.rb`
+  *Code:* `AgentImage`
+
+- [x] **CONTAINER-RUNTIME-022** — The `AgentImage` record SHALL support a
+  status state machine with three values: `active` (schedulable),
+  `deprecated` (still runnable but superseded, retained for rollback), and
+  `blocked` (excluded from future scheduling, retained for audit and to
+  explain prior run outcomes). Transitions SHALL be idempotent:
+  `active -> deprecated -> blocked` and `active -> blocked` are allowed,
+  re-applying the same transition SHALL NOT re-stamp the timestamp or
+  replace the recorded reason. The `AgentImage` record SHALL never be
+  deleted; historical records are retained for audit and rollback.
+  *Tests:* `spec/models/agent_image_spec.rb`
+  *Code:* `AgentImage#deprecate!`, `AgentImage#block!`, `AgentImage#schedulable?`
+
+- [x] **CONTAINER-RUNTIME-023** — The `AgentImage` registry SHALL enforce
+  uniqueness on the immutable production identity `(account_id, registry,
+  repository, digest, architecture)`. The same digest on a different
+  architecture SHALL be a separate image record (multi-arch images are
+  registered as one row per architecture). The same identity MAY be
+  recorded independently by different accounts. The `provenance` and
+  `metadata` jsonb fields SHALL be mutable so late-arriving build
+  metadata and runbook links can be added without affecting the
+  immutable identity, and their changes SHALL be tracked (logidze) so mutable
+  provenance/metadata edits and lifecycle transitions leave an audit trail of
+  who changed what and when.
+  *Tests:* `spec/models/agent_image_spec.rb`
+  *Code:* `AgentImage`, `idx_agent_images_identity`
+
+- [x] **CONTAINER-RUNTIME-024** — The `AgentImage` record SHALL expose
+  scheduling-relevant query scopes: `AgentImage.active` /
+  `AgentImage.schedulable` (only `active` rows), `AgentImage.deprecated`,
+  `AgentImage.blocked`, and `AgentImage.historical` (the
+  `deprecated`+`blocked` union for audit and rollback). A partial index
+  over non-active rows SHALL keep audit queries fast as the active set
+  grows, and a `(account_id, name, architecture)` lookup index SHALL
+  support the (profile, architecture) scheduling decision.
+  *Tests:* `spec/models/agent_image_spec.rb`
+  *Code:* `AgentImage.active`, `AgentImage.schedulable`,
+  `AgentImage.historical`, `idx_agent_images_inactive`,
+  `idx_agent_images_profile_arch`
+
+- [x] **CONTAINER-RUNTIME-025** — Capacity admission SHALL enforce aggregate
   requested CPU, memory, and disk ceilings globally and per selected backend,
   using provider-neutral execution resource specs rather than Docker-only
   fields, and SHALL return a named denial reason naming the constrained scope
@@ -319,7 +375,7 @@
   *Code:* `Capacity::RunAdmission`, `Capacity::RequestedResources`,
   `Capacity::InfrastructureLimits`, `Metrics::PrometheusCollector`
 
-- [x] **CONTAINER-RUNTIME-022** — Capacity admission SHALL enforce global,
+- [x] **CONTAINER-RUNTIME-026** — Capacity admission SHALL enforce global,
   per-account, and per-project provisioning-rate limits over a configured time
   window, returning a named denial reason and a next-eligible timestamp so the
   queue can park the run until the limit window opens again.
@@ -328,7 +384,7 @@
   *Code:* `Capacity::RunAdmission`, `Capacity::ProvisioningRateWindow`,
   `ProcessRunQueueJob`
 
-- [x] **CONTAINER-RUNTIME-023** — The provider-neutral execution resource spec
+- [x] **CONTAINER-RUNTIME-027** — The provider-neutral execution resource spec
   SHALL include CPU, memory, and disk request fields, and the system SHALL
   reject a run whose requested per-execution resources exceed the configured
   infrastructure maxima before provisioning starts.

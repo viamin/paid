@@ -164,7 +164,7 @@ RSpec.describe Capacity::RunAdmission do
       expect(result[:host_available_slots]).to eq(0)
     end
 
-    # @spec CONTAINER-RUNTIME-021
+    # @spec CONTAINER-RUNTIME-025
     it "denies when the projected global requested memory would exceed the aggregate ceiling" do
       allow(Capacity::InfrastructureLimits).to receive(:current).and_return(
         infra_limits.merge(global_requested_memory_bytes_limit: 16.gigabytes)
@@ -180,7 +180,7 @@ RSpec.describe Capacity::RunAdmission do
       expect(result[:global_requested_memory_bytes_limit]).to eq(16.gigabytes)
     end
 
-    # @spec CONTAINER-RUNTIME-021
+    # @spec CONTAINER-RUNTIME-025
     it "denies when the projected selected-host requested cpu would exceed the backend ceiling" do
       allow(Capacity::InfrastructureLimits).to receive(:current).and_return(
         infra_limits.merge(host_requested_cpu_quota_limit: 500_000)
@@ -196,7 +196,7 @@ RSpec.describe Capacity::RunAdmission do
       expect(result[:host_requested_cpu_quota_limit]).to eq(500_000)
     end
 
-    # @spec CONTAINER-RUNTIME-021
+    # @spec CONTAINER-RUNTIME-025
     # Admission runs tenant-scoped in production (e.g. CheckRunCapacityActivity
     # under TenantContext.with(account)), while agent_runs has FORCE ROW LEVEL
     # SECURITY. The host aggregate must therefore be loaded while system access
@@ -226,7 +226,7 @@ RSpec.describe Capacity::RunAdmission do
       expect(bypass_states).to all(be(true))
     end
 
-    # @spec CONTAINER-RUNTIME-022
+    # @spec CONTAINER-RUNTIME-026
     it "returns a provisioning-rate denial with the next eligible timestamp" do
       travel_to(Time.zone.parse("2026-08-17 12:00:00 UTC")) do
         create_requested_run!(provisioning_started_at: 5.minutes.ago.iso8601)
@@ -245,7 +245,7 @@ RSpec.describe Capacity::RunAdmission do
       end
     end
 
-    # @spec CONTAINER-RUNTIME-022
+    # @spec CONTAINER-RUNTIME-026
     it "filters stale provisioning starts in SQL before loading the window" do
       travel_to(Time.zone.parse("2026-08-17 12:00:00 UTC")) do
         create_requested_run!(provisioning_started_at: 11.minutes.ago.iso8601)
@@ -268,7 +268,7 @@ RSpec.describe Capacity::RunAdmission do
       end
     end
 
-    # @spec CONTAINER-RUNTIME-022
+    # @spec CONTAINER-RUNTIME-026
     it "uses the matching account window when returning an account provisioning-rate denial" do
       travel_to(Time.zone.parse("2026-08-17 12:00:00 UTC")) do
         other_account = create(:account)
@@ -293,7 +293,7 @@ RSpec.describe Capacity::RunAdmission do
       end
     end
 
-    # @spec CONTAINER-RUNTIME-022
+    # @spec CONTAINER-RUNTIME-026
     it "uses the matching project window when returning a project provisioning-rate denial" do
       travel_to(Time.zone.parse("2026-08-17 12:00:00 UTC")) do
         sibling_project = create(:project, account: account, created_by: user)
@@ -317,7 +317,7 @@ RSpec.describe Capacity::RunAdmission do
       end
     end
 
-    # @spec CONTAINER-RUNTIME-023
+    # @spec CONTAINER-RUNTIME-027
     it "denies when the requested execution disk exceeds the configured maximum" do
       allow(Capacity::InfrastructureLimits).to receive(:current).and_return(
         infra_limits.merge(max_execution_disk_bytes_limit: 1.gigabyte)

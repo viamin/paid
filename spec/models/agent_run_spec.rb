@@ -2254,6 +2254,18 @@ RSpec.describe AgentRun do
           expect(orphan_volume).to have_received(:remove)
         end
 
+        it "skips volume cleanup when container is already gone and preserve_workspace_volume is set" do
+          agent_run = create(:agent_run, worktree_path: nil, container_id: "gone999")
+          allow(Docker::Container).to receive(:get).with("gone999")
+            .and_raise(Docker::Error::NotFoundError)
+
+          expect(Docker::Volume).not_to receive(:get)
+
+          agent_run.cleanup_container(force: true, preserve_workspace_volume: true)
+
+          expect(agent_run.reload.container_id).to be_nil
+        end
+
         it "handles missing volume gracefully when container is already gone" do
           agent_run = create(:agent_run, worktree_path: nil, container_id: "gone456")
           allow(Docker::Container).to receive(:get).with("gone456")
