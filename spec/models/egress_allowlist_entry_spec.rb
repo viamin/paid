@@ -27,6 +27,9 @@ RSpec.describe EgressAllowlistEntry do
         api.example.com:443
         127.0.0.1
         localhost
+        localhost.localdomain
+        api.local
+        api.test
       ].each do |pattern|
         expect(described_class.host_pattern_valid?(pattern)).to be(false)
       end
@@ -118,6 +121,14 @@ RSpec.describe EgressAllowlistEntry do
     it "rejects out-of-range ports" do
       expect(build(:egress_allowlist_entry, account: account, port: 0)).not_to be_valid
       expect(build(:egress_allowlist_entry, account: account, port: 65_536)).not_to be_valid
+    end
+
+    it "does not add a host-pattern error for an invalid port" do
+      entry = build(:egress_allowlist_entry, account: account, port: 0)
+
+      expect(entry).not_to be_valid
+      expect(entry.errors[:port]).to include("must be between 1 and 65535")
+      expect(entry.errors[:host_pattern]).to be_empty
     end
 
     it "accepts http and https schemes only" do
@@ -243,14 +254,14 @@ RSpec.describe EgressAllowlistEntry do
 
     it "returns the rejection reason for a port that bypassed write-time validation" do
       entry = create(:egress_allowlist_entry)
-      entry.update_column(:port, 70_000)
+      entry.port = 70_000
 
       expect(entry.unsafe_reason).to eq("port must be between 1 and 65535")
     end
 
     it "returns the rejection reason for a scheme that bypassed write-time validation" do
       entry = create(:egress_allowlist_entry)
-      entry.update_column(:scheme, "ftp")
+      entry.scheme = "ftp"
 
       expect(entry.unsafe_reason).to eq("scheme must be http or https")
     end

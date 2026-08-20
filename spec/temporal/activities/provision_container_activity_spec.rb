@@ -125,8 +125,8 @@ RSpec.describe Activities::ProvisionContainerActivity do
     # "EgressPolicyDenied") so the workflow sees it on the first attempt.
     # @spec EGRESS-POLICY-005
     it "surfaces a denied policy as a non-retryable EgressPolicyDenied application error" do
-      create(:egress_allowlist_entry, account: project.account, host_pattern: "api.partner.com")
-        .tap { |entry| entry.update_columns(host_pattern: "169.254.169.254") } # bypass write-time validation
+      entry = create(:egress_allowlist_entry, account: project.account, host_pattern: "api.partner.com")
+      entry.update_columns(host_pattern: "169.254.169.254") # bypass write-time validation
 
       allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
       allow(agent_run).to receive(:ensure_proxy_token!).and_return("token")

@@ -14,9 +14,8 @@ class EgressAllowlistEntry < ApplicationRecord
 
   SOURCE_KINDS = %w[tenant platform operator_override].freeze
   SCHEMES = %w[http https].freeze
-  LOOPBACK_LITERALS = %w[localhost localhost.localdomain].freeze
   METADATA_IPS = %w[169.254.169.254 fd00:ec2::254].freeze
-  INVALID_HOST_PATTERN_MESSAGE = "Host pattern must be a hostname (e.g. api.example.com) or leading-wildcard subdomain (e.g. *.packages.example.com)."
+  INVALID_HOST_PATTERN_MESSAGE = "must be a hostname (e.g. api.example.com) or leading-wildcard subdomain (e.g. *.packages.example.com)."
 
   belongs_to :project, optional: true
   belongs_to :created_by, class_name: "User", optional: true
@@ -107,7 +106,7 @@ class EgressAllowlistEntry < ApplicationRecord
   def host_pattern_shape
     return if host_pattern.blank?
 
-    reason = unsafe_reason
+    reason = AgentRuns::EgressPolicy::HostPattern.invalid_reason(host_pattern)
     errors.add(:host_pattern, validation_message_for_host_pattern(reason)) if reason
   end
 
@@ -121,6 +120,8 @@ class EgressAllowlistEntry < ApplicationRecord
       ip_literal_validation_message
     when "must have at least two host labels"
       wildcard_tld?(normalized_host_pattern) ? "Wildcard top-level domains (e.g. *.com) are not allowed." : INVALID_HOST_PATTERN_MESSAGE
+    when "top-level domain must not be a reserved or special-use TLD"
+      "Special-use top-level domains (e.g. .local, .test) are not allowed."
     when "top-level domain must be at least two alphabetic characters"
       normalized_host_pattern.start_with?("*.") ? "Wildcard top-level domains (e.g. *.com) are not allowed." : INVALID_HOST_PATTERN_MESSAGE
     when /\Awildcard/

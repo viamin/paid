@@ -17,6 +17,7 @@ module AgentRuns
       MAX_HOST_LENGTH = 253
       LABEL_REGEX = /\A[a-z0-9]([a-z0-9-]*[a-z0-9])?\z/
       TLD_REGEX = /\A[a-z]{2}[a-z0-9-]*[a-z0-9]\z/
+      RESERVED_TLDS = %w[local test example invalid].freeze
       IPV4_SHAPE_REGEX = /\A\d{1,3}(\.\d{1,3}){3}\z/
       WILDCARD_PREFIX = "*."
 
@@ -42,6 +43,7 @@ module AgentRuns
 
         labels = host.split(".")
         return "has an invalid label (empty, or starting/ending with '-')" unless labels.all? { |label| LABEL_REGEX.match?(label) }
+        return "top-level domain must not be a reserved or special-use TLD" if RESERVED_TLDS.include?(labels.last)
         return "top-level domain must be at least two alphabetic characters" unless TLD_REGEX.match?(labels.last)
 
         nil
@@ -80,7 +82,8 @@ module AgentRuns
       end
 
       def localhost?(host)
-        host == "localhost" || host.end_with?(".localhost")
+        host == "localhost" || host == "localhost.localdomain" ||
+          host.end_with?(".localhost", ".localhost.localdomain")
       end
     end
   end

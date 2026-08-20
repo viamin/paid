@@ -2,10 +2,6 @@
 
 class ExpandEgressAllowlistEntriesForAuditAndUi < ActiveRecord::Migration[8.1]
   def up
-    remove_check_constraint :egress_allowlist_entries, name: "chk_egress_allowlist_entries_source_kind_valid" if check_constraint_exists?(:egress_allowlist_entries, name: "chk_egress_allowlist_entries_source_kind_valid")
-    remove_check_constraint :egress_allowlist_entries, name: "chk_egress_allowlist_entries_scheme_valid" if check_constraint_exists?(:egress_allowlist_entries, name: "chk_egress_allowlist_entries_scheme_valid")
-    remove_check_constraint :egress_allowlist_entries, name: "chk_egress_allowlist_entries_port_range" if check_constraint_exists?(:egress_allowlist_entries, name: "chk_egress_allowlist_entries_port_range")
-
     add_column :egress_allowlist_entries, :source_kind, :string,
       limit: 20,
       default: "tenant",
@@ -27,7 +23,6 @@ class ExpandEgressAllowlistEntriesForAuditAndUi < ActiveRecord::Migration[8.1]
       name: "idx_egress_allowlist_entries_account_enabled" unless index_exists?(:egress_allowlist_entries, [ :account_id, :enabled ], name: "idx_egress_allowlist_entries_account_enabled")
     add_index :egress_allowlist_entries, [ :project_id, :enabled ],
       name: "idx_egress_allowlist_entries_project_enabled" unless index_exists?(:egress_allowlist_entries, [ :project_id, :enabled ], name: "idx_egress_allowlist_entries_project_enabled")
-
   end
 
   def down

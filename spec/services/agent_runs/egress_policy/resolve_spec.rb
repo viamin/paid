@@ -231,11 +231,11 @@ RSpec.describe AgentRuns::EgressPolicy::Resolve do
 
     it "raises DeniedPolicyError after persisting the denied snapshot" do
       entry = create(:egress_allowlist_entry, account: account, host_pattern: "api.partner.com")
-      entry.update_columns(scheme: "ftp")
+      entry.update_columns(host_pattern: "169.254.169.254")
 
       expect {
         described_class.resolve_and_persist!(agent_run, networking_policy: networking_policy)
-      }.to raise_error(AgentRuns::EgressPolicy::Resolve::DeniedPolicyError, /scheme must be http or https/)
+      }.to raise_error(AgentRuns::EgressPolicy::Resolve::DeniedPolicyError, /must not be an IP literal/)
 
       persisted = AgentRuns::EgressPolicy::Snapshot.from_record(agent_run.reload)
       expect(persisted).to be_denied

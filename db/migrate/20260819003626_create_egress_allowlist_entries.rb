@@ -23,7 +23,7 @@ class CreateEgressAllowlistEntries < ActiveRecord::Migration[8.1]
         comment: "Owning account. Entries with a null project_id apply account-wide."
       t.references :project, foreign_key: { on_delete: :cascade },
         comment: "Optional project scope. Project entries extend, never replace, account entries."
-      t.string :host_pattern, null: false, limit: 253,
+      t.string :host_pattern, null: false, limit: 255,
         comment: "Exact public hostname or leading-wildcard subdomain pattern (*.api.example.com)."
       t.integer :port, comment: "Optional destination port (1-65535). Blank means any allowed port for the host."
       t.string :scheme, comment: "Optional scheme restriction: http or https."
@@ -36,6 +36,19 @@ class CreateEgressAllowlistEntries < ActiveRecord::Migration[8.1]
 
     add_index :egress_allowlist_entries, [ :account_id, :project_id ],
       comment: "Account/project scope lookup used by per-run egress policy resolution."
+
+    add_check_constraint :egress_allowlist_entries,
+      "host_pattern IS NOT NULL",
+      name: "chk_egress_allowlist_entries_host_present"
+    add_check_constraint :egress_allowlist_entries,
+      "port IS NULL OR (port > 0 AND port <= 65535)",
+      name: "chk_egress_allowlist_entries_port_range"
+    add_check_constraint :egress_allowlist_entries,
+      "scheme IS NULL OR scheme IN ('http', 'https')",
+      name: "chk_egress_allowlist_entries_scheme_valid"
+    add_check_constraint :egress_allowlist_entries,
+      "source_kind IN ('tenant', 'platform', 'operator_override')",
+      name: "chk_egress_allowlist_entries_source_kind_valid"
 
     enable_egress_allowlist_entries_rls
   end

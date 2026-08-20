@@ -20,6 +20,9 @@ RSpec.describe AgentRuns::EgressPolicy::HostPattern do
       expect(described_class.invalid_reason("https://api.example.com")).to be_present
       expect(described_class.invalid_reason("169.254.169.254")).to be_present
       expect(described_class.invalid_reason("localhost")).to be_present
+      expect(described_class.invalid_reason("localhost.localdomain")).to eq("must not target localhost")
+      expect(described_class.invalid_reason("api.local")).to eq("top-level domain must not be a reserved or special-use TLD")
+      expect(described_class.invalid_reason("*.localhost.localdomain")).to eq("must not target localhost")
     end
 
     it "rejects hostnames longer than 253 characters" do

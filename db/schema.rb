@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_19_092242) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_20_001000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1033,6 +1033,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_092242) do
     t.datetime "disabled_at"
     t.boolean "enabled", default: true, null: false
     t.string "host_pattern", limit: 255, null: false, comment: "Hostname pattern. Supports exact hosts and leading-wildcard subdomains (e.g. *.packages.example.com)."
+    t.jsonb "log_data"
     t.integer "port", comment: "Optional destination port. When null, applies to standard ports for the scheme."
     t.bigint "project_id"
     t.text "reason", comment: "Operator-provided justification shown in audit and UI."
@@ -1047,6 +1048,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_092242) do
     t.index ["project_id", "enabled"], name: "idx_egress_allowlist_entries_project_enabled"
     t.index ["project_id"], name: "index_egress_allowlist_entries_on_project_id"
     t.check_constraint "host_pattern IS NOT NULL", name: "chk_egress_allowlist_entries_host_present"
+    t.check_constraint "port IS NULL OR port > 0 AND port <= 65535", name: "chk_egress_allowlist_entries_port_range"
+    t.check_constraint "scheme IS NULL OR (scheme::text = ANY (ARRAY['http'::character varying::text, 'https'::character varying::text]))", name: "chk_egress_allowlist_entries_scheme_valid"
+    t.check_constraint "source_kind::text = ANY (ARRAY['tenant'::character varying::text, 'platform'::character varying::text, 'operator_override'::character varying::text])", name: "chk_egress_allowlist_entries_source_kind_valid"
   end
 
   create_table "egress_security_events", comment: "Audit trail for blocked outbound traffic and redacted secret-extraction attempts captured by the agent container egress gateway.", force: :cascade do |t|
@@ -1453,6 +1457,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_092242) do
     t.datetime "paused_at", comment: "Sync epoch: records when the pause state last transitioned (from UI or GitHub) to resolve bidirectional sync ordering."
     t.datetime "pr_auto_continue_token_limit_overridden_at", comment: "When set, owner dismissed a PR token-cap escalation and allowed this PR to exceed the automatic PR token cap."
     t.string "pr_escalation_reason", comment: "Machine-readable cause for the current PR escalation so only operational outages can auto-dismiss."
+    t.datetime "pr_escalation_started_at", comment: "Timestamp when this PR entered the escalated phase. Bounds the paid-escalated label-event replay so an unlabeled event from a prior escalation cycle cannot read as a fresh owner dismissal."
     t.integer "pr_followup_count", default: 0, null: false
     t.string "pr_review_phase", default: "draft", null: false
     t.bigint "project_id", null: false
@@ -2283,6 +2288,32 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_092242) do
     t.index ["user_id", "api_service_type"], name: "index_provider_api_keys_on_user_id_and_api_service_type"
     t.index ["user_id", "name"], name: "index_provider_api_keys_on_user_id_and_name", unique: true
     t.index ["user_id"], name: "index_provider_api_keys_on_user_id"
+  end
+
+  create_table "provisioning_intents", comment: "Execution-resource provisioning-intent ledger rows recording runner intent before provider create calls so orphaned resources remain reconcileable (RDR-060).", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Owning account (ownership tag 'account')."
+    t.bigint "agent_run_id", comment: "Agent run the resource was provisioned for (ownership tag 'run')."
+    t.integer "attempt", default: 0, null: false, comment: "Provision attempt ordinal for this run/resource kind (ownership tag 'attempt')."
+    t.datetime "created_at", null: false
+    t.string "environment", limit: 100, null: false, comment: "Paid deployment environment the resource belongs to (ownership tag 'environment')."
+    t.jsonb "metadata", default: {}, null: false, comment: "Additional structured context (degradation reasons, reconciliation notes)."
+    t.jsonb "ownership_tags", default: {}, null: false, comment: "Stable Paid ownership tag map (paid.* labels) applied to the live resource for reconciliation."
+    t.bigint "project_id", comment: "Owning project (ownership tag 'project')."
+    t.string "provider_resource_host", limit: 200, comment: "Backend host owning the provider resource (e.g. container_host)."
+    t.string "provider_resource_id", limit: 200, comment: "Provider resource identifier captured once the create call succeeds (e.g. Docker container id)."
+    t.datetime "reconciled_at", comment: "When a reconciliation process resolved this ledger row (e.g. reclaimed an orphan)."
+    t.string "resource_kind", limit: 100, null: false, comment: "Kind of execution resource the runner intends to create (e.g. 'container', 'workspace_volume')."
+    t.jsonb "runner_handle", comment: "Serialized ExecutionRunners::RunnerHandle linked once the runner builds the handle."
+    t.string "runner_type", limit: 50, null: false, comment: "Runner type that recorded the intent (matches RunnerHandle#runner_type, e.g. 'local_docker')."
+    t.string "status", limit: 50, default: "pending", null: false, comment: "Ledger lifecycle state: pending | created | linked | failed."
+    t.boolean "tagging_supported", default: true, null: false, comment: "Whether the runner/provider could apply ownership tags; false records an explicit degradation."
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_provisioning_intents_on_account_id"
+    t.index ["agent_run_id", "resource_kind", "attempt"], name: "index_provisioning_intents_on_run_kind_attempt", unique: true
+    t.index ["agent_run_id"], name: "index_provisioning_intents_on_agent_run_id"
+    t.index ["project_id"], name: "index_provisioning_intents_on_project_id"
+    t.index ["provider_resource_id"], name: "index_provisioning_intents_on_provider_resource_id", where: "(provider_resource_id IS NOT NULL)"
+    t.index ["status", "created_at"], name: "index_provisioning_intents_on_status_and_created_at"
   end
 
   create_table "quality_gate_events", comment: "Records each threshold breach and recovery observed by the quality gate system.", force: :cascade do |t|
@@ -3295,6 +3326,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_092242) do
   add_foreign_key "prompts", "projects", on_delete: :cascade
   add_foreign_key "prompts", "prompt_versions", column: "current_version_id", on_delete: :nullify
   add_foreign_key "provider_api_keys", "users", on_delete: :cascade
+  add_foreign_key "provisioning_intents", "accounts"
+  add_foreign_key "provisioning_intents", "agent_runs"
+  add_foreign_key "provisioning_intents", "projects"
   add_foreign_key "quality_gate_events", "projects"
   add_foreign_key "quality_gate_events", "quality_gate_thresholds"
   add_foreign_key "quality_gate_events", "quality_metrics"
@@ -4151,8 +4185,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_092242) do
        LANGUAGE sql
        STABLE
       AS $function$
-        -- @spec POSTGRESQL-PERSISTENCE-007
-        -- version: 1
         SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
       $function$
   SQL
@@ -4163,8 +4195,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_092242) do
        LANGUAGE sql
        STABLE
       AS $function$
-        -- @spec POSTGRESQL-PERSISTENCE-007
-        -- version: 1
         SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
       $function$
   SQL
@@ -4201,6 +4231,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_092242) do
       CREATE TRIGGER logidze_on_docker_hosts BEFORE INSERT OR UPDATE ON public.docker_hosts FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
+  create_trigger :logidze_on_egress_allowlist_entries, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_egress_allowlist_entries BEFORE INSERT OR UPDATE ON public.egress_allowlist_entries FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
   create_trigger :logidze_on_exception_incidents, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_exception_incidents BEFORE INSERT OR UPDATE ON public.exception_incidents FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{occurrence_count,last_occurred_at,backtrace,context}')
   SQL
@@ -4223,10 +4257,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_092242) do
 
   create_trigger :logidze_on_mcp_server_definitions, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_mcp_server_definitions BEFORE INSERT OR UPDATE ON public.mcp_server_definitions FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{env}')
-  SQL
-
-  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
-      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
   SQL
 
   create_trigger :logidze_on_orchestration_strategies, sql_definition: <<-SQL
@@ -4295,5 +4325,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_092242) do
 
   create_trigger :logidze_on_users, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_users BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{encrypted_password,reset_password_token,reset_password_sent_at,remember_created_at}')
+  SQL
+
+  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
+      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
   SQL
 end
