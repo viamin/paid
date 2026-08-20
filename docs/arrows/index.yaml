@@ -66,6 +66,14 @@ arrows:
     specs: docs/intent/chat-pr-proposal/chat-pr-proposal-specs.md
     parent: PAID
     taxonomy: chat
+  toolchain-pin-management:
+    title: Toolchain Pin Management
+    path: docs/intent/toolchain-pin-management/toolchain-pin-management-design.md
+    specs: docs/intent/toolchain-pin-management/toolchain-pin-management-specs.md
+    parent: PAID
+    taxonomy: security
+    status: OK
+    audited: 2026-08-19
   repo-secret-scan:
     title: Repo Secret Scan
     path: docs/intent/repo-secret-scan/repo-secret-scan-design.md

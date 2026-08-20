@@ -123,6 +123,26 @@ module ApplicationHelper
     [ (completed_at - start_time).to_i, 0 ].max
   end
 
+  # Extracts the persisted egress policy snapshot recorded on the run before
+  # provisioning. Delegates to AgentRun#egress_policy_snapshot so controllers
+  # and views share a single extraction of the authoritative snapshot.
+  def agent_run_egress_policy_snapshot(agent_run)
+    agent_run.egress_policy_snapshot
+  end
+
+  EGRESS_DESTINATION_SOURCE_KIND_BADGES = {
+    "platform" => "bg-indigo-100 text-indigo-700",
+    "tenant" => "bg-amber-100 text-amber-700",
+    "tenant_account" => "bg-amber-100 text-amber-700",
+    "tenant_project" => "bg-emerald-100 text-emerald-700",
+    "service_container" => "bg-sky-100 text-sky-700",
+    "preview_tunnel" => "bg-violet-100 text-violet-700"
+  }.freeze
+
+  def source_kind_badge_classes(kind)
+    EGRESS_DESTINATION_SOURCE_KIND_BADGES[kind.to_s] || "bg-gray-100 text-gray-700"
+  end
+
   AGENT_RUN_PRIORITY_STYLES = { # @spec QUEUE-TIER-004
     manual: { bg: "bg-sky-100", text: "text-sky-700" },
     pr_p1: { bg: "bg-red-100", text: "text-red-700" },
