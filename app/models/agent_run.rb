@@ -2603,19 +2603,29 @@ class AgentRun < ApplicationRecord
   # such volume exists or when worktree_path is set (bind-mount flows).
   #
   # @param force [Boolean] Force kill if container doesn't stop gracefully
+  # @param preserve_workspace_volume [Boolean] Skip removing the shared
+  #   workspace volume — see Containers::Provision#cleanup for why a caller
+  #   tearing down a stale container reference needs this.
   # @return [void]
-  def cleanup_container(force: false)
+  def cleanup_container(force: false, preserve_workspace_volume: false)
+    # Snapshot up front: a caller operating on a stale id (e.g.
+    # ExecutionControlParkCleanupJob, which assigns a park-time snapshot
+    # before calling this method) must tear down *that* container without
+    # the row write below clobbering a container_id the run may have picked
+    # up in the meantime via redispatch.
+    target_container_id = container_id
+
     # Safety net for a worker killed mid-provision: the workspace volume
     # may exist with no container_id to drive a normal cleanup. Run before
     # the early-return so it covers all paths (worktree-based runs are no-ops).
-    cleanup_orphaned_workspace_volume if container_id.blank? && @container_service.nil? && @current_handle.nil?
+    cleanup_orphaned_workspace_volume if target_container_id.blank? && @container_service.nil? && @current_handle.nil?
 
-    return if container_id.blank? && @container_service.nil? && @current_handle.nil?
+    return if target_container_id.blank? && @container_service.nil? && @current_handle.nil?
 
     if Containers::PoolManager.cleanup_claimed_container(agent_run: self, force: force)
       @container_service = nil
       @current_handle = nil
-      update!(container_id: nil)
+      clear_container_id_if_unchanged!(target_container_id)
       return
     end
 
@@ -2623,19 +2633,33 @@ class AgentRun < ApplicationRecord
       cleanup_via_runner(force: force)
     else
       ensure_container_service!
-      @container_service.cleanup(force: force)
+      @container_service.cleanup(force: force, preserve_workspace_volume: preserve_workspace_volume)
       @container_service = nil
-      update!(container_id: nil)
+      clear_container_id_if_unchanged!(target_container_id)
     end
   rescue Containers::Provision::Error, ExecutionRunners::Error
     # Container may already be gone; clear the reference anyway
     @container_service = nil
     @current_handle = nil
-    update!(container_id: nil, runner_handle: nil)
+    clear_container_id_if_unchanged!(target_container_id, also_clear: { runner_handle: nil })
     # The container is gone but the workspace volume may still exist.
     # Provision#cleanup would normally handle this in its ensure block,
-    # but we never reached it, so clean up the volume directly.
-    cleanup_orphaned_workspace_volume
+    # but we never reached it, so clean up the volume directly. Skip it
+    # when preserve_workspace_volume is set (redispatch race): the volume
+    # may already be in use by a container that redispatch just claimed.
+    cleanup_orphaned_workspace_volume unless preserve_workspace_volume
+  end
+
+  # Clears container_id (and any also_clear columns) only if container_id
+  # still matches the container this method just tore down. A run cleaned up
+  # from a stale snapshot (see cleanup_container above) may have already been
+  # re-dispatched to a different container by the time teardown finishes; an
+  # unconditional write here would silently wipe the new container's id out
+  # from under the run that is now using it.
+  def clear_container_id_if_unchanged!(expected_container_id, also_clear: {})
+    updates = also_clear.merge(container_id: nil)
+    self.class.where(id: id, container_id: expected_container_id).update_all(updates)
+    assign_attributes(updates) if container_id == expected_container_id
   end
 
   # Persists the id of a container that provisioning created but never
