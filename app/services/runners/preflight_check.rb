@@ -26,9 +26,10 @@ module Runners
       new(...).call
     end
 
-    def initialize(runner:, user:)
+    def initialize(runner:, user:, disabled_runner_ids: nil)
       @runner = runner
       @user = user
+      @disabled_runner_ids = disabled_runner_ids
     end
 
     def call
@@ -37,7 +38,7 @@ module Runners
       return failure("runner_discarded") if runner.discarded?
 
       return failure("runner_disabled") unless runner.enabled_for_agent_runs?
-      return failure("execution_disabled") unless runner.execution_enabled_for_agent_runs?
+      return failure("execution_disabled") unless runner.execution_enabled_for_agent_runs?(disabled_runner_ids: disabled_runner_ids)
 
       # @spec RUNNER-SCHED-005 — block-mode time-window guard for pinned runs
       # that bypass RunnerResolver on first dispatch.
@@ -57,7 +58,7 @@ module Runners
 
     private
 
-    attr_reader :runner, :user
+    attr_reader :runner, :user, :disabled_runner_ids
 
     def failure(reason)
       raise ArgumentError, "unknown preflight reason: #{reason.inspect}" unless REASONS.include?(reason)

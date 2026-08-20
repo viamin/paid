@@ -2558,8 +2558,11 @@ class AgentRun < ApplicationRecord
   # such volume exists or when worktree_path is set (bind-mount flows).
   #
   # @param force [Boolean] Force kill if container doesn't stop gracefully
+  # @param preserve_workspace_volume [Boolean] Skip removing the shared
+  #   workspace volume — see Containers::Provision#cleanup for why a caller
+  #   tearing down a stale container reference needs this.
   # @return [void]
-  def cleanup_container(force: false)
+  def cleanup_container(force: false, preserve_workspace_volume: false)
     # Snapshot up front: a caller operating on a stale id (e.g.
     # ExecutionControlParkCleanupJob, which assigns a park-time snapshot
     # before calling this method) must tear down *that* container without
@@ -2585,7 +2588,7 @@ class AgentRun < ApplicationRecord
       cleanup_via_runner(force: force)
     else
       ensure_container_service!
-      @container_service.cleanup(force: force)
+      @container_service.cleanup(force: force, preserve_workspace_volume: preserve_workspace_volume)
       @container_service = nil
       clear_container_id_if_unchanged!(target_container_id)
     end

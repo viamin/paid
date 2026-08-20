@@ -1455,7 +1455,7 @@ RSpec.describe ProcessRunQueueJob do
 
         allow(Runners::PreflightCheck).to receive(:call).and_call_original
         allow(Runners::PreflightCheck).to receive(:call)
-          .with(runner: runner, user: user)
+          .with(hash_including(runner: runner, user: user))
           .and_return(Runners::PreflightCheck::Result.new(pass?: false, reason: "missing_api_key", runner_id: runner.id))
 
         expect(temporal_client).to receive(:start_workflow).once.and_return(workflow_handle)

@@ -47,7 +47,16 @@ class ExecutionControlParkCleanupJob < ApplicationJob
   end
 
   def cleanup_container(agent_run, container_id)
+    # If the run has since been re-dispatched to a new container, its
+    # persisted container_id will differ from the stale id we're tearing
+    # down here (clear_container_id_if_unchanged! only clears it when it
+    # still matches). The container itself is still safe to tear down, but
+    # the shared workspace volume must be preserved — the new container
+    # reuses the same "paid-workspace-<agent_run.id>" volume name.
+    redispatched = AgentRun.where(id: agent_run.id)
+      .where.not(container_id: [ nil, container_id ]).exists?
+
     agent_run.container_id = container_id
-    agent_run.cleanup_container(force: true)
+    agent_run.cleanup_container(force: true, preserve_workspace_volume: redispatched)
   end
 end

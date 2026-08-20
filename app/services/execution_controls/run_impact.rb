@@ -33,6 +33,7 @@ module ExecutionControls
       # of a rescue-and-log swallow.
       workflow_id = nil
       container_id = nil
+      parked = false
 
       agent_run.with_lock do
         next if agent_run.finished?
@@ -46,6 +47,7 @@ module ExecutionControls
 
         if agent_run.status == "queued" && agent_run.temporal_workflow_id.blank? && agent_run.container_id.blank?
           park_record!(agent_run)
+          parked = true
           next
         end
 
@@ -55,7 +57,10 @@ module ExecutionControls
         workflow_id = agent_run.temporal_workflow_id.presence
         container_id = agent_run.container_id.presence
         park_record!(agent_run)
+        parked = true
       end
+
+      return unless parked
 
       if workflow_id.present? || container_id.present?
         ExecutionControlParkCleanupJob.perform_later(agent_run.id, workflow_id, container_id)

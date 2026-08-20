@@ -103,5 +103,25 @@ RSpec.describe ExecutionControlParkCleanupJob, type: :job do
       expect(container).to have_received(:delete)
       expect(agent_run.reload.container_id).to eq("new-container-456")
     end
+
+    it "preserves the shared workspace volume when the run has been redispatched to a new container" do
+      # A re-dispatched container for the same run reuses the
+      # "paid-workspace-<agent_run.id>" volume, so tearing down the stale
+      # container must not delete it out from under the active run.
+      agent_run.update!(status: "queued", paused_at: nil, container_id: "new-container-456")
+
+      container = double(id: "container-123")
+      allow(container).to receive(:refresh!)
+      allow(container).to receive(:info).and_return("State" => { "Running" => true })
+      allow(container).to receive(:stop)
+      allow(container).to receive(:delete)
+      allow(Docker::Container).to receive(:get).with("container-123").and_return(container)
+      allow(Docker::Volume).to receive(:get)
+
+      described_class.perform_now(agent_run.id, nil, "container-123")
+
+      expect(container).to have_received(:delete)
+      expect(Docker::Volume).not_to have_received(:get)
+    end
   end
 end

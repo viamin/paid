@@ -269,7 +269,8 @@ class ProcessRunQueueJob < ApplicationJob
           next
         end
 
-        preflight_result = check_runner_preflight(next_run, user)
+        preflight_result = check_runner_preflight(next_run, user,
+          disabled_runner_ids: execution_control_snapshot[:disabled_runner_ids])
         if preflight_result && !preflight_result.pass?
           log_preflight_skip(next_run, preflight_result)
           blocked_runner_ids.add(preflight_result.runner_id) if preflight_result.runner_id
@@ -357,11 +358,11 @@ class ProcessRunQueueJob < ApplicationJob
     state if state.unavailable?
   end
 
-  def check_runner_preflight(agent_run, user)
+  def check_runner_preflight(agent_run, user, disabled_runner_ids: nil)
     runner = agent_run.runner
     return nil unless runner
 
-    Runners::PreflightCheck.call(runner: runner, user: user)
+    Runners::PreflightCheck.call(runner: runner, user: user, disabled_runner_ids: disabled_runner_ids)
   end
 
   # @spec EXEC-DISABLE-002 — only global/account/project controls park queued

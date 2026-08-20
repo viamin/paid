@@ -886,8 +886,13 @@ module Containers
     # Stops and removes the container, cleaning up resources.
     #
     # @param force [Boolean] Force kill if container doesn't stop gracefully
+    # @param preserve_workspace_volume [Boolean] Skip removing the shared
+    #   workspace volume — set by callers tearing down a stale container
+    #   reference (e.g. ExecutionControlParkCleanupJob) when the run has
+    #   since been re-dispatched to a new container that reuses the same
+    #   named volume.
     # @return [void]
-    def cleanup(force: false)
+    def cleanup(force: false, preserve_workspace_volume: false)
       cleanup_heartbeat_dir!
 
       log_system("container.cleanup.start", container_id: container&.id)
@@ -913,7 +918,7 @@ module Containers
       preview_tunnel_released ||= release_preview_tunnel_reservation!
       log_system("container.preview_tunnel_port_released", tunnel_port: preview_tunnel.tunnel_port) if preview_tunnel_released
       @container = nil
-      cleanup_workspace_volume
+      cleanup_workspace_volume unless preserve_workspace_volume
       cleanup_claimed_pool_entry
     end
 
