@@ -2580,7 +2580,7 @@ module Containers
     #   /home/agent/.config/kilocode - tmpfs (64MB, for Kilocode CLI config)
     #   /home/agent/.local/share/kilo - tmpfs (64MB, for Kilocode CLI data)
     #   /home/agent/.config/opencode         - tmpfs (64MB, for OpenCode CLI config)
-    #   /home/agent/.local/share/opencode    - tmpfs (64MB, for OpenCode CLI data)
+    #   /home/agent/.local/share/opencode    - tmpfs (256MB, for OpenCode CLI data)
     #   /home/agent/.copilot                 - tmpfs (64MB, for GitHub Copilot CLI config)
     # All other paths are read-only via ReadonlyRootfs.
     def container_config
@@ -2703,9 +2703,13 @@ module Containers
       # OpenCode CLI stores config under ~/.config/opencode and data under
       # ~/.local/share/opencode. Ownership is fixed by
       # fix_opencode_config_tmpfs_ownership! and fix_opencode_data_tmpfs_ownership!
-      # after container start.
+      # after container start. The data dir gets 256MB: opencode keeps its
+      # SQLite state (db + WAL) and file snapshots there, and a long agent
+      # attempt fills a smaller cap — once full, every later opencode start
+      # in the container dies on PRAGMA wal_checkpoint (tmpfs ENOSPC).
+      # @spec CONTAINER-RUNTIME-029
       tmpfs["/home/agent/.config/opencode"] = "size=#{64 * 1024 * 1024},mode=0700"
-      tmpfs["/home/agent/.local/share/opencode"] = "size=#{64 * 1024 * 1024},mode=0700"
+      tmpfs["/home/agent/.local/share/opencode"] = "size=#{256 * 1024 * 1024},mode=0700"
 
       # GitHub Copilot CLI stores config and auth state under ~/.copilot.
       # Ownership is fixed by fix_copilot_tmpfs_ownership! after container start.

@@ -197,6 +197,15 @@ RSpec.describe Activities::RunAgentActivity do
     )
   end
 
+  def wal_checkpoint_preflight_failure
+    Containers::Provision::Result.failure(
+      error: "exit 1",
+      stdout: "",
+      stderr: "\e[91m\e[1mError: \e[0mUnexpected error\n\nFailed query: PRAGMA wal_checkpoint(PASSIVE)\nparams: ",
+      exit_code: 1
+    )
+  end
+
   describe "#with_periodic_heartbeat" do
     let(:mock_context) { instance_double(Temporalio::Activity::Context) }
 
@@ -3312,6 +3321,53 @@ expect(container_service).to receive(:execute).with(
           described_class::RunnerExecutionError,
           /Preflight check failed: Agent exited with code 137 \(process killed by SIGKILL; container OOM not reported; configured memory limit 4.0 GB, container_running=true\): > build · MiniMax-M3/
         )
+      end
+
+      # @spec RUNNER-FALLBACK-004
+      it "repairs the opencode state tmpfs and retries when preflight fails on a WAL checkpoint error" do
+        opencode_provider = create_opencode_provider_for(user)
+        checkpoint_failure = wal_checkpoint_preflight_failure
+        repair_success = Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0)
+        allow(container_service).to receive(:execute).and_return(checkpoint_failure, repair_success, exec_success)
+
+        expect {
+          run_direct_outbound_preflight(
+            activity: activity,
+            agent_run: agent_run,
+            container_service: container_service,
+            provider: opencode_provider,
+            user: user
+          )
+        }.not_to raise_error
+
+        expect(container_service).to have_received(:execute).with(
+          array_including("sh", "-c", /opencode-seed/),
+          hash_including(timeout: kind_of(Numeric))
+        )
+        expect(container_service).to have_received(:execute).exactly(3).times
+      end
+
+      # @spec RUNNER-FALLBACK-004
+      it "fails the preflight when the WAL checkpoint failure persists after repair" do
+        opencode_provider = create_opencode_provider_for(user)
+        checkpoint_failure = wal_checkpoint_preflight_failure
+        repair_success = Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0)
+        allow(container_service).to receive(:execute).and_return(checkpoint_failure, repair_success, checkpoint_failure)
+
+        expect {
+          run_direct_outbound_preflight(
+            activity: activity,
+            agent_run: agent_run,
+            container_service: container_service,
+            provider: opencode_provider,
+            user: user
+          )
+        }.to raise_error(
+          described_class::RunnerExecutionError,
+          /Failed query: PRAGMA wal_checkpoint/
+        )
+
+        expect(container_service).to have_received(:execute).exactly(3).times
       end
 
       it "marks the runner rate-limited when preflight surfaces an insufficient credits error" do

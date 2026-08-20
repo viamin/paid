@@ -942,7 +942,8 @@ RSpec.describe Containers::Provision do
           tmpfs = config["HostConfig"]["Tmpfs"]
           expect(tmpfs).to have_key("/home/agent/.local/share/opencode")
           expect(tmpfs["/home/agent/.local/share/opencode"]).to include("mode=0700")
-          expect(tmpfs["/home/agent/.local/share/opencode"]).to include("size=#{64 * 1024 * 1024}")
+          # @spec CONTAINER-RUNTIME-029
+          expect(tmpfs["/home/agent/.local/share/opencode"]).to include("size=#{256 * 1024 * 1024}")
           mock_container
         end
 

@@ -436,3 +436,12 @@
   `NetworkPolicy.build_firewall_script`,
   `NetworkPolicy.contract_for_policy`,
   `Containers::ProxyUrl.resolve`
+
+- [x] **CONTAINER-RUNTIME-029** — When a container is provisioned for a run
+  that may use the OpenCode CLI, the system SHALL size the OpenCode data
+  tmpfs (`/home/agent/.local/share/opencode`) at 256MB so a long agent
+  attempt's SQLite state (db + WAL) and file snapshots do not exhaust it —
+  once the tmpfs is full, every subsequent OpenCode start in that container
+  fails at startup on `PRAGMA wal_checkpoint` (tmpfs ENOSPC).
+  *Tests:* `spec/services/containers/provision_spec.rb`.
+  *Code:* `Containers::Provision` tmpfs configuration.
