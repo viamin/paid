@@ -10,6 +10,7 @@ require "rails_helper"
 # @spec CONTAINER-RUNTIME-017
 # @spec CONTAINER-RUNTIME-018
 # @spec CONTAINER-RUNTIME-020
+# @spec CONTAINER-RUNTIME-028
 # @spec EXEC-INGRESS-001
 # @spec EXEC-INGRESS-002
 RSpec.describe ExecutionRunners do
@@ -388,6 +389,7 @@ RSpec.describe ExecutionRunners do
       expect(policy).to be_restricted
       expect(policy).to be_firewall
       expect(policy.allow_destinations).to eq([ { host: "10.0.0.1", port: 5432 } ])
+      expect(policy.canonical_mode).to eq(:approved_services)
     end
 
     it "treats subscription_auth mode as unrestricted" do
@@ -396,6 +398,7 @@ RSpec.describe ExecutionRunners do
       expect(policy).not_to be_restricted
       expect(policy).not_to be_firewall
       expect(policy.allow_destinations).to eq([])
+      expect(policy.canonical_mode).to eq(:model_direct)
     end
 
     it "treats direct_outbound mode as unrestricted" do
@@ -403,6 +406,131 @@ RSpec.describe ExecutionRunners do
 
       expect(policy).not_to be_restricted
       expect(policy).not_to be_firewall
+      expect(policy.canonical_mode).to eq(:model_direct)
+    end
+
+    describe "new RDR-062 intents" do
+      it "treats :no_outbound as restricted and firewall-required with no egress" do
+        policy = described_class.no_outbound
+
+        expect(policy).to be_restricted
+        expect(policy).to be_firewall
+        expect(policy).to be_no_outbound
+        expect(policy.allow_destinations).to eq([])
+      end
+
+      it "treats :proxy_only as restricted and firewall-required" do
+        policy = described_class.proxy_only
+
+        expect(policy).to be_restricted
+        expect(policy).to be_firewall
+        expect(policy.allow_destinations).to eq([])
+      end
+
+      it "treats :git_plus_proxy as restricted and firewall-required" do
+        policy = described_class.git_plus_proxy
+
+        expect(policy).to be_restricted
+        expect(policy).to be_firewall
+      end
+
+      it "treats :approved_services as restricted and firewall-required" do
+        policy = described_class.approved_services
+
+        expect(policy).to be_restricted
+        expect(policy).to be_firewall
+        expect(policy.canonical_mode).to eq(:approved_services)
+      end
+
+      it "treats the :proxy_restricted alias as approved_services" do
+        policy = described_class.proxy_restricted
+
+        expect(policy).to be_approved_services
+      end
+
+      it "treats :model_direct as unrestricted and firewall-free" do
+        policy = described_class.model_direct
+
+        expect(policy).not_to be_restricted
+        expect(policy).not_to be_firewall
+        expect(policy).to be_model_direct
+        expect(policy).not_to be_explicit_internet
+      end
+
+      it "treats :explicit_internet as unrestricted and firewall-free" do
+        policy = described_class.explicit_internet
+
+        expect(policy).not_to be_restricted
+        expect(policy).not_to be_firewall
+        expect(policy).to be_explicit_internet
+        expect(policy).not_to be_model_direct
+      end
+
+      it "preserves the legacy :proxy_restricted mode value while normalizing canonical_mode" do
+        policy = described_class.proxy_restricted
+
+        expect(policy.mode).to eq(:proxy_restricted)
+        expect(policy.canonical_mode).to eq(:approved_services)
+        expect(policy).to be_restricted
+      end
+
+      it "normalizes :subscription_auth to the :model_direct canonical mode" do
+        expect(described_class.subscription_auth.canonical_mode).to eq(:model_direct)
+      end
+
+      it "normalizes :direct_outbound to the :model_direct canonical mode" do
+        expect(described_class.direct_outbound.canonical_mode).to eq(:model_direct)
+      end
+
+      it "returns the mode unchanged for each canonical intent" do
+        %i[no_outbound proxy_only git_plus_proxy approved_services model_direct explicit_internet].each do |mode|
+          policy = described_class.public_send(mode)
+
+          expect(policy.canonical_mode).to eq(mode), "expected canonical_mode for #{mode}"
+        end
+      end
+
+      it "rejects unknown networking policy modes at construction time" do
+        expect {
+          described_class.new(mode: :unknown_mode, firewall: true, allow_destinations: [])
+        }.to raise_error(ArgumentError, /Unknown networking policy mode/)
+      end
+
+      it "rejects firewall settings that conflict with the mode" do
+        expect {
+          described_class.new(mode: :model_direct, firewall: true, allow_destinations: [])
+        }.to raise_error(ArgumentError, /requires firewall=false/)
+      end
+
+      it "rejects allow destinations without host and port keys" do
+        expect {
+          described_class.proxy_only(allow_destinations: [ { host: "10.0.0.1" } ])
+        }.to raise_error(ArgumentError, /missing keys: port/)
+      end
+
+      it "normalizes allow destinations with string keys" do
+        policy = described_class.proxy_only(allow_destinations: [ { "host" => "10.0.0.1", "port" => 5432 } ])
+
+        expect(policy.allow_destinations).to eq([ { host: "10.0.0.1", port: 5432 } ])
+      end
+
+      it "normalizes string ports to integers" do
+        policy = described_class.proxy_only(allow_destinations: [ { "host" => "10.0.0.1", "port" => "5432" } ])
+
+        expect(policy.allow_destinations).to eq([ { host: "10.0.0.1", port: 5432 } ])
+      end
+
+      it "rejects allow destinations with an invalid host value" do
+        expect {
+          described_class.proxy_only(allow_destinations: [ { host: "bad host", port: 5432 } ])
+        }.to raise_error(ArgumentError, /host is invalid/)
+      end
+
+      it "rejects allow destinations with an invalid port value" do
+        expect {
+          described_class.proxy_only(allow_destinations: [ { host: "10.0.0.1", port: 70_000 } ])
+        }.to raise_error(ArgumentError, /port is invalid/)
+      end
     end
 
     it "defaults the egress_profile to :locked for every factory method" do
@@ -825,7 +953,7 @@ RSpec.describe ExecutionRunners do
       manifest = described_class.from_run_spec(run_spec)
 
       expect(manifest.execution["networking"]).to include(
-        "mode" => "proxy_restricted",
+        "mode" => "approved_services",
         "firewall" => true,
         "egress_profile" => "locked"
       )
@@ -849,7 +977,7 @@ RSpec.describe ExecutionRunners do
       manifest = described_class.from_run_spec(open_spec)
 
       expect(manifest.execution["networking"]).to include(
-        "mode" => "direct_outbound",
+        "mode" => "model_direct",
         "firewall" => false,
         "egress_profile" => "open"
       )

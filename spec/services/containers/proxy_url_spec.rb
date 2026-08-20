@@ -2,6 +2,8 @@
 
 require "rails_helper"
 
+# @spec CONTAINER-RUNTIME-017
+# @spec CONTAINER-RUNTIME-028
 RSpec.describe Containers::ProxyUrl, :no_db do
   describe ".resolve" do
     let(:backend_identifier) { "worker-1" }

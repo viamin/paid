@@ -3,6 +3,7 @@
 require "rails_helper"
 
 # @spec CONTAINER-RUNTIME-007
+# @spec CONTAINER-RUNTIME-028
 RSpec.describe ExecutionRunners::Base do
   let(:spec) do
     ExecutionRunners::RunSpec.new(
@@ -61,6 +62,11 @@ RSpec.describe ExecutionRunners::Base do
     it "raises NotImplementedError for .compatible?" do
       expect { described_class.compatible?(spec: spec, backend: instance_double(Containers::Backends::Base)) }
         .to raise_error(NotImplementedError, /compatible/)
+    end
+
+    it "raises NotImplementedError for .supports_policy?" do
+      expect { described_class.supports_policy?(ExecutionRunners::NetworkingPolicy.model_direct) }
+        .to raise_error(NotImplementedError, /supports_policy/)
     end
 
     it "raises NotImplementedError for .ping" do

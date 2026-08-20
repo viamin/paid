@@ -7,6 +7,7 @@ require "rails_helper"
 # @spec CONTAINER-RUNTIME-017
 # @spec CONTAINER-RUNTIME-019
 # @spec CONTAINER-RUNTIME-020
+# @spec CONTAINER-RUNTIME-028
 # @spec EXEC-INGRESS-001
 # @spec EXEC-INGRESS-002
 RSpec.describe ExecutionRunners::LocalDockerRunner do
@@ -172,7 +173,11 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       )
 
       expect(NetworkPolicy).to receive(:apply_firewall_rules)
-        .with(started_container, service_destinations: [], backend: backend)
+        .with(started_container,
+              github_ips: NetworkPolicy::DEFAULT_GITHUB_IPS,
+              proxy_host: nil,
+              service_destinations: [],
+              backend: backend)
 
       runner.provision(spec: run_spec)
     end
@@ -191,7 +196,11 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       )
 
       expect(NetworkPolicy).to receive(:apply_firewall_rules)
-        .with(started_container, service_destinations: [ { ip: "10.0.0.1", port: 5432 } ], backend: backend)
+        .with(started_container,
+              github_ips: NetworkPolicy::DEFAULT_GITHUB_IPS,
+              proxy_host: nil,
+              service_destinations: [ { ip: "10.0.0.1", port: 5432 } ],
+              backend: backend)
 
       runner.provision(spec: allow_destinations_spec)
     end
@@ -204,9 +213,115 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       )
 
       expect(NetworkPolicy).to receive(:apply_firewall_rules)
-        .with(started_container, service_destinations: [ { ip: "192.0.2.10", port: 443 } ], backend: backend)
+        .with(started_container,
+              github_ips: NetworkPolicy::DEFAULT_GITHUB_IPS,
+              proxy_host: nil,
+              service_destinations: [ { ip: "192.0.2.10", port: 443 } ],
+              backend: backend)
 
       runner.provision(spec: run_spec)
+    end
+
+    it "translates the :no_outbound intent to a firewall that omits the proxy and GitHub allow rules" do
+      no_outbound_spec = ExecutionRunners::RunSpec.new(
+        **run_spec.to_h.merge(
+          networking_policy: ExecutionRunners::NetworkingPolicy.no_outbound
+        )
+      )
+      allow(NetworkPolicy).to receive(:contract_for_policy)
+        .and_return(double(network: NetworkPolicy::NETWORK_NAME))
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      allow(provision_service).to receive(:provision).and_return(
+        Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
+      )
+
+      expect(NetworkPolicy).to receive(:apply_firewall_rules)
+        .with(started_container, github_ips: [], proxy_host: false,
+              service_destinations: [], backend: backend)
+
+      runner.provision(spec: no_outbound_spec)
+    end
+
+    it "translates the :proxy_only intent to a firewall that allows the proxy but not GitHub" do
+      proxy_only_spec = ExecutionRunners::RunSpec.new(
+        **run_spec.to_h.merge(
+          networking_policy: ExecutionRunners::NetworkingPolicy.proxy_only
+        )
+      )
+      allow(NetworkPolicy).to receive(:contract_for_policy)
+        .and_return(double(network: NetworkPolicy::NETWORK_NAME))
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      allow(provision_service).to receive(:provision).and_return(
+        Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
+      )
+
+      expect(NetworkPolicy).to receive(:apply_firewall_rules)
+        .with(started_container, github_ips: [], proxy_host: nil,
+              service_destinations: [], backend: backend)
+
+      runner.provision(spec: proxy_only_spec)
+    end
+
+    it "translates the :git_plus_proxy intent to a firewall that allows the proxy and GitHub but not services" do
+      git_proxy_spec = ExecutionRunners::RunSpec.new(
+        **run_spec.to_h.merge(
+          networking_policy: ExecutionRunners::NetworkingPolicy.git_plus_proxy
+        )
+      )
+      allow(NetworkPolicy).to receive(:contract_for_policy)
+        .and_return(double(network: NetworkPolicy::NETWORK_NAME))
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      allow(provision_service).to receive(:provision).and_return(
+        Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
+      )
+
+      expect(NetworkPolicy).to receive(:apply_firewall_rules)
+        .with(started_container, github_ips: NetworkPolicy::DEFAULT_GITHUB_IPS,
+              proxy_host: nil, service_destinations: [], backend: backend)
+
+      runner.provision(spec: git_proxy_spec)
+    end
+
+    it "excludes service container IPs from the firewall for :no_outbound even when services are provisioned" do
+      no_outbound_spec = ExecutionRunners::RunSpec.new(
+        **run_spec.to_h.merge(
+          networking_policy: ExecutionRunners::NetworkingPolicy.no_outbound
+        )
+      )
+      allow(NetworkPolicy).to receive(:contract_for_policy)
+        .and_return(double(network: NetworkPolicy::NETWORK_NAME))
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      allow(provision_service).to receive_messages(
+        provision: Containers::Provision::Result.success(container_id: "abc123", container_host: "local"),
+        firewall_service_destinations: [ { ip: "192.0.2.10", port: 5432 } ]
+      )
+
+      expect(NetworkPolicy).to receive(:apply_firewall_rules)
+        .with(started_container, github_ips: [], proxy_host: false,
+              service_destinations: [], backend: backend)
+
+      runner.provision(spec: no_outbound_spec)
+    end
+
+    it "excludes service container IPs from the firewall for :git_plus_proxy even when services are provisioned" do
+      git_proxy_spec = ExecutionRunners::RunSpec.new(
+        **run_spec.to_h.merge(
+          networking_policy: ExecutionRunners::NetworkingPolicy.git_plus_proxy
+        )
+      )
+      allow(NetworkPolicy).to receive(:contract_for_policy)
+        .and_return(double(network: NetworkPolicy::NETWORK_NAME))
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      allow(provision_service).to receive_messages(
+        provision: Containers::Provision::Result.success(container_id: "abc123", container_host: "local"),
+        firewall_service_destinations: [ { ip: "192.0.2.10", port: 5432 } ]
+      )
+
+      expect(NetworkPolicy).to receive(:apply_firewall_rules)
+        .with(started_container, github_ips: NetworkPolicy::DEFAULT_GITHUB_IPS,
+              proxy_host: nil, service_destinations: [], backend: backend)
+
+      runner.provision(spec: git_proxy_spec)
     end
 
     it "skips NetworkPolicy firewall application when the policy is unrestricted" do
@@ -225,6 +340,24 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       expect(NetworkPolicy).not_to receive(:apply_firewall_rules)
 
       runner.provision(spec: direct_outbound_spec)
+    end
+
+    it "skips NetworkPolicy firewall application when the policy is :explicit_internet" do
+      explicit_internet_spec = ExecutionRunners::RunSpec.new(
+        **run_spec.to_h.merge(
+          networking_policy: ExecutionRunners::NetworkingPolicy.explicit_internet
+        )
+      )
+      allow(NetworkPolicy).to receive(:contract_for_policy)
+        .and_return(double(network: NetworkPolicy::INFRA_NETWORK_NAME))
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      allow(provision_service).to receive(:provision).and_return(
+        Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
+      )
+
+      expect(NetworkPolicy).not_to receive(:apply_firewall_rules)
+
+      runner.provision(spec: explicit_internet_spec)
     end
 
     it "threads the locked egress profile through to Containers::Provision without inspecting it" do
@@ -311,6 +444,31 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
 
       expect { runner.provision(spec: debug_spec) }
         .to raise_error(ExecutionRunners::ProvisionError, "Unsupported inbound exposure requested: debug.")
+    end
+
+    it "rejects an unsupported networking policy before any Docker side effects" do
+      unsupported_policy = Struct.new(:mode).new(:unknown_mode)
+      unsupported_spec = ExecutionRunners::RunSpec.new(
+        **run_spec.to_h.merge(
+          networking_policy: unsupported_policy
+        )
+      )
+
+      expect(NetworkPolicy).not_to receive(:ensure_network!)
+      expect(Containers::Provision).not_to receive(:new)
+
+      expect { runner.provision(spec: unsupported_spec) }
+        .to raise_error(ExecutionRunners::ProvisionError, /does not support networking policy :unknown_mode/)
+    end
+
+    it "rejects a missing networking policy before any Docker side effects" do
+      missing_policy_spec = ExecutionRunners::RunSpec.new(**run_spec.to_h.merge(networking_policy: nil))
+
+      expect(NetworkPolicy).not_to receive(:ensure_network!)
+      expect(Containers::Provision).not_to receive(:new)
+
+      expect { runner.provision(spec: missing_policy_spec) }
+        .to raise_error(ExecutionRunners::ProvisionError, /RunSpec requires a NetworkingPolicy/)
     end
 
     it "cleans up the provisioned container when firewall application fails in production" do
@@ -644,6 +802,53 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
 
       expect(result).to be_a(ExecutionRunners::CompatibilityResult)
       expect(result.compatible).to be(true)
+    end
+
+    it "supports every RDR-062 networking intent (Docker implements every shape)" do
+      allow(Containers::Provision).to receive(:compatibility_for)
+        .and_return(Containers::Provision::CompatibilityResult.new(compatible: true, error_message: nil))
+
+      %i[no_outbound proxy_only git_plus_proxy approved_services
+         model_direct explicit_internet subscription_auth direct_outbound].each do |mode|
+        policy = ExecutionRunners::NetworkingPolicy.public_send(mode)
+        spec = ExecutionRunners::RunSpec.new(**run_spec.to_h.merge(networking_policy: policy))
+
+        result = described_class.compatible?(spec: spec, backend: backend)
+
+        expect(result.compatible).to be(true), "expected #{mode} policy to be compatible, got #{result.error_message}"
+      end
+    end
+
+    it "rejects a spec with no networking policy before provisioning" do
+      allow(Containers::Provision).to receive(:compatibility_for)
+        .and_return(Containers::Provision::CompatibilityResult.new(compatible: true, error_message: nil))
+      spec = ExecutionRunners::RunSpec.new(**run_spec.to_h.merge(networking_policy: nil))
+
+      result = described_class.compatible?(spec: spec, backend: backend)
+
+      expect(result.compatible).to be(false)
+      expect(result.error_message).to include("networking policy nil")
+    end
+  end
+
+  describe ".supports_policy?" do
+    it "returns true for every RDR-062 networking intent" do
+      %i[no_outbound proxy_only git_plus_proxy approved_services
+         model_direct explicit_internet subscription_auth direct_outbound].each do |mode|
+        policy = ExecutionRunners::NetworkingPolicy.public_send(mode)
+
+        expect(described_class.supports_policy?(policy)).to be(true), "expected #{mode} policy to be supported"
+      end
+    end
+
+    it "returns false when the policy is nil" do
+      expect(described_class.supports_policy?(nil)).to be(false)
+    end
+
+    it "returns false for an unknown policy mode" do
+      policy = Struct.new(:mode).new(:unknown_mode)
+
+      expect(described_class.supports_policy?(policy)).to be(false)
     end
   end
 

@@ -23,6 +23,7 @@ module ExecutionRunners
   # @spec CONTAINER-RUNTIME-013
   # @spec CONTAINER-RUNTIME-014
   # @spec CONTAINER-RUNTIME-017
+  # @spec CONTAINER-RUNTIME-028
   class LocalDockerRunner < Base
     RUNNER_TYPE = :local_docker
 
@@ -35,6 +36,7 @@ module ExecutionRunners
       backend = backend_for(spec)
       policy = spec.networking_policy
       raise ProvisionError, "RunSpec requires a NetworkingPolicy" if policy.nil?
+      raise ProvisionError, self.class.unsupported_policy_message(policy) unless self.class.supports_policy?(policy)
       raise ProvisionError, "RunSpec requires an IngressPolicy" if spec.ingress_policy.nil?
       spec.ingress_policy.validate_supported!
 
@@ -180,7 +182,35 @@ module ExecutionRunners
       result = Containers::Provision.compatibility_for(
         agent_run: spec.agent_run, backend: backend, worktree_path: worktree_path_for(spec)
       )
-      CompatibilityResult.new(compatible: result.compatible, error_message: result.error_message)
+      return CompatibilityResult.new(compatible: false, error_message: result.error_message) unless result.compatible
+
+      policy = spec.networking_policy
+      unless supports_policy?(policy)
+        return CompatibilityResult.new(
+          compatible: false,
+          error_message: unsupported_policy_message(policy)
+        )
+      end
+
+      CompatibilityResult.new(compatible: true, error_message: nil)
+    end
+
+    # Single source of truth for the unsupported-policy error message, shared
+    # by +.compatible?+ (rejects before scheduling) and +#provision+ (rejects
+    # before any Docker side effect).
+    def self.unsupported_policy_message(policy)
+      "Runner does not support networking policy #{policy&.mode.inspect}"
+    end
+
+    # Docker supports every RDR-062 networking intent: the four restricted
+    # intents use the existing +paid_agent+ network + iptables allowlist and
+    # the two unrestricted intents use +paid_internal+ with no firewall. A
+    # future remote runner returns +false+ for the intents its native egress
+    # primitives cannot implement so the queue scheduler rejects the spec
+    # before any provision attempt.
+    # @spec CONTAINER-RUNTIME-028
+    def self.supports_policy?(policy)
+      policy.present? && ExecutionRunners::NETWORKING_POLICY_KNOWN_MODES.include?(policy.mode)
     end
 
     def self.ping
@@ -256,13 +286,30 @@ module ExecutionRunners
     # +policy.allow_destinations+ uses the provider-neutral +{host:, port:}+
     # shape, so entries are normalized to +{ip:, port:}+ to match
     # +NetworkPolicy.build_firewall_script+, which reads +dest[:ip]+.
+    #
+    # The four restricted RDR-062 intents determine which default
+    # destinations the firewall allows:
+    #
+    # - +:no_outbound+       — nothing; loopback + DNS only.
+    # - +:proxy_only+        — Paid secrets proxy + DNS.
+    # - +:git_plus_proxy+    — adds GitHub CIDR ranges.
+    # - +:approved_services+ — adds service container IPs (current default).
+    #
+    # Service container IPs (+service.firewall_service_destinations+) are only
+    # added for the +:approved_services+ intent; the narrower restricted
+    # intents exclude them so their allowlist matches the RDR-062 mapping
+    # table. Caller-supplied +allow_destinations+ are always honored.
     def apply_firewall!(service:, backend:, policy:)
       return unless policy.firewall?
 
-      destinations = policy.allow_destinations.map { |dest| { ip: dest.fetch(:host), port: dest.fetch(:port) } } + service.firewall_service_destinations
+      destinations = policy.allow_destinations.map { |dest| { ip: dest.fetch(:host), port: dest.fetch(:port) } }
+      destinations += service.firewall_service_destinations if policy.approved_services?
+      github_ips = github_ranges_for(policy)
 
       NetworkPolicy.apply_firewall_rules(
         service.container,
+        github_ips: github_ips,
+        proxy_host: proxy_host_for(policy),
         service_destinations: destinations,
         backend: backend
       )
@@ -278,6 +325,25 @@ module ExecutionRunners
       # (e.g., macOS Docker Desktop, some CI runners). Production always
       # raises: a firewall gap on a live deployment is a security incident.
       raise ProvisionError, "Firewall setup failed: #{e.message}" if Rails.env.production?
+    end
+
+    # Returns the GitHub CIDR ranges the firewall should allow for the given
+    # policy intent. +:no_outbound+ and +:proxy_only+ restrict egress so
+    # tightly that direct GitHub access is denied — the agent must reach Git
+    # through the Paid proxy or another tunnel.
+    def github_ranges_for(policy)
+      return [] if %i[no_outbound proxy_only].include?(policy.mode)
+
+      NetworkPolicy::DEFAULT_GITHUB_IPS
+    end
+
+    # Returns the proxy host the firewall should allow. +false+ tells
+    # +NetworkPolicy.apply_firewall_rules+ to omit the proxy allow rule
+    # entirely, which is what the RDR-062 :no_outbound intent demands.
+    def proxy_host_for(policy)
+      return false if policy.no_outbound?
+
+      nil
     end
 
     def provision_options(spec)
