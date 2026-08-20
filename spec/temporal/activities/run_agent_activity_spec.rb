@@ -44,6 +44,14 @@ RSpec.describe Activities::RunAgentActivity do
       install_co_author_hook: nil
     )
 
+    # Fallback reprovisioning reaches AgentRun#provision_container, which
+    # derives and persists execution authority grants (RDR-058) before
+    # provisioning. The derivation inspects Docker config mounts via
+    # Containers::Provision.networking_policy_for, so it needs a stubbed
+    # policy like every other spec exercising provision_container.
+    allow(Containers::Provision).to receive(:networking_policy_for)
+      .and_return(ExecutionRunners::NetworkingPolicy.proxy_restricted)
+
     # By default, skip the runner preflight so tests that don't care
     # about preflight behaviour aren't affected by the smoke exec call.
     # Tests that verify preflight paths override this stub.
