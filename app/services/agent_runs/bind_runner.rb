@@ -29,9 +29,10 @@ module AgentRuns
       new(...).call
     end
 
-    def initialize(agent_run:, exclude_runner_ids: [], logger: nil)
+    def initialize(agent_run:, exclude_runner_ids: [], disabled_runner_ids: nil, logger: nil)
       @agent_run = agent_run
       @exclude_runner_ids = Array(exclude_runner_ids)
+      @disabled_runner_ids = disabled_runner_ids
       @logger = logger
     end
 
@@ -45,6 +46,7 @@ module AgentRuns
         project: agent_run.project,
         goal: agent_run.goal,
         exclude_runner_ids: exclude_runner_ids,
+        disabled_runner_ids: disabled_runner_ids,
         effective_runner: agent_run.effective_runner,
         logger: logger
       )
@@ -71,7 +73,7 @@ module AgentRuns
 
     private
 
-    attr_reader :agent_run, :exclude_runner_ids, :logger
+    attr_reader :agent_run, :exclude_runner_ids, :disabled_runner_ids, :logger
 
     def apply_resolution!(runner, resolved_agent_type)
       target_agent_type = resolved_agent_type.presence ||

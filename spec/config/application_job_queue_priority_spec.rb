@@ -13,6 +13,7 @@ RSpec.describe ApplicationJob, :no_db do
         DependabotAutoMergeJob
         DiagnoseErrorJob
         DispatchCircuitBreakerOutcomeJob
+        ExecutionControlParkCleanupJob
         FailureRecoveryDecisionJob
         GithubTokenValidationJob
         HandleExceptionJob
@@ -39,6 +40,7 @@ RSpec.describe ApplicationJob, :no_db do
         ClaudeCredentialKeepWarmJob
         CoordinationExperimentResolutionJob
         CoordinationPolicyEvolutionJob
+        ExecutionAuditEventRetentionJob
         FreeModels::SyncJob
         GithubTokenHealthCheckJob
         KnowledgeAuditRetentionJob

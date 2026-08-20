@@ -195,15 +195,20 @@ module Containers
     # does not pay the user-setting/image resolution cost of a full provision
     # (RDR-054).
     #
+    # @param egress_profile [Symbol, nil] optional egress profile from RDR-055
+    #   (:locked | :research | :open). When nil, the policy defaults to
+    #   +:locked+ (the safe production default).
     # @return [ExecutionRunners::NetworkingPolicy]
-    def self.networking_policy_for(agent_run:, project:)
-      new(agent_run: agent_run, project: project).derived_networking_policy
+    def self.networking_policy_for(agent_run:, project:, egress_profile: nil)
+      service = new(agent_run: agent_run, project: project)
+      service.networking_policy_with_egress_profile(egress_profile)
     end
 
     def self.codex_notify_line
       CODEX_NOTIFY_LINE
     end
 
+    # @spec EXECUTION-ISOLATION-004
     def self.compatibility_for(agent_run:, backend:, worktree_path: nil)
       agent_run.execution_ingress_policy.validate_supported!
       service = new(agent_run: agent_run, worktree_path: worktree_path, backend: backend)
@@ -269,8 +274,22 @@ module Containers
     # and image resolution cost (DB queries plus profile lookups) that only
     # provisioning actually needs.
     def options
-      @options ||= DEFAULTS.merge(resolve_user_setting_overrides).merge(resolve_project_image).merge(@raw_options)
+      @options ||= begin
+        base_options = DEFAULTS.merge(resolve_user_setting_overrides)
+        image_selection = resolve_runtime_image_selection(default_image: base_options[:image])
+        @runtime_image_selection = image_selection
+
+        base_options
+          .merge(image: image_selection.image)
+          .merge(@raw_options.except(:image))
+      end
     end
+
+    # The runtime image selection backing #options — warm-time provenance for
+    # a claimed pool entry, a fresh selection otherwise. Nil until #options
+    # has been resolved. PoolManager persists this on the pool entry at warm
+    # time so claims attribute the digest the container actually runs.
+    attr_reader :runtime_image_selection
 
     # Provisions a new container with security hardening.
     # Ensures the selected network exists before creating the container,
@@ -363,14 +382,22 @@ module Containers
     #   long, silent LLM inference. Agents can touch this file (e.g. via
     #   Claude Code +PostToolUse+ or Codex +notify+ hooks) to signal
     #   "still working" and avoid startup/idle timeouts.
+    # @yieldparam stream_type [Symbol] +:stdout+ or +:stderr+
+    # @yieldparam chunk [String] output chunk forwarded as the container
+    #   exec stream emits it, after UTF-8/null-byte normalization. The block
+    #   runs inside the backend streaming callback alongside the watchdog
+    #   bookkeeping, so it must stay fast; a slow consumer throttles output
+    #   pumping and the shared timeout checks. Exceptions raised by the block
+    #   propagate out of +#execute+ and abort the run.
     # @return [Result] Result with stdout, stderr, and exit_code
     # @raise [StartupTimeoutError] when no output is received within +startup_timeout+ seconds
     # @raise [IdleTimeoutError] when output stops for more than +idle_timeout+ seconds
     # @raise [TimeoutError] when total wall-clock +timeout+ is exceeded
-    def execute(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil, heartbeat_path: nil, abort_patterns: nil)
+    # @spec CONTAINER-RUNTIME-019
+    def execute(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil, heartbeat_path: nil, abort_patterns: nil, &block)
       raise ProvisionError, "Container not provisioned" unless container
 
-      with_codex_auth_lock(command) { execute_unlocked(command, timeout:, startup_timeout:, idle_timeout:, stream:, env:, preparation:, heartbeat_path:, abort_patterns:) }
+      with_codex_auth_lock(command) { execute_unlocked(command, timeout:, startup_timeout:, idle_timeout:, stream:, env:, preparation:, heartbeat_path:, abort_patterns:, &block) }
     end
 
     def network_name
@@ -379,7 +406,7 @@ module Containers
 
     # Derives the provider-neutral +ExecutionRunners::NetworkingPolicy+ for
     # this provision using the subscription-auth / direct-outbound heuristics
-    # (the same source of truth as the legacy +network_contract+ path). Public
+    # (the same source of truth as the legacy +#network_contract+ path). Public
     # so +networking_policy_for+ can compute the policy without reaching into
     # private detection methods.
     def derived_networking_policy
@@ -390,6 +417,19 @@ module Containers
       else
         ExecutionRunners::NetworkingPolicy.proxy_restricted
       end
+    end
+
+    # Returns a policy derived from {#derived_networking_policy} with the given
+    # RDR-055 egress profile applied. The profile is carried through
+    # +ExecutionRunners::NetworkingPolicy+ so orchestration code does not need
+    # to reference Docker- or network-specific concepts to set it. Defaults to
+    # +:locked+ when +egress_profile+ is nil.
+    # @spec CONTAINER-RUNTIME-020
+    def networking_policy_with_egress_profile(egress_profile)
+      base = derived_networking_policy
+      return base if egress_profile.nil?
+
+      base.with(egress_profile: egress_profile)
     end
 
     private def abort_pattern_candidates(stream_type, normalized_chunk, stdout_buffer:)
@@ -494,7 +534,7 @@ module Containers
       ].find(&:present?)
     end
 
-    private def execute_unlocked(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil, heartbeat_path: nil, abort_patterns: nil)
+    private def execute_unlocked(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil, heartbeat_path: nil, abort_patterns: nil, &block)
       timeout ||= options[:timeout_seconds]
       cmd_array = close_stdin_for_codex_exec(command)
       cmd_array = cmd_array.is_a?(Array) ? cmd_array : [ "sh", "-c", cmd_array ]
@@ -599,6 +639,8 @@ module Containers
             stderr_buffer << normalized_chunk
             log_output(:stderr, normalized_chunk) if stream
           end
+
+          yield(stream_type, normalized_chunk) if block_given?
 
           # Check both stdout and stderr against abort patterns — if the CLI
           # emits a fatal error but hangs instead of exiting, stop the container
@@ -859,8 +901,13 @@ module Containers
     # Stops and removes the container, cleaning up resources.
     #
     # @param force [Boolean] Force kill if container doesn't stop gracefully
+    # @param preserve_workspace_volume [Boolean] Skip removing the shared
+    #   workspace volume — set by callers tearing down a stale container
+    #   reference (e.g. ExecutionControlParkCleanupJob) when the run has
+    #   since been re-dispatched to a new container that reuses the same
+    #   named volume.
     # @return [void]
-    def cleanup(force: false)
+    def cleanup(force: false, preserve_workspace_volume: false)
       cleanup_heartbeat_dir!
 
       log_system("container.cleanup.start", container_id: container&.id)
@@ -886,7 +933,7 @@ module Containers
       preview_tunnel_released ||= release_preview_tunnel_reservation!
       log_system("container.preview_tunnel_port_released", tunnel_port: preview_tunnel.tunnel_port) if preview_tunnel_released
       @container = nil
-      cleanup_workspace_volume
+      cleanup_workspace_volume unless preserve_workspace_volume
       cleanup_claimed_pool_entry
     end
 
@@ -1284,17 +1331,55 @@ module Containers
       overrides
     end
 
-    # Resolves the language-appropriate agent image from the project's detected
-    # runtime profile (RDR-046 / POLYGLOT-TEST-004). Sits between user-setting
-    # overrides and caller-supplied options, so an explicit +image:+ (e.g. pool
-    # reconnect, credential maintenance) still wins. Returns an empty hash when
-    # there is no project or the project resolves to the base image, leaving
-    # +DEFAULTS[:image]+ as the effective default.
-    def resolve_project_image
-      return {} unless project
+    # The existing language-aware resolver still chooses the requested
+    # runtime/image profile (RDR-046). RDR-059 layers on the final selection:
+    # development/test keep mutable tags for local iteration, while production
+    # resolves the requested tag to an immutable digest and persists the
+    # selection metadata on the run. The resolution order mirrors the audit
+    # trail: a claimed warm-pool container reuses the selection persisted on
+    # its entry at warm time, an already-provisioned non-pool run reuses its
+    # own recorded selection across reconnects, and only then does a fresh
+    # catalog resolution win. The catalog's default may have moved between
+    # warm and claim (or between reconnect and re-execute), and the run's
+    # provenance must describe the container it actually executes in.
+    def resolve_runtime_image_selection(default_image:)
+      # @spec IMMUTABLE-IMAGE-001, IMMUTABLE-IMAGE-002, IMMUTABLE-IMAGE-003
+      selection = claimed_pool_entry_selection || recorded_run_selection || resolve_catalog_selection(default_image)
+      agent_run&.record_runtime_image_selection!(selection.metadata)
+      selection
+    end
 
-      resolved = Containers::ImageResolver.resolve(project)
-      resolved == Containers::ImageResolver::BASE_IMAGE ? {} : { image: resolved }
+    def claimed_pool_entry_selection
+      metadata = @pool_entry&.runtime_image_selection
+      return if metadata.blank?
+
+      Containers::RuntimeImageSelector::Result.from_metadata(metadata)
+    end
+
+    # A non-pool run that already provisioned keeps its recorded selection.
+    # Reconnects resolve #options each time, and re-resolving against the
+    # catalog can overwrite provenance with a digest the running container
+    # does not use — the same warm/claim drift fixed for pool entries.
+    def recorded_run_selection
+      metadata = agent_run&.runtime_image_selection
+      return if metadata.blank?
+
+      Containers::RuntimeImageSelector::Result.from_metadata(metadata)
+    end
+
+    def resolve_catalog_selection(default_image)
+      requested_image = @raw_options[:image].presence || resolve_requested_project_image || default_image
+      Containers::RuntimeImageSelector.select(
+        project: project,
+        requested_image: requested_image,
+        environment: Rails.env
+      )
+    end
+
+    def resolve_requested_project_image
+      return unless project
+
+      Containers::ImageResolver.resolve(project)
     end
 
     # In manual mode the memory limit comes straight from
@@ -2237,6 +2322,7 @@ module Containers
     # When a host-side worktree_path is provided, validates it exists for bind-mount.
     # When nil (or container-internal), creates a Docker named volume for in-container git clone.
     # Docker volumes live on the overlay2 disk, bypassing the VM root filesystem.
+    # @spec EXECUTION-ISOLATION-001
     def prepare_workspace!
       if host_worktree_path.present?
         unless backend.supports_host_paths?
@@ -3051,6 +3137,7 @@ module Containers
       scope.order(created_at: :desc, id: :desc).first
     end
 
+    # @spec EXECUTION-ISOLATION-003
     def managed_subscription_credential_scope_for(runner_key)
       return nil unless project.is_a?(Project)
 

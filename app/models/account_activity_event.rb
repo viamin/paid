@@ -32,8 +32,11 @@ class AccountActivityEvent < ApplicationRecord
     "runner.codex_login_failed" => "runner",
     "self_heal.remediation_applied" => "runner",
     "self_heal.remediation_reverted" => "runner",
+    "execution_control.enabled" => "settings",
+    "execution_control.disabled" => "settings",
     "agent_run.created" => "run",
     "agent_run.cancelled" => "run",
+    "agent_run.execution_parked" => "run",
     "agent_run.retried" => "run",
     "agent_run.terminated" => "run",
     "agent_run.resumed" => "run",
@@ -44,6 +47,12 @@ class AccountActivityEvent < ApplicationRecord
     "prompt_version.rejected" => "approval",
     "configuration_profile.applied" => "configuration_profile",
     "configuration_profile.reverted" => "configuration_profile",
+    "egress_allowlist.account_entry_created" => "egress_allowlist",
+    "egress_allowlist.account_entry_updated" => "egress_allowlist",
+    "egress_allowlist.account_entry_removed" => "egress_allowlist",
+    "egress_allowlist.project_entry_created" => "egress_allowlist",
+    "egress_allowlist.project_entry_updated" => "egress_allowlist",
+    "egress_allowlist.project_entry_removed" => "egress_allowlist",
     "auth.sign_in" => "auth",
     "auth.password_changed" => "auth"
   }.freeze
@@ -145,10 +154,16 @@ class AccountActivityEvent < ApplicationRecord
       "Auto-applied #{metadata_value('remediation_action').to_s.humanize.downcase} for #{metadata_value('target_label')}"
     when "self_heal.remediation_reverted"
       "Reverted #{metadata_value('remediation_action').to_s.humanize.downcase} for #{metadata_value('target_label')}"
+    when "execution_control.enabled"
+      "Enabled #{metadata_value('execution_control_scope')} execution disable (#{metadata_value('execution_control_mode')})"
+    when "execution_control.disabled"
+      "Disabled #{metadata_value('execution_control_scope')} execution disable"
     when "agent_run.created"
       "Created agent run ##{metadata_value('agent_run_id')} on #{metadata_value('project_name')}"
     when "agent_run.cancelled"
       "Cancelled agent run ##{metadata_value('agent_run_id')}"
+    when "agent_run.execution_parked"
+      "Parked agent run ##{metadata_value('agent_run_id')}"
     when "agent_run.retried"
       "Retried agent run ##{metadata_value('agent_run_id')} -> ##{metadata_value('new_agent_run_id')}"
     when "agent_run.terminated"
@@ -167,6 +182,18 @@ class AccountActivityEvent < ApplicationRecord
       "Applied posture #{metadata_value('label')} to #{metadata_value('project_name')}"
     when "configuration_profile.reverted"
       "Reverted posture change on #{metadata_value('project_name')}"
+    when "egress_allowlist.account_entry_created"
+      "Added account egress allowlist entry for #{metadata_value('host_pattern')}"
+    when "egress_allowlist.account_entry_updated"
+      "Updated account egress allowlist entry for #{metadata_value('host_pattern')}"
+    when "egress_allowlist.account_entry_removed"
+      "Removed account egress allowlist entry for #{metadata_value('host_pattern')}"
+    when "egress_allowlist.project_entry_created"
+      "Added project egress allowlist entry for #{metadata_value('host_pattern')}"
+    when "egress_allowlist.project_entry_updated"
+      "Updated project egress allowlist entry for #{metadata_value('host_pattern')}"
+    when "egress_allowlist.project_entry_removed"
+      "Removed project egress allowlist entry for #{metadata_value('host_pattern')}"
     when "auth.sign_in"
       "Signed in"
     when "auth.password_changed"
@@ -192,8 +219,12 @@ class AccountActivityEvent < ApplicationRecord
       Array(metadata.to_h["details"]).compact
     when "self_heal.remediation_applied", "self_heal.remediation_reverted"
       Array(metadata.to_h["details"]).compact
+    when "execution_control.enabled", "execution_control.disabled"
+      Array(metadata.to_h["reason"]).compact
     when "agent_run.created"
       Array(metadata.to_h["details"]).compact
+    when "agent_run.execution_parked"
+      Array(metadata.to_h["result"]).compact
     when "agent_run.retried"
       Array(metadata.to_h["details"]).compact
     when "propose_pull_request.executed"

@@ -284,6 +284,41 @@ RSpec.describe Screenshots::ContainerCapture do
     end
 
     let(:artifacts) { build_publish_artifacts }
+    let(:expected_screenshot_artifact) do
+      hash_including(
+        "kind" => "screenshot",
+        "content_type" => "image/png",
+        "locator" => {
+          "key" => "screenshots/#{project.owner}/#{project.repo}/pr-#{agent_run.pull_request_number}/#{agent_run.result_commit_sha}/home.png",
+          "url" => "https://example.test/home.png"
+        },
+        "context" => {
+          "account_id" => project.account_id,
+          "project_id" => project.id,
+          "agent_run_id" => agent_run.id
+        }
+      )
+    end
+    let(:expected_trace_artifact) do
+      hash_including(
+        "kind" => "playwright_trace",
+        "content_type" => "application/zip",
+        "locator" => {
+          "key" => "screenshots/#{project.owner}/#{project.repo}/pr-#{agent_run.pull_request_number}/#{agent_run.result_commit_sha}/trace.zip",
+          "url" => "https://example.test/trace.zip"
+        }
+      )
+    end
+    let(:expected_capture_video_artifact) do
+      hash_including(
+        "kind" => "capture_video",
+        "content_type" => "video/webm",
+        "locator" => {
+          "key" => "screenshots/#{project.owner}/#{project.repo}/pr-#{agent_run.pull_request_number}/#{agent_run.result_commit_sha}/capture.webm",
+          "url" => "https://example.test/capture.webm"
+        }
+      )
+    end
 
     before do
       allow(service).to receive(:publish_result!).and_call_original
@@ -296,6 +331,10 @@ RSpec.describe Screenshots::ContainerCapture do
         new: storage
       )
       allow(storage).to receive_messages(
+        configured?: true,
+        object_key: "screenshots/#{project.owner}/#{project.repo}/pr-#{agent_run.pull_request_number}/#{agent_run.result_commit_sha}/home.png",
+        trace_object_key: "screenshots/#{project.owner}/#{project.repo}/pr-#{agent_run.pull_request_number}/#{agent_run.result_commit_sha}/trace.zip",
+        video_object_key: "screenshots/#{project.owner}/#{project.repo}/pr-#{agent_run.pull_request_number}/#{agent_run.result_commit_sha}/capture.webm",
         upload: "https://example.test/home.png",
         upload_trace: "https://example.test/trace.zip",
         upload_video: "https://example.test/capture.webm",
@@ -304,7 +343,33 @@ RSpec.describe Screenshots::ContainerCapture do
       allow(Screenshots::TraceArtifactExporter).to receive(:call).and_return(
         gif_url: "https://example.test/home.gif",
         video_url: "https://example.test/home.webm",
-        video_filename: "home-demo.webm"
+        video_filename: "home-demo.webm",
+        gif_artifact: {
+          "lane" => "object_storage",
+          "kind" => "trace_gif",
+          "content_type" => "image/gif",
+          "locator" => {
+            "key" => "screenshots/#{project.owner}/#{project.repo}/pr-#{agent_run.pull_request_number}/#{agent_run.result_commit_sha}/home.gif",
+            "url" => "https://example.test/home.gif"
+          },
+          "metadata" => {
+            "route_name" => "home",
+            "filename" => "home.gif"
+          }
+        },
+        video_artifact: {
+          "lane" => "object_storage",
+          "kind" => "trace_video",
+          "content_type" => "video/webm",
+          "locator" => {
+            "key" => "screenshots/#{project.owner}/#{project.repo}/pr-#{agent_run.pull_request_number}/#{agent_run.result_commit_sha}/home.webm",
+            "url" => "https://example.test/home.webm"
+          },
+          "metadata" => {
+            "route_name" => "home",
+            "filename" => "home.webm"
+          }
+        }
       )
     end
 
@@ -326,6 +391,20 @@ RSpec.describe Screenshots::ContainerCapture do
       expect_uploaded_supporting_artifacts(storage:, artifacts:)
     end
 
+    # @spec CONTAINER-RUNTIME-018
+    it "persists a durable artifact manifest keyed by storage key, without presigned URLs" do
+      updated_at = agent_run.updated_at
+      manifest = service.send(:publish_result!, [ artifacts[:screenshot_path] ])
+
+      expect(manifest).to include(expected_screenshot_artifact, expected_trace_artifact, expected_capture_video_artifact)
+      persisted = agent_run.reload.external_metadata["artifact_manifest"]
+      expect(persisted).to eq(
+        manifest.map { |artifact| artifact.merge("locator" => artifact["locator"].except("url")) }
+      )
+      expect(persisted).to all(include("locator" => hash_excluding("url")))
+      expect(agent_run.updated_at).to eq(updated_at)
+    end
+
     it "passes previous screenshots plus trace and video links into the PR comment" do
       service.send(:publish_result!, [ artifacts[:screenshot_path] ])
 
@@ -336,14 +415,14 @@ RSpec.describe Screenshots::ContainerCapture do
           trace_url: "https://example.test/trace.zip",
           video_url: "https://example.test/capture.webm",
           screenshots: [
-            {
+            hash_including(
               route_name: "home",
               summary: "Updated hero",
               url: "https://example.test/home.png",
               gif_url: "https://example.test/home.gif",
               video_url: "https://example.test/home.webm",
               video_filename: "home-demo.webm"
-            }
+            )
           ]
         )
       )

@@ -20,7 +20,10 @@
           phase_timeline: @phase_timeline,
           phase_summary: @phase_summary,
            final_runner_record: @final_runner_record,
-           attempted_runners_by_routing_key: @attempted_runners_by_routing_key %>
+           attempted_runners_by_routing_key: @attempted_runners_by_routing_key,
+           egress_policy_snapshot: @egress_policy_snapshot,
+           egress_security_events: @egress_security_events,
+           egress_denied_event_count: @egress_denied_event_count %>
 
     <%# Action buttons are rendered outside the Turbo broadcast target so that
         live updates (which re-render _detail without user-specific locals)

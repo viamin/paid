@@ -122,7 +122,11 @@ confirm coverage.
   `ExecutionResult` (outcome, including OOM and timeout classification),
   `ExecutionStatus` (lifecycle status: `:running | :exited | :oom_killed |
   :not_found`, returned by `Base#status`), `NetworkingPolicy` (adapts
-  `NetworkPolicy::NetworkContract`, drops the Docker network name),
+  `NetworkPolicy::NetworkContract`, drops the Docker network name; carries
+  `mode`, `firewall?`, `allow_destinations`, and the RDR-055 `egress_profile`
+  — `:locked` (default), `:research`, or `:open` — so orchestration can
+  request a per-run egress posture without referencing Docker- or
+  network-specific concepts),
   `ServiceDeclaration`, and `ComputeRequirements`.
 - `ExecutionRunners::LocalDockerRunner` implements `Base` as a thin adapter over
   `Containers::Provision`: `#provision`/`#start`/`#running?`/`#reconnect`/`#status`/
@@ -207,6 +211,28 @@ default workspace strategy (named volumes with in-container clone), host
 bind-mount support, and all provision-side workspace/heartbeat tests are
 preserved until the deferred specs land.
 
+### Egress profile propagation (RDR-055, this PR)
+
+`ExecutionRunners::NetworkingPolicy` now carries an `egress_profile` field so
+orchestration can request a per-run egress posture through the runner contract
+without ever naming Docker networks, iptables rules, or gateway
+implementation details.
+
+- `egress_profile` defaults to `:locked` for every factory method
+  (`proxy_restricted`, `subscription_auth`, `direct_outbound`), so existing
+  callers preserve the production default.
+- `:research` propagates through the same `RunSpec` → `Containers::Provision`
+  → `ExecutionInputManifest` chain; downstream tooling (research broker,
+  gateway) reads the profile from the manifest's networking section without
+  the runner exposing the firewall translation.
+- `:open` (operator-only break-glass) is carried through the same path; a
+  future enforcement adapter can reject the profile for production restricted
+  runs by inspecting `policy.open?` / `policy.egress_profile`.
+- The factory methods and `NetworkingPolicy#with` (Data-defined) keep the
+  profile immutable and provider-neutral: `LocalDockerRunner` only reads
+  `egress_profile` through the policy object, never reconstructs Docker-side
+  state from it.
+
 ### Remote execution manifests (RDR-057)
 
 `ExecutionRunners` now also defines the provider-neutral manifests that cross
@@ -221,12 +247,119 @@ is explicit value-object data, not ad hoc hashes.
   carries result summaries, log references, verification results, durable
   binary artifact references, and git output identity (`branch_name`,
   `result_commit_sha`, PR/review identity).
+- Durable binary artifact references are object-storage-first records with a
+  content type, storage locator (`key` and/or presigned `url`), and run
+  context (`account_id`, `project_id`, `agent_run_id`) so the control plane
+  never needs runner-local files after cleanup.
+- Binary artifact references distinguish trusted source lanes from
+  agent-authored ones, and both are namespace-scoped. Artifacts persisted by
+  the runner under `AgentRun#external_metadata["artifact_manifest"]` (e.g. by
+  `Screenshots::ContainerCapture`) are runner-written, but the field is not
+  exclusively runner-written — interop ingestion
+  (`Api::Projects::ExternalAgentRunsController` → `AgentRuns::IngestExternal`)
+  persists caller-supplied `external_metadata` verbatim — so their storage
+  keys are honored only when they live under the project's own storage
+  namespace (`Screenshots::Storage.namespace_prefix`). Artifacts persisted by
+  `AgentRuns::VerificationResultRecorder` from the agent-written result file
+  inside the container are untrusted input: their locators are URL-only. In
+  both lanes a `key` under another tenant's prefix would otherwise be
+  re-signed into a working presigned URL by any durable consumer, since the
+  manifest contract says durable consumers re-sign from the key. The run's
+  `account_id`, `project_id`, and `agent_run_id` are always authoritative; an
+  artifact-supplied context value cannot override the run's identity, so a
+  run cannot misattribute its artifacts to a different tenant in the durable
+  manifest.
+- Presigned URLs are ephemeral — they expire within the SigV4 one-week cap —
+  so artifact manifests persisted as durable records on the run (e.g.
+  `AgentRun#external_metadata["artifact_manifest"]`) carry storage keys only;
+  durable consumers re-sign from the key
+  (`Screenshots::Storage#previous_artifacts` is the established pattern).
 - The manifest shape is deliberately host-path-free. Workspace translation and
   container/worktree identifiers remain runner-local implementation details;
   the manifest only carries repo/ref and declarative workspace mode.
 - Secrets are excluded by construction. Credential lanes carry only references
   (variable names, service names, config keys) and never secret values; service
   declarations expose `env_keys`, not `env` payloads.
+
+### Immutable agent image registry (RDR-059)
+
+`AgentImage` is the system of record for what image actually runs in
+production. The model records the immutable production identity
+`(account_id, registry, repository, digest, architecture)` — the OCI
+content-addressed tuple — alongside the logical profile name used by
+`Containers::ImageResolver` (e.g. `base`, `elixir-node`, `ruby`), a mutable
+`provenance` jsonb for build metadata, a mutable `metadata` jsonb for
+operations/runbook links, the upstream `built_at` timestamp, and a lifecycle
+`status` of `active`, `deprecated`, or `blocked`.
+
+- Identity fields are immutable after creation. A new build produces a new
+  digest, which is a new row. This is the only safe way to keep history
+  accurate: editing an existing row would silently rewrite what the registry
+  claims was running on a prior run.
+- `status` is the only mutating lifecycle surface. The state machine allows
+  `active -> deprecated -> blocked` and `active -> blocked`; transitions are
+  idempotent so retrying an Avo action or job does not double-stamp
+  timestamps or replace the recorded reason. Records are never deleted, so
+  audit and rollback queries see the full history.
+- The `schedulable?` predicate is the single gate for new placements. Today
+  it is `active?`, but exposing the predicate means future states (e.g.
+  `quarantined`) do not have to be repeated at every call site.
+- Local development and single-backend deployments continue to use the
+  literal `paid-agent:latest` constant in `Containers::ImageResolver`; the
+  registry is the production source of truth, not a replacement for the
+  resolver. The two layers compose: the resolver decides which logical
+  profile a run needs, the registry records which content-addressed image
+  the production host pulled, and a future `ImageResolver#resolve!` will
+  cross-check the resolver output against the active registry rows.
+- Uniqueness is enforced on `(account_id, registry, repository, digest,
+  architecture)`. The same digest on a different architecture is a separate
+  image record (multi-arch images register one row per architecture). The
+  same identity may be recorded independently by different accounts. Digests
+  are accepted in bare-hex or `sha256:`-prefixed form and stored
+  canonicalized as `sha256:<hex>`, so the two input forms cannot register as
+  two rows and the digest-pinned reference is always a valid OCI reference.
+- Change history is tracked with logidze (`log_data`), following the
+  `docker_hosts` precedent: lifecycle timestamps capture what and when, and
+  logidze captures who edited the mutable `provenance`/`metadata` fields.
+- A partial index over non-active rows keeps audit and rollback queries
+  fast as the active set grows; a `(account_id, name, architecture)`
+  index supports the (profile, architecture) scheduling decision.
+
+### No-shared-filesystem conformance coverage (#3401)
+
+RDR-057's no-shared-filesystem execution model is enforced by a
+provider-neutral conformance suite that any runner implementation includes.
+The suite (`spec/support/shared_examples/no_shared_filesystem_conformance.rb`)
+drives the complete normal create-PR lifecycle — clone, run, log capture,
+artifact output, result manifest, and cleanup — through the
+`ExecutionRunners` contract only, deriving its `RunSpec` via
+`RunSpec.from_agent_run` so every runner conforms to the same canonical,
+host-path-free scenario:
+
+- Code transport is the input manifest's Git lane; the workspace stays
+  declarative (mode + mount point) with no host reference.
+- Durable outputs travel on the object-storage lane (binary artifacts) and
+  the control-plane API lane (log refs, verification), with git output
+  identity on the Git lane.
+- The persisted `RunnerHandle` and both manifests carry no host filesystem
+  paths (`NoSharedFilesystemConformance.host_path_strings` walks the
+  JSON-native payloads for absolute-path strings, allowing only the
+  declarative in-container workspace mount point).
+- The contract surface — interface methods, parameters, and value-object
+  members — carries no Docker `exec` / bind-mount / shared-directory
+  vocabulary.
+
+A runner that requires shared host storage fails the suite: it either cannot
+provision the host-path-free scenario or leaks host paths into its persisted
+handle or manifests. Negative controls
+(`spec/services/execution_runners/no_shared_filesystem_conformance_spec.rb`)
+prove the checks reject host-storage-requiring runners, handles, manifests,
+and contract surfaces, so the suite keeps its teeth against regressions.
+`LocalDockerRunner` passes as the baseline without weakening local Docker
+development: its platform is stubbed with the constraint that
+`Containers::Provision` receives `worktree_path: nil` (the in-container
+clone path), while legacy bind-mount runs remain a compatibility path
+outside the conformance scenario.
 
 ## References
 
@@ -240,11 +373,17 @@ is explicit value-object data, not ad hoc hashes.
 - `app/services/capacity/docker_snapshot.rb`
 - `app/services/capacity/run_admission.rb`
 - `app/models/agent_run.rb`
+- `app/models/agent_image.rb`
+- `db/migrate/20260817195654_create_agent_images.rb`
 - `spec/services/containers/provision_spec.rb`
+- `spec/models/agent_image_spec.rb`
 - `spec/services/execution_runners_spec.rb`
 - `spec/services/execution_runners/base_spec.rb`
 - `spec/services/execution_runners/local_docker_runner_spec.rb`
+- `spec/services/execution_runners/no_shared_filesystem_conformance_spec.rb`
+- `spec/support/no_shared_filesystem_conformance.rb`
 - `spec/support/shared_examples/execution_runner_contract.rb`
+- `spec/support/shared_examples/no_shared_filesystem_conformance.rb`
 - `spec/services/containers/service_provisioner_spec.rb`
 - `spec/services/capacity/docker_snapshot_spec.rb`
 - `spec/services/capacity/run_admission_spec.rb`
