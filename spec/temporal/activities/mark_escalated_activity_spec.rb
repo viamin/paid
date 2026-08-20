@@ -75,11 +75,26 @@ RSpec.describe Activities::MarkEscalatedActivity do
         expect(issue.reload.pr_review_phase).to eq("escalated")
       end
 
-      # @spec FOCUSED-RUN-008
-      it "pauses auto-continue followups" do
+      # @spec PR-ESCALATION-002
+      it "does not set the operator's auto-continue pause" do
         activity.execute(issue_id: issue.id)
 
-        expect(issue.reload.auto_continue_paused).to be(true)
+        expect(issue.reload.auto_continue_paused).to be(false)
+      end
+
+      # @spec PR-ESCALATION-004
+      it "leaves automatic runs already queued for the pull request in the queue" do
+        queued_run = create(:agent_run,
+          project: issue.project,
+          issue: issue,
+          source_pull_request_number: issue.github_number,
+          goal: "create_pr",
+          trigger_type: "automatic",
+          status: "queued")
+
+        activity.execute(issue_id: issue.id)
+
+        expect(queued_run.reload.status).to eq("queued")
       end
 
       it "stores the default escalation reason as a failure streak" do

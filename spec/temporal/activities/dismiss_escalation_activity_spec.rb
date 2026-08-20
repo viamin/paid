@@ -12,7 +12,8 @@ RSpec.describe Activities::DismissEscalationActivity do
           pr_review_phase: "escalated",
           pr_followup_count: 2,
           review_goal_retry_count: 3,
-          auto_continue_paused: true,
+          draft_review_count: 11,
+          stuck_confirmation_count: 2,
           operational_failure_reset_at: 2.hours.ago,
           labels: [ "paid-generated", "paid-escalated", "paid-dismiss-escalation" ])
       end
@@ -23,21 +24,34 @@ RSpec.describe Activities::DismissEscalationActivity do
         expect(issue.reload.pr_review_phase).to eq("ready")
       end
 
-      it "preserves the review-goal retry count" do
-        activity.execute(issue_id: issue.id)
+      # @spec PR-ESCALATION-005
+      it "zeroes every counter the escalation counted and stamps the reset markers" do
+        freeze_time do
+          activity.execute(issue_id: issue.id)
 
-        expect(issue.reload.review_goal_retry_count).to eq(3)
+          issue.reload
+          expect(issue.review_goal_retry_count).to eq(0)
+          expect(issue.pr_followup_count).to eq(0)
+          expect(issue.draft_review_count).to eq(0)
+          expect(issue.stuck_confirmation_count).to eq(0)
+          expect(issue.review_goal_retry_reset_at).to be_within(1.second).of(Time.current)
+          expect(issue.operational_failure_reset_at).to be_within(1.second).of(Time.current)
+        end
       end
 
-      it "preserves the follow-up counter and reset markers" do
-        review_goal_retry_reset_at = issue.review_goal_retry_reset_at
+      # @spec PR-ESCALATION-008
+      it "releases the hold without zeroing counters when the dismissal is not owner-initiated" do
+        issue.update!(pr_escalation_reason: Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES)
         operational_failure_reset_at = issue.operational_failure_reset_at
 
-        activity.execute(issue_id: issue.id)
+        activity.execute(issue_id: issue.id, owner_initiated: false)
 
         issue.reload
+        expect(issue.pr_review_phase).to eq("ready")
+        expect(issue.review_goal_retry_count).to eq(3)
         expect(issue.pr_followup_count).to eq(2)
-        expect(issue.review_goal_retry_reset_at).to eq(review_goal_retry_reset_at)
+        expect(issue.draft_review_count).to eq(11)
+        expect(issue.stuck_confirmation_count).to eq(2)
         expect(issue.operational_failure_reset_at).to eq(operational_failure_reset_at)
       end
 
@@ -47,20 +61,13 @@ RSpec.describe Activities::DismissEscalationActivity do
         expect(issue.reload.labels).not_to include("paid-escalated", "paid-dismiss-escalation")
       end
 
-      # @spec FOCUSED-RUN-008
-      it "resumes auto-continue followups" do
-        activity.execute(issue_id: issue.id)
-
-        expect(issue.reload.auto_continue_paused).to be(false)
-      end
-
       it "does not record a token-cap override for unrelated escalations" do
         activity.execute(issue_id: issue.id)
 
         expect(issue.reload.pr_auto_continue_token_limit_overridden_at).to be_nil
       end
 
-      # @spec FOCUSED-RUN-007
+      # @spec PR-ESCALATION-007
       it "records a token-cap override when dismissing a token-cap escalation" do
         issue.update!(pr_escalation_reason: Issue::PR_ESCALATION_REASON_PR_AUTO_CONTINUE_TOKEN_LIMIT)
 
@@ -69,12 +76,13 @@ RSpec.describe Activities::DismissEscalationActivity do
         expect(issue.reload.pr_auto_continue_token_limit_overridden_at).to be_present
       end
 
-      it "returns dismissed: true" do
+      # @spec PR-ESCALATION-005
+      it "returns dismissed: true with the counters the clearing left behind" do
         result = activity.execute(issue_id: issue.id)
 
         expect(result[:dismissed]).to be true
         expect(result[:phase]).to eq("ready")
-        expect(result[:current_followup_count]).to eq(2)
+        expect(result[:current_followup_count]).to eq(0)
       end
 
       it "records a resume decision event" do
@@ -107,6 +115,7 @@ RSpec.describe Activities::DismissEscalationActivity do
           labels: [ "paid-generated", "paid-escalated" ])
       end
 
+      # @spec PR-ESCALATION-005 @spec PR-ESCALATION-006
       it "resets into restarted phase with fresh draft counters" do
         result = activity.execute(issue_id: issue.id, draft: true)
 
@@ -114,8 +123,8 @@ RSpec.describe Activities::DismissEscalationActivity do
         expect(result[:dismissed]).to be true
         expect(result[:phase]).to eq("restarted")
         expect(issue.pr_review_phase).to eq("restarted")
-        expect(issue.draft_review_count).to eq(4)
-        expect(issue.pr_followup_count).to eq(2)
+        expect(issue.draft_review_count).to eq(0)
+        expect(issue.pr_followup_count).to eq(0)
       end
     end
 

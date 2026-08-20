@@ -84,9 +84,8 @@
   has already consumed at least the project's `max_pr_auto_continue_tokens`,
   the poll workflow SHALL skip queueing another automatic create-pr or review
   run for that PR and SHALL escalate the PR to the owner instead, even when an
-  existing queued automatic PR run is still active. If the owner dismisses a
-  token-cap escalation, the system SHALL record that override on the PR and
-  SHALL allow future automatic PR runs for that PR to exceed the token cap.
+  existing queued automatic PR run is still active. Clearing the resulting
+  escalation is owned by `PR-ESCALATION-006`.
   *Code:* `CheckQualityGateActivity#pr_auto_continue_token_limit_result`,
   `GitHubPollWorkflow#handle_quality_gate_block`,
   `ScanPaidPrsActivity#pr_auto_continue_token_limit_breach`,
@@ -95,14 +94,6 @@
   `spec/temporal/workflows/git_hub_poll_workflow_spec.rb`,
   `spec/services/automation/strategies/auto_continue_spec.rb`,
   `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.
-
-- [x] **FOCUSED-RUN-008** — When a PR is escalated, the system SHALL pause
-  auto-continue follow-ups for that PR, and when the owner dismisses the
-  escalation the system SHALL resume auto-continue for the PR.
-  *Code:* `MarkEscalatedActivity#execute`,
-  `DismissEscalationActivity#execute`.
-  *Test:* `spec/temporal/activities/mark_escalated_activity_spec.rb`,
-  `spec/temporal/activities/dismiss_escalation_activity_spec.rb`.
 
 - [x] **FOCUSED-RUN-009** — When a project enables Paid Agent review, the
   system SHALL add `paid-code-reviewer[bot]` to that project's trusted GitHub
