@@ -2,8 +2,6 @@
 
 class CreateExecutionControls < ActiveRecord::Migration[8.1]
   def change
-    return if table_exists?(:execution_controls)
-
     create_table :execution_controls, comment: "Execution disable controls for global, account, project, runner, and backend scopes." do |t|
       t.string :scope, null: false, comment: "Scope controlled by this row: global, account, project, runner, or backend."
       t.references :account, foreign_key: true, comment: "Account target when scope=account."
