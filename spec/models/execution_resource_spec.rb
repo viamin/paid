@@ -103,4 +103,31 @@ RSpec.describe ExecutionResource do
       )
     end
   end
+
+  describe ".schedule_cleanup_for!" do
+    let(:project) { create(:project) }
+    let(:agent_run) { create(:agent_run, :completed, project: project) }
+
+    it "is a no-op for a run whose ledger row is already cleaned" do
+      cleaned_at = 10.minutes.ago
+      resource = create(:execution_resource,
+        project: project,
+        agent_run: agent_run,
+        state: "cleaned",
+        cleaned_at: cleaned_at)
+
+      described_class.schedule_cleanup_for!(agent_run: agent_run)
+
+      expect(resource.reload).to have_attributes(state: "cleaned")
+      expect(resource.cleaned_at).to be_within(1.second).of(cleaned_at)
+    end
+
+    it "transitions an active resource to cleanup_pending" do
+      resource = create(:execution_resource, project: project, agent_run: agent_run, state: "active")
+
+      described_class.schedule_cleanup_for!(agent_run: agent_run)
+
+      expect(resource.reload.state).to eq("cleanup_pending")
+    end
+  end
 end

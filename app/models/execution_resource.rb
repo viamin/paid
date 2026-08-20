@@ -63,6 +63,7 @@ class ExecutionResource < ApplicationRecord # @spec CONTAINER-RUNTIME-021
 
     resource = environments.find_by(agent_run: agent_run) || track_environment!(agent_run:)
     return unless resource
+    return resource if resource.cleaned?
 
     resource.mark_cleanup_pending!
     resource
