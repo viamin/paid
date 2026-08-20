@@ -215,6 +215,18 @@
       <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
         <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
+            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Egress Allowlist</h2>
+            <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">Account-wide outbound destinations agent containers may reach beyond Paid's secrets proxy and GitHub proxy.</p>
+          </div>
+          <% if policy(current_account).update? %>
+            <%= link_to "Manage egress allowlist", account_egress_allowlist_entries_path, class: "text-sm font-semibold text-amber-700 hover:text-amber-600 dark:text-amber-300 dark:hover:text-amber-200" %>
+          <% end %>
+        </div>
+      </section>
+
+      <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
             <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Tenant Limits and Usage</h2>
             <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">Current capacity, active usage, and the enforced defaults applied to this account.</p>
           </div>

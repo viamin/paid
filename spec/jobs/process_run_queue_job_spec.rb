@@ -194,6 +194,38 @@ RSpec.describe ProcessRunQueueJob do
     expect(queued_run.reload.external_metadata.dig("host_placement_decision", "decision_mode")).to eq(decision_mode)
   end
 
+  def provisioning_rate_denied_admission(available_at:)
+    {
+      allowed: false,
+      reason: "global_provisioning_rate_limit",
+      mode: "auto",
+      selected_host: "local",
+      host_active_count: 0,
+      host_max_concurrent_runs: 2,
+      host_available_slots: 2,
+      available_slots: 0,
+      global_active_count: 0,
+      global_max_concurrent_executions: 50,
+      global_available_slots: 50,
+      effective_max_concurrent_runs: 5,
+      available_memory_bytes: 16.gigabytes,
+      estimated_memory_per_run_bytes: 4.gigabytes,
+      reserved_agent_memory_bytes: 0,
+      rate_limited_until: available_at
+    }
+  end
+
+  def default_local_host_selection_result
+    Containers::BackendScheduler::Result.new(
+      candidate_hosts: [ "local" ],
+      fallback_policy: "disabled",
+      selection_source: "default",
+      requested_host: "local",
+      compatibility_failures: {},
+      health_failures: {}
+    )
+  end
+
   def stub_unavailable_fallback_hosts(run, registry_bundle)
     disallowed = Containers::Provision::CompatibilityResult.new(
       compatible: false,
@@ -1232,6 +1264,70 @@ RSpec.describe ProcessRunQueueJob do
         expect(run.reload.status).to eq("running")
       end
 
+      # @spec EXEC-DISABLE-002
+      it "parks queued runs when a global execution disable is enabled" do
+        run = create(:agent_run, :queued)
+        create(:execution_control, :global, :enabled, reason: "Global maintenance")
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(run.reload.status).to eq("paused")
+        expect(run.external_metadata.dig("execution_control", "scope")).to eq("global")
+      end
+
+      # @spec EXEC-DISABLE-002
+      it "parks queued runs when a project execution disable is enabled" do
+        project = create(:project)
+        run = create(:agent_run, :queued, project: project)
+        create(:execution_control, :project_scope, :enabled, project: project, reason: "Project maintenance")
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(run.reload.status).to eq("paused")
+        expect(run.external_metadata.dig("execution_control", "scope")).to eq("project")
+      end
+
+      # @spec EXEC-DISABLE-002
+      it "parks a runner-unbound queued run before admission so it skips host/runner binding entirely" do
+        project = create(:project)
+        issue = create(:issue, project: project, github_state: "open")
+        run = create(:agent_run, :queued, :automatic, project: project, issue: issue, goal: "create_pr", auto_pick: true)
+        create(:execution_control, :project_scope, :enabled, project: project, reason: "Project maintenance")
+
+        expect(Containers::BackendScheduler).not_to receive(:call)
+        expect(AgentRuns::BindRunner).not_to receive(:call)
+
+        described_class.new.perform
+
+        run.reload
+        expect(run.status).to eq("paused")
+        expect(run.runner_id).to be_nil
+      end
+
+      # @spec EXEC-DISABLE-003
+      it "reroutes a pinned run when only the pinned runner has an execution disable" do
+        project = create(:project)
+        user = project.created_by
+        disabled_runner = user.runners.kept_only.find_by!(runner_key: "claude", auth_type: "subscription")
+        fallback_runner = create(:runner, user: user, runner_key: "codex")
+        run = create(:agent_run, :queued, project: project, runner: disabled_runner)
+        create(:execution_control, :runner_scope, :enabled, runner: disabled_runner, reason: "Runner maintenance")
+
+        expect(temporal_client).to receive(:start_workflow).once.and_return(workflow_handle)
+
+        described_class.new.perform
+
+        run.reload
+        expect(run.runner_id).to eq(fallback_runner.id)
+        expect(run.status).to eq("running")
+        expect(run.temporal_workflow_id).to be_present
+        expect(run.external_metadata).not_to have_key("execution_control")
+      end
+
       it "does not recheck a manual run even if its issue is ineligible" do
         project = create(:project)
         issue = create(:issue, project: project, github_state: "open", labels: [ "planning" ])
@@ -1391,7 +1487,7 @@ RSpec.describe ProcessRunQueueJob do
 
         allow(Runners::PreflightCheck).to receive(:call).and_call_original
         allow(Runners::PreflightCheck).to receive(:call)
-          .with(runner: runner, user: user)
+          .with(hash_including(runner: runner, user: user))
           .and_return(Runners::PreflightCheck::Result.new(pass?: false, reason: "missing_api_key", runner_id: runner.id))
 
         expect(temporal_client).to receive(:start_workflow).once.and_return(workflow_handle)
@@ -2061,6 +2157,42 @@ RSpec.describe ProcessRunQueueJob do
             message: "process_run_queue.capacity_blocked",
             reasons: include("docker_sampling_budget_exceeded")
           )
+        )
+      end
+
+      # @spec CONTAINER-RUNTIME-026
+      it "parks provisioning-rate-limited runs until the admission window reopens" do
+        queued_run = create_queued_run_with_policy(max_concurrent_runs: 5)
+        queued_run.project.created_by.settings.update!(run_concurrency_mode: "auto")
+        stub_policy_decision(local_auto_decision)
+        allow(Rails.logger).to receive(:info)
+        available_at = Time.utc(2026, 8, 17, 12, 5, 0)
+        allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(auto_mode_snapshot)
+        allow(Containers::BackendScheduler).to receive(:call).and_return(default_local_host_selection_result)
+        allow(Capacity::RunAdmission).to receive(:call).and_return(
+          provisioning_rate_denied_admission(available_at: available_at)
+        )
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        queued_run.reload
+        expect(queued_run.status).to eq("rate_limited")
+        expect(queued_run.rate_limited_until).to eq(available_at)
+        expect(queued_run.external_metadata["capacity_park_reason"]).to eq("global_provisioning_rate_limit")
+      end
+
+      it "preserves unrelated external metadata when parking for capacity" do
+        queued_run = create(:agent_run, :queued, external_metadata: { "keep" => "value" })
+        allow(Rails.logger).to receive(:info)
+
+        job.send(:park_run_for_capacity, queued_run, Time.utc(2026, 8, 17, 12, 5, 0), "project_provisioning_rate_limit")
+
+        queued_run.reload
+        expect(queued_run.external_metadata).to include(
+          "keep" => "value",
+          "capacity_park_reason" => "project_provisioning_rate_limit"
         )
       end
     end

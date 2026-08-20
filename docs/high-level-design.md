@@ -93,6 +93,9 @@ The operating principles that tie the approaches above to day-to-day work:
   in isolated workspaces, unable to reach one another or the host.
 - **Observable everything.** Token cost, iteration counts, success rates, and
   prompt effectiveness are tracked as data so the system can learn.
+- **No silent stops.** When automation stops acting on a work item, the system
+  surfaces that it stopped, why it stopped, and what clears it. A blocked state
+  legible only in the database is a defect, not a quiet success.
 - **One LLM interface.** All application-level LLM calls flow through
   `agent_harness`; fail loudly rather than papering over provider differences
   in the control plane.

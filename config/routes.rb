@@ -50,6 +50,7 @@ Rails.application.routes.draw do
   get "dashboard/decision_metrics", to: "dashboard#decision_metrics", as: :dashboard_decision_metrics
   get "dashboard/eligibility_breakdown", to: "dashboard#eligibility_breakdown", as: :dashboard_eligibility_breakdown
   get "dashboard/queue_preview", to: "dashboard#queue_preview", as: :dashboard_queue_preview
+  get "dashboard/recent_activity", to: "dashboard#recent_activity", as: :dashboard_recent_activity
   get "dashboard/runner_health", to: "dashboard#runner_health", as: :dashboard_runner_health
   get "dashboard/queue_health", to: "dashboard#queue_health", as: :dashboard_queue_health
   get "dashboard/github_health", to: "dashboard#github_health", as: :dashboard_github_health
@@ -129,6 +130,11 @@ Rails.application.routes.draw do
 
   # Account-level pre-commit requirements (defaults inherited by all projects)
   resources :account_pre_commit_requirements, only: [ :index, :show, :create, :update, :destroy ]
+
+  # Account-level egress allowlist entries (defaults inherited by all projects)
+  resources :account_egress_allowlist_entries,
+    only: [ :index, :show, :create, :update, :destroy ],
+    controller: "accounts/egress_allowlist_entries"
 
   # User-level pre-commit requirements (per-user overrides)
   resources :user_pre_commit_requirements, only: [ :index, :show, :create, :update, :destroy ]
@@ -259,10 +265,14 @@ Rails.application.routes.draw do
       post :quick_create, on: :collection
       post :bump_priority, on: :collection
       post :toggle_auto_continue_pause, on: :collection
+      post :unblock_escalation, on: :collection
       get :docker_host_options, on: :collection
     end
     resources :pre_commit_requirements, only: [ :index, :show, :create, :update, :destroy ],
       controller: "projects/pre_commit_requirements"
+    resources :egress_allowlist_entries,
+      only: [ :index, :show, :create, :update, :destroy ],
+      controller: "projects/egress_allowlist_entries"
     resources :pr_templates, only: [ :index, :show, :create, :update, :destroy ],
       controller: "projects/pr_templates"
     resources :project_service_containers, only: [ :create, :destroy ], controller: "projects/service_containers"

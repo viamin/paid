@@ -104,6 +104,7 @@ RSpec.describe Containers::PoolManager do
         agent_run: agent_run,
         container_host: "worker-1"
       )
+      agent_run.update!(container_id: entry.container_id)
       allow(Containers).to receive(:backend_for).with("worker-1").and_return(remote_backend)
 
       expect(described_class.cleanup_claimed_container(agent_run: agent_run, force: true)).to be(true)
@@ -113,6 +114,20 @@ RSpec.describe Containers::PoolManager do
       expect(remote_backend).to have_received(:get_volume).with(entry.workspace_volume, host: "worker-1")
       expect(remote_backend).to have_received(:delete_volume).with(volume)
       expect(ContainerPoolEntry.exists?(entry.id)).to be(false)
+    end
+
+    it "does not tear down a newly claimed entry when the run has moved on to a different container" do
+      entry = create(
+        :container_pool_entry,
+        :claimed,
+        project: project,
+        agent_run: agent_run,
+        container_host: "worker-1"
+      )
+      agent_run.update!(container_id: "stale-container-id")
+
+      expect(described_class.cleanup_claimed_container(agent_run: agent_run, force: true)).to be(false)
+      expect(ContainerPoolEntry.exists?(entry.id)).to be(true)
     end
   end
 
@@ -280,6 +295,26 @@ RSpec.describe Containers::PoolManager do
       expect(result).to be_nil
       expect(ContainerPoolEntry.exists?(entry.id)).to be(false)
     end
+
+    it "records the warm-time runtime image selection on the claiming run" do
+      # @spec IMMUTABLE-IMAGE-002
+      warm_metadata = runtime_image_selection_metadata(digest: "a" * 64)
+      create(:container_pool_entry, project: project, runtime_image_metadata: warm_metadata)
+
+      result = described_class.new(project: project, target_size: 1).acquire(agent_run: agent_run)
+
+      expect(result).to be_success
+      expect(agent_run.reload.runtime_image_selection).to eq(warm_metadata)
+    end
+
+    it "does not touch run provenance when the claimed entry has no persisted selection" do
+      create(:container_pool_entry, project: project)
+
+      result = described_class.new(project: project, target_size: 1).acquire(agent_run: agent_run)
+
+      expect(result).to be_success
+      expect(agent_run.reload.runtime_image_selection).to be_nil
+    end
   end
 
   describe "#replenish" do
@@ -306,7 +341,8 @@ RSpec.describe Containers::PoolManager do
       allow(Containers::Provision).to receive(:new).and_return(provision)
       allow(provision).to receive_messages(
         network_name: "paid_agent",
-        provision: Containers::Provision::Result.success(container_id: "warm-1", container_host: "local")
+        provision: Containers::Provision::Result.success(container_id: "warm-1", container_host: "local"),
+        runtime_image_selection: nil
       )
 
       described_class.new(project: project, target_size: 1).replenish
@@ -317,13 +353,30 @@ RSpec.describe Containers::PoolManager do
       expect(entry.container_host).to eq("local")
     end
 
+    it "persists the warm-time runtime image selection on the warmed entry" do
+      # @spec IMMUTABLE-IMAGE-002
+      selection = runtime_image_selection_result(digest: "a" * 64)
+      provision = instance_double(Containers::Provision)
+      allow(Containers::Provision).to receive(:new).and_return(provision)
+      allow(provision).to receive_messages(
+        network_name: "paid_agent",
+        provision: Containers::Provision::Result.success(container_id: "warm-1", container_host: "local"),
+        runtime_image_selection: selection
+      )
+
+      described_class.new(project: project, target_size: 1).replenish
+
+      expect(project.container_pool_entries.sole.runtime_image_selection).to eq(selection.metadata)
+    end
+
     it "warms entries with the project-resolved image for extended runtimes" do
       project.update!(primary_language: "Go")
       provision = instance_double(Containers::Provision)
       allow(Containers::Provision).to receive(:new).and_return(provision)
       allow(provision).to receive_messages(
         network_name: "paid_agent",
-        provision: Containers::Provision::Result.success(container_id: "warm-go", container_host: "local")
+        provision: Containers::Provision::Result.success(container_id: "warm-go", container_host: "local"),
+        runtime_image_selection: nil
       )
 
       described_class.new(project: project, target_size: 1).replenish
@@ -339,7 +392,8 @@ RSpec.describe Containers::PoolManager do
       allow(Containers::Provision).to receive(:new).and_return(provision)
       allow(provision).to receive_messages(
         network_name: "paid_agent",
-        provision: Containers::Provision::Result.success(container_id: "warm-remote", container_host: "elguapo")
+        provision: Containers::Provision::Result.success(container_id: "warm-remote", container_host: "elguapo"),
+        runtime_image_selection: nil
       )
 
       described_class.new(project: project, target_size: 1, container_host: "elguapo").replenish
@@ -359,7 +413,8 @@ RSpec.describe Containers::PoolManager do
       allow(Containers::Provision).to receive(:new).and_return(provision)
       allow(provision).to receive_messages(
         network_name: "paid_agent",
-        provision: Containers::Provision::Result.success(container_id: "warm-2", container_host: "local")
+        provision: Containers::Provision::Result.success(container_id: "warm-2", container_host: "local"),
+        runtime_image_selection: nil
       )
 
       described_class.new(project: project, target_size: 1).replenish
@@ -377,7 +432,8 @@ RSpec.describe Containers::PoolManager do
       allow(Containers::Provision).to receive(:new).and_return(provision)
       allow(provision).to receive_messages(
         network_name: "paid_agent",
-        provision: Containers::Provision::Result.success(container_id: "warm-3", container_host: "local")
+        provision: Containers::Provision::Result.success(container_id: "warm-3", container_host: "local"),
+        runtime_image_selection: nil
       )
 
       described_class.new(project: project, target_size: 1).replenish
@@ -512,7 +568,8 @@ RSpec.describe Containers::PoolManager do
       allow(Containers::Provision).to receive(:new).and_return(provision)
       allow(provision).to receive_messages(
         network_name: "paid_agent",
-        provision: Containers::Provision::Result.success(container_id: "warm-1", container_host: "local")
+        provision: Containers::Provision::Result.success(container_id: "warm-1", container_host: "local"),
+        runtime_image_selection: nil
       )
       connection = ActiveRecord::Base.connection
       raw_connection = instance_double(PG::Connection, exec_params: true)
@@ -528,6 +585,25 @@ RSpec.describe Containers::PoolManager do
     end
   end
 
+  def runtime_image_selection_metadata(digest:, provenance_reference: "base-amd64-2026-08-19")
+    {
+      "requested_image" => "paid-agent:latest",
+      "resolved_image" => "ghcr.io/viamin/paid-agent@sha256:#{digest}",
+      "digest" => "sha256:#{digest}",
+      "architecture" => "amd64",
+      "registry" => "ghcr.io",
+      "repository" => "viamin/paid-agent",
+      "provenance_reference" => provenance_reference,
+      "immutable" => true
+    }
+  end
+
+  def runtime_image_selection_result(digest:)
+    Containers::RuntimeImageSelector::Result.from_metadata(
+      runtime_image_selection_metadata(digest: digest)
+    )
+  end
+
   def expect_replenish_to_remove_stale_warm_entry(stale_entry)
     container = instance_double(Docker::Container, info: { "State" => { "Running" => true } }, stop: true, delete: true)
     volume = instance_double(Docker::Volume, remove: true)
@@ -538,7 +614,8 @@ RSpec.describe Containers::PoolManager do
     allow(Containers::Provision).to receive(:new).and_return(provision)
     allow(provision).to receive_messages(
       network_name: "paid_agent",
-      provision: Containers::Provision::Result.success(container_id: "warm-4", container_host: "local")
+      provision: Containers::Provision::Result.success(container_id: "warm-4", container_host: "local"),
+      runtime_image_selection: nil
     )
     allow(backend).to receive(:stop_container).and_call_original
     allow(backend).to receive(:delete_container).and_call_original

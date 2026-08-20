@@ -50,6 +50,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | [RDR-007](RDR-007-agent-cli-abstraction.md) | Agent CLI Abstraction (agent-harness gem) | Implemented | High |
 | [RDR-008](RDR-008-model-selection.md) | Model Selection Strategy | Implemented | Medium |
 | [RDR-034](RDR-034-tier-based-runner-fallback.md) | Tier-Based Runner Fallback | Implemented | P1 |
+| [RDR-059](RDR-059-immutable-agent-runtime-images.md) | Immutable Agent Runtime Images | Implemented | P1 |
 
 ### Intelligence
 
@@ -121,6 +122,17 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | [RDR-056](RDR-056-strict-test-driven-development-mode.md) | Test-Driven Development Modes with Human Test Review | Draft | P1 |
 | [RDR-063](RDR-063-operational-supervisor-delivery-health.md) | Operational Supervisor for Delivery Health | Draft | P1 |
 
+### Cloud Execution Readiness
+
+RDR-057, RDR-058, RDR-059, and RDR-060 were drafted alongside RDR-061 as a
+set of cloud-execution-readiness decisions, but have since been implemented
+(see their entries under Security & Isolation, Agent System, and Scaling &
+Distribution above). RDR-061 remains the open decision in this set.
+
+| RDR | Title | Status | Priority |
+|-----|-------|--------|----------|
+| [RDR-061](RDR-061-infrastructure-safety-and-audit.md) | Infrastructure Safety Rails and Execution Audit Events | Draft | P1 |
+
 ### Runner Intelligence
 
 | RDR | Title | Status | Priority |
@@ -129,6 +141,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | [RDR-025](RDR-025-provider-quota-tracking.md) | Provider Quota Tracking and Quota-Aware Routing | Superseded | Medium |
 | [RDR-038](RDR-038-free-models-catalog-and-runner.md) | Free Models Catalog and Runner | Implemented | P1 |
 | [RDR-040](RDR-040-runner-model-compatibility-contracts.md) | Runner Model Compatibility Contracts | Implemented | P1 |
+| [RDR-062](RDR-062-execution-network-policy-intent.md) | Provider-Neutral Execution Network Policy Intent | Implemented | P1 |
 
 ### Semantic Understanding
 

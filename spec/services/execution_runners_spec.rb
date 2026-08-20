@@ -13,6 +13,9 @@ require "rails_helper"
 # @spec EXECUTION-AUTHORITY-003
 # @spec EXECUTION-AUTHORITY-004
 # @spec CONTAINER-RUNTIME-020
+# @spec CONTAINER-RUNTIME-028
+# @spec EXEC-INGRESS-001
+# @spec EXEC-INGRESS-002
 RSpec.describe ExecutionRunners do
   describe ".resolve" do
     it "returns a LocalDockerRunner for the current Docker-only backends" do
@@ -25,11 +28,18 @@ RSpec.describe ExecutionRunners do
   end
 
   describe ExecutionRunners::ComputeRequirements do
-    it "is an immutable Data object with cpu, memory, and pids fields" do
-      requirements = described_class.new(cpu_quota: 200_000, memory_bytes: 4 * 1024 ** 3, pids_limit: 500)
+    # @spec CONTAINER-RUNTIME-027
+    it "is an immutable Data object with cpu, memory, disk, and pids fields" do
+      requirements = described_class.new(
+        cpu_quota: 200_000,
+        memory_bytes: 4 * 1024 ** 3,
+        disk_bytes: 2 * 1024 ** 3,
+        pids_limit: 500
+      )
 
       expect(requirements.cpu_quota).to eq(200_000)
       expect(requirements.memory_bytes).to eq(4_294_967_296)
+      expect(requirements.disk_bytes).to eq(2_147_483_648)
       expect(requirements.pids_limit).to eq(500)
     end
   end
@@ -55,7 +65,8 @@ RSpec.describe ExecutionRunners do
         project: project,
         mcp_server_snapshot: [],
         mcp_provisioned_servers: {},
-        service_environment: {}
+        service_environment: {},
+        execution_ingress_policy: ExecutionRunners::IngressPolicy.default_deny
       )
     end
     let(:project) do
@@ -73,9 +84,10 @@ RSpec.describe ExecutionRunners do
         project: project,
         image: "paid/agent:latest",
         command: "claude code",
-        resources: ExecutionRunners::ComputeRequirements.new(cpu_quota: 1, memory_bytes: 2, pids_limit: 3),
+        resources: ExecutionRunners::ComputeRequirements.new(cpu_quota: 1, memory_bytes: 2, disk_bytes: 3, pids_limit: 4),
         environment: { "FOO" => "bar" },
         networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted,
+        ingress_policy: ExecutionRunners::IngressPolicy.default_deny,
         workspace: ExecutionRunners::WorkspaceStrategy.named_volume,
         services: [ ExecutionRunners::ServiceDeclaration.new(name: "postgres", image: "pg", port: 5432, env: {}, type: :database) ],
         secrets_config: { "auth" => "proxy" }
@@ -114,6 +126,7 @@ RSpec.describe ExecutionRunners do
     it "embeds the resource, networking, and service declarations" do
       expect(spec.resources).to be_a(ExecutionRunners::ComputeRequirements)
       expect(spec.networking_policy).to be_a(ExecutionRunners::NetworkingPolicy)
+      expect(spec.ingress_policy).to be_a(ExecutionRunners::IngressPolicy)
       expect(spec.services.first).to be_a(ExecutionRunners::ServiceDeclaration)
     end
 
@@ -128,6 +141,7 @@ RSpec.describe ExecutionRunners do
       expect(manifest.repository.dig("ref", "branch_name")).to eq("agent-run-branch")
       expect(manifest.execution.dig("workspace", "mode")).to eq("named_volume")
       expect(manifest.execution.dig("authority_grants", "grants")).not_to be_empty
+      expect(manifest.execution.dig("ingress", "public_inbound")).to be(false)
     end
 
     it "re-derives authority grants when a persisted snapshot no longer matches current inputs" do
@@ -228,6 +242,134 @@ RSpec.describe ExecutionRunners do
       )
 
       expect(grants.grants.pluck("kind")).not_to include("service_credentials")
+    end
+  end
+
+  describe ".from_agent_run" do
+    # @spec CONTAINER-RUNTIME-027
+    it "reuses the requested-resource envelope when building from an agent run" do
+      project = create(:project)
+      run = create(:agent_run, project: project, external_metadata: {
+        "requested_resources" => {
+          "cpu_quota" => 123_000,
+          "memory_bytes" => 5.gigabytes,
+          "disk_bytes" => 2.gigabytes
+        }
+      })
+
+      built = ExecutionRunners::RunSpec.from_agent_run(run, memory_bytes: 0)
+
+      expect(built.resources.cpu_quota).to eq(123_000)
+      expect(built.resources.memory_bytes).to eq(5.gigabytes)
+      expect(built.resources.disk_bytes).to eq(2.gigabytes)
+    end
+  end
+
+  describe ExecutionRunners::IngressCapability do
+    it "normalizes a scoped authenticated preview grant" do
+      capability = described_class.build(
+        kind: "preview",
+        scope: "paid_mediated_tunnel",
+        expires_at: 2.days.from_now.iso8601,
+        authentication: { required: true, type: "authenticated_proxy" },
+        granted_at: 1.day.ago.iso8601,
+        granted_by: "user:42"
+      )
+
+      expect(capability).to be_preview
+      expect(capability).to be_supported_kind
+      expect(capability).to be_authenticated
+      expect(capability).to be_valid_grant
+      expect(capability.to_h["granted_by"]).to eq("user:42")
+    end
+  end
+
+  describe ExecutionRunners::IngressPolicy do
+    it "defaults to no public inbound endpoint" do
+      policy = described_class.default_deny
+
+      expect(policy.public_inbound).to be(false)
+      expect(policy.capabilities).to eq([])
+      expect(policy.violation_message).to be_nil
+    end
+
+    it "treats absent metadata as the default-deny posture" do
+      policy = described_class.from_metadata({})
+
+      expect(policy.public_inbound).to be(false)
+      expect(policy).to be_explicit
+      expect(policy.violation_message).to be_nil
+    end
+
+    it "treats nil metadata as the default-deny posture" do
+      policy = described_class.from_metadata(nil)
+
+      expect(policy.public_inbound).to be(false)
+      expect(policy).to be_explicit
+    end
+
+    it "rejects a preview exception whose grant has expired" do
+      policy = described_class.from_metadata(
+        "public_inbound" => false,
+        "capabilities" => [
+          {
+            "kind" => "preview",
+            "scope" => "paid_mediated_tunnel",
+            "expires_at" => 1.hour.ago.iso8601,
+            "authentication" => { "required" => true, "type" => "authenticated_proxy" },
+            "granted_at" => 2.hours.ago.iso8601,
+            "granted_by" => "user:42"
+          }
+        ]
+      )
+
+      expect(policy.supported_for_runtime?).to be(false)
+      expect(policy.violation_message)
+        .to eq("Ingress exception grants must be authenticated, time-bounded, and explicitly recorded.")
+    end
+
+    it "accepts an authenticated, time-bounded preview exception" do
+      policy = described_class.default_deny(
+        capabilities: [
+          ExecutionRunners::IngressCapability.build(
+            kind: "preview",
+            scope: "paid_mediated_tunnel",
+            expires_at: 2.days.from_now.iso8601,
+            authentication: { required: true, type: "authenticated_proxy" },
+            granted_at: 1.day.ago.iso8601,
+            granted_by: "user:42"
+          )
+        ]
+      )
+
+      expect(policy.supported_for_runtime?).to be(true)
+      expect(policy.violation_message).to be_nil
+    end
+
+    it "rejects metadata that requests public inbound exposure" do
+      policy = described_class.from_metadata("public_inbound" => true)
+
+      expect(policy.supported_for_runtime?).to be(false)
+      expect(policy.violation_message)
+        .to eq("Execution ingress policy must explicitly deny public inbound exposure.")
+    end
+
+    it "rejects unsupported inbound exposure kinds" do
+      policy = described_class.default_deny(
+        capabilities: [
+          ExecutionRunners::IngressCapability.build(
+            kind: "debug",
+            scope: "public_listener",
+            expires_at: 2.days.from_now.iso8601,
+            authentication: { required: true, type: "signed_token" },
+            granted_at: 1.day.ago.iso8601,
+            granted_by: "user:42"
+          )
+        ]
+      )
+
+      expect(policy.supported_for_runtime?).to be(false)
+      expect(policy.violation_message).to eq("Unsupported inbound exposure requested: debug.")
     end
   end
 
@@ -385,6 +527,7 @@ RSpec.describe ExecutionRunners do
       expect(policy).to be_restricted
       expect(policy).to be_firewall
       expect(policy.allow_destinations).to eq([ { host: "10.0.0.1", port: 5432 } ])
+      expect(policy.canonical_mode).to eq(:approved_services)
     end
 
     it "treats subscription_auth mode as unrestricted" do
@@ -393,6 +536,7 @@ RSpec.describe ExecutionRunners do
       expect(policy).not_to be_restricted
       expect(policy).not_to be_firewall
       expect(policy.allow_destinations).to eq([])
+      expect(policy.canonical_mode).to eq(:model_direct)
     end
 
     it "treats direct_outbound mode as unrestricted" do
@@ -400,6 +544,131 @@ RSpec.describe ExecutionRunners do
 
       expect(policy).not_to be_restricted
       expect(policy).not_to be_firewall
+      expect(policy.canonical_mode).to eq(:model_direct)
+    end
+
+    describe "new RDR-062 intents" do
+      it "treats :no_outbound as restricted and firewall-required with no egress" do
+        policy = described_class.no_outbound
+
+        expect(policy).to be_restricted
+        expect(policy).to be_firewall
+        expect(policy).to be_no_outbound
+        expect(policy.allow_destinations).to eq([])
+      end
+
+      it "treats :proxy_only as restricted and firewall-required" do
+        policy = described_class.proxy_only
+
+        expect(policy).to be_restricted
+        expect(policy).to be_firewall
+        expect(policy.allow_destinations).to eq([])
+      end
+
+      it "treats :git_plus_proxy as restricted and firewall-required" do
+        policy = described_class.git_plus_proxy
+
+        expect(policy).to be_restricted
+        expect(policy).to be_firewall
+      end
+
+      it "treats :approved_services as restricted and firewall-required" do
+        policy = described_class.approved_services
+
+        expect(policy).to be_restricted
+        expect(policy).to be_firewall
+        expect(policy.canonical_mode).to eq(:approved_services)
+      end
+
+      it "treats the :proxy_restricted alias as approved_services" do
+        policy = described_class.proxy_restricted
+
+        expect(policy).to be_approved_services
+      end
+
+      it "treats :model_direct as unrestricted and firewall-free" do
+        policy = described_class.model_direct
+
+        expect(policy).not_to be_restricted
+        expect(policy).not_to be_firewall
+        expect(policy).to be_model_direct
+        expect(policy).not_to be_explicit_internet
+      end
+
+      it "treats :explicit_internet as unrestricted and firewall-free" do
+        policy = described_class.explicit_internet
+
+        expect(policy).not_to be_restricted
+        expect(policy).not_to be_firewall
+        expect(policy).to be_explicit_internet
+        expect(policy).not_to be_model_direct
+      end
+
+      it "preserves the legacy :proxy_restricted mode value while normalizing canonical_mode" do
+        policy = described_class.proxy_restricted
+
+        expect(policy.mode).to eq(:proxy_restricted)
+        expect(policy.canonical_mode).to eq(:approved_services)
+        expect(policy).to be_restricted
+      end
+
+      it "normalizes :subscription_auth to the :model_direct canonical mode" do
+        expect(described_class.subscription_auth.canonical_mode).to eq(:model_direct)
+      end
+
+      it "normalizes :direct_outbound to the :model_direct canonical mode" do
+        expect(described_class.direct_outbound.canonical_mode).to eq(:model_direct)
+      end
+
+      it "returns the mode unchanged for each canonical intent" do
+        %i[no_outbound proxy_only git_plus_proxy approved_services model_direct explicit_internet].each do |mode|
+          policy = described_class.public_send(mode)
+
+          expect(policy.canonical_mode).to eq(mode), "expected canonical_mode for #{mode}"
+        end
+      end
+
+      it "rejects unknown networking policy modes at construction time" do
+        expect {
+          described_class.new(mode: :unknown_mode, firewall: true, allow_destinations: [])
+        }.to raise_error(ArgumentError, /Unknown networking policy mode/)
+      end
+
+      it "rejects firewall settings that conflict with the mode" do
+        expect {
+          described_class.new(mode: :model_direct, firewall: true, allow_destinations: [])
+        }.to raise_error(ArgumentError, /requires firewall=false/)
+      end
+
+      it "rejects allow destinations without host and port keys" do
+        expect {
+          described_class.proxy_only(allow_destinations: [ { host: "10.0.0.1" } ])
+        }.to raise_error(ArgumentError, /missing keys: port/)
+      end
+
+      it "normalizes allow destinations with string keys" do
+        policy = described_class.proxy_only(allow_destinations: [ { "host" => "10.0.0.1", "port" => 5432 } ])
+
+        expect(policy.allow_destinations).to eq([ { host: "10.0.0.1", port: 5432 } ])
+      end
+
+      it "normalizes string ports to integers" do
+        policy = described_class.proxy_only(allow_destinations: [ { "host" => "10.0.0.1", "port" => "5432" } ])
+
+        expect(policy.allow_destinations).to eq([ { host: "10.0.0.1", port: 5432 } ])
+      end
+
+      it "rejects allow destinations with an invalid host value" do
+        expect {
+          described_class.proxy_only(allow_destinations: [ { host: "bad host", port: 5432 } ])
+        }.to raise_error(ArgumentError, /host is invalid/)
+      end
+
+      it "rejects allow destinations with an invalid port value" do
+        expect {
+          described_class.proxy_only(allow_destinations: [ { host: "10.0.0.1", port: 70_000 } ])
+        }.to raise_error(ArgumentError, /port is invalid/)
+      end
     end
 
     it "defaults the egress_profile to :locked for every factory method" do
@@ -504,6 +773,56 @@ RSpec.describe ExecutionRunners do
 
     describe "#output_manifest" do
       let(:project) { create(:project, owner: "acme", repo: "widgets") }
+      # Verification-result artifacts are agent-authored input. The
+      # consumption contract only honors URLs from this lane — a spoofed
+      # `storage_key` under another tenant's prefix would otherwise be
+      # re-signed into a working presigned URL by any durable consumer.
+      let(:report_artifact) do
+        {
+          "kind" => "generated_report",
+          "content_type" => "application/pdf",
+          "storage_key" => "reports/acme/widgets/pr-42/abc123/summary.pdf",
+          "url" => "https://artifacts.test/summary.pdf",
+          "context" => {
+            "account_id" => 9_999,
+            "project_id" => 9_999,
+            "agent_run_id" => 999_999
+          },
+          "metadata" => {
+            "note" => "Summary report"
+          }
+        }
+      end
+      let(:expected_binary_artifact) do
+        {
+          "lane" => "object_storage",
+          "kind" => "generated_report",
+          "content_type" => "application/pdf",
+          "locator" => { "url" => "https://artifacts.test/summary.pdf" },
+          "context" => {
+            "account_id" => project.account_id,
+            "project_id" => project.id,
+            "agent_run_id" => agent_run.id
+          },
+          "metadata" => {
+            "note" => "Summary report"
+          }
+        }
+      end
+      let(:persisted_manifest_artifact) do
+        {
+          "lane" => "object_storage",
+          "kind" => "screenshot",
+          "content_type" => "image/png",
+          "locator" => { "key" => "screenshots/acme/widgets/pr-42/abc123/home.png" },
+          "context" => {
+            "account_id" => project.account_id,
+            "project_id" => project.id,
+            "agent_run_id" => agent_run.id
+          },
+          "metadata" => { "route_name" => "home" }
+        }
+      end
       let(:agent_run) do
         create(
           :agent_run,
@@ -515,9 +834,7 @@ RSpec.describe ExecutionRunners do
           review_url: "https://example.test/review/42",
           verification_result: {
             "status" => "passed",
-            "artifacts" => [
-              { "kind" => "trace", "url" => "https://artifacts.test/trace.zip", "note" => "Playwright trace" }
-            ]
+            "artifacts" => [ report_artifact ]
           }
         )
       end
@@ -527,9 +844,85 @@ RSpec.describe ExecutionRunners do
 
         expect(manifest).to be_a(ExecutionRunners::ExecutionOutputManifest)
         expect(manifest.artifacts["code_outputs"].first["result_commit_sha"]).to eq("abc123")
-        expect(manifest.artifacts["binary_artifacts"].first["lane"]).to eq("object_storage")
+        expect(manifest.artifacts["binary_artifacts"].first).to include(expected_binary_artifact)
         expect(manifest.artifacts["structured_results"].first["kind"]).to eq("verification_result")
         expect(manifest.git_output["pull_request_number"]).to eq(42)
+      end
+
+      # @spec CONTAINER-RUNTIME-018
+      it "forwards persisted artifact-manifest keys without inventing presigned URLs" do
+        agent_run.update!(external_metadata: { "artifact_manifest" => [ persisted_manifest_artifact ] })
+
+        manifest = described_class.success(stdout: "ok", exit_code: 0).output_manifest(agent_run:)
+
+        expect(manifest.artifacts["binary_artifacts"]).to include(
+          hash_including(
+            "kind" => "screenshot",
+            "locator" => { "key" => "screenshots/acme/widgets/pr-42/abc123/home.png" }
+          )
+        )
+      end
+
+      # @spec CONTAINER-RUNTIME-018
+      # Verification artifacts are agent-authored input. A spoofed `storage_key`
+      # under another tenant's prefix must not survive into the durable manifest,
+      # because durable consumers re-sign keys into presigned URLs.
+      it "drops verification-artifact storage keys and locator keys" do
+        spoofed_key = "screenshots/other-org/other-repo/pr-1/abc/home.png"
+        artifact = {
+          "kind" => "spoofed_artifact",
+          "url" => "https://artifacts.test/spoofed.png",
+          "storage_key" => spoofed_key,
+          "locator" => { "key" => spoofed_key, "url" => "https://artifacts.test/spoofed.png" }
+        }
+        agent_run.update!(verification_result: { "status" => "passed", "artifacts" => [ artifact ] })
+
+        manifest = described_class.success(stdout: "ok", exit_code: 0).output_manifest(agent_run:)
+        entry = manifest.artifacts["binary_artifacts"].first
+
+        expect(entry["locator"]).to eq({ "url" => "https://artifacts.test/spoofed.png" })
+        expect(entry["locator"]).not_to have_key("key")
+        expect(entry.to_s).not_to include(spoofed_key)
+      end
+
+      # @spec CONTAINER-RUNTIME-018
+      # `external_metadata` is not exclusively runner-written: interop callers
+      # can persist arbitrary `artifact_manifest` entries
+      # (`Api::Projects::ExternalAgentRunsController` →
+      # `AgentRuns::IngestExternal` stores `external_metadata` verbatim). A key
+      # planted under another tenant's prefix must therefore degrade to
+      # URL-only even on the trusted lane, because durable consumers re-sign
+      # keys into presigned URLs.
+      it "drops trusted-lane locator keys outside the project's storage namespace" do
+        planted_key = "screenshots/other-org/other-repo/pr-1/abc/home.png"
+        artifact = {
+          "kind" => "screenshot",
+          "storage_key" => planted_key,
+          "url" => "https://artifacts.test/planted.png",
+          "locator" => { "key" => planted_key, "url" => "https://artifacts.test/planted.png" }
+        }
+        agent_run.update!(external_metadata: { "artifact_manifest" => [ artifact ] })
+
+        manifest = described_class.success(stdout: "ok", exit_code: 0).output_manifest(agent_run:)
+        entry = manifest.artifacts["binary_artifacts"].first
+
+        expect(entry["locator"]).to eq({ "url" => "https://artifacts.test/planted.png" })
+        expect(entry.to_s).not_to include(planted_key)
+      end
+
+      # @spec CONTAINER-RUNTIME-018
+      # The system always knows the run's real account/project/run identity;
+      # the artifact must never be allowed to misattribute itself to a
+      # different tenant.
+      it "makes the run's identity authoritative over artifact-supplied context" do
+        manifest = described_class.success(stdout: "ok", exit_code: 0).output_manifest(agent_run:)
+        entry = manifest.artifacts["binary_artifacts"].first
+
+        expect(entry["context"]).to eq(
+          "account_id" => project.account_id,
+          "project_id" => project.id,
+          "agent_run_id" => agent_run.id
+        )
       end
     end
   end
@@ -641,9 +1034,10 @@ RSpec.describe ExecutionRunners do
         project: project,
         image: "paid/agent:latest",
         command: "claude code",
-        resources: ExecutionRunners::ComputeRequirements.new(cpu_quota: 100_000, memory_bytes: 1024, pids_limit: 50),
+        resources: ExecutionRunners::ComputeRequirements.new(cpu_quota: 100_000, memory_bytes: 1024, disk_bytes: 2048, pids_limit: 50),
         environment: { "DATABASE_URL" => "postgres://secret@db", "API_TOKEN" => "shh" },
         networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted,
+        ingress_policy: ExecutionRunners::IngressPolicy.default_deny,
         workspace: ExecutionRunners::WorkspaceStrategy.named_volume,
         services: services,
         secrets_config: { "github_token" => "top-secret" }
@@ -719,7 +1113,7 @@ RSpec.describe ExecutionRunners do
       manifest = described_class.from_run_spec(run_spec)
 
       expect(manifest.execution["networking"]).to include(
-        "mode" => "proxy_restricted",
+        "mode" => "approved_services",
         "firewall" => true,
         "egress_profile" => "locked"
       )
@@ -743,7 +1137,7 @@ RSpec.describe ExecutionRunners do
       manifest = described_class.from_run_spec(open_spec)
 
       expect(manifest.execution["networking"]).to include(
-        "mode" => "direct_outbound",
+        "mode" => "model_direct",
         "firewall" => false,
         "egress_profile" => "open"
       )
@@ -784,6 +1178,11 @@ RSpec.describe ExecutionRunners do
           "lane" => "object_storage",
           "kind" => "trace",
           "locator" => { "url" => "https://artifacts.test/trace.zip" },
+          "context" => {
+            "account_id" => project.account_id,
+            "project_id" => project.id,
+            "agent_run_id" => agent_run.id
+          },
           "metadata" => { "note" => "Playwright trace" }
         }
       ]

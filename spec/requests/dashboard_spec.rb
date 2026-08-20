@@ -18,6 +18,37 @@ RSpec.describe "Dashboard" do
 
       before { sign_in user }
 
+      # @spec PR-ESCALATION-011
+      it "lists escalated pull requests in the blocked PRs panel with an unblock action" do
+        pr = create(:issue, :pull_request,
+          project: project,
+          github_number: 91,
+          title: "Fix the flaky suite",
+          pr_review_phase: "escalated",
+          pr_escalation_reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK,
+          draft_review_count: 12)
+
+        get dashboard_path
+
+        expect(response.body).to include("Blocked PRs")
+        expect(response.body).to include("##{pr.github_number}")
+        expect(response.body).to include("Unblock")
+      end
+
+      # @spec PR-ESCALATION-022
+      it "names the project in the unblock confirmation prompt" do
+        pr = create(:issue, :pull_request,
+          project: project,
+          github_number: 91,
+          pr_review_phase: "escalated",
+          pr_escalation_reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK,
+          draft_review_count: 12)
+
+        get dashboard_path
+
+        expect(response.body).to include(CGI.escapeHTML("#{project.full_name}##{pr.github_number}"))
+      end
+
       it "renders the dashboard" do
         get dashboard_path
         expect(response).to have_http_status(:ok)
@@ -241,6 +272,30 @@ RSpec.describe "Dashboard" do
         expect(doc.at_css("turbo-frame#dashboard-queue-health[src]")).not_to be_present
       end
 
+      it "defers the queue preview and recent activity to lazy frames" do
+        allow(Dashboard::QueuePreview).to receive(:call).and_call_original
+        allow(Dashboard::RecentActivity).to receive(:call).and_call_original
+
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        expect(doc.at_css("turbo-frame#dashboard-queue-preview[data-dashboard-frames-src='#{dashboard_queue_preview_path}']")).to be_present
+        expect(doc.at_css("turbo-frame#dashboard-queue-preview[src]")).not_to be_present
+        expect(doc.at_css("turbo-frame#dashboard-recent-activity[data-dashboard-frames-src='#{dashboard_recent_activity_path}']")).to be_present
+        expect(Dashboard::QueuePreview).not_to have_received(:call)
+        expect(Dashboard::RecentActivity).not_to have_received(:call)
+      end
+
+      it "renders the recent activity frame with the activity stream" do
+        create(:agent_run, project: project, status: "completed", completed_at: 1.minute.ago, duration_seconds: 42)
+
+        get dashboard_recent_activity_path
+
+        doc = Nokogiri::HTML(response.body)
+        expect(doc.at_css("turbo-frame#dashboard-recent-activity #activity-stream")).to be_present
+        expect(response.body).to include("42s")
+      end
+
       it "wires the deferred github credential health turbo frame" do
         get dashboard_path
 
@@ -365,7 +420,7 @@ RSpec.describe "Dashboard" do
         create(:agent_run, :queued, project: owned_project, issue: visible_issue, created_at: 2.minutes.ago)
         create(:agent_run, :queued, :manual, project: hidden_project, created_at: 1.minute.ago)
 
-        get dashboard_path
+        get dashboard_queue_preview_path
         doc = Nokogiri::HTML(response.body)
         queue_section = doc.at_xpath("//h3[normalize-space(text())='Upcoming Queue']/ancestor::div[contains(@class, 'rounded-lg')][1]")
 
@@ -386,7 +441,7 @@ RSpec.describe "Dashboard" do
         issue = create(:issue, project: project, github_number: 91, title: "Cancel from the queue")
         run = create(:agent_run, :queued, project: project, issue: issue, created_at: 2.minutes.ago)
 
-        get dashboard_path
+        get dashboard_queue_preview_path
 
         document = Nokogiri::HTML(response.body)
         queue_section = document.at_xpath("//h3[normalize-space(text())='Upcoming Queue']/ancestor::div[contains(@class, 'rounded-lg')][1]")
@@ -405,7 +460,7 @@ RSpec.describe "Dashboard" do
         issue = create(:issue, project: project, github_number: 92, title: "Navigate from the queue")
         run = create(:agent_run, :queued, project: project, issue: issue, created_at: 2.minutes.ago)
 
-        get dashboard_path
+        get dashboard_queue_preview_path
 
         document = Nokogiri::HTML(response.body)
         queue_section = document.at_xpath("//h3[normalize-space(text())='Upcoming Queue']/ancestor::div[contains(@class, 'rounded-lg')][1]")
@@ -423,7 +478,7 @@ RSpec.describe "Dashboard" do
         viewer_project = create(:project, account: account, created_by: viewer, owner: "viewer-octo", repo: "queue")
         run = create(:agent_run, :queued, project: viewer_project, created_at: 2.minutes.ago)
 
-        get dashboard_path
+        get dashboard_queue_preview_path
 
         document = Nokogiri::HTML(response.body)
         queue_section = document.at_xpath("//h3[normalize-space(text())='Upcoming Queue']/ancestor::div[contains(@class, 'rounded-lg')][1]")
@@ -440,7 +495,7 @@ RSpec.describe "Dashboard" do
 
         create(:agent_run, :queued, :manual, project: orphaned_project)
 
-        get dashboard_path
+        get dashboard_queue_preview_path
 
         expect(response.body).to include("fallback-owner/orphaned-repo")
       end
@@ -449,7 +504,7 @@ RSpec.describe "Dashboard" do
         create(:agent_run, project: project, status: "running", started_at: 5.minutes.ago)
         create(:agent_run, project: project, status: "completed", completed_at: 1.minute.ago, duration_seconds: 42)
 
-        get dashboard_path
+        get dashboard_recent_activity_path
 
         expect(response.body).to include(project.full_name)
         expect(response.body).to include("42s")
@@ -628,9 +683,11 @@ RSpec.describe "Dashboard" do
         )
 
         get dashboard_path
+        shell = response.body
+        get dashboard_queue_preview_path
 
         body = response.body
-        expect(body.index("Quality-paused projects")).to be < body.index("Upcoming Queue")
+        expect(shell.index("Quality-paused projects")).to be < shell.index(%(id="dashboard-queue-preview"))
         expect(body).not_to include("No queued runs for your projects.")
         expect(body).to include("no work is being queued")
       end
@@ -643,8 +700,9 @@ RSpec.describe "Dashboard" do
         )
 
         get dashboard_path
-
         expect(response.body).to include("Quality-paused projects")
+
+        get dashboard_queue_preview_path
         expect(response.body).to include("No queued runs for your projects.")
       end
 
@@ -695,7 +753,7 @@ RSpec.describe "Dashboard" do
           title: "Ship the thing",
           github_updated_at: 3.minutes.ago)
 
-        get dashboard_path
+        get dashboard_recent_activity_path
 
         expect(response.body).to include("PR ##{merged_pr.github_number}")
         expect(response.body).to include("Ship the thing")
@@ -711,7 +769,7 @@ RSpec.describe "Dashboard" do
           metadata: { resumed_by_user_email: "operator@example.com" },
           created_at: 5.minutes.ago)
 
-        get dashboard_path
+        get dashboard_recent_activity_path
 
         expect(response.body).to include("Automatic work paused by quality gate")
         expect(response.body).to include("32.0% below 50.0%")

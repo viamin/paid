@@ -38,6 +38,10 @@ module Projects
       @phase_summary = @agent_run.phase_summary(phases: @phase_timeline.to_a)
       @final_runner_record = @agent_run.final_runner_record
       @attempted_runners_by_routing_key = @agent_run.attempted_runners_by_routing_key
+      @egress_policy_snapshot = @agent_run.egress_policy_snapshot
+      egress_audit_events = @agent_run.egress_security_events.audit_visible
+      @egress_security_events = egress_audit_events.recent.limit(50).load
+      @egress_denied_event_count = egress_audit_events.count
     end
 
     def provenance
@@ -254,6 +258,22 @@ module Projects
       ProcessRunQueueJob.perform_later
 
       redirect_to project_path(@project), notice: "Priority bumped for PR ##{pr.github_number}."
+    end
+
+    # @spec PR-ESCALATION-014 @spec PR-ESCALATION-015 @spec PR-ESCALATION-017
+    def unblock_escalation
+      authorize @project, :run_agent?
+
+      pr = resolve_pull_request_record
+      unless pr
+        redirect_to dashboard_path, alert: "Please select a pull request."
+        return
+      end
+
+      result = PullRequests::Unblock.call(pull_request: pr, actor: current_user)
+      @project.broadcast_pull_requests_update if result.success?
+
+      redirect_to dashboard_path, **unblock_flash(result, pr)
     end
 
     def toggle_auto_continue_pause
@@ -685,6 +705,34 @@ module Projects
 
       pr = @project.issues.pull_requests_only.find(params[:pull_request_id])
       pr.github_number
+    end
+
+    # The blocked-work surface spans every project in the account and the
+    # unblock redirects back to it, so the outcome names the repository the
+    # same way the listing does — a bare number identifies nothing there.
+    # `@project` is the pull request's project: `pr` is resolved through
+    # `@project.issues`, and reading it from there costs no further query.
+    #
+    # Clearing the escalation drops the pull request off that listing, so an
+    # operator pause that still holds it has to be named along with the page
+    # that can release it — the control does not exist on the dashboard.
+    #
+    # @spec PR-ESCALATION-022 @spec PR-ESCALATION-023
+    def unblock_flash(result, pull_request)
+      pr_ref = "#{@project.full_name}##{pull_request.github_number}"
+
+      if result.success?
+        return { notice: "PR #{pr_ref} unblocked, but auto-continue is still paused for it — resume it from the project page." } if pull_request.auto_continue_paused?
+
+        return { notice: "PR #{pr_ref} unblocked. Paid picks it up on the next scan." }
+      end
+
+      case result.error
+      when :not_open
+        { alert: "PR #{pr_ref} is no longer open." }
+      else
+        { alert: "PR #{pr_ref} is not blocked." }
+      end
     end
 
     def resolve_pull_request_record
@@ -1328,13 +1376,12 @@ module Projects
     end
 
     def eligible_docker_hosts_for_manual_selection(auth_source: nil)
-      current_account.docker_hosts.enabled.ordered.select do |host|
+      current_account.docker_hosts.placement_ready_for_agent_runs.ordered.select do |host|
         docker_host_eligible_for_manual_selection?(host, auth_source: auth_source)
       end
     end
 
     def docker_host_eligible_for_manual_selection?(host, auth_source: nil)
-      return false unless host.placement_ready?
       return true if auth_source.nil?
 
       subscription_auth_eligibility_for(host, auth_source: auth_source).eligible?

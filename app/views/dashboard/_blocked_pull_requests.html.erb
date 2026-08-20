@@ -1,0 +1,88 @@
+<%# @spec PR-ESCALATION-011 @spec PR-ESCALATION-012 @spec PR-ESCALATION-013 @spec PR-ESCALATION-022 %>
+<% has_blocked_prs = blocked_pull_requests.any? %>
+
+<div class="rounded-lg border <%= has_blocked_prs ? "border-amber-200 bg-amber-50" : "border-gray-200 bg-white" %> p-6 shadow-sm" data-testid="blocked-pull-requests-card">
+  <div class="flex items-start justify-between gap-4">
+    <div>
+      <h3 class="text-base font-semibold <%= has_blocked_prs ? "text-amber-900" : "text-gray-900" %>">Blocked PRs</h3>
+      <% if has_blocked_prs %>
+        <p class="mt-1 text-sm text-amber-700">Paid stopped working these PRs and handed them back to you. Unblocking clears the counters and returns the PR to the scanner.</p>
+      <% else %>
+        <p class="mt-1 text-sm text-gray-500">Pull requests Paid has stopped working will appear here.</p>
+      <% end %>
+    </div>
+    <% if has_blocked_prs %>
+      <span class="inline-flex items-center rounded-md bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800">
+        <%= pluralize(blocked_pull_requests.size, "PR") %>
+      </span>
+    <% end %>
+  </div>
+
+  <% if has_blocked_prs %>
+    <div class="mt-4 flow-root">
+      <div class="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
+        <div class="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
+          <table class="min-w-full divide-y divide-amber-200">
+            <thead>
+              <tr>
+                <th scope="col" class="py-2 pl-4 pr-3 text-left text-xs font-medium uppercase tracking-wide text-amber-700 sm:pl-0">PR</th>
+                <th scope="col" class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-amber-700">Project</th>
+                <th scope="col" class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-amber-700">Why</th>
+                <th scope="col" class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-amber-700">Counter</th>
+                <th scope="col" class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-amber-700">Blocked</th>
+                <th scope="col" class="px-3 py-2 text-right text-xs font-medium uppercase tracking-wide text-amber-700">Action</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-amber-200 bg-amber-50">
+              <% blocked_pull_requests.each do |entry| %>
+                <% pr = entry.pull_request %>
+                <tr>
+                  <td class="whitespace-nowrap py-3 pl-4 pr-3 text-sm sm:pl-0">
+                    <%= link_to "##{pr.github_number}", pr.github_url, target: "_blank", rel: "noopener noreferrer", class: "font-medium text-indigo-600 hover:text-indigo-900" %>
+                    <span class="ml-1 text-amber-700"><%= truncate(pr.title, length: 48) %></span>
+                  </td>
+                  <td class="whitespace-nowrap px-3 py-3 text-sm text-amber-900">
+                    <%= link_to pr.project.full_name, project_path(pr.project), class: "hover:text-indigo-600" %>
+                  </td>
+                  <td class="whitespace-nowrap px-3 py-3 text-sm">
+                    <span class="inline-flex items-center rounded-md bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 ring-1 ring-inset ring-amber-600/20">
+                      <%= escalation_reason_label(entry.reason) %>
+                    </span>
+                    <% if entry.operator_paused %>
+                      <span class="ml-1 inline-flex items-center rounded-md bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 ring-1 ring-inset ring-gray-500/20" title="You paused auto-continue on this PR. Unblocking clears the escalation but leaves your pause in place.">Also paused by you</span>
+                    <% end %>
+                  </td>
+                  <td class="whitespace-nowrap px-3 py-3 text-sm text-amber-700">
+                    <% if entry.counters.any? %>
+                      <% entry.counters.each do |counter| %>
+                        <div><%= escalation_counter_label(counter.name) %> <span class="font-medium"><%= counter.value %> / <%= counter.limit %></span></div>
+                      <% end %>
+                    <% elsif entry.last_progress_at %>
+                      <span title="Time since this PR last made meaningful progress">No progress for <%= time_ago_in_words(entry.last_progress_at) %></span>
+                    <% else %>
+                      <span class="text-amber-600">—</span>
+                    <% end %>
+                  </td>
+                  <td class="whitespace-nowrap px-3 py-3 text-sm text-amber-700">
+                    <%= local_time(entry.blocked_since, format: :relative) %>
+                  </td>
+                  <td class="whitespace-nowrap px-3 py-3 text-right text-sm">
+                    <% if policy(pr.project).run_agent? %>
+                      <%= button_to "Unblock",
+                            unblock_escalation_project_agent_runs_path(pr.project, pull_request_id: pr.id),
+                            method: :post,
+                            class: "inline-flex items-center rounded-md bg-amber-600 px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-amber-500",
+                            form: { data: { turbo_confirm: "Clear the escalation on #{pr.project.full_name}##{pr.github_number}? This resets its attempt counters, waives the token cap for this PR, and returns it to the scanner." } } %>
+                    <% end %>
+                  </td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  <% else %>
+    <p class="mt-4 text-sm text-gray-500">No blocked pull requests at the moment.</p>
+  <% end %>
+</div>

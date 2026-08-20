@@ -1,6 +1,26 @@
 # frozen_string_literal: true
 
 module ApplicationHelper
+  ESCALATION_REASON_LABELS = {
+    "failure_streak" => "Failure streak",
+    "review_goal_retry_limit" => "Retry limit",
+    "pr_auto_continue_token_limit" => "Token cap",
+    "operational_failures" => "Infrastructure failures"
+  }.freeze
+
+  ESCALATION_COUNTER_LABELS = {
+    draft_review_count: "Draft rounds",
+    pr_followup_count: "Follow-up runs",
+    review_goal_retry_count: "Review retries"
+  }.freeze
+
+  def escalation_reason_label(reason)
+    ESCALATION_REASON_LABELS.fetch(reason.to_s, "Stopped")
+  end
+
+  def escalation_counter_label(name)
+    ESCALATION_COUNTER_LABELS.fetch(name.to_sym, name.to_s.humanize)
+  end
   MISSING_RUNNER_ENTRY_LABEL = "Deleted runner entry"
   MISSING_PROVIDER_ENTRY_LABEL = MISSING_RUNNER_ENTRY_LABEL
 
@@ -101,6 +121,26 @@ module ApplicationHelper
     return nil unless start_time.present?
 
     [ (completed_at - start_time).to_i, 0 ].max
+  end
+
+  # Extracts the persisted egress policy snapshot recorded on the run before
+  # provisioning. Delegates to AgentRun#egress_policy_snapshot so controllers
+  # and views share a single extraction of the authoritative snapshot.
+  def agent_run_egress_policy_snapshot(agent_run)
+    agent_run.egress_policy_snapshot
+  end
+
+  EGRESS_DESTINATION_SOURCE_KIND_BADGES = {
+    "platform" => "bg-indigo-100 text-indigo-700",
+    "tenant" => "bg-amber-100 text-amber-700",
+    "tenant_account" => "bg-amber-100 text-amber-700",
+    "tenant_project" => "bg-emerald-100 text-emerald-700",
+    "service_container" => "bg-sky-100 text-sky-700",
+    "preview_tunnel" => "bg-violet-100 text-violet-700"
+  }.freeze
+
+  def source_kind_badge_classes(kind)
+    EGRESS_DESTINATION_SOURCE_KIND_BADGES[kind.to_s] || "bg-gray-100 text-gray-700"
   end
 
   AGENT_RUN_PRIORITY_STYLES = { # @spec QUEUE-TIER-004

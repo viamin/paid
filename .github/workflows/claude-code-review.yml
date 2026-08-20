@@ -22,7 +22,7 @@ jobs:
       id-token: write
     services:
       postgres:
-        image: postgres:16.14
+        image: postgres:16.15
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -138,7 +138,7 @@ jobs:
       - name: Run Claude Code Review
         if: steps.pr.outputs.head_repo_fork != 'true' && steps.trust.outputs.allowed == 'true'
         id: claude-review
-        uses: anthropics/claude-code-action@9d7150bc8a3dae8149739a88019d192b579ad90c # v1
+        uses: anthropics/claude-code-action@459ad358ae43fea66bfefd0a1f8d840b4b9791fb # v1
         with:
           # IMPORTANT: Authentication uses an OAuth token, NOT an API key.
           # Create the CLAUDE_CODE_OAUTH_TOKEN secret (not an Anthropic API key)

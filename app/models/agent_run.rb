@@ -177,6 +177,7 @@ class AgentRun < ApplicationRecord
   # circuit-breaker counters on its behalf.
   STALE_CLEANUP_ERROR_PREFIX = "Marked stale on startup"
   PREVIEW_SESSION_EXTERNAL_METADATA_KEY = "preview_session".freeze
+  EXECUTION_INGRESS_METADATA_KEY = "execution_ingress".freeze
 
   STALE_DETECTOR_ERROR_PREFIX = "Stale run detected"
 
@@ -207,6 +208,7 @@ class AgentRun < ApplicationRecord
   has_many :agent_run_anomalies, dependent: :destroy
   has_many :knowledge_usage_stats, dependent: :destroy
   has_many :agent_run_marketplace_entries, -> { order(:position) }, dependent: :destroy
+  has_many :egress_security_events, dependent: :destroy
   has_many :sent_coordination_signals,
     class_name: "AgentCoordinationSignal",
     foreign_key: :source_agent_run_id,
@@ -373,6 +375,22 @@ class AgentRun < ApplicationRecord
   # (AgentRuns::IngestExternal). See `synthetic_operational_run?`.
   scope :excluding_synthetic, -> { where(synthetic: false) }
 
+  # Transcript/diagnostic payload columns are never rendered by list views
+  # (dashboard cards, queue preview, activity stream); skipping them keeps
+  # fat JSON/TEXT columns off list queries. custom_prompt is deliberately
+  # KEPT by default: agent_run_context uses it as the context fallback for
+  # runs without an issue or PR link. Call sites that never render context
+  # (recent activity) pass extra: %w[custom_prompt].
+  LIST_PAYLOAD_EXCLUDED_COLUMNS = %w[
+    streaming_turns_data external_metadata mcp_server_snapshot
+    mcp_provisioned_servers screenshot_hints review_proxy_diagnostics
+  ].freeze
+
+  scope :excluding_list_payload, ->(extra: []) {
+    excluded = LIST_PAYLOAD_EXCLUDED_COLUMNS + Array(extra)
+    select((column_names - excluded).map { |c| "#{table_name}.#{c}" })
+  }
+
   def update_columns(attributes)
     super(attributes)
   end
@@ -388,6 +406,39 @@ class AgentRun < ApplicationRecord
   def preview_provisioning?
     ActiveModel::Type::Boolean.new.cast(external_metadata&.[](PREVIEW_SESSION_EXTERNAL_METADATA_KEY))
   end
+
+  # @spec EXEC-INGRESS-002
+  def execution_ingress_policy
+    ExecutionRunners::IngressPolicy.from_metadata(
+      external_metadata.is_a?(Hash) ? external_metadata[EXECUTION_INGRESS_METADATA_KEY] : {}
+    )
+  end
+
+  # @spec EXEC-INGRESS-002
+  def self.preview_execution_metadata(preview_session:, granted_by:)
+    metadata = {
+      PREVIEW_SESSION_EXTERNAL_METADATA_KEY => true,
+      EXECUTION_INGRESS_METADATA_KEY => ExecutionRunners::IngressPolicy.default_deny(
+        capabilities: [
+          ExecutionRunners::IngressCapability.build(
+            kind: "preview",
+            scope: "paid_mediated_tunnel",
+            expires_at: preview_session.expires_at || 1.hour.from_now,
+            authentication: { required: true, type: "authenticated_proxy" },
+            granted_at: Time.current,
+            granted_by: preview_granted_by(granted_by)
+          )
+        ]
+      ).to_h
+    }
+
+    metadata
+  end
+
+  def self.preview_granted_by(granted_by)
+    granted_by.respond_to?(:id) ? "user:#{granted_by.id}" : granted_by.to_s
+  end
+  private_class_method :preview_granted_by
 
   scope :recent, -> { order(created_at: :desc) }
   scope :started_before, ->(time) { where("started_at < ?", time) }
@@ -415,6 +466,7 @@ class AgentRun < ApplicationRecord
     "NULLIF(final_runner, '')",
     "attempt->>'runner'"
   ].freeze
+
   LEGACY_PROVIDER_NORMALIZABLE_COLUMNS = {
     "final_provider" => "final_runner",
     "NULLIF(final_provider, '')" => "NULLIF(final_runner, '')",
@@ -742,18 +794,21 @@ class AgentRun < ApplicationRecord
   # (their count stays 0 during the claim window) while starving the local
   # host with runs admitted elsewhere. Once container_host is set by a real
   # provision/pool result it is authoritative and the planned value is ignored.
+  def self.capacity_inflight_for_host(container_host)
+    capacity_inflight.where(
+      "COALESCE(NULLIF(container_host, ''), " \
+      "COALESCE(external_metadata->>'planned_container_host', '')) IN (:scope)",
+      scope: host_scope_for(container_host)
+    )
+  end
+
   def self.active_count_for_host(container_host)
     # A host is a shared physical resource that runs workloads for multiple
     # accounts, so the count must span all tenants — otherwise RunAdmission
     # (tenant-scoped) undercounts and the unauthenticated Prometheus path
     # reads zero. See active_count_global for the same RLS concern.
-    scope = host_scope_for(container_host)
     TenantContext.with_system_access do
-      capacity_inflight.where(
-        "COALESCE(NULLIF(container_host, ''), " \
-        "COALESCE(external_metadata->>'planned_container_host', '')) IN (:scope)",
-        scope: scope
-      ).count
+      capacity_inflight_for_host(container_host).count
     end
   end
 
@@ -835,6 +890,17 @@ class AgentRun < ApplicationRecord
   def host_placement_decision
     raw = external_metadata.fetch("host_placement_decision", {})
     raw.is_a?(Hash) ? raw.stringify_keys : {}
+  end
+
+  # Extracts the persisted egress policy snapshot stored under
+  # `external_metadata["egress_policy"]`. The snapshot is written by the
+  # resolver before provisioning and is the authoritative record of which
+  # destinations a run was actually allowed to reach.
+  def egress_policy_snapshot
+    return nil unless external_metadata.is_a?(Hash)
+
+    snapshot = external_metadata["egress_policy"]
+    snapshot.is_a?(Hash) ? snapshot : nil
   end
 
   # Resolves the Docker host that owns this run's named workspace volume for
@@ -2318,6 +2384,7 @@ class AgentRun < ApplicationRecord
 
   PROMPT_ASSEMBLY_KEY = "prompt_assembly"
   ISSUE_PROMPT_ASSEMBLY_KEY = "issue_prompt_assembly"
+  RUNTIME_IMAGE_KEY = "runtime_image"
   PROMPT_BUILDER_KEY = "prompt_builder"
 
   # Persists prompt-assembly provenance (digest + section list) on the run so
@@ -2344,6 +2411,38 @@ class AgentRun < ApplicationRecord
 
   def prompt_assembly_digest
     prompt_assembly_provenance&.dig("digest")
+  end
+
+  def record_runtime_image_selection!(selection)
+    # @spec IMMUTABLE-IMAGE-002
+    return if selection.blank?
+
+    metadata = external_metadata.is_a?(Hash) ? external_metadata.dup : {}
+    metadata[RUNTIME_IMAGE_KEY] = selection
+
+    if persisted?
+      update_columns(external_metadata: metadata)
+    else
+      self.external_metadata = metadata
+    end
+  end
+
+  def runtime_image_selection
+    external_metadata.is_a?(Hash) ? external_metadata[RUNTIME_IMAGE_KEY] : nil
+  end
+
+  # Clears any runtime image selection previously recorded on this run. Used
+  # on the fresh-reprovision path so a replacement container records the
+  # current catalog resolution rather than the dead container's digest — the
+  # complement to Provision#recorded_run_selection, which reuses the recorded
+  # selection across reconnects (RDR-059 / IMMUTABLE-IMAGE-002).
+  def clear_runtime_image_selection!
+    return unless external_metadata.is_a?(Hash) && external_metadata.key?(RUNTIME_IMAGE_KEY)
+
+    metadata = external_metadata.dup
+    metadata.delete(RUNTIME_IMAGE_KEY)
+
+    update_columns(external_metadata: metadata)
   end
 
   def record_prompt_builder!(builder)
@@ -2573,19 +2672,29 @@ class AgentRun < ApplicationRecord
   # such volume exists or when worktree_path is set (bind-mount flows).
   #
   # @param force [Boolean] Force kill if container doesn't stop gracefully
+  # @param preserve_workspace_volume [Boolean] Skip removing the shared
+  #   workspace volume — see Containers::Provision#cleanup for why a caller
+  #   tearing down a stale container reference needs this.
   # @return [void]
-  def cleanup_container(force: false)
+  def cleanup_container(force: false, preserve_workspace_volume: false)
+    # Snapshot up front: a caller operating on a stale id (e.g.
+    # ExecutionControlParkCleanupJob, which assigns a park-time snapshot
+    # before calling this method) must tear down *that* container without
+    # the row write below clobbering a container_id the run may have picked
+    # up in the meantime via redispatch.
+    target_container_id = container_id
+
     # Safety net for a worker killed mid-provision: the workspace volume
     # may exist with no container_id to drive a normal cleanup. Run before
     # the early-return so it covers all paths (worktree-based runs are no-ops).
-    cleanup_orphaned_workspace_volume if container_id.blank? && @container_service.nil? && @current_handle.nil?
+    cleanup_orphaned_workspace_volume if target_container_id.blank? && @container_service.nil? && @current_handle.nil?
 
-    return if container_id.blank? && @container_service.nil? && @current_handle.nil?
+    return if target_container_id.blank? && @container_service.nil? && @current_handle.nil?
 
     if Containers::PoolManager.cleanup_claimed_container(agent_run: self, force: force)
       @container_service = nil
       @current_handle = nil
-      update!(container_id: nil)
+      clear_container_id_if_unchanged!(target_container_id)
       return
     end
 
@@ -2593,19 +2702,33 @@ class AgentRun < ApplicationRecord
       cleanup_via_runner(force: force)
     else
       ensure_container_service!
-      @container_service.cleanup(force: force)
+      @container_service.cleanup(force: force, preserve_workspace_volume: preserve_workspace_volume)
       @container_service = nil
-      update!(container_id: nil)
+      clear_container_id_if_unchanged!(target_container_id)
     end
   rescue Containers::Provision::Error, ExecutionRunners::Error
     # Container may already be gone; clear the reference anyway
     @container_service = nil
     @current_handle = nil
-    update!(container_id: nil, runner_handle: nil)
+    clear_container_id_if_unchanged!(target_container_id, also_clear: { runner_handle: nil })
     # The container is gone but the workspace volume may still exist.
     # Provision#cleanup would normally handle this in its ensure block,
-    # but we never reached it, so clean up the volume directly.
-    cleanup_orphaned_workspace_volume
+    # but we never reached it, so clean up the volume directly. Skip it
+    # when preserve_workspace_volume is set (redispatch race): the volume
+    # may already be in use by a container that redispatch just claimed.
+    cleanup_orphaned_workspace_volume unless preserve_workspace_volume
+  end
+
+  # Clears container_id (and any also_clear columns) only if container_id
+  # still matches the container this method just tore down. A run cleaned up
+  # from a stale snapshot (see cleanup_container above) may have already been
+  # re-dispatched to a different container by the time teardown finishes; an
+  # unconditional write here would silently wipe the new container's id out
+  # from under the run that is now using it.
+  def clear_container_id_if_unchanged!(expected_container_id, also_clear: {})
+    updates = also_clear.merge(container_id: nil)
+    self.class.where(id: id, container_id: expected_container_id).update_all(updates)
+    assign_attributes(updates) if container_id == expected_container_id
   end
 
   # Persists the id of a container that provisioning created but never
@@ -2882,12 +3005,16 @@ class AgentRun < ApplicationRecord
   end
 
   # Clears persisted container reference columns after a stale runner handle is
-  # cleaned up, so a subsequent provision starts from a clean slate. Uses
-  # +update_columns+ to bypass validations (the run may be in an inconsistent
-  # state mid-reconciliation).
+  # cleaned up, so a subsequent provision starts from a clean slate. Also
+  # clears the recorded runtime image selection so a replacement container
+  # records the current catalog resolution instead of inheriting provenance
+  # from a container that no longer exists (RDR-059 / IMMUTABLE-IMAGE-002).
+  # Uses +update_columns+ to bypass validations (the run may be in an
+  # inconsistent state mid-reconciliation).
   def clear_runner_reference!
     @current_handle = nil
     update_columns(container_id: nil, runner_handle: nil)
+    clear_runtime_image_selection!
   end
 
   def set_initiating_user_from_current_user
@@ -3280,6 +3407,10 @@ class AgentRun < ApplicationRecord
   # Cleans up a recorded container that is no longer usable (dead or missing)
   # so a fresh one can be provisioned. Handles both pooled and freshly
   # provisioned containers and guarantees the stale container_id is cleared.
+  # Also clears the recorded runtime image selection so the replacement
+  # container records the current catalog resolution instead of inheriting
+  # provenance from a container that no longer exists (RDR-059 /
+  # IMMUTABLE-IMAGE-002).
   def reconcile_stale_container!(service)
     @container_service = service
     cleanup_container(force: true)
@@ -3293,6 +3424,7 @@ class AgentRun < ApplicationRecord
   ensure
     @container_service = nil
     update_column(:container_id, nil) if container_id.present?
+    clear_runtime_image_selection!
   end
 
   def self.host_scope_for(container_host)

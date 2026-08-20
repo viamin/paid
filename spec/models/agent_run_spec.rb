@@ -2280,6 +2280,18 @@ RSpec.describe AgentRun do
           expect(orphan_volume).to have_received(:remove)
         end
 
+        it "skips volume cleanup when container is already gone and preserve_workspace_volume is set" do
+          agent_run = create(:agent_run, worktree_path: nil, container_id: "gone999")
+          allow(Docker::Container).to receive(:get).with("gone999")
+            .and_raise(Docker::Error::NotFoundError)
+
+          expect(Docker::Volume).not_to receive(:get)
+
+          agent_run.cleanup_container(force: true, preserve_workspace_volume: true)
+
+          expect(agent_run.reload.container_id).to be_nil
+        end
+
         it "handles missing volume gracefully when container is already gone" do
           agent_run = create(:agent_run, worktree_path: nil, container_id: "gone456")
           allow(Docker::Container).to receive(:get).with("gone456")
@@ -2376,6 +2388,31 @@ RSpec.describe AgentRun do
           expect(ExecutionRunners).not_to have_received(:resolve_for)
           expect(result).to be_success
           expect(result[:container_id]).to eq("abc123container")
+        end
+
+        # @spec EXEC-INGRESS-001
+        it "rejects unsupported ingress on the legacy path when the runner flag is disabled" do
+          agent_run = create(:agent_run, worktree_path: worktree_path, external_metadata: {
+            AgentRun::EXECUTION_INGRESS_METADATA_KEY => {
+              "public_inbound" => false,
+              "capabilities" => [
+                {
+                  "kind" => "callback",
+                  "scope" => "public_listener",
+                  "expires_at" => 2.days.from_now.iso8601,
+                  "authentication" => { "required" => true, "type" => "signed_token" },
+                  "granted_at" => 1.day.ago.iso8601,
+                  "granted_by" => "user:42"
+                }
+              ]
+            }
+          })
+          FeatureFlags.disable!(:execution_runner_enabled)
+
+          expect {
+            agent_run.provision_container
+          }.to raise_error(ExecutionRunners::ProvisionError, "Unsupported inbound exposure requested: callback.")
+          expect(Docker::Container).not_to have_received(:create)
         end
 
         it "reuses an existing container even when runner flag is enabled" do
@@ -6003,6 +6040,28 @@ RSpec.describe AgentRun do
         agent_run.send(:cleanup_orphaned_workspace_volume)
 
         expect(backend).to have_received(:get_volume).with("runner-built-sentinel", host: "remote")
+      end
+    end
+
+    describe "#egress_policy_snapshot" do
+      it "returns the snapshot hash recorded before provisioning" do
+        snapshot = { "mode" => "enforced", "destinations" => [] }
+        agent_run = create(:agent_run, external_metadata: { "egress_policy" => snapshot })
+
+        expect(agent_run.egress_policy_snapshot).to eq(snapshot)
+      end
+
+      it "returns nil when no snapshot was recorded" do
+        agent_run = create(:agent_run, external_metadata: {})
+
+        expect(agent_run.egress_policy_snapshot).to be_nil
+      end
+
+      it "returns nil when the recorded snapshot is not a Hash" do
+        agent_run = create(:agent_run)
+        agent_run.update_columns(external_metadata: { "egress_policy" => "enforced" })
+
+        expect(agent_run.egress_policy_snapshot).to be_nil
       end
     end
 

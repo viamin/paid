@@ -46,6 +46,7 @@ class ProcessRunQueueJob < ApplicationJob
     issue_p3: 5,
     auto_pick: 5
   }.freeze
+  QUEUE_PARKING_EXECUTION_CONTROL_SCOPES = %w[global account project].freeze
 
   def perform
     # Use a PostgreSQL advisory lock to ensure only one job processes the queue at a time.
@@ -78,11 +79,16 @@ class ProcessRunQueueJob < ApplicationJob
       # different projects/goals can legitimately resolve to different
       # healthy alternatives.
       reroute_cache = {}
+      blocked_account_ids = Set.new
       blocked_account_create_pr_ids = Set.new
       blocked_account_dispatch_ids = Set.new
+      execution_control_snapshot = execution_control_snapshot_for_queue
       docker_snapshots_by_host = {}
       base_reserved_agent_memory_bytes_by_host = {}
       started_reserved_agent_memory_bytes_by_host = Hash.new(0)
+      admission_snapshot = Capacity::AdmissionSnapshot.capture(
+        window_seconds: Capacity::InfrastructureLimits.current[:provisioning_rate_window_seconds]
+      )
 
       loop do
         iterations += 1
@@ -95,6 +101,7 @@ class ProcessRunQueueJob < ApplicationJob
           skipped_ids:,
           blocked_project_ids:,
           blocked_user_ids:,
+          blocked_account_ids:,
           blocked_account_create_pr_ids:,
           blocked_account_dispatch_ids:
         )
@@ -116,6 +123,22 @@ class ProcessRunQueueJob < ApplicationJob
         if (github_state = unavailable_github_state(next_run.project.github_health_endpoint))
           blocked_project_ids.add(next_run.project_id)
           log_github_unavailable(github_state, project_id: next_run.project_id)
+          next
+        end
+
+        # @spec EXEC-DISABLE-002 — global/account/project controls park
+        # unconditionally, independent of capacity, host, or runner. Checked
+        # here, before admission, so parked runs skip the entire backend
+        # scheduling / host placement / runner binding pipeline instead of
+        # paying for it only to be parked afterward. This also keeps
+        # runner-unbound runs unbound: AgentRuns::BindRunner (further down)
+        # persists a runner_id as a side effect of resolution, which would
+        # otherwise pin a parked run to a runner chosen before the control
+        # cleared rather than one re-resolved at dispatch time.
+        execution_control = queue_parking_execution_control_for(next_run, execution_control_snapshot)
+        if execution_control
+          park_run_for_execution_control(next_run, execution_control)
+          skipped_ids.add(next_run.id)
           next
         end
 
@@ -187,7 +210,8 @@ class ProcessRunQueueJob < ApplicationJob
           forced_admission_mode: forced_admission_mode,
           docker_snapshots_by_host: docker_snapshots_by_host,
           base_reserved_agent_memory_bytes_by_host: base_reserved_agent_memory_bytes_by_host,
-          started_reserved_agent_memory_bytes_by_host: started_reserved_agent_memory_bytes_by_host
+          started_reserved_agent_memory_bytes_by_host: started_reserved_agent_memory_bytes_by_host,
+          admission_snapshot: admission_snapshot
         )
         unless admission[:allowed]
           log_capacity_skip(next_run, admission, host_selection: host_selection, host_placement_decision: host_placement_decision)
@@ -206,6 +230,15 @@ class ProcessRunQueueJob < ApplicationJob
             blocked_project_ids.add(next_run.project_id)
           when "create_pr_hard_ceiling"
             blocked_account_create_pr_ids.add(next_run.project.account_id)
+          when "global_provisioning_rate_limit"
+            park_run_for_capacity(next_run, admission[:rate_limited_until], admission[:reason])
+            break
+          when "account_provisioning_rate_limit"
+            park_run_for_capacity(next_run, admission[:rate_limited_until], admission[:reason])
+            blocked_account_ids.add(next_run.project.account_id)
+          when "project_provisioning_rate_limit"
+            park_run_for_capacity(next_run, admission[:rate_limited_until], admission[:reason])
+            blocked_project_ids.add(next_run.project_id)
           else
             # Exclude the whole owner for the rest of this pass so a deep
             # backlog for a saturated user cannot consume the iteration budget
@@ -223,7 +256,11 @@ class ProcessRunQueueJob < ApplicationJob
         # agent-run-enabled runners). Weighting/preference is a soft preference
         # — availability is a hard filter that never blocks work from running.
         if next_run.runner_unbound?
-          bound_runner = AgentRuns::BindRunner.call(agent_run: next_run, exclude_runner_ids: blocked_runner_ids)
+          bound_runner = AgentRuns::BindRunner.call(
+            agent_run: next_run,
+            exclude_runner_ids: blocked_runner_ids,
+            disabled_runner_ids: execution_control_snapshot[:disabled_runner_ids]
+          )
           unless bound_runner
             # @spec RUNNER-SCHED-008: when all eligible runners are blocked by
             # time-window restrictions, park the run until the earliest window
@@ -242,15 +279,18 @@ class ProcessRunQueueJob < ApplicationJob
           # Runner already failed preflight earlier this pass — reroute to a
           # healthy alternative without re-checking (preserves the bulk-skip
           # optimization for runs sharing one bad runner).
-          reroute_unavailable_runner(next_run, blocked_runner_ids, skipped_ids, reroute_cache)
+          reroute_unavailable_runner(next_run, blocked_runner_ids, skipped_ids, reroute_cache,
+            disabled_runner_ids: execution_control_snapshot[:disabled_runner_ids])
           next
         end
 
-        preflight_result = check_runner_preflight(next_run, user)
+        preflight_result = check_runner_preflight(next_run, user,
+          disabled_runner_ids: execution_control_snapshot[:disabled_runner_ids])
         if preflight_result && !preflight_result.pass?
           log_preflight_skip(next_run, preflight_result)
           blocked_runner_ids.add(preflight_result.runner_id) if preflight_result.runner_id
-          reroute_unavailable_runner(next_run, blocked_runner_ids, skipped_ids, reroute_cache)
+          reroute_unavailable_runner(next_run, blocked_runner_ids, skipped_ids, reroute_cache,
+            disabled_runner_ids: execution_control_snapshot[:disabled_runner_ids])
           next
         end
 
@@ -311,6 +351,11 @@ class ProcessRunQueueJob < ApplicationJob
             )
           end
           started_reserved_agent_memory_bytes_by_host[selected_host] += admission[:estimated_memory_per_run_bytes].to_i
+          admission_snapshot.record_started_run(
+            agent_run,
+            host: selected_host,
+            started_at: agent_run.provisioning_started_at || Time.current
+          )
           break if starts_count >= MAX_STARTS_PER_PERFORM
         else
           consecutive_failures += 1
@@ -333,11 +378,36 @@ class ProcessRunQueueJob < ApplicationJob
     state if state.unavailable?
   end
 
-  def check_runner_preflight(agent_run, user)
+  def check_runner_preflight(agent_run, user, disabled_runner_ids: nil)
     runner = agent_run.runner
     return nil unless runner
 
-    Runners::PreflightCheck.call(runner: runner, user: user)
+    Runners::PreflightCheck.call(runner: runner, user: user, disabled_runner_ids: disabled_runner_ids)
+  end
+
+  # @spec EXEC-DISABLE-002 — only global/account/project controls park queued
+  # runs before claim. Runner/backend controls are enforced later in the
+  # preflight and placement paths so reroute/late-binding semantics still apply.
+  def queue_parking_execution_control_for(agent_run, execution_control_snapshot)
+    control = [
+      execution_control_snapshot[:global],
+      execution_control_snapshot[:accounts][agent_run.project.account_id],
+      execution_control_snapshot[:projects][agent_run.project_id]
+    ].compact.max_by(&:priority)
+    return unless control
+
+    control if QUEUE_PARKING_EXECUTION_CONTROL_SCOPES.include?(control.scope)
+  end
+
+  def execution_control_snapshot_for_queue
+    controls = ExecutionControl.enabled.where(scope: ExecutionControl::SCOPES).to_a
+
+    {
+      global: controls.find { |control| control.scope == "global" },
+      accounts: controls.select { |control| control.scope == "account" }.index_by(&:account_id),
+      projects: controls.select { |control| control.scope == "project" }.index_by(&:project_id),
+      disabled_runner_ids: controls.filter_map { |control| control.runner_id if control.scope == "runner" }.to_set
+    }
   end
 
   # Reroutes a run whose pinned/bound runner is unavailable to a healthy
@@ -358,7 +428,7 @@ class ProcessRunQueueJob < ApplicationJob
   # instead of being restored and churned on every queue pass. The parked_until
   # time is cached alongside reroute resolutions so runs sharing a reroute
   # context park without another resolver call.
-  def reroute_unavailable_runner(agent_run, blocked_runner_ids, skipped_ids, reroute_cache)
+  def reroute_unavailable_runner(agent_run, blocked_runner_ids, skipped_ids, reroute_cache, disabled_runner_ids: nil)
     original_id = agent_run.runner_id
     cache_key = reroute_cache_key(agent_run, original_id)
 
@@ -370,7 +440,8 @@ class ProcessRunQueueJob < ApplicationJob
     end
 
     agent_run.update_columns(runner_id: nil)
-    if AgentRuns::BindRunner.call(agent_run: agent_run, exclude_runner_ids: blocked_runner_ids)
+    if AgentRuns::BindRunner.call(agent_run: agent_run, exclude_runner_ids: blocked_runner_ids,
+                                    disabled_runner_ids: disabled_runner_ids)
       cache_reroute_resolution(agent_run, original_id, cache_key, reroute_cache)
     else
       # @spec RUNNER-SCHED-008: when every alternative is time-window-blocked,
@@ -435,6 +506,18 @@ class ProcessRunQueueJob < ApplicationJob
     )
   end
 
+  def park_run_for_execution_control(agent_run, control)
+    ExecutionControls::RunImpact.new(control: control).park_run!(agent_run)
+    Rails.logger.info(
+      message: "process_run_queue.execution_disabled",
+      execution_control_id: control.id,
+      scope: control.scope,
+      mode: control.mode,
+      agent_run_id: agent_run.id,
+      project_id: agent_run.project_id
+    )
+  end
+
   def log_github_unavailable(state, project_id: nil)
     payload = {
       message: "process_run_queue.skipped_github_unavailable",
@@ -490,21 +573,54 @@ class ProcessRunQueueJob < ApplicationJob
     end
   end
 
-  def run_admission_for(agent_run, user, mode:, docker_snapshot:, reserved_agent_memory_bytes:, selected_host:, selected_host_limit:)
+  def park_run_for_capacity(agent_run, available_at, reason)
+    return if available_at.blank?
+
+    parked = false
+    agent_run.with_lock do
+      agent_run.reload
+      next unless agent_run.status == "queued" && agent_run.temporal_workflow_id.nil?
+
+      metadata = agent_run.external_metadata.deep_dup
+      metadata["capacity_park_reason"] = reason
+      agent_run.update_columns(
+        status: "rate_limited",
+        rate_limited_until: available_at,
+        external_metadata: metadata,
+        updated_at: Time.current
+      )
+      parked = true
+    end
+
+    return unless parked
+
+    Rails.logger.info(
+      message: "process_run_queue.capacity_parked",
+      agent_run_id: agent_run.id,
+      project_id: agent_run.project_id,
+      reason: reason,
+      rate_limited_until: available_at.iso8601
+    )
+  end
+
+  def run_admission_for(agent_run, user, mode:, docker_snapshot:, reserved_agent_memory_bytes:, selected_host:, selected_host_limit:,
+    admission_snapshot:)
     Capacity::RunAdmission.call(
       user: user,
       project: agent_run.project,
       goal: agent_run.goal,
+      agent_run: agent_run,
       mode: mode,
       docker_snapshot: docker_snapshot,
       reserved_agent_memory_bytes: reserved_agent_memory_bytes,
       selected_host: selected_host,
-      selected_host_limit: selected_host_limit
+      selected_host_limit: selected_host_limit,
+      admission_snapshot: admission_snapshot
     )
   end
 
   def select_host_admission(agent_run:, user:, host_selection:, forced_admission_mode:, docker_snapshots_by_host:,
-    base_reserved_agent_memory_bytes_by_host:, started_reserved_agent_memory_bytes_by_host:)
+    base_reserved_agent_memory_bytes_by_host:, started_reserved_agent_memory_bytes_by_host:, admission_snapshot:)
     return select_first_available_host_admission(
       agent_run: agent_run,
       user: user,
@@ -512,7 +628,8 @@ class ProcessRunQueueJob < ApplicationJob
       mode: forced_admission_mode,
       docker_snapshots_by_host: docker_snapshots_by_host,
       base_reserved_agent_memory_bytes_by_host: base_reserved_agent_memory_bytes_by_host,
-      started_reserved_agent_memory_bytes_by_host: started_reserved_agent_memory_bytes_by_host
+      started_reserved_agent_memory_bytes_by_host: started_reserved_agent_memory_bytes_by_host,
+      admission_snapshot: admission_snapshot
     ) unless capacity_aware_host_selection?(host_selection, forced_admission_mode, user)
 
     evaluations = build_host_admission_evaluations(
@@ -522,7 +639,8 @@ class ProcessRunQueueJob < ApplicationJob
       mode: forced_admission_mode,
       docker_snapshots_by_host: docker_snapshots_by_host,
       base_reserved_agent_memory_bytes_by_host: base_reserved_agent_memory_bytes_by_host,
-      started_reserved_agent_memory_bytes_by_host: started_reserved_agent_memory_bytes_by_host
+      started_reserved_agent_memory_bytes_by_host: started_reserved_agent_memory_bytes_by_host,
+      admission_snapshot: admission_snapshot
     )
 
     if evaluations.any? { |evaluation| !capacity_snapshot_usable_for_balancing?(evaluation[:admission]) }
@@ -533,7 +651,8 @@ class ProcessRunQueueJob < ApplicationJob
         mode: UserSetting::RUN_CONCURRENCY_MODE_MANUAL,
         docker_snapshots_by_host: docker_snapshots_by_host,
         base_reserved_agent_memory_bytes_by_host: base_reserved_agent_memory_bytes_by_host,
-        started_reserved_agent_memory_bytes_by_host: started_reserved_agent_memory_bytes_by_host
+        started_reserved_agent_memory_bytes_by_host: started_reserved_agent_memory_bytes_by_host,
+        admission_snapshot: admission_snapshot
       )
       return [
         selected_host,
@@ -588,7 +707,7 @@ class ProcessRunQueueJob < ApplicationJob
   end
 
   def select_first_available_host_admission(agent_run:, user:, host_selection:, mode:, docker_snapshots_by_host:,
-    base_reserved_agent_memory_bytes_by_host:, started_reserved_agent_memory_bytes_by_host:)
+    base_reserved_agent_memory_bytes_by_host:, started_reserved_agent_memory_bytes_by_host:, admission_snapshot:)
     evaluations = build_host_admission_evaluations(
       agent_run: agent_run,
       user: user,
@@ -596,7 +715,8 @@ class ProcessRunQueueJob < ApplicationJob
       mode: mode,
       docker_snapshots_by_host: docker_snapshots_by_host,
       base_reserved_agent_memory_bytes_by_host: base_reserved_agent_memory_bytes_by_host,
-      started_reserved_agent_memory_bytes_by_host: started_reserved_agent_memory_bytes_by_host
+      started_reserved_agent_memory_bytes_by_host: started_reserved_agent_memory_bytes_by_host,
+      admission_snapshot: admission_snapshot
     )
 
     chosen_evaluation = nil
@@ -621,7 +741,7 @@ class ProcessRunQueueJob < ApplicationJob
   end
 
   def build_host_admission_evaluations(agent_run:, user:, host_selection:, mode:, docker_snapshots_by_host:,
-    base_reserved_agent_memory_bytes_by_host:, started_reserved_agent_memory_bytes_by_host:)
+    base_reserved_agent_memory_bytes_by_host:, started_reserved_agent_memory_bytes_by_host:, admission_snapshot:)
     host_selection.candidate_hosts.each_with_index.map do |candidate_host, index|
       admission_uses_auto = mode != UserSetting::RUN_CONCURRENCY_MODE_MANUAL && user.settings.run_concurrency_auto?
       docker_snapshot = docker_snapshot_for_host(candidate_host, docker_snapshots_by_host) if admission_uses_auto
@@ -638,7 +758,8 @@ class ProcessRunQueueJob < ApplicationJob
           selected_host: candidate_host
         ),
         selected_host: candidate_host,
-        selected_host_limit: Containers.host_registry.host_limit_for(candidate_host)
+        selected_host_limit: Containers.host_registry.host_limit_for(candidate_host),
+        admission_snapshot: admission_snapshot
       )
 
       {
@@ -740,6 +861,28 @@ class ProcessRunQueueJob < ApplicationJob
       available_memory_bytes: admission[:available_memory_bytes],
       estimated_memory_per_run_bytes: admission[:estimated_memory_per_run_bytes],
       reserved_agent_memory_bytes: admission[:reserved_agent_memory_bytes],
+      requested_cpu_quota: admission[:requested_cpu_quota],
+      requested_memory_bytes: admission[:requested_memory_bytes],
+      requested_disk_bytes: admission[:requested_disk_bytes],
+      current_global_requested_cpu_quota: admission[:current_global_requested_cpu_quota],
+      current_global_requested_memory_bytes: admission[:current_global_requested_memory_bytes],
+      current_global_requested_disk_bytes: admission[:current_global_requested_disk_bytes],
+      global_requested_cpu_quota_limit: admission[:global_requested_cpu_quota_limit],
+      global_requested_memory_bytes_limit: admission[:global_requested_memory_bytes_limit],
+      global_requested_disk_bytes_limit: admission[:global_requested_disk_bytes_limit],
+      current_host_requested_cpu_quota: admission[:current_host_requested_cpu_quota],
+      current_host_requested_memory_bytes: admission[:current_host_requested_memory_bytes],
+      current_host_requested_disk_bytes: admission[:current_host_requested_disk_bytes],
+      host_requested_cpu_quota_limit: admission[:host_requested_cpu_quota_limit],
+      host_requested_memory_bytes_limit: admission[:host_requested_memory_bytes_limit],
+      host_requested_disk_bytes_limit: admission[:host_requested_disk_bytes_limit],
+      current_global_provisionings_per_window: admission[:current_global_provisionings_per_window],
+      current_account_provisionings_per_window: admission[:current_account_provisionings_per_window],
+      current_project_provisionings_per_window: admission[:current_project_provisionings_per_window],
+      global_provisionings_per_window_limit: admission[:global_provisionings_per_window_limit],
+      account_provisionings_per_window_limit: admission[:account_provisionings_per_window_limit],
+      project_provisionings_per_window_limit: admission[:project_provisionings_per_window_limit],
+      rate_limited_until: admission[:rate_limited_until]&.iso8601,
       snapshot_backend_identifier: admission[:snapshot_backend_identifier],
       docker_degraded_reasons: admission[:docker_degraded_reasons],
       docker_reason: admission[:docker_reason],
@@ -892,14 +1035,22 @@ class ProcessRunQueueJob < ApplicationJob
     # and capacity accounting. Keep started_at tied to actual agent execution
     # in RunAgentActivity so max_execution_seconds and stale-running thresholds
     # do not start burning down during Temporal admission/provisioning.
+    # @spec OBSERVABILITY-002 — record provisioning_started_at and
+    # requested_resources so admission telemetry can correlate rate-limited
+    # runs with the exact resource envelope they were admitted against.
     update_attributes = {
       temporal_workflow_id: workflow_id,
       status: "running",
-      completed_at: nil
+      completed_at: nil,
+      provisioning_started_at: Time.current,
+      external_metadata: agent_run.external_metadata.merge(
+        "provisioning_started_at" => Time.current.iso8601,
+        "requested_resources" => Capacity::RequestedResources.persistable_for(agent_run)
+      )
     }
     if planned_container_host.present?
       update_attributes[:container_host] = nil
-      update_attributes[:external_metadata] = agent_run.external_metadata.merge({
+      update_attributes[:external_metadata] = update_attributes[:external_metadata].merge({
         "planned_container_host" => planned_container_host
       }).tap do |metadata|
         metadata["host_placement_decision"] = serialize_host_placement_decision(host_placement_decision) if host_placement_decision.present?
@@ -1019,12 +1170,13 @@ class ProcessRunQueueJob < ApplicationJob
     )
   end
 
-  def next_queued_run_for_scheduler(skipped_ids:, blocked_project_ids:, blocked_user_ids:,
+  def next_queued_run_for_scheduler(skipped_ids:, blocked_project_ids:, blocked_user_ids:, blocked_account_ids:,
     blocked_account_create_pr_ids:, blocked_account_dispatch_ids:)
     ranked_scope = schedulable_queue_scope(
       skipped_ids: skipped_ids,
       blocked_project_ids: blocked_project_ids,
       blocked_user_ids: blocked_user_ids,
+      blocked_account_ids: blocked_account_ids,
       blocked_account_create_pr_ids: blocked_account_create_pr_ids,
       blocked_account_dispatch_ids: blocked_account_dispatch_ids
     ).select("#{account_scheduler_rank_sql} AS account_queue_rank")
@@ -1061,7 +1213,7 @@ class ProcessRunQueueJob < ApplicationJob
     SQL
   end
 
-  def schedulable_queue_scope(skipped_ids:, blocked_project_ids:, blocked_user_ids:,
+  def schedulable_queue_scope(skipped_ids:, blocked_project_ids:, blocked_user_ids:, blocked_account_ids:,
     blocked_account_create_pr_ids:, blocked_account_dispatch_ids:)
     scope = AgentRun.unclaimed_with_priority
       .joins(project: :account)
@@ -1073,6 +1225,7 @@ class ProcessRunQueueJob < ApplicationJob
     scope = scope.where.not(id: skipped_ids.to_a) if skipped_ids.any?
     scope = scope.where.not(project_id: blocked_project_ids.to_a) if blocked_project_ids.any?
     scope = scope.where("project_owner.user_id NOT IN (?)", blocked_user_ids.to_a) if blocked_user_ids.any?
+    scope = scope.where.not(projects: { account_id: blocked_account_ids.to_a }) if blocked_account_ids.any?
     scope = scope.where.not(projects: { account_id: blocked_account_dispatch_ids.to_a }) if blocked_account_dispatch_ids.any?
     if blocked_account_create_pr_ids.any?
       scope = scope.where(

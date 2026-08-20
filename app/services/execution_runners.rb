@@ -62,12 +62,13 @@ module ExecutionRunners
     resolve(backend: nil)
   end
 
-  # Compute resource limits for a workload. Mirrors the fields
-  # +Containers::Provision::DEFAULTS+ actually consumes (memory_bytes,
-  # cpu_quota, pids_limit). Runners translate these to their native
-  # resource controls (cgroups, Fly machine size, etc.).
+  # Compute resource limits for a workload. Mirrors the provider-neutral
+  # execution request that admission and observability reason about; Docker
+  # runners only consume cpu/memory/pids directly today, while disk_bytes is
+  # used by infrastructure admission and future remote runners.
   # @spec CONTAINER-RUNTIME-009
-  ComputeRequirements = Data.define(:cpu_quota, :memory_bytes, :pids_limit)
+  # @spec CONTAINER-RUNTIME-027
+  ComputeRequirements = Data.define(:cpu_quota, :memory_bytes, :disk_bytes, :pids_limit)
 
   # A writable directory inside the workload. A Docker runner translates this
   # to a tmpfs mount; a remote runner translates it to ephemeral disk or
@@ -171,6 +172,160 @@ module ExecutionRunners
     end
   end
 
+  # Provider-neutral inbound exposure exception. Execution environments are
+  # default-deny for public ingress; any exception must be explicit, scoped,
+  # authenticated, and time-bounded.
+  # @spec EXEC-INGRESS-001
+  # @spec EXEC-INGRESS-002
+  IngressCapability = Data.define(
+    :kind,
+    :scope,
+    :expires_at,
+    :authentication,
+    :granted_at,
+    :granted_by
+  ) do
+    SUPPORTED_KINDS = %w[preview browser debug callback].freeze
+    PREVIEW_KIND = "preview".freeze
+    AUTHENTICATED_AUTH_TYPES = %w[signed_token authenticated_proxy].freeze
+
+    def self.build(kind:, scope:, expires_at:, authentication:, granted_at:, granted_by:)
+      new(
+        kind: kind.to_s,
+        scope: scope.to_s,
+        expires_at: normalize_time(expires_at),
+        authentication: normalize_authentication(authentication),
+        granted_at: normalize_time(granted_at),
+        granted_by: granted_by.to_s
+      )
+    end
+
+    def self.from_h(payload)
+      data = payload.respond_to?(:to_h) ? payload.to_h : {}
+      build(
+        kind: data[:kind] || data["kind"],
+        scope: data[:scope] || data["scope"],
+        expires_at: data[:expires_at] || data["expires_at"],
+        authentication: data[:authentication] || data["authentication"],
+        granted_at: data[:granted_at] || data["granted_at"],
+        granted_by: data[:granted_by] || data["granted_by"]
+      )
+    end
+
+    def preview?
+      kind == PREVIEW_KIND
+    end
+
+    def supported_kind?
+      kind.in?(SUPPORTED_KINDS)
+    end
+
+    def authenticated?
+      authentication.fetch("required", false) == true &&
+        AUTHENTICATED_AUTH_TYPES.include?(authentication["type"])
+    end
+
+    def valid_grant?
+      supported_kind? &&
+        expires_at.present? &&
+        expires_at.future? &&
+        granted_at.present? &&
+        granted_by.present? &&
+        authenticated?
+    end
+
+    def to_h
+      {
+        "kind" => kind,
+        "scope" => scope,
+        "expires_at" => expires_at&.iso8601,
+        "authentication" => authentication,
+        "granted_at" => granted_at&.iso8601,
+        "granted_by" => granted_by
+      }
+    end
+
+    class << self
+      private
+
+      def normalize_time(value)
+        return value if value.is_a?(Time) || value.is_a?(ActiveSupport::TimeWithZone)
+        return if value.blank?
+
+        Time.zone.parse(value.to_s)
+      end
+
+      def normalize_authentication(value)
+        auth = value.respond_to?(:to_h) ? value.to_h : {}
+        {
+          "required" => ActiveModel::Type::Boolean.new.cast(auth[:required] || auth["required"]),
+          "type" => (auth[:type] || auth["type"]).to_s
+        }
+      end
+    end
+  end
+
+  # Provider-neutral ingress policy carried on the run contract.
+  # @spec EXEC-INGRESS-001
+  # @spec EXEC-INGRESS-002
+  IngressPolicy = Data.define(:public_inbound, :capabilities) do
+    def self.default_deny(capabilities: [])
+      new(public_inbound: false, capabilities: Array(capabilities))
+    end
+
+    def self.from_metadata(metadata)
+      raw = metadata.respond_to?(:to_h) ? metadata.to_h : {}
+      capabilities = Array(raw[:capabilities] || raw["capabilities"]).map do |entry|
+        entry.is_a?(IngressCapability) ? entry : IngressCapability.from_h(entry)
+      end
+
+      raw_public_inbound = raw[:public_inbound] || raw["public_inbound"]
+      public_inbound_value = ActiveModel::Type::Boolean.new.cast(raw_public_inbound)
+
+      new(
+        public_inbound: public_inbound_value.nil? ? false : public_inbound_value,
+        capabilities: capabilities
+      )
+    end
+
+    def explicit?
+      public_inbound == false
+    end
+
+    def preview_only?
+      capabilities.all?(&:preview?)
+    end
+
+    def supported_for_runtime?
+      explicit? &&
+        preview_only? &&
+        capabilities.all?(&:valid_grant?)
+    end
+
+    def violation_message
+      return "Execution ingress policy must explicitly deny public inbound exposure." unless explicit?
+      return nil if capabilities.empty?
+      return nil if supported_for_runtime?
+
+      unsupported = capabilities.reject(&:preview?).map(&:kind).uniq
+      return "Unsupported inbound exposure requested: #{unsupported.join(', ')}." if unsupported.any?
+
+      "Ingress exception grants must be authenticated, time-bounded, and explicitly recorded."
+    end
+
+    def validate_supported!
+      message = violation_message
+      raise ExecutionRunners::ProvisionError, message if message.present?
+    end
+
+    def to_h
+      {
+        "public_inbound" => public_inbound == true,
+        "capabilities" => capabilities.map(&:to_h)
+      }
+    end
+  end
+
   # Immutable description of what to execute. Built by orchestration from the
   # +AgentRun+/+Project+ context and handed to {ExecutionRunners::Base#provision}.
   # @spec CONTAINER-RUNTIME-009
@@ -183,6 +338,7 @@ module ExecutionRunners
     :resources,          # ComputeRequirements (cpu, memory, pids)
     :environment,        # Hash of env vars
     :networking_policy,  # NetworkingPolicy (restricted vs. direct)
+    :ingress_policy,     # IngressPolicy (default deny + scoped exceptions)
     :workspace,          # WorkspaceStrategy (named_volume | bind_mount | ephemeral)
     :services,           # Array<ServiceDeclaration>
     :secrets_config      # Auth/credential configuration
@@ -197,13 +353,14 @@ module ExecutionRunners
     # @param options [Hash] container options (memory_bytes, cpu_quota, etc.)
     # @return [RunSpec]
     def self.from_agent_run(agent_run, networking_policy: nil, **options)
-      resources = if options[:memory_bytes] || options[:cpu_quota] || options[:pids_limit]
-                    ComputeRequirements.new(
-                      cpu_quota: options[:cpu_quota],
-                      memory_bytes: options[:memory_bytes],
-                      pids_limit: options[:pids_limit]
-                    )
-      end
+      workspace = workspace_strategy_for(agent_run)
+      requested_resources = Capacity::RequestedResources.for_agent_run(agent_run)
+      resources = ComputeRequirements.new(
+        cpu_quota: positive_numeric_option(options[:cpu_quota]) || requested_resources[:cpu_quota],
+        memory_bytes: positive_numeric_option(options[:memory_bytes]) || requested_resources[:memory_bytes],
+        disk_bytes: positive_numeric_option(options[:disk_bytes]) || requested_resources[:disk_bytes],
+        pids_limit: positive_numeric_option(options[:pids_limit]) || Containers::Provision::DEFAULTS[:pids_limit]
+      )
 
       new(
         agent_run: agent_run,
@@ -213,10 +370,15 @@ module ExecutionRunners
         resources: resources,
         environment: agent_run.service_environment || {},
         networking_policy: networking_policy,
-        workspace: workspace_strategy_for(agent_run),
+        workspace: workspace,
+        ingress_policy: agent_run.execution_ingress_policy,
         services: [],
         secrets_config: nil
       )
+    end
+
+    def self.positive_numeric_option(value)
+      value if value.to_i.positive?
     end
 
     # Derives the workspace strategy from the agent run: a legacy bind mount
@@ -447,23 +609,34 @@ module ExecutionRunners
   # Provider-neutral networking policy, replacing Docker network names.
   # Adapted from +NetworkPolicy::NetworkContract+ but drops the Docker-specific
   # +network+ name and derives restriction from +mode+. A runner implementation
-  # translates this to Docker networks, in-container firewall rules, Fly
-  # firewall rules, etc.
+  # translates the coarse intent into its native controls — Docker networks
+  # and in-container iptables for {LocalDockerRunner}; a future Fly or remote
+  # runner maps the same intents to its own egress primitives.
   #
-  # +mode+ values:
-  #   :proxy_restricted   — restricted; traffic flows through Paid's secrets proxy
-  #                          and an in-container iptables firewall limits egress
-  #                          to the proxy, GitHub IPs, DNS, and service containers.
-  #   :subscription_auth  — unrestricted; provider CLI reaches upstream APIs directly.
-  #   :direct_outbound    — unrestricted; provider bypasses the proxy entirely.
+  # The vocabulary is deliberately coarse. The runner is the only place that
+  # knows the underlying network and firewall mechanism; orchestration code
+  # names intent, never implementation.
+  #
+  # +mode+ values (RDR-062):
+  #   :no_outbound       — air-gapped; loopback + DNS only.
+  #   :proxy_only        — restricted; only Paid secrets proxy + DNS.
+  #   :git_plus_proxy    — restricted; adds GitHub CIDR ranges.
+  #   :approved_services — restricted; adds service container IPs.
+  #                         The default for API-key LLM runs.
+  #   :model_direct      — unrestricted; provider CLI reaches upstream APIs.
+  #   :explicit_internet — unrestricted; operator opt-in for full egress.
+  #
+  # The three backward-compatible constructors from before RDR-062
+  # (+:proxy_restricted+, +:subscription_auth+, +:direct_outbound+) remain
+  # valid and map onto the new intent vocabulary without changing behavior.
   #
   # +firewall+ (boolean) — whether the runner must apply in-container firewall
-  #                          rules. Always true for +:proxy_restricted+, false
-  #                          for the unrestricted modes.
+  #                          rules. Always true for the four restricted modes,
+  #                          false for the two unrestricted modes.
   #
   # +allow_destinations+ — array of destination hashes ({host:, port:}) the
-  #                          runner should grant in the firewall, in addition to
-  #                          the secrets proxy and GitHub ranges. The runner
+  #                          runner should grant in the firewall, in addition
+  #                          to the secrets proxy and GitHub ranges. The runner
   #                          merges these with service container IPs (resolved
   #                          from Provision after containers start) and
   #                          preview-tunnel destinations, so the underlying
@@ -490,30 +663,92 @@ module ExecutionRunners
   # +ArgumentError+ for any value outside the closed +EGRESS_PROFILES+ enum,
   # so typos or foreign values (e.g. a string instead of a symbol) fail at
   # construction instead of silently serializing into the manifest.
+  #
   # @spec CONTAINER-RUNTIME-009
   # @spec CONTAINER-RUNTIME-017
   # @spec CONTAINER-RUNTIME-020
+  # @spec CONTAINER-RUNTIME-028
+
+  # The set of canonical intent modes and their restricted/unrestricted
+  # classification. Defined on the module so callers and the {NetworkingPolicy}
+  # value object can reference them as ordinary Ruby constants (Data.define
+  # does not expose constants defined inside the block as accessible
+  # attributes on the resulting class).
+  NETWORKING_POLICY_RESTRICTED_MODES = [ :proxy_restricted, :no_outbound, :proxy_only, :git_plus_proxy, :approved_services ].freeze
+  NETWORKING_POLICY_UNRESTRICTED_MODES = [ :subscription_auth, :direct_outbound, :model_direct, :explicit_internet ].freeze
+  NETWORKING_POLICY_KNOWN_MODES = (NETWORKING_POLICY_RESTRICTED_MODES + NETWORKING_POLICY_UNRESTRICTED_MODES).freeze
+
   NetworkingPolicy = Data.define(:mode, :firewall, :allow_destinations, :egress_profile) do
-    RESTRICTED_MODE = :proxy_restricted
+    RESTRICTED_MODES = ExecutionRunners::NETWORKING_POLICY_RESTRICTED_MODES
+    UNRESTRICTED_MODES = ExecutionRunners::NETWORKING_POLICY_UNRESTRICTED_MODES
+    KNOWN_MODES = ExecutionRunners::NETWORKING_POLICY_KNOWN_MODES
+    ALLOW_DESTINATION_REQUIRED_KEYS = %i[host port].freeze
+    ALLOW_DESTINATION_HOST_PATTERN = /\A[a-zA-Z0-9.\-]+\z/
     LOCKED_PROFILE = :locked
     RESEARCH_PROFILE = :research
     OPEN_PROFILE = :open
     EGRESS_PROFILES = [ LOCKED_PROFILE, RESEARCH_PROFILE, OPEN_PROFILE ].freeze
 
-    def initialize(mode:, firewall:, allow_destinations:, egress_profile:)
-      super(mode:, firewall:, allow_destinations:, egress_profile: self.class.validate_egress_profile!(egress_profile))
+    def initialize(mode:, firewall:, allow_destinations:, egress_profile: LOCKED_PROFILE)
+      normalized_mode = mode&.to_sym
+      normalized_destinations = normalize_allow_destinations(Array(allow_destinations))
+
+      validate_mode!(normalized_mode)
+      validate_firewall!(normalized_mode, firewall)
+      validate_allow_destinations!(normalized_destinations)
+
+      super(
+        mode: normalized_mode,
+        firewall: firewall,
+        allow_destinations: normalized_destinations,
+        egress_profile: self.class.validate_egress_profile!(egress_profile)
+      )
     end
 
+    def self.no_outbound(allow_destinations: [], egress_profile: LOCKED_PROFILE)
+      new(mode: :no_outbound, firewall: true, allow_destinations: allow_destinations, egress_profile: egress_profile)
+    end
+
+    def self.proxy_only(allow_destinations: [], egress_profile: LOCKED_PROFILE)
+      new(mode: :proxy_only, firewall: true, allow_destinations: allow_destinations, egress_profile: egress_profile)
+    end
+
+    def self.git_plus_proxy(allow_destinations: [], egress_profile: LOCKED_PROFILE)
+      new(mode: :git_plus_proxy, firewall: true, allow_destinations: allow_destinations, egress_profile: egress_profile)
+    end
+
+    def self.approved_services(allow_destinations: [], egress_profile: LOCKED_PROFILE)
+      new(mode: :approved_services, firewall: true, allow_destinations: allow_destinations, egress_profile: egress_profile)
+    end
+
+    # Backward-compatible alias for {.approved_services}. Keeps +mode+ set to
+    # the legacy +:proxy_restricted+ symbol (rather than delegating to
+    # {.approved_services}) so existing callers checking
+    # +policy.mode == :proxy_restricted+ see no change in behavior;
+    # {#canonical_mode} performs the normalization instead.
     def self.proxy_restricted(allow_destinations: [], egress_profile: LOCKED_PROFILE)
-      new(mode: RESTRICTED_MODE, firewall: true, allow_destinations: allow_destinations, egress_profile: egress_profile)
+      new(mode: :proxy_restricted, firewall: true, allow_destinations: allow_destinations, egress_profile: egress_profile)
     end
 
+    def self.model_direct(allow_destinations: [], egress_profile: LOCKED_PROFILE)
+      new(mode: :model_direct, firewall: false, allow_destinations: allow_destinations, egress_profile: egress_profile)
+    end
+
+    # Backward-compatible alias for {.model_direct}. Keeps +mode+ set to the
+    # legacy +:subscription_auth+ symbol so {#canonical_mode} normalizes it
+    # rather than the constructor silently swapping the mode.
     def self.subscription_auth(egress_profile: LOCKED_PROFILE)
       new(mode: :subscription_auth, firewall: false, allow_destinations: [], egress_profile: egress_profile)
     end
 
+    # Backward-compatible alias for {.model_direct}. Keeps +mode+ set to the
+    # legacy +:direct_outbound+ symbol so {#canonical_mode} normalizes it.
     def self.direct_outbound(egress_profile: LOCKED_PROFILE)
       new(mode: :direct_outbound, firewall: false, allow_destinations: [], egress_profile: egress_profile)
+    end
+
+    def self.explicit_internet(egress_profile: LOCKED_PROFILE)
+      new(mode: :explicit_internet, firewall: false, allow_destinations: [], egress_profile: egress_profile)
     end
 
     # Validates that +egress_profile+ is one of the closed RDR-055 enum
@@ -533,11 +768,50 @@ module ExecutionRunners
     end
 
     def restricted?
-      mode == RESTRICTED_MODE
+      RESTRICTED_MODES.include?(mode)
     end
 
     def firewall?
       firewall
+    end
+
+    # +true+ when the intent names a provider-direct outbound run (subscription
+    # auth or direct outbound). Distinguishes the two unrestricted intents.
+    def model_direct?
+      mode == :model_direct || mode == :subscription_auth || mode == :direct_outbound
+    end
+
+    # +true+ when the intent names an explicit-internet run (operator opt-in
+    # full egress). Distinguishes the two unrestricted intents.
+    def explicit_internet?
+      mode == :explicit_internet
+    end
+
+    # +true+ when the policy is meant to block all outbound traffic.
+    # Runners with iptables + a default-deny script can implement this; runners
+    # without a firewall capability reject it via {.supports_policy?}.
+    def no_outbound?
+      mode == :no_outbound
+    end
+
+    # +true+ when the intent includes service container IPs in its allowlist.
+    # Only the approved-services intent (and its +:proxy_restricted+ alias)
+    # grants service containers; the narrower restricted intents do not
+    # (RDR-062 mapping table).
+    def approved_services?
+      canonical_mode == :approved_services
+    end
+
+    # Returns the canonical intent mode. The three backward-compatible modes
+    # (:proxy_restricted, :subscription_auth, :direct_outbound) are normalized
+    # to their new-intent names so downstream translation paths only see the
+    # canonical six-intent set.
+    def canonical_mode
+      case mode
+      when :proxy_restricted then :approved_services
+      when :subscription_auth, :direct_outbound then :model_direct
+      else mode
+      end
     end
 
     def locked?
@@ -550,6 +824,68 @@ module ExecutionRunners
 
     def open?
       egress_profile == OPEN_PROFILE
+    end
+
+    private
+
+    def validate_mode!(mode)
+      return if KNOWN_MODES.include?(mode)
+
+      raise ArgumentError, "Unknown networking policy mode: #{mode.inspect}"
+    end
+
+    def validate_firewall!(mode, firewall)
+      expected_firewall = RESTRICTED_MODES.include?(mode)
+      return if firewall == expected_firewall
+
+      raise ArgumentError, "Networking policy #{mode.inspect} requires firewall=#{expected_firewall}"
+    end
+
+    def validate_allow_destinations!(destinations)
+      destinations.each do |destination|
+        unless destination.is_a?(Hash)
+          raise ArgumentError, "Allow destinations must be hashes with :host and :port"
+        end
+
+        missing_keys = ALLOW_DESTINATION_REQUIRED_KEYS.reject { |key| destination[key].present? }
+        next if missing_keys.empty?
+
+        raise ArgumentError, "Allow destination is missing keys: #{missing_keys.join(', ')}"
+      end
+
+      destinations.each do |destination|
+        validate_allow_destination_host!(destination[:host])
+        validate_allow_destination_port!(destination[:port])
+      end
+    end
+
+    def normalize_allow_destinations(destinations)
+      destinations.map do |destination|
+        next destination unless destination.is_a?(Hash)
+
+        {
+          host: destination[:host] || destination["host"],
+          port: normalize_allow_destination_port(destination[:port] || destination["port"])
+        }
+      end
+    end
+
+    def validate_allow_destination_host!(host)
+      return if host.is_a?(String) && host.match?(ALLOW_DESTINATION_HOST_PATTERN)
+
+      raise ArgumentError, "Allow destination host is invalid: #{host.inspect}"
+    end
+
+    def validate_allow_destination_port!(port)
+      return if port.is_a?(Integer) && port.between?(1, 65_535)
+
+      raise ArgumentError, "Allow destination port is invalid: #{port.inspect}"
+    end
+
+    def normalize_allow_destination_port(port)
+      Integer(port)
+    rescue ArgumentError, TypeError
+      port
     end
   end
 
@@ -606,8 +942,12 @@ module ExecutionRunners
             "mode" => spec.workspace&.mode&.to_s,
             "mount_point" => spec.workspace&.mount_point
           }.compact,
+          "ingress" => {
+            "public_inbound" => spec.ingress_policy&.public_inbound == true,
+            "capabilities" => ExecutionRunners.json_value(spec.ingress_policy&.capabilities&.map(&:to_h) || [])
+          }.compact,
           "networking" => {
-            "mode" => spec.networking_policy&.mode&.to_s,
+            "mode" => spec.networking_policy&.canonical_mode&.to_s,
             "firewall" => spec.networking_policy&.firewall?,
             "allow_destinations" => ExecutionRunners.json_value(spec.networking_policy&.allow_destinations || []),
             "egress_profile" => spec.networking_policy&.egress_profile&.to_s
@@ -899,17 +1239,119 @@ module ExecutionRunners
       )
     end
 
+    # Binary artifact references for the output manifest.
+    #
+    # Two source lanes feed this list:
+    #
+    # 1. `external_metadata["artifact_manifest"]` — usually persisted by the
+    #    runner, but not exclusively: interop callers can persist arbitrary
+    #    `external_metadata` (`Api::Projects::ExternalAgentRunsController` →
+    #    `AgentRuns::IngestExternal` stores it verbatim). Locator keys are
+    #    therefore honored only under the project's own storage namespace
+    #    (`Screenshots::Storage.namespace_prefix`); any other key degrades to
+    #    URL-only, so durable consumers can re-sign keys only within the
+    #    run's own tenant namespace.
+    # 2. `verification_result["artifacts"]` — written by the agent inside the
+    #    container (`AgentRuns::VerificationResultRecorder` persists it as-is),
+    #    so it is untrusted input. A spoofed key under another tenant's prefix
+    #    would otherwise be re-signed into a working presigned URL, so this
+    #    lane stays URL-only: only `url` (and `locator.url`) survive.
+    # @spec CONTAINER-RUNTIME-018
     def self.build_binary_artifact_refs(agent_run)
-      Array(agent_run.verification_result["artifacts"]).filter_map do |artifact|
-        next unless artifact.is_a?(Hash) && artifact["url"].present?
+      manifest_artifacts = Array(agent_run.external_metadata["artifact_manifest"])
+      verification_artifacts = Array(agent_run.verification_result["artifacts"])
 
+      manifest_refs = manifest_artifacts.filter_map do |artifact|
+        normalize_binary_artifact_ref(artifact, agent_run: agent_run, trusted_key: true)
+      end
+      verification_refs = verification_artifacts.filter_map do |artifact|
+        normalize_binary_artifact_ref(artifact, agent_run: agent_run, trusted_key: false)
+      end
+
+      manifest_refs + verification_refs
+    end
+
+    # @spec CONTAINER-RUNTIME-018
+    def self.normalize_binary_artifact_ref(artifact, agent_run:, trusted_key:)
+      return unless artifact.is_a?(Hash)
+
+      normalized = artifact.deep_stringify_keys
+      locator = normalized_locator(normalized, agent_run: agent_run, trusted_key: trusted_key)
+      return if locator.blank?
+
+      {
+        "lane" => "object_storage",
+        "kind" => normalized["kind"].presence || "artifact",
+        "content_type" => normalized["content_type"].presence,
+        "locator" => locator,
+        "context" => normalized_context(normalized, agent_run: agent_run),
+        "metadata" => normalized_metadata(normalized)
+      }.compact
+    end
+
+    # @spec CONTAINER-RUNTIME-018
+    def self.normalized_locator(artifact, agent_run:, trusted_key:)
+      raw_locator = if artifact["locator"].is_a?(Hash)
+        artifact["locator"].deep_stringify_keys.slice("key", "url")
+      else
         {
-          "lane" => "object_storage",
-          "kind" => artifact["kind"].presence || "artifact",
-          "locator" => { "url" => artifact["url"] },
-          "metadata" => { "note" => artifact["note"] }.compact
+          "key" => artifact["storage_key"].presence,
+          "url" => artifact["url"].presence
         }
       end
+
+      locator = trusted_key ? raw_locator : raw_locator.slice("url")
+      locator = locator.slice("url") unless key_within_project_namespace?(locator["key"], agent_run)
+      locator.compact.presence
+    end
+
+    # A locator key survives only under the run's own project storage
+    # namespace: durable consumers re-sign keys into presigned URLs, so a key
+    # planted under another tenant's prefix must degrade to URL-only — on the
+    # trusted lane too, because interop ingestion can persist caller-supplied
+    # `external_metadata` verbatim.
+    # @spec CONTAINER-RUNTIME-018
+    def self.key_within_project_namespace?(key, agent_run)
+      return true if key.blank?
+      return false unless key.is_a?(String)
+
+      prefix = project_namespace_prefix(agent_run)
+      prefix.present? && key.start_with?(prefix)
+    end
+
+    def self.project_namespace_prefix(agent_run)
+      project = agent_run.project
+      return unless project&.owner.present? && project&.repo.present?
+
+      Screenshots::Storage.namespace_prefix(org: project.owner, repo: project.repo)
+    end
+
+    # @spec CONTAINER-RUNTIME-018
+    def self.normalized_context(artifact, agent_run:)
+      artifact_context = if artifact["context"].is_a?(Hash)
+        artifact["context"].deep_stringify_keys.slice("account_id", "project_id", "agent_run_id")
+      else
+        {}
+      end
+
+      # Run identity is authoritative: the system already knows the real
+      # account/project/run, so an artifact-supplied value can never override
+      # it. Supplied values only survive where the run itself can't answer.
+      run_context = {
+        "account_id" => agent_run.project&.account_id,
+        "project_id" => agent_run.project_id,
+        "agent_run_id" => agent_run.id
+      }.compact
+
+      artifact_context.merge(run_context).compact.presence
+    end
+
+    def self.normalized_metadata(artifact)
+      raw_metadata = artifact["metadata"]
+      metadata = raw_metadata.is_a?(Hash) ? raw_metadata.deep_stringify_keys : {}
+      metadata["note"] ||= artifact["note"].presence
+      metadata["path"] ||= artifact["path"].presence
+      metadata.compact.presence
     end
 
     def self.build_structured_results(verification)

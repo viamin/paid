@@ -281,8 +281,9 @@ class StaleRunDetectorJob < ApplicationJob
       agent_run.reload
       return :skip unless agent_run.status == "rate_limited"
       return :skip if agent_run.rate_limited_until.blank? || agent_run.rate_limited_until > Time.current
+      capacity_parked = capacity_parked_run?(agent_run)
 
-      if agent_run.stale_requeue_count >= AgentRun::MAX_RATE_LIMITED_REQUEUES
+      if !capacity_parked && agent_run.stale_requeue_count >= AgentRun::MAX_RATE_LIMITED_REQUEUES
         agent_run.update!(
           status: "failed",
           completed_at: Time.current,
@@ -326,7 +327,7 @@ class StaleRunDetectorJob < ApplicationJob
       agent_run.update!(
         status: "queued",
         queue_entered_at: Time.current,
-        stale_requeue_count: agent_run.stale_requeue_count + 1,
+        stale_requeue_count: capacity_parked ? agent_run.stale_requeue_count : agent_run.stale_requeue_count + 1,
         stale_skip_count: 0,
         started_at: nil,
         completed_at: nil,
@@ -336,19 +337,29 @@ class StaleRunDetectorJob < ApplicationJob
         temporal_run_id: nil,
         service_environment: nil,
         container_id: nil,
-        service_container_ids: []
+        service_container_ids: [],
+        external_metadata: agent_run.external_metadata.except("capacity_park_reason")
       )
       agent_run.log!("system",
-        "Rate-limited run re-queued by stale run detector " \
-        "(attempt #{agent_run.stale_requeue_count}/#{AgentRun::MAX_RATE_LIMITED_REQUEUES})")
+        if capacity_parked
+          "Capacity-parked run re-queued by stale run detector"
+        else
+          "Rate-limited run re-queued by stale run detector " \
+          "(attempt #{agent_run.stale_requeue_count}/#{AgentRun::MAX_RATE_LIMITED_REQUEUES})"
+        end)
       Rails.logger.info(
         message: "stale_run_detector.reactivated_rate_limited_run",
         agent_run_id: agent_run.id,
         project_id: agent_run.project_id,
-        stale_requeue_count: agent_run.stale_requeue_count
+        stale_requeue_count: agent_run.stale_requeue_count,
+        capacity_parked: capacity_parked
       )
       :reactivated
     end
+  end
+
+  def capacity_parked_run?(agent_run)
+    agent_run.external_metadata["capacity_park_reason"].present?
   end
 
   # Attempts to unclaim a stale claimed queued run.

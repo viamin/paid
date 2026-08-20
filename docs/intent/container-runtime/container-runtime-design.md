@@ -11,7 +11,8 @@ prefix: CONTAINER-RUNTIME
 > [RDR-020](../../rdrs/RDR-020-service-container-architecture.md),
 > [RDR-043](../../rdrs/RDR-043-zero-config-docker-capacity-autoscaling.md), and
 > [RDR-048](../../rdrs/RDR-048-multi-host-docker-backend-support.md), and
-> [RDR-057](../../rdrs/RDR-057-remote-execution-data-contract.md). This
+> [RDR-057](../../rdrs/RDR-057-remote-execution-data-contract.md), and
+> [RDR-062](../../rdrs/RDR-062-execution-network-policy-intent.md). This
 > segment also records the still-shipped legacy residue from superseded
 > [RDR-005](../../rdrs/RDR-005-git-worktree-management.md).
 
@@ -247,12 +248,104 @@ is explicit value-object data, not ad hoc hashes.
   carries result summaries, log references, verification results, durable
   binary artifact references, and git output identity (`branch_name`,
   `result_commit_sha`, PR/review identity).
+- Durable binary artifact references are object-storage-first records with a
+  content type, storage locator (`key` and/or presigned `url`), and run
+  context (`account_id`, `project_id`, `agent_run_id`) so the control plane
+  never needs runner-local files after cleanup.
+- Binary artifact references distinguish trusted source lanes from
+  agent-authored ones, and both are namespace-scoped. Artifacts persisted by
+  the runner under `AgentRun#external_metadata["artifact_manifest"]` (e.g. by
+  `Screenshots::ContainerCapture`) are runner-written, but the field is not
+  exclusively runner-written — interop ingestion
+  (`Api::Projects::ExternalAgentRunsController` → `AgentRuns::IngestExternal`)
+  persists caller-supplied `external_metadata` verbatim — so their storage
+  keys are honored only when they live under the project's own storage
+  namespace (`Screenshots::Storage.namespace_prefix`). Artifacts persisted by
+  `AgentRuns::VerificationResultRecorder` from the agent-written result file
+  inside the container are untrusted input: their locators are URL-only. In
+  both lanes a `key` under another tenant's prefix would otherwise be
+  re-signed into a working presigned URL by any durable consumer, since the
+  manifest contract says durable consumers re-sign from the key. The run's
+  `account_id`, `project_id`, and `agent_run_id` are always authoritative; an
+  artifact-supplied context value cannot override the run's identity, so a
+  run cannot misattribute its artifacts to a different tenant in the durable
+  manifest.
+- Presigned URLs are ephemeral — they expire within the SigV4 one-week cap —
+  so artifact manifests persisted as durable records on the run (e.g.
+  `AgentRun#external_metadata["artifact_manifest"]`) carry storage keys only;
+  durable consumers re-sign from the key
+  (`Screenshots::Storage#previous_artifacts` is the established pattern).
 - The manifest shape is deliberately host-path-free. Workspace translation and
   container/worktree identifiers remain runner-local implementation details;
   the manifest only carries repo/ref and declarative workspace mode.
 - Secrets are excluded by construction. Credential lanes carry only references
   (variable names, service names, config keys) and never secret values; service
   declarations expose `env_keys`, not `env` payloads.
+
+### Immutable agent image registry (RDR-059)
+
+`AgentImage` is the system of record for what image actually runs in
+production. The model records the immutable production identity
+`(account_id, registry, repository, digest, architecture)` — the OCI
+content-addressed tuple — alongside the logical profile name used by
+`Containers::ImageResolver` (e.g. `base`, `elixir-node`, `ruby`), a mutable
+`provenance` jsonb for build metadata, a mutable `metadata` jsonb for
+operations/runbook links, the upstream `built_at` timestamp, and a lifecycle
+`status` of `active`, `deprecated`, or `blocked`.
+
+- Identity fields are immutable after creation. A new build produces a new
+  digest, which is a new row. This is the only safe way to keep history
+  accurate: editing an existing row would silently rewrite what the registry
+  claims was running on a prior run.
+- `status` is the only mutating lifecycle surface. The state machine allows
+  `active -> deprecated -> blocked` and `active -> blocked`; transitions are
+  idempotent so retrying an Avo action or job does not double-stamp
+  timestamps or replace the recorded reason. Records are never deleted, so
+  audit and rollback queries see the full history.
+- The `schedulable?` predicate is the single gate for new placements. Today
+  it is `active?`, but exposing the predicate means future states (e.g.
+  `quarantined`) do not have to be repeated at every call site.
+- Local development and single-backend deployments continue to use the
+  literal `paid-agent:latest` constant in `Containers::ImageResolver`; the
+  registry is the production source of truth, not a replacement for the
+  resolver. The two layers compose: the resolver decides which logical
+  profile a run needs, the registry records which content-addressed image
+  the production host pulled, and a future `ImageResolver#resolve!` will
+  cross-check the resolver output against the active registry rows.
+- Uniqueness is enforced on `(account_id, registry, repository, digest,
+  architecture)`. The same digest on a different architecture is a separate
+  image record (multi-arch images register one row per architecture). The
+  same identity may be recorded independently by different accounts. Digests
+  are accepted in bare-hex or `sha256:`-prefixed form and stored
+  canonicalized as `sha256:<hex>`, so the two input forms cannot register as
+  two rows and the digest-pinned reference is always a valid OCI reference.
+- Change history is tracked with logidze (`log_data`), following the
+  `docker_hosts` precedent: lifecycle timestamps capture what and when, and
+  logidze captures who edited the mutable `provenance`/`metadata` fields.
+- A partial index over non-active rows keeps audit and rollback queries
+  fast as the active set grows; a `(account_id, name, architecture)`
+  index supports the (profile, architecture) scheduling decision.
+
+### Provider-neutral networking intent (RDR-062)
+
+`ExecutionRunners::NetworkingPolicy` now names six coarse egress intents
+instead of leaking Docker network names across the runner boundary:
+`:no_outbound`, `:proxy_only`, `:git_plus_proxy`, `:approved_services`,
+`:model_direct`, and `:explicit_internet`.
+
+- The three legacy constructors (`:proxy_restricted`, `:subscription_auth`,
+  `:direct_outbound`) remain valid for compatibility, but
+  `NetworkingPolicy#canonical_mode` normalizes them to the canonical intent
+  names so runner-side translation paths only need to understand one
+  vocabulary.
+- `ExecutionRunners::Base.supports_policy?` is part of the runner contract.
+  `LocalDockerRunner.compatible?` rejects specs whose networking intent the
+  runner cannot implement before any provision-side effects occur.
+- `LocalDockerRunner` remains the only place that translates intent into
+  Docker implementation details. The four restricted intents use the
+  restricted `paid_agent` network plus an allowlist firewall whose scope
+  depends on the intent; the two unrestricted intents use the infrastructure
+  network without a firewall.
 
 ### No-shared-filesystem conformance coverage (#3401)
 
@@ -302,7 +395,10 @@ outside the conformance scenario.
 - `app/services/capacity/docker_snapshot.rb`
 - `app/services/capacity/run_admission.rb`
 - `app/models/agent_run.rb`
+- `app/models/agent_image.rb`
+- `db/migrate/20260817195654_create_agent_images.rb`
 - `spec/services/containers/provision_spec.rb`
+- `spec/models/agent_image_spec.rb`
 - `spec/services/execution_runners_spec.rb`
 - `spec/services/execution_runners/base_spec.rb`
 - `spec/services/execution_runners/local_docker_runner_spec.rb`

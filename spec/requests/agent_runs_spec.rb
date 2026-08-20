@@ -780,6 +780,92 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include(agent_run.error_message)
       end
 
+      it "shows the egress policy snapshot recorded for the run" do
+        agent_run = create(:agent_run, project: project, external_metadata: {
+          "egress_policy" => {
+            "mode" => "enforced",
+            "egress_profile" => "standard",
+            "snapshot_at" => "2026-08-19T00:00:00Z",
+            "required_destinations" => [
+              { "host" => "secrets-proxy.paid.internal", "source" => "platform" }
+            ],
+            "destinations" => [
+              { "host" => "api.example.com", "source" => "tenant", "source_kind" => "tenant_account", "entry_id" => 42 }
+            ]
+          }
+        })
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response.body).to include("Egress Policy")
+        expect(response.body).to include("Mode: Enforced")
+        expect(response.body).to include("secrets-proxy.paid.internal")
+        expect(response.body).to include("api.example.com")
+        expect(response.body).to include("entry #42")
+      end
+
+      it "shows a placeholder when a denied event exists without a policy snapshot" do
+        agent_run = create(:agent_run, project: project, external_metadata: {})
+        create(:egress_security_event, account: account, project: project, agent_run: agent_run)
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response.body).to include("Egress policy snapshot was not recorded for this run.")
+      end
+
+      it "shows denied and redacted egress security events for the run" do
+        agent_run = create(:agent_run, project: project)
+        create(:egress_security_event, :redacted_extraction,
+          account: account, project: project, agent_run: agent_run,
+          destination_host: "leaky.example.com", matched_rule: "request body contained high-entropy token")
+        create(:egress_security_event,
+          account: account, project: project, agent_run: agent_run,
+          destination_host: "blocked.example.com", matched_rule: "host not in allowlist")
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response.body).to include("Denied Egress")
+        expect(response.body).to include("2 events")
+        expect(response.body).to include("leaky.example.com")
+        expect(response.body).to include("blocked.example.com")
+        expect(response.body).to include("request body contained high-entropy token")
+        expect(response.body).to include("token fingerprint sha256:deadbeef")
+      end
+
+      it "shows the total denied event count even when more events exist than the displayed table limit" do
+        agent_run = create(:agent_run, project: project)
+        create_list(:egress_security_event, 55, account: account, project: project, agent_run: agent_run)
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response.body).to include("55 events")
+      end
+
+      it "excludes allowlist_match events from the displayed table and count" do
+        agent_run = create(:agent_run, project: project)
+        create(:egress_security_event,
+          account: account, project: project, agent_run: agent_run,
+          destination_host: "blocked.example.com")
+        create_list(:egress_security_event, 3, :allowlist_match,
+          account: account, project: project, agent_run: agent_run,
+          destination_host: "allowed.example.com")
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response.body).to include("1 event")
+        expect(response.body).not_to include("allowed.example.com")
+      end
+
+      it "shows an empty state when a policy snapshot exists but no events were recorded" do
+        agent_run = create(:agent_run, :completed, project: project, external_metadata: {
+          "egress_policy" => { "mode" => "enforced" }
+        })
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response.body).to include("No denied or redacted events recorded for this run.")
+      end
+
       it "shows retry runner options for configured providers" do
         allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor])
         project.effective_owner.runners.create!(runner_key: "cursor")
@@ -1187,6 +1273,21 @@ RSpec.describe "AgentRuns" do
 
         expect(identifiers).to include("", "remote-host")
         expect(labels.first).to eq("Inherit saved placement preference")
+      end
+
+      # @spec EXEC-DISABLE-004
+      it "omits backend-disabled hosts from the returned options" do
+        disabled_host = create_placement_ready_remote_host(project: project, identifier: "disabled-host")
+        create_placement_ready_remote_host(project: project, identifier: "healthy-host")
+        codex = configure_codex_create_pr_default!(project)
+        create(:execution_control, :backend_scope, :enabled, docker_host: disabled_host)
+
+        get docker_host_options_project_agent_runs_path(project, runner: codex.routing_key, format: :json)
+
+        expect(response).to have_http_status(:ok)
+        identifiers = JSON.parse(response.body).fetch("options").map(&:last)
+        expect(identifiers).to include("", "healthy-host")
+        expect(identifiers).not_to include("disabled-host")
       end
 
       it "reports the project/account preferred host when it is eligible for the runner" do
@@ -2140,6 +2241,105 @@ RSpec.describe "AgentRuns" do
         expect(response).to redirect_to(project_path(project))
         follow_redirect!
         expect(response.body).to include("No queued auto-continue runs")
+      end
+    end
+  end
+
+  describe "POST /projects/:project_id/agent_runs/unblock_escalation" do
+    let(:escalated_pr) do
+      create(:issue, :pull_request,
+        project: project,
+        github_number: 88,
+        title: "Fix flaky specs",
+        pr_review_phase: "escalated",
+        pr_escalation_reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK,
+        labels: [ "paid-generated", "paid-automation", "paid-escalated" ],
+        draft_review_count: 12,
+        pr_followup_count: 4)
+    end
+
+    context "when not authenticated" do
+      # @spec PR-ESCALATION-017
+      it "redirects to the sign in page" do
+        post unblock_escalation_project_agent_runs_path(project), params: { pull_request_id: escalated_pr.id }
+
+        expect(response).to redirect_to(new_user_session_path)
+        expect(escalated_pr.reload.pr_review_phase).to eq("escalated")
+      end
+    end
+
+    context "when authenticated without permission to run agents" do
+      let(:outsider) { create(:user) }
+
+      before { sign_in outsider }
+
+      # @spec PR-ESCALATION-017
+      it "refuses the unblock" do
+        post unblock_escalation_project_agent_runs_path(project), params: { pull_request_id: escalated_pr.id }
+
+        expect(response).not_to have_http_status(:ok)
+        expect(escalated_pr.reload.pr_review_phase).to eq("escalated")
+      end
+    end
+
+    context "when authenticated" do
+      before do
+        sign_in user
+        stub_request(:delete, %r{https://api\.github\.com/repos/.+/issues/88/labels/paid-escalated})
+          .to_return(status: 200, body: "[]", headers: { "Content-Type" => "application/json" })
+      end
+
+      # @spec PR-ESCALATION-014
+      it "clears the escalation without enqueueing a run" do
+        expect {
+          post unblock_escalation_project_agent_runs_path(project), params: { pull_request_id: escalated_pr.id }
+        }.not_to change(AgentRun, :count)
+
+        escalated_pr.reload
+        expect(escalated_pr.pr_review_phase).to eq("ready")
+        expect(escalated_pr.pr_escalation_reason).to be_nil
+        expect(escalated_pr.draft_review_count).to eq(0)
+        expect(response).to redirect_to(dashboard_path)
+        expect(flash[:notice]).to include("unblocked")
+      end
+
+      # @spec PR-ESCALATION-015
+      it "refuses to unblock a closed pull request" do
+        escalated_pr.update!(github_state: "closed")
+
+        post unblock_escalation_project_agent_runs_path(project), params: { pull_request_id: escalated_pr.id }
+
+        escalated_pr.reload
+        expect(escalated_pr.pr_review_phase).to eq("escalated")
+        expect(escalated_pr.draft_review_count).to eq(12)
+        expect(flash[:alert]).to be_present
+      end
+
+      # @spec PR-ESCALATION-022
+      it "names the project in the unblock confirmation" do
+        post unblock_escalation_project_agent_runs_path(project), params: { pull_request_id: escalated_pr.id }
+
+        expect(flash[:notice]).to include("#{project.full_name}#88")
+      end
+
+      # @spec PR-ESCALATION-022 @spec PR-ESCALATION-023
+      it "names the project and where to release the pause when the pull request stays operator-paused" do
+        escalated_pr.update!(auto_continue_paused: true)
+
+        post unblock_escalation_project_agent_runs_path(project), params: { pull_request_id: escalated_pr.id }
+
+        expect(flash[:notice]).to include("#{project.full_name}#88")
+        expect(flash[:notice]).to include("auto-continue is still paused")
+        expect(flash[:notice]).to include("project page")
+      end
+
+      # @spec PR-ESCALATION-022
+      it "names the project when refusing the unblock" do
+        escalated_pr.update!(github_state: "closed")
+
+        post unblock_escalation_project_agent_runs_path(project), params: { pull_request_id: escalated_pr.id }
+
+        expect(flash[:alert]).to include("#{project.full_name}#88")
       end
     end
   end
