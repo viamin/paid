@@ -172,6 +172,23 @@
   *Test:* `spec/requests/agent_runs_spec.rb`,
   `spec/policies/project_policy_spec.rb`.
 
+- [x] **PR-ESCALATION-022** — When the system prompts the operator to confirm
+  an unblock, and when it reports that unblock's outcome, whether applied or
+  refused, it SHALL identify the pull request by its project's `owner/repo`
+  alongside its number, because the blocked-work surface spans every project in
+  the account and a number alone does not identify a pull request there.
+  *Code:* `app/views/dashboard/_blocked_pull_requests.html.erb`,
+  `Projects::AgentRunsController#unblock_flash`.
+  *Test:* `spec/requests/dashboard_spec.rb`, `spec/requests/agent_runs_spec.rb`.
+
+- [x] **PR-ESCALATION-023** — When an unblock succeeds on a pull request the
+  operator has also paused, the outcome SHALL tell the operator where that
+  remaining pause can be released, because clearing the escalation drops the
+  pull request from the blocked-work listing the operator is returned to while
+  the pause still holds it, and the release control is not on that surface.
+  *Code:* `Projects::AgentRunsController#unblock_flash`.
+  *Test:* `spec/requests/agent_runs_spec.rb`.
+
 ## Migration
 
 - [x] **PR-ESCALATION-018** — The migration retiring the escalation-set pause

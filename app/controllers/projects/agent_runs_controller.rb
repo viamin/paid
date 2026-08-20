@@ -707,18 +707,31 @@ module Projects
       pr.github_number
     end
 
+    # The blocked-work surface spans every project in the account and the
+    # unblock redirects back to it, so the outcome names the repository the
+    # same way the listing does — a bare number identifies nothing there.
+    # `@project` is the pull request's project: `pr` is resolved through
+    # `@project.issues`, and reading it from there costs no further query.
+    #
+    # Clearing the escalation drops the pull request off that listing, so an
+    # operator pause that still holds it has to be named along with the page
+    # that can release it — the control does not exist on the dashboard.
+    #
+    # @spec PR-ESCALATION-022 @spec PR-ESCALATION-023
     def unblock_flash(result, pull_request)
-      if result.success?
-        return { notice: "PR ##{pull_request.github_number} unblocked, but auto-continue is still paused for it." } if pull_request.auto_continue_paused?
+      pr_ref = "#{@project.full_name}##{pull_request.github_number}"
 
-        return { notice: "PR ##{pull_request.github_number} unblocked. Paid picks it up on the next scan." }
+      if result.success?
+        return { notice: "PR #{pr_ref} unblocked, but auto-continue is still paused for it — resume it from the project page." } if pull_request.auto_continue_paused?
+
+        return { notice: "PR #{pr_ref} unblocked. Paid picks it up on the next scan." }
       end
 
       case result.error
       when :not_open
-        { alert: "PR ##{pull_request.github_number} is no longer open." }
+        { alert: "PR #{pr_ref} is no longer open." }
       else
-        { alert: "PR ##{pull_request.github_number} is not blocked." }
+        { alert: "PR #{pr_ref} is not blocked." }
       end
     end
 

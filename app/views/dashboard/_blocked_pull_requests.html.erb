@@ -1,4 +1,4 @@
-<%# @spec PR-ESCALATION-011 @spec PR-ESCALATION-012 @spec PR-ESCALATION-013 %>
+<%# @spec PR-ESCALATION-011 @spec PR-ESCALATION-012 @spec PR-ESCALATION-013 @spec PR-ESCALATION-022 %>
 <% has_blocked_prs = blocked_pull_requests.any? %>
 
 <div class="rounded-lg border <%= has_blocked_prs ? "border-amber-200 bg-amber-50" : "border-gray-200 bg-white" %> p-6 shadow-sm" data-testid="blocked-pull-requests-card">
@@ -72,7 +72,7 @@
                             unblock_escalation_project_agent_runs_path(pr.project, pull_request_id: pr.id),
                             method: :post,
                             class: "inline-flex items-center rounded-md bg-amber-600 px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-amber-500",
-                            form: { data: { turbo_confirm: "Clear the escalation on ##{pr.github_number}? This resets its attempt counters, waives the token cap for this PR, and returns it to the scanner." } } %>
+                            form: { data: { turbo_confirm: "Clear the escalation on #{pr.project.full_name}##{pr.github_number}? This resets its attempt counters, waives the token cap for this PR, and returns it to the scanner." } } %>
                     <% end %>
                   </td>
                 </tr>
