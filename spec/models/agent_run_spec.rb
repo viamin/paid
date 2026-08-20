@@ -2027,10 +2027,29 @@ RSpec.describe AgentRun do
             worktree_path: worktree_path,
             backend: Containers.backend_for(agent_run.container_host),
             memory_bytes: 1024 * 1024 * 1024,
-            networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted
+            networking_policy: nil
           ).and_call_original
 
           agent_run.provision_container(memory_bytes: 1024 * 1024 * 1024)
+        end
+
+        it "does not thread a networking_policy into the direct provisioner, so it keeps owning network/firewall setup" do
+          agent_run = create(:agent_run, worktree_path: worktree_path)
+
+          allow(Containers::Provision).to receive(:networking_policy_for)
+            .with(agent_run: agent_run, project: agent_run.project)
+            .and_return(ExecutionRunners::NetworkingPolicy.proxy_restricted)
+
+          result = agent_run.provision_container
+
+          expect(result).to be_success
+          # Containers::Provision#ensure_network! only calls through to
+          # NetworkPolicy.ensure_network! when it was NOT given a
+          # networking_policy (it returns early otherwise — see
+          # Containers::Provision#ensure_network!). Observing this call
+          # confirms the direct-provision path still owns network setup
+          # instead of silently skipping it.
+          expect(NetworkPolicy).to have_received(:ensure_network!)
         end
 
         it "reuses a live recorded container on Temporal retry instead of provisioning a duplicate" do

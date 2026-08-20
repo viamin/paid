@@ -2536,7 +2536,14 @@ class AgentRun < ApplicationRecord
 
     return reuse_or_reconcile_container(**options) if container_id.present?
 
-    provision_new_container(networking_policy: networking_policy, **options)
+    # Deliberately not threading networking_policy through here: on the
+    # direct-provision path (execution_runner disabled) there is no runner to
+    # own the network/firewall translation, so Containers::Provision must
+    # perform its own NetworkPolicy.ensure_network!/apply_firewall_rules
+    # side effects. Passing a policy would make it skip those (see
+    # Containers::Provision#ensure_network!/#apply_network_restrictions!),
+    # silently dropping egress isolation for first provisions.
+    provision_new_container(**options)
   end
 
   # Executes a command in the provisioned container.
