@@ -4,145 +4,268 @@
 
 ## Metadata
 
-- **Date**: 2026-08-12
-- **Status**: Draft
-- **Type**: Architecture + Operations
+- **Date**: 2026-08-18
+- **Status**: Partially Implemented
+- **Type**: Architecture + Reliability
 - **Priority**: P1
-- **Related RDRs**: [RDR-019](RDR-019-remote-container-execution.md), [RDR-020](RDR-020-service-container-architecture.md), [RDR-045](RDR-045-live-web-app-preview-agent-verification.md), [RDR-048](RDR-048-multi-host-docker-backend-support.md), [RDR-057](RDR-057-remote-execution-data-contract.md) (output manifest references ledger resources), [RDR-061](RDR-061-infrastructure-safety-and-audit.md) (audit events reference ledger IDs)
-- **Related Issues**: #3336, #3344, #3346, #3352
+- **Related RDRs**:
+  - [RDR-004](RDR-004-container-isolation.md) (Container Isolation)
+  - [RDR-019](RDR-019-remote-container-execution.md) (Remote Container Execution)
+  - [RDR-048](RDR-048-multi-host-docker-backend-support.md) (Multi-Host Docker Backend Support)
+  - [RDR-057](RDR-057-remote-execution-data-contract.md) (Remote Execution Data Contract)
+  - [RDR-058](RDR-058-execution-authority-network-and-isolation.md) (Execution Authority, Network Policy, and Isolation)
+- **Related Issues**: [#3420](https://github.com/viamin/paid/issues/3420) (closeout), [#3409](https://github.com/viamin/paid/issues/3409), [#3410](https://github.com/viamin/paid/issues/3410), [#3411](https://github.com/viamin/paid/issues/3411), [#3352](https://github.com/viamin/paid/issues/3352), [#3344](https://github.com/viamin/paid/issues/3344), [#3346](https://github.com/viamin/paid/issues/3346), [#3358](https://github.com/viamin/paid/issues/3358)
+- **Related Tests**: `spec/jobs/agent_run_resource_janitor_job_spec.rb`, `spec/services/execution_runners_spec.rb`, `spec/services/execution_runners/`, `spec/models/worktree_spec.rb`, `spec/services/containers/pool_manager_spec.rb`
+
+## Implementation Status
+
+**Partially Implemented** as of 2026-08-18. The foundational infrastructure for
+tracking and cleaning up execution resources exists across multiple subsystems,
+but a unified resource ledger table, provisioning intents, provider ownership
+tags, and reconciliation against provider state are not yet implemented.
+
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| Externally provisioned execution resources representable in ledger | **Partial** | Resources tracked across `agent_runs` (container_id, container_host, runner_handle), `container_pool_entries`, `worktrees`, `docker_hosts` — but no unified ledger table. This also excludes MCP sidecar containers (`app/services/containers/mcp_provisioner.rb`, tracked only via `AgentRun#mcp_sidecar_container_ids`) and shared service containers (`app/services/containers/service_provisioner.rb`, tracked via `ServiceContainer#docker_container_id`/`AgentRun#service_container_ids`), which are provisioned on external infrastructure but have no ledger representation either |
+| Provider resources carry stable Paid ownership tags | **Partial** | Docker containers and volumes are labeled during provisioning (`app/services/containers/provision.rb`) with `paid.managed`, `paid.resource`, `paid.project_id`, and `paid.agent_run_id`/`paid.container_pool_entry_id`, plus deterministic `paid-workspace-{id}` volume naming — but `paid.account_id`, `paid.created_at`, and `paid.resource_kind` are not yet applied. MCP sidecar containers (`McpProvisioner#create_sidecar_container`) and service containers (`ServiceProvisioner#create_docker_container`) fall further short: they only apply a narrow, provisioner-specific label pair (`paid.mcp_sidecar`/`paid.agent_run_id`, and `paid.service_container`/`paid.service_container_id` respectively) with no `paid.managed`, `paid.project_id`, `paid.account_id`, `paid.created_at`, or `paid.resource_kind` |
+| Crash-window provisioning intents before provider create calls | **Gap** | `runner_handle` persisted post-provision (#3346); no pre-provision intent record |
+| Reconciliation detects ledger/provider drift and retries cleanup | **Gap** | Janitor job retries failed cleanup; no active drift detection against provider state |
+| Providers without tag/list support degrade explicitly and safely | **Gap** | No explicit degradation model for providers lacking tag/list APIs |
+| Existing Docker janitors work during migration | **Implemented** | `AgentRunResourceJanitorJob`, `CleanupContainerActivity`, `CleanupWorktreeActivity`, `EnqueueJanitorActivity` |
+
+### 2026-08-18 Closeout
+
+Audit recorded against umbrella issue
+[#3420](https://github.com/viamin/paid/issues/3420). See
+[`audit-report-2026-08-18-rdr-060.md`](audit-report-2026-08-18-rdr-060.md) for
+full criterion-by-criterion evidence and gap analysis.
+
+The closeout is **partial**. The shipped implementation provides robust
+container and volume lifecycle management through the existing janitor
+infrastructure, persisted runner handles for crash recovery, and multi-host
+Docker backend tracking. However, the core ledger concept — a unified table
+recording every externally provisioned resource with pre-provision intents,
+provider ownership tags, and active reconciliation — is not yet built.
+
+Five of seven implementation dependencies remain open:
+[#3409](https://github.com/viamin/paid/issues/3409) (ledger data model),
+[#3410](https://github.com/viamin/paid/issues/3410) (runner/ledger integration),
+[#3411](https://github.com/viamin/paid/issues/3411) (reconciliation),
+[#3352](https://github.com/viamin/paid/issues/3352) (idempotent lifecycle),
+[#3358](https://github.com/viamin/paid/issues/3358) (runner conformance suite).
 
 ## Problem Statement
 
-Paid already has idempotent Docker provisioning, runner handles, stale-run cleanup, and Docker orphan janitors. Cloud execution adds a harder failure window: a provider may create a billable resource, then the worker process may crash before `AgentRun#runner_handle` is persisted. A retry cannot clean up what Paid never recorded unless the resource is discoverable by stable Paid identifiers.
+Paid provisions execution resources on external infrastructure providers —
+Docker containers, workspace volumes, network interfaces, and (in future) cloud
+VMs and managed-service instances. These resources cost money when running and
+leak when orphaned. The current system tracks resources implicitly across
+multiple tables (`agent_runs.container_id`, `container_pool_entries`,
+`worktrees`) but has no single source of truth for "what did we ask the provider
+to create, and is it still there?"
 
-The question is whether Paid needs a distinct resource registry. The answer is yes, but it should be a narrow execution resource ledger, not a generic infrastructure CMDB.
+This creates several failure modes:
+
+1. **Crash-window orphans**: If the process crashes between calling the provider
+   create API and persisting the identifier, the resource leaks with no record.
+2. **Drift**: Provider-side resources can exist without a ledger record (manual
+   creation, partial cleanup) or vice versa (stale record after external
+   deletion).
+3. **No ownership proof**: Without stable tags on provider resources, a
+   reconciler cannot distinguish Paid-managed resources from unrelated ones on
+   the same provider account.
+4. **Provider heterogeneity**: Docker supports labels and container listing;
+   future cloud providers may not support tagging or may have different listing
+   APIs. The system needs explicit degradation, not silent omission.
 
 ## Context
 
-### Current Implementation
+### Existing Resource Tracking
 
-- `AgentRun` stores `container_id`, `container_host`, and `runner_handle`.
-- `Containers::Provision` labels Docker containers and workspace volumes with project/run/pool identifiers.
-- `ServiceContainer` stores Docker container IDs and has `runner_handle` for the runner-extraction migration.
-- `PreviewSession` and preview tunnel labels carry preview-specific identifiers.
-- `AgentRuns::CleanupStale`, `DockerOrphanCleanupJob`, service cleanup, MCP cleanup, and workspace cleanup reconcile known Docker resources.
-- Issue #3352 already proposes stable tags, pre-provision intent, orphan reconciliation, cleanup retry, and a failure-window matrix.
+The current codebase tracks execution resources across several subsystems:
 
-### Forces and Constraints
+- **`agent_runs`**: `container_id`, `container_host`, `runner_handle` (jsonb),
+  `worktree_path`, `external_metadata` (carries `planned_container_host`)
+- **`container_pool_entries`**: Warm-pool containers with lifecycle states
+  (warming, warm, claimed, error)
+- **`worktrees`**: Git worktree lifecycle (active, cleaned, cleanup_failed)
+- **`docker_hosts`**: Multi-backend host registry with readiness states
 
-- Do not duplicate the runner handle; the ledger complements it.
-- Support resources that are not Docker containers: jobs, machines, tasks, disks, networks, tunnels, temporary storage.
-- Temporal retries and worker restarts must not create duplicate billable resources without a cleanup path.
-- Providers differ in tag support and list APIs.
-- Keep the first version small.
+### Existing Cleanup Infrastructure
 
-## Research Findings
+- **`AgentRunResourceJanitorJob`**: Removes containers and volumes for finished
+  runs. Retries on Docker errors with polynomial backoff. Resolves cleanup host
+  from `runner_handle`, `container_host`, or `external_metadata`.
+- **`CleanupContainerActivity`** (Temporal): Calls `agent_run.cleanup_container`
+  as a workflow activity with phase tracking.
+- **`CleanupWorktreeActivity`** (Temporal): Transitions worktree status from
+  active to cleaned.
+- **`EnqueueJanitorActivity`** (Temporal): Second-chance cleanup by enqueuing
+  the janitor job outside the workflow lifecycle.
 
-- The existing `runner_handle` is necessary for active control, but it is not sufficient to recover from crash windows before the handle is durably persisted.
-- Stable provider-side tags already exist conceptually in the current Docker cleanup model and are the only practical recovery hook across provider restarts and worker crashes.
-- Cloud execution broadens the resource surface beyond containers, so Docker-specific identifiers cannot remain the only durable ownership record.
-- Reconciliation must be a first-class capability because the ledger can drift from provider reality under partial failures.
+### Runner Handle Recovery (#3346 — Closed)
 
-## Proposed Solution
+`ExecutionRunners::RunnerHandle` is a Data value object persisted as jsonb on
+`agent_runs.runner_handle`. It carries `runner_type`, `identifier` (container
+ID), `host`, `workspace_ref` (volume name), and `metadata`. This enables
+recovery after worker crash/failover — the handle is deserialized and used to
+resume or clean up the execution resource.
 
-Paid should record every externally provisioned execution resource in an execution resource ledger. The ledger records ownership and lifecycle, while `RunnerHandle` remains the opaque handle used for active runner operations.
+### Runner Abstraction (#3344 — Closed)
 
-Minimum fields:
+Logging, status, cancellation, and cleanup are abstracted behind the
+`ExecutionRunners::Base` interface. Concrete runners (`LocalDockerRunner`,
+future cloud runners) implement `provision`, `start`, `running?`, `cancel`,
+and `cleanup`. This is the integration point for ledger operations.
 
-- account_id, project_id, agent_run_id;
-- execution attempt identifier;
-- runner/backend key;
-- resource kind (`primary_environment`, `service`, `browser`, `mcp_sidecar`, `workspace`, `network`, `preview_tunnel`, `temporary_storage`);
-- provider resource ID and provider region/location when applicable;
-- stable Paid tags applied to the provider resource;
-- status (`provisioning`, `active`, `cleanup_pending`, `deleted`, `orphaned`, `cleanup_failed`);
-- created_at, observed_at, deleted_at;
-- cleanup error and retry metadata;
-- runner handle reference when known.
+## Decision
 
-### Ownership and Lifecycle Semantics
+### Unified Resource Ledger
 
-- A provisioning intent row is created before the provider create call when the runner can identify the intended resource kind.
-- Provider resources are tagged with stable Paid identifiers: environment, account, project, agent run, attempt, resource kind.
-- When provider creation succeeds, the ledger row records provider ID and links to the runner handle.
-- Cleanup moves resources through `cleanup_pending` to `deleted`; transient failures remain durable for retry.
-- Reconciliation compares ledger rows and provider-listed tagged resources:
-  - ledger active + provider missing => mark observed gone, clear active handle if appropriate;
-  - provider tagged + no active run/ledger => adopt as orphan and cleanup;
-  - ledger cleanup_pending + provider present => retry cleanup;
-  - provider cannot list tags => handle-based cleanup only, runner capability reflects the limitation.
+Introduce an `execution_resource_ledger_entries` table as the single source of
+truth for every externally provisioned resource. Each entry tracks:
 
-## Alternatives Considered
+- **Resource identity**: provider type, provider resource ID, resource kind
+  (container, volume, network, VM)
+- **Ownership**: account, project, agent run (optional for pool resources)
+- **Lifecycle state**: `intent_created` -> `provisioning` -> `provisioned` ->
+  `cleanup_requested` -> `cleaned` -> `verified_gone` (terminal); also
+  `orphaned` and `leak_suspected` for reconciliation findings
+- **Provider tags**: The ownership tags applied (or attempted) on the provider
+  resource
+- **Timestamps**: intent created, provisioned, cleanup requested, cleaned,
+  last verified
 
-### Only persist `RunnerHandle`
+### Provisioning Intents
 
-- **Pros**: Already exists; simple.
-- **Cons**: Does not cover crash-before-handle-persisted resources.
-- **Decision**: Insufficient.
+Before calling a provider create API, write an `intent_created` ledger entry
+with enough information to identify or clean up the resource if the create call
+succeeds but the process crashes before recording the result. The intent carries:
 
-### Provider-native tags only
+- The intended provider and resource kind
+- The ownership tags that will be applied
+- The agent run or pool entry the resource is for
 
-- **Pros**: No new table; resources discoverable externally.
-- **Cons**: Paid cannot track cleanup attempts, failures, or providers without good tag listing.
-- **Decision**: Necessary but not sufficient.
+After a successful create, update the entry to `provisioned` with the provider
+resource ID.
 
-### Generic infrastructure inventory
+### Provider Ownership Tags
 
-- **Pros**: Could model every cloud resource.
-- **Cons**: Overbuilt; Paid only needs execution lifecycle ownership.
-- **Decision**: Reject.
+Apply stable, machine-readable tags/labels to every provider resource where the
+backend supports tagging:
 
-### Narrow execution resource ledger
+- `paid.managed = true`
+- `paid.account_id = <account_id>`
+- `paid.agent_run_id = <agent_run_id>` (when applicable)
+- `paid.resource_kind = container|volume|network`
+- `paid.created_at = <ISO 8601>`
 
-- **Pros**: Captures ownership, lifecycle, and reconciliation without cloud taxonomy sprawl.
-- **Cons**: Adds one durable model and runner contract requirements.
-- **Decision**: Adopt.
+For Docker, these map to container labels and volume labels. For cloud
+providers, they map to resource tags.
 
-## Security Implications
+### Reconciliation
 
-- Tags must not contain secret values.
-- Resource ownership tags support security audit and emergency cleanup.
-- Cross-account deletion must be guarded by account/project/run ownership checks in Paid, not only provider tags.
+A periodic reconciliation job:
 
-## Operational Implications
+1. Lists all provider resources with `paid.managed = true` tags
+2. Compares against `provisioned` and `cleanup_requested` ledger entries
+3. For provider resources with no ledger entry: marks as `orphaned`, attempts
+   cleanup
+4. For ledger entries with no provider resource: marks as `verified_gone`
+5. For stale `intent_created` entries (older than threshold): marks as
+   `leak_suspected`, attempts cleanup using the intended resource identity
 
-- Operators get a single place to answer "what execution resources does Paid believe exist?"
-- Reconciliation can be scheduled independently of Temporal activity retries.
-- Provider APIs with weak tagging/listing remain usable but lower confidence; they need tighter runtime limits and manual runbooks.
+### Explicit Degradation
 
-## Migration and Compatibility
+Providers that do not support tagging or listing must declare this in their
+runner capability model. When a runner lacks tag support:
 
-- Docker runner can initially populate ledger rows from existing labels and handles while keeping existing janitors.
-- Existing `container_id`/`container_host` stay for compatibility until the runner extraction effort removes Docker leakage from higher layers.
-- Issue #3352 remains the implementation vehicle for failure windows; this RDR supplies the durable resource concept.
+- Provisioning intents are still recorded in the ledger
+- Cleanup relies solely on the stored provider resource ID
+- Reconciliation for that provider is disabled with a logged warning
+- No silent omission — the capability gap is visible in operational dashboards
 
-## Trade-offs and Consequences
+## Acceptance Criteria
 
-- A ledger is extra state that can drift, so reconciliation is mandatory.
-- It avoids a provider-specific resource table per backend.
-- It creates the substrate for infra cost accounting without becoming customer billing.
+1. Every externally provisioned execution resource (containers, volumes,
+   worktrees, pool entries) can be represented in the ledger.
+2. Provider resources carry stable Paid ownership tags where the backend
+   supports tags.
+3. Crash-window provisioning intents exist before provider create calls where
+   feasible.
+4. Reconciliation can detect ledger/provider drift and retry cleanup.
+5. Providers without tag/list support degrade explicitly and safely.
+6. Existing Docker janitors continue to function during and after migration to
+   the ledger.
 
 ## Implementation Plan
 
-1. Introduce a narrow execution resource ledger model keyed by account, project, run, attempt, runner, and resource kind.
-2. Create provisioning intent rows before provider create calls whenever the runner can identify the resource being requested.
-3. Require runners to apply stable Paid ownership tags to provider resources and to report provider IDs back into the ledger.
-4. Add reconciliation and cleanup retry flows that compare ledger state with provider-listed tagged resources.
-5. Keep existing Docker janitors and `runner_handle` behavior during migration while backfilling ledger rows for current runner-managed resources.
+### Phase 1: Ledger Data Model (#3409)
+
+- Create `execution_resource_ledger_entries` table with lifecycle states
+- Add model with state machine transitions and validation
+- Add association from `agent_runs` and `container_pool_entries`
+
+### Phase 2: Runner Integration (#3410)
+
+- Integrate ledger intent creation into `ExecutionRunners::Base#provision`
+- Apply ownership tags via runner-specific implementations
+- Update ledger state on provision success/failure
+
+### Phase 3: Reconciliation (#3411)
+
+- Build reconciliation service that compares ledger vs provider state
+- Schedule periodic reconciliation jobs
+- Handle orphan detection and cleanup
+
+### Phase 4: Idempotent Lifecycle (#3352)
+
+- Make provision/cleanup operations idempotent using ledger state
+- Handle crash recovery using intent records
+
+### Phase 5: Conformance (#3358)
+
+- Runner conformance suite validates ledger integration
+- Provider comparison benchmarks include tag/list capability testing
+
+## Alternatives Considered
+
+### Continue with distributed tracking
+
+Keep resource tracking spread across `agent_runs`, `container_pool_entries`,
+and `worktrees` without a unified ledger.
+
+**Rejected**: This approach cannot detect crash-window orphans, has no
+reconciliation capability, and becomes increasingly fragile as new provider
+types are added.
+
+### Event-sourced ledger
+
+Use an append-only event log instead of a mutable state machine.
+
+**Rejected**: Event sourcing adds complexity without proportional benefit for
+this use case. The resource lifecycle is linear (create -> use -> cleanup) and
+the current state is what matters for reconciliation, not the full event
+history.
+
+## Trade-offs
+
+**Positive**:
+
+- Single source of truth for all externally provisioned resources
+- Crash-window protection prevents silent resource leaks
+- Reconciliation catches drift before it becomes costly
+- Explicit degradation prevents silent capability gaps
+
+**Negative**:
+
+- Additional write on every provision/cleanup (mitigated: one row per resource)
+- Migration period where both old and new tracking coexist
+- Reconciliation job adds provider API load (mitigated: configurable interval)
 
 ## Validation
 
-- Verify a worker crash after provider creation but before handle persistence still leaves enough ledger and tag state to reconcile and clean up the resource.
-- Verify duplicate Temporal retries do not leak billable resources without a durable ledger row or orphan-adoption path.
-- Verify provider resources can be queried and traced back to account, project, run, attempt, and resource kind without exposing secrets.
-- Verify reconciliation correctly handles missing-provider, orphaned-provider, and cleanup-pending cases across supported runners.
-
-## Open Questions
-
-- Should execution attempt be a new first-class model or derived from Temporal attempt/run metadata?
-- Which resources are worth ledgering for local Docker development versus cloud production?
-- What retention period should deleted ledger rows use?
-
-## Relationship to Existing Work
-
-This RDR narrows #3352's resource-tagging and cleanup requirements into a durable data model. It does not replace runner handles or existing Docker janitors.
+- Unit tests for ledger model state transitions
+- Integration tests for provision -> ledger -> cleanup flow
+- Reconciliation tests with simulated drift scenarios
+- Existing janitor job specs continue to pass unchanged

@@ -56,6 +56,10 @@ module Automation
         # data (e.g. specs exercising AutoReview in isolation).
         return delegate_to_auto_review(context) unless signals
 
+        # Token-cap escalation is a hard spend fuse. It must outrank the active
+        # run gate so stale queued runs cannot hide an already-over-budget PR.
+        return escalate_result(signals) if signals.pr_auto_continue_token_limit_reached
+
         # Gate: active run — no decisions while an agent is running.
         return noop_result if signals.active_run_exists
 

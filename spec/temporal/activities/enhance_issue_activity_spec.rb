@@ -159,7 +159,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
       }.to raise_error(Temporalio::Error::ApplicationError) { |error| expect(error.type).to eq("EnhanceIssueUnparseableOutput") }
 
       expect(client).not_to have_received(:add_comment)
-      expect(issue.reload.paid_state).to eq("in_progress")
+      expect(issue.reload.paid_state).to eq("needs_input")
       expect(issue.needs_input_questions).to be_nil
     end
 
@@ -361,6 +361,8 @@ RSpec.describe Activities::EnhanceIssueActivity do
         expect(error.type).to eq("EnhanceIssueUnparseableOutput")
         expect(error.non_retryable).to be(true)
       }
+
+      expect(issue.reload.paid_state).to eq("needs_input")
     end
 
     it "recovers a Paid-authored question comment when stdout is invalid JSON" do # @spec ISSUE-ENHANCEMENT-002
@@ -414,7 +416,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
         activity.execute(agent_run_id: agent_run.id)
       }.to raise_error(Temporalio::Error::ApplicationError) { |error| expect(error.type).to eq("EnhanceIssueUnparseableOutput") }
 
-      expect(issue.reload.paid_state).to eq("in_progress")
+      expect(issue.reload.paid_state).to eq("needs_input")
     end
 
     it "does not recover untrusted question-shaped comments" do
@@ -431,7 +433,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
         activity.execute(agent_run_id: agent_run.id)
       }.to raise_error(Temporalio::Error::ApplicationError) { |error| expect(error.type).to eq("EnhanceIssueUnparseableOutput") }
 
-      expect(issue.reload.paid_state).to eq("in_progress")
+      expect(issue.reload.paid_state).to eq("needs_input")
     end
 
     it "parses a markdown-fenced response with a trailing newline after the closing fence" do
@@ -609,7 +611,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
         }
 
         expect(client).not_to have_received(:add_comment)
-        expect(issue.reload.paid_state).to eq("in_progress")
+        expect(issue.reload.paid_state).to eq("needs_input")
       end
 
       it "raises a non-retryable error when no stdout was captured" do
@@ -620,6 +622,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
         }
 
         expect(client).not_to have_received(:add_comment)
+        expect(issue.reload.paid_state).to eq("needs_input")
       end
     end
   end

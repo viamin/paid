@@ -7,12 +7,21 @@ class PrScreenshotsPublishWorkflowFile < Pathname
 end
 
 RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
+  # Derived from docker-compose.yml so a PostgreSQL bump does not require a spec
+  # edit; see spec/config/toolchain_pins_spec.rb for the group-wide guard.
+  #
+  # @spec TOOLCHAIN-PIN-020
   subject(:workflow) do
     Psych.safe_load_file(
       Rails.root.join(".github/workflows/pr-screenshots-publish.yml"),
       aliases: true
     )
   end
+
+  let(:pinned_postgres_version) do
+    Rails.root.join("docker-compose.yml").read[/image:\s*postgres:(\S+)/, 1]
+  end
+
 
   def job
     workflow.fetch("jobs").fetch("publish")
@@ -61,7 +70,7 @@ RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
   it "boots Rails in test mode against the workflow postgres service before publishing" do
     expect(job).to include("runs-on" => "ubuntu-24.04")
     expect(job.fetch("services").fetch("postgres")).to include(
-      "image" => "postgres:16.14",
+      "image" => "postgres:#{pinned_postgres_version}",
       "ports" => [ "5432:5432" ]
     )
 
@@ -113,16 +122,26 @@ RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
   it "queries recent screenshot capture runs without relying on GitHub branch filtering" do
     expect(resolve_step.fetch("run")).to include("runs?event=pull_request&per_page=100")
     expect(resolve_step.fetch("run")).not_to include("branch=\#{head_ref}")
+    expect(resolve_step.fetch("run")).to include('def branch_workflow_runs_url(repo, head_ref, page: 1)')
+    expect(resolve_step.fetch("run")).to include('branch=#{escaped_ref}')
   end
 
-  it "passes the PR head ref to the resolver for branch-based lookup and fallback matching" do
+  it "passes the PR head ref and recent PR update time to the resolver" do
     expect(resolve_env).to include(
       "HEAD_REF" => "${{ github.event.pull_request.head.ref }}",
       "PR_UPDATED_AT" => "${{ github.event.pull_request.updated_at }}"
     )
+  end
+
+  it "bounds current-run polling to the recent PR update window" do
     expect(resolve_step.fetch("run")).to include("poll_attempts = 120")
     expect(resolve_step.fetch("run")).to include("poll_interval_seconds = 10")
     expect(resolve_step.fetch("run")).to include("recent_window_seconds = 300")
+    expect(resolve_step.fetch("run")).to include("search_deadline = pr_updated_at + recent_window_seconds")
+    expect(resolve_step.fetch("run")).to include("break if Time.now >= search_deadline")
+  end
+
+  it "matches current runs by head metadata and uses the branch name for fallback matching" do
     expect(resolve_step.fetch("run")).to include("poll_search_pages = 5")
     expect(resolve_step.fetch("run")).to include("fallback_search_pages = 30")
     expect(resolve_step.fetch("run")).to include('candidate["head_sha"] == head_sha || candidate.dig("head_commit", "id") == head_sha')
@@ -138,8 +157,8 @@ RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
     expect(resolve_step.fetch("run")).to include('run = first_matching_run(repo, headers, poll_search_pages) do |candidate|')
   end
 
-  it "falls back to the latest completed branch run when GitHub omits PR metadata for older screenshot runs" do
-    expect(resolve_step.fetch("run")).to include('fallback_run ||= first_matching_run(repo, headers, poll_search_pages) do |candidate|')
+  it "falls back to the latest completed branch run using a branch-filtered lookup when the current PR run never appears" do
+    expect(resolve_step.fetch("run")).to include('fallback_run ||= first_matching_branch_run(repo, headers, head_ref, poll_search_pages) do |candidate|')
     expect(resolve_step.fetch("run")).to include('candidate["status"] == "completed" &&')
     expect(resolve_step.fetch("run")).to include('return false unless candidate["head_branch"] == head_ref')
     expect(resolve_step.fetch("run")).to include('pull_requests = Array(candidate["pull_requests"])')
@@ -151,20 +170,27 @@ RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
   it "searches older workflow run pages during polling and for fallback recovery when the current run is off the first page" do
     expect(resolve_step.fetch("run")).to include("def write_outputs(path:, run_id: \"\", artifact_present: false, comment_status:, error_message: nil)")
     expect(resolve_step.fetch("run")).to include('def first_matching_run(repo, headers, pages)')
+    expect(resolve_step.fetch("run")).to include('def first_matching_branch_run(repo, headers, head_ref, pages)')
     expect(resolve_step.fetch("run")).to include('def workflow_runs_url(repo, page: 1)')
     expect(resolve_step.fetch("run")).to include('page=#{page}')
     expect(resolve_step.fetch("run")).to include('1.upto(pages) do |page|')
     expect(resolve_step.fetch("run")).to include('first_matching_run(repo, headers, poll_search_pages)')
-    expect(resolve_step.fetch("run")).to include('fallback_run ||= first_completed_fallback_run(repo, headers, pr_number, head_ref, fallback_search_pages)')
+    expect(resolve_step.fetch("run")).to include('fallback_run ||= first_completed_branch_fallback_run(repo, headers, pr_number, head_ref, fallback_search_pages)')
   end
 
   it "degrades unresolved or ambiguous capture runs to capture_failed instead of failing the publish job" do
     expect(resolve_step.fetch("run")).to include('comment_status: "capture_failed"')
     expect(resolve_step.fetch("run")).to include('warn "Timed out waiting for PR Screenshots capture workflow for #{head_sha}"')
     expect(resolve_step.fetch("run")).to include("exit 0")
-    expect(resolve_step.fetch("run")).to include('file.puts("error_message=#{error_message}") if error_message')
+    expect(resolve_step.fetch("run")).to include('"error_message" => error_message')
+    expect(resolve_step.fetch("run")).to include('file.puts("#{key}<<#{delimiter}")')
     expect(resolve_step.fetch("run")).not_to include('raise "Timed out waiting for PR Screenshots capture workflow')
     expect(resolve_step.fetch("run")).not_to include('"Could not determine screenshot capture outcome for workflow run')
+  end
+
+  it "marks screenshots stale on synchronize when only an older branch fallback run is available" do
+    expect(resolve_step.fetch("run")).to include('if fallback_run == run && !current_run_match?(run, pr_number, head_sha, head_ref, pr_updated_at, recent_window_seconds)')
+    expect(resolve_step.fetch("run")).to include('comment_status: pr_action == "synchronize" ? "no_ui_changes" : "skip"')
   end
 
   it "degrades unexpected resolver errors to capture_failed instead of failing the publish job" do

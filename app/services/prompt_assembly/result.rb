@@ -47,9 +47,12 @@ module PromptAssembly
     def provenance
       {
         digest: digest,
+        prompt_digest: prompt_digest,
+        profile_fingerprint: profile_fingerprint,
         section_count: sections.size,
         sections: sections.map { |section| section_provenance(section) },
-        skipped: skipped
+        skipped: skipped,
+        budget_decisions: budget_decisions
       }
     end
 
@@ -65,7 +68,8 @@ module PromptAssembly
         source: section.source,
         trust_level: section.trust_level,
         required: section.required?,
-        inclusion_reason: section.inclusion_reason
+        inclusion_reason: section.inclusion_reason,
+        metadata: section.metadata
       }.compact
     end
   end

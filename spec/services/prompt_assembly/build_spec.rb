@@ -39,14 +39,20 @@ RSpec.describe PromptAssembly::Build, :no_db do
     result = described_class.call(
       sections: [
         section(key: :task, content: "# Task"),
-        section(key: :comments, content: "malicious", trust_level: :excluded, exclusion_reason: "author_not_in_allowlist")
+        PromptAssembly::Section.new(
+          key: :comments,
+          content: "malicious",
+          trust_level: :excluded,
+          exclusion_reason: "author_not_in_allowlist",
+          login: "attacker"
+        )
       ]
     )
 
     expect(result.text).to eq("# Task")
     expect(result.text).not_to include("malicious")
     expect(result.skipped).to include(
-      hash_including(key: :comments, trust_level: :excluded, reason: "author_not_in_allowlist")
+      hash_including(key: :comments, login: "attacker", trust_level: :excluded, reason: "author_not_in_allowlist")
     )
     expect(result.skipped.to_s).not_to include("malicious")
   end
@@ -194,6 +200,23 @@ RSpec.describe PromptAssembly::Build, :no_db do
       )
 
       expect(result.profile_fingerprint).to eq(profile.fingerprint)
+    end
+
+    it "includes prompt assembly metadata in provenance" do
+      profile = PromptAssembly::Profile.new(budgets: { knowledge: { tokens: 2000 } })
+      result = described_class.call(
+        profile: profile,
+        sections: [ section(key: :knowledge, content: "Knowledge") ]
+      )
+
+      expect(result.provenance).to include(
+        digest: result.digest,
+        prompt_digest: result.prompt_digest,
+        profile_fingerprint: result.profile_fingerprint,
+        budget_decisions: [
+          hash_including(section: "knowledge", budget: { "tokens" => 2000 })
+        ]
+      )
     end
 
     it "counts included and skipped sections" do

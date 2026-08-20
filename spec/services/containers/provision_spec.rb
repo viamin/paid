@@ -100,6 +100,19 @@ RSpec.describe Containers::Provision do
     allow(provision).to receive(:apply_network_restrictions!)
   end
 
+  def runtime_image_selection_metadata(digest: "#{'1' * 64}")
+    {
+      "requested_image" => "paid-agent:latest",
+      "resolved_image" => "ghcr.io/acme/paid-agent@sha256:#{digest}",
+      "digest" => "sha256:#{digest}",
+      "architecture" => "amd64",
+      "registry" => "ghcr.io",
+      "repository" => "acme/paid-agent",
+      "provenance_reference" => "base-amd64-2026-08-17",
+      "immutable" => true
+    }
+  end
+
   def build_remote_backend_without_host_paths(container, &create_container)
     backend = instance_double(
       Containers::Backends::Base,
@@ -217,11 +230,65 @@ RSpec.describe Containers::Provision do
   end
 
   describe ".networking_policy_for" do
+    # @spec CONTAINER-RUNTIME-020
     it "derives the proxy-restricted policy for a run with no subscription auth or direct-outbound runner" do
       policy = described_class.networking_policy_for(agent_run: agent_run, project: project)
 
       expect(policy.mode).to eq(:proxy_restricted)
       expect(policy).to be_restricted
+    end
+
+    it "defaults the egress_profile to :locked when none is supplied" do
+      policy = described_class.networking_policy_for(agent_run: agent_run, project: project)
+
+      expect(policy.egress_profile).to eq(:locked)
+    end
+
+    it "threads a non-default egress_profile through without changing the mode" do
+      policy = described_class.networking_policy_for(
+        agent_run: agent_run, project: project, egress_profile: :research
+      )
+
+      expect(policy.egress_profile).to eq(:research)
+      expect(policy.mode).to eq(:proxy_restricted)
+    end
+
+    it "rejects an egress_profile outside the closed :locked/:research/:open enum" do
+      expect {
+        described_class.networking_policy_for(agent_run: agent_run, project: project, egress_profile: :reserach)
+      }.to raise_error(ArgumentError, /Invalid egress_profile/)
+    end
+  end
+
+  # RDR-058: runners that cannot satisfy isolation requirements are rejected
+  # by capability validation (a typed CompatibilityResult), not a generic
+  # agent failure. @spec EXECUTION-ISOLATION-004
+  describe ".compatibility_for" do
+    let(:local_backend) { instance_double(Containers::Backends::LocalDocker, supports_host_paths?: true) }
+
+    it "returns a compatible result without raising for a host-path-capable backend" do
+      result = described_class.compatibility_for(agent_run: agent_run, backend: local_backend, worktree_path: worktree_path)
+
+      expect(result).to be_a(Containers::Provision::CompatibilityResult)
+      expect(result.compatible).to be(true)
+      expect(result.error_message).to be_nil
+    end
+
+    it "returns an incompatible result, not a raised error, when the backend cannot host-bind-mount the worktree" do
+      remote_backend = instance_double(
+        Containers::Backends::RemoteDocker,
+        identifier: "worker-1",
+        remote?: true,
+        supports_host_paths?: false
+      )
+
+      result = nil
+      expect {
+        result = described_class.compatibility_for(agent_run: agent_run, backend: remote_backend, worktree_path: worktree_path)
+      }.not_to raise_error
+
+      expect(result.compatible).to be(false)
+      expect(result.error_message).to include("requires_host_bind_mount")
     end
   end
 
@@ -286,6 +353,72 @@ RSpec.describe Containers::Provision do
       svc = described_class.new(agent_run: agent_run, worktree_path: worktree_path, image: "custom:latest")
 
       expect(svc.options[:image]).to eq("custom:latest")
+    end
+
+    it "records immutable runtime image metadata for production selections" do
+      provision_project = build_stubbed(:project)
+      provision_run = build_stubbed(:agent_run, project: provision_project)
+      selection_metadata = runtime_image_selection_metadata
+
+      allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("production"))
+      allow(Containers::RuntimeImageSelector).to receive(:select).and_return(
+        instance_double(
+          Containers::RuntimeImageSelector::Result,
+          image: "ghcr.io/acme/paid-agent@sha256:#{'1' * 64}",
+          metadata: selection_metadata
+        )
+      )
+      expect(provision_run).to receive(:record_runtime_image_selection!).with(hash_including(selection_metadata))
+
+      svc = described_class.new(agent_run: provision_run, worktree_path: worktree_path)
+      allow(svc).to receive(:resolve_user_setting_overrides).and_return({})
+
+      expect(svc.options[:image]).to eq("ghcr.io/acme/paid-agent@sha256:#{'1' * 64}")
+    end
+
+    it "reuses the warm-time selection persisted on a claimed pool entry instead of re-resolving" do
+      # @spec IMMUTABLE-IMAGE-002
+      # Materialize records while the environment is still test so their
+      # Turbo broadcasts use the test cable adapter.
+      agent_run
+      warm_metadata = runtime_image_selection_metadata(digest: "a" * 64)
+      pool_entry = create(
+        :container_pool_entry,
+        :claimed,
+        project: project,
+        agent_run: agent_run,
+        runtime_image_metadata: warm_metadata
+      )
+      allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("production"))
+      # The catalog default may have moved (or have nothing configured) between
+      # warm and claim; the claimed container runs the warm-time digest.
+      allow(Containers::RuntimeImageSelector).to receive(:select)
+        .and_raise(Containers::RuntimeImageCatalog::UnknownProfileError, "catalog must not be consulted")
+
+      svc = described_class.new(agent_run: agent_run, project: project, pool_entry: pool_entry)
+
+      expect(svc.options[:image]).to eq("ghcr.io/acme/paid-agent@sha256:#{'a' * 64}")
+      expect(agent_run.reload.runtime_image_selection).to eq(warm_metadata)
+      expect(Containers::RuntimeImageSelector).not_to have_received(:select)
+    end
+
+    it "reuses the recorded runtime image selection on a non-pool reconnect instead of re-resolving" do
+      # @spec IMMUTABLE-IMAGE-002
+      # A Temporal retry/worker failover reconnects to an already-provisioned
+      # container through Containers::Provision.reconnect (no pool_entry).
+      # Re-resolving #options against the catalog would overwrite the
+      # recorded provenance with a digest the running container does not use.
+      agent_run.record_runtime_image_selection!(runtime_image_selection_metadata(digest: "b" * 64))
+      allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("production"))
+      # The catalog default may have moved since the original provision.
+      allow(Containers::RuntimeImageSelector).to receive(:select)
+        .and_raise(Containers::RuntimeImageCatalog::UnknownProfileError, "catalog must not be consulted")
+
+      svc = described_class.new(agent_run: agent_run, worktree_path: worktree_path)
+
+      expect(svc.options[:image]).to eq("ghcr.io/acme/paid-agent@sha256:#{'b' * 64}")
+      expect(agent_run.reload.runtime_image_selection).to include("digest" => "sha256:#{'b' * 64}")
+      expect(Containers::RuntimeImageSelector).not_to have_received(:select)
     end
 
     it "applies container_memory_bytes from user settings" do
@@ -1067,6 +1200,9 @@ RSpec.describe Containers::Provision do
 
     context "when worktree path is not provided" do
       it "creates workspace volume for nil path" do
+        # RDR-058: the workspace volume is named after this run's own
+        # agent_run.id, never shared with another run.
+        # @spec EXECUTION-ISOLATION-001
         service = described_class.new(agent_run: agent_run)
 
         result = service.provision
@@ -2315,7 +2451,21 @@ RSpec.describe Containers::Provision do
 
     context "when firewall rules fail in production" do
       before do
+        # Materialize records while the environment is still test so their
+        # Turbo broadcasts use the test cable adapter, not production
+        # SolidCable (which has no database in this environment).
+        agent_run
         allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("production"))
+        # Production resolves the runtime image through the immutable catalog
+        # (RDR-059). No catalog profiles are configured in this environment, so
+        # stub the selector to keep this example focused on firewall failure.
+        allow(Containers::RuntimeImageSelector).to receive(:select).and_return(
+          instance_double(
+            Containers::RuntimeImageSelector::Result,
+            image: "ghcr.io/acme/paid-agent@sha256:#{'1' * 64}",
+            metadata: runtime_image_selection_metadata
+          )
+        )
         allow(NetworkPolicy).to receive(:apply_firewall_rules)
           .and_raise(NetworkPolicy::Error, "Permission denied")
       end
@@ -2601,6 +2751,32 @@ RSpec.describe Containers::Provision do
           "container.execute.start",
           metadata: hash_including(command: satisfy { |command| !command.include?("super-secret") })
         )
+      end
+
+      # @spec CONTAINER-RUNTIME-019
+      it "yields normalized stdout and stderr chunks to the caller block in stream order" do
+        raw_stdout = "out\x00put\n".b
+        raw_stderr = "bad\xFF\n".b
+
+        expect(Containers.backend).to receive(:exec_in_container) do |container, command, **_opts, &block|
+          expect(container).to eq(mock_container)
+          expect(command).to eq([ "sh", "-c", "echo 'hello'" ])
+
+          block.call(:stdout, raw_stdout)
+          block.call(:stderr, raw_stderr)
+
+          [ [ raw_stdout ], [ raw_stderr ], 0 ]
+        end
+        allow(mock_container).to receive(:info).and_return({ "State" => { "Running" => true, "ExitCode" => 0 } })
+
+        streamed = []
+        result = service.execute("echo 'hello'") { |stream, chunk| streamed << [ stream, chunk ] }
+
+        expect(result).to be_success
+        expect(streamed).to eq([
+          [ :stdout, "output\n" ],
+          [ :stderr, "bad\uFFFD\n" ]
+        ])
       end
 
       it "fails the command and invalidates the container when preparation cleanup exits non-zero" do
@@ -4345,6 +4521,27 @@ RSpec.describe Containers::Provision do
 
       expect(result).to eq("model = \"gpt-5.1\"\n")
     end
+
+    it "uses subscription-safe Codex defaults for subscription-auth Codex runners" do # @spec MODEL-SELECTION-005
+      codex_runner = create(:runner, user: project.created_by, runner_key: "codex", auth_type: "subscription")
+      agent_run.update!(runner: codex_runner)
+      create(:llm_model, :openai, model_id: "gpt-5.6-preview", tier: "mid", capability_score: 9.9)
+      create(:llm_model, :openai, model_id: "gpt-5.2-codex", tier: "mid", capability_score: 9.0)
+
+      result = service.send(:sanitize_codex_host_config, "model = \"gpt-5.6-preview\"\n")
+
+      expect(result).to eq("model = \"gpt-5.2-codex\"\n")
+    end
+
+    it "uses subscription-safe Codex defaults when subscription auth is active without a bound runner" do # @spec MODEL-SELECTION-005
+      create(:llm_model, :openai, model_id: "gpt-5.6-preview", tier: "mid", capability_score: 9.9)
+      create(:llm_model, :openai, model_id: "gpt-5.2-codex", tier: "mid", capability_score: 9.0)
+      allow(service).to receive(:codex_subscription_auth?).and_return(true)
+
+      result = service.send(:sanitize_codex_host_config, "model = \"gpt-5.6-preview\"\n")
+
+      expect(result).to eq("model = \"gpt-5.2-codex\"\n")
+    end
   end
 
   describe "#codex_model_config_line" do
@@ -4862,6 +5059,40 @@ RSpec.describe Containers::Provision do
       expect {
         service.send(:cleanup_execution_preparation, cleanup_steps, env: {})
       }.to raise_error(Containers::Provision::ExecutionError, /Failed to restore prepared runtime state/)
+    end
+  end
+
+  # RDR-058: managed subscription credentials must never leak across accounts
+  # into another account's run. @spec EXECUTION-ISOLATION-003
+  describe "#managed_subscription_credential_scope_for" do
+    it "only resolves credentials belonging to the run's own account" do
+      own_credential = create(
+        :runner_credential,
+        account: project.account,
+        created_by: project.created_by,
+        runner_key: "claude",
+        auth_kind: "oauth_token"
+      )
+
+      other_account = create(:account)
+      other_project = create(:project, account: other_account)
+      create(
+        :runner_credential,
+        account: other_account,
+        created_by: other_project.created_by,
+        runner_key: "claude",
+        auth_kind: "oauth_token"
+      )
+
+      scope = service.send(:managed_subscription_credential_scope_for, "claude")
+
+      expect(scope).to contain_exactly(own_credential)
+    end
+
+    it "returns nil when the record's project has no account" do
+      allow(project).to receive(:account).and_return(nil)
+
+      expect(service.send(:managed_subscription_credential_scope_for, "claude")).to be_nil
     end
   end
 

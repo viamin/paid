@@ -88,5 +88,17 @@ RSpec.describe Runners::DefaultTierModelIds do
         expect(result["high"]).to eq("gpt-5.5-pro")
       end
     end
+
+    context "when the highest-capability mid-tier Codex model is subscription-incompatible" do # @spec MODEL-SELECTION-005
+      before do
+        create(:llm_model, :openai, model_id: "gpt-5.6-preview", tier: "mid", capability_score: 9.9)
+        create(:llm_model, :openai, model_id: "gpt-5.2-codex", tier: "mid", capability_score: 9.0)
+      end
+
+      it "filters it out under subscription auth" do
+        result = described_class.call(runner_key: "codex", auth_type: "subscription")
+        expect(result["mid"]).to eq("gpt-5.2-codex")
+      end
+    end
   end
 end

@@ -24,6 +24,7 @@ module Projects
       @runner_options = base_scope.distinct_effective_runner_options(account_id: @project.account_id, cache_key: cache_key)
     end
 
+    # @spec EXECUTION-ISOLATION-005
     def show
       authorize @agent_run
       @retry_runner_options = retry_runner_options_for(@agent_run)
@@ -37,6 +38,10 @@ module Projects
       @phase_summary = @agent_run.phase_summary(phases: @phase_timeline.to_a)
       @final_runner_record = @agent_run.final_runner_record
       @attempted_runners_by_routing_key = @agent_run.attempted_runners_by_routing_key
+      @egress_policy_snapshot = @agent_run.egress_policy_snapshot
+      egress_audit_events = @agent_run.egress_security_events.audit_visible
+      @egress_security_events = egress_audit_events.recent.limit(50).load
+      @egress_denied_event_count = egress_audit_events.count
     end
 
     def provenance

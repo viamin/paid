@@ -44,6 +44,12 @@ class AccountActivityEvent < ApplicationRecord
     "prompt_version.rejected" => "approval",
     "configuration_profile.applied" => "configuration_profile",
     "configuration_profile.reverted" => "configuration_profile",
+    "egress_allowlist.account_entry_created" => "egress_allowlist",
+    "egress_allowlist.account_entry_updated" => "egress_allowlist",
+    "egress_allowlist.account_entry_removed" => "egress_allowlist",
+    "egress_allowlist.project_entry_created" => "egress_allowlist",
+    "egress_allowlist.project_entry_updated" => "egress_allowlist",
+    "egress_allowlist.project_entry_removed" => "egress_allowlist",
     "auth.sign_in" => "auth",
     "auth.password_changed" => "auth"
   }.freeze
@@ -167,6 +173,18 @@ class AccountActivityEvent < ApplicationRecord
       "Applied posture #{metadata_value('label')} to #{metadata_value('project_name')}"
     when "configuration_profile.reverted"
       "Reverted posture change on #{metadata_value('project_name')}"
+    when "egress_allowlist.account_entry_created"
+      "Added account egress allowlist entry for #{metadata_value('host_pattern')}"
+    when "egress_allowlist.account_entry_updated"
+      "Updated account egress allowlist entry for #{metadata_value('host_pattern')}"
+    when "egress_allowlist.account_entry_removed"
+      "Removed account egress allowlist entry for #{metadata_value('host_pattern')}"
+    when "egress_allowlist.project_entry_created"
+      "Added project egress allowlist entry for #{metadata_value('host_pattern')}"
+    when "egress_allowlist.project_entry_updated"
+      "Updated project egress allowlist entry for #{metadata_value('host_pattern')}"
+    when "egress_allowlist.project_entry_removed"
+      "Removed project egress allowlist entry for #{metadata_value('host_pattern')}"
     when "auth.sign_in"
       "Signed in"
     when "auth.password_changed"

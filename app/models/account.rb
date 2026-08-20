@@ -56,6 +56,8 @@ class Account < ApplicationRecord
   has_many :strategy_experiments, dependent: :destroy
   has_many :coordination_policies, dependent: :destroy
   has_one :dispatch_circuit_breaker, dependent: :destroy
+  has_many :egress_allowlist_entries, dependent: :destroy
+  has_many :egress_security_events, dependent: :destroy
 
   validates :name, presence: true
   validates :plan, presence: true, inclusion: { in: PLANS }

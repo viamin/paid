@@ -207,6 +207,7 @@ class AgentRun < ApplicationRecord
   has_many :agent_run_anomalies, dependent: :destroy
   has_many :knowledge_usage_stats, dependent: :destroy
   has_many :agent_run_marketplace_entries, -> { order(:position) }, dependent: :destroy
+  has_many :egress_security_events, dependent: :destroy
   has_many :sent_coordination_signals,
     class_name: "AgentCoordinationSignal",
     foreign_key: :source_agent_run_id,
@@ -236,7 +237,7 @@ class AgentRun < ApplicationRecord
   after_commit :enqueue_quality_metrics_collection, on: :update, if: :real_run_just_finished?
   after_commit :enqueue_anomaly_detection, on: :update, if: :real_run_just_finished?
   after_commit :enqueue_resource_profile_refresh, on: :update, if: :real_run_just_finished?
-  after_commit :enqueue_container_metrics_collection, on: :update, if: :just_started_running?
+  after_commit :enqueue_container_metrics_collection, on: :update, if: :container_metrics_seed_due?
   after_commit :enqueue_issue_goal_timeout_retry, on: :update, if: :just_timed_out_issue_goal?
   after_commit :enqueue_failure_recovery_decision, on: :update, if: :recovery_decision_required?
   after_commit :record_dispatch_circuit_breaker_outcome, on: :update, if: :real_run_just_finished?
@@ -333,6 +334,7 @@ class AgentRun < ApplicationRecord
   scope :queued, -> { where(status: "queued") }
   scope :waiting, -> { queued.where(temporal_workflow_id: nil) }
   scope :claimed, -> { queued.where.not(temporal_workflow_id: nil) }
+  scope :admitted_not_started, -> { running.where.not(temporal_workflow_id: nil).where(started_at: nil) }
   scope :unclaimed, -> { waiting }
   scope :running, -> { where(status: "running") }
   scope :completed, -> { where(status: "completed") }
@@ -392,7 +394,7 @@ class AgentRun < ApplicationRecord
   scope :started_before, ->(time) { where("started_at < ?", time) }
   scope :updated_before, ->(time) { where("updated_at < ?", time) }
   scope :stale_running, -> { running.where(stale_running_condition_sql(now: Time.current)) }
-  scope :stale_claimed, -> { claimed.updated_before(stale_claimed_cutoff) }
+  scope :stale_claimed, -> { claimed.or(admitted_not_started).updated_before(stale_claimed_cutoff) }
   scope :stale_for_cleanup, -> { stale_running.or(stale_claimed) }
   scope :search_by_goal, lambda { |query|
     normalized_query = query.to_s.strip
@@ -836,6 +838,17 @@ class AgentRun < ApplicationRecord
     raw.is_a?(Hash) ? raw.stringify_keys : {}
   end
 
+  # Extracts the persisted egress policy snapshot stored under
+  # `external_metadata["egress_policy"]`. The snapshot is written by the
+  # resolver before provisioning and is the authoritative record of which
+  # destinations a run was actually allowed to reach.
+  def egress_policy_snapshot
+    return nil unless external_metadata.is_a?(Hash)
+
+    snapshot = external_metadata["egress_policy"]
+    snapshot.is_a?(Hash) ? snapshot : nil
+  end
+
   # Resolves the Docker host that owns this run's named workspace volume for
   # cleanup. ProcessRunQueueJob clears container_host at claim time and only
   # restores it from a real provision/pool result (see start_claimed_run), so
@@ -854,6 +867,13 @@ class AgentRun < ApplicationRecord
     agent_run.status == "running" &&
       agent_run.started_at.present? &&
       agent_run.started_at < stale_running_cutoff(goal: agent_run.goal, now: now)
+  end
+
+  def self.stale_claimed?(agent_run, now: Time.current)
+    agent_run.temporal_workflow_id.present? &&
+      agent_run.updated_at.present? &&
+      agent_run.updated_at < stale_claimed_cutoff(now: now) &&
+      (agent_run.status == "queued" || (agent_run.status == "running" && agent_run.started_at.nil?))
   end
 
   def should_refresh_queue_entered_at?
@@ -1505,6 +1525,21 @@ class AgentRun < ApplicationRecord
     latest_pr_run.trigger_type == "manual" ? "manual" : "automatic"
   end
 
+  def self.pr_history_scope(project:, pr_number:, issue: nil)
+    project.agent_runs.where(
+      "issue_id = :issue_id OR source_pull_request_number = :pr_num OR pull_request_number = :pr_num",
+      issue_id: issue&.id,
+      pr_num: pr_number
+    )
+  end
+
+  def self.pr_auto_continue_tokens_used(project:, pr_number:, issue: nil)
+    pr_history_scope(project:, pr_number:, issue:)
+      .where(trigger_type: "automatic")
+      .pick(Arel.sql("COALESCE(SUM(COALESCE(tokens_input, 0) + COALESCE(tokens_output, 0)), 0)"))
+      .to_i
+  end
+
   # @spec LID-RUNS-004
   # Finds the lid_planning run that opened a given Planning PR, if any.
   # Used by the review-goal prompt path to detect that a PR is a Planning PR
@@ -1527,8 +1562,8 @@ class AgentRun < ApplicationRecord
   end
 
   # Atomically claims a queued run by setting temporal_workflow_id inside a
-  # transaction with FOR UPDATE SKIP LOCKED. The status stays "queued" — the
-  # run transitions to "running" only when RunAgentActivity#start! is called.
+  # transaction with FOR UPDATE SKIP LOCKED. ProcessRunQueueJob transitions the
+  # run to "running" once the workflow is admitted.
   # Returns nil if the run is no longer unclaimed or another process already
   # claimed it.
   #
@@ -1536,8 +1571,8 @@ class AgentRun < ApplicationRecord
   #   prior peek_next_queued_run call)
   #
   # Note: if the transaction commits but the subsequent workflow start fails,
-  # the run stays "queued" with a claimed marker. StaleRunDetectorJob handles
-  # this by clearing the claim after STALE_CLAIMED_TIMEOUT.
+  # ProcessRunQueueJob leaves the workflow id in place when it marks the run
+  # failed so StaleRunDetectorJob can cancel a potentially orphaned workflow.
   def self.claim_next_queued_run(target_id:)
     transaction do
       run = unclaimed.where(id: target_id).lock("FOR UPDATE SKIP LOCKED").first
@@ -1902,6 +1937,8 @@ class AgentRun < ApplicationRecord
         raise ActiveRecord::RecordInvalid, self
       end
 
+      return self if running? && started_at.present?
+
       update!(status: "running", started_at: Time.current, completed_at: nil)
     end
   end
@@ -2170,7 +2207,7 @@ class AgentRun < ApplicationRecord
   end
 
   # Agent execution integration methods.
-  # These delegate to AgentRuns::Execute and Prompts::BuildForIssue services.
+  # These delegate to AgentRuns::Execute and PromptAssembly services.
 
   # Executes the agent for this run using agent-harness.
   #
@@ -2185,13 +2222,26 @@ class AgentRun < ApplicationRecord
     AgentRuns::Execute.call(**args)
   end
 
-  # Builds a prompt for this run's issue using the PromptBuilder.
+  # Builds a prompt for this run's issue using PromptAssembly.
+  #
+  # For create_pr runs the prompt is assembled from ordered, provenance-tracked
+  # section providers via {PromptAssembly::BuildIssuePrompt}. The assembly
+  # result is memoized so {#effective_prompt} can record provenance and avoid
+  # double-injecting marketplace content.
+  #
+  # @spec PROMPT-ASSEMBLY-014
   #
   # @return [String, nil] The built prompt, or nil if no issue is attached
   def prompt_for_issue
     return nil unless issue
 
-    Prompts::BuildForIssue.call(issue: issue, project: project, github_client: project.github_token&.client, agent_run: self)
+    @prompt_assembly_result = PromptAssembly::BuildIssuePrompt.call(
+      issue: issue,
+      project: project,
+      github_client: project.github_token&.client,
+      agent_run: self
+    )
+    @prompt_assembly_result.text
   end
 
   # Returns the agent's stdout output joined as a single string.
@@ -2236,16 +2286,52 @@ class AgentRun < ApplicationRecord
   # Returns the prompt for this run: custom_prompt if provided,
   # otherwise delegates to goal-specific prompt builders.
   #
+  # When the create_pr path produced a PromptAssembly result that already
+  # includes marketplace content, the marketplace injection is skipped to
+  # avoid duplication. Section provenance is persisted to external_metadata.
+  #
   # @return [String, nil] The prompt to send to the agent
   def effective_prompt
     base = custom_prompt.presence || prompt_for_goal
-    return base unless agent_run_marketplace_entries.exists?
 
-    runner_key = runner&.runner_key || RunnerSupport.runner_key_for_agent_type(agent_type)
-    MarketplaceEntries::InjectIntoPrompt.call(agent_run: self, prompt: base, provider_key: runner_key)
+    unless prompt_assembly_marketplace_handled?
+      if agent_run_marketplace_entries.exists?
+        runner_key = runner&.runner_key || RunnerSupport.runner_key_for_agent_type(agent_type)
+        base = MarketplaceEntries::InjectIntoPrompt.call(agent_run: self, prompt: base, provider_key: runner_key)
+      end
+    end
+
+    persist_prompt_assembly_provenance!
+    base
+  end
+
+  # Whether the PromptAssembly result already included marketplace content,
+  # so {#effective_prompt} can skip the separate injection step.
+  #
+  # @spec PROMPT-ASSEMBLY-014
+  def prompt_assembly_marketplace_handled?
+    @prompt_assembly_result&.sections&.any? { |section| section.key == :marketplace_attachments }
+  end
+
+  # Persists section provenance from the memoized PromptAssembly result into
+  # external_metadata. Uses update_columns to avoid triggering lifecycle
+  # callbacks — this is a metadata-only audit record, not a state change.
+  #
+  # @spec PROMPT-ASSEMBLY-014
+  def persist_prompt_assembly_provenance!
+    return unless @prompt_assembly_result
+    return unless persisted?
+
+    current = external_metadata.is_a?(Hash) ? external_metadata : {}
+    update_columns(
+      external_metadata: current.merge(ISSUE_PROMPT_ASSEMBLY_KEY => @prompt_assembly_result.provenance)
+    )
   end
 
   PROMPT_ASSEMBLY_KEY = "prompt_assembly"
+  ISSUE_PROMPT_ASSEMBLY_KEY = "issue_prompt_assembly"
+  RUNTIME_IMAGE_KEY = "runtime_image"
+  PROMPT_BUILDER_KEY = "prompt_builder"
 
   # Persists prompt-assembly provenance (digest + section list) on the run so
   # configuration bundles and run metadata can fingerprint exactly which
@@ -2265,8 +2351,54 @@ class AgentRun < ApplicationRecord
     external_metadata.is_a?(Hash) ? external_metadata[PROMPT_ASSEMBLY_KEY] : nil
   end
 
+  def issue_prompt_assembly_provenance
+    external_metadata.is_a?(Hash) ? external_metadata[ISSUE_PROMPT_ASSEMBLY_KEY] : nil
+  end
+
   def prompt_assembly_digest
     prompt_assembly_provenance&.dig("digest")
+  end
+
+  def record_runtime_image_selection!(selection)
+    # @spec IMMUTABLE-IMAGE-002
+    return if selection.blank?
+
+    metadata = external_metadata.is_a?(Hash) ? external_metadata.dup : {}
+    metadata[RUNTIME_IMAGE_KEY] = selection
+
+    if persisted?
+      update_columns(external_metadata: metadata)
+    else
+      self.external_metadata = metadata
+    end
+  end
+
+  def runtime_image_selection
+    external_metadata.is_a?(Hash) ? external_metadata[RUNTIME_IMAGE_KEY] : nil
+  end
+
+  # Clears any runtime image selection previously recorded on this run. Used
+  # on the fresh-reprovision path so a replacement container records the
+  # current catalog resolution rather than the dead container's digest — the
+  # complement to Provision#recorded_run_selection, which reuses the recorded
+  # selection across reconnects (RDR-059 / IMMUTABLE-IMAGE-002).
+  def clear_runtime_image_selection!
+    return unless external_metadata.is_a?(Hash) && external_metadata.key?(RUNTIME_IMAGE_KEY)
+
+    metadata = external_metadata.dup
+    metadata.delete(RUNTIME_IMAGE_KEY)
+
+    update_columns(external_metadata: metadata)
+  end
+
+  def record_prompt_builder!(builder)
+    metadata = (external_metadata.is_a?(Hash) ? external_metadata.dup : {})
+    metadata[PROMPT_BUILDER_KEY] = builder.to_s
+    update!(external_metadata: metadata)
+  end
+
+  def prompt_builder
+    external_metadata.is_a?(Hash) ? external_metadata[PROMPT_BUILDER_KEY] : nil
   end
 
   # Returns the base prompt for the review goal.
@@ -2759,12 +2891,16 @@ class AgentRun < ApplicationRecord
   end
 
   # Clears persisted container reference columns after a stale runner handle is
-  # cleaned up, so a subsequent provision starts from a clean slate. Uses
-  # +update_columns+ to bypass validations (the run may be in an inconsistent
-  # state mid-reconciliation).
+  # cleaned up, so a subsequent provision starts from a clean slate. Also
+  # clears the recorded runtime image selection so a replacement container
+  # records the current catalog resolution instead of inheriting provenance
+  # from a container that no longer exists (RDR-059 / IMMUTABLE-IMAGE-002).
+  # Uses +update_columns+ to bypass validations (the run may be in an
+  # inconsistent state mid-reconciliation).
   def clear_runner_reference!
     @current_handle = nil
     update_columns(container_id: nil, runner_handle: nil)
+    clear_runtime_image_selection!
   end
 
   def set_initiating_user_from_current_user
@@ -3156,6 +3292,10 @@ class AgentRun < ApplicationRecord
   # Cleans up a recorded container that is no longer usable (dead or missing)
   # so a fresh one can be provisioned. Handles both pooled and freshly
   # provisioned containers and guarantees the stale container_id is cleared.
+  # Also clears the recorded runtime image selection so the replacement
+  # container records the current catalog resolution instead of inheriting
+  # provenance from a container that no longer exists (RDR-059 /
+  # IMMUTABLE-IMAGE-002).
   def reconcile_stale_container!(service)
     @container_service = service
     cleanup_container(force: true)
@@ -3169,6 +3309,7 @@ class AgentRun < ApplicationRecord
   ensure
     @container_service = nil
     update_column(:container_id, nil) if container_id.present?
+    clear_runtime_image_selection!
   end
 
   def self.host_scope_for(container_host)
@@ -3338,6 +3479,15 @@ class AgentRun < ApplicationRecord
 
   def just_started_running?
     previous_changes.key?("status") && status == "running"
+  end
+
+  # @spec TEMPORAL-ORCHESTRATION-005 — admission flips a run to running before
+  # any container exists, so metrics seeding must also fire when provisioning
+  # later assigns a container to an already-running run.
+  def container_metrics_seed_due?
+    return false unless container_id.present?
+
+    just_started_running? || (previous_changes.key?("container_id") && running?)
   end
 
   private :explicit_user_max_tokens_per_run, :explicit_user_max_execution_seconds

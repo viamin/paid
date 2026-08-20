@@ -7,6 +7,21 @@ class SpecHelperCoverage < Pathname
 end
 
 RSpec.describe SpecHelperCoverage, :no_db do
+  def run_spec_helper_probe(env)
+    probe_script = <<~RUBY
+      require "bundler/setup"
+      require "rspec/core"
+      require_relative "spec/spec_helper"
+      if Object.const_defined?(:SimpleCov)
+        SimpleCov.command_name("spec_helper_coverage_probe-\#{Process.pid}")
+        SimpleCov.minimum_coverage 0
+      end
+      puts Object.const_defined?(:SimpleCov)
+    RUBY
+
+    Open3.capture3(env, "bundle", "exec", "ruby", "-e", probe_script, chdir: Rails.root.to_s)
+  end
+
   # The decision logic is unit-tested in-process against the pure
   # SpecCoverageDecision module (fast). One subprocess spec below asserts the
   # wiring — that requiring spec_helper actually honors the decision.
@@ -40,27 +55,13 @@ RSpec.describe SpecHelperCoverage, :no_db do
   # Integration contract: requiring spec_helper.rb actually applies the
   # decision. Kept as a single subprocess assertion (not one per matrix case).
   it "wires SpecCoverageDecision into spec_helper (explicit request enables SimpleCov)" do
-    probe_script = <<~RUBY
-      require "bundler/setup"
-      require "rspec/core"
-      require_relative "spec/spec_helper"
-      if Object.const_defined?(:SimpleCov)
-        SimpleCov.command_name("spec_helper_coverage_probe-\#{Process.pid}")
-        SimpleCov.minimum_coverage 0
-      end
-      puts Object.const_defined?(:SimpleCov)
-    RUBY
-
-    stdout, stderr, status = Open3.capture3(
-      {
-        "ALLOW_DBLESS_SPECS" => "true",
-        "COVERAGE" => "true"
-      },
-      "bundle", "exec", "ruby", "-e", probe_script,
-      chdir: Rails.root.to_s
+    stdout, stderr, status = run_spec_helper_probe(
+      "ALLOW_DBLESS_SPECS" => "true",
+      "COVERAGE" => "true"
     )
 
     expect(status.success?).to be(true), stderr
+    expect(stderr).not_to include("SimpleCov.add_filter")
     expect(stdout.lines.first.to_s.strip).to eq("true")
   end
 end
