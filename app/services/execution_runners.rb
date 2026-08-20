@@ -302,23 +302,34 @@ module ExecutionRunners
   # Provider-neutral networking policy, replacing Docker network names.
   # Adapted from +NetworkPolicy::NetworkContract+ but drops the Docker-specific
   # +network+ name and derives restriction from +mode+. A runner implementation
-  # translates this to Docker networks, in-container firewall rules, Fly
-  # firewall rules, etc.
+  # translates the coarse intent into its native controls — Docker networks
+  # and in-container iptables for {LocalDockerRunner}; a future Fly or remote
+  # runner maps the same intents to its own egress primitives.
   #
-  # +mode+ values:
-  #   :proxy_restricted   — restricted; traffic flows through Paid's secrets proxy
-  #                          and an in-container iptables firewall limits egress
-  #                          to the proxy, GitHub IPs, DNS, and service containers.
-  #   :subscription_auth  — unrestricted; provider CLI reaches upstream APIs directly.
-  #   :direct_outbound    — unrestricted; provider bypasses the proxy entirely.
+  # The vocabulary is deliberately coarse. The runner is the only place that
+  # knows the underlying network and firewall mechanism; orchestration code
+  # names intent, never implementation.
+  #
+  # +mode+ values (RDR-062):
+  #   :no_outbound       — air-gapped; loopback + DNS only.
+  #   :proxy_only        — restricted; only Paid secrets proxy + DNS.
+  #   :git_plus_proxy    — restricted; adds GitHub CIDR ranges.
+  #   :approved_services — restricted; adds service container IPs.
+  #                         The default for API-key LLM runs.
+  #   :model_direct      — unrestricted; provider CLI reaches upstream APIs.
+  #   :explicit_internet — unrestricted; operator opt-in for full egress.
+  #
+  # The three backward-compatible constructors from before RDR-062
+  # (+:proxy_restricted+, +:subscription_auth+, +:direct_outbound+) remain
+  # valid and map onto the new intent vocabulary without changing behavior.
   #
   # +firewall+ (boolean) — whether the runner must apply in-container firewall
-  #                          rules. Always true for +:proxy_restricted+, false
-  #                          for the unrestricted modes.
+  #                          rules. Always true for the four restricted modes,
+  #                          false for the two unrestricted modes.
   #
   # +allow_destinations+ — array of destination hashes ({host:, port:}) the
-  #                          runner should grant in the firewall, in addition to
-  #                          the secrets proxy and GitHub ranges. The runner
+  #                          runner should grant in the firewall, in addition
+  #                          to the secrets proxy and GitHub ranges. The runner
   #                          merges these with service container IPs (resolved
   #                          from Provision after containers start) and
   #                          preview-tunnel destinations, so the underlying
@@ -345,30 +356,92 @@ module ExecutionRunners
   # +ArgumentError+ for any value outside the closed +EGRESS_PROFILES+ enum,
   # so typos or foreign values (e.g. a string instead of a symbol) fail at
   # construction instead of silently serializing into the manifest.
+  #
   # @spec CONTAINER-RUNTIME-009
   # @spec CONTAINER-RUNTIME-017
   # @spec CONTAINER-RUNTIME-020
+  # @spec CONTAINER-RUNTIME-028
+
+  # The set of canonical intent modes and their restricted/unrestricted
+  # classification. Defined on the module so callers and the {NetworkingPolicy}
+  # value object can reference them as ordinary Ruby constants (Data.define
+  # does not expose constants defined inside the block as accessible
+  # attributes on the resulting class).
+  NETWORKING_POLICY_RESTRICTED_MODES = [ :proxy_restricted, :no_outbound, :proxy_only, :git_plus_proxy, :approved_services ].freeze
+  NETWORKING_POLICY_UNRESTRICTED_MODES = [ :subscription_auth, :direct_outbound, :model_direct, :explicit_internet ].freeze
+  NETWORKING_POLICY_KNOWN_MODES = (NETWORKING_POLICY_RESTRICTED_MODES + NETWORKING_POLICY_UNRESTRICTED_MODES).freeze
+
   NetworkingPolicy = Data.define(:mode, :firewall, :allow_destinations, :egress_profile) do
-    RESTRICTED_MODE = :proxy_restricted
+    RESTRICTED_MODES = ExecutionRunners::NETWORKING_POLICY_RESTRICTED_MODES
+    UNRESTRICTED_MODES = ExecutionRunners::NETWORKING_POLICY_UNRESTRICTED_MODES
+    KNOWN_MODES = ExecutionRunners::NETWORKING_POLICY_KNOWN_MODES
+    ALLOW_DESTINATION_REQUIRED_KEYS = %i[host port].freeze
+    ALLOW_DESTINATION_HOST_PATTERN = /\A[a-zA-Z0-9.\-]+\z/
     LOCKED_PROFILE = :locked
     RESEARCH_PROFILE = :research
     OPEN_PROFILE = :open
     EGRESS_PROFILES = [ LOCKED_PROFILE, RESEARCH_PROFILE, OPEN_PROFILE ].freeze
 
-    def initialize(mode:, firewall:, allow_destinations:, egress_profile:)
-      super(mode:, firewall:, allow_destinations:, egress_profile: self.class.validate_egress_profile!(egress_profile))
+    def initialize(mode:, firewall:, allow_destinations:, egress_profile: LOCKED_PROFILE)
+      normalized_mode = mode&.to_sym
+      normalized_destinations = normalize_allow_destinations(Array(allow_destinations))
+
+      validate_mode!(normalized_mode)
+      validate_firewall!(normalized_mode, firewall)
+      validate_allow_destinations!(normalized_destinations)
+
+      super(
+        mode: normalized_mode,
+        firewall: firewall,
+        allow_destinations: normalized_destinations,
+        egress_profile: self.class.validate_egress_profile!(egress_profile)
+      )
     end
 
+    def self.no_outbound(allow_destinations: [], egress_profile: LOCKED_PROFILE)
+      new(mode: :no_outbound, firewall: true, allow_destinations: allow_destinations, egress_profile: egress_profile)
+    end
+
+    def self.proxy_only(allow_destinations: [], egress_profile: LOCKED_PROFILE)
+      new(mode: :proxy_only, firewall: true, allow_destinations: allow_destinations, egress_profile: egress_profile)
+    end
+
+    def self.git_plus_proxy(allow_destinations: [], egress_profile: LOCKED_PROFILE)
+      new(mode: :git_plus_proxy, firewall: true, allow_destinations: allow_destinations, egress_profile: egress_profile)
+    end
+
+    def self.approved_services(allow_destinations: [], egress_profile: LOCKED_PROFILE)
+      new(mode: :approved_services, firewall: true, allow_destinations: allow_destinations, egress_profile: egress_profile)
+    end
+
+    # Backward-compatible alias for {.approved_services}. Keeps +mode+ set to
+    # the legacy +:proxy_restricted+ symbol (rather than delegating to
+    # {.approved_services}) so existing callers checking
+    # +policy.mode == :proxy_restricted+ see no change in behavior;
+    # {#canonical_mode} performs the normalization instead.
     def self.proxy_restricted(allow_destinations: [], egress_profile: LOCKED_PROFILE)
-      new(mode: RESTRICTED_MODE, firewall: true, allow_destinations: allow_destinations, egress_profile: egress_profile)
+      new(mode: :proxy_restricted, firewall: true, allow_destinations: allow_destinations, egress_profile: egress_profile)
     end
 
+    def self.model_direct(allow_destinations: [], egress_profile: LOCKED_PROFILE)
+      new(mode: :model_direct, firewall: false, allow_destinations: allow_destinations, egress_profile: egress_profile)
+    end
+
+    # Backward-compatible alias for {.model_direct}. Keeps +mode+ set to the
+    # legacy +:subscription_auth+ symbol so {#canonical_mode} normalizes it
+    # rather than the constructor silently swapping the mode.
     def self.subscription_auth(egress_profile: LOCKED_PROFILE)
       new(mode: :subscription_auth, firewall: false, allow_destinations: [], egress_profile: egress_profile)
     end
 
+    # Backward-compatible alias for {.model_direct}. Keeps +mode+ set to the
+    # legacy +:direct_outbound+ symbol so {#canonical_mode} normalizes it.
     def self.direct_outbound(egress_profile: LOCKED_PROFILE)
       new(mode: :direct_outbound, firewall: false, allow_destinations: [], egress_profile: egress_profile)
+    end
+
+    def self.explicit_internet(egress_profile: LOCKED_PROFILE)
+      new(mode: :explicit_internet, firewall: false, allow_destinations: [], egress_profile: egress_profile)
     end
 
     # Validates that +egress_profile+ is one of the closed RDR-055 enum
@@ -388,11 +461,50 @@ module ExecutionRunners
     end
 
     def restricted?
-      mode == RESTRICTED_MODE
+      RESTRICTED_MODES.include?(mode)
     end
 
     def firewall?
       firewall
+    end
+
+    # +true+ when the intent names a provider-direct outbound run (subscription
+    # auth or direct outbound). Distinguishes the two unrestricted intents.
+    def model_direct?
+      mode == :model_direct || mode == :subscription_auth || mode == :direct_outbound
+    end
+
+    # +true+ when the intent names an explicit-internet run (operator opt-in
+    # full egress). Distinguishes the two unrestricted intents.
+    def explicit_internet?
+      mode == :explicit_internet
+    end
+
+    # +true+ when the policy is meant to block all outbound traffic.
+    # Runners with iptables + a default-deny script can implement this; runners
+    # without a firewall capability reject it via {.supports_policy?}.
+    def no_outbound?
+      mode == :no_outbound
+    end
+
+    # +true+ when the intent includes service container IPs in its allowlist.
+    # Only the approved-services intent (and its +:proxy_restricted+ alias)
+    # grants service containers; the narrower restricted intents do not
+    # (RDR-062 mapping table).
+    def approved_services?
+      canonical_mode == :approved_services
+    end
+
+    # Returns the canonical intent mode. The three backward-compatible modes
+    # (:proxy_restricted, :subscription_auth, :direct_outbound) are normalized
+    # to their new-intent names so downstream translation paths only see the
+    # canonical six-intent set.
+    def canonical_mode
+      case mode
+      when :proxy_restricted then :approved_services
+      when :subscription_auth, :direct_outbound then :model_direct
+      else mode
+      end
     end
 
     def locked?
@@ -405,6 +517,68 @@ module ExecutionRunners
 
     def open?
       egress_profile == OPEN_PROFILE
+    end
+
+    private
+
+    def validate_mode!(mode)
+      return if KNOWN_MODES.include?(mode)
+
+      raise ArgumentError, "Unknown networking policy mode: #{mode.inspect}"
+    end
+
+    def validate_firewall!(mode, firewall)
+      expected_firewall = RESTRICTED_MODES.include?(mode)
+      return if firewall == expected_firewall
+
+      raise ArgumentError, "Networking policy #{mode.inspect} requires firewall=#{expected_firewall}"
+    end
+
+    def validate_allow_destinations!(destinations)
+      destinations.each do |destination|
+        unless destination.is_a?(Hash)
+          raise ArgumentError, "Allow destinations must be hashes with :host and :port"
+        end
+
+        missing_keys = ALLOW_DESTINATION_REQUIRED_KEYS.reject { |key| destination[key].present? }
+        next if missing_keys.empty?
+
+        raise ArgumentError, "Allow destination is missing keys: #{missing_keys.join(', ')}"
+      end
+
+      destinations.each do |destination|
+        validate_allow_destination_host!(destination[:host])
+        validate_allow_destination_port!(destination[:port])
+      end
+    end
+
+    def normalize_allow_destinations(destinations)
+      destinations.map do |destination|
+        next destination unless destination.is_a?(Hash)
+
+        {
+          host: destination[:host] || destination["host"],
+          port: normalize_allow_destination_port(destination[:port] || destination["port"])
+        }
+      end
+    end
+
+    def validate_allow_destination_host!(host)
+      return if host.is_a?(String) && host.match?(ALLOW_DESTINATION_HOST_PATTERN)
+
+      raise ArgumentError, "Allow destination host is invalid: #{host.inspect}"
+    end
+
+    def validate_allow_destination_port!(port)
+      return if port.is_a?(Integer) && port.between?(1, 65_535)
+
+      raise ArgumentError, "Allow destination port is invalid: #{port.inspect}"
+    end
+
+    def normalize_allow_destination_port(port)
+      Integer(port)
+    rescue ArgumentError, TypeError
+      port
     end
   end
 
@@ -462,7 +636,7 @@ module ExecutionRunners
             "mount_point" => spec.workspace&.mount_point
           }.compact,
           "networking" => {
-            "mode" => spec.networking_policy&.mode&.to_s,
+            "mode" => spec.networking_policy&.canonical_mode&.to_s,
             "firewall" => spec.networking_policy&.firewall?,
             "allow_destinations" => ExecutionRunners.json_value(spec.networking_policy&.allow_destinations || []),
             "egress_profile" => spec.networking_policy&.egress_profile&.to_s
