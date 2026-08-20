@@ -237,23 +237,24 @@ module ExecutionRunners
     end
 
     # Prefers the persisted authority-grant snapshot on +agent_run+ when one
-    # exists *and* it still matches this spec's +networking_policy+. This
-    # keeps a provision retry that reuses an unchanged policy aligned with
-    # the snapshot already recorded on the run and audited by operators,
-    # without ever letting the manifest disagree with itself: +provision_via_runner+
-    # (app/models/agent_run.rb) deliberately re-derives +networking_policy+ fresh
-    # on retry (e.g. for subscription-auth / direct-outbound recovery), and that
-    # same fresh policy also drives +execution.networking+ in the input manifest
-    # (see #input_manifest). If the persisted snapshot's network mode no longer
-    # matches, it is stale relative to this attempt, so grants are re-derived
-    # from the current policy instead — the persisted +agent_run.authority_grants+
-    # column itself is left untouched as the historical audit record (RDR-058).
+    # exists *and* it still matches the current derivation inputs. This keeps a
+    # provision retry aligned with the snapshot already recorded on the run and
+    # audited by operators, without ever letting the manifest disagree with
+    # itself: +provision_via_runner+ (app/models/agent_run.rb) deliberately
+    # re-derives +networking_policy+ fresh on retry (e.g. for subscription-auth /
+    # direct-outbound recovery), and the grant set also depends on the run's
+    # current service-env keys, MCP server names, and runner selection. If the
+    # persisted snapshot differs from the fresh derivation, it is stale relative
+    # to this attempt, so grants are re-derived from current inputs instead —
+    # the persisted +agent_run.authority_grants+ column itself is left untouched
+    # as the historical audit record (RDR-058).
     # @spec EXECUTION-AUTHORITY-002
     def authority_grants
       persisted = persisted_authority_grants
-      return persisted if persisted && persisted.network_mode == networking_policy&.mode.to_s
+      fresh = AuthorityGrantSet.from_agent_run(agent_run, networking_policy: networking_policy)
+      return persisted if persisted == fresh
 
-      AuthorityGrantSet.from_agent_run(agent_run, networking_policy: networking_policy)
+      fresh
     end
 
     private
@@ -382,7 +383,7 @@ module ExecutionRunners
     private_class_method :object_storage_upload_enabled_for?
 
     def self.service_env_keys_for(agent_run)
-      agent_run.service_environment.to_h.keys.map(&:to_s).sort
+      (agent_run.service_environment || {}).to_h.keys.map(&:to_s).sort
     end
     private_class_method :service_env_keys_for
   end

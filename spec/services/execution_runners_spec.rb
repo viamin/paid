@@ -81,6 +81,25 @@ RSpec.describe ExecutionRunners do
         secrets_config: { "auth" => "proxy" }
       }
     end
+    let(:persisted_stale_authority_grants) do
+      {
+        "schema_version" => 1,
+        "grants" => [
+          {
+            "kind" => "model_provider_credentials",
+            "delivery" => "proxy_mode",
+            "scope" => "runner",
+            "metadata" => { "runner_key" => "claude_code", "network_mode" => "proxy_restricted" }
+          },
+          {
+            "kind" => "service_credentials",
+            "delivery" => "service_environment",
+            "scope" => "run",
+            "metadata" => { "env_keys" => [ "OLD_DATABASE_URL" ] }
+          }
+        ]
+      }
+    end
 
     it "carries the full execution description" do
       expect(spec.image).to eq("paid/agent:latest")
@@ -109,6 +128,21 @@ RSpec.describe ExecutionRunners do
       expect(manifest.repository.dig("ref", "branch_name")).to eq("agent-run-branch")
       expect(manifest.execution.dig("workspace", "mode")).to eq("named_volume")
       expect(manifest.execution.dig("authority_grants", "grants")).not_to be_empty
+    end
+
+    it "re-derives authority grants when a persisted snapshot no longer matches current inputs" do
+      allow(agent_run).to receive_messages(
+        authority_grants: persisted_stale_authority_grants,
+        service_environment: { "DATABASE_URL" => "postgres://example" }
+      )
+
+      service_grant = spec.authority_grants.grants.find { |grant| grant["kind"] == "service_credentials" }
+
+      expect(service_grant).to include(
+        "delivery" => "service_environment",
+        "scope" => "run",
+        "metadata" => { "env_keys" => [ "DATABASE_URL" ] }
+      )
     end
   end
 
@@ -183,6 +217,17 @@ RSpec.describe ExecutionRunners do
 
       expect(grants.grants.find { |grant| grant["kind"] == "object_storage_upload_authority" })
         .to include("delivery" => "object_storage", "scope" => "account")
+    end
+
+    it "tolerates a nil service environment" do
+      agent_run.update_column(:service_environment, nil)
+
+      grants = described_class.from_agent_run(
+        agent_run,
+        networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted
+      )
+
+      expect(grants.grants.pluck("kind")).not_to include("service_credentials")
     end
   end
 
