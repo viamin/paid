@@ -50,4 +50,14 @@ RSpec.describe CiWorkflowFile, :no_db do
     expect(install_step.fetch("run")).to include('echo "$HOME/.local/bin" >> "$GITHUB_PATH"')
     expect(install_step.fetch("run")).to include('INSTALL_DIR="$HOME/.local/bin" bin/install-ast-grep')
   end
+
+  it "fetches full git history for the test job checkout" do
+    checkout_step = workflow.fetch("jobs").fetch("test").fetch("steps")
+      .find { |step| step["name"] == "Checkout code" }
+
+    expect(checkout_step.fetch("with")).to include(
+      "fetch-depth" => 0,
+      "persist-credentials" => false
+    )
+  end
 end
