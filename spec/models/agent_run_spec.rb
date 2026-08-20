@@ -2533,6 +2533,16 @@ RSpec.describe AgentRun do
           )
         end
 
+        def stale_proxy_authority_grants
+          {
+            "schema_version" => 1,
+            "grants" => [
+              { "kind" => "model_provider_credentials", "delivery" => "proxy_mode", "scope" => "runner",
+                "metadata" => { "runner_key" => "claude_code", "network_mode" => "proxy_restricted" } }
+            ]
+          }
+        end
+
         it "reuses a still-running environment from a persisted runner handle" do
           agent_run = create(:agent_run, worktree_path: worktree_path,
                              container_id: "runner-container-123", container_host: "local")
@@ -2570,6 +2580,31 @@ RSpec.describe AgentRun do
           expect(reloaded.container_id).to eq("fresh-container")
           handle = ExecutionRunners::RunnerHandle.from_record(reloaded)
           expect(handle.identifier).to eq("fresh-container")
+        end
+
+        it "re-derives authority grants matching the freshly re-derived networking policy on retry" do
+          agent_run = create(:agent_run, worktree_path: worktree_path,
+                             container_id: "runner-container-123", container_host: "local")
+          agent_run.update!(runner_handle: build_handle(agent_run).to_storage,
+                             authority_grants: stale_proxy_authority_grants)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          fresh_handle = build_handle(agent_run, identifier: "fresh-container")
+          allow(mock_runner).to receive_messages(running?: false, cleanup: nil)
+          captured_spec = nil
+          allow(mock_runner).to receive(:provision) { |spec:| captured_spec = spec; fresh_handle }
+          allow(Containers::Provision).to receive(:networking_policy_for)
+            .and_return(ExecutionRunners::NetworkingPolicy.direct_outbound)
+          allow(Containers::PoolManager).to receive(:new)
+            .with(project: agent_run.project)
+            .and_return(instance_double(Containers::PoolManager, acquire: nil))
+          allow(PoolReplenishmentJob).to receive(:perform_later)
+
+          agent_run.provision_container
+
+          expect(captured_spec.networking_policy.mode).to eq(:direct_outbound)
+          provider_grant = captured_spec.authority_grants.grants.find { |g| g["kind"] == "model_provider_credentials" }
+          expect(provider_grant["metadata"]["network_mode"]).to eq("direct_outbound")
+          expect(provider_grant["delivery"]).to eq("direct_outbound")
         end
 
         it "reconciles a missing environment without error and provisions fresh" do

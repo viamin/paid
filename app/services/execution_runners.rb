@@ -237,18 +237,31 @@ module ExecutionRunners
     end
 
     # Prefers the persisted authority-grant snapshot on +agent_run+ when one
-    # exists, so a provision retry that re-derives +networking_policy+ (e.g.
-    # +reuse_or_reconcile_via_runner+ recursing back into +provision_via_runner+)
-    # cannot disagree with the snapshot already recorded on the run and
-    # audited by operators. Falls back to fresh derivation only when no
-    # snapshot has been persisted yet (RDR-058).
+    # exists *and* it still matches this spec's +networking_policy+. This
+    # keeps a provision retry that reuses an unchanged policy aligned with
+    # the snapshot already recorded on the run and audited by operators,
+    # without ever letting the manifest disagree with itself: +provision_via_runner+
+    # (app/models/agent_run.rb) deliberately re-derives +networking_policy+ fresh
+    # on retry (e.g. for subscription-auth / direct-outbound recovery), and that
+    # same fresh policy also drives +execution.networking+ in the input manifest
+    # (see #input_manifest). If the persisted snapshot's network mode no longer
+    # matches, it is stale relative to this attempt, so grants are re-derived
+    # from the current policy instead — the persisted +agent_run.authority_grants+
+    # column itself is left untouched as the historical audit record (RDR-058).
     # @spec EXECUTION-AUTHORITY-002
     def authority_grants
-      if agent_run.authority_grants.is_a?(Hash) && agent_run.authority_grants["grants"].present?
-        return AuthorityGrantSet.from_json(agent_run.authority_grants)
-      end
+      persisted = persisted_authority_grants
+      return persisted if persisted && persisted.network_mode == networking_policy&.mode.to_s
 
       AuthorityGrantSet.from_agent_run(agent_run, networking_policy: networking_policy)
+    end
+
+    private
+
+    def persisted_authority_grants
+      return nil unless agent_run.authority_grants.is_a?(Hash) && agent_run.authority_grants["grants"].present?
+
+      AuthorityGrantSet.from_json(agent_run.authority_grants)
     end
   end
 
@@ -278,6 +291,13 @@ module ExecutionRunners
 
     def to_storage
       as_json
+    end
+
+    # The network mode recorded on the +model_provider_credentials+ grant,
+    # used to detect whether a persisted snapshot still matches a freshly
+    # derived +NetworkingPolicy+ (see {RunSpec#authority_grants}).
+    def network_mode
+      grants.find { |grant| grant["kind"] == "model_provider_credentials" }&.dig("metadata", "network_mode")
     end
 
     def self.from_json(payload)
