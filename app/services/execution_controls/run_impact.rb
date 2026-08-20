@@ -232,7 +232,16 @@ module ExecutionControls
     end
 
     def global_audit_accounts(action)
-      runs = (action == "execution_control.disabled") ? scoped_runs.where(status: "paused") : active_runs_scope(scoped_runs)
+      # For disable, only attribute accounts whose runs were actually parked
+      # by *this* control (resume_parked_runs! only resumes those) -- runs
+      # paused for unrelated reasons (RUNNER-SCHED-008 time-window parking,
+      # stale-detector parking) must not show a misleading "global execution
+      # disable cleared" audit event.
+      runs = if action == "execution_control.disabled"
+        scoped_runs.where(status: "paused").where("external_metadata -> 'execution_control' ->> 'control_id' = ?", control.id.to_s)
+      else
+        active_runs_scope(scoped_runs)
+      end
       Account.where(id: runs.joins(:project).select("projects.account_id")).distinct
     end
 

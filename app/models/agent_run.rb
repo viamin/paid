@@ -2599,8 +2599,10 @@ class AgentRun < ApplicationRecord
     clear_container_id_if_unchanged!(target_container_id, also_clear: { runner_handle: nil })
     # The container is gone but the workspace volume may still exist.
     # Provision#cleanup would normally handle this in its ensure block,
-    # but we never reached it, so clean up the volume directly.
-    cleanup_orphaned_workspace_volume
+    # but we never reached it, so clean up the volume directly. Skip it
+    # when preserve_workspace_volume is set (redispatch race): the volume
+    # may already be in use by a container that redispatch just claimed.
+    cleanup_orphaned_workspace_volume unless preserve_workspace_volume
   end
 
   # Clears container_id (and any also_clear columns) only if container_id

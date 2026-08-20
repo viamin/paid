@@ -28,11 +28,7 @@ class ExecutionControl < ApplicationRecord
   validate :target_matches_scope
 
   scope :enabled, -> { where(enabled: true) }
-  scope :global_scope, -> { where(scope: "global") }
-  scope :for_account_scope, ->(account_id) { where(scope: "account", account_id: account_id) }
-  scope :for_project_scope, ->(project_id) { where(scope: "project", project_id: project_id) }
   scope :for_runner_scope, ->(runner_id) { where(scope: "runner", runner_id: runner_id) }
-  scope :for_backend_scope, ->(docker_host_id) { where(scope: "backend", docker_host_id: docker_host_id) }
 
   def emergency?
     mode == "emergency"

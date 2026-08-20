@@ -193,6 +193,24 @@ RSpec.describe ExecutionControl do
     end
 
     # @spec EXEC-DISABLE-007
+    it "only attributes a global disable audit event to accounts with runs parked by this control" do
+      project_a = create(:project)
+      project_b = create(:project)
+      create(:agent_run, :running, :with_temporal, project: project_a)
+      control = create(:execution_control, :global)
+      control.update!(enabled: true, reason: "Global capacity reduction")
+
+      # Unrelated run paused for a different reason (e.g. stale-detector
+      # parking) -- must not be attributed to this control's disable event.
+      create(:agent_run, :paused, project: project_b, external_metadata: {})
+
+      control.update!(enabled: false)
+
+      global_events = AccountActivityEvent.where(action: "execution_control.disabled")
+      expect(global_events.pluck(:account_id)).to contain_exactly(project_a.account_id)
+    end
+
+    # @spec EXEC-DISABLE-007
     it "does not raise when recording a global control audit event fails for one account" do
       project_a = create(:project)
       project_b = create(:project)
