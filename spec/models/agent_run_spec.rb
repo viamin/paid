@@ -16,6 +16,7 @@ RSpec.describe AgentRun do
     it { is_expected.to have_many(:agent_run_logs).dependent(:destroy) }
     it { is_expected.to have_many(:agent_run_phases).dependent(:destroy) }
     it { is_expected.to have_many(:orchestration_decisions).dependent(:nullify) }
+    it { is_expected.to have_many(:execution_resource_ledger_entries).dependent(:nullify) }
   end
 
   describe "legacy provider aliases" do

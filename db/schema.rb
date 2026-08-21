@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_20_001000) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_21_135405) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1171,6 +1171,39 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_20_001000) do
     t.index ["runner_id"], name: "index_execution_controls_on_runner_id"
     t.index ["scope"], name: "idx_execution_controls_global_scope_singleton", unique: true, where: "((scope)::text = 'global'::text)"
     t.index ["scope"], name: "index_execution_controls_on_scope"
+  end
+
+  create_table "execution_resource_ledger_entries", comment: "Durable ledger of externally provisioned execution resources (containers, sidecars, workspaces, networks, tunnels, temporary storage) tracked across their provisioning-to-cleanup lifecycle.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "activated_at", comment: "When the resource transitioned to active."
+    t.bigint "agent_run_id"
+    t.string "backend", limit: 64, comment: "Backend or provider identifier for the runner, e.g. local, ecs, gke."
+    t.integer "cleanup_attempts", default: 0, null: false, comment: "Number of cleanup attempts made for this resource."
+    t.datetime "cleanup_failed_at", comment: "When the most recent cleanup attempt failed."
+    t.datetime "cleanup_last_attempted_at", comment: "Timestamp of the most recent cleanup attempt."
+    t.text "cleanup_last_error", comment: "Error message from the most recent failed cleanup attempt."
+    t.datetime "cleanup_requested_at", comment: "When cleanup was first requested for the resource."
+    t.datetime "created_at", null: false
+    t.datetime "deleted_at", comment: "When the resource was confirmed deleted."
+    t.datetime "orphaned_at", comment: "When the resource was flagged as orphaned."
+    t.bigint "project_id"
+    t.string "provider_resource_id", limit: 255, comment: "Provider-assigned identifier for the resource (container ID, volume ID, tunnel ID, etc.)."
+    t.string "resource_kind", limit: 32, null: false, comment: "Category of resource: primary_environment, service, sidecar, workspace, network, preview_tunnel, temporary_storage."
+    t.integer "run_attempt", comment: "Attempt number of the agent run that requested this resource, when applicable."
+    t.jsonb "runner_handle", default: {}, null: false, comment: "Serialized ExecutionRunners::RunnerHandle reference used to locate the resource for cleanup/reconciliation."
+    t.string "runner_type", limit: 64, null: false, comment: "Execution runner that owns this resource, e.g. docker, kubernetes."
+    t.string "status", limit: 32, default: "provisioning", null: false, comment: "Lifecycle status: provisioning, active, cleanup_pending, deleted, orphaned, cleanup_failed."
+    t.jsonb "tags", default: {}, null: false, comment: "Non-secret ownership/labeling tags attached to the resource. Never stores secret values."
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "created_at"], name: "idx_execution_resource_ledger_account_recent", order: { created_at: :desc }
+    t.index ["agent_run_id"], name: "index_execution_resource_ledger_entries_on_agent_run_id"
+    t.index ["project_id"], name: "index_execution_resource_ledger_entries_on_project_id"
+    t.index ["resource_kind"], name: "index_execution_resource_ledger_entries_on_resource_kind"
+    t.index ["runner_type", "backend", "provider_resource_id"], name: "idx_execution_resource_ledger_provider_identity", unique: true, where: "(provider_resource_id IS NOT NULL)", nulls_not_distinct: true
+    t.index ["status"], name: "index_execution_resource_ledger_entries_on_status"
+    t.check_constraint "cleanup_attempts >= 0", name: "chk_execution_resource_ledger_cleanup_attempts_nonneg"
+    t.check_constraint "resource_kind::text = ANY (ARRAY['primary_environment'::character varying::text, 'service'::character varying::text, 'sidecar'::character varying::text, 'workspace'::character varying::text, 'network'::character varying::text, 'preview_tunnel'::character varying::text, 'temporary_storage'::character varying::text])", name: "chk_execution_resource_ledger_kind_valid"
+    t.check_constraint "status::text = ANY (ARRAY['provisioning'::character varying::text, 'active'::character varying::text, 'cleanup_pending'::character varying::text, 'deleted'::character varying::text, 'orphaned'::character varying::text, 'cleanup_failed'::character varying::text])", name: "chk_execution_resource_ledger_status_valid"
   end
 
   create_table "external_connector_events", comment: "Events ingested from external connectors (Jira, Linear, Slack, etc.) for coexistence workflows.", force: :cascade do |t|
@@ -3218,6 +3251,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_20_001000) do
   add_foreign_key "execution_controls", "docker_hosts"
   add_foreign_key "execution_controls", "projects"
   add_foreign_key "execution_controls", "runners"
+  add_foreign_key "execution_resource_ledger_entries", "accounts", on_delete: :cascade
+  add_foreign_key "execution_resource_ledger_entries", "agent_runs", on_delete: :nullify
+  add_foreign_key "execution_resource_ledger_entries", "projects", on_delete: :nullify
   add_foreign_key "external_connector_events", "accounts"
   add_foreign_key "external_connector_events", "projects"
   add_foreign_key "failure_classifications", "agent_runs", on_delete: :cascade

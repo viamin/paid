@@ -209,6 +209,10 @@ class AgentRun < ApplicationRecord
   has_many :knowledge_usage_stats, dependent: :destroy
   has_many :agent_run_marketplace_entries, -> { order(:position) }, dependent: :destroy
   has_many :egress_security_events, dependent: :destroy
+  # :nullify (not :destroy) — the ledger exists to durably track external
+  # resources independent of the agent run that created them, so destroying
+  # the run must not delete rows that still need reconciliation/cleanup.
+  has_many :execution_resource_ledger_entries, dependent: :nullify
   has_many :sent_coordination_signals,
     class_name: "AgentCoordinationSignal",
     foreign_key: :source_agent_run_id,
