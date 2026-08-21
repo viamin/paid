@@ -323,6 +323,14 @@ sandboxed container's GitHub proxy is scoped to the agent-run's own operations, 
 issue creation), so instead of fabricating filed issues, the follow-up scope is recorded here
 verbatim so it can be filed or re-verified directly against issues #3466–#3469:
 
+**PR keyword note:** because #3470 is not resolvable per this section, the PR that lands this
+audit must reference #3470 (e.g. `Refs #3470`) rather than close it (`Closes #3470`). Using the
+closing keyword would auto-close the umbrella/closeout issue via GitHub's keyword even though
+its own dependencies (#3466–#3469) are still open with no implementation landed, defeating its
+purpose as the tracking issue for the re-audit called out below. This environment's sandboxed
+GitHub proxy does not expose PR-description editing, so this note documents the required
+correction for whoever merges or edits the PR.
+
 1. **Project-level TDD mode** — add `off` / `non_strict` / `strict` configuration to `Project`,
    defaulting to `off`, plus the three `paid-` prefixed labels in
    `Projects::EnsureStandardLabels`.
