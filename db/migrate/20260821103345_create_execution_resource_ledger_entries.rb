@@ -1,11 +1,18 @@
 # frozen_string_literal: true
 
+# @spec RESOURCE-LEDGER-007
 class CreateExecutionResourceLedgerEntries < ActiveRecord::Migration[8.1]
   def up
     create_table :execution_resource_ledger_entries, comment: "Durable ledger of externally provisioned execution resources (containers, sidecars, workspaces, networks, tunnels, temporary storage) tracked across their provisioning-to-cleanup lifecycle." do |t|
-      t.references :account, null: false, foreign_key: { on_delete: :cascade }
-      t.references :project, null: false, foreign_key: { on_delete: :cascade }
-      t.references :agent_run, null: true, foreign_key: { on_delete: :cascade }
+      t.references :account, null: false, foreign_key: { on_delete: :cascade }, index: false
+      # project/agent_run use on_delete: :nullify (not :cascade) because this
+      # table's purpose is to durably track external resources so orphaned or
+      # leaked resources can be reconciled independent of the process that
+      # created them; the column stays nullable so the FK action can clear it
+      # without violating a NOT NULL constraint, while the model still
+      # requires project at creation time (see ExecutionResourceLedgerEntry).
+      t.references :project, null: true, foreign_key: { on_delete: :nullify }
+      t.references :agent_run, null: true, foreign_key: { on_delete: :nullify }
       t.integer :run_attempt, comment: "Attempt number of the agent run that requested this resource, when applicable."
       t.string :runner_type, limit: 64, null: false, comment: "Execution runner that owns this resource, e.g. docker, kubernetes."
       t.string :backend, limit: 64, comment: "Backend or provider identifier for the runner, e.g. local, ecs, gke."

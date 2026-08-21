@@ -20,12 +20,16 @@
 # - +cleanup_failed+ — a cleanup attempt failed; retried from here.
 #
 # +tags+ carries non-secret ownership/labeling metadata only (e.g. provider
-# ownership tags); it is scanned to guarantee it never stores secret values.
+# ownership tags), and +runner_handle+ carries a serialized
+# ExecutionRunners::RunnerHandle reference (which can include runner
+# metadata such as container environment variables); both are scanned to
+# guarantee they never store secret values.
 #
 # @spec RESOURCE-LEDGER-001
 # @spec RESOURCE-LEDGER-002
 # @spec RESOURCE-LEDGER-003
 # @spec RESOURCE-LEDGER-004
+# @spec RESOURCE-LEDGER-007
 # @see docs/rdrs/RDR-060-external-execution-resource-ledger.md
 # @see docs/intent/execution-resource-ledger/execution-resource-ledger-specs.md
 class ExecutionResourceLedgerEntry < ApplicationRecord
@@ -67,6 +71,7 @@ class ExecutionResourceLedgerEntry < ApplicationRecord
   validate :tags_is_object
   validate :tags_secret_safety
   validate :runner_handle_is_object
+  validate :runner_handle_secret_safety
   validate :project_matches_agent_run
   validate :account_matches_project
   validate :status_transition_is_allowed, on: :update
@@ -189,6 +194,10 @@ class ExecutionResourceLedgerEntry < ApplicationRecord
 
   def runner_handle_is_object
     errors.add(:runner_handle, "must be an object") unless runner_handle.is_a?(Hash)
+  end
+
+  def runner_handle_secret_safety
+    scan_metadata_for_secrets(runner_handle, attribute: :runner_handle)
   end
 
   def project_matches_agent_run

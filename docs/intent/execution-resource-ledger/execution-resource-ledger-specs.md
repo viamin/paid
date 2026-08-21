@@ -33,13 +33,26 @@
   *Code:* `ExecutionResourceLedgerEntry`,
   `db/migrate/20260821103345_create_execution_resource_ledger_entries.rb`
 
-- [x] **RESOURCE-LEDGER-004** — `tags` SHALL be validated as an object and
-  scanned for secret-shaped keys/values using the shared `SecretSafeMetadata`
-  scan, rejecting persistence (even via the bare `create!` constructor) when
-  tags carry forbidden keys or credential-shaped values; `runner_handle`
-  SHALL be validated as an object.
+- [x] **RESOURCE-LEDGER-004** — `tags` and `runner_handle` SHALL each be
+  validated as an object and scanned for secret-shaped keys/values using the
+  shared `SecretSafeMetadata` scan, rejecting persistence (even via the bare
+  `create!` constructor) when either carries forbidden keys or
+  credential-shaped values — `runner_handle` serializes
+  `ExecutionRunners::RunnerHandle`, whose metadata can include container
+  environment variables, so it gets the same scan as `tags`.
   *Tests:* `spec/models/execution_resource_ledger_entry_spec.rb`
   *Code:* `ExecutionResourceLedgerEntry`, `SecretSafeMetadata`
+
+- [x] **RESOURCE-LEDGER-007** — Deleting the owning `project` or `agent_run`
+  SHALL NOT delete a ledger row: the foreign keys use `on_delete: :nullify`
+  (not `:cascade`) and `AgentRun#execution_resource_ledger_entries` uses
+  `dependent: :nullify`, so rows the ledger exists to track remain queryable
+  for reconciliation after their creating project/run is gone. `account`
+  remains `on_delete: :cascade` as the RLS tenant key.
+  *Tests:* `spec/models/execution_resource_ledger_entry_spec.rb`,
+  `spec/models/agent_run_spec.rb`
+  *Code:* `db/migrate/20260821103345_create_execution_resource_ledger_entries.rb`,
+  `AgentRun`
 
 - [ ] **RESOURCE-LEDGER-005** — Provisioning and cleanup activities SHALL
   create and transition ledger rows idempotently as part of the actual

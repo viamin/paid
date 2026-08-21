@@ -1186,7 +1186,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_21_103345) do
     t.datetime "created_at", null: false
     t.datetime "deleted_at", comment: "When the resource was confirmed deleted."
     t.datetime "orphaned_at", comment: "When the resource was flagged as orphaned."
-    t.bigint "project_id", null: false
+    t.bigint "project_id"
     t.string "provider_resource_id", limit: 255, comment: "Provider-assigned identifier for the resource (container ID, volume ID, tunnel ID, etc.)."
     t.string "resource_kind", limit: 32, null: false, comment: "Category of resource: primary_environment, service, sidecar, workspace, network, preview_tunnel, temporary_storage."
     t.integer "run_attempt", comment: "Attempt number of the agent run that requested this resource, when applicable."
@@ -1196,7 +1196,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_21_103345) do
     t.jsonb "tags", default: {}, null: false, comment: "Non-secret ownership/labeling tags attached to the resource. Never stores secret values."
     t.datetime "updated_at", null: false
     t.index ["account_id", "created_at"], name: "idx_execution_resource_ledger_account_recent", order: { created_at: :desc }
-    t.index ["account_id"], name: "index_execution_resource_ledger_entries_on_account_id"
     t.index ["agent_run_id"], name: "index_execution_resource_ledger_entries_on_agent_run_id"
     t.index ["project_id"], name: "index_execution_resource_ledger_entries_on_project_id"
     t.index ["resource_kind"], name: "index_execution_resource_ledger_entries_on_resource_kind"
@@ -3253,8 +3252,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_21_103345) do
   add_foreign_key "execution_controls", "projects"
   add_foreign_key "execution_controls", "runners"
   add_foreign_key "execution_resource_ledger_entries", "accounts", on_delete: :cascade
-  add_foreign_key "execution_resource_ledger_entries", "agent_runs", on_delete: :cascade
-  add_foreign_key "execution_resource_ledger_entries", "projects", on_delete: :cascade
+  add_foreign_key "execution_resource_ledger_entries", "agent_runs", on_delete: :nullify
+  add_foreign_key "execution_resource_ledger_entries", "projects", on_delete: :nullify
   add_foreign_key "external_connector_events", "accounts"
   add_foreign_key "external_connector_events", "projects"
   add_foreign_key "failure_classifications", "agent_runs", on_delete: :cascade

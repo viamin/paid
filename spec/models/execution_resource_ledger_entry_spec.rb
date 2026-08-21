@@ -6,6 +6,7 @@ require "rails_helper"
 # @spec RESOURCE-LEDGER-002
 # @spec RESOURCE-LEDGER-003
 # @spec RESOURCE-LEDGER-004
+# @spec RESOURCE-LEDGER-007
 RSpec.describe ExecutionResourceLedgerEntry, type: :model do
   describe "associations" do
     it { is_expected.to belong_to(:account) }
@@ -88,6 +89,16 @@ RSpec.describe ExecutionResourceLedgerEntry, type: :model do
       expect(record).not_to be_valid
       expect(record.errors[:project]).to include("must match the agent run's project")
     end
+
+    it "survives project deletion with project_id nullified so orphaned resources stay reconcilable" do
+      project = create(:project)
+      record = create(:execution_resource_ledger_entry, project: project, account: project.account)
+
+      project.destroy
+
+      expect { record.reload }.not_to raise_error
+      expect(record.project_id).to be_nil
+    end
   end
 
   describe "secret-free tags" do
@@ -131,6 +142,32 @@ RSpec.describe ExecutionResourceLedgerEntry, type: :model do
         )
       }.to raise_error(ActiveRecord::RecordInvalid)
       expect(described_class.count).to eq(0)
+    end
+  end
+
+  describe "secret-free runner_handle" do
+    it "rejects forbidden runner_handle keys" do
+      record = build(:execution_resource_ledger_entry, runner_handle: { token: "sk-ant-oat01-secret" })
+      expect(record).not_to be_valid
+      expect(record.errors[:runner_handle].join).to include("forbidden key")
+    end
+
+    it "rejects runner_handle values that look like secrets" do
+      github_pat = "ghp_" + ("a" * 36)
+      record = build(:execution_resource_ledger_entry, runner_handle: { "note" => github_pat })
+      expect(record).not_to be_valid
+      expect(record.errors[:runner_handle].join).to include("secret-shaped")
+    end
+
+    it "walks nested runner_handle structures for secret-looking values, e.g. container env vars" do
+      record = build(:execution_resource_ledger_entry, runner_handle: { "metadata" => { "spec" => { "environment" => { "api_key" => "sk-ant-oat01-secret" } } } })
+      expect(record).not_to be_valid
+      expect(record.errors[:runner_handle].join).to include("forbidden key")
+    end
+
+    it "accepts safe runner_handle data" do
+      record = build(:execution_resource_ledger_entry, runner_handle: { "container_id" => "cont_abc123" })
+      expect(record).to be_valid
     end
   end
 
