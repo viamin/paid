@@ -298,16 +298,15 @@ Rejected for v1. Paid should reuse existing secret-scanning rules, exact known-s
 
 ## Implementation Status (Partial — audited 2026-08-21 against open umbrella #3441)
 
-This section is a partial implementation audit; the umbrella issue
-[#3441](https://github.com/viamin/paid/issues/3441) remains **open** and its
-blocking dependency chain (including the open follow-ups [#3434](https://github.com/viamin/paid/issues/3434),
+This section records the durable partial implementation state while umbrella
+issue [#3441](https://github.com/viamin/paid/issues/3441) remains **open**.
+Its blocking dependency chain still includes the open follow-ups
+[#3434](https://github.com/viamin/paid/issues/3434),
 [#3435](https://github.com/viamin/paid/issues/3435),
 [#3438](https://github.com/viamin/paid/issues/3438), and
-[#3439](https://github.com/viamin/paid/issues/3439)) has not yet closed. The
-audit is the snapshot a future re-run will reconcile against when the
-umbrella closeout is rerun; it does not assert that the umbrella has already
-been closed. See [`audit-report-2026-08-21-rdr-055.md`](audit-report-2026-08-21-rdr-055.md)
-for the per-criterion evidence.
+[#3439](https://github.com/viamin/paid/issues/3439), so this RDR keeps the
+current partial-state summary in one living document rather than a dated
+closeout snapshot.
 
 Implementation plan steps 1, 2, 3, 4, and 7 are shipped:
 
@@ -326,17 +325,14 @@ Steps 5 and 6 are accepted gaps tracked as follow-up issues (see the child issue
 
 Until those land, restricted runs rely on the existing iptables firewall + Docker network isolation rather than a domain-aware gateway; the `:research` profile is reserved but has no broker to delegate to.
 
-### 2026-08-21 Closeout (Partial)
+### 2026-08-21 Status Update
 
 Audit recorded against the still-open umbrella issue
 [#3441](https://github.com/viamin/paid/issues/3441); no closure claimed.
-See [`audit-report-2026-08-21-rdr-055.md`](audit-report-2026-08-21-rdr-055.md)
-for the full criterion-by-criterion evidence, gap analysis, and a
-per-dependency reconciliation of every child linked from #3441. This
-closeout moves the RDR status from **Draft** to **Partially Implemented**
-without closing the umbrella.
+This status update moves the RDR from **Draft** to
+**Partially Implemented** without closing the umbrella.
 
-What shipped in this audit window (cross-referenced to the related issues
+What shipped by 2026-08-21 (cross-referenced to the related issues
 and EARS specs):
 
 - the `EgressAllowlistEntry` model, migration, and shared `HostPattern`
@@ -372,6 +368,6 @@ What remains open (children of [#3441](https://github.com/viamin/paid/issues/344
 Because [#3434](https://github.com/viamin/paid/issues/3434),
 [#3435](https://github.com/viamin/paid/issues/3435),
 [#3438](https://github.com/viamin/paid/issues/3438), and
-[#3439](https://github.com/viamin/paid/issues/3439) all remain open, the
-umbrella closeout must be rerun after those gaps land. Closing the
-umbrella while any child stays open would overstate the RDR's reach.
+[#3439](https://github.com/viamin/paid/issues/3439) all remain open, this
+RDR stays at **Partially Implemented** until those gaps land. Claiming
+umbrella closeout earlier would overstate the RDR's reach.
