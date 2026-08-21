@@ -77,11 +77,12 @@ What remains open (children of [#3441](https://github.com/viamin/paid/issues/344
 - the brokered research fetch/search service tracked by
   [#3439](https://github.com/viamin/paid/issues/3439)
 
-Because [#3434](https://github.com/viamin/paid/issues/3434),
-[#3435](https://github.com/viamin/paid/issues/3435),
-[#3438](https://github.com/viamin/paid/issues/3438), and
-[#3439](https://github.com/viamin/paid/issues/3439) all remain open, this
-RDR stays at **Partially Implemented** until those gaps land. Claiming
+Because [#3438](https://github.com/viamin/paid/issues/3438) and
+[#3439](https://github.com/viamin/paid/issues/3439) are still open and
+their acceptance criteria (domain-aware gateway enforcement with
+production fail-closed runtime eligibility, and brokered research
+egress with secret-extraction guards) are not yet implemented, this RDR
+stays at **Partially Implemented** until those gaps land. Claiming
 umbrella closeout earlier would overstate the RDR's reach.
 
 ## Problem Statement
