@@ -5,13 +5,13 @@
 ## Metadata
 
 - **Date**: 2026-08-14
-- **Status**: Draft
+- **Status**: Partially Implemented
 - **Type**: Security + Architecture
 - **Priority**: P1
 - **Related RDRs**: [RDR-004](RDR-004-container-isolation.md) (Container Isolation), [RDR-006](RDR-006-secrets-proxy.md) (Secrets Proxy), [RDR-019](RDR-019-remote-container-execution.md) (Remote Container Execution), [RDR-041](RDR-041-subscription-runner-auth-lifecycle.md) (Subscription Runner Managed Auth Lifecycle), [RDR-048](RDR-048-multi-host-docker-backend-support.md) (Multi-Host Docker Backend Support), [RDR-054](RDR-054-prompt-assembly-service.md) (Prompt Assembly Service)
-- **Related Intent**: `CONTAINER-RUNTIME-017`, `docs/intent/container-egress-allowlisting/`
-- **Related Issues**: #3436
-- **Related Tests**: `spec/services/agent_runs/egress_policy/`, `spec/models/egress_allowlist_entry_spec.rb`
+- **Related Intent**: `CONTAINER-RUNTIME-017`, `CONTAINER-RUNTIME-020`, `EGRESS-POLICY-001..006`, `docs/intent/container-egress-allowlisting/`
+- **Related Issues**: #3434 (account/project allowlist entries and validation), #3435 (required platform and runner destination registry), #3436 (per-run egress policy resolution and snapshot persistence), #3437 (portable runner networking contract propagation), #3438 (production enforcement adapters and fail-closed runtime eligibility — follow-up), #3439 (brokered research access with secret-extraction guards — follow-up), #3440 (settings UI/API and run audit visibility), #3441 (this umbrella issue)
+- **Related Tests**: `spec/models/egress_allowlist_entry_spec.rb`, `spec/models/egress_security_event_spec.rb`, `spec/services/agent_runs/egress_policy/host_pattern_spec.rb`, `spec/services/agent_runs/egress_policy/required_destinations_spec.rb`, `spec/services/agent_runs/egress_policy/resolve_spec.rb`, `spec/requests/account_egress_allowlist_entries_spec.rb`, `spec/requests/projects/egress_allowlist_entries_spec.rb`, `spec/temporal/activities/provision_container_activity_spec.rb`, `spec/services/execution_runners_spec.rb`, `spec/services/execution_runners/local_docker_runner_spec.rb`, `spec/services/containers/provision_spec.rb`, `spec/migrations/expand_egress_allowlist_entries_for_audit_and_ui_dbless_spec.rb`
 
 ## Problem Statement
 
@@ -295,3 +295,22 @@ Rejected for v1. Paid should reuse existing secret-scanning rules, exact known-s
 - Which egress gateway implementation should be used: a small existing proxy image, Envoy, Squid, or a purpose-built minimal service?
 - Should package registries such as npm, RubyGems, PyPI, and crates.io be platform-required defaults or project-selected presets?
 - Should denied egress events become a first-class incident feed, or are agent-run logs enough for v1?
+
+## Implementation Status (closed out via #3441)
+
+Implementation plan steps 1, 2, 3, 4, and 7 are complete:
+
+- (1) `egress_allowlist_entries` table + `EgressAllowlistEntry` model with account/project scope and server-side host-pattern validation (#3434).
+- (2) `AgentRuns::EgressPolicy::RequiredDestinations` code registry for platform, GitHub, and runner/provider destinations (#3435).
+- (3) `AgentRuns::EgressPolicy::Resolve` resolves a per-run snapshot and `Snapshot#persist!` records it on `agent_runs.external_metadata["egress_policy"]` before provisioning starts (#3436).
+- (4) `ExecutionRunners::NetworkingPolicy#egress_profile` plus `Containers::Provision#networking_policy_with_egress_profile` thread the RDR-055 `:locked`/`:research`/`:open` profile through the portable runner contract without leaking Docker concepts (#3437).
+- (7) `Accounts::EgressAllowlistEntriesController` and `Projects::EgressAllowlistEntriesController` expose the CRUD surface; `Projects::AgentRunsController#show` renders the persisted snapshot plus denied/redacted `EgressSecurityEvent` audit rows on the run detail page (#3440).
+
+EARS coverage: `EGRESS-POLICY-001` through `EGRESS-POLICY-006` are implemented and annotated on the relevant code. `EGRESS-POLICY-007` (gateway enforcement) remains deferred.
+
+Steps 5 and 6 are accepted gaps tracked as follow-up issues (see the child issue plan in #3441):
+
+- **#3438** — per-host egress gateway + production fail-closed enforcement. `EgressSecurityEvent` rows are recorded with `event_kind = "denied_egress"` already, but no gateway process observes the snapshot today; production restricted runs cannot fail closed at the gateway level. Implementation requires an HTTP(S) CONNECT gateway service, container network plumbing so agent containers route through it, and integration with `NetworkPolicy` / `LocalDockerRunner` to refuse restricted runs when the gateway is unreachable.
+- **#3439** — brokered research profile. The `:research` egress profile is defined and propagates through `ExecutionRunners::NetworkingPolicy` (`research?`), but there is no broker service yet. Implementation needs a Paid-side URL fetch/search service that runs only when `egress_profile == :research`, validates scheme/host/size/timeout/redirects, enforces budgets, records `EgressSecurityEvent` rows for both blocked (`redacted_secret_extraction`) and completed requests, and redacts or quarantines fetched credential-looking content before it can reach the agent prompt.
+
+Until those land, restricted runs rely on the existing iptables firewall + Docker network isolation rather than a domain-aware gateway; the `:research` profile is reserved but has no broker to delegate to.
