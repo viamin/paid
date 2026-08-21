@@ -21,14 +21,19 @@ records exactly which egress policy applied to it.
 
 ## Scope of this segment
 
-This segment covers implementation plan steps 1–3 of RDR-055:
+This segment covers implementation plan steps 1–5 of RDR-055:
 
 1. the persisted `EgressAllowlistEntry` model (account/project scope),
-2. the required-destination code registry, and
-3. `AgentRuns::EgressPolicy::Resolve` plus snapshot persistence.
+2. the required-destination code registry,
+3. `AgentRuns::EgressPolicy::Resolve` plus snapshot persistence,
+4. wiring the resolved snapshot into the runner's `NetworkingPolicy#allow_destinations`
+   translation, and
+5. the per-Docker-host egress gateway that translates domain-aware HTTP(S)
+   traffic, plus production fail-closed behavior when enforcement cannot be
+   applied.
 
-Gateway enforcement (step 5), the `research` egress profile broker (step 6),
-and the settings UI (step 7) remain future work tracked by the RDR.
+The `research` egress profile broker (step 6) and the settings UI (step 7)
+remain future work tracked by the RDR.
 
 ## Allowlist entries
 
@@ -94,6 +99,24 @@ defaulting to `locked`, destinations, required destinations, `denied_reason`,
 by `ProvisionContainerActivity` before provisioning starts — threading the
 planned container host into resolution so the secrets-proxy destination
 matches the backend that will actually provision the run — so a failed
-provision still leaves the intended policy auditable. Enforcement wiring into
-`NetworkingPolicy#allow_destinations` (RDR-055 step 4) will consume this
-snapshot.
+provision still leaves the intended policy auditable.
+
+## Enforcement
+
+`LocalDockerRunner#provision` consumes the persisted snapshot by building
+an `AgentRuns::EgressPolicy::Gateway` whose adapter (default: `GatewayAdapters::Docker`)
+translates the snapshot's destinations into platform-specific firewall rules.
+The runner's `apply_firewall!` merges three sources into the iptables
+allowlist: the snapshot's tenant destinations (RDR-055 step 4), the
+service-container IPs, and the egress gateway URL. The runner's
+`gateway_adapter` class method is the platform seam; runners that cannot
+enforce the policy (Kubernetes, managed machine) register their own
+adapters, and runners without one are rejected by
+`ExecutionRunners::Base.compatible?` before any Docker side effect.
+
+Fail-closed production behavior: if the gateway adapter raises
+`Gateway::UnavailableError` from `ensure!`, production runs surface the
+failure as `ProvisionError` so the container never starts without
+enforcement. Non-production environments log the warning instead so local
+development on hosts without iptables (e.g., macOS Docker Desktop, some
+CI runners) is not blocked.

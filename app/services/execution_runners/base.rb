@@ -149,6 +149,18 @@ module ExecutionRunners
       raise NotImplementedError, "#{name} must implement .#{__method__}"
     end
 
+    # Returns the per-runtime egress gateway adapter for enforcing the
+    # RDR-055 restricted policy (RDR-055 step 5). +nil+ when the runtime
+    # cannot enforce the policy — +.compatible?+ rejects such a spec
+    # before provisioning rather than letting a container start with no
+    # gateway to translate domain-aware HTTP(S) traffic.
+    #
+    # @return [AgentRuns::EgressPolicy::GatewayAdapters::Base, nil]
+    # @spec EGRESS-POLICY-007
+    def self.gateway_adapter
+      nil
+    end
+
     # Health check the underlying execution platform. Returns true when the
     # platform is reachable and ready to accept a +#provision+ call.
     #

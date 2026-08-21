@@ -486,6 +486,129 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       expect { runner.provision(spec: run_spec) }
         .to raise_error(ExecutionRunners::ProvisionError, /Firewall setup failed/)
     end
+
+    # @spec EGRESS-POLICY-007
+    it "threads the gateway URL into the firewall destinations as {ip:, port:}" do
+      seed_snapshot!(destinations: [ { "host" => "api.partner.com", "port" => 443, "source" => "project_allowlist" } ])
+      stub_provision_success!
+
+      expect(NetworkPolicy).to receive(:apply_firewall_rules)
+        .with(started_container,
+              github_ips: NetworkPolicy::DEFAULT_GITHUB_IPS,
+              proxy_host: nil,
+              service_destinations: [
+                { ip: "api.partner.com", port: 443 },
+                { ip: "egress-gateway", port: 3128 }
+              ],
+              backend: backend)
+
+      runner.provision(spec: run_spec)
+    end
+
+    def seed_snapshot!(destinations: [], required_destinations: [], mode: "proxy_restricted", egress_profile: "locked")
+      snapshot = AgentRuns::EgressPolicy::Snapshot.new(
+        mode: mode,
+        egress_profile: egress_profile,
+        destinations: destinations,
+        required_destinations: required_destinations
+      )
+      agent_run.update!(external_metadata: { "egress_policy" => snapshot.to_h })
+      snapshot
+    end
+
+    def stub_provision_success!
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      allow(provision_service).to receive(:provision).and_return(
+        Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
+      )
+    end
+
+    # @spec EGRESS-POLICY-007
+    it "calls the gateway adapter's ensure! before provisioning the container" do
+      seed_snapshot!
+      adapter = instance_double(
+        AgentRuns::EgressPolicy::GatewayAdapters::Docker,
+        gateway_url: "egress-gateway:3128",
+        allowlist_for: [],
+        ensure!: nil
+      )
+      allow(described_class).to receive(:gateway_adapter).and_return(adapter)
+      stub_provision_success!
+
+      runner.provision(spec: run_spec)
+
+      expect(adapter).to have_received(:ensure!).with(
+        hash_including(agent_run: agent_run, backend: backend)
+      )
+      expect(NetworkPolicy).to have_received(:apply_firewall_rules).with(
+        started_container,
+        hash_including(service_destinations: [ { ip: "egress-gateway", port: 3128 } ])
+      )
+    end
+
+    # @spec EGRESS-POLICY-007
+    it "skips gateway destinations for unrestricted runs that carry no snapshot" do
+      stub_provision_success!
+
+      expect(NetworkPolicy).not_to receive(:apply_firewall_rules)
+
+      runner.provision(spec: ExecutionRunners::RunSpec.new(**run_spec.to_h.merge(
+        networking_policy: ExecutionRunners::NetworkingPolicy.direct_outbound
+      )))
+    end
+
+    # @spec EGRESS-POLICY-007
+    it "fails closed in production when the gateway adapter cannot be brought up" do
+      allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new("production"))
+      seed_snapshot!
+      stub_failing_gateway!
+
+      expect(Containers::Provision).not_to receive(:new)
+
+      expect { runner.provision(spec: run_spec) }
+        .to raise_error(ExecutionRunners::ProvisionError, /Egress gateway setup failed/)
+    end
+
+    # @spec EGRESS-POLICY-007
+    it "logs but does not raise when the gateway adapter fails in non-production environments" do
+      allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("development"))
+      seed_snapshot!
+      stub_failing_gateway!
+      stub_provision_success!
+
+      expect(Rails.logger).to receive(:warn).with(hash_including(message: "container.egress_gateway.failed"))
+      expect { runner.provision(spec: run_spec) }.not_to raise_error
+    end
+
+    def seed_snapshot!(destinations: [], required_destinations: [], mode: "proxy_restricted", egress_profile: "locked")
+      snapshot = AgentRuns::EgressPolicy::Snapshot.new(
+        mode: mode,
+        egress_profile: egress_profile,
+        destinations: destinations,
+        required_destinations: required_destinations
+      )
+      agent_run.update!(external_metadata: { "egress_policy" => snapshot.to_h })
+      snapshot
+    end
+
+    def stub_provision_success!
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      allow(provision_service).to receive(:provision).and_return(
+        Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
+      )
+    end
+
+    def stub_failing_gateway!
+      adapter = instance_double(
+        AgentRuns::EgressPolicy::GatewayAdapters::Docker,
+        gateway_url: "egress-gateway:3128",
+        allowlist_for: []
+      )
+      allow(adapter).to receive(:ensure!).and_raise(
+        AgentRuns::EgressPolicy::Gateway::UnavailableError, "gateway sidecar not present"
+      )
+      allow(described_class).to receive(:gateway_adapter).and_return(adapter)
+    end
   end
 
   describe "#start" do
@@ -828,6 +951,62 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
 
       expect(result.compatible).to be(false)
       expect(result.error_message).to include("networking policy nil")
+    end
+
+    # @spec EGRESS-POLICY-007
+    it "rejects a restricted spec when the runtime cannot enforce it (no gateway adapter)" do
+      allow(Containers::Provision).to receive(:compatibility_for)
+        .and_return(Containers::Provision::CompatibilityResult.new(compatible: true, error_message: nil))
+      allow(described_class).to receive(:gateway_adapter).and_return(nil)
+      spec = ExecutionRunners::RunSpec.new(**run_spec.to_h.merge(
+        networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted
+      ))
+
+      result = described_class.compatible?(spec: spec, backend: backend)
+
+      expect(result.compatible).to be(false)
+      expect(result.error_message).to include("cannot enforce the egress policy snapshot")
+    end
+
+    # @spec EGRESS-POLICY-007
+    it "accepts a restricted spec when a gateway adapter is registered" do
+      allow(Containers::Provision).to receive(:compatibility_for)
+        .and_return(Containers::Provision::CompatibilityResult.new(compatible: true, error_message: nil))
+      spec = ExecutionRunners::RunSpec.new(**run_spec.to_h.merge(
+        networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted
+      ))
+
+      result = described_class.compatible?(spec: spec, backend: backend)
+
+      expect(result.compatible).to be(true), result.error_message
+    end
+
+    # @spec EGRESS-POLICY-007
+    it "accepts an unrestricted spec even without a gateway adapter (open profiles don't enforce domains)" do
+      allow(Containers::Provision).to receive(:compatibility_for)
+        .and_return(Containers::Provision::CompatibilityResult.new(compatible: true, error_message: nil))
+      allow(described_class).to receive(:gateway_adapter).and_return(nil)
+      spec = ExecutionRunners::RunSpec.new(**run_spec.to_h.merge(
+        networking_policy: ExecutionRunners::NetworkingPolicy.direct_outbound
+      ))
+
+      result = described_class.compatible?(spec: spec, backend: backend)
+
+      expect(result.compatible).to be(true)
+    end
+  end
+
+  describe ".gateway_adapter" do
+    # @spec EGRESS-POLICY-007
+    it "returns the Docker gateway adapter by default" do
+      expect(described_class.gateway_adapter).to be_a(AgentRuns::EgressPolicy::GatewayAdapters::Docker)
+    end
+
+    # @spec EGRESS-POLICY-007
+    it "honors a narrowed gateway adapter override (test double)" do
+      custom = Object.new
+      allow(described_class).to receive(:gateway_adapter).and_return(custom)
+      expect(described_class.gateway_adapter).to eq(custom)
     end
   end
 

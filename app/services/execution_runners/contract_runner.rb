@@ -73,6 +73,19 @@ module ExecutionRunners
       return CompatibilityResult.new(compatible: false, error_message: "Backend is not supported") if backend.nil?
 
       if supports_policy?(spec.networking_policy)
+        # Restricted policies must be enforceable: a runtime without a
+        # gateway adapter cannot honor the RDR-055 domain-aware allowlist.
+        # The contract runner's default gateway adapter is nil, so narrowed
+        # test runners can opt in by overriding {.gateway_adapter} to
+        # return a real adapter.
+        # @spec EGRESS-POLICY-007
+        if spec.networking_policy.restricted? && gateway_adapter.nil?
+          return CompatibilityResult.new(
+            compatible: false,
+            error_message: "Runtime cannot enforce the egress policy snapshot; register a gateway adapter or reject the run"
+          )
+        end
+
         CompatibilityResult.new(compatible: true, error_message: nil)
       else
         CompatibilityResult.new(
