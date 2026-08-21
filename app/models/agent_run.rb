@@ -2695,10 +2695,13 @@ class AgentRun < ApplicationRecord
 
     return if target_container_id.blank? && @container_service.nil? && @current_handle.nil?
 
+    ExecutionResource.schedule_cleanup_for!(agent_run: self)
+
     if Containers::PoolManager.cleanup_claimed_container(agent_run: self, force: force)
       @container_service = nil
       @current_handle = nil
       clear_container_id_if_unchanged!(target_container_id)
+      ExecutionResource.mark_cleaned_for!(agent_run: self)
       return
     end
 
@@ -2710,7 +2713,9 @@ class AgentRun < ApplicationRecord
       @container_service = nil
       clear_container_id_if_unchanged!(target_container_id)
     end
-  rescue Containers::Provision::Error, ExecutionRunners::Error
+    ExecutionResource.mark_cleaned_for!(agent_run: self)
+  rescue Containers::Provision::Error, ExecutionRunners::Error => e
+    ExecutionResource.record_cleanup_failure_for!(agent_run: self, error: e)
     # Container may already be gone; clear the reference anyway
     @container_service = nil
     @current_handle = nil
@@ -2772,6 +2777,7 @@ class AgentRun < ApplicationRecord
       self.runner_handle = handle_hash
       self.container_id = @current_handle.identifier
       self.container_host = @current_handle.host
+      ExecutionResource.track_environment!(agent_run: self, handle: @current_handle)
       Rails.logger.info(
         message: "container_manager.recovered_in_flight_runner_handle",
         agent_run_id: id,
@@ -2792,6 +2798,7 @@ class AgentRun < ApplicationRecord
       .update_all(container_id: container.id, container_host: host)
     self.container_id = container.id
     self.container_host = host
+    ExecutionResource.track_environment!(agent_run: self, identifier: container.id, host: host)
     Rails.logger.info(
       message: "container_manager.recovered_in_flight_container",
       agent_run_id: id,
@@ -2902,6 +2909,7 @@ class AgentRun < ApplicationRecord
     @current_handle = runner.provision(spec: spec)
     update!(container_id: @current_handle.identifier, container_host: @current_handle.host,
             runner_handle: @current_handle.to_storage)
+    ExecutionResource.track_environment!(agent_run: self, handle: @current_handle)
     PoolReplenishmentJob.perform_later(project_id)
 
     Containers::Provision::Result.success(
@@ -2922,6 +2930,7 @@ class AgentRun < ApplicationRecord
 
     if handle && runner.running?(handle: handle)
       @current_handle = handle
+      ExecutionResource.track_environment!(agent_run: self, handle: handle)
       Rails.logger.info(
         message: "container_manager.provision_reused_existing",
         agent_run_id: id,
@@ -3343,6 +3352,7 @@ class AgentRun < ApplicationRecord
 
     if service&.container_running?
       @container_service = service
+      ExecutionResource.track_environment!(agent_run: self)
       Rails.logger.info(
         message: "container_manager.provision_reused_existing",
         agent_run_id: id,
@@ -3403,6 +3413,11 @@ class AgentRun < ApplicationRecord
     result = @container_service.provision
     if result.success?
       update!(container_id: result[:container_id], container_host: result[:container_host])
+      ExecutionResource.track_environment!(
+        agent_run: self,
+        identifier: result[:container_id],
+        host: result[:container_host]
+      )
       PoolReplenishmentJob.perform_later(project_id)
     end
     result

@@ -120,6 +120,29 @@ module ExecutionRunners
       raise NotImplementedError, "#{self.class} must implement ##{__method__}"
     end
 
+    # Whether the runner can list tagged resources directly from the provider.
+    # Runners without this capability fall back to handle-based cleanup only,
+    # so reconciliation must report reduced confidence.
+    def supports_resource_listing?
+      false
+    end
+
+    # List provider-tagged resources owned by Paid for reconciliation.
+    #
+    # @param host [String, nil] host scope when the provider exposes one
+    # @return [Array<ExecutionRunners::TrackedResource>]
+    def list_resources(host: nil)
+      raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+    end
+
+    # Clean up a provider-reported resource directly by identifier.
+    #
+    # @param resource [ExecutionRunners::TrackedResource]
+    # @return [void]
+    def cleanup_resource(resource:)
+      raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+    end
+
     # Check compatibility before provisioning (e.g. host-path requirements).
     # Called for every candidate during scheduling, so it must be cheap and
     # must not mutate state or record telemetry.

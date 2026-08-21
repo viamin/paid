@@ -447,3 +447,42 @@
   CLIs against `paid-agent:latest`).
   *Tests:* `spec/services/containers/provision_spec.rb`.
   *Code:* `Containers::Provision` tmpfs configuration.
+- [x] **CONTAINER-RUNTIME-030** — The system SHALL persist a durable
+  `execution_resources` ledger for agent execution resources so cleanup state
+  survives workflow retries, janitor retries, and direct provider drift. A
+  successful provision SHALL upsert an `environment` ledger row for the run
+  containing the provider identity (`runner_type`, `host`, `identifier`), the
+  serialized `runner_handle`, and the opaque `workspace_ref`. Cleanup SHALL
+  transition the row to `cleanup_pending` before provider cleanup starts,
+  record durable failure metadata (`cleanup_attempts`, `next_cleanup_at`,
+  `last_cleanup_error`, `last_cleanup_error_class`, `last_cleanup_failed_at`)
+  when cleanup fails, and mark the row `cleaned` when cleanup completes.
+  *Tests:* `spec/jobs/agent_run_resource_janitor_job_spec.rb`,
+  `spec/services/execution_resources/reconcile_spec.rb`
+  *Code:* `ExecutionResource`,
+  `AgentRun#cleanup_container`,
+  `AgentRunResourceJanitorJob`
+
+- [x] **CONTAINER-RUNTIME-031** — Reconciliation SHALL compare ledger rows with
+  runner/provider state when the provider supports tag/list inventory, and
+  SHALL degrade to handle-based cleanup with `reduced_confidence` when it does
+  not. The reconciliation matrix SHALL cover:
+  active-ledger/provider-missing when the owning agent run is finished (or
+  unauthenticated) (mark cleaned — the listing gap is authoritative because
+  no live container is expected to be hanging on to the identifier),
+  active-ledger/provider-missing when the owning agent run is still in
+  progress (mark reconciled with `reduced_confidence` and leave the row
+  active so a transient listing gap cannot sever the live link between a
+  running agent and its container),
+  provider-tagged/no-active-ledger orphans for missing or finished runs
+  (adopt into the ledger and clean up),
+  cleanup-pending/provider-present (retry cleanup with durable backoff), and
+  provider-cannot-list (use the persisted `runner_handle` only and surface
+  reduced confidence). Existing Docker janitors SHALL remain active during the
+  migration.
+  *Tests:* `spec/services/execution_resources/reconcile_spec.rb`,
+  `spec/config/good_job_configuration_spec.rb`
+  *Code:* `ExecutionResources::Reconcile`,
+  `ExecutionResourceReconciliationJob`,
+  `ExecutionRunners::Base`,
+  `ExecutionRunners::LocalDockerRunner`

@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe AgentRunResourceJanitorJob do
+RSpec.describe AgentRunResourceJanitorJob do # @spec CONTAINER-RUNTIME-030
   let(:backend) { instance_double(Containers::Backends::Base) }
 
   before do
@@ -12,6 +12,10 @@ RSpec.describe AgentRunResourceJanitorJob do
   describe "#perform" do
     context "when agent run is finished" do
       let(:agent_run) { create(:agent_run, :completed) }
+      let!(:resource) do
+        create(:execution_resource, project: agent_run.project, agent_run: agent_run,
+          identifier: "abc123", host: agent_run.workspace_volume_host)
+      end
 
       it "attempts to remove the container when container_id is present" do
         agent_run.update_columns(container_id: "abc123")
@@ -77,6 +81,9 @@ RSpec.describe AgentRunResourceJanitorJob do
 
         expect { described_class.new.perform(agent_run.id) }
           .to raise_error(Docker::Error::DockerError, "daemon unavailable")
+        expect(resource.reload).to be_cleanup_pending
+        expect(resource.cleanup_attempts).to eq(1)
+        expect(resource.last_cleanup_error_class).to eq("Docker::Error::DockerError")
       end
 
       it "re-raises Docker errors during volume cleanup so retry_on can retry" do
@@ -85,6 +92,8 @@ RSpec.describe AgentRunResourceJanitorJob do
 
         expect { described_class.new.perform(agent_run.id) }
           .to raise_error(Docker::Error::DockerError, "daemon unavailable")
+        expect(resource.reload).to be_cleanup_pending
+        expect(resource.cleanup_attempts).to eq(1)
       end
 
       it "skips volume cleanup for worktree-based runs" do
@@ -94,6 +103,7 @@ RSpec.describe AgentRunResourceJanitorJob do
         described_class.new.perform(agent_run.id)
 
         expect(backend).not_to have_received(:get_volume)
+        expect(resource.reload).to be_cleaned
       end
     end
 

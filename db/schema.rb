@@ -1206,6 +1206,38 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_21_135405) do
     t.check_constraint "status::text = ANY (ARRAY['provisioning'::character varying::text, 'active'::character varying::text, 'cleanup_pending'::character varying::text, 'deleted'::character varying::text, 'orphaned'::character varying::text, 'cleanup_failed'::character varying::text])", name: "chk_execution_resource_ledger_status_valid"
   end
 
+  create_table "execution_resources", comment: "Durable execution-resource ledger rows tracked against provider state for reconciliation and cleanup retry.", force: :cascade do |t|
+    t.bigint "account_id", comment: "Owning account for resources linked to a known Paid account."
+    t.datetime "adopted_at"
+    t.bigint "agent_run_id", comment: "Agent run that owns the tracked environment when the resource is tied to a specific run."
+    t.datetime "cleaned_at"
+    t.integer "cleanup_attempts", default: 0, null: false, comment: "How many durable cleanup retries have been recorded for this row."
+    t.datetime "created_at", null: false
+    t.string "host", default: "", null: false, comment: "Owning backend host or empty string when the provider has no host dimension."
+    t.string "identifier", null: false, comment: "Provider-native resource identifier."
+    t.string "last_cleanup_error", comment: "Last cleanup failure message recorded for retry."
+    t.string "last_cleanup_error_class", comment: "Class name of the last cleanup failure recorded for retry."
+    t.datetime "last_cleanup_failed_at"
+    t.jsonb "metadata", default: {}, null: false, comment: "Provider-specific reconciliation metadata."
+    t.datetime "next_cleanup_at"
+    t.bigint "project_id", comment: "Owning project for resources linked to a known Paid project."
+    t.datetime "reconciled_at"
+    t.boolean "reduced_confidence", default: false, null: false, comment: "True when reconciliation had to degrade without provider list/tag support."
+    t.string "resource_type", null: false, comment: "Tracked execution resource type: environment or workspace."
+    t.jsonb "runner_handle", comment: "Persisted RunnerHandle used for handle-based cleanup when provider listing is unavailable."
+    t.string "runner_type", null: false, comment: "Execution runner/provider type that owns the resource."
+    t.string "state", default: "active", null: false, comment: "Ledger lifecycle state: active, cleanup_pending, or cleaned."
+    t.jsonb "tags", default: {}, null: false, comment: "Provider-reported labels/tags captured for reconciliation and orphan adoption."
+    t.datetime "updated_at", null: false
+    t.string "workspace_ref", comment: "Opaque workspace reference carried by the runner handle for cleanup and reconciliation."
+    t.index ["account_id"], name: "index_execution_resources_on_account_id"
+    t.index ["agent_run_id", "resource_type"], name: "idx_execution_resources_agent_run_resource_type", unique: true, where: "(agent_run_id IS NOT NULL)"
+    t.index ["agent_run_id"], name: "index_execution_resources_on_agent_run_id"
+    t.index ["project_id"], name: "index_execution_resources_on_project_id"
+    t.index ["runner_type", "host", "identifier"], name: "idx_execution_resources_provider_identity", unique: true
+    t.index ["state", "next_cleanup_at"], name: "idx_execution_resources_cleanup_schedule"
+  end
+
   create_table "external_connector_events", comment: "Events ingested from external connectors (Jira, Linear, Slack, etc.) for coexistence workflows.", force: :cascade do |t|
     t.bigint "account_id", null: false, comment: "Account this connector event belongs to."
     t.string "connector_key", null: false, comment: "Connector source key from Interop::Catalog (e.g. jira, linear, slack)."
@@ -3254,6 +3286,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_21_135405) do
   add_foreign_key "execution_resource_ledger_entries", "accounts", on_delete: :cascade
   add_foreign_key "execution_resource_ledger_entries", "agent_runs", on_delete: :nullify
   add_foreign_key "execution_resource_ledger_entries", "projects", on_delete: :nullify
+  add_foreign_key "execution_resources", "accounts", on_delete: :nullify
+  add_foreign_key "execution_resources", "agent_runs", on_delete: :nullify
+  add_foreign_key "execution_resources", "projects", on_delete: :nullify
   add_foreign_key "external_connector_events", "accounts"
   add_foreign_key "external_connector_events", "projects"
   add_foreign_key "failure_classifications", "agent_runs", on_delete: :cascade
