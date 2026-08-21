@@ -95,3 +95,21 @@ replacement container is provisioned from scratch, `AgentRun#reconcile_stale_con
 clears the recorded selection so the next `#options` resolution records the
 current catalog default on the replacement container instead of inheriting
 provenance from a container that no longer exists.
+
+### Carrying the selection on `RunSpec`
+
+`Containers::Provision` is Docker-specific; the provider-neutral
+`ExecutionRunners::RunSpec` (RDR-057/RDR-054) is what any current or future
+runner and the control-plane/runner boundary manifest actually depend on.
+`RunSpec.from_agent_run` resolves the run's final runtime image identity
+itself — reusing a selection already recorded on the run before falling back
+to a fresh catalog resolution, the same two-tier rule `Containers::Provision`
+applies for non-pool reconnects (pool-claimed provisions never reach
+`RunSpec` at all: `AgentRun#provision_via_runner` returns early via
+`acquire_pooled_container` before a `RunSpec` is built) — and records the
+result via `AgentRun#record_runtime_image_selection!`. The full
+`Containers::RuntimeImageSelector::Result` is carried on
+`RunSpec#runtime_image_selection`, and `ExecutionInputManifest.from_run_spec`
+exposes its metadata under `execution["runtime_image"]` so a runner
+conformance suite can assert on the resolved image identity without touching
+Docker-specific internals.
