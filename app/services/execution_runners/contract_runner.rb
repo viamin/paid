@@ -171,6 +171,20 @@ module ExecutionRunners
         raise ProvisionError, self.class.unsupported_policy_message(spec.networking_policy)
       end
 
+      # Mirror .compatible?'s restricted-policy guard so a spec that would be
+      # rejected before scheduling cannot still be provisioned directly
+      # against this runner (#3556 review). The contract runner has no real
+      # backend of its own (it is an in-memory double), so it checks
+      # enforceability the same way .compatible? does for a nil backend —
+      # any adapter that requires a specific backend to answer +capable?+
+      # opts in via {.supporting}/{.gateway_adapter} stubbing, same as specs
+      # exercising .compatible? do.
+      # @spec EGRESS-POLICY-007
+      if spec.networking_policy.restricted? && !self.class.egress_capable?(spec: spec, backend: nil)
+        raise ProvisionError,
+          "Runtime cannot enforce the egress policy snapshot on this backend; register a capable gateway adapter or reject the run"
+      end
+
       default_handle_for(spec)
     end
 

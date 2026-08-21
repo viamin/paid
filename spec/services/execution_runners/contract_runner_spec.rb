@@ -160,6 +160,11 @@ RSpec.describe ExecutionRunners::ContractRunner do
     context "when the policy is in the supported set" do
       let(:supported_modes) { [ :approved_services ] }
 
+      before do
+        adapter = instance_double(AgentRuns::EgressPolicy::GatewayAdapters::Docker, capable?: true)
+        allow(runner_class).to receive(:gateway_adapter).and_return(adapter)
+      end
+
       it "returns a RunnerHandle" do
         handle = runner.provision(spec: run_spec)
 
@@ -179,6 +184,22 @@ RSpec.describe ExecutionRunners::ContractRunner do
       it "raises ProvisionError with a descriptive message" do
         expect { runner.provision(spec: run_spec) }
           .to raise_error(ExecutionRunners::ProvisionError, /approved_services/)
+      end
+
+      it "records the call before raising" do
+        expect { runner.provision(spec: run_spec) rescue nil }
+          .to change { runner.provision_calls.size }.from(0).to(1)
+      end
+    end
+
+    # @spec EGRESS-POLICY-007
+    context "when the policy is restricted and no gateway adapter can enforce it" do
+      let(:supported_modes) { [ :approved_services ] }
+
+      it "raises ProvisionError instead of returning a handle, mirroring .compatible?" do
+        expect(runner_class.compatible?(spec: run_spec, backend: backend).compatible).to be(false)
+        expect { runner.provision(spec: run_spec) }
+          .to raise_error(ExecutionRunners::ProvisionError, /cannot enforce the egress policy snapshot/)
       end
 
       it "records the call before raising" do

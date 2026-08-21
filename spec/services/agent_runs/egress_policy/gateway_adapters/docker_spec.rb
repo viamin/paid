@@ -63,7 +63,7 @@ RSpec.describe AgentRuns::EgressPolicy::GatewayAdapters::Docker do
 
     before do
       allow(backend).to receive(:get_container).with("egress-gateway").and_return(gateway_container)
-      allow(backend).to receive(:exec_in_container)
+      allow(backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
     end
 
     it "writes the per-run allowlist as JSON into the gateway sidecar under a per-run filename" do
@@ -96,6 +96,13 @@ RSpec.describe AgentRuns::EgressPolicy::GatewayAdapters::Docker do
 
       expect { adapter.install_allowlist!(agent_run: agent_run, snapshot: snapshot, backend: backend) }
         .to raise_error(AgentRuns::EgressPolicy::Gateway::UnavailableError, /failed to install allowlist/)
+    end
+
+    it "raises Gateway::UnavailableError when the write command exits non-zero (fail closed)" do
+      allow(backend).to receive(:exec_in_container).and_return([ [], [ "base64: invalid input\n" ], 1 ])
+
+      expect { adapter.install_allowlist!(agent_run: agent_run, snapshot: snapshot, backend: backend) }
+        .to raise_error(AgentRuns::EgressPolicy::Gateway::UnavailableError, /failed to install allowlist.*exit 1/)
     end
   end
 

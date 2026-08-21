@@ -51,7 +51,7 @@ class LocalDockerRunner < Base
       spec.ingress_policy.validate_supported!
 
       gateway = build_gateway(spec: spec, backend: backend)
-      enforce_gateway!(gateway: gateway)
+      gateway = nil unless enforce_gateway!(gateway: gateway)
 
       ensure_agent_network!(backend: backend, policy: policy)
       service = Containers::Provision.new(
@@ -411,11 +411,18 @@ class LocalDockerRunner < Base
     # that can translate their snapshot. Adapters raise
     # {Gateway::UnavailableError} when they cannot install the gateway;
     # production always re-raises as ProvisionError so the container is
-    # not started without enforcement.
+    # not started without enforcement. In non-production, the failure is
+    # logged and swallowed, but returns +false+ so the caller drops the
+    # gateway reference entirely — otherwise the proxy env vars and
+    # firewall rules below would still point restricted traffic at a
+    # gateway that was never installed.
+    #
+    # @return [Boolean] whether +gateway+ is usable for the rest of provisioning
     def enforce_gateway!(gateway:)
-      return unless gateway
+      return true unless gateway
 
       gateway.ensure!
+      true
     rescue AgentRuns::EgressPolicy::Gateway::UnavailableError => e
       Rails.logger.warn(
         message: "container.egress_gateway.failed",
@@ -423,6 +430,8 @@ class LocalDockerRunner < Base
         agent_run_id: gateway.agent_run.id
       )
       raise ProvisionError, "Egress gateway setup failed: #{e.message}" if Rails.env.production?
+
+      false
     end
 
     # Drains denial events from the per-host egress gateway into

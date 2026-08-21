@@ -507,7 +507,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     it "threads the gateway URL into the firewall destinations as {ip:, port:}" do
       seed_snapshot!(destinations: [ { "host" => "api.partner.com", "port" => 443, "source" => "project_allowlist" } ])
       allow(backend).to receive(:get_container).with("egress-gateway").and_return(instance_double(Docker::Container))
-      allow(backend).to receive(:exec_in_container)
+      allow(backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
       stub_provision_success!
 
       expect(NetworkPolicy).to receive(:apply_firewall_rules)
@@ -527,7 +527,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
         { "host" => "metrics.example.com", "port" => 8443, "source" => "account_allowlist" }
       ])
       allow(backend).to receive(:get_container).with("egress-gateway").and_return(instance_double(Docker::Container))
-      allow(backend).to receive(:exec_in_container)
+      allow(backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
       stub_provision_success!
 
       expect(NetworkPolicy).to receive(:apply_firewall_rules) do |_container, **kwargs|

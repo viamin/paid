@@ -85,11 +85,16 @@ module AgentRuns
             installed_at: Time.current.iso8601
           )
           encoded = Base64.strict_encode64(config)
-          backend.exec_in_container(
+          path = allowlist_config_path(agent_run: agent_run)
+          _stdout, stderr, exit_code = backend.exec_in_container(
             gateway_container,
-            [ "sh", "-c", "echo '#{encoded}' | base64 -d > #{allowlist_config_path(agent_run: agent_run)}" ],
+            [ "sh", "-c", "echo '#{encoded}' | base64 -d > #{path}" ],
             wait: 5
           )
+          unless exit_code&.zero?
+            raise Gateway::UnavailableError,
+              "failed to install allowlist on gateway '#{GATEWAY_HOST}': exit #{exit_code.inspect}: #{Array(stderr).join}"
+          end
         rescue ::Docker::Error::DockerError => e
           raise Gateway::UnavailableError,
             "failed to install allowlist on gateway '#{GATEWAY_HOST}': #{e.message}"
