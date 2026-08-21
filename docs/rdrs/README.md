@@ -131,7 +131,7 @@ Distribution above). RDR-061 remains the open decision in this set.
 
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
-| [RDR-061](RDR-061-infrastructure-safety-and-audit.md) | Infrastructure Safety Rails and Execution Audit Events | Draft | P1 |
+| [RDR-061](RDR-061-infrastructure-safety-and-audit.md) | Infrastructure Safety Rails and Execution Audit Events | Partially Implemented | P1 |
 
 ### Runner Intelligence
 

@@ -5,11 +5,64 @@
 ## Metadata
 
 - **Date**: 2026-08-12
-- **Status**: Draft
+- **Status**: Partially Implemented
 - **Type**: Operations + Security Architecture
 - **Priority**: P1
 - **Related RDRs**: [RDR-011](RDR-011-observability.md), [RDR-018a](RDR-018a-billing-aggregation.md), [RDR-025a](RDR-025a-runner-quota-tracking.md), [RDR-033](RDR-033-worker-pool-scaling-algorithm.md), [RDR-049](RDR-049-configuration-health-checks.md), [RDR-050](RDR-050-account-queue-fairness-mode.md), [RDR-057](RDR-057-remote-execution-data-contract.md) (data movement audit), [RDR-058](RDR-058-execution-authority-network-and-isolation.md) (network policy and authority audit), [RDR-059](RDR-059-immutable-agent-runtime-images.md) (image digest in audit), [RDR-060](RDR-060-external-execution-resource-ledger.md) (resource ledger IDs in audit events)
-- **Related Issues**: #3353 (execution concurrency), #3354 (resource requirements), #3355 (infra cost accounting), #3357 (health/shutdown), #3359 (production readiness), #3414 (execution audit trail, partial)
+- **Related Issues**: [#3421](https://github.com/viamin/paid/issues/3421) (closeout), [#3553](https://github.com/viamin/paid/issues/3553) (audit-event instrumentation gap), [#3554](https://github.com/viamin/paid/issues/3554) (spend-threshold gap), #3353 (execution concurrency), #3354 (resource requirements), #3355 (infra cost accounting), #3357 (health/shutdown), #3359 (production readiness), #3414 (execution audit trail, partial)
+- **Related Tests**: `spec/services/capacity/run_admission_spec.rb`, `spec/models/execution_control_spec.rb`, `spec/models/execution_audit_event_spec.rb`, `spec/services/config/production_validator_spec.rb`
+
+## Implementation Status
+
+RDR-061 is **partially implemented** as of 2026-08-21. The core admission-time
+infrastructure safety rails are shipped for aggregate requested resources,
+per-execution resource maxima, provisioning-rate limits, and execution-disable
+controls. The dedicated `ExecutionAuditEvent` record type is also shipped as an
+append-only, tenant-scoped, secret-safe audit store.
+
+Two acceptance criteria remain open:
+
+- lifecycle execution audit-event emission from provisioning, cleanup, runner
+  selection, image resolution, and network/credential decisions
+- Paid-owned infrastructure spend-threshold enforcement on the pre-provisioning
+  safety path once infra cost accounting is available
+
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| Aggregate requested CPU/memory/disk safety rails before provisioning | Implemented | `Capacity::RunAdmission` — `app/services/capacity/run_admission.rb` |
+| Provisioning-rate safety rails before provisioning | Implemented | `Capacity::RunAdmission` — `app/services/capacity/run_admission.rb` |
+| Emergency disable at global/account/project/runner/backend scopes | Implemented | `ExecutionControls::RunImpact`; queue/runner/backend enforcement from `docs/intent/execution-disable-controls/` |
+| Append-only, secret-safe execution audit record model | Implemented | `ExecutionAuditEvent` — `app/models/execution_audit_event.rb` |
+| Lifecycle execution audit-event emission | **Gap** | Follow-up [#3553](https://github.com/viamin/paid/issues/3553) |
+| Pre-provisioning infrastructure spend thresholds | **Gap** | Follow-up [#3554](https://github.com/viamin/paid/issues/3554) |
+
+### 2026-08-21 Closeout
+
+Audit recorded against umbrella issue
+[#3421](https://github.com/viamin/paid/issues/3421). See
+[`audit-report-2026-08-21-rdr-061.md`](audit-report-2026-08-21-rdr-061.md) for
+the full criterion-by-criterion evidence and validation notes.
+
+The closeout is **partial**. What shipped:
+
+- pre-provisioning aggregate requested CPU/memory/disk ceilings
+- pre-provisioning provisioning-rate ceilings
+- per-execution resource maxima
+- global/account/project/runner/backend execution-disable controls
+- append-only, secret-safe `ExecutionAuditEvent` storage and retention
+
+What remains open:
+
+- lifecycle execution audit-event instrumentation across provisioning and
+  cleanup ([#3553](https://github.com/viamin/paid/issues/3553))
+- infrastructure spend-threshold enforcement before provisioning
+  ([#3554](https://github.com/viamin/paid/issues/3554))
+
+Provider quotas and billing alarms remain explicitly documented as
+defense-in-depth backstops, not the primary Paid behavior. Because the two
+remaining gaps are still open and directly map to the RDR acceptance criteria,
+RDR-061 stays **Partially Implemented** and umbrella issue #3421 should remain
+open until those gaps land.
 
 ## Problem Statement
 
