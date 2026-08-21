@@ -38,7 +38,11 @@
   account entries by id, enabled project entries by id, then run-local
   service and preview destinations — deduplicated by host+port with first
   occurrence winning, and each destination SHALL carry provenance (source,
-  entry/service identifiers, reason).
+  entry/service identifiers, reason). Run-local service destinations SHALL
+  record the Docker network alias provisioning grants
+  (`Containers::ServiceRuntimeNaming.runtime_name`, the host behind the run's
+  `SERVICE_*_HOST` env vars), never the user-facing service name, so the
+  snapshot matches the host the container can actually resolve.
   *Tests:* `spec/services/agent_runs/egress_policy/resolve_spec.rb`
   *Code:* `AgentRuns::EgressPolicy::Resolve`,
   `AgentRuns::EgressPolicy::Snapshot`

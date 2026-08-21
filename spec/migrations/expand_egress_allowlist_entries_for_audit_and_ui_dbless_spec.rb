@@ -35,4 +35,17 @@ RSpec.describe ExpandEgressAllowlistEntriesForAuditAndUi, :no_db do
     )
     expect(migration).not_to have_received(:remove_check_constraint)
   end
+
+  # @spec EGRESS-POLICY-003
+  it "adds the account/project scope lookup index per-run resolution queries target" do
+    migration.up
+
+    expect(migration).to have_received(:add_index).with(
+      :egress_allowlist_entries,
+      [ :account_id, :project_id ],
+      name: ExpandEgressAllowlistEntriesForAuditAndUi::SCOPE_LOOKUP_INDEX,
+      comment: "Account/project scope lookup used by per-run egress policy resolution.",
+      algorithm: :concurrently
+    )
+  end
 end

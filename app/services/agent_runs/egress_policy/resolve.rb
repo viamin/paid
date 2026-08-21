@@ -213,10 +213,16 @@ module AgentRuns
         service_destinations + preview_destinations
       end
 
+      # Records the Docker network alias provisioning actually grants
+      # (Containers::ServiceRuntimeNaming.runtime_name — the host the run's
+      # SERVICE_*_HOST env vars point at), never the user-facing service
+      # name, so EGRESS-POLICY-007 enforcement can consume +destinations+
+      # verbatim and the audit snapshot matches reachable reality.
+      # @spec EGRESS-POLICY-003
       def service_destinations
         service_containers.map do |service|
           {
-            "host" => service.name,
+            "host" => Containers::ServiceRuntimeNaming.runtime_name(service),
             "port" => service.port,
             "source" => "run_service",
             "service_container_id" => service.id

@@ -167,7 +167,7 @@ RSpec.describe AgentRuns::EgressPolicy::Resolve do
           "egress-gateway", "paid-proxy", "github.com", "api.github.com", # required
           "z.account.com", "a.account.com",                              # account entries by id, not name
           "z.project.com",                                               # project entries by id
-          "db",                                                          # run services by id
+          "paid-svc-a#{account.id}-s#{service.id}-db",                   # run services by id, under the provisioning network alias
           "preview-host"                                                 # preview
         ]
       )
@@ -195,15 +195,22 @@ RSpec.describe AgentRuns::EgressPolicy::Resolve do
   end
 
   describe "run-local destinations" do
-    it "includes running service containers with provenance" do
+    # @spec EGRESS-POLICY-003
+    it "records running service containers under the provisioning network alias" do
       service = create(:service_container, :running, account: account, name: "pg", port: 5432)
       stopped = create(:service_container, account: account, name: "old", port: 6379)
       agent_run.update!(service_container_ids: [ service.id, stopped.id ])
 
       destinations = resolve.destinations.select { |d| d["source"] == "run_service" }
 
+      # The alias must match Containers::ServiceRuntimeNaming — the host the
+      # container's SERVICE_*_HOST env vars point at — not the service name.
       expect(destinations).to contain_exactly(
-        hash_including("host" => "pg", "port" => 5432, "service_container_id" => service.id)
+        hash_including(
+          "host" => "paid-svc-a#{account.id}-s#{service.id}-pg",
+          "port" => 5432,
+          "service_container_id" => service.id
+        )
       )
     end
 
