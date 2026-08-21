@@ -105,14 +105,25 @@ provision still leaves the intended policy auditable.
 
 `LocalDockerRunner#provision` consumes the persisted snapshot by building
 an `AgentRuns::EgressPolicy::Gateway` whose adapter (default: `GatewayAdapters::Docker`)
-translates the snapshot's destinations into platform-specific firewall rules.
-The runner's `apply_firewall!` merges three sources into the iptables
-allowlist: the snapshot's tenant destinations (RDR-055 step 4), the
-service-container IPs, and the egress gateway URL. The runner's
-`gateway_adapter` class method is the platform seam; runners that cannot
-enforce the policy (Kubernetes, managed machine) register their own
-adapters, and runners without one are rejected by
-`ExecutionRunners::Base.compatible?` before any Docker side effect.
+materializes a per-Docker-host egress gateway. The runner's
+`apply_firewall!` opens iptables only for what the gateway itself needs to
+reach — the secrets proxy, GitHub CIDRs (per intent), service container
+IPs (`:approved_services` only), and the egress gateway URL. The
+snapshot's tenant-allowlisted destinations are deliberately NOT threaded
+into iptables: HTTP(S) traffic to those hosts must flow through the
+gateway so the gateway's domain-aware filtering and structured denial
+audit trail apply. The gateway's own allowlist (built from the snapshot
+via `GatewayAdapters::Base#allowlist_for`) is what enforces the per-run
+domain policy; the iptables rules only ensure the agent can reach the
+gateway.
+
+The runner's `gateway_adapter` class method is the platform seam; runners
+that cannot enforce the policy (Kubernetes, managed machine) register
+their own adapters and expose their backend eligibility through
+`GatewayAdapters::Base#capable?`. Runners without a registered adapter —
+or whose adapter answers `capable?` with `false` for the candidate
+backend — are rejected by `ExecutionRunners::Base.compatible?` before any
+Docker side effect.
 
 Fail-closed production behavior: if the gateway adapter raises
 `Gateway::UnavailableError` from `ensure!`, production runs surface the

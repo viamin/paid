@@ -105,6 +105,55 @@ RSpec.describe ExecutionRunners::ContractRunner do
       expect { runner.provision(spec: spec) }
         .to raise_error(ExecutionRunners::ProvisionError, /approved_services/)
     end
+
+    # @spec EGRESS-POLICY-007
+    it "rejects a restricted spec when no gateway adapter is registered" do
+      narrowed = described_class.supporting([ :approved_services ])
+      spec = ExecutionRunners::RunSpec.new(**run_spec.to_h.merge(
+        networking_policy: ExecutionRunners::NetworkingPolicy.approved_services
+      ))
+
+      result = narrowed.compatible?(spec: spec, backend: backend)
+
+      expect(result.compatible).to be(false)
+      expect(result.error_message).to include("cannot enforce the egress policy snapshot")
+    end
+
+    # @spec EGRESS-POLICY-007
+    it "rejects a restricted spec when the registered adapter is not capable on this backend" do
+      narrowed = described_class.supporting([ :approved_services ])
+      adapter = instance_double(
+        AgentRuns::EgressPolicy::GatewayAdapters::Kubernetes,
+        capable?: false
+      )
+      allow(narrowed).to receive(:gateway_adapter).and_return(adapter)
+      spec = ExecutionRunners::RunSpec.new(**run_spec.to_h.merge(
+        networking_policy: ExecutionRunners::NetworkingPolicy.approved_services
+      ))
+
+      result = narrowed.compatible?(spec: spec, backend: backend)
+
+      expect(result.compatible).to be(false)
+      expect(result.error_message).to include("cannot enforce the egress policy snapshot")
+      expect(adapter).to have_received(:capable?).with(hash_including(backend: backend))
+    end
+
+    # @spec EGRESS-POLICY-007
+    it "accepts a restricted spec when a capable adapter is registered" do
+      narrowed = described_class.supporting([ :approved_services ])
+      adapter = instance_double(
+        AgentRuns::EgressPolicy::GatewayAdapters::Docker,
+        capable?: true
+      )
+      allow(narrowed).to receive(:gateway_adapter).and_return(adapter)
+      spec = ExecutionRunners::RunSpec.new(**run_spec.to_h.merge(
+        networking_policy: ExecutionRunners::NetworkingPolicy.approved_services
+      ))
+
+      result = narrowed.compatible?(spec: spec, backend: backend)
+
+      expect(result.compatible).to be(true), result.error_message
+    end
   end
 
   describe "#provision" do

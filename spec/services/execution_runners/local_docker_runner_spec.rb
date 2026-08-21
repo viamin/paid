@@ -28,6 +28,22 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
   let(:provision_service) { instance_double(Containers::Provision, container: instance_double(Docker::Container)) }
   let(:started_container) { instance_double(Docker::Container) }
 
+  # Persists a synthetic egress policy snapshot on the +agent_run+ so
+  # +AgentRuns::EgressPolicy::Snapshot.from_record+ returns it. Shared
+  # between the +#provision+ tests (which consume the snapshot during
+  # +apply_firewall!+) and the +.compatible?+ tests (which check whether
+  # the registered adapter accepts the persisted snapshot).
+  def seed_snapshot!(destinations: [], required_destinations: [], mode: "proxy_restricted", egress_profile: "locked")
+    snapshot = AgentRuns::EgressPolicy::Snapshot.new(
+      mode: mode,
+      egress_profile: egress_profile,
+      destinations: destinations,
+      required_destinations: required_destinations
+    )
+    agent_run.update!(external_metadata: { "egress_policy" => snapshot.to_h })
+    snapshot
+  end
+
   before do
     allow(Containers).to receive(:backend_for).and_return(backend)
     allow(NetworkPolicy).to receive(:ensure_network!).and_return(instance_double(Docker::Network))
@@ -496,24 +512,32 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
         .with(started_container,
               github_ips: NetworkPolicy::DEFAULT_GITHUB_IPS,
               proxy_host: nil,
-              service_destinations: [
-                { ip: "api.partner.com", port: 443 },
-                { ip: "egress-gateway", port: 3128 }
-              ],
+              service_destinations: [ { ip: "egress-gateway", port: 3128 } ],
               backend: backend)
 
       runner.provision(spec: run_spec)
     end
 
-    def seed_snapshot!(destinations: [], required_destinations: [], mode: "proxy_restricted", egress_profile: "locked")
-      snapshot = AgentRuns::EgressPolicy::Snapshot.new(
-        mode: mode,
-        egress_profile: egress_profile,
-        destinations: destinations,
-        required_destinations: required_destinations
-      )
-      agent_run.update!(external_metadata: { "egress_policy" => snapshot.to_h })
-      snapshot
+    # @spec EGRESS-POLICY-007
+    it "routes tenant-allowlisted destinations through the gateway rather than opening them directly in iptables" do
+      seed_snapshot!(destinations: [
+        { "host" => "api.partner.com", "port" => 443, "source" => "project_allowlist" },
+        { "host" => "metrics.example.com", "port" => 8443, "source" => "account_allowlist" }
+      ])
+      stub_provision_success!
+
+      expect(NetworkPolicy).to receive(:apply_firewall_rules) do |_container, **kwargs|
+        # Snapshot destinations must NOT appear as direct iptables rules:
+        # they are enforced by the gateway's own allowlist, so denials go
+        # through the gateway audit trail and bypass is impossible.
+        expect(kwargs[:service_destinations]).not_to include(
+          a_hash_including(ip: "api.partner.com"),
+          a_hash_including(ip: "metrics.example.com")
+        )
+        expect(kwargs[:service_destinations]).to include({ ip: "egress-gateway", port: 3128 })
+      end
+
+      runner.provision(spec: run_spec)
     end
 
     def stub_provision_success!
@@ -975,6 +999,50 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       result = described_class.compatible?(spec: spec, backend: backend)
 
       expect(result.compatible).to be(true)
+    end
+
+    # @spec EGRESS-POLICY-007
+    it "rejects a restricted spec when the registered adapter is not capable on this backend" do
+      allow(Containers::Provision).to receive(:compatibility_for)
+        .and_return(Containers::Provision::CompatibilityResult.new(compatible: true, error_message: nil))
+      adapter = instance_double(
+        AgentRuns::EgressPolicy::GatewayAdapters::Kubernetes,
+        capable?: false
+      )
+      allow(described_class).to receive(:gateway_adapter).and_return(adapter)
+      spec = ExecutionRunners::RunSpec.new(**run_spec.to_h.merge(
+        networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted
+      ))
+
+      result = described_class.compatible?(spec: spec, backend: backend)
+
+      expect(result.compatible).to be(false)
+      expect(result.error_message).to include("cannot enforce the egress policy snapshot")
+      expect(adapter).to have_received(:capable?).with(hash_including(backend: backend))
+    end
+
+    # @spec EGRESS-POLICY-007
+    it "asks the adapter about capability with the persisted snapshot when one exists" do
+      seed_snapshot!(destinations: [ { "host" => "api.partner.com", "port" => 443, "source" => "project_allowlist" } ])
+      allow(Containers::Provision).to receive(:compatibility_for)
+        .and_return(Containers::Provision::CompatibilityResult.new(compatible: true, error_message: nil))
+      adapter = instance_double(
+        AgentRuns::EgressPolicy::GatewayAdapters::Kubernetes,
+        capable?: true
+      )
+      allow(described_class).to receive(:gateway_adapter).and_return(adapter)
+      spec = ExecutionRunners::RunSpec.new(**run_spec.to_h.merge(
+        networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted
+      ))
+
+      result = described_class.compatible?(spec: spec, backend: backend)
+
+      expect(result.compatible).to be(true), result.error_message
+      expect(adapter).to have_received(:capable?) do |kwargs|
+        expect(kwargs[:backend]).to eq(backend)
+        expect(kwargs[:snapshot]).to be_a(AgentRuns::EgressPolicy::Snapshot)
+        expect(kwargs[:snapshot].destinations.first["host"]).to eq("api.partner.com")
+      end
     end
   end
 

@@ -74,15 +74,17 @@ module ExecutionRunners
 
       if supports_policy?(spec.networking_policy)
         # Restricted policies must be enforceable: a runtime without a
-        # gateway adapter cannot honor the RDR-055 domain-aware allowlist.
-        # The contract runner's default gateway adapter is nil, so narrowed
-        # test runners can opt in by overriding {.gateway_adapter} to
-        # return a real adapter.
+        # gateway adapter cannot honor the RDR-055 domain-aware allowlist,
+        # and any adapter present must also answer +capable?+ for this
+        # backend (Kubernetes/managed-machine adapters answer +false+ for
+        # non-matching backends). The contract runner's default gateway
+        # adapter is nil, so narrowed test runners can opt in by
+        # overriding {.gateway_adapter} to return a real adapter.
         # @spec EGRESS-POLICY-007
-        if spec.networking_policy.restricted? && gateway_adapter.nil?
+        if spec.networking_policy.restricted? && !egress_capable?(spec: spec, backend: backend)
           return CompatibilityResult.new(
             compatible: false,
-            error_message: "Runtime cannot enforce the egress policy snapshot; register a gateway adapter or reject the run"
+            error_message: "Runtime cannot enforce the egress policy snapshot on this backend; register a capable gateway adapter or reject the run"
           )
         end
 
@@ -93,6 +95,21 @@ module ExecutionRunners
           error_message: unsupported_policy_message(spec.networking_policy)
         )
       end
+    end
+
+    # Returns true when the registered gateway adapter can enforce the
+    # restricted policy on +backend+. Mirrors {LocalDockerRunner}: the
+    # runner must have an adapter, and the adapter must answer +true+
+    # from {GatewayAdapters::Base#capable?}. Used by {.compatible?} so
+    # narrowing the registered adapter or stubbing +capable?+ exercises
+    # the same code path production runners use.
+    # @spec EGRESS-POLICY-007
+    def self.egress_capable?(spec:, backend:)
+      adapter = gateway_adapter
+      return false if adapter.nil?
+
+      snapshot = AgentRuns::EgressPolicy::Snapshot.from_record(spec.agent_run)
+      adapter.capable?(snapshot: snapshot, backend: backend)
     end
 
     # Single source for the unsupported-policy error message, shared by

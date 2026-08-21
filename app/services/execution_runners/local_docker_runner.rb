@@ -208,15 +208,37 @@ class LocalDockerRunner < Base
       # Restricted policies must be enforceable: a runtime without a
       # gateway adapter cannot honor the RDR-055 domain-aware allowlist,
       # so the spec is rejected before any Docker side effect rather than
-      # starting a container with no enforcement.
-      if policy.restricted? && gateway_adapter.nil?
+      # starting a container with no enforcement. The adapter also has to
+      # declare the backend eligible ({GatewayAdapters::Base#capable?}) —
+      # Kubernetes and managed-machine adapters answer +false+ for
+      # non-matching backends, so a future runner that returns an adapter
+      # instance does not silently start a container with no enforcement.
+      if policy.restricted? && !egress_capable?(spec: spec, backend: backend)
         return CompatibilityResult.new(
           compatible: false,
-          error_message: "Runtime cannot enforce the egress policy snapshot; register a gateway adapter or reject the run"
+          error_message: "Runtime cannot enforce the egress policy snapshot on this backend; register a capable gateway adapter or reject the run"
         )
       end
 
       CompatibilityResult.new(compatible: true, error_message: nil)
+    end
+
+    # Returns true when the registered gateway adapter can enforce the
+    # restricted policy on +backend+. Both legs must pass: the runner must
+    # have an adapter registered, and that adapter must answer +true+ from
+    # {GatewayAdapters::Base#capable?}. Adapters that depend on platform
+    # primitives (CNI without NetworkPolicy, provider firewalls without
+    # per-host filters) use +capable?+ to opt out per backend rather than
+    # letting +#ensure!+ raise later in the provision path. The snapshot
+    # is best-effort: it may not be persisted yet at scheduling time, so
+    # adapters that need it implement +capable?+ defensively.
+    # @spec EGRESS-POLICY-007
+    def self.egress_capable?(spec:, backend:)
+      adapter = gateway_adapter
+      return false if adapter.nil?
+
+      snapshot = AgentRuns::EgressPolicy::Snapshot.from_record(spec.agent_run)
+      adapter.capable?(snapshot: snapshot, backend: backend)
     end
 
     # Single source of truth for the unsupported-policy error message, shared
@@ -323,11 +345,19 @@ class LocalDockerRunner < Base
     # added for the +:approved_services+ intent; the narrower restricted
     # intents exclude them so their allowlist matches the RDR-062 mapping
     # table. Caller-supplied +allow_destinations+ are always honored.
+    #
+    # The snapshot's tenant-allowlisted destinations are NOT threaded into
+    # the iptables rules: that would let the agent connect straight to
+    # +api.partner.com:443+ without ever touching the egress gateway,
+    # bypassing the gateway's domain-aware filtering and the structured
+    # denial audit trail (EGRESS-POLICY-007). The gateway URL is opened so
+    # HTTP(S) traffic can reach the gateway, and the gateway's own
+    # allowlist (built from the snapshot's destinations) is what enforces
+    # the per-run domain policy.
     def apply_firewall!(service:, backend:, policy:, gateway: nil)
       return unless policy.firewall?
 
       destinations = policy.allow_destinations.map { |dest| { ip: dest.fetch(:host), port: dest.fetch(:port) } }
-      destinations += snapshot_destinations(gateway) if gateway
       destinations += service.firewall_service_destinations if policy.approved_services?
       destinations += gateway_destinations(gateway) if gateway
       github_ips = github_ranges_for(policy)
@@ -351,25 +381,6 @@ class LocalDockerRunner < Base
       # (e.g., macOS Docker Desktop, some CI runners). Production always
       # raises: a firewall gap on a live deployment is a security incident.
       raise ProvisionError, "Firewall setup failed: #{e.message}" if Rails.env.production?
-    end
-
-    # Threads the snapshot's tenant-allowlisted destinations into the
-    # in-container firewall so restricted Docker runs can reach every
-    # destination the resolver included (RDR-055 step 4). Required
-    # platform / provider destinations are already baked into the
-    # iptables rules by {NetworkPolicy.apply_firewall_rules}, so the
-    # snapshot's required destinations are intentionally skipped here to
-    # keep the dedupe semantics correct.
-    def snapshot_destinations(gateway)
-      Array(gateway.snapshot.destinations).filter_map do |destination|
-        host = destination["host"]
-        port = destination["port"]
-        next if host.blank? || port.blank?
-
-        { ip: host, port: Integer(port) }
-      rescue ArgumentError, TypeError
-        nil
-      end
     end
 
     # Builds the per-run egress gateway from the snapshot persisted on
