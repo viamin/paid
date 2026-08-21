@@ -327,7 +327,8 @@ module Models
         supports_tools: true,
         supports_json_output: true,
         capability_score: 9.4,
-        tier: "mid"
+        tier: "mid",
+        active: false
       },
       {
         model_id: "gpt-5.6-luna",
@@ -343,7 +344,8 @@ module Models
         supports_tools: true,
         supports_json_output: true,
         capability_score: 9.0,
-        tier: "mid"
+        tier: "mid",
+        active: false
       },
       {
         model_id: "gpt-5.6-sol",
@@ -359,7 +361,8 @@ module Models
         supports_tools: true,
         supports_json_output: true,
         capability_score: 9.0,
-        tier: "mid"
+        tier: "mid",
+        active: false
       },
       {
         model_id: "gpt-5.6-terra",
@@ -375,7 +378,8 @@ module Models
         supports_tools: true,
         supports_json_output: true,
         capability_score: 9.0,
-        tier: "mid"
+        tier: "mid",
+        active: false
       },
       {
         model_id: "gpt-5-mini",
@@ -508,6 +512,22 @@ module Models
         supports_tools: true,
         supports_json_output: true,
         capability_score: 8.3,
+        tier: "mid"
+      },
+      {
+        model_id: "gemini-3.7-flash",
+        display_name: "Gemini 3.7 Flash",
+        provider: "google",
+        family: "gemini-3",
+        category: "general",
+        context_window: 1_000_000,
+        max_output_tokens: 65_536,
+        input_cost_per_million: 0.30,
+        output_cost_per_million: 1.50,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 8.4,
         tier: "mid"
       },
       # Catalog completeness for the custom Anthropic-compatible MiniMax
