@@ -119,6 +119,10 @@ RSpec.describe ExecutionRunners do
       expect(spec.workspace.named_volume?).to be(true)
     end
 
+    it "defaults runtime_image_selection to nil when built directly" do
+      expect(spec.runtime_image_selection).to be_nil
+    end
+
     it "never references Docker-specific concepts" do
       expect(described_class.members).not_to include(:container_id, :network_name, :bind_mount)
     end
@@ -142,6 +146,7 @@ RSpec.describe ExecutionRunners do
       expect(manifest.execution.dig("workspace", "mode")).to eq("named_volume")
       expect(manifest.execution.dig("authority_grants", "grants")).not_to be_empty
       expect(manifest.execution.dig("ingress", "public_inbound")).to be(false)
+      expect(manifest.execution["runtime_image"]).to be_nil
     end
 
     it "re-derives authority grants when a persisted snapshot no longer matches current inputs" do
@@ -246,6 +251,19 @@ RSpec.describe ExecutionRunners do
   end
 
   describe ".from_agent_run" do
+    def runtime_image_selection_metadata(digest: "1" * 64)
+      {
+        "requested_image" => "paid-agent:latest",
+        "resolved_image" => "ghcr.io/acme/paid-agent@sha256:#{digest}",
+        "digest" => "sha256:#{digest}",
+        "architecture" => "amd64",
+        "registry" => "ghcr.io",
+        "repository" => "acme/paid-agent",
+        "provenance_reference" => "base-amd64-2026-08-17",
+        "immutable" => true
+      }
+    end
+
     # @spec CONTAINER-RUNTIME-027
     it "reuses the requested-resource envelope when building from an agent run" do
       project = create(:project)
@@ -262,6 +280,66 @@ RSpec.describe ExecutionRunners do
       expect(built.resources.cpu_quota).to eq(123_000)
       expect(built.resources.memory_bytes).to eq(5.gigabytes)
       expect(built.resources.disk_bytes).to eq(2.gigabytes)
+    end
+
+    # @spec IMMUTABLE-IMAGE-001
+    it "resolves and records the runtime image selection when building from an agent run" do
+      project = create(:project)
+      run = create(:agent_run, project: project)
+      selection_metadata = runtime_image_selection_metadata
+
+      allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("production"))
+      allow(Containers::RuntimeImageSelector).to receive(:select).and_return(
+        instance_double(
+          Containers::RuntimeImageSelector::Result,
+          image: "ghcr.io/acme/paid-agent@sha256:#{'1' * 64}",
+          metadata: selection_metadata
+        )
+      )
+
+      built = ExecutionRunners::RunSpec.from_agent_run(run)
+
+      expect(built.image).to eq("ghcr.io/acme/paid-agent@sha256:#{'1' * 64}")
+      expect(built.runtime_image_selection.metadata).to eq(selection_metadata)
+      expect(run.reload.runtime_image_selection).to eq(selection_metadata)
+    end
+
+    # @spec IMMUTABLE-IMAGE-002
+    it "reuses a runtime image selection already recorded on the run instead of re-resolving" do
+      project = create(:project)
+      run = create(:agent_run, project: project)
+      recorded_metadata = runtime_image_selection_metadata(digest: "b" * 64)
+      run.record_runtime_image_selection!(recorded_metadata)
+
+      allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("production"))
+      allow(Containers::RuntimeImageSelector).to receive(:select)
+        .and_raise(Containers::RuntimeImageCatalog::UnknownProfileError, "catalog must not be consulted")
+
+      built = ExecutionRunners::RunSpec.from_agent_run(run)
+
+      expect(built.image).to eq("ghcr.io/acme/paid-agent@sha256:#{'b' * 64}")
+      expect(built.runtime_image_selection.metadata).to eq(recorded_metadata)
+      expect(Containers::RuntimeImageSelector).not_to have_received(:select)
+    end
+
+    # @spec CONTAINER-RUNTIME-020
+    it "exposes the resolved runtime image selection through the input manifest" do
+      project = create(:project)
+      run = create(:agent_run, project: project)
+      selection_metadata = runtime_image_selection_metadata
+
+      allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("production"))
+      allow(Containers::RuntimeImageSelector).to receive(:select).and_return(
+        instance_double(
+          Containers::RuntimeImageSelector::Result,
+          image: "ghcr.io/acme/paid-agent@sha256:#{'1' * 64}",
+          metadata: selection_metadata
+        )
+      )
+
+      built = ExecutionRunners::RunSpec.from_agent_run(run, networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted)
+
+      expect(built.input_manifest.execution["runtime_image"]).to eq(selection_metadata)
     end
   end
 
