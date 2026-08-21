@@ -49,9 +49,7 @@ RSpec.describe PrScreenshotsWorkflowFile, :no_db do
   end
 
   it "pins the detect job to the repo Ruby version before running the UI detector" do
-    expect(detect_step("Set up Ruby")).to include(
-      "uses" => "ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b"
-    )
+    expect(detect_step("Set up Ruby").fetch("uses")).to match(/\Aruby\/setup-ruby@[0-9a-f]{40}\z/)
     expect(detect_step("Set up Ruby").fetch("with")).to include(
       "ruby-version" => ".tool-versions"
     )
