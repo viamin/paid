@@ -26,7 +26,7 @@ tags, and reconciliation against provider state are not yet implemented.
 
 | Criterion | Status | Evidence |
 |-----------|--------|----------|
-| Externally provisioned execution resources representable in ledger | **Partial** | Resources tracked across `agent_runs` (container_id, container_host, runner_handle), `container_pool_entries`, `worktrees`, `docker_hosts` — but no unified ledger table. This also excludes MCP sidecar containers (`app/services/containers/mcp_provisioner.rb`, tracked only via `AgentRun#mcp_sidecar_container_ids`) and shared service containers (`app/services/containers/service_provisioner.rb`, tracked via `ServiceContainer#docker_container_id`/`AgentRun#service_container_ids`), which are provisioned on external infrastructure but have no ledger representation either |
+| Externally provisioned execution resources representable in ledger | **Partial** | `ExecutionResourceLedgerEntry` (#3409) now provides a unified `execution_resource_ledger_entries` table covering every resource kind in scope (`primary_environment`, `service`, `sidecar`, `workspace`, `network`, `preview_tunnel`, `temporary_storage`) with lifecycle states, tenant scoping, and secret-free tags — but no provisioning/cleanup code path writes to it yet. Resources are still tracked ad hoc across `agent_runs` (container_id, container_host, runner_handle), `container_pool_entries`, `worktrees`, `docker_hosts`, MCP sidecar containers (`app/services/containers/mcp_provisioner.rb`), and shared service containers (`app/services/containers/service_provisioner.rb`) until Phase 2 (#3410) wires runner provisioning into the ledger |
 | Provider resources carry stable Paid ownership tags | **Partial** | Docker containers and volumes are labeled during provisioning (`app/services/containers/provision.rb`) with `paid.managed`, `paid.resource`, `paid.project_id`, and `paid.agent_run_id`/`paid.container_pool_entry_id`, plus deterministic `paid-workspace-{id}` volume naming — but `paid.account_id`, `paid.created_at`, and `paid.resource_kind` are not yet applied. MCP sidecar containers (`McpProvisioner#create_sidecar_container`) and service containers (`ServiceProvisioner#create_docker_container`) fall further short: they only apply a narrow, provisioner-specific label pair (`paid.mcp_sidecar`/`paid.agent_run_id`, and `paid.service_container`/`paid.service_container_id` respectively) with no `paid.managed`, `paid.project_id`, `paid.account_id`, `paid.created_at`, or `paid.resource_kind` |
 | Crash-window provisioning intents before provider create calls | **Gap** | `runner_handle` persisted post-provision (#3346); no pre-provision intent record |
 | Reconciliation detects ledger/provider drift and retries cleanup | **Gap** | Janitor job retries failed cleanup; no active drift detection against provider state |
@@ -200,11 +200,16 @@ runner capability model. When a runner lacks tag support:
 
 ## Implementation Plan
 
-### Phase 1: Ledger Data Model (#3409)
+### Phase 1: Ledger Data Model (#3409) — Implemented
 
-- Create `execution_resource_ledger_entries` table with lifecycle states
-- Add model with state machine transitions and validation
-- Add association from `agent_runs` and `container_pool_entries`
+- [x] Create `execution_resource_ledger_entries` table with lifecycle states
+- [x] Add model with state machine transitions and validation
+- [x] Add association from `agent_runs` (`ContainerPoolEntry` has no ledger
+      FK yet; it is not part of this phase's field list and remains future
+      work for Phase 2 runner integration)
+
+See `docs/intent/execution-resource-ledger/` for the LLD and EARS specs
+(`RESOURCE-LEDGER-001` through `RESOURCE-LEDGER-004`).
 
 ### Phase 2: Runner Integration (#3410)
 

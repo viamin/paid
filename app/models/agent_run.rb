@@ -209,6 +209,7 @@ class AgentRun < ApplicationRecord
   has_many :knowledge_usage_stats, dependent: :destroy
   has_many :agent_run_marketplace_entries, -> { order(:position) }, dependent: :destroy
   has_many :egress_security_events, dependent: :destroy
+  has_many :execution_resource_ledger_entries, dependent: :destroy
   has_many :sent_coordination_signals,
     class_name: "AgentCoordinationSignal",
     foreign_key: :source_agent_run_id,
