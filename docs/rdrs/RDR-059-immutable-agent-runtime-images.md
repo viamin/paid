@@ -256,6 +256,15 @@ Shipped behavior:
   from a container that no longer exists.
 - Local development/test continue using mutable tags such as
   `paid-agent:latest`.
+- The provider-neutral `ExecutionRunners::RunSpec` (not just the
+  Docker-specific `Containers::Provision`) resolves and carries the
+  selection: `RunSpec.from_agent_run` reuses a selection already recorded on
+  the run before falling back to a fresh catalog resolution, records the
+  result, and exposes the full `Containers::RuntimeImageSelector::Result` on
+  `RunSpec#runtime_image_selection`. `ExecutionInputManifest.from_run_spec`
+  surfaces the same metadata under `execution["runtime_image"]`, so any
+  runner — and runner conformance suites — can inspect the resolved image
+  identity without depending on Docker-specific internals.
 
 Validated by:
 
@@ -263,6 +272,7 @@ Validated by:
 - `spec/services/containers/runtime_image_catalog_spec.rb`
 - `spec/models/agent_run_runtime_image_spec.rb`
 - `spec/services/containers/provision_spec.rb`
+- `spec/services/execution_runners_spec.rb`
 
 ## Acceptance Criteria
 
@@ -308,6 +318,7 @@ The implementation is complete when:
 - `app/services/containers/runtime_image_selector.rb`
 - `app/services/containers/runtime_image_catalog.rb`
 - `config/agent_runtime_images.yml`
+- `app/services/execution_runners.rb` (`RunSpec`, `ExecutionInputManifest`)
 - `docs/intent/immutable-runtime-images/immutable-runtime-images-design.md`
 - `docs/intent/immutable-runtime-images/immutable-runtime-images-specs.md`
-  (IMMUTABLE-IMAGE-001..-005)
+  (IMMUTABLE-IMAGE-001..-006)

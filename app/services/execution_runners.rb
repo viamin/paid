@@ -330,10 +330,13 @@ module ExecutionRunners
   # +AgentRun+/+Project+ context and handed to {ExecutionRunners::Base#provision}.
   # @spec CONTAINER-RUNTIME-009
   # @spec CONTAINER-RUNTIME-011
+  # @spec IMMUTABLE-IMAGE-001
+  # @spec IMMUTABLE-IMAGE-002
+  # @spec IMMUTABLE-IMAGE-006
   RunSpec = Data.define(
     :agent_run,          # AgentRun context
     :project,            # Project context
-    :image,              # Workload image
+    :image,              # Workload image (final resolved reference)
     :command,            # Agent command to execute
     :resources,          # ComputeRequirements (cpu, memory, pids)
     :environment,        # Hash of env vars
@@ -341,13 +344,36 @@ module ExecutionRunners
     :ingress_policy,     # IngressPolicy (default deny + scoped exceptions)
     :workspace,          # WorkspaceStrategy (named_volume | bind_mount | ephemeral)
     :services,           # Array<ServiceDeclaration>
-    :secrets_config      # Auth/credential configuration
+    :secrets_config,     # Auth/credential configuration
+    :runtime_image_selection # Containers::RuntimeImageSelector::Result (RDR-059)
   ) do
+    # +runtime_image_selection+ defaults to nil so existing direct +.new+
+    # call sites (tests constructing a RunSpec by hand) do not need to know
+    # about runtime image resolution; only {.from_agent_run} populates it.
+    def initialize(agent_run:, project:, image:, command:, resources:, environment:,
+      networking_policy:, ingress_policy:, workspace:, services:, secrets_config:,
+      runtime_image_selection: nil)
+      super(
+        agent_run: agent_run, project: project, image: image, command: command,
+        resources: resources, environment: environment, networking_policy: networking_policy,
+        ingress_policy: ingress_policy, workspace: workspace, services: services,
+        secrets_config: secrets_config, runtime_image_selection: runtime_image_selection
+      )
+    end
+
     # Builds a RunSpec from an AgentRun context for the shim migration path
     # (RDR-054). Derives the workspace strategy and resource limits from the
     # agent run; the networking policy is the caller's responsibility so the
     # +NetworkingPolicy+ flows in as a domain object rather than being
     # reconstructed from Docker signals inside the runner.
+    #
+    # Resolves the runtime image profile/tag +options[:image]+ requests to its
+    # final identity (an immutable digest in production, the mutable tag
+    # elsewhere — RDR-059) and carries the full selection on +runtime_image_selection+
+    # so any runner — and the {ExecutionInputManifest} handed across the
+    # control-plane/runner boundary — can inspect the resolved image identity
+    # without depending on the Docker-specific +Containers::Provision+
+    # internals that used to be the only place this ran.
     # @param agent_run [AgentRun]
     # @param networking_policy [NetworkingPolicy, nil] required networking policy
     # @param options [Hash] container options (memory_bytes, cpu_quota, etc.)
@@ -361,11 +387,12 @@ module ExecutionRunners
         disk_bytes: positive_numeric_option(options[:disk_bytes]) || requested_resources[:disk_bytes],
         pids_limit: positive_numeric_option(options[:pids_limit]) || Containers::Provision::DEFAULTS[:pids_limit]
       )
+      selection = resolve_runtime_image_selection(agent_run, requested_image: options[:image])
 
       new(
         agent_run: agent_run,
         project: agent_run.project,
-        image: options[:image],
+        image: selection.image,
         command: nil, # Set at start time
         resources: resources,
         environment: agent_run.service_environment || {},
@@ -373,13 +400,36 @@ module ExecutionRunners
         workspace: workspace,
         ingress_policy: agent_run.execution_ingress_policy,
         services: [],
-        secrets_config: nil
+        secrets_config: nil,
+        runtime_image_selection: selection
       )
     end
 
     def self.positive_numeric_option(value)
       value if value.to_i.positive?
     end
+
+    # Resolves the run's final runtime image identity, reusing a selection
+    # already recorded on the run (a Temporal retry rebuilding the same spec
+    # must not risk a different digest than the one already in flight) before
+    # falling back to a fresh catalog resolution. Records the resolved
+    # selection on the run so historical runs show the exact digest and
+    # architecture used, mirroring +Containers::Provision#resolve_runtime_image_selection+
+    # (which reuses this same recorded value once the runner starts
+    # provisioning, so the two never disagree).
+    # @spec IMMUTABLE-IMAGE-001
+    # @spec IMMUTABLE-IMAGE-002
+    def self.resolve_runtime_image_selection(agent_run, requested_image: nil)
+      recorded_metadata = agent_run.runtime_image_selection
+      selection = if recorded_metadata.present?
+        Containers::RuntimeImageSelector::Result.from_metadata(recorded_metadata)
+      else
+        Containers::RuntimeImageSelector.select(project: agent_run.project, requested_image: requested_image)
+      end
+      agent_run.record_runtime_image_selection!(selection.metadata)
+      selection
+    end
+    private_class_method :resolve_runtime_image_selection
 
     # Derives the workspace strategy from the agent run: a legacy bind mount
     # when an explicit worktree path is present, otherwise the default named
@@ -903,6 +953,7 @@ module ExecutionRunners
   # credentials). Secret values are excluded by construction — credential lane
   # entries only name sources/keys, never values.
   # @spec CONTAINER-RUNTIME-018
+  # @spec IMMUTABLE-IMAGE-006
   ExecutionInputManifest = Data.define(
     :schema_version,
     :repository,
@@ -936,6 +987,7 @@ module ExecutionRunners
           "goal" => agent_run&.goal,
           "execution_origin" => agent_run&.execution_origin,
           "image" => spec.image,
+          "runtime_image" => spec.runtime_image_selection&.metadata,
           "command" => spec.command,
           "resources" => ExecutionRunners.json_value(spec.resources&.to_h || {}),
           "workspace" => {
