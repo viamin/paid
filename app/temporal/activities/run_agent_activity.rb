@@ -1807,21 +1807,18 @@ module Activities
       end
 
       prompt = runner_preflight_prompt_for(runner)
-      command = build_command(command_context, prompt, agent_run: agent_run)
-      env = command_env_for(command_context, prompt)
-      preparation = command_preparation_for(command_context, prompt, agent_run: agent_run)
       preflight_timeout = preflight_timeout_seconds_for(command_context.runner_candidate, command_context.user)
 
       smoke_attempt = 0
       result = begin
         smoke_attempt += 1
-        container_service.execute(
-          command,
-          timeout: preflight_timeout,
-          idle_timeout: preflight_timeout,
-          env: env,
-          preparation: preparation,
-          abort_patterns: aggregated_abort_patterns
+        execute_smoke_with_state_repair(
+          agent_run: agent_run,
+          container_service: container_service,
+          command_context: command_context,
+          runner: runner,
+          preflight_timeout: preflight_timeout,
+          prompt: prompt
         )
       rescue Containers::Provision::TimeoutError => e
         if smoke_attempt < 2
@@ -1840,10 +1837,7 @@ module Activities
         raise_preflight_timeout!(agent_run: agent_run, runner: runner, reason: reason)
       end
 
-      stdout = normalize_output_text(result[:stdout])
-      stderr = normalize_output_text(result[:stderr])
-      combined_output = [ stderr, stdout ].compact.join("\n").strip
-      sanitized_output = strip_prompt_echo(combined_output, prompt)
+      sanitized_output = smoke_output(result, prompt)
 
       if result.success?
         # Keep the same precedence as the main execution path so preflight
@@ -1912,6 +1906,84 @@ module Activities
       end
 
       raise_preflight_failure!(agent_run: agent_run, runner: runner, reason: reason)
+    end
+
+    # @spec RUNNER-FALLBACK-004
+    # Runs the runner smoke exec. When an OpenCode-engine CLI (OpenCode,
+    # Kilocode fork) dies at startup because its state tmpfs filled up (a long
+    # sibling attempt sharing the container can exhaust it — see
+    # CONTAINER-RUNTIME-029), wipes and re-seeds the state dir once, then
+    # retries the smoke. Session data from the failed attempt is disposable:
+    # stdout/JSONL remains the source of truth.
+    def execute_smoke_with_state_repair(agent_run:, container_service:, command_context:, runner:, preflight_timeout:, prompt:)
+      command = build_command(command_context, prompt, agent_run: agent_run)
+      env = command_env_for(command_context, prompt)
+      preparation = command_preparation_for(command_context, prompt, agent_run: agent_run)
+      attempt = 0
+      loop do
+        attempt += 1
+        result = container_service.execute(
+          command,
+          timeout: preflight_timeout,
+          idle_timeout: preflight_timeout,
+          env: env,
+          preparation: preparation,
+          abort_patterns: aggregated_abort_patterns
+        )
+        return result if result.success? || attempt >= 2 || !runner_storage_failure?(runner, smoke_output(result, prompt))
+
+        repair_runner_state_dir!(container_service, agent_run: agent_run, runner: runner)
+      end
+    end
+
+    # @spec RUNNER-FALLBACK-004
+    # OpenCode-engine CLIs keep local SQLite state on a size-capped tmpfs; once
+    # full, every subsequent start in the container fails on WAL checkpoint.
+    STORAGE_FAILURE_PATTERN = /Failed query: PRAGMA wal_checkpoint/
+
+    # runner_key => [state dir, image seed dir] for repairable state dirs.
+    RUNNER_STATE_DIRS = {
+      "opencode" => [ "/home/agent/.local/share/opencode", "/opt/opencode-seed" ],
+      "kilocode" => [ "/home/agent/.local/share/kilo", "/opt/kilo-seed" ]
+    }.freeze
+
+    def runner_storage_failure?(runner, output)
+      RUNNER_STATE_DIRS.key?(runner.to_s) && output.to_s.match?(STORAGE_FAILURE_PATTERN)
+    end
+
+    # @spec RUNNER-FALLBACK-004
+    def repair_runner_state_dir!(container_service, agent_run:, runner:)
+      state_dir, seed_dir = RUNNER_STATE_DIRS.fetch(runner.to_s)
+      # The state dir is a tmpfs mountpoint (CONTAINER-RUNTIME-029), so it
+      # cannot be rm -rf'd — removing the contents works but rmdir of the
+      # mountpoint fails EBUSY, which would short-circuit the seed restore.
+      result = container_service.execute(
+        [ "sh", "-c",
+         "find #{state_dir} -mindepth 1 -delete && " \
+         "if [ -d #{seed_dir} ]; then cp -a #{seed_dir}/. #{state_dir}/; fi" ],
+        timeout: 30,
+        stream: false
+      )
+      if result.success?
+        logger.warn(
+          message: "agent_execution.preflight_runner_state_repaired",
+          agent_run_id: agent_run.id,
+          runner: runner.to_s
+        )
+      else
+        logger.error(
+          message: "agent_execution.preflight_runner_state_repair_failed",
+          agent_run_id: agent_run.id,
+          runner: runner.to_s,
+          exit_code: result[:exit_code]
+        )
+      end
+    end
+
+    def smoke_output(result, prompt)
+      stdout = normalize_output_text(result[:stdout])
+      stderr = normalize_output_text(result[:stderr])
+      strip_prompt_echo([ stderr, stdout ].compact.join("\n").strip, prompt)
     end
 
     def run_harness_preflight!(agent_run:, harness_provider:, runner:, execution_env:)

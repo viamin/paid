@@ -28,3 +28,16 @@
   `StreamingEventProcessor#last_error_message`,
   `Activities::RunAgentActivity#output_abort_rate_limit_error?`.
   *Test:* `spec/temporal/activities/run_agent_activity_spec.rb`.
+
+- [x] **RUNNER-FALLBACK-004** — When an OpenCode-engine runner's (OpenCode or
+  Kilocode) smoke preflight exits non-zero with a local storage failure
+  signature (`Failed query: PRAGMA wal_checkpoint` — the state tmpfs was
+  filled by a prior long attempt sharing the container), the system SHALL
+  wipe and re-seed that CLI's state directory from its image seed
+  (`/opt/opencode-seed` / `/opt/kilo-seed`) and retry the smoke once before
+  failing the runner, so a poisoned container does not cascade into
+  exhausting every sibling runner on the same engine (e.g. run 3537:
+  Minimax filled the tmpfs, GLM's preflight then failed in 2.8s).
+  *Code:* `Activities::RunAgentActivity#execute_smoke_with_state_repair`,
+  `#runner_storage_failure?`, `#repair_runner_state_dir!`.
+  *Test:* `spec/temporal/activities/run_agent_activity_spec.rb`.
