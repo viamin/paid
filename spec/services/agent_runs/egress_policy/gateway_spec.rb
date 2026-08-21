@@ -58,9 +58,15 @@ RSpec.describe AgentRuns::EgressPolicy::Gateway do
   end
 
   describe "#ensure!" do
-    it "delegates setup to the adapter" do
-      expect(adapter).to receive(:ensure!).with(agent_run: agent_run, snapshot: snapshot, backend: backend)
+    before do
+      allow(adapter).to receive(:ensure!)
+      allow(adapter).to receive(:install_allowlist!)
+    end
+
+    it "delegates setup and allowlist installation to the adapter" do
       gateway.ensure!
+      expect(adapter).to have_received(:ensure!).with(agent_run: agent_run, snapshot: snapshot, backend: backend)
+      expect(adapter).to have_received(:install_allowlist!).with(agent_run: agent_run, snapshot: snapshot, backend: backend)
     end
 
     it "lets the adapter's UnavailableError propagate (fail-closed contract)" do
@@ -71,6 +77,40 @@ RSpec.describe AgentRuns::EgressPolicy::Gateway do
       expect { gateway.ensure! }.to raise_error(
         AgentRuns::EgressPolicy::Gateway::UnavailableError, /iptables missing/
       )
+    end
+
+    it "propagates UnavailableError from allowlist installation" do
+      allow(adapter).to receive(:install_allowlist!).and_raise(
+        AgentRuns::EgressPolicy::Gateway::UnavailableError, "exec failed"
+      )
+
+      expect { gateway.ensure! }.to raise_error(
+        AgentRuns::EgressPolicy::Gateway::UnavailableError, /exec failed/
+      )
+    end
+  end
+
+  describe "#collect_denials!" do
+    it "reads denials from the adapter and persists them as EgressSecurityEvent rows" do
+      denials = [
+        { host: "evil.example.com", port: 443, matched_rule: "no matching rule", scheme: "https" }
+      ]
+      allow(adapter).to receive(:collect_denials).with(agent_run: agent_run, backend: backend).and_return(denials)
+
+      expect { gateway.collect_denials! }.to change(EgressSecurityEvent, :count).by(1)
+      expect(EgressSecurityEvent.last).to have_attributes(
+        event_kind: "denied_egress",
+        destination_host: "evil.example.com",
+        destination_port: 443,
+        source_layer: "gateway",
+        agent_run: agent_run
+      )
+    end
+
+    it "does nothing when the adapter returns no denials" do
+      allow(adapter).to receive(:collect_denials).and_return([])
+
+      expect { gateway.collect_denials! }.not_to change(EgressSecurityEvent, :count)
     end
   end
 

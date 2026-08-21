@@ -56,6 +56,33 @@ module AgentRuns
           raise NotImplementedError, "#{self.class} must implement ##{__method__}"
         end
 
+        # Installs the per-run allowlist into the gateway so it can
+        # filter traffic. Called after +ensure!+ succeeds so the
+        # gateway process knows which hosts this run is allowed to
+        # reach. Implementations must be idempotent — re-installing
+        # the same allowlist is safe.
+        #
+        # @param agent_run [AgentRun] the run that owns this gateway
+        # @param snapshot [Snapshot] the resolved egress policy snapshot
+        # @param backend [Object] the backend descriptor
+        # @return [void]
+        # @raise [Gateway::UnavailableError] when the allowlist cannot be installed
+        def install_allowlist!(agent_run:, snapshot:, backend:)
+          raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+        end
+
+        # Collects denial events from the gateway after the run
+        # completes. Returns an array of hashes, each carrying at
+        # least +:host+, +:port+, and +:matched_rule+ so the caller
+        # can feed them to {Gateway#record_denial!}.
+        #
+        # @param agent_run [AgentRun] the completed run
+        # @param backend [Object] the backend descriptor
+        # @return [Array<Hash>] denied request records (may be empty)
+        def collect_denials(agent_run:, backend:)
+          []
+        end
+
         # Whether this adapter can enforce the policy on the given backend.
         # Returns +false+ when the platform lacks the primitives (CNI
         # without NetworkPolicy, provider firewall that does not accept

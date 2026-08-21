@@ -35,13 +35,15 @@ module AgentRuns
         @adapter = adapter
       end
 
-      # Materializes the gateway on the host backing +backend+ so the
-      # container can route its outbound HTTP(S) through it. Adapters are
-      # required to fail closed: if the gateway cannot be brought up, the
-      # call MUST raise so the runner aborts provisioning rather than
-      # starting a container with no enforcement.
+      # Materializes the gateway on the host backing +backend+ and
+      # installs the per-run allowlist so the gateway can filter
+      # outbound traffic. Adapters are required to fail closed: if the
+      # gateway cannot be brought up or the allowlist cannot be
+      # installed, the call MUST raise so the runner aborts provisioning
+      # rather than starting a container with no enforcement.
       def ensure!
         adapter.ensure!(agent_run: agent_run, snapshot: snapshot, backend: backend)
+        adapter.install_allowlist!(agent_run: agent_run, snapshot: snapshot, backend: backend)
       end
 
       # Returns the gateway URL as +host:port+ for the runner to allow
@@ -56,6 +58,22 @@ module AgentRuns
       # rules and the gateway's denials carry the same shape as the snapshot.
       def allowlist_for
         adapter.allowlist_for(snapshot: snapshot)
+      end
+
+      # Collects denial events from the gateway sidecar and persists
+      # them as {EgressSecurityEvent} rows. Call after the run completes
+      # so the audit trail includes every denied request the gateway
+      # logged during execution.
+      def collect_denials!
+        denials = adapter.collect_denials(agent_run: agent_run, backend: backend)
+        denials.each do |denial|
+          record_denial!(
+            host: denial[:host],
+            port: denial[:port],
+            matched_rule: denial[:matched_rule],
+            scheme: denial[:scheme]
+          )
+        end
       end
 
       # Records a denied egress attempt against the gateway so operators

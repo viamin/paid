@@ -60,6 +60,7 @@ class LocalDockerRunner < Base
         worktree_path: self.class.worktree_path_for(spec),
         backend: backend,
         networking_policy: policy,
+        egress_gateway_url: gateway&.gateway_url,
         **provision_options(spec)
       )
       result = service.provision

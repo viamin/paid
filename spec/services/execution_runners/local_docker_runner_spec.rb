@@ -58,7 +58,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     it "delegates to Containers::Provision and returns a RunnerHandle" do
       expect(Containers::Provision).to receive(:new).with(
         agent_run: agent_run, project: agent_run.project, worktree_path: nil, backend: backend,
-        networking_policy: run_spec.networking_policy,
+        networking_policy: run_spec.networking_policy, egress_gateway_url: nil,
         image: "paid/agent:latest", memory_bytes: 1024, cpu_quota: 100_000, pids_limit: 50
       ).and_return(provision_service)
       allow(provision_service).to receive(:provision).and_return(
@@ -507,6 +507,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     it "threads the gateway URL into the firewall destinations as {ip:, port:}" do
       seed_snapshot!(destinations: [ { "host" => "api.partner.com", "port" => 443, "source" => "project_allowlist" } ])
       allow(backend).to receive(:get_container).with("egress-gateway").and_return(instance_double(Docker::Container))
+      allow(backend).to receive(:exec_in_container)
       stub_provision_success!
 
       expect(NetworkPolicy).to receive(:apply_firewall_rules)
@@ -526,6 +527,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
         { "host" => "metrics.example.com", "port" => 8443, "source" => "account_allowlist" }
       ])
       allow(backend).to receive(:get_container).with("egress-gateway").and_return(instance_double(Docker::Container))
+      allow(backend).to receive(:exec_in_container)
       stub_provision_success!
 
       expect(NetworkPolicy).to receive(:apply_firewall_rules) do |_container, **kwargs|
@@ -556,7 +558,8 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
         AgentRuns::EgressPolicy::GatewayAdapters::Docker,
         gateway_url: "egress-gateway:3128",
         allowlist_for: [],
-        ensure!: nil
+        ensure!: nil,
+        install_allowlist!: nil
       )
       allow(described_class).to receive(:gateway_adapter).and_return(adapter)
       stub_provision_success!

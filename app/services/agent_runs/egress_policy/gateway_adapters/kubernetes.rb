@@ -31,6 +31,10 @@ module AgentRuns
           raise Gateway::UnavailableError, "kubernetes adapter requires a Kubernetes backend" unless capable?(backend: backend)
         end
 
+        def install_allowlist!(agent_run:, snapshot:, backend:)
+          raise Gateway::UnavailableError, "kubernetes adapter requires a Kubernetes backend" unless capable?(backend: backend)
+        end
+
         def gateway_url(snapshot:, backend:)
           "#{GATEWAY_HOST}.#{namespace_for(backend)}.svc.cluster.local:#{GATEWAY_PORT}"
         end

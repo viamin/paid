@@ -57,4 +57,64 @@ RSpec.describe AgentRuns::EgressPolicy::GatewayAdapters::Docker do
     expect { adapter.ensure!(agent_run: agent_run, snapshot: snapshot, backend: backend) }
       .to raise_error(AgentRuns::EgressPolicy::Gateway::UnavailableError, /egress gateway lookup failed/)
   end
+
+  describe "#install_allowlist!" do
+    let(:gateway_container) { instance_double(Docker::Container) }
+
+    before do
+      allow(backend).to receive(:get_container).with("egress-gateway").and_return(gateway_container)
+      allow(backend).to receive(:exec_in_container)
+    end
+
+    it "writes the per-run allowlist as JSON into the gateway sidecar" do
+      adapter.install_allowlist!(agent_run: agent_run, snapshot: snapshot, backend: backend)
+
+      expect(backend).to have_received(:exec_in_container).with(
+        gateway_container,
+        array_including("sh", "-c", a_string_matching(/base64 -d/)),
+        hash_including(wait: 5)
+      )
+    end
+
+    it "raises Gateway::UnavailableError when the exec fails" do
+      allow(backend).to receive(:exec_in_container).and_raise(Docker::Error::DockerError, "exec failed")
+
+      expect { adapter.install_allowlist!(agent_run: agent_run, snapshot: snapshot, backend: backend) }
+        .to raise_error(AgentRuns::EgressPolicy::Gateway::UnavailableError, /failed to install allowlist/)
+    end
+  end
+
+  describe "#collect_denials" do
+    let(:gateway_container) { instance_double(Docker::Container) }
+
+    before do
+      allow(backend).to receive(:get_container).with("egress-gateway").and_return(gateway_container)
+    end
+
+    it "parses denial events from the sidecar log" do
+      log_lines = [
+        '{"host":"evil.com","port":443,"matched_rule":"no match","scheme":"https"}',
+        '{"host":"bad.org","port":80,"matched_rule":"no match","scheme":"http"}'
+      ].join("\n") + "\n"
+      allow(backend).to receive(:exec_in_container).and_return([ [ log_lines ], [], 0 ])
+
+      denials = adapter.collect_denials(agent_run: agent_run, backend: backend)
+      expect(denials).to eq([
+        { host: "evil.com", port: 443, matched_rule: "no match", scheme: "https" },
+        { host: "bad.org", port: 80, matched_rule: "no match", scheme: "http" }
+      ])
+    end
+
+    it "returns an empty array when the denial log does not exist" do
+      allow(backend).to receive(:exec_in_container).and_return([ [ "" ], [], 0 ])
+
+      expect(adapter.collect_denials(agent_run: agent_run, backend: backend)).to eq([])
+    end
+
+    it "returns an empty array on Docker errors" do
+      allow(backend).to receive(:exec_in_container).and_raise(Docker::Error::DockerError, "container gone")
+
+      expect(adapter.collect_denials(agent_run: agent_run, backend: backend)).to eq([])
+    end
+  end
 end

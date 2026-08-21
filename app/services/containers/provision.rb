@@ -241,7 +241,8 @@ module Containers
     #   intended caller — direct callers should leave it nil and keep the
     #   existing fallback behavior.
     def initialize(agent_run: nil, project: nil, worktree_path: nil, pool_entry: nil, workspace_volume: nil,
-      backend: Containers.backend, networking_policy: nil, credential_maintenance: false, **options)
+      backend: Containers.backend, networking_policy: nil, credential_maintenance: false,
+      egress_gateway_url: nil, **options)
       raise ArgumentError, "agent_run or project is required" if agent_run.nil? && project.nil? && !credential_maintenance
 
       if options.key?(:network)
@@ -260,6 +261,7 @@ module Containers
       @preview_tunnel_option = options.delete(:preview_tunnel)
       @pool_mode = options.delete(:pool_mode) { false }
       @networking_policy = networking_policy
+      @egress_gateway_url = egress_gateway_url
       @raw_options = options
       @backend = backend
       @container = nil
@@ -2921,6 +2923,8 @@ module Containers
         "GIT_COMMITTER_EMAIL=#{git_identity.email}"
       ])
 
+      env.concat(egress_proxy_environment) if @egress_gateway_url.present?
+
       env
     end
 
@@ -2961,6 +2965,34 @@ module Containers
         harness_key = RunnerSupport.harness_runner_key_for(key).to_sym
         AgentHarness.provider(harness_key).cli_env_overrides.map { |k, v| "#{k}=#{v}" }
       end
+    end
+
+    # HTTP(S)_PROXY environment variables that route the agent container's
+    # outbound traffic through the egress gateway (RDR-055). The gateway
+    # inspects every CONNECT/HTTP request and allows only destinations on
+    # the per-run allowlist. NO_PROXY exempts Paid-local services that
+    # the container already reaches directly via iptables rules.
+    def egress_proxy_environment
+      proxy_url = "http://#{@egress_gateway_url}"
+      no_proxy = egress_no_proxy_hosts.join(",")
+
+      [
+        "HTTP_PROXY=#{proxy_url}",
+        "HTTPS_PROXY=#{proxy_url}",
+        "http_proxy=#{proxy_url}",
+        "https_proxy=#{proxy_url}",
+        "NO_PROXY=#{no_proxy}",
+        "no_proxy=#{no_proxy}"
+      ]
+    end
+
+    # Hosts that must bypass the egress gateway and connect directly.
+    # These are Paid-local services on the restricted Docker network
+    # whose traffic should never leave the platform perimeter.
+    def egress_no_proxy_hosts
+      hosts = %w[localhost 127.0.0.1 paid-proxy egress-gateway]
+      hosts << "*.internal" # Docker internal DNS
+      hosts
     end
 
     def exec_environment(env)

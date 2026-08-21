@@ -28,6 +28,10 @@ module AgentRuns
           raise Gateway::UnavailableError, "managed-machine adapter requires a provider firewall backend" unless capable?(backend: backend)
         end
 
+        def install_allowlist!(agent_run:, snapshot:, backend:)
+          raise Gateway::UnavailableError, "managed-machine adapter requires a provider firewall backend" unless capable?(backend: backend)
+        end
+
         def gateway_url(snapshot:, backend:)
           "#{DEFAULT_GATEWAY_HOST}:#{DEFAULT_GATEWAY_PORT}"
         end
