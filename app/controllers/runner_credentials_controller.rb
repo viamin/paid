@@ -3,6 +3,8 @@
 class RunnerCredentialsController < ApplicationController
   SETUP_TOKEN_AUTH_KIND = "oauth_token"
 
+  rescue_from ActiveRecord::RecordNotFound, with: :render_not_found
+
   before_action :set_runner
   before_action :set_runner_credential, only: [ :show, :destroy ]
 
@@ -95,5 +97,9 @@ class RunnerCredentialsController < ApplicationController
 
   def runner_credential_params
     params.require(:runner_credential).permit(:token, :long_lived)
+  end
+
+  def render_not_found
+    head :not_found
   end
 end

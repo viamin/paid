@@ -4,6 +4,8 @@ module Projects
   class KnowledgeRecommendationsController < ApplicationController
     SUPPORTED_ACTIONS = %w[accept dismiss].freeze
 
+    rescue_from ActiveRecord::RecordNotFound, with: :render_not_found
+
     before_action :set_project
     before_action :set_recommendation, only: :update
 
@@ -74,6 +76,10 @@ module Projects
 
       @recommendation.errors.add(:dismissal_reason, "can't be blank")
       raise ActiveRecord::RecordInvalid, @recommendation
+    end
+
+    def render_not_found
+      head :not_found
     end
   end
 end

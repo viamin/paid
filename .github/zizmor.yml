@@ -44,5 +44,5 @@ rules:
       # trusted source, not attacker-controlled PR content:
       # - The "Normalize test master key" step writes a repo secret
       #   (`secrets.RAILS_MASTER_KEY`), not PR-controlled data.
-      - pr-screenshots-publish.yml:73
-      - pr-screenshots.yml:143
+      - pr-screenshots-publish.yml:75
+      - pr-screenshots.yml:145

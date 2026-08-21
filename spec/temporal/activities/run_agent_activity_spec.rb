@@ -44,6 +44,14 @@ RSpec.describe Activities::RunAgentActivity do
       install_co_author_hook: nil
     )
 
+    # Fallback reprovisioning reaches AgentRun#provision_container, which
+    # derives and persists execution authority grants (RDR-058) before
+    # provisioning. The derivation inspects Docker config mounts via
+    # Containers::Provision.networking_policy_for, so it needs a stubbed
+    # policy like every other spec exercising provision_container.
+    allow(Containers::Provision).to receive(:networking_policy_for)
+      .and_return(ExecutionRunners::NetworkingPolicy.proxy_restricted)
+
     # By default, skip the runner preflight so tests that don't care
     # about preflight behaviour aren't affected by the smoke exec call.
     # Tests that verify preflight paths override this stub.
@@ -107,6 +115,20 @@ RSpec.describe Activities::RunAgentActivity do
       provider_api_key: api_key,
       config: {
         "opencode" => {
+          "model" => "moonshotai/kimi-k2",
+          "api_provider" => "openrouter"
+        }
+      })
+  end
+
+  def create_kilocode_provider_for(user)
+    api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+    create(:provider, :api_key,
+      user: user,
+      provider_key: "kilocode",
+      provider_api_key: api_key,
+      config: {
+        "kilocode" => {
           "model" => "moonshotai/kimi-k2",
           "api_provider" => "openrouter"
         }
@@ -194,6 +216,15 @@ RSpec.describe Activities::RunAgentActivity do
       oom_killed: true,
       memory_limit_bytes: 4 * 1024 * 1024 * 1024,
       container_running: false
+    )
+  end
+
+  def wal_checkpoint_preflight_failure
+    Containers::Provision::Result.failure(
+      error: "exit 1",
+      stdout: "",
+      stderr: "\e[91m\e[1mError: \e[0mUnexpected error\n\nFailed query: PRAGMA wal_checkpoint(PASSIVE)\nparams: ",
+      exit_code: 1
     )
   end
 
@@ -3312,6 +3343,111 @@ expect(container_service).to receive(:execute).with(
           described_class::RunnerExecutionError,
           /Preflight check failed: Agent exited with code 137 \(process killed by SIGKILL; container OOM not reported; configured memory limit 4.0 GB, container_running=true\): > build · MiniMax-M3/
         )
+      end
+
+      # @spec RUNNER-FALLBACK-004
+      it "repairs the opencode state tmpfs and retries when preflight fails on a WAL checkpoint error" do
+        opencode_provider = create_opencode_provider_for(user)
+        checkpoint_failure = wal_checkpoint_preflight_failure
+        repair_success = Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0)
+        allow(container_service).to receive(:execute).and_return(checkpoint_failure, repair_success, exec_success)
+
+        expect {
+          run_direct_outbound_preflight(
+            activity: activity,
+            agent_run: agent_run,
+            container_service: container_service,
+            provider: opencode_provider,
+            user: user
+          )
+        }.not_to raise_error
+
+        # The state dir is a tmpfs mountpoint: the repair must wipe its
+        # contents in place (rm -rf on the mountpoint fails EBUSY and would
+        # short-circuit the seed restore) and re-seed from the image.
+        expect(container_service).to have_received(:execute).with(
+          [ "sh", "-c",
+           "find /home/agent/.local/share/opencode -mindepth 1 -delete && " \
+           "if [ -d /opt/opencode-seed ]; then cp -a /opt/opencode-seed/. /home/agent/.local/share/opencode/; fi" ],
+          hash_including(timeout: 30, stream: false)
+        )
+        expect(container_service).to have_received(:execute).exactly(3).times
+      end
+
+      # @spec RUNNER-FALLBACK-004 — the repair exec result must not be
+      # silently discarded: a non-zero exit is logged and the bounded retry
+      # still runs.
+      it "logs a repair failure and still retries the smoke once when the repair command fails" do
+        opencode_provider = create_opencode_provider_for(user)
+        repair_failure = Containers::Provision::Result.failure(error: "exit 1", stdout: "", stderr: "cannot delete", exit_code: 1)
+        logger = instance_double(ActiveSupport::Logger, debug: nil, info: nil, warn: nil, error: nil)
+        allow(activity).to receive(:logger).and_return(logger)
+        allow(container_service).to receive(:execute).and_return(wal_checkpoint_preflight_failure, repair_failure, exec_success)
+
+        expect {
+          run_direct_outbound_preflight(
+            activity: activity,
+            agent_run: agent_run,
+            container_service: container_service,
+            provider: opencode_provider,
+            user: user
+          )
+        }.not_to raise_error
+
+        expect(logger).to have_received(:error).with(hash_including(
+          message: "agent_execution.preflight_runner_state_repair_failed", agent_run_id: agent_run.id, runner: "opencode", exit_code: 1))
+        expect(logger).not_to have_received(:warn).with(hash_including(message: "agent_execution.preflight_runner_state_repaired"))
+        expect(container_service).to have_received(:execute).exactly(3).times
+      end
+
+      # @spec RUNNER-FALLBACK-004
+      it "fails the preflight when the WAL checkpoint failure persists after repair" do
+        opencode_provider = create_opencode_provider_for(user)
+        checkpoint_failure = wal_checkpoint_preflight_failure
+        repair_success = Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0)
+        allow(container_service).to receive(:execute).and_return(checkpoint_failure, repair_success, checkpoint_failure)
+
+        expect {
+          run_direct_outbound_preflight(
+            activity: activity,
+            agent_run: agent_run,
+            container_service: container_service,
+            provider: opencode_provider,
+            user: user
+          )
+        }.to raise_error(
+          described_class::RunnerExecutionError,
+          /Failed query: PRAGMA wal_checkpoint/
+        )
+
+        expect(container_service).to have_received(:execute).exactly(3).times
+      end
+
+      # @spec RUNNER-FALLBACK-004 — Kilocode is an OpenCode fork with the
+      # identical WAL-checkpoint ENOSPC failure signature.
+      it "repairs the kilocode state tmpfs and retries when preflight fails on a WAL checkpoint error" do
+        kilocode_provider = create_kilocode_provider_for(user)
+        checkpoint_failure = wal_checkpoint_preflight_failure
+        repair_success = Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0)
+        allow(container_service).to receive(:execute).and_return(checkpoint_failure, repair_success, exec_success)
+
+        expect {
+          run_direct_outbound_preflight(
+            activity: activity,
+            agent_run: agent_run,
+            container_service: container_service,
+            provider: kilocode_provider,
+            user: user
+          )
+        }.not_to raise_error
+
+        expect(container_service).to have_received(:execute).with(
+          [ "sh", "-c",
+           "find /home/agent/.local/share/kilo -mindepth 1 -delete && " \
+           "if [ -d /opt/kilo-seed ]; then cp -a /opt/kilo-seed/. /home/agent/.local/share/kilo/; fi" ],
+          hash_including(timeout: 30, stream: false)
+        )
+        expect(container_service).to have_received(:execute).exactly(3).times
       end
 
       it "marks the runner rate-limited when preflight surfaces an insufficient credits error" do

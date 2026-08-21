@@ -331,10 +331,13 @@ module ExecutionRunners
   # +AgentRun+/+Project+ context and handed to {ExecutionRunners::Base#provision}.
   # @spec CONTAINER-RUNTIME-009
   # @spec CONTAINER-RUNTIME-011
+  # @spec IMMUTABLE-IMAGE-001
+  # @spec IMMUTABLE-IMAGE-002
+  # @spec IMMUTABLE-IMAGE-006
   RunSpec = Data.define(
     :agent_run,          # AgentRun context
     :project,            # Project context
-    :image,              # Workload image
+    :image,              # Workload image (final resolved reference)
     :command,            # Agent command to execute
     :resources,          # ComputeRequirements (cpu, memory, pids)
     :environment,        # Hash of env vars
@@ -342,13 +345,36 @@ module ExecutionRunners
     :ingress_policy,     # IngressPolicy (default deny + scoped exceptions)
     :workspace,          # WorkspaceStrategy (named_volume | bind_mount | ephemeral)
     :services,           # Array<ServiceDeclaration>
-    :secrets_config      # Auth/credential configuration
+    :secrets_config,     # Auth/credential configuration
+    :runtime_image_selection # Containers::RuntimeImageSelector::Result (RDR-059)
   ) do
+    # +runtime_image_selection+ defaults to nil so existing direct +.new+
+    # call sites (tests constructing a RunSpec by hand) do not need to know
+    # about runtime image resolution; only {.from_agent_run} populates it.
+    def initialize(agent_run:, project:, image:, command:, resources:, environment:,
+      networking_policy:, ingress_policy:, workspace:, services:, secrets_config:,
+      runtime_image_selection: nil)
+      super(
+        agent_run: agent_run, project: project, image: image, command: command,
+        resources: resources, environment: environment, networking_policy: networking_policy,
+        ingress_policy: ingress_policy, workspace: workspace, services: services,
+        secrets_config: secrets_config, runtime_image_selection: runtime_image_selection
+      )
+    end
+
     # Builds a RunSpec from an AgentRun context for the shim migration path
     # (RDR-054). Derives the workspace strategy and resource limits from the
     # agent run; the networking policy is the caller's responsibility so the
     # +NetworkingPolicy+ flows in as a domain object rather than being
     # reconstructed from Docker signals inside the runner.
+    #
+    # Resolves the runtime image profile/tag +options[:image]+ requests to its
+    # final identity (an immutable digest in production, the mutable tag
+    # elsewhere — RDR-059) and carries the full selection on +runtime_image_selection+
+    # so any runner — and the {ExecutionInputManifest} handed across the
+    # control-plane/runner boundary — can inspect the resolved image identity
+    # without depending on the Docker-specific +Containers::Provision+
+    # internals that used to be the only place this ran.
     # @param agent_run [AgentRun]
     # @param networking_policy [NetworkingPolicy, nil] required networking policy
     # @param options [Hash] container options (memory_bytes, cpu_quota, etc.)
@@ -362,11 +388,12 @@ module ExecutionRunners
         disk_bytes: positive_numeric_option(options[:disk_bytes]) || requested_resources[:disk_bytes],
         pids_limit: positive_numeric_option(options[:pids_limit]) || Containers::Provision::DEFAULTS[:pids_limit]
       )
+      selection = resolve_runtime_image_selection(agent_run, requested_image: options[:image])
 
       new(
         agent_run: agent_run,
         project: agent_run.project,
-        image: options[:image],
+        image: selection.image,
         command: nil, # Set at start time
         resources: resources,
         environment: agent_run.service_environment || {},
@@ -374,13 +401,36 @@ module ExecutionRunners
         workspace: workspace,
         ingress_policy: agent_run.execution_ingress_policy,
         services: [],
-        secrets_config: nil
+        secrets_config: nil,
+        runtime_image_selection: selection
       )
     end
 
     def self.positive_numeric_option(value)
       value if value.to_i.positive?
     end
+
+    # Resolves the run's final runtime image identity, reusing a selection
+    # already recorded on the run (a Temporal retry rebuilding the same spec
+    # must not risk a different digest than the one already in flight) before
+    # falling back to a fresh catalog resolution. Records the resolved
+    # selection on the run so historical runs show the exact digest and
+    # architecture used, mirroring +Containers::Provision#resolve_runtime_image_selection+
+    # (which reuses this same recorded value once the runner starts
+    # provisioning, so the two never disagree).
+    # @spec IMMUTABLE-IMAGE-001
+    # @spec IMMUTABLE-IMAGE-002
+    def self.resolve_runtime_image_selection(agent_run, requested_image: nil)
+      recorded_metadata = agent_run.runtime_image_selection
+      selection = if recorded_metadata.present?
+        Containers::RuntimeImageSelector::Result.from_metadata(recorded_metadata)
+      else
+        Containers::RuntimeImageSelector.select(project: agent_run.project, requested_image: requested_image)
+      end
+      agent_run.record_runtime_image_selection!(selection.metadata)
+      selection
+    end
+    private_class_method :resolve_runtime_image_selection
 
     # Derives the workspace strategy from the agent run: a legacy bind mount
     # when an explicit worktree path is present, otherwise the default named
@@ -398,6 +448,157 @@ module ExecutionRunners
     def input_manifest
       ExecutionInputManifest.from_run_spec(self)
     end
+
+    # Prefers the persisted authority-grant snapshot on +agent_run+ when one
+    # exists *and* it still matches the current derivation inputs. This keeps a
+    # provision retry aligned with the snapshot already recorded on the run and
+    # audited by operators, without ever letting the manifest disagree with
+    # itself: +provision_via_runner+ (app/models/agent_run.rb) deliberately
+    # re-derives +networking_policy+ fresh on retry (e.g. for subscription-auth /
+    # direct-outbound recovery), and the grant set also depends on the run's
+    # current service-env keys, MCP server names, and runner selection. If the
+    # persisted snapshot differs from the fresh derivation, it is stale relative
+    # to this attempt, so grants are re-derived from current inputs instead —
+    # the persisted +agent_run.authority_grants+ column itself is left untouched
+    # as the historical audit record (RDR-058).
+    # @spec EXECUTION-AUTHORITY-002
+    def authority_grants
+      persisted = persisted_authority_grants
+      fresh = AuthorityGrantSet.from_agent_run(agent_run, networking_policy: networking_policy)
+      return persisted if persisted == fresh
+
+      fresh
+    end
+
+    private
+
+    def persisted_authority_grants
+      return nil unless agent_run.authority_grants.is_a?(Hash) && agent_run.authority_grants["grants"].present?
+
+      AuthorityGrantSet.from_json(agent_run.authority_grants)
+    end
+  end
+
+  # Secret-free execution authority grant contract for a run. This is derived
+  # before provisioning so runners can validate support without seeing secret
+  # payloads.
+  # @spec EXECUTION-AUTHORITY-002
+  # @spec EXECUTION-AUTHORITY-003
+  # @spec EXECUTION-AUTHORITY-004
+  AuthorityGrantSet = Data.define(:schema_version, :grants) do
+    SCHEMA_VERSION = 1
+
+    def self.from_agent_run(agent_run, networking_policy:)
+      new(schema_version: SCHEMA_VERSION, grants: build_grants(agent_run, networking_policy))
+    end
+
+    def as_json(*)
+      {
+        "schema_version" => schema_version,
+        "grants" => ExecutionRunners.json_value(grants)
+      }
+    end
+
+    def to_json(*args)
+      as_json.to_json(*args)
+    end
+
+    def to_storage
+      as_json
+    end
+
+    # The network mode recorded on the +model_provider_credentials+ grant,
+    # used to detect whether a persisted snapshot still matches a freshly
+    # derived +NetworkingPolicy+ (see {RunSpec#authority_grants}).
+    def network_mode
+      grants.find { |grant| grant["kind"] == "model_provider_credentials" }&.dig("metadata", "network_mode")
+    end
+
+    def self.from_json(payload)
+      data = payload.is_a?(String) ? JSON.parse(payload) : ExecutionRunners.json_value(payload)
+      new(schema_version: data["schema_version"], grants: data["grants"] || [])
+    end
+
+    def self.build_grants(agent_run, networking_policy)
+      delivery = provider_delivery_for(networking_policy)
+      grants = [
+        grant("paid_api_proxy_token", delivery: "run_proxy_token", scope: "run"),
+        grant("github_authority", delivery: "control_plane_proxy", scope: "project"),
+        grant("model_provider_credentials", delivery: delivery, scope: "runner",
+              metadata: { "runner_key" => runner_key_for(agent_run), "network_mode" => networking_policy&.mode.to_s })
+      ]
+
+      if delivery == "subscription_auth"
+        grants << grant("subscription_auth_material", delivery: "materialized_runtime_auth", scope: "runner",
+                        metadata: { "runner_key" => runner_key_for(agent_run) })
+      end
+
+      mcp_server_names = mcp_server_names_for(agent_run)
+      if mcp_server_names.any?
+        grants << grant("mcp_credentials", delivery: "mcp_server_configuration", scope: "project",
+                        metadata: { "server_names" => mcp_server_names })
+      end
+
+      if object_storage_upload_enabled_for?(agent_run)
+        grants << grant("object_storage_upload_authority", delivery: "object_storage", scope: "account",
+                        metadata: { "backend" => "s3_compatible" })
+      end
+
+      service_env_keys = service_env_keys_for(agent_run)
+      if service_env_keys.any?
+        grants << grant("service_credentials", delivery: "service_environment", scope: "run",
+                        metadata: { "env_keys" => service_env_keys })
+      end
+
+      grants
+    end
+
+    def self.grant(kind, delivery:, scope:, metadata: {})
+      {
+        "kind" => kind,
+        "delivery" => delivery,
+        "scope" => scope,
+        "metadata" => ExecutionRunners.json_value(metadata)
+      }
+    end
+    private_class_method :grant
+
+    def self.provider_delivery_for(networking_policy)
+      case networking_policy&.mode
+      when :subscription_auth then "subscription_auth"
+      when :direct_outbound then "direct_outbound"
+      else "proxy_mode"
+      end
+    end
+    private_class_method :provider_delivery_for
+
+    def self.runner_key_for(agent_run)
+      agent_run.runner&.runner_key || RunnerSupport.runner_key_for_agent_type(agent_run.agent_type)
+    end
+    private_class_method :runner_key_for
+
+    def self.mcp_server_names_for(agent_run)
+      snapshot_names = Array(agent_run.mcp_server_snapshot).filter_map { |server| server["name"] }
+      provisioned = agent_run.mcp_provisioned_servers || {}
+      provisioned_names = Array(provisioned["stdio_servers"]).filter_map { |server| server["name"] } +
+        Array(provisioned["url_servers"]).filter_map { |server| server["name"] }
+
+      (snapshot_names + provisioned_names).uniq.sort
+    end
+    private_class_method :mcp_server_names_for
+
+    def self.object_storage_upload_enabled_for?(agent_run)
+      project = agent_run.project
+      return false unless project
+
+      ArtifactStorage.configured? && (project.screenshots_enabled? || project.verification_enabled?)
+    end
+    private_class_method :object_storage_upload_enabled_for?
+
+    def self.service_env_keys_for(agent_run)
+      (agent_run.service_environment || {}).to_h.keys.map(&:to_s).sort
+    end
+    private_class_method :service_env_keys_for
   end
 
   # Opaque reference to a launched environment, returned by +#provision+ and
@@ -802,6 +1003,7 @@ module ExecutionRunners
   # credentials). Secret values are excluded by construction — credential lane
   # entries only name sources/keys, never values.
   # @spec CONTAINER-RUNTIME-018
+  # @spec IMMUTABLE-IMAGE-006
   ExecutionInputManifest = Data.define(
     :schema_version,
     :repository,
@@ -835,6 +1037,7 @@ module ExecutionRunners
           "goal" => agent_run&.goal,
           "execution_origin" => agent_run&.execution_origin,
           "image" => spec.image,
+          "runtime_image" => spec.runtime_image_selection&.metadata,
           "command" => spec.command,
           "resources" => ExecutionRunners.json_value(spec.resources&.to_h || {}),
           "workspace" => {
@@ -850,7 +1053,8 @@ module ExecutionRunners
             "firewall" => spec.networking_policy&.firewall?,
             "allow_destinations" => ExecutionRunners.json_value(spec.networking_policy&.allow_destinations || []),
             "egress_profile" => spec.networking_policy&.egress_profile&.to_s
-          }.compact
+          }.compact,
+          "authority_grants" => spec.authority_grants.as_json
         }.compact,
         prompt_refs: prompt_refs,
         context_refs: context_refs,
