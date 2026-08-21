@@ -22,7 +22,7 @@ module ExecutionResources
 
       def resource_for(resource)
         resources_by_provider_key[
-          [ resource.resource_type.to_s, resource.identifier.to_s, resource.host.to_s ]
+          [ resource.runner_type.to_s, resource.resource_type.to_s, resource.identifier.to_s, resource.host.to_s ]
         ]
       end
 
@@ -86,16 +86,16 @@ module ExecutionResources
       runner = runner_resolver.call(runner_type:, host:)
 
       if runner.supports_resource_listing?
-        reconcile_with_listing(resources:, runner:, host:, counts:)
+        reconcile_with_listing(resources:, runner:, runner_type:, host:, counts:)
       else
         reconcile_without_listing(resources:, runner:, counts:)
       end
     end
 
-    def reconcile_with_listing(resources:, runner:, host:, counts:)
+    def reconcile_with_listing(resources:, runner:, runner_type:, host:, counts:)
       listed_resources = runner.list_resources(host: host)
       listed_index = listed_resources.index_by { |resource| provider_key(resource) }
-      listing_context = build_listing_context(resources:, listed_resources:, host:)
+      listing_context = build_listing_context(resources:, listed_resources:, runner_type:, host:)
 
       resources.each do |resource|
         counts[:checked] += 1
@@ -261,7 +261,7 @@ module ExecutionResources
       run.nil? || (run.finished? && !run.container_retained?)
     end
 
-    def build_listing_context(resources:, listed_resources:, host:)
+    def build_listing_context(resources:, listed_resources:, runner_type:, host:)
       run_ids = resources.filter_map(&:agent_run_id) + listed_resources.filter_map { |resource| resource.tags&.[]("paid.agent_run_id") }
       project_ids = listed_resources.filter_map { |resource| resource.tags&.[]("paid.project_id") }
       identifiers = listed_resources.map(&:identifier)
@@ -270,7 +270,7 @@ module ExecutionResources
       ListingContext.new(
         runs_by_id: preload_runs(run_ids),
         projects_by_id: preload_projects(project_ids),
-        resources_by_provider_key: preload_resources(host:, identifiers:, resource_types:),
+        resources_by_provider_key: preload_resources(runner_type:, host:, identifiers:, resource_types:),
         owned_resource_ids_by_key: preload_owned_resource_ids(run_ids)
       )
     end
@@ -283,9 +283,9 @@ module ExecutionResources
       Project.includes(:account).where(id: project_ids.uniq).index_by { |project| project.id.to_s }
     end
 
-    def preload_resources(host:, identifiers:, resource_types:)
+    def preload_resources(runner_type:, host:, identifiers:, resource_types:)
       ExecutionResource
-        .where(host:, identifier: identifiers.uniq, resource_type: resource_types.uniq)
+        .where(runner_type:, host:, identifier: identifiers.uniq, resource_type: resource_types.uniq)
         .index_by { |resource| provider_key(resource) }
     end
 
@@ -301,6 +301,7 @@ module ExecutionResources
 
     def provider_key(resource)
       [
+        resource.runner_type.to_s,
         resource.resource_type.to_s,
         resource.identifier.to_s,
         resource.host.to_s

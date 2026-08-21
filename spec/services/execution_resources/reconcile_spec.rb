@@ -169,6 +169,27 @@ RSpec.describe ExecutionResources::Reconcile do
     expect(runner.cleaned_identifiers).to include("leaked-container")
   end
 
+  it "does not confuse a differently-runner_type ledger row sharing host/identifier/resource_type when adopting" do
+    other_project = create(:project, account: account)
+    other_agent_run = create(:agent_run, :completed, project: other_project)
+    contract_resource = create(:execution_resource, project: other_project, agent_run: other_agent_run,
+      runner_type: "contract", host: "local", identifier: "shared-id", resource_type: "environment")
+    leaked = tracked_resource(resource_type: "environment", identifier: "shared-id")
+    runner.resources = [ leaked ]
+
+    result = reconcile(scope: ExecutionResource.none)
+
+    adopted = ExecutionResource.find_by(runner_type: "local_docker", identifier: "shared-id", host: "local")
+    expect(result.adopted).to eq(1)
+    expect(adopted).to be_present
+    expect(adopted.id).not_to eq(contract_resource.id)
+    expect(adopted.agent_run_id).to eq(agent_run.id)
+    # The pre-existing contract-runner row must remain untouched: it is a
+    # distinct ledger identity ((runner_type, host, identifier)) and must not
+    # be adopted or repurposed just because it shares host/identifier/type.
+    expect(contract_resource.reload.agent_run_id).to eq(other_agent_run.id)
+  end
+
   it "keeps reconciling remaining orphans when adopting one races into a RecordNotUnique conflict" do
     create(:execution_resource, project: project, agent_run: agent_run,
       resource_type: "environment", state: "cleaned", identifier: "known-container", host: "local")
