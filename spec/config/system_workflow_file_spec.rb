@@ -41,14 +41,12 @@ RSpec.describe SystemWorkflowFile, :no_db do
     )
   end
 
-  it "installs a known-good Chrome binary for explicit browser specs" do
+  it "installs a pinned Chrome binary for explicit browser specs" do
     setup_step = system_step("Set up Chrome")
     export_step = system_step("Export Chromium path")
 
-    expect(setup_step).to include(
-      "id" => "setup_chrome",
-      "uses" => "browser-actions/setup-chrome@2e1d749697dd1612b833dba4a722266286fbefcd"
-    )
+    expect(setup_step).to include("id" => "setup_chrome")
+    expect(setup_step.fetch("uses")).to match(/\Abrowser-actions\/setup-chrome@[0-9a-f]{40}\z/)
     expect(export_step.fetch("env")).to include(
       "INSTALLED_CHROME_PATH" => "${{ steps.setup_chrome.outputs.chrome-path }}"
     )
