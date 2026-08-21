@@ -7,12 +7,18 @@
 class AddTddModeToProjects < ActiveRecord::Migration[8.1]
   TDD_MODE_DEFAULT = "off"
 
-  def change
+  def up
     return if column_exists?(:projects, :tdd_mode)
 
     add_column :projects, :tdd_mode, :string,
       default: TDD_MODE_DEFAULT,
       null: false,
       comment: "Project-level TDD mode from RDR-056: off | non_strict | strict"
+  end
+
+  def down
+    return unless column_exists?(:projects, :tdd_mode)
+
+    remove_column :projects, :tdd_mode
   end
 end
