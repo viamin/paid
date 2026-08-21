@@ -489,6 +489,48 @@ class ChatControllerNodeHarness
       }
     }
 
+    function testUpdateViewportHeightTracksPanelOffset() {
+      const styleWrites = [];
+      const { controller } = makeController({
+        element: {
+          getBoundingClientRect: () => ({ top: 123.2 }),
+          style: {
+            setProperty: (name, value) => styleWrites.push({ name, value })
+          }
+        }
+      });
+
+      controller.updateViewportHeight();
+
+      if (styleWrites.length !== 1) {
+        throw new Error(`Expected 1 viewport height style write, got ${styleWrites.length}`);
+      }
+      if (styleWrites[0].name !== "--chat-panel-offset-top") {
+        throw new Error(`Expected viewport offset variable write, got ${styleWrites[0].name}`);
+      }
+      if (styleWrites[0].value !== "124px") {
+        throw new Error(`Expected viewport offset to round up to 124px, got ${styleWrites[0].value}`);
+      }
+    }
+
+    function testUpdateViewportHeightClampsNegativeOffset() {
+      const styleWrites = [];
+      const { controller } = makeController({
+        element: {
+          getBoundingClientRect: () => ({ top: -20 }),
+          style: {
+            setProperty: (name, value) => styleWrites.push({ name, value })
+          }
+        }
+      });
+
+      controller.updateViewportHeight();
+
+      if (styleWrites[0].value !== "0px") {
+        throw new Error(`Expected negative viewport offset to clamp to 0px, got ${styleWrites[0].value}`);
+      }
+    }
+
     function run() {
       testToolCallAppendsCardAndUpdatesStatus();
       testToolCallWithUnknownToolName();
@@ -510,6 +552,8 @@ class ChatControllerNodeHarness
       testScrollToTopScrollsToZero();
       testHandleScrollShowsBackToTopWhenScrolled();
       testHandleScrollHidesBackToTopAtTop();
+      testUpdateViewportHeightTracksPanelOffset();
+      testUpdateViewportHeightClampsNegativeOffset();
     }
 
     try {
