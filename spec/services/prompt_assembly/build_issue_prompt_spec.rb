@@ -121,6 +121,22 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
       expect(result.text).to include("Do not make guarded behavior default")
     end
 
+    it "includes RDR rollout guard guidance even when the profile disables that section" do
+      rdr_issue = OpenStruct.new(issue.to_h.merge(body: "#{issue.body}\n\nPart of RDR-099")).tap do |i|
+        i.define_singleton_method(:trusted?) { true }
+      end
+      profile = PromptAssembly::Profile.new(disabled_sections: [ :rdr_rollout_guard ])
+      allow(PromptAssembly::ProfileResolution).to receive(:resolve).and_return(profile)
+
+      result = described_class.call(issue: rdr_issue, project: project)
+
+      expect(result.text).to include("# RDR Rollout Guard")
+      expect(result.sections.find { |section| section.key == :rdr_rollout_guard }).to have_attributes(
+        required?: true,
+        trust_level: :trusted
+      )
+    end
+
     it "includes RDR rollout guard guidance when a trusted comment references an RDR" do
       github_client = instance_double(GithubClient)
       rdr_comment = OpenStruct.new(

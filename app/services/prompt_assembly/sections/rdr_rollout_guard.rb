@@ -22,6 +22,10 @@ class PromptAssembly::Sections::RdrRolloutGuard
     "RDR-backed work must keep incomplete runtime behavior guarded"
   end
 
+  def required
+    true
+  end
+
   def skip_reason
     "issue does not reference an RDR"
   end
