@@ -11,8 +11,13 @@
   SHALL classify each row by `resource_kind` into one of
   `primary_environment`, `service`, `sidecar`, `workspace`, `network`,
   `preview_tunnel`, or `temporary_storage`, rejecting any other value.
+  Whenever `provider_resource_id` is present, the system SHALL also enforce
+  uniqueness per `(runner_type, backend)`, including rows whose `backend` is
+  `NULL`.
   *Tests:* `spec/models/execution_resource_ledger_entry_spec.rb`
-  *Code:* `ExecutionResourceLedgerEntry`
+  *Code:* `ExecutionResourceLedgerEntry`,
+  `db/migrate/20260821103345_create_execution_resource_ledger_entries.rb`,
+  `db/migrate/20260821135405_fix_execution_resource_ledger_provider_identity_index.rb`
 
 - [x] **RESOURCE-LEDGER-002** — The system SHALL enforce a fixed lifecycle
   state machine on `status` (`provisioning`, `active`, `cleanup_pending`,

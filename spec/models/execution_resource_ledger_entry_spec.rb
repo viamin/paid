@@ -72,6 +72,42 @@ RSpec.describe ExecutionResourceLedgerEntry, type: :model do
       expect(record).not_to be_valid
       expect(record.errors[:runner_handle]).to include("must be an object")
     end
+
+    it "rejects duplicate provider identity rows when backend is nil" do
+      create(
+        :execution_resource_ledger_entry,
+        runner_type: "docker",
+        backend: nil,
+        provider_resource_id: "cont_123"
+      )
+
+      duplicate = build(
+        :execution_resource_ledger_entry,
+        runner_type: "docker",
+        backend: nil,
+        provider_resource_id: "cont_123"
+      )
+
+      expect { duplicate.save!(validate: false) }.to raise_error(ActiveRecord::RecordNotUnique)
+    end
+
+    it "allows the same provider identity when backend differs" do
+      create(
+        :execution_resource_ledger_entry,
+        runner_type: "docker",
+        backend: nil,
+        provider_resource_id: "cont_123"
+      )
+
+      expect {
+        create(
+          :execution_resource_ledger_entry,
+          runner_type: "docker",
+          backend: "ecs",
+          provider_resource_id: "cont_123"
+        )
+      }.not_to raise_error
+    end
   end
 
   describe "account/project/run consistency (tenant scoping)" do
