@@ -50,6 +50,97 @@ RSpec.describe Activities::ProvisionContainerActivity do
       }.to raise_error(ActiveRecord::RecordNotFound)
     end
 
+    # @spec EGRESS-POLICY-006
+    it "snapshots the resolved egress policy on the run before provisioning" do
+      activity.execute(agent_run_id: agent_run.id)
+
+      snapshot = AgentRuns::EgressPolicy::Snapshot.from_record(agent_run.reload)
+      derived_policy = Containers::Provision.networking_policy_for(agent_run: agent_run, project: project)
+      # The snapshot's secrets-proxy host must match the endpoint the
+      # provisioned container will actually use (paid-proxy restricted-local,
+      # web unrestricted-local, external URL remote) — never a hardcoded host.
+      proxy_host = URI.parse(Containers::ProxyUrl.resolve(backend: Containers.backend_for(nil), policy: derived_policy)).host
+      expect(snapshot).not_to be_nil
+      expect(snapshot.mode).to eq(derived_policy.mode.to_s)
+      expect(snapshot.destinations.map { |destination| destination["host"] }).to include("egress-gateway", proxy_host)
+    end
+
+    # @spec EGRESS-POLICY-006
+    it "keeps the egress policy snapshot auditable when provisioning fails" do
+      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+      allow(agent_run).to receive(:ensure_proxy_token!).and_return("token")
+      allow(agent_run).to receive(:provision_container)
+        .and_raise(Containers::Provision::ProvisionError, "provision exploded")
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Containers::Provision::ProvisionError)
+
+      expect(AgentRuns::EgressPolicy::Snapshot.from_record(agent_run.reload)).not_to be_nil
+    end
+
+    # @spec EGRESS-POLICY-006
+    it "resolves the snapshot's secrets proxy against the planned container host" do
+      remote_backend = instance_double(Containers::Backends::Base, remote?: true, identifier: "remote-worker-1")
+      Containers::Backends::Resolver.register("remote-worker-1", -> { remote_backend })
+      ENV["PAID_PROXY_EXTERNAL_URL"] = "https://proxy.example.test:3443"
+      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+      allow(agent_run).to receive(:ensure_proxy_token!).and_return("token")
+      allow(agent_run).to receive(:provision_container)
+
+      activity.execute(agent_run_id: agent_run.id, container_host: "remote-worker-1")
+
+      snapshot = AgentRuns::EgressPolicy::Snapshot.from_record(agent_run.reload)
+      proxy = snapshot.required_destinations.find { |destination| destination["reason"] == "secrets_proxy" }
+      expect(proxy).to include("host" => "proxy.example.test", "port" => 3443)
+    ensure
+      Containers::Backends::Resolver.reset!("remote-worker-1")
+      ENV.delete("PAID_PROXY_EXTERNAL_URL")
+    end
+
+    # @spec EGRESS-POLICY-005
+    it "fails closed before provisioning when an unsafe allowlist entry is rejected" do
+      entry = create(:egress_allowlist_entry, account: project.account, host_pattern: "api.partner.com")
+      entry.update_columns(host_pattern: "*") # bypass write-time validation
+
+      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+      allow(agent_run).to receive(:ensure_proxy_token!).and_return("token")
+      expect(agent_run).not_to receive(:provision_container)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(
+        Temporalio::Error::ApplicationError,
+        /wildcard/
+      ) { |error| expect(error.non_retryable).to be(true) }
+
+      snapshot = AgentRuns::EgressPolicy::Snapshot.from_record(agent_run.reload)
+      expect(snapshot).to be_denied
+    end
+
+    # The denial is deterministic — same unsafe rows are rejected on every
+    # attempt — so burning DEFAULT_RETRY_POLICY's 3 attempts with backoff
+    # would just delay surfacing the failure. The denial is wrapped in a
+    # non-retryable Temporalio::Error::ApplicationError (type
+    # "EgressPolicyDenied") so the workflow sees it on the first attempt.
+    # @spec EGRESS-POLICY-005
+    it "surfaces a denied policy as a non-retryable EgressPolicyDenied application error" do
+      entry = create(:egress_allowlist_entry, account: project.account, host_pattern: "api.partner.com")
+      entry.update_columns(host_pattern: "169.254.169.254") # bypass write-time validation
+
+      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+      allow(agent_run).to receive(:ensure_proxy_token!).and_return("token")
+
+      error = nil
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |raised| error = raised }
+
+      expect(error.type).to eq("EgressPolicyDenied")
+      expect(error.non_retryable).to be(true)
+      expect(error.message).to include('IP literal')
+    end
+
     it "does not create a second container when retried against a live container" do
       run = create(:agent_run, project: project, worktree_path: worktree_path, container_id: "existing-container")
       existing = instance_double(

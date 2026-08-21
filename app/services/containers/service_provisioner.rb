@@ -86,8 +86,10 @@ module Containers
     }.freeze
 
     DEFAULT_RESOURCE_LIMITS = { memory: 1 * 1024 * 1024 * 1024, cpu_quota: 100_000, pids_limit: 200 }.freeze
-    RUNTIME_NAME_PREFIX = "paid-svc"
-    MAX_NETWORK_ALIAS_LENGTH = 63
+
+    # Network alias naming (paid-svc-a<account_id>-s<id>-<name>) is shared with
+    # egress policy snapshots — see Containers::ServiceRuntimeNaming.
+    include ServiceRuntimeNaming
 
     # Provisions all service containers needed by an agent run's project.
     #
@@ -634,23 +636,6 @@ module Containers
         "SERVICE_#{key}_HOST" => host,
         "SERVICE_#{key}_PORT" => service_container.port.to_s
       }
-    end
-
-    def runtime_name(service_container)
-      suffix = "a#{service_container.account_id}-s#{service_container.id}"
-      budget = [ MAX_NETWORK_ALIAS_LENGTH - RUNTIME_NAME_PREFIX.length - suffix.length - 2, 1 ].max
-      name = sanitized_runtime_segment(service_container.name)
-      segment = name.first(budget).delete_suffix("-").presence || "service"
-
-      [ RUNTIME_NAME_PREFIX, suffix, segment ].join("-")
-    end
-
-    def sanitized_runtime_segment(name)
-      name.to_s.downcase
-        .gsub(/[^a-z0-9-]/, "-")
-        .gsub(/-+/, "-")
-        .delete_prefix("-")
-        .presence || "service"
     end
 
     # Generates a unique, safe database name for each agent run attempt.

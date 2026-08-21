@@ -8,7 +8,9 @@ RSpec.describe SyncIssueImplementationPromptRemoveSafetyRules, :aggregate_failur
   let(:migration) { described_class.new }
 
   before do
-    Prompt.unscoped.where(slug: described_class::PROMPT_SLUG).destroy_all
+    TenantContext.with_system_access do
+      Prompt.unscoped.where(slug: described_class::PROMPT_SLUG).destroy_all
+    end
   end
 
   def seed_prompt
