@@ -489,6 +489,9 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
 
     it "cleans up the provisioned container when firewall application fails in production" do
       allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new("production"))
+      seed_snapshot!
+      allow(backend).to receive(:get_container).with("egress-gateway").and_return(instance_double(Docker::Container))
+      allow(backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
       allow(Containers::Provision).to receive(:new).and_return(provision_service)
       allow(provision_service).to receive_messages(
         provision: Containers::Provision::Result.success(container_id: "abc123", container_host: "local"),
@@ -619,6 +622,34 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
         AgentRuns::EgressPolicy::Gateway::UnavailableError, "gateway sidecar not present"
       )
       allow(described_class).to receive(:gateway_adapter).and_return(adapter)
+    end
+
+    # @spec EGRESS-POLICY-007
+    it "fails closed in production when a restricted run has no persisted egress snapshot" do
+      allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new("production"))
+
+      expect(Containers::Provision).not_to receive(:new)
+      expect(Rails.logger).to receive(:warn).with(
+        hash_including(message: "container.egress_gateway.missing_snapshot", agent_run_id: agent_run.id)
+      )
+
+      expect { runner.provision(spec: run_spec) }
+        .to raise_error(ExecutionRunners::ProvisionError, /no egress policy snapshot persisted/)
+    end
+
+    # @spec EGRESS-POLICY-007
+    it "logs but does not raise when a restricted run has no persisted egress snapshot outside production" do
+      allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("development"))
+      stub_provision_success!
+
+      expect(NetworkPolicy).to receive(:apply_firewall_rules).with(
+        started_container, hash_including(service_destinations: [])
+      )
+      expect(Rails.logger).to receive(:warn).with(
+        hash_including(message: "container.egress_gateway.missing_snapshot", agent_run_id: agent_run.id)
+      )
+
+      expect { runner.provision(spec: run_spec) }.not_to raise_error
     end
   end
 

@@ -394,17 +394,46 @@ class LocalDockerRunner < Base
     # through one. Open runs pass +nil+ to
     # {NetworkPolicy.apply_firewall_rules} and {apply_firewall!} skips the
     # gateway destinations entirely.
+    #
+    # A restricted policy with no persisted snapshot is a different case:
+    # {AgentRuns::EgressPolicy::Resolve.resolve_and_persist!} is supposed to
+    # persist a snapshot on +agent_run+ before the runner ever provisions,
+    # so a missing snapshot here means that step was skipped or its result
+    # was lost. Returning +nil+ silently would let #provision continue with
+    # only the coarse firewall rules and no domain-aware allowlist/gateway —
+    # {missing_snapshot_gateway!} applies the same fail-closed contract as
+    # {enforce_gateway!} instead.
     def build_gateway(spec:, backend:)
       policy = spec.networking_policy
       return nil unless policy&.restricted?
 
       snapshot = AgentRuns::EgressPolicy::Snapshot.from_record(spec.agent_run)
-      return nil unless snapshot
+      return missing_snapshot_gateway!(agent_run: spec.agent_run) unless snapshot
 
       adapter = self.class.gateway_adapter
       AgentRuns::EgressPolicy::Gateway.new(
         agent_run: spec.agent_run, backend: backend, snapshot: snapshot, adapter: adapter
       )
+    end
+
+    # Mirrors {enforce_gateway!}'s production/non-production split for the
+    # gap {enforce_gateway!} itself cannot see: it only runs once a gateway
+    # object already exists, so a restricted run that never got a snapshot
+    # would otherwise skip fail-closed enforcement entirely. Production
+    # raises so the run aborts instead of starting without the gateway path;
+    # non-production logs and returns +nil+ so hosts that never resolved a
+    # snapshot (dev/test/CI) are not blocked, matching {apply_firewall!} and
+    # {enforce_gateway!}'s existing relaxation there.
+    def missing_snapshot_gateway!(agent_run:)
+      Rails.logger.warn(
+        message: "container.egress_gateway.missing_snapshot",
+        agent_run_id: agent_run.id
+      )
+      if Rails.env.production?
+        raise ProvisionError, "Egress gateway setup failed: no egress policy snapshot persisted for restricted run"
+      end
+
+      nil
     end
 
     # Fail-closed enforcement: restricted policies must reach a gateway
