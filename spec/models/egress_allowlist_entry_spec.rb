@@ -69,6 +69,12 @@ RSpec.describe EgressAllowlistEntry do
       expect(build(:egress_allowlist_entry, account: account, host_pattern: "*.packages.example.com")).to be_valid
     end
 
+    it "is valid with hostnames that have two-letter public TLDs" do
+      expect(build(:egress_allowlist_entry, account: account, host_pattern: "api.example.ai")).to be_valid
+      expect(build(:egress_allowlist_entry, account: account, host_pattern: "api.example.io")).to be_valid
+      expect(build(:egress_allowlist_entry, account: account, host_pattern: "api.example.uk")).to be_valid
+    end
+
     it "normalizes the host pattern before validation" do
       entry = build(:egress_allowlist_entry, account: account, host_pattern: "  API.Example.COM  ")
 

@@ -12,6 +12,15 @@ RSpec.describe AgentRuns::EgressPolicy::HostPattern do
       expect(described_class.invalid_reason("xn--80ak6aa92e.com")).to be_nil
     end
 
+    it "accepts two-letter public TLDs (e.g. .ai, .io, .uk)" do
+      expect(described_class.invalid_reason("api.example.ai")).to be_nil
+      expect(described_class.invalid_reason("api.example.io")).to be_nil
+      expect(described_class.invalid_reason("api.example.uk")).to be_nil
+      expect(described_class.invalid_reason("api.example.us")).to be_nil
+      expect(described_class.invalid_reason("api.example.de")).to be_nil
+      expect(described_class.invalid_reason("api.example.AI")).to be_nil
+    end
+
     it "returns a reason for unsafe patterns" do
       expect(described_class.invalid_reason(nil)).to eq("is missing")
       expect(described_class.invalid_reason(123)).to eq("must be a string")

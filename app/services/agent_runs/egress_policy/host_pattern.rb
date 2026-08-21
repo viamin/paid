@@ -16,7 +16,7 @@ module AgentRuns
     module HostPattern
       MAX_HOST_LENGTH = 253
       LABEL_REGEX = /\A[a-z0-9]([a-z0-9-]*[a-z0-9])?\z/
-      TLD_REGEX = /\A[a-z]{2}[a-z0-9-]*[a-z0-9]\z/
+      TLD_REGEX = /\A[a-z]{2}([a-z0-9-]*[a-z0-9])?\z/
       RESERVED_TLDS = %w[local test example invalid].freeze
       IPV4_SHAPE_REGEX = /\A\d{1,3}(\.\d{1,3}){3}\z/
       WILDCARD_PREFIX = "*."
