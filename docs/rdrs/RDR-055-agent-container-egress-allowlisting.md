@@ -9,9 +9,9 @@
 - **Type**: Security + Architecture
 - **Priority**: P1
 - **Related RDRs**: [RDR-004](RDR-004-container-isolation.md) (Container Isolation), [RDR-006](RDR-006-secrets-proxy.md) (Secrets Proxy), [RDR-019](RDR-019-remote-container-execution.md) (Remote Container Execution), [RDR-041](RDR-041-subscription-runner-auth-lifecycle.md) (Subscription Runner Managed Auth Lifecycle), [RDR-048](RDR-048-multi-host-docker-backend-support.md) (Multi-Host Docker Backend Support), [RDR-054](RDR-054-prompt-assembly-service.md) (Prompt Assembly Service)
-- **Related Intent**: `CONTAINER-RUNTIME-017`
-- **Related Issues**: TBD
-- **Related Tests**: TBD
+- **Related Intent**: `CONTAINER-RUNTIME-017`, `docs/intent/container-egress-allowlisting/`
+- **Related Issues**: #3436
+- **Related Tests**: `spec/services/agent_runs/egress_policy/`, `spec/models/egress_allowlist_entry_spec.rb`
 
 ## Problem Statement
 

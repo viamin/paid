@@ -46,22 +46,22 @@ RSpec.describe "CreateFeature E2E", type: :model do
   describe "chat path" do
     let(:chat_session) { create(:chat_session, account: account, created_by: user) }
 
-    it "includes create_feature instructions in the system prompt" do
+    it "includes general system guidance in the system prompt" do
       prompt = ChatSessions::BuildSystemPrompt.call(chat_session: chat_session)
 
-      expect(prompt).to include("create a new feature")
-      expect(prompt).to include("trigger a `create_feature` agent run")
-      expect(prompt).to include("custom_prompt")
+      expect(prompt).to include("AI assistant helping manage software projects via Paid")
+      expect(prompt).to include("Designing features and discussing implementation approaches")
+      expect(prompt).to include("use the available tools")
     end
 
-    it "chat session with a primary project includes project name and create_feature guidance" do
+    it "chat session with a primary project includes project name and feature guidance" do
       session = ChatSessions::Create.call(account: account, user: user, project_id: project.id)
 
       expect(session).to be_persisted
       expect(session.project).to eq(project)
       system_msg = session.messages.find_by(role: "system")
       expect(system_msg.content).to include(project.name)
-      expect(system_msg.content).to include("create_feature")
+      expect(system_msg.content).to include("Designing features and discussing implementation approaches")
     end
   end
 

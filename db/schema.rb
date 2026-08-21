@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_19_165503) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_20_001000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1036,6 +1036,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_165503) do
     t.datetime "disabled_at"
     t.boolean "enabled", default: true, null: false
     t.string "host_pattern", limit: 255, null: false, comment: "Hostname pattern. Supports exact hosts and leading-wildcard subdomains (e.g. *.packages.example.com)."
+    t.jsonb "log_data"
     t.integer "port", comment: "Optional destination port. When null, applies to standard ports for the scheme."
     t.bigint "project_id"
     t.text "reason", comment: "Operator-provided justification shown in audit and UI."
@@ -1045,6 +1046,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_165503) do
     t.index "account_id, host_pattern, COALESCE(scheme, ''::character varying), COALESCE(port, '-1'::integer)", name: "idx_egress_allowlist_entries_account_host_unique", unique: true, where: "(project_id IS NULL)"
     t.index "project_id, host_pattern, COALESCE(scheme, ''::character varying), COALESCE(port, '-1'::integer)", name: "idx_egress_allowlist_entries_project_host_unique", unique: true, where: "(project_id IS NOT NULL)"
     t.index ["account_id", "enabled"], name: "idx_egress_allowlist_entries_account_enabled"
+    t.index ["account_id", "project_id"], name: "idx_egress_allowlist_entries_account_project_scope", comment: "Account/project scope lookup used by per-run egress policy resolution."
     t.index ["account_id"], name: "index_egress_allowlist_entries_on_account_id"
     t.index ["created_by_id"], name: "index_egress_allowlist_entries_on_created_by_id"
     t.index ["project_id", "enabled"], name: "idx_egress_allowlist_entries_project_enabled"
@@ -4206,6 +4208,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_165503) do
 
   create_trigger :logidze_on_docker_hosts, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_docker_hosts BEFORE INSERT OR UPDATE ON public.docker_hosts FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :logidze_on_egress_allowlist_entries, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_egress_allowlist_entries BEFORE INSERT OR UPDATE ON public.egress_allowlist_entries FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
   create_trigger :logidze_on_exception_incidents, sql_definition: <<-SQL

@@ -16,7 +16,7 @@ FactoryBot.define do
     end
 
     trait :project_level do
-      project
+      project { association :project, account: account }
     end
 
     trait :disabled do
