@@ -104,6 +104,30 @@ RSpec.describe ExecutionControlParkCleanupJob, type: :job do
       expect(agent_run.reload.container_id).to eq("new-container-456")
     end
 
+    it "reconstructs the runner handle for runner-backed runs so cleanup takes the runner path" do
+      FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+
+      handle_hash = ExecutionRunners::RunnerHandle.new(
+        runner_type: :contract,
+        identifier: "container-123",
+        host: "contract",
+        workspace_ref: "contract-#{agent_run.id}",
+        metadata: { "agent_run_id" => agent_run.id }
+      ).to_storage
+      agent_run.update!(runner_handle: handle_hash)
+
+      runner = instance_double(ExecutionRunners::ContractRunner)
+      allow(ExecutionRunners).to receive(:resolve_for).and_return(runner)
+      allow(runner).to receive(:cleanup)
+
+      described_class.perform_now(agent_run.id, nil, "container-123")
+
+      expect(runner).to have_received(:cleanup).with(
+        handle: an_instance_of(ExecutionRunners::RunnerHandle),
+        force: true
+      )
+    end
+
     it "preserves the shared workspace volume when the run has been redispatched to a new container" do
       # A re-dispatched container for the same run reuses the
       # "paid-workspace-<agent_run.id>" volume, so tearing down the stale

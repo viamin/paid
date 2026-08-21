@@ -57,6 +57,14 @@ class ExecutionControlParkCleanupJob < ApplicationJob
       .where.not(container_id: [ nil, container_id ]).exists?
 
     agent_run.container_id = container_id
+
+    # Runner-backed environments need @current_handle reconstructed so
+    # cleanup_container takes the runner cleanup path instead of falling
+    # through to Docker. park_record! nulls container_id but preserves
+    # runner_handle, so the persisted handle is still available.
+    runner_handle = ExecutionRunners::RunnerHandle.from_record(agent_run)
+    agent_run.instance_variable_set(:@current_handle, runner_handle) if runner_handle
+
     agent_run.cleanup_container(force: true, preserve_workspace_volume: redispatched)
   end
 end
