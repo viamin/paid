@@ -1950,6 +1950,15 @@ RSpec.describe "Projects" do
         expect(project.reload.auto_scan_security).to be true
       end
 
+      it "allows updating the TDD mode" do # @spec TDD-MODE-002
+        project = create(:project, account: account, github_token: github_token, tdd_mode: "off")
+
+        patch project_path(project), params: { project: { tdd_mode: "strict" } }
+
+        expect(response).to redirect_to(project_path(project))
+        expect(project.reload.tdd_mode).to eq("strict")
+      end
+
       it "allows forcing lid mode from project settings" do
         project = create(:project, account: account, github_token: github_token, lid_mode: nil)
 

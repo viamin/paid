@@ -30,6 +30,15 @@ class Project < ApplicationRecord
   PRIORITY_TIERS = %w[P1 P2 P3].freeze
   DEFAULT_PRIORITY_LABELS = { "P1" => "P1", "P2" => "P2", "P3" => "P3" }.freeze
   ADOPTION_MODES = %w[observe_only advisory review_only full_execution].freeze
+  # Project-level TDD mode (RDR-056). "off" preserves existing Paid behavior;
+  # "non_strict" runs an automated test-review verdict before implementation;
+  # "strict" waits for a human-applied approval label before implementation.
+  TDD_MODES = %w[off non_strict strict].freeze
+  TDD_MODE_LABELS = {
+    "off" => "Off",
+    "non_strict" => "Non-strict",
+    "strict" => "Strict"
+  }.freeze
   DATA_CLASSIFICATIONS = %w[open internal confidential restricted].freeze
   DEFAULT_SCREENSHOT_SETTINGS = {
     "enabled" => false,
@@ -161,6 +170,8 @@ class Project < ApplicationRecord
     [ "All PRs", "all" ]
   ].freeze
 
+  TDD_MODE_OPTIONS = TDD_MODES.map { |mode| [ TDD_MODE_LABELS[mode], mode ] }.freeze
+
   # Bots whose PRs may be admitted by scoped automation paths when the project
   # is configured to auto-merge dependency updates. They are deliberately not
   # added to #trusted_github_author_logins because that global author trust also
@@ -266,6 +277,7 @@ class Project < ApplicationRecord
   validates :auto_merge_mode, inclusion: { in: %w[off dependabot_only all] }
   validates :auto_release_granularity, inclusion: { in: AUTO_RELEASE_GRANULARITIES }
   validates :lid_mode, inclusion: { in: LID_MODES }, allow_nil: true
+  validates :tdd_mode, inclusion: { in: TDD_MODES }
   validates :max_draft_review_rounds, numericality: { greater_than_or_equal_to: 0 }
   validates :generated_label_name, presence: true
   validates :automation_label_name, presence: true
@@ -941,6 +953,13 @@ class Project < ApplicationRecord
 
   def auto_merge_dependabot?
     auto_merge_mode.in?(%w[dependabot_only all])
+  end
+
+  # Human-readable TDD mode label for the project show page. Falls back to the
+  # raw value (titleized) when an unknown value somehow reaches the view path,
+  # matching how auto_merge_mode is rendered.
+  def tdd_mode_label
+    TDD_MODE_LABELS[tdd_mode] || tdd_mode.to_s.titleize
   end
 
   def auto_merge_bot_authored?

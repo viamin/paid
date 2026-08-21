@@ -251,6 +251,14 @@
             </span>
           </dd>
         </div>
+        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+          <dt class="text-sm font-medium text-gray-500">TDD Mode</dt>
+          <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+            <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium <%= @project.tdd_mode == 'strict' ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-600' %>">
+              <%= @project.tdd_mode_label %>
+            </span>
+          </dd>
+        </div>
 
         <%# PR Review Settings %>
         <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">

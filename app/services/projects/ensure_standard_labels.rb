@@ -13,6 +13,10 @@ module Projects
   # - recommend_close                      (e.g. "paid-recommend-close"; overridable via
   #                                        Project#label_for_stage("recommend_close"))
   # - paused                               (e.g. "paid-paused"; mirrors Issue#paused)
+  # - tdd test-review labels (RDR-056):
+  #   * tests_ready_for_review             (paid-tests-ready-for-review)
+  #   * tests_approved                     (paid-tests-approved)
+  #   * test_changes_requested             (paid-test-changes-requested)
   # - Priority labels          (P1, P2, P3 by default)
   #
   # @example
@@ -29,6 +33,21 @@ module Projects
       enhance_issue_enhanced: { color: "0e8a16", description: "Paid has added implementation context to this issue" },
       recommend_close: { color: "fbca04", description: "Paid ran but produced no PR — human review needed" },
       paused: { color: "5319e7", description: "Paused in Paid — excluded from issue auto-pick" },
+      tdd_test_review: {
+        name: "paid-tests-ready-for-review",
+        color: "fbca04",
+        description: "Paid draft PR contains proposed tests and is waiting for test review"
+      },
+      tdd_tests_approved: {
+        name: "paid-tests-approved",
+        color: "0e8a16",
+        description: "Paid tests are approved; implementation may begin"
+      },
+      tdd_test_changes_requested: {
+        name: "paid-test-changes-requested",
+        color: "d93f0b",
+        description: "Paid tests need changes before implementation starts"
+      },
       priority: {
         "P1" => { color: "d93f0b", description: "High priority" },
         "P2" => { color: "ff9800", description: "Medium priority" },
@@ -127,6 +146,18 @@ module Projects
         color: LABEL_DEFINITIONS[:paused][:color],
         description: LABEL_DEFINITIONS[:paused][:description]
       }
+
+      # TDD test-review labels (RDR-056). Names are deliberately literal and
+      # not configurable per-project — Paid's queue and label-gate logic
+      # matches on these exact strings.
+      %i[tdd_test_review tdd_tests_approved tdd_test_changes_requested].each do |key|
+        definition = LABEL_DEFINITIONS[key]
+        labels << {
+          name: definition[:name],
+          color: definition[:color],
+          description: definition[:description]
+        }
+      end
 
       project.effective_priority_labels.each do |tier, label_name|
         defaults = LABEL_DEFINITIONS[:priority][tier] || {}
