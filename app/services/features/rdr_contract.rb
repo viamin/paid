@@ -50,6 +50,8 @@ module Features
       "Proposed Solution",
       "Alternatives Considered",
       "Trade-offs and Consequences",
+      # @spec RDR-ROLLOUT-GUARD-001
+      "Rollout Guard",
       "Implementation Plan",
       "Validation"
     ].freeze

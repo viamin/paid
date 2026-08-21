@@ -103,6 +103,24 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
       expect(result.text).to include("Fix forward")
     end
 
+    it "omits RDR rollout guard guidance when the issue does not reference an RDR" do
+      result = described_class.call(issue: issue, project: project)
+
+      expect(result.text).not_to include("# RDR Rollout Guard")
+    end
+
+    it "includes RDR rollout guard guidance when the issue references an RDR" do
+      rdr_issue = OpenStruct.new(issue.to_h.merge(body: "#{issue.body}\n\nPart of RDR-099")).tap do |i|
+        i.define_singleton_method(:trusted?) { true }
+      end
+
+      result = described_class.call(issue: rdr_issue, project: project)
+
+      expect(result.text).to include("# RDR Rollout Guard")
+      expect(result.text).to include("read that RDR's `## Rollout Guard`")
+      expect(result.text).to include("Do not make guarded behavior default")
+    end
+
     it "includes the safety rules exactly once (no duplication from the template)" do
       result = described_class.call(issue: issue, project: project)
 
