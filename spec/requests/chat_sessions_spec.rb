@@ -378,8 +378,27 @@ RSpec.describe "ChatSessions" do
         classes = panel["class"].split
 
         expect(classes).to include("min-h-[70vh]")
-        expect(classes.grep(/max-h-\[calc\(100dvh/).any?).to be(true),
-          "Expected chat panel to bound its height with a 100dvh-based max-h class, got: #{classes.join(' ')}"
+        expect(panel["style"]).to include("max-height: calc(100dvh - var(--chat-panel-offset-top, 0px) - 2rem)")
+      end
+
+      it "keeps the measured viewport height bound when the show page renders a flash banner" do
+        # @spec CHAT-API-008
+        patch chat_session_path(chat_session), params: {
+          chat_session: { title: "Retitled session" }
+        }
+
+        expect(response).to redirect_to(chat_session_path(chat_session))
+
+        follow_redirect!
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Chat session updated.")
+
+        doc = Nokogiri::HTML(response.body)
+        panel = doc.at_xpath("//div[@data-controller='chat']")
+
+        expect(panel).to be_present
+        expect(panel["style"]).to include("max-height: calc(100dvh - var(--chat-panel-offset-top, 0px) - 2rem)")
       end
 
       it "renders the auto-approve checkbox reflecting the session state" do
