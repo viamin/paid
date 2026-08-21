@@ -92,3 +92,22 @@
   *Code:* `ChatSessions::BuildLlmClient#openai_compatible_client`,
   `Runner::DIRECT_OUTBOUND_API_PROVIDERS`,
   `ChatSessions::BuildLlmClient::HttpClient#chat_kwargs`.
+
+- [x] **CHAT-API-008** — When rendering the chat session show page
+  (`GET /chat/:id` as HTML), the conversation panel's outer wrapper SHALL
+  bound its height to the available viewport using `dvh` units (after the
+  fixed top nav and the page's `py-8` padding) so the inner
+  `overflow-y-auto` region is the actual scroll container rather than the
+  document. The wrapper SHALL keep the previous `min-h-[70vh]` floor so
+  short content still leaves enough room for the header, message list, and
+  input form, and SHALL add a `max-h-[calc(100dvh-...)]` cap so longer
+  transcripts bound to the viewport instead of overflowing the page; both
+  bounds are required because the chat controller's `scrollToInput`,
+  `scrollToTop`, and `handleScroll` (back-to-top visibility +
+  auto-scroll tracking) only fire on `containerTarget.scrollTop`, which
+  stays at 0 when the document scrolls instead of the intended container
+  (#3459, follow-up to #3331).
+  *Tests:* `spec/requests/chat_sessions_spec.rb` ("height-bounds the chat
+  panel …", "gives the conversation's scroll wrapper a min-h-0 flex
+  constraint (#3331)").
+  *Code:* `app/views/chat_sessions/show.html.erb` (chat panel outer wrapper).

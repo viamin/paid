@@ -21,7 +21,17 @@
                available_models: @available_models %>
 
     <section class="overflow-hidden rounded-lg bg-white shadow">
-      <div class="flex min-h-[70vh] flex-col overflow-x-hidden"
+      <%# `min-h-[70vh]` is the floor for short transcripts so the header,
+          message list, and input form still fit. `max-h-[calc(100dvh-8rem)]`
+          is the ceiling: 100dvh minus the top nav (h-16 = 4rem) and the
+          page container's py-8 padding (2rem top + 2rem bottom = 4rem).
+          Without the cap the inner overflow-y-auto region grows with the
+          transcript and the document scrolls instead, which breaks the
+          chat controller's scrollToInput / scrollToTop / handleScroll
+          (jump-to-input link, back-to-top button, auto-scroll tracking).
+          dvh (not vh) so the iOS Safari URL bar doesn't shrink the
+          available space. (@spec CHAT-API-008, #3459) %>
+      <div class="flex min-h-[70vh] max-h-[calc(100dvh-8rem)] flex-col overflow-x-hidden"
            data-controller="chat"
            data-chat-session-id-value="<%= @chat_session.id %>">
         <header class="border-b border-gray-200 px-4 py-5 sm:px-6">

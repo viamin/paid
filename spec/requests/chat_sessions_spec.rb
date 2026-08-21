@@ -355,6 +355,33 @@ RSpec.describe "ChatSessions" do
         expect(wrapper["class"].split.sort).to include("min-h-0")
       end
 
+      it "height-bounds the chat panel so the conversation container is the scroll container (#3459)" do
+        # @spec CHAT-API-008
+        # The #3331 fix added `min-h-0` to the inner flex-1 wrapper, but the
+        # chat panel's outer wrapper still uses `min-h-[70vh]` — a *minimum*,
+        # not a bound. When the transcript is long the panel grows beyond the
+        # viewport, the inner `overflow-y-auto` region expands to fit its
+        # content, and the document scrolls instead. That leaves the
+        # chat controller's scrollToInput / scrollToTop / handleScroll
+        # writing to a scrollTop that never changes, so the "jump to input"
+        # link does nothing and the floating "back to top" button never
+        # appears. Mirror the popup's behavior with a viewport-bounded max
+        # height (dvh so the iOS URL bar doesn't break it) on top of the
+        # existing 70vh floor.
+        get chat_session_path(chat_session)
+        expect(response).to have_http_status(:ok)
+
+        doc = Nokogiri::HTML(response.body)
+        panel = doc.at_xpath("//div[@data-controller='chat']")
+
+        expect(panel).to be_present
+        classes = panel["class"].split
+
+        expect(classes).to include("min-h-[70vh]")
+        expect(classes.grep(/max-h-\[calc\(100dvh/).any?).to be(true),
+          "Expected chat panel to bound its height with a 100dvh-based max-h class, got: #{classes.join(' ')}"
+      end
+
       it "renders the auto-approve checkbox reflecting the session state" do
         chat_session.update!(auto_approve: true)
 
