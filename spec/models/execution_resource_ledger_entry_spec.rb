@@ -10,8 +10,11 @@ require "rails_helper"
 RSpec.describe ExecutionResourceLedgerEntry, type: :model do
   describe "associations" do
     it { is_expected.to belong_to(:account) }
-    it { is_expected.to belong_to(:project) }
     it { is_expected.to belong_to(:agent_run).optional }
+
+    it "allows project to be nullified after creation" do
+      expect(described_class.reflect_on_association(:project).options[:optional]).to be(true)
+    end
   end
 
   describe "validations" do
@@ -23,6 +26,12 @@ RSpec.describe ExecutionResourceLedgerEntry, type: :model do
       record = build(:execution_resource_ledger_entry, runner_type: nil)
       expect(record).not_to be_valid
       expect(record.errors[:runner_type]).to include("can't be blank")
+    end
+
+    it "requires a project when creating a ledger row" do
+      record = build(:execution_resource_ledger_entry, project: nil, account: create(:account))
+      expect(record).not_to be_valid
+      expect(record.errors[:project]).to include("can't be blank")
     end
 
     it "requires a resource_kind from the documented list" do
@@ -98,6 +107,16 @@ RSpec.describe ExecutionResourceLedgerEntry, type: :model do
 
       expect { record.reload }.not_to raise_error
       expect(record.project_id).to be_nil
+    end
+
+    it "allows lifecycle transitions after project deletion nullifies project_id" do
+      project = create(:project)
+      record = create(:execution_resource_ledger_entry, :active, project: project, account: project.account)
+
+      project.destroy
+
+      expect { record.reload.request_cleanup! }.not_to raise_error
+      expect(record).to be_cleanup_pending
     end
   end
 

@@ -56,12 +56,13 @@ class ExecutionResourceLedgerEntry < ApplicationRecord
   }.freeze
 
   belongs_to :account
-  belongs_to :project
+  belongs_to :project, optional: true
   belongs_to :agent_run, optional: true
 
   before_validation :assign_account_from_project
   before_validation :normalize_tags_and_handle
 
+  validates :project, presence: true, on: :create
   validates :runner_type, presence: true, length: { maximum: 64 }
   validates :backend, length: { maximum: 64 }, allow_nil: true
   validates :resource_kind, presence: true, inclusion: { in: RESOURCE_KINDS }
