@@ -127,6 +127,17 @@ RSpec.describe "Dashboard" do
         expect(desktop_nav_link.text.strip).to eq("Exception incidents")
       end
 
+      it "includes marketplace in the desktop navigation" do
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        desktop_nav_link = doc.at_css("#operations-menu a[href='#{marketplace_entries_path}']")
+
+        expect(desktop_nav_link).to be_present
+        expect(desktop_nav_link["href"]).to eq(marketplace_entries_path)
+        expect(desktop_nav_link.text.strip).to eq("Marketplace")
+      end
+
       it "includes settings in the mobile menu" do
         get dashboard_path
 
@@ -146,6 +157,17 @@ RSpec.describe "Dashboard" do
         expect(mobile_exception_link).to be_present
         expect(mobile_exception_link["href"]).to eq(exception_incidents_path)
         expect(mobile_exception_link.text.strip).to eq("Exception incidents")
+      end
+
+      it "includes marketplace in the mobile menu" do
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        mobile_marketplace_link = doc.at_css("#mobile-menu a[href='#{marketplace_entries_path}']")
+
+        expect(mobile_marketplace_link).to be_present
+        expect(mobile_marketplace_link["href"]).to eq(marketplace_entries_path)
+        expect(mobile_marketplace_link.text.strip).to eq("Marketplace")
       end
 
       it "renders the user email dropdown in the desktop navbar" do
