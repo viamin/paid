@@ -179,8 +179,8 @@ RSpec.describe ExecutionResources::Reconcile do
     # Force the TOCTOU race the rescue defends against: adoptable_agent_run's
     # exists? check can pass and still lose to a concurrent reconciliation
     # pass inserting the conflicting row before this save! runs.
-    allow(reconciler).to receive(:adoptable_agent_run).and_wrap_original do |original, run:, resource:, resource_type:|
-      resource_type == "environment" ? run : original.call(run:, resource:, resource_type:)
+    allow(reconciler).to receive(:adoptable_agent_run).and_wrap_original do |original, run:, resource:, resource_type:, listing_context:|
+      resource_type == "environment" ? run : original.call(run:, resource:, resource_type:, listing_context:)
     end
 
     result = reconciler.call
@@ -189,6 +189,21 @@ RSpec.describe ExecutionResources::Reconcile do
     expect(result.adopted).to eq(1)
     expect(ExecutionResource.find_by(identifier: "leaked-container")).to be_nil
     expect(ExecutionResource.find_by(identifier: "paid-workspace-orphan")).to be_cleaned
+  end
+
+  it "preloads adoption ownership and owner records per group instead of querying per orphan" do
+    runner.resources = [
+      tracked_resource(resource_type: "environment", identifier: "orphan-environment"),
+      orphaned_workspace_resource
+    ]
+
+    sql = capture_sql do
+      reconcile(scope: ExecutionResource.none)
+    end
+
+    expect(sql.grep(/FROM "agent_runs"/).size).to eq(1)
+    expect(sql.grep(/FROM "projects"/).size).to eq(2)
+    expect(sql.grep(/SELECT 1 AS one FROM "execution_resources"/)).to be_empty
   end
 
   it "retries cleanup_pending resources with durable backoff when cleanup fails" do
@@ -299,5 +314,22 @@ RSpec.describe ExecutionResources::Reconcile do
       runner_resolver: runner_resolver,
       inventory_targets: inventory_targets
     ).call
+  end
+
+  def capture_sql
+    queries = []
+    callback = lambda do |_name, _start, _finish, _id, payload|
+      sql = payload[:sql]
+      next if payload[:name] == "SCHEMA"
+      next if sql.match?(/\A(?:BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE SAVEPOINT)/)
+
+      queries << sql
+    end
+
+    ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+      yield
+    end
+
+    queries
   end
 end

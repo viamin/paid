@@ -1,8 +1,43 @@
 # frozen_string_literal: true
 
+require "set"
+
 module ExecutionResources
   class Reconcile # @spec CONTAINER-RUNTIME-031
     Result = Data.define(:checked, :adopted, :cleaned, :failures, :reduced_confidence)
+
+    ListingContext = Data.define(
+      :runs_by_id,
+      :projects_by_id,
+      :resources_by_provider_key,
+      :owned_resource_ids_by_key
+    ) do
+      def run_for(id)
+        runs_by_id[id.to_s]
+      end
+
+      def project_for(id)
+        projects_by_id[id.to_s]
+      end
+
+      def resource_for(resource)
+        resources_by_provider_key[
+          [ resource.resource_type.to_s, resource.identifier.to_s, resource.host.to_s ]
+        ]
+      end
+
+      def owned_elsewhere?(run_id:, resource_type:, excluding_resource_id:)
+        resource_ids = owned_resource_ids_by_key[[ run_id, resource_type ]] || Set.new
+        return false if resource_ids.empty?
+
+        resource_ids.any? { |resource_id| resource_id != excluding_resource_id }
+      end
+
+      def track_owned_resource!(run_id:, resource_type:, resource_id:)
+        owned_resource_ids_by_key[[ run_id, resource_type ]] ||= Set.new
+        owned_resource_ids_by_key[[ run_id, resource_type ]] << resource_id
+      end
+    end
 
     def initialize(scope: ExecutionResource.active_or_pending, runner_resolver: nil, inventory_targets: nil)
       @scope = scope
@@ -34,7 +69,10 @@ module ExecutionResources
     attr_reader :scope, :runner_resolver
 
     def grouped_scope
-      scope.order(:id).group_by { |resource| [ resource.runner_type, resource.host ] }
+      scope
+        .includes(agent_run: { project: :account })
+        .order(:id)
+        .group_by { |resource| [ resource.runner_type, resource.host ] }
     end
 
     def grouped_inventory
@@ -55,7 +93,9 @@ module ExecutionResources
     end
 
     def reconcile_with_listing(resources:, runner:, host:, counts:)
-      listed_index = runner.list_resources(host: host).index_by { |resource| provider_key(resource) }
+      listed_resources = runner.list_resources(host: host)
+      listed_index = listed_resources.index_by { |resource| provider_key(resource) }
+      listing_context = build_listing_context(resources:, listed_resources:, host:)
 
       resources.each do |resource|
         counts[:checked] += 1
@@ -64,14 +104,14 @@ module ExecutionResources
       end
 
       listed_index.each_value do |listed_resource|
-        next unless adoptable?(listed_resource)
+        next unless adoptable?(listed_resource, listing_context:)
 
-        adopt_and_cleanup(listed_resource:, runner:, counts:)
+        adopt_and_cleanup(listed_resource:, runner:, counts:, listing_context:)
       end
     end
 
-    def adopt_and_cleanup(listed_resource:, runner:, counts:)
-      adopted = adopt_resource(listed_resource)
+    def adopt_and_cleanup(listed_resource:, runner:, counts:, listing_context:)
+      adopted = adopt_resource(listed_resource, listing_context:)
       counts[:adopted] += 1
       cleanup_via_resource(resource: adopted, listed_resource:, runner:, counts:)
     rescue ActiveRecord::RecordNotUnique => e
@@ -159,20 +199,21 @@ module ExecutionResources
       counts[:failures] += 1
     end
 
-    def adopt_resource(listed_resource)
+    def adopt_resource(listed_resource, listing_context:)
       tags = listed_resource.tags || {}
-      run = AgentRun.find_by(id: tags["paid.agent_run_id"])
-      project = run&.project || Project.find_by(id: tags["paid.project_id"])
+      run = listing_context.run_for(tags["paid.agent_run_id"])
+      project = run&.project || listing_context.project_for(tags["paid.project_id"])
       resource_type = listed_resource.resource_type.to_s
-      resource = ExecutionResource.find_or_initialize_by(
+      resource = listing_context.resource_for(listed_resource) || ExecutionResource.new(
         runner_type: listed_resource.runner_type.to_s,
         host: listed_resource.host.to_s,
         identifier: listed_resource.identifier
       )
+      agent_run = adoptable_agent_run(run:, resource:, resource_type:, listing_context:)
       resource.assign_attributes(
         account: run&.project&.account || project&.account,
         project: project,
-        agent_run: adoptable_agent_run(run:, resource:, resource_type:),
+        agent_run: agent_run,
         resource_type: resource_type,
         tags: tags,
         workspace_ref: listed_resource.workspace_ref,
@@ -183,6 +224,7 @@ module ExecutionResources
         reduced_confidence: false
       )
       resource.save!
+      listing_context.track_owned_resource!(run_id: run.id, resource_type:, resource_id: resource.id) if agent_run
       resource
     end
 
@@ -192,29 +234,69 @@ module ExecutionResources
     # row) must still adopt under its own provider-identity key so it can be
     # tracked and cleaned up - just without the agent_run link, which would
     # otherwise collide with the existing row on every reconciliation pass.
-    def adoptable_agent_run(run:, resource:, resource_type:)
+    def adoptable_agent_run(run:, resource:, resource_type:, listing_context:)
       return run if run.nil?
 
-      scope = ExecutionResource.where(agent_run_id: run.id, resource_type: resource_type)
-      scope = scope.where.not(id: resource.id) if resource.persisted?
-      scope.exists? ? nil : run
+      listing_context.owned_elsewhere?(
+        run_id: run.id,
+        resource_type: resource_type,
+        excluding_resource_id: resource.id
+      ) ? nil : run
     end
 
-    def adoptable?(listed_resource)
+    def adoptable?(listed_resource, listing_context:)
       tags = listed_resource.tags || {}
       return false if tags["paid.service_container"] == "true"
       return false if tags["paid.container_pool"] == "true"
-      return false unless orphaned_run?(tags["paid.agent_run_id"])
+      return false unless orphaned_run?(tags["paid.agent_run_id"], listing_context:)
 
       listed_resource.resource_type == "environment" ||
         (listed_resource.resource_type == "workspace" && tags["paid.resource"] == "workspace_volume")
     end
 
-    def orphaned_run?(agent_run_id)
+    def orphaned_run?(agent_run_id, listing_context:)
       return true if agent_run_id.blank?
 
-      run = AgentRun.find_by(id: agent_run_id)
+      run = listing_context.run_for(agent_run_id)
       run.nil? || (run.finished? && !run.container_retained?)
+    end
+
+    def build_listing_context(resources:, listed_resources:, host:)
+      run_ids = resources.filter_map(&:agent_run_id) + listed_resources.filter_map { |resource| resource.tags&.[]("paid.agent_run_id") }
+      project_ids = listed_resources.filter_map { |resource| resource.tags&.[]("paid.project_id") }
+      identifiers = listed_resources.map(&:identifier)
+      resource_types = listed_resources.map { |resource| resource.resource_type.to_s }
+
+      ListingContext.new(
+        runs_by_id: preload_runs(run_ids),
+        projects_by_id: preload_projects(project_ids),
+        resources_by_provider_key: preload_resources(host:, identifiers:, resource_types:),
+        owned_resource_ids_by_key: preload_owned_resource_ids(run_ids)
+      )
+    end
+
+    def preload_runs(run_ids)
+      AgentRun.includes(project: :account).where(id: run_ids.uniq).index_by { |run| run.id.to_s }
+    end
+
+    def preload_projects(project_ids)
+      Project.includes(:account).where(id: project_ids.uniq).index_by { |project| project.id.to_s }
+    end
+
+    def preload_resources(host:, identifiers:, resource_types:)
+      ExecutionResource
+        .where(host:, identifier: identifiers.uniq, resource_type: resource_types.uniq)
+        .index_by { |resource| provider_key(resource) }
+    end
+
+    def preload_owned_resource_ids(run_ids)
+      ExecutionResource
+        .where(agent_run_id: run_ids.uniq)
+        .pluck(:agent_run_id, :resource_type, :id)
+        .each_with_object({}) do |(agent_run_id, resource_type, resource_id), index|
+          index[[ agent_run_id, resource_type ]] ||= Set.new
+          index[[ agent_run_id, resource_type ]] << resource_id
+        end
     end
 
     def provider_key(resource)
