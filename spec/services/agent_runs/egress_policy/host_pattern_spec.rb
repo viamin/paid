@@ -50,5 +50,11 @@ RSpec.describe AgentRuns::EgressPolicy::HostPattern do
       expect(described_class.matches?("*.packages.example.com", "packages.example.com")).to be(false)
       expect(described_class.matches?("*.packages.example.com", "evil.example.com")).to be(false)
     end
+
+    it "fails closed for patterns that invalid_reason rejects" do
+      expect(described_class.matches?("*.localhost", "foo.localhost")).to be(false)
+      expect(described_class.matches?("*.com", "evil.com")).to be(false)
+      expect(described_class.matches?("*.local", "x.local")).to be(false)
+    end
   end
 end

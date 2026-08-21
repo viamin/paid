@@ -54,6 +54,7 @@ module AgentRuns
       # matches, keeping matching fail-closed.
       def matches?(pattern, host)
         return false if pattern.blank? || host.blank?
+        return false if invalid_reason(pattern)
 
         normalized_pattern = pattern.to_s.strip.downcase
         normalized_host = host.to_s.strip.downcase
