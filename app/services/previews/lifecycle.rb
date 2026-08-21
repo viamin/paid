@@ -100,7 +100,7 @@ module Previews
         )
         preview_session.save!
 
-        agent_run = create_preview_agent_run!(project:, created_by:)
+        agent_run = create_preview_agent_run!(project:, created_by:, preview_session:)
         preview_session.update!(agent_run:)
       end
 
@@ -118,14 +118,17 @@ module Previews
       raise Error.new(e.message, preview_session: preview_session)
     end
 
-    def create_preview_agent_run!(project:, created_by:)
+    def create_preview_agent_run!(project:, created_by:, preview_session:)
       AgentRun.create!(
         project: project,
         initiating_user: created_by,
         agent_type: "internal_agent",
         goal: "create_pr",
         custom_prompt: PREVIEW_CUSTOM_PROMPT,
-        external_metadata: { AgentRun::PREVIEW_SESSION_EXTERNAL_METADATA_KEY => true },
+        external_metadata: AgentRun.preview_execution_metadata(
+          preview_session: preview_session,
+          granted_by: created_by
+        ),
         trigger_type: "manual",
         status: "running",
         started_at: Time.current

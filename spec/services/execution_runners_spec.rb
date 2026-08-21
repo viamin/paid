@@ -10,6 +10,9 @@ require "rails_helper"
 # @spec CONTAINER-RUNTIME-017
 # @spec CONTAINER-RUNTIME-018
 # @spec CONTAINER-RUNTIME-020
+# @spec CONTAINER-RUNTIME-028
+# @spec EXEC-INGRESS-001
+# @spec EXEC-INGRESS-002
 RSpec.describe ExecutionRunners do
   describe ".resolve" do
     it "returns a LocalDockerRunner for the current Docker-only backends" do
@@ -52,7 +55,8 @@ RSpec.describe ExecutionRunners do
         execution_origin: "paid_native",
         prompt_version_id: nil,
         custom_prompt: nil,
-        issue_id: nil
+        issue_id: nil,
+        execution_ingress_policy: ExecutionRunners::IngressPolicy.default_deny
       )
     end
     let(:project) do
@@ -67,6 +71,7 @@ RSpec.describe ExecutionRunners do
         resources: ExecutionRunners::ComputeRequirements.new(cpu_quota: 1, memory_bytes: 2, disk_bytes: 3, pids_limit: 4),
         environment: { "FOO" => "bar" },
         networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted,
+        ingress_policy: ExecutionRunners::IngressPolicy.default_deny,
         workspace: ExecutionRunners::WorkspaceStrategy.named_volume,
         services: [ ExecutionRunners::ServiceDeclaration.new(name: "postgres", image: "pg", port: 5432, env: {}, type: :database) ],
         secrets_config: { "auth" => "proxy" }
@@ -86,6 +91,7 @@ RSpec.describe ExecutionRunners do
     it "embeds the resource, networking, and service declarations" do
       expect(spec.resources).to be_a(ExecutionRunners::ComputeRequirements)
       expect(spec.networking_policy).to be_a(ExecutionRunners::NetworkingPolicy)
+      expect(spec.ingress_policy).to be_a(ExecutionRunners::IngressPolicy)
       expect(spec.services.first).to be_a(ExecutionRunners::ServiceDeclaration)
     end
 
@@ -99,6 +105,7 @@ RSpec.describe ExecutionRunners do
       expect(manifest).to be_a(ExecutionRunners::ExecutionInputManifest)
       expect(manifest.repository.dig("ref", "branch_name")).to eq("agent-run-branch")
       expect(manifest.execution.dig("workspace", "mode")).to eq("named_volume")
+      expect(manifest.execution.dig("ingress", "public_inbound")).to be(false)
     end
 
     # @spec CONTAINER-RUNTIME-027
@@ -117,6 +124,114 @@ RSpec.describe ExecutionRunners do
       expect(built.resources.cpu_quota).to eq(123_000)
       expect(built.resources.memory_bytes).to eq(5.gigabytes)
       expect(built.resources.disk_bytes).to eq(2.gigabytes)
+    end
+  end
+
+  describe ExecutionRunners::IngressCapability do
+    it "normalizes a scoped authenticated preview grant" do
+      capability = described_class.build(
+        kind: "preview",
+        scope: "paid_mediated_tunnel",
+        expires_at: 2.days.from_now.iso8601,
+        authentication: { required: true, type: "authenticated_proxy" },
+        granted_at: 1.day.ago.iso8601,
+        granted_by: "user:42"
+      )
+
+      expect(capability).to be_preview
+      expect(capability).to be_supported_kind
+      expect(capability).to be_authenticated
+      expect(capability).to be_valid_grant
+      expect(capability.to_h["granted_by"]).to eq("user:42")
+    end
+  end
+
+  describe ExecutionRunners::IngressPolicy do
+    it "defaults to no public inbound endpoint" do
+      policy = described_class.default_deny
+
+      expect(policy.public_inbound).to be(false)
+      expect(policy.capabilities).to eq([])
+      expect(policy.violation_message).to be_nil
+    end
+
+    it "treats absent metadata as the default-deny posture" do
+      policy = described_class.from_metadata({})
+
+      expect(policy.public_inbound).to be(false)
+      expect(policy).to be_explicit
+      expect(policy.violation_message).to be_nil
+    end
+
+    it "treats nil metadata as the default-deny posture" do
+      policy = described_class.from_metadata(nil)
+
+      expect(policy.public_inbound).to be(false)
+      expect(policy).to be_explicit
+    end
+
+    it "rejects a preview exception whose grant has expired" do
+      policy = described_class.from_metadata(
+        "public_inbound" => false,
+        "capabilities" => [
+          {
+            "kind" => "preview",
+            "scope" => "paid_mediated_tunnel",
+            "expires_at" => 1.hour.ago.iso8601,
+            "authentication" => { "required" => true, "type" => "authenticated_proxy" },
+            "granted_at" => 2.hours.ago.iso8601,
+            "granted_by" => "user:42"
+          }
+        ]
+      )
+
+      expect(policy.supported_for_runtime?).to be(false)
+      expect(policy.violation_message)
+        .to eq("Ingress exception grants must be authenticated, time-bounded, and explicitly recorded.")
+    end
+
+    it "accepts an authenticated, time-bounded preview exception" do
+      policy = described_class.default_deny(
+        capabilities: [
+          ExecutionRunners::IngressCapability.build(
+            kind: "preview",
+            scope: "paid_mediated_tunnel",
+            expires_at: 2.days.from_now.iso8601,
+            authentication: { required: true, type: "authenticated_proxy" },
+            granted_at: 1.day.ago.iso8601,
+            granted_by: "user:42"
+          )
+        ]
+      )
+
+      expect(policy.supported_for_runtime?).to be(true)
+      expect(policy.violation_message).to be_nil
+    end
+
+    it "rejects metadata that requests public inbound exposure" do
+      policy = described_class.from_metadata("public_inbound" => true)
+
+      expect(policy.supported_for_runtime?).to be(false)
+      expect(policy.violation_message)
+        .to eq("Execution ingress policy must explicitly deny public inbound exposure.")
+    end
+
+    it "rejects unsupported inbound exposure kinds" do
+      policy = described_class.default_deny(
+        capabilities: [
+          ExecutionRunners::IngressCapability.build(
+            kind: "debug",
+            scope: "public_listener",
+            expires_at: 2.days.from_now.iso8601,
+            authentication: { required: true, type: "signed_token" },
+            granted_at: 1.day.ago.iso8601,
+            granted_by: "user:42"
+          )
+        ]
+      )
+
+      expect(policy.supported_for_runtime?).to be(false)
+      expect(policy.violation_message).to eq("Unsupported inbound exposure requested: debug.")
     end
   end
 
@@ -274,6 +389,7 @@ RSpec.describe ExecutionRunners do
       expect(policy).to be_restricted
       expect(policy).to be_firewall
       expect(policy.allow_destinations).to eq([ { host: "10.0.0.1", port: 5432 } ])
+      expect(policy.canonical_mode).to eq(:approved_services)
     end
 
     it "treats subscription_auth mode as unrestricted" do
@@ -282,6 +398,7 @@ RSpec.describe ExecutionRunners do
       expect(policy).not_to be_restricted
       expect(policy).not_to be_firewall
       expect(policy.allow_destinations).to eq([])
+      expect(policy.canonical_mode).to eq(:model_direct)
     end
 
     it "treats direct_outbound mode as unrestricted" do
@@ -289,6 +406,131 @@ RSpec.describe ExecutionRunners do
 
       expect(policy).not_to be_restricted
       expect(policy).not_to be_firewall
+      expect(policy.canonical_mode).to eq(:model_direct)
+    end
+
+    describe "new RDR-062 intents" do
+      it "treats :no_outbound as restricted and firewall-required with no egress" do
+        policy = described_class.no_outbound
+
+        expect(policy).to be_restricted
+        expect(policy).to be_firewall
+        expect(policy).to be_no_outbound
+        expect(policy.allow_destinations).to eq([])
+      end
+
+      it "treats :proxy_only as restricted and firewall-required" do
+        policy = described_class.proxy_only
+
+        expect(policy).to be_restricted
+        expect(policy).to be_firewall
+        expect(policy.allow_destinations).to eq([])
+      end
+
+      it "treats :git_plus_proxy as restricted and firewall-required" do
+        policy = described_class.git_plus_proxy
+
+        expect(policy).to be_restricted
+        expect(policy).to be_firewall
+      end
+
+      it "treats :approved_services as restricted and firewall-required" do
+        policy = described_class.approved_services
+
+        expect(policy).to be_restricted
+        expect(policy).to be_firewall
+        expect(policy.canonical_mode).to eq(:approved_services)
+      end
+
+      it "treats the :proxy_restricted alias as approved_services" do
+        policy = described_class.proxy_restricted
+
+        expect(policy).to be_approved_services
+      end
+
+      it "treats :model_direct as unrestricted and firewall-free" do
+        policy = described_class.model_direct
+
+        expect(policy).not_to be_restricted
+        expect(policy).not_to be_firewall
+        expect(policy).to be_model_direct
+        expect(policy).not_to be_explicit_internet
+      end
+
+      it "treats :explicit_internet as unrestricted and firewall-free" do
+        policy = described_class.explicit_internet
+
+        expect(policy).not_to be_restricted
+        expect(policy).not_to be_firewall
+        expect(policy).to be_explicit_internet
+        expect(policy).not_to be_model_direct
+      end
+
+      it "preserves the legacy :proxy_restricted mode value while normalizing canonical_mode" do
+        policy = described_class.proxy_restricted
+
+        expect(policy.mode).to eq(:proxy_restricted)
+        expect(policy.canonical_mode).to eq(:approved_services)
+        expect(policy).to be_restricted
+      end
+
+      it "normalizes :subscription_auth to the :model_direct canonical mode" do
+        expect(described_class.subscription_auth.canonical_mode).to eq(:model_direct)
+      end
+
+      it "normalizes :direct_outbound to the :model_direct canonical mode" do
+        expect(described_class.direct_outbound.canonical_mode).to eq(:model_direct)
+      end
+
+      it "returns the mode unchanged for each canonical intent" do
+        %i[no_outbound proxy_only git_plus_proxy approved_services model_direct explicit_internet].each do |mode|
+          policy = described_class.public_send(mode)
+
+          expect(policy.canonical_mode).to eq(mode), "expected canonical_mode for #{mode}"
+        end
+      end
+
+      it "rejects unknown networking policy modes at construction time" do
+        expect {
+          described_class.new(mode: :unknown_mode, firewall: true, allow_destinations: [])
+        }.to raise_error(ArgumentError, /Unknown networking policy mode/)
+      end
+
+      it "rejects firewall settings that conflict with the mode" do
+        expect {
+          described_class.new(mode: :model_direct, firewall: true, allow_destinations: [])
+        }.to raise_error(ArgumentError, /requires firewall=false/)
+      end
+
+      it "rejects allow destinations without host and port keys" do
+        expect {
+          described_class.proxy_only(allow_destinations: [ { host: "10.0.0.1" } ])
+        }.to raise_error(ArgumentError, /missing keys: port/)
+      end
+
+      it "normalizes allow destinations with string keys" do
+        policy = described_class.proxy_only(allow_destinations: [ { "host" => "10.0.0.1", "port" => 5432 } ])
+
+        expect(policy.allow_destinations).to eq([ { host: "10.0.0.1", port: 5432 } ])
+      end
+
+      it "normalizes string ports to integers" do
+        policy = described_class.proxy_only(allow_destinations: [ { "host" => "10.0.0.1", "port" => "5432" } ])
+
+        expect(policy.allow_destinations).to eq([ { host: "10.0.0.1", port: 5432 } ])
+      end
+
+      it "rejects allow destinations with an invalid host value" do
+        expect {
+          described_class.proxy_only(allow_destinations: [ { host: "bad host", port: 5432 } ])
+        }.to raise_error(ArgumentError, /host is invalid/)
+      end
+
+      it "rejects allow destinations with an invalid port value" do
+        expect {
+          described_class.proxy_only(allow_destinations: [ { host: "10.0.0.1", port: 70_000 } ])
+        }.to raise_error(ArgumentError, /port is invalid/)
+      end
     end
 
     it "defaults the egress_profile to :locked for every factory method" do
@@ -656,6 +898,7 @@ RSpec.describe ExecutionRunners do
         resources: ExecutionRunners::ComputeRequirements.new(cpu_quota: 100_000, memory_bytes: 1024, disk_bytes: 2048, pids_limit: 50),
         environment: { "DATABASE_URL" => "postgres://secret@db", "API_TOKEN" => "shh" },
         networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted,
+        ingress_policy: ExecutionRunners::IngressPolicy.default_deny,
         workspace: ExecutionRunners::WorkspaceStrategy.named_volume,
         services: services,
         secrets_config: { "github_token" => "top-secret" }
@@ -710,7 +953,7 @@ RSpec.describe ExecutionRunners do
       manifest = described_class.from_run_spec(run_spec)
 
       expect(manifest.execution["networking"]).to include(
-        "mode" => "proxy_restricted",
+        "mode" => "approved_services",
         "firewall" => true,
         "egress_profile" => "locked"
       )
@@ -734,7 +977,7 @@ RSpec.describe ExecutionRunners do
       manifest = described_class.from_run_spec(open_spec)
 
       expect(manifest.execution["networking"]).to include(
-        "mode" => "direct_outbound",
+        "mode" => "model_direct",
         "firewall" => false,
         "egress_profile" => "open"
       )
