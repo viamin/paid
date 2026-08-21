@@ -118,7 +118,8 @@ RSpec.describe AgentRuns::EgressPolicy::GatewayAdapters::Docker do
         '{"host":"evil.com","port":443,"matched_rule":"no match","scheme":"https"}',
         '{"host":"bad.org","port":80,"matched_rule":"no match","scheme":"http"}'
       ].join("\n") + "\n"
-      allow(backend).to receive(:exec_in_container).and_return([ [ log_lines ], [], 0 ])
+      allow(backend).to receive(:exec_in_container)
+        .and_return([ [ log_lines ], [], 0 ], [ [], [], 0 ])
 
       adapter.collect_denials(agent_run: agent_run, backend: backend)
 
@@ -134,7 +135,8 @@ RSpec.describe AgentRuns::EgressPolicy::GatewayAdapters::Docker do
         '{"host":"evil.com","port":443,"matched_rule":"no match","scheme":"https"}',
         '{"host":"bad.org","port":80,"matched_rule":"no match","scheme":"http"}'
       ].join("\n") + "\n"
-      allow(backend).to receive(:exec_in_container).and_return([ [ log_lines ], [], 0 ])
+      allow(backend).to receive(:exec_in_container)
+        .and_return([ [ log_lines ], [], 0 ], [ [], [], 0 ])
 
       denials = adapter.collect_denials(agent_run: agent_run, backend: backend)
       expect(denials).to eq([
@@ -144,7 +146,7 @@ RSpec.describe AgentRuns::EgressPolicy::GatewayAdapters::Docker do
     end
 
     it "truncates the per-run denial log so a re-entry does not re-ingest denials" do
-      allow(backend).to receive(:exec_in_container).and_return([ [ "" ], [], 0 ])
+      allow(backend).to receive(:exec_in_container).and_return([ [ "" ], [], 0 ], [ [], [], 0 ])
 
       adapter.collect_denials(agent_run: agent_run, backend: backend)
 
@@ -170,15 +172,26 @@ RSpec.describe AgentRuns::EgressPolicy::GatewayAdapters::Docker do
     end
 
     it "returns an empty array when the denial log does not exist" do
-      allow(backend).to receive(:exec_in_container).and_return([ [ "" ], [], 0 ])
+      allow(backend).to receive(:exec_in_container).and_return([ [], [], 3 ])
 
       expect(adapter.collect_denials(agent_run: agent_run, backend: backend)).to eq([])
     end
 
-    it "returns an empty array on Docker errors" do
-      allow(backend).to receive(:exec_in_container).and_raise(Docker::Error::DockerError, "container gone")
+    it "raises when reading the denial log fails for a reason other than a missing file" do
+      allow(backend).to receive(:exec_in_container).and_return([ [], [ "Permission denied\n" ], 1 ])
 
-      expect(adapter.collect_denials(agent_run: agent_run, backend: backend)).to eq([])
+      expect { adapter.collect_denials(agent_run: agent_run, backend: backend) }
+        .to raise_error(AgentRuns::EgressPolicy::Gateway::UnavailableError, /failed to read gateway denial log/)
+    end
+
+    it "does not truncate when reading the denial log fails" do
+      allow(backend).to receive(:exec_in_container).and_return([ [], [ "Permission denied\n" ], 1 ])
+
+      expect do
+        adapter.collect_denials(agent_run: agent_run, backend: backend)
+      end.to raise_error(AgentRuns::EgressPolicy::Gateway::UnavailableError)
+
+      expect(backend).to have_received(:exec_in_container).once
     end
   end
 end

@@ -110,25 +110,18 @@ module AgentRuns
         def collect_denials(agent_run:, backend:)
           gateway_container = backend.get_container(GATEWAY_HOST)
           path = denial_log_path(agent_run: agent_run)
-          stdout, _stderr, exit_code = backend.exec_in_container(
-            gateway_container,
-            [ "sh", "-c", "cat #{path} 2>/dev/null || true" ],
-            wait: 5
-          )
-          denials = []
-          if exit_code&.zero?
-            denials = stdout.join.each_line.filter_map do |line|
-              parsed = JSON.parse(line.strip)
-              { host: parsed["host"], port: parsed["port"],
-                matched_rule: parsed["matched_rule"], scheme: parsed["scheme"] }
-            rescue JSON::ParserError
-              nil
-            end
+          stdout = read_denial_log(gateway_container: gateway_container, path: path, backend: backend)
+          return [] unless stdout
+
+          denials = stdout.join.each_line.filter_map do |line|
+            parsed = JSON.parse(line.strip)
+            { host: parsed["host"], port: parsed["port"],
+              matched_rule: parsed["matched_rule"], scheme: parsed["scheme"] }
+          rescue JSON::ParserError
+            nil
           end
           truncate_per_run_log!(gateway_container: gateway_container, path: path, backend: backend)
           denials
-        rescue ::Docker::Error::DockerError
-          []
         end
 
         # Path to the per-run allowlist config inside the shared
@@ -163,6 +156,22 @@ module AgentRuns
         end
 
         private
+
+        # Returns nil only when the denial log does not exist yet. Any other
+        # read failure is a real operational error and must bubble so the
+        # runner can log that the denial audit trail could not be drained.
+        def read_denial_log(gateway_container:, path:, backend:)
+          stdout, stderr, exit_code = backend.exec_in_container(
+            gateway_container,
+            [ "sh", "-c", "if [ ! -f #{path} ]; then exit 3; fi; cat #{path}" ],
+            wait: 5
+          )
+          return nil if exit_code == 3
+          return stdout if exit_code&.zero?
+
+          raise Gateway::UnavailableError,
+            "failed to read gateway denial log #{path}: exit #{exit_code.inspect}: #{Array(stderr).join}"
+        end
 
         # Truncates the per-run denial log inside the gateway sidecar.
         # {#collect_denials} always calls this after a successful
