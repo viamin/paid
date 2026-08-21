@@ -1051,8 +1051,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_165503) do
     t.index ["project_id"], name: "index_egress_allowlist_entries_on_project_id"
     t.check_constraint "host_pattern IS NOT NULL", name: "chk_egress_allowlist_entries_host_present"
     t.check_constraint "port IS NULL OR port > 0 AND port <= 65535", name: "chk_egress_allowlist_entries_port_range"
-    t.check_constraint "scheme IS NULL OR (scheme::text = ANY (ARRAY['http'::character varying, 'https'::character varying]::text[]))", name: "chk_egress_allowlist_entries_scheme_valid"
-    t.check_constraint "source_kind::text = ANY (ARRAY['tenant'::character varying, 'platform'::character varying, 'operator_override'::character varying]::text[])", name: "chk_egress_allowlist_entries_source_kind_valid"
+    t.check_constraint "scheme IS NULL OR (scheme::text = ANY (ARRAY['http'::character varying::text, 'https'::character varying::text]))", name: "chk_egress_allowlist_entries_scheme_valid"
+    t.check_constraint "source_kind::text = ANY (ARRAY['tenant'::character varying::text, 'platform'::character varying::text, 'operator_override'::character varying::text])", name: "chk_egress_allowlist_entries_source_kind_valid"
   end
 
   create_table "egress_security_events", comment: "Audit trail for blocked outbound traffic and redacted secret-extraction attempts captured by the agent container egress gateway.", force: :cascade do |t|
@@ -1080,9 +1080,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_165503) do
     t.index ["project_id", "occurred_at"], name: "idx_egress_security_events_project_recent", order: { occurred_at: :desc }
     t.index ["project_id"], name: "index_egress_security_events_on_project_id"
     t.check_constraint "destination_port IS NULL OR destination_port > 0 AND destination_port <= 65535", name: "chk_egress_security_events_port_range"
-    t.check_constraint "event_kind::text = ANY (ARRAY['denied_egress'::character varying, 'redacted_secret_extraction'::character varying, 'allowlist_match'::character varying]::text[])", name: "chk_egress_security_events_kind_valid"
-    t.check_constraint "scheme IS NULL OR (scheme::text = ANY (ARRAY['http'::character varying, 'https'::character varying]::text[]))", name: "chk_egress_security_events_scheme_valid"
-    t.check_constraint "severity::text = ANY (ARRAY['info'::character varying, 'warn'::character varying, 'critical'::character varying]::text[])", name: "chk_egress_security_events_severity_valid"
+    t.check_constraint "event_kind::text = ANY (ARRAY['denied_egress'::character varying::text, 'redacted_secret_extraction'::character varying::text, 'allowlist_match'::character varying::text])", name: "chk_egress_security_events_kind_valid"
+    t.check_constraint "scheme IS NULL OR (scheme::text = ANY (ARRAY['http'::character varying::text, 'https'::character varying::text]))", name: "chk_egress_security_events_scheme_valid"
+    t.check_constraint "severity::text = ANY (ARRAY['info'::character varying::text, 'warn'::character varying::text, 'critical'::character varying::text])", name: "chk_egress_security_events_severity_valid"
   end
 
   create_table "exception_incidents", force: :cascade do |t|
@@ -4184,6 +4184,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_165503) do
       CREATE TRIGGER logidze_on_accounts BEFORE INSERT OR UPDATE ON public.accounts FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
+  create_trigger :logidze_on_agent_images, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_agent_images BEFORE INSERT OR UPDATE ON public.agent_images FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
   create_trigger :logidze_on_billing_invoices, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_billing_invoices BEFORE INSERT OR UPDATE ON public.billing_invoices FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
@@ -4298,9 +4302,5 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_165503) do
 
   create_trigger :logidze_on_users, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_users BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{encrypted_password,reset_password_token,reset_password_sent_at,remember_created_at}')
-  SQL
-
-  create_trigger :logidze_on_agent_images, sql_definition: <<-SQL
-      CREATE TRIGGER logidze_on_agent_images BEFORE INSERT OR UPDATE ON public.agent_images FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 end
