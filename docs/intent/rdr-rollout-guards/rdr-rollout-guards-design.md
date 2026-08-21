@@ -25,4 +25,8 @@ action, and cleanup criteria. Non-runtime work uses `docs-only`,
 `Features::RdrContract` enforces the section for `create_feature` docs-only PRs.
 `Prompts::BuildForCreateFeature` tells RDR authors to fill it in, and
 `PromptAssembly::Sections::RdrRolloutGuard` reminds implementation agents to
-read and preserve it before changing runtime behavior.
+read and preserve it before changing runtime behavior. The guard trigger reads
+the issue title, body, and any trusted/admitted collaborator comments
+(mirroring `PromptAssembly::Trust.comment_trusted?`); a bare reference inside
+an untrusted comment is ignored so prompt-injected bodies cannot disable the
+guard.

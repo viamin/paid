@@ -11,7 +11,10 @@
 
 - [x] **RDR-ROLLOUT-GUARD-002** — Issue implementation prompts SHALL remind
   agents that RDR-referenced runtime behavior must preserve the RDR's rollout
-  guard until the issue or RDR closeout explicitly requests cleanup.
+  guard until the issue or RDR closeout explicitly requests cleanup. An RDR
+  reference appearing in the issue title, body, OR a trusted/admitted
+  collaborator comment SHALL trigger the guard reminder. References in
+  untrusted comments SHALL NOT trigger it.
   *Tests:* `spec/services/prompt_assembly/build_issue_prompt_spec.rb`
   *Code:* `PromptAssembly::Sections::RdrRolloutGuard`,
   `PromptAssembly::BuildIssuePrompt`
