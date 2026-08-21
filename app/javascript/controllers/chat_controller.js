@@ -11,6 +11,7 @@ export default class extends Controller {
     this.currentStreamId = null
     this.currentAttemptToolCards = []
     this.scrollAnimationId = null
+    this.boundUpdateViewportHeight = () => this.updateViewportHeight()
 
     this.subscription = consumer.subscriptions.create(
       { channel: "ChatChannel", session_id: this.sessionIdValue },
@@ -22,11 +23,14 @@ export default class extends Controller {
       }
     )
 
+    window.addEventListener("resize", this.boundUpdateViewportHeight)
+    this.updateViewportHeight()
     this.handleScroll()
   }
 
   disconnect() {
     this.subscription?.unsubscribe()
+    window.removeEventListener("resize", this.boundUpdateViewportHeight)
     if (this.scrollAnimationId) cancelAnimationFrame(this.scrollAnimationId)
   }
 
@@ -81,6 +85,11 @@ export default class extends Controller {
     if (input.name?.endsWith("[title]")) {
       input.form?.requestSubmit()
     }
+  }
+
+  updateViewportHeight() {
+    const top = Math.max(this.element.getBoundingClientRect().top, 0)
+    this.element.style.setProperty("--chat-panel-offset-top", `${Math.ceil(top)}px`)
   }
 
   handleScroll() {
