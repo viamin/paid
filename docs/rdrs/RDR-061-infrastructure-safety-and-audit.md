@@ -74,12 +74,31 @@ This is distinct from customer billing. It is an operator safety and audit decis
 
 ### Current Implementation
 
-- `Capacity::RunAdmission` enforces per-user, per-project, per-host, and account create-PR ceilings; #3353 adds global/per-runner limits.
-- `AgentRun` has statuses, timestamps, duration, token limit status, peak memory, runner handle, external metadata, and logs.
-- `DispatchCircuitBreaker`, tenant/user settings, and runner quota tracking provide additional dispatch controls.
-- `TokenUsageTracker` and `CostBudget` track LLM cost, not infrastructure spend.
-- `ContainerMetric` samples Docker resource usage; #3355 proposes infra usage/cost records.
-- Configuration and credential models often use Logidze, but there was no dedicated execution-security audit event stream until issue #3414 introduced `ExecutionAuditEvent`: an append-only, tenant-scoped, secret-safe record queryable by account/project/run/runner/image/resource, retained 400 days via `ExecutionAuditEventRetentionJob` (see `docs/intent/execution-audit/`). It ships the record shape and retention only; call sites such as `Containers::Provision` are not yet instrumented to write the event classes this RDR's Audit Event Model section defines, and the safety-rail admission/emergency-disable controls below remain unimplemented.
+- `Capacity::RunAdmission` now enforces the shipped pre-provisioning
+  infrastructure safety rails for aggregate requested CPU/memory/disk,
+  provisioning-rate ceilings, and per-execution resource maxima; it continues
+  to sit alongside the existing per-user, per-project, per-host, and account
+  create-PR ceilings plus the global/per-runner concurrency controls from
+  #3353.
+- `ExecutionControls::RunImpact` and the execution-disable controls under
+  `docs/intent/execution-disable-controls/` implement the shipped global,
+  account, project, runner, and backend emergency-disable behavior.
+- `AgentRun` has statuses, timestamps, duration, token limit status, peak
+  memory, runner handle, external metadata, and logs.
+- `DispatchCircuitBreaker`, tenant/user settings, and runner quota tracking
+  provide additional dispatch controls.
+- `TokenUsageTracker` and `CostBudget` track LLM cost, not infrastructure
+  spend.
+- `ContainerMetric` samples Docker resource usage; #3355 proposes infra
+  usage/cost records.
+- `ExecutionAuditEvent`, introduced by issue #3414 and extended by this
+  closeout work, provides a dedicated append-only, tenant-scoped, secret-safe
+  audit store queryable by account/project/run/runner/image/resource and
+  retained 400 days via `ExecutionAuditEventRetentionJob` (see
+  `docs/intent/execution-audit/`). The shipped model covers record shape,
+  retention, and application-level append-only behavior, but call sites such as
+  `Containers::Provision` are not yet instrumented to emit the lifecycle event
+  classes defined in this RDR's Audit Event Model section.
 
 ### Forces and Constraints
 
