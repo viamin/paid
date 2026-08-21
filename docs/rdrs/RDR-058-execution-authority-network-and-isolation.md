@@ -10,7 +10,7 @@
 - **Priority**: P1
 - **Related RDRs**: [RDR-004](RDR-004-container-isolation.md) (Container Isolation), [RDR-006](RDR-006-secrets-proxy.md) (Secrets Proxy), [RDR-019](RDR-019-remote-container-execution.md) (Remote Container Execution), [RDR-024](RDR-024-multi-tenancy-isolation-strategy.md) (Multi-Tenancy Isolation Strategy), [RDR-041](RDR-041-subscription-runner-auth-lifecycle.md) (Subscription Runner Managed Auth Lifecycle), [RDR-048](RDR-048-multi-host-docker-backend-support.md) (Multi-Host Docker Backend Support), [RDR-055](RDR-055-agent-container-egress-allowlisting.md) (Agent Container Egress Allowlisting), [RDR-057](RDR-057-remote-execution-data-contract.md) (Remote Execution Data Contract)
 - **Related Issues**: [#3418](https://github.com/viamin/paid/issues/3418) (closeout), [#3402](https://github.com/viamin/paid/issues/3402), [#3404](https://github.com/viamin/paid/issues/3404), [#3405](https://github.com/viamin/paid/issues/3405), [#3341](https://github.com/viamin/paid/issues/3341), [#3343](https://github.com/viamin/paid/issues/3343), [#3356](https://github.com/viamin/paid/issues/3356)
-- **Related Tests**: `spec/services/network_policy_spec.rb`, `spec/services/execution_runners_spec.rb`, `spec/services/execution_runners/`, `spec/models/runner_credential_spec.rb`, `spec/models/runner_auth_attempt_spec.rb`, `spec/requests/runner_credentials_spec.rb`, `spec/security/tenant_context_spec.rb`, `spec/requests/api/secrets_proxy_spec.rb`, `spec/services/containers/provision_spec.rb`
+- **Related Tests**: `spec/services/network_policy_spec.rb`, `spec/services/execution_runners_spec.rb`, `spec/services/execution_runners/`, `spec/models/runner_credential_spec.rb`, `spec/models/runner_auth_attempt_spec.rb`, `spec/models/agent_run_spec.rb`, `spec/requests/runner_credentials_spec.rb`, `spec/security/tenant_context_spec.rb`, `spec/requests/api/secrets_proxy_spec.rb`, `spec/services/containers/provision_spec.rb`
 
 ## Implementation Status
 
@@ -21,7 +21,7 @@ in Draft status.
 
 | Criterion | Status | Evidence |
 |-----------|--------|----------|
-| Per-run authority grants are explicit and secret-free by default (`direct_outbound` is the documented exception) | Implemented | `app/models/agent_run.rb` `proxy_token`; `app/controllers/api/secrets_proxy_controller.rb`; RDR-006 |
+| Per-run authority grants are explicit and secret-free by default (`direct_outbound` is the documented exception) | Implemented | `app/models/agent_run.rb` `proxy_token` and persisted `authority_grants` snapshot; `app/services/execution_runners.rb` `ExecutionRunners::AuthorityGrantSet`; `app/controllers/api/secrets_proxy_controller.rb`; RDR-006 |
 | Network policy is provider-neutral and runner-validated before provisioning | Implemented | `app/services/execution_runners.rb` `NetworkingPolicy`; `app/services/containers/provision.rb` `derived_networking_policy`; `app/services/network_policy.rb` |
 | Execution environments have no public ingress by default | Implemented | `app/services/network_policy.rb` — `paid_agent` network is `internal: true` in production (see `NetworkPolicy.create_network`); no container ports exposed; in other environments egress isolation relies on the in-container iptables firewall; `spec/services/network_policy_spec.rb` |
 | Preview/debug ingress exceptions are scoped | Implemented | `preview_sessions` and `PreviewProvisionState` — tunnel creation requires an explicit project-owned `preview_session` record; `app/models/preview_session.rb` |
@@ -47,10 +47,6 @@ checklist items from the closeout issue, with the qualifier that the
 *enforcement* is shipped but several *modeled* and *pre-provision-validated*
 counterparts are not:
 
-- The structured per-run authority-grant model from
-  [#3402](https://github.com/viamin/paid/issues/3402) is not built
-  (`RunSpec#secrets_config` is `nil` in every `from_agent_run` path; authority
-  is currently implicit in `proxy_token` + `derived_networking_policy`).
 - Runner capability modeling and pre-provisioning rejection from
   [#3356](https://github.com/viamin/paid/issues/3356) is not built.
 - Pre-provision enforcement of the no-public-ingress default from
@@ -70,6 +66,18 @@ of those five represent remaining RDR-058 scope (#3356, #3402, #3404, #3405),
 the umbrella status of RDR-058 stays **Partially Implemented**. Closing the
 umbrella while children stay open is premature; the closeout should be
 re-run after the remaining gaps land.
+
+### 2026-08-19 Update — Per-Run Authority Grant Model (#3402)
+
+The structured per-run authority-grant model called out as missing above is
+now built. Each `agent_run` persists a secret-free `authority_grants`
+snapshot (see Layer 1 below), and `ExecutionRunners::RunSpec#authority_grants`
+exposes the same `AuthorityGrantSet` at the runner boundary so runner
+implementations can validate support before provisioning. `#3402` is closed.
+
+Of the six blocking children of #3418, three remain open (#3356, #3404, #3405)
+plus RDR-055 itself. The umbrella status of RDR-058 stays **Partially
+Implemented** until those land.
 
 ## Problem Statement
 
@@ -142,6 +150,22 @@ not provider API keys.
 
 Subscription-auth materialization goes through `Runners::SubscriptionAuthMaterializers`
 and is recorded as a `RunnerAuthAttempt` with telemetry but no secret values.
+
+Each `agent_run` also carries a persisted, secret-free `authority_grants`
+snapshot (`ExecutionRunners::AuthorityGrantSet`), built from the run's
+resolved networking policy and credential mode. The grant model records
+authority classes rather than secret payloads — Paid API proxy token, GitHub
+authority, model-provider credentials (with an explicit `proxy_mode` /
+`subscription_auth` / `direct_outbound` delivery mode), subscription-auth
+material, MCP credentials, object-storage upload authority, and service
+credentials. `subscription_auth_material` is emitted only for runs that
+materially receive native subscription auth, so proxy-mode and
+direct-outbound runs stay distinguishable from subscription-auth runs. The
+same `AuthorityGrantSet` is exposed at the runner boundary through
+`ExecutionRunners::RunSpec#authority_grants` and embedded in the
+`ExecutionInputManifest`, so runner implementations and downstream
+manifest/audit consumers can inspect a stable, structured grant contract
+without ever seeing secrets.
 
 ### Layer 2 — Provider-Neutral Network Policy
 

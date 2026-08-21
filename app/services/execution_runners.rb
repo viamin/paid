@@ -397,6 +397,157 @@ module ExecutionRunners
     def input_manifest
       ExecutionInputManifest.from_run_spec(self)
     end
+
+    # Prefers the persisted authority-grant snapshot on +agent_run+ when one
+    # exists *and* it still matches the current derivation inputs. This keeps a
+    # provision retry aligned with the snapshot already recorded on the run and
+    # audited by operators, without ever letting the manifest disagree with
+    # itself: +provision_via_runner+ (app/models/agent_run.rb) deliberately
+    # re-derives +networking_policy+ fresh on retry (e.g. for subscription-auth /
+    # direct-outbound recovery), and the grant set also depends on the run's
+    # current service-env keys, MCP server names, and runner selection. If the
+    # persisted snapshot differs from the fresh derivation, it is stale relative
+    # to this attempt, so grants are re-derived from current inputs instead —
+    # the persisted +agent_run.authority_grants+ column itself is left untouched
+    # as the historical audit record (RDR-058).
+    # @spec EXECUTION-AUTHORITY-002
+    def authority_grants
+      persisted = persisted_authority_grants
+      fresh = AuthorityGrantSet.from_agent_run(agent_run, networking_policy: networking_policy)
+      return persisted if persisted == fresh
+
+      fresh
+    end
+
+    private
+
+    def persisted_authority_grants
+      return nil unless agent_run.authority_grants.is_a?(Hash) && agent_run.authority_grants["grants"].present?
+
+      AuthorityGrantSet.from_json(agent_run.authority_grants)
+    end
+  end
+
+  # Secret-free execution authority grant contract for a run. This is derived
+  # before provisioning so runners can validate support without seeing secret
+  # payloads.
+  # @spec EXECUTION-AUTHORITY-002
+  # @spec EXECUTION-AUTHORITY-003
+  # @spec EXECUTION-AUTHORITY-004
+  AuthorityGrantSet = Data.define(:schema_version, :grants) do
+    SCHEMA_VERSION = 1
+
+    def self.from_agent_run(agent_run, networking_policy:)
+      new(schema_version: SCHEMA_VERSION, grants: build_grants(agent_run, networking_policy))
+    end
+
+    def as_json(*)
+      {
+        "schema_version" => schema_version,
+        "grants" => ExecutionRunners.json_value(grants)
+      }
+    end
+
+    def to_json(*args)
+      as_json.to_json(*args)
+    end
+
+    def to_storage
+      as_json
+    end
+
+    # The network mode recorded on the +model_provider_credentials+ grant,
+    # used to detect whether a persisted snapshot still matches a freshly
+    # derived +NetworkingPolicy+ (see {RunSpec#authority_grants}).
+    def network_mode
+      grants.find { |grant| grant["kind"] == "model_provider_credentials" }&.dig("metadata", "network_mode")
+    end
+
+    def self.from_json(payload)
+      data = payload.is_a?(String) ? JSON.parse(payload) : ExecutionRunners.json_value(payload)
+      new(schema_version: data["schema_version"], grants: data["grants"] || [])
+    end
+
+    def self.build_grants(agent_run, networking_policy)
+      delivery = provider_delivery_for(networking_policy)
+      grants = [
+        grant("paid_api_proxy_token", delivery: "run_proxy_token", scope: "run"),
+        grant("github_authority", delivery: "control_plane_proxy", scope: "project"),
+        grant("model_provider_credentials", delivery: delivery, scope: "runner",
+              metadata: { "runner_key" => runner_key_for(agent_run), "network_mode" => networking_policy&.mode.to_s })
+      ]
+
+      if delivery == "subscription_auth"
+        grants << grant("subscription_auth_material", delivery: "materialized_runtime_auth", scope: "runner",
+                        metadata: { "runner_key" => runner_key_for(agent_run) })
+      end
+
+      mcp_server_names = mcp_server_names_for(agent_run)
+      if mcp_server_names.any?
+        grants << grant("mcp_credentials", delivery: "mcp_server_configuration", scope: "project",
+                        metadata: { "server_names" => mcp_server_names })
+      end
+
+      if object_storage_upload_enabled_for?(agent_run)
+        grants << grant("object_storage_upload_authority", delivery: "object_storage", scope: "account",
+                        metadata: { "backend" => "s3_compatible" })
+      end
+
+      service_env_keys = service_env_keys_for(agent_run)
+      if service_env_keys.any?
+        grants << grant("service_credentials", delivery: "service_environment", scope: "run",
+                        metadata: { "env_keys" => service_env_keys })
+      end
+
+      grants
+    end
+
+    def self.grant(kind, delivery:, scope:, metadata: {})
+      {
+        "kind" => kind,
+        "delivery" => delivery,
+        "scope" => scope,
+        "metadata" => ExecutionRunners.json_value(metadata)
+      }
+    end
+    private_class_method :grant
+
+    def self.provider_delivery_for(networking_policy)
+      case networking_policy&.mode
+      when :subscription_auth then "subscription_auth"
+      when :direct_outbound then "direct_outbound"
+      else "proxy_mode"
+      end
+    end
+    private_class_method :provider_delivery_for
+
+    def self.runner_key_for(agent_run)
+      agent_run.runner&.runner_key || RunnerSupport.runner_key_for_agent_type(agent_run.agent_type)
+    end
+    private_class_method :runner_key_for
+
+    def self.mcp_server_names_for(agent_run)
+      snapshot_names = Array(agent_run.mcp_server_snapshot).filter_map { |server| server["name"] }
+      provisioned = agent_run.mcp_provisioned_servers || {}
+      provisioned_names = Array(provisioned["stdio_servers"]).filter_map { |server| server["name"] } +
+        Array(provisioned["url_servers"]).filter_map { |server| server["name"] }
+
+      (snapshot_names + provisioned_names).uniq.sort
+    end
+    private_class_method :mcp_server_names_for
+
+    def self.object_storage_upload_enabled_for?(agent_run)
+      project = agent_run.project
+      return false unless project
+
+      ArtifactStorage.configured? && (project.screenshots_enabled? || project.verification_enabled?)
+    end
+    private_class_method :object_storage_upload_enabled_for?
+
+    def self.service_env_keys_for(agent_run)
+      (agent_run.service_environment || {}).to_h.keys.map(&:to_s).sort
+    end
+    private_class_method :service_env_keys_for
   end
 
   # Opaque reference to a launched environment, returned by +#provision+ and
@@ -800,7 +951,8 @@ module ExecutionRunners
             "firewall" => spec.networking_policy&.firewall?,
             "allow_destinations" => ExecutionRunners.json_value(spec.networking_policy&.allow_destinations || []),
             "egress_profile" => spec.networking_policy&.egress_profile&.to_s
-          }.compact
+          }.compact,
+          "authority_grants" => spec.authority_grants.as_json
         }.compact,
         prompt_refs: prompt_refs,
         context_refs: context_refs,

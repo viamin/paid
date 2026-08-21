@@ -8,13 +8,24 @@ db_names() {
   ruby <<'RUBY'
 require File.expand_path("config/worktree_database_names", Dir.pwd)
 
-puts Paid::WorktreeDatabaseNames.development_primary_name
-puts Paid::WorktreeDatabaseNames.development_cable_name
-puts Paid::WorktreeDatabaseNames.test_name
+begin
+  puts Paid::WorktreeDatabaseNames.development_primary_name
+  puts Paid::WorktreeDatabaseNames.development_cable_name
+  puts Paid::WorktreeDatabaseNames.test_name
+rescue ArgumentError => error
+  warn error.message
+  exit 1
+end
 RUBY
 }
 
-mapfile -t DB_NAMES < <(db_names)
+DB_NAMES_OUTPUT="$(db_names)"
+mapfile -t DB_NAMES <<<"$DB_NAMES_OUTPUT"
+if [[ "${#DB_NAMES[@]}" -ne 3 ]]; then
+  echo "Expected development, cable, and test database names from config/worktree_database_names.rb." >&2
+  exit 1
+fi
+
 DEV_DB="${DB_NAMES[0]}"
 CABLE_DB="${DB_NAMES[1]}"
 TEST_DB="${DB_NAMES[2]}"
