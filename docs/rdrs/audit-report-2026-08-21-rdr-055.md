@@ -456,33 +456,32 @@ issue [#3441](https://github.com/viamin/paid/issues/3441) are sufficient:
   The issue itself is not yet closed, so it remains a blocking
   dependency in the umbrella tracker.
 - [#3436](https://github.com/viamin/paid/issues/3436) — per-run egress
-  policy resolution and snapshot persistence. **Open**. The work for this
-  child is shipped (`AgentRuns::EgressPolicy::Resolve` + `Snapshot`,
-  including `ProvisionContainerActivity` persistence, shipped in
-  [#3496](https://github.com/viamin/paid/pull/3496)). The issue itself is
-  not yet closed, so it remains a blocking dependency in the umbrella
-  tracker.
+  policy resolution and snapshot persistence. **Closed** (2026-08-21,
+  via [#3496](https://github.com/viamin/paid/pull/3496)). The work for
+  this child is shipped: `AgentRuns::EgressPolicy::Resolve` + `Snapshot`,
+  including `ProvisionContainerActivity` persistence (criterion 3 + 4 +
+  9). The issue is no longer a blocking dependency on the umbrella.
 - [#3437](https://github.com/viamin/paid/issues/3437) — portable runner
-  networking contract propagation. **Open**. The work for this child is
-  shipped (`ExecutionRunners::NetworkingPolicy#egress_profile` plus
-  `Containers::Provision#networking_policy_with_egress_profile`, shipped
-  in [#3495](https://github.com/viamin/paid/pull/3495)). The issue itself
-  is not yet closed, so it remains a blocking dependency in the umbrella
-  tracker.
+  networking contract propagation. **Closed** (2026-08-19, via
+  [#3495](https://github.com/viamin/paid/pull/3495)). The work for this
+  child is shipped: `ExecutionRunners::NetworkingPolicy#egress_profile`
+  plus `Containers::Provision#networking_policy_with_egress_profile`
+  (criterion 8 partial). The issue is no longer a blocking dependency on
+  the umbrella.
 - [#3438](https://github.com/viamin/paid/issues/3438) — per-host egress
   gateway + production fail-closed enforcement. **Open**. See gap 1
   above.
 - [#3439](https://github.com/viamin/paid/issues/3439) — brokered research
   access with secret-extraction guards. **Open**. See gap 2 above.
 - [#3440](https://github.com/viamin/paid/issues/3440) — settings UI/API
-  and run audit visibility. **Open**. The work for this child is shipped
-  (`Accounts::EgressAllowlistEntriesController`,
+  and run audit visibility. **Closed** (2026-08-19, via
+  [#3497](https://github.com/viamin/paid/pull/3497)). The work for this
+  child is shipped: `Accounts::EgressAllowlistEntriesController`,
   `Projects::EgressAllowlistEntriesController`, the run-detail
   `EgressSecurityEvent` audit surface, and the persisted snapshot
-  rendering on `Projects::AgentRunsController#show`, shipped in
-  [#3497](https://github.com/viamin/paid/pull/3497)). The issue itself is
-  not yet closed, so it remains a blocking dependency in the umbrella
-  tracker.
+  rendering on `Projects::AgentRunsController#show` (criterion 1 +
+  run-detail audit surface). The issue is no longer a blocking dependency
+  on the umbrella.
 
 ## Blocking Dependencies Reconciliation
 
@@ -494,20 +493,18 @@ links seven child issues. This section reconciles each against the
 |------------|-------|----------------|
 | [#3434](https://github.com/viamin/paid/issues/3434) — account/project allowlist entries and validation | Open | RDR-055 step 1 work is shipped (criterion 1). The issue itself has not been closed in the tracker, so the umbrella still lists it as a blocking dependency. The shipped code is the evidence the issue can be closed when the tracker is reconciled. |
 | [#3435](https://github.com/viamin/paid/issues/3435) — required platform and runner destination registry | Open | RDR-055 step 2 work is shipped (criterion 5). The issue itself has not been closed in the tracker, so the umbrella still lists it as a blocking dependency. |
-| [#3436](https://github.com/viamin/paid/issues/3436) — per-run egress policy resolution and snapshot persistence | Open | RDR-055 step 3 work is shipped (criterion 3 + 4 + 9). The issue itself has not been closed in the tracker, so the umbrella still lists it as a blocking dependency. |
-| [#3437](https://github.com/viamin/paid/issues/3437) — portable runner networking contract propagation | Open | RDR-055 step 4 work is shipped (criterion 8 partial). The issue itself has not been closed in the tracker, so the umbrella still lists it as a blocking dependency. |
+| [#3436](https://github.com/viamin/paid/issues/3436) — per-run egress policy resolution and snapshot persistence | Closed (2026-08-21, via [#3496](https://github.com/viamin/paid/pull/3496)) | RDR-055 step 3 work is shipped (criterion 3 + 4 + 9). The tracker has closed the issue, so it is no longer a blocking dependency on the umbrella. |
+| [#3437](https://github.com/viamin/paid/issues/3437) — portable runner networking contract propagation | Closed (2026-08-19, via [#3495](https://github.com/viamin/paid/pull/3495)) | RDR-055 step 4 work is shipped (criterion 8 partial). The tracker has closed the issue, so it is no longer a blocking dependency on the umbrella. |
 | [#3438](https://github.com/viamin/paid/issues/3438) — per-host egress gateway + production fail-closed enforcement | Open | Remaining RDR-055 scope (gaps 1 and 3). The gateway service, container network plumbing, and runtime-side fail-closed eligibility check are not implemented. |
 | [#3439](https://github.com/viamin/paid/issues/3439) — brokered research fetch/search with secret-extraction guards | Open | Remaining RDR-055 scope (gap 2). The `:research` profile is reserved and propagates, but no broker implementation exists. |
-| [#3440](https://github.com/viamin/paid/issues/3440) — settings UI/API and run audit visibility | Open | RDR-055 step 7 work is shipped (criterion 1 + run-detail audit surface). The issue itself has not been closed in the tracker, so the umbrella still lists it as a blocking dependency. |
+| [#3440](https://github.com/viamin/paid/issues/3440) — settings UI/API and run audit visibility | Closed (2026-08-19, via [#3497](https://github.com/viamin/paid/pull/3497)) | RDR-055 step 7 work is shipped (criterion 1 + run-detail audit surface). The tracker has closed the issue, so it is no longer a blocking dependency on the umbrella. |
 
 Because [#3438](https://github.com/viamin/paid/issues/3438) and
 [#3439](https://github.com/viamin/paid/issues/3439) are open and represent
 remaining RDR-055 scope, and because the umbrella's child-link tracker
-still lists [#3434](https://github.com/viamin/paid/issues/3434),
-[#3435](https://github.com/viamin/paid/issues/3435),
-[#3436](https://github.com/viamin/paid/issues/3436),
-[#3437](https://github.com/viamin/paid/issues/3437), and
-[#3440](https://github.com/viamin/paid/issues/3440) as open, the umbrella
+still lists [#3434](https://github.com/viamin/paid/issues/3434) and
+[#3435](https://github.com/viamin/paid/issues/3435) as open (the work for
+both is shipped but the tracker has not yet closed them), the umbrella
 closeout [#3441](https://github.com/viamin/paid/issues/3441) must remain
 open. Closing the umbrella while any child stays open would overstate the
 RDR's reach. This audit recommends keeping the umbrella open and re-running
