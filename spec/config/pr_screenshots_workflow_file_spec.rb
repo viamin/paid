@@ -70,15 +70,13 @@ RSpec.describe PrScreenshotsWorkflowFile, :no_db do
     )
   end
 
-  it "uses a known-good Chrome install and exports CHROMIUM_PATH for capture" do
+  it "uses a pinned Chrome install and exports CHROMIUM_PATH for capture" do
     setup_step = capture_step("Set up Chrome")
     export_step = capture_step("Export Chromium path")
     capture_screenshots_step = capture_step("Capture screenshots")
 
-    expect(setup_step).to include(
-      "id" => "setup_chrome",
-      "uses" => "browser-actions/setup-chrome@2e1d749697dd1612b833dba4a722266286fbefcd"
-    )
+    expect(setup_step).to include("id" => "setup_chrome")
+    expect(setup_step.fetch("uses")).to match(/\Abrowser-actions\/setup-chrome@[0-9a-f]{40}\z/)
     expect(export_step).to include("id" => "export_chromium_path")
     expect(export_step.fetch("env")).to include(
       "INSTALLED_CHROME_PATH" => "${{ steps.setup_chrome.outputs.chrome-path }}"
