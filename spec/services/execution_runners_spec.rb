@@ -9,6 +9,9 @@ require "rails_helper"
 # @spec CONTAINER-RUNTIME-011
 # @spec CONTAINER-RUNTIME-017
 # @spec CONTAINER-RUNTIME-018
+# @spec EXECUTION-AUTHORITY-002
+# @spec EXECUTION-AUTHORITY-003
+# @spec EXECUTION-AUTHORITY-004
 # @spec CONTAINER-RUNTIME-020
 # @spec CONTAINER-RUNTIME-028
 # @spec EXEC-INGRESS-001
@@ -56,11 +59,24 @@ RSpec.describe ExecutionRunners do
         prompt_version_id: nil,
         custom_prompt: nil,
         issue_id: nil,
+        agent_type: "claude_code",
+        runner: nil,
+        authority_grants: nil,
+        project: project,
+        mcp_server_snapshot: [],
+        mcp_provisioned_servers: {},
+        service_environment: {},
         execution_ingress_policy: ExecutionRunners::IngressPolicy.default_deny
       )
     end
     let(:project) do
-      instance_double(Project, full_name: "acme/widgets", github_url: "https://github.com/acme/widgets")
+      instance_double(
+        Project,
+        full_name: "acme/widgets",
+        github_url: "https://github.com/acme/widgets",
+        screenshots_enabled?: false,
+        verification_enabled?: false
+      )
     end
     let(:spec_args) do
       {
@@ -75,6 +91,25 @@ RSpec.describe ExecutionRunners do
         workspace: ExecutionRunners::WorkspaceStrategy.named_volume,
         services: [ ExecutionRunners::ServiceDeclaration.new(name: "postgres", image: "pg", port: 5432, env: {}, type: :database) ],
         secrets_config: { "auth" => "proxy" }
+      }
+    end
+    let(:persisted_stale_authority_grants) do
+      {
+        "schema_version" => 1,
+        "grants" => [
+          {
+            "kind" => "model_provider_credentials",
+            "delivery" => "proxy_mode",
+            "scope" => "runner",
+            "metadata" => { "runner_key" => "claude_code", "network_mode" => "proxy_restricted" }
+          },
+          {
+            "kind" => "service_credentials",
+            "delivery" => "service_environment",
+            "scope" => "run",
+            "metadata" => { "env_keys" => [ "OLD_DATABASE_URL" ] }
+          }
+        ]
       }
     end
 
@@ -105,9 +140,112 @@ RSpec.describe ExecutionRunners do
       expect(manifest).to be_a(ExecutionRunners::ExecutionInputManifest)
       expect(manifest.repository.dig("ref", "branch_name")).to eq("agent-run-branch")
       expect(manifest.execution.dig("workspace", "mode")).to eq("named_volume")
+      expect(manifest.execution.dig("authority_grants", "grants")).not_to be_empty
       expect(manifest.execution.dig("ingress", "public_inbound")).to be(false)
     end
 
+    it "re-derives authority grants when a persisted snapshot no longer matches current inputs" do
+      allow(agent_run).to receive_messages(
+        authority_grants: persisted_stale_authority_grants,
+        service_environment: { "DATABASE_URL" => "postgres://example" }
+      )
+
+      service_grant = spec.authority_grants.grants.find { |grant| grant["kind"] == "service_credentials" }
+
+      expect(service_grant).to include(
+        "delivery" => "service_environment",
+        "scope" => "run",
+        "metadata" => { "env_keys" => [ "DATABASE_URL" ] }
+      )
+    end
+  end
+
+  describe ExecutionRunners::AuthorityGrantSet do
+    let(:project) { create(:project, owner: "acme", repo: "widgets") }
+    let(:agent_run) { create(:agent_run, project: project, service_environment: service_environment) }
+    let(:service_environment) { {} }
+
+    it "builds proxy-mode provider grants by default" do
+      grants = described_class.from_agent_run(
+        agent_run,
+        networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted
+      )
+
+      provider_grant = grants.grants.find { |grant| grant["kind"] == "model_provider_credentials" }
+
+      expect(provider_grant).to include(
+        "delivery" => "proxy_mode",
+        "scope" => "runner"
+      )
+      expect(grants.grants.pluck("kind")).to include("paid_api_proxy_token", "github_authority")
+      expect(grants.grants.pluck("kind")).not_to include("subscription_auth_material")
+    end
+
+    it "distinguishes subscription-auth and direct-outbound provider grants" do
+      subscription_grants = described_class.from_agent_run(
+        agent_run,
+        networking_policy: ExecutionRunners::NetworkingPolicy.subscription_auth
+      )
+      direct_grants = described_class.from_agent_run(
+        agent_run,
+        networking_policy: ExecutionRunners::NetworkingPolicy.direct_outbound
+      )
+
+      expect(subscription_grants.grants.find { |grant| grant["kind"] == "model_provider_credentials" })
+        .to include("delivery" => "subscription_auth")
+      expect(subscription_grants.grants.pluck("kind")).to include("subscription_auth_material")
+      expect(direct_grants.grants.find { |grant| grant["kind"] == "model_provider_credentials" })
+        .to include("delivery" => "direct_outbound")
+      expect(direct_grants.grants.pluck("kind")).not_to include("subscription_auth_material")
+    end
+
+    it "adds MCP credential grants without persisting secret payloads" do
+      allow(agent_run).to receive(:mcp_server_snapshot).and_return(
+        [
+          { "name" => "playwright-mcp", "command" => "npx", "env" => { "TOKEN" => "secret" } }
+        ]
+      )
+
+      grants = described_class.from_agent_run(
+        agent_run,
+        networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted
+      )
+      mcp_grant = grants.grants.find { |grant| grant["kind"] == "mcp_credentials" }
+
+      expect(mcp_grant).to include(
+        "delivery" => "mcp_server_configuration",
+        "scope" => "project",
+        "metadata" => { "server_names" => [ "playwright-mcp" ] }
+      )
+      expect(grants.to_json).not_to include("secret")
+    end
+
+    it "adds object-storage upload authority when verification artifacts can be published" do
+      project.update!(screenshot_settings: { "verification_enabled" => true })
+      allow(ArtifactStorage).to receive(:configured?).and_return(true)
+
+      grants = described_class.from_agent_run(
+        agent_run,
+        networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted
+      )
+
+      expect(grants.grants.find { |grant| grant["kind"] == "object_storage_upload_authority" })
+        .to include("delivery" => "object_storage", "scope" => "account")
+    end
+
+    it "tolerates a nil service environment" do
+      agent_run.update_column(:service_environment, nil)
+
+      grants = described_class.from_agent_run(
+        agent_run,
+        networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted
+      )
+
+      expect(grants.grants.pluck("kind")).not_to include("service_credentials")
+    end
+  end
+
+  describe ".from_agent_run" do
     # @spec CONTAINER-RUNTIME-027
     it "reuses the requested-resource envelope when building from an agent run" do
       project = create(:project)
@@ -119,7 +257,7 @@ RSpec.describe ExecutionRunners do
         }
       })
 
-      built = described_class.from_agent_run(run, memory_bytes: 0)
+      built = ExecutionRunners::RunSpec.from_agent_run(run, memory_bytes: 0)
 
       expect(built.resources.cpu_quota).to eq(123_000)
       expect(built.resources.memory_bytes).to eq(5.gigabytes)
@@ -800,7 +938,8 @@ RSpec.describe ExecutionRunners do
         source_pull_request_number: 7,
         custom_prompt: "Build the thing",
         prompt_version: create(:prompt_version),
-        issue: create(:issue, project:)
+        issue: create(:issue, project:),
+        service_environment: { "DATABASE_URL" => "postgres://secret@db", "API_TOKEN" => "shh" }
       )
     end
     let(:services) do
@@ -920,6 +1059,21 @@ RSpec.describe ExecutionRunners do
       expect(manifest.lanes["control_plane_api"]).to match_array(expected_control_plane_refs)
       expect(manifest.lanes["object_storage"]).to eq([])
       expect(manifest.lanes["credentials"]).to match_array(expected_credential_refs)
+      expect(manifest.execution.dig("authority_grants", "grants")).to include(
+        hash_including("kind" => "service_credentials")
+      )
+    end
+
+    it "defaults authority grants to proxy delivery when networking policy is absent" do
+      manifest = described_class.from_run_spec(run_spec.with(networking_policy: nil))
+
+      expect(manifest.execution.dig("authority_grants", "grants")).to include(
+        hash_including(
+          "kind" => "model_provider_credentials",
+          "delivery" => "proxy_mode",
+          "metadata" => hash_including("network_mode" => "")
+        )
+      )
     end
 
     it "describes normal execution without requiring shared host storage" do
@@ -936,6 +1090,12 @@ RSpec.describe ExecutionRunners do
         "repository_url" => "https://github.com/acme/widgets"
       )
       expect(manifest.services).to eq(expected_service_manifest)
+      expect(manifest.execution.dig("authority_grants", "grants")).to include(
+        hash_including(
+          "kind" => "model_provider_credentials",
+          "delivery" => "proxy_mode"
+        )
+      )
     end
 
     it "keeps secret values and host paths out of the manifest by construction" do

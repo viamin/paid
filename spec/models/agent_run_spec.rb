@@ -1994,6 +1994,9 @@ RSpec.describe AgentRun do
           allow(Containers::PoolManager).to receive(:new)
             .with(project: agent_run.project)
             .and_return(instance_double(Containers::PoolManager, acquire: nil))
+          allow(Containers::Provision).to receive(:networking_policy_for)
+            .with(agent_run: agent_run, project: agent_run.project)
+            .and_return(ExecutionRunners::NetworkingPolicy.proxy_restricted)
           allow(Containers::Provision).to receive(:new).and_return(provision_service)
           allow(provision_service).to receive(:provision).and_return(result)
           allow(PoolReplenishmentJob).to receive(:perform_later)
@@ -2016,14 +2019,37 @@ RSpec.describe AgentRun do
         it "accepts optional container options" do
           agent_run = create(:agent_run, worktree_path: worktree_path)
 
+          allow(Containers::Provision).to receive(:networking_policy_for)
+            .with(agent_run: agent_run, project: agent_run.project)
+            .and_return(ExecutionRunners::NetworkingPolicy.proxy_restricted)
           expect(Containers::Provision).to receive(:new).with(
             agent_run: agent_run,
             worktree_path: worktree_path,
             backend: Containers.backend_for(agent_run.container_host),
-            memory_bytes: 1024 * 1024 * 1024
+            memory_bytes: 1024 * 1024 * 1024,
+            networking_policy: nil
           ).and_call_original
 
           agent_run.provision_container(memory_bytes: 1024 * 1024 * 1024)
+        end
+
+        it "does not thread a networking_policy into the direct provisioner, so it keeps owning network/firewall setup" do
+          agent_run = create(:agent_run, worktree_path: worktree_path)
+
+          allow(Containers::Provision).to receive(:networking_policy_for)
+            .with(agent_run: agent_run, project: agent_run.project)
+            .and_return(ExecutionRunners::NetworkingPolicy.proxy_restricted)
+
+          result = agent_run.provision_container
+
+          expect(result).to be_success
+          # Containers::Provision#ensure_network! only calls through to
+          # NetworkPolicy.ensure_network! when it was NOT given a
+          # networking_policy (it returns early otherwise — see
+          # Containers::Provision#ensure_network!). Observing this call
+          # confirms the direct-provision path still owns network setup
+          # instead of silently skipping it.
+          expect(NetworkPolicy).to have_received(:ensure_network!)
         end
 
         it "reuses a live recorded container on Temporal retry instead of provisioning a duplicate" do
@@ -2311,6 +2337,34 @@ RSpec.describe AgentRun do
           )
         end
 
+        def persisted_retry_authority_grants
+          {
+            "schema_version" => 1,
+            "grants" => [
+              { "kind" => "original_grant", "delivery" => "proxy_mode", "scope" => "run", "metadata" => {} }
+            ]
+          }
+        end
+
+        def changed_retry_authority_grants
+          ExecutionRunners::AuthorityGrantSet.new(
+            schema_version: 1,
+            grants: [
+              { "kind" => "changed_grant", "delivery" => "direct_outbound", "scope" => "runner", "metadata" => {} }
+            ]
+          )
+        end
+
+        def persisted_runner_handle_for(agent_run)
+          ExecutionRunners::RunnerHandle.new(
+            runner_type: :local_docker,
+            identifier: "runner-container-123",
+            host: "local",
+            workspace_ref: "paid-workspace-#{agent_run.id}",
+            metadata: { "agent_run_id" => agent_run.id, "worktree_path" => nil, "environment" => {} }
+          )
+        end
+
         it "routes through the runner when the feature flag is enabled" do
           agent_run = create(:agent_run, worktree_path: worktree_path)
           FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
@@ -2428,6 +2482,58 @@ RSpec.describe AgentRun do
 
           expect(captured_spec).to be_a(ExecutionRunners::RunSpec)
           expect(captured_spec.networking_policy).to be_a(ExecutionRunners::NetworkingPolicy)
+          expect(captured_spec.authority_grants.grants).to include(
+            hash_including("kind" => "paid_api_proxy_token")
+          )
+        end
+
+        it "persists secret-free authority grants before runner provisioning" do
+          agent_run = create(:agent_run, worktree_path: worktree_path)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          allow(Containers::PoolManager).to receive(:new)
+            .with(project: agent_run.project)
+            .and_return(instance_double(Containers::PoolManager, acquire: nil))
+
+          agent_run.provision_container
+
+          persisted = agent_run.reload.authority_grants
+          expect(persisted.fetch("grants")).to include(
+            hash_including("kind" => "model_provider_credentials")
+          )
+          expect(persisted.to_json).not_to include(agent_run.proxy_token)
+        end
+
+        it "preserves the first authority grant snapshot on provisioning retry" do
+          agent_run = create(:agent_run, worktree_path: worktree_path,
+                             container_id: "runner-container-123", container_host: "local")
+          agent_run.update!(
+            runner_handle: persisted_runner_handle_for(agent_run).to_storage,
+            authority_grants: persisted_retry_authority_grants
+          )
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          allow(mock_runner).to receive_messages(running?: true, cleanup: nil)
+          allow(agent_run).to receive(:execution_authority_grants).and_return(changed_retry_authority_grants)
+
+          agent_run.provision_container
+
+          expect(agent_run.reload.authority_grants).to eq(persisted_retry_authority_grants)
+        end
+
+        it "skips networking policy derivation on retry when grants are already persisted" do # @spec EXECUTION-AUTHORITY-001
+          agent_run = create(:agent_run, worktree_path: worktree_path,
+                             container_id: "runner-container-123", container_host: "local")
+          agent_run.update!(
+            runner_handle: persisted_runner_handle_for(agent_run).to_storage,
+            authority_grants: persisted_retry_authority_grants
+          )
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          allow(mock_runner).to receive_messages(running?: true, cleanup: nil)
+          allow(Containers::Provision).to receive(:networking_policy_for)
+
+          agent_run.provision_container
+
+          expect(Containers::Provision).not_to have_received(:networking_policy_for)
+          expect(agent_run.reload.authority_grants).to eq(persisted_retry_authority_grants)
         end
 
         it "persists runner_handle alongside container_id when provisioning via the runner" do
@@ -2483,6 +2589,16 @@ RSpec.describe AgentRun do
           )
         end
 
+        def stale_proxy_authority_grants
+          {
+            "schema_version" => 1,
+            "grants" => [
+              { "kind" => "model_provider_credentials", "delivery" => "proxy_mode", "scope" => "runner",
+                "metadata" => { "runner_key" => "claude_code", "network_mode" => "proxy_restricted" } }
+            ]
+          }
+        end
+
         it "reuses a still-running environment from a persisted runner handle" do
           agent_run = create(:agent_run, worktree_path: worktree_path,
                              container_id: "runner-container-123", container_host: "local")
@@ -2520,6 +2636,31 @@ RSpec.describe AgentRun do
           expect(reloaded.container_id).to eq("fresh-container")
           handle = ExecutionRunners::RunnerHandle.from_record(reloaded)
           expect(handle.identifier).to eq("fresh-container")
+        end
+
+        it "re-derives authority grants matching the freshly re-derived networking policy on retry" do
+          agent_run = create(:agent_run, worktree_path: worktree_path,
+                             container_id: "runner-container-123", container_host: "local")
+          agent_run.update!(runner_handle: build_handle(agent_run).to_storage,
+                             authority_grants: stale_proxy_authority_grants)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          fresh_handle = build_handle(agent_run, identifier: "fresh-container")
+          allow(mock_runner).to receive_messages(running?: false, cleanup: nil)
+          captured_spec = nil
+          allow(mock_runner).to receive(:provision) { |spec:| captured_spec = spec; fresh_handle }
+          allow(Containers::Provision).to receive(:networking_policy_for)
+            .and_return(ExecutionRunners::NetworkingPolicy.direct_outbound)
+          allow(Containers::PoolManager).to receive(:new)
+            .with(project: agent_run.project)
+            .and_return(instance_double(Containers::PoolManager, acquire: nil))
+          allow(PoolReplenishmentJob).to receive(:perform_later)
+
+          agent_run.provision_container
+
+          expect(captured_spec.networking_policy.mode).to eq(:direct_outbound)
+          provider_grant = captured_spec.authority_grants.grants.find { |g| g["kind"] == "model_provider_credentials" }
+          expect(provider_grant["metadata"]["network_mode"]).to eq("direct_outbound")
+          expect(provider_grant["delivery"]).to eq("direct_outbound")
         end
 
         it "reconciles a missing environment without error and provisions fresh" do

@@ -16,11 +16,18 @@ RSpec.describe AgentRun, :no_db do
         run.define_singleton_method(:worktree_path) { nil }
         run.define_singleton_method(:container_id) { container_id }
         run.define_singleton_method(:container_host) { nil }
+        run.define_singleton_method(:authority_grants) { { "grants" => [ { "kind" => "stub" } ] } }
         run.define_singleton_method(:persisted_updates) { @persisted_updates ||= [] }
         run.define_singleton_method(:update!) do |**attrs|
           persisted_updates << attrs
         end
       end
+    end
+
+    before do
+      allow(Containers::Provision).to receive(:networking_policy_for)
+        .with(agent_run: agent_run, project: project)
+        .and_return(ExecutionRunners::NetworkingPolicy.proxy_restricted)
     end
 
     it "persists the claimed pool entry host instead of the process-global backend" do

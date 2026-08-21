@@ -2621,12 +2621,27 @@ class AgentRun < ApplicationRecord
   # @return [Containers::Provision::Result] Result with container_id on success
   # @raise [Containers::Provision::ProvisionError] When container creation fails
   def provision_container(**options)
+    networking_policy = nil
+    if authority_grants.blank? || authority_grants["grants"].blank?
+      networking_policy = Containers::Provision.networking_policy_for(
+        agent_run: self, project: project
+      )
+      persist_execution_authority_grants!(networking_policy: networking_policy)
+    end
+
     if execution_runner_enabled?
-      return provision_via_runner(**options)
+      return provision_via_runner(networking_policy: networking_policy, **options)
     end
 
     return reuse_or_reconcile_container(**options) if container_id.present?
 
+    # Deliberately not threading networking_policy through here: on the
+    # direct-provision path (execution_runner disabled) there is no runner to
+    # own the network/firewall translation, so Containers::Provision must
+    # perform its own NetworkPolicy.ensure_network!/apply_firewall_rules
+    # side effects. Passing a policy would make it skip those (see
+    # Containers::Provision#ensure_network!/#apply_network_restrictions!),
+    # silently dropping egress isolation for first provisions.
     provision_new_container(**options)
   end
 
@@ -2822,6 +2837,21 @@ class AgentRun < ApplicationRecord
     proxy_token
   end
 
+  # @spec EXECUTION-AUTHORITY-001
+  def execution_authority_grants(networking_policy: nil)
+    resolved_policy = networking_policy || Containers::Provision.networking_policy_for(
+      agent_run: self, project: project
+    )
+    ExecutionRunners::AuthorityGrantSet.from_agent_run(self, networking_policy: resolved_policy)
+  end
+
+  # @spec EXECUTION-AUTHORITY-001
+  def persist_execution_authority_grants!(networking_policy: nil)
+    grant_set = execution_authority_grants(networking_policy: networking_policy)
+    update!(authority_grants: grant_set.to_storage)
+    grant_set
+  end
+
   private
 
   # ── runner shim helpers (RDR-054) ──────────────────────────────
@@ -2843,7 +2873,13 @@ class AgentRun < ApplicationRecord
   # runner that survived a worker restart), recovery goes through
   # +reuse_or_reconcile_via_runner+ — the runner-level reconnect path —
   # rather than the Docker-specific +reuse_or_reconcile_container+.
-  def provision_via_runner(**options)
+  # +networking_policy:+ is optional so the recovery path
+  # (+reuse_or_reconcile_via_runner+ recursing back here after a stale
+  # handle is cleaned up) can re-enter without threading the policy through.
+  # Deriving it here keeps the manifest accurate for subscription-auth /
+  # direct-outbound recovery rather than defaulting to proxy_mode when a
+  # +nil+ policy falls through (RDR-058, RDR-054).
+  def provision_via_runner(networking_policy: nil, **options)
     return reuse_or_reconcile_via_runner(**options) if runner_handle.present?
 
     return reuse_or_reconcile_container(**options) if container_id.present?
@@ -2855,10 +2891,10 @@ class AgentRun < ApplicationRecord
     return pooled_result if pooled_result
 
     runner = ExecutionRunners.resolve_for(self)
-    networking_policy = Containers::Provision.networking_policy_for(
+    resolved_policy = networking_policy || Containers::Provision.networking_policy_for(
       agent_run: self, project: project
     )
-    spec = ExecutionRunners::RunSpec.from_agent_run(self, networking_policy: networking_policy, **options)
+    spec = ExecutionRunners::RunSpec.from_agent_run(self, networking_policy: resolved_policy, **options)
     @current_handle = runner.provision(spec: spec)
     update!(container_id: @current_handle.identifier, container_host: @current_handle.host,
             runner_handle: @current_handle.to_storage)
@@ -3334,7 +3370,7 @@ class AgentRun < ApplicationRecord
 
   # Provisions a brand-new container when there is no existing container to
   # reuse. Tries the warm pool first, then falls back to a fresh provision.
-  def provision_new_container(**options)
+  def provision_new_container(networking_policy: nil, **options)
     # RDR-048 (#2947): a caller (e.g. the queue processor) may know which
     # Docker host this run was admitted against before any container
     # resource exists. The container_host column on the run is intentionally
@@ -3357,6 +3393,7 @@ class AgentRun < ApplicationRecord
       agent_run: self,
       worktree_path: worktree_path.presence,
       backend: Containers.backend_for(backend_host),
+      networking_policy: networking_policy,
       **options
     )
     result = @container_service.provision

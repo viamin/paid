@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class WorkflowStatusesController < ApplicationController
+  rescue_from ActiveRecord::RecordNotFound, with: :render_not_found
+
   def show
     @project = policy_scope(Project).find(params[:project_id])
     authorize @project, :show?
@@ -80,5 +82,9 @@ class WorkflowStatusesController < ApplicationController
       label: "Active",
       description: "Paid is monitoring this repository for labeled issues."
     }
+  end
+
+  def render_not_found
+    head :not_found
   end
 end

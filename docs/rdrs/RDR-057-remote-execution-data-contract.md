@@ -82,7 +82,8 @@ The input manifest carries:
 - `repository`: provider, repo full name, repository URL, and the git ref
   identity (`branch_name`, `base_commit_sha`, `source_pull_request_number`)
 - `execution`: agent-run identity plus declarative execution settings
-  (`image`, `command`, `resources`, workspace mode/mount point, networking)
+  (`image`, `command`, `resources`, workspace mode/mount point, networking,
+  authority grant snapshot)
 - `prompt_refs`: control-plane references to prompt-version or custom-prompt
   data
 - `context_refs`: control-plane references to issue or other run context

@@ -54,6 +54,21 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
     context workflow_path do
       subject(:workflow) { Psych.safe_load_file(Rails.root.join(workflow_path), aliases: true) }
 
+      def expected_test_database_env(expectations)
+        {
+          "PAID_DEVELOPMENT_DATABASE" => "paid_test",
+          "PAID_DEVELOPMENT_CABLE_DATABASE" => "paid_test",
+          "PAID_TEST_DATABASE" => "paid_test",
+          "DB_USERNAME" => expectations.fetch("db_username"),
+          "DB_PASSWORD" => expectations.fetch("db_password"),
+          "TMPDIR" => "${{ github.workspace }}/.tmp-build",
+          "YARN_CACHE_FOLDER" => "${{ github.workspace }}/.cache-yarn",
+          "XDG_CACHE_HOME" => "${{ github.workspace }}/.cache",
+          "npm_config_cache" => "${{ github.workspace }}/.cache/npm",
+          "PLAYWRIGHT_BROWSERS_PATH" => "${{ github.workspace }}/.cache/ms-playwright"
+        }
+      end
+
       def expect_application_role_database_url!(job, expectations)
         return unless expectations.fetch("creates_application_role")
 
@@ -74,16 +89,7 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
           job = workflow.fetch("jobs").fetch(job_name)
           step_names = job.fetch("steps").map { |step| step["name"] }
 
-          expect(job.fetch("env")).to include(
-            "PAID_TEST_DATABASE" => "paid_test",
-            "DB_USERNAME" => expectations.fetch("db_username"),
-            "DB_PASSWORD" => expectations.fetch("db_password"),
-            "TMPDIR" => "${{ github.workspace }}/.tmp-build",
-            "YARN_CACHE_FOLDER" => "${{ github.workspace }}/.cache-yarn",
-            "XDG_CACHE_HOME" => "${{ github.workspace }}/.cache",
-            "npm_config_cache" => "${{ github.workspace }}/.cache/npm",
-            "PLAYWRIGHT_BROWSERS_PATH" => "${{ github.workspace }}/.cache/ms-playwright"
-          )
+          expect(job.fetch("env")).to include(expected_test_database_env(expectations))
 
           expect_application_role_database_url!(job, expectations)
           expect_database_yml_connection!(job, expectations)
@@ -151,6 +157,8 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
           expect(setup_step).not_to be_nil, "expected migrations job to include a Replay migrations step"
           expect(drift_step).not_to be_nil, "expected migrations job to verify schema dump drift"
           expect(job.fetch("env")).to include(
+            "PAID_DEVELOPMENT_DATABASE" => "paid_test",
+            "PAID_DEVELOPMENT_CABLE_DATABASE" => "paid_test",
             "PAID_TEST_DATABASE" => "paid_test",
             "RAILS_TEST_KEY" => "${{ secrets.RAILS_TEST_KEY }}",
             "DB_USERNAME" => "postgres",

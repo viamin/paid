@@ -85,6 +85,17 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
     end
   end
 
+  it "pins development and cable database names anywhere Rails boots in test mode" do
+    workflow_paths.each do |path|
+      expect(test_env_blocks_for(path)).to all(
+        include(
+          "PAID_DEVELOPMENT_DATABASE" => "paid_test",
+          "PAID_DEVELOPMENT_CABLE_DATABASE" => "paid_test"
+        )
+      ), "expected #{path} test env blocks to pin development and cable database names explicitly"
+    end
+  end
+
   it "passes the test master key alias anywhere Rails boots in test mode" do
     workflow_paths.each do |path|
       expect(test_env_blocks_for(path)).to all(include("RAILS_TEST_KEY" => "${{ secrets.RAILS_TEST_KEY }}")),
