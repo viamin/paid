@@ -2991,8 +2991,23 @@ module Containers
     # whose traffic should never leave the platform perimeter.
     def egress_no_proxy_hosts
       hosts = %w[localhost 127.0.0.1 paid-proxy egress-gateway]
+      hosts.concat(run_service_container_hosts)
       hosts << "*.internal" # Docker internal DNS
       hosts
+    end
+
+    # Per-run service-container aliases (e.g. SELENIUM_URL's paid-svc-* host)
+    # that the run's SERVICE_*_HOST env vars already point at. The firewall
+    # allows these directly, but the egress gateway allowlist only contains
+    # the run's egress-policy snapshot destinations, so proxying this traffic
+    # through the gateway would be denied. Derived via ServiceRuntimeNaming
+    # (see its module comment) rather than the user-facing service name,
+    # which is not resolvable on the network.
+    def run_service_container_hosts
+      ids = Array(agent_run&.service_container_ids)
+      return [] if ids.blank?
+
+      ServiceContainer.where(id: ids).map { |service| ServiceRuntimeNaming.runtime_name(service) }
     end
 
     def exec_environment(env)

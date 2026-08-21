@@ -357,6 +357,30 @@ RSpec.describe Containers::Provision do
     end
   end
 
+  # @spec EGRESS-POLICY-007
+  describe "#egress_no_proxy_hosts" do
+    let(:egress_service) { described_class.new(agent_run: agent_run, worktree_path: worktree_path, egress_gateway_url: "egress-gateway:3128") }
+
+    it "always bypasses the gateway/proxy hosts and the Docker-internal wildcard" do
+      expect(egress_service.send(:egress_no_proxy_hosts)).to include(
+        "localhost", "127.0.0.1", "paid-proxy", "egress-gateway", "*.internal"
+      )
+    end
+
+    it "exempts this run's service-container runtime aliases so local service traffic bypasses the gateway" do
+      selenium = create(:service_container, :running, :selenium, account: project.account)
+      agent_run.update!(service_container_ids: [ selenium.id ])
+
+      expect(egress_service.send(:egress_no_proxy_hosts)).to include(Containers::ServiceRuntimeNaming.runtime_name(selenium))
+    end
+
+    it "does not query service containers when the run has none provisioned" do
+      expect(ServiceContainer).not_to receive(:where)
+
+      egress_service.send(:egress_no_proxy_hosts)
+    end
+  end
+
   describe "#initialize" do
     it "stores agent_run and worktree_path" do
       expect(service.agent_run).to eq(agent_run)
