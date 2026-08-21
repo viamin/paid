@@ -16,8 +16,9 @@
   outside `Project::TDD_MODES` and the project's automation settings UI SHALL
   render `off`, `non_strict`, and `strict` as the only selectable options so
   users cannot accidentally persist an unsupported value.
-  *Code:* `app/models/project.rb`, `app/views/projects/edit.html.erb`.
-  *Test:* `spec/models/project_spec.rb`.
+  *Code:* `app/models/project.rb`, `app/views/projects/edit.html.erb`,
+  `app/controllers/projects_controller.rb`.
+  *Test:* `spec/models/project_spec.rb`, `spec/requests/projects_spec.rb`.
 
 - [x] **TDD-MODE-003** — `Projects::EnsureStandardLabels` SHALL provision the
   three test-review labels from RDR-056 — `paid-tests-ready-for-review`,
