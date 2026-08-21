@@ -21,16 +21,24 @@
                available_models: @available_models %>
 
     <section class="overflow-hidden rounded-lg bg-white shadow">
-      <%# `min-h-[70vh]` is the floor for short transcripts so the header,
-          message list, and input form still fit. The viewport cap is applied
-          from the controller with a measured `--chat-panel-offset-top`
-          variable instead of a fixed subtraction so layout chrome above
-          `<main>` (notably notice/alert flashes) still leaves the
-          conversation pane as the real scroll container. The remaining `2rem`
-          subtraction preserves this page's bottom `py-8` padding. dvh (not
-          vh) so the iOS Safari URL bar doesn't shrink the available space.
+      <%# The viewport cap is applied from the controller with a measured
+          `--chat-panel-offset-top` variable instead of a fixed subtraction
+          so layout chrome above `<main>` (notably notice/alert flashes)
+          still leaves the conversation pane as the real scroll container.
+          The remaining `2rem` subtraction preserves this page's bottom
+          `py-8` padding. dvh (not vh) so the iOS Safari URL bar doesn't
+          shrink the available space.
+          The 70vh floor is scoped to `lg+` because below `lg` the grid
+          collapses to one column and the panel sits under the stacked
+          mobile sidebar bar, so `getBoundingClientRect().top` already
+          accounts for that chrome and the computed `max-height` is
+          regularly smaller than 70vh. Without the breakpoint guard,
+          `min-height` would win over `max-height`, force the panel back to
+          70vh, push the document (not the conversation container) into
+          the scroll role, and break `scrollToInput` / `scrollToTop` /
+          `handleScroll` (they all act on `containerTarget.scrollTop`).
           (@spec CHAT-API-008, #3459) %>
-      <div class="flex min-h-[70vh] flex-col overflow-x-hidden"
+      <div class="flex lg:min-h-[70vh] flex-col overflow-x-hidden"
            data-controller="chat"
            data-chat-session-id-value="<%= @chat_session.id %>"
            style="max-height: calc(100dvh - var(--chat-panel-offset-top, 0px) - 2rem);">

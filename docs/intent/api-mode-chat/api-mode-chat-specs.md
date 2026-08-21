@@ -99,18 +99,25 @@
   for the panel's actual rendered offset from the top of the viewport
   (including layout chrome such as flash banners above `<main>`) so the inner
   `overflow-y-auto` region is the actual scroll container rather than the
-  document. The wrapper SHALL keep the previous `min-h-[70vh]` floor so
+  document. The wrapper SHALL apply a `100dvh`-based max-height cap that
+  preserves the page's bottom padding so longer transcripts bind to the
+  viewport instead of overflowing the page. The wrapper SHALL keep a
+  `min-h-[70vh]` floor, scoped to the `lg` breakpoint and above so that
   short content still leaves enough room for the header, message list, and
-  input form, and SHALL apply a `100dvh`-based max-height cap that preserves
-  the page's bottom padding so longer transcripts bind to the viewport instead
-  of overflowing the page; both bounds are required because the chat
-  controller's `scrollToInput`,
-  `scrollToTop`, and `handleScroll` (back-to-top visibility +
-  auto-scroll tracking) only fire on `containerTarget.scrollTop`, which
+  input form on the desktop layout; below `lg` the grid collapses to a
+  single column and the panel sits under the mobile sidebar bar, so the
+  floor is suppressed so the viewport-bounded max-height can actually
+  apply — otherwise `min-height` would win over `max-height`, the panel
+  would grow past the viewport, and the document would become the scroll
+  container. Both bounds are required because the chat controller's
+  `scrollToInput`, `scrollToTop`, and `handleScroll` (back-to-top visibility
+  and auto-scroll tracking) only fire on `containerTarget.scrollTop`, which
   stays at 0 when the document scrolls instead of the intended container
   (#3459, follow-up to #3331).
   *Tests:* `spec/requests/chat_sessions_spec.rb` ("height-bounds the chat
   panel …", "keeps the measured viewport height bound when the show page
-  renders a flash banner", "gives the conversation's scroll wrapper a
-  min-h-0 flex constraint (#3331)"), `spec/lib/chat_controller_node_harness_spec.rb`.
+  renders a flash banner", "scopes the 70vh floor to the lg breakpoint so
+  the panel stays viewport-bounded below lg", "gives the conversation's
+  scroll wrapper a min-h-0 flex constraint (#3331)"),
+  `spec/lib/chat_controller_node_harness_spec.rb`.
   *Code:* `app/views/chat_sessions/show.html.erb` (chat panel outer wrapper).
