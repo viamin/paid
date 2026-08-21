@@ -149,6 +149,20 @@ module AgentRuns
         # gateway's denials and the snapshot's destinations in the same
         # +{host:, port:}+ format, so an {EgressSecurityEvent} can directly
         # cite the snapshot's rule_id/entry_id for context.
+        #
+        # NOTE: +snapshot.destinations+ is intentionally NOT unioned with
+        # +snapshot.required_destinations+ here. {Resolve#merged_destinations}
+        # already folds required destinations (egress-gateway, secrets proxy,
+        # GitHub, direct-outbound provider hosts) into +destinations+ as the
+        # highest-precedence entries before persisting the snapshot —
+        # +required_destinations+ is exposed separately only for audit/
+        # provenance display, not as a second source callers must merge in.
+        # {ExecutionRunners::LocalDockerRunner#apply_firewall!} documents the
+        # same invariant: the gateway's allowlist built from
+        # +snapshot.destinations+ is the single enforcement source of truth.
+        # Re-merging +required_destinations+ here would be redundant today,
+        # and would silently mask a real regression if {Resolve} ever stopped
+        # merging them in.
         def allowlist_for(snapshot:)
           Array(snapshot&.destinations).map do |destination|
             { host: destination["host"], port: destination["port"] }.compact
