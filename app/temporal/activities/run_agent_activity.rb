@@ -1837,10 +1837,7 @@ module Activities
         raise_preflight_timeout!(agent_run: agent_run, runner: runner, reason: reason)
       end
 
-      stdout = normalize_output_text(result[:stdout])
-      stderr = normalize_output_text(result[:stderr])
-      combined_output = [ stderr, stdout ].compact.join("\n").strip
-      sanitized_output = strip_prompt_echo(combined_output, prompt)
+      sanitized_output = smoke_output(result, prompt)
 
       if result.success?
         # Keep the same precedence as the main execution path so preflight
