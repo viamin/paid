@@ -580,24 +580,6 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       expect { runner.provision(spec: run_spec) }.not_to raise_error
     end
 
-    def seed_snapshot!(destinations: [], required_destinations: [], mode: "proxy_restricted", egress_profile: "locked")
-      snapshot = AgentRuns::EgressPolicy::Snapshot.new(
-        mode: mode,
-        egress_profile: egress_profile,
-        destinations: destinations,
-        required_destinations: required_destinations
-      )
-      agent_run.update!(external_metadata: { "egress_policy" => snapshot.to_h })
-      snapshot
-    end
-
-    def stub_provision_success!
-      allow(Containers::Provision).to receive(:new).and_return(provision_service)
-      allow(provision_service).to receive(:provision).and_return(
-        Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
-      )
-    end
-
     def stub_failing_gateway!
       adapter = instance_double(
         AgentRuns::EgressPolicy::GatewayAdapters::Docker,

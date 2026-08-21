@@ -20,16 +20,6 @@ module AgentRuns
     # +#record_denial!+.
     # @spec EGRESS-POLICY-007
     class Gateway
-      # Sentinel raised when no gateway adapter is registered for the
-      # runtime. A production restricted run cannot start without
-      # enforcement, so the runner rejects it before provisioning.
-      class UnsupportedEgressProfileError < StandardError
-        def initialize(runner_class)
-          super("Runtime #{runner_class} cannot enforce the egress policy snapshot; " \
-            "register a gateway adapter or reject the run")
-        end
-      end
-
       # Raised when the gateway cannot be brought up on the host. The
       # runner treats this as a fail-closed condition in production: the
       # container is not started and the run surfaces a ProvisionError so
