@@ -29,15 +29,22 @@ module AgentRuns
         GATEWAY_HOST = AgentRuns::EgressPolicy::RequiredDestinations::EGRESS_GATEWAY_HOST
         GATEWAY_PORT = AgentRuns::EgressPolicy::RequiredDestinations::EGRESS_GATEWAY_PORT
 
-        # Well-known path inside the gateway sidecar where the per-run
-        # allowlist is written. The gateway process watches or reads
-        # this file to know which hosts the current run may reach.
-        ALLOWLIST_CONFIG_PATH = "/etc/egress-gateway/allowlist.json"
+        # Per-run allowlist path inside the shared gateway sidecar.
+        # Each restricted run writes its own file (named after
+        # +agent_run.id+) so concurrent restricted runs cannot
+        # overwrite each other's policy — every restricted run reaches
+        # the same gateway via the +egress-gateway+ Docker network
+        # alias, and the sidecar process uses the file to filter
+        # CONNECT/HTTP requests by host against the owning run's
+        # destinations. See {#allowlist_config_path}.
+        ALLOWLIST_CONFIG_DIR = "/etc/egress-gateway"
 
-        # Path inside the sidecar where denied-request events are
-        # appended as newline-delimited JSON. The runner reads this
-        # after the run to create {EgressSecurityEvent} audit rows.
-        DENIAL_LOG_PATH = "/var/log/egress-gateway/denials.jsonl"
+        # Per-run denial log path inside the sidecar. The gateway
+        # appends a newline-delimited JSON line per denied request to
+        # the run's file, so reads are naturally scoped to one run and
+        # the file can be truncated after collection without losing
+        # any other run's audit data. See {#denial_log_path}.
+        DENIAL_LOG_DIR = "/var/log/egress-gateway"
 
         # Whether the platform adapter can enforce the policy. The Docker
         # adapter declares every restricted RDR-062 mode enforceable when
@@ -66,9 +73,9 @@ module AgentRuns
         end
 
         # Installs the per-run allowlist into the gateway sidecar by
-        # writing a JSON config to {ALLOWLIST_CONFIG_PATH}. The gateway
-        # process reads this file to filter CONNECT/HTTP requests by
-        # host against the run's snapshot destinations.
+        # writing a JSON config to {#allowlist_config_path}. The
+        # per-run filename isolates this run's policy from concurrent
+        # restricted runs sharing the same sidecar.
         def install_allowlist!(agent_run:, snapshot:, backend:)
           gateway_container = backend.get_container(GATEWAY_HOST)
           allowlist = allowlist_for(snapshot: snapshot)
@@ -80,7 +87,7 @@ module AgentRuns
           encoded = Base64.strict_encode64(config)
           backend.exec_in_container(
             gateway_container,
-            [ "sh", "-c", "echo '#{encoded}' | base64 -d > #{ALLOWLIST_CONFIG_PATH}" ],
+            [ "sh", "-c", "echo '#{encoded}' | base64 -d > #{allowlist_config_path(agent_run: agent_run)}" ],
             wait: 5
           )
         rescue ::Docker::Error::DockerError => e
@@ -88,28 +95,51 @@ module AgentRuns
             "failed to install allowlist on gateway '#{GATEWAY_HOST}': #{e.message}"
         end
 
-        # Reads denial events from the gateway sidecar's denial log.
-        # Each line is a JSON object with at least +host+, +port+, and
-        # +matched_rule+. Returns an empty array when the log does not
-        # exist or the gateway has not recorded any denials.
+        # Reads denial events from the gateway sidecar's per-run
+        # denial log {#denial_log_path} and truncates the file so a
+        # subsequent retry of {Gateway#collect_denials!} does not
+        # re-persist the same audit rows. Each line is a JSON object
+        # with at least +host+, +port+, and +matched_rule+. Returns an
+        # empty array when the log does not exist or the gateway has
+        # not recorded any denials.
         def collect_denials(agent_run:, backend:)
           gateway_container = backend.get_container(GATEWAY_HOST)
+          path = denial_log_path(agent_run: agent_run)
           stdout, _stderr, exit_code = backend.exec_in_container(
             gateway_container,
-            [ "sh", "-c", "cat #{DENIAL_LOG_PATH} 2>/dev/null || true" ],
+            [ "sh", "-c", "cat #{path} 2>/dev/null || true" ],
             wait: 5
           )
-          return [] unless exit_code&.zero?
-
-          stdout.join.each_line.filter_map do |line|
-            parsed = JSON.parse(line.strip)
-            { host: parsed["host"], port: parsed["port"],
-              matched_rule: parsed["matched_rule"], scheme: parsed["scheme"] }
-          rescue JSON::ParserError
-            nil
+          denials = []
+          if exit_code&.zero?
+            denials = stdout.join.each_line.filter_map do |line|
+              parsed = JSON.parse(line.strip)
+              { host: parsed["host"], port: parsed["port"],
+                matched_rule: parsed["matched_rule"], scheme: parsed["scheme"] }
+            rescue JSON::ParserError
+              nil
+            end
           end
+          truncate_per_run_log!(gateway_container: gateway_container, path: path, backend: backend)
+          denials
         rescue ::Docker::Error::DockerError
           []
+        end
+
+        # Path to the per-run allowlist config inside the shared
+        # gateway sidecar. Each run's filename is its +agent_run.id+ so
+        # two restricted runs sharing the sidecar never overwrite each
+        # other's policy.
+        def allowlist_config_path(agent_run:)
+          "#{ALLOWLIST_CONFIG_DIR}/allowlist_#{agent_run.id}.json"
+        end
+
+        # Path to the per-run denial log inside the shared gateway
+        # sidecar. Filename is keyed by +agent_run.id+ so a run only
+        # ever reads its own denials, even when the sidecar is shared
+        # across many concurrent restricted runs.
+        def denial_log_path(agent_run:)
+          "#{DENIAL_LOG_DIR}/denials_#{agent_run.id}.jsonl"
         end
 
         def gateway_url(snapshot:, backend:)
@@ -125,6 +155,27 @@ module AgentRuns
           Array(snapshot&.destinations).map do |destination|
             { host: destination["host"], port: destination["port"] }.compact
           end
+        end
+
+        private
+
+        # Truncates the per-run denial log inside the gateway sidecar.
+        # {#collect_denials} always calls this after a successful
+        # read so a re-entry of {Gateway#collect_denials!} (e.g. a
+        # retry from the runner's cleanup path) sees an empty log and
+        # does not duplicate {EgressSecurityEvent} rows. Failures are
+        # swallowed because the read already happened — a missed
+        # truncation can at worst cause duplicate audit rows on the
+        # next collect, never a missed denial.
+        def truncate_per_run_log!(gateway_container:, path:, backend:)
+          backend.exec_in_container(
+            gateway_container,
+            [ "sh", "-c", ": > #{path}" ],
+            wait: 5
+          )
+          nil
+        rescue ::Docker::Error::DockerError
+          nil
         end
       end
     end

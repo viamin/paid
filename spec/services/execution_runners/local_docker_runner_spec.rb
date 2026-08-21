@@ -888,6 +888,95 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
 
       expect { runner.cleanup(handle: handle, force: false) }.not_to raise_error
     end
+
+    # @spec EGRESS-POLICY-007
+    it "drains gateway denials to EgressSecurityEvent rows for restricted runs" do
+      seed_snapshot!(destinations: [ { "host" => "evil.example.com", "port" => 443, "source" => "project_allowlist" } ])
+      adapter = stub_gateway_collect_denials!(
+        host: "evil.example.com", port: 443, matched_rule: "no matching rule", scheme: "https"
+      )
+      allow(Containers::Provision).to receive(:reconnect).and_return(provision_service)
+      allow(provision_service).to receive(:cleanup)
+      allow(Containers).to receive(:backend_for).with("local").and_return(backend)
+
+      expect { runner.cleanup(handle: handle, force: true) }.to change(EgressSecurityEvent, :count).by(1)
+
+      expect(EgressSecurityEvent.last).to have_attributes(
+        event_kind: "denied_egress",
+        destination_host: "evil.example.com",
+        destination_port: 443,
+        source_layer: "gateway",
+        agent_run: agent_run
+      )
+      expect(adapter).to have_received(:collect_denials).with(agent_run: agent_run, backend: backend)
+    end
+
+    # @spec EGRESS-POLICY-007
+    it "skips the gateway drain for runs with no persisted snapshot" do
+      allow(Containers::Provision).to receive(:reconnect).and_return(provision_service)
+      allow(provision_service).to receive(:cleanup)
+      adapter = instance_double(AgentRuns::EgressPolicy::GatewayAdapters::Docker)
+      expect(adapter).not_to receive(:collect_denials)
+      allow(described_class).to receive(:gateway_adapter).and_return(adapter)
+
+      expect { runner.cleanup(handle: handle, force: true) }.not_to change(EgressSecurityEvent, :count)
+    end
+
+    # @spec EGRESS-POLICY-007
+    it "skips the gateway drain for unrestricted runs that persisted a snapshot" do
+      seed_snapshot!(mode: "direct_outbound", destinations: [])
+      allow(Containers::Provision).to receive(:reconnect).and_return(provision_service)
+      allow(provision_service).to receive(:cleanup)
+      adapter = instance_double(AgentRuns::EgressPolicy::GatewayAdapters::Docker)
+      expect(adapter).not_to receive(:collect_denials)
+      allow(described_class).to receive(:gateway_adapter).and_return(adapter)
+
+      expect { runner.cleanup(handle: handle, force: true) }.not_to change(EgressSecurityEvent, :count)
+    end
+
+    # @spec EGRESS-POLICY-007
+    it "logs a warning but never raises when the gateway drain itself fails" do
+      seed_snapshot!(destinations: [ { "host" => "evil.example.com", "port" => 443, "source" => "project_allowlist" } ])
+      allow(Containers::Provision).to receive(:reconnect).and_return(provision_service)
+      allow(provision_service).to receive(:cleanup)
+      adapter = instance_double(AgentRuns::EgressPolicy::GatewayAdapters::Docker)
+      allow(adapter).to receive(:collect_denials).and_raise(StandardError, "sidecar exec failed")
+      allow(described_class).to receive(:gateway_adapter).and_return(adapter)
+      allow(Containers).to receive(:backend_for).with("local").and_return(backend)
+
+      expect(Rails.logger).to receive(:warn).with(
+        hash_including(message: "container.gateway.denial_drain_failed", agent_run_id: agent_run.id)
+      )
+
+      expect { runner.cleanup(handle: handle, force: true) }.not_to raise_error
+    end
+
+    # @spec EGRESS-POLICY-007
+    it "skips the gateway drain when the handle omits an agent_run_id" do
+      no_id_handle = ExecutionRunners::RunnerHandle.new(
+        runner_type: :local_docker, identifier: "abc123", host: "local",
+        workspace_ref: "paid-workspace-1", metadata: {}
+      )
+      allow(Containers::Provision).to receive(:reconnect).and_return(provision_service)
+      allow(provision_service).to receive(:cleanup)
+      adapter = instance_double(AgentRuns::EgressPolicy::GatewayAdapters::Docker)
+      expect(adapter).not_to receive(:collect_denials)
+      allow(described_class).to receive(:gateway_adapter).and_return(adapter)
+
+      expect { runner.cleanup(handle: no_id_handle, force: true) }.not_to raise_error
+    end
+
+    # Builds an instance double for the gateway adapter whose
+    # +#collect_denials+ returns a single denial record built from the
+    # given kwargs. Returns the double so specs can assert against it.
+    def stub_gateway_collect_denials!(host:, port:, matched_rule:, scheme:)
+      adapter = instance_double(
+        AgentRuns::EgressPolicy::GatewayAdapters::Docker,
+        collect_denials: [ { host: host, port: port, matched_rule: matched_rule, scheme: scheme } ]
+      )
+      allow(described_class).to receive(:gateway_adapter).and_return(adapter)
+      adapter
+    end
   end
 
   describe ".workspace_volume_name_for" do

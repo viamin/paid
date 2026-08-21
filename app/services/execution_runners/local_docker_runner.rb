@@ -161,6 +161,7 @@ class LocalDockerRunner < Base
     end
 
     def cleanup(handle:, force: false)
+      drain_gateway_denials!(handle: handle)
       reconnect(handle: handle).cleanup(force: force)
       nil
     rescue Containers::Provision::ProvisionError
@@ -422,6 +423,59 @@ class LocalDockerRunner < Base
         agent_run_id: gateway.agent_run.id
       )
       raise ProvisionError, "Egress gateway setup failed: #{e.message}" if Rails.env.production?
+    end
+
+    # Drains denial events from the per-host egress gateway into
+    # {EgressSecurityEvent} rows for the run that just finished. This
+    # is the live call site for {Gateway#collect_denials!} — without it
+    # the gateway would only ever be exercised in unit tests, and a
+    # restricted run would enforce via the sidecar but never persist
+    # any denials to the audit trail.
+    #
+    # Only restricted runs (those that provisioned a gateway at
+    # {#provision} time, gated by +networking_policy.restricted?+ and a
+    # persisted snapshot) need a drain: an unrestricted run never
+    # touched the gateway, so draining it returns no rows and would
+    # only burn a Docker exec against the shared sidecar.
+    #
+    # Best-effort and idempotent: failures are logged but never raised
+    # because {#cleanup} must remain safe to call on an already
+    # torn-down handle, and the adapter's per-run denial log path
+    # truncates after read so a retry cannot duplicate audit rows.
+    # @spec EGRESS-POLICY-007
+    def drain_gateway_denials!(handle:)
+      agent_run_id = handle.metadata["agent_run_id"]
+      return if agent_run_id.blank?
+
+      agent_run = AgentRun.find_by(id: agent_run_id)
+      return unless agent_run
+
+      snapshot = AgentRuns::EgressPolicy::Snapshot.from_record(agent_run)
+      return unless snapshot && restricted_snapshot_mode?(snapshot.mode)
+
+      backend = Containers.backend_for(handle.host)
+      adapter = self.class.gateway_adapter
+      return unless adapter
+
+      AgentRuns::EgressPolicy::Gateway.new(
+        agent_run: agent_run, backend: backend, snapshot: snapshot, adapter: adapter
+      ).collect_denials!
+    rescue StandardError => e
+      Rails.logger.warn(
+        message: "container.gateway.denial_drain_failed",
+        agent_run_id: handle.metadata["agent_run_id"],
+        error: e.message
+      )
+      nil
+    end
+
+    # Whether the snapshot's persisted mode corresponds to one of the
+    # restricted RDR-062 networking intents. Used by
+    # {#drain_gateway_denials!} to skip unrestricted runs that never
+    # installed a gateway, mirroring {#build_gateway}'s
+    # +networking_policy.restricted?+ gate at provision time.
+    def restricted_snapshot_mode?(mode)
+      ExecutionRunners::NETWORKING_POLICY_RESTRICTED_MODES.include?(mode.to_sym)
     end
 
     # Translates the gateway's +host:port+ URL into the +{ip:, port:}+

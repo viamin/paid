@@ -66,14 +66,29 @@ RSpec.describe AgentRuns::EgressPolicy::GatewayAdapters::Docker do
       allow(backend).to receive(:exec_in_container)
     end
 
-    it "writes the per-run allowlist as JSON into the gateway sidecar" do
+    it "writes the per-run allowlist as JSON into the gateway sidecar under a per-run filename" do
       adapter.install_allowlist!(agent_run: agent_run, snapshot: snapshot, backend: backend)
 
       expect(backend).to have_received(:exec_in_container).with(
         gateway_container,
-        array_including("sh", "-c", a_string_matching(/base64 -d/)),
+        array_including("sh", "-c", a_string_matching(%r{allowlist_#{agent_run.id}\.json})),
         hash_including(wait: 5)
       )
+    end
+
+    it "keys each concurrent restricted run's allowlist by its own agent_run_id" do
+      other_run = create(:agent_run, project: project)
+      adapter.install_allowlist!(agent_run: agent_run, snapshot: snapshot, backend: backend)
+
+      expect(backend).to have_received(:exec_in_container).with(
+        gateway_container,
+        array_including(a_string_matching(%r{allowlist_#{agent_run.id}\.json})),
+        hash_including(wait: 5)
+      )
+      # The other run's path is different, so concurrent restricted runs
+      # sharing the same sidecar never overwrite each other's policy.
+      expect(adapter.allowlist_config_path(agent_run: agent_run))
+        .not_to eq(adapter.allowlist_config_path(agent_run: other_run))
     end
 
     it "raises Gateway::UnavailableError when the exec fails" do
@@ -91,6 +106,22 @@ RSpec.describe AgentRuns::EgressPolicy::GatewayAdapters::Docker do
       allow(backend).to receive(:get_container).with("egress-gateway").and_return(gateway_container)
     end
 
+    it "reads only this run's denial log (per-run path)" do
+      log_lines = [
+        '{"host":"evil.com","port":443,"matched_rule":"no match","scheme":"https"}',
+        '{"host":"bad.org","port":80,"matched_rule":"no match","scheme":"http"}'
+      ].join("\n") + "\n"
+      allow(backend).to receive(:exec_in_container).and_return([ [ log_lines ], [], 0 ])
+
+      adapter.collect_denials(agent_run: agent_run, backend: backend)
+
+      expect(backend).to have_received(:exec_in_container).at_least(:once).with(
+        gateway_container,
+        array_including("sh", "-c", a_string_matching(%r{denials_#{agent_run.id}\.jsonl})),
+        hash_including(wait: 5)
+      )
+    end
+
     it "parses denial events from the sidecar log" do
       log_lines = [
         '{"host":"evil.com","port":443,"matched_rule":"no match","scheme":"https"}',
@@ -103,6 +134,32 @@ RSpec.describe AgentRuns::EgressPolicy::GatewayAdapters::Docker do
         { host: "evil.com", port: 443, matched_rule: "no match", scheme: "https" },
         { host: "bad.org", port: 80, matched_rule: "no match", scheme: "http" }
       ])
+    end
+
+    it "truncates the per-run denial log so a re-entry does not re-ingest denials" do
+      allow(backend).to receive(:exec_in_container).and_return([ [ "" ], [], 0 ])
+
+      adapter.collect_denials(agent_run: agent_run, backend: backend)
+
+      expect(backend).to have_received(:exec_in_container).with(
+        gateway_container,
+        array_including("sh", "-c", a_string_matching(%r{: > /var/log/egress-gateway/denials_#{agent_run.id}\.jsonl})),
+        hash_including(wait: 5)
+      )
+    end
+
+    it "swallows truncation failures so a re-entry does not lose audit data" do
+      call_count = 0
+      allow(backend).to receive(:exec_in_container) do |_container, _command, **_opts|
+        call_count += 1
+        # First call: cat (the read). Second call: truncate (the write).
+        if call_count == 2
+          raise Docker::Error::DockerError, "truncate write failed"
+        end
+        [ [ "" ], [], 0 ]
+      end
+
+      expect { adapter.collect_denials(agent_run: agent_run, backend: backend) }.not_to raise_error
     end
 
     it "returns an empty array when the denial log does not exist" do
