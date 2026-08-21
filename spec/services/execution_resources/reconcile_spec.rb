@@ -302,6 +302,21 @@ RSpec.describe ExecutionResources::Reconcile do
     expect(resource.reload).to be_active
   end
 
+  it "fails a group instead of resolving an unknown runner_type to the Docker runner" do
+    # @spec CONTAINER-RUNTIME-031
+    resource = create(:execution_resource, project: project, agent_run: agent_run,
+      runner_type: "contract", identifier: "contract-resource", host: "local")
+
+    result = described_class.new(
+      scope: ExecutionResource.where(id: resource.id),
+      inventory_targets: [ { runner_type: "contract", host: "local" } ]
+    ).call
+
+    expect(result.failures).to eq(1)
+    expect(result.checked).to eq(0)
+    expect(resource.reload).to be_active
+  end
+
   def tracked_resource(resource_type:, identifier:, tags: nil)
     ExecutionRunners::TrackedResource.new(
       runner_type: :local_docker,

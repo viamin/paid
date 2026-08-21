@@ -308,12 +308,24 @@ module ExecutionResources
       ]
     end
 
+    # Raised when a ledger row's `runner_type` has no known runner
+    # implementation to reconcile against.
+    UnknownRunnerTypeError = Class.new(StandardError)
+
+    # `ExecutionRunners.resolve` currently returns {LocalDockerRunner} for
+    # every backend (RDR-054: all current backends are Docker transports), so
+    # it cannot be used here to distinguish runner types — doing so would
+    # silently reconcile any non-`local_docker` row against the Docker
+    # provider instead of its owning runner. Until a provider-specific
+    # resolver exists, constrain reconciliation to `local_docker` explicitly
+    # and fail loudly for anything else so a group_failed log/counted failure
+    # surfaces instead of a wrong-backend adoption/cleanup.
     def default_runner_for(runner_type:, host:)
       case runner_type.to_s
       when "local_docker", ""
         ExecutionRunners::LocalDockerRunner.new
       else
-        ExecutionRunners.resolve(backend: Containers.backend_for(host))
+        raise UnknownRunnerTypeError, "No reconciliation runner for runner_type #{runner_type.inspect}"
       end
     end
 
