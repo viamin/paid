@@ -384,11 +384,18 @@ class LocalDockerRunner < Base
     end
 
     # Builds the per-run egress gateway from the snapshot persisted on
-    # +agent_run+. Restricted policies always carry a snapshot; open /
-    # unrestricted runs do not need a gateway, so the caller passes +nil+
-    # to {NetworkPolicy.apply_firewall_rules} and {apply_firewall!} skips
-    # the gateway destinations entirely.
+    # +agent_run+. Only restricted policies need a gateway: {Resolve}
+    # persists a snapshot for unrestricted policies too (e.g.
+    # +subscription_auth+/+direct_outbound+), so gating on the snapshot's
+    # presence alone would build a gateway — and later call
+    # {enforce_gateway!} — for open runs that were never meant to go
+    # through one. Open runs pass +nil+ to
+    # {NetworkPolicy.apply_firewall_rules} and {apply_firewall!} skips the
+    # gateway destinations entirely.
     def build_gateway(spec:, backend:)
+      policy = spec.networking_policy
+      return nil unless policy&.restricted?
+
       snapshot = AgentRuns::EgressPolicy::Snapshot.from_record(spec.agent_run)
       return nil unless snapshot
 

@@ -38,7 +38,23 @@ RSpec.describe AgentRuns::EgressPolicy::GatewayAdapters::Docker do
     end
   end
 
-  it "returns nil from ensure! by default (operator-deployed sidecar lifecycle is not the runner's job)" do
+  it "returns nil from ensure! when the operator-deployed gateway sidecar exists" do
+    allow(backend).to receive(:get_container).with("egress-gateway").and_return(instance_double(Docker::Container))
+
     expect(adapter.ensure!(agent_run: agent_run, snapshot: snapshot, backend: backend)).to be_nil
+  end
+
+  it "raises Gateway::UnavailableError when the gateway sidecar is missing (fail closed)" do
+    allow(backend).to receive(:get_container).with("egress-gateway").and_raise(Docker::Error::NotFoundError, "not found")
+
+    expect { adapter.ensure!(agent_run: agent_run, snapshot: snapshot, backend: backend) }
+      .to raise_error(AgentRuns::EgressPolicy::Gateway::UnavailableError, /egress gateway container 'egress-gateway' not found/)
+  end
+
+  it "raises Gateway::UnavailableError when the gateway lookup fails for another Docker reason" do
+    allow(backend).to receive(:get_container).with("egress-gateway").and_raise(Docker::Error::DockerError, "daemon unreachable")
+
+    expect { adapter.ensure!(agent_run: agent_run, snapshot: snapshot, backend: backend) }
+      .to raise_error(AgentRuns::EgressPolicy::Gateway::UnavailableError, /egress gateway lookup failed/)
   end
 end

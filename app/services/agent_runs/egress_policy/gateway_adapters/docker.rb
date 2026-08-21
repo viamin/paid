@@ -38,12 +38,21 @@ module AgentRuns
           true
         end
 
+        # The default Docker gateway is a platform-managed sidecar; the
+        # runner does not own the gateway lifecycle (no create/start calls
+        # here). But per RDR-055's fail-closed requirement, provisioning
+        # must not proceed as if enforcement exists when the sidecar was
+        # never deployed. Look the gateway container up by the same name
+        # its network alias uses (+GATEWAY_HOST+) and raise
+        # {Gateway::UnavailableError} when it is missing, so restricted
+        # runs stop before the agent container starts.
         def ensure!(agent_run:, snapshot:, backend:)
-          # The default Docker gateway is a platform-managed sidecar; the
-          # runner does not own the gateway lifecycle. This hook exists so
-          # a future per-run sidecar provisioner can slot in without
-          # changing the adapter contract.
+          backend.get_container(GATEWAY_HOST)
           nil
+        rescue ::Docker::Error::NotFoundError
+          raise Gateway::UnavailableError, "egress gateway container '#{GATEWAY_HOST}' not found on backend #{backend.identifier}"
+        rescue ::Docker::Error::DockerError => e
+          raise Gateway::UnavailableError, "egress gateway lookup failed on backend #{backend.identifier}: #{e.message}"
         end
 
         def gateway_url(snapshot:, backend:)
