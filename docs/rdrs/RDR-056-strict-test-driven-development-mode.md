@@ -5,7 +5,7 @@
 ## Metadata
 
 - **Date**: 2026-08-16
-- **Status**: Draft
+- **Status**: Accepted (implementation not started — see [Implementation Notes](#implementation-notes))
 - **Type**: Architecture + Process
 - **Priority**: P1
 - **Related RDRs**:
@@ -14,8 +14,8 @@
   - [RDR-046](RDR-046-polyglot-language-detection-and-test-execution.md) (Polyglot Language Detection and Test Execution)
   - [RDR-051](RDR-051-lid-aware-agent-runs.md) (LID-Aware Agent Runs)
   - [RDR-053](RDR-053-new-feature-creation.md) (New Feature Creation)
-- **Related Issues**: TBD
-- **Related Tests**: TBD
+- **Related Issues**: #3470 (closeout, this audit), #3466, #3467, #3468, #3469 (implementation — not reflected in shipped code as of this audit, see below)
+- **Related Tests**: None yet — no implementation exists to test
 
 ## Problem Statement
 
@@ -285,3 +285,70 @@ contract mismatch.
 - When project mutation testing is enabled, mutation checks run after the green phase, not
   during the red test-review gate; mutation-driven implementation or refactor fixes must
   not alter approved tests unless the PR returns to test review.
+
+## Implementation Notes
+
+**Closeout audit (2026-08-21, issue #3470):** #3470 was opened as an umbrella/closeout issue
+that is "intentionally blocked on" #3466–#3469 and assumes those implementation issues are
+complete. A full codebase audit at this date found **no shipped implementation of this RDR**:
+none of the four dependency issues are reflected in `main`. This section records that audit
+so status doesn't drift ahead of what is actually running in production, per the closeout
+checklist's own instruction to "leave the RDR status as partially implemented rather than
+marking it complete" when gaps remain — in this case the gap is the entire feature.
+
+Checklist item results:
+
+| Closeout checklist item | Result | Evidence |
+|---|---|---|
+| Project-level TDD modes exist and default to `off` | **Not found** | No `tdd_mode` (or equivalent) column/enum on `Project`; `db/schema.rb` has no such field. |
+| Three `paid-` prefixed test-review labels are created/synced | **Not found** | `Projects::EnsureStandardLabels::LABEL_DEFINITIONS` (`app/services/projects/ensure_standard_labels.rb`) has no `paid-tests-ready-for-review`, `paid-tests-approved`, or `paid-test-changes-requested` entries. Repo-wide search for those three strings matches only this RDR document. |
+| Strict mode produces test-only draft PRs and waits for human test approval | **Not found** | No test-writing run path exists. `AgentRun::GOALS` (`app/models/agent_run.rb`) has no test-writing goal, and no service opens a tests-only draft PR. |
+| Non-strict mode uses a `test_review` agent verdict with the same approval labels | **Not found** | No `test_review` goal/focus value exists anywhere in `AgentRun::GOALS` or `AgentRun::FOCUSES`. |
+| Implementation runs do not start until `paid-tests-approved` is present | **Not found** | No queue/dispatch code (`ProcessRunQueueJob`, Temporal activities, etc.) checks for this label. |
+| Rejected tests route back to test-writing, not implementation | **Not found** | No revision-routing logic keyed on `paid-test-changes-requested` exists. |
+| Every PR with tests includes the documentation-style test outline | **Not found** | No PR-description generator renders an RSpec `--format documentation`-style outline. |
+| LID projects expose changed LID docs, coherence status, and specs before implementation | **Not found** | No prompt/service ties LID coherence-check output to a strict-review gate for this RDR's purposes (LID-Aware Agent Runs itself is separately tracked under RDR-051, Partially Implemented). |
+| Run-scoped pre-commit checks enforce test-writing / implementation-fixing / refactor write boundaries | **Not found** | `PreCommitRequirement` (`app/models/pre_commit_requirement.rb`) is scoped by account/project/user, not by agent-run goal or TDD phase; there is no write-boundary enforcement between test files and implementation files. |
+| Mutation testing runs after green and cannot mutate the approved-test boundary | **Not found** | Mutation testing exists and works (RDR-036, Implemented — `app/services/quality_feedback/parse_mutant.rb`, `app/services/containers/quality_hooks.rb`), but it is not gated on, or aware of, an approved-test boundary; RDR-056's specific interaction is unimplemented. |
+
+Because none of the codebase changes this closeout issue was meant to verify exist, the
+remaining checklist items (run tests, verify labels, etc.) could not produce evidence one way
+or the other and are left undone rather than marked as passed.
+
+**Disposition:** Status is set to **Accepted** rather than **Partially Implemented** because
+zero implementation work has landed — "partially implemented" would overstate progress.
+Issues #3466–#3469 remain open implementation work; this closeout issue cannot be resolved as
+"complete" until they are. This agent run does not have GitHub issue-creation access (the
+sandboxed container's GitHub proxy is scoped to the agent-run's own operations, not general
+issue creation), so instead of fabricating filed issues, the follow-up scope is recorded here
+verbatim so it can be filed or re-verified directly against issues #3466–#3469:
+
+**PR keyword note:** because #3470 is not resolvable per this section, the PR that lands this
+audit must reference #3470 (e.g. `Refs #3470`) rather than close it (`Closes #3470`). Using the
+closing keyword would auto-close the umbrella/closeout issue via GitHub's keyword even though
+its own dependencies (#3466–#3469) are still open with no implementation landed, defeating its
+purpose as the tracking issue for the re-audit called out below. This environment's sandboxed
+GitHub proxy does not expose PR-description editing, so this note documents the required
+correction for whoever merges or edits the PR.
+
+1. **Project-level TDD mode** — add `off` / `non_strict` / `strict` configuration to `Project`,
+   defaulting to `off`, plus the three `paid-` prefixed labels in
+   `Projects::EnsureStandardLabels`.
+2. **Test-writing run path** — a new `AgentRun` goal that writes tests only (and LID docs when
+   applicable), opens/updates a draft PR, and applies `paid-tests-ready-for-review`.
+3. **Queue gating** — block implementation runs while `paid-tests-ready-for-review` or
+   `paid-test-changes-requested` is present without `paid-tests-approved`; route
+   `paid-test-changes-requested` back to a test-revision run, not implementation.
+4. **`test_review` agent run** — for `non_strict` mode, review tests automatically and apply
+   `paid-tests-approved` or `paid-test-changes-requested`.
+5. **Run-scoped pre-commit write guards** — enforce the test-writing / test-fixing / refactor
+   allowed-and-forbidden file matrix from this RDR's "Run-scoped write guards" section.
+6. **PR test-outline rendering** — an RSpec-documentation-style (or nearest framework
+   equivalent) test outline section for every PR whose diff includes tests.
+7. **LID-aware strict review** — surface changed LID docs and coherence status alongside the
+   test outline before implementation starts, building on RDR-051.
+8. **Mutation-testing / approved-test-boundary interaction** — ensure mutation-driven fixes
+   cannot alter approved tests without returning the PR to test review, building on RDR-036.
+
+Re-run this audit once #3466–#3469 land, and only then advance the status to
+**Partially Implemented** or **Implemented** as appropriate.
