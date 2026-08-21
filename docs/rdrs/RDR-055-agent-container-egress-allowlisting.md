@@ -296,21 +296,82 @@ Rejected for v1. Paid should reuse existing secret-scanning rules, exact known-s
 - Should package registries such as npm, RubyGems, PyPI, and crates.io be platform-required defaults or project-selected presets?
 - Should denied egress events become a first-class incident feed, or are agent-run logs enough for v1?
 
-## Implementation Status (closed out via #3441)
+## Implementation Status (Partial — audited 2026-08-21 against open umbrella #3441)
 
-Implementation plan steps 1, 2, 3, 4, and 7 are complete:
+This section is a partial implementation audit; the umbrella issue
+[#3441](https://github.com/viamin/paid/issues/3441) remains **open** and its
+blocking dependency chain (including the open follow-ups [#3434](https://github.com/viamin/paid/issues/3434),
+[#3435](https://github.com/viamin/paid/issues/3435),
+[#3438](https://github.com/viamin/paid/issues/3438), and
+[#3439](https://github.com/viamin/paid/issues/3439)) has not yet closed. The
+audit is the snapshot a future re-run will reconcile against when the
+umbrella closeout is rerun; it does not assert that the umbrella has already
+been closed. See [`audit-report-2026-08-21-rdr-055.md`](audit-report-2026-08-21-rdr-055.md)
+for the per-criterion evidence.
 
-- (1) `egress_allowlist_entries` table + `EgressAllowlistEntry` model with account/project scope and server-side host-pattern validation (#3434).
-- (2) `AgentRuns::EgressPolicy::RequiredDestinations` code registry for platform, GitHub, and runner/provider destinations (#3435).
-- (3) `AgentRuns::EgressPolicy::Resolve` resolves a per-run snapshot and `Snapshot#persist!` records it on `agent_runs.external_metadata["egress_policy"]` before provisioning starts (#3436).
-- (4) `ExecutionRunners::NetworkingPolicy#egress_profile` plus `Containers::Provision#networking_policy_with_egress_profile` thread the RDR-055 `:locked`/`:research`/`:open` profile through the portable runner contract without leaking Docker concepts (#3437).
-- (7) `Accounts::EgressAllowlistEntriesController` and `Projects::EgressAllowlistEntriesController` expose the CRUD surface; `Projects::AgentRunsController#show` renders the persisted snapshot plus denied/redacted `EgressSecurityEvent` audit rows on the run detail page (#3440).
+Implementation plan steps 1, 2, 3, 4, and 7 are shipped:
+
+- (1) `egress_allowlist_entries` table + `EgressAllowlistEntry` model with account/project scope and server-side host-pattern validation ([#3434](https://github.com/viamin/paid/issues/3434)).
+- (2) `AgentRuns::EgressPolicy::RequiredDestinations` code registry for platform, GitHub, and runner/provider destinations ([#3435](https://github.com/viamin/paid/issues/3435)).
+- (3) `AgentRuns::EgressPolicy::Resolve` resolves a per-run snapshot and `Snapshot#persist!` records it on `agent_runs.external_metadata["egress_policy"]` before provisioning starts ([#3436](https://github.com/viamin/paid/issues/3436)).
+- (4) `ExecutionRunners::NetworkingPolicy#egress_profile` plus `Containers::Provision#networking_policy_with_egress_profile` thread the RDR-055 `:locked`/`:research`/`:open` profile through the portable runner contract without leaking Docker concepts ([#3437](https://github.com/viamin/paid/issues/3437)).
+- (7) `Accounts::EgressAllowlistEntriesController` and `Projects::EgressAllowlistEntriesController` expose the CRUD surface; `Projects::AgentRunsController#show` renders the persisted snapshot plus denied/redacted `EgressSecurityEvent` audit rows on the run detail page ([#3440](https://github.com/viamin/paid/issues/3440)).
 
 EARS coverage: `EGRESS-POLICY-001` through `EGRESS-POLICY-006` are implemented and annotated on the relevant code. `EGRESS-POLICY-007` (gateway enforcement) remains deferred.
 
-Steps 5 and 6 are accepted gaps tracked as follow-up issues (see the child issue plan in #3441):
+Steps 5 and 6 are accepted gaps tracked as follow-up issues (see the child issue plan in [#3441](https://github.com/viamin/paid/issues/3441)):
 
-- **#3438** — per-host egress gateway + production fail-closed enforcement. `EgressSecurityEvent` rows are recorded with `event_kind = "denied_egress"` already, but no gateway process observes the snapshot today; production restricted runs cannot fail closed at the gateway level. Implementation requires an HTTP(S) CONNECT gateway service, container network plumbing so agent containers route through it, and integration with `NetworkPolicy` / `LocalDockerRunner` to refuse restricted runs when the gateway is unreachable.
-- **#3439** — brokered research profile. The `:research` egress profile is defined and propagates through `ExecutionRunners::NetworkingPolicy` (`research?`), but there is no broker service yet. Implementation needs a Paid-side URL fetch/search service that runs only when `egress_profile == :research`, validates scheme/host/size/timeout/redirects, enforces budgets, records `EgressSecurityEvent` rows for both blocked (`redacted_secret_extraction`) and completed requests, and redacts or quarantines fetched credential-looking content before it can reach the agent prompt.
+- **[#3438](https://github.com/viamin/paid/issues/3438)** — per-host egress gateway + production fail-closed enforcement. `EgressSecurityEvent` rows are recorded with `event_kind = "denied_egress"` already, but no gateway process observes the snapshot today; production restricted runs cannot fail closed at the gateway level. Implementation requires an HTTP(S) CONNECT gateway service, container network plumbing so agent containers route through it, and integration with `NetworkPolicy` / `LocalDockerRunner` to refuse restricted runs when the gateway is unreachable.
+- **[#3439](https://github.com/viamin/paid/issues/3439)** — brokered research profile. The `:research` egress profile is defined and propagates through `ExecutionRunners::NetworkingPolicy` (`research?`), but there is no broker service yet. Implementation needs a Paid-side URL fetch/search service that runs only when `egress_profile == :research`, validates scheme/host/size/timeout/redirects, enforces budgets, records `EgressSecurityEvent` rows for both blocked (`redacted_secret_extraction`) and completed requests, and redacts or quarantines fetched credential-looking content before it can reach the agent prompt.
 
 Until those land, restricted runs rely on the existing iptables firewall + Docker network isolation rather than a domain-aware gateway; the `:research` profile is reserved but has no broker to delegate to.
+
+### 2026-08-21 Closeout (Partial)
+
+Audit recorded against the still-open umbrella issue
+[#3441](https://github.com/viamin/paid/issues/3441); no closure claimed.
+See [`audit-report-2026-08-21-rdr-055.md`](audit-report-2026-08-21-rdr-055.md)
+for the full criterion-by-criterion evidence, gap analysis, and a
+per-dependency reconciliation of every child linked from #3441. This
+closeout moves the RDR status from **Draft** to **Partially Implemented**
+without closing the umbrella.
+
+What shipped in this audit window (cross-referenced to the related issues
+and EARS specs):
+
+- the `EgressAllowlistEntry` model, migration, and shared `HostPattern`
+  validator (`EGRESS-POLICY-001`, #3434);
+- the `RequiredDestinations` code registry, including runner/provider host
+  resolution and the drift-raises contract (`EGRESS-POLICY-002`, #3435);
+- the `Resolve` service, `Snapshot` value object, and deterministic
+  merge/dedupe/provenance pipeline (`EGRESS-POLICY-003`, #3434/#3436);
+- account inheritance, project extension, and the required-destination
+  shadow-proof guarantee (`EGRESS-POLICY-004`, #3434/#3436);
+- read-time defensive re-validation with `DeniedPolicyError` and the
+  pre-provisioning deny snapshot (`EGRESS-POLICY-005`, #3434/#3436);
+- per-run persistence to
+  `agent_runs.external_metadata["egress_policy"]` via
+  `ProvisionContainerActivity`, including the `Containers::ProxyUrl`
+  resolution that threads the planned container host and networking policy
+  into the snapshot (`EGRESS-POLICY-006`, #3436);
+- the `egress_profile` enum on `ExecutionRunners::NetworkingPolicy` plus
+  `Containers::Provision#networking_policy_with_egress_profile` so the
+  profile propagates without leaking Docker concepts (`CONTAINER-RUNTIME-020`,
+  #3437);
+- the settings UI/API controllers and the run-detail audit surface that
+  renders the persisted snapshot plus denied/redacted `EgressSecurityEvent`
+  rows (#3440).
+
+What remains open (children of [#3441](https://github.com/viamin/paid/issues/3441)):
+
+- the per-host egress gateway and production fail-closed enforcement
+  tracked by [#3438](https://github.com/viamin/paid/issues/3438);
+- the brokered research fetch/search service tracked by
+  [#3439](https://github.com/viamin/paid/issues/3439).
+
+Because [#3434](https://github.com/viamin/paid/issues/3434),
+[#3435](https://github.com/viamin/paid/issues/3435),
+[#3438](https://github.com/viamin/paid/issues/3438), and
+[#3439](https://github.com/viamin/paid/issues/3439) all remain open, the
+umbrella closeout must be rerun after those gaps land. Closing the
+umbrella while any child stays open would overstate the RDR's reach.
