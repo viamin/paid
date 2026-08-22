@@ -253,6 +253,10 @@ jobs:
         with:
           ruby-version: .tool-versions
 
+      - name: Install Ruby dependencies
+        if: steps.changes.outputs.image_relevant == 'true'
+        run: bundle install --jobs 4 --retry 3
+
       - name: Extract Claude install contract from agent-harness
         if: steps.changes.outputs.image_relevant == 'true'
         id: claude-contract
