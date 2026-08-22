@@ -18,9 +18,12 @@ made default.
 ## Contract
 
 Every new RDR includes a `## Rollout Guard` section. For runtime changes, the
-section names the feature flag or config gate, its default state, rollback
-action, and cleanup criteria. Non-runtime work uses `docs-only`,
-`migration-only`, or `none required` with a short justification.
+section names the feature flag or config gate, its default state, enablement
+surface, rollback action, and cleanup criteria. Feature-flag guards also name
+the implementation issue that adds the key to `FeatureFlags::DEFINITIONS` and
+wires the runtime decision through `FeatureFlags.enabled?(:flag_name, project:)`.
+Non-runtime work uses `docs-only`, `migration-only`, or `none required` with a
+short justification.
 
 `Features::RdrContract` enforces the section for `create_feature` docs-only PRs.
 `Prompts::BuildForCreateFeature` tells RDR authors to fill it in, and

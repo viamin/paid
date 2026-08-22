@@ -30,15 +30,21 @@ RSpec.describe Prompts::BuildForCreateFeature do
         feature_brief: feature_brief
       )
 
-      expect(prompt).to be_a(String)
-      expect(prompt).to include("Add dark mode")
-      expect(prompt).to include("Users want a dark theme to reduce eye strain at night")
-      expect(prompt).to include("docs/rdrs/RDR-0XX-<slug>.md")
-      expect(prompt).to include("docs/rdrs/README.md")
-      expect(prompt).to include("Rollout Guard")
-      expect(prompt).to include("feature flag or")
-      expect(prompt).to include("config gate")
-      expect(prompt).to include("cleanup criteria")
+      expect(prompt).to include(
+        "Add dark mode",
+        "Users want a dark theme to reduce eye strain at night",
+        "docs/rdrs/RDR-0XX-<slug>.md",
+        "docs/rdrs/README.md",
+        "Rollout Guard"
+      )
+      expect(prompt).to include(
+        "feature flag or",
+        "config gate",
+        "enablement surface",
+        "FeatureFlags::DEFINITIONS",
+        "FeatureFlags.enabled?",
+        "cleanup criteria"
+      )
     end
 
     it "tells the agent to derive the RDR number from the repo (with target override)" do

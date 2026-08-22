@@ -118,6 +118,8 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
 
       expect(result.text).to include("# RDR Rollout Guard")
       expect(result.text).to include("read that RDR's `## Rollout Guard`")
+      expect(result.text).to include("FeatureFlags::DEFINITIONS")
+      expect(result.text).to include("FeatureFlags.enabled?")
       expect(result.text).to include("Do not make guarded behavior default")
     end
 
