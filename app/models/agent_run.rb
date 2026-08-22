@@ -2706,7 +2706,7 @@ class AgentRun < ApplicationRecord
     end
 
     if execution_runner_enabled? && @current_handle
-      cleanup_via_runner(force: force)
+      cleanup_via_runner(force: force, expected_container_id: target_container_id)
     else
       ensure_container_service!
       @container_service.cleanup(force: force, preserve_workspace_volume: preserve_workspace_volume)
@@ -3007,14 +3007,20 @@ class AgentRun < ApplicationRecord
   end
 
   # Cleans up through the runner interface. Idempotent on missing resources.
-  def cleanup_via_runner(force: false)
+  #
+  # +expected_container_id+ mirrors clear_container_id_if_unchanged! below: a
+  # caller operating on a stale snapshot (e.g. ExecutionControlParkCleanupJob
+  # tearing down a parked run's old environment) must not wipe out
+  # container_id/runner_handle if the row has since been re-dispatched to a
+  # different environment out from under it.
+  def cleanup_via_runner(force: false, expected_container_id: nil)
     runner = ExecutionRunners.resolve_for(self)
     runner.cleanup(handle: @current_handle, force: force)
   rescue ExecutionRunners::ProvisionError
     nil
   ensure
     @current_handle = nil
-    update!(container_id: nil, runner_handle: nil)
+    clear_container_id_if_unchanged!(expected_container_id, also_clear: { runner_handle: nil })
   end
 
   # Clears persisted container reference columns after a stale runner handle is

@@ -70,7 +70,7 @@ RSpec.describe ExecutionControl do
 
       expect {
         control.update!(enabled: true, reason: "Capacity reduction")
-      }.to have_enqueued_job(ExecutionControlParkCleanupJob).with(agent_run.id, workflow_id, nil)
+      }.to have_enqueued_job(ExecutionControlParkCleanupJob).with(agent_run.id, workflow_id, nil, nil)
 
       agent_run.reload
       expect(agent_run.status).to eq("paused")
