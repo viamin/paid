@@ -448,12 +448,15 @@ RUN if [ -z "${OMP_PACKAGE}" ]; then \
     && export PATH="${BUN_INSTALL}/bin:${PATH}" \
     && ln -sf "${BUN_INSTALL}/bin/bun" /usr/local/bin/bun \
     && ln -sf "${BUN_INSTALL}/bin/bunx" /usr/local/bin/bunx \
-    && npm_config_cache=/tmp/omp-npm-cache npm_config_omit=optional sh -c "${OMP_INSTALL_COMMAND}" \
-    && rm -rf /tmp/omp-npm-cache \
+    && export OMP_INSTALL_WORKDIR="/var/tmp/omp-install" \
+    && mkdir -p "${OMP_INSTALL_WORKDIR}/cache" "${OMP_INSTALL_WORKDIR}/tmp" \
+    && TMPDIR="${OMP_INSTALL_WORKDIR}/tmp" npm_config_cache="${OMP_INSTALL_WORKDIR}/cache" npm_config_omit=optional sh -c "${OMP_INSTALL_COMMAND}" \
+    && rm -rf "${OMP_INSTALL_WORKDIR}" \
     && OMP_BINARY_PATH="$(command -v omp || true)" \
     && if [ -z "${OMP_BINARY_PATH}" ]; then \
         echo "ERROR: omp binary not found on PATH after install" >&2; \
         echo "PATH=${PATH}" >&2; \
+        echo "TMPDIR=${TMPDIR:-unset}" >&2; \
         echo "npm prefix: $(npm config get prefix)" >&2; \
         echo "npm root -g: $(npm root -g)" >&2; \
         ls -la "$(npm config get prefix)/bin" >&2 || true; \
