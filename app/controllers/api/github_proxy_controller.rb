@@ -361,14 +361,22 @@ module Api
       return unless @agent_run.source_pull_request_number == match[:number].to_i
 
       body = parse_response_body(response.body)
-      return unless body.is_a?(Hash) && body["pull_request"].is_a?(Hash) && body["labels"].is_a?(Array)
+      labels = extract_issue_labels(body)
+      return unless labels
 
-      updated = Tdd::ReturnToTestReview.record_from_label_state(agent_run: @agent_run, labels: body["labels"])
+      updated = Tdd::ReturnToTestReview.record_from_label_state(agent_run: @agent_run, labels: labels)
       return unless updated
 
       log_info("github_proxy.tdd_return_to_test_review_recorded", pr_number: match[:number].to_i)
     rescue => e
       log_error("github_proxy.track_tdd_return_to_test_review_failed", e.message)
+    end
+
+    def extract_issue_labels(body)
+      return body if body.is_a?(Array)
+      return body["labels"] if body.is_a?(Hash) && body["labels"].is_a?(Array)
+
+      nil
     end
 
     def review_url_for(pr_number, review_id)

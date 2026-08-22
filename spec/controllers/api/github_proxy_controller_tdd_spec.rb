@@ -17,8 +17,6 @@ RSpec.describe Api::GithubProxyController, type: :controller do
     end
     let(:response) do
       instance_double(Faraday::Response, body: {
-        "number" => 42,
-        "pull_request" => { "html_url" => "https://github.com/acme/alpha/pull/42" },
         "labels" => [
           { "name" => "paid-generated" },
           { "name" => "paid-tests-ready-for-review" }
@@ -32,8 +30,24 @@ RSpec.describe Api::GithubProxyController, type: :controller do
       allow(controller).to receive(:log_error)
     end
 
-    it "records the reset when the proxy returns the source PR to test review" do
+    it "records the reset when the label proxy returns the source PR to test review" do
       controller.send(:track_tdd_return_to_test_review, "repos/acme/alpha/issues/42/labels", response)
+
+      expect(agent_run.reload.tdd_returned_to_test_review).to be(true)
+      expect(pull_request.reload.labels).to contain_exactly("paid-generated", "paid-tests-ready-for-review")
+    end
+
+    it "records the reset when an issue update returns the source PR to test review" do
+      issue_response = instance_double(Faraday::Response, body: {
+        "number" => 42,
+        "pull_request" => { "html_url" => "https://github.com/acme/alpha/pull/42" },
+        "labels" => [
+          { "name" => "paid-generated" },
+          { "name" => "paid-tests-ready-for-review" }
+        ]
+      }.to_json)
+
+      controller.send(:track_tdd_return_to_test_review, "repos/acme/alpha/issues/42", issue_response)
 
       expect(agent_run.reload.tdd_returned_to_test_review).to be(true)
       expect(pull_request.reload.labels).to contain_exactly("paid-generated", "paid-tests-ready-for-review")
@@ -41,8 +55,6 @@ RSpec.describe Api::GithubProxyController, type: :controller do
 
     it "ignores label updates that do not return the PR to test review" do
       unchanged = instance_double(Faraday::Response, body: {
-        "number" => 42,
-        "pull_request" => { "html_url" => "https://github.com/acme/alpha/pull/42" },
         "labels" => [
           { "name" => "paid-generated" },
           { "name" => "paid-tests-approved" }

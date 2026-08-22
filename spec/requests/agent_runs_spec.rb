@@ -2868,14 +2868,14 @@ RSpec.describe "AgentRuns" do
         expect(new_run.source_pull_request_number).to eq(agent_run.source_pull_request_number)
       end
 
-      it "preserves tdd_returned_to_test_review from the original run" do
+      it "resets tdd_returned_to_test_review on a new retry run" do
         agent_run = create(:agent_run, :failed, :existing_pr, project: project,
           tdd_phase: "test_fixing",
           tdd_returned_to_test_review: true)
 
         post retry_project_agent_run_path(project, agent_run)
 
-        expect(AgentRun.last.tdd_returned_to_test_review).to be(true)
+        expect(AgentRun.last.tdd_returned_to_test_review).to be(false)
       end
 
       it "enqueues ProcessRunQueueJob" do
@@ -3008,7 +3008,7 @@ RSpec.describe "AgentRuns" do
         without_partial_double_verification { expect(AgentHarness).to have_received(:refresh_auth).with(:claude, token: "valid-token") }
       end
 
-      it "preserves tdd_returned_to_test_review on refresh-auth retries" do
+      it "resets tdd_returned_to_test_review on refresh-auth retries" do
         agent_run = create(:agent_run, :auth_expired, :existing_pr, project: project,
           tdd_phase: "test_fixing",
           tdd_returned_to_test_review: true)
@@ -3016,7 +3016,7 @@ RSpec.describe "AgentRuns" do
 
         post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_token: "valid-token" }
 
-        expect(AgentRun.last.tdd_returned_to_test_review).to be(true)
+        expect(AgentRun.last.tdd_returned_to_test_review).to be(false)
       end
 
       it "persists explicit host selection metadata on refresh-auth retries" do

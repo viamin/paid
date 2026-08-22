@@ -466,7 +466,6 @@ module Projects
         source_pull_request_number: @agent_run.source_pull_request_number,
         goal: @agent_run.goal,
         tdd_phase: @agent_run.tdd_phase,
-        tdd_returned_to_test_review: @agent_run.tdd_returned_to_test_review,
         **resolved_container_host_attributes(runner: retry_runner),
         trigger_type: "manual",
         status: "queued"
@@ -557,7 +556,6 @@ module Projects
         source_pull_request_number: @agent_run.source_pull_request_number,
         goal: @agent_run.goal,
         tdd_phase: @agent_run.tdd_phase,
-        tdd_returned_to_test_review: @agent_run.tdd_returned_to_test_review,
         **resolved_container_host_attributes(runner: @agent_run.runner),
         trigger_type: "manual",
         status: "queued"
