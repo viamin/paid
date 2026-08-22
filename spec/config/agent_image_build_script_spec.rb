@@ -112,20 +112,52 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(dockerfile_source).not_to include('ln -sf /root/.bun/bin/bun /usr/local/bin/bun')
     end
 
-    it "uses the agent-harness omp install command after provisioning Bun" do
+    it "requires the omp install contract inputs" do
       expect(dockerfile_source).to include("ARG OMP_INSTALL_COMMAND")
-      expect(dockerfile_source).to include("ARG OMP_BUN_INSTALL_SCRIPT_URL")
       expect(dockerfile_source).to include('echo "ERROR: OMP_INSTALL_COMMAND build-arg is required')
-      expect(dockerfile_source).to include('echo "ERROR: OMP_BUN_INSTALL_SCRIPT_URL build-arg is required')
-      expect(dockerfile_source).to include('curl -fsSL "${OMP_BUN_INSTALL_SCRIPT_URL}" -o /tmp/omp-bun-install.sh')
-      expect(dockerfile_source).to include('BUN_VERSION="${OMP_BUN_VERSION}" bash /tmp/omp-bun-install.sh')
+    end
+
+    it "installs the pinned bun release with checksum verification before running the omp install command" do
+      expect(dockerfile_source).to include('BUN_RELEASE_BASE_URL="https://github.com/oven-sh/bun/releases/download/bun-v${OMP_BUN_VERSION}"')
+      expect(dockerfile_source).to include('curl -fsSL "${BUN_RELEASE_BASE_URL}/SHASUMS256.txt"')
+      expect(dockerfile_source).to include('sha256sum -c -')
+      expect(dockerfile_source).to include('install -m 0755 "${OMP_BUN_TMPDIR}/${BUN_ASSET%.zip}/bun" "${BUN_INSTALL}/bin/bun"')
+      expect(dockerfile_source).not_to include('bash /tmp/omp-bun-install.sh')
+    end
+
+    it "falls back to Bun's baseline amd64 binary when AVX2 is unavailable" do
+      expect(dockerfile_source).to include('if ! grep -qm1 avx2 /proc/cpuinfo; then')
+      expect(dockerfile_source).to include('BUN_ASSET="bun-linux-x64-baseline.zip"')
+    end
+
+    it "redirects omp install temp files into the larger shared workdir" do
+      expect(dockerfile_source).to include('export OMP_INSTALL_WORKDIR="/var/tmp/omp-install"')
+      expect(dockerfile_source).to include('export OMP_INSTALL_TMPDIR="${OMP_INSTALL_WORKDIR}/tmp"')
+      expect(dockerfile_source).to include('TMPDIR="${OMP_INSTALL_TMPDIR}" TMP="${OMP_INSTALL_TMPDIR}" TEMP="${OMP_INSTALL_TMPDIR}"')
+      expect(dockerfile_source).to include('npm_config_tmp="${OMP_INSTALL_TMPDIR}" npm_config_cache="${OMP_INSTALL_WORKDIR}/cache"')
+    end
+
+    it "runs the agent-harness omp install command with optional deps omitted for CI disk budget" do
       expect(dockerfile_source).to include('sh -c "${OMP_INSTALL_COMMAND}"')
+      expect(dockerfile_source).to include('rm -rf "${OMP_INSTALL_WORKDIR}"')
+      expect(dockerfile_source).to include('npm_config_omit=optional')
       expect(dockerfile_source).not_to include('bun install -g "${OMP_PACKAGE}"')
     end
 
+    # @spec CONTAINER-RUNTIME-031
     it "verifies the omp launcher exists after installation" do
       expect(dockerfile_source).to include('OMP_BINARY_PATH="$(command -v omp || true)"')
-      expect(dockerfile_source).to include('test -x "${OMP_BINARY_PATH}"')
+      expect(dockerfile_source).to include('if [ ! -x "${OMP_BINARY_PATH}" ]; then')
+    end
+
+    # @spec CONTAINER-RUNTIME-031
+    it "surfaces actionable diagnostics when oh-my-pi post-install checks fail" do
+      expect(dockerfile_source).to include('ERROR: omp binary not found on PATH after install')
+      expect(dockerfile_source).to include('ERROR: omp binary is not executable:')
+      expect(dockerfile_source).to include('ERROR: bun version mismatch after OMP install')
+      expect(dockerfile_source).to include('OMP_BUN_ACTUAL_VERSION="$(bun --version || true)"')
+      expect(dockerfile_source).to include('TMPDIR=${TMPDIR:-unset}')
+      expect(dockerfile_source).to include('npm config get prefix')
     end
 
     it "copies the vendored git credential helper from the agent image directory" do

@@ -504,3 +504,14 @@
   regressing restricted-only remote placement.
   *Tests:* `spec/models/docker_host_spec.rb`, `spec/requests/agent_runs_spec.rb`, `spec/services/docker_hosts/setup_action_runner_spec.rb`, `spec/services/docker_hosts/setup_guide_spec.rb`.
   *Code:* `DockerHost`, `Containers::ResolveHostForRun`, `Projects::AgentRunsController`, `DockerHosts::SetupActionRunner`, `DockerHosts::SetupGuide`.
+- [x] **CONTAINER-RUNTIME-031** — When a contract-owned CLI install block in
+  the agent image fails a post-install Oh My Pi assertion, the Dockerfile
+  SHALL identify which check failed and print enough local diagnostic state to
+  act on the failure without rerunning interactively. For the Oh My Pi block,
+  the image SHALL install the contract-pinned Bun release with checksum
+  verification and SHALL select the baseline `amd64` Bun asset when AVX2 is
+  unavailable, so the install path stays compatible with older runners.
+  The image SHALL also distinguish: missing `omp` on `PATH`, a
+  non-executable `omp` launcher, and a Bun version mismatch after install.
+  *Tests:* `spec/config/agent_image_build_script_spec.rb`.
+  *Code:* `docker/agent/Dockerfile`.

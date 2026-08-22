@@ -412,9 +412,17 @@ RUN if [ -z "${PI_PACKAGE}" ]; then \
     && npm install -g --ignore-scripts "${PI_PACKAGE}"
 
 # Install Oh My Pi plus its Bun runtime from the agent-harness contract.
+# @spec CONTAINER-RUNTIME-031
+# OMP's install command is owned by agent-harness. Paid keeps the contract-owned
+# package/version, redirects temp files off /tmp for CI stability, and omits the
+# package's optional dependencies because the full optional set adds roughly 1GB
+# to the global install footprint and exhausts constrained amd64 CI runners.
 ARG OMP_PACKAGE
 ARG OMP_INSTALL_COMMAND
 ARG OMP_BUN_VERSION
+# Retained for contract traceability in the build inputs even though the image
+# installs Bun from the pinned GitHub release assets rather than piping the
+# generic install script, so amd64 builds can fall back to the baseline binary.
 ARG OMP_BUN_INSTALL_SCRIPT_URL
 RUN if [ -z "${OMP_PACKAGE}" ]; then \
         echo "ERROR: OMP_PACKAGE build-arg is required (sourced from agent-harness)" >&2; \
@@ -428,26 +436,65 @@ RUN if [ -z "${OMP_PACKAGE}" ]; then \
         echo "ERROR: OMP_BUN_VERSION build-arg is required (sourced from agent-harness)" >&2; \
         exit 1; \
     fi \
-    && if [ -z "${OMP_BUN_INSTALL_SCRIPT_URL}" ]; then \
-        echo "ERROR: OMP_BUN_INSTALL_SCRIPT_URL build-arg is required (sourced from agent-harness)" >&2; \
-        exit 1; \
-    fi \
     && export BUN_INSTALL="/usr/local/bun" \
     && mkdir -p "${BUN_INSTALL}/bin" \
-    && curl -fsSL "${OMP_BUN_INSTALL_SCRIPT_URL}" -o /tmp/omp-bun-install.sh \
-    && test -s /tmp/omp-bun-install.sh \
-    && BUN_VERSION="${OMP_BUN_VERSION}" bash /tmp/omp-bun-install.sh \
-    && rm -f /tmp/omp-bun-install.sh \
+    && BUN_RELEASE_BASE_URL="https://github.com/oven-sh/bun/releases/download/bun-v${OMP_BUN_VERSION}" \
+    && OMP_BUN_TMPDIR="$(mktemp -d)" \
+    && DEB_ARCH="$(dpkg --print-architecture)" \
+    && case "$DEB_ARCH" in \
+        amd64) \
+            BUN_ASSET="bun-linux-x64.zip"; \
+            if ! grep -qm1 avx2 /proc/cpuinfo; then \
+                BUN_ASSET="bun-linux-x64-baseline.zip"; \
+            fi ;; \
+        arm64) BUN_ASSET="bun-linux-aarch64.zip" ;; \
+        *) echo "ERROR: Unsupported architecture for Bun: $DEB_ARCH" >&2; exit 1 ;; \
+    esac \
+    && curl -fsSL "${BUN_RELEASE_BASE_URL}/SHASUMS256.txt" -o "${OMP_BUN_TMPDIR}/SHASUMS256.txt" \
+    && BUN_CHECKSUM="$(awk -v asset="${BUN_ASSET}" '$2 == asset { print $1 }' "${OMP_BUN_TMPDIR}/SHASUMS256.txt")" \
+    && if [ -z "${BUN_CHECKSUM}" ]; then \
+        echo "ERROR: No Bun checksum found for ${BUN_ASSET}" >&2; \
+        exit 1; \
+    fi \
+    && curl -fsSL "${BUN_RELEASE_BASE_URL}/${BUN_ASSET}" -o "${OMP_BUN_TMPDIR}/${BUN_ASSET}" \
+    && echo "${BUN_CHECKSUM}  ${OMP_BUN_TMPDIR}/${BUN_ASSET}" | sha256sum -c - \
+    && unzip -oq "${OMP_BUN_TMPDIR}/${BUN_ASSET}" -d "${OMP_BUN_TMPDIR}" \
+    && install -m 0755 "${OMP_BUN_TMPDIR}/${BUN_ASSET%.zip}/bun" "${BUN_INSTALL}/bin/bun" \
+    && rm -rf "${OMP_BUN_TMPDIR}" \
     && test -x "${BUN_INSTALL}/bin/bun" \
     && ln -sf "${BUN_INSTALL}/bin/bun" "${BUN_INSTALL}/bin/bunx" \
     && export PATH="${BUN_INSTALL}/bin:${PATH}" \
     && ln -sf "${BUN_INSTALL}/bin/bun" /usr/local/bin/bun \
     && ln -sf "${BUN_INSTALL}/bin/bunx" /usr/local/bin/bunx \
-    && sh -c "${OMP_INSTALL_COMMAND}" \
+    && export OMP_INSTALL_WORKDIR="/var/tmp/omp-install" \
+    && export OMP_INSTALL_TMPDIR="${OMP_INSTALL_WORKDIR}/tmp" \
+    && mkdir -p "${OMP_INSTALL_WORKDIR}/cache" "${OMP_INSTALL_TMPDIR}" \
+    && TMPDIR="${OMP_INSTALL_TMPDIR}" TMP="${OMP_INSTALL_TMPDIR}" TEMP="${OMP_INSTALL_TMPDIR}" \
+       npm_config_tmp="${OMP_INSTALL_TMPDIR}" npm_config_cache="${OMP_INSTALL_WORKDIR}/cache" npm_config_omit=optional \
+       sh -c "${OMP_INSTALL_COMMAND}" \
+    && rm -rf "${OMP_INSTALL_WORKDIR}" \
     && OMP_BINARY_PATH="$(command -v omp || true)" \
-    && test -n "${OMP_BINARY_PATH}" \
-    && test -x "${OMP_BINARY_PATH}" \
-    && bun --version | grep -Fx "${OMP_BUN_VERSION}"
+    && if [ -z "${OMP_BINARY_PATH}" ]; then \
+        echo "ERROR: omp binary not found on PATH after install" >&2; \
+        echo "PATH=${PATH}" >&2; \
+        echo "TMPDIR=${TMPDIR:-unset}" >&2; \
+        echo "npm prefix: $(npm config get prefix)" >&2; \
+        echo "npm root -g: $(npm root -g)" >&2; \
+        ls -la "$(npm config get prefix)/bin" >&2 || true; \
+        exit 1; \
+    fi \
+    && if [ ! -x "${OMP_BINARY_PATH}" ]; then \
+        echo "ERROR: omp binary is not executable: ${OMP_BINARY_PATH}" >&2; \
+        ls -l "${OMP_BINARY_PATH}" >&2 || true; \
+        exit 1; \
+    fi \
+    && OMP_BUN_ACTUAL_VERSION="$(bun --version || true)" \
+    && if [ "${OMP_BUN_ACTUAL_VERSION}" != "${OMP_BUN_VERSION}" ]; then \
+        echo "ERROR: bun version mismatch after OMP install (expected ${OMP_BUN_VERSION}, got ${OMP_BUN_ACTUAL_VERSION:-missing})" >&2; \
+        command -v bun >&2 || true; \
+        ls -l /usr/local/bin/bun >&2 || true; \
+        exit 1; \
+    fi
 
 # Install GitHub Copilot CLI via agent-harness install contract.
 # The modern `copilot` binary supports --autopilot mode for fully autonomous,
