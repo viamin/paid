@@ -412,6 +412,7 @@ RUN if [ -z "${PI_PACKAGE}" ]; then \
     && npm install -g --ignore-scripts "${PI_PACKAGE}"
 
 # Install Oh My Pi plus its Bun runtime from the agent-harness contract.
+# @spec CONTAINER-RUNTIME-030
 ARG OMP_PACKAGE
 ARG OMP_INSTALL_COMMAND
 ARG OMP_BUN_VERSION
@@ -445,9 +446,26 @@ RUN if [ -z "${OMP_PACKAGE}" ]; then \
     && ln -sf "${BUN_INSTALL}/bin/bunx" /usr/local/bin/bunx \
     && sh -c "${OMP_INSTALL_COMMAND}" \
     && OMP_BINARY_PATH="$(command -v omp || true)" \
-    && test -n "${OMP_BINARY_PATH}" \
-    && test -x "${OMP_BINARY_PATH}" \
-    && bun --version | grep -Fx "${OMP_BUN_VERSION}"
+    && if [ -z "${OMP_BINARY_PATH}" ]; then \
+        echo "ERROR: omp binary not found on PATH after install" >&2; \
+        echo "PATH=${PATH}" >&2; \
+        echo "npm prefix: $(npm config get prefix)" >&2; \
+        echo "npm root -g: $(npm root -g)" >&2; \
+        ls -la "$(npm config get prefix)/bin" >&2 || true; \
+        exit 1; \
+    fi \
+    && if [ ! -x "${OMP_BINARY_PATH}" ]; then \
+        echo "ERROR: omp binary is not executable: ${OMP_BINARY_PATH}" >&2; \
+        ls -l "${OMP_BINARY_PATH}" >&2 || true; \
+        exit 1; \
+    fi \
+    && OMP_BUN_ACTUAL_VERSION="$(bun --version || true)" \
+    && if [ "${OMP_BUN_ACTUAL_VERSION}" != "${OMP_BUN_VERSION}" ]; then \
+        echo "ERROR: bun version mismatch after OMP install (expected ${OMP_BUN_VERSION}, got ${OMP_BUN_ACTUAL_VERSION:-missing})" >&2; \
+        command -v bun >&2 || true; \
+        ls -l /usr/local/bin/bun >&2 || true; \
+        exit 1; \
+    fi
 
 # Install GitHub Copilot CLI via agent-harness install contract.
 # The modern `copilot` binary supports --autopilot mode for fully autonomous,

@@ -488,3 +488,12 @@
   CLIs against `paid-agent:latest`).
   *Tests:* `spec/services/containers/provision_spec.rb`.
   *Code:* `Containers::Provision` tmpfs configuration.
+
+- [x] **CONTAINER-RUNTIME-030** — When a contract-owned CLI install block in
+  the agent image fails a post-install Oh My Pi assertion, the Dockerfile
+  SHALL identify which check failed and print enough local diagnostic state to
+  act on the failure without rerunning interactively. For the Oh My Pi block,
+  the image SHALL distinguish: missing `omp` on `PATH`, a non-executable `omp`
+  launcher, and a Bun version mismatch after install.
+  *Tests:* `spec/config/agent_image_build_script_spec.rb`.
+  *Code:* `docker/agent/Dockerfile`.
