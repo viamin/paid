@@ -92,8 +92,8 @@ module DockerHosts
           Shellwords.join([ "docker", "build", "-t", image_tag, "." ]),
           Shellwords.join([ "ssh", endpoint_host, remote_build_command ])
         ].join("\n"),
-        "network_create" => "#{docker_tls_command_prefix} network create #{Shellwords.escape(network_name)}",
-        "infra_network_create" => "#{docker_tls_command_prefix} network create #{Shellwords.escape(NetworkPolicy::INFRA_NETWORK_NAME)}",
+        "network_create" => network_create_command(network_name),
+        "infra_network_create" => network_create_command(NetworkPolicy::INFRA_NETWORK_NAME),
         "server_files" => "Install the generated server certificate and private key on #{endpoint_host}.\nConfigure the Docker daemon to trust the generated CA and restart Docker after the files are in place."
       }
     end
@@ -188,6 +188,20 @@ module DockerHosts
       URI.parse(endpoint.to_s).host.presence || "remote-host"
     rescue URI::InvalidURIError
       "remote-host"
+    end
+
+    # Mirrors DockerHosts::SetupActionRunner#docker_network_create_config so
+    # the manual snippet for NetworkPolicy::NETWORK_NAME (paid_agent) matches
+    # the network the "Create network" button actually creates (RDR-054,
+    # RDR-062) and docs/guides/remote-docker-setup.md. Other network names
+    # (custom required networks, the infra network) have no canonical fixed
+    # subnet and are left to Docker's auto-assigned subnet.
+    def network_create_command(network_name)
+      args = [ "network", "create" ]
+      args += [ "--driver", "bridge", "--subnet", NetworkPolicy::NETWORK_SUBNET ] if network_name == NetworkPolicy::NETWORK_NAME
+      args << network_name
+
+      "#{docker_tls_command_prefix} #{Shellwords.join(args)}"
     end
 
     def docker_tls_command_prefix

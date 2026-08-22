@@ -21,6 +21,24 @@ RSpec.describe DockerHosts::SetupGuide do
       )
     end
 
+    it "includes the same driver and subnet options the automated helper applies to the paid_agent network" do
+      host = build(
+        :docker_host,
+        endpoint: "tcp://docker.example.test:2376",
+        required_network_name: NetworkPolicy::NETWORK_NAME
+      )
+
+      snippets = described_class.new(host).command_snippets
+
+      expect(snippets.fetch("network_create")).to eq(
+        "docker --host tcp://docker.example.test:2376 " \
+          "--tlscacert client-ca.pem " \
+          "--tlscert client-cert.pem " \
+          "--tlskey client-key.pem --tlsverify network create " \
+          "--driver bridge --subnet #{NetworkPolicy::NETWORK_SUBNET} #{NetworkPolicy::NETWORK_NAME}"
+      )
+    end
+
     it "shell-escapes operator-controlled values in generated commands" do
       host = build(
         :docker_host,
