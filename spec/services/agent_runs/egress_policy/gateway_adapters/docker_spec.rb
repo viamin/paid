@@ -46,6 +46,7 @@ RSpec.describe AgentRuns::EgressPolicy::GatewayAdapters::Docker do
 
   it "raises Gateway::UnavailableError when the gateway sidecar is missing (fail closed)" do
     allow(backend).to receive(:get_container).with("egress-gateway").and_raise(Docker::Error::NotFoundError, "not found")
+    allow(backend).to receive(:list_containers).and_return([])
 
     expect { adapter.ensure!(agent_run: agent_run, snapshot: snapshot, backend: backend) }
       .to raise_error(AgentRuns::EgressPolicy::Gateway::UnavailableError, /egress gateway container 'egress-gateway' not found/)
@@ -56,6 +57,25 @@ RSpec.describe AgentRuns::EgressPolicy::GatewayAdapters::Docker do
 
     expect { adapter.ensure!(agent_run: agent_run, snapshot: snapshot, backend: backend) }
       .to raise_error(AgentRuns::EgressPolicy::Gateway::UnavailableError, /egress gateway lookup failed/)
+  end
+
+  it "resolves the gateway by network alias when no container is named after the alias" do
+    aliased_container = instance_double(Docker::Container,
+      info: { "NetworkSettings" => { "Networks" => { "paid_agent" => { "Aliases" => [ "egress-gateway", "abc123" ] } } } })
+    allow(backend).to receive(:get_container).with("egress-gateway").and_raise(Docker::Error::NotFoundError, "not found")
+    allow(backend).to receive(:list_containers).and_return([ aliased_container ])
+
+    expect(adapter.ensure!(agent_run: agent_run, snapshot: snapshot, backend: backend)).to be_nil
+  end
+
+  it "raises Gateway::UnavailableError when no running container carries the gateway alias (fail closed)" do
+    other_container = instance_double(Docker::Container,
+      info: { "NetworkSettings" => { "Networks" => { "paid_agent" => { "Aliases" => [ "some-other-container" ] } } } })
+    allow(backend).to receive(:get_container).with("egress-gateway").and_raise(Docker::Error::NotFoundError, "not found")
+    allow(backend).to receive(:list_containers).and_return([ other_container ])
+
+    expect { adapter.ensure!(agent_run: agent_run, snapshot: snapshot, backend: backend) }
+      .to raise_error(AgentRuns::EgressPolicy::Gateway::UnavailableError, /egress gateway container 'egress-gateway' not found/)
   end
 
   describe "#install_allowlist!" do
@@ -103,6 +123,21 @@ RSpec.describe AgentRuns::EgressPolicy::GatewayAdapters::Docker do
 
       expect { adapter.install_allowlist!(agent_run: agent_run, snapshot: snapshot, backend: backend) }
         .to raise_error(AgentRuns::EgressPolicy::Gateway::UnavailableError, /failed to install allowlist.*exit 1/)
+    end
+
+    it "resolves the gateway by network alias when the sidecar container has a different name" do
+      allow(backend).to receive(:get_container).with("egress-gateway").and_raise(Docker::Error::NotFoundError, "not found")
+      aliased_container = instance_double(Docker::Container,
+        info: { "NetworkSettings" => { "Networks" => { "paid_agent" => { "Aliases" => [ "egress-gateway" ] } } } })
+      allow(backend).to receive(:list_containers).and_return([ aliased_container ])
+
+      adapter.install_allowlist!(agent_run: agent_run, snapshot: snapshot, backend: backend)
+
+      expect(backend).to have_received(:exec_in_container).with(
+        aliased_container,
+        array_including("sh", "-c", a_string_matching(%r{allowlist_#{agent_run.id}\.json})),
+        hash_including(wait: 5)
+      )
     end
   end
 

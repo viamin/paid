@@ -59,12 +59,12 @@ module AgentRuns
         # runner does not own the gateway lifecycle (no create/start calls
         # here). But per RDR-055's fail-closed requirement, provisioning
         # must not proceed as if enforcement exists when the sidecar was
-        # never deployed. Look the gateway container up by the same name
-        # its network alias uses (+GATEWAY_HOST+) and raise
-        # {Gateway::UnavailableError} when it is missing, so restricted
-        # runs stop before the agent container starts.
+        # never deployed. Resolve the gateway container via
+        # {#resolve_gateway_container} and raise {Gateway::UnavailableError}
+        # when it is missing, so restricted runs stop before the agent
+        # container starts.
         def ensure!(agent_run:, snapshot:, backend:)
-          backend.get_container(GATEWAY_HOST)
+          resolve_gateway_container(backend: backend)
           nil
         rescue ::Docker::Error::NotFoundError
           raise Gateway::UnavailableError, "egress gateway container '#{GATEWAY_HOST}' not found on backend #{backend.identifier}"
@@ -77,7 +77,7 @@ module AgentRuns
         # per-run filename isolates this run's policy from concurrent
         # restricted runs sharing the same sidecar.
         def install_allowlist!(agent_run:, snapshot:, backend:)
-          gateway_container = backend.get_container(GATEWAY_HOST)
+          gateway_container = resolve_gateway_container(backend: backend)
           allowlist = allowlist_for(snapshot: snapshot)
           config = JSON.generate(
             agent_run_id: agent_run.id,
@@ -108,7 +108,7 @@ module AgentRuns
         # empty array when the log does not exist or the gateway has
         # not recorded any denials.
         def collect_denials(agent_run:, backend:)
-          gateway_container = backend.get_container(GATEWAY_HOST)
+          gateway_container = resolve_gateway_container(backend: backend)
           path = denial_log_path(agent_run: agent_run)
           stdout = read_denial_log(gateway_container: gateway_container, path: path, backend: backend)
           return [] unless stdout
@@ -170,6 +170,34 @@ module AgentRuns
         end
 
         private
+
+        # Resolves the gateway sidecar container. +GATEWAY_HOST+ is a Docker
+        # network alias, not necessarily the container's name or ID —
+        # operators are free to deploy the sidecar under any container name
+        # as long as it publishes the +egress-gateway+ alias on the network.
+        # Try the direct name/ID lookup first (the common case where the
+        # container name matches its alias), then fall back to scanning
+        # running containers for one whose network alias matches, so a
+        # differently-named sidecar is still found instead of rejecting an
+        # otherwise-present gateway.
+        #
+        # @raise [Docker::Error::NotFoundError] when no container resolves
+        #   by ID or by alias
+        def resolve_gateway_container(backend:)
+          backend.get_container(GATEWAY_HOST)
+        rescue ::Docker::Error::NotFoundError
+          find_gateway_container_by_alias(backend: backend) ||
+            raise(::Docker::Error::NotFoundError, "no container aliased '#{GATEWAY_HOST}' on backend #{backend.identifier}")
+        end
+
+        # Scans running containers for one whose network settings publish
+        # +GATEWAY_HOST+ as an alias, regardless of which network it is on.
+        def find_gateway_container_by_alias(backend:)
+          backend.list_containers.find do |container|
+            networks = container.info.dig("NetworkSettings", "Networks") || {}
+            networks.each_value.any? { |endpoint| Array(endpoint["Aliases"]).include?(GATEWAY_HOST) }
+          end
+        end
 
         # Returns nil only when the denial log does not exist yet. Any other
         # read failure is a real operational error and must bubble so the
