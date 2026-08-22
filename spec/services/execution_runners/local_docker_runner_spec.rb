@@ -673,6 +673,28 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     end
 
     # @spec EGRESS-POLICY-007
+    it "removes the gateway allowlist when gateway setup fails after the gateway object is built" do
+      allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new("production"))
+      seed_snapshot!
+      adapter = instance_double(
+        AgentRuns::EgressPolicy::GatewayAdapters::Docker,
+        gateway_url: "egress-gateway:3128",
+        allowlist_for: []
+      )
+      allow(adapter).to receive(:ensure!).and_raise(
+        AgentRuns::EgressPolicy::Gateway::UnavailableError, "allowlist write failed after partial install"
+      )
+      allow(adapter).to receive(:remove_allowlist!).with(agent_run: agent_run, backend: backend)
+      allow(described_class).to receive(:gateway_adapter).and_return(adapter)
+
+      expect(Containers::Provision).not_to receive(:new)
+      expect(adapter).to receive(:remove_allowlist!).with(agent_run: agent_run, backend: backend)
+
+      expect { runner.provision(spec: run_spec) }
+        .to raise_error(ExecutionRunners::ProvisionError, /Egress gateway setup failed/)
+    end
+
+    # @spec EGRESS-POLICY-007
     it "logs but does not raise when the gateway adapter fails in non-production environments" do
       allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("development"))
       seed_snapshot!
@@ -687,7 +709,8 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       adapter = instance_double(
         AgentRuns::EgressPolicy::GatewayAdapters::Docker,
         gateway_url: "egress-gateway:3128",
-        allowlist_for: []
+        allowlist_for: [],
+        remove_allowlist!: nil
       )
       allow(adapter).to receive(:ensure!).and_raise(
         AgentRuns::EgressPolicy::Gateway::UnavailableError, "gateway sidecar not present"

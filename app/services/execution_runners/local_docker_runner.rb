@@ -106,10 +106,10 @@ class LocalDockerRunner < Base
       # Provider create failed; Containers::Provision cleaned up. No live
       # resource to reconcile — record the failure and surface the error.
       ledger&.mark_failed(intent)
-      cleanup_gateway_on_failure(gateway) if gateway_ready
+      cleanup_gateway_on_failure(gateway)
       raise ProvisionError, e.message
     rescue ProvisionError
-      cleanup_gateway_on_failure(gateway) if gateway_ready
+      cleanup_gateway_on_failure(gateway)
       # The container is already provisioned and running by the time the
       # runner raises its own error (the production firewall failure path in
       # #apply_firewall!); +Containers::Provision#provision+ only cleans up
@@ -128,7 +128,7 @@ class LocalDockerRunner < Base
       ledger&.mark_failed(intent) if cleanup_succeeded
       raise
     rescue StandardError
-      cleanup_gateway_on_failure(gateway) if gateway_ready
+      cleanup_gateway_on_failure(gateway)
       raise
     end
 
