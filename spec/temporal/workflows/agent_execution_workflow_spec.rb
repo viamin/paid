@@ -959,7 +959,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
       end
     end
 
-    def stub_tdd_existing_pr_followup(tdd_phase:, queue_result: nil)
+    def stub_tdd_existing_pr_followup(tdd_phase:, queue_result: nil, complete_result: nil)
       allow(workflow).to receive(:run_activity) do |activity_class, input, **_opts|
         case activity_class.name
         when "Activities::CreateAgentRunActivity"
@@ -977,7 +977,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
         when "Activities::RebaseBranchActivity" then { rebase_succeeded: true }
         when "Activities::PreparePrPromptActivity" then { review_thread_ids: [] }
         when "Activities::RunAgentActivity" then { success: true, has_changes: true }
-        when "Activities::CompleteExistingPrRunActivity" then { pr_review_phase: "ready" }
+        when "Activities::CompleteExistingPrRunActivity" then complete_result || { pr_review_phase: "ready", tdd_returned_to_test_review: false }
         when "Activities::QueueAgentRunActivity"
           expect(input).to include(
             project_id: 1,
@@ -1082,8 +1082,32 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
           timeout: 30)
     end
 
+    it "does not queue a refactor follow-up when the run returned the PR to test review" do
+      stub_tdd_existing_pr_followup(
+        tdd_phase: "test_fixing",
+        complete_result: { pr_review_phase: "ready", tdd_returned_to_test_review: true }
+      )
+
+      workflow.execute(input)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity, anything, timeout: 30)
+    end
+
     it "does not queue another follow-up after a refactor run" do
       stub_tdd_existing_pr_followup(tdd_phase: "refactor")
+
+      workflow.execute(input)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity, anything, timeout: 30)
+    end
+
+    it "does not queue a refactor follow-up for a no-change test_fixing run that returned to test review" do
+      stub_no_changes_followup
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::MarkAgentRunCompleteActivity, any_args)
+        .and_return({ agent_run_id: 42, skipped: false, cancelled: false, tdd_returned_to_test_review: true })
 
       workflow.execute(input)
 

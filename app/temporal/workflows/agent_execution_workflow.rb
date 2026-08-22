@@ -374,6 +374,7 @@ module Workflows
               queue_refactor_followup_if_needed(
                 goal: goal,
                 tdd_phase: tdd_phase,
+                tdd_returned_to_test_review: complete_result[:tdd_returned_to_test_review],
                 project_id: project_id,
                 issue_id: issue_id,
                 source_pull_request_number: source_pull_request_number,
@@ -451,6 +452,7 @@ module Workflows
             queue_refactor_followup_if_needed(
               goal: goal,
               tdd_phase: tdd_phase,
+              tdd_returned_to_test_review: complete_result[:tdd_returned_to_test_review],
               project_id: project_id,
               issue_id: issue_id,
               source_pull_request_number: source_pull_request_number,
@@ -621,9 +623,10 @@ module Workflows
       end
     end
 
-    def queue_refactor_followup_if_needed(goal:, tdd_phase:, project_id:, issue_id:, source_pull_request_number:, focus:, runner_id:, initiating_user_id:)
+    def queue_refactor_followup_if_needed(goal:, tdd_phase:, tdd_returned_to_test_review:, project_id:, issue_id:, source_pull_request_number:, focus:, runner_id:, initiating_user_id:)
       return unless goal == "create_pr"
       return unless tdd_phase == "test_fixing"
+      return if tdd_returned_to_test_review
       return if source_pull_request_number.blank?
 
       run_activity(Activities::QueueAgentRunActivity,
