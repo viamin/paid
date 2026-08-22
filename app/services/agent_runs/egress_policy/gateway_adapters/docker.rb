@@ -120,7 +120,15 @@ module AgentRuns
         def remove_allowlist!(agent_run:, backend:)
           gateway_container = resolve_gateway_container(backend: backend)
           path = allowlist_config_path(agent_run: agent_run)
-          backend.exec_in_container(gateway_container, [ "sh", "-c", "rm -f #{path}" ], wait: 5)
+          _stdout, stderr, exit_code = backend.exec_in_container(
+            gateway_container,
+            [ "sh", "-c", "rm -f #{path}" ],
+            wait: 5
+          )
+          unless exit_code&.zero?
+            raise Gateway::UnavailableError,
+              "failed to remove allowlist from gateway '#{GATEWAY_HOST}': exit #{exit_code.inspect}: #{Array(stderr).join}"
+          end
           nil
         rescue ::Docker::Error::DockerError
           nil

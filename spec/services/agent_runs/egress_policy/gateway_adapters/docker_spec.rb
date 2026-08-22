@@ -204,6 +204,13 @@ RSpec.describe AgentRuns::EgressPolicy::GatewayAdapters::Docker do
 
       expect { adapter.remove_allowlist!(agent_run: agent_run, backend: backend) }.not_to raise_error
     end
+
+    it "raises Gateway::UnavailableError when the delete command exits non-zero" do
+      allow(backend).to receive(:exec_in_container).and_return([ [], [ "rm: Permission denied\n" ], 1 ])
+
+      expect { adapter.remove_allowlist!(agent_run: agent_run, backend: backend) }
+        .to raise_error(AgentRuns::EgressPolicy::Gateway::UnavailableError, /failed to remove allowlist.*exit 1/)
+    end
   end
 
   describe "#collect_denials" do

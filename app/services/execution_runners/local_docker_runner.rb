@@ -490,14 +490,14 @@ class LocalDockerRunner < Base
       return unless gateway
 
       gateway.collect_denials!
-      gateway.remove_allowlist!
     rescue StandardError => e
-      Rails.logger.warn(
-        message: "container.gateway.denial_drain_failed",
-        agent_run_id: handle.metadata["agent_run_id"],
-        error: e.message
-      )
-      nil
+      log_gateway_teardown_failure(handle:, error: e)
+    ensure
+      begin
+        gateway&.remove_allowlist!
+      rescue StandardError => e
+        log_gateway_teardown_failure(handle:, error: e)
+      end
     end
 
     # Builds the {Gateway} for a finished run's post-run teardown, or +nil+
@@ -530,6 +530,15 @@ class LocalDockerRunner < Base
     # +networking_policy.restricted?+ gate at provision time.
     def restricted_snapshot_mode?(mode)
       ExecutionRunners::NETWORKING_POLICY_RESTRICTED_MODES.include?(mode.to_sym)
+    end
+
+    def log_gateway_teardown_failure(handle:, error:)
+      Rails.logger.warn(
+        message: "container.gateway.denial_drain_failed",
+        agent_run_id: handle.metadata["agent_run_id"],
+        error: error.message
+      )
+      nil
     end
 
     # Translates the gateway's +host:port+ URL into the +{ip:, port:}+

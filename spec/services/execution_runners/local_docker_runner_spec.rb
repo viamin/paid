@@ -1004,6 +1004,21 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     end
 
     # @spec EGRESS-POLICY-007
+    it "still attempts allowlist removal when denial draining fails" do
+      seed_snapshot!(destinations: [ { "host" => "evil.example.com", "port" => 443, "source" => "project_allowlist" } ])
+      allow(Containers::Provision).to receive(:reconnect).and_return(provision_service)
+      allow(provision_service).to receive(:cleanup)
+      adapter = instance_double(AgentRuns::EgressPolicy::GatewayAdapters::Docker, remove_allowlist!: nil)
+      allow(adapter).to receive(:collect_denials).and_raise(StandardError, "sidecar exec failed")
+      allow(described_class).to receive(:gateway_adapter).and_return(adapter)
+      allow(Containers).to receive(:backend_for).with("local").and_return(backend)
+
+      expect { runner.cleanup(handle: handle, force: true) }.not_to raise_error
+
+      expect(adapter).to have_received(:remove_allowlist!).with(agent_run: agent_run, backend: backend)
+    end
+
+    # @spec EGRESS-POLICY-007
     it "logs a warning but never raises when the allowlist removal itself fails" do
       seed_snapshot!(destinations: [ { "host" => "evil.example.com", "port" => 443, "source" => "project_allowlist" } ])
       allow(Containers::Provision).to receive(:reconnect).and_return(provision_service)
