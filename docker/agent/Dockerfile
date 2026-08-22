@@ -413,6 +413,10 @@ RUN if [ -z "${PI_PACKAGE}" ]; then \
 
 # Install Oh My Pi plus its Bun runtime from the agent-harness contract.
 # @spec CONTAINER-RUNTIME-030
+# OMP's published npm package pulls large optional dependencies that are not
+# required for the agent image's non-interactive runner flows. Omitting them
+# keeps the amd64 CI build under the runner's disk budget without changing the
+# contract-owned package/version selection.
 ARG OMP_PACKAGE
 ARG OMP_INSTALL_COMMAND
 ARG OMP_BUN_VERSION
@@ -444,7 +448,8 @@ RUN if [ -z "${OMP_PACKAGE}" ]; then \
     && export PATH="${BUN_INSTALL}/bin:${PATH}" \
     && ln -sf "${BUN_INSTALL}/bin/bun" /usr/local/bin/bun \
     && ln -sf "${BUN_INSTALL}/bin/bunx" /usr/local/bin/bunx \
-    && sh -c "${OMP_INSTALL_COMMAND}" \
+    && npm_config_cache=/tmp/omp-npm-cache npm_config_omit=optional sh -c "${OMP_INSTALL_COMMAND}" \
+    && rm -rf /tmp/omp-npm-cache \
     && OMP_BINARY_PATH="$(command -v omp || true)" \
     && if [ -z "${OMP_BINARY_PATH}" ]; then \
         echo "ERROR: omp binary not found on PATH after install" >&2; \

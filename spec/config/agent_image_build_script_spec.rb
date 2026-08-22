@@ -119,7 +119,7 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(dockerfile_source).to include('echo "ERROR: OMP_BUN_INSTALL_SCRIPT_URL build-arg is required')
       expect(dockerfile_source).to include('curl -fsSL "${OMP_BUN_INSTALL_SCRIPT_URL}" -o /tmp/omp-bun-install.sh')
       expect(dockerfile_source).to include('BUN_VERSION="${OMP_BUN_VERSION}" bash /tmp/omp-bun-install.sh')
-      expect(dockerfile_source).to include('sh -c "${OMP_INSTALL_COMMAND}"')
+      expect(dockerfile_source).to include('npm_config_cache=/tmp/omp-npm-cache npm_config_omit=optional sh -c "${OMP_INSTALL_COMMAND}"')
       expect(dockerfile_source).not_to include('bun install -g "${OMP_PACKAGE}"')
     end
 
