@@ -76,6 +76,15 @@ module AgentRuns
         end
       end
 
+      # Removes the per-run allowlist installed by {#ensure!} from the
+      # gateway. Call as part of the runner's post-run cleanup, alongside
+      # {#collect_denials!}, so a shared long-lived gateway sidecar does not
+      # retain a stale allowlist file for every restricted run that has ever
+      # executed on the host.
+      def remove_allowlist!
+        adapter.remove_allowlist!(agent_run: agent_run, backend: backend)
+      end
+
       # Records a denied egress attempt against the gateway so operators
       # see +agent_run_id+, host, port, and matched/failed rule context.
       def record_denial!(host:, port:, matched_rule:, scheme: nil,

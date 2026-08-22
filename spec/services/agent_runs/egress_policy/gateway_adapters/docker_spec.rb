@@ -36,10 +36,29 @@ RSpec.describe AgentRuns::EgressPolicy::GatewayAdapters::Docker do
     ])
   end
 
-  it "declares itself capable for every restricted mode on a Docker backend" do
+  it "declares itself capable for every restricted mode when the gateway sidecar is deployed" do
+    allow(backend).to receive(:get_container).with("egress-gateway").and_return(gateway_container)
+
     %i[proxy_restricted approved_services proxy_only git_plus_proxy no_outbound].each do |mode|
       expect(adapter.capable?(snapshot: snapshot, backend: backend)).to be(true), "expected #{mode} to be enforceable"
     end
+  end
+
+  it "declares itself incapable when the gateway sidecar is not deployed (reject before provisioning)" do
+    allow(backend).to receive(:get_container).with("egress-gateway").and_raise(Docker::Error::NotFoundError, "not found")
+    allow(backend).to receive(:list_containers).and_return([])
+
+    expect(adapter.capable?(snapshot: snapshot, backend: backend)).to be(false)
+  end
+
+  it "declares itself incapable when the gateway lookup fails for another Docker reason" do
+    allow(backend).to receive(:get_container).with("egress-gateway").and_raise(Docker::Error::DockerError, "daemon unreachable")
+
+    expect(adapter.capable?(snapshot: snapshot, backend: backend)).to be(false)
+  end
+
+  it "declares itself incapable without a backend to probe" do
+    expect(adapter.capable?(snapshot: snapshot, backend: nil)).to be(false)
   end
 
   it "returns nil from ensure! when the operator-deployed gateway sidecar exists" do
@@ -161,6 +180,29 @@ RSpec.describe AgentRuns::EgressPolicy::GatewayAdapters::Docker do
         array_including("sh", "-c", a_string_matching(%r{allowlist_#{agent_run.id}\.json})),
         hash_including(wait: 5)
       )
+    end
+  end
+
+  describe "#remove_allowlist!" do
+    before do
+      allow(backend).to receive(:get_container).with("egress-gateway").and_return(gateway_container)
+      allow(backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
+    end
+
+    it "removes the per-run allowlist file from the gateway sidecar" do
+      adapter.remove_allowlist!(agent_run: agent_run, backend: backend)
+
+      expect(backend).to have_received(:exec_in_container).with(
+        gateway_container,
+        array_including("sh", "-c", a_string_matching(%r{rm -f .*allowlist_#{agent_run.id}\.json})),
+        hash_including(wait: 5)
+      )
+    end
+
+    it "swallows Docker errors so cleanup never raises on an already-removed file" do
+      allow(backend).to receive(:exec_in_container).and_raise(Docker::Error::DockerError, "exec failed")
+
+      expect { adapter.remove_allowlist!(agent_run: agent_run, backend: backend) }.not_to raise_error
     end
   end
 

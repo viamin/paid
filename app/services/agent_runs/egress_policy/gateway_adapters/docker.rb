@@ -46,13 +46,21 @@ module AgentRuns
         # any other run's audit data. See {#denial_log_path}.
         DENIAL_LOG_DIR = "/var/log/egress-gateway"
 
-        # Whether the platform adapter can enforce the policy. The Docker
-        # adapter declares every restricted RDR-062 mode enforceable when
-        # the backend exposes a Docker API; non-Docker backends fall
-        # through to the Kubernetes/managed-machine adapters or are
-        # rejected by the runner.
+        # Whether the platform adapter can enforce the policy. A cheap,
+        # read-only probe for the deployed gateway sidecar via
+        # {#resolve_gateway_container} — the same lookup {#ensure!} performs
+        # before provisioning. A backend with no gateway sidecar deployed
+        # answers +false+ here, so {LocalDockerRunner.compatible?} rejects
+        # the restricted run before scheduling instead of only discovering
+        # the missing gateway when +#ensure!+ raises during +#provision+
+        # (EGRESS-POLICY-007's reject-before-provisioning requirement).
         def capable?(snapshot: nil, backend: nil)
+          return false if backend.nil?
+
+          resolve_gateway_container(backend: backend)
           true
+        rescue ::Docker::Error::DockerError
+          false
         end
 
         # The default Docker gateway is a platform-managed sidecar; the
@@ -98,6 +106,24 @@ module AgentRuns
         rescue ::Docker::Error::DockerError => e
           raise Gateway::UnavailableError,
             "failed to install allowlist on gateway '#{GATEWAY_HOST}': #{e.message}"
+        end
+
+        # Removes the per-run allowlist file installed by
+        # {#install_allowlist!}. Called once the run has finished (from the
+        # runner's post-run cleanup path) so the shared gateway sidecar does
+        # not accumulate one +allowlist_<agent_run_id>.json+ file per
+        # restricted run ever executed on the host. Best-effort: the gateway
+        # already stopped enforcing this run's policy the moment the run's
+        # container was torn down, so a failed delete only leaves a harmless
+        # stale file behind rather than a security gap, and must not block
+        # the rest of cleanup.
+        def remove_allowlist!(agent_run:, backend:)
+          gateway_container = resolve_gateway_container(backend: backend)
+          path = allowlist_config_path(agent_run: agent_run)
+          backend.exec_in_container(gateway_container, [ "sh", "-c", "rm -f #{path}" ], wait: 5)
+          nil
+        rescue ::Docker::Error::DockerError
+          nil
         end
 
         # Reads denial events from the gateway sidecar's per-run

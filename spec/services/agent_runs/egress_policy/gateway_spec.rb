@@ -114,6 +114,16 @@ RSpec.describe AgentRuns::EgressPolicy::Gateway do
     end
   end
 
+  describe "#remove_allowlist!" do
+    it "delegates removal of the per-run allowlist to the adapter" do
+      allow(adapter).to receive(:remove_allowlist!)
+
+      gateway.remove_allowlist!
+
+      expect(adapter).to have_received(:remove_allowlist!).with(agent_run: agent_run, backend: backend)
+    end
+  end
+
   describe "#record_denial!" do
     it "creates a structured EgressSecurityEvent with the gateway denials context" do
       entry = create(:egress_allowlist_entry, account: account, host_pattern: "denied.example.com")

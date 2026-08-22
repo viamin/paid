@@ -27,6 +27,10 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
   end
   let(:provision_service) { instance_double(Containers::Provision, container: instance_double(Docker::Container)) }
   let(:started_container) { instance_double(Docker::Container) }
+  let(:gateway_container) do
+    instance_double(Docker::Container,
+      info: { "NetworkSettings" => { "Networks" => { "paid_agent" => { "Aliases" => [ "egress-gateway" ] } } } })
+  end
 
   # Persists a synthetic egress policy snapshot on the +agent_run+ so
   # +AgentRuns::EgressPolicy::Snapshot.from_record+ returns it. Shared
@@ -490,7 +494,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     it "cleans up the provisioned container when firewall application fails in production" do
       allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new("production"))
       seed_snapshot!
-      allow(backend).to receive(:get_container).with("egress-gateway").and_return(instance_double(Docker::Container))
+      allow(backend).to receive(:get_container).with("egress-gateway").and_return(gateway_container)
       allow(backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
       allow(Containers::Provision).to receive(:new).and_return(provision_service)
       allow(provision_service).to receive_messages(
@@ -509,7 +513,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     # @spec EGRESS-POLICY-007
     it "threads the gateway URL into the firewall destinations as {ip:, port:}" do
       seed_snapshot!(destinations: [ { "host" => "api.partner.com", "port" => 443, "source" => "project_allowlist" } ])
-      allow(backend).to receive(:get_container).with("egress-gateway").and_return(instance_double(Docker::Container))
+      allow(backend).to receive(:get_container).with("egress-gateway").and_return(gateway_container)
       allow(backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
       stub_provision_success!
 
@@ -529,7 +533,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
         { "host" => "api.partner.com", "port" => 443, "source" => "project_allowlist" },
         { "host" => "metrics.example.com", "port" => 8443, "source" => "account_allowlist" }
       ])
-      allow(backend).to receive(:get_container).with("egress-gateway").and_return(instance_double(Docker::Container))
+      allow(backend).to receive(:get_container).with("egress-gateway").and_return(gateway_container)
       allow(backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
       stub_provision_success!
 
@@ -943,11 +947,27 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     end
 
     # @spec EGRESS-POLICY-007
+    it "removes the run's allowlist from the gateway sidecar so it does not accumulate stale files" do
+      seed_snapshot!(destinations: [ { "host" => "evil.example.com", "port" => 443, "source" => "project_allowlist" } ])
+      adapter = stub_gateway_collect_denials!(
+        host: "evil.example.com", port: 443, matched_rule: "no matching rule", scheme: "https"
+      )
+      allow(Containers::Provision).to receive(:reconnect).and_return(provision_service)
+      allow(provision_service).to receive(:cleanup)
+      allow(Containers).to receive(:backend_for).with("local").and_return(backend)
+
+      runner.cleanup(handle: handle, force: true)
+
+      expect(adapter).to have_received(:remove_allowlist!).with(agent_run: agent_run, backend: backend)
+    end
+
+    # @spec EGRESS-POLICY-007
     it "skips the gateway drain for runs with no persisted snapshot" do
       allow(Containers::Provision).to receive(:reconnect).and_return(provision_service)
       allow(provision_service).to receive(:cleanup)
       adapter = instance_double(AgentRuns::EgressPolicy::GatewayAdapters::Docker)
       expect(adapter).not_to receive(:collect_denials)
+      expect(adapter).not_to receive(:remove_allowlist!)
       allow(described_class).to receive(:gateway_adapter).and_return(adapter)
 
       expect { runner.cleanup(handle: handle, force: true) }.not_to change(EgressSecurityEvent, :count)
@@ -960,6 +980,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       allow(provision_service).to receive(:cleanup)
       adapter = instance_double(AgentRuns::EgressPolicy::GatewayAdapters::Docker)
       expect(adapter).not_to receive(:collect_denials)
+      expect(adapter).not_to receive(:remove_allowlist!)
       allow(described_class).to receive(:gateway_adapter).and_return(adapter)
 
       expect { runner.cleanup(handle: handle, force: true) }.not_to change(EgressSecurityEvent, :count)
@@ -983,6 +1004,23 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     end
 
     # @spec EGRESS-POLICY-007
+    it "logs a warning but never raises when the allowlist removal itself fails" do
+      seed_snapshot!(destinations: [ { "host" => "evil.example.com", "port" => 443, "source" => "project_allowlist" } ])
+      allow(Containers::Provision).to receive(:reconnect).and_return(provision_service)
+      allow(provision_service).to receive(:cleanup)
+      adapter = instance_double(AgentRuns::EgressPolicy::GatewayAdapters::Docker, collect_denials: [])
+      allow(adapter).to receive(:remove_allowlist!).and_raise(StandardError, "sidecar exec failed")
+      allow(described_class).to receive(:gateway_adapter).and_return(adapter)
+      allow(Containers).to receive(:backend_for).with("local").and_return(backend)
+
+      expect(Rails.logger).to receive(:warn).with(
+        hash_including(message: "container.gateway.denial_drain_failed", agent_run_id: agent_run.id)
+      )
+
+      expect { runner.cleanup(handle: handle, force: true) }.not_to raise_error
+    end
+
+    # @spec EGRESS-POLICY-007
     it "skips the gateway drain when the handle omits an agent_run_id" do
       no_id_handle = ExecutionRunners::RunnerHandle.new(
         runner_type: :local_docker, identifier: "abc123", host: "local",
@@ -992,6 +1030,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       allow(provision_service).to receive(:cleanup)
       adapter = instance_double(AgentRuns::EgressPolicy::GatewayAdapters::Docker)
       expect(adapter).not_to receive(:collect_denials)
+      expect(adapter).not_to receive(:remove_allowlist!)
       allow(described_class).to receive(:gateway_adapter).and_return(adapter)
 
       expect { runner.cleanup(handle: no_id_handle, force: true) }.not_to raise_error
@@ -999,11 +1038,13 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
 
     # Builds an instance double for the gateway adapter whose
     # +#collect_denials+ returns a single denial record built from the
-    # given kwargs. Returns the double so specs can assert against it.
+    # given kwargs, and whose +#remove_allowlist!+ is stubbed as a no-op.
+    # Returns the double so specs can assert against it.
     def stub_gateway_collect_denials!(host:, port:, matched_rule:, scheme:)
       adapter = instance_double(
         AgentRuns::EgressPolicy::GatewayAdapters::Docker,
-        collect_denials: [ { host: host, port: port, matched_rule: matched_rule, scheme: scheme } ]
+        collect_denials: [ { host: host, port: port, matched_rule: matched_rule, scheme: scheme } ],
+        remove_allowlist!: nil
       )
       allow(described_class).to receive(:gateway_adapter).and_return(adapter)
       adapter
@@ -1051,6 +1092,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       allow(Containers::Provision).to receive(:compatibility_for)
         .with(agent_run: agent_run, backend: backend, worktree_path: nil)
         .and_return(Containers::Provision::CompatibilityResult.new(compatible: true, error_message: nil))
+      allow(backend).to receive(:get_container).with("egress-gateway").and_return(gateway_container)
 
       result = described_class.compatible?(spec: run_spec, backend: backend)
 
@@ -1061,6 +1103,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     it "supports every RDR-062 networking intent (Docker implements every shape)" do
       allow(Containers::Provision).to receive(:compatibility_for)
         .and_return(Containers::Provision::CompatibilityResult.new(compatible: true, error_message: nil))
+      allow(backend).to receive(:get_container).with("egress-gateway").and_return(gateway_container)
 
       %i[no_outbound proxy_only git_plus_proxy approved_services
          model_direct explicit_internet subscription_auth direct_outbound].each do |mode|
@@ -1103,6 +1146,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     it "accepts a restricted spec when a gateway adapter is registered" do
       allow(Containers::Provision).to receive(:compatibility_for)
         .and_return(Containers::Provision::CompatibilityResult.new(compatible: true, error_message: nil))
+      allow(backend).to receive(:get_container).with("egress-gateway").and_return(gateway_container)
       spec = ExecutionRunners::RunSpec.new(**run_spec.to_h.merge(
         networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted
       ))
@@ -1255,6 +1299,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       allow(Containers::HealthCheck).to receive(:ping)
         .and_return(Containers::HealthCheck::Result.new(backend_identifier: "local", healthy: true, pinged_at: Time.current, error_message: nil))
       allow(backend).to receive(:stop_container)
+      allow(backend).to receive(:get_container).with("egress-gateway").and_return(gateway_container)
       allow(provision_service).to receive_messages(
         provision: Containers::Provision::Result.success(container_id: "abc123", container_host: "local"),
         execute: Containers::Provision::Result.success(stdout: "ok\n", stderr: "", exit_code: 0),

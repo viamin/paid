@@ -71,6 +71,21 @@ module AgentRuns
           raise NotImplementedError, "#{self.class} must implement ##{__method__}"
         end
 
+        # Removes the per-run allowlist installed by {#install_allowlist!}
+        # once the run has finished. The base implementation is a no-op:
+        # adapters whose gateway lifecycle already tears down per-run state
+        # (e.g. a gateway process created fresh per run) have nothing to
+        # remove. Adapters that install policy into a long-lived, shared
+        # gateway process (e.g. {Docker}) must override this so the shared
+        # gateway does not accumulate one allowlist per run ever executed.
+        #
+        # @param agent_run [AgentRun] the run whose allowlist should be removed
+        # @param backend [Object] the backend descriptor
+        # @return [void]
+        def remove_allowlist!(agent_run:, backend:)
+          nil
+        end
+
         # Collects denial events from the gateway after the run
         # completes. Returns an array of hashes, each carrying at
         # least +:host+, +:port+, and +:matched_rule+ so the caller

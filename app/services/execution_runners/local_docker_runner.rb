@@ -161,7 +161,7 @@ class LocalDockerRunner < Base
     end
 
     def cleanup(handle:, force: false)
-      drain_gateway_denials!(handle: handle)
+      teardown_gateway!(handle: handle)
       reconnect(handle: handle).cleanup(force: force)
       nil
     rescue Containers::Provision::ProvisionError
@@ -464,24 +464,47 @@ class LocalDockerRunner < Base
     end
 
     # Drains denial events from the per-host egress gateway into
-    # {EgressSecurityEvent} rows for the run that just finished. This
-    # is the live call site for {Gateway#collect_denials!} — without it
-    # the gateway would only ever be exercised in unit tests, and a
-    # restricted run would enforce via the sidecar but never persist
-    # any denials to the audit trail.
+    # {EgressSecurityEvent} rows for the run that just finished, then
+    # removes the run's per-run allowlist from the gateway. This is the
+    # live call site for {Gateway#collect_denials!} and
+    # {Gateway#remove_allowlist!} — without it the gateway would only ever
+    # be exercised in unit tests: a restricted run would enforce via the
+    # sidecar but never persist any denials to the audit trail, and every
+    # restricted run would leave its allowlist file behind on the shared
+    # gateway sidecar forever.
     #
     # Only restricted runs (those that provisioned a gateway at
     # {#provision} time, gated by +networking_policy.restricted?+ and a
-    # persisted snapshot) need a drain: an unrestricted run never
-    # touched the gateway, so draining it returns no rows and would
-    # only burn a Docker exec against the shared sidecar.
+    # persisted snapshot) need a teardown: an unrestricted run never
+    # touched the gateway, so tearing it down returns no rows and would
+    # only burn Docker execs against the shared sidecar.
     #
     # Best-effort and idempotent: failures are logged but never raised
     # because {#cleanup} must remain safe to call on an already
-    # torn-down handle, and the adapter's per-run denial log path
-    # truncates after read so a retry cannot duplicate audit rows.
+    # torn-down handle. The adapter's per-run denial log path truncates
+    # after read so a retry cannot duplicate audit rows, and removing an
+    # already-removed allowlist file is a no-op.
     # @spec EGRESS-POLICY-007
-    def drain_gateway_denials!(handle:)
+    def teardown_gateway!(handle:)
+      gateway = restricted_gateway_for(handle: handle)
+      return unless gateway
+
+      gateway.collect_denials!
+      gateway.remove_allowlist!
+    rescue StandardError => e
+      Rails.logger.warn(
+        message: "container.gateway.denial_drain_failed",
+        agent_run_id: handle.metadata["agent_run_id"],
+        error: e.message
+      )
+      nil
+    end
+
+    # Builds the {Gateway} for a finished run's post-run teardown, or +nil+
+    # when the run never provisioned one. Shared by {#teardown_gateway!} so
+    # denial draining and allowlist removal operate on the same gateway
+    # instance instead of re-deriving the snapshot/backend/adapter twice.
+    def restricted_gateway_for(handle:)
       agent_run_id = handle.metadata["agent_run_id"]
       return if agent_run_id.blank?
 
@@ -497,19 +520,12 @@ class LocalDockerRunner < Base
 
       AgentRuns::EgressPolicy::Gateway.new(
         agent_run: agent_run, backend: backend, snapshot: snapshot, adapter: adapter
-      ).collect_denials!
-    rescue StandardError => e
-      Rails.logger.warn(
-        message: "container.gateway.denial_drain_failed",
-        agent_run_id: handle.metadata["agent_run_id"],
-        error: e.message
       )
-      nil
     end
 
     # Whether the snapshot's persisted mode corresponds to one of the
     # restricted RDR-062 networking intents. Used by
-    # {#drain_gateway_denials!} to skip unrestricted runs that never
+    # {#restricted_gateway_for} to skip unrestricted runs that never
     # installed a gateway, mirroring {#build_gateway}'s
     # +networking_policy.restricted?+ gate at provision time.
     def restricted_snapshot_mode?(mode)
