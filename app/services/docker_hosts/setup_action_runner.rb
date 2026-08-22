@@ -151,11 +151,11 @@ module DockerHosts
     end
 
     def verify_network
-      network_name = host.required_network_name.presence || required_param!(:required_network_name)
-      host.required_network_name = network_name
+      network_name = primary_network_name
 
       DockerHosts::RemoteBackendSession.with_backend(host) do |backend|
         backend.get_network(network_name)
+        host.required_network_name = network_name
         host.required_network_status = "ready"
         record_step_success("required_network", "Verified Docker network #{network_name.inspect}.")
       end
@@ -167,11 +167,11 @@ module DockerHosts
     def create_network
       raise ArgumentError, "Authorize network creation before running this helper" unless ActiveModel::Type::Boolean.new.cast(params[:allow_network_create])
 
-      network_name = host.required_network_name.presence || required_param!(:required_network_name)
-      host.required_network_name = network_name
+      network_name = primary_network_name
 
       DockerHosts::RemoteBackendSession.with_backend(host) do |backend|
         backend.create_network(network_name, docker_network_create_config(network_name))
+        host.required_network_name = network_name
         host.required_network_status = "ready"
         record_step_success("required_network", "Created Docker network #{network_name.inspect}.")
       end
@@ -249,11 +249,12 @@ module DockerHosts
     end
 
     def test_callback
-      network_name = host.required_network_name.presence || required_param!(:required_network_name)
+      network_name = primary_network_name
       url = host.callback_url.presence || required_param!(:callback_url)
       command = [ "sh", "-lc", "wget -qO- #{Shellwords.escape(url)} >/dev/null || curl -fsSL #{Shellwords.escape(url)} >/dev/null" ]
 
       DockerHosts::RemoteBackendSession.with_backend(host) do |backend|
+        host.required_network_name = network_name
         container = backend.create_container(
           "Image" => host.image_tag,
           "Cmd" => command,
@@ -272,9 +273,10 @@ module DockerHosts
     end
 
     def dry_run
-      network_name = host.required_network_name.presence || required_param!(:required_network_name)
+      network_name = primary_network_name
 
       DockerHosts::RemoteBackendSession.with_backend(host) do |backend|
+        host.required_network_name = network_name
         container = backend.create_container(
           "Image" => host.image_tag,
           "Cmd" => [ "true" ],
@@ -317,6 +319,10 @@ module DockerHosts
 
     def optional_param(key)
       params[key].to_s.strip.presence
+    end
+
+    def primary_network_name
+      NetworkPolicy::NETWORK_NAME
     end
 
     def validate_uploaded_client_tls_bundle!(client_ca_pem:, client_ca_key_pem:, client_certificate_pem:, client_private_key_pem:)

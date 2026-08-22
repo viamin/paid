@@ -15,6 +15,13 @@ RSpec.describe DockerHost, type: :model do
   end
 
   # @spec CONTAINER-RUNTIME-030
+  it "normalizes arbitrary required network names back to the runtime restricted network" do
+    host = create(:docker_host, required_network_name: "shared-agents")
+
+    expect(host.required_network_name).to eq(NetworkPolicy::NETWORK_NAME)
+  end
+
+  # @spec CONTAINER-RUNTIME-030
   it "defaults the infra network status to unknown" do
     host = create(:docker_host, required_infra_network_status: nil)
 

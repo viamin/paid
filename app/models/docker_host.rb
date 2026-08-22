@@ -19,6 +19,8 @@ class DockerHost < ApplicationRecord
 
   scope :enabled, -> { where(enabled: true) }
   scope :ordered, -> { order(enabled: :desc, display_name: :asc, identifier: :asc) }
+  PRIMARY_NETWORK_NAME = NetworkPolicy::NETWORK_NAME
+
   # @spec EXEC-DISABLE-004
   # @spec CONTAINER-RUNTIME-030
   #
@@ -135,7 +137,11 @@ class DockerHost < ApplicationRecord
     self.endpoint = endpoint.to_s.strip.presence
     self.callback_url = callback_url.to_s.strip.presence
     self.image_tag = image_tag.to_s.strip.presence || "paid-agent:latest"
-    self.required_network_name = required_network_name.to_s.strip.presence || NetworkPolicy::NETWORK_NAME
+    # Remote setup/readiness must stay pinned to the runtime contract's
+    # restricted network. Allowing arbitrary names here would make the
+    # record's cached "required_network_status" prove a network the runtime
+    # never uses.
+    self.required_network_name = PRIMARY_NETWORK_NAME
     self.backend_type = backend_type.to_s.strip.presence || "local"
     self.readiness_status = readiness_status.to_s.strip.presence || "unknown"
     self.image_status = image_status.to_s.strip.presence || "unknown"

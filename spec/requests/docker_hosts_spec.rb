@@ -94,7 +94,6 @@ RSpec.describe "DockerHosts", type: :request do
       docker_host: {
         display_name: "QNAP Edge",
         callback_url: "https://paid.example.test/health/services",
-        required_network_name: "shared-agents",
         manual_concurrency_limit: 6
       }
     }
@@ -103,7 +102,7 @@ RSpec.describe "DockerHosts", type: :request do
 
     host.reload
     expect(host.display_name).to eq("QNAP Edge")
-    expect(host.required_network_name).to eq("shared-agents")
+    expect(host.required_network_name).to eq(NetworkPolicy::NETWORK_NAME)
     expect(host.manual_concurrency_limit).to eq(6)
     expect(host.setup_profile).to eq("qnap_nas")
   end

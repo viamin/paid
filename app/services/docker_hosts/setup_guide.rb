@@ -70,7 +70,7 @@ module DockerHosts
 
     def command_snippets
       endpoint_host = endpoint_host_for(host.endpoint)
-      network_name = host.required_network_name.presence || NetworkPolicy::NETWORK_NAME
+      network_name = NetworkPolicy::NETWORK_NAME
       image_tag = host.image_tag
       tarball_name = image_archive_filename(image_tag)
       remote_tarball_path = "/tmp/#{tarball_name}"
@@ -120,7 +120,6 @@ module DockerHosts
         check_status_for(step_key)
       when "required_network"
         return "verified" if host.required_network_status == "ready"
-        return "pending" if host.required_network_name.blank?
 
         check_status_for(step_key)
       when "required_infra_network"
@@ -164,7 +163,7 @@ module DockerHosts
       when "callback_configuration"
         host.callback_url.presence || "Set the callback URL Paid containers must reach."
       when "required_network"
-        host.required_network_name.presence || "Choose the Docker network disposable containers should join."
+        "Docker network #{NetworkPolicy::NETWORK_NAME} is required for restricted/proxy agent runs."
       when "required_infra_network"
         return "Docker network #{NetworkPolicy::INFRA_NETWORK_NAME} verified for subscription-auth and direct-outbound runs." if host.required_infra_network_status == "ready"
 

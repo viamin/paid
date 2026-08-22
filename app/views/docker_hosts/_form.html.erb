@@ -50,8 +50,9 @@
     </div>
 
     <div>
-      <%= form.label :required_network_name, "Required network", class: "block text-sm font-medium text-gray-700" %>
-      <%= form.text_field :required_network_name, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm" %>
+      <label class="block text-sm font-medium text-gray-700">Restricted agent network</label>
+      <input value="<%= NetworkPolicy::NETWORK_NAME %>" disabled class="mt-1 block w-full rounded-xl border-gray-300 bg-gray-50 text-sm shadow-sm">
+      <p class="mt-1 text-xs text-gray-500">Remote setup always verifies the runtime restricted network.</p>
     </div>
   </div>
 

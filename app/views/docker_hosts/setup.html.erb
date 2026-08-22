@@ -102,8 +102,9 @@
           </div>
 
           <div>
-            <%= form.label :required_network_name, "Required network", class: "block text-sm font-medium text-gray-700" %>
-            <%= form.text_field :required_network_name, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm" %>
+            <label class="block text-sm font-medium text-gray-700">Restricted agent network</label>
+            <input value="<%= NetworkPolicy::NETWORK_NAME %>" disabled class="mt-1 block w-full rounded-xl border-gray-300 bg-gray-50 text-sm shadow-sm">
+            <p class="mt-1 text-xs text-gray-500">Restricted/proxy runs on remote hosts always use <%= NetworkPolicy::NETWORK_NAME %>.</p>
           </div>
 
           <div>
@@ -170,19 +171,18 @@
         <h2 class="text-xl font-semibold text-gray-900">Verification helpers</h2>
         <div class="mt-6 flex flex-wrap gap-3">
           <%= button_to "Test TLS connectivity", setup_helper_docker_host_path(@docker_host, helper_action: "test_tls"), method: :post, class: "rounded-full bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-600" %>
-          <%= button_to "Verify network", setup_helper_docker_host_path(@docker_host, helper_action: "verify_network", required_network_name: @docker_host.required_network_name), method: :post, class: "rounded-full border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50" %>
+          <%= button_to "Verify network", setup_helper_docker_host_path(@docker_host, helper_action: "verify_network"), method: :post, class: "rounded-full border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50" %>
           <%= button_to "Verify infra network (#{NetworkPolicy::INFRA_NETWORK_NAME})", setup_helper_docker_host_path(@docker_host, helper_action: "verify_infra_network"), method: :post, class: "rounded-full border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50" %>
           <%= button_to "Inspect image", setup_helper_docker_host_path(@docker_host, helper_action: "inspect_image"), method: :post, class: "rounded-full border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50" %>
-          <%= button_to "Test callback reachability", setup_helper_docker_host_path(@docker_host, helper_action: "test_callback", required_network_name: @docker_host.required_network_name, callback_url: @docker_host.callback_url), method: :post, class: "rounded-full border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50" %>
-          <%= button_to "Dry-run disposable container", setup_helper_docker_host_path(@docker_host, helper_action: "dry_run", required_network_name: @docker_host.required_network_name), method: :post, class: "rounded-full border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50" %>
+          <%= button_to "Test callback reachability", setup_helper_docker_host_path(@docker_host, helper_action: "test_callback", callback_url: @docker_host.callback_url), method: :post, class: "rounded-full border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50" %>
+          <%= button_to "Dry-run disposable container", setup_helper_docker_host_path(@docker_host, helper_action: "dry_run"), method: :post, class: "rounded-full border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50" %>
         </div>
 
         <%= form_with url: setup_helper_docker_host_path(@docker_host), method: :post, class: "mt-6 flex flex-wrap items-center gap-3" do %>
           <%= hidden_field_tag :helper_action, "create_network" %>
-          <%= hidden_field_tag :required_network_name, @docker_host.required_network_name %>
           <label class="inline-flex items-center gap-2 text-sm text-gray-700">
             <%= check_box_tag :allow_network_create, "1", false, class: "rounded border-gray-300 text-sky-700" %>
-            I authorize Paid to create the missing Docker network on this remote host
+            I authorize Paid to create the missing <%= NetworkPolicy::NETWORK_NAME %> Docker network on this remote host
           </label>
           <%= submit_tag "Create missing network", class: "rounded-full bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-600" %>
         <% end %>
