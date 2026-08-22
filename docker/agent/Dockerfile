@@ -449,8 +449,11 @@ RUN if [ -z "${OMP_PACKAGE}" ]; then \
     && ln -sf "${BUN_INSTALL}/bin/bun" /usr/local/bin/bun \
     && ln -sf "${BUN_INSTALL}/bin/bunx" /usr/local/bin/bunx \
     && export OMP_INSTALL_WORKDIR="/var/tmp/omp-install" \
-    && mkdir -p "${OMP_INSTALL_WORKDIR}/cache" "${OMP_INSTALL_WORKDIR}/tmp" \
-    && TMPDIR="${OMP_INSTALL_WORKDIR}/tmp" npm_config_cache="${OMP_INSTALL_WORKDIR}/cache" npm_config_omit=optional sh -c "${OMP_INSTALL_COMMAND}" \
+    && export OMP_INSTALL_TMPDIR="${OMP_INSTALL_WORKDIR}/tmp" \
+    && mkdir -p "${OMP_INSTALL_WORKDIR}/cache" "${OMP_INSTALL_TMPDIR}" \
+    && TMPDIR="${OMP_INSTALL_TMPDIR}" TMP="${OMP_INSTALL_TMPDIR}" TEMP="${OMP_INSTALL_TMPDIR}" \
+       npm_config_tmp="${OMP_INSTALL_TMPDIR}" npm_config_cache="${OMP_INSTALL_WORKDIR}/cache" \
+       npm_config_omit=optional sh -c "${OMP_INSTALL_COMMAND}" \
     && rm -rf "${OMP_INSTALL_WORKDIR}" \
     && OMP_BINARY_PATH="$(command -v omp || true)" \
     && if [ -z "${OMP_BINARY_PATH}" ]; then \

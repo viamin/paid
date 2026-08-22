@@ -112,15 +112,27 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(dockerfile_source).not_to include('ln -sf /root/.bun/bin/bun /usr/local/bin/bun')
     end
 
-    it "uses the agent-harness omp install command after provisioning Bun" do
+    it "requires the omp install contract and bun install script inputs" do
       expect(dockerfile_source).to include("ARG OMP_INSTALL_COMMAND")
       expect(dockerfile_source).to include("ARG OMP_BUN_INSTALL_SCRIPT_URL")
       expect(dockerfile_source).to include('echo "ERROR: OMP_INSTALL_COMMAND build-arg is required')
       expect(dockerfile_source).to include('echo "ERROR: OMP_BUN_INSTALL_SCRIPT_URL build-arg is required')
+    end
+
+    it "provisions bun before running the omp install command" do
       expect(dockerfile_source).to include('curl -fsSL "${OMP_BUN_INSTALL_SCRIPT_URL}" -o /tmp/omp-bun-install.sh')
       expect(dockerfile_source).to include('BUN_VERSION="${OMP_BUN_VERSION}" bash /tmp/omp-bun-install.sh')
+    end
+
+    it "redirects omp install temp files into the larger shared workdir" do
       expect(dockerfile_source).to include('export OMP_INSTALL_WORKDIR="/var/tmp/omp-install"')
-      expect(dockerfile_source).to include('TMPDIR="${OMP_INSTALL_WORKDIR}/tmp" npm_config_cache="${OMP_INSTALL_WORKDIR}/cache" npm_config_omit=optional sh -c "${OMP_INSTALL_COMMAND}"')
+      expect(dockerfile_source).to include('export OMP_INSTALL_TMPDIR="${OMP_INSTALL_WORKDIR}/tmp"')
+      expect(dockerfile_source).to include('TMPDIR="${OMP_INSTALL_TMPDIR}" TMP="${OMP_INSTALL_TMPDIR}" TEMP="${OMP_INSTALL_TMPDIR}"')
+      expect(dockerfile_source).to include('npm_config_tmp="${OMP_INSTALL_TMPDIR}" npm_config_cache="${OMP_INSTALL_WORKDIR}/cache"')
+    end
+
+    it "runs the agent-harness omp install command without the old bun package install path" do
+      expect(dockerfile_source).to include('npm_config_omit=optional sh -c "${OMP_INSTALL_COMMAND}"')
       expect(dockerfile_source).to include('rm -rf "${OMP_INSTALL_WORKDIR}"')
       expect(dockerfile_source).not_to include('bun install -g "${OMP_PACKAGE}"')
     end
