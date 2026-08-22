@@ -161,11 +161,11 @@ class LocalDockerRunner < Base
     end
 
     def cleanup(handle:, force: false)
-      teardown_gateway!(handle: handle)
       reconnect(handle: handle).cleanup(force: force)
-      nil
     rescue Containers::Provision::ProvisionError
       nil
+    ensure
+      teardown_gateway!(handle: handle)
     end
 
     # Removes the named Docker workspace volume for an agent run when it exists.

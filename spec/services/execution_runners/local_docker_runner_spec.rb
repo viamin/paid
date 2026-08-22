@@ -911,6 +911,21 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       runner.cleanup(handle: handle, force: true)
     end
 
+    it "tears down the container before draining the gateway state" do
+      seed_snapshot!(destinations: [ { "host" => "evil.example.com", "port" => 443, "source" => "project_allowlist" } ])
+      adapter = stub_gateway_collect_denials!(
+        host: "evil.example.com", port: 443, matched_rule: "no matching rule", scheme: "https"
+      )
+      allow(Containers::Provision).to receive(:reconnect).and_return(provision_service)
+      allow(Containers).to receive(:backend_for).with("local").and_return(backend)
+
+      expect(provision_service).to receive(:cleanup).ordered.with(force: true)
+      expect(adapter).to receive(:collect_denials).ordered.with(agent_run: agent_run, backend: backend)
+      expect(adapter).to receive(:remove_allowlist!).ordered.with(agent_run: agent_run, backend: backend)
+
+      runner.cleanup(handle: handle, force: true)
+    end
+
     it "is idempotent when the container was already torn down" do
       allow(Containers::Provision).to receive(:reconnect)
         .and_raise(Containers::Provision::ProvisionError, "Container abc123 not found")
@@ -991,7 +1006,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       seed_snapshot!(destinations: [ { "host" => "evil.example.com", "port" => 443, "source" => "project_allowlist" } ])
       allow(Containers::Provision).to receive(:reconnect).and_return(provision_service)
       allow(provision_service).to receive(:cleanup)
-      adapter = instance_double(AgentRuns::EgressPolicy::GatewayAdapters::Docker)
+      adapter = instance_double(AgentRuns::EgressPolicy::GatewayAdapters::Docker, remove_allowlist!: nil)
       allow(adapter).to receive(:collect_denials).and_raise(StandardError, "sidecar exec failed")
       allow(described_class).to receive(:gateway_adapter).and_return(adapter)
       allow(Containers).to receive(:backend_for).with("local").and_return(backend)
