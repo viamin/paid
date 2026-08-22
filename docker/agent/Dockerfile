@@ -420,6 +420,9 @@ RUN if [ -z "${PI_PACKAGE}" ]; then \
 ARG OMP_PACKAGE
 ARG OMP_INSTALL_COMMAND
 ARG OMP_BUN_VERSION
+# Retained for contract traceability in the build inputs even though the image
+# installs Bun from the pinned GitHub release assets rather than piping the
+# generic install script, so amd64 builds can fall back to the baseline binary.
 ARG OMP_BUN_INSTALL_SCRIPT_URL
 RUN if [ -z "${OMP_PACKAGE}" ]; then \
         echo "ERROR: OMP_PACKAGE build-arg is required (sourced from agent-harness)" >&2; \
@@ -433,16 +436,31 @@ RUN if [ -z "${OMP_PACKAGE}" ]; then \
         echo "ERROR: OMP_BUN_VERSION build-arg is required (sourced from agent-harness)" >&2; \
         exit 1; \
     fi \
-    && if [ -z "${OMP_BUN_INSTALL_SCRIPT_URL}" ]; then \
-        echo "ERROR: OMP_BUN_INSTALL_SCRIPT_URL build-arg is required (sourced from agent-harness)" >&2; \
-        exit 1; \
-    fi \
     && export BUN_INSTALL="/usr/local/bun" \
     && mkdir -p "${BUN_INSTALL}/bin" \
-    && curl -fsSL "${OMP_BUN_INSTALL_SCRIPT_URL}" -o /tmp/omp-bun-install.sh \
-    && test -s /tmp/omp-bun-install.sh \
-    && BUN_VERSION="${OMP_BUN_VERSION}" bash /tmp/omp-bun-install.sh \
-    && rm -f /tmp/omp-bun-install.sh \
+    && BUN_RELEASE_BASE_URL="https://github.com/oven-sh/bun/releases/download/bun-v${OMP_BUN_VERSION}" \
+    && OMP_BUN_TMPDIR="$(mktemp -d)" \
+    && DEB_ARCH="$(dpkg --print-architecture)" \
+    && case "$DEB_ARCH" in \
+        amd64) \
+            BUN_ASSET="bun-linux-x64.zip"; \
+            if ! grep -qm1 avx2 /proc/cpuinfo; then \
+                BUN_ASSET="bun-linux-x64-baseline.zip"; \
+            fi ;; \
+        arm64) BUN_ASSET="bun-linux-aarch64.zip" ;; \
+        *) echo "ERROR: Unsupported architecture for Bun: $DEB_ARCH" >&2; exit 1 ;; \
+    esac \
+    && curl -fsSL "${BUN_RELEASE_BASE_URL}/SHASUMS256.txt" -o "${OMP_BUN_TMPDIR}/SHASUMS256.txt" \
+    && BUN_CHECKSUM="$(awk -v asset="${BUN_ASSET}" '$2 == asset { print $1 }' "${OMP_BUN_TMPDIR}/SHASUMS256.txt")" \
+    && if [ -z "${BUN_CHECKSUM}" ]; then \
+        echo "ERROR: No Bun checksum found for ${BUN_ASSET}" >&2; \
+        exit 1; \
+    fi \
+    && curl -fsSL "${BUN_RELEASE_BASE_URL}/${BUN_ASSET}" -o "${OMP_BUN_TMPDIR}/${BUN_ASSET}" \
+    && echo "${BUN_CHECKSUM}  ${OMP_BUN_TMPDIR}/${BUN_ASSET}" | sha256sum -c - \
+    && unzip -oq "${OMP_BUN_TMPDIR}/${BUN_ASSET}" -d "${OMP_BUN_TMPDIR}" \
+    && install -m 0755 "${OMP_BUN_TMPDIR}/${BUN_ASSET%.zip}/bun" "${BUN_INSTALL}/bin/bun" \
+    && rm -rf "${OMP_BUN_TMPDIR}" \
     && test -x "${BUN_INSTALL}/bin/bun" \
     && ln -sf "${BUN_INSTALL}/bin/bun" "${BUN_INSTALL}/bin/bunx" \
     && export PATH="${BUN_INSTALL}/bin:${PATH}" \

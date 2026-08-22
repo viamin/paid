@@ -438,6 +438,13 @@ version with explicit failure messages instead of chained silent `test` calls.
 That keeps cross-architecture failures actionable without requiring an operator
 to rerun the whole image build under an interactive shell.
 
+Because the generic Bun installer can pick an `amd64` binary that assumes AVX2,
+the agent image installs the contract-pinned Bun release asset directly,
+verifies it against Bun's published `SHASUMS256.txt`, and falls back to the
+baseline `bun-linux-x64-baseline.zip` asset when `/proc/cpuinfo` does not
+advertise AVX2. That keeps the Oh My Pi install path compatible with older
+`amd64` runners instead of failing inside the post-install assertions.
+
 ## References
 
 - `app/services/containers/provision.rb`
