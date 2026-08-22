@@ -81,7 +81,7 @@ module ExecutionRunners
         # adapter is nil, so narrowed test runners can opt in by
         # overriding {.gateway_adapter} to return a real adapter.
         # @spec EGRESS-POLICY-007
-        if spec.networking_policy.restricted? && !egress_capable?(spec: spec, backend: backend)
+        if policy_requires_egress_gateway?(spec.networking_policy) && !egress_capable?(spec: spec, backend: backend)
           return CompatibilityResult.new(
             compatible: false,
             error_message: "Runtime cannot enforce the egress policy snapshot on this backend; register a capable gateway adapter or reject the run"
@@ -128,6 +128,10 @@ module ExecutionRunners
       return false if policy.nil?
 
       supported_modes.include?(policy.mode) || supported_modes.include?(policy.canonical_mode)
+    end
+
+    def self.policy_requires_egress_gateway?(policy)
+      policy.present? && policy.restricted? && !policy.no_outbound? && policy.mode != :proxy_only
     end
 
     def self.ping
@@ -180,7 +184,8 @@ module ExecutionRunners
       # opts in via {.supporting}/{.gateway_adapter} stubbing, same as specs
       # exercising .compatible? do.
       # @spec EGRESS-POLICY-007
-      if spec.networking_policy.restricted? && !self.class.egress_capable?(spec: spec, backend: nil)
+      if self.class.policy_requires_egress_gateway?(spec.networking_policy) &&
+          !self.class.egress_capable?(spec: spec, backend: nil)
         raise ProvisionError,
           "Runtime cannot enforce the egress policy snapshot on this backend; register a capable gateway adapter or reject the run"
       end

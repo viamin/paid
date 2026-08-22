@@ -85,6 +85,32 @@ RSpec.describe ExecutionRunners::ContractRunner do
       expect(result.error_message).to be_nil
     end
 
+    # @spec EGRESS-POLICY-007
+    it "accepts :no_outbound without a gateway adapter because it only uses firewall enforcement" do
+      narrowed = described_class.supporting([ :no_outbound ])
+      spec = ExecutionRunners::RunSpec.new(**run_spec.to_h.merge(
+        networking_policy: ExecutionRunners::NetworkingPolicy.no_outbound
+      ))
+
+      result = narrowed.compatible?(spec: spec, backend: backend)
+
+      expect(result.compatible).to be(true)
+      expect(result.error_message).to be_nil
+    end
+
+    # @spec EGRESS-POLICY-007
+    it "accepts :proxy_only without a gateway adapter because it only uses firewall enforcement" do
+      narrowed = described_class.supporting([ :proxy_only ])
+      spec = ExecutionRunners::RunSpec.new(**run_spec.to_h.merge(
+        networking_policy: ExecutionRunners::NetworkingPolicy.proxy_only
+      ))
+
+      result = narrowed.compatible?(spec: spec, backend: backend)
+
+      expect(result.compatible).to be(true)
+      expect(result.error_message).to be_nil
+    end
+
     it "rejects a nil backend" do
       spec = ExecutionRunners::RunSpec.new(**run_spec.to_h.merge(
         networking_policy: ExecutionRunners::NetworkingPolicy.model_direct
@@ -205,6 +231,21 @@ RSpec.describe ExecutionRunners::ContractRunner do
       it "records the call before raising" do
         expect { runner.provision(spec: run_spec) rescue nil }
           .to change { runner.provision_calls.size }.from(0).to(1)
+      end
+    end
+
+    # @spec EGRESS-POLICY-007
+    context "when the policy does not route through the egress gateway" do
+      let(:supported_modes) { [ :no_outbound ] }
+
+      it "returns a handle for :no_outbound without requiring a gateway adapter" do
+        spec = ExecutionRunners::RunSpec.new(**run_spec.to_h.merge(
+          networking_policy: ExecutionRunners::NetworkingPolicy.no_outbound
+        ))
+
+        handle = runner.provision(spec: spec)
+
+        expect(handle).to be_a(ExecutionRunners::RunnerHandle)
       end
     end
   end

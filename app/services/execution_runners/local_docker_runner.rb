@@ -45,13 +45,15 @@ class LocalDockerRunner < Base
     def provision(spec:)
       backend = backend_for(spec)
       policy = spec.networking_policy
+      gateway_ready = false
       raise ProvisionError, "RunSpec requires a NetworkingPolicy" if policy.nil?
       raise ProvisionError, self.class.unsupported_policy_message(policy) unless self.class.supports_policy?(policy)
       raise ProvisionError, "RunSpec requires an IngressPolicy" if spec.ingress_policy.nil?
       spec.ingress_policy.validate_supported!
 
       gateway = build_gateway(spec: spec, backend: backend)
-      gateway = nil unless enforce_gateway!(gateway: gateway)
+      gateway_ready = enforce_gateway!(gateway: gateway)
+      gateway = nil unless gateway_ready
 
       ensure_agent_network!(backend: backend, policy: policy)
       service = Containers::Provision.new(
@@ -67,8 +69,10 @@ class LocalDockerRunner < Base
       apply_firewall!(service: service, backend: backend, policy: policy, gateway: gateway)
       handle_for(spec: spec, result: result)
     rescue Containers::Provision::ProvisionError => e
+      cleanup_gateway_on_failure(gateway) if gateway_ready
       raise ProvisionError, e.message
     rescue ProvisionError
+      cleanup_gateway_on_failure(gateway) if gateway_ready
       # The container is already provisioned and running by the time the
       # runner raises its own error (the production firewall failure path in
       # #apply_firewall!); +Containers::Provision#provision+ only cleans up
@@ -82,6 +86,9 @@ class LocalDockerRunner < Base
       rescue StandardError
         # Surface the original provisioning error, not the cleanup error.
       end
+      raise
+    rescue StandardError
+      cleanup_gateway_on_failure(gateway) if gateway_ready
       raise
     end
 
@@ -215,7 +222,7 @@ class LocalDockerRunner < Base
       # Kubernetes and managed-machine adapters answer +false+ for
       # non-matching backends, so a future runner that returns an adapter
       # instance does not silently start a container with no enforcement.
-      if policy.restricted? && !egress_capable?(spec: spec, backend: backend)
+      if policy_requires_egress_gateway?(policy) && !egress_capable?(spec: spec, backend: backend)
         return CompatibilityResult.new(
           compatible: false,
           error_message: "Runtime cannot enforce the egress policy snapshot on this backend; register a capable gateway adapter or reject the run"
@@ -405,8 +412,7 @@ class LocalDockerRunner < Base
     # {enforce_gateway!} instead.
     def build_gateway(spec:, backend:)
       policy = spec.networking_policy
-      return nil unless policy&.restricted?
-      return nil unless policy_uses_egress_gateway?(policy)
+      return nil unless policy_requires_egress_gateway?(policy)
 
       snapshot = AgentRuns::EgressPolicy::Snapshot.from_record(spec.agent_run)
       return missing_snapshot_gateway!(agent_run: spec.agent_run) unless snapshot
@@ -501,6 +507,19 @@ class LocalDockerRunner < Base
       end
     end
 
+    def cleanup_gateway_on_failure(gateway)
+      return unless gateway
+
+      gateway.remove_allowlist!
+    rescue StandardError => e
+      Rails.logger.warn(
+        message: "container.egress_gateway.cleanup_failed",
+        agent_run_id: gateway.agent_run.id,
+        error: e.message
+      )
+      nil
+    end
+
     # Builds the {Gateway} for a finished run's post-run teardown, or +nil+
     # when the run never provisioned one. Shared by {#teardown_gateway!} so
     # denial draining and allowlist removal operate on the same gateway
@@ -559,6 +578,14 @@ class LocalDockerRunner < Base
 
     def policy_uses_egress_gateway?(policy)
       !policy.no_outbound? && policy.mode != :proxy_only
+    end
+
+    def self.policy_requires_egress_gateway?(policy)
+      policy.present? && policy.restricted? && !policy.no_outbound? && policy.mode != :proxy_only
+    end
+
+    def policy_requires_egress_gateway?(policy)
+      self.class.policy_requires_egress_gateway?(policy)
     end
 
     # Returns the GitHub CIDR ranges the firewall should allow for the given

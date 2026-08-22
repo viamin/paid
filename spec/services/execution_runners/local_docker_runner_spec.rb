@@ -699,6 +699,46 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
 
       expect { runner.provision(spec: run_spec) }.not_to raise_error
     end
+
+    # @spec EGRESS-POLICY-007
+    it "removes the gateway allowlist when later provisioning steps fail after gateway setup" do
+      seed_snapshot!
+      adapter = instance_double(
+        AgentRuns::EgressPolicy::GatewayAdapters::Docker,
+        ensure!: nil,
+        install_allowlist!: nil,
+        gateway_url: "egress-gateway:3128",
+        remove_allowlist!: nil
+      )
+      allow(described_class).to receive(:gateway_adapter).and_return(adapter)
+      allow(NetworkPolicy).to receive(:ensure_network!).and_raise(NetworkPolicy::Error, "Failed to create agent network")
+
+      expect(adapter).to receive(:remove_allowlist!).with(agent_run: agent_run, backend: backend)
+
+      expect { runner.provision(spec: run_spec) }
+        .to raise_error(ExecutionRunners::ProvisionError, /Network setup failed/)
+    end
+
+    # @spec EGRESS-POLICY-007
+    it "best-effort logs gateway allowlist cleanup failures without masking the original error" do
+      seed_snapshot!
+      adapter = instance_double(
+        AgentRuns::EgressPolicy::GatewayAdapters::Docker,
+        ensure!: nil,
+        install_allowlist!: nil,
+        gateway_url: "egress-gateway:3128"
+      )
+      allow(adapter).to receive(:remove_allowlist!).and_raise("sidecar unavailable")
+      allow(described_class).to receive(:gateway_adapter).and_return(adapter)
+      allow(NetworkPolicy).to receive(:ensure_network!).and_raise(NetworkPolicy::Error, "Failed to create agent network")
+
+      expect(Rails.logger).to receive(:warn).with(
+        hash_including(message: "container.egress_gateway.cleanup_failed", agent_run_id: agent_run.id, error: "sidecar unavailable")
+      )
+
+      expect { runner.provision(spec: run_spec) }
+        .to raise_error(ExecutionRunners::ProvisionError, /Network setup failed/)
+    end
   end
 
   describe "#start" do
@@ -1237,6 +1277,34 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       allow(described_class).to receive(:gateway_adapter).and_return(nil)
       spec = ExecutionRunners::RunSpec.new(**run_spec.to_h.merge(
         networking_policy: ExecutionRunners::NetworkingPolicy.direct_outbound
+      ))
+
+      result = described_class.compatible?(spec: spec, backend: backend)
+
+      expect(result.compatible).to be(true)
+    end
+
+    # @spec EGRESS-POLICY-007
+    it "accepts :no_outbound without a gateway adapter because it only uses firewall enforcement" do
+      allow(Containers::Provision).to receive(:compatibility_for)
+        .and_return(Containers::Provision::CompatibilityResult.new(compatible: true, error_message: nil))
+      allow(described_class).to receive(:gateway_adapter).and_return(nil)
+      spec = ExecutionRunners::RunSpec.new(**run_spec.to_h.merge(
+        networking_policy: ExecutionRunners::NetworkingPolicy.no_outbound
+      ))
+
+      result = described_class.compatible?(spec: spec, backend: backend)
+
+      expect(result.compatible).to be(true)
+    end
+
+    # @spec EGRESS-POLICY-007
+    it "accepts :proxy_only without a gateway adapter because it only uses firewall enforcement" do
+      allow(Containers::Provision).to receive(:compatibility_for)
+        .and_return(Containers::Provision::CompatibilityResult.new(compatible: true, error_message: nil))
+      allow(described_class).to receive(:gateway_adapter).and_return(nil)
+      spec = ExecutionRunners::RunSpec.new(**run_spec.to_h.merge(
+        networking_policy: ExecutionRunners::NetworkingPolicy.proxy_only
       ))
 
       result = described_class.compatible?(spec: spec, backend: backend)
