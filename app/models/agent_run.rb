@@ -27,6 +27,10 @@ class AgentRun < ApplicationRecord
   FOCUSES = %w[general ci_fix review_feedback merge_conflict conversation issue_implementation label_action].freeze # @spec FOCUSED-RUN-001
   # analyze_issue is automation-only (triggered via Automation::Decision), not exposed in the manual run form.
   GOALS = %w[create_pr create_issue review enhance_issue analyze_issue lid_planning create_feature].freeze
+  # RDR-056 (Strict TDD): the run-scoped write-guard phase for projects with
+  # tdd_mode != "off". nil means the run is not TDD-governed (existing
+  # behavior). See Tdd::WriteGuard for the enforced allowed/forbidden matrix.
+  TDD_PHASES = %w[test_writing test_fixing refactor].freeze
   # Goals that read an issue body and reason about it without needing aggressive
   # codebase exploration. Routed to economical runners by default so they don't
   # land on heavy-exploration runners that consume 15-20x more tokens.
@@ -251,6 +255,7 @@ class AgentRun < ApplicationRecord
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :goal, presence: true, inclusion: { in: GOALS }
   validates :focus, presence: true, inclusion: { in: FOCUSES }
+  validates :tdd_phase, inclusion: { in: TDD_PHASES }, allow_nil: true
   validates :execution_origin, presence: true, inclusion: { in: EXECUTION_ORIGINS }
   validate :review_goal_requires_pull_request
   validate :issue_goal_requires_issue
@@ -1692,6 +1697,26 @@ class AgentRun < ApplicationRecord
 
   def create_feature_goal?
     goal == "create_feature"
+  end
+
+  # RDR-056 (Strict TDD) run-scoped write-guard phase predicates.
+  # @spec TDD-GUARD-001
+  def tdd_test_writing_phase?
+    tdd_phase == "test_writing"
+  end
+
+  # @spec TDD-GUARD-002
+  def tdd_test_fixing_phase?
+    tdd_phase == "test_fixing"
+  end
+
+  # @spec TDD-GUARD-003
+  def tdd_refactor_phase?
+    tdd_phase == "refactor"
+  end
+
+  def tdd_governed?
+    tdd_phase.present?
   end
 
   # Synthetic operational runs (e.g. live-preview provisioning) reuse the

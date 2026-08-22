@@ -304,6 +304,18 @@ arrows:
     taxonomy: intelligence
     status: OK
     audited: 2026-08-12
+  tdd-mode:
+    title: Project TDD Mode
+    path: docs/intent/tdd-mode/tdd-mode-design.md
+    specs: docs/intent/tdd-mode/tdd-mode-specs.md
+    parent: PAID
+    taxonomy: runtime
+  tdd-write-guards:
+    title: Run-Scoped TDD Write Guards
+    path: docs/intent/tdd-write-guards/tdd-write-guards-design.md
+    specs: docs/intent/tdd-write-guards/tdd-write-guards-specs.md
+    parent: PAID
+    taxonomy: runtime
 
 # Items found during mapping that don't yet belong to a segment.
 # arrow-maintenance cleans this up on each audit.

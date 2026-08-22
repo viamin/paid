@@ -19,6 +19,11 @@ module Containers
       lint_commands, test_commands = resolve_commands(languages, db_available)
       mutation_cmd = resolve_mutation_command(agent_run.project, agent_run.settings_user, languages)
       mutation_cmd = nil if ruby_db_gated?(languages, db_available)
+      # RDR-056 (Strict TDD): mutation checks run after green, not during the
+      # red test-review phase — a test_writing run has no implementation to
+      # mutate yet, and running mutant against approved tests here would only
+      # produce noise before a human/agent has reviewed the tests themselves.
+      mutation_cmd = nil if agent_run.tdd_test_writing_phase?
 
       return unless lint_commands.any? || test_commands.any? || mutation_cmd
       git_ops.install_git_hooks(
