@@ -73,6 +73,21 @@ module ExecutionRunners
       return CompatibilityResult.new(compatible: false, error_message: "Backend is not supported") if backend.nil?
 
       if supports_policy?(spec.networking_policy)
+        # Restricted policies must be enforceable: a runtime without a
+        # gateway adapter cannot honor the RDR-055 domain-aware allowlist,
+        # and any adapter present must also answer +capable?+ for this
+        # backend (Kubernetes/managed-machine adapters answer +false+ for
+        # non-matching backends). The contract runner's default gateway
+        # adapter is nil, so narrowed test runners can opt in by
+        # overriding {.gateway_adapter} to return a real adapter.
+        # @spec EGRESS-POLICY-007
+        if policy_requires_egress_gateway?(spec.networking_policy) && !egress_capable?(spec: spec, backend: backend)
+          return CompatibilityResult.new(
+            compatible: false,
+            error_message: "Runtime cannot enforce the egress policy snapshot on this backend; register a capable gateway adapter or reject the run"
+          )
+        end
+
         CompatibilityResult.new(compatible: true, error_message: nil)
       else
         CompatibilityResult.new(
@@ -80,6 +95,21 @@ module ExecutionRunners
           error_message: unsupported_policy_message(spec.networking_policy)
         )
       end
+    end
+
+    # Returns true when the registered gateway adapter can enforce the
+    # restricted policy on +backend+. Mirrors {LocalDockerRunner}: the
+    # runner must have an adapter, and the adapter must answer +true+
+    # from {GatewayAdapters::Base#capable?}. Used by {.compatible?} so
+    # narrowing the registered adapter or stubbing +capable?+ exercises
+    # the same code path production runners use.
+    # @spec EGRESS-POLICY-007
+    def self.egress_capable?(spec:, backend:)
+      adapter = gateway_adapter
+      return false if adapter.nil?
+
+      snapshot = AgentRuns::EgressPolicy::Snapshot.from_record(spec.agent_run)
+      adapter.capable?(snapshot: snapshot, backend: backend)
     end
 
     # Single source for the unsupported-policy error message, shared by
@@ -98,6 +128,10 @@ module ExecutionRunners
       return false if policy.nil?
 
       supported_modes.include?(policy.mode) || supported_modes.include?(policy.canonical_mode)
+    end
+
+    def self.policy_requires_egress_gateway?(policy)
+      policy.present? && policy.restricted? && !policy.no_outbound? && policy.mode != :proxy_only
     end
 
     def self.ping
@@ -139,6 +173,21 @@ module ExecutionRunners
       @provision_calls << spec
       unless self.class.supports_policy?(spec.networking_policy)
         raise ProvisionError, self.class.unsupported_policy_message(spec.networking_policy)
+      end
+
+      # Mirror .compatible?'s restricted-policy guard so a spec that would be
+      # rejected before scheduling cannot still be provisioned directly
+      # against this runner (#3556 review). The contract runner has no real
+      # backend of its own (it is an in-memory double), so it checks
+      # enforceability the same way .compatible? does for a nil backend —
+      # any adapter that requires a specific backend to answer +capable?+
+      # opts in via {.supporting}/{.gateway_adapter} stubbing, same as specs
+      # exercising .compatible? do.
+      # @spec EGRESS-POLICY-007
+      if self.class.policy_requires_egress_gateway?(spec.networking_policy) &&
+          !self.class.egress_capable?(spec: spec, backend: nil)
+        raise ProvisionError,
+          "Runtime cannot enforce the egress policy snapshot on this backend; register a capable gateway adapter or reject the run"
       end
 
       default_handle_for(spec)

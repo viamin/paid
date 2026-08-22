@@ -79,7 +79,15 @@
   `AgentRuns::EgressPolicy::Resolve`,
   `Activities::ProvisionContainerActivity`
 
-- [ ] **EGRESS-POLICY-007** — The resolved snapshot SHALL be wired into
+- [x] **EGRESS-POLICY-007** — The resolved snapshot SHALL be wired into
   `ExecutionRunners::NetworkingPolicy#allow_destinations` and enforced by a
   per-Docker-host egress gateway, with production restricted runs failing
-  closed when enforcement cannot be applied. (RDR-055 steps 4–5; future work.)
+  closed when enforcement cannot be applied. Runners that cannot enforce
+  the selected egress profile SHALL be rejected by `compatible?` before any
+  provisioning work begins.
+  *Tests:* `spec/services/agent_runs/egress_policy/gateway_spec.rb`,
+  `spec/services/execution_runners/local_docker_runner_spec.rb`
+  *Code:* `AgentRuns::EgressPolicy::Gateway`,
+  `AgentRuns::EgressPolicy::GatewayAdapters::{Docker,Kubernetes,ManagedMachine}`,
+  `ExecutionRunners::Base.gateway_adapter`,
+  `ExecutionRunners::LocalDockerRunner`
