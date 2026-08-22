@@ -2,7 +2,6 @@
 
 class AddRequiredInfraNetworkStatusToDockerHosts < ActiveRecord::Migration[8.1]
   PRIMARY_NETWORK_NAME = "paid_agent"
-  READY_STATUS = "ready"
   UNKNOWN_STATUS = "unknown"
 
   def up
@@ -16,24 +15,8 @@ class AddRequiredInfraNetworkStatusToDockerHosts < ActiveRecord::Migration[8.1]
     execute <<~SQL.squish
       UPDATE docker_hosts
       SET
-        required_network_name = '#{PRIMARY_NETWORK_NAME}',
-        required_infra_network_status = CASE
-          WHEN backend_type = 'remote'
-            AND readiness_status = '#{READY_STATUS}'
-            AND image_status = '#{READY_STATUS}'
-            AND required_network_status = '#{READY_STATUS}'
-            AND required_infra_network_status = '#{UNKNOWN_STATUS}'
-          THEN '#{READY_STATUS}'
-          ELSE required_infra_network_status
-        END
+        required_network_name = '#{PRIMARY_NETWORK_NAME}'
       WHERE required_network_name IS DISTINCT FROM '#{PRIMARY_NETWORK_NAME}'
-         OR (
-           backend_type = 'remote'
-           AND readiness_status = '#{READY_STATUS}'
-           AND image_status = '#{READY_STATUS}'
-           AND required_network_status = '#{READY_STATUS}'
-           AND required_infra_network_status = '#{UNKNOWN_STATUS}'
-         )
     SQL
   end
 
