@@ -135,6 +135,75 @@ RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUA
         mutation_command: "true"
       )
     end
+
+    # @spec TDD-GUARD-009
+    it "suppresses the mutation command during a test_writing phase run even when mutation testing is configured" do
+      allow(project).to receive_messages(
+        detected_language: "ruby",
+        has_running_database_container?: true
+      )
+      create(
+        :pre_commit_requirement,
+        :mutation_test,
+        account: account,
+        project: project,
+        name: "mutant",
+        command: "bundle exec mutant run --since HEAD~1 --use rspec --jobs 1"
+      )
+      test_writing_run = create(:agent_run, project: project, tdd_phase: "test_writing")
+
+      host.install_quality_hooks(git_ops, test_writing_run)
+
+      expect(git_ops).to have_received(:install_git_hooks).with(
+        lint_command: [ "bundle exec rubocop" ],
+        test_command: [ "bundle exec rspec" ],
+        mutation_command: "true",
+        pre_commit_guard: a_string_including("tdd_phase=\"test_writing\"")
+      )
+    end
+
+    # @spec TDD-GUARD-009
+    it "keeps the mutation command during a test_fixing phase run" do
+      allow(project).to receive_messages(
+        detected_language: "ruby",
+        has_running_database_container?: true
+      )
+      create(
+        :pre_commit_requirement,
+        :mutation_test,
+        account: account,
+        project: project,
+        name: "mutant",
+        command: "bundle exec mutant run --since HEAD~1 --use rspec --jobs 1"
+      )
+      test_fixing_run = create(:agent_run, project: project, tdd_phase: "test_fixing")
+
+      host.install_quality_hooks(git_ops, test_fixing_run)
+
+      expect(git_ops).to have_received(:install_git_hooks).with(
+        lint_command: [ "bundle exec rubocop" ],
+        test_command: [ "bundle exec rspec" ],
+        mutation_command: "RAILS_ENV=test bundle exec mutant run --since HEAD\\~1 --use rspec --jobs 1 --results-dir .mutant/results",
+        pre_commit_guard: a_string_including("tdd_phase=\"test_fixing\"")
+      )
+    end
+
+    it "installs a frozen-test write guard during a refactor phase run" do
+      allow(project).to receive_messages(
+        detected_language: "ruby",
+        has_running_database_container?: true
+      )
+      refactor_run = create(:agent_run, project: project, tdd_phase: "refactor")
+
+      host.install_quality_hooks(git_ops, refactor_run)
+
+      expect(git_ops).to have_received(:install_git_hooks).with(
+        lint_command: [ "bundle exec rubocop" ],
+        test_command: [ "bundle exec rspec" ],
+        mutation_command: "true",
+        pre_commit_guard: a_string_including("tdd_phase=\"refactor\"")
+      )
+    end
   end
 
   describe "#resolve_mutation_command" do

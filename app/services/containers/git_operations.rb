@@ -377,8 +377,8 @@ module Containers
     # @param test_command [String, Array<String>] one or more test commands
     # @param mutation_command [String] command to run for mutation testing
     # @return [void]
-    def install_git_hooks(lint_command:, test_command:, mutation_command: "true") # @spec POLYGLOT-TEST-003
-      install_hook("pre-commit", pre_commit_script(lint_command, test_command, mutation_command))
+    def install_git_hooks(lint_command:, test_command:, mutation_command: "true", pre_commit_guard: nil) # @spec POLYGLOT-TEST-003
+      install_hook("pre-commit", pre_commit_script(lint_command, test_command, mutation_command, pre_commit_guard))
     rescue Error => e
       # Expected failures: hook write/chmod failed, unsafe command, etc.
       Rails.logger.warn(
@@ -1281,7 +1281,7 @@ module Containers
       raise Error, "Hook command contains unsafe characters: #{command.inspect}"
     end
 
-    def pre_commit_script(lint_command, test_command, mutation_command)
+    def pre_commit_script(lint_command, test_command, mutation_command, pre_commit_guard = nil)
       lint_commands = Array(lint_command)
       test_commands = Array(test_command)
       lint_commands.each { |cmd| validate_hook_command!(cmd) }
@@ -1294,6 +1294,7 @@ module Containers
         # All quality checks run here so the agent gets immediate feedback
         # and can fix issues before the commit succeeds.
 
+        #{pre_commit_guard}
         #{lint_section(lint_commands)}
         #{test_section(test_commands)}
         #{mutation_section(mutation_command)}

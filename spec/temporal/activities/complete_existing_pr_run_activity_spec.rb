@@ -192,6 +192,15 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
       expect(result[:pull_request_url]).to eq("https://github.com/#{project.full_name}/pull/42")
       expect(result[:pull_request_number]).to eq(42)
       expect(result[:pr_review_phase]).to eq("ready")
+      expect(result[:tdd_returned_to_test_review]).to be(false)
+    end
+
+    it "returns whether the run sent the PR back to test review" do
+      agent_run.update!(tdd_phase: "test_fixing", tdd_returned_to_test_review: true)
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:tdd_returned_to_test_review]).to be(true)
     end
 
     it "enqueues ProcessRunQueueJob" do

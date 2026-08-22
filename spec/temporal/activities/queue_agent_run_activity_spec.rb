@@ -171,6 +171,19 @@ RSpec.describe Activities::QueueAgentRunActivity do
       expect(agent_run.goal).to eq("review")
     end
 
+    it "persists an explicit tdd_phase override for refactor follow-up runs" do
+      result = activity.execute(
+        project_id: project.id,
+        issue_id: issue.id,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        tdd_phase: "refactor"
+      )
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.tdd_phase).to eq("refactor")
+    end
+
     it "inherits manual priority from the latest unsuccessful PR run" do
       create(:agent_run, :timeout,
         project: project,

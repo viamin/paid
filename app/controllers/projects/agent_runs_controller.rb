@@ -465,6 +465,7 @@ module Projects
         custom_prompt: prompt_for_retry(@agent_run),
         source_pull_request_number: @agent_run.source_pull_request_number,
         goal: @agent_run.goal,
+        tdd_phase: @agent_run.tdd_phase,
         **resolved_container_host_attributes(runner: retry_runner),
         trigger_type: "manual",
         status: "queued"
@@ -554,6 +555,7 @@ module Projects
         custom_prompt: prompt_for_retry(@agent_run),
         source_pull_request_number: @agent_run.source_pull_request_number,
         goal: @agent_run.goal,
+        tdd_phase: @agent_run.tdd_phase,
         **resolved_container_host_attributes(runner: @agent_run.runner),
         trigger_type: "manual",
         status: "queued"

@@ -118,6 +118,16 @@ RSpec.describe Activities::MarkAgentRunCompleteActivity do
       expect(agent_run.reload.status).to eq("completed")
     end
 
+    it "returns whether the run sent the PR back to test review" do
+      agent_run = create(:agent_run, :running, project: project,
+        tdd_phase: "test_fixing",
+        tdd_returned_to_test_review: true)
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:tdd_returned_to_test_review]).to be(true)
+    end
+
     it "enqueues ProcessRunQueueJob" do
       agent_run = create(:agent_run, :running, project: project)
 

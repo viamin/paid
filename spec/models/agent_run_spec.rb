@@ -67,6 +67,8 @@ RSpec.describe AgentRun do
     it { is_expected.to validate_inclusion_of(:focus).in_array(described_class::FOCUSES) }
     it { is_expected.to validate_inclusion_of(:execution_origin).in_array(described_class::EXECUTION_ORIGINS) }
     it { is_expected.to validate_presence_of(:trigger_type) }
+    # @spec TDD-GUARD-001
+    it { is_expected.to validate_inclusion_of(:tdd_phase).in_array(described_class::TDD_PHASES).allow_nil }
     it { is_expected.to validate_inclusion_of(:trigger_type).in_array(described_class::TRIGGER_TYPES) }
     it { is_expected.to validate_length_of(:created_issue_url).is_at_most(500) }
     it { is_expected.to validate_length_of(:worktree_path).is_at_most(500) }
@@ -635,6 +637,99 @@ RSpec.describe AgentRun do
         agent_run = build(:agent_run, goal: "create_pr")
 
         expect(agent_run.create_feature_goal?).to be false
+      end
+    end
+
+    # @spec TDD-GUARD-002
+    describe "TDD phase predicates" do
+      describe "default phase assignment" do
+        let(:project) { create(:project, tdd_mode: "strict") }
+
+        it "defaults issue-based create_pr runs to test_writing" do
+          run = create(:agent_run, project: project)
+
+          expect(run.tdd_phase).to eq("test_writing")
+        end
+
+        it "defaults PR follow-up runs awaiting test review to test_writing" do
+          create(:issue, :pull_request,
+            project: project,
+            github_number: 42,
+            labels: [ "paid-tests-ready-for-review" ])
+
+          run = create(:agent_run, :existing_pr, project: project)
+
+          expect(run.tdd_phase).to eq("test_writing")
+        end
+
+        it "defaults PR follow-up runs with approved tests to test_fixing" do
+          create(:issue, :pull_request,
+            project: project,
+            github_number: 42,
+            labels: [ "paid-tests-approved" ])
+
+          run = create(:agent_run, :existing_pr, project: project)
+
+          expect(run.tdd_phase).to eq("test_fixing")
+        end
+
+        it "defaults PR follow-up runs without a synced PR record to test_writing" do
+          run = create(:agent_run, :existing_pr, project: project)
+
+          expect(run.tdd_phase).to eq("test_writing")
+        end
+
+        it "preserves an explicitly assigned phase" do
+          run = create(:agent_run, project: project, tdd_phase: "refactor")
+
+          expect(run.tdd_phase).to eq("refactor")
+        end
+
+        it "leaves non-create_pr runs ungoverned" do
+          run = create(:agent_run, :review_goal, project: project)
+
+          expect(run.tdd_phase).to be_nil
+        end
+      end
+
+      describe "#tdd_test_writing_phase?" do
+        it "returns true when tdd_phase is test_writing" do
+          expect(build(:agent_run, tdd_phase: "test_writing").tdd_test_writing_phase?).to be true
+        end
+
+        it "returns false for other phases" do
+          expect(build(:agent_run, tdd_phase: "test_fixing").tdd_test_writing_phase?).to be false
+        end
+      end
+
+      describe "#tdd_test_fixing_phase?" do
+        it "returns true when tdd_phase is test_fixing" do
+          expect(build(:agent_run, tdd_phase: "test_fixing").tdd_test_fixing_phase?).to be true
+        end
+
+        it "returns false for other phases" do
+          expect(build(:agent_run, tdd_phase: "refactor").tdd_test_fixing_phase?).to be false
+        end
+      end
+
+      describe "#tdd_refactor_phase?" do
+        it "returns true when tdd_phase is refactor" do
+          expect(build(:agent_run, tdd_phase: "refactor").tdd_refactor_phase?).to be true
+        end
+
+        it "returns false for other phases" do
+          expect(build(:agent_run, tdd_phase: "test_writing").tdd_refactor_phase?).to be false
+        end
+      end
+
+      describe "#tdd_governed?" do
+        it "returns true when tdd_phase is present" do
+          expect(build(:agent_run, tdd_phase: "refactor").tdd_governed?).to be true
+        end
+
+        it "returns false when tdd_phase is nil" do
+          expect(build(:agent_run, tdd_phase: nil).tdd_governed?).to be false
+        end
       end
     end
 

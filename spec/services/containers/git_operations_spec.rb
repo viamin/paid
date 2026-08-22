@@ -1931,6 +1931,17 @@ RSpec.describe Containers::GitOperations do
       expect(pre_commit_script).to include("bundle exec mutant run")
     end
 
+    it "includes the run-scoped TDD guard when provided" do
+      captured = capture_pre_commit_hook(
+        lint_command: "bundle exec rubocop",
+        test_command: "bundle exec rspec",
+        mutation_command: "true",
+        pre_commit_guard: "echo tdd guard\n"
+      )
+
+      expect(captured).to include("echo tdd guard")
+    end
+
     it "emits one availability-checked block per command for a polyglot repo" do
       captured = capture_pre_commit_hook(
         lint_command: [ "bundle exec rubocop", "mix credo --strict" ],
