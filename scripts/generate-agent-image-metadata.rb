@@ -100,14 +100,18 @@ class AgentImageMetadataGenerator
     {
       "profiles" => {
         fetch("REQUESTED_IMAGE") => {
-          "default_reference" => provenance_reference,
-          "identities" => {
-            provenance_reference => {
-              "digest" => digest,
-              "architecture" => architecture,
-              "registry" => fetch("REGISTRY"),
-              "repository" => fetch("REPOSITORY"),
-              "status" => "active"
+          # Emit an additive patch so downstream activation can promote the new
+          # default reference without overwriting the full identities map.
+          "operations" => {
+            "set_default_reference" => provenance_reference,
+            "upsert_identities" => {
+              provenance_reference => {
+                "digest" => digest,
+                "architecture" => architecture,
+                "registry" => fetch("REGISTRY"),
+                "repository" => fetch("REPOSITORY"),
+                "status" => "active"
+              }
             }
           }
         }

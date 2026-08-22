@@ -89,14 +89,16 @@ RSpec.describe GenerateAgentImageMetadata, :no_db do # @spec IMMUTABLE-IMAGE-007
     expect(payload.fetch("runtime_catalog_patch")).to eq(
       "profiles" => {
         "paid-agent:latest" => {
-          "default_reference" => reference,
-          "identities" => {
-            reference => {
-              "digest" => "sha256:#{'a' * 64}",
-              "architecture" => "amd64",
-              "registry" => "ghcr.io",
-              "repository" => "viamin/paid-agent",
-              "status" => "active"
+          "operations" => {
+            "set_default_reference" => reference,
+            "upsert_identities" => {
+              reference => {
+                "digest" => "sha256:#{'a' * 64}",
+                "architecture" => "amd64",
+                "registry" => "ghcr.io",
+                "repository" => "viamin/paid-agent",
+                "status" => "active"
+              }
             }
           }
         }
