@@ -406,6 +406,7 @@ class LocalDockerRunner < Base
     def build_gateway(spec:, backend:)
       policy = spec.networking_policy
       return nil unless policy&.restricted?
+      return nil unless policy_uses_egress_gateway?(policy)
 
       snapshot = AgentRuns::EgressPolicy::Snapshot.from_record(spec.agent_run)
       return missing_snapshot_gateway!(agent_run: spec.agent_run) unless snapshot
@@ -554,6 +555,10 @@ class LocalDockerRunner < Base
       [ { ip: host, port: Integer(port) } ]
     rescue ArgumentError
       []
+    end
+
+    def policy_uses_egress_gateway?(policy)
+      !policy.no_outbound? && policy.mode != :proxy_only
     end
 
     # Returns the GitHub CIDR ranges the firewall should allow for the given

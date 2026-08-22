@@ -2923,7 +2923,7 @@ module Containers
         "GIT_COMMITTER_EMAIL=#{git_identity.email}"
       ])
 
-      env.concat(egress_proxy_environment) if @egress_gateway_url.present?
+      env.concat(egress_proxy_environment) if apply_egress_proxy_environment?
 
       env
     end
@@ -2984,6 +2984,12 @@ module Containers
         "NO_PROXY=#{no_proxy}",
         "no_proxy=#{no_proxy}"
       ]
+    end
+
+    def apply_egress_proxy_environment?
+      @egress_gateway_url.present? &&
+        !@networking_policy&.no_outbound? &&
+        @networking_policy&.mode != :proxy_only
     end
 
     # Hosts that must bypass the egress gateway and connect directly.

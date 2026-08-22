@@ -282,6 +282,50 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       runner.provision(spec: proxy_only_spec)
     end
 
+    it "does not thread the egress gateway into :no_outbound runs even when a snapshot exists" do
+      no_outbound_spec = ExecutionRunners::RunSpec.new(
+        **run_spec.to_h.merge(
+          networking_policy: ExecutionRunners::NetworkingPolicy.no_outbound
+        )
+      )
+      seed_snapshot!(mode: "no_outbound")
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      allow(provision_service).to receive(:provision).and_return(
+        Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
+      )
+
+      expect(Containers::Provision).to receive(:new)
+        .with(hash_including(egress_gateway_url: nil))
+        .and_return(provision_service)
+      expect(NetworkPolicy).to receive(:apply_firewall_rules)
+        .with(started_container, github_ips: [], proxy_host: false,
+              service_destinations: [], backend: backend)
+
+      runner.provision(spec: no_outbound_spec)
+    end
+
+    it "does not thread the egress gateway into :proxy_only runs even when a snapshot exists" do
+      proxy_only_spec = ExecutionRunners::RunSpec.new(
+        **run_spec.to_h.merge(
+          networking_policy: ExecutionRunners::NetworkingPolicy.proxy_only
+        )
+      )
+      seed_snapshot!(mode: "proxy_only")
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      allow(provision_service).to receive(:provision).and_return(
+        Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
+      )
+
+      expect(Containers::Provision).to receive(:new)
+        .with(hash_including(egress_gateway_url: nil))
+        .and_return(provision_service)
+      expect(NetworkPolicy).to receive(:apply_firewall_rules)
+        .with(started_container, github_ips: [], proxy_host: nil,
+              service_destinations: [], backend: backend)
+
+      runner.provision(spec: proxy_only_spec)
+    end
+
     it "translates the :git_plus_proxy intent to a firewall that allows the proxy and GitHub but not services" do
       git_proxy_spec = ExecutionRunners::RunSpec.new(
         **run_spec.to_h.merge(

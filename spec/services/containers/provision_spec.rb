@@ -381,6 +381,42 @@ RSpec.describe Containers::Provision do
     end
   end
 
+  # @spec EGRESS-POLICY-007
+  describe "#apply_egress_proxy_environment?" do
+    it "applies gateway proxy vars for gateway-enforced restricted policies" do
+      service = described_class.new(
+        agent_run: agent_run,
+        worktree_path: worktree_path,
+        egress_gateway_url: "egress-gateway:3128",
+        networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted
+      )
+
+      expect(service.send(:apply_egress_proxy_environment?)).to be(true)
+    end
+
+    it "skips gateway proxy vars for :no_outbound" do
+      service = described_class.new(
+        agent_run: agent_run,
+        worktree_path: worktree_path,
+        egress_gateway_url: "egress-gateway:3128",
+        networking_policy: ExecutionRunners::NetworkingPolicy.no_outbound
+      )
+
+      expect(service.send(:apply_egress_proxy_environment?)).to be(false)
+    end
+
+    it "skips gateway proxy vars for :proxy_only" do
+      service = described_class.new(
+        agent_run: agent_run,
+        worktree_path: worktree_path,
+        egress_gateway_url: "egress-gateway:3128",
+        networking_policy: ExecutionRunners::NetworkingPolicy.proxy_only
+      )
+
+      expect(service.send(:apply_egress_proxy_environment?)).to be(false)
+    end
+  end
+
   describe "#initialize" do
     it "stores agent_run and worktree_path" do
       expect(service.agent_run).to eq(agent_run)
