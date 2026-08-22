@@ -196,12 +196,16 @@ class ExecutionResource < ApplicationRecord # @spec CONTAINER-RUNTIME-030
   def clear_agent_run_references!
     return unless environment? && agent_run
 
-    updates = {}
-    updates[:container_id] = nil if agent_run.container_id == identifier
-    updates[:container_host] = nil if updates.key?(:container_id)
-
     stored_handle = ExecutionRunners::RunnerHandle.from_record(agent_run)
-    updates[:runner_handle] = nil if stored_handle&.identifier == identifier
+    container_matches = agent_run.container_id == identifier
+    handle_matches = stored_handle&.identifier == identifier
+
+    updates = {}
+    updates[:container_id] = nil if container_matches
+    updates[:runner_handle] = nil if handle_matches
+    if container_matches || (handle_matches && agent_run.container_id.blank?)
+      updates[:container_host] = nil
+    end
     agent_run.update_columns(updates) if updates.any?
   end
 

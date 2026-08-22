@@ -130,4 +130,38 @@ RSpec.describe ExecutionResource do
       expect(resource.reload.state).to eq("cleanup_pending")
     end
   end
+
+  describe "#mark_cleaned!" do
+    let(:project) { create(:project) }
+    let(:agent_run) { create(:agent_run, :completed, project: project, container_id: nil, container_host: "remote") }
+    let(:handle) do
+      ExecutionRunners::RunnerHandle.new(
+        runner_type: :local_docker,
+        identifier: "container-123",
+        host: "remote",
+        workspace_ref: "paid-workspace-#{agent_run.id}",
+        metadata: { "agent_run_id" => agent_run.id }
+      )
+    end
+    let(:resource) do
+      create(:execution_resource,
+        project: project,
+        agent_run: agent_run,
+        identifier: "container-123",
+        host: "remote")
+    end
+
+    before do
+      agent_run.update!(runner_handle: handle.to_storage)
+    end
+
+    it "clears a stale container_host when the persisted runner_handle still points at the cleaned environment" do
+      resource.mark_cleaned!
+
+      expect(agent_run.reload).to have_attributes(
+        container_host: nil,
+        runner_handle: nil
+      )
+    end
+  end
 end
