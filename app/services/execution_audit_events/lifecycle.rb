@@ -103,12 +103,27 @@ module ExecutionAuditEvents
       end
 
       def resource_ledger_id_for(agent_run:, resource_id:)
-        return if agent_run.blank? || resource_id.blank?
+        return if agent_run.blank?
 
-        agent_run.execution_resource_ledger_entries
-          .where(provider_resource_id: resource_id)
-          .order(id: :desc)
-          .pick(:id)
+        entries = agent_run.execution_resource_ledger_entries
+        ledger_id_by_provider_resource_id(entries: entries, resource_id: resource_id) ||
+          ledger_id_by_runner_handle(entries: entries, agent_run: agent_run)
+      end
+
+      def ledger_id_by_provider_resource_id(entries:, resource_id:)
+        return if resource_id.blank?
+
+        entries.where(provider_resource_id: resource_id).order(id: :desc).pick(:id)
+      end
+
+      # Falls back to matching the agent run's persisted runner handle when no
+      # provider resource id is available (or no row matches it) — the only
+      # durable identifier for execution-runner-backed resources.
+      def ledger_id_by_runner_handle(entries:, agent_run:)
+        runner_handle_id = agent_run.runner_handle&.dig("identifier")
+        return if runner_handle_id.blank?
+
+        entries.where("runner_handle ->> 'identifier' = ?", runner_handle_id).order(id: :desc).pick(:id)
       end
 
       def current_request_id
