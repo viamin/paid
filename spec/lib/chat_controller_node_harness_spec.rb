@@ -90,6 +90,19 @@ class ChatControllerNodeHarness
       }
     }
 
+    // updateViewportHeight reads window.scrollY so the measured panel offset is
+    // document-relative (scroll-invariant). Node has no `window`; stub it.
+    function withScrollY(scrollY, callback) {
+      const origWindow = globalThis.window;
+      globalThis.window = { scrollY };
+
+      try {
+        callback();
+      } finally {
+        globalThis.window = origWindow;
+      }
+    }
+
     function testToolCallAppendsCardAndUpdatesStatus() {
       const { controller, appended, statusMessages } = makeController();
 
@@ -489,6 +502,144 @@ class ChatControllerNodeHarness
       }
     }
 
+    function testUpdateViewportHeightTracksPanelOffset() {
+      const styleWrites = [];
+      const { controller } = makeController({
+        element: {
+          getBoundingClientRect: () => ({ top: 123.2 }),
+          style: {
+            setProperty: (name, value) => styleWrites.push({ name, value })
+          }
+        }
+      });
+
+      withScrollY(0, () => controller.updateViewportHeight());
+
+      if (styleWrites.length !== 1) {
+        throw new Error(`Expected 1 viewport height style write, got ${styleWrites.length}`);
+      }
+      if (styleWrites[0].name !== "--chat-panel-offset-top") {
+        throw new Error(`Expected viewport offset variable write, got ${styleWrites[0].name}`);
+      }
+      if (styleWrites[0].value !== "124px") {
+        throw new Error(`Expected viewport offset to round up to 124px, got ${styleWrites[0].value}`);
+      }
+    }
+
+    function testUpdateViewportHeightClampsNegativeOffset() {
+      const styleWrites = [];
+      const { controller } = makeController({
+        element: {
+          getBoundingClientRect: () => ({ top: -20 }),
+          style: {
+            setProperty: (name, value) => styleWrites.push({ name, value })
+          }
+        }
+      });
+
+      withScrollY(0, () => controller.updateViewportHeight());
+
+      if (styleWrites[0].value !== "0px") {
+        throw new Error(`Expected negative viewport offset to clamp to 0px, got ${styleWrites[0].value}`);
+      }
+    }
+
+    // A restoration visit can connect the controller while the page is already
+    // scrolled. Measuring viewport-relative would then understate the offset
+    // (here: 123 - 400, clamped to 0) and size the panel a whole viewport tall,
+    // handing the scroll role back to the document.
+    function testUpdateViewportHeightIsScrollInvariant() {
+      const styleWrites = [];
+      const { controller } = makeController({
+        element: {
+          getBoundingClientRect: () => ({ top: 123.2 - 400 }),
+          style: {
+            setProperty: (name, value) => styleWrites.push({ name, value })
+          }
+        }
+      });
+
+      withScrollY(400, () => controller.updateViewportHeight());
+
+      if (styleWrites[0].value !== "124px") {
+        throw new Error(`Expected scrolled page to measure the same 124px offset, got ${styleWrites[0].value}`);
+      }
+    }
+
+    // The reopen CTA lives inside the workspace disclosure, so un-hiding it is
+    // not enough — a chat whose workspace stops would show no way to recover.
+    function testStoppedCapabilityUnfoldsItsDisclosure() {
+      const attributes = [];
+      const details = { setAttribute: (name, value) => attributes.push({ name, value }) };
+      const reopenForm = {
+        classList: { contains: (cls) => cls === "hidden", toggle: () => {} },
+        closest: (selector) => (selector === "details" ? details : null)
+      };
+      const { controller } = makeController({
+        element: {
+          querySelectorAll: (selector) => (
+            selector === "[data-chat-capability-stopped-only]" ? [ reopenForm ] : []
+          )
+        }
+      });
+
+      controller.updateCapabilityActions("stopped");
+
+      if (!attributes.some((attr) => attr.name === "open")) {
+        throw new Error("Expected a revealed stopped-only action to open its <details> disclosure");
+      }
+    }
+
+    // ...but a capability that hides the action must not yank the disclosure
+    // open, or an unrelated capability broadcast would expand the header.
+    function testHiddenCapabilityActionLeavesDisclosureAlone() {
+      const attributes = [];
+      const details = { setAttribute: (name, value) => attributes.push({ name, value }) };
+      const cloneForm = {
+        classList: { contains: () => false, toggle: () => {} },
+        closest: () => details
+      };
+      const { controller } = makeController({
+        element: {
+          querySelectorAll: (selector) => (
+            selector === "[data-chat-capability-ready-only]" ? [ cloneForm ] : []
+          )
+        }
+      });
+
+      controller.updateCapabilityActions("stopped");
+
+      if (attributes.length !== 0) {
+        throw new Error("Expected a hidden ready-only action to leave its <details> untouched");
+      }
+    }
+
+    // Snapshot broadcasts re-send the current capability. Reopening the
+    // disclosure on every same-state payload would fight a user who
+    // intentionally collapsed Workspace, so an action that was already visible
+    // must leave its <details> disclosure untouched.
+    function testSameStateBroadcastLeavesDisclosureAlone() {
+      const attributes = [];
+      const details = { setAttribute: (name, value) => attributes.push({ name, value }) };
+      const alreadyVisibleForm = {
+        classList: { contains: () => false, toggle: () => {} },
+        closest: (selector) => (selector === "details" ? details : null)
+      };
+      const { controller } = makeController({
+        element: {
+          querySelectorAll: (selector) => (
+            selector === "[data-chat-capability-stopped-only]" ? [ alreadyVisibleForm ] : []
+          )
+        }
+      });
+
+      controller.updateCapabilityActions("stopped");
+
+      if (attributes.length !== 0) {
+        throw new Error("Expected a same-state broadcast to leave the disclosure untouched when the action was already visible");
+      }
+    }
+
     function run() {
       testToolCallAppendsCardAndUpdatesStatus();
       testToolCallWithUnknownToolName();
@@ -510,6 +661,12 @@ class ChatControllerNodeHarness
       testScrollToTopScrollsToZero();
       testHandleScrollShowsBackToTopWhenScrolled();
       testHandleScrollHidesBackToTopAtTop();
+      testUpdateViewportHeightTracksPanelOffset();
+      testUpdateViewportHeightClampsNegativeOffset();
+      testUpdateViewportHeightIsScrollInvariant();
+      testStoppedCapabilityUnfoldsItsDisclosure();
+      testHiddenCapabilityActionLeavesDisclosureAlone();
+      testSameStateBroadcastLeavesDisclosureAlone();
     }
 
     try {

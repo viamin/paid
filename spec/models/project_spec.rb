@@ -35,6 +35,7 @@ RSpec.describe Project do
     it { is_expected.to validate_numericality_of(:token_limit_warning_threshold).only_integer.is_greater_than_or_equal_to(1).is_less_than_or_equal_to(100) }
     it { is_expected.to validate_numericality_of(:max_execution_seconds).only_integer.is_greater_than_or_equal_to(60).is_less_than_or_equal_to(86_400) }
     it { is_expected.to validate_inclusion_of(:data_classification).in_array(described_class::DATA_CLASSIFICATIONS) }
+    it { is_expected.to validate_inclusion_of(:tdd_mode).in_array(described_class::TDD_MODES) }
 
     it "defaults max_execution_seconds to 7200" do
       project = build(:project)
@@ -45,6 +46,40 @@ RSpec.describe Project do
       project = build(:project)
 
       expect(project.data_classification).to eq("internal")
+    end
+
+    it "defaults tdd_mode to off" do # @spec TDD-MODE-001
+      project = build(:project)
+
+      expect(project.tdd_mode).to eq("off")
+    end
+
+    it "accepts each value in Project::TDD_MODES" do # @spec TDD-MODE-002
+      described_class::TDD_MODES.each do |mode|
+        project = build(:project, tdd_mode: mode)
+        expect(project).to be_valid, "expected tdd_mode=#{mode.inspect} to be valid"
+      end
+    end
+
+    it "rejects an unknown tdd_mode value" do # @spec TDD-MODE-002
+      project = build(:project, tdd_mode: "maybe")
+
+      expect(project).not_to be_valid
+      expect(project.errors[:tdd_mode]).to be_present
+    end
+
+    it "rejects a nil tdd_mode" do # @spec TDD-MODE-002
+      project = build(:project, tdd_mode: nil)
+
+      expect(project).not_to be_valid
+      expect(project.errors[:tdd_mode]).to be_present
+    end
+
+    it "persists tdd_mode and reads it back unchanged" do # @spec TDD-MODE-001
+      project = create(:project, tdd_mode: "strict")
+      reloaded = described_class.find(project.id)
+
+      expect(reloaded.tdd_mode).to eq("strict")
     end
 
     it "validates knowledge_status inclusion" do
@@ -546,6 +581,21 @@ RSpec.describe Project do
 
       it "returns false for other classifications" do
         expect(build(:project, data_classification: "confidential")).not_to be_restricted
+      end
+    end
+
+    describe "#tdd_mode_label" do # @spec TDD-MODE-005
+      it "returns the human-readable label for each supported mode" do
+        Project::TDD_MODES.each do |mode|
+          expect(build(:project, tdd_mode: mode).tdd_mode_label).to eq(Project::TDD_MODE_LABELS[mode])
+        end
+      end
+
+      it "falls back to titleizing the raw value when the mode is unknown" do
+        project = build(:project)
+        project.tdd_mode = "experimental"
+
+        expect(project.tdd_mode_label).to eq("Experimental")
       end
     end
 

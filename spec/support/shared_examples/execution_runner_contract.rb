@@ -55,6 +55,41 @@ RSpec.shared_examples "an ExecutionRunner implementation" do
     end
   end
 
+  # @spec CONTAINER-RUNTIME-025
+  # @spec CONTAINER-RUNTIME-026
+  describe "provisioning ledger and ownership tags (RDR-060)" do
+    before do
+      skip "runner does not identify a resource kind" unless runner.respond_to?(:resource_kind) && runner.resource_kind.present?
+    end
+
+    it "records a provisioning-intent ledger row before provisioning" do
+      expect { runner.provision(spec: run_spec) }.to change(ProvisioningIntent, :count).by_at_least(1)
+    end
+
+    it "links the provisioned resource and runner handle back to the ledger row" do
+      handle = runner.provision(spec: run_spec)
+
+      intent = ProvisioningIntent.order(:id).last
+      expect(intent.provider_resource_id).to eq(handle.identifier)
+      expect(intent.runner_handle).to be_present
+      expect(intent.status).to eq("linked")
+    end
+
+    it "applies the stable Paid ownership tags to the ledger row" do
+      runner.provision(spec: run_spec)
+
+      intent = ProvisioningIntent.order(:id).last
+      expected_tag_names = ExecutionRunners::REQUIRED_OWNERSHIP_TAG_NAMES.map { |name| "paid.#{name}" }
+
+      expect(intent.ownership_tags).to include(*expected_tag_names)
+    end
+
+    it "declares whether it can tag and list resources" do
+      expect(runner.supports_tagging?).to be_in([ true, false ])
+      expect(runner.supports_listing?).to be_in([ true, false ])
+    end
+  end
+
   describe "class-level checks" do
     it "returns a compatibility result from .compatible?" do
       result = described_class.compatible?(spec: run_spec, backend: backend)

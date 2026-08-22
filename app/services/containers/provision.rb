@@ -241,7 +241,8 @@ module Containers
     #   intended caller — direct callers should leave it nil and keep the
     #   existing fallback behavior.
     def initialize(agent_run: nil, project: nil, worktree_path: nil, pool_entry: nil, workspace_volume: nil,
-      backend: Containers.backend, networking_policy: nil, credential_maintenance: false, **options)
+      backend: Containers.backend, networking_policy: nil, credential_maintenance: false,
+      egress_gateway_url: nil, **options)
       raise ArgumentError, "agent_run or project is required" if agent_run.nil? && project.nil? && !credential_maintenance
 
       if options.key?(:network)
@@ -260,6 +261,8 @@ module Containers
       @preview_tunnel_option = options.delete(:preview_tunnel)
       @pool_mode = options.delete(:pool_mode) { false }
       @networking_policy = networking_policy
+      @egress_gateway_url = egress_gateway_url
+      @ownership_labels = options.delete(:ownership_labels) { {} }
       @raw_options = options
       @backend = backend
       @container = nil
@@ -2533,7 +2536,7 @@ module Containers
       labels["paid.container_pool_entry_id"] = pool_entry.id.to_s if pool_entry
 
       {
-        "Labels" => labels
+        "Labels" => labels.merge(@ownership_labels.except("paid.resource"))
       }
     end
 
@@ -2556,7 +2559,7 @@ module Containers
         labels[Previews::TunnelManager::PREVIEW_SERVICE_NAME_LABEL] = preview_tunnel.service_name
         labels[Previews::TunnelManager::PREVIEW_TUNNEL_PORT_LABEL] = preview_tunnel.tunnel_port.to_s
       end
-      labels
+      labels.merge(@ownership_labels)
     end
 
     def create_container
@@ -2921,6 +2924,8 @@ module Containers
         "GIT_COMMITTER_EMAIL=#{git_identity.email}"
       ])
 
+      env.concat(egress_proxy_environment) if apply_egress_proxy_environment?
+
       env
     end
 
@@ -2961,6 +2966,55 @@ module Containers
         harness_key = RunnerSupport.harness_runner_key_for(key).to_sym
         AgentHarness.provider(harness_key).cli_env_overrides.map { |k, v| "#{k}=#{v}" }
       end
+    end
+
+    # HTTP(S)_PROXY environment variables that route the agent container's
+    # outbound traffic through the egress gateway (RDR-055). The gateway
+    # inspects every CONNECT/HTTP request and allows only destinations on
+    # the per-run allowlist. NO_PROXY exempts Paid-local services that
+    # the container already reaches directly via iptables rules.
+    def egress_proxy_environment
+      proxy_url = "http://#{@egress_gateway_url}"
+      no_proxy = egress_no_proxy_hosts.join(",")
+
+      [
+        "HTTP_PROXY=#{proxy_url}",
+        "HTTPS_PROXY=#{proxy_url}",
+        "http_proxy=#{proxy_url}",
+        "https_proxy=#{proxy_url}",
+        "NO_PROXY=#{no_proxy}",
+        "no_proxy=#{no_proxy}"
+      ]
+    end
+
+    def apply_egress_proxy_environment?
+      @egress_gateway_url.present? &&
+        !@networking_policy&.no_outbound? &&
+        @networking_policy&.mode != :proxy_only
+    end
+
+    # Hosts that must bypass the egress gateway and connect directly.
+    # These are Paid-local services on the restricted Docker network
+    # whose traffic should never leave the platform perimeter.
+    def egress_no_proxy_hosts
+      hosts = %w[localhost 127.0.0.1 paid-proxy egress-gateway]
+      hosts.concat(run_service_container_hosts)
+      hosts << "*.internal" # Docker internal DNS
+      hosts
+    end
+
+    # Per-run service-container aliases (e.g. SELENIUM_URL's paid-svc-* host)
+    # that the run's SERVICE_*_HOST env vars already point at. The firewall
+    # allows these directly, but the egress gateway allowlist only contains
+    # the run's egress-policy snapshot destinations, so proxying this traffic
+    # through the gateway would be denied. Derived via ServiceRuntimeNaming
+    # (see its module comment) rather than the user-facing service name,
+    # which is not resolvable on the network.
+    def run_service_container_hosts
+      ids = Array(agent_run&.service_container_ids)
+      return [] if ids.blank?
+
+      ServiceContainer.where(id: ids).map { |service| ServiceRuntimeNaming.runtime_name(service) }
     end
 
     def exec_environment(env)

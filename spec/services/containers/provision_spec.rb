@@ -357,6 +357,66 @@ RSpec.describe Containers::Provision do
     end
   end
 
+  # @spec EGRESS-POLICY-007
+  describe "#egress_no_proxy_hosts" do
+    let(:egress_service) { described_class.new(agent_run: agent_run, worktree_path: worktree_path, egress_gateway_url: "egress-gateway:3128") }
+
+    it "always bypasses the gateway/proxy hosts and the Docker-internal wildcard" do
+      expect(egress_service.send(:egress_no_proxy_hosts)).to include(
+        "localhost", "127.0.0.1", "paid-proxy", "egress-gateway", "*.internal"
+      )
+    end
+
+    it "exempts this run's service-container runtime aliases so local service traffic bypasses the gateway" do
+      selenium = create(:service_container, :running, :selenium, account: project.account)
+      agent_run.update!(service_container_ids: [ selenium.id ])
+
+      expect(egress_service.send(:egress_no_proxy_hosts)).to include(Containers::ServiceRuntimeNaming.runtime_name(selenium))
+    end
+
+    it "does not query service containers when the run has none provisioned" do
+      expect(ServiceContainer).not_to receive(:where)
+
+      egress_service.send(:egress_no_proxy_hosts)
+    end
+  end
+
+  # @spec EGRESS-POLICY-007
+  describe "#apply_egress_proxy_environment?" do
+    it "applies gateway proxy vars for gateway-enforced restricted policies" do
+      service = described_class.new(
+        agent_run: agent_run,
+        worktree_path: worktree_path,
+        egress_gateway_url: "egress-gateway:3128",
+        networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted
+      )
+
+      expect(service.send(:apply_egress_proxy_environment?)).to be(true)
+    end
+
+    it "skips gateway proxy vars for :no_outbound" do
+      service = described_class.new(
+        agent_run: agent_run,
+        worktree_path: worktree_path,
+        egress_gateway_url: "egress-gateway:3128",
+        networking_policy: ExecutionRunners::NetworkingPolicy.no_outbound
+      )
+
+      expect(service.send(:apply_egress_proxy_environment?)).to be(false)
+    end
+
+    it "skips gateway proxy vars for :proxy_only" do
+      service = described_class.new(
+        agent_run: agent_run,
+        worktree_path: worktree_path,
+        egress_gateway_url: "egress-gateway:3128",
+        networking_policy: ExecutionRunners::NetworkingPolicy.proxy_only
+      )
+
+      expect(service.send(:apply_egress_proxy_environment?)).to be(false)
+    end
+  end
+
   describe "#initialize" do
     it "stores agent_run and worktree_path" do
       expect(service.agent_run).to eq(agent_run)
@@ -1288,6 +1348,28 @@ RSpec.describe Containers::Provision do
               "paid.project_id" => project.id.to_s
             }
           }
+        )
+      end
+
+      it "preserves the workspace-volume resource kind when ownership labels are merged" do
+        service = described_class.new(
+          agent_run: agent_run,
+          ownership_labels: {
+            "paid.resource" => "container",
+            "paid.environment" => "test"
+          }
+        )
+
+        service.provision
+
+        expect(Docker::Volume).to have_received(:create).with(
+          "paid-workspace-#{agent_run.id}",
+          hash_including(
+            "Labels" => hash_including(
+              "paid.resource" => "workspace_volume",
+              "paid.environment" => "test"
+            )
+          )
         )
       end
 

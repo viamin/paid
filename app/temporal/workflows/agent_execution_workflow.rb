@@ -125,6 +125,8 @@ module Workflows
         Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT
       )
       max_execution_seconds = agent_run_result[:max_execution_seconds]
+      tdd_phase = agent_run_result[:tdd_phase]
+      runner_id = agent_run_result[:runner_id]
 
       if agent_run_result[:paused]
         return { success: false, paused: true, agent_run_id: agent_run_id }
@@ -369,6 +371,17 @@ module Workflows
 
               # Draft a decision record for existing PR changes (best-effort)
               draft_decision_record(agent_run_id)
+              queue_refactor_followup_if_needed(
+                goal: goal,
+                tdd_phase: tdd_phase,
+                tdd_returned_to_test_review: complete_result[:tdd_returned_to_test_review],
+                project_id: project_id,
+                issue_id: issue_id,
+                source_pull_request_number: source_pull_request_number,
+                focus: focus,
+                runner_id: runner_id,
+                initiating_user_id: input[:initiating_user_id]
+              )
             end
           else
             # Step 6: Create PR
@@ -436,6 +449,17 @@ module Workflows
           # previous run may have pushed a fix the bot has not reviewed yet.
           if source_pull_request_number && !complete_result[:skipped]
             request_review_bot_review(project_id, source_pull_request_number)
+            queue_refactor_followup_if_needed(
+              goal: goal,
+              tdd_phase: tdd_phase,
+              tdd_returned_to_test_review: complete_result[:tdd_returned_to_test_review],
+              project_id: project_id,
+              issue_id: issue_id,
+              source_pull_request_number: source_pull_request_number,
+              focus: focus,
+              runner_id: runner_id,
+              initiating_user_id: input[:initiating_user_id]
+            )
           end
         end
 
@@ -597,6 +621,26 @@ module Workflows
           end
         end
       end
+    end
+
+    def queue_refactor_followup_if_needed(goal:, tdd_phase:, tdd_returned_to_test_review:, project_id:, issue_id:, source_pull_request_number:, focus:, runner_id:, initiating_user_id:)
+      return unless goal == "create_pr"
+      return unless tdd_phase == "test_fixing"
+      return if tdd_returned_to_test_review
+      return if source_pull_request_number.blank?
+
+      run_activity(Activities::QueueAgentRunActivity,
+        {
+          project_id: project_id,
+          issue_id: issue_id,
+          source_pull_request_number: source_pull_request_number,
+          goal: "create_pr",
+          focus: focus,
+          runner_id: runner_id,
+          initiating_user_id: initiating_user_id,
+          tdd_phase: "refactor"
+        }.compact,
+        timeout: 30)
     end
 
     private

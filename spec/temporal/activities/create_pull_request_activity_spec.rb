@@ -862,6 +862,13 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
           Maintenance overhead.
 
+          ## Rollout Guard
+
+          Feature flag: dark_mode, default off.
+          Enablement surface: `/tenant_configuration`.
+          Implementation issue: add `dark_mode` to `FeatureFlags::DEFINITIONS`
+          and guard runtime behavior with `FeatureFlags.enabled?(:dark_mode, project:)`.
+
           ## Implementation Plan
 
           Three phases.
@@ -987,6 +994,87 @@ RSpec.describe Activities::CreatePullRequestActivity do
             activity.execute(agent_run_id: feature_agent_run.id)
           }.to raise_error(RuntimeError, /output contract violated/)
         end
+      end
+    end
+
+    # @spec TDD-GUARD-006
+    context "when the run is TDD-governed" do
+      let(:tdd_phase) { "refactor" }
+      let(:tdd_agent_run) do
+        create(:agent_run, :with_git_context, project: project, tdd_phase: tdd_phase, issue: nil, custom_prompt: "Fix the widget model")
+      end
+
+      before do
+        tdd_agent_run.update!(result_commit_sha: "abc123def456789012345678901234567890abcd")
+      end
+
+      context "when in test_writing phase" do
+        let(:tdd_phase) { "test_writing" }
+
+        it "raises when implementation files are changed" do
+          allow(github_client).to receive(:compare_changed_files)
+            .and_return([ "spec/models/widget_spec.rb", "app/models/widget.rb" ])
+
+          expect {
+            activity.execute(agent_run_id: tdd_agent_run.id)
+          }.to raise_error(RuntimeError, /TDD write guard violation/)
+        end
+
+        it "does not raise when only test files are changed" do
+          allow(github_client).to receive(:compare_changed_files)
+            .and_return([ "spec/models/widget_spec.rb" ])
+
+          expect { activity.execute(agent_run_id: tdd_agent_run.id) }.not_to raise_error
+        end
+      end
+
+      context "when in test_fixing phase" do
+        let(:tdd_phase) { "test_fixing" }
+
+        it "raises when test files are changed without returning to test review" do
+          allow(github_client).to receive(:compare_changed_files)
+            .and_return([ "app/models/widget.rb", "spec/models/widget_spec.rb" ])
+
+          expect {
+            activity.execute(agent_run_id: tdd_agent_run.id)
+          }.to raise_error(RuntimeError, /TDD write guard violation/)
+        end
+
+        it "does not raise when test files are changed after returning to test review" do
+          tdd_agent_run.update!(tdd_returned_to_test_review: true)
+          allow(github_client).to receive(:compare_changed_files)
+            .and_return([ "app/models/widget.rb", "spec/models/widget_spec.rb" ])
+
+          expect { activity.execute(agent_run_id: tdd_agent_run.id) }.not_to raise_error
+        end
+      end
+
+      context "when in refactor phase" do
+        let(:tdd_phase) { "refactor" }
+
+        it "raises when test files are changed" do
+          allow(github_client).to receive(:compare_changed_files)
+            .and_return([ "app/models/widget.rb", "spec/models/widget_spec.rb" ])
+
+          expect {
+            activity.execute(agent_run_id: tdd_agent_run.id)
+          }.to raise_error(RuntimeError, /TDD write guard violation/)
+        end
+
+        it "does not raise when only implementation files are changed" do
+          allow(github_client).to receive(:compare_changed_files)
+            .and_return([ "app/models/widget.rb" ])
+
+          expect { activity.execute(agent_run_id: tdd_agent_run.id) }.not_to raise_error
+        end
+      end
+
+      it "raises when changed file data is unavailable" do
+        tdd_agent_run_no_sha = create(:agent_run, project: project, tdd_phase: "refactor", issue: nil, custom_prompt: "Fix the widget model")
+
+        expect {
+          activity.execute(agent_run_id: tdd_agent_run_no_sha.id)
+        }.to raise_error(RuntimeError, /requires changed file data/)
       end
     end
 

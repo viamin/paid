@@ -50,6 +50,15 @@ module Activities
           enforce_create_feature_contract!(agent_run, changed_files: changed_files, client: client)
         end
 
+        # RDR-056 (Strict TDD): reject test_writing/test_fixing/refactor runs
+        # that alter files outside their allowed write boundary before the PR
+        # is created or updated. Runs regardless of goal, so mutation-driven
+        # fixes are held to the same boundary as manual edits.
+        # @spec TDD-GUARD-004
+        if agent_run.tdd_governed?
+          validate_tdd_write_guard!(agent_run, client)
+        end
+
         if existing_pr
           pr = existing_pr
           pr_action = "reused"
@@ -931,6 +940,37 @@ module Activities
 
     def create_feature_allowed?(path)
       CREATE_FEATURE_ALLOWED_PATTERNS.any? { |pattern| path.match?(pattern) }
+    end
+
+    # Validates that a TDD-governed run (test_writing/test_fixing/refactor)
+    # only touched files within its phase's write boundary. Raises when
+    # forbidden files are detected or when the changed file list is
+    # unavailable, mirroring the lid_planning/create_feature guards above —
+    # the boundary is server-side enforced, so skipping validation because
+    # comparison data is unavailable would defeat it.
+    # @spec TDD-GUARD-004
+    def validate_tdd_write_guard!(agent_run, client)
+      changed_files = fetch_changed_files(agent_run, client)
+      if changed_files.nil?
+        raise "TDD write guard validation requires changed file data (missing client or commit SHAs)"
+      end
+
+      result = Tdd::WriteGuard.call(agent_run: agent_run, changed_files: changed_files)
+      return if result.valid?
+
+      logger.error(
+        message: "agent_execution.tdd_write_guard_violation",
+        agent_run_id: agent_run.id,
+        tdd_phase: result.phase,
+        forbidden_files: result.forbidden_files,
+        total_changed: changed_files.size
+      )
+      agent_run.log!(
+        "system",
+        "TDD write guard violation (#{result.phase}): #{result.reason}. " \
+        "Forbidden files: #{result.forbidden_files.to_sentence}. The run is aborted."
+      )
+      raise "TDD write guard violation (#{result.phase}): #{result.forbidden_files.join(', ')}"
     end
 
     def create_feature_pr_title(agent_run)

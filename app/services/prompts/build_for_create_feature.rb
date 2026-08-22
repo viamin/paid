@@ -4,6 +4,7 @@ module Prompts
   # @spec CREATE-FEATURE-001
   # @spec CREATE-FEATURE-002
   # @spec CREATE-FEATURE-003
+  # @spec RDR-ROLLOUT-GUARD-003
   #
   # Builds the agent prompt for a `create_feature` run. The run is responsible
   # for taking a structured feature brief (collected via chat or the
@@ -63,6 +64,7 @@ module Prompts
          - Proposed Solution (with rationale)
          - Alternatives Considered
          - Trade-offs and Consequences
+         - Rollout Guard
          - Implementation Plan (phases/steps)
          - Validation (testing approach and scenarios)
       4. **Update the index**: Add a row for the new RDR to `docs/rdrs/README.md`
@@ -94,6 +96,15 @@ module Prompts
         No code, no test, no config edits in the same PR.
       - **Issues reference the RDR.** Every filed issue must link back to the
         RDR by number so the tree is traceable to the specification.
+      - **Guard incomplete runtime behavior.** If the RDR changes runtime
+        behavior, its `## Rollout Guard` section must name a feature flag or
+        config gate, default state, enablement surface, rollback action, and
+        cleanup criteria. For feature flags, name the implementation issue that
+        adds the key to `FeatureFlags::DEFINITIONS` and wires the runtime
+        decision through `FeatureFlags.enabled?(:flag_name, project:)`. Use
+        `docs-only`, `migration-only`, or `none required` only with a short
+        justification. Implementation issues must preserve that guard until the
+        RDR closeout audit marks the behavior complete and safe by default.
       - **Lint and tests MUST pass** for any non-RDR changes (none expected in
         this run).
 

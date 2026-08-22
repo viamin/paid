@@ -104,6 +104,7 @@ RSpec.describe ExecutionRunners::Base do
 
       expect(instance_methods).to contain_exactly(
         :provision, :start, :running?, :reconnect, :status, :cancel, :cleanup,
+        :resource_kind, :supports_tagging?, :supports_listing?,
         :supports_resource_listing?, :list_resources, :cleanup_resource
       )
 

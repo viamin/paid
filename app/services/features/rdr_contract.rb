@@ -50,9 +50,16 @@ module Features
       "Proposed Solution",
       "Alternatives Considered",
       "Trade-offs and Consequences",
+      # @spec RDR-ROLLOUT-GUARD-001
+      "Rollout Guard",
       "Implementation Plan",
       "Validation"
     ].freeze
+    FEATURE_FLAG_GUARD_REQUIREMENTS = {
+      "feature flag definition: FeatureFlags::DEFINITIONS" => /FeatureFlags::DEFINITIONS/,
+      "feature flag runtime check: FeatureFlags.enabled?" => /FeatureFlags\.enabled\?/,
+      "feature flag enablement surface" => /enablement surface/i
+    }.freeze
 
     Result = Data.define(:new_rdr_path, :valid?, :missing, :index_updated) do
       alias_method :valid?, :valid?
@@ -93,6 +100,7 @@ module Features
       gaps = []
       gaps << "new RDR under #{RDRS_DIR}/ (RDR-NNN-*.md)" if new_rdr_path.nil?
       gaps.concat(section_gaps) if new_rdr_path
+      gaps.concat(feature_flag_guard_gaps) if new_rdr_path
       gaps << "RDR index update (#{INDEX_PATH})" unless index_updated?
       gaps
     end
@@ -101,6 +109,21 @@ module Features
       body = contents.fetch(new_rdr_path, "")
       REQUIRED_SECTIONS.reject { |section| body.include?("## #{section}") }
                        .map { |section| "RDR section: ## #{section}" }
+    end
+
+    # @spec RDR-ROLLOUT-GUARD-003
+    def feature_flag_guard_gaps
+      guard = section_body("Rollout Guard")
+      return [] unless guard.match?(/feature flag|FeatureFlags/i)
+
+      FEATURE_FLAG_GUARD_REQUIREMENTS.filter_map do |label, pattern|
+        "RDR rollout guard: #{label}" unless guard.match?(pattern)
+      end
+    end
+
+    def section_body(section)
+      body = contents.fetch(new_rdr_path, "")
+      body[/^## #{Regexp.escape(section)}\s*\n(?<section_body>.*?)(?=^## |\z)/m, :section_body].to_s
     end
 
     def index_updated?

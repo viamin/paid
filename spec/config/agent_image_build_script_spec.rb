@@ -70,6 +70,22 @@ RSpec.describe AgentImageBuildScript, :no_db do
     it "skips the runtime role guard for the agent-image job's metadata-only Ruby subprocesses" do
       expect(workflow_source).to include("env:\n      PAID_SKIP_DATABASE_RUNTIME_ROLE_GUARD: \"true\"")
     end
+
+    it "avoids action-managed Bundler caching in the artifact-publishing job" do
+      expect(workflow_source).to include("uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b")
+      expect(workflow_source).not_to include("bundler-cache: true")
+      expect(workflow_source).to include("name: Install Ruby dependencies")
+      expect(workflow_source).to include("run: bundle install --jobs 4 --retry 3")
+    end
+
+    it "generates and uploads a smoke-tested image metadata artifact" do
+      expect(workflow_source).to include("id: build-paid-agent")
+      expect(workflow_source).to include("id: image-digest")
+      expect(workflow_source).to include("bundle exec ruby scripts/generate-agent-image-metadata.rb")
+      expect(workflow_source).to include("VERIFIED_CHECKS: smoke_test,runner_contract_smoke_test")
+      expect(workflow_source).to include("uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1")
+      expect(workflow_source).to include("path: tmp/agent-image-metadata.json")
+    end
   end
 
   describe AgentImageDockerfile do

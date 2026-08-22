@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_21_135405) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_22_000026) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -329,6 +329,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_21_135405) do
     t.string "status", limit: 50, default: "queued", null: false
     t.jsonb "streaming_turns_data", default: [], null: false, comment: "Per-turn metrics from streaming JSONL events (turn number, tokens, duration)"
     t.boolean "synthetic", default: false, null: false, comment: "Operational-only run that reuses the agent-run lifecycle to drive infrastructure (e.g. live-preview provisioning) but never executes a real agent or produces a PR/issue/review artifact. Excluded from user-facing run history and totals. Keyed off this flag rather than agent_type because internal_agent is shared with legitimate externally-ingested runs."
+    t.string "tdd_phase", comment: "RDR-056 TDD phase governing this run's write guard: test_writing | test_fixing | refactor | null (not TDD-governed)"
+    t.boolean "tdd_returned_to_test_review", default: false, null: false, comment: "RDR-056: true once this test_fixing run has reset the PR to test review, permitting it to alter tests"
     t.string "temporal_run_id", limit: 255
     t.string "temporal_workflow_id", limit: 255
     t.string "token_limit_status", limit: 50
@@ -2269,6 +2271,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_21_135405) do
     t.jsonb "screenshot_settings", default: {}, null: false, comment: "Project-level defaults and overrides for repository screenshot capture config"
     t.jsonb "screenshot_status", default: {}, null: false, comment: "Latest screenshot capture status shown in project settings."
     t.jsonb "security_alert_types", default: ["code_scanning"], null: false
+    t.string "tdd_mode", default: "off", null: false, comment: "Project-level TDD mode from RDR-056: off | non_strict | strict"
     t.integer "token_budget_max_input_tokens", comment: "Per-run input token budget; runs exceeding it without output are terminated early (nil = defer to provider/global default)"
     t.integer "token_limit_warning_threshold", default: 80, null: false
     t.bigint "total_cost_cents", default: 0, null: false
@@ -2357,6 +2360,32 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_21_135405) do
     t.index ["user_id", "api_service_type"], name: "index_provider_api_keys_on_user_id_and_api_service_type"
     t.index ["user_id", "name"], name: "index_provider_api_keys_on_user_id_and_name", unique: true
     t.index ["user_id"], name: "index_provider_api_keys_on_user_id"
+  end
+
+  create_table "provisioning_intents", comment: "Execution-resource provisioning-intent ledger rows recording runner intent before provider create calls so orphaned resources remain reconcileable (RDR-060).", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Owning account (ownership tag 'account')."
+    t.bigint "agent_run_id", comment: "Agent run the resource was provisioned for (ownership tag 'run')."
+    t.integer "attempt", default: 0, null: false, comment: "Provision attempt ordinal for this run/resource kind (ownership tag 'attempt')."
+    t.datetime "created_at", null: false
+    t.string "environment", limit: 100, null: false, comment: "Paid deployment environment the resource belongs to (ownership tag 'environment')."
+    t.jsonb "metadata", default: {}, null: false, comment: "Additional structured context (degradation reasons, reconciliation notes)."
+    t.jsonb "ownership_tags", default: {}, null: false, comment: "Stable Paid ownership tag map (paid.* labels) applied to the live resource for reconciliation."
+    t.bigint "project_id", comment: "Owning project (ownership tag 'project')."
+    t.string "provider_resource_host", limit: 200, comment: "Backend host owning the provider resource (e.g. container_host)."
+    t.string "provider_resource_id", limit: 200, comment: "Provider resource identifier captured once the create call succeeds (e.g. Docker container id)."
+    t.datetime "reconciled_at", comment: "When a reconciliation process resolved this ledger row (e.g. reclaimed an orphan)."
+    t.string "resource_kind", limit: 100, null: false, comment: "Kind of execution resource the runner intends to create (e.g. 'container', 'workspace_volume')."
+    t.jsonb "runner_handle", comment: "Serialized ExecutionRunners::RunnerHandle linked once the runner builds the handle."
+    t.string "runner_type", limit: 50, null: false, comment: "Runner type that recorded the intent (matches RunnerHandle#runner_type, e.g. 'local_docker')."
+    t.string "status", limit: 50, default: "pending", null: false, comment: "Ledger lifecycle state: pending | created | linked | failed."
+    t.boolean "tagging_supported", default: true, null: false, comment: "Whether the runner/provider could apply ownership tags; false records an explicit degradation."
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_provisioning_intents_on_account_id"
+    t.index ["agent_run_id", "resource_kind", "attempt"], name: "index_provisioning_intents_on_run_kind_attempt", unique: true
+    t.index ["agent_run_id"], name: "index_provisioning_intents_on_agent_run_id"
+    t.index ["project_id"], name: "index_provisioning_intents_on_project_id"
+    t.index ["provider_resource_id"], name: "index_provisioning_intents_on_provider_resource_id", where: "(provider_resource_id IS NOT NULL)"
+    t.index ["status", "created_at"], name: "index_provisioning_intents_on_status_and_created_at"
   end
 
   create_table "quality_gate_events", comment: "Records each threshold breach and recovery observed by the quality gate system.", force: :cascade do |t|
@@ -3375,6 +3404,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_21_135405) do
   add_foreign_key "prompts", "projects", on_delete: :cascade
   add_foreign_key "prompts", "prompt_versions", column: "current_version_id", on_delete: :nullify
   add_foreign_key "provider_api_keys", "users", on_delete: :cascade
+  add_foreign_key "provisioning_intents", "accounts"
+  add_foreign_key "provisioning_intents", "agent_runs"
+  add_foreign_key "provisioning_intents", "projects"
   add_foreign_key "quality_gate_events", "projects"
   add_foreign_key "quality_gate_events", "quality_gate_thresholds"
   add_foreign_key "quality_gate_events", "quality_metrics"

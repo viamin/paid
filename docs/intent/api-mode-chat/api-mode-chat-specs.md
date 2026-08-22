@@ -92,3 +92,97 @@
   *Code:* `ChatSessions::BuildLlmClient#openai_compatible_client`,
   `Runner::DIRECT_OUTBOUND_API_PROVIDERS`,
   `ChatSessions::BuildLlmClient::HttpClient#chat_kwargs`.
+
+- [x] **CHAT-API-008** — When rendering the chat session show page
+  (`GET /chat/:id` as HTML), the conversation panel's outer wrapper SHALL
+  bound its height to the available viewport using `dvh` units, accounting
+  for the panel's actual rendered offset from the top of the viewport
+  (including layout chrome such as flash banners above `<main>`) so the inner
+  `overflow-y-auto` region is the actual scroll container rather than the
+  document. The bound SHALL be expressed as a **definite `height`**, not a
+  `max-height`, and the wrapper SHALL NOT carry a `min-h-[70vh]` floor.
+  A `max-height` leaves the wrapper's own height `auto` and therefore
+  *indefinite*, so the percentage heights beneath it do not resolve: the
+  shared conversation partial's `h-full` root collapses to its natural
+  content height, overflows the `min-h-0 flex-1 overflow-hidden` wrapper,
+  and the transcript is clipped mid-conversation with the message input
+  unreachable and nothing scrollable. A definite `height` makes every
+  descendant flex item definite, so `h-full` resolves and
+  `[data-chat-target="container"]` becomes the real scroll region. The
+  `70vh` floor is dropped because, against a definite height, `min-height`
+  can only clamp the panel *taller* than the viewport it was just fitted
+  to — re-creating the document-scroll failure it was meant to prevent —
+  and the viewport-derived height already exceeds `70vh` on the desktop
+  layout. The bound is required because the chat controller's
+  `scrollToInput`, `scrollToTop`, and `handleScroll` (back-to-top visibility
+  and auto-scroll tracking) only fire on `containerTarget.scrollTop`, which
+  stays at 0 when the document scrolls instead of the intended container
+  (#3459, follow-up to #3331; regression fixed in #3575).
+
+  The offset SHALL be measured document-relative
+  (`getBoundingClientRect().top + window.scrollY`), not viewport-relative. A
+  viewport-relative reading understates the offset — clamping to `0` — whenever
+  the page is already scrolled as the controller connects (a Turbo restoration
+  visit, or a user who scrolls before JS boots), which sizes the panel a full
+  viewport tall and hands the scroll role straight back to the document. The
+  document offset is scroll-invariant, so the panel binds identically on every
+  visit.
+  *Tests:* `spec/requests/chat_sessions_spec.rb` ("height-bounds the chat
+  panel …", "keeps the measured viewport height bound when the show page
+  renders a flash banner", "uses a definite height rather than a max-height
+  so the conversation's `h-full` root resolves", "gives the conversation's
+  scroll wrapper a min-h-0 flex constraint (#3331)"),
+  `spec/lib/chat_controller_node_harness_spec.rb`
+  ("testUpdateViewportHeightIsScrollInvariant").
+  *Code:* `app/views/chat_sessions/show.html.erb` (chat panel outer wrapper),
+  `app/javascript/controllers/chat_controller.js#updateViewportHeight`.
+
+- [x] **CHAT-API-009** — While the chat session show page's conversation
+  panel is bound to the viewport (CHAT-API-008), the panel header SHALL stay
+  compact enough to leave the transcript a usable share of the panel, without
+  ever hiding a workspace control the user needs.
+
+  The workspace capability panel — whose cloned-repo list grows without
+  bound — SHALL sit behind a `<details>` disclosure. The disclosure SHALL
+  render **open in the server response** for any session that has a workspace
+  (`container_capability` other than `none`), and collapsed only for
+  inline-only chats. A stopped workspace's sole recovery path is the "Reopen
+  with workspace" button inside that panel, and a ready workspace's clone
+  affordance and repo list live there too; folding them away leaves a stopped
+  chat looking unrecoverable. Server-rendering the `open` state (rather than
+  relying on a click) keeps those controls reachable before, and without,
+  JavaScript. When a live `capability_changed` broadcast *reveals* one of
+  those actions — i.e. the action transitions from hidden to shown — the
+  controller SHALL unfold the surrounding `<details>` with it, since un-hiding
+  a control inside a collapsed disclosure reveals nothing; it SHALL NOT unfold
+  the disclosure when it is hiding an action or when the action was already
+  visible before the toggle, or same-state snapshot broadcasts (e.g. a
+  `clone_manifest` rebroadcast that still carries `container_capability:
+  "ready"`) would fight a user who intentionally collapsed the disclosure.
+
+  The header SHALL carry a percentage `max-height` with its own
+  `overflow-y-auto` so no combination of long titles, badges, or workspace
+  state can starve the message list, plus `overflow-x-hidden` so that scroll
+  container does not compute its x axis to `auto` and hang a horizontal
+  scrollbar off the header. The cap SHALL relax while the disclosure is open
+  (`has-[details[open]]`): clipping content the user just chose to expand is
+  worse than a temporarily shorter transcript, and collapsing it again
+  reclaims the space. Without the relaxed cap, opening Workspace on a 900px
+  viewport hid ~84px of the panel below the header's clipped edge with no
+  visible hint that the header scrolled.
+
+  Without these bounds the header's runner/model controls, token bar, and
+  workspace panel consume most of a viewport-bound panel and the transcript
+  renders in a sliver too short to read (#3575).
+  *Tests:* `spec/requests/chat_sessions_spec.rb` ("collapses the workspace
+  disclosure for an inline-only chat", "renders the workspace disclosure open
+  when the chat has a workspace", "bounds the chat panel header so the
+  transcript keeps usable height", "relaxes the header cap while the workspace
+  disclosure is open"), `spec/system/chat_workspace_reopen_spec.rb`,
+  `spec/lib/chat_controller_node_harness_spec.rb`
+  ("testStoppedCapabilityUnfoldsItsDisclosure",
+  "testHiddenCapabilityActionLeavesDisclosureAlone",
+  "testSameStateBroadcastLeavesDisclosureAlone").
+  *Code:* `app/views/chat_sessions/show.html.erb` (panel header),
+  `app/javascript/controllers/chat_controller.js#toggleCapabilityActions`,
+  `app/views/chat_sessions/_popup.html.erb` (established pattern).
