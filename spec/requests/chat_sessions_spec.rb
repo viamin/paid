@@ -358,17 +358,15 @@ RSpec.describe "ChatSessions" do
       it "height-bounds the chat panel so the conversation container is the scroll container (#3459)" do
         # @spec CHAT-API-008
         # The #3331 fix added `min-h-0` to the inner flex-1 wrapper, but the
-        # chat panel's outer wrapper still uses `min-h-[70vh]` — a *minimum*,
+        # chat panel's outer wrapper still used `min-h-[70vh]` — a *minimum*,
         # not a bound. When the transcript is long the panel grows beyond the
         # viewport, the inner `overflow-y-auto` region expands to fit its
         # content, and the document scrolls instead. That leaves the
         # chat controller's scrollToInput / scrollToTop / handleScroll
         # writing to a scrollTop that never changes, so the "jump to input"
         # link does nothing and the floating "back to top" button never
-        # appears. Mirror the popup's behavior with a viewport-bounded max
-        # height (dvh so the iOS URL bar doesn't break it) on top of the
-        # existing 70vh floor (scoped to lg+ so single-column mobile doesn't
-        # force the panel taller than the viewport).
+        # appears. Mirror the popup's behavior with a viewport-bound height
+        # (dvh so the iOS URL bar doesn't break it).
         get chat_session_path(chat_session)
         expect(response).to have_http_status(:ok)
 
@@ -376,23 +374,26 @@ RSpec.describe "ChatSessions" do
         panel = doc.at_xpath("//div[@data-controller='chat']")
 
         expect(panel).to be_present
-        classes = panel["class"].split
-
-        expect(classes).to include("lg:min-h-[70vh]")
-        expect(panel["style"]).to include("max-height: calc(100dvh - var(--chat-panel-offset-top, 0px) - 2rem)")
+        # Anchored so a `max-height:` declaration cannot satisfy it by substring.
+        expect(panel["style"]).to match(/(?:\A|;\s*)height: calc\(100dvh - var\(--chat-panel-offset-top, 0px\) - 2rem\)/)
       end
 
-      it "scopes the 70vh floor to the lg breakpoint so the panel stays viewport-bounded below lg" do
+      it "uses a definite height rather than a max-height so the conversation's h-full root resolves" do
         # @spec CHAT-API-008
-        # Below `lg` the grid collapses to a single column and the chat panel
-        # sits under the mobile sidebar bar. The panel's
-        # `getBoundingClientRect().top` already includes that stacked chrome,
-        # so the `100dvh - top - 2rem` max-height is regularly smaller than
-        # 70vh. If `min-h-[70vh]` were applied unconditionally, `min-height`
-        # would win over `max-height`, the panel would grow back to 70vh, the
-        # document would become the scroll container, and the chat
-        # controller's scrollToInput / scrollToTop / handleScroll would all
-        # act on a `containerTarget.scrollTop` that never changes.
+        # A `max-height` cap leaves the panel's own `height` computed as
+        # `auto`, i.e. *indefinite*. Percentage heights below an indefinite
+        # ancestor do not resolve, so the shared conversation partial's
+        # `h-full` root fell back to its natural content height, overflowed
+        # the `min-h-0 flex-1 overflow-hidden` wrapper, and got clipped —
+        # the transcript cut off mid-conversation, the message input
+        # unreachable, and nothing scrollable anywhere. A definite `height`
+        # makes the flex chain definite so `h-full` resolves and the inner
+        # container is the scroll region.
+        #
+        # The `70vh` floor must stay gone: against a definite height a
+        # `min-height` can only clamp the panel *taller* than the viewport it
+        # was just fitted to, which is the document-scroll failure mode
+        # CHAT-API-008 exists to prevent.
         get chat_session_path(chat_session)
         expect(response).to have_http_status(:ok)
 
@@ -400,10 +401,83 @@ RSpec.describe "ChatSessions" do
         panel = doc.at_xpath("//div[@data-controller='chat']")
 
         expect(panel).to be_present
-        classes = panel["class"].split
+        expect(panel["style"]).not_to include("max-height")
+        expect(panel["class"].split).not_to include("min-h-[70vh]", "lg:min-h-[70vh]")
+      end
 
-        expect(classes).not_to include("min-h-[70vh]")
-        expect(classes).to include("lg:min-h-[70vh]")
+      it "collapses the workspace disclosure for an inline-only chat" do
+        # @spec CHAT-API-009
+        # The capability panel's cloned-repo list grows without bound. Inside
+        # a viewport-bound panel an unbounded header starves the transcript,
+        # so an inline-only chat — which has no workspace to act on — folds it
+        # away and gives the space to the message list.
+        chat_session.update!(container_capability: "none")
+
+        get chat_session_path(chat_session)
+        expect(response).to have_http_status(:ok)
+
+        disclosure = workspace_disclosure_in(response.body)
+
+        expect(disclosure).to be_present
+        expect(disclosure["open"]).to be_nil
+        expect(disclosure.at_xpath(".//summary")&.text).to include("Workspace")
+      end
+
+      it "renders the workspace disclosure open when the chat has a workspace" do
+        # @spec CHAT-API-009
+        # A stopped workspace's only recovery path is the "Reopen with
+        # workspace" button inside this panel. Folded away, the chat looks
+        # unrecoverable — so any session that actually has a workspace renders
+        # the disclosure open, in the server response, so it does not depend on
+        # JavaScript having booted.
+        %w[pending provisioning ready failed stopped].each do |capability|
+          chat_session.update!(container_capability: capability)
+
+          get chat_session_path(chat_session)
+          expect(response).to have_http_status(:ok)
+
+          disclosure = workspace_disclosure_in(response.body)
+
+          expect(disclosure).to be_present, "no workspace disclosure for #{capability}"
+          expect(disclosure["open"]).not_to be_nil, "workspace disclosure folded shut for #{capability}"
+        end
+      end
+
+      it "bounds the chat panel header so the transcript keeps usable height" do
+        # @spec CHAT-API-009
+        # Structural backstop: no combination of long titles, badges, or
+        # workspace state may push the header past its share of the panel.
+        # `overflow-y-auto` also zeroes the header's automatic minimum size
+        # so it can actually shrink when the panel is short, and
+        # `overflow-x-hidden` stops that from computing the x axis to `auto`.
+        get chat_session_path(chat_session)
+        expect(response).to have_http_status(:ok)
+
+        doc = Nokogiri::HTML(response.body)
+        header = doc.at_xpath("//div[@data-controller='chat']/header")
+
+        expect(header).to be_present
+
+        classes = header["class"].split
+
+        expect(classes).to include("max-h-[45%]")
+        expect(classes).to include("overflow-y-auto")
+        expect(classes).to include("overflow-x-hidden")
+      end
+
+      it "relaxes the header cap while the workspace disclosure is open" do
+        # @spec CHAT-API-009
+        # Clipping content the user just chose to expand is worse than a
+        # temporarily shorter transcript: without the relaxed cap, opening
+        # Workspace on a 900px viewport hid ~84px of the panel below the
+        # header's clipped edge with no visible hint that it scrolled.
+        get chat_session_path(chat_session)
+        expect(response).to have_http_status(:ok)
+
+        doc = Nokogiri::HTML(response.body)
+        header = doc.at_xpath("//div[@data-controller='chat']/header")
+
+        expect(header["class"].split).to include("has-[details[open]]:max-h-[75%]")
       end
 
       it "keeps the measured viewport height bound when the show page renders a flash banner" do
@@ -423,7 +497,8 @@ RSpec.describe "ChatSessions" do
         panel = doc.at_xpath("//div[@data-controller='chat']")
 
         expect(panel).to be_present
-        expect(panel["style"]).to include("max-height: calc(100dvh - var(--chat-panel-offset-top, 0px) - 2rem)")
+        # Anchored so a `max-height:` declaration cannot satisfy it by substring.
+        expect(panel["style"]).to match(/(?:\A|;\s*)height: calc\(100dvh - var\(--chat-panel-offset-top, 0px\) - 2rem\)/)
       end
 
       it "renders the auto-approve checkbox reflecting the session state" do
@@ -986,6 +1061,13 @@ RSpec.describe "ChatSessions" do
       expect(form["class"]).to include('hidden')
       expect(form["data-chat-capability-stopped-only"]).to be_present
     end
+  end
+
+  def workspace_disclosure_in(body)
+    Nokogiri::HTML(body)
+      .at_xpath("//div[@data-chat-target='capabilityPanel']")
+      &.ancestors("details")
+      &.first
   end
 
   def create_api_chat_runner

@@ -87,8 +87,16 @@ export default class extends Controller {
     }
   }
 
+  // Measured document-relative, not viewport-relative: getBoundingClientRect
+  // alone shrinks (and clamps to 0) whenever the page is scrolled as the
+  // controller connects — a Turbo restoration visit, or a user who scrolls
+  // before JS boots. That understates the offset, sizes the panel taller than
+  // the viewport, and hands the scroll role back to the document, which is the
+  // exact failure the bound exists to prevent. The document offset is
+  // scroll-invariant, so the panel is bound the same on every visit.
   updateViewportHeight() {
-    const top = Math.max(this.element.getBoundingClientRect().top, 0)
+    const scrollY = globalThis.window?.scrollY || 0
+    const top = Math.max(this.element.getBoundingClientRect().top + scrollY, 0)
     this.element.style.setProperty("--chat-panel-offset-top", `${Math.ceil(top)}px`)
   }
 
@@ -482,12 +490,22 @@ export default class extends Controller {
   }
 
   updateCapabilityActions(capability) {
-    this.element.querySelectorAll("[data-chat-capability-ready-only]").forEach((element) => {
-      element.classList.toggle("hidden", capability !== "ready")
-    })
+    this.toggleCapabilityActions("[data-chat-capability-ready-only]", capability === "ready")
+    this.toggleCapabilityActions("[data-chat-capability-stopped-only]", capability === "stopped")
+  }
 
-    this.element.querySelectorAll("[data-chat-capability-stopped-only]").forEach((element) => {
-      element.classList.toggle("hidden", capability !== "stopped")
+  // Revealing an action inside a collapsed disclosure reveals nothing, so
+  // unfold the surrounding <details> with it. Without this a workspace that
+  // stops mid-session hides its own "Reopen with workspace" recovery button.
+  // Only unfold on an actual hidden -> shown transition — same-state snapshot
+  // broadcasts (e.g. a clone_manifest rebroadcast that still carries
+  // container_capability: "ready") would otherwise force a disclosure the user
+  // just collapsed back open.
+  toggleCapabilityActions(selector, show) {
+    this.element.querySelectorAll(selector).forEach((element) => {
+      const wasHidden = element.classList.contains("hidden")
+      element.classList.toggle("hidden", !show)
+      if (show && wasHidden) element.closest("details")?.setAttribute("open", "")
     })
   }
 
