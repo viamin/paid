@@ -144,13 +144,13 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(dockerfile_source).not_to include('bun install -g "${OMP_PACKAGE}"')
     end
 
-    # @spec CONTAINER-RUNTIME-030
+    # @spec CONTAINER-RUNTIME-031
     it "verifies the omp launcher exists after installation" do
       expect(dockerfile_source).to include('OMP_BINARY_PATH="$(command -v omp || true)"')
       expect(dockerfile_source).to include('if [ ! -x "${OMP_BINARY_PATH}" ]; then')
     end
 
-    # @spec CONTAINER-RUNTIME-030
+    # @spec CONTAINER-RUNTIME-031
     it "surfaces actionable diagnostics when oh-my-pi post-install checks fail" do
       expect(dockerfile_source).to include('ERROR: omp binary not found on PATH after install')
       expect(dockerfile_source).to include('ERROR: omp binary is not executable:')

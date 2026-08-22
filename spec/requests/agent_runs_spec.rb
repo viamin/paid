@@ -1275,6 +1275,19 @@ RSpec.describe "AgentRuns" do
         expect(labels.first).to eq("Inherit saved placement preference")
       end
 
+      # @spec CONTAINER-RUNTIME-030
+      it "keeps proxy-restricted remote hosts eligible when only the restricted network is ready" do
+        create_placement_ready_remote_host(project: project, identifier: "proxy-ready-host",
+          required_infra_network_status: "unknown")
+        codex = configure_codex_create_pr_default!(project)
+
+        get docker_host_options_project_agent_runs_path(project, runner: codex.routing_key, format: :json)
+
+        expect(response).to have_http_status(:ok)
+        identifiers = JSON.parse(response.body).fetch("options").map(&:last)
+        expect(identifiers).to include("", "proxy-ready-host")
+      end
+
       # @spec EXEC-DISABLE-004
       it "omits backend-disabled hosts from the returned options" do
         disabled_host = create_placement_ready_remote_host(project: project, identifier: "disabled-host")
@@ -1815,6 +1828,18 @@ RSpec.describe "AgentRuns" do
         expect(AgentRun.last.external_metadata).to include(
           "container_host_selection" => include("explicit_host" => "remote-host")
         )
+      end
+
+      # @spec CONTAINER-RUNTIME-030
+      it "allows explicit remote host selection when Codex only needs the restricted network" do
+        create_placement_ready_remote_host(project: project, identifier: "proxy-ready-host",
+          required_infra_network_status: "unknown")
+        codex = configure_codex_create_pr_default!(project)
+
+        post project_agent_runs_path(project), params: { issue_id: issue.id, container_host: "proxy-ready-host" }
+
+        expect(response).to redirect_to(project_path(project))
+        expect(AgentRun.last).to have_attributes(runner: codex, container_host: "proxy-ready-host")
       end
 
       it "keeps a preferred remote host eligible for Codex when proxy auth is the available fallback" do
@@ -3299,11 +3324,12 @@ RSpec.describe "AgentRuns" do
     document.css("table thead th").find_index { |header| header.text.squish == header_text }
   end
 
-  def create_placement_ready_remote_host(project:, identifier:)
+  def create_placement_ready_remote_host(project:, identifier:, required_infra_network_status: "ready")
     create(:docker_host, account: project.account,
       identifier: identifier, display_name: identifier.humanize,
       backend_type: "remote", fallback_eligible: true,
-      readiness_status: "ready", image_status: "ready", required_network_status: "ready")
+      readiness_status: "ready", image_status: "ready", required_network_status: "ready",
+      required_infra_network_status: required_infra_network_status)
   end
 
   def configure_codex_create_pr_default!(project)

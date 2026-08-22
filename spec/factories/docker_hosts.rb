@@ -15,6 +15,7 @@ FactoryBot.define do
     readiness_status { "ready" }
     image_status { "ready" }
     required_network_status { "ready" }
+    required_infra_network_status { "ready" }
 
     trait :local do
       backend_type { "local" }

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_22_000026) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_22_085848) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1019,6 +1019,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_22_000026) do
     t.integer "manual_concurrency_limit", default: 1, null: false, comment: "Independent host-level run cap enforced separately from account, user, and project guardrails."
     t.jsonb "metadata", default: {}, null: false, comment: "Extensible host-scoped readiness and setup metadata."
     t.string "readiness_status", default: "unknown", null: false, comment: "Cached host readiness state shown in the admin control plane."
+    t.string "required_infra_network_status", default: "unknown", null: false, comment: "Whether the unrestricted paid_internal Docker network (subscription-auth/direct-outbound runs) exists on the host."
     t.string "required_network_name", comment: "Docker network name the remote host must provide for disposable agent containers."
     t.string "required_network_status", default: "unknown", null: false, comment: "Whether the required Docker network exists on the host."
     t.text "server_certificate_pem", comment: "Encrypted server certificate PEM generated or uploaded for operator installation on the remote Docker daemon host."
