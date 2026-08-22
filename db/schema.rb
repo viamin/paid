@@ -329,6 +329,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_22_085848) do
     t.string "status", limit: 50, default: "queued", null: false
     t.jsonb "streaming_turns_data", default: [], null: false, comment: "Per-turn metrics from streaming JSONL events (turn number, tokens, duration)"
     t.boolean "synthetic", default: false, null: false, comment: "Operational-only run that reuses the agent-run lifecycle to drive infrastructure (e.g. live-preview provisioning) but never executes a real agent or produces a PR/issue/review artifact. Excluded from user-facing run history and totals. Keyed off this flag rather than agent_type because internal_agent is shared with legitimate externally-ingested runs."
+    t.string "tdd_phase", comment: "RDR-056 TDD phase governing this run's write guard: test_writing | test_fixing | refactor | null (not TDD-governed)"
+    t.boolean "tdd_returned_to_test_review", default: false, null: false, comment: "RDR-056: true once this test_fixing run has reset the PR to test review, permitting it to alter tests"
     t.string "temporal_run_id", limit: 255
     t.string "temporal_workflow_id", limit: 255
     t.string "token_limit_status", limit: 50

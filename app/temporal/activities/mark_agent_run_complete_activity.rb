@@ -43,6 +43,7 @@ module Activities
     def result(agent_run)
       {
         agent_run_id: agent_run.id,
+        tdd_returned_to_test_review: agent_run.tdd_returned_to_test_review?,
         skipped: agent_run.status == "cancelled",
         cancelled: agent_run.status == "cancelled"
       }

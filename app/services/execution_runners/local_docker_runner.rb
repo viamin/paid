@@ -1,30 +1,31 @@
 # frozen_string_literal: true
 
 module ExecutionRunners
-  # Thin adapter that wraps the existing +Containers::Provision+ Docker
-  # orchestrator behind the provider-neutral +ExecutionRunners::Base+
-  # interface (RDR-054). Translates {RunSpec}/{RunnerHandle}/{ExecutionResult}
-  # domain objects to and from +Containers::Provision+ calls.
-  #
-  # This runner owns the +NetworkingPolicy+ → Docker-network translation: it
-  # is the only place that calls +NetworkPolicy.ensure_network!+ and
-  # +NetworkPolicy.apply_firewall_rules+. +Containers::Provision+ accepts the
-  # +networking_policy+ for read-only Docker-config decisions (proxy URL,
-  # network name) but skips its own network/firewall side effects when a
-  # policy is provided.
-  #
-  # +RunnerHandle#metadata+ carries everything needed to reconnect to the
-  # container on a later call (agent_run id, worktree_path, environment),
-  # since +#start+/+#running?+/+#cancel+/+#cleanup+ only receive the handle.
-  #
-  # @spec CONTAINER-RUNTIME-010
-  # @spec CONTAINER-RUNTIME-011
-  # @spec CONTAINER-RUNTIME-012
-  # @spec CONTAINER-RUNTIME-013
-  # @spec CONTAINER-RUNTIME-014
-  # @spec CONTAINER-RUNTIME-017
-  # @spec CONTAINER-RUNTIME-028
-  class LocalDockerRunner < Base
+# Thin adapter that wraps the existing +Containers::Provision+ Docker
+# orchestrator behind the provider-neutral +ExecutionRunners::Base+
+# interface (RDR-054). Translates {RunSpec}/{RunnerHandle}/{ExecutionResult}
+# domain objects to and from +Containers::Provision+ calls.
+#
+# This runner owns the +NetworkingPolicy+ → Docker-network translation: it
+# is the only place that calls +NetworkPolicy.ensure_network!+ and
+# +NetworkPolicy.apply_firewall_rules+. +Containers::Provision+ accepts the
+# +networking_policy+ for read-only Docker-config decisions (proxy URL,
+# network name) but skips its own network/firewall side effects when a
+# policy is provided.
+#
+# +RunnerHandle#metadata+ carries everything needed to reconnect to the
+# container on a later call (agent_run id, worktree_path, environment),
+# since +#start+/+#running?+/+#cancel+/+#cleanup+ only receive the handle.
+#
+# @spec CONTAINER-RUNTIME-010
+# @spec CONTAINER-RUNTIME-011
+# @spec CONTAINER-RUNTIME-012
+# @spec CONTAINER-RUNTIME-013
+# @spec CONTAINER-RUNTIME-014
+# @spec CONTAINER-RUNTIME-017
+# @spec CONTAINER-RUNTIME-028
+# @spec EGRESS-POLICY-007
+class LocalDockerRunner < Base
     RUNNER_TYPE = :local_docker
 
     # The kind of execution resource this runner provisions, recorded on the
@@ -35,6 +36,15 @@ module ExecutionRunners
     # here (inside the runner) so no orchestration code or domain model builds
     # Docker volume names (RDR-054).
     WORKSPACE_VOLUME_PREFIX = "paid-workspace"
+
+    # Default adapter registered for this runner. Specs may override per
+    # test by stubbing {.gateway_adapter}; production callers always see
+    # the Docker adapter because every LocalDockerRunner backend talks to
+    # a Docker daemon.
+    # @spec EGRESS-POLICY-007
+    def self.gateway_adapter
+      AgentRuns::EgressPolicy::GatewayAdapters::Docker.new
+    end
 
     # @spec CONTAINER-RUNTIME-025
     def resource_kind
@@ -59,10 +69,15 @@ module ExecutionRunners
     def provision(spec:)
       backend = backend_for(spec)
       policy = spec.networking_policy
+      gateway_ready = false
       raise ProvisionError, "RunSpec requires a NetworkingPolicy" if policy.nil?
       raise ProvisionError, self.class.unsupported_policy_message(policy) unless self.class.supports_policy?(policy)
       raise ProvisionError, "RunSpec requires an IngressPolicy" if spec.ingress_policy.nil?
       spec.ingress_policy.validate_supported!
+
+      gateway = build_gateway(spec: spec, backend: backend)
+      gateway_ready = enforce_gateway!(gateway: gateway)
+      gateway = nil unless gateway_ready
 
       ensure_agent_network!(backend: backend, policy: policy)
       ledger = provisioning_ledger
@@ -75,6 +90,7 @@ module ExecutionRunners
         backend: backend,
         networking_policy: policy,
         ownership_labels: ledger.ownership_labels_for(agent_run: spec.agent_run, attempt: attempt),
+        egress_gateway_url: gateway&.gateway_url,
         **provision_options(spec)
       )
       result = service.provision
@@ -82,7 +98,7 @@ module ExecutionRunners
       # here and handle persistence still leaves a reconcileable ledger row
       # (CONTAINER-RUNTIME-027).
       ledger.link_created(intent, provider_resource_id: result[:container_id], host: result[:container_host])
-      apply_firewall!(service: service, backend: backend, policy: policy)
+      apply_firewall!(service: service, backend: backend, policy: policy, gateway: gateway)
       handle = handle_for(spec: spec, result: result)
       ledger.link_handle(intent, handle)
       handle
@@ -90,8 +106,10 @@ module ExecutionRunners
       # Provider create failed; Containers::Provision cleaned up. No live
       # resource to reconcile — record the failure and surface the error.
       ledger&.mark_failed(intent)
+      cleanup_gateway_on_failure(gateway)
       raise ProvisionError, e.message
     rescue ProvisionError
+      cleanup_gateway_on_failure(gateway)
       # The container is already provisioned and running by the time the
       # runner raises its own error (the production firewall failure path in
       # #apply_firewall!); +Containers::Provision#provision+ only cleans up
@@ -108,6 +126,9 @@ module ExecutionRunners
         # Surface the original provisioning error, not the cleanup error.
       end
       ledger&.mark_failed(intent) if cleanup_succeeded
+      raise
+    rescue StandardError
+      cleanup_gateway_on_failure(gateway)
       raise
     end
 
@@ -188,9 +209,10 @@ module ExecutionRunners
 
     def cleanup(handle:, force: false)
       reconnect(handle: handle).cleanup(force: force)
-      nil
     rescue Containers::Provision::ProvisionError
       nil
+    ensure
+      teardown_gateway!(handle: handle)
     end
 
     # Removes the named Docker workspace volume for an agent run when it exists.
@@ -232,7 +254,40 @@ module ExecutionRunners
         )
       end
 
+      # Restricted policies must be enforceable: a runtime without a
+      # gateway adapter cannot honor the RDR-055 domain-aware allowlist,
+      # so the spec is rejected before any Docker side effect rather than
+      # starting a container with no enforcement. The adapter also has to
+      # declare the backend eligible ({GatewayAdapters::Base#capable?}) —
+      # Kubernetes and managed-machine adapters answer +false+ for
+      # non-matching backends, so a future runner that returns an adapter
+      # instance does not silently start a container with no enforcement.
+      if policy_requires_egress_gateway?(policy) && !egress_capable?(spec: spec, backend: backend)
+        return CompatibilityResult.new(
+          compatible: false,
+          error_message: "Runtime cannot enforce the egress policy snapshot on this backend; register a capable gateway adapter or reject the run"
+        )
+      end
+
       CompatibilityResult.new(compatible: true, error_message: nil)
+    end
+
+    # Returns true when the registered gateway adapter can enforce the
+    # restricted policy on +backend+. Both legs must pass: the runner must
+    # have an adapter registered, and that adapter must answer +true+ from
+    # {GatewayAdapters::Base#capable?}. Adapters that depend on platform
+    # primitives (CNI without NetworkPolicy, provider firewalls without
+    # per-host filters) use +capable?+ to opt out per backend rather than
+    # letting +#ensure!+ raise later in the provision path. The snapshot
+    # is best-effort: it may not be persisted yet at scheduling time, so
+    # adapters that need it implement +capable?+ defensively.
+    # @spec EGRESS-POLICY-007
+    def self.egress_capable?(spec:, backend:)
+      adapter = gateway_adapter
+      return false if adapter.nil?
+
+      snapshot = AgentRuns::EgressPolicy::Snapshot.from_record(spec.agent_run)
+      adapter.capable?(snapshot: snapshot, backend: backend)
     end
 
     # Single source of truth for the unsupported-policy error message, shared
@@ -358,11 +413,21 @@ module ExecutionRunners
     # added for the +:approved_services+ intent; the narrower restricted
     # intents exclude them so their allowlist matches the RDR-062 mapping
     # table. Caller-supplied +allow_destinations+ are always honored.
-    def apply_firewall!(service:, backend:, policy:)
+    #
+    # The snapshot's tenant-allowlisted destinations are NOT threaded into
+    # the iptables rules: that would let the agent connect straight to
+    # +api.partner.com:443+ without ever touching the egress gateway,
+    # bypassing the gateway's domain-aware filtering and the structured
+    # denial audit trail (EGRESS-POLICY-007). The gateway URL is opened so
+    # HTTP(S) traffic can reach the gateway, and the gateway's own
+    # allowlist (built from the snapshot's destinations) is what enforces
+    # the per-run domain policy.
+    def apply_firewall!(service:, backend:, policy:, gateway: nil)
       return unless policy.firewall?
 
       destinations = policy.allow_destinations.map { |dest| { ip: dest.fetch(:host), port: dest.fetch(:port) } }
       destinations += service.firewall_service_destinations if policy.approved_services?
+      destinations += gateway_destinations(gateway) if gateway
       github_ips = github_ranges_for(policy)
 
       NetworkPolicy.apply_firewall_rules(
@@ -384,6 +449,202 @@ module ExecutionRunners
       # (e.g., macOS Docker Desktop, some CI runners). Production always
       # raises: a firewall gap on a live deployment is a security incident.
       raise ProvisionError, "Firewall setup failed: #{e.message}" if Rails.env.production?
+    end
+
+    # Builds the per-run egress gateway from the snapshot persisted on
+    # +agent_run+. Only restricted policies need a gateway: {Resolve}
+    # persists a snapshot for unrestricted policies too (e.g.
+    # +subscription_auth+/+direct_outbound+), so gating on the snapshot's
+    # presence alone would build a gateway — and later call
+    # {enforce_gateway!} — for open runs that were never meant to go
+    # through one. Open runs pass +nil+ to
+    # {NetworkPolicy.apply_firewall_rules} and {apply_firewall!} skips the
+    # gateway destinations entirely.
+    #
+    # A restricted policy with no persisted snapshot is a different case:
+    # {AgentRuns::EgressPolicy::Resolve.resolve_and_persist!} is supposed to
+    # persist a snapshot on +agent_run+ before the runner ever provisions,
+    # so a missing snapshot here means that step was skipped or its result
+    # was lost. Returning +nil+ silently would let #provision continue with
+    # only the coarse firewall rules and no domain-aware allowlist/gateway —
+    # {missing_snapshot_gateway!} applies the same fail-closed contract as
+    # {enforce_gateway!} instead.
+    def build_gateway(spec:, backend:)
+      policy = spec.networking_policy
+      return nil unless policy_requires_egress_gateway?(policy)
+
+      snapshot = AgentRuns::EgressPolicy::Snapshot.from_record(spec.agent_run)
+      return missing_snapshot_gateway!(agent_run: spec.agent_run) unless snapshot
+
+      adapter = self.class.gateway_adapter
+      AgentRuns::EgressPolicy::Gateway.new(
+        agent_run: spec.agent_run, backend: backend, snapshot: snapshot, adapter: adapter
+      )
+    end
+
+    # Mirrors {enforce_gateway!}'s production/non-production split for the
+    # gap {enforce_gateway!} itself cannot see: it only runs once a gateway
+    # object already exists, so a restricted run that never got a snapshot
+    # would otherwise skip fail-closed enforcement entirely. Production
+    # raises so the run aborts instead of starting without the gateway path;
+    # non-production logs and returns +nil+ so hosts that never resolved a
+    # snapshot (dev/test/CI) are not blocked, matching {apply_firewall!} and
+    # {enforce_gateway!}'s existing relaxation there.
+    def missing_snapshot_gateway!(agent_run:)
+      Rails.logger.warn(
+        message: "container.egress_gateway.missing_snapshot",
+        agent_run_id: agent_run.id
+      )
+      if Rails.env.production?
+        raise ProvisionError, "Egress gateway setup failed: no egress policy snapshot persisted for restricted run"
+      end
+
+      nil
+    end
+
+    # Fail-closed enforcement: restricted policies must reach a gateway
+    # that can translate their snapshot. Adapters raise
+    # {Gateway::UnavailableError} when they cannot install the gateway;
+    # production always re-raises as ProvisionError so the container is
+    # not started without enforcement. In non-production, the failure is
+    # logged and swallowed, but returns +false+ so the caller drops the
+    # gateway reference entirely — otherwise the proxy env vars and
+    # firewall rules below would still point restricted traffic at a
+    # gateway that was never installed.
+    #
+    # @return [Boolean] whether +gateway+ is usable for the rest of provisioning
+    def enforce_gateway!(gateway:)
+      return true unless gateway
+
+      gateway.ensure!
+      true
+    rescue AgentRuns::EgressPolicy::Gateway::UnavailableError => e
+      Rails.logger.warn(
+        message: "container.egress_gateway.failed",
+        error: e.message,
+        agent_run_id: gateway.agent_run.id
+      )
+      raise ProvisionError, "Egress gateway setup failed: #{e.message}" if Rails.env.production?
+
+      false
+    end
+
+    # Drains denial events from the per-host egress gateway into
+    # {EgressSecurityEvent} rows for the run that just finished, then
+    # removes the run's per-run allowlist from the gateway. This is the
+    # live call site for {Gateway#collect_denials!} and
+    # {Gateway#remove_allowlist!} — without it the gateway would only ever
+    # be exercised in unit tests: a restricted run would enforce via the
+    # sidecar but never persist any denials to the audit trail, and every
+    # restricted run would leave its allowlist file behind on the shared
+    # gateway sidecar forever.
+    #
+    # Only restricted runs (those that provisioned a gateway at
+    # {#provision} time, gated by +networking_policy.restricted?+ and a
+    # persisted snapshot) need a teardown: an unrestricted run never
+    # touched the gateway, so tearing it down returns no rows and would
+    # only burn Docker execs against the shared sidecar.
+    #
+    # Best-effort and idempotent: failures are logged but never raised
+    # because {#cleanup} must remain safe to call on an already
+    # torn-down handle. The adapter's per-run denial log path truncates
+    # after read so a retry cannot duplicate audit rows, and removing an
+    # already-removed allowlist file is a no-op.
+    # @spec EGRESS-POLICY-007
+    def teardown_gateway!(handle:)
+      gateway = restricted_gateway_for(handle: handle)
+      return unless gateway
+
+      gateway.collect_denials!
+    rescue StandardError => e
+      log_gateway_teardown_failure(handle:, error: e)
+    ensure
+      begin
+        gateway&.remove_allowlist!
+      rescue StandardError => e
+        log_gateway_teardown_failure(handle:, error: e)
+      end
+    end
+
+    def cleanup_gateway_on_failure(gateway)
+      return unless gateway
+
+      gateway.remove_allowlist!
+    rescue StandardError => e
+      Rails.logger.warn(
+        message: "container.egress_gateway.cleanup_failed",
+        agent_run_id: gateway.agent_run.id,
+        error: e.message
+      )
+      nil
+    end
+
+    # Builds the {Gateway} for a finished run's post-run teardown, or +nil+
+    # when the run never provisioned one. Shared by {#teardown_gateway!} so
+    # denial draining and allowlist removal operate on the same gateway
+    # instance instead of re-deriving the snapshot/backend/adapter twice.
+    def restricted_gateway_for(handle:)
+      agent_run_id = handle.metadata["agent_run_id"]
+      return if agent_run_id.blank?
+
+      agent_run = AgentRun.find_by(id: agent_run_id)
+      return unless agent_run
+
+      snapshot = AgentRuns::EgressPolicy::Snapshot.from_record(agent_run)
+      return unless snapshot && restricted_snapshot_mode?(snapshot.mode)
+
+      backend = Containers.backend_for(handle.host)
+      adapter = self.class.gateway_adapter
+      return unless adapter
+
+      AgentRuns::EgressPolicy::Gateway.new(
+        agent_run: agent_run, backend: backend, snapshot: snapshot, adapter: adapter
+      )
+    end
+
+    # Whether the snapshot's persisted mode corresponds to one of the
+    # restricted RDR-062 networking intents. Used by
+    # {#restricted_gateway_for} to skip unrestricted runs that never
+    # installed a gateway, mirroring {#build_gateway}'s
+    # +networking_policy.restricted?+ gate at provision time.
+    def restricted_snapshot_mode?(mode)
+      ExecutionRunners::NETWORKING_POLICY_RESTRICTED_MODES.include?(mode.to_sym)
+    end
+
+    def log_gateway_teardown_failure(handle:, error:)
+      Rails.logger.warn(
+        message: "container.gateway.denial_drain_failed",
+        agent_run_id: handle.metadata["agent_run_id"],
+        error: error.message
+      )
+      nil
+    end
+
+    # Translates the gateway's +host:port+ URL into the +{ip:, port:}+
+    # shape +NetworkPolicy.apply_firewall_rules+ expects so the container
+    # can reach the gateway without going through DNS. The gateway URL is
+    # the platform's network alias (Docker) or service DNS (Kubernetes)
+    # and is already validated at adapter construction time.
+    def gateway_destinations(gateway)
+      url = gateway.gateway_url
+      host, port = url.split(":", 2)
+      return [] if host.blank? || port.blank?
+
+      [ { ip: host, port: Integer(port) } ]
+    rescue ArgumentError
+      []
+    end
+
+    def policy_uses_egress_gateway?(policy)
+      !policy.no_outbound? && policy.mode != :proxy_only
+    end
+
+    def self.policy_requires_egress_gateway?(policy)
+      policy.present? && policy.restricted? && !policy.no_outbound? && policy.mode != :proxy_only
+    end
+
+    def policy_requires_egress_gateway?(policy)
+      self.class.policy_requires_egress_gateway?(policy)
     end
 
     # Returns the GitHub CIDR ranges the firewall should allow for the given
@@ -451,5 +712,5 @@ module ExecutionRunners
         )
       end
     end
-  end
+end
 end

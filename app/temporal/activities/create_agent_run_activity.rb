@@ -695,7 +695,9 @@ module Activities
           confidence: scope_result.confidence,
           sub_components: scope_result.sub_components
         } : nil,
-        paused: paused
+        paused: paused,
+        tdd_phase: agent_run.tdd_phase,
+        runner_id: agent_run.runner_id
       }
     end
 
