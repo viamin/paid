@@ -1713,12 +1713,7 @@ class AgentRun < ApplicationRecord
     return "test_writing" if source_pull_request_number.blank?
 
     pr_record = source_pull_request_record
-    return "test_writing" if pr_record &&
-      !pr_record.has_label?(Tdd::ReturnToTestReview::TESTS_APPROVED_LABEL) &&
-      (
-        pr_record.has_label?(Tdd::ReturnToTestReview::TESTS_READY_FOR_REVIEW_LABEL) ||
-        pr_record.has_label?(Projects::EnsureStandardLabels::LABEL_DEFINITIONS.dig(:tdd_test_changes_requested, :name))
-      )
+    return "test_writing" unless pr_record&.has_label?(Tdd::ReturnToTestReview::TESTS_APPROVED_LABEL)
 
     "test_fixing"
   end

@@ -673,6 +673,12 @@ RSpec.describe AgentRun do
           expect(run.tdd_phase).to eq("test_fixing")
         end
 
+        it "defaults PR follow-up runs without a synced PR record to test_writing" do
+          run = create(:agent_run, :existing_pr, project: project)
+
+          expect(run.tdd_phase).to eq("test_writing")
+        end
+
         it "preserves an explicitly assigned phase" do
           run = create(:agent_run, project: project, tdd_phase: "refactor")
 
