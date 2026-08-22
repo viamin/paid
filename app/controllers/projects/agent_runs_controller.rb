@@ -1372,13 +1372,13 @@ module Projects
         auth_source = runner&.subscription? ? subscription_auth_source_for(runner) : nil
         {
           auth_source: auth_source,
-          eligible_hosts: eligible_docker_hosts_for_manual_selection(auth_source: auth_source)
+          eligible_hosts: eligible_docker_hosts_for_manual_selection(runner: runner, auth_source: auth_source)
         }
       end
     end
 
-    def eligible_docker_hosts_for_manual_selection(auth_source: nil)
-      docker_host_scope_for_manual_selection(auth_source: auth_source).ordered.select do |host|
+    def eligible_docker_hosts_for_manual_selection(runner: nil, auth_source: nil)
+      docker_host_scope_for_manual_selection(runner: runner, auth_source: auth_source).ordered.select do |host|
         docker_host_eligible_for_manual_selection?(host, auth_source: auth_source)
       end
     end
@@ -1401,14 +1401,14 @@ module Projects
       Struct.new(:identifier, :supports_host_paths?).new(host.identifier, host.local?)
     end
 
-    def docker_host_scope_for_manual_selection(auth_source:)
-      return current_account.docker_hosts.placement_ready_for_agent_runs if unrestricted_network_required?(auth_source:)
+    def docker_host_scope_for_manual_selection(runner:, auth_source:)
+      return current_account.docker_hosts.placement_ready_for_agent_runs if unrestricted_network_required?(runner:, auth_source:)
 
       current_account.docker_hosts.placement_ready_for_restricted_agent_runs
     end
 
-    def unrestricted_network_required?(auth_source:)
-      runner_for_docker_host_param&.requires_direct_outbound? ||
+    def unrestricted_network_required?(runner:, auth_source:)
+      runner&.requires_direct_outbound? ||
         auth_source&.managed? ||
         auth_source&.host_forwarded?
     end

@@ -7,9 +7,24 @@ RSpec.describe AddRequiredInfraNetworkStatusToDockerHosts do
   let(:migration) { described_class.new }
 
   # @spec CONTAINER-RUNTIME-030
+  it "backfills local hosts as infra-network ready only when the real local network probe succeeds" do
+    host = create(:docker_host, :local, required_infra_network_status: described_class::UNKNOWN_STATUS)
+
+    allow(Docker::Network).to receive(:get).with(described_class::INFRA_NETWORK_NAME)
+      .and_return(instance_double(Docker::Network))
+
+    expect {
+      migrate_up
+    }.to change { host.reload.required_infra_network_status }.from(described_class::UNKNOWN_STATUS).to("ready")
+  end
+
+  # @spec CONTAINER-RUNTIME-030
   it "does not backfill remote hosts as infra-network ready without real verification" do
     host = create(:docker_host, required_infra_network_status: described_class::UNKNOWN_STATUS)
     host.update_column(:required_network_name, "shared-agents")
+
+    allow(Docker::Network).to receive(:get).with(described_class::INFRA_NETWORK_NAME)
+      .and_raise(Docker::Error::NotFoundError.new("missing"))
 
     expect {
       migrate_up
