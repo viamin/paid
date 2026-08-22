@@ -28,6 +28,10 @@ module ExecutionRunners
 class LocalDockerRunner < Base
     RUNNER_TYPE = :local_docker
 
+    # The kind of execution resource this runner provisions, recorded on the
+    # provisioning-intent ledger (RDR-060).
+    RESOURCE_KIND = "container"
+
     # Prefix for per-run Docker named volumes. Volume-name construction lives
     # here (inside the runner) so no orchestration code or domain model builds
     # Docker volume names (RDR-054).
@@ -42,6 +46,26 @@ class LocalDockerRunner < Base
       AgentRuns::EgressPolicy::GatewayAdapters::Docker.new
     end
 
+    # @spec CONTAINER-RUNTIME-025
+    def resource_kind
+      RESOURCE_KIND
+    end
+
+    # Docker supports container/volume labels, so the runner can apply the
+    # stable Paid ownership tags to every provisioned resource.
+    # @spec CONTAINER-RUNTIME-026
+    def supports_tagging?
+      true
+    end
+
+    # Docker can list containers/volumes, so reconciliation can locate orphans.
+    def supports_listing?
+      true
+    end
+
+    # @spec CONTAINER-RUNTIME-025
+    # @spec CONTAINER-RUNTIME-026
+    # @spec CONTAINER-RUNTIME-027
     def provision(spec:)
       backend = backend_for(spec)
       policy = spec.networking_policy
@@ -56,19 +80,32 @@ class LocalDockerRunner < Base
       gateway = nil unless gateway_ready
 
       ensure_agent_network!(backend: backend, policy: policy)
+      ledger = provisioning_ledger
+      attempt = ledger.next_attempt_for(agent_run: spec.agent_run)
+      intent = ledger.record_intent(agent_run: spec.agent_run, attempt: attempt)
       service = Containers::Provision.new(
         agent_run: spec.agent_run,
         project: spec.project,
         worktree_path: self.class.worktree_path_for(spec),
         backend: backend,
         networking_policy: policy,
+        ownership_labels: ledger.ownership_labels_for(agent_run: spec.agent_run, attempt: attempt),
         egress_gateway_url: gateway&.gateway_url,
         **provision_options(spec)
       )
       result = service.provision
+      # Capture the provider resource identifier immediately so a crash between
+      # here and handle persistence still leaves a reconcileable ledger row
+      # (CONTAINER-RUNTIME-027).
+      ledger.link_created(intent, provider_resource_id: result[:container_id], host: result[:container_host])
       apply_firewall!(service: service, backend: backend, policy: policy, gateway: gateway)
-      handle_for(spec: spec, result: result)
+      handle = handle_for(spec: spec, result: result)
+      ledger.link_handle(intent, handle)
+      handle
     rescue Containers::Provision::ProvisionError => e
+      # Provider create failed; Containers::Provision cleaned up. No live
+      # resource to reconcile — record the failure and surface the error.
+      ledger&.mark_failed(intent)
       cleanup_gateway_on_failure(gateway) if gateway_ready
       raise ProvisionError, e.message
     rescue ProvisionError
@@ -81,11 +118,14 @@ class LocalDockerRunner < Base
       # on the restricted network. Cleanup is best-effort — a partially-started
       # container may resist removal, and that must not mask the original
       # error.
+      cleanup_succeeded = false
       begin
         service.cleanup if service
+        cleanup_succeeded = true
       rescue StandardError
         # Surface the original provisioning error, not the cleanup error.
       end
+      ledger&.mark_failed(intent) if cleanup_succeeded
       raise
     rescue StandardError
       cleanup_gateway_on_failure(gateway) if gateway_ready
@@ -307,6 +347,25 @@ class LocalDockerRunner < Base
     end
 
     private
+
+    # Builds the provisioning-intent ledger from this runner's declared
+    # capabilities (RDR-060). The runner owns the environment identifier so a
+    # future remote runner can substitute a deployment-specific value.
+    def provisioning_ledger
+      ProvisioningLedger.new(
+        runner_type: RUNNER_TYPE,
+        resource_kind: resource_kind,
+        environment: provisioning_environment,
+        supports_tagging: supports_tagging?,
+        supports_listing: supports_listing?
+      )
+    end
+
+    # Paid deployment identifier burned into the ownership tags so resources
+    # are attributed to the deployment that created them.
+    def provisioning_environment
+      Rails.env.to_s
+    end
 
     # Maps the raw Docker state inspection to an ExecutionStatus state:
     # a running workload wins over OOM (a container can show OOMKilled=true

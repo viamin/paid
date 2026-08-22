@@ -7,6 +7,9 @@ require "rails_helper"
 # @spec CONTAINER-RUNTIME-017
 # @spec CONTAINER-RUNTIME-019
 # @spec CONTAINER-RUNTIME-020
+# @spec CONTAINER-RUNTIME-025
+# @spec CONTAINER-RUNTIME-026
+# @spec CONTAINER-RUNTIME-027
 # @spec CONTAINER-RUNTIME-028
 # @spec EXEC-INGRESS-001
 # @spec EXEC-INGRESS-002
@@ -31,6 +34,11 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     instance_double(Docker::Container,
       info: { "NetworkSettings" => { "Networks" => { "paid_agent" => { "Aliases" => [ "egress-gateway" ] } } } })
   end
+  let(:ownership_label_map) do
+    ExecutionRunners::OwnershipTags.for(
+      agent_run: agent_run, resource_kind: "container", environment: "test"
+    ).to_label_map
+  end
 
   # Persists a synthetic egress policy snapshot on the +agent_run+ so
   # +AgentRuns::EgressPolicy::Snapshot.from_record+ returns it. Shared
@@ -48,6 +56,18 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     snapshot
   end
 
+  def stub_ready_gateway_adapter!
+    adapter = instance_double(
+      AgentRuns::EgressPolicy::GatewayAdapters::Docker,
+      gateway_url: "egress-gateway:3128",
+      allowlist_for: [],
+      ensure!: nil,
+      install_allowlist!: nil,
+      remove_allowlist!: nil
+    )
+    allow(described_class).to receive(:gateway_adapter).and_return(adapter)
+  end
+
   before do
     allow(Containers).to receive(:backend_for).and_return(backend)
     allow(NetworkPolicy).to receive(:ensure_network!).and_return(instance_double(Docker::Network))
@@ -62,7 +82,9 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     it "delegates to Containers::Provision and returns a RunnerHandle" do
       expect(Containers::Provision).to receive(:new).with(
         agent_run: agent_run, project: agent_run.project, worktree_path: nil, backend: backend,
-        networking_policy: run_spec.networking_policy, egress_gateway_url: nil,
+        networking_policy: run_spec.networking_policy,
+        ownership_labels: ownership_label_map,
+        egress_gateway_url: nil,
         image: "paid/agent:latest", memory_bytes: 1024, cpu_quota: 100_000, pids_limit: 50
       ).and_return(provision_service)
       allow(provision_service).to receive(:provision).and_return(
@@ -608,10 +630,11 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       adapter = instance_double(
         AgentRuns::EgressPolicy::GatewayAdapters::Docker,
         gateway_url: "egress-gateway:3128",
-        allowlist_for: [],
-        ensure!: nil,
-        install_allowlist!: nil
+        allowlist_for: []
       )
+      allow(adapter).to receive(:ensure!).with(agent_run: agent_run, snapshot: kind_of(AgentRuns::EgressPolicy::Snapshot), backend: backend)
+      allow(adapter).to receive(:install_allowlist!).with(agent_run: agent_run, snapshot: kind_of(AgentRuns::EgressPolicy::Snapshot), backend: backend)
+      allow(adapter).to receive(:remove_allowlist!).with(agent_run: agent_run, backend: backend)
       allow(described_class).to receive(:gateway_adapter).and_return(adapter)
       stub_provision_success!
 
@@ -738,6 +761,218 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
 
       expect { runner.provision(spec: run_spec) }
         .to raise_error(ExecutionRunners::ProvisionError, /Network setup failed/)
+    end
+  end
+
+  # @spec CONTAINER-RUNTIME-025
+  # @spec CONTAINER-RUNTIME-026
+  # @spec CONTAINER-RUNTIME-027
+  describe "provisioning ledger integration (RDR-060)" do
+    before do
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      allow(provision_service).to receive(:provision).and_return(
+        Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
+      )
+    end
+
+    it "records a pending intent before the create call, then links the resource and handle" do
+      intents_at_create = []
+      allow(provision_service).to receive(:provision) do
+        intents_at_create.concat(ProvisioningIntent.where(status: "pending").to_a)
+        Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
+      end
+
+      handle = runner.provision(spec: run_spec)
+
+      expect(intents_at_create).not_to be_empty
+      expect(intents_at_create.first).to be_pending
+      intent = ProvisioningIntent.order(:id).last
+      expect(intent.status).to eq("linked")
+      expect(intent.provider_resource_id).to eq("abc123")
+      expect(intent.runner_handle).to eq(handle.to_storage)
+      expect(intent.runner_type).to eq("local_docker")
+      expect(intent.resource_kind).to eq("container")
+      expect(intent.tagging_supported).to be(true)
+    end
+
+    it "passes the stable Paid ownership labels through to Containers::Provision" do
+      expect(Containers::Provision).to receive(:new).with(
+        hash_including(ownership_labels: ownership_label_map)
+      ).and_return(provision_service)
+
+      runner.provision(spec: run_spec)
+    end
+
+    it "increments the provisioning attempt ordinal across repeated provisions for the same run" do
+      first_handle = runner.provision(spec: run_spec)
+      second_handle = runner.provision(spec: run_spec)
+
+      intents = ProvisioningIntent.order(:id).last(2)
+
+      expect(first_handle.identifier).to eq("abc123")
+      expect(second_handle.identifier).to eq("abc123")
+      expect(intents.map(&:attempt)).to eq([ 0, 1 ])
+      expect(intents.map { |intent| intent.ownership_tags.fetch("paid.attempt") }).to eq(%w[0 1])
+    end
+
+    it "fails loudly instead of duplicating a ledger row when two provisions race for the same attempt ordinal" do
+      # ExecutionRunners::ProvisioningLedger#next_attempt_for (count) then
+      # #record_intent (create!) is not atomic, so two concurrent retries can
+      # both observe attempt 0. The unique index on
+      # (agent_run_id, resource_kind, attempt) is the concurrency guard: the
+      # second writer must raise instead of silently persisting a duplicate.
+      first_ledger = runner.send(:provisioning_ledger)
+      second_ledger = runner.send(:provisioning_ledger)
+      attempt = first_ledger.next_attempt_for(agent_run: agent_run)
+      expect(second_ledger.next_attempt_for(agent_run: agent_run)).to eq(attempt)
+
+      first_ledger.record_intent(agent_run: agent_run, attempt: attempt)
+
+      expect { second_ledger.record_intent(agent_run: agent_run, attempt: attempt) }
+        .to raise_error(ActiveRecord::RecordNotUnique)
+    end
+
+    it "marks the intent failed when the provider create call fails" do
+      allow(provision_service).to receive(:provision)
+        .and_raise(Containers::Provision::ProvisionError, "Docker error: no space left")
+
+      expect { runner.provision(spec: run_spec) }
+        .to raise_error(ExecutionRunners::ProvisionError, /no space left/)
+
+      intent = ProvisioningIntent.order(:id).last
+      expect(intent.status).to eq("failed")
+      expect(intent.provider_resource_id).to be_nil
+    end
+
+    it "keeps the intent reconcileable when cleanup also fails after a post-create runner error" do
+      allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new("production"))
+      seed_snapshot!
+      stub_ready_gateway_adapter!
+      allow(NetworkPolicy).to receive(:apply_firewall_rules)
+        .and_raise(NetworkPolicy::Error, "iptables not available")
+      allow(provision_service).to receive_messages(agent_run: agent_run, cleanup: nil)
+      allow(provision_service).to receive(:cleanup).and_raise(StandardError, "docker daemon unavailable")
+
+      expect { runner.provision(spec: run_spec) }
+        .to raise_error(ExecutionRunners::ProvisionError, /Firewall setup failed/)
+
+      intent = ProvisioningIntent.order(:id).last
+      expect(intent.status).to eq("created")
+      expect(intent.provider_resource_id).to eq("abc123")
+      expect(intent).to be_orphaned
+    end
+  end
+
+  # @spec CONTAINER-RUNTIME-027
+  describe "crash-window reconciliation (RDR-060)" do
+    it "leaves a created ledger row with the resource id when the process dies after provider creation" do
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      allow(provision_service).to receive(:provision).and_return(
+        Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
+      )
+      # A fresh runner instance simulates a worker crash after the provider
+      # resource is created but before the runner handle is built/persisted.
+      crashing_runner = described_class.new
+      allow(crashing_runner).to receive(:handle_for).and_raise(StandardError, "worker killed mid-provision")
+
+      expect { crashing_runner.provision(spec: run_spec) }.to raise_error(StandardError, /worker killed/)
+
+      intent = ProvisioningIntent.order(:id).last
+      expect(intent.status).to eq("created")
+      expect(intent.provider_resource_id).to eq("abc123")
+      expect(intent.provider_resource_host).to eq("local")
+      expect(intent.runner_handle).to be_blank
+      expect(intent).to be_orphaned
+      # Reconciliation can locate the live resource by tag even without the
+      # persisted runner handle.
+      expect(intent.ownership_tags).to include(
+        "paid.run" => agent_run.id.to_s,
+        "paid.resource" => "container"
+      )
+    end
+  end
+
+  # @spec CONTAINER-RUNTIME-026
+  describe "degradation when tagging is unsupported (RDR-060)" do
+    let(:untagging_runner) do
+      Class.new(described_class) { def supports_tagging?; false; end }.new
+    end
+
+    before do
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      allow(provision_service).to receive(:provision).and_return(
+        Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
+      )
+    end
+
+    it "still provisions, records tagging_supported=false, and applies no ownership labels" do
+      expect(Containers::Provision).to receive(:new).with(
+        hash_including(ownership_labels: {})
+      ).and_return(provision_service)
+
+      expect { untagging_runner.provision(spec: run_spec) }.not_to raise_error
+
+      intent = ProvisioningIntent.order(:id).last
+      expect(intent.tagging_supported).to be(false)
+      expect(intent.metadata).to include("tagging_degraded" => true)
+      expect(intent.ownership_tags).to be_empty
+    end
+
+    it "emits a warning so the degradation is observable" do
+      seed_snapshot!
+      adapter = instance_double(
+        AgentRuns::EgressPolicy::GatewayAdapters::Docker,
+        gateway_url: "egress-gateway:3128",
+        allowlist_for: [],
+        ensure!: nil,
+        install_allowlist!: nil
+      )
+      allow(described_class).to receive(:gateway_adapter).and_return(adapter)
+      expect(Rails.logger).to receive(:warn).with(
+        hash_including(message: "execution_runners.tagging_unsupported_degraded")
+      )
+
+      untagging_runner.provision(spec: run_spec)
+    end
+  end
+
+  # @spec CONTAINER-RUNTIME-026
+  describe "degradation when listing is unsupported (RDR-060)" do
+    let(:unlisting_runner) do
+      Class.new(described_class) { def supports_listing?; false; end }.new
+    end
+
+    before do
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      allow(provision_service).to receive(:provision).and_return(
+        Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
+      )
+    end
+
+    it "still provisions and records the explicit listing degradation on the ledger row" do
+      expect { unlisting_runner.provision(spec: run_spec) }.not_to raise_error
+
+      intent = ProvisioningIntent.order(:id).last
+      expect(intent.ownership_tags).to include("paid.run" => agent_run.id.to_s)
+      expect(intent.metadata).to include("listing_degraded" => true)
+      expect(intent.metadata.fetch("reason")).to include("runner_or_provider_cannot_list")
+    end
+
+    it "emits a warning so the degradation is observable" do
+      seed_snapshot!
+      adapter = instance_double(
+        AgentRuns::EgressPolicy::GatewayAdapters::Docker,
+        gateway_url: "egress-gateway:3128",
+        allowlist_for: [],
+        ensure!: nil,
+        install_allowlist!: nil
+      )
+      allow(described_class).to receive(:gateway_adapter).and_return(adapter)
+      expect(Rails.logger).to receive(:warn).with(
+        hash_including(message: "execution_runners.listing_unsupported_degraded")
+      )
+
+      unlisting_runner.provision(spec: run_spec)
     end
   end
 
