@@ -159,6 +159,16 @@ RSpec.describe Containers::Provision do
     )
   end
 
+  def create_cleanup_ledger_entry(agent_run, provider_resource_id:)
+    create(:execution_resource_ledger_entry,
+      :active,
+      :with_agent_run,
+      entry_account: agent_run.project.account,
+      project: agent_run.project,
+      agent_run: agent_run,
+      provider_resource_id: provider_resource_id)
+  end
+
   let(:project) { create(:project) }
   let(:agent_run) { create(:agent_run, project: project) }
   let(:worktree_path) { Dir.mktmpdir("worktree") }
@@ -760,6 +770,25 @@ RSpec.describe Containers::Provision do
           metadata: hash_including(container_id: "abc123container")).ordered
 
         service.provision
+      end
+
+      # @spec EXECUTION-AUDIT-004
+      # @spec EXECUTION-AUDIT-005
+      it "records image, authority, network, and provision audit events" do
+        service.provision
+
+        event_names = ExecutionAuditEvent.for_agent_run(agent_run)
+          .recent
+          .limit(5)
+          .pluck(:event_name)
+
+        expect(event_names).to include(
+          "execution.image_resolved",
+          "execution.credential_classes_granted",
+          "execution.network_policy_granted",
+          "execution.resource_provision_requested",
+          "execution.resource_provisioned"
+        )
       end
 
       it "skips OpenCode database seeding when the run does not resolve to opencode" do
@@ -3733,6 +3762,30 @@ RSpec.describe Containers::Provision do
         expect(mock_container).to receive(:delete).with(force: true, v: true)
 
         service.cleanup
+      end
+
+      # @spec EXECUTION-AUDIT-005
+      it "records cleanup failure, retry, and success audit events" do
+        create_cleanup_ledger_entry(agent_run, provider_resource_id: "abc123container")
+        allow(mock_container).to receive(:delete).with(force: false, v: true).and_raise(Docker::Error::ServerError.new("Docker error"))
+        allow(mock_container).to receive(:delete).with(force: true, v: true).and_return(true)
+
+        service.cleanup
+
+        events = ExecutionAuditEvent.for_agent_run(agent_run)
+          .where(event_name: %w[
+            execution.resource_cleanup_failed
+            execution.resource_cleanup_retried
+            execution.resource_cleanup_succeeded
+          ])
+          .order(:id)
+
+        expect(events.pluck(:event_name)).to eq(%w[
+          execution.resource_cleanup_failed
+          execution.resource_cleanup_retried
+          execution.resource_cleanup_succeeded
+        ])
+        expect(events.first.metadata["resource_ledger_id"]).to be_present
       end
     end
 

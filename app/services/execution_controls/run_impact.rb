@@ -11,12 +11,14 @@ module ExecutionControls
     end
 
     def enable!
+      record_execution_audit_event!("enabled")
       record_control_event!("execution_control.enabled")
       log_control_event("execution_control.enabled")
       affect_active_runs!
     end
 
     def disable!
+      record_execution_audit_event!("disabled")
       record_control_event!("execution_control.disabled")
       log_control_event("execution_control.disabled")
       resume_parked_runs!
@@ -252,6 +254,18 @@ module ExecutionControls
         execution_control_mode: control.mode,
         reason: control.reason
       }
+    end
+
+    def record_execution_audit_event!(state)
+      return unless control.emergency?
+
+      ExecutionAuditEvents::Lifecycle.record(
+        event_name: "execution.emergency_disable_changed",
+        actor_id: "execution_controls.run_impact",
+        project: control.project,
+        account: control_account,
+        metadata: control_event_metadata.merge(state: state)
+      )
     end
 
     def log_control_audit_failure(action, error)

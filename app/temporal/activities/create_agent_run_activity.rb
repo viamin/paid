@@ -91,6 +91,18 @@ module Activities
         )
         created_run
       end
+      if agent_run.previously_new_record?
+        ExecutionAuditEvents::Lifecycle.record(
+          event_name: "execution.requested",
+          actor_id: "activities.create_agent_run",
+          agent_run: agent_run
+        )
+        ExecutionAuditEvents::Lifecycle.record(
+          event_name: "execution.queued",
+          actor_id: "activities.create_agent_run",
+          agent_run: agent_run
+        )
+      end
       log_runner_selection(agent_run: agent_run, **runner_selection_options, resolved_runner_id: provider_id, resolved_agent_type: agent_type)
 
       track_phase(

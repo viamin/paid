@@ -226,6 +226,22 @@ RSpec.describe ProcessRunQueueJob do
     )
   end
 
+  def expect_execution_rejected_event(agent_run, reason:, rate_limited_until:)
+    event = ExecutionAuditEvent.for_agent_run(agent_run).by_event_name("execution.rejected").last
+    expect(event.metadata).to include(
+      "reason" => reason,
+      "rate_limited_until" => rate_limited_until.iso8601
+    )
+  end
+
+  def stub_global_provisioning_rate_limit(available_at:)
+    allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(auto_mode_snapshot)
+    allow(Containers::BackendScheduler).to receive(:call).and_return(default_local_host_selection_result)
+    allow(Capacity::RunAdmission).to receive(:call).and_return(
+      provisioning_rate_denied_admission(available_at: available_at)
+    )
+  end
+
   def stub_unavailable_fallback_hosts(run, registry_bundle)
     disallowed = Containers::Provision::CompatibilityResult.new(
       compatible: false,
@@ -266,6 +282,10 @@ RSpec.describe ProcessRunQueueJob do
       expect(queued_run.temporal_workflow_id).to be_present
       expect(AgentRun.active_count_for_host("aws-runner-1")).to eq(1)
       expect(captured_input[:container_host]).to eq("aws-runner-1")
+
+      event = ExecutionAuditEvent.for_agent_run(queued_run).by_event_name("execution.admitted").last
+      expect(event.metadata).to include("selected_host" => "aws-runner-1")
+      expect(event.correlation_id).to eq(queued_run.temporal_workflow_id)
     end
 
     it "logs the selected host, selection reason, and fallback chain" do
@@ -2167,11 +2187,7 @@ RSpec.describe ProcessRunQueueJob do
         stub_policy_decision(local_auto_decision)
         allow(Rails.logger).to receive(:info)
         available_at = Time.utc(2026, 8, 17, 12, 5, 0)
-        allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(auto_mode_snapshot)
-        allow(Containers::BackendScheduler).to receive(:call).and_return(default_local_host_selection_result)
-        allow(Capacity::RunAdmission).to receive(:call).and_return(
-          provisioning_rate_denied_admission(available_at: available_at)
-        )
+        stub_global_provisioning_rate_limit(available_at:)
 
         expect(temporal_client).not_to receive(:start_workflow)
 
@@ -2181,6 +2197,11 @@ RSpec.describe ProcessRunQueueJob do
         expect(queued_run.status).to eq("rate_limited")
         expect(queued_run.rate_limited_until).to eq(available_at)
         expect(queued_run.external_metadata["capacity_park_reason"]).to eq("global_provisioning_rate_limit")
+        expect_execution_rejected_event(
+          queued_run,
+          reason: "global_provisioning_rate_limit",
+          rate_limited_until: available_at
+        )
       end
 
       it "preserves unrelated external metadata when parking for capacity" do

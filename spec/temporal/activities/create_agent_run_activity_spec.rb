@@ -672,6 +672,19 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(agent_run.guardrail_context.dig("policy_controls", "approval", "required")).to be(true)
     end
 
+    # @spec EXECUTION-AUDIT-004
+    it "records requested and queued execution audit events" do
+      result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      events = ExecutionAuditEvent.for_agent_run(agent_run)
+        .where(event_name: %w[execution.requested execution.queued])
+        .order(:id)
+
+      expect(events.pluck(:event_name)).to eq(%w[execution.requested execution.queued])
+      expect(events.map(&:actor_id)).to eq([ "activities.create_agent_run", "activities.create_agent_run" ])
+    end
+
     it "redacts the custom prompt before persistence when prompt redaction is enabled" do
       create_execution_policy(
         "controls" => {

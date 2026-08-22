@@ -2922,6 +2922,24 @@ class AgentRun < ApplicationRecord
   def persist_execution_authority_grants!(networking_policy: nil)
     grant_set = execution_authority_grants(networking_policy: networking_policy)
     update!(authority_grants: grant_set.to_storage)
+    ExecutionAuditEvents::Lifecycle.record(
+      event_name: "execution.credential_classes_granted",
+      actor_id: "agent_run.persist_execution_authority_grants",
+      agent_run: self,
+      networking_policy: networking_policy,
+      metadata: {
+        grant_kinds: Array(grant_set.grants).map { |grant| grant["kind"] }
+      }
+    )
+    ExecutionAuditEvents::Lifecycle.record(
+      event_name: "execution.network_policy_granted",
+      actor_id: "agent_run.persist_execution_authority_grants",
+      agent_run: self,
+      networking_policy: networking_policy,
+      metadata: {
+        grant_kinds: Array(grant_set.grants).map { |grant| grant["kind"] }
+      }
+    )
     grant_set
   end
 

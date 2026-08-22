@@ -55,9 +55,14 @@ RSpec.describe ExecutionControl do
         control.update!(enabled: true, reason: "Emergency shutdown")
       }.to have_enqueued_job(AgentRunCancellationJob).with(agent_run.id)
         .and change(AccountActivityEvent, :count).by(2)
+        .and change(ExecutionAuditEvent, :count).by(1)
 
       expect(agent_run.reload.status).to eq("cancelled")
       expect(AccountActivityEvent.order(:id).last.action).to eq("agent_run.cancelled")
+      expect(ExecutionAuditEvent.order(:id).last).to have_attributes(
+        event_name: "execution.emergency_disable_changed",
+        actor_id: "execution_controls.run_impact"
+      )
     end
 
     # @spec EXEC-DISABLE-006
