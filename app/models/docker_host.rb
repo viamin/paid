@@ -21,14 +21,22 @@ class DockerHost < ApplicationRecord
   scope :ordered, -> { order(enabled: :desc, display_name: :asc, identifier: :asc) }
   # @spec EXEC-DISABLE-004
   # @spec CONTAINER-RUNTIME-030
+  #
+  # required_infra_network_status is only ever verified (and set to "ready")
+  # by the remote guided setup helpers (DockerHosts::SetupActionRunner), so
+  # it is scoped to remote hosts here. Local hosts never go through that
+  # wizard; their paid_internal network readiness is instead checked live at
+  # run time (Containers::HostReadiness, NetworkPolicy.ensure_network!)
+  # rather than cached on the record. Gating on this column for local hosts
+  # would leave them permanently unable to reach placement-ready.
   scope :placement_ready_for_agent_runs, lambda {
     enabled
       .where(
         readiness_status: "ready",
         image_status: "ready",
-        required_network_status: "ready",
-        required_infra_network_status: "ready"
+        required_network_status: "ready"
       )
+      .where("backend_type <> 'remote' OR required_infra_network_status = 'ready'")
       .where.not(id: ExecutionControl.enabled.where(scope: "backend").select(:docker_host_id))
   }
 
@@ -104,9 +112,11 @@ class DockerHost < ApplicationRecord
   end
 
   # @spec CONTAINER-RUNTIME-030
+  # See placement_ready_for_agent_runs for why required_infra_network_status
+  # only gates remote hosts.
   def placement_ready?
-    enabled? && ready? && image_status == "ready" &&
-      required_network_status == "ready" && required_infra_network_status == "ready"
+    enabled? && ready? && image_status == "ready" && required_network_status == "ready" &&
+      (!remote? || required_infra_network_status == "ready")
   end
 
   def disable!

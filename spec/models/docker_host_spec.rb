@@ -72,6 +72,14 @@ RSpec.describe DockerHost, type: :model do
     expect(ready_host.account.docker_hosts.placement_ready_for_agent_runs).not_to include(infra_pending_host)
   end
 
+  # @spec CONTAINER-RUNTIME-030
+  it "does not require the infra network status for local hosts, since local guided setup never sets it" do
+    host = create(:docker_host, :local, required_network_status: "ready", required_infra_network_status: "unknown")
+
+    expect(host.placement_ready?).to be(true)
+    expect(host.account.docker_hosts.placement_ready_for_agent_runs).to contain_exactly(host)
+  end
+
   # @spec EXEC-DISABLE-004
   it "excludes backend-disabled hosts from placement-ready relations" do
     enabled_host = create(:docker_host)
