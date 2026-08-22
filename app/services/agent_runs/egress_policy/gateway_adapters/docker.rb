@@ -184,19 +184,31 @@ module AgentRuns
         # @raise [Docker::Error::NotFoundError] when no container resolves
         #   by ID or by alias
         def resolve_gateway_container(backend:)
-          backend.get_container(GATEWAY_HOST)
+          container = backend.get_container(GATEWAY_HOST)
+          return container if attached_to_gateway_network?(container)
+
+          find_gateway_container_by_alias(backend: backend) ||
+            raise(::Docker::Error::NotFoundError, "container '#{GATEWAY_HOST}' is not attached to #{NetworkPolicy::NETWORK_NAME} on backend #{backend.identifier}")
         rescue ::Docker::Error::NotFoundError
           find_gateway_container_by_alias(backend: backend) ||
             raise(::Docker::Error::NotFoundError, "no container aliased '#{GATEWAY_HOST}' on backend #{backend.identifier}")
         end
 
-        # Scans running containers for one whose network settings publish
-        # +GATEWAY_HOST+ as an alias, regardless of which network it is on.
+        # Scans running containers for one whose restricted-network endpoint
+        # publishes +GATEWAY_HOST+ as an alias.
         def find_gateway_container_by_alias(backend:)
           backend.list_containers.find do |container|
-            networks = container.info.dig("NetworkSettings", "Networks") || {}
-            networks.each_value.any? { |endpoint| Array(endpoint["Aliases"]).include?(GATEWAY_HOST) }
+            endpoint = gateway_network_endpoint(container)
+            endpoint && Array(endpoint["Aliases"]).include?(GATEWAY_HOST)
           end
+        end
+
+        def attached_to_gateway_network?(container)
+          gateway_network_endpoint(container).present?
+        end
+
+        def gateway_network_endpoint(container)
+          container.info.dig("NetworkSettings", "Networks", NetworkPolicy::NETWORK_NAME)
         end
 
         # Returns nil only when the denial log does not exist yet. Any other

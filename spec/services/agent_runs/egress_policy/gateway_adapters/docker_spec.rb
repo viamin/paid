@@ -10,6 +10,10 @@ RSpec.describe AgentRuns::EgressPolicy::GatewayAdapters::Docker do
   let(:project) { create(:project, account: account) }
   let(:agent_run) { create(:agent_run, project: project) }
   let(:backend) { instance_double(Containers::Backends::Base, identifier: "local") }
+  let(:gateway_container) do
+    instance_double(Docker::Container,
+      info: { "NetworkSettings" => { "Networks" => { "paid_agent" => { "Aliases" => [ "egress-gateway" ] } } } })
+  end
   let(:snapshot) do
     AgentRuns::EgressPolicy::Snapshot.new(
       mode: "proxy_restricted",
@@ -39,7 +43,7 @@ RSpec.describe AgentRuns::EgressPolicy::GatewayAdapters::Docker do
   end
 
   it "returns nil from ensure! when the operator-deployed gateway sidecar exists" do
-    allow(backend).to receive(:get_container).with("egress-gateway").and_return(instance_double(Docker::Container))
+    allow(backend).to receive(:get_container).with("egress-gateway").and_return(gateway_container)
 
     expect(adapter.ensure!(agent_run: agent_run, snapshot: snapshot, backend: backend)).to be_nil
   end
@@ -78,9 +82,28 @@ RSpec.describe AgentRuns::EgressPolicy::GatewayAdapters::Docker do
       .to raise_error(AgentRuns::EgressPolicy::Gateway::UnavailableError, /egress gateway container 'egress-gateway' not found/)
   end
 
-  describe "#install_allowlist!" do
-    let(:gateway_container) { instance_double(Docker::Container) }
+  it "ignores alias matches published only on unrelated networks" do
+    other_network_container = instance_double(Docker::Container,
+      info: { "NetworkSettings" => { "Networks" => { "bridge" => { "Aliases" => [ "egress-gateway" ] } } } })
+    allow(backend).to receive(:get_container).with("egress-gateway").and_raise(Docker::Error::NotFoundError, "not found")
+    allow(backend).to receive(:list_containers).and_return([ other_network_container ])
 
+    expect { adapter.ensure!(agent_run: agent_run, snapshot: snapshot, backend: backend) }
+      .to raise_error(AgentRuns::EgressPolicy::Gateway::UnavailableError, /egress gateway container 'egress-gateway' not found/)
+  end
+
+  it "falls back to a restricted-network alias when the directly resolved container is on the wrong network" do
+    wrong_network_container = instance_double(Docker::Container,
+      info: { "NetworkSettings" => { "Networks" => { "bridge" => { "Aliases" => [ "egress-gateway" ] } } } })
+    restricted_gateway = instance_double(Docker::Container,
+      info: { "NetworkSettings" => { "Networks" => { "paid_agent" => { "Aliases" => [ "egress-gateway" ] } } } })
+    allow(backend).to receive(:get_container).with("egress-gateway").and_return(wrong_network_container)
+    allow(backend).to receive(:list_containers).and_return([ wrong_network_container, restricted_gateway ])
+
+    expect(adapter.ensure!(agent_run: agent_run, snapshot: snapshot, backend: backend)).to be_nil
+  end
+
+  describe "#install_allowlist!" do
     before do
       allow(backend).to receive(:get_container).with("egress-gateway").and_return(gateway_container)
       allow(backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
@@ -142,8 +165,6 @@ RSpec.describe AgentRuns::EgressPolicy::GatewayAdapters::Docker do
   end
 
   describe "#collect_denials" do
-    let(:gateway_container) { instance_double(Docker::Container) }
-
     before do
       allow(backend).to receive(:get_container).with("egress-gateway").and_return(gateway_container)
     end
