@@ -152,10 +152,13 @@
   chat looking unrecoverable. Server-rendering the `open` state (rather than
   relying on a click) keeps those controls reachable before, and without,
   JavaScript. When a live `capability_changed` broadcast *reveals* one of
-  those actions, the controller SHALL unfold the surrounding `<details>` with
-  it, since un-hiding a control inside a collapsed disclosure reveals nothing;
-  it SHALL NOT unfold the disclosure when it is hiding an action, or every
-  unrelated broadcast would expand the header.
+  those actions — i.e. the action transitions from hidden to shown — the
+  controller SHALL unfold the surrounding `<details>` with it, since un-hiding
+  a control inside a collapsed disclosure reveals nothing; it SHALL NOT unfold
+  the disclosure when it is hiding an action or when the action was already
+  visible before the toggle, or same-state snapshot broadcasts (e.g. a
+  `clone_manifest` rebroadcast that still carries `container_capability:
+  "ready"`) would fight a user who intentionally collapsed the disclosure.
 
   The header SHALL carry a percentage `max-height` with its own
   `overflow-y-auto` so no combination of long titles, badges, or workspace
@@ -178,7 +181,8 @@
   disclosure is open"), `spec/system/chat_workspace_reopen_spec.rb`,
   `spec/lib/chat_controller_node_harness_spec.rb`
   ("testStoppedCapabilityUnfoldsItsDisclosure",
-  "testHiddenCapabilityActionLeavesDisclosureAlone").
+  "testHiddenCapabilityActionLeavesDisclosureAlone",
+  "testSameStateBroadcastLeavesDisclosureAlone").
   *Code:* `app/views/chat_sessions/show.html.erb` (panel header),
   `app/javascript/controllers/chat_controller.js#toggleCapabilityActions`,
   `app/views/chat_sessions/_popup.html.erb` (established pattern).

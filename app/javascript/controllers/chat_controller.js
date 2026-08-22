@@ -497,10 +497,15 @@ export default class extends Controller {
   // Revealing an action inside a collapsed disclosure reveals nothing, so
   // unfold the surrounding <details> with it. Without this a workspace that
   // stops mid-session hides its own "Reopen with workspace" recovery button.
+  // Only unfold on an actual hidden -> shown transition — same-state snapshot
+  // broadcasts (e.g. a clone_manifest rebroadcast that still carries
+  // container_capability: "ready") would otherwise force a disclosure the user
+  // just collapsed back open.
   toggleCapabilityActions(selector, show) {
     this.element.querySelectorAll(selector).forEach((element) => {
+      const wasHidden = element.classList.contains("hidden")
       element.classList.toggle("hidden", !show)
-      if (show) element.closest("details")?.setAttribute("open", "")
+      if (show && wasHidden) element.closest("details")?.setAttribute("open", "")
     })
   }
 

@@ -572,7 +572,7 @@ class ChatControllerNodeHarness
       const attributes = [];
       const details = { setAttribute: (name, value) => attributes.push({ name, value }) };
       const reopenForm = {
-        classList: { toggle: () => {} },
+        classList: { contains: (cls) => cls === "hidden", toggle: () => {} },
         closest: (selector) => (selector === "details" ? details : null)
       };
       const { controller } = makeController({
@@ -596,7 +596,7 @@ class ChatControllerNodeHarness
       const attributes = [];
       const details = { setAttribute: (name, value) => attributes.push({ name, value }) };
       const cloneForm = {
-        classList: { toggle: () => {} },
+        classList: { contains: () => false, toggle: () => {} },
         closest: () => details
       };
       const { controller } = makeController({
@@ -611,6 +611,32 @@ class ChatControllerNodeHarness
 
       if (attributes.length !== 0) {
         throw new Error("Expected a hidden ready-only action to leave its <details> untouched");
+      }
+    }
+
+    // Snapshot broadcasts re-send the current capability. Reopening the
+    // disclosure on every same-state payload would fight a user who
+    // intentionally collapsed Workspace, so an action that was already visible
+    // must leave its <details> disclosure untouched.
+    function testSameStateBroadcastLeavesDisclosureAlone() {
+      const attributes = [];
+      const details = { setAttribute: (name, value) => attributes.push({ name, value }) };
+      const alreadyVisibleForm = {
+        classList: { contains: () => false, toggle: () => {} },
+        closest: (selector) => (selector === "details" ? details : null)
+      };
+      const { controller } = makeController({
+        element: {
+          querySelectorAll: (selector) => (
+            selector === "[data-chat-capability-stopped-only]" ? [ alreadyVisibleForm ] : []
+          )
+        }
+      });
+
+      controller.updateCapabilityActions("stopped");
+
+      if (attributes.length !== 0) {
+        throw new Error("Expected a same-state broadcast to leave the disclosure untouched when the action was already visible");
       }
     }
 
@@ -640,6 +666,7 @@ class ChatControllerNodeHarness
       testUpdateViewportHeightIsScrollInvariant();
       testStoppedCapabilityUnfoldsItsDisclosure();
       testHiddenCapabilityActionLeavesDisclosureAlone();
+      testSameStateBroadcastLeavesDisclosureAlone();
     }
 
     try {
