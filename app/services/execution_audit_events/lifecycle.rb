@@ -102,28 +102,39 @@ module ExecutionAuditEvents
         result
       end
 
+      # `ExecutionResourceLedgerEntry` rows are the long-term linkage target,
+      # but the runtime provision/cleanup path does not create or update them
+      # yet (RESOURCE-LEDGER-005, tracked by #3352/#3410) — only
+      # `ExecutionRunners::ProvisioningLedger` writes `ProvisioningIntent`
+      # rows today. Check the ledger first so linkage upgrades automatically
+      # once RESOURCE-LEDGER-005 lands, and fall back to the provisioning
+      # intent so the field is actually populated in the meantime.
       def resource_ledger_id_for(agent_run:, resource_id:)
         return if agent_run.blank?
 
-        entries = agent_run.execution_resource_ledger_entries
-        ledger_id_by_provider_resource_id(entries: entries, resource_id: resource_id) ||
-          ledger_id_by_runner_handle(entries: entries, agent_run: agent_run)
+        matching_record_id(agent_run.execution_resource_ledger_entries, agent_run: agent_run, resource_id: resource_id) ||
+          matching_record_id(ProvisioningIntent.where(agent_run_id: agent_run.id), agent_run: agent_run, resource_id: resource_id)
       end
 
-      def ledger_id_by_provider_resource_id(entries:, resource_id:)
+      def matching_record_id(relation, agent_run:, resource_id:)
+        id_by_provider_resource_id(relation, resource_id: resource_id) ||
+          id_by_runner_handle(relation, agent_run: agent_run)
+      end
+
+      def id_by_provider_resource_id(relation, resource_id:)
         return if resource_id.blank?
 
-        entries.where(provider_resource_id: resource_id).order(id: :desc).pick(:id)
+        relation.where(provider_resource_id: resource_id).order(id: :desc).pick(:id)
       end
 
       # Falls back to matching the agent run's persisted runner handle when no
       # provider resource id is available (or no row matches it) — the only
       # durable identifier for execution-runner-backed resources.
-      def ledger_id_by_runner_handle(entries:, agent_run:)
+      def id_by_runner_handle(relation, agent_run:)
         runner_handle_id = agent_run.runner_handle&.dig("identifier")
         return if runner_handle_id.blank?
 
-        entries.where("runner_handle ->> 'identifier' = ?", runner_handle_id).order(id: :desc).pick(:id)
+        relation.where("runner_handle ->> 'identifier' = ?", runner_handle_id).order(id: :desc).pick(:id)
       end
 
       def current_request_id

@@ -100,7 +100,11 @@ event normalization shared in one helper layer.
   `execution.resource_cleanup_failed`, `execution.resource_cleanup_retried`,
   and `execution.resource_cleanup_succeeded`, linking a matching
   `ExecutionResourceLedgerEntry` when one is discoverable from the run and
-  provider resource id.
+  provider resource id. `ExecutionResourceLedgerEntry` rows are not created by
+  the runtime path yet (RESOURCE-LEDGER-005, tracked by #3352/#3410), so until
+  that lands the linkage falls back to the `ProvisioningIntent` row
+  `ExecutionRunners::ProvisioningLedger` actually persists today, matched the
+  same way (provider resource id, then runner handle).
 - **Execution controls.** Emergency or capacity kill-switch toggles emit
   `execution.emergency_disable_changed` in the execution-audit stream in
   addition to the existing account activity trail so RDR-061 investigations do
