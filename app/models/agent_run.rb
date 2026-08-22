@@ -2912,21 +2912,20 @@ class AgentRun < ApplicationRecord
 
   # @spec EXECUTION-AUTHORITY-001
   def execution_authority_grants(networking_policy: nil)
-    resolved_policy = networking_policy || Containers::Provision.networking_policy_for(
-      agent_run: self, project: project
-    )
+    resolved_policy = resolve_networking_policy(networking_policy)
     ExecutionRunners::AuthorityGrantSet.from_agent_run(self, networking_policy: resolved_policy)
   end
 
   # @spec EXECUTION-AUTHORITY-001
   def persist_execution_authority_grants!(networking_policy: nil)
-    grant_set = execution_authority_grants(networking_policy: networking_policy)
+    resolved_policy = resolve_networking_policy(networking_policy)
+    grant_set = execution_authority_grants(networking_policy: resolved_policy)
     update!(authority_grants: grant_set.to_storage)
     ExecutionAuditEvents::Lifecycle.record(
       event_name: "execution.credential_classes_granted",
       actor_id: "agent_run.persist_execution_authority_grants",
       agent_run: self,
-      networking_policy: networking_policy,
+      networking_policy: resolved_policy,
       metadata: {
         grant_kinds: Array(grant_set.grants).map { |grant| grant["kind"] }
       }
@@ -2935,7 +2934,7 @@ class AgentRun < ApplicationRecord
       event_name: "execution.network_policy_granted",
       actor_id: "agent_run.persist_execution_authority_grants",
       agent_run: self,
-      networking_policy: networking_policy,
+      networking_policy: resolved_policy,
       metadata: {
         grant_kinds: Array(grant_set.grants).map { |grant| grant["kind"] }
       }
@@ -2944,6 +2943,10 @@ class AgentRun < ApplicationRecord
   end
 
   private
+
+  def resolve_networking_policy(networking_policy)
+    networking_policy || Containers::Provision.networking_policy_for(agent_run: self, project: project)
+  end
 
   # ── runner shim helpers (RDR-054) ──────────────────────────────
 

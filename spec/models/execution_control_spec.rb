@@ -76,12 +76,16 @@ RSpec.describe ExecutionControl do
       expect {
         control.update!(enabled: true, reason: "Capacity reduction")
       }.to have_enqueued_job(ExecutionControlParkCleanupJob).with(agent_run.id, workflow_id, nil)
+        .and change(ExecutionAuditEvent, :count).by(1)
 
       agent_run.reload
       expect(agent_run.status).to eq("paused")
       expect(agent_run.external_metadata.dig("execution_control", "control_id")).to eq(control.id)
+      expect(ExecutionAuditEvent.order(:id).last.event_name).to eq("execution.emergency_disable_changed")
 
-      control.update!(enabled: false)
+      expect {
+        control.update!(enabled: false)
+      }.to change(ExecutionAuditEvent, :count).by(1)
 
       expect(agent_run.reload.status).to eq("queued")
       expect(agent_run.external_metadata).not_to have_key("execution_control")

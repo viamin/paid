@@ -257,7 +257,6 @@ module ExecutionControls
     end
 
     def record_execution_audit_event!(state)
-      return unless control.emergency?
       return record_global_execution_audit_events!(state) if control.scope == "global"
 
       ExecutionAuditEvents::Lifecycle.record(
