@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-08-19
+last_updated: 2026-08-21
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -316,6 +316,14 @@ arrows:
     specs: docs/intent/tdd-write-guards/tdd-write-guards-specs.md
     parent: PAID
     taxonomy: runtime
+  rdr-rollout-guards:
+    title: RDR Rollout Guards
+    path: docs/intent/rdr-rollout-guards/rdr-rollout-guards-design.md
+    specs: docs/intent/rdr-rollout-guards/rdr-rollout-guards-specs.md
+    parent: PAID
+    taxonomy: knowledge
+    status: OK
+    audited: 2026-08-21
 
 # Items found during mapping that don't yet belong to a segment.
 # arrow-maintenance cleans this up on each audit.

@@ -44,6 +44,15 @@ RSpec.describe Features::RdrContract do
 
         Two-run chain.
 
+        ## Rollout Guard
+
+        Feature flag: `create_feature`, default off.
+        Enablement surface: `/tenant_configuration` or `bin/rails feature_flags:enable[create_feature]`.
+        Implementation issue: add `create_feature` to `FeatureFlags::DEFINITIONS`
+        and guard runtime behavior with `FeatureFlags.enabled?(:create_feature, project:)`.
+        Rollback: disable the flag.
+        Cleanup: remove after closeout makes feature creation default.
+
         ## Implementation Plan
 
         Five phases.
@@ -113,6 +122,7 @@ RSpec.describe Features::RdrContract do
       expect(result.missing).to include(a_string_matching(/Proposed Solution/))
       expect(result.missing).to include(a_string_matching(/Alternatives Considered/))
       expect(result.missing).to include(a_string_matching(/Trade-offs and Consequences/))
+      expect(result.missing).to include(a_string_matching(/Rollout Guard/))
       expect(result.missing).to include(a_string_matching(/Implementation Plan/))
       expect(result.missing).to include(a_string_matching(/Validation/))
     end
@@ -134,9 +144,42 @@ RSpec.describe Features::RdrContract do
 
       expect(result.valid?).to be false
       # 1 missing section list (Context, Research Findings, Proposed Solution,
-      # Alternatives Considered, Trade-offs and Consequences, Implementation Plan,
-      # Validation) + 1 missing index update = 8 entries
-      expect(result.missing.length).to eq(8)
+      # Alternatives Considered, Trade-offs and Consequences, Rollout Guard,
+      # Implementation Plan, Validation) + 1 missing index update = 9 entries
+      expect(result.missing.length).to eq(9)
+    end
+
+    it "requires enablement and runtime wiring details when rollout guard names a feature flag" do
+      rdr_path = "docs/rdrs/RDR-099-flagged.md"
+      body = Features::RdrContract::REQUIRED_SECTIONS.each_with_object(+"") do |section, str|
+        text = section == "Rollout Guard" ? "Feature flag: new_thing, default off." : "body"
+        str << "## #{section}\n\n#{text}\n\n"
+      end
+
+      result = contract(
+        changed_files: [ rdr_path, "docs/rdrs/README.md" ],
+        contents: { rdr_path => body, "docs/rdrs/README.md" => "RDR-099-flagged.md" }
+      )
+
+      expect(result.valid?).to be false
+      expect(result.missing).to include("RDR rollout guard: feature flag definition: FeatureFlags::DEFINITIONS")
+      expect(result.missing).to include("RDR rollout guard: feature flag runtime check: FeatureFlags.enabled?")
+      expect(result.missing).to include("RDR rollout guard: feature flag enablement surface")
+    end
+
+    it "does not require FeatureFlags wiring for a config-gated rollout guard" do
+      rdr_path = "docs/rdrs/RDR-099-config.md"
+      body = Features::RdrContract::REQUIRED_SECTIONS.each_with_object(+"") do |section, str|
+        text = section == "Rollout Guard" ? "Config gate: tenant setting, default off. Enablement surface: tenant configuration." : "body"
+        str << "## #{section}\n\n#{text}\n\n"
+      end
+
+      result = contract(
+        changed_files: [ rdr_path, "docs/rdrs/README.md" ],
+        contents: { rdr_path => body, "docs/rdrs/README.md" => "RDR-099-config.md" }
+      )
+
+      expect(result.valid?).to be true
     end
   end
 
