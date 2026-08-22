@@ -94,7 +94,7 @@ module Containers
     end
 
     def eligible_docker_hosts(auth_source)
-      account.docker_hosts.placement_ready_for_agent_runs.ordered.select do |host|
+      docker_host_scope(auth_source).ordered.select do |host|
         docker_host_eligible?(host, auth_source)
       end
     end
@@ -115,6 +115,18 @@ module Containers
 
     def docker_host_backend_capabilities(host)
       Struct.new(:identifier, :supports_host_paths?).new(host.identifier, host.local?)
+    end
+
+    def docker_host_scope(auth_source)
+      return account.docker_hosts.placement_ready_for_agent_runs if unrestricted_network_required?(auth_source)
+
+      account.docker_hosts.placement_ready_for_restricted_agent_runs
+    end
+
+    def unrestricted_network_required?(auth_source)
+      runner&.requires_direct_outbound? ||
+        auth_source&.managed? ||
+        auth_source&.host_forwarded?
     end
 
     def subscription_auth_source_for(runner)

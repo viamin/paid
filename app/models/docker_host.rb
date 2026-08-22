@@ -24,20 +24,27 @@ class DockerHost < ApplicationRecord
   # @spec EXEC-DISABLE-004
   # @spec CONTAINER-RUNTIME-030
   #
-  # Placement readiness must stay aligned with the actual runtime contract.
-  # Local hosts do not go through the remote setup wizard, but they can still
-  # require the paid_internal network at run time. If this cached status does
-  # not gate local placement too, a host can be offered for placement and fail
-  # later during provisioning when runtime readiness checks enforce it.
-  scope :placement_ready_for_agent_runs, lambda {
+  # Proxy-restricted runs only require the primary/restricted network.
+  # Unrestricted subscription-auth and direct-outbound runs add the infra
+  # network requirement via placement_ready_for_agent_runs below.
+  scope :placement_ready_for_restricted_agent_runs, lambda {
     enabled
       .where(
         readiness_status: "ready",
         image_status: "ready",
         required_network_status: "ready"
       )
-      .where(required_infra_network_status: "ready")
       .where.not(id: ExecutionControl.enabled.where(scope: "backend").select(:docker_host_id))
+  }
+
+  # Placement readiness for unrestricted runs must stay aligned with the
+  # actual runtime contract. Local hosts do not go through the remote setup
+  # wizard, but they can still require the paid_internal network at run time.
+  # If this cached status does not gate unrestricted placement too, a host can
+  # be offered for placement and fail later during provisioning when runtime
+  # readiness checks enforce it.
+  scope :placement_ready_for_agent_runs, lambda {
+    placement_ready_for_restricted_agent_runs.where(required_infra_network_status: "ready")
   }
 
   # Identifiers (scoped to a single account, since identifier is only unique

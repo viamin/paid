@@ -495,11 +495,12 @@
   contract actually uses: `NetworkPolicy::NETWORK_NAME` (`paid_agent`) for
   the primary/restricted network, and a distinct `required_infra_network_status`
   tracking `NetworkPolicy::INFRA_NETWORK_NAME` (`paid_internal`) for
-  unrestricted subscription-auth/direct-outbound runs. Both must be
-  `"ready"` before `DockerHost#placement_ready?` (and the
-  `placement_ready_for_agent_runs` scope) consider the host eligible for
-  agent run placement — closing the gap where the setup UI defaulted to an
-  unused `"paid-agents"` name and never checked `paid_internal` at all,
-  giving operators a false sense of readiness for remote hosts.
-  *Tests:* `spec/models/docker_host_spec.rb`, `spec/services/docker_hosts/setup_action_runner_spec.rb`, `spec/services/docker_hosts/setup_guide_spec.rb`.
-  *Code:* `DockerHost`, `DockerHosts::SetupActionRunner`, `DockerHosts::SetupGuide`.
+  unrestricted subscription-auth/direct-outbound runs. `DockerHost#placement_ready?`
+  and the unrestricted placement relation SHALL require both networks to be
+  `"ready"`, while restricted/proxy placement SHALL continue to admit hosts
+  whose `paid_agent` network is ready even when `paid_internal` is still
+  pending — closing the gap where the setup UI defaulted to an unused
+  `"paid-agents"` name and never checked `paid_internal` at all, without
+  regressing restricted-only remote placement.
+  *Tests:* `spec/models/docker_host_spec.rb`, `spec/requests/agent_runs_spec.rb`, `spec/services/docker_hosts/setup_action_runner_spec.rb`, `spec/services/docker_hosts/setup_guide_spec.rb`.
+  *Code:* `DockerHost`, `Containers::ResolveHostForRun`, `Projects::AgentRunsController`, `DockerHosts::SetupActionRunner`, `DockerHosts::SetupGuide`.

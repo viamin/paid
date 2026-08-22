@@ -75,6 +75,8 @@ RSpec.describe DockerHost, type: :model do
     ready_host = create(:docker_host)
     infra_pending_host = create(:docker_host, account: ready_host.account, required_infra_network_status: "unknown")
 
+    expect(ready_host.account.docker_hosts.placement_ready_for_restricted_agent_runs)
+      .to contain_exactly(ready_host, infra_pending_host)
     expect(ready_host.account.docker_hosts.placement_ready_for_agent_runs).to contain_exactly(ready_host)
     expect(ready_host.account.docker_hosts.placement_ready_for_agent_runs).not_to include(infra_pending_host)
   end
