@@ -36,7 +36,9 @@ module Tdd
       client = project.client
       return failure(:no_github_client) unless client
 
-      swap_labels(client)
+      result = swap_labels(client)
+      return result unless result.success?
+
       agent_run.update!(tdd_returned_to_test_review: true)
 
       Result.new(success: true, error: nil)
@@ -58,6 +60,7 @@ module Tdd
       client.remove_label_from_issue(project.full_name, pull_request_number, TESTS_APPROVED_LABEL)
       client.add_labels_to_issue(project.full_name, pull_request_number, [ TESTS_READY_FOR_REVIEW_LABEL ])
       update_local_pull_request_labels
+      Result.new(success: true, error: nil)
     rescue GithubClient::Error, Faraday::Error => e
       Rails.logger.warn(
         message: "tdd.return_to_test_review_label_sync_failed",
@@ -66,6 +69,7 @@ module Tdd
         error_class: e.class.name,
         error: e.message
       )
+      failure(:label_sync_failed)
     end
 
     def update_local_pull_request_labels

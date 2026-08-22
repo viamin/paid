@@ -91,11 +91,12 @@ RSpec.describe Tdd::ReturnToTestReview do
         allow(Rails.logger).to receive(:warn)
       end
 
-      it "still records the reset locally and logs a warning" do
+      it "fails without flipping the write-guard flag and logs a warning" do
         result = described_class.call(agent_run: agent_run)
 
-        expect(result).to be_success
-        expect(agent_run.reload.tdd_returned_to_test_review).to be(true)
+        expect(result).not_to be_success
+        expect(result.error).to eq(:label_sync_failed)
+        expect(agent_run.reload.tdd_returned_to_test_review).to be(false)
         expect(Rails.logger).to have_received(:warn)
           .with(hash_including(message: "tdd.return_to_test_review_label_sync_failed"))
       end

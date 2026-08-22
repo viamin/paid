@@ -63,10 +63,12 @@
 - [x] **TDD-GUARD-008** — `Tdd::ReturnToTestReview` SHALL fail without
   raising — returning a result with `success?: false` and a reason — when
   the run is not in `test_fixing` phase, when no PR number is resolvable, or
-  when the project has no GitHub client; remote label-sync errors
-  (`GithubClient::Error`, `Faraday::Error`) SHALL be caught and logged as a
-  warning rather than aborting the reset, since the local flag update is
-  what write-guard enforcement actually depends on.
+  when the project has no GitHub client. Remote label-sync errors
+  (`GithubClient::Error`, `Faraday::Error`) SHALL be caught, logged as a
+  warning, and returned as `success?: false` with a distinct failure reason;
+  in that case `agent_run.tdd_returned_to_test_review` SHALL remain false so
+  the write-guard exemption is never granted unless the PR label transition
+  actually succeeds.
   *Code:* `app/services/tdd/return_to_test_review.rb`.
   *Test:* `spec/services/tdd/return_to_test_review_spec.rb`.
 

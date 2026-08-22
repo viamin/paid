@@ -98,6 +98,12 @@ closes the loophole where a run could claim it returned the PR without the
 label state agreeing — a reviewer (human or agent) re-checking the PR always
 sees a label state consistent with the run's write-guard exemption.
 
+If the GitHub label transition itself fails, `Tdd::ReturnToTestReview` logs
+the sync error and returns a failure result instead of flipping the flag
+locally. The exemption is intentionally conservative: a `test_fixing` run may
+only unlock test edits after the remote PR state and the local `AgentRun`
+state have both been updated successfully.
+
 `Tdd::ReturnToTestReview` is only invoked when the write guard actually
 rejects a `test_fixing` run's test edits and the run's own reasoning
 determines the approved tests are wrong (per RDR-056: "If implementation
