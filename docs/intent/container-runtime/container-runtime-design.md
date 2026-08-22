@@ -423,6 +423,28 @@ development: its platform is stubbed with the constraint that
 clone path), while legacy bind-mount runs remain a compatibility path
 outside the conformance scenario.
 
+### Agent-image install failure diagnostics
+
+The agent image carries contract-owned CLI install recipes from
+`agent-harness`. When a build fails in a post-install assertion, the
+Dockerfile must say which assertion failed and print the small amount of local
+state needed to diagnose it, because the contract/package may be correct while
+the image environment is wrong (for example PATH, launcher location, execute
+bit, or runtime version drift).
+
+The Oh My Pi install block is the concrete guardrail here: after installing Bun
+and the `omp` package, the Dockerfile validates the `omp` launcher and the Bun
+version with explicit failure messages instead of chained silent `test` calls.
+That keeps cross-architecture failures actionable without requiring an operator
+to rerun the whole image build under an interactive shell.
+
+Because the generic Bun installer can pick an `amd64` binary that assumes AVX2,
+the agent image installs the contract-pinned Bun release asset directly,
+verifies it against Bun's published `SHASUMS256.txt`, and falls back to the
+baseline `bun-linux-x64-baseline.zip` asset when `/proc/cpuinfo` does not
+advertise AVX2. That keeps the Oh My Pi install path compatible with older
+`amd64` runners instead of failing inside the post-install assertions.
+
 ## References
 
 - `app/services/containers/provision.rb`
