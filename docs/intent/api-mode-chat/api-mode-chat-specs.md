@@ -117,7 +117,7 @@
   `scrollToInput`, `scrollToTop`, and `handleScroll` (back-to-top visibility
   and auto-scroll tracking) only fire on `containerTarget.scrollTop`, which
   stays at 0 when the document scrolls instead of the intended container
-  (#3459, follow-up to #3331; regression fixed in #3564).
+  (#3459, follow-up to #3331; regression fixed in #3575).
 
   The offset SHALL be measured document-relative
   (`getBoundingClientRect().top + window.scrollY`), not viewport-relative. A
@@ -170,7 +170,7 @@
 
   Without these bounds the header's runner/model controls, token bar, and
   workspace panel consume most of a viewport-bound panel and the transcript
-  renders in a sliver too short to read (#3564).
+  renders in a sliver too short to read (#3575).
   *Tests:* `spec/requests/chat_sessions_spec.rb` ("collapses the workspace
   disclosure for an inline-only chat", "renders the workspace disclosure open
   when the chat has a workspace", "bounds the chat panel header so the
