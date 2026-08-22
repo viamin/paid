@@ -195,6 +195,10 @@ RSpec.describe ExecutionControl do
       global_events = AccountActivityEvent.where(action: "execution_control.enabled")
       expect(global_events.pluck(:account_id)).to contain_exactly(project_a.account_id, project_b.account_id)
       expect(global_events.pluck(:subject_id).uniq).to eq([ control.id ])
+
+      audit_events = ExecutionAuditEvent.where(event_name: "execution.emergency_disable_changed").order(:id)
+      expect(audit_events.pluck(:account_id)).to contain_exactly(project_a.account_id, project_b.account_id)
+      expect(audit_events.pluck(:project_id)).to all(be_nil)
     end
 
     # @spec EXEC-DISABLE-007

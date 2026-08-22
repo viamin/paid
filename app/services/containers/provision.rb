@@ -322,24 +322,6 @@ module Containers
         networking_policy: resolved_policy
       )
       ExecutionAuditEvents::Lifecycle.record(
-        event_name: "execution.credential_classes_granted",
-        actor_id: "containers.provision",
-        agent_run: agent_run,
-        backend: backend_identifier,
-        image_reference: resolved_image_reference,
-        image_digest: resolved_image_digest,
-        networking_policy: resolved_policy
-      )
-      ExecutionAuditEvents::Lifecycle.record(
-        event_name: "execution.network_policy_granted",
-        actor_id: "containers.provision",
-        agent_run: agent_run,
-        backend: backend_identifier,
-        image_reference: resolved_image_reference,
-        image_digest: resolved_image_digest,
-        networking_policy: resolved_policy
-      )
-      ExecutionAuditEvents::Lifecycle.record(
         event_name: "execution.resource_provision_requested",
         actor_id: "containers.provision",
         agent_run: agent_run,

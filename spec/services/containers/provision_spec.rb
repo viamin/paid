@@ -774,18 +774,16 @@ RSpec.describe Containers::Provision do
 
       # @spec EXECUTION-AUDIT-004
       # @spec EXECUTION-AUDIT-005
-      it "records image, authority, network, and provision audit events" do
+      it "records image and provision audit events without duplicating grant events" do
         service.provision
 
         event_names = ExecutionAuditEvent.for_agent_run(agent_run)
           .recent
-          .limit(5)
+          .limit(3)
           .pluck(:event_name)
 
-        expect(event_names).to include(
+        expect(event_names).to contain_exactly(
           "execution.image_resolved",
-          "execution.credential_classes_granted",
-          "execution.network_policy_granted",
           "execution.resource_provision_requested",
           "execution.resource_provisioned"
         )

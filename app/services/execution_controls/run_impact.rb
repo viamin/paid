@@ -258,6 +258,7 @@ module ExecutionControls
 
     def record_execution_audit_event!(state)
       return unless control.emergency?
+      return record_global_execution_audit_events!(state) if control.scope == "global"
 
       ExecutionAuditEvents::Lifecycle.record(
         event_name: "execution.emergency_disable_changed",
@@ -266,6 +267,17 @@ module ExecutionControls
         account: control_account,
         metadata: control_event_metadata.merge(state: state)
       )
+    end
+
+    def record_global_execution_audit_events!(state)
+      global_audit_accounts("execution_control.#{state}").each do |account|
+        ExecutionAuditEvents::Lifecycle.record(
+          event_name: "execution.emergency_disable_changed",
+          actor_id: "execution_controls.run_impact",
+          account: account,
+          metadata: control_event_metadata.merge(state: state)
+        )
+      end
     end
 
     def log_control_audit_failure(action, error)
