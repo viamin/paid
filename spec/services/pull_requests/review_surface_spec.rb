@@ -86,4 +86,30 @@ RSpec.describe PullRequests::ReviewSurface, :no_db do
       expect(body).to include("  rejects invalid token")
     end
   end
+
+  context "when a follow-up run does not touch any test files" do
+    let(:changed_files_output) { "app/services/projects/import.rb\n" }
+    let(:existing_body) do
+      <<~MARKDOWN
+        ## Summary
+
+        Test PR
+
+        ## Test Outline
+
+        ```text
+        Projects::Import
+          creates a project
+        ```
+      MARKDOWN
+    end
+
+    it "preserves the existing Test Outline section" do # @spec TDD-PR-002
+      body = described_class.call(body: existing_body, agent_run: agent_run)
+
+      expect(body).to include("## Test Outline")
+      expect(body).to include("Projects::Import")
+      expect(body).to include("creates a project")
+    end
+  end
 end

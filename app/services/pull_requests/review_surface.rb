@@ -25,13 +25,23 @@ module PullRequests
     end
 
     def call
-      updated = replace_or_remove_section(body, TEST_OUTLINE_HEADING, test_outline_section)
+      updated = update_test_outline_section(body)
       replace_or_remove_section(updated, LID_REPORT_HEADING, lid_phase_report_section)
     end
 
     private
 
     attr_reader :body, :agent_run
+
+    # Only rewrite the Test Outline section when this run's own diff touched
+    # test files. Follow-up runs (test_fixing/refactor) that don't touch test
+    # files would otherwise recompute an empty outline from their own diff
+    # and delete the section that earlier red-phase commits populated.
+    def update_test_outline_section(markdown)
+      return markdown if changed_test_files.empty?
+
+      replace_or_remove_section(markdown, TEST_OUTLINE_HEADING, test_outline_section)
+    end
 
     def test_outline_section
       outlines = changed_test_files.filter_map { |path| outline_for(path) }
