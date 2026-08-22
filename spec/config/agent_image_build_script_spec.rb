@@ -71,6 +71,11 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(workflow_source).to include("env:\n      PAID_SKIP_DATABASE_RUNTIME_ROLE_GUARD: \"true\"")
     end
 
+    it "avoids action-managed Bundler caching in the artifact-publishing job" do
+      expect(workflow_source).to include("uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b")
+      expect(workflow_source).not_to include("bundler-cache: true")
+    end
+
     it "generates and uploads a smoke-tested image metadata artifact" do
       expect(workflow_source).to include("id: build-paid-agent")
       expect(workflow_source).to include("id: image-digest")
