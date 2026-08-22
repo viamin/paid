@@ -150,7 +150,7 @@ module ExecutionResources
         # agent and its container, forcing a duplicate re-provision that
         # `clear_agent_run_references!` would have made worse. Mirror the
         # `orphaned_run?` guard used by adoptable below.
-        if resource.agent_run.nil? || resource.agent_run.finished?
+        if resource.agent_run.nil? || missing_listing_authoritative?(resource.agent_run)
           resource.mark_cleaned!
           counts[:cleaned] += 1
         else
@@ -172,6 +172,10 @@ module ExecutionResources
 
     def due_for_cleanup?(resource)
       resource.next_cleanup_at.nil? || resource.next_cleanup_at <= Time.current
+    end
+
+    def missing_listing_authoritative?(agent_run)
+      agent_run.finished? && !agent_run.container_retained?
     end
 
     def cleanup_via_resource(resource:, listed_resource:, runner:, counts:)

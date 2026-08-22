@@ -98,6 +98,24 @@ RSpec.describe ExecutionResources::Reconcile do
     expect(agent_run.container_host).to eq(handle.host)
   end
 
+  it "leaves an active ledger row active when the provider listing is missing but the finished run is retained" do
+    agent_run.update!(container_retained_until: 2.hours.from_now)
+    resource = create(:execution_resource, project: project, agent_run: agent_run,
+      identifier: handle.identifier, host: handle.host, runner_handle: handle.to_storage)
+
+    result = reconcile(scope: ExecutionResource.where(id: resource.id))
+
+    expect(result.checked).to eq(1)
+    expect(result.cleaned).to eq(0)
+    expect(result.reduced_confidence).to eq(1)
+    resource.reload
+    expect(resource).to be_active
+    expect(resource).not_to be_cleaned
+    expect(resource.reduced_confidence).to be(true)
+    expect(agent_run.reload.container_id).to eq(handle.identifier)
+    expect(agent_run.container_host).to eq(handle.host)
+  end
+
   it "marks an active ledger row cleaned when the provider listing is missing and the owning run has no agent_run" do
     resource = ExecutionResource.create!(
       account: account,
