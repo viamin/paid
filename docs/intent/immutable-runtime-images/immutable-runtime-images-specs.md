@@ -68,3 +68,16 @@
   *Code:* `app/services/execution_runners.rb` (`RunSpec#runtime_image_selection`,
   `ExecutionInputManifest.from_run_spec`).
   *Test:* `spec/services/execution_runners_spec.rb`.
+
+- [x] **IMMUTABLE-IMAGE-007** — The agent-image CI workflow SHALL publish a
+  machine-readable metadata envelope for each smoke-tested build that includes
+  the immutable digest, architecture, source commit, relevant lockfile and
+  `agent-harness` identity, build timestamp, and CI provenance URL, plus an
+  activation payload that marks the tested digest `active` by provenance
+  reference without mutating the human-facing tag authority. The activation
+  payload SHALL preserve prior active references so rollback can restore an
+  earlier digest by selecting its prior provenance reference.
+  *Code:* `.github/workflows/agent-image.yml`,
+  `scripts/generate-agent-image-metadata.rb`.
+  *Test:* `spec/config/agent_image_build_script_spec.rb`,
+  `spec/scripts/generate_agent_image_metadata_spec.rb`.

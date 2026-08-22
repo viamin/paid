@@ -61,6 +61,22 @@ Each catalog identity stores:
 - provenance reference
 - whether the final reference was immutable
 
+## CI-published activation metadata
+
+The agent-image CI workflow publishes a machine-readable metadata envelope for
+each smoke-tested build. The envelope carries the immutable digest,
+architecture, source commit, relevant lockfile identities (`bundler`,
+`ruby-maat`, `agent-harness` version/git ref), build timestamp, CI provenance
+URL, an `AgentImage`-compatible registry record payload, and a
+`runtime_catalog_patch` that promotes the new digest by updating the profile's
+`default_reference` without deleting prior active identities.
+
+That separation is what keeps rollback safe: production activation moves the
+default provenance reference to the newly tested digest, while rollback simply
+points the default back at a prior active provenance reference. The mutable tag
+(`paid-agent:latest`) remains a human-facing request shape rather than the
+production authority.
+
 ### Warm-pool provenance
 
 Warm-pool containers are provisioned at warm time (`PoolManager#warm_one`,
