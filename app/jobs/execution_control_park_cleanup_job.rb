@@ -28,10 +28,14 @@ class ExecutionControlParkCleanupJob < ApplicationJob
     agent_run = AgentRun.find(agent_run_id)
 
     cancel_temporal_workflow(agent_run_id, workflow_id) if workflow_id.present?
-    cleanup_container(agent_run, container_id, runner_handle_data) if container_id.present?
+    cleanup_container(agent_run, container_id, runner_handle_data) if cleanup_requested?(container_id, runner_handle_data)
   end
 
   private
+
+  def cleanup_requested?(container_id, runner_handle_data)
+    container_id.present? || runner_handle_data.present?
+  end
 
   def cancel_temporal_workflow(agent_run_id, workflow_id)
     return if workflow_id == AgentRun::CLAIMED_SENTINEL

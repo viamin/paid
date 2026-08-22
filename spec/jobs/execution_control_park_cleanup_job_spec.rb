@@ -127,6 +127,29 @@ RSpec.describe ExecutionControlParkCleanupJob, type: :job do
       )
     end
 
+    it "cleans up runner-backed runs even when only the persisted handle snapshot is available" do
+      FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+
+      handle_hash = ExecutionRunners::RunnerHandle.new(
+        runner_type: :contract,
+        identifier: "runner-environment-123",
+        host: "contract",
+        workspace_ref: "contract-#{agent_run.id}",
+        metadata: { "agent_run_id" => agent_run.id }
+      ).to_storage
+
+      runner = instance_double(ExecutionRunners::ContractRunner)
+      allow(ExecutionRunners).to receive(:resolve_for).and_return(runner)
+      allow(runner).to receive(:cleanup)
+
+      described_class.perform_now(agent_run.id, nil, nil, handle_hash)
+
+      expect(runner).to have_received(:cleanup).with(
+        handle: an_object_having_attributes(identifier: "runner-environment-123"),
+        force: true
+      )
+    end
+
     it "uses the park-time handle snapshot rather than the row's current runner_handle" do
       # If the run was resumed and re-dispatched to a new environment before
       # this job runs, agent_run.runner_handle on the row reflects the NEW
