@@ -18,3 +18,14 @@
   *Tests:* `spec/services/prompt_assembly/build_issue_prompt_spec.rb`
   *Code:* `PromptAssembly::Sections::RdrRolloutGuard`,
   `PromptAssembly::BuildIssuePrompt`
+
+- [x] **RDR-ROLLOUT-GUARD-003** — When a rollout guard uses a feature flag, RDR
+  authoring and implementation prompts SHALL require a reachable enablement
+  path: the flag key is added to `FeatureFlags::DEFINITIONS`, the RDR names the
+  enablement surface, and runtime behavior is guarded with
+  `FeatureFlags.enabled?(:flag_name, project:)`.
+  *Tests:* `spec/services/features/rdr_contract_spec.rb`,
+  `spec/services/prompts/build_for_create_feature_spec.rb`,
+  `spec/services/prompt_assembly/build_issue_prompt_spec.rb`
+  *Code:* `Features::RdrContract`, `Prompts::BuildForCreateFeature`,
+  `PromptAssembly::Sections::RdrRolloutGuard`

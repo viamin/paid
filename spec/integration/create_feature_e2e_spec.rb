@@ -402,6 +402,9 @@ RSpec.describe "CreateFeature E2E", type: :model do
         ## Rollout Guard
 
         Feature flag: dark_mode, default off.
+        Enablement surface: `/tenant_configuration`.
+        Implementation issue: add `dark_mode` to `FeatureFlags::DEFINITIONS`
+        and guard runtime behavior with `FeatureFlags.enabled?(:dark_mode, project:)`.
 
         ## Implementation Plan
 

@@ -28,10 +28,12 @@ Any RDR that changes runtime behavior must include a `## Rollout Guard`
 section before implementation begins. Use the smallest guard that lets an
 incomplete RDR ship safely:
 
-- **Feature flag**: name the `FeatureFlags` key, default state, rollback action,
-  and cleanup criteria.
+- **Feature flag**: name the `FeatureFlags` key, default state, enablement
+  surface, rollback action, and cleanup criteria. Also state which
+  implementation issue adds the key to `FeatureFlags::DEFINITIONS` and wires
+  the runtime decision through `FeatureFlags.enabled?(:flag_name, project:)`.
 - **Config gate**: name the tenant/project setting, default state, rollback
-  action, and cleanup criteria.
+  action, cleanup criteria, and enablement surface.
 - **Migration-only**: explain why runtime behavior is not exposed until a later
   RDR or issue.
 - **Docs-only**: explain why there is no shipped runtime behavior.
@@ -261,8 +263,9 @@ Key sections:
 - **Proposed Solution**: Technical design with rationale
 - **Alternatives Considered**: Options explored and why rejected
 - **Trade-offs**: Positive/negative consequences, risks
-- **Rollout Guard**: Feature flag, config gate, migration-only/docs-only note,
-  or explicit "none required" justification
+- **Rollout Guard**: Feature flag or config gate with enablement surface and
+  wiring issue, migration-only/docs-only note, or explicit "none required"
+  justification
 - **Implementation Plan**: Prerequisites, steps, files to modify
 - **Validation**: Testing approach and scenarios
 

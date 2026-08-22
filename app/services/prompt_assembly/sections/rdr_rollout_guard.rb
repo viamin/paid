@@ -8,13 +8,14 @@ class PromptAssembly::Sections::RdrRolloutGuard
   private
 
   # @spec RDR-ROLLOUT-GUARD-002
+  # @spec RDR-ROLLOUT-GUARD-003
   def build_section
     return "" unless issue_references_rdr?
 
     <<~PROMPT
       # RDR Rollout Guard
 
-      If this issue references an RDR, read that RDR's `## Rollout Guard` before changing runtime behavior. Preserve the named feature flag, config gate, migration-only boundary, docs-only boundary, or explicit "none required" rationale. Do not make guarded behavior default unless the issue or RDR closeout explicitly asks for that cleanup.
+      If this issue references an RDR, read that RDR's `## Rollout Guard` before changing runtime behavior. Preserve the named feature flag, config gate, migration-only boundary, docs-only boundary, or explicit "none required" rationale. For feature flags, make sure the flag is listed in `FeatureFlags::DEFINITIONS`, has a named enablement surface, and guards the runtime decision with `FeatureFlags.enabled?(:flag_name, project:)`. Do not make guarded behavior default unless the issue or RDR closeout explicitly asks for that cleanup.
     PROMPT
   end
 
