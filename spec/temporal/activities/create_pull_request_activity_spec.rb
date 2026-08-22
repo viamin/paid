@@ -862,6 +862,10 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
           Maintenance overhead.
 
+          ## Rollout Guard
+
+          Feature flag: dark_mode, default off.
+
           ## Implementation Plan
 
           Three phases.

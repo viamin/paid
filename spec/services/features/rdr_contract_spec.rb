@@ -44,6 +44,10 @@ RSpec.describe Features::RdrContract do
 
         Two-run chain.
 
+        ## Rollout Guard
+
+        Ship behind a feature flag; rollback by reverting the flag.
+
         ## Implementation Plan
 
         Five phases.
@@ -113,6 +117,7 @@ RSpec.describe Features::RdrContract do
       expect(result.missing).to include(a_string_matching(/Proposed Solution/))
       expect(result.missing).to include(a_string_matching(/Alternatives Considered/))
       expect(result.missing).to include(a_string_matching(/Trade-offs and Consequences/))
+      expect(result.missing).to include(a_string_matching(/Rollout Guard/))
       expect(result.missing).to include(a_string_matching(/Implementation Plan/))
       expect(result.missing).to include(a_string_matching(/Validation/))
     end
@@ -134,9 +139,9 @@ RSpec.describe Features::RdrContract do
 
       expect(result.valid?).to be false
       # 1 missing section list (Context, Research Findings, Proposed Solution,
-      # Alternatives Considered, Trade-offs and Consequences, Implementation Plan,
-      # Validation) + 1 missing index update = 8 entries
-      expect(result.missing.length).to eq(8)
+      # Alternatives Considered, Trade-offs and Consequences, Rollout Guard,
+      # Implementation Plan, Validation) + 1 missing index update = 9 entries
+      expect(result.missing.length).to eq(9)
     end
   end
 

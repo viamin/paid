@@ -399,6 +399,10 @@ RSpec.describe "CreateFeature E2E", type: :model do
 
         Maintenance overhead.
 
+        ## Rollout Guard
+
+        Feature flag: dark_mode, default off.
+
         ## Implementation Plan
 
         Three phases.

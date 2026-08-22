@@ -35,6 +35,10 @@ RSpec.describe Prompts::BuildForCreateFeature do
       expect(prompt).to include("Users want a dark theme to reduce eye strain at night")
       expect(prompt).to include("docs/rdrs/RDR-0XX-<slug>.md")
       expect(prompt).to include("docs/rdrs/README.md")
+      expect(prompt).to include("Rollout Guard")
+      expect(prompt).to include("feature flag or")
+      expect(prompt).to include("config gate")
+      expect(prompt).to include("cleanup criteria")
     end
 
     it "tells the agent to derive the RDR number from the repo (with target override)" do
