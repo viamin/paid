@@ -13,7 +13,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
   let(:issue) { fixture_repository.issue }
   let(:agent_run) { fixture_repository.agent_run }
   let(:github_client) { instance_double(GithubClient) }
-  let(:pr_response) { Struct.new(:html_url, :number, :body).new("https://github.com/owner/repo/pull/42", 42, "PR body") }
+  let(:pr_response) { Struct.new(:html_url, :number, :body, :title).new("https://github.com/owner/repo/pull/42", 42, "PR body", "PR title") }
   let(:issue_response) do
     OpenStruct.new(
       id: 4242,
@@ -51,6 +51,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
       compare_changed_files: []
     )
     allow(github_client).to receive(:add_labels_to_issue)
+    allow(github_client).to receive(:update_pull_request)
     # Stub external agent harness so Llm::GeneratePrDescription runs without real external calls.
     # By default, return a failed response so the activity falls back to a deterministic description.
     allow(AgentHarness).to receive(:send_message)
@@ -164,6 +165,21 @@ RSpec.describe Activities::CreatePullRequestActivity do
         project.full_name,
         head: "#{project.owner}:#{agent_run.branch_name}",
         state: "open"
+      )
+    end
+
+    it "adds paid-tests-ready-for-review on test-writing runs" do # @spec TDD-PR-001
+      agent_run.update!(
+        tdd_phase: "test_writing",
+        base_commit_sha: "def123def456789012345678901234567890abcd",
+        result_commit_sha: "abc123def456789012345678901234567890abcd"
+      )
+      allow(github_client).to receive(:compare_changed_files).and_return([ "spec/models/widget_spec.rb" ])
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(github_client).to have_received(:add_labels_to_issue).with(
+        project.full_name, 42, include("paid-tests-ready-for-review")
       )
     end
 
@@ -350,7 +366,15 @@ RSpec.describe Activities::CreatePullRequestActivity do
     it "treats ephemeral PR tests as test-first evidence in the LID report" do
       allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
       project.update!(lid_mode: "full")
-      allow(activity).to receive(:git_diff_name_only).with(agent_run).and_return(".ephemeral-tests/lid_report_spec.rb\n")
+      agent_run.update!(
+        base_commit_sha: "def123def456789012345678901234567890abcd",
+        result_commit_sha: "abc123def456789012345678901234567890abcd",
+        worktree_path: Rails.root.to_s
+      )
+      allow(Open3).to receive(:capture2).and_return([
+        ".ephemeral-tests/lid_report_spec.rb\n",
+        instance_double(Process::Status, success?: true)
+      ])
 
       captured_body = nil
       allow(github_client).to receive(:create_pull_request) do |*_args, **kwargs|
@@ -1025,6 +1049,29 @@ RSpec.describe Activities::CreatePullRequestActivity do
             .and_return([ "spec/models/widget_spec.rb" ])
 
           expect { activity.execute(agent_run_id: tdd_agent_run.id) }.not_to raise_error
+        end
+
+        it "refreshes an existing PR body with the test outline" do # @spec TDD-PR-001
+          existing_pr = Struct.new(:html_url, :number, :body, :title).new(
+            "https://github.com/owner/repo/pull/42",
+            42,
+            "## Summary\n\nExisting draft body",
+            "Existing PR"
+          )
+          allow(github_client).to receive_messages(
+            pull_requests: [ existing_pr ],
+            compare_changed_files: [ "spec/models/widget_spec.rb" ]
+          )
+          allow(PullRequests::ReviewSurface).to receive(:call)
+            .and_return("## Summary\n\nExisting draft body\n\n## Test Outline\n\n```text\nWidget\n```")
+
+          activity.execute(agent_run_id: tdd_agent_run.id)
+
+          expect(github_client).to have_received(:update_pull_request).with(
+            project.full_name,
+            42,
+            body: include("## Test Outline")
+          )
         end
       end
 
