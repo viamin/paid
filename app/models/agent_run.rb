@@ -232,6 +232,7 @@ class AgentRun < ApplicationRecord
 
   before_validation :set_initiating_user_from_current_user, on: :create
   before_validation :refresh_queue_entered_at, if: :should_refresh_queue_entered_at?
+  before_validation :assign_default_tdd_phase, on: :create
   before_create :generate_proxy_token
   before_create :snapshot_mcp_servers
 
@@ -1698,6 +1699,30 @@ class AgentRun < ApplicationRecord
   def create_feature_goal?
     goal == "create_feature"
   end
+
+  def assign_default_tdd_phase
+    return if tdd_phase.present?
+    return unless create_pr_goal?
+    return unless project&.tdd_mode.in?(%w[strict non_strict])
+
+    self.tdd_phase = inferred_tdd_phase
+  end
+  private :assign_default_tdd_phase
+
+  def inferred_tdd_phase
+    return "test_writing" if source_pull_request_number.blank?
+
+    pr_record = source_pull_request_record
+    return "test_writing" if pr_record &&
+      !pr_record.has_label?(Tdd::ReturnToTestReview::TESTS_APPROVED_LABEL) &&
+      (
+        pr_record.has_label?(Tdd::ReturnToTestReview::TESTS_READY_FOR_REVIEW_LABEL) ||
+        pr_record.has_label?(Projects::EnsureStandardLabels::LABEL_DEFINITIONS.dig(:tdd_test_changes_requested, :name))
+      )
+
+    "test_fixing"
+  end
+  private :inferred_tdd_phase
 
   # RDR-056 (Strict TDD) run-scoped write-guard phase predicates.
   # @spec TDD-GUARD-001

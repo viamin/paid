@@ -71,6 +71,7 @@ module Api
       if response.status >= 200 && response.status < 300
         track_issue_creation(path, response)
         track_review_creation(path, response)
+        track_tdd_return_to_test_review(path, response)
       elsif response.status >= 400
         log_github_error_response(path, response)
       end
@@ -350,6 +351,24 @@ module Api
       dismiss_stale_changes_requested_reviews(match, body)
     rescue => e
       log_error("github_proxy.track_review_failed", e.message)
+    end
+
+    def track_tdd_return_to_test_review(path, response)
+      return unless @agent_run&.tdd_test_fixing_phase?
+
+      match = %r{\Arepos/[^/]+/[^/]+/issues/(?<number>\d+)(?:/labels)?\z}.match(path)
+      return unless match
+      return unless @agent_run.source_pull_request_number == match[:number].to_i
+
+      body = parse_response_body(response.body)
+      return unless body.is_a?(Hash) && body["pull_request"].is_a?(Hash) && body["labels"].is_a?(Array)
+
+      updated = Tdd::ReturnToTestReview.record_from_label_state(agent_run: @agent_run, labels: body["labels"])
+      return unless updated
+
+      log_info("github_proxy.tdd_return_to_test_review_recorded", pr_number: match[:number].to_i)
+    rescue => e
+      log_error("github_proxy.track_tdd_return_to_test_review_failed", e.message)
     end
 
     def review_url_for(pr_number, review_id)

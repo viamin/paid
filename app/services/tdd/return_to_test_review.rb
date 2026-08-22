@@ -25,6 +25,10 @@ module Tdd
       new(...).call
     end
 
+    def self.record_from_label_state(agent_run:, labels:)
+      new(agent_run:).record_from_label_state(labels:)
+    end
+
     def initialize(agent_run:)
       @agent_run = agent_run
     end
@@ -42,6 +46,17 @@ module Tdd
       agent_run.update!(tdd_returned_to_test_review: true)
 
       Result.new(success: true, error: nil)
+    end
+
+    def record_from_label_state(labels:)
+      return false unless agent_run.tdd_test_fixing_phase?
+
+      label_names = normalize_label_names(labels)
+      return false unless returned_to_test_review_labels?(label_names)
+
+      update_local_pull_request_labels(label_names)
+      agent_run.update!(tdd_returned_to_test_review: true)
+      true
     end
 
     private
@@ -72,18 +87,33 @@ module Tdd
       failure(:label_sync_failed)
     end
 
-    def update_local_pull_request_labels
+    def update_local_pull_request_labels(labels = nil)
       pull_request = project.issues.find_by(github_number: pull_request_number, is_pull_request: true)
       return unless pull_request
 
       pull_request.with_lock do
-        updated = (pull_request.labels - [ TESTS_APPROVED_LABEL ] + [ TESTS_READY_FOR_REVIEW_LABEL ]).uniq
+        updated = labels || (pull_request.labels - [ TESTS_APPROVED_LABEL ] + [ TESTS_READY_FOR_REVIEW_LABEL ]).uniq
         pull_request.update!(labels: updated)
       end
     end
 
     def failure(error)
       Result.new(success: false, error: error)
+    end
+
+    def normalize_label_names(labels)
+      Array(labels).filter_map do |label|
+        case label
+        when String then label
+        when Hash then label["name"] || label[:name]
+        else
+          label.respond_to?(:name) ? label.name : nil
+        end
+      end.uniq
+    end
+
+    def returned_to_test_review_labels?(labels)
+      labels.include?(TESTS_READY_FOR_REVIEW_LABEL) && !labels.include?(TESTS_APPROVED_LABEL)
     end
   end
 end

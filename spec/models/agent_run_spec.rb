@@ -642,6 +642,50 @@ RSpec.describe AgentRun do
 
     # @spec TDD-GUARD-002
     describe "TDD phase predicates" do
+      describe "default phase assignment" do
+        let(:project) { create(:project, tdd_mode: "strict") }
+
+        it "defaults issue-based create_pr runs to test_writing" do
+          run = create(:agent_run, project: project)
+
+          expect(run.tdd_phase).to eq("test_writing")
+        end
+
+        it "defaults PR follow-up runs awaiting test review to test_writing" do
+          create(:issue, :pull_request,
+            project: project,
+            github_number: 42,
+            labels: [ "paid-tests-ready-for-review" ])
+
+          run = create(:agent_run, :existing_pr, project: project)
+
+          expect(run.tdd_phase).to eq("test_writing")
+        end
+
+        it "defaults PR follow-up runs with approved tests to test_fixing" do
+          create(:issue, :pull_request,
+            project: project,
+            github_number: 42,
+            labels: [ "paid-tests-approved" ])
+
+          run = create(:agent_run, :existing_pr, project: project)
+
+          expect(run.tdd_phase).to eq("test_fixing")
+        end
+
+        it "preserves an explicitly assigned phase" do
+          run = create(:agent_run, project: project, tdd_phase: "refactor")
+
+          expect(run.tdd_phase).to eq("refactor")
+        end
+
+        it "leaves non-create_pr runs ungoverned" do
+          run = create(:agent_run, :review_goal, project: project)
+
+          expect(run.tdd_phase).to be_nil
+        end
+      end
+
       describe "#tdd_test_writing_phase?" do
         it "returns true when tdd_phase is test_writing" do
           expect(build(:agent_run, tdd_phase: "test_writing").tdd_test_writing_phase?).to be true
