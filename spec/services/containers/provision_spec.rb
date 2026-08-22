@@ -1291,6 +1291,28 @@ RSpec.describe Containers::Provision do
         )
       end
 
+      it "preserves the workspace-volume resource kind when ownership labels are merged" do
+        service = described_class.new(
+          agent_run: agent_run,
+          ownership_labels: {
+            "paid.resource" => "container",
+            "paid.environment" => "test"
+          }
+        )
+
+        service.provision
+
+        expect(Docker::Volume).to have_received(:create).with(
+          "paid-workspace-#{agent_run.id}",
+          hash_including(
+            "Labels" => hash_including(
+              "paid.resource" => "workspace_volume",
+              "paid.environment" => "test"
+            )
+          )
+        )
+      end
+
       it "creates workspace volume for blank path" do
         service = described_class.new(agent_run: agent_run, worktree_path: "")
 

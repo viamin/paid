@@ -20,6 +20,7 @@ require "json"
 # @see ExecutionRunners::Base
 module ExecutionRunners
   MANIFEST_SCHEMA_VERSION = "remote_execution.v1"
+  REQUIRED_OWNERSHIP_TAG_NAMES = %w[environment account project run attempt resource].freeze
 
   def self.json_value(value)
     case value
@@ -653,6 +654,55 @@ module ExecutionRunners
     # @return [Hash]
     def to_storage
       as_json
+    end
+  end
+
+  # Stable Paid ownership-tag set applied to every provisioned execution
+  # resource so a leaked/orphaned resource can be attributed and reconciled
+  # back to its Paid origin (RDR-060). A runner translates this to its native
+  # provider tag mechanism (Docker labels for the Docker runner).
+  #
+  # The six tag names are the contract every Paid-managed execution resource
+  # carries: environment, account, project, run, attempt, and resource kind.
+  # @spec CONTAINER-RUNTIME-026
+  OwnershipTags = Data.define(:environment, :account_id, :project_id, :run_id, :attempt, :resource_kind) do
+    LABEL_PREFIX = "paid."
+
+    # Builds the ownership tags from an agent-run context. The environment is
+    # the Paid deployment identifier (caller-supplied so deployments without a
+    # Rails.env concept can still attribute resources). Returns nil when no
+    # resource kind is supplied, signalling the runner cannot attribute the
+    # resource and must skip the ledger.
+    def self.for(agent_run:, resource_kind:, environment:, attempt: 0)
+      return nil if resource_kind.blank?
+
+      project = agent_run&.project
+      new(
+        environment: environment.to_s,
+        account_id: project&.account_id,
+        project_id: project&.id,
+        run_id: agent_run&.id,
+        attempt: Integer(attempt || 0),
+        resource_kind: resource_kind.to_s
+      )
+    end
+
+    # The tags as a provider-label map (the Docker runner merges this into the
+    # container/volume labels). Keys carry the shared `paid.*` prefix so a
+    # reconciliation scan can list resources by label regardless of runner.
+    def to_label_map
+      values_by_name = {
+        "environment" => environment,
+        "account" => account_id,
+        "project" => project_id,
+        "run" => run_id,
+        "attempt" => attempt,
+        "resource" => resource_kind
+      }
+
+      ExecutionRunners::REQUIRED_OWNERSHIP_TAG_NAMES.to_h do |name|
+        [ "#{LABEL_PREFIX}#{name}", values_by_name.fetch(name).to_s ]
+      end
     end
   end
 
