@@ -12,6 +12,7 @@ module Activities
       requested_agent_type = input[:agent_type]
       provider_id = input[:runner_id]
       source_pull_request_number = input[:source_pull_request_number]
+      tdd_phase = input[:tdd_phase]
       goal = input[:goal]
       focus = input[:focus] || "general"
       trigger_type = input[:trigger_type]
@@ -83,6 +84,7 @@ module Activities
             source_pull_request_number: source_pull_request_number,
             goal: goal,
             focus: focus,
+            tdd_phase: tdd_phase,
             trigger_type: trigger_type,
             auto_pick: auto_pick,
             count_toward_draft_review_round: count_toward_draft_review_round,
