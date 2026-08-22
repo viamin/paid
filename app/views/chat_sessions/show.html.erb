@@ -21,28 +21,41 @@
                available_models: @available_models %>
 
     <section class="overflow-hidden rounded-lg bg-white shadow">
-      <%# The viewport cap is applied from the controller with a measured
+      <%# The viewport bound is applied from the controller with a measured
           `--chat-panel-offset-top` variable instead of a fixed subtraction
           so layout chrome above `<main>` (notably notice/alert flashes)
           still leaves the conversation pane as the real scroll container.
           The remaining `2rem` subtraction preserves this page's bottom
           `py-8` padding. dvh (not vh) so the iOS Safari URL bar doesn't
           shrink the available space.
-          The 70vh floor is scoped to `lg+` because below `lg` the grid
-          collapses to one column and the panel sits under the stacked
-          mobile sidebar bar, so `getBoundingClientRect().top` already
-          accounts for that chrome and the computed `max-height` is
-          regularly smaller than 70vh. Without the breakpoint guard,
-          `min-height` would win over `max-height`, force the panel back to
-          70vh, push the document (not the conversation container) into
-          the scroll role, and break `scrollToInput` / `scrollToTop` /
-          `handleScroll` (they all act on `containerTarget.scrollTop`).
-          (@spec CHAT-API-008, #3459) %>
-      <div class="flex lg:min-h-[70vh] flex-col overflow-x-hidden"
+
+          This must be a definite `height`, never a `max-height`, and must
+          carry no `min-h` floor. A `max-height` leaves the panel's own
+          height `auto` — indefinite — so percentage heights below it do not
+          resolve: the shared conversation partial's `h-full` root falls
+          back to its natural content height, overflows the
+          `min-h-0 flex-1 overflow-hidden` wrapper below, and the transcript
+          is clipped mid-conversation with the input unreachable and nothing
+          scrollable. A `min-height` is equally wrong here: against a height
+          already fitted to the viewport it can only clamp the panel taller
+          than the viewport, which is the document-scroll failure this bound
+          exists to prevent.
+          (@spec CHAT-API-008, #3459, #3564) %>
+      <div class="flex flex-col overflow-x-hidden"
            data-controller="chat"
            data-chat-session-id-value="<%= @chat_session.id %>"
-           style="max-height: calc(100dvh - var(--chat-panel-offset-top, 0px) - 2rem);">
-        <header class="border-b border-gray-200 px-4 py-5 sm:px-6">
+           style="height: calc(100dvh - var(--chat-panel-offset-top, 0px) - 2rem);">
+        <%# The panel is viewport-bound, so header growth comes straight out
+            of the transcript. Cap the header at a share of the panel and let
+            it scroll internally; `overflow-y-auto` also zeroes its automatic
+            minimum size so it can shrink when the panel is short, and
+            `overflow-x-hidden` keeps that from computing the x axis to
+            `auto` and hanging a horizontal scrollbar off the header.
+            The cap relaxes while the workspace disclosure is open: clipping
+            content the user just chose to expand is worse than a temporarily
+            shorter transcript, and they can collapse it again to reclaim the
+            space. (@spec CHAT-API-009) %>
+        <header class="max-h-[45%] overflow-y-auto overflow-x-hidden border-b border-gray-200 px-4 py-5 sm:px-6 has-[details[open]]:max-h-[75%]">
           <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div class="min-w-0 flex-1 overflow-hidden">
               <% if can_update_chat_session %>
@@ -146,7 +159,27 @@
                 </div>
               </div>
 
-              <%= render "capability_panel", chat_session: @chat_session %>
+              <%# Collapsed for inline-only chats: the capability panel's
+                  cloned-repo list grows without bound, and inside a
+                  viewport-bound panel an unbounded header starves the
+                  transcript. Sessions that actually have a workspace render it
+                  open, because the panel then holds the only controls for that
+                  workspace — "Reopen with workspace" is a stopped chat's sole
+                  recovery path, and folding it away leaves the chat looking
+                  unrecoverable. Open by default (not on click) so it works
+                  before, and without, JavaScript. (@spec CHAT-API-009) %>
+              <%= tag.details class: "group rounded-lg border border-gray-200 bg-gray-50",
+                              open: !@chat_session.inline_only? do %>
+                <summary class="flex cursor-pointer list-none items-center gap-1.5 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 transition hover:text-gray-800 [&::-webkit-details-marker]:hidden">
+                  <svg class="h-3.5 w-3.5 text-gray-400 transition group-open:rotate-90" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="m9 5 7 7-7 7" />
+                  </svg>
+                  Workspace
+                </summary>
+                <div class="px-2 pb-2">
+                  <%= render "capability_panel", chat_session: @chat_session %>
+                </div>
+              <% end %>
             </div>
           </div>
         </header>
