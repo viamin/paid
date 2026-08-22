@@ -131,10 +131,10 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(dockerfile_source).to include('npm_config_tmp="${OMP_INSTALL_TMPDIR}" npm_config_cache="${OMP_INSTALL_WORKDIR}/cache"')
     end
 
-    it "runs the agent-harness omp install command without mutating its dependency set" do
+    it "runs the agent-harness omp install command with optional deps omitted for CI disk budget" do
       expect(dockerfile_source).to include('sh -c "${OMP_INSTALL_COMMAND}"')
       expect(dockerfile_source).to include('rm -rf "${OMP_INSTALL_WORKDIR}"')
-      expect(dockerfile_source).not_to include('npm_config_omit=optional')
+      expect(dockerfile_source).to include('npm_config_omit=optional')
       expect(dockerfile_source).not_to include('bun install -g "${OMP_PACKAGE}"')
     end
 

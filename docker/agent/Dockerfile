@@ -413,9 +413,10 @@ RUN if [ -z "${PI_PACKAGE}" ]; then \
 
 # Install Oh My Pi plus its Bun runtime from the agent-harness contract.
 # @spec CONTAINER-RUNTIME-030
-# OMP's install command is owned by agent-harness; Paid can redirect its temp
-# files for CI stability, but must not change which dependencies the contract
-# installs or the resulting CLI shape can drift from the runner contract.
+# OMP's install command is owned by agent-harness. Paid keeps the contract-owned
+# package/version, redirects temp files off /tmp for CI stability, and omits the
+# package's optional dependencies because the full optional set adds roughly 1GB
+# to the global install footprint and exhausts constrained amd64 CI runners.
 ARG OMP_PACKAGE
 ARG OMP_INSTALL_COMMAND
 ARG OMP_BUN_VERSION
@@ -451,7 +452,7 @@ RUN if [ -z "${OMP_PACKAGE}" ]; then \
     && export OMP_INSTALL_TMPDIR="${OMP_INSTALL_WORKDIR}/tmp" \
     && mkdir -p "${OMP_INSTALL_WORKDIR}/cache" "${OMP_INSTALL_TMPDIR}" \
     && TMPDIR="${OMP_INSTALL_TMPDIR}" TMP="${OMP_INSTALL_TMPDIR}" TEMP="${OMP_INSTALL_TMPDIR}" \
-       npm_config_tmp="${OMP_INSTALL_TMPDIR}" npm_config_cache="${OMP_INSTALL_WORKDIR}/cache" \
+       npm_config_tmp="${OMP_INSTALL_TMPDIR}" npm_config_cache="${OMP_INSTALL_WORKDIR}/cache" npm_config_omit=optional \
        sh -c "${OMP_INSTALL_COMMAND}" \
     && rm -rf "${OMP_INSTALL_WORKDIR}" \
     && OMP_BINARY_PATH="$(command -v omp || true)" \
