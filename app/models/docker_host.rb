@@ -20,9 +20,15 @@ class DockerHost < ApplicationRecord
   scope :enabled, -> { where(enabled: true) }
   scope :ordered, -> { order(enabled: :desc, display_name: :asc, identifier: :asc) }
   # @spec EXEC-DISABLE-004
+  # @spec CONTAINER-RUNTIME-030
   scope :placement_ready_for_agent_runs, lambda {
     enabled
-      .where(readiness_status: "ready", image_status: "ready", required_network_status: "ready")
+      .where(
+        readiness_status: "ready",
+        image_status: "ready",
+        required_network_status: "ready",
+        required_infra_network_status: "ready"
+      )
       .where.not(id: ExecutionControl.enabled.where(scope: "backend").select(:docker_host_id))
   }
 
@@ -61,6 +67,7 @@ class DockerHost < ApplicationRecord
   validates :readiness_status, inclusion: { in: READINESS_STATUSES }
   validates :image_status, inclusion: { in: STATUS_TYPES }
   validates :required_network_status, inclusion: { in: STATUS_TYPES }
+  validates :required_infra_network_status, inclusion: { in: STATUS_TYPES }
   validate :identifier_immutable, if: -> { persisted? && will_save_change_to_identifier? }
   validate :local_backend_endpoint_rules
 
@@ -96,8 +103,10 @@ class DockerHost < ApplicationRecord
     setup_state.fetch("steps", {}).fetch(key.to_s, {})
   end
 
+  # @spec CONTAINER-RUNTIME-030
   def placement_ready?
-    enabled? && ready? && image_status == "ready" && required_network_status == "ready"
+    enabled? && ready? && image_status == "ready" &&
+      required_network_status == "ready" && required_infra_network_status == "ready"
   end
 
   def disable!
@@ -116,11 +125,12 @@ class DockerHost < ApplicationRecord
     self.endpoint = endpoint.to_s.strip.presence
     self.callback_url = callback_url.to_s.strip.presence
     self.image_tag = image_tag.to_s.strip.presence || "paid-agent:latest"
-    self.required_network_name = required_network_name.to_s.strip.presence || "paid-agents"
+    self.required_network_name = required_network_name.to_s.strip.presence || NetworkPolicy::NETWORK_NAME
     self.backend_type = backend_type.to_s.strip.presence || "local"
     self.readiness_status = readiness_status.to_s.strip.presence || "unknown"
     self.image_status = image_status.to_s.strip.presence || "unknown"
     self.required_network_status = required_network_status.to_s.strip.presence || "unknown"
+    self.required_infra_network_status = required_infra_network_status.to_s.strip.presence || "unknown"
     self.failing_check = failing_check.to_s.strip.presence
     self.daemon_architecture = daemon_architecture.to_s.strip.presence
     self.daemon_summary = daemon_summary.to_s.strip.presence

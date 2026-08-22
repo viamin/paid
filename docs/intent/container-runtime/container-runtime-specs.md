@@ -488,3 +488,18 @@
   CLIs against `paid-agent:latest`).
   *Tests:* `spec/services/containers/provision_spec.rb`.
   *Code:* `Containers::Provision` tmpfs configuration.
+
+- [x] **CONTAINER-RUNTIME-030** — When a remote Docker host is registered
+  through the guided setup wizard, the system SHALL default and verify the
+  host's required networks against the same names the runtime network
+  contract actually uses: `NetworkPolicy::NETWORK_NAME` (`paid_agent`) for
+  the primary/restricted network, and a distinct `required_infra_network_status`
+  tracking `NetworkPolicy::INFRA_NETWORK_NAME` (`paid_internal`) for
+  unrestricted subscription-auth/direct-outbound runs. Both must be
+  `"ready"` before `DockerHost#placement_ready?` (and the
+  `placement_ready_for_agent_runs` scope) consider the host eligible for
+  agent run placement — closing the gap where the setup UI defaulted to an
+  unused `"paid-agents"` name and never checked `paid_internal` at all,
+  giving operators a false sense of readiness for remote hosts.
+  *Tests:* `spec/models/docker_host_spec.rb`, `spec/services/docker_hosts/setup_action_runner_spec.rb`, `spec/services/docker_hosts/setup_guide_spec.rb`.
+  *Code:* `DockerHost`, `DockerHosts::SetupActionRunner`, `DockerHosts::SetupGuide`.

@@ -28,6 +28,8 @@ module DockerHosts
       when "test_tls" then test_tls
       when "verify_network" then verify_network
       when "create_network" then create_network
+      when "verify_infra_network" then verify_infra_network
+      when "create_infra_network" then create_infra_network
       when "inspect_image" then inspect_image
       when "test_callback" then test_callback
       when "dry_run" then dry_run
@@ -169,13 +171,59 @@ module DockerHosts
       host.required_network_name = network_name
 
       DockerHosts::RemoteBackendSession.with_backend(host) do |backend|
-        backend.create_network(network_name, { "Driver" => "bridge" })
+        backend.create_network(network_name, docker_network_create_config(network_name))
         host.required_network_status = "ready"
         record_step_success("required_network", "Created Docker network #{network_name.inspect}.")
       end
       host.save!
 
       Result.new(success?: true, message: "Created Docker network #{network_name}.")
+    end
+
+    # @spec CONTAINER-RUNTIME-030
+    def verify_infra_network
+      network_name = NetworkPolicy::INFRA_NETWORK_NAME
+
+      DockerHosts::RemoteBackendSession.with_backend(host) do |backend|
+        backend.get_network(network_name)
+        host.required_infra_network_status = "ready"
+        record_step_success("required_infra_network", "Verified Docker network #{network_name.inspect}.")
+      end
+      host.save!
+
+      Result.new(success?: true, message: "Verified Docker network #{network_name}.")
+    end
+
+    # @spec CONTAINER-RUNTIME-030
+    def create_infra_network
+      raise ArgumentError, "Authorize network creation before running this helper" unless ActiveModel::Type::Boolean.new.cast(params[:allow_network_create])
+
+      network_name = NetworkPolicy::INFRA_NETWORK_NAME
+
+      DockerHosts::RemoteBackendSession.with_backend(host) do |backend|
+        backend.create_network(network_name, docker_network_create_config(network_name))
+        host.required_infra_network_status = "ready"
+        record_step_success("required_infra_network", "Created Docker network #{network_name.inspect}.")
+      end
+      host.save!
+
+      Result.new(success?: true, message: "Created Docker network #{network_name}.")
+    end
+
+    # Mirrors the bridge driver NetworkPolicy.create_network uses for the
+    # local backend (RDR-054, RDR-062). The fixed NETWORK_SUBNET only applies
+    # to +paid_agent+ itself; +paid_internal+ has no canonical subnet
+    # constant, so Docker is left to auto-assign one (see
+    # docs/guides/remote-docker-setup.md, which documents a distinct example
+    # subnet per network to avoid collisions on the same daemon). The
+    # production-only Internal/no-masquerade options are intentionally
+    # omitted here: remote proxy-mode containers must reach
+    # PAID_PROXY_EXTERNAL_URL on the Paid control plane, and a
+    # Docker-internal bridge network blocks that callback (issue #3545).
+    def docker_network_create_config(network_name)
+      config = { "Driver" => "bridge" }
+      config["IPAM"] = { "Config" => [ { "Subnet" => NetworkPolicy::NETWORK_SUBNET } ] } if network_name == NetworkPolicy::NETWORK_NAME
+      config
     end
 
     def inspect_image
@@ -252,6 +300,8 @@ module DockerHosts
         "test_tls" => "tls_connectivity",
         "verify_network" => "required_network",
         "create_network" => "required_network",
+        "verify_infra_network" => "required_infra_network",
+        "create_infra_network" => "required_infra_network",
         "inspect_image" => "image_availability",
         "test_callback" => "callback_reachability",
         "dry_run" => "dry_run"
@@ -387,6 +437,7 @@ module DockerHosts
 
     def downgrade_status_for_failure(step_key)
       host.required_network_status = "failing" if step_key == "required_network"
+      host.required_infra_network_status = "failing" if step_key == "required_infra_network"
     end
 
     def write_step(step_key, status:, message:, completed:)

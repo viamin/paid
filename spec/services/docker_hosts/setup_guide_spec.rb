@@ -38,5 +38,44 @@ RSpec.describe DockerHosts::SetupGuide do
       expect(snippets.fetch("docker_save_load")).not_to include("touch /tmp/pwned |")
       expect(snippets.fetch("registry_pull")).not_to include("docker pull paid-agent:latest; touch /tmp/pwned")
     end
+
+    # @spec CONTAINER-RUNTIME-030
+    it "includes a network create snippet for the fixed infra network regardless of the configured network name" do
+      host = build(
+        :docker_host,
+        endpoint: "tcp://docker.example.test:2376",
+        required_network_name: "shared-agents"
+      )
+
+      snippets = described_class.new(host).command_snippets
+
+      expect(snippets.fetch("infra_network_create")).to eq(
+        "docker --host tcp://docker.example.test:2376 " \
+          "--tlscacert client-ca.pem " \
+          "--tlscert client-cert.pem " \
+          "--tlskey client-key.pem --tlsverify network create #{NetworkPolicy::INFRA_NETWORK_NAME}"
+      )
+    end
+  end
+
+  # @spec CONTAINER-RUNTIME-030
+  describe "#step_rows" do
+    it "reports the infra network step as verified once required_infra_network_status is ready" do
+      host = build(:docker_host, required_infra_network_status: "ready")
+
+      rows = described_class.new(host).step_rows
+      infra_row = rows.find { |row| row[:key] == "required_infra_network" }
+
+      expect(infra_row[:status]).to eq("verified")
+    end
+
+    it "reports the infra network step as pending when required_infra_network_status is unknown" do
+      host = build(:docker_host, required_infra_network_status: "unknown")
+
+      rows = described_class.new(host).step_rows
+      infra_row = rows.find { |row| row[:key] == "required_infra_network" }
+
+      expect(infra_row[:status]).to eq("pending")
+    end
   end
 end

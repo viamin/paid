@@ -19,6 +19,7 @@ module DockerHosts
       { key: "callback_configuration", label: "Paid callback / proxy URL configuration", mode: "verified" },
       { key: "callback_reachability", label: "Callback reachability test from a disposable container", mode: "verified" },
       { key: "required_network", label: "Required network verification or creation", mode: "automated" },
+      { key: "required_infra_network", label: "Infra network (#{NetworkPolicy::INFRA_NETWORK_NAME}) verification or creation", mode: "automated" },
       { key: "image_availability", label: "Image verification and architecture compatibility", mode: "verified" },
       { key: "image_distribution", label: "Image build / pull / load / copy instructions", mode: "manual" },
       { key: "concurrency_limit", label: "Host concurrency limit", mode: "verified" },
@@ -69,7 +70,7 @@ module DockerHosts
 
     def command_snippets
       endpoint_host = endpoint_host_for(host.endpoint)
-      network_name = host.required_network_name.presence || "paid-agents"
+      network_name = host.required_network_name.presence || NetworkPolicy::NETWORK_NAME
       image_tag = host.image_tag
       tarball_name = image_archive_filename(image_tag)
       remote_tarball_path = "/tmp/#{tarball_name}"
@@ -92,6 +93,7 @@ module DockerHosts
           Shellwords.join([ "ssh", endpoint_host, remote_build_command ])
         ].join("\n"),
         "network_create" => "#{docker_tls_command_prefix} network create #{Shellwords.escape(network_name)}",
+        "infra_network_create" => "#{docker_tls_command_prefix} network create #{Shellwords.escape(NetworkPolicy::INFRA_NETWORK_NAME)}",
         "server_files" => "Install the generated server certificate and private key on #{endpoint_host}.\nConfigure the Docker daemon to trust the generated CA and restart Docker after the files are in place."
       }
     end
@@ -119,6 +121,10 @@ module DockerHosts
       when "required_network"
         return "verified" if host.required_network_status == "ready"
         return "pending" if host.required_network_name.blank?
+
+        check_status_for(step_key)
+      when "required_infra_network"
+        return "verified" if host.required_infra_network_status == "ready"
 
         check_status_for(step_key)
       when "image_availability"
@@ -159,6 +165,10 @@ module DockerHosts
         host.callback_url.presence || "Set the callback URL Paid containers must reach."
       when "required_network"
         host.required_network_name.presence || "Choose the Docker network disposable containers should join."
+      when "required_infra_network"
+        return "Docker network #{NetworkPolicy::INFRA_NETWORK_NAME} verified for subscription-auth and direct-outbound runs." if host.required_infra_network_status == "ready"
+
+        "Docker network #{NetworkPolicy::INFRA_NETWORK_NAME} is required for unrestricted subscription-auth / direct-outbound runs."
       when "image_availability"
         host.setup_step(step_key).fetch("message", host.image_tag)
       else

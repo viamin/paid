@@ -154,7 +154,8 @@ RSpec.describe "DockerHosts", type: :request do
       daemon_architecture: "arm64",
       daemon_summary: "Docker 99.9",
       image_status: "ready",
-      required_network_status: "ready"
+      required_network_status: "ready",
+      required_infra_network_status: "ready"
     }
   end
 
@@ -168,5 +169,6 @@ RSpec.describe "DockerHosts", type: :request do
     expect(host.daemon_summary).to be_nil
     expect(host.image_status).to eq("unknown")
     expect(host.required_network_status).to eq("unknown")
+    expect(host.required_infra_network_status).to eq("unknown")
   end
 end
