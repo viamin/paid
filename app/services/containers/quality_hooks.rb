@@ -26,11 +26,15 @@ module Containers
       mutation_cmd = nil if agent_run.tdd_test_writing_phase?
 
       return unless lint_commands.any? || test_commands.any? || mutation_cmd
-      git_ops.install_git_hooks(
+      install_args = {
         lint_command: lint_commands,
         test_command: test_commands,
         mutation_command: mutation_cmd || "true"
-      )
+      }
+      pre_commit_guard = tdd_write_guard_script(agent_run)
+      install_args[:pre_commit_guard] = pre_commit_guard if pre_commit_guard.present?
+
+      git_ops.install_git_hooks(**install_args)
     end
 
     def resolve_mutation_command(project, user, languages) # @spec QUALITY-LOOPS-003
@@ -124,6 +128,83 @@ module Containers
 
       normalized.concat([ "--jobs", "1" ]) unless jobs_overridden
       MutantResultsReader.with_results_dir(Shellwords.join(env_tokens + normalized))
+    end
+
+    def tdd_write_guard_script(agent_run)
+      return unless agent_run.tdd_governed?
+
+      <<~SHELL
+        # Enforce the run-scoped TDD write boundary before the commit lands.
+        tdd_phase="#{agent_run.tdd_phase}"
+        tdd_return_to_review_marker="#{Tdd::ReturnToTestReview::HOOK_MARKER_RELATIVE_PATH}"
+        tdd_changed_files="$(git diff --cached --name-only --diff-filter=ACMR)"
+
+        if [ -n "$tdd_changed_files" ]; then
+          tdd_violation=0
+          tdd_forbidden_files=""
+          tdd_old_ifs="$IFS"
+          IFS='
+        '
+          for tdd_file in $tdd_changed_files; do
+            [ -n "$tdd_file" ] || continue
+
+            case "$tdd_phase" in
+              test_writing)
+                case "$tdd_file" in
+                  #{allowed_test_writing_patterns})
+                    ;;
+                  *)
+                    tdd_violation=1
+                    tdd_forbidden_files="${tdd_forbidden_files}${tdd_file}\n"
+                    ;;
+                esac
+                ;;
+              test_fixing)
+                if [ ! -f "$tdd_return_to_review_marker" ]; then
+                  case "$tdd_file" in
+                    #{test_file_patterns})
+                      tdd_violation=1
+                      tdd_forbidden_files="${tdd_forbidden_files}${tdd_file}\n"
+                      ;;
+                  esac
+                fi
+                ;;
+              refactor)
+                case "$tdd_file" in
+                  #{test_file_patterns})
+                    tdd_violation=1
+                    tdd_forbidden_files="${tdd_forbidden_files}${tdd_file}\n"
+                    ;;
+                esac
+                ;;
+            esac
+          done
+          IFS="$tdd_old_ifs"
+
+          if [ "$tdd_violation" -ne 0 ]; then
+            echo "TDD write guard violation (${tdd_phase}). Forbidden staged files:" >&2
+            printf '%b' "$tdd_forbidden_files" >&2
+            exit 1
+          fi
+        fi
+      SHELL
+    end
+
+    def test_file_patterns
+      @test_file_patterns ||= Tdd::WriteGuard::TEST_PATH_PREFIXES.map { |prefix| "#{prefix}*" }.join("|")
+    end
+
+    def allowed_test_writing_patterns
+      @allowed_test_writing_patterns ||= shell_patterns(
+        prefixes: Tdd::WriteGuard::TEST_PATH_PREFIXES + Tdd::WriteGuard::LID_DOC_PREFIXES,
+        exact_paths: Tdd::WriteGuard::LID_DOC_EXACT_PATHS
+      )
+    end
+
+    def shell_patterns(prefixes:, exact_paths: [])
+      Array(prefixes).map { |prefix| "#{prefix}*" }
+        .concat(Array(exact_paths))
+        .join("|")
     end
   end
 end

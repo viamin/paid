@@ -10,6 +10,7 @@ RSpec.describe Tdd::ReturnToTestReview do
   let(:project) { create(:project, account: account, created_by: user, owner: "acme", repo: "alpha") }
   let(:github_client) { instance_double(GithubClient) }
   let(:agent_run) { create(:agent_run, :existing_pr, project: project, tdd_phase: "test_fixing") }
+  let(:worktree_path) { Dir.mktmpdir("tdd-return-to-review") }
 
   let!(:pull_request) do
     create(:issue, :pull_request,
@@ -19,9 +20,14 @@ RSpec.describe Tdd::ReturnToTestReview do
   end
 
   before do
+    agent_run.update!(worktree_path: worktree_path)
     allow(project).to receive(:client).and_return(github_client)
     allow(github_client).to receive(:remove_label_from_issue)
     allow(github_client).to receive(:add_labels_to_issue)
+  end
+
+  after do
+    FileUtils.remove_entry(worktree_path)
   end
 
   describe ".call" do
@@ -39,6 +45,7 @@ RSpec.describe Tdd::ReturnToTestReview do
       expect(pull_request.labels).not_to include("paid-tests-approved")
 
       expect(agent_run.reload.tdd_returned_to_test_review).to be(true)
+      expect(File).to exist(File.join(worktree_path, Tdd::ReturnToTestReview::HOOK_MARKER_RELATIVE_PATH))
     end
 
     it "applies the local label update under a row lock" do
@@ -100,6 +107,19 @@ RSpec.describe Tdd::ReturnToTestReview do
         expect(Rails.logger).to have_received(:warn)
           .with(hash_including(message: "tdd.return_to_test_review_label_sync_failed"))
       end
+    end
+  end
+
+  describe ".record_from_label_state" do
+    it "records the local exemption and writes the hook marker when labels return to test review" do
+      updated = described_class.record_from_label_state(
+        agent_run: agent_run,
+        labels: [ "paid-generated", "paid-tests-ready-for-review" ]
+      )
+
+      expect(updated).to be(true)
+      expect(agent_run.reload.tdd_returned_to_test_review).to be(true)
+      expect(File).to exist(File.join(worktree_path, Tdd::ReturnToTestReview::HOOK_MARKER_RELATIVE_PATH))
     end
   end
 end

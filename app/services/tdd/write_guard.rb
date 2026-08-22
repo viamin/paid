@@ -23,16 +23,16 @@ module Tdd
     # Mirrors CreatePullRequestActivity#changed_test_files's test-path
     # convention so the guard and the rest of the pipeline agree on what
     # counts as a test file.
-    TEST_PATH_PATTERN = %r{\A(spec|test|\.ephemeral-tests)/}
+    TEST_PATH_PREFIXES = %w[spec/ test/ .ephemeral-tests/].freeze
 
     # Docs a test_writing run may touch alongside tests: LID artifacts and
     # the instruction files that carry the "## LID" block. Mirrors
     # CreatePullRequestActivity::LID_PLANNING_ALLOWED_PATTERNS.
-    LID_DOC_PATTERNS = [
-      %r{\Adocs/},
-      %r{\AAGENTS\.md\z},
-      %r{\ACLAUDE\.md\z},
-      %r{\A\.github/copilot-instructions\.md\z}
+    LID_DOC_PREFIXES = %w[docs/].freeze
+    LID_DOC_EXACT_PATHS = %w[
+      AGENTS.md
+      CLAUDE.md
+      .github/copilot-instructions.md
     ].freeze
 
     REASONS = {
@@ -83,11 +83,12 @@ module Tdd
     end
 
     def test_file?(path)
-      path.match?(TEST_PATH_PATTERN)
+      TEST_PATH_PREFIXES.any? { |prefix| path.start_with?(prefix) }
     end
 
     def lid_doc?(path)
-      LID_DOC_PATTERNS.any? { |pattern| path.match?(pattern) }
+      LID_DOC_PREFIXES.any? { |prefix| path.start_with?(prefix) } ||
+        LID_DOC_EXACT_PATHS.include?(path)
     end
   end
 end

@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 module Tdd
+  require "fileutils"
+
   # Executes the one legitimate path for a test_fixing run to touch tests
   # under RDR-056: remove paid-tests-approved, add
   # paid-tests-ready-for-review, and record that the reset happened so
@@ -16,6 +18,7 @@ module Tdd
   class ReturnToTestReview
     TESTS_READY_FOR_REVIEW_LABEL = Projects::EnsureStandardLabels::LABEL_DEFINITIONS.dig(:tdd_test_review, :name)
     TESTS_APPROVED_LABEL = Projects::EnsureStandardLabels::LABEL_DEFINITIONS.dig(:tdd_tests_approved, :name)
+    HOOK_MARKER_RELATIVE_PATH = ".git/paid/tdd-returned-to-test-review".freeze
 
     Result = Data.define(:success, :error) do
       def success? = success
@@ -43,7 +46,7 @@ module Tdd
       result = swap_labels(client)
       return result unless result.success?
 
-      agent_run.update!(tdd_returned_to_test_review: true)
+      grant_write_guard_exemption!
 
       Result.new(success: true, error: nil)
     end
@@ -55,7 +58,7 @@ module Tdd
       return false unless returned_to_test_review_labels?(label_names)
 
       update_local_pull_request_labels(label_names)
-      agent_run.update!(tdd_returned_to_test_review: true)
+      grant_write_guard_exemption!
       true
     end
 
@@ -99,6 +102,37 @@ module Tdd
 
     def failure(error)
       Result.new(success: false, error: error)
+    end
+
+    def grant_write_guard_exemption!
+      write_hook_marker!
+      agent_run.update!(tdd_returned_to_test_review: true)
+    rescue
+      remove_hook_marker!
+      raise
+    end
+
+    def write_hook_marker!
+      marker_path = hook_marker_path
+      return if marker_path.blank?
+
+      FileUtils.mkdir_p(File.dirname(marker_path))
+      File.write(marker_path, "#{agent_run.id}\n")
+    end
+
+    def remove_hook_marker!
+      marker_path = hook_marker_path
+      return if marker_path.blank?
+
+      File.delete(marker_path) if File.exist?(marker_path)
+    rescue Errno::ENOENT
+      nil
+    end
+
+    def hook_marker_path
+      return if agent_run.worktree_path.blank?
+
+      File.join(agent_run.worktree_path, HOOK_MARKER_RELATIVE_PATH)
     end
 
     def normalize_label_names(labels)
