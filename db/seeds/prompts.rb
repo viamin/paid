@@ -988,6 +988,8 @@ upsert_global_prompt.call(
   variables: [
     var.call("project_name", "Human-readable project name"),
     var.call("full_name", "Repository full_name (owner/repo)"),
-    var.call("feature_brief", "Structured feature brief (title, problem, desired behavior, constraints, rejected alternatives, scope, done criteria, lid_requested, target_rdr_number)")
+    var.call("feature_brief", "Structured feature brief (title, problem, desired behavior, constraints, rejected alternatives, scope, done criteria, lid_requested, target_rdr_number)"),
+    var.call("lid_mode", "Project LID mode when enabled", required: false),
+    var.call("lid_section", "Rendered LID instructions when the project has or requested LID", required: false)
   ]
 )

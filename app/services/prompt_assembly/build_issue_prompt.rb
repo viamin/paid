@@ -71,6 +71,7 @@ class PromptAssembly::BuildIssuePrompt
       PromptAssembly::Sections::ProjectConventions.call(context),
       PromptAssembly::Sections::LidWorkflow.call(context),
       PromptAssembly::Sections::MarketplaceAttachments.call(context),
+      PromptAssembly::Sections::RdrRolloutGuard.call(context),
       PromptAssembly::Sections::SafetyRules.call(context)
     ]
   end
