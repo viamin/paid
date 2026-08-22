@@ -129,9 +129,8 @@ RSpec.describe DockerHosts::SetupActionRunner do
 
     it "marks the required network verified when the network exists remotely" do
       seed_client_tls_material
-      allow(DockerHosts::RemoteBackendSession).to receive(:with_backend).and_yield(
-        instance_double(Containers::Backends::RemoteDocker, get_network: true)
-      )
+      backend = instance_double(Containers::Backends::RemoteDocker, get_network: true)
+      allow(DockerHosts::RemoteBackendSession).to receive(:with_backend).and_yield(backend)
 
       result = described_class.call(
         host: host,
@@ -140,18 +139,18 @@ RSpec.describe DockerHosts::SetupActionRunner do
       )
 
       expect(result.success?).to be(true)
+      expect(backend).to have_received(:get_network).with(NetworkPolicy::NETWORK_NAME)
       expect(host.reload.required_network_status).to eq("ready")
+      expect(host.required_network_name).to eq(NetworkPolicy::NETWORK_NAME)
       expect(host.setup_step("required_network")).to include("status" => "verified")
     end
 
     it "downgrades the required network status when verification fails" do
       seed_client_tls_material
       host.update!(required_network_status: "ready")
-      allow(DockerHosts::RemoteBackendSession).to receive(:with_backend).and_yield(
-        instance_double(Containers::Backends::RemoteDocker).tap do |backend|
-          allow(backend).to receive(:get_network).and_raise(Docker::Error::NotFoundError, "missing network")
-        end
-      )
+      backend = instance_double(Containers::Backends::RemoteDocker)
+      allow(backend).to receive(:get_network).and_raise(Docker::Error::NotFoundError, "missing network")
+      allow(DockerHosts::RemoteBackendSession).to receive(:with_backend).and_yield(backend)
 
       result = described_class.call(
         host: host,
@@ -160,6 +159,7 @@ RSpec.describe DockerHosts::SetupActionRunner do
       )
 
       expect(result.success?).to be(false)
+      expect(backend).to have_received(:get_network).with(NetworkPolicy::NETWORK_NAME)
       expect(host.reload.required_network_status).to eq("failing")
       expect(host).not_to be_placement_ready
       expect(host.setup_step("required_network")).to include("status" => "failing")
@@ -168,11 +168,9 @@ RSpec.describe DockerHosts::SetupActionRunner do
     it "downgrades the required network status when network creation fails" do
       seed_client_tls_material
       host.update!(required_network_status: "ready")
-      allow(DockerHosts::RemoteBackendSession).to receive(:with_backend).and_yield(
-        instance_double(Containers::Backends::RemoteDocker).tap do |backend|
-          allow(backend).to receive(:create_network).and_raise(Docker::Error::DockerError, "permission denied")
-        end
-      )
+      backend = instance_double(Containers::Backends::RemoteDocker)
+      allow(backend).to receive(:create_network).and_raise(Docker::Error::DockerError, "permission denied")
+      allow(DockerHosts::RemoteBackendSession).to receive(:with_backend).and_yield(backend)
 
       result = described_class.call(
         host: host,
@@ -184,9 +182,110 @@ RSpec.describe DockerHosts::SetupActionRunner do
       )
 
       expect(result.success?).to be(false)
+      expect_primary_network_create_call(backend)
       expect(host.reload.required_network_status).to eq("failing")
       expect(host).not_to be_placement_ready
       expect(host.setup_step("required_network")).to include("status" => "failing")
+    end
+
+    # @spec CONTAINER-RUNTIME-030
+    it "marks the infra network verified when the network exists remotely" do
+      seed_client_tls_material
+      allow(DockerHosts::RemoteBackendSession).to receive(:with_backend).and_yield(
+        instance_double(Containers::Backends::RemoteDocker, get_network: true)
+      )
+
+      result = described_class.call(
+        host: host,
+        action: "verify_infra_network",
+        params: ActionController::Parameters.new
+      )
+
+      expect(result.success?).to be(true)
+      expect(host.reload.required_infra_network_status).to eq("ready")
+      expect(host.setup_step("required_infra_network")).to include("status" => "verified")
+    end
+
+    # @spec CONTAINER-RUNTIME-030
+    it "downgrades the infra network status when verification fails" do
+      seed_client_tls_material
+      host.update!(required_infra_network_status: "ready")
+      allow(DockerHosts::RemoteBackendSession).to receive(:with_backend).and_yield(
+        instance_double(Containers::Backends::RemoteDocker).tap do |backend|
+          allow(backend).to receive(:get_network).and_raise(Docker::Error::NotFoundError, "missing network")
+        end
+      )
+
+      result = described_class.call(
+        host: host,
+        action: "verify_infra_network",
+        params: ActionController::Parameters.new
+      )
+
+      expect(result.success?).to be(false)
+      expect(host.reload.required_infra_network_status).to eq("failing")
+      expect(host).not_to be_placement_ready
+      expect(host.setup_step("required_infra_network")).to include("status" => "failing")
+    end
+
+    # @spec CONTAINER-RUNTIME-030
+    it "creates the infra network without an explicit subnet and without touching the primary network" do
+      seed_client_tls_material
+      backend = instance_double(Containers::Backends::RemoteDocker, create_network: true)
+      allow(DockerHosts::RemoteBackendSession).to receive(:with_backend).and_yield(backend)
+
+      result = described_class.call(
+        host: host,
+        action: "create_infra_network",
+        params: ActionController::Parameters.new(allow_network_create: "1")
+      )
+
+      expect(result.success?).to be(true)
+      expect(backend).to have_received(:create_network).with(NetworkPolicy::INFRA_NETWORK_NAME, { "Driver" => "bridge" })
+      expect(host.reload.required_infra_network_status).to eq("ready")
+      expect(host.setup_step("required_infra_network")).to include("status" => "verified")
+    end
+
+    # @spec CONTAINER-RUNTIME-030
+    it "downgrades the infra network status when network creation fails" do
+      seed_client_tls_material
+      host.update!(required_infra_network_status: "ready")
+      allow(DockerHosts::RemoteBackendSession).to receive(:with_backend).and_yield(
+        instance_double(Containers::Backends::RemoteDocker).tap do |backend|
+          allow(backend).to receive(:create_network).and_raise(Docker::Error::DockerError, "permission denied")
+        end
+      )
+
+      result = described_class.call(
+        host: host,
+        action: "create_infra_network",
+        params: ActionController::Parameters.new(allow_network_create: "1")
+      )
+
+      expect(result.success?).to be(false)
+      expect(host.reload.required_infra_network_status).to eq("failing")
+      expect(host).not_to be_placement_ready
+      expect(host.setup_step("required_infra_network")).to include("status" => "failing")
+    end
+
+    # @spec CONTAINER-RUNTIME-030
+    it "creates the primary network with the runtime subnet" do
+      seed_client_tls_material
+      backend = instance_double(Containers::Backends::RemoteDocker, create_network: true)
+      allow(DockerHosts::RemoteBackendSession).to receive(:with_backend).and_yield(backend)
+
+      result = described_class.call(
+        host: host,
+        action: "create_network",
+        params: ActionController::Parameters.new(
+          required_network_name: NetworkPolicy::NETWORK_NAME,
+          allow_network_create: "1"
+        )
+      )
+
+      expect(result.success?).to be(true)
+      expect_primary_network_create_call(backend)
+      expect(host.reload.required_network_name).to eq(NetworkPolicy::NETWORK_NAME)
     end
 
     it "captures daemon architecture and summary during the TLS test" do
@@ -308,6 +407,9 @@ RSpec.describe DockerHosts::SetupActionRunner do
       )
 
       expect(result.success?).to be(false)
+      expect(backend).to have_received(:create_container).with(
+        hash_including("NetworkingConfig" => { "EndpointsConfig" => { NetworkPolicy::NETWORK_NAME => {} } })
+      )
       expect(result.message).to include("exit status 7")
       expect(host.reload.setup_step("callback_reachability")).to include("status" => "failing")
     end
@@ -329,6 +431,9 @@ RSpec.describe DockerHosts::SetupActionRunner do
       )
 
       expect(result.success?).to be(true)
+      expect(backend).to have_received(:create_container).with(
+        hash_including("NetworkingConfig" => { "EndpointsConfig" => { NetworkPolicy::NETWORK_NAME => {} } })
+      )
       expect(host.reload.setup_step("callback_reachability")).to include("status" => "verified")
     end
 
@@ -349,6 +454,9 @@ RSpec.describe DockerHosts::SetupActionRunner do
       )
 
       expect(result.success?).to be(false)
+      expect(backend).to have_received(:create_container).with(
+        hash_including("NetworkingConfig" => { "EndpointsConfig" => { NetworkPolicy::NETWORK_NAME => {} } })
+      )
       expect(result.message).to include("exit status 1")
       expect(host.reload.setup_step("dry_run")).to include("status" => "failing")
     end
@@ -370,6 +478,9 @@ RSpec.describe DockerHosts::SetupActionRunner do
       )
 
       expect(result.success?).to be(true)
+      expect(backend).to have_received(:create_container).with(
+        hash_including("NetworkingConfig" => { "EndpointsConfig" => { NetworkPolicy::NETWORK_NAME => {} } })
+      )
       expect(host.reload.setup_step("dry_run")).to include("status" => "verified")
     end
   end
@@ -410,6 +521,13 @@ RSpec.describe DockerHosts::SetupActionRunner do
     expect(server_certificate.to_pem).to include("BEGIN CERTIFICATE")
     expect(server_certificate.issuer.to_s).to eq(client_ca.subject.to_s)
     expect(server_certificate.verify(client_ca.public_key)).to be(true)
+  end
+
+  def expect_primary_network_create_call(backend)
+    expect(backend).to have_received(:create_network).with(
+      NetworkPolicy::NETWORK_NAME,
+      { "Driver" => "bridge", "IPAM" => { "Config" => [ { "Subnet" => NetworkPolicy::NETWORK_SUBNET } ] } }
+    )
   end
 
   def build_certificate(...)

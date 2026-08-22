@@ -259,16 +259,19 @@ RSpec.describe Projects::AgentRunsController, :no_db do
   describe "#docker_host_selection_context" do
     let(:controller) { described_class.new }
     let(:host) { instance_double(DockerHost) }
-    let(:runner) { instance_double(Runner, subscription?: true, id: 42) }
+    let(:runner) { instance_double(Runner, subscription?: true, id: 42, requires_direct_outbound?: false) }
     let(:eligible_hosts_scope) { [ host ] }
     let(:placement_ready_scope) { double(ordered: eligible_hosts_scope) }
-    let(:docker_hosts) { double(placement_ready_for_agent_runs: placement_ready_scope) }
+    let(:auth_source) { instance_double(Runners::SubscriptionAuthEligibility::AuthSource, managed?: false, host_forwarded?: false) }
+    let(:docker_hosts) { double(placement_ready_for_restricted_agent_runs: placement_ready_scope) }
     let(:account) { instance_double(Account, docker_hosts:) }
 
     before do
-      allow(controller).to receive(:current_account).and_return(account)
-      allow(controller).to receive(:subscription_auth_source_for).with(runner).and_return(:auth_source)
-      allow(controller).to receive(:docker_host_eligible_for_manual_selection?).with(host, auth_source: :auth_source).and_return(true)
+      allow(controller).to receive_messages(
+        current_account: account
+      )
+      allow(controller).to receive(:subscription_auth_source_for).with(runner).and_return(auth_source)
+      allow(controller).to receive(:docker_host_eligible_for_manual_selection?).with(host, auth_source: auth_source).and_return(true)
     end
 
     it "memoizes the auth source and eligible hosts per runner" do
@@ -276,9 +279,29 @@ RSpec.describe Projects::AgentRunsController, :no_db do
       second_context = controller.send(:docker_host_selection_context, runner: runner)
 
       expect(first_context).to equal(second_context)
-      expect(first_context[:auth_source]).to eq(:auth_source)
+      expect(first_context[:auth_source]).to eq(auth_source)
       expect(first_context[:eligible_hosts]).to eq([ host ])
       expect(controller).to have_received(:subscription_auth_source_for).once
+    end
+
+    it "uses the resolved runner instead of re-reading params when checking unrestricted placement" do
+      unrestricted_scope = double(ordered: eligible_hosts_scope)
+      direct_outbound_runner = instance_double(Runner, subscription?: false, id: 99, requires_direct_outbound?: true)
+      docker_hosts = double(
+        placement_ready_for_agent_runs: unrestricted_scope,
+        placement_ready_for_restricted_agent_runs: placement_ready_scope
+      )
+
+      allow(controller).to receive(:current_account).and_return(instance_double(Account, docker_hosts:))
+      allow(controller).to receive(:runner_for_docker_host_param).and_raise("should not re-read params")
+      allow(controller).to receive(:docker_host_eligible_for_manual_selection?).with(host, auth_source: nil).and_return(true)
+      expect(docker_hosts).to receive(:placement_ready_for_agent_runs).and_return(unrestricted_scope)
+      expect(docker_hosts).not_to receive(:placement_ready_for_restricted_agent_runs)
+
+      context = controller.send(:docker_host_selection_context, runner: direct_outbound_runner)
+
+      expect(context[:auth_source]).to be_nil
+      expect(context[:eligible_hosts]).to eq([ host ])
     end
   end
 end

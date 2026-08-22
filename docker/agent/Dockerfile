@@ -412,7 +412,7 @@ RUN if [ -z "${PI_PACKAGE}" ]; then \
     && npm install -g --ignore-scripts "${PI_PACKAGE}"
 
 # Install Oh My Pi plus its Bun runtime from the agent-harness contract.
-# @spec CONTAINER-RUNTIME-030
+# @spec CONTAINER-RUNTIME-031
 # OMP's install command is owned by agent-harness. Paid keeps the contract-owned
 # package/version, redirects temp files off /tmp for CI stability, and omits the
 # package's optional dependencies because the full optional set adds roughly 1GB

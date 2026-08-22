@@ -48,9 +48,11 @@ the default execution workspace for normal agent runs.
 ### Host selection and lifecycle routing
 
 `Containers::ResolveHostForRun` converts explicit or preferred host choices
-into run attributes. `Containers::BackendScheduler` then filters candidate
-hosts by compatibility and readiness, with optional first-healthy or
-capacity-aware fallback.
+into run attributes. Restricted/proxy runs consider hosts whose primary
+`paid_agent` network is ready; unrestricted subscription-auth and
+direct-outbound runs additionally require the `paid_internal` infra network.
+`Containers::BackendScheduler` then filters candidate hosts by compatibility
+and readiness, with optional first-healthy or capacity-aware fallback.
 
 In multi-host mode, `container_host` is intentionally not treated as an eager
 claim-time placement field. During the queue claim window, the admitted host is

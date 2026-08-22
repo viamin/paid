@@ -133,7 +133,6 @@ class DockerHostsController < ApplicationController
       :endpoint,
       :callback_url,
       :image_tag,
-      :required_network_name,
       :fallback_eligible,
       :manual_concurrency_limit,
       :enabled
@@ -163,7 +162,6 @@ class DockerHostsController < ApplicationController
       :display_name,
       :endpoint,
       :callback_url,
-      :required_network_name,
       :image_tag,
       :manual_concurrency_limit
     )
@@ -183,7 +181,6 @@ class DockerHostsController < ApplicationController
       :server_common_name,
       :server_sans,
       :server_mode,
-      :required_network_name,
       :callback_url,
       :allow_network_create,
       :step_key
