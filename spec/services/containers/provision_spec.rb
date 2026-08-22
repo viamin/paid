@@ -3785,6 +3785,27 @@ RSpec.describe Containers::Provision do
         ])
         expect(events.first.metadata["resource_ledger_id"]).to be_present
       end
+
+      # @spec EXECUTION-AUDIT-005
+      it "records the retry attempt even when the forced delete also fails" do
+        allow(mock_container).to receive(:delete).with(force: false, v: true).and_raise(Docker::Error::ServerError.new("Docker error"))
+        allow(mock_container).to receive(:delete).with(force: true, v: true).and_raise(Docker::Error::ServerError.new("still failing"))
+
+        service.cleanup
+
+        events = ExecutionAuditEvent.for_agent_run(agent_run)
+          .where(event_name: %w[
+            execution.resource_cleanup_failed
+            execution.resource_cleanup_retried
+            execution.resource_cleanup_succeeded
+          ])
+          .order(:id)
+
+        expect(events.pluck(:event_name)).to eq(%w[
+          execution.resource_cleanup_failed
+          execution.resource_cleanup_retried
+        ])
+      end
     end
 
     it "clears the container reference" do

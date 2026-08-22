@@ -979,17 +979,17 @@ module Containers
               error: e.message
             }
           )
+          ExecutionAuditEvents::Lifecycle.record(
+            event_name: "execution.resource_cleanup_retried",
+            actor_id: "containers.provision",
+            agent_run: agent_run,
+            backend: backend_identifier,
+            resource_type: "container",
+            resource_id: container_id
+          )
           begin
             backend.delete_container(container, force: true, v: true)
             preview_tunnel_released = release_preview_tunnel_reservation!
-            ExecutionAuditEvents::Lifecycle.record(
-              event_name: "execution.resource_cleanup_retried",
-              actor_id: "containers.provision",
-              agent_run: agent_run,
-              backend: backend_identifier,
-              resource_type: "container",
-              resource_id: container_id
-            )
             ExecutionAuditEvents::Lifecycle.record(
               event_name: "execution.resource_cleanup_succeeded",
               actor_id: "containers.provision",
@@ -999,7 +999,8 @@ module Containers
               resource_id: container_id
             )
           rescue Docker::Error::DockerError
-            # Container may already be gone
+            # Container may already be gone; the retry attempt itself is
+            # already recorded above via execution.resource_cleanup_retried.
           end
         end
       end
