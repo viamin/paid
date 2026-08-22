@@ -2780,7 +2780,7 @@ class AgentRun < ApplicationRecord
   # unconditional write here would silently wipe the new container's id out
   # from under the run that is now using it.
   def clear_container_id_if_unchanged!(expected_container_id, also_clear: {})
-    updates = also_clear.merge(container_id: nil)
+    updates = also_clear.merge(container_id: nil, container_host: nil)
     self.class.where(id: id, container_id: expected_container_id).update_all(updates)
     assign_attributes(updates) if container_id == expected_container_id
   end
@@ -3077,7 +3077,7 @@ class AgentRun < ApplicationRecord
   # inconsistent state mid-reconciliation).
   def clear_runner_reference!
     @current_handle = nil
-    update_columns(container_id: nil, runner_handle: nil)
+    update_columns(container_id: nil, container_host: nil, runner_handle: nil)
     clear_runtime_image_selection!
   end
 

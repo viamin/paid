@@ -2793,6 +2793,7 @@ RSpec.describe AgentRun do
 
           reloaded = agent_run.reload
           expect(reloaded.container_id).to be_nil
+          expect(reloaded.container_host).to be_nil
           expect(reloaded.runner_handle).to be_nil
         end
       end
