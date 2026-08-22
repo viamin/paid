@@ -111,6 +111,7 @@ closeout audit marks the guarded behavior complete and safe to make default.
 | [RDR-028](RDR-028-interactive-chat.md) | Interactive Chat for Agent-Driven Development | Implemented | High |
 | [RDR-037](RDR-037-containerized-multi-repo-chat.md) | Containerized Multi-Repo Chat Sessions | Partially Implemented | High |
 | [RDR-044](RDR-044-configuration-profiles-chat.md) | Chat-Driven Configuration Profiles (Operating Modes) | Partially Implemented | High |
+| [RDR-064](RDR-064-container-agent-chat-mode.md) | Container Agent Chat Mode | Draft | P1 |
 
 ### Scaling & Distribution
 
