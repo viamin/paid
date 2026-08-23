@@ -264,6 +264,19 @@ RSpec.describe Tools::Registry do
         }
       },
       {
+        tool_name: "grep_workspace",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> { { repo_path: "/workspace/repo-one", query: "def authorize" } },
+        session: ->(user) {
+          create(:chat_session, :workspace, account: user.account, created_by: user, clone_manifest: [
+            { project_id: project.id, path: "/workspace/repo-one" }
+          ])
+        },
+        ui_call: ->(user) {
+          authorize_record!(user, project, :show?, policy_class: ProjectPolicy)
+        }
+      },
+      {
         tool_name: "write_repo_file",
         denied_user: -> { create(:user, :member, account: other_account) },
         arguments: -> { { repo_path: "/workspace/repo-one", path: "README.md", content: "x", confirmed: true } },

@@ -25,6 +25,7 @@ module Tools
       "Tools::ReadRepoFile",
       "Tools::ListRepoTree",
       "Tools::GrepRepo",
+      "Tools::GrepWorkspace",
       "Tools::WriteRepoFile",
       "Tools::ApplyPatch",
       "Tools::GitDiff",
