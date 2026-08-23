@@ -7,6 +7,15 @@ class EphemeralTestsWorkflowFile < Pathname
 end
 
 RSpec.describe EphemeralTestsWorkflowFile, :no_db do
+  def multiline_fallback_key_export?(run_script)
+    [
+      'echo "RAILS_TEST_KEY<<${delimiter}"',
+      "printf '%s\\n' \"$RAILS_MASTER_KEY_FALLBACK\"",
+      'echo "${delimiter}"',
+      '} >> "$GITHUB_ENV"'
+    ].all? { |fragment| run_script.include?(fragment) }
+  end
+
   it "passes test credentials and tolerates runners without a Chromium binary" do
     workflow = Psych.safe_load_file(
       Rails.root.join(".github/workflows/ephemeral_tests.yml"),
@@ -36,6 +45,6 @@ RSpec.describe EphemeralTestsWorkflowFile, :no_db do
 
     expect(normalize_step).to include("if" => "env.RAILS_TEST_KEY == ''")
     expect(normalize_step.fetch("env")).to include("RAILS_MASTER_KEY_FALLBACK" => "${{ secrets.RAILS_MASTER_KEY }}")
-    expect(normalize_step.fetch("run")).to include('echo "RAILS_TEST_KEY=$RAILS_MASTER_KEY_FALLBACK" >> "$GITHUB_ENV"')
+    expect(multiline_fallback_key_export?(normalize_step.fetch("run"))).to be(true)
   end
 end

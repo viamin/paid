@@ -38,3 +38,28 @@
   `spec/jobs/execution_audit_event_retention_job_spec.rb`.
   *Code:* `ExecutionAuditEvent`, `ExecutionAuditEventRetentionJob`,
   `config/initializers/good_job.rb`.
+
+- [x] **EXECUTION-AUDIT-004** — The execution lifecycle SHALL emit
+  `execution.requested`, `execution.queued`, `execution.admitted`,
+  `execution.rejected`, `execution.runner_selected`, `execution.image_resolved`,
+  `execution.credential_classes_granted`, `execution.network_policy_granted`,
+  and `execution.policy_exception_granted` events with secret-free metadata
+  sufficient to answer RDR-061 investigation questions. When available, events
+  SHALL include Temporal workflow ids, request ids, and persisted runner
+  handle ids without logging raw credential material.
+  *Tests:* `spec/temporal/activities/create_agent_run_activity_spec.rb`,
+  `spec/jobs/process_run_queue_job_spec.rb`,
+  `spec/services/containers/provision_spec.rb`.
+  *Code:* `Activities::CreateAgentRunActivity`, `ProcessRunQueueJob`,
+  `AgentRuns::BindRunner`, `AgentRun`, `Containers::Provision`.
+
+- [x] **EXECUTION-AUDIT-005** — Resource lifecycle and execution-control paths
+  SHALL emit `execution.resource_provision_requested`,
+  `execution.resource_provisioned`, `execution.resource_cleanup_failed`,
+  `execution.resource_cleanup_retried`,
+  `execution.resource_cleanup_succeeded`, and
+  `execution.emergency_disable_changed`, linking a resource-ledger row when one
+  is available for the provider resource id or runner handle.
+  *Tests:* `spec/services/containers/provision_spec.rb`,
+  `spec/models/execution_control_spec.rb`.
+  *Code:* `Containers::Provision`, `ExecutionControls::RunImpact`.

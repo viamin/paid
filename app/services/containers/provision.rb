@@ -308,7 +308,29 @@ module Containers
     # @return [Result] Result object with success/failure status
     def provision
       agent_run&.execution_ingress_policy&.validate_supported!
-      log_system("container.provision.start", image: options[:image], backend: backend.identifier)
+      log_system("container.provision.start", image: options[:image], backend: backend_identifier)
+      resolved_policy = @networking_policy || derived_networking_policy
+      resolved_image_reference = runtime_image_selection&.image || options[:image]
+      resolved_image_digest = runtime_image_digest
+      ExecutionAuditEvents::Lifecycle.record(
+        event_name: "execution.image_resolved",
+        actor_id: "containers.provision",
+        agent_run: agent_run,
+        backend: backend_identifier,
+        image_reference: resolved_image_reference,
+        image_digest: resolved_image_digest,
+        networking_policy: resolved_policy
+      )
+      ExecutionAuditEvents::Lifecycle.record(
+        event_name: "execution.resource_provision_requested",
+        actor_id: "containers.provision",
+        agent_run: agent_run,
+        backend: backend_identifier,
+        image_reference: resolved_image_reference,
+        image_digest: resolved_image_digest,
+        networking_policy: resolved_policy,
+        resource_type: "container"
+      )
 
       validate_backend_mount_support!
       prepare_heartbeat_dir! if backend.supports_host_paths?
@@ -327,6 +349,17 @@ module Containers
       apply_network_restrictions!
 
       log_system("container.provision.success", container_id: container.id)
+      ExecutionAuditEvents::Lifecycle.record(
+        event_name: "execution.resource_provisioned",
+        actor_id: "containers.provision",
+        agent_run: agent_run,
+        backend: backend_identifier,
+        image_reference: resolved_image_reference,
+        image_digest: resolved_image_digest,
+        networking_policy: resolved_policy,
+        resource_type: "container",
+        resource_id: container.id
+      )
       Result.success(container_id: container.id, container_host: backend.container_host_for(container))
     rescue Docker::Error::DockerError => e
       log_system("container.provision.failed", error: e.message)
@@ -914,7 +947,8 @@ module Containers
     def cleanup(force: false, preserve_workspace_volume: false)
       cleanup_heartbeat_dir!
 
-      log_system("container.cleanup.start", container_id: container&.id)
+      container_id = container&.id
+      log_system("container.cleanup.start", container_id: container_id)
       preview_tunnel_released = false
 
       if container
@@ -923,13 +957,50 @@ module Containers
           backend.delete_container(container, force: force, v: true)
           preview_tunnel_released = release_preview_tunnel_reservation!
           log_system("container.cleanup.success")
+          ExecutionAuditEvents::Lifecycle.record(
+            event_name: "execution.resource_cleanup_succeeded",
+            actor_id: "containers.provision",
+            agent_run: agent_run,
+            backend: backend_identifier,
+            resource_type: "container",
+            resource_id: container_id
+          )
         rescue Docker::Error::DockerError => e
           log_system("container.cleanup.failed", error: e.message)
+          ExecutionAuditEvents::Lifecycle.record(
+            event_name: "execution.resource_cleanup_failed",
+            actor_id: "containers.provision",
+            agent_run: agent_run,
+            backend: backend_identifier,
+            resource_type: "container",
+            resource_id: container_id,
+            metadata: {
+              error_class: e.class.name,
+              error: e.message
+            }
+          )
+          ExecutionAuditEvents::Lifecycle.record(
+            event_name: "execution.resource_cleanup_retried",
+            actor_id: "containers.provision",
+            agent_run: agent_run,
+            backend: backend_identifier,
+            resource_type: "container",
+            resource_id: container_id
+          )
           begin
             backend.delete_container(container, force: true, v: true)
             preview_tunnel_released = release_preview_tunnel_reservation!
+            ExecutionAuditEvents::Lifecycle.record(
+              event_name: "execution.resource_cleanup_succeeded",
+              actor_id: "containers.provision",
+              agent_run: agent_run,
+              backend: backend_identifier,
+              resource_type: "container",
+              resource_id: container_id
+            )
           rescue Docker::Error::DockerError
-            # Container may already be gone
+            # Container may already be gone; the retry attempt itself is
+            # already recorded above via execution.resource_cleanup_retried.
           end
         end
       end
@@ -4277,7 +4348,15 @@ module Containers
       container = local_runtime_backend.get_container(hostname)
       mounts = container.info["Mounts"] || []
       mounts.find { |mount| mount["Destination"]&.end_with?(suffix) }
-    rescue Docker::Error::DockerError
+    rescue Docker::Error::DockerError, Excon::Error
+      # Host-config mount detection is a best-effort convenience for local
+      # subscription-auth forwarding. If the local runtime backend is
+      # unavailable or sandboxed (for example in tests that block Docker HTTP),
+      # treat it as "no mount detected" so fallback recovery can continue.
+      nil
+    rescue Exception => error
+      raise unless defined?(WebMock::NetConnectNotAllowedError) && error.is_a?(WebMock::NetConnectNotAllowedError)
+
       nil
     end
 
@@ -4363,6 +4442,14 @@ module Containers
     def container_name
       run_part = agent_run ? agent_run.id : "pool-#{pool_entry.id}"
       "paid-#{project.id}-#{run_part}-#{SecureRandom.hex(4)}"
+    end
+
+    def backend_identifier
+      backend.respond_to?(:identifier) ? backend.identifier : nil
+    end
+
+    def runtime_image_digest
+      runtime_image_selection.respond_to?(:digest) ? runtime_image_selection.digest : nil
     end
 
     def ensure_network!

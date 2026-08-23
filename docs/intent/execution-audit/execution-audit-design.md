@@ -77,7 +77,40 @@ can never carry raw secret material.
   make those decisions.
 - **Not wired into every execution call site yet.** This segment ships the
   model, validations, retention job, and factory/spec scaffolding.
-  Instrumenting `Containers::Provision`, `Containers::ServiceProvisioner`,
-  and similar call sites to actually call
-  `ExecutionAuditEvent.record!` is follow-up work, tracked outside this
-  segment.
+
+## Lifecycle Instrumentation
+
+Execution lifecycle call sites record the RDR-061 investigation events through
+`ExecutionAuditEvent.record!`, with the call-site wiring kept thin and the
+event normalization shared in one helper layer.
+
+- **Admission lifecycle.** Run creation and dequeue admission emit
+  `execution.requested`, `execution.queued`, `execution.admitted`, and
+  `execution.rejected` so operators can see when a run entered the system,
+  when it became runnable, and when capacity or policy blocked execution.
+- **Selection and grant decisions.** Runner binding emits
+  `execution.runner_selected`; authority/network decisions emit
+  `execution.credential_classes_granted`, `execution.network_policy_granted`,
+  and `execution.policy_exception_granted` with secret-free snapshots of the
+  granted authority, unrestricted-network intent, and preview-ingress or
+  other explicit exception grants.
+- **Provisioning and cleanup.** Container/image provisioning emits
+  `execution.image_resolved`, `execution.resource_provision_requested`, and
+  `execution.resource_provisioned`; cleanup emits
+  `execution.resource_cleanup_failed`, `execution.resource_cleanup_retried`,
+  and `execution.resource_cleanup_succeeded`, linking a matching
+  `ExecutionResourceLedgerEntry` when one is discoverable from the run and
+  provider resource id. `ExecutionResourceLedgerEntry` rows are not created by
+  the runtime path yet (RESOURCE-LEDGER-005, tracked by #3352/#3410), so until
+  that lands the linkage falls back to the `ProvisioningIntent` row
+  `ExecutionRunners::ProvisioningLedger` actually persists today, matched the
+  same way (provider resource id, then runner handle).
+- **Execution controls.** Emergency or capacity kill-switch toggles emit
+  `execution.emergency_disable_changed` in the execution-audit stream in
+  addition to the existing account activity trail so RDR-061 investigations do
+  not need to join two audit models to reconstruct lifecycle causality.
+
+Each emitted event includes the common correlation identifiers when available:
+Temporal workflow id, request id, persisted runner handle id, and resource
+ledger id. Secret-shaped values are still rejected by the model-layer scans, so
+call sites pass only class names, ids, digests, and other non-secret metadata.

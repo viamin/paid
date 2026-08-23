@@ -50,6 +50,18 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
     end
   end
 
+  def fallback_key_export?(run_script)
+    legacy_export = 'echo "RAILS_TEST_KEY=$RAILS_MASTER_KEY_FALLBACK" >> "$GITHUB_ENV"'
+    multiline_export_fragments = [
+      'echo "RAILS_TEST_KEY<<${delimiter}"',
+      "printf '%s\\n' \"$RAILS_MASTER_KEY_FALLBACK\"",
+      'echo "${delimiter}"',
+      '} >> "$GITHUB_ENV"'
+    ]
+
+    run_script.include?(legacy_export) || multiline_export_fragments.all? { |fragment| run_script.include?(fragment) }
+  end
+
   def prepare_workspace_cache_steps_for(path)
     workflow = workflow_config(path)
 
@@ -69,6 +81,16 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
         node_index:
       }
     end
+  end
+
+  def expected_libpq_credentials
+    {
+      ".github/workflows/ci.yml" => [ "postgres", "postgres" ],
+      ".github/workflows/pr-screenshots-publish.yml" => [ "postgres", "postgres" ],
+      ".github/workflows/system_tests.yml" => [ "paid", "paid" ],
+      ".github/workflows/test_prof.yml" => [ "postgres", "postgres" ],
+      ".github/workflows/ephemeral_tests.yml" => [ "postgres", "postgres" ]
+    }
   end
 
   it "sets an explicit test secret key base anywhere Rails boots in test mode" do
@@ -98,7 +120,13 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
 
   it "passes the test master key alias anywhere Rails boots in test mode" do
     workflow_paths.each do |path|
-      expect(test_env_blocks_for(path)).to all(include("RAILS_TEST_KEY" => "${{ secrets.RAILS_TEST_KEY }}")),
+      expected_value = if path == ".github/workflows/pr-screenshots.yml"
+        "${{ secrets.RAILS_TEST_KEY != '' && secrets.RAILS_TEST_KEY || secrets.RAILS_MASTER_KEY }}"
+      else
+        "${{ secrets.RAILS_TEST_KEY }}"
+      end
+
+      expect(test_env_blocks_for(path)).to all(include("RAILS_TEST_KEY" => expected_value)),
         "expected #{path} test env blocks to pass RAILS_TEST_KEY explicitly"
     end
   end
@@ -113,7 +141,6 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
   it "normalizes missing test keys from RAILS_MASTER_KEY before Rails boots" do
     %w[
       .github/workflows/ci.yml
-      .github/workflows/pr-screenshots.yml
       .github/workflows/pr-screenshots-publish.yml
       .github/workflows/system_tests.yml
       .github/workflows/test_prof.yml
@@ -125,9 +152,20 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
         include("RAILS_MASTER_KEY_FALLBACK" => "${{ secrets.RAILS_MASTER_KEY }}")
       ), "expected #{path} to source the fallback key from RAILS_MASTER_KEY"
       expect(normalize_steps_for(path).map { |step| step.fetch("run") }).to all(
-        include('echo "RAILS_TEST_KEY=$RAILS_MASTER_KEY_FALLBACK" >> "$GITHUB_ENV"')
+        satisfy { |run_script| fallback_key_export?(run_script) }
       ), "expected #{path} to export the fallback key into RAILS_TEST_KEY"
     end
+  end
+
+  it "allows the screenshots workflow to resolve the test key inline without GITHUB_ENV writes" do
+    path = ".github/workflows/pr-screenshots.yml"
+
+    expect(test_env_blocks_for(path)).to all(
+      include("RAILS_TEST_KEY" => "${{ secrets.RAILS_TEST_KEY != '' && secrets.RAILS_TEST_KEY || secrets.RAILS_MASTER_KEY }}")
+    ), "expected #{path} to resolve RAILS_TEST_KEY inline from the explicit secret or fallback master key"
+
+    expect(normalize_steps_for(path)).to be_empty,
+      "expected #{path} not to use a Normalize test master key step"
   end
 
   it "creates workspace-backed temp and cache directories before Ruby and Node setup in test jobs" do
@@ -160,6 +198,24 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
           "PLAYWRIGHT_BROWSERS_PATH" => "${{ github.workspace }}/.cache/ms-playwright"
         )
       ), "expected #{path} test env blocks to pin npm and Playwright caches into the workspace"
+    end
+  end
+
+  it "pins libpq environment variables anywhere Rails boots in test mode" do
+    expected_libpq_credentials.each do |path, (expected_username, expected_password)|
+      expect(test_env_blocks_for(path)).to all(
+        include(
+          "PGHOST" => "localhost",
+          "PGPORT" => 5432
+        )
+      ), "expected #{path} test env blocks to pin PGHOST/PGPORT explicitly"
+
+      expect(test_env_blocks_for(path)).to all(
+        include(
+          "PGUSER" => expected_username,
+          "PGPASSWORD" => expected_password
+        )
+      ), "expected #{path} test env blocks to pin libpq credentials explicitly"
     end
   end
 end
