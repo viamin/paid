@@ -256,6 +256,15 @@ module Capacity
     def apply_infrastructure_safety_rails(decision)
       return decision unless decision[:allowed]
 
+      if (spend_denial = infrastructure_spend_denial)
+        decision[:allowed] = false
+        decision[:reason] = spend_denial[:reason]
+        decision[:available_slots] = 0
+        decision[:rate_limited_until] = spend_denial[:rate_limited_until]
+        decision.merge!(spend_denial.except(:allowed, :reason, :rate_limited_until))
+        return decision
+      end
+
       reason, rate_limited_until = infrastructure_denial
       return decision unless reason
 
@@ -264,6 +273,18 @@ module Capacity
       decision[:available_slots] = 0
       decision[:rate_limited_until] = rate_limited_until
       decision
+    end
+
+    def infrastructure_spend_denial
+      result = Capacity::InfrastructureSpendGuard.call(
+        account: user.account,
+        project: project,
+        agent_run: agent_run,
+        selected_host: selected_host,
+        now: now
+      )
+
+      result unless result[:allowed]
     end
 
     def infrastructure_denial

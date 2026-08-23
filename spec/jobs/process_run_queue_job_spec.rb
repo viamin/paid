@@ -166,6 +166,13 @@ RSpec.describe ProcessRunQueueJob do
     )
   end
 
+  def expect_runner_spend_skip_log(reason:)
+    expect(Rails.logger).to have_received(:info).with(hash_including(
+      message: "process_run_queue.runner_spend_skip",
+      reason: reason
+    ))
+  end
+
   def stub_capacity_aware_preferred_run(project:)
     user = project.created_by
     user.settings.update!(run_concurrency_mode: "auto", max_concurrent_runs: 20, max_parallel_agents_per_project: 20)
@@ -224,6 +231,17 @@ RSpec.describe ProcessRunQueueJob do
       compatibility_failures: {},
       health_failures: {}
     )
+  end
+
+  def runner_spend_denied_result(available_at:)
+    {
+      allowed: false,
+      reason: "runner_infra_spend_hourly_limit_exceeded",
+      rate_limited_until: available_at,
+      spend_scope: "runner",
+      spend_period: "hourly",
+      spend_action: "fail_fast"
+    }
   end
 
   def stub_unavailable_fallback_hosts(run, registry_bundle)
@@ -1589,6 +1607,31 @@ RSpec.describe ProcessRunQueueJob do
         queued_run.reload
         expect(queued_run.status).to eq("queued")
         expect(queued_run.runner_id).to eq(runner.id)
+      end
+
+      # @spec INFRA-SPEND-002
+      it "parks the run when the runner spend threshold is exceeded and no alternative exists" do
+        project = create(:project)
+        user = project.created_by
+        runner = user.runners.kept_only.find_by!(runner_key: "claude", auth_type: "subscription")
+        user.runners.kept_only.where.not(id: runner.id).update_all(enabled_for_agent_runs: false)
+        queued_run = create(:agent_run, :queued, project: project, runner: runner)
+        allow(Rails.logger).to receive(:info)
+        available_at = Time.utc(2026, 8, 23, 13, 0, 0)
+
+        allow(Capacity::InfrastructureSpendGuard).to receive(:call).and_call_original
+        allow(Capacity::InfrastructureSpendGuard).to receive(:call)
+          .with(hash_including(runner: runner, agent_run: queued_run))
+          .and_return(runner_spend_denied_result(available_at: available_at))
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        queued_run.reload
+        expect(queued_run.status).to eq("rate_limited")
+        expect(queued_run.rate_limited_until).to eq(available_at)
+        expect(queued_run.external_metadata["capacity_park_reason"]).to eq("runner_infra_spend_hourly_limit_exceeded")
+        expect_runner_spend_skip_log(reason: "runner_infra_spend_hourly_limit_exceeded")
       end
 
       # @spec RUNNER-SCHED-005, RUNNER-SCHED-008 — pinned runs blocked by a

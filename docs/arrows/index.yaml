@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-08-21
+last_updated: 2026-08-23
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -236,6 +236,12 @@ arrows:
     title: Billing Aggregation
     path: docs/intent/billing-aggregation/billing-aggregation-design.md
     specs: docs/intent/billing-aggregation/billing-aggregation-specs.md
+    parent: PAID
+    taxonomy: operations
+  infrastructure-spend-thresholds:
+    title: Infrastructure Spend Thresholds
+    path: docs/intent/infrastructure-spend-thresholds/infrastructure-spend-thresholds-design.md
+    specs: docs/intent/infrastructure-spend-thresholds/infrastructure-spend-thresholds-specs.md
     parent: PAID
     taxonomy: operations
     status: OK

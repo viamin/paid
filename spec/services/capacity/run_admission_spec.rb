@@ -668,5 +668,30 @@ RSpec.describe Capacity::RunAdmission do
         expect(result[:global_available_slots]).to be_nil
       end
     end
+
+    # @spec INFRA-SPEND-001
+    it "denies admission when projected infrastructure spend breaches a threshold" do
+      allow(Capacity::InfrastructureSpendGuard).to receive(:call).and_return(
+        allowed: false,
+        reason: "project_infra_spend_hourly_limit_exceeded",
+        rate_limited_until: Time.zone.parse("2026-08-17 13:00:00 UTC"),
+        spend_scope: "project",
+        spend_period: "hourly",
+        spend_action: "park",
+        current_spend_cents: 90,
+        projected_spend_cents: 120,
+        infra_spend_limit_cents: 100
+      )
+
+      result = admission_for(host: "local", limit: 8)
+
+      expect(result[:allowed]).to be(false)
+      expect(result[:reason]).to eq("project_infra_spend_hourly_limit_exceeded")
+      expect(result[:available_slots]).to eq(0)
+      expect(result[:rate_limited_until]).to eq(Time.zone.parse("2026-08-17 13:00:00 UTC"))
+      expect(result[:spend_scope]).to eq("project")
+      expect(result[:projected_spend_cents]).to eq(120)
+      expect(result[:infra_spend_limit_cents]).to eq(100)
+    end
   end
 end

@@ -60,6 +60,8 @@ class ProcessRunQueueJob < ApplicationJob
         return
       end
 
+      Capacity::InfrastructureSpendGuard.recover_global_daily_threshold!
+
       consecutive_failures = 0
       starts_count = 0
       iterations = 0
@@ -294,6 +296,16 @@ class ProcessRunQueueJob < ApplicationJob
           next
         end
 
+        if (runner_spend_result = runner_infrastructure_spend_result(next_run, selected_host))
+          log_runner_spend_skip(next_run, runner_spend_result)
+          blocked_runner_ids.add(next_run.runner_id) if next_run.runner_id
+          reroute_unavailable_runner(next_run, blocked_runner_ids, skipped_ids, reroute_cache,
+            disabled_runner_ids: execution_control_snapshot[:disabled_runner_ids],
+            available_at: runner_spend_result[:rate_limited_until],
+            park_reason: runner_spend_result[:reason])
+          next
+        end
+
         dispatch_decision = dispatch_decision_for(next_run, blocked_account_dispatch_ids)
         next if dispatch_decision == :halt
 
@@ -428,14 +440,19 @@ class ProcessRunQueueJob < ApplicationJob
   # instead of being restored and churned on every queue pass. The parked_until
   # time is cached alongside reroute resolutions so runs sharing a reroute
   # context park without another resolver call.
-  def reroute_unavailable_runner(agent_run, blocked_runner_ids, skipped_ids, reroute_cache, disabled_runner_ids: nil)
+  def reroute_unavailable_runner(agent_run, blocked_runner_ids, skipped_ids, reroute_cache, disabled_runner_ids: nil,
+    available_at: nil, park_reason: nil)
     original_id = agent_run.runner_id
     cache_key = reroute_cache_key(agent_run, original_id)
 
     if reroute_cache.key?(cache_key)
       cached = reroute_cache[cache_key]
       return skipped_ids.add(agent_run.id) if cached.nil?
-      return park_run_for_time_window(agent_run, cached[:parked_until]) if cached.key?(:parked_until)
+      if cached.key?(:parked_until)
+        return park_run_for_capacity(agent_run, cached[:parked_until], cached[:park_reason]) if cached[:park_reason].present?
+
+        return park_run_for_time_window(agent_run, cached[:parked_until])
+      end
       return apply_cached_reroute(agent_run, cached) unless blocked_runner_ids.include?(cached[:runner_id])
     end
 
@@ -455,11 +472,15 @@ class ProcessRunQueueJob < ApplicationJob
       # time restriction would never park — they'd churn every pass. Rate-limited
       # runners in +blocked_runner_ids+ are NOT time-window-blocked, so counting
       # them (by not excluding) correctly suppresses parking while they recover.
-      park_until = Runners::TimeWindowPark.call(agent_run)
+      park_until = available_at || Runners::TimeWindowPark.call(agent_run)
       agent_run.update_columns(runner_id: original_id)
       if park_until
-        park_run_for_time_window(agent_run, park_until)
-        reroute_cache[cache_key] = { parked_until: park_until }
+        if park_reason.present?
+          park_run_for_capacity(agent_run, park_until, park_reason)
+        else
+          park_run_for_time_window(agent_run, park_until)
+        end
+        reroute_cache[cache_key] = { parked_until: park_until, park_reason: park_reason }
       else
         reroute_cache[cache_key] = nil
         skipped_ids.add(agent_run.id)
@@ -503,6 +524,33 @@ class ProcessRunQueueJob < ApplicationJob
       runner_id: result.runner_id,
       reason: result.reason,
       project_id: agent_run.project_id
+    )
+  end
+
+  def runner_infrastructure_spend_result(agent_run, selected_host)
+    return unless agent_run.runner
+
+    result = Capacity::InfrastructureSpendGuard.call(
+      account: agent_run.project.account,
+      project: agent_run.project,
+      agent_run: agent_run,
+      runner: agent_run.runner,
+      selected_host: selected_host
+    )
+    return if result[:allowed]
+    return unless result[:spend_scope] == "runner"
+
+    result
+  end
+
+  def log_runner_spend_skip(agent_run, result)
+    Rails.logger.info(
+      message: "process_run_queue.runner_spend_skip",
+      agent_run_id: agent_run.id,
+      project_id: agent_run.project_id,
+      runner_id: agent_run.runner_id,
+      reason: result[:reason],
+      rate_limited_until: result[:rate_limited_until]&.iso8601
     )
   end
 
@@ -1045,7 +1093,11 @@ class ProcessRunQueueJob < ApplicationJob
       provisioning_started_at: Time.current,
       external_metadata: agent_run.external_metadata.merge(
         "provisioning_started_at" => Time.current.iso8601,
-        "requested_resources" => Capacity::RequestedResources.persistable_for(agent_run)
+        "requested_resources" => Capacity::RequestedResources.persistable_for(agent_run),
+        "infrastructure_spend" => {
+          "rate_cents_per_hour" => Capacity::InfrastructureLimits.rate_cents_per_hour(host: planned_container_host),
+          "projection_seconds" => Capacity::InfrastructureLimits.current(host: planned_container_host)[:infra_spend_projection_seconds]
+        }
       )
     }
     if planned_container_host.present?
