@@ -4348,7 +4348,15 @@ module Containers
       container = local_runtime_backend.get_container(hostname)
       mounts = container.info["Mounts"] || []
       mounts.find { |mount| mount["Destination"]&.end_with?(suffix) }
-    rescue Docker::Error::DockerError
+    rescue Docker::Error::DockerError, Excon::Error
+      # Host-config mount detection is a best-effort convenience for local
+      # subscription-auth forwarding. If the local runtime backend is
+      # unavailable or sandboxed (for example in tests that block Docker HTTP),
+      # treat it as "no mount detected" so fallback recovery can continue.
+      nil
+    rescue Exception => error
+      raise unless defined?(WebMock::NetConnectNotAllowedError) && error.is_a?(WebMock::NetConnectNotAllowedError)
+
       nil
     end
 

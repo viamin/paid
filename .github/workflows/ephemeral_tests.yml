@@ -111,7 +111,12 @@ jobs:
           RAILS_MASTER_KEY_FALLBACK: ${{ secrets.RAILS_MASTER_KEY }}
         run: |
           if [ -n "$RAILS_MASTER_KEY_FALLBACK" ]; then
-            echo "RAILS_TEST_KEY=$RAILS_MASTER_KEY_FALLBACK" >> "$GITHUB_ENV"
+            delimiter="ghadelim_$(openssl rand -hex 16)"
+            {
+              echo "RAILS_TEST_KEY<<${delimiter}"
+              printf '%s\n' "$RAILS_MASTER_KEY_FALLBACK"
+              echo "${delimiter}"
+            } >> "$GITHUB_ENV"
           fi
 
       - name: Prepare workspace cache directories

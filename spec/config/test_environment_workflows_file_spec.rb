@@ -83,6 +83,16 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
     end
   end
 
+  def expected_libpq_credentials
+    {
+      ".github/workflows/ci.yml" => [ "postgres", "postgres" ],
+      ".github/workflows/pr-screenshots-publish.yml" => [ "postgres", "postgres" ],
+      ".github/workflows/system_tests.yml" => [ "paid", "paid" ],
+      ".github/workflows/test_prof.yml" => [ "postgres", "postgres" ],
+      ".github/workflows/ephemeral_tests.yml" => [ "postgres", "postgres" ]
+    }
+  end
+
   it "sets an explicit test secret key base anywhere Rails boots in test mode" do
     workflow_paths.each do |path|
       expect(test_env_blocks_for(path)).to all(include("SECRET_KEY_BASE" => "test-secret-key-base")),
@@ -188,6 +198,24 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
           "PLAYWRIGHT_BROWSERS_PATH" => "${{ github.workspace }}/.cache/ms-playwright"
         )
       ), "expected #{path} test env blocks to pin npm and Playwright caches into the workspace"
+    end
+  end
+
+  it "pins libpq environment variables anywhere Rails boots in test mode" do
+    expected_libpq_credentials.each do |path, (expected_username, expected_password)|
+      expect(test_env_blocks_for(path)).to all(
+        include(
+          "PGHOST" => "localhost",
+          "PGPORT" => 5432
+        )
+      ), "expected #{path} test env blocks to pin PGHOST/PGPORT explicitly"
+
+      expect(test_env_blocks_for(path)).to all(
+        include(
+          "PGUSER" => expected_username,
+          "PGPASSWORD" => expected_password
+        )
+      ), "expected #{path} test env blocks to pin libpq credentials explicitly"
     end
   end
 end
