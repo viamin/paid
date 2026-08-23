@@ -112,6 +112,15 @@ A synced, closed-unmerged PR row always lifts the exclusion immediately
 (no need to wait out the grace window), so legitimate replacement runs after
 an abandoned or rejected PR are not delayed.
 
+Permanent exclusions after the grace window require an authoritative link
+back from the PR row to the source issue. Today that linkage is
+`issues.parent_issue_id`: an open linked PR remains blocked by
+`Issue.open_pull_request_parent_issue_ids`, and a merged linked PR remains
+blocked by a dedicated merged-linked-PR filter in `base_scope`. Bare
+`pull_request_number` alone is intentionally not trusted past
+`PR_SYNC_GRACE_PERIOD`, so a stale or wrong recorded PR number cannot make an
+unrelated synced PR row keep the issue ineligible forever.
+
 ## Fair-stride impact
 
 None. `QUEUE_ORDER` already sorts by project and user in-flight counts ahead

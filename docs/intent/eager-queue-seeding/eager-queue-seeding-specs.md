@@ -92,6 +92,10 @@
   SHALL lift immediately once a synced PR row shows the PR closed unmerged,
   and SHALL lift after `PR_SYNC_GRACE_PERIOD` elapses with no synced PR row
   at all, so missing or stale sync state cannot block the issue forever.
+  Any exclusion that outlives `PR_SYNC_GRACE_PERIOD` SHALL require an
+  authoritative link from the synced PR row back to the source issue (today:
+  `parent_issue_id`), so a stale or wrong recorded `pull_request_number`
+  cannot permanently strand the issue.
   *Code:* `Automation::Strategies::AutoPick::DefaultCandidateSource.unsynced_pr_produced_issue_ids`,
   `DefaultCandidateSource::PR_SYNC_GRACE_PERIOD`, `DefaultCandidateSource.base_scope`.
   *Test:* `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.

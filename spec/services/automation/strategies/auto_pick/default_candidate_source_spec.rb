@@ -128,39 +128,47 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to be_empty
     end
 
-    it "permanently excludes an issue reset to a pre-completion paid_state after its PR merged, even past the grace window" do
+    it "permanently excludes an issue reset to a pre-completion paid_state after its linked PR merged, even past the grace window" do
       # Reviewer follow-up on #3432/#3588: PR_SYNC_GRACE_PERIOD only bounds
-      # the *unsynced* gap. Once the PR issue row has synced and merged, the
-      # source issue must stay ineligible forever -- even if paid_state is
-      # later reset back to "new" (e.g. by StaleRunDetectorJob) and even
-      # after the grace window has long since elapsed -- otherwise auto-pick
-      # would re-pick the issue and open a duplicate PR for already-shipped
-      # work.
+      # the *bare pull_request_number* gap. Once the merged PR row is
+      # authoritatively linked back to the source issue via parent_issue_id,
+      # the issue must stay ineligible forever even if paid_state is later
+      # reset back to "new".
       issue = create(:issue, project: project, paid_state: "new")
       create(:agent_run, :completed, :automatic, project: project, issue: issue,
         goal: "create_pr", auto_pick: true, pull_request_number: 42, pull_request_url: "https://example.test/pr/42",
         completed_at: described_class::PR_SYNC_GRACE_PERIOD.ago - 1.minute)
-      create(:issue, :pull_request, :closed, project: project, github_number: 42, pr_review_phase: "merged")
+      create(:issue, :pull_request, :closed, project: project, github_number: 42, pr_review_phase: "merged",
+        parent_issue: issue)
 
       scope = described_class.eligible_scope(project)
 
       expect(scope.pluck(:id)).to be_empty
     end
 
-    it "permanently excludes an issue whose synced open PR has no parent_issue_id link yet, even past the grace window" do
-      # Reviewer follow-up on #3432/#3588: open_pull_request_parent_issue_ids
-      # only blocks a PR once the separate parent_issue_id backfill has run.
-      # A PR issue row can sync (github_state: open) before that linkage is
-      # written, and PR_SYNC_GRACE_PERIOD only bounds the *unsynced* gap --
-      # so without a parent_issue_id-independent check, this issue would
-      # become auto-pickable again once the grace window elapses, producing
-      # a duplicate PR for work that already has one open.
+    it "recovers eligibility once the grace window elapses if the matched open PR row is still unlinked" do # @spec EAGER-QUEUE-009
+      # A synced PR row without parent_issue_id is not authoritative enough
+      # to block forever: if the run recorded the wrong PR number, an
+      # unrelated open PR with that number must not strand the source issue.
       issue = create(:issue, project: project, paid_state: "new")
       create(:agent_run, :completed, :automatic, project: project, issue: issue,
         goal: "create_pr", auto_pick: true, pull_request_number: 42, pull_request_url: "https://example.test/pr/42",
         completed_at: described_class::PR_SYNC_GRACE_PERIOD.ago - 1.minute)
       create(:issue, project: project, github_number: 42, is_pull_request: true, github_state: "open",
         parent_issue_id: nil)
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to contain_exactly(issue.id)
+    end
+
+    it "keeps an issue ineligible once a synced open PR row is linked back to it, even past the grace window" do
+      issue = create(:issue, project: project, paid_state: "new")
+      create(:agent_run, :completed, :automatic, project: project, issue: issue,
+        goal: "create_pr", auto_pick: true, pull_request_number: 42, pull_request_url: "https://example.test/pr/42",
+        completed_at: described_class::PR_SYNC_GRACE_PERIOD.ago - 1.minute)
+      create(:issue, project: project, github_number: 42, is_pull_request: true, github_state: "open",
+        parent_issue: issue)
 
       scope = described_class.eligible_scope(project)
 
@@ -176,6 +184,19 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       create(:agent_run, :completed, :automatic, project: project, issue: issue,
         goal: "create_pr", auto_pick: true, pull_request_number: 42, pull_request_url: "https://example.test/pr/42",
         completed_at: described_class::PR_SYNC_GRACE_PERIOD.ago - 1.minute)
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to contain_exactly(issue.id)
+    end
+
+    it "recovers eligibility once the grace window elapses if the matched merged PR row is still unlinked" do # @spec EAGER-QUEUE-009
+      issue = create(:issue, project: project, paid_state: "new")
+      create(:agent_run, :completed, :automatic, project: project, issue: issue,
+        goal: "create_pr", auto_pick: true, pull_request_number: 42, pull_request_url: "https://example.test/pr/42",
+        completed_at: described_class::PR_SYNC_GRACE_PERIOD.ago - 1.minute)
+      create(:issue, :pull_request, :closed, project: project, github_number: 42, pr_review_phase: "merged",
+        parent_issue_id: nil)
 
       scope = described_class.eligible_scope(project)
 
