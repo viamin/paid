@@ -20,18 +20,17 @@ RSpec.describe Dashboard::NeedsInputQueue do
   end
 
   describe ".call" do
-    it "includes needs-input issues without a local or body questionnaire" do
+    it "skips needs-input issues without a local or body questionnaire" do
       questionless_issue = create(:issue, :needs_input, project: project, github_number: 9, body: "Needs manual retry")
       first_issue
 
       entries = described_class.call(user: user, project: project)
 
       expect(entries.map(&:issue)).to include(first_issue)
-      expect(entries.map(&:issue)).to include(questionless_issue)
-      expect(entries.find { |entry| entry.issue == questionless_issue }.questions).to eq([])
+      expect(entries.map(&:issue)).not_to include(questionless_issue)
     end
 
-    it "includes issues whose body only looks like a questionnaire" do
+    it "skips issues whose body only looks like a questionnaire" do
       marker_only_issue = create(:issue, :needs_input, project: project, github_number: 9,
         body: "#{ClarifyingQuestions::Parse::ENHANCEMENT_MARKER}\n\n## Clarifying questions\nNo numbered questions here.")
       first_issue
@@ -39,8 +38,7 @@ RSpec.describe Dashboard::NeedsInputQueue do
       entries = described_class.call(user: user, project: project)
 
       expect(entries.map(&:issue)).to include(first_issue)
-      expect(entries.map(&:issue)).to include(marker_only_issue)
-      expect(entries.find { |entry| entry.issue == marker_only_issue }.questions).to eq([])
+      expect(entries.map(&:issue)).not_to include(marker_only_issue)
     end
 
     it "returns clarifying questions persisted locally for create_feature issues without an API round-trip" do
@@ -76,15 +74,15 @@ RSpec.describe Dashboard::NeedsInputQueue do
       expect(described_class.next_issue(user: user, project: project, after_issue: stale_issue)).to be_nil
     end
 
-    it "advances through questionless issues" do
+    it "skips questionless issues when advancing through the queue" do
       first_issue
       questionless = create(:issue, :needs_input, project: project, github_number: 11, body: "Needs manual retry")
-      create(:issue, :needs_input, project: project, github_number: 12, body: questions_body)
+      answerable = create(:issue, :needs_input, project: project, github_number: 12, body: questions_body)
 
       entries = described_class.call(user: user, project: project).map(&:issue)
 
-      expect(entries).to include(questionless)
-      expect(described_class.next_issue(user: user, project: project, after_issue: first_issue)).to eq(questionless)
+      expect(entries).not_to include(questionless)
+      expect(described_class.next_issue(user: user, project: project, after_issue: first_issue)).to eq(answerable)
     end
   end
 end

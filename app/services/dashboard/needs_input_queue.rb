@@ -37,11 +37,13 @@ module Dashboard
     attr_reader :after_issue, :project, :user
 
     # Shared by +call+ (dashboard render) and +next_issue+ (queue navigation).
-    # Questionless rows are invalid and repaired during sync, but keep them
-    # visible defensively if a stale row reaches the dashboard first.
+    # Questionless rows are invalid and repaired during sync, so keep them out
+    # of every queue consumer until reconciliation clears the stale state.
     def queued_entries
       @queued_entries ||= ordered_issues.filter_map do |issue|
         questions = question_summary_for(issue)
+        next if questions.empty?
+
         Entry.new(
           project: issue.project,
           issue: issue,

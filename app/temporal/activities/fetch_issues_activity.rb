@@ -48,34 +48,38 @@ module Activities
           heartbeat("fetch_issues.sync_issue", project_id: project.id, github_issue_id: gi.id, index: index, total: github_issues.size)
           sync_issue(project, gi, eager_queue_enabled: eager_queue_enabled, eligible_issues: eligible_issues)
         end
-        sync_changed ||= synced_issues.any? { |issue_data| issue_data[:changed] }
+        sync_changed = synced_issues.any? { |issue_data| issue_data[:changed] }
         relationship_changes = parse_issue_relationships(project, synced_issues)
-        sync_changed ||= relationship_changes
+        sync_changed = relationship_changes || sync_changed
 
         enhance_issue_result = detect_enhance_issue_rechecks(project, synced_issues)
         enhance_issue_rechecks = enhance_issue_result[:rechecks]
-        sync_changed ||= enhance_issue_result[:changed]
+        sync_changed = enhance_issue_result[:changed] || sync_changed
 
         needs_input_changed = detect_needs_input_label_removals(
           project,
           synced_issues,
           ignored_issue_ids: enhance_issue_result[:handled_issue_ids]
         )
-        sync_changed ||= needs_input_changed
+        sync_changed = needs_input_changed || sync_changed
 
-        invalid_needs_input_changed = repair_questionless_needs_input(project, synced_issues)
-        sync_changed ||= invalid_needs_input_changed
+        invalid_needs_input_changed = repair_questionless_needs_input(
+          project,
+          synced_issues,
+          ignored_issue_ids: enhance_issue_result[:handled_issue_ids]
+        )
+        sync_changed = invalid_needs_input_changed || sync_changed
 
         paused_changed = sync_paused_state(project, synced_issues)
-        sync_changed ||= paused_changed
+        sync_changed = paused_changed || sync_changed
 
         closed_count = close_stale_issues(project, github_issues, truncated: truncated, incremental: incremental)
-        sync_changed ||= closed_count.positive?
+        sync_changed = closed_count.positive? || sync_changed
 
         if incremental && !truncated
           stale_pr_result = reconcile_open_pull_requests(project, client)
           stale_pr_count = stale_pr_result[:closed_count]
-          sync_changed ||= stale_pr_result[:changed]
+          sync_changed = stale_pr_result[:changed] || sync_changed
 
           stale_issue_result = reconcile_open_issues(
             project,
@@ -84,12 +88,12 @@ module Activities
             eligible_issues: eligible_issues
           )
           stale_issue_count = stale_issue_result[:closed_count]
-          sync_changed ||= stale_issue_result[:changed]
-          sync_changed ||= repair_questionless_needs_input(project, stale_issue_result[:synced_issues])
+          sync_changed = stale_issue_result[:changed] || sync_changed
+          sync_changed = repair_questionless_needs_input(project, stale_issue_result[:synced_issues]) || sync_changed
         end
 
         completed_state_changed = repair_completed_open_issues(project)
-        sync_changed ||= completed_state_changed
+        sync_changed = completed_state_changed || sync_changed
 
         seed_eligible_issues(project, eligible_issues, incremental: incremental)
       end
@@ -447,20 +451,23 @@ module Activities
       changed
     end
 
-    def repair_questionless_needs_input(project, synced_issues)
+    def repair_questionless_needs_input(project, synced_issues, ignored_issue_ids: [])
       labels = [
         project.enhance_issue_needs_input_label_name,
         project.label_for_stage("needs_input"),
         Activities::HandleNoOutputIssueRunActivity::PAID_NEEDS_INPUT_LABEL
       ].compact.uniq
-      return false if labels.empty?
+      synced_issues = Array(synced_issues)
+      return false if labels.empty? || synced_issues.empty?
 
+      ignored_issue_ids = ignored_issue_ids.to_set
       changed = false
       synced_issues.each_with_index do |issue_data, index|
         heartbeat("fetch_issues.questionless_needs_input", project_id: project.id, issue_id: issue_data[:id], index: index, total: synced_issues.size)
-        next unless (Array(issue_data[:labels]) & labels).any?
+        next if ignored_issue_ids.include?(issue_data[:id])
 
         issue = project.issues.find(issue_data[:id])
+        next unless (Array(issue.labels) & labels).any?
         next if issue.is_pull_request? || issue.github_state == "closed" || issue.paid_state != "needs_input"
         next if pending_clarifying_questions_for(project, issue).any?
         next unless issue.reload.paid_state == "needs_input"
@@ -1163,7 +1170,7 @@ module Activities
       {
         changed: backfilled_count.positive? || reconciled_count.positive? || count.positive?,
         closed_count: count,
-        synced_issues: synced_issues
+        synced_issues: questionless_needs_input_candidates(project, synced_issues, open_numbers)
       }
     end
 
@@ -1238,6 +1245,16 @@ module Activities
     def issue_reconciliation_due?(project)
       last = project.last_issue_reconciliation_at
       last.nil? || last < ISSUE_RECONCILIATION_INTERVAL.ago
+    end
+
+    def questionless_needs_input_candidates(project, synced_issues, open_numbers)
+      candidate_ids = synced_issues.filter_map { |issue_data| issue_data[:id] }
+      candidate_ids.concat(
+        project.issues
+          .where(github_state: "open", is_pull_request: false, paid_state: "needs_input", github_number: open_numbers)
+          .pluck(:id)
+      )
+      candidate_ids.uniq.map { |id| { id: id } }
     end
 
     def fetch_open_issue_numbers(client, repo_full_name)
