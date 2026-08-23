@@ -36,3 +36,11 @@
   *Code:* `app/services/pull_requests/review_surface.rb`,
   `app/temporal/activities/create_pull_request_activity.rb`.
   *Test:* `spec/temporal/activities/create_pull_request_activity_spec.rb`.
+
+- [x] **TDD-PR-006** — In non-strict TDD mode, the scanner SHALL accept a
+  `paid_agent` test-review verdict only when that review applies to the current
+  test revision; older verdicts from before a newer test-writing or test-fixing
+  push SHALL NOT re-apply `paid-tests-approved` or
+  `paid-test-changes-requested`.
+  *Code:* `app/temporal/activities/scan_paid_prs_activity.rb`.
+  *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.

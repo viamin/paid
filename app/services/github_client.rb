@@ -754,6 +754,8 @@ class GithubClient
                     path
                     line
                     author { login }
+                    createdAt
+                    originalCommit { oid }
                   }
                 }
               }
@@ -771,7 +773,10 @@ class GithubClient
         id: thread["id"],
         is_resolved: thread["isResolved"],
         comments: (thread.dig("comments", "nodes") || []).map do |c|
-          { body: c["body"], path: c["path"], line: c["line"], author: c.dig("author", "login") }
+          {
+            body: c["body"], path: c["path"], line: c["line"], author: c.dig("author", "login"),
+            created_at: c["createdAt"], commit_id: c.dig("originalCommit", "oid")
+          }
         end
       }
     end

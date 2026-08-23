@@ -101,7 +101,9 @@ module Automation
                 author: comment.author_login,
                 body: comment.body,
                 path: comment.path,
-                line: comment.line
+                line: comment.line,
+                created_at: comment.created_at,
+                commit_id: comment.commit_id
               }
             end
           }
