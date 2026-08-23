@@ -9,8 +9,15 @@ module Tools
       @user = user || session&.created_by
     end
 
+    # @spec CHAT-API-010
+    # Prefers the project's own credential (GitHub App installation token, or
+    # PAT when the project has no installation) so read-heavy chat tools like
+    # grep_repo spend GitHub API quota from the project's bucket instead of
+    # exhausting the chatting user's personal rate limit / Code Search quota.
+    # Falls back to an active user token when the project has no usable
+    # credential (no active token/installation, or #client cannot be built).
     def resolve
-      resolve_user_client || resolve_project_client || raise(ArgumentError, "Project has no GitHub credentials configured")
+      resolve_project_client || resolve_user_client || raise(ArgumentError, "Project has no GitHub credentials configured")
     end
 
     private
