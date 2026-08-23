@@ -30,20 +30,19 @@
   `app/temporal/activities/enhance_issue_activity.rb#recover_paid_question_comment!`,
   `app/services/clarifying_questions/load.rb`.
 
-- [D] **ISSUE-ENHANCEMENT-006** — When generating clarifying questions, the
+- [x] **ISSUE-ENHANCEMENT-008** — When generating clarifying questions, the
   system SHALL ground question-generation in the actual repository: it SHALL
   self-answer codebase-determinable questions (existing models, platform
   targets, persistence format, current patterns) from the code and SHALL NOT
   ask the human clarifying questions whose answers are directly readable from
   the repository, asking only about genuine product, scope, or intent
   ambiguities the code cannot resolve (RDR-052 R3).
-  *Deferred:* Requires the read-only containerized execution path that lands
-  with RDR-052 Phase 1 (#3254). Today `enhance_issue` is a direct LLM call
-  (`tools: :none`, `enhance_issue` in `skip_clone` at
-  `app/temporal/workflows/agent_execution_workflow.rb:234`) with no
-  repository access; the prompt is grounded in the supplied retrieval
-  results and knowledge-base context only. Restored when the agent has
-  actual filesystem / repo access.
+  *Tests:* `spec/temporal/activities/run_agent_activity_spec.rb#augment_prompt_for_enhance_issue_goal`.
+  *Code:* `app/temporal/activities/run_agent_activity.rb#FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT`,
+  `app/temporal/activities/run_agent_activity.rb#augment_prompt_for_enhance_issue_goal`.
+  Shipped with RDR-052 Phase 1/2 (#3254, #3255): the run is now a
+  containerized agent with repository access, and the prompt instructs it to
+  explore the repo and self-answer before asking the human.
 
 - [x] **ISSUE-ENHANCEMENT-005** — When issue enhancement re-evaluates an issue
   after the user answers clarifying questions, the system SHALL include the
@@ -58,16 +57,19 @@
   `app/services/clarifying_questions/comment_admission.rb`,
   `app/models/project.rb#paid_bot_author?`.
 
-- [D] **ISSUE-ENHANCEMENT-007** — When re-evaluating an issue after the user
+- [x] **ISSUE-ENHANCEMENT-009** — When re-evaluating an issue after the user
   answers clarifying questions, the system SHALL judge answer-sufficiency
   against the user's answers TOGETHER WITH the actual codebase it reads, not
   against the supplied knowledge-base context alone, so the readiness verdict
   is grounded in the real code (RDR-052 R4).
-  *Deferred:* Same dependency as ISSUE-ENHANCEMENT-006 — the agent has no
-  repository access until #3254 lands. Today the re-evaluation prompt
-  instructs the agent to weigh the user's answers against the supplied
-  knowledge-base context, which is the strongest grounding available
-  pre-Phase 1.
+  *Tests:* `spec/temporal/activities/fetch_issues_activity_spec.rb`
+  (`"when the enhance_issue needs-input label is removed"`).
+  *Code:* `app/temporal/activities/fetch_issues_activity.rb#detect_enhance_issue_rechecks`,
+  `app/temporal/activities/run_agent_activity.rb#FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT`.
+  Shipped with RDR-052 Phase 1/2 (#3254, #3255): re-evaluation re-queues the
+  same containerized, codebase-grounded `enhance_issue` goal rather than a
+  KB-only re-check, so the verdict reads the repo alongside the prior
+  answers (admitted via ISSUE-ENHANCEMENT-005).
 
 ## LID-aware prompt materialization
 

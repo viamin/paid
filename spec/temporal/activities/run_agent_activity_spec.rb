@@ -1079,7 +1079,7 @@ RSpec.describe Activities::RunAgentActivity do
       allow(Prompt).to receive(:resolve).and_return(nil)
     end
 
-    it "includes knowledge context when artifacts are available" do
+    it "includes knowledge context when artifacts are available" do # @spec ISSUE-ENHANCEMENT-008
       base_prompt = "Enhance this issue with implementation context."
       allow(Knowledge::ContextBundle::Build).to receive(:call)
         .with(issue: issue, project: project, agent_run: agent_run, agent_run_id: agent_run.id)
@@ -1098,6 +1098,13 @@ RSpec.describe Activities::RunAgentActivity do
       expect(prompt).to include("Do NOT write code, create PRs, create new issues, or push commits")
       expect(prompt).to include("This run is comment-only")
       expect(prompt).to include("do NOT modify files in /workspace")
+      # Pin the codebase-grounded question-generation instruction (RDR-052
+      # Phase 2 / ISSUE-ENHANCEMENT-008): the agent must self-answer
+      # codebase-determinable questions from the repo before asking the
+      # human, and ask only about genuine product/scope/intent ambiguities.
+      expect(prompt).to include("Explore the repository")
+      expect(prompt).to include("self-answer codebase-determinable questions")
+      expect(prompt).to include("before asking the human")
     end
 
     it "renders without knowledge context when no artifacts are available" do

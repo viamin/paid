@@ -172,7 +172,7 @@ Distribution above). RDR-061 remains the open decision in this set.
 | [RDR-021](RDR-021-knowledge-base.md) | Knowledge Base Architecture | Implemented | High |
 | [RDR-027](RDR-027-auto-enhance-knowledge-evolution.md) | Auto-Enhance and Knowledge Base Evolution | Partially Implemented | High |
 | [RDR-042](RDR-042-change-intent-records.md) | Change Intent Records for the Knowledge Base | Partially Implemented | Medium |
-| [RDR-052](RDR-052-codebase-aware-enhance-issue.md) | Codebase-Aware Issue Enhancement | Draft | P1 |
+| [RDR-052](RDR-052-codebase-aware-enhance-issue.md) | Codebase-Aware Issue Enhancement | Implemented | P1 |
 
 ### AI-Native Evolution (Phase 4)
 
