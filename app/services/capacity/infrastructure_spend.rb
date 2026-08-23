@@ -78,7 +78,7 @@ module Capacity
 
     def runs_missing_rate
       overlapping_runs
-        .where("#{rate_cents_per_hour_sql} <= 0")
+        .where(rate_cents_per_hour_expression.lteq(0))
         .select(:id, :container_host, :external_metadata)
     end
 
@@ -106,6 +106,10 @@ module Capacity
           '0'
         )::numeric
       SQL
+    end
+
+    def rate_cents_per_hour_expression
+      @rate_cents_per_hour_expression ||= Arel.sql(rate_cents_per_hour_sql)
     end
 
     def quoted_ends_at
