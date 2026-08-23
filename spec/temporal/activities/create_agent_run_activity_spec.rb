@@ -695,11 +695,12 @@ RSpec.describe Activities::CreateAgentRunActivity do
           }
         }
       )
+      custom_prompt = "token=" + "ghp_" + "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn"
 
       result = activity.execute(
         project_id: project.id,
         issue_id: issue.id,
-        custom_prompt: "api_key=abcdefghijklmnopqrstuvwx123456"
+        custom_prompt:
       )
 
       agent_run = AgentRun.find(result[:agent_run_id])

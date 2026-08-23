@@ -13,8 +13,8 @@ module ExecutionAuditEvents
         runner: nil, backend: nil, image_reference: nil, image_digest: nil, credential_classes: nil,
         networking_policy: nil, resource_type: nil, resource_id: nil, correlation_id: nil, metadata: {})
         run = agent_run
-        resolved_project = project || run&.project
-        resolved_account = account || resolved_project&.account
+        resolved_project = project || run_project(run)
+        resolved_account = account || project_account(resolved_project)
         resolved_policy = normalize_networking_policy(networking_policy)
         resolved_metadata = base_metadata(
           agent_run: run,
@@ -32,7 +32,7 @@ module ExecutionAuditEvents
           event_version: 1,
           actor_type: actor_type,
           actor_id: actor_id,
-          runner_key: runner&.runner_key || run&.runner&.runner_key,
+          runner_key: resolve_runner_key(runner, run),
           backend: backend,
           image_reference: image_reference,
           image_digest: image_digest,
@@ -42,7 +42,7 @@ module ExecutionAuditEvents
           network_policy: resolved_policy,
           resource_type: resource_type,
           resource_id: resource_id,
-          correlation_id: normalize_correlation_id(correlation_id || run&.temporal_workflow_id),
+          correlation_id: normalize_correlation_id(correlation_id || run_temporal_workflow_id(run)),
           metadata: resolved_metadata
         )
       rescue StandardError => error
@@ -59,7 +59,7 @@ module ExecutionAuditEvents
       private
 
       def credential_classes_for(agent_run, networking_policy)
-        grants = Array(agent_run&.authority_grants&.dig("grants"))
+        grants = Array(run_authority_grants(agent_run)&.dig("grants"))
         classes = grants.filter_map do |grant|
           CREDENTIAL_CLASS_BY_DELIVERY[grant["delivery"].to_s]
         end
@@ -91,11 +91,11 @@ module ExecutionAuditEvents
 
       def base_metadata(agent_run:, correlation_id:, resource_id:, metadata:)
         result = stringify(metadata)
-        workflow_id = normalize_correlation_id(correlation_id || agent_run&.temporal_workflow_id)
+        workflow_id = normalize_correlation_id(correlation_id || run_temporal_workflow_id(agent_run))
         result["temporal_workflow_id"] ||= workflow_id if workflow_id.present?
         request_id = current_request_id
         result["request_id"] ||= request_id if request_id.present?
-        runner_handle_id = agent_run&.runner_handle&.dig("identifier")
+        runner_handle_id = run_runner_handle_id(agent_run)
         result["runner_handle_id"] ||= runner_handle_id if runner_handle_id.present?
         ledger_id = resource_ledger_id_for(agent_run: agent_run, resource_id: resource_id)
         result["resource_ledger_id"] ||= ledger_id if ledger_id.present?
@@ -110,7 +110,7 @@ module ExecutionAuditEvents
       # once RESOURCE-LEDGER-005 lands, and fall back to the provisioning
       # intent so the field is actually populated in the meantime.
       def resource_ledger_id_for(agent_run:, resource_id:)
-        return if agent_run.blank?
+        return if agent_run.blank? || !agent_run.respond_to?(:execution_resource_ledger_entries)
 
         matching_record_id(agent_run.execution_resource_ledger_entries, agent_run: agent_run, resource_id: resource_id) ||
           matching_record_id(ProvisioningIntent.where(agent_run_id: agent_run.id), agent_run: agent_run, resource_id: resource_id)
@@ -131,10 +131,39 @@ module ExecutionAuditEvents
       # provider resource id is available (or no row matches it) — the only
       # durable identifier for execution-runner-backed resources.
       def id_by_runner_handle(relation, agent_run:)
-        runner_handle_id = agent_run.runner_handle&.dig("identifier")
+        runner_handle_id = run_runner_handle_id(agent_run)
         return if runner_handle_id.blank?
 
         relation.where("runner_handle ->> 'identifier' = ?", runner_handle_id).order(id: :desc).pick(:id)
+      end
+
+      def run_project(run)
+        run.project if run.respond_to?(:project)
+      end
+
+      def project_account(project)
+        project.account if project.respond_to?(:account)
+      end
+
+      def resolve_runner_key(runner, run)
+        return runner.runner_key if runner.respond_to?(:runner_key)
+
+        persisted_runner = run.runner if run.respond_to?(:runner)
+        persisted_runner.runner_key if persisted_runner&.respond_to?(:runner_key)
+      end
+
+      def run_authority_grants(run)
+        run.authority_grants if run.respond_to?(:authority_grants)
+      end
+
+      def run_temporal_workflow_id(run)
+        run.temporal_workflow_id if run.respond_to?(:temporal_workflow_id)
+      end
+
+      def run_runner_handle_id(run)
+        return unless run.respond_to?(:runner_handle)
+
+        run.runner_handle&.dig("identifier")
       end
 
       def current_request_id
