@@ -87,6 +87,56 @@ module Containers
 
     DEFAULT_RESOURCE_LIMITS = { memory: 1 * 1024 * 1024 * 1024, cpu_quota: 100_000, pids_limit: 200 }.freeze
 
+    # @spec CONTAINER-RUNTIME-035
+    # Baseline container hardening (issue #3450): every service container
+    # runs with a read-only root filesystem, all capabilities dropped, and
+    # no-new-privileges, mirroring the hardening already applied to agent
+    # and chat containers (Containers::Provision, Containers::ProvisionForChat).
+    # Known image families get a profiled Tmpfs for the writable paths their
+    # documented entrypoint actually needs, plus the minimum capabilities
+    # that entrypoint needs back (e.g. the official postgres image chowns
+    # PGDATA and drops from root to the postgres user via gosu on first
+    # boot). Unrecognized images fall back to DEFAULT_HARDENING_PROFILE, a
+    # conservative generic-writable-scratch-space profile with no added
+    # capabilities — account admins wanting a less restrictive profile for a
+    # specific image must still pass ServiceContainer's image allowlist.
+    HARDENING_PROFILES = {
+      "postgres" => {
+        tmpfs: {
+          "/var/lib/postgresql/data" => "size=#{2 * 1024 * 1024 * 1024},mode=0700",
+          "/var/run/postgresql" => "size=#{64 * 1024 * 1024},mode=1777",
+          "/tmp" => "size=#{128 * 1024 * 1024},mode=1777"
+        },
+        cap_add: [ "CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID" ]
+      },
+      "redis" => {
+        tmpfs: {
+          "/data" => "size=#{512 * 1024 * 1024},mode=1777",
+          "/tmp" => "size=#{64 * 1024 * 1024},mode=1777"
+        },
+        cap_add: []
+      },
+      "selenium" => {
+        tmpfs: {
+          "/tmp" => "size=#{256 * 1024 * 1024},mode=1777",
+          "/dev/shm" => "size=#{1024 * 1024 * 1024},mode=1777"
+        },
+        cap_add: []
+      },
+      "chromium" => {
+        tmpfs: {
+          "/tmp" => "size=#{256 * 1024 * 1024},mode=1777",
+          "/dev/shm" => "size=#{1024 * 1024 * 1024},mode=1777"
+        },
+        cap_add: []
+      }
+    }.freeze
+
+    DEFAULT_HARDENING_PROFILE = {
+      tmpfs: { "/tmp" => "size=#{64 * 1024 * 1024},mode=1777" },
+      cap_add: []
+    }.freeze
+
     # Maps an image pattern to the provider-neutral ExecutionRunners::ServiceDeclaration
     # type (RDR-054). Matched the same way as ENV_MAPPINGS/RESOURCE_LIMITS: the
     # first pattern the image name includes wins.
@@ -514,6 +564,7 @@ module Containers
 
     def create_docker_container(service_container)
       limits = resource_limits_for(service_container.image)
+      hardening = hardening_profile_for(service_container.image)
       env = container_env_for(service_container)
       host = runtime_name(service_container)
 
@@ -521,13 +572,18 @@ module Containers
         "Image" => service_container.image,
         "name" => host,
         "Env" => env.map { |k, v| "#{k}=#{v}" },
+        "ReadonlyRootfs" => true,
+        "SecurityOpt" => [ "no-new-privileges:true" ],
         "HostConfig" => {
           "NetworkMode" => @network,
           "Memory" => limits[:memory],
           "MemorySwap" => limits[:memory],
           "CpuPeriod" => 100_000,
           "CpuQuota" => limits[:cpu_quota],
-          "PidsLimit" => limits[:pids_limit]
+          "PidsLimit" => limits[:pids_limit],
+          "CapDrop" => [ "ALL" ],
+          "CapAdd" => hardening[:cap_add],
+          "Tmpfs" => hardening[:tmpfs]
         },
         "NetworkingConfig" => {
           "EndpointsConfig" => {
@@ -546,6 +602,13 @@ module Containers
       options["Healthcheck"] = healthcheck if healthcheck
 
       backend.create_container(options)
+    end
+
+    def hardening_profile_for(image)
+      HARDENING_PROFILES.each do |pattern, profile|
+        return profile if image.include?(pattern)
+      end
+      DEFAULT_HARDENING_PROFILE
     end
 
     def container_env_for(service_container)

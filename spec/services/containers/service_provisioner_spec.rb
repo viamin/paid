@@ -742,6 +742,78 @@ RSpec.describe Containers::ServiceProvisioner do
         )
       )
     end
+
+    it "creates the container with baseline security hardening" do
+      # @spec CONTAINER-RUNTIME-035
+      allow(Docker::Image).to receive(:create)
+      stub_healthy_created_container("abc123")
+
+      provisioner.provision(agent_run)
+
+      expect(Docker::Container).to have_received(:create).with(
+        hash_including(
+          "ReadonlyRootfs" => true,
+          "SecurityOpt" => [ "no-new-privileges:true" ],
+          "HostConfig" => hash_including("CapDrop" => [ "ALL" ])
+        )
+      )
+    end
+
+    it "applies the postgres tmpfs and capability profile for postgres images" do
+      # @spec CONTAINER-RUNTIME-035
+      allow(Docker::Image).to receive(:create)
+      stub_healthy_created_container("abc123")
+
+      provisioner.provision(agent_run)
+
+      expect(Docker::Container).to have_received(:create).with(
+        hash_including(
+          "HostConfig" => hash_including(
+            "CapAdd" => [ "CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID" ],
+            "Tmpfs" => hash_including(
+              "/var/lib/postgresql/data" => a_string_matching(/mode=0700/),
+              "/var/run/postgresql" => a_string_matching(/mode=1777/)
+            )
+          )
+        )
+      )
+    end
+
+    context "with an unrecognized image" do
+      let(:service_container) do
+        custom_account = create(:account)
+        admin = create(:user, account: custom_account)
+        admin.add_role(:admin, custom_account)
+        create(:user_setting, user: admin, allowed_service_images: [ "custom-service:1.0" ])
+
+        create(:service_container,
+          account: custom_account,
+          image: "custom-service:1.0",
+          name: "limits-custom",
+          port: 9000,
+          env: {})
+      end
+
+      it "falls back to the conservative default hardening profile" do
+        # @spec CONTAINER-RUNTIME-035
+        allow(Docker::Image).to receive(:create)
+        stub_healthy_created_container("abc123")
+
+        provisioner.provision(agent_run)
+
+        expect(Docker::Container).to have_received(:create).with(
+          hash_including(
+            "ReadonlyRootfs" => true,
+            "SecurityOpt" => [ "no-new-privileges:true" ],
+            "HostConfig" => hash_including(
+              "CapDrop" => [ "ALL" ],
+              "CapAdd" => [],
+              "Tmpfs" => { "/tmp" => "size=#{64 * 1024 * 1024},mode=1777" }
+            )
+          )
+        )
+      end
+    end
   end
 
   describe "Docker HEALTHCHECK-aware health monitoring" do

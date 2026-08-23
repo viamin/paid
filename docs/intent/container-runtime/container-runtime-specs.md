@@ -568,3 +568,25 @@
   `spec/temporal/activities/provision_browser_container_activity_spec.rb`.
   *Code:* `ExecutionRunners::Base`, `ExecutionRunners::LocalDockerRunner`,
   `AgentRuns::Verification`, `Activities::ProvisionBrowserContainerActivity`.
+
+- [x] **CONTAINER-RUNTIME-035** — When `Containers::ServiceProvisioner`
+  creates a service container (Postgres, Redis, or an account-admin
+  allowlisted image), the system SHALL apply the same baseline hardening as
+  agent and chat containers: a read-only root filesystem, `no-new-privileges`,
+  and all Linux capabilities dropped. The system SHALL apply a per-image-family
+  hardening profile (`HARDENING_PROFILES`, matched by image-name substring
+  like `RESOURCE_LIMITS`) that declares the Tmpfs mounts for that image's
+  documented writable paths and the minimum capabilities its entrypoint needs
+  back — e.g. Postgres's official entrypoint chowns `PGDATA` and drops from
+  root to the `postgres` user via `gosu` on first boot, so its profile adds
+  back `CHOWN`/`DAC_OVERRIDE`/`FOWNER`/`SETGID`/`SETUID`. An image that does
+  not match a known family SHALL fall back to `DEFAULT_HARDENING_PROFILE`: a
+  writable `/tmp` tmpfs and no added capabilities. Account-admin control over
+  which images may run at all remains `ServiceContainer#image_in_allowlist`
+  (`UserSetting#allowed_service_images`); this spec governs only the runtime
+  hardening applied to whichever image that allowlist admits.
+  *Tests:* `spec/services/containers/service_provisioner_spec.rb`
+  *Code:* `Containers::ServiceProvisioner::HARDENING_PROFILES`,
+  `Containers::ServiceProvisioner::DEFAULT_HARDENING_PROFILE`,
+  `Containers::ServiceProvisioner#create_docker_container`,
+  `Containers::ServiceProvisioner#hardening_profile_for`
