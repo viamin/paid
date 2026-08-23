@@ -337,6 +337,35 @@ RSpec.describe Capacity::RunAdmission do
       expect(result[:max_execution_disk_bytes_limit]).to eq(1.gigabyte)
     end
 
+    # @spec INFRA-SPEND-002
+    it "does not invoke the side-effecting spend guard when execution limits already deny admission" do
+      allow(Capacity::InfrastructureLimits).to receive(:current).and_return(
+        infra_limits.merge(max_execution_disk_bytes_limit: 1.gigabyte)
+      )
+      expect(Capacity::InfrastructureSpendGuard).not_to receive(:call)
+
+      result = admission_for(host: "local", limit: 8)
+
+      expect(result[:allowed]).to be false
+      expect(result[:reason]).to eq("execution_disk_limit_exceeded")
+    end
+
+    # @spec INFRA-SPEND-002
+    it "does not invoke the side-effecting spend guard when provisioning is already rate limited" do
+      travel_to(Time.zone.parse("2026-08-17 12:00:00 UTC")) do
+        create_requested_run!(provisioning_started_at: 5.minutes.ago.iso8601)
+        allow(Capacity::InfrastructureLimits).to receive(:current).and_return(
+          infra_limits.merge(global_provisionings_per_window_limit: 1)
+        )
+        expect(Capacity::InfrastructureSpendGuard).not_to receive(:call)
+
+        result = admission_for(host: "local", limit: 8)
+
+        expect(result[:allowed]).to be false
+        expect(result[:reason]).to eq("global_provisioning_rate_limit")
+      end
+    end
+
     it "still enforces user guardrails across all hosts" do
       user.settings.update!(run_concurrency_mode: "manual", max_concurrent_runs: 2)
       create(:agent_run, :running, project: project, container_host: "local")
@@ -667,6 +696,52 @@ RSpec.describe Capacity::RunAdmission do
         expect(result[:mode]).to eq("manual")
         expect(result[:global_available_slots]).to be_nil
       end
+    end
+
+    # @spec INFRA-SPEND-001
+    it "denies admission when projected infrastructure spend breaches a threshold" do
+      allow(Capacity::InfrastructureSpendGuard).to receive(:call).and_return(
+        allowed: false,
+        reason: "project_infra_spend_hourly_limit_exceeded",
+        rate_limited_until: Time.zone.parse("2026-08-17 13:00:00 UTC"),
+        spend_scope: "project",
+        spend_period: "hourly",
+        spend_action: "park",
+        current_spend_cents: 90,
+        projected_spend_cents: 120,
+        infra_spend_limit_cents: 100
+      )
+
+      result = admission_for(host: "local", limit: 8)
+
+      expect(result[:allowed]).to be(false)
+      expect(result[:reason]).to eq("project_infra_spend_hourly_limit_exceeded")
+      expect(result[:available_slots]).to eq(0)
+      expect(result[:rate_limited_until]).to eq(Time.zone.parse("2026-08-17 13:00:00 UTC"))
+      expect(result[:spend_scope]).to eq("project")
+      expect(result[:projected_spend_cents]).to eq(120)
+      expect(result[:infra_spend_limit_cents]).to eq(100)
+    end
+
+    # @spec INFRA-SPEND-001
+    it "previews infrastructure spend without invoking the side-effecting guard" do
+      expect(Capacity::InfrastructureSpendGuard).to receive(:preview).and_return(
+        allowed: false,
+        reason: "project_infra_spend_hourly_limit_exceeded",
+        rate_limited_until: Time.zone.parse("2026-08-17 13:00:00 UTC")
+      )
+      expect(Capacity::InfrastructureSpendGuard).not_to receive(:call)
+
+      result = described_class.preview(
+        user: user,
+        project: project,
+        docker_snapshot: docker_snapshot,
+        selected_host: "local",
+        selected_host_limit: 8
+      )
+
+      expect(result[:allowed]).to be(false)
+      expect(result[:reason]).to eq("project_infra_spend_hourly_limit_exceeded")
     end
   end
 end

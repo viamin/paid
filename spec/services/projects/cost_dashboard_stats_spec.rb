@@ -25,6 +25,28 @@ RSpec.describe Projects::CostDashboardStats do
       end
     end
 
+    it "separates infrastructure cost from llm cost while exposing total variable cost" do
+      travel_to(Time.zone.local(2024, 1, 15, 12, 0, 0)) do
+        run = create(:agent_run, project: project, status: "completed", cost_cents: 300,
+          provisioning_started_at: 2.hours.ago, completed_at: 1.hour.ago,
+          external_metadata: {
+            "infrastructure_spend" => { "rate_cents_per_hour" => 120 }
+          })
+        create(:token_usage, agent_run: run, cost_cents: 300, request_type: "agent")
+
+        result = described_class.call(project: project)
+
+        expect(result[:summary][:total_cost_cents]).to eq(5000)
+        expect(result[:summary][:infrastructure_cost_cents]).to eq(120)
+        expect(result[:summary][:total_variable_cost_cents]).to eq(5120)
+        expect(result[:summary][:cost_today_cents]).to eq(300)
+        expect(result[:summary][:infrastructure_cost_today_cents]).to eq(120)
+        expect(result[:summary][:total_variable_cost_today_cents]).to eq(420)
+        expect(result[:summary][:infrastructure_cost_this_month_cents]).to eq(120)
+        expect(result[:summary][:total_variable_cost_this_month_cents]).to eq(420)
+      end
+    end
+
     it "calculates average cost per run" do
       create(:agent_run, project: project, status: "completed", cost_cents: 400)
       create(:agent_run, project: project, status: "completed", cost_cents: 600)
