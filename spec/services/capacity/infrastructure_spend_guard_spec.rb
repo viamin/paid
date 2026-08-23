@@ -86,6 +86,23 @@ RSpec.describe Capacity::InfrastructureSpendGuard do
     expect(control.metadata["recovered_at"]).to be_present
   end
 
+  # @spec INFRA-SPEND-004
+  it "does not recover the global daily execution control while spend is still over the limit" do
+    allow(Capacity::InfrastructureLimits).to receive(:current).and_return(spend_limits(global_daily: 100))
+    allow(Capacity::InfrastructureSpend).to receive(:spent_cents).and_return(90, 150)
+    allow(Capacity::InfrastructureSpend).to receive(:projected_cents_for_host).and_return(20)
+
+    result = call_guard(now: Time.utc(2026, 8, 23, 12, 15, 0))
+
+    expect(result[:allowed]).to be(false)
+    control = ExecutionControl.find_by!(scope: "global")
+    expect(control.enabled).to be(true)
+
+    described_class.recover_global_daily_threshold!(now: Time.utc(2026, 8, 23, 13, 0, 0))
+
+    expect(control.reload.enabled).to be(true)
+  end
+
   # @spec INFRA-SPEND-005
   it "previews a breach without publishing notifications, audit events, or execution control changes" do
     allow(Capacity::InfrastructureLimits).to receive(:current).and_return(spend_limits(project_hourly: 100))

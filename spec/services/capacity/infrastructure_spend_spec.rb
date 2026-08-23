@@ -48,4 +48,20 @@ RSpec.describe Capacity::InfrastructureSpend do
       hash_including(message: "capacity.infrastructure_spend_rate_missing", agent_run_id: run.id, container_host: "local")
     )
   end
+
+  # @spec INFRA-SPEND-001
+  it "excludes runs completed well before the queried window" do
+    create(
+      :agent_run,
+      :completed,
+      project: project,
+      provisioning_started_at: Time.utc(2026, 8, 1, 12, 0, 0),
+      started_at: Time.utc(2026, 8, 1, 12, 0, 0),
+      completed_at: Time.utc(2026, 8, 1, 13, 0, 0),
+      container_host: "local",
+      external_metadata: { "infrastructure_spend" => { "rate_cents_per_hour" => 200 } }
+    )
+
+    expect(spent_cents_for_account).to eq(0)
+  end
 end

@@ -54,6 +54,8 @@ module Capacity
       return unless check
 
       current_spend_cents = spend_cents_for(check)
+      return if current_spend_cents > check[:limit_cents]
+
       recover_threshold(check, current_spend_cents)
     end
 
@@ -157,7 +159,7 @@ module Capacity
     end
 
     def account_for(scope)
-      return account if %w[account project runner].include?(scope)
+      return account if scope == "account"
       return project.account if scope == "project" && project
       return runner.user.account if scope == "runner" && runner
 

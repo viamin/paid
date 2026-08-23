@@ -55,6 +55,7 @@ module Capacity
           .joins(:project)
           .where.not(provisioning_started_at: nil)
           .where("agent_runs.provisioning_started_at < ?", ends_at)
+          .where("agent_runs.completed_at IS NULL OR agent_runs.completed_at >= ?", starts_at)
           .where("agent_runs.completed_at IS NOT NULL OR agent_runs.status IN (?)", AgentRun::ACTIVE_STATUSES)
 
         scope = scope.where(projects: { account_id: account.id }) if account
