@@ -102,8 +102,15 @@ module Containers
     # specific image must still pass ServiceContainer's image allowlist.
     HARDENING_PROFILES = {
       "postgres" => {
+        # Tmpfs pages are accounted against the container's memcg, so the
+        # combined tmpfs budget here (1 GiB + 64 MiB + 128 MiB ≈ 1.19 GiB)
+        # is sized to stay well under RESOURCE_LIMITS["postgres"][:memory]
+        # (2 GiB), leaving ~800 MiB of headroom for the postgres process's
+        # own RSS (shared_buffers, work_mem, WAL buffers, per-connection
+        # overhead) so the container isn't OOM-killed as soon as PGDATA
+        # usage grows.
         tmpfs: {
-          "/var/lib/postgresql/data" => "size=#{2 * 1024 * 1024 * 1024},mode=0700",
+          "/var/lib/postgresql/data" => "size=#{1 * 1024 * 1024 * 1024},mode=0700",
           "/var/run/postgresql" => "size=#{64 * 1024 * 1024},mode=1777",
           "/tmp" => "size=#{128 * 1024 * 1024},mode=1777"
         },
