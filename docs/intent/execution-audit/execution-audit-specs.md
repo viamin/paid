@@ -39,7 +39,7 @@
   *Code:* `ExecutionAuditEvent`, `ExecutionAuditEventRetentionJob`,
   `config/initializers/good_job.rb`.
 
-- [ ] **EXECUTION-AUDIT-004** — The execution lifecycle SHALL emit
+- [x] **EXECUTION-AUDIT-004** — The execution lifecycle SHALL emit
   `execution.requested`, `execution.queued`, `execution.admitted`,
   `execution.rejected`, `execution.runner_selected`, `execution.image_resolved`,
   `execution.credential_classes_granted`, `execution.network_policy_granted`,
@@ -53,7 +53,7 @@
   *Code:* `Activities::CreateAgentRunActivity`, `ProcessRunQueueJob`,
   `AgentRuns::BindRunner`, `AgentRun`, `Containers::Provision`.
 
-- [ ] **EXECUTION-AUDIT-005** — Resource lifecycle and execution-control paths
+- [x] **EXECUTION-AUDIT-005** — Resource lifecycle and execution-control paths
   SHALL emit `execution.resource_provision_requested`,
   `execution.resource_provisioned`, `execution.resource_cleanup_failed`,
   `execution.resource_cleanup_retried`,
