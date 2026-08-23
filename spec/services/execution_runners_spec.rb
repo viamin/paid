@@ -264,6 +264,16 @@ RSpec.describe ExecutionRunners do
       }
     end
 
+    def recorded_postgres_service(service_container:, run:)
+      ExecutionRunners::ServiceDeclaration.new(
+        name: "pg",
+        image: "postgres:16",
+        port: 5432,
+        env: { "DATABASE_URL" => "postgres://u:p@paid-svc-a#{service_container.account_id}-s#{service_container.id}-pg:5432/agent_run_#{run.id}" },
+        type: :database
+      )
+    end
+
     # @spec CONTAINER-RUNTIME-027
     it "reuses the requested-resource envelope when building from an agent run" do
       project = create(:project)
@@ -343,12 +353,14 @@ RSpec.describe ExecutionRunners do
     end
 
     # @spec CONTAINER-RUNTIME-032
-    it "populates services from the service containers ProvisionServicesActivity already provisioned" do
+    it "populates services from the persisted snapshot ProvisionServicesActivity recorded" do
       project = create(:project)
       run = create(:agent_run, project: project)
       service_container = create(:service_container, image: "postgres:16", name: "pg", port: 5432,
         env: { "POSTGRES_USER" => "u", "POSTGRES_PASSWORD" => "p", "POSTGRES_DB" => "d" })
       run.update!(service_container_ids: [ service_container.id ])
+      run.record_service_declarations!([ recorded_postgres_service(service_container:, run:) ], container_ids: [ service_container.id ])
+      service_container.update_columns(image: "postgres:17", name: "pg-renamed")
 
       built = ExecutionRunners::RunSpec.from_agent_run(run)
 
@@ -356,6 +368,7 @@ RSpec.describe ExecutionRunners do
       declaration = built.services.first
       expect(declaration).to be_a(ExecutionRunners::ServiceDeclaration)
       expect(declaration.name).to eq("pg")
+      expect(declaration.image).to eq("postgres:16")
       expect(declaration.type).to eq(:database)
       expect(declaration.env["DATABASE_URL"]).to be_present
     end

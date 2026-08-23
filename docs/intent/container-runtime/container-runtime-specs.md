@@ -525,8 +525,10 @@
   preserving its existing reference counting and per-run database isolation.
   `RunSpec#services` SHALL be populated with provider-neutral
   `ExecutionRunners::ServiceDeclaration` values (`name`, `image`, `port`,
-  `env`, `type`) reconstructed from the agent run's already-provisioned
-  `ServiceContainer` rows, without issuing Docker calls.
+  `env`, `type`) captured at provisioning time on the agent run and reused for
+  later manifest generation; when no persisted snapshot exists, the system MAY
+  reconstruct them from the already-provisioned `ServiceContainer` rows
+  without issuing Docker calls.
   *Tests:* `spec/services/execution_runners/base_spec.rb`,
   `spec/services/execution_runners/local_docker_runner_spec.rb`,
   `spec/services/containers/service_provisioner_spec.rb`,

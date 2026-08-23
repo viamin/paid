@@ -171,13 +171,16 @@ isolation semantics (reference counting, per-run database naming).
 - `ExecutionRunners::ServiceDeclaration` (`name`, `image`, `port`, `env`,
   `type` — `:database | :cache | :browser | :other`) is the provider-neutral
   shape for a supporting service. `RunSpec#services` is populated in
-  `RunSpec.from_agent_run` by `Containers::ServiceProvisioner#service_declarations`,
-  a pure reconstruction from the `ServiceContainer` rows already referenced by
-  `agent_run.service_container_ids` — it performs no Docker calls and is safe
-  to call after provisioning has already happened, which is what
-  `RunSpec.from_agent_run` does (Temporal provisions services, MCP sidecars,
-  and the browser container in Steps 1.5–1.7, before `RunSpec` is built for
-  `ProvisionContainerActivity` in Step 2).
+  `RunSpec.from_agent_run` by `Containers::ServiceProvisioner#service_declarations`.
+  `ProvisionServicesActivity` persists the declaration array onto the run at
+  provisioning time, keyed to the same `service_container_ids`, so later
+  manifest generation reuses the point-in-time image/port/env values of the
+  services the run is actually attached to. Older runs without the snapshot
+  fall back to reconstructing from the referenced `ServiceContainer` rows
+  without issuing Docker calls. This is what `RunSpec.from_agent_run` does
+  after Temporal provisions services, MCP sidecars, and the browser container
+  in Steps 1.5–1.7, before `ProvisionContainerActivity` builds the primary
+  workload `RunSpec` in Step 2.
 - `ExecutionRunners::Base` declares five additional lifecycle methods —
   `#provision_services`, `#cleanup_services`, `#provision_mcp_servers`,
   `#cleanup_mcp_servers`, `#provision_browser_container` — alongside the
