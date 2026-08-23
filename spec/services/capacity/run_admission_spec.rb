@@ -337,6 +337,35 @@ RSpec.describe Capacity::RunAdmission do
       expect(result[:max_execution_disk_bytes_limit]).to eq(1.gigabyte)
     end
 
+    # @spec INFRA-SPEND-002
+    it "does not invoke the side-effecting spend guard when execution limits already deny admission" do
+      allow(Capacity::InfrastructureLimits).to receive(:current).and_return(
+        infra_limits.merge(max_execution_disk_bytes_limit: 1.gigabyte)
+      )
+      expect(Capacity::InfrastructureSpendGuard).not_to receive(:call)
+
+      result = admission_for(host: "local", limit: 8)
+
+      expect(result[:allowed]).to be false
+      expect(result[:reason]).to eq("execution_disk_limit_exceeded")
+    end
+
+    # @spec INFRA-SPEND-002
+    it "does not invoke the side-effecting spend guard when provisioning is already rate limited" do
+      travel_to(Time.zone.parse("2026-08-17 12:00:00 UTC")) do
+        create_requested_run!(provisioning_started_at: 5.minutes.ago.iso8601)
+        allow(Capacity::InfrastructureLimits).to receive(:current).and_return(
+          infra_limits.merge(global_provisionings_per_window_limit: 1)
+        )
+        expect(Capacity::InfrastructureSpendGuard).not_to receive(:call)
+
+        result = admission_for(host: "local", limit: 8)
+
+        expect(result[:allowed]).to be false
+        expect(result[:reason]).to eq("global_provisioning_rate_limit")
+      end
+    end
+
     it "still enforces user guardrails across all hosts" do
       user.settings.update!(run_concurrency_mode: "manual", max_concurrent_runs: 2)
       create(:agent_run, :running, project: project, container_host: "local")

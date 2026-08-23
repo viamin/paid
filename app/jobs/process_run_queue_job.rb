@@ -1153,22 +1153,11 @@ class ProcessRunQueueJob < ApplicationJob
     # and capacity accounting. Keep started_at tied to actual agent execution
     # in RunAgentActivity so max_execution_seconds and stale-running thresholds
     # do not start burning down during Temporal admission/provisioning.
-    # @spec OBSERVABILITY-002 — record provisioning_started_at and
-    # requested_resources so admission telemetry can correlate rate-limited
-    # runs with the exact resource envelope they were admitted against.
     update_attributes = {
       temporal_workflow_id: workflow_id,
       status: "running",
       completed_at: nil,
-      provisioning_started_at: Time.current,
-      external_metadata: agent_run.external_metadata.merge(
-        "provisioning_started_at" => Time.current.iso8601,
-        "requested_resources" => Capacity::RequestedResources.persistable_for(agent_run),
-        "infrastructure_spend" => {
-          "rate_cents_per_hour" => Capacity::InfrastructureLimits.rate_cents_per_hour(host: planned_container_host),
-          "projection_seconds" => Capacity::InfrastructureLimits.current(host: planned_container_host)[:infra_spend_projection_seconds]
-        }
-      )
+      external_metadata: agent_run.external_metadata
     }
     if planned_container_host.present?
       update_attributes[:container_host] = nil
@@ -1199,6 +1188,7 @@ class ProcessRunQueueJob < ApplicationJob
       task_queue: Paid.agent_task_queue,
       priority: temporal_priority_for(agent_run)
     )
+    record_provisioning_start!(agent_run, planned_container_host)
 
     Rails.logger.info(
       message: "process_run_queue.started_queued_run",
@@ -1214,6 +1204,27 @@ class ProcessRunQueueJob < ApplicationJob
       error: e.message
     )
     false
+  end
+
+  # @spec OBSERVABILITY-002 — record provisioning_started_at and
+  # requested_resources only after Temporal accepted the workflow start so
+  # failed dispatch attempts do not create phantom infrastructure spend.
+  def record_provisioning_start!(agent_run, planned_container_host)
+    started_at = Time.current
+    metadata = agent_run.external_metadata.merge(
+      "provisioning_started_at" => started_at.iso8601,
+      "requested_resources" => Capacity::RequestedResources.persistable_for(agent_run),
+      "infrastructure_spend" => {
+        "rate_cents_per_hour" => Capacity::InfrastructureLimits.rate_cents_per_hour(host: planned_container_host),
+        "projection_seconds" => Capacity::InfrastructureLimits.current(host: planned_container_host)[:infra_spend_projection_seconds]
+      }
+    )
+
+    agent_run.update_columns(
+      provisioning_started_at: started_at,
+      external_metadata: metadata,
+      updated_at: Time.current
+    )
   end
 
   # Queue-start failures are infrastructure failures, not business-rule

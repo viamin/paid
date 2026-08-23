@@ -916,6 +916,9 @@ RSpec.describe ProcessRunQueueJob do
       # (e.g. when start_workflow raises due to a network timeout but
       # the workflow actually started server-side).
       expect(failing_run.reload.temporal_workflow_id).to be_present
+      expect(failing_run.reload.provisioning_started_at).to be_nil
+      expect(failing_run.reload.external_metadata["provisioning_started_at"]).to be_nil
+      expect(failing_run.reload.external_metadata["infrastructure_spend"]).to be_nil
       expect(good_run.reload.status).to eq("running")
     end
 
@@ -929,6 +932,31 @@ RSpec.describe ProcessRunQueueJob do
       expect(QualityMetricsCollectionJob).to have_been_enqueued.with(failing_run.id)
       expect(AnomalyDetectionJob).to have_been_enqueued.with(failing_run.id)
       expect(DashboardBroadcastJob).to have_been_enqueued.with(failing_run.project.account_id)
+    end
+
+    # @spec INFRA-SPEND-002
+    # @spec OBSERVABILITY-002
+    it "records provisioning spend metadata only after workflow start succeeds" do
+      queued_run = create(:agent_run, :queued)
+
+      allow(temporal_client).to receive(:start_workflow) do |_wf, input, **_opts|
+        run = AgentRun.find(input[:agent_run_id])
+
+        expect(run.provisioning_started_at).to be_nil
+        expect(run.external_metadata["provisioning_started_at"]).to be_nil
+        expect(run.external_metadata["infrastructure_spend"]).to be_nil
+
+        workflow_handle
+      end
+
+      described_class.new.perform
+
+      queued_run.reload
+      expect(queued_run.status).to eq("running")
+      expect(queued_run.provisioning_started_at).to be_present
+      expect(queued_run.external_metadata["provisioning_started_at"]).to be_present
+      expect(queued_run.external_metadata.dig("infrastructure_spend", "rate_cents_per_hour")).to be_present
+      expect(queued_run.external_metadata["requested_resources"]).to be_present
     end
 
     it "admits a claimed run even when unrelated validations drift after queueing" do
