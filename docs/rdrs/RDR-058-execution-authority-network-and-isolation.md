@@ -84,20 +84,7 @@ Implemented** until those land.
 
 ### 2026-08-23 Update — RDR-055 Egress Allowlisting Shipped
 
-RDR-055's tenant-configurable egress allowlisting has since shipped: the
-`EgressAllowlistEntry` model, `AgentRuns::EgressPolicy::{Resolve,Gateway}`,
-the per-host Docker egress gateway, and production fail-closed rejection
-for runtimes that cannot enforce the restricted profile (#3434, #3435,
-#3436, #3437, #3438) are all merged. The Kubernetes and managed-machine
-adapter classes included in that work are contract stubs, not shipped
-enforcement implementations. This
-supersedes the "RDR-055 is Draft" framing in the 2026-08-17 closeout audit
-above, which reflected an earlier point in time. RDR-055 itself remains
-**Partially Implemented**, not Implemented, because its brokered research
-egress with secret-extraction guards
-([#3439](https://github.com/viamin/paid/issues/3439)) is still open; see
-RDR-055's 2026-08-23 Umbrella Audit for full evidence. Of the six blocking
-children of #3418, #3356, #3404, and #3405 remain open.
+RDR-055's tenant-configurable egress allowlisting has since shipped: the `EgressAllowlistEntry` model, `AgentRuns::EgressPolicy::{Resolve,Gateway}`, the per-host Docker egress gateway, and production fail-closed rejection for runtimes that cannot enforce the restricted profile (#3434, #3435, #3436, #3437, #3438) are all merged. The Kubernetes and managed-machine adapter classes included in that work are contract stubs, not shipped enforcement implementations. This supersedes the "RDR-055 is Draft" framing in the 2026-08-17 closeout audit above, which reflected an earlier point in time. RDR-055 itself remains **Partially Implemented**, not Implemented, because its brokered research egress with secret-extraction guards ([#3439](https://github.com/viamin/paid/issues/3439)) is still open; see RDR-055's 2026-08-23 Umbrella Audit for full evidence. Of the six blocking children of #3418, #3356, #3404, and #3405 remain open.
 
 ## Problem Statement
 
