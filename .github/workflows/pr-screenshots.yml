@@ -117,14 +117,18 @@ jobs:
       BUNDLE_FROZEN: "true"
       RAILS_ENV: test
       SECRET_KEY_BASE: test-secret-key-base
-      RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY }}
+      RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY != '' && secrets.RAILS_TEST_KEY || secrets.RAILS_MASTER_KEY }}
       PAID_DEVELOPMENT_DATABASE: paid_test
       PAID_DEVELOPMENT_CABLE_DATABASE: paid_test
       PAID_TEST_DATABASE: paid_test
       DATABASE_URL: postgres://paid:paid@localhost:5432/paid_test
       DB_HOST: localhost
+      PGHOST: localhost
+      PGPORT: 5432
       DB_USERNAME: paid
+      PGUSER: paid
       DB_PASSWORD: paid
+      PGPASSWORD: paid
       TMPDIR: ${{ github.workspace }}/.tmp-build
       YARN_CACHE_FOLDER: ${{ github.workspace }}/.cache-yarn
       XDG_CACHE_HOME: ${{ github.workspace }}/.cache
@@ -137,15 +141,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-
-      - name: Normalize test master key
-        if: env.RAILS_TEST_KEY == ''
-        env:
-          RAILS_MASTER_KEY_FALLBACK: ${{ secrets.RAILS_MASTER_KEY }}
-        run: |
-          if [ -n "$RAILS_MASTER_KEY_FALLBACK" ]; then
-            echo "RAILS_TEST_KEY=$RAILS_MASTER_KEY_FALLBACK" >> "$GITHUB_ENV"
-          fi
 
       - name: Prepare workspace cache directories
         run: mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME" "$npm_config_cache" "$PLAYWRIGHT_BROWSERS_PATH"
@@ -303,7 +298,7 @@ jobs:
           BUNDLE_FROZEN: "true"
           RAILS_ENV: test
           SECRET_KEY_BASE: test-secret-key-base
-          RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY }}
+          RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY != '' && secrets.RAILS_TEST_KEY || secrets.RAILS_MASTER_KEY }}
           PAID_DEVELOPMENT_DATABASE: paid_test
           PAID_DEVELOPMENT_CABLE_DATABASE: paid_test
           PAID_TEST_DATABASE: paid_test
@@ -317,7 +312,4 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          RAILS_MASTER_KEY_FALLBACK: ${{ secrets.RAILS_MASTER_KEY }}
-        run: |
-          export RAILS_TEST_KEY="${RAILS_TEST_KEY:-$RAILS_MASTER_KEY_FALLBACK}"
-          bin/rails screenshots:cleanup_pr
+        run: bin/rails screenshots:cleanup_pr

@@ -55,9 +55,14 @@ RSpec.describe ExecutionControl do
         control.update!(enabled: true, reason: "Emergency shutdown")
       }.to have_enqueued_job(AgentRunCancellationJob).with(agent_run.id)
         .and change(AccountActivityEvent, :count).by(2)
+        .and change(ExecutionAuditEvent, :count).by(1)
 
       expect(agent_run.reload.status).to eq("cancelled")
       expect(AccountActivityEvent.order(:id).last.action).to eq("agent_run.cancelled")
+      expect(ExecutionAuditEvent.order(:id).last).to have_attributes(
+        event_name: "execution.emergency_disable_changed",
+        actor_id: "execution_controls.run_impact"
+      )
     end
 
     # @spec EXEC-DISABLE-006
@@ -71,12 +76,16 @@ RSpec.describe ExecutionControl do
       expect {
         control.update!(enabled: true, reason: "Capacity reduction")
       }.to have_enqueued_job(ExecutionControlParkCleanupJob).with(agent_run.id, workflow_id, nil, nil)
+        .and change(ExecutionAuditEvent, :count).by(1)
 
       agent_run.reload
       expect(agent_run.status).to eq("paused")
       expect(agent_run.external_metadata.dig("execution_control", "control_id")).to eq(control.id)
+      expect(ExecutionAuditEvent.order(:id).last.event_name).to eq("execution.emergency_disable_changed")
 
-      control.update!(enabled: false)
+      expect {
+        control.update!(enabled: false)
+      }.to change(ExecutionAuditEvent, :count).by(1)
 
       expect(agent_run.reload.status).to eq("queued")
       expect(agent_run.external_metadata).not_to have_key("execution_control")
@@ -190,6 +199,10 @@ RSpec.describe ExecutionControl do
       global_events = AccountActivityEvent.where(action: "execution_control.enabled")
       expect(global_events.pluck(:account_id)).to contain_exactly(project_a.account_id, project_b.account_id)
       expect(global_events.pluck(:subject_id).uniq).to eq([ control.id ])
+
+      audit_events = ExecutionAuditEvent.where(event_name: "execution.emergency_disable_changed").order(:id)
+      expect(audit_events.pluck(:account_id)).to contain_exactly(project_a.account_id, project_b.account_id)
+      expect(audit_events.pluck(:project_id)).to all(be_nil)
     end
 
     # @spec EXEC-DISABLE-007

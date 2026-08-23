@@ -80,7 +80,7 @@ module PreviewSessions
     end
 
     def create_preview_agent_run!(preview_session)
-      AgentRun.create!(
+      agent_run = AgentRun.create!(
         project: preview_session.project,
         initiating_user: preview_session.created_by,
         agent_type: "internal_agent",
@@ -96,6 +96,22 @@ module PreviewSessions
         branch_name: preview_session.branch_name,
         started_at: Time.current
       )
+
+      agent_run.execution_ingress_policy.capabilities.each do |capability|
+        ExecutionAuditEvents::Lifecycle.record(
+          event_name: "execution.policy_exception_granted",
+          actor_id: "preview_sessions.provision_job",
+          agent_run: agent_run,
+          metadata: {
+            exception_kind: capability.kind,
+            exception_scope: capability.scope,
+            granted_by: capability.granted_by,
+            expires_at: capability.expires_at&.iso8601
+          }
+        )
+      end
+
+      agent_run
     end
 
     def complete_agent_run!(agent_run)

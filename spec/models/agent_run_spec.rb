@@ -3940,6 +3940,24 @@ RSpec.describe AgentRun do
     end
   end
 
+  describe "#persist_execution_authority_grants!" do # @spec EXECUTION-AUTHORITY-001
+    it "records the derived networking policy in the audit events when called without an explicit policy" do
+      agent_run = create(:agent_run)
+      derived_policy = ExecutionRunners::NetworkingPolicy.no_outbound
+      allow(Containers::Provision).to receive(:networking_policy_for)
+        .with(agent_run: agent_run, project: agent_run.project)
+        .and_return(derived_policy)
+
+      agent_run.persist_execution_authority_grants!
+
+      credential_event = ExecutionAuditEvent.find_by!(event_name: "execution.credential_classes_granted", agent_run: agent_run)
+      network_event = ExecutionAuditEvent.find_by!(event_name: "execution.network_policy_granted", agent_run: agent_run)
+
+      expect(credential_event.network_policy).to eq(network_event.network_policy)
+      expect(network_event.network_policy).to include("mode" => "no_outbound", "firewall" => true)
+    end
+  end
+
   describe "#queue_priority_tier" do # @spec QUEUE-TIER-002
     it "returns :manual for manual trigger type" do
       run = create(:agent_run, trigger_type: "manual")
