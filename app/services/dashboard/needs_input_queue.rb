@@ -36,14 +36,12 @@ module Dashboard
 
     attr_reader :after_issue, :project, :user
 
-    # Question-backed needs-input issues only. Shared by +call+ (dashboard
-    # render) and +next_issue+ (queue navigation) so neither links to a stale
-    # needs-input row that has no parseable questions.
+    # Shared by +call+ (dashboard render) and +next_issue+ (queue navigation).
+    # Questionless rows are invalid and repaired during sync, but keep them
+    # visible defensively if a stale row reaches the dashboard first.
     def queued_entries
       @queued_entries ||= ordered_issues.filter_map do |issue|
         questions = question_summary_for(issue)
-        next if questions.empty?
-
         Entry.new(
           project: issue.project,
           issue: issue,

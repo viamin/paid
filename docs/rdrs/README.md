@@ -42,6 +42,19 @@ incomplete RDR ship safely:
 Issue implementations for an RDR must preserve the stated guard until the RDR's
 closeout audit marks the guarded behavior complete and safe to make default.
 
+## Implementation Issues and Closeout
+
+RDR implementation issue trees should end with a closeout/validation issue. That
+final issue validates the shipped code, tests, and docs against the RDR plan,
+updates the RDR status, records any remaining gaps, and follows
+[`closeout-checklist.md`](closeout-checklist.md).
+
+When the closeout concludes that the RDR is fully implemented, its PR should
+visibly close the umbrella issue with GitHub closing language such as
+`Closes #1234`. Use non-closing language such as `Tracks #1234` only for
+intermediate or partial closeout work where the umbrella must remain open for
+remaining gap issues.
+
 ## Index
 
 ### Foundation (Core Technology Stack)
