@@ -5,32 +5,25 @@
 ## Metadata
 
 - **Date**: 2026-07-08
-- **Status**: Partially Implemented
+- **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: High
-- **Related Issues**: #3166 (gap reconciliation), #3192 (live preview provisioning), #3193 (proxy/root-path unification), #3194 (preview UI lifecycle), #3195 (trace viewer end-to-end wiring), #3196 (agent self-verification), #3197 (RDR-046 follow-up), #2844 (closed epic), #2845 (closed Phoenix detection issue), #2846 (closed seed-data issue), #2847 (closed trace-recording issue), #2848 (closed preview provisioning issue), #2849 (closed PreviewSession issue), #2850 (closed reverse-proxy issue), #2851 (closed preview UI issue), #2852 (closed agent-verification issue), #2853 (closed tunnel issue), #2854 (closed trace-viewer issue), #2855 (closed demo-video/GIF issue)
+- **Related Issues**: #3596 (final closeout), #3166 (gap reconciliation), #3192 (live preview provisioning), #3193 (proxy/root-path unification), #3194 (preview UI lifecycle), #3195 (trace viewer end-to-end wiring), #3196 (agent self-verification), #3197 (RDR-046 follow-up), #2844 (closed epic), #2845 (closed Phoenix detection issue), #2846 (closed seed-data issue), #2847 (closed trace-recording issue), #2848 (closed preview provisioning issue), #2849 (closed PreviewSession issue), #2850 (closed reverse-proxy issue), #2851 (closed preview UI issue), #2852 (closed agent-verification issue), #2853 (closed tunnel issue), #2854 (closed trace-viewer issue), #2855 (closed demo-video/GIF issue)
 - **Related RDRs**: [RDR-004](RDR-004-container-isolation.md) (Container Isolation), [RDR-006](RDR-006-secrets-proxy.md) (Secrets Proxy), [RDR-019](RDR-019-remote-container-execution.md) (Remote Container Execution), [RDR-020](RDR-020-service-container-architecture.md) (Service Container Architecture), [RDR-028](RDR-028-interactive-chat.md) (Interactive Chat)
 - **Related Tests**: `spec/services/screenshots/`, `spec/services/containers/`
 
 ## Implementation Status
 
-Partially implemented as of 2026-08-04. The July 2026 RDR-045 work shipped important foundations that are now present in the repository:
+Implemented as of 2026-08-23. The August closeout audit found shipped code and test coverage for the RDR's live-preview and interactive-verification acceptance criteria:
 
-- Phoenix/Elixir detection and Phoenix route discovery in the screenshot and route-collection stack
-- Playwright trace recording in `Screenshots::ContainerCapture`
-- trace-derived GIF/video export and a trace-viewer UI
-- `PreviewSession`, preview tunnel reservations, `Previews::Provision`, `Previews::TunnelManager`, `PreviewsProxy`, preview routes/views/policies, and the preview tunnel server
-- Playwright MCP definition wiring plus verification browser sidecar provisioning for agent runs
+- project preview actions now queue real provisioning work through `PreviewSessions::ProvisionJob`, which invokes `Previews::Provision` and tears down replaced sessions
+- the token-root preview route redirects into the tunnel-backed `PreviewsProxy` path, which handles header rewriting, redirect rewriting, cookie scoping, and WebSocket upgrades for proxied apps
+- preview UI and wrapper flows reflect the real async lifecycle (`pending`, `provisioning`, `ready`, `failed`, `stopped`) rather than simulated states
+- Playwright trace artifacts, trace-derived GIF/video exports, trace viewer hosting, and UI embedding are wired through the screenshot/preview artifact pipeline
+- agent verification now provisions the browser sidecar, attaches the `playwright-mcp` MCP definition, and persists verification results/artifacts onto the agent run during post-run bookkeeping
+- Phoenix runtime detection, route collection, and preview startup commands are shipped across the screenshot, preview, and knowledge-collection paths
 
-The remaining gap is not absence of infrastructure; it is missing end-to-end wiring. In particular:
-
-- project preview actions still create DB-only `PreviewSession` records instead of provisioning real live previews
-- preview root-path serving is still split between the middleware and controller-side fallback/simulated paths
-- preview UI still reflects simulated/stubbed states rather than a real async lifecycle
-- trace viewing needs end-to-end producer/consumer confirmation for real runs
-- agent self-verification still stops at browser-sidecar provisioning instead of a full app-verification flow
-
-See [audit-report-2026-08-04-rdr-045.md](audit-report-2026-08-04-rdr-045.md) and issues #3192 through #3197.
+See [audit-report-2026-08-23-rdr-045.md](audit-report-2026-08-23-rdr-045.md) for the closeout evidence and [audit-report-2026-08-04-rdr-045.md](audit-report-2026-08-04-rdr-045.md) for the earlier partial-implementation reconciliation.
 
 ## 2026-08-04 Reconciliation
 
@@ -40,6 +33,27 @@ The original RDR and epic issue [#2844](https://github.com/viamin/paid/issues/28
 - **Open reconciliation / follow-up work**: August 4, 2026 issue #3166 and implementation issues #3192 through #3197
 
 This RDR remains the architectural source for the full feature, but its status is now "partially implemented" until the reopened end-to-end gaps close.
+
+## 2026-08-23 Closeout
+
+Closeout issue: [#3596](https://github.com/viamin/paid/issues/3596)
+
+The reopened August follow-ups are now reflected in shipped code rather than placeholder infrastructure:
+
+- `ProjectsController#queue_preview_provision!` creates queued preview sessions, tears down replaced live sessions, and enqueues `PreviewSessions::ProvisionJob` instead of marking DB-only rows ready
+- `PreviewSessions::ProvisionJob` and `Previews::Provision` drive the real preview lifecycle from queued/provisioning through ready/failed, including synthetic preview-run creation, branch checkout, service provisioning, seed handling, app startup, and tunnel startup
+- `PreviewsController` and `PreviewsProxy` now unify the token-root flow on the middleware-backed proxy path, including redirect, cookie, CSP/X-Frame-Options rewriting, and WebSocket pass-through
+- preview wrapper/request coverage exercises the lifecycle UI states and access rules around real `PreviewSession` records
+- `Previews::TraceViewer`, the trace viewer helper/partial, and the screenshot trace artifact pipeline now share the same trace object-key contract, so recorded traces are discoverable in the UI
+- `AgentRuns::Verification`, `RunAgentActivity`, and `AgentRuns::VerificationResultRecorder` now complete the end-to-end agent verification path by provisioning the browser sidecar and persisting verification outcomes/artifacts onto the run
+
+Design deltas from the original RDR remain within scope rather than contradicting it:
+
+- preview provisioning is asynchronous via `PreviewSessions::ProvisionJob` rather than synchronous from the controller
+- preview runs use synthetic internal `AgentRun` records to reuse execution policy, audit, and cleanup machinery
+- the trace-viewer delivery path is S3-backed and keyed by the screenshot artifact contract rather than a separate preview-only storage system
+
+Conclusion: the closeout audit found no remaining acceptance-criterion gaps for RDR-045, so the RDR status is now **Implemented**.
 
 ## Problem Statement
 
