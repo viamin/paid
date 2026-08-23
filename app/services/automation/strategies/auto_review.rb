@@ -48,6 +48,7 @@ module Automation
       FOLLOWUP_TRIGGER_TYPES = %w[
         ci_failure review_threads conversation_comments changes_requested
         actionable_labels merge_conflicts review_bot_comments review_bot_threads
+        tdd_tests_approved tdd_test_changes_requested
       ].freeze
       POSTED_BOT_FEEDBACK_TRIGGER_TYPES = %w[
         review_bot_comments review_bot_threads

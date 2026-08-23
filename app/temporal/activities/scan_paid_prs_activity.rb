@@ -52,6 +52,15 @@ module Activities
     # the marker without matching human-authored text.
     PAID_REVIEW_CLEAN_MARKER = "<!-- paid-review-clean -->"
     PAID_ESCALATED_LABEL = "paid-escalated"
+    TDD_TESTS_READY_FOR_REVIEW_LABEL = Projects::EnsureStandardLabels::LABEL_DEFINITIONS
+      .dig(:tdd_test_review, :name)
+      .freeze
+    TDD_TESTS_APPROVED_LABEL = Projects::EnsureStandardLabels::LABEL_DEFINITIONS
+      .dig(:tdd_tests_approved, :name)
+      .freeze
+    TDD_TEST_CHANGES_REQUESTED_LABEL = Projects::EnsureStandardLabels::LABEL_DEFINITIONS
+      .dig(:tdd_test_changes_requested, :name)
+      .freeze
     TRIGGER_TO_FOCUS = {
       "actionable_labels" => "label_action",
       "changes_requested" => "review_feedback",
@@ -91,6 +100,7 @@ module Activities
     def execute(input)
       @pr_progress_states = {}
       @live_pr_states = {}
+      @label_applied_at_cache = {}
       # Per-scan caches must be reset each execute: bin/temporal_worker builds
       # activity instances once at boot and the temporalio SDK invokes execute
       # on the same instance for every task, so a memo without a reset outlives
@@ -470,6 +480,9 @@ module Activities
         return scan_bot_authored_draft_pr(project, client, issue, pr_data: pr_data)
       end
 
+      tdd_result = scan_tdd_draft_pr(project, client, issue, pr_data: pr_data)
+      return tdd_result unless tdd_result == :not_applicable
+
       # Hard cap: when the draft round counter is at the project limit and
       # there are no actionable human review threads to address, escalate
       # instead of queuing another follow-up that would just increment the
@@ -649,6 +662,203 @@ module Activities
 
       log_triggers(project, issue, triggers)
       draft_trigger_payload(issue, triggers)
+    end
+
+    def scan_tdd_draft_pr(project, client, issue, pr_data: nil)
+      return :not_applicable unless project.tdd_mode.in?(%w[strict non_strict])
+      return :not_applicable unless tdd_test_review_pr?(issue)
+
+      if issue.has_label?(TDD_TESTS_APPROVED_LABEL) &&
+          tdd_implementation_started_for_current_revision?(project, client, issue)
+        return :not_applicable
+      end
+
+      return tdd_followup_trigger(issue,
+        type: "tdd_tests_approved",
+        details: "Test review approved; implementation may begin") if issue.has_label?(TDD_TESTS_APPROVED_LABEL)
+
+      return tdd_followup_trigger(issue,
+        type: "tdd_test_changes_requested",
+        details: "Test review requested changes before implementation") if issue.has_label?(TDD_TEST_CHANGES_REQUESTED_LABEL)
+
+      return nil if project.tdd_mode == "strict"
+
+      scan_non_strict_tdd_draft_pr(project, client, issue, pr_data: pr_data)
+    end
+
+    def scan_non_strict_tdd_draft_pr(project, client, issue, pr_data: nil) # @spec TDD-PR-006
+      reviews = fetch_reviews(client, project, issue)
+      unresolved_threads = fetch_unresolved_threads(client, project, issue)
+      return :skipped if reviews.nil? || unresolved_threads.nil?
+
+      reviews = current_tdd_test_review_verdicts(project, issue, reviews, pr_data:)
+      unresolved_threads = current_tdd_unresolved_threads(project, issue, unresolved_threads, pr_data:)
+      last_run = last_completed_run(project, issue)
+      status_triggers = check_review_bot_status(reviews, unresolved_threads,
+        project: project, last_run: last_run, client: client, issue: issue,
+        allowed_bot_logins: paid_agent_review_logins(project))
+
+      if status_triggers.any? { |trigger| trigger[:data_incomplete] }
+        return draft_trigger_payload(issue, status_triggers)
+      end
+
+      if tdd_review_rejected?(status_triggers)
+        sync_tdd_test_review_verdict!(client, project, issue, TDD_TEST_CHANGES_REQUESTED_LABEL)
+        return tdd_followup_trigger(issue,
+          type: "tdd_test_changes_requested",
+          details: "Automated test review requested changes before implementation")
+      end
+
+      latest_paid_agent_review = latest_allowed_bot_review(reviews, paid_agent_review_logins(project))
+      if latest_paid_agent_review
+        sync_tdd_test_review_verdict!(client, project, issue, TDD_TESTS_APPROVED_LABEL)
+        return tdd_followup_trigger(issue,
+          type: "tdd_tests_approved",
+          details: "Automated test review approved the proposed tests")
+      end
+
+      pending_review = check_paid_agent_review_status(project, issue)
+      return draft_trigger_payload(issue, pending_review) if pending_review.any?
+
+      draft_trigger_payload(issue, [ { type: "paid_agent_review_pending", details: "No paid_agent review found for PR" } ]) if latest_paid_agent_review.nil?
+    end
+
+    def current_tdd_test_review_verdicts(project, issue, reviews, pr_data: nil)
+      paid_agent_logins = paid_agent_review_logins(project)
+
+      reviews.select do |review|
+        paid_agent_logins.include?(review[:user_login]&.downcase) &&
+          tdd_review_current_for_revision?(project, issue, review, pr_data:)
+      end
+    end
+
+    # Drops paid-agent thread comments left by a stale (pre-revision) test
+    # review from each thread's comment list before the thread is evaluated
+    # by check_review_bot_status. GitHub does not resolve review threads
+    # when the review that created them is dismissed (see
+    # Api::GithubProxyController#dismiss_stale_changes_requested_reviews),
+    # so an old paid-agent change-request thread otherwise survives past a
+    # newer clean review and re-triggers "paid-test-changes-requested",
+    # breaking the freshness guarantee in current_tdd_test_review_verdicts.
+    # Non-paid-agent comments in the same thread are left untouched.
+    def current_tdd_unresolved_threads(project, issue, unresolved_threads, pr_data: nil)
+      paid_agent_logins = paid_agent_review_logins(project)
+
+      unresolved_threads.map do |thread|
+        comments = thread[:comments].reject do |comment|
+          paid_agent_logins.include?(comment[:author]&.downcase) &&
+            !tdd_thread_comment_current_for_revision?(project, issue, comment, pr_data:)
+        end
+        thread.merge(comments: comments)
+      end
+    end
+
+    def tdd_review_current_for_revision?(project, issue, review, pr_data: nil)
+      tdd_revision_current?(project, issue, commit: review[:commit_id], timestamp: review[:submitted_at], pr_data:)
+    end
+
+    def tdd_thread_comment_current_for_revision?(project, issue, comment, pr_data: nil)
+      tdd_revision_current?(project, issue, commit: comment[:commit_id], timestamp: comment[:created_at], pr_data:)
+    end
+
+    def tdd_revision_current?(project, issue, commit:, timestamp:, pr_data: nil)
+      current_head_sha = pr_head_sha(pr_data)
+      commit = commit.presence
+      return commit == current_head_sha if commit && current_head_sha
+
+      baseline = latest_completed_tdd_test_revision_run(project, issue)
+      return false unless baseline&.completed_at && timestamp
+
+      timestamp >= baseline.completed_at
+    end
+
+    def latest_completed_tdd_test_revision_run(project, issue)
+      pr_run_history_scope(project, issue)
+        .where(goal: "create_pr")
+        .completed
+        .order(completed_at: :desc)
+        .first
+    end
+
+    def tdd_implementation_started_for_current_revision?(project, client, issue)
+      approved_at = latest_label_applied_at(client, project, issue, TDD_TESTS_APPROVED_LABEL)
+      return false unless approved_at
+
+      pr_run_history_scope(project, issue)
+        .where(goal: "create_pr", source_pull_request_number: issue.github_number, tdd_phase: "test_fixing")
+        .where.not(status: "retried")
+        .where(created_at: approved_at..)
+        .exists?
+    end
+
+    def latest_label_applied_at(client, project, issue, label)
+      cache_key = [ project.id, issue.github_number, label ]
+      return @label_applied_at_cache[cache_key] if @label_applied_at_cache.key?(cache_key)
+
+      events = client.issue_events(project.full_name, issue.github_number)
+      @label_applied_at_cache[cache_key] = Array(events)
+        .select { |event| event.event == "labeled" && event_label_name(event) == label }
+        .filter_map(&:created_at)
+        .max
+    rescue GithubClient::RateLimitError
+      raise
+    rescue => e
+      logger.warn(
+        message: "github_sync.issue_events_fetch_failed",
+        project_id: project.id,
+        issue_id: issue.id,
+        github_number: issue.github_number,
+        error_class: e.class.name,
+        error: e.message
+      )
+      @label_applied_at_cache[cache_key] = nil
+    end
+
+    def tdd_test_review_pr?(issue)
+      tdd_review_labels(issue).any?
+    end
+
+    def tdd_review_labels(issue)
+      issue.labels & [
+        TDD_TESTS_READY_FOR_REVIEW_LABEL,
+        TDD_TESTS_APPROVED_LABEL,
+        TDD_TEST_CHANGES_REQUESTED_LABEL
+      ]
+    end
+
+    def tdd_review_rejected?(triggers)
+      Array(triggers).any? do |trigger|
+        %w[review_bot_comments review_bot_threads].include?(trigger[:type].to_s)
+      end
+    end
+
+    def tdd_followup_trigger(issue, type:, details:)
+      log_triggers(issue.project, issue, [ { type: type, details: details } ])
+
+      {
+        focus: "general",
+        issue_id: issue.id,
+        pr_number: issue.github_number,
+        triggers: [ { type: type, details: details } ],
+        phase: issue.pr_review_phase,
+        labels_to_remove: [],
+        current_draft_review_count: issue.draft_review_count
+      }
+    end
+
+    def sync_tdd_test_review_verdict!(client, project, issue, verdict_label)
+      labels_to_remove = [
+        TDD_TESTS_READY_FOR_REVIEW_LABEL,
+        TDD_TESTS_APPROVED_LABEL,
+        TDD_TEST_CHANGES_REQUESTED_LABEL
+      ] - [ verdict_label ]
+
+      labels_to_remove.each do |label|
+        client.remove_label_from_issue(project.full_name, issue.github_number, label) if issue.has_label?(label)
+      end
+      client.add_labels_to_issue(project.full_name, issue.github_number, [ verdict_label ]) unless issue.has_label?(verdict_label)
+
+      issue.update!(labels: (issue.labels - labels_to_remove + [ verdict_label ]).uniq)
     end
 
     # Returns the paid_agent_review_pending trigger when present, or nil.
@@ -1894,6 +2104,11 @@ module Activities
       bot_reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
     end
 
+    def paid_agent_review_logins(project)
+      project.enabled_review_bot_logins &
+        ProviderSupport.provider_bot_usernames_for("paid_agent")
+    end
+
     # Returns the login that should be explicitly requested for a review-bot
     # review, or nil when no enabled review method has a bot that accepts
     # explicit review requests. See Project#review_bot_request_login for the
@@ -1925,8 +2140,9 @@ module Activities
 
     BODY_ONLY_REVIEW_PROVIDER_KEYS = %w[codex paid_agent].freeze
 
-    def check_review_bot_status(reviews, unresolved_threads, project: nil, last_run: nil, client: nil, issue: nil)
-      allowed = allowed_review_bot_logins(project)
+    def check_review_bot_status(reviews, unresolved_threads, project: nil, last_run: nil, client: nil, issue: nil,
+      allowed_bot_logins: nil)
+      allowed = allowed_bot_logins || allowed_review_bot_logins(project)
       latest = latest_allowed_bot_review(reviews, allowed)
       paid_agent_limit_reached_for_latest_review =
         paid_agent_review_limit_reached_for_review?(project, reviews, latest, issue)
@@ -1950,7 +2166,7 @@ module Activities
 
       case status
       when :clean
-        clean_review_thread_triggers(unresolved_threads)
+        clean_review_thread_triggers(unresolved_threads, allowed_bot_logins: allowed)
       when :no_review
         # Only emit a pending trigger when a requestable review bot is
         # configured. When login is nil — reviews globally disabled, or
@@ -1996,7 +2212,7 @@ module Activities
           # thread-fetch failure cannot trigger premature escalation.
           [ { type: "review_bot_review_pending", details: "Latest review bot review was not clean", data_incomplete: true } ]
         else
-          bot_thread_triggers = review_bot_thread_triggers(unresolved_threads)
+          bot_thread_triggers = review_bot_thread_triggers(unresolved_threads, allowed_bot_logins: allowed)
           body_only_pending_triggers = [
             { type: "review_bot_review_pending", details: "Latest review bot review was not clean" },
             { type: "review_bot_comments", details: "Latest review bot review generated comments (body-only)" }
@@ -2054,7 +2270,7 @@ module Activities
           end
         end
       when :unknown
-        review_bot_thread_triggers(unresolved_threads)
+        review_bot_thread_triggers(unresolved_threads, allowed_bot_logins: allowed)
       end
     end
 
@@ -2477,11 +2693,16 @@ module Activities
         .review_diff_touches_reviewed_files?(issue:, review:)
     end
 
-    def review_bot_thread_triggers(unresolved_threads)
+    def review_bot_thread_triggers(unresolved_threads, allowed_bot_logins: nil)
       return [] if unresolved_threads.nil?
 
       review_bot_threads = unresolved_threads.select do |thread|
-        thread[:comments].any? { |c| review_bot?(c[:author]) }
+        thread[:comments].any? do |comment|
+          next false unless review_bot?(comment[:author])
+          next true if allowed_bot_logins.nil?
+
+          allowed_bot_logins.include?(comment[:author]&.downcase)
+        end
       end
 
       return [] if review_bot_threads.empty?
@@ -2833,7 +3054,10 @@ module Activities
       end
 
       if non_enabled_reviews.empty?
-        return non_enabled_bot_thread_triggers(unresolved_threads, non_enabled_logins)
+        thread_triggers = non_enabled_bot_thread_triggers(unresolved_threads, non_enabled_logins)
+        return thread_triggers if thread_triggers.empty?
+
+        return non_enabled_bot_comment_triggers(nil, thread_triggers)
       end
 
       all_triggers = []
@@ -2847,7 +3071,10 @@ module Activities
           all_triggers.concat(triggers)
         end
 
-      all_triggers.concat(non_enabled_bot_thread_triggers(unresolved_threads, non_enabled_logins)) if all_triggers.empty?
+      if all_triggers.empty?
+        thread_triggers = non_enabled_bot_thread_triggers(unresolved_threads, non_enabled_logins)
+        all_triggers.concat(non_enabled_bot_comment_triggers(nil, thread_triggers)) if thread_triggers.any?
+      end
 
       all_triggers
     end
@@ -3091,10 +3318,10 @@ module Activities
       Activities::CompleteExistingPrRunActivity.agent_update_comment?(body)
     end
 
-    def clean_review_thread_triggers(unresolved_threads)
+    def clean_review_thread_triggers(unresolved_threads, allowed_bot_logins: nil)
       return [] if unresolved_threads.nil?
 
-      bot_thread_triggers = review_bot_thread_triggers(unresolved_threads)
+      bot_thread_triggers = review_bot_thread_triggers(unresolved_threads, allowed_bot_logins:)
       return [] if bot_thread_triggers.empty?
 
       [

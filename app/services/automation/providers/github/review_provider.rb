@@ -124,7 +124,9 @@ module Automation
             ),
             body: read_field(comment, :body).to_s,
             path: read_field(comment, :path),
-            line: read_field(comment, :line)
+            line: read_field(comment, :line),
+            created_at: parse_time(read_field(comment, :created_at)),
+            commit_id: read_field(comment, :commit_id)
           )
         end
 
