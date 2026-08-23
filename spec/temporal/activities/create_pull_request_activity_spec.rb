@@ -1052,26 +1052,19 @@ RSpec.describe Activities::CreatePullRequestActivity do
         end
 
         it "refreshes an existing PR body with the test outline" do # @spec TDD-PR-001
-          existing_pr = Struct.new(:html_url, :number, :body, :title).new(
-            "https://github.com/owner/repo/pull/42",
-            42,
-            "## Summary\n\nExisting draft body",
-            "Existing PR"
-          )
           allow(github_client).to receive_messages(
-            pull_requests: [ existing_pr ],
+            pull_requests: [ existing_test_writing_pr ],
             compare_changed_files: [ "spec/models/widget_spec.rb" ]
           )
-          allow(PullRequests::ReviewSurface).to receive(:call)
-            .and_return("## Summary\n\nExisting draft body\n\n## Test Outline\n\n```text\nWidget\n```")
+          allow(PullRequests::ReviewSurface).to receive(:call).with(
+            body: existing_test_writing_pr.body,
+            agent_run: tdd_agent_run
+          )
+            .and_return(updated_test_writing_body)
 
           activity.execute(agent_run_id: tdd_agent_run.id)
 
-          expect(github_client).to have_received(:update_pull_request).with(
-            project.full_name,
-            42,
-            body: include("## Test Outline")
-          )
+          expect(github_client).to have_received(:update_pull_request).with(project.full_name, 42, body: updated_test_writing_body)
         end
       end
 
@@ -1094,10 +1087,23 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
           expect { activity.execute(agent_run_id: tdd_agent_run.id) }.not_to raise_error
         end
-      end
+    end
 
-      context "when in refactor phase" do
-        let(:tdd_phase) { "refactor" }
+    def existing_test_writing_pr
+      Struct.new(:html_url, :number, :body, :title).new(
+        "https://github.com/owner/repo/pull/42",
+        42,
+        "## Summary\n\nExisting draft body",
+        "Existing PR"
+      )
+    end
+
+    def updated_test_writing_body
+      "## Summary\n\nExisting draft body\n\n## Test Outline\n\n```text\nWidget\n```"
+    end
+
+    context "when in refactor phase" do
+      let(:tdd_phase) { "refactor" }
 
         it "raises when test files are changed" do
           allow(github_client).to receive(:compare_changed_files)

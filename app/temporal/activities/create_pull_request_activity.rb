@@ -53,12 +53,13 @@ module Activities
           validate_tdd_write_guard!(agent_run, client)
         end
 
-        pr_body = build_pr_body(issue, agent_run, client: client)
+        pr_body = nil
 
         if existing_pr
           pr = existing_pr
           pr_action = "reused"
         elsif branch_exists
+          pr_body = build_pr_body(issue, agent_run, client: client)
           pr, pr_action = create_pull_request_or_reuse(
             client, project, agent_run, issue, pr_body, agent_run_id: agent_run_id
           )
@@ -210,9 +211,14 @@ module Activities
 
       # Best-effort post-processing runs even when cancellation wins the
       # complete! lock, because the GitHub PR already exists at this point.
-      if pr_action == "reused" && pr_body.present?
+      if pr_action == "reused"
         best_effort(agent_run_id, context: "refresh_pull_request_body") do
-          refresh_pull_request_body(client, project, pr.number, pr_body.fetch(:body))
+          refresh_pull_request_body(
+            client,
+            project,
+            pr.number,
+            PullRequests::ReviewSurface.call(body: pr.body.to_s, agent_run: agent_run)
+          )
         end
       end
       best_effort(agent_run_id, context: "sync_created_pull_request") { sync_pull_request_record(client, project, pr.number) }
