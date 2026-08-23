@@ -87,6 +87,16 @@ module Containers
 
     DEFAULT_RESOURCE_LIMITS = { memory: 1 * 1024 * 1024 * 1024, cpu_quota: 100_000, pids_limit: 200 }.freeze
 
+    # Maps an image pattern to the provider-neutral ExecutionRunners::ServiceDeclaration
+    # type (RDR-054). Matched the same way as ENV_MAPPINGS/RESOURCE_LIMITS: the
+    # first pattern the image name includes wins.
+    SERVICE_TYPES = {
+      "postgres" => :database,
+      "redis" => :cache,
+      "selenium" => :browser,
+      "chromium" => :browser
+    }.freeze
+
     # Network alias naming (paid-svc-a<account_id>-s<id>-<name>) is shared with
     # egress policy snapshots — see Containers::ServiceRuntimeNaming.
     include ServiceRuntimeNaming
@@ -116,6 +126,7 @@ module Containers
       agent_run.update!(service_container_ids: container_ids)
 
       env_vars = {}
+      declarations = []
 
       service_containers.each do |sc|
         begin
@@ -127,10 +138,13 @@ module Containers
             if sc.image.include?("postgres")
               db_name = per_run_db_name(agent_run)
               create_per_run_database(sc, db_name)
-              env_vars.merge!(generate_env_vars(sc, db_override: db_name))
+              env = generate_env_vars(sc, db_override: db_name)
             else
-              env_vars.merge!(generate_env_vars(sc))
+              env = generate_env_vars(sc)
             end
+
+            env_vars.merge!(env)
+            declarations << service_declaration_for(sc, env: env)
           end
         rescue DatabaseError => e
           log_error("service_provisioner.database_error",
@@ -149,6 +163,7 @@ module Containers
       end
 
       agent_run.update!(service_environment: env_vars)
+      agent_run.record_service_declarations!(declarations, container_ids: container_ids)
 
       env_vars
     end
@@ -220,7 +235,71 @@ module Containers
       end
     end
 
+    # Returns the provider-neutral ExecutionRunners::ServiceDeclaration
+    # snapshot for the services already provisioned for +agent_run+ (RDR-054).
+    # Prefers the point-in-time declaration array persisted by #provision so
+    # later RunSpec/manifest generation stays aligned with the live services
+    # this run actually attached to; older runs without that snapshot fall
+    # back to reconstructing from the persisted ServiceContainer rows.
+    #
+    # This performs no Docker side effects, so it is safe to call after
+    # #provision has already run — RunSpec.from_agent_run calls this once
+    # ProvisionServicesActivity has recorded +service_container_ids+, rather
+    # than provisioning a second time.
+    #
+    # @param agent_run [AgentRun]
+    # @return [Array<ExecutionRunners::ServiceDeclaration>]
+    # @spec CONTAINER-RUNTIME-032
+    def service_declarations(agent_run)
+      persisted = persisted_service_declarations(agent_run)
+      return persisted if persisted
+
+      container_ids = agent_run.service_container_ids
+      return [] if container_ids.blank?
+
+      ServiceContainer.where(id: container_ids).map do |sc|
+        db_override = sc.image.include?("postgres") ? per_run_db_name(agent_run) : nil
+        service_declaration_for(sc, env: generate_env_vars(sc, db_override: db_override))
+      end
+    end
+
     private
+
+    def persisted_service_declarations(agent_run)
+      snapshot = agent_run.service_declaration_snapshot
+      return unless snapshot.present?
+      return unless Array(snapshot["container_ids"]).map(&:to_i) == Array(agent_run.service_container_ids).map(&:to_i)
+
+      Array(snapshot["declarations"]).map { |entry| execution_runner_service_declaration(entry) }
+    end
+
+    def service_declaration_for(service_container, env:)
+      ExecutionRunners::ServiceDeclaration.new(
+        name: service_container.name,
+        image: service_container.image,
+        port: service_container.port,
+        env: env,
+        type: service_type_for(service_container.image)
+      )
+    end
+
+    def execution_runner_service_declaration(entry)
+      payload = entry.respond_to?(:to_h) ? entry.to_h : {}
+      ExecutionRunners::ServiceDeclaration.new(
+        name: payload["name"] || payload[:name],
+        image: payload["image"] || payload[:image],
+        port: payload["port"] || payload[:port],
+        env: payload["env"] || payload[:env] || {},
+        type: (payload["type"] || payload[:type])&.to_sym
+      )
+    end
+
+    def service_type_for(image)
+      SERVICE_TYPES.each do |pattern, type|
+        return type if image.include?(pattern)
+      end
+      :other
+    end
 
     # NOTE: this class is NOT thread-safe. `with_backend` stashes the resolved
     # backend in @backend and the private `backend` reader relies on that

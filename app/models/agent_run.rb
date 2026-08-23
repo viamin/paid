@@ -2435,6 +2435,7 @@ class AgentRun < ApplicationRecord
   ISSUE_PROMPT_ASSEMBLY_KEY = "issue_prompt_assembly"
   RUNTIME_IMAGE_KEY = "runtime_image"
   PROMPT_BUILDER_KEY = "prompt_builder"
+  SERVICE_DECLARATIONS_KEY = "service_declarations"
 
   # Persists prompt-assembly provenance (digest + section list) on the run so
   # configuration bundles and run metadata can fingerprint exactly which
@@ -2478,6 +2479,29 @@ class AgentRun < ApplicationRecord
 
   def runtime_image_selection
     external_metadata.is_a?(Hash) ? external_metadata[RUNTIME_IMAGE_KEY] : nil
+  end
+
+  def record_service_declarations!(declarations, container_ids:)
+    return if declarations.blank?
+
+    metadata = external_metadata.is_a?(Hash) ? external_metadata.dup : {}
+    metadata[SERVICE_DECLARATIONS_KEY] = {
+      "container_ids" => Array(container_ids),
+      "declarations" => ExecutionRunners.json_value(declarations)
+    }
+
+    if persisted?
+      update_columns(external_metadata: metadata)
+    else
+      self.external_metadata = metadata
+    end
+  end
+
+  def service_declaration_snapshot
+    return unless external_metadata.is_a?(Hash)
+
+    snapshot = external_metadata[SERVICE_DECLARATIONS_KEY]
+    snapshot.is_a?(Hash) ? snapshot : nil
   end
 
   # Clears any runtime image selection previously recorded on this run. Used
@@ -2888,20 +2912,41 @@ class AgentRun < ApplicationRecord
 
   # @spec EXECUTION-AUTHORITY-001
   def execution_authority_grants(networking_policy: nil)
-    resolved_policy = networking_policy || Containers::Provision.networking_policy_for(
-      agent_run: self, project: project
-    )
+    resolved_policy = resolve_networking_policy(networking_policy)
     ExecutionRunners::AuthorityGrantSet.from_agent_run(self, networking_policy: resolved_policy)
   end
 
   # @spec EXECUTION-AUTHORITY-001
   def persist_execution_authority_grants!(networking_policy: nil)
-    grant_set = execution_authority_grants(networking_policy: networking_policy)
+    resolved_policy = resolve_networking_policy(networking_policy)
+    grant_set = execution_authority_grants(networking_policy: resolved_policy)
     update!(authority_grants: grant_set.to_storage)
+    ExecutionAuditEvents::Lifecycle.record(
+      event_name: "execution.credential_classes_granted",
+      actor_id: "agent_run.persist_execution_authority_grants",
+      agent_run: self,
+      networking_policy: resolved_policy,
+      metadata: {
+        grant_kinds: Array(grant_set.grants).map { |grant| grant["kind"] }
+      }
+    )
+    ExecutionAuditEvents::Lifecycle.record(
+      event_name: "execution.network_policy_granted",
+      actor_id: "agent_run.persist_execution_authority_grants",
+      agent_run: self,
+      networking_policy: resolved_policy,
+      metadata: {
+        grant_kinds: Array(grant_set.grants).map { |grant| grant["kind"] }
+      }
+    )
     grant_set
   end
 
   private
+
+  def resolve_networking_policy(networking_policy)
+    networking_policy || Containers::Provision.networking_policy_for(agent_run: self, project: project)
+  end
 
   # ── runner shim helpers (RDR-054) ──────────────────────────────
 

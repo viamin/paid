@@ -55,6 +55,16 @@ module AgentRuns
       return nil unless runner
 
       apply_resolution!(runner, resolved_agent_type)
+      ExecutionAuditEvents::Lifecycle.record(
+        event_name: "execution.runner_selected",
+        actor_id: "agent_runs.bind_runner",
+        agent_run: agent_run,
+        runner: runner,
+        metadata: {
+          resolved_runner_id: runner.id,
+          resolved_agent_type: resolved_agent_type
+        }
+      )
       runner
     rescue ActiveRecord::RecordInvalid => e
       # The resolved runner/agent_type failed model validation (e.g. an

@@ -26,6 +26,32 @@ RSpec.describe Containers::ServiceProvisioner do
     end
   end
 
+  def stub_postgres_container_start(container_id)
+    docker_container = instance_double(Docker::Container, id: container_id)
+    allow(Docker::Image).to receive(:create)
+    allow(Docker::Container).to receive(:create).and_return(docker_container)
+    allow(docker_container).to receive(:start)
+    allow(provisioner).to receive(:docker_healthcheck_status).and_return(nil)
+    allow(Containers::TcpHealthProbe).to receive(:open?).and_return(true)
+    allow(Docker::Container).to receive(:get).with(container_id).and_return(docker_container)
+    allow(docker_container).to receive(:exec).and_return([ [ "(0 rows)" ], [], 0 ])
+  end
+
+  def expect_postgres_service_snapshot!(agent_run:, service_container:, service_host:, expected_db:)
+    expect(agent_run.service_declaration_snapshot).to eq(
+      "container_ids" => [ service_container.id ],
+      "declarations" => [
+        {
+          "name" => "test-postgres",
+          "image" => "postgres:16",
+          "port" => 5432,
+          "env" => { "DATABASE_URL" => "postgres://agent:agent@#{service_host}:5432/#{expected_db}" },
+          "type" => "database"
+        }
+      ]
+    )
+  end
+
   describe "#provision" do
     let(:project) { create(:project) }
     let(:issue) { create(:issue, project: project) }
@@ -81,23 +107,21 @@ RSpec.describe Containers::ServiceProvisioner do
       end
 
       it "starts stopped containers with per-run database and enqueues metrics collection" do
-        docker_container = instance_double(Docker::Container, id: "abc123")
-        allow(Docker::Image).to receive(:create)
-        allow(Docker::Container).to receive(:create).and_return(docker_container)
-        allow(docker_container).to receive(:start)
-        allow(provisioner).to receive(:docker_healthcheck_status).and_return(nil)
-        allow(Containers::TcpHealthProbe).to receive(:open?).and_return(true)
-
-        # Stub per-run database creation
-        allow(Docker::Container).to receive(:get).with("abc123").and_return(docker_container)
-        allow(docker_container).to receive(:exec).and_return([ [ "(0 rows)" ], [], 0 ])
+        stub_postgres_container_start("abc123")
 
         result = provisioner.provision(agent_run)
 
         expected_db = provisioner.send(:per_run_db_name, agent_run)
         expect(result).to include("DATABASE_URL")
         expect(result["DATABASE_URL"]).to eq("postgres://agent:agent@#{service_host}:5432/#{expected_db}")
-        expect(agent_run.reload.service_container_ids).to eq([ service_container.id ])
+        reloaded_run = agent_run.reload
+        expect(reloaded_run.service_container_ids).to eq([ service_container.id ])
+        expect_postgres_service_snapshot!(
+          agent_run: reloaded_run,
+          service_container: service_container,
+          service_host: service_host,
+          expected_db: expected_db
+        )
         expect(ServiceContainerMetricsCollectionJob).to have_been_enqueued.with(service_container.id)
       end
 
@@ -566,6 +590,71 @@ RSpec.describe Containers::ServiceProvisioner do
         expect(result["SERVICE_MY_SVC_HOST"]).to eq(provisioner.send(:runtime_name, sc))
         expect(result["SERVICE_MY_SVC_PORT"]).to eq("8080")
       end
+    end
+  end
+
+  # @spec CONTAINER-RUNTIME-032
+  describe "#service_declarations" do
+    let(:project) { create(:project) }
+    let(:issue) { create(:issue, project: project) }
+    let(:agent_run) { create(:agent_run, project: project, issue: issue) }
+
+    it "returns an empty array when no services are provisioned" do
+      expect(provisioner.service_declarations(agent_run)).to eq([])
+    end
+
+    it "reconstructs a ServiceDeclaration per provisioned service container without touching Docker" do
+      sc = create(:service_container, image: "postgres:16", name: "pg", port: 5432,
+        env: { "POSTGRES_USER" => "u", "POSTGRES_PASSWORD" => "p", "POSTGRES_DB" => "d" })
+      agent_run.update!(service_container_ids: [ sc.id ])
+
+      declarations = provisioner.service_declarations(agent_run)
+
+      expect(declarations.size).to eq(1)
+      declaration = declarations.first
+      expect(declaration).to be_a(ExecutionRunners::ServiceDeclaration)
+      expect(declaration.name).to eq("pg")
+      expect(declaration.image).to eq("postgres:16")
+      expect(declaration.port).to eq(5432)
+      expect(declaration.type).to eq(:database)
+      expected_db = provisioner.send(:per_run_db_name, agent_run)
+      expect(declaration.env["DATABASE_URL"]).to eq(
+        "postgres://u:p@#{provisioner.send(:runtime_name, sc)}:5432/#{expected_db}"
+      )
+    end
+
+    it "types cache and browser services from the image pattern" do
+      redis = create(:service_container, :redis, name: "redis-svc", port: 6379)
+      agent_run.update!(service_container_ids: [ redis.id ])
+
+      declaration = provisioner.service_declarations(agent_run).first
+
+      expect(declaration.type).to eq(:cache)
+      expect(declaration.env["REDIS_URL"]).to eq("redis://#{provisioner.send(:runtime_name, redis)}:6379")
+    end
+
+    it "prefers the persisted run snapshot over mutable ServiceContainer rows" do
+      sc = create(:service_container, image: "postgres:16", name: "pg", port: 5432,
+        env: { "POSTGRES_USER" => "u", "POSTGRES_PASSWORD" => "p", "POSTGRES_DB" => "d" })
+      agent_run.update!(service_container_ids: [ sc.id ])
+      original = ExecutionRunners::ServiceDeclaration.new(
+        name: "pg",
+        image: "postgres:16",
+        port: 5432,
+        env: { "DATABASE_URL" => "postgres://u:p@paid-svc-a#{sc.account_id}-s#{sc.id}-pg:5432/original_db" },
+        type: :database
+      )
+      agent_run.record_service_declarations!([ original ], container_ids: [ sc.id ])
+
+      sc.update_columns(image: "postgres:17", name: "renamed-pg", port: 6432)
+
+      declaration = provisioner.service_declarations(agent_run).first
+
+      expect(declaration.name).to eq("pg")
+      expect(declaration.image).to eq("postgres:16")
+      expect(declaration.port).to eq(5432)
+      expect(declaration.env["DATABASE_URL"]).to end_with("/original_db")
+      expect(declaration.type).to eq(:database)
     end
   end
 

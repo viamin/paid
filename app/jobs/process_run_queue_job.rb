@@ -222,6 +222,17 @@ class ProcessRunQueueJob < ApplicationJob
           admission_snapshot: admission_snapshot
         )
         unless admission[:allowed]
+          ExecutionAuditEvents::Lifecycle.record(
+            event_name: "execution.rejected",
+            actor_id: "process_run_queue",
+            agent_run: next_run,
+            backend: selected_host,
+            metadata: {
+              reason: admission[:reason],
+              rate_limited_until: admission[:rate_limited_until]&.iso8601,
+              selected_host: selected_host
+            }
+          )
           log_capacity_skip(next_run, admission, host_selection: host_selection, host_placement_decision: host_placement_decision)
 
           case admission[:reason]
@@ -1222,6 +1233,17 @@ class ProcessRunQueueJob < ApplicationJob
       workflow_id: workflow_id,
       workflow_handle: workflow_handle,
       planned_container_host: planned_container_host
+    )
+
+    ExecutionAuditEvents::Lifecycle.record(
+      event_name: "execution.admitted",
+      actor_id: "process_run_queue",
+      agent_run: agent_run,
+      backend: planned_container_host,
+      correlation_id: workflow_id,
+      metadata: {
+        selected_host: planned_container_host
+      }
     )
 
     Rails.logger.info(

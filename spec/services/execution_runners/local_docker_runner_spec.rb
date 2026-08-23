@@ -1459,6 +1459,70 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     end
   end
 
+  # @spec CONTAINER-RUNTIME-032
+  # @spec CONTAINER-RUNTIME-033
+  # @spec CONTAINER-RUNTIME-034
+  describe "supporting services, MCP sidecars, and the browser container (RDR-054)" do
+    describe "#provision_services" do
+      it "delegates to Containers::ServiceProvisioner#provision with the same env-var result as today" do
+        provisioner = instance_double(Containers::ServiceProvisioner)
+        allow(Containers::ServiceProvisioner).to receive(:new).and_return(provisioner)
+        allow(provisioner).to receive(:provision)
+          .with(agent_run, network: "paid_agent")
+          .and_return({ "DATABASE_URL" => "postgres://agent:agent@pg:5432/agent_test" })
+
+        env_vars = runner.provision_services(agent_run: agent_run, network: "paid_agent")
+
+        expect(env_vars).to eq({ "DATABASE_URL" => "postgres://agent:agent@pg:5432/agent_test" })
+      end
+    end
+
+    describe "#cleanup_services" do
+      it "delegates to Containers::ServiceProvisioner#cleanup" do
+        provisioner = instance_double(Containers::ServiceProvisioner)
+        allow(Containers::ServiceProvisioner).to receive(:new).and_return(provisioner)
+        expect(provisioner).to receive(:cleanup).with(agent_run, stale_requeue_count: 2)
+
+        runner.cleanup_services(agent_run: agent_run, stale_requeue_count: 2)
+      end
+    end
+
+    describe "#provision_mcp_servers" do
+      it "delegates to Containers::McpProvisioner#provision" do
+        provisioner = instance_double(Containers::McpProvisioner)
+        allow(Containers::McpProvisioner).to receive(:new).and_return(provisioner)
+        allow(provisioner).to receive(:provision)
+          .with(agent_run, network: "paid_agent")
+          .and_return(stdio_servers: [], url_servers: [])
+
+        result = runner.provision_mcp_servers(agent_run: agent_run, network: "paid_agent")
+
+        expect(result).to eq(stdio_servers: [], url_servers: [])
+      end
+    end
+
+    describe "#cleanup_mcp_servers" do
+      it "delegates to Containers::McpProvisioner#cleanup" do
+        provisioner = instance_double(Containers::McpProvisioner)
+        allow(Containers::McpProvisioner).to receive(:new).and_return(provisioner)
+        expect(provisioner).to receive(:cleanup).with(agent_run)
+
+        runner.cleanup_mcp_servers(agent_run: agent_run)
+      end
+    end
+
+    describe "#provision_browser_container" do
+      it "delegates to AgentRuns::Verification.call" do
+        result = instance_double(AgentRuns::Verification::Result)
+        expect(AgentRuns::Verification).to receive(:call)
+          .with(agent_run: agent_run, network: "paid_agent", logger: Rails.logger)
+          .and_return(result)
+
+        expect(runner.provision_browser_container(agent_run: agent_run, network: "paid_agent", logger: Rails.logger)).to eq(result)
+      end
+    end
+  end
+
   describe ".compatible?" do
     it "delegates to Containers::Provision.compatibility_for" do
       allow(Containers::Provision).to receive(:compatibility_for)

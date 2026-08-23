@@ -110,7 +110,7 @@ closeout audit marks the guarded behavior complete and safe to make default.
 |-----|-------|--------|----------|
 | [RDR-028](RDR-028-interactive-chat.md) | Interactive Chat for Agent-Driven Development | Implemented | High |
 | [RDR-037](RDR-037-containerized-multi-repo-chat.md) | Containerized Multi-Repo Chat Sessions | Partially Implemented | High |
-| [RDR-044](RDR-044-configuration-profiles-chat.md) | Chat-Driven Configuration Profiles (Operating Modes) | Partially Implemented | High |
+| [RDR-044](RDR-044-configuration-profiles-chat.md) | Chat-Driven Configuration Profiles (Operating Modes) | Implemented | High |
 | [RDR-064](RDR-064-container-agent-chat-mode.md) | Container Agent Chat Mode | Draft | P1 |
 
 ### Scaling & Distribution
@@ -135,7 +135,7 @@ closeout audit marks the guarded behavior complete and safe to make default.
 | [RDR-032](RDR-032-eager-queue-seeding.md) | Eager Queue Seeding — Eliminate Auto-Pick Throttling | Implemented | P1 |
 | [RDR-035](RDR-035-style-guide-evolution.md) | Style Guide Evolution | Implemented | High |
 | [RDR-036](RDR-036-mutation-testing-for-ai-generated-tests.md) | Mutation Testing for AI-Generated Tests (Mutant) | Implemented | P1 |
-| [RDR-045](RDR-045-live-web-app-preview-agent-verification.md) | Live Web App Preview and Interactive Agent Verification | Partially Implemented | High |
+| [RDR-045](RDR-045-live-web-app-preview-agent-verification.md) | Live Web App Preview and Interactive Agent Verification | Implemented | High |
 | [RDR-046](RDR-046-polyglot-language-detection-and-test-execution.md) | Polyglot Language Detection and Test Execution | Partially Implemented | High |
 | [RDR-047](RDR-047-work-category-queue-priority.md) | Work-Category-Aware Queue Priority — PR Continuation Over Fresh Issues | Implemented | P1 |
 | [RDR-049](RDR-049-configuration-health-checks.md) | Configuration Health Checks | Implemented | P1 |

@@ -226,9 +226,16 @@ jobs:
       PAID_DEVELOPMENT_DATABASE: paid_test
       PAID_DEVELOPMENT_CABLE_DATABASE: paid_test
       PAID_TEST_DATABASE: paid_test
+      # Keep Rails, libpq shellouts, and any child processes on the same test
+      # database connection flow instead of relying on split DB_* / PG* vars.
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/paid_test
       DB_HOST: localhost
+      PGHOST: localhost
+      PGPORT: 5432
       DB_USERNAME: postgres
+      PGUSER: postgres
       DB_PASSWORD: postgres
+      PGPASSWORD: postgres
       TMPDIR: ${{ github.workspace }}/.tmp-build
       YARN_CACHE_FOLDER: ${{ github.workspace }}/.cache-yarn
       XDG_CACHE_HOME: ${{ github.workspace }}/.cache
@@ -249,7 +256,12 @@ jobs:
           RAILS_MASTER_KEY_FALLBACK: ${{ secrets.RAILS_MASTER_KEY }}
         run: |
           if [ -n "$RAILS_MASTER_KEY_FALLBACK" ]; then
-            echo "RAILS_TEST_KEY=$RAILS_MASTER_KEY_FALLBACK" >> "$GITHUB_ENV"
+            delimiter="ghadelim_$(openssl rand -hex 16)"
+            {
+              echo "RAILS_TEST_KEY<<${delimiter}"
+              printf '%s\n' "$RAILS_MASTER_KEY_FALLBACK"
+              echo "${delimiter}"
+            } >> "$GITHUB_ENV"
           fi
 
       - name: Prepare workspace cache directories
@@ -361,9 +373,14 @@ jobs:
       PAID_DEVELOPMENT_DATABASE: paid_test
       PAID_DEVELOPMENT_CABLE_DATABASE: paid_test
       PAID_TEST_DATABASE: paid_test
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/paid_test
       DB_HOST: localhost
+      PGHOST: localhost
+      PGPORT: 5432
       DB_USERNAME: postgres
+      PGUSER: postgres
       DB_PASSWORD: postgres
+      PGPASSWORD: postgres
       npm_config_cache: ${{ github.workspace }}/.cache/npm
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
 
@@ -372,6 +389,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          # bin/ci-migration-replay reads db/schema.rb from HEAD^.
+          fetch-depth: 2
 
       - name: Normalize test master key
         if: env.RAILS_TEST_KEY == ''
@@ -379,7 +398,12 @@ jobs:
           RAILS_MASTER_KEY_FALLBACK: ${{ secrets.RAILS_MASTER_KEY }}
         run: |
           if [ -n "$RAILS_MASTER_KEY_FALLBACK" ]; then
-            echo "RAILS_TEST_KEY=$RAILS_MASTER_KEY_FALLBACK" >> "$GITHUB_ENV"
+            delimiter="ghadelim_$(openssl rand -hex 16)"
+            {
+              echo "RAILS_TEST_KEY<<${delimiter}"
+              printf '%s\n' "$RAILS_MASTER_KEY_FALLBACK"
+              echo "${delimiter}"
+            } >> "$GITHUB_ENV"
           fi
 
       - name: Set up Ruby
@@ -388,13 +412,12 @@ jobs:
           ruby-version: .tool-versions
           bundler-cache: true
 
-      - name: Replay migrations
-        run: bin/rails db:create db:migrate
-
-      - name: Verify canonical schema dump
-        run: |
-          bin/rails db:schema:dump
-          git diff --exit-code db/schema.rb
+      # HEAD^ is the base branch tip: on a pull request HEAD is the merge commit,
+      # and on a push to main it is the previous main commit. bin/ci-migration-replay
+      # loads that revision's schema so only the migrations this branch adds stay
+      # pending -- see the script for why a plain db:migrate runs no migration code.
+      - name: Replay migrations added on this branch
+        run: bin/ci-migration-replay HEAD^
 
   fasterer:
     if: >-
@@ -453,9 +476,14 @@ jobs:
       PAID_DEVELOPMENT_DATABASE: paid_test
       PAID_DEVELOPMENT_CABLE_DATABASE: paid_test
       PAID_TEST_DATABASE: paid_test
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/paid_test
       DB_HOST: localhost
+      PGHOST: localhost
+      PGPORT: 5432
       DB_USERNAME: postgres
+      PGUSER: postgres
       DB_PASSWORD: postgres
+      PGPASSWORD: postgres
       TMPDIR: ${{ github.workspace }}/.tmp-build
       YARN_CACHE_FOLDER: ${{ github.workspace }}/.cache-yarn
       XDG_CACHE_HOME: ${{ github.workspace }}/.cache
@@ -475,7 +503,12 @@ jobs:
           RAILS_MASTER_KEY_FALLBACK: ${{ secrets.RAILS_MASTER_KEY }}
         run: |
           if [ -n "$RAILS_MASTER_KEY_FALLBACK" ]; then
-            echo "RAILS_TEST_KEY=$RAILS_MASTER_KEY_FALLBACK" >> "$GITHUB_ENV"
+            delimiter="ghadelim_$(openssl rand -hex 16)"
+            {
+              echo "RAILS_TEST_KEY<<${delimiter}"
+              printf '%s\n' "$RAILS_MASTER_KEY_FALLBACK"
+              echo "${delimiter}"
+            } >> "$GITHUB_ENV"
           fi
 
       - name: Prepare workspace cache directories

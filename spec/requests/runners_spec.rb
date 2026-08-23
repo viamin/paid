@@ -6,6 +6,34 @@ require "set"
 RSpec.describe "Runners" do
   let(:user) { create(:user) }
 
+  def runners_index_document
+    Nokogiri::HTML(response.body)
+  end
+
+  def runners_table_headers
+    runners_index_document.css("table thead th").map { |header| header.text.strip }.reject(&:empty?)
+  end
+
+  def runner_table_row_for(name)
+    runners_index_document.css("table tbody tr").find do |row|
+      row.at_css("td")&.text&.include?(name)
+    end
+  end
+
+  def checkbox_in(row, label)
+    row.at_css(%(input[type="checkbox"][aria-label="#{label}"]))
+  end
+
+  def expect_disabled_checkbox(row:, label:, checked:, title:)
+    checkbox = checkbox_in(row, label)
+
+    expect(checkbox).to be_present
+    expect(checkbox["disabled"]).to eq("disabled")
+    expect(checkbox["checked"]).to eq("checked") if checked
+    expect(checkbox["checked"]).to be_nil unless checked
+    expect(checkbox["title"]).to eq(title)
+  end
+
   def kilocode_runner_params(api_key_id:, model:, preflight_timeout_seconds: nil)
     kilocode_config = {
       api_provider: "inception",
@@ -52,6 +80,17 @@ RSpec.describe "Runners" do
 
     context "when authenticated" do
       let(:opencode_api_key) { create(:provider_api_key, user: user, api_service_type: "openrouter") }
+      let(:rate_limit_fallback_runner) do
+        user.runners.create!(
+          runner_key: "codex",
+          auth_type: "api_key",
+          provider_api_key: create(:provider_api_key, user: user, api_service_type: "openai"),
+          enabled_for_agent_runs: true,
+          enabled_for_chat: false,
+          enabled_for_fallback: true,
+          fallback_role: "rate_limit_fallback"
+        )
+      end
 
       before do
         sign_in user
@@ -84,6 +123,39 @@ RSpec.describe "Runners" do
         expect(response.body).to include("Chat")
       end
 
+      # @spec RUNNERS-INDEX-001
+      it "renders Status immediately after Runner in the index table" do
+        get runners_path
+
+        expect(runners_table_headers).to include("Runner", "Status", "Auth")
+        expect(runners_table_headers.index("Status")).to eq(runners_table_headers.index("Runner") + 1)
+        expect(runners_table_headers.index("Status")).to be < runners_table_headers.index("Auth")
+      end
+
+      # @spec RUNNERS-INDEX-002
+      it "renders Agent Runs and Chat as disabled checkboxes with matching state" do
+        rate_limit_fallback_runner
+        get runners_path
+
+        row = runner_table_row_for(rate_limit_fallback_runner.display_name)
+
+        expect(row).to be_present
+        expect_disabled_checkbox(row: row, label: "Agent Runs", checked: true, title: "Enabled")
+        expect_disabled_checkbox(row: row, label: "Chat", checked: false, title: "Disabled")
+      end
+
+      # @spec RUNNERS-INDEX-002
+      # @spec RUNNERS-INDEX-003
+      it "renders Fallback as a disabled checkbox with the rate-limit-only tooltip" do
+        rate_limit_fallback_runner
+        get runners_path
+
+        row = runner_table_row_for(rate_limit_fallback_runner.display_name)
+
+        expect(row).to be_present
+        expect_disabled_checkbox(row: row, label: "Fallback", checked: true, title: "Enabled (rate-limit only)")
+      end
+
       it "shows the free models badge and section for an openrouter_free runner" do
         free_model = create(:llm_model, model_id: "high-free", provider: "openrouter", tier: "high", pricing_tier: "free")
         api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
@@ -100,43 +172,12 @@ RSpec.describe "Runners" do
         expect(response.body.scan("Free Models").size).to be >= 2
       end
 
-      it "renders collapsed auth instructions for every supported runner" do
+      # @spec RUNNERS-INDEX-005
+      it "does not render the removed runner auth setup section" do
         get runners_path
 
-        expect(response.body).to include("Runner Auth Setup")
-        expect(response.body.scan(/<details[^>]*data-runner-instruction-key="/).size).to eq(Runner.supported_runner_keys.size)
-        expect(response.body).not_to match(/<details[^>]*data-runner-instruction-key="[^"]+"[^>]*\sopen(?:\s|>)/)
-        Runner.supported_runner_keys.each do |runner_key|
-          expect(response.body).to include(%(data-runner-instruction-key="#{runner_key}"))
-          expect(response.body).to include(Runner.display_name(runner_key))
-        end
-      end
-
-      it "describes managed Claude auth as preferred and local subscription mounts as local-only" do
-        get runners_path
-
-        expect(response.body).to include("Preferred: capture a managed Claude credential in Paid")
-        expect(response.body).to include("Host-mounted Codex subscription auth is local-only today")
-        expect(response.body).to include("follow-up issue <code>#2962</code>")
-        expect(response.body).to include("follow-up issue <code>#2964</code>")
-      end
-
-      it "includes a KiloCode instructions block" do
-        get runners_path
-
-        expect(response.body).to include(%(data-runner-instruction-key="kilocode"))
-        expect(response.body).to include(Runner.display_name("kilocode"))
-        expect(response.body).to include("Set a KiloCode model ID on the runner record")
-      end
-
-      it "renders a generic checklist when runner-specific copy is missing" do
-        allow(RunnerSupport).to receive(:supported_runner_keys).and_return(%w[claude mystery_provider])
-
-        get runners_path
-
-        expect(response.body).to include(%(data-runner-instruction-key="mystery_provider"))
-        expect(response.body).to include("Runner-specific setup notes are not available yet")
-        expect(response.body).to include("Generic Checklist")
+        expect(response.body).not_to include("Runner Auth Setup")
+        expect(response.body).not_to include("data-runner-auth-instructions")
       end
 
       it "shows empty state when no addable providers remain" do
@@ -231,6 +272,28 @@ RSpec.describe "Runners" do
         expect(response.body).to include("Auto-balance weights based on usage quotas")
         expect(response.body).to include("has no monthly budget set. Its weight will not be auto-balanced.")
         expect(response.body).to match(/name="user_setting\[runner_weights\]\[[0-9]+\]".*disabled/m)
+      end
+
+      # @spec RUNNERS-INDEX-004
+      it "omits the Rate Limits column while keeping usage details rate-limit counts" do
+        runner = user.runners.find_by!(runner_key: "claude")
+        allow(Runners::UsageStats).to receive(:call).and_return(
+          runner.routing_key => {
+            runs_7d: 3,
+            cost_cents_7d: 250,
+            tokens_7d: 1_500,
+            fallback_total: 0,
+            fallback_rate: 0,
+            fallback_switched: 0,
+            rate_limit_events_7d: 4
+          }
+        )
+
+        get runners_path
+
+        expect(runners_table_headers).not_to include("Rate Limits")
+        expect(response.body).to include("Runner Usage Details")
+        expect(response.body).to include("4")
       end
 
       it "still shows canonical runner state for subscription fallback entries" do

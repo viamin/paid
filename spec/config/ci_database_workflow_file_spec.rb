@@ -12,11 +12,13 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
       "test" => {
         "db_username" => "postgres",
         "db_password" => "postgres",
+        "database_url" => "postgres://postgres:postgres@localhost:5432/paid_test",
         "creates_application_role" => false
       },
       "performance" => {
         "db_username" => "postgres",
         "db_password" => "postgres",
+        "database_url" => "postgres://postgres:postgres@localhost:5432/paid_test",
         "creates_application_role" => false
       }
     },
@@ -24,6 +26,7 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
       "system" => {
         "db_username" => "paid",
         "db_password" => "paid",
+        "database_url" => "postgres://paid:paid@localhost:5432/paid_test",
         "creates_application_role" => true
       }
     },
@@ -31,6 +34,7 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
       "capture" => {
         "db_username" => "paid",
         "db_password" => "paid",
+        "database_url" => "postgres://paid:paid@localhost:5432/paid_test",
         "creates_application_role" => true
       }
     },
@@ -59,6 +63,10 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
           "PAID_DEVELOPMENT_DATABASE" => "paid_test",
           "PAID_DEVELOPMENT_CABLE_DATABASE" => "paid_test",
           "PAID_TEST_DATABASE" => "paid_test",
+          "PGHOST" => "localhost",
+          "PGPORT" => 5432,
+          "PGUSER" => expectations.fetch("db_username"),
+          "PGPASSWORD" => expectations.fetch("db_password"),
           "DB_USERNAME" => expectations.fetch("db_username"),
           "DB_PASSWORD" => expectations.fetch("db_password"),
           "TMPDIR" => "${{ github.workspace }}/.tmp-build",
@@ -69,19 +77,32 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
         }
       end
 
-      def expect_application_role_database_url!(job, expectations)
-        return unless expectations.fetch("creates_application_role")
+      def expect_database_connection_env!(job, expectations)
+        if expectations.key?("database_url")
+          expect(job.fetch("env")).to include(
+            "DATABASE_URL" => expectations.fetch("database_url")
+          )
+        else
+          expect(job.fetch("env")).not_to have_key("DATABASE_URL")
+        end
 
-        expect(job.fetch("env")).to include(
-          "DATABASE_URL" => "postgres://paid:paid@localhost:5432/paid_test"
-        )
+        expect(job.fetch("env")).not_to have_key("CABLE_DATABASE_URL")
       end
 
-      def expect_database_yml_connection!(job, expectations)
-        return if expectations.fetch("creates_application_role")
-
-        expect(job.fetch("env")).not_to have_key("DATABASE_URL")
-        expect(job.fetch("env")).not_to have_key("CABLE_DATABASE_URL")
+      def expected_ci_migrations_env
+        {
+          "PAID_DEVELOPMENT_DATABASE" => "paid_test",
+          "PAID_DEVELOPMENT_CABLE_DATABASE" => "paid_test",
+          "PAID_TEST_DATABASE" => "paid_test",
+          "RAILS_TEST_KEY" => "${{ secrets.RAILS_TEST_KEY }}",
+          "DATABASE_URL" => "postgres://postgres:postgres@localhost:5432/paid_test",
+          "PGHOST" => "localhost",
+          "PGPORT" => 5432,
+          "PGUSER" => "postgres",
+          "PGPASSWORD" => "postgres",
+          "DB_USERNAME" => "postgres",
+          "DB_PASSWORD" => "postgres"
+        }
       end
 
       jobs.each do |job_name, expectations|
@@ -91,8 +112,7 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
 
           expect(job.fetch("env")).to include(expected_test_database_env(expectations))
 
-          expect_application_role_database_url!(job, expectations)
-          expect_database_yml_connection!(job, expectations)
+          expect_database_connection_env!(job, expectations)
 
           if expectations.fetch("creates_application_role")
             expect(step_names).to include("Create application database role")
@@ -149,23 +169,21 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
 
       if workflow_path == ".github/workflows/ci.yml"
         # @spec POSTGRESQL-PERSISTENCE-007
-        it "replays migrations in a dedicated CI job" do
+        it "replays this branch's migrations against the base schema in a dedicated CI job" do
           job = workflow.fetch("jobs").fetch("migrations")
-          setup_step = job.fetch("steps").find { |step| step["name"] == "Replay migrations" }
-          drift_step = job.fetch("steps").find { |step| step["name"] == "Verify canonical schema dump" }
+          replay_step = job.fetch("steps").find { |step| step["name"] == "Replay migrations added on this branch" }
 
-          expect(setup_step).not_to be_nil, "expected migrations job to include a Replay migrations step"
-          expect(drift_step).not_to be_nil, "expected migrations job to verify schema dump drift"
-          expect(job.fetch("env")).to include(
-            "PAID_DEVELOPMENT_DATABASE" => "paid_test",
-            "PAID_DEVELOPMENT_CABLE_DATABASE" => "paid_test",
-            "PAID_TEST_DATABASE" => "paid_test",
-            "RAILS_TEST_KEY" => "${{ secrets.RAILS_TEST_KEY }}",
-            "DB_USERNAME" => "postgres",
-            "DB_PASSWORD" => "postgres"
-          )
-          expect(setup_step.fetch("run")).to eq("bin/rails db:create db:migrate")
-          expect(drift_step.fetch("run").strip).to eq("bin/rails db:schema:dump\ngit diff --exit-code db/schema.rb")
+          expect(replay_step).not_to be_nil,
+            "expected migrations job to include a 'Replay migrations added on this branch' step"
+          expect(job.fetch("env")).to include(expected_ci_migrations_env)
+          # bin/ci-migration-replay loads the base revision's db/schema.rb so only
+          # this branch's migrations remain pending, runs them for real, and
+          # verifies the resulting dump matches the committed schema.
+          expect(replay_step.fetch("run")).to eq("bin/ci-migration-replay HEAD^")
+
+          checkout_step = job.fetch("steps").find { |step| step["uses"]&.start_with?("actions/checkout@") }
+          expect(checkout_step.fetch("with").fetch("fetch-depth")).to eq(2),
+            "bin/ci-migration-replay needs HEAD^ available, so checkout must fetch at least depth 2"
         end
       end
     end
