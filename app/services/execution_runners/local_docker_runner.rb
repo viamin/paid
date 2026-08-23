@@ -215,6 +215,31 @@ class LocalDockerRunner < Base
       teardown_gateway!(handle: handle)
     end
 
+    # @spec CONTAINER-RUNTIME-032
+    def provision_services(agent_run:, network:)
+      Containers::ServiceProvisioner.new.provision(agent_run, network: network)
+    end
+
+    # @spec CONTAINER-RUNTIME-032
+    def cleanup_services(agent_run:, stale_requeue_count: nil)
+      Containers::ServiceProvisioner.new.cleanup(agent_run, stale_requeue_count: stale_requeue_count)
+    end
+
+    # @spec CONTAINER-RUNTIME-033
+    def provision_mcp_servers(agent_run:, network:)
+      Containers::McpProvisioner.new.provision(agent_run, network: network)
+    end
+
+    # @spec CONTAINER-RUNTIME-033
+    def cleanup_mcp_servers(agent_run:)
+      Containers::McpProvisioner.new.cleanup(agent_run)
+    end
+
+    # @spec CONTAINER-RUNTIME-034
+    def provision_browser_container(agent_run:, network:, logger: Rails.logger)
+      AgentRuns::Verification.call(agent_run: agent_run, network: network, logger: logger)
+    end
+
     # Removes the named Docker workspace volume for an agent run when it exists.
     # Used as the orphan-volume safety net: a worker killed mid-provision may
     # have created the volume without ever recording a container_id, so cleanup

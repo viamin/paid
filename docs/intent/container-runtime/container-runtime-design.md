@@ -141,10 +141,9 @@ confirm coverage.
   the `agent_run_id`, `worktree_path`, and `environment` needed to reconnect a
   handle recovered after worker restart, since only the handle (not the
   original `RunSpec`) is passed back into later lifecycle calls.
-  `Containers::Provision` itself is not modified, and services/sidecars are not
-  yet translated (tracked separately). `ExecutionRunners.resolve` currently
-  always returns `LocalDockerRunner`, since every existing backend (local
-  Docker, remote Docker, Swarm) is a Docker transport.
+  `Containers::Provision` itself is not modified. `ExecutionRunners.resolve`
+  currently always returns `LocalDockerRunner`, since every existing backend
+  (local Docker, remote Docker, Swarm) is a Docker transport.
 
 ### Persisted handle and recovery (RDR-054)
 
@@ -159,6 +158,58 @@ fresh. A data migration backfills `runner_handle` from existing
 `container_id` + `container_host` so legacy rows are immediately recoverable.
 The column is also added to `container_pool_entries` and `service_containers`
 so future pool and service-container code can store runner handles.
+
+### Supporting services, MCP sidecars, and the browser container (RDR-054, #3343)
+
+Postgres/Redis/Selenium service containers, `docker_image` MCP sidecars, and
+the Playwright/Chromium verification container were the last Docker-specific
+multi-container topology orchestration code still reached for directly. Phase
+1 folds their provisioning/cleanup calls behind the runner boundary without
+merging the Temporal activities that invoke them or changing per-run
+isolation semantics (reference counting, per-run database naming).
+
+- `ExecutionRunners::ServiceDeclaration` (`name`, `image`, `port`, `env`,
+  `type` — `:database | :cache | :browser | :other`) is the provider-neutral
+  shape for a supporting service. `RunSpec#services` is populated in
+  `RunSpec.from_agent_run` by `Containers::ServiceProvisioner#service_declarations`.
+  `ProvisionServicesActivity` persists the declaration array onto the run at
+  provisioning time, keyed to the same `service_container_ids`, so later
+  manifest generation reuses the point-in-time image/port/env values of the
+  services the run is actually attached to. Older runs without the snapshot
+  fall back to reconstructing from the referenced `ServiceContainer` rows
+  without issuing Docker calls. This is what `RunSpec.from_agent_run` does
+  after Temporal provisions services, MCP sidecars, and the browser container
+  in Steps 1.5–1.7, before `ProvisionContainerActivity` builds the primary
+  workload `RunSpec` in Step 2.
+- `ExecutionRunners::Base` declares five additional lifecycle methods —
+  `#provision_services`, `#cleanup_services`, `#provision_mcp_servers`,
+  `#cleanup_mcp_servers`, `#provision_browser_container` — alongside the
+  existing `#provision`/`#cleanup`. They are deliberately not folded into
+  `#provision`/`#cleanup` in Phase 1: each still corresponds to one Temporal
+  activity (`ProvisionServicesActivity`, `CleanupServicesActivity`,
+  `ProvisionMcpServersActivity`, `CleanupMcpServersActivity`,
+  `ProvisionBrowserContainerActivity`), preserving each activity's own retry,
+  heartbeat, and error-handling behavior.
+- `LocalDockerRunner` implements the five methods as thin delegates to the
+  existing Docker-specific provisioners (`Containers::ServiceProvisioner`,
+  `Containers::McpProvisioner`, `AgentRuns::Verification`) — the provisioners
+  themselves, their reference counting, and their per-run database isolation
+  are unchanged. Docker-specific error classes raised by those provisioners
+  (e.g. `Containers::McpProvisioner::Error`, `AgentRuns::Verification::Error`)
+  intentionally propagate untranslated through the runner boundary in Phase 1,
+  so each activity's existing rescue logic keeps working unmodified.
+- Stdio (`npx`-type) MCP servers remain agent runtime configuration, not a
+  `ServiceDeclaration` — they are not Docker-specific and were already outside
+  this abstraction's scope.
+- Restricted-mode firewall rules continue to resolve service destinations
+  through `Containers::Provision#firewall_service_destinations` (live Docker
+  container IPs), a path independent of `RunSpec#services`; the new
+  `ServiceDeclaration` array is additive information for the runner boundary
+  and manifest, not a replacement input for firewall resolution.
+- Phase 2 (out of scope here) would consolidate the five Temporal activities
+  into `#provision`/`#cleanup` directly; that consolidation is intentionally
+  deferred to avoid changing activity-level retry/heartbeat semantics in the
+  same change as the abstraction.
 
 ### Workspace strategy isolation (#3342)
 

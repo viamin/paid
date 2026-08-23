@@ -19,8 +19,8 @@ module Activities
       end
 
       track_phase(agent_run_id: agent_run_id, phase_key: "cleanup_mcp_servers", phase_group: "cleanup", agent_run: agent_run) do
-        provisioner = Containers::McpProvisioner.new
-        provisioner.cleanup(agent_run)
+        runner = ExecutionRunners.resolve_for(agent_run)
+        runner.cleanup_mcp_servers(agent_run: agent_run)
 
         logger.info(
           message: "agent_execution.mcp_servers_cleaned",

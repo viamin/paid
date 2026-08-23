@@ -18,8 +18,8 @@ module Activities
       end
 
       track_phase(agent_run_id: agent_run_id, phase_key: "cleanup_services", phase_group: "cleanup", agent_run: agent_run) do
-        provisioner = Containers::ServiceProvisioner.new
-        provisioner.cleanup(agent_run)
+        runner = ExecutionRunners.resolve_for(agent_run)
+        runner.cleanup_services(agent_run: agent_run)
 
         logger.info(
           message: "agent_execution.services_cleaned",

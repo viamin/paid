@@ -47,7 +47,8 @@ module Activities
         agent_run: agent_run
       ) do
         result = with_periodic_heartbeat("provision_browser_container", agent_run_id: agent_run.id) do
-          AgentRuns::Verification.call(
+          runner = ExecutionRunners.resolve_for(agent_run)
+          runner.provision_browser_container(
             agent_run: agent_run,
             network: Containers::Provision.network_for(agent_run: agent_run),
             logger: logger

@@ -146,6 +146,72 @@ module ExecutionRunners
       raise NotImplementedError, "#{self.class} must implement ##{__method__}"
     end
 
+    # Provisions the supporting service containers (database, cache, browser
+    # backend, etc.) declared for +agent_run+'s project and returns the
+    # environment variables the workload needs to reach them. Folds
+    # Docker-specific service provisioning behind the runner boundary so
+    # Temporal activities never instantiate a Docker-specific provisioner
+    # directly (RDR-054 Phase 1: activities still exist and call this method
+    # individually rather than going through +#provision+, so a service
+    # dependency change does not require re-provisioning the primary
+    # workload).
+    #
+    # @param agent_run [AgentRun]
+    # @param network [Object] provider-specific network identifier
+    # @return [Hash] environment variables for the workload (e.g. DATABASE_URL)
+    # @spec CONTAINER-RUNTIME-032
+    def provision_services(agent_run:, network:)
+      raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+    end
+
+    # Tears down the supporting service containers provisioned for
+    # +agent_run+ (idempotent; a run with no services provisioned is a
+    # no-op). Reference counting for containers shared across runs is the
+    # provisioner's responsibility, not the runner's.
+    #
+    # @param agent_run [AgentRun]
+    # @param stale_requeue_count [Integer, nil] override for per-run resource naming
+    # @return [void]
+    # @spec CONTAINER-RUNTIME-032
+    def cleanup_services(agent_run:, stale_requeue_count: nil)
+      raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+    end
+
+    # Provisions the MCP servers declared on +agent_run+'s
+    # +mcp_server_snapshot+: materializes +npx+ definitions as stdio server
+    # specs (not Docker-specific — never modeled as a {ServiceDeclaration})
+    # and provisions +docker_image+ definitions as sidecar containers on the
+    # run's network.
+    #
+    # @param agent_run [AgentRun]
+    # @param network [Object] provider-specific network identifier
+    # @return [Hash] +{stdio_servers:, url_servers:}+
+    # @spec CONTAINER-RUNTIME-033
+    def provision_mcp_servers(agent_run:, network:)
+      raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+    end
+
+    # Tears down the MCP sidecar containers provisioned for +agent_run+.
+    #
+    # @param agent_run [AgentRun]
+    # @return [void]
+    # @spec CONTAINER-RUNTIME-033
+    def cleanup_mcp_servers(agent_run:)
+      raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+    end
+
+    # Provisions the verification browser sidecar (Playwright/Chromium) used
+    # by run verification, when the project has verification enabled.
+    #
+    # @param agent_run [AgentRun]
+    # @param network [Object] provider-specific network identifier
+    # @param logger [Object] structured logger
+    # @return [Object] provisioner-specific result (status, container_id, hostname, cdp_url)
+    # @spec CONTAINER-RUNTIME-034
+    def provision_browser_container(agent_run:, network:, logger:)
+      raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+    end
+
     # Check compatibility before provisioning (e.g. host-path requirements).
     # Called for every candidate during scheduling, so it must be cheap and
     # must not mutate state or record telemetry.
