@@ -15,9 +15,9 @@ module Activities
       agent_run = AgentRun.find(agent_run_id)
 
       track_phase(agent_run_id: agent_run_id, phase_key: "provision_mcp_servers", phase_group: "setup", agent_run: agent_run) do
-        provisioner = Containers::McpProvisioner.new
-        result = provisioner.provision(
-          agent_run,
+        runner = ExecutionRunners.resolve_for(agent_run)
+        result = runner.provision_mcp_servers(
+          agent_run: agent_run,
           network: Containers::Provision.network_for(agent_run: agent_run)
         )
 

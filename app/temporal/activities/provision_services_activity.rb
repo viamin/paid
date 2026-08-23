@@ -19,8 +19,8 @@ module Activities
       track_phase(agent_run_id: agent_run_id, phase_key: "provision_services", phase_group: "setup", agent_run: agent_run) do
         auto_link_services_if_unconfigured(agent_run.project)
 
-        provisioner = Containers::ServiceProvisioner.new
-        env_vars = provisioner.provision(agent_run, network: Containers::Provision.network_for(agent_run: agent_run))
+        runner = ExecutionRunners.resolve_for(agent_run)
+        env_vars = runner.provision_services(agent_run: agent_run, network: Containers::Provision.network_for(agent_run: agent_run))
 
         logger.info(
           message: "agent_execution.services_provisioned",

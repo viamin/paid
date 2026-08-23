@@ -87,6 +87,16 @@ module Containers
 
     DEFAULT_RESOURCE_LIMITS = { memory: 1 * 1024 * 1024 * 1024, cpu_quota: 100_000, pids_limit: 200 }.freeze
 
+    # Maps an image pattern to the provider-neutral ExecutionRunners::ServiceDeclaration
+    # type (RDR-054). Matched the same way as ENV_MAPPINGS/RESOURCE_LIMITS: the
+    # first pattern the image name includes wins.
+    SERVICE_TYPES = {
+      "postgres" => :database,
+      "redis" => :cache,
+      "selenium" => :browser,
+      "chromium" => :browser
+    }.freeze
+
     # Network alias naming (paid-svc-a<account_id>-s<id>-<name>) is shared with
     # egress policy snapshots — see Containers::ServiceRuntimeNaming.
     include ServiceRuntimeNaming
@@ -220,7 +230,41 @@ module Containers
       end
     end
 
+    # Reconstructs the provider-neutral ExecutionRunners::ServiceDeclaration
+    # for each service container already provisioned for +agent_run+
+    # (RDR-054). Reads already-persisted ServiceContainer state and performs
+    # no Docker side effects, so it is safe to call after #provision has
+    # already run — RunSpec.from_agent_run calls this once
+    # ProvisionServicesActivity has recorded +service_container_ids+, rather
+    # than provisioning a second time.
+    #
+    # @param agent_run [AgentRun]
+    # @return [Array<ExecutionRunners::ServiceDeclaration>]
+    # @spec CONTAINER-RUNTIME-032
+    def service_declarations(agent_run)
+      container_ids = agent_run.service_container_ids
+      return [] if container_ids.blank?
+
+      ServiceContainer.where(id: container_ids).map do |sc|
+        db_override = sc.image.include?("postgres") ? per_run_db_name(agent_run) : nil
+        ExecutionRunners::ServiceDeclaration.new(
+          name: sc.name,
+          image: sc.image,
+          port: sc.port,
+          env: generate_env_vars(sc, db_override: db_override),
+          type: service_type_for(sc.image)
+        )
+      end
+    end
+
     private
+
+    def service_type_for(image)
+      SERVICE_TYPES.each do |pattern, type|
+        return type if image.include?(pattern)
+      end
+      :other
+    end
 
     # NOTE: this class is NOT thread-safe. `with_backend` stashes the resolved
     # backend in @backend and the private `backend` reader relies on that

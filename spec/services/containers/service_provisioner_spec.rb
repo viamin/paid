@@ -569,6 +569,47 @@ RSpec.describe Containers::ServiceProvisioner do
     end
   end
 
+  # @spec CONTAINER-RUNTIME-032
+  describe "#service_declarations" do
+    let(:project) { create(:project) }
+    let(:issue) { create(:issue, project: project) }
+    let(:agent_run) { create(:agent_run, project: project, issue: issue) }
+
+    it "returns an empty array when no services are provisioned" do
+      expect(provisioner.service_declarations(agent_run)).to eq([])
+    end
+
+    it "reconstructs a ServiceDeclaration per provisioned service container without touching Docker" do
+      sc = create(:service_container, image: "postgres:16", name: "pg", port: 5432,
+        env: { "POSTGRES_USER" => "u", "POSTGRES_PASSWORD" => "p", "POSTGRES_DB" => "d" })
+      agent_run.update!(service_container_ids: [ sc.id ])
+
+      declarations = provisioner.service_declarations(agent_run)
+
+      expect(declarations.size).to eq(1)
+      declaration = declarations.first
+      expect(declaration).to be_a(ExecutionRunners::ServiceDeclaration)
+      expect(declaration.name).to eq("pg")
+      expect(declaration.image).to eq("postgres:16")
+      expect(declaration.port).to eq(5432)
+      expect(declaration.type).to eq(:database)
+      expected_db = provisioner.send(:per_run_db_name, agent_run)
+      expect(declaration.env["DATABASE_URL"]).to eq(
+        "postgres://u:p@#{provisioner.send(:runtime_name, sc)}:5432/#{expected_db}"
+      )
+    end
+
+    it "types cache and browser services from the image pattern" do
+      redis = create(:service_container, :redis, name: "redis-svc", port: 6379)
+      agent_run.update!(service_container_ids: [ redis.id ])
+
+      declaration = provisioner.service_declarations(agent_run).first
+
+      expect(declaration.type).to eq(:cache)
+      expect(declaration.env["REDIS_URL"]).to eq("redis://#{provisioner.send(:runtime_name, redis)}:6379")
+    end
+  end
+
   describe "resource limits" do
     it "applies postgres resource limits to postgres images" do
       limits = provisioner.send(:resource_limits_for, "postgres:16")

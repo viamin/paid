@@ -12,7 +12,7 @@ RSpec.describe Activities::CleanupServicesActivity do
       provisioner = instance_double(Containers::ServiceProvisioner)
       allow(Containers::ServiceProvisioner).to receive(:new).and_return(provisioner)
       allow(AgentRun).to receive(:find_by).with(id: agent_run.id).and_return(agent_run)
-      expect(provisioner).to receive(:cleanup).with(agent_run)
+      expect(provisioner).to receive(:cleanup).with(agent_run, stale_requeue_count: nil)
 
       result = activity.execute(agent_run_id: agent_run.id)
 

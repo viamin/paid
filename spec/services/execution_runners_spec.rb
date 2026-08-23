@@ -341,6 +341,33 @@ RSpec.describe ExecutionRunners do
 
       expect(built.input_manifest.execution["runtime_image"]).to eq(selection_metadata)
     end
+
+    # @spec CONTAINER-RUNTIME-032
+    it "populates services from the service containers ProvisionServicesActivity already provisioned" do
+      project = create(:project)
+      run = create(:agent_run, project: project)
+      service_container = create(:service_container, image: "postgres:16", name: "pg", port: 5432,
+        env: { "POSTGRES_USER" => "u", "POSTGRES_PASSWORD" => "p", "POSTGRES_DB" => "d" })
+      run.update!(service_container_ids: [ service_container.id ])
+
+      built = ExecutionRunners::RunSpec.from_agent_run(run)
+
+      expect(built.services.size).to eq(1)
+      declaration = built.services.first
+      expect(declaration).to be_a(ExecutionRunners::ServiceDeclaration)
+      expect(declaration.name).to eq("pg")
+      expect(declaration.type).to eq(:database)
+      expect(declaration.env["DATABASE_URL"]).to be_present
+    end
+
+    it "returns an empty services array when no services were provisioned" do
+      project = create(:project)
+      run = create(:agent_run, project: project)
+
+      built = ExecutionRunners::RunSpec.from_agent_run(run)
+
+      expect(built.services).to eq([])
+    end
   end
 
   describe ExecutionRunners::IngressCapability do
