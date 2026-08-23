@@ -55,6 +55,15 @@ RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
     publish_step.fetch("env")
   end
 
+  def multiline_fallback_key_export?(run_script)
+    [
+      'echo "RAILS_TEST_KEY<<${delimiter}"',
+      "printf '%s\\n' \"$RAILS_MASTER_KEY_FALLBACK\"",
+      'echo "${delimiter}"',
+      '} >> "$GITHUB_ENV"'
+    ].all? { |fragment| run_script.include?(fragment) }
+  end
+
   it "scopes concurrency by PR number and action to avoid cross-event self-cancellation" do
     expect(workflow.fetch("concurrency")).to include(
       "group" => "pr-screenshots-publish-${{ github.event.pull_request.number }}-${{ github.event.action }}",
@@ -95,9 +104,7 @@ RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
     expect(step("Normalize test master key").fetch("env")).to include(
       "RAILS_MASTER_KEY_FALLBACK" => "${{ secrets.RAILS_MASTER_KEY }}"
     )
-    expect(step("Normalize test master key").fetch("run")).to include(
-      'echo "RAILS_TEST_KEY=$RAILS_MASTER_KEY_FALLBACK" >> "$GITHUB_ENV"'
-    )
+    expect(multiline_fallback_key_export?(step("Normalize test master key").fetch("run"))).to be(true)
   end
 
   it "installs JavaScript dependencies and prepares the schema-only test database before publishing" do
