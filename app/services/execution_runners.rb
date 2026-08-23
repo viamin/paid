@@ -400,7 +400,7 @@ module ExecutionRunners
         networking_policy: networking_policy,
         workspace: workspace,
         ingress_policy: agent_run.execution_ingress_policy,
-        services: [],
+        services: Containers::ServiceProvisioner.new.service_declarations(agent_run),
         secrets_config: nil,
         runtime_image_selection: selection
       )

@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# Replay the migrations this branch adds against the base revision's schema.
+#
+# A plain `db:create db:migrate` never runs migration code: against a fresh
+# database Rails' DatabaseTasks#initialize_database loads db/schema.rb and
+# stamps every version as applied. Loading the base revision's schema instead
+# leaves this branch's own migrations pending, so they execute for real --
+# under Strong Migrations, against a realistic starting schema -- and the
+# resulting dump must match the committed db/schema.rb.
+#
+# Always runs in RAILS_ENV=test against its own disposable database so it can
+# never load a schema over a real development or test database. That database is
+# reloaded from scratch on every run and left behind when the run finishes.
+set -euo pipefail
+
+base_rev="${1:-}"
+if [ -z "$base_rev" ]; then
+  echo "usage: bin/ci-migration-replay <base-revision>" >&2
+  exit 64
+fi
+
+export RAILS_ENV=test
+export PAID_TEST_DATABASE="${MIGRATION_REPLAY_DATABASE:-paid_migration_replay}"
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+if ! git rev-parse --verify --quiet "${base_rev}^{commit}" >/dev/null; then
+  echo "error: cannot resolve base revision '${base_rev}'." >&2
+  echo "On a shallow CI clone this means fetch-depth is too small to reach it." >&2
+  exit 1
+fi
+
+work_dir="$(mktemp -d)"
+branch_migrations="$work_dir/branch_migrate"
+restored=0
+
+# db/migrate is moved aside below. Restore it on any exit path, including a
+# cancelled CI run or a local Ctrl-C, so uncommitted migrations are never
+# stranded in a temporary directory.
+restore_branch_migrations() {
+  if [ "$restored" -eq 0 ] && [ -d "$branch_migrations" ]; then
+    rm -rf db/migrate
+    mv "$branch_migrations" db/migrate
+    restored=1
+  fi
+}
+cleanup() {
+  restore_branch_migrations
+  rm -rf "$work_dir"
+}
+trap cleanup EXIT
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM HUP
+
+git show "${base_rev}:db/schema.rb" > "$work_dir/base_schema.rb"
+
+# Rails stamps every migration file older than the schema it loads. Staging the
+# base revision's migration set keeps that stamping honest, so a migration this
+# branch adds stays pending even when its timestamp predates the base schema.
+# git archive rather than git checkout: this must not touch the index, where a
+# developer may have staged the very migration under test.
+mv db/migrate "$branch_migrations"
+git archive "$base_rev" db/migrate | tar -x -C .
+SCHEMA="$work_dir/base_schema.rb" bin/rails db:create db:schema:load
+
+restore_branch_migrations
+
+bin/rails db:migrate
+
+# Dump to a scratch path: the committed db/schema.rb is the expectation being
+# checked, not a file this script may rewrite.
+SCHEMA="$work_dir/replayed_schema.rb" bin/rails db:schema:dump
+if ! diff -u db/schema.rb "$work_dir/replayed_schema.rb"; then
+  echo "error: replaying this branch's migrations does not reproduce db/schema.rb." >&2
+  echo "Run bin/rails db:migrate and commit the regenerated dump." >&2
+  exit 1
+fi

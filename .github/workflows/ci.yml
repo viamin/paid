@@ -372,6 +372,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          # bin/ci-migration-replay reads db/schema.rb from HEAD^.
+          fetch-depth: 2
 
       - name: Normalize test master key
         if: env.RAILS_TEST_KEY == ''
@@ -388,13 +390,12 @@ jobs:
           ruby-version: .tool-versions
           bundler-cache: true
 
-      - name: Replay migrations
-        run: bin/rails db:create db:migrate
-
-      - name: Verify canonical schema dump
-        run: |
-          bin/rails db:schema:dump
-          git diff --exit-code db/schema.rb
+      # HEAD^ is the base branch tip: on a pull request HEAD is the merge commit,
+      # and on a push to main it is the previous main commit. bin/ci-migration-replay
+      # loads that revision's schema so only the migrations this branch adds stay
+      # pending -- see the script for why a plain db:migrate runs no migration code.
+      - name: Replay migrations added on this branch
+        run: bin/ci-migration-replay HEAD^
 
   fasterer:
     if: >-

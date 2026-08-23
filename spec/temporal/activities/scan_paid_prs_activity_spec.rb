@@ -10270,6 +10270,353 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
   end
 
+  describe "TDD test-review gating" do
+    let(:pull_request) do
+      create(:issue, :pull_request,
+        project: project,
+        github_number: 42,
+        pr_review_phase: "draft",
+        labels: [ "paid-generated", "paid-automation", "paid-tests-ready-for-review" ],
+        paid_state: "completed")
+    end
+
+    def decision_types_for(result)
+      result.fetch(:automation_results).flat_map do |entry|
+        Array(entry[:decisions]).map { |decision| decision[:type] }
+      end
+    end
+
+    def stub_non_strict_tdd_review(review_body:)
+      enable_paid_agent_review!
+      create(:agent_run, :completed,
+        project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        trigger_type: "automatic",
+        completed_at: 2.hours.ago)
+      stub_github_for_pr(
+        draft: true,
+        checks: [ { name: "rspec", conclusion: "failure" } ],
+        reviews: [ {
+          id: 1,
+          user_login: "paid-code-reviewer[bot]",
+          state: "COMMENTED",
+          body: review_body,
+          submitted_at: 1.hour.ago,
+          commit_id: "abc123"
+        } ],
+        review_threads: []
+      )
+    end
+
+    def stub_non_strict_tdd_review_with_mixed_bot_feedback
+      project.update!(review_settings: {
+        "enabled" => true,
+        "methods" => {
+          "paid_agent" => {
+            "enabled" => true,
+            "termination" => { "max_review_rounds" => 3 }
+          },
+          "copilot" => { "enabled" => true }
+        }
+      })
+      create(:agent_run, :completed,
+        project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        trigger_type: "automatic",
+        completed_at: 3.hours.ago)
+      stub_github_for_pr(
+        draft: true,
+        checks: [ { name: "rspec", conclusion: "failure" } ],
+        reviews: [
+          {
+            id: 1,
+            user_login: "paid-code-reviewer[bot]",
+            state: "COMMENTED",
+            body: "Tests look good. <!-- paid-review-clean -->",
+            submitted_at: 2.hours.ago,
+            commit_id: "abc123"
+          },
+          {
+            id: 2,
+            user_login: "copilot-pull-request-reviewer[bot]",
+            state: "COMMENTED",
+            body: "Please add one more edge case.",
+            submitted_at: 1.hour.ago,
+            commit_id: "abc123"
+          }
+        ],
+        review_threads: [
+          {
+            id: "copilot-thread-1",
+            is_resolved: false,
+            comments: [ { body: "Please add one more edge case.", path: "spec/models/project_spec.rb", line: 10,
+              author: "copilot-pull-request-reviewer[bot]" } ]
+          }
+        ]
+      )
+    end
+
+    # An old paid-agent CHANGES_REQUESTED review left an unresolved inline
+    # thread; GitHub does not auto-resolve threads when that review is later
+    # dismissed, so the thread lingers even after a fresh clean review lands.
+    # The TDD gate must not re-block on it (#3468 follow-up).
+    def stub_non_strict_tdd_review_with_stale_thread
+      enable_paid_agent_review!
+      create(:agent_run, :completed,
+        project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        trigger_type: "automatic",
+        completed_at: 2.hours.ago)
+      stub_github_for_pr(
+        draft: true,
+        checks: [ { name: "rspec", conclusion: "failure" } ],
+        reviews: [ {
+          id: 2,
+          user_login: "paid-code-reviewer[bot]",
+          state: "COMMENTED",
+          body: "Tests look good. <!-- paid-review-clean -->",
+          submitted_at: 10.minutes.ago,
+          commit_id: "abc123"
+        } ],
+        review_threads: [
+          {
+            id: "stale-paid-agent-thread",
+            is_resolved: false,
+            comments: [ {
+              body: "Add an edge-case spec for the failure path.",
+              path: "spec/foo_spec.rb",
+              line: 5,
+              author: "paid-code-reviewer[bot]",
+              created_at: 3.hours.ago,
+              commit_id: "old_sha"
+            } ]
+          }
+        ]
+      )
+    end
+
+    def stub_stale_non_strict_tdd_review(review_body:)
+      create(:agent_run, :completed,
+        project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        trigger_type: "automatic",
+        completed_at: 30.minutes.ago)
+      stub_github_for_pr(
+        draft: true,
+        checks: [ { name: "rspec", conclusion: "failure" } ],
+        reviews: [ {
+          id: 1,
+          user_login: "paid-code-reviewer[bot]",
+          state: "COMMENTED",
+          body: review_body,
+          submitted_at: 2.hours.ago,
+          commit_id: "stale_sha"
+        } ],
+        review_threads: []
+      )
+    end
+
+    def stub_started_tdd_implementation_after_approval
+      allow(github_client).to receive(:issue_events)
+        .with(project.full_name, 42)
+        .and_return([
+          OpenStruct.new(
+            event: "labeled",
+            actor: OpenStruct.new(login: "viamin"),
+            label: OpenStruct.new(name: "paid-tests-approved"),
+            created_at: 2.hours.ago
+          )
+        ])
+      create(:agent_run,
+        project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        tdd_phase: "test_fixing",
+        status: "completed",
+        created_at: 1.hour.ago,
+        started_at: 1.hour.ago,
+        completed_at: 50.minutes.ago)
+      stub_github_for_pr(
+        draft: true,
+        reviews: [],
+        review_threads: [],
+        checks: [ { name: "rspec", conclusion: "success" } ]
+      )
+    end
+
+    def expect_stale_tdd_review_to_request_fresh_review(result, blocked_label:)
+      expect(automation_scan_results(result).first[:triggers]).to contain_exactly(
+        hash_including(type: "paid_agent_review_pending")
+      )
+      expect(decision_types_for(result)).to include("queue_review_run")
+      expect(decision_types_for(result)).not_to include("queue_create_pr_run")
+      expect(pull_request.reload.labels).to contain_exactly("paid-generated", "paid-automation", "paid-tests-ready-for-review")
+      expect(github_client).not_to have_received(:remove_label_from_issue)
+        .with(project.full_name, 42, "paid-tests-ready-for-review")
+      expect(github_client).not_to have_received(:add_labels_to_issue)
+        .with(project.full_name, 42, [ blocked_label ])
+    end
+
+    it "does not start implementation in strict mode while tests are awaiting review" do
+      project.update!(tdd_mode: "strict")
+      pull_request
+      stub_github_for_pr(draft: true, reviews: [], checks: [ { name: "rspec", conclusion: "failure" } ])
+
+      result = activity.execute(project_id: project.id)
+
+      expect(automation_scan_results(result)).to eq([])
+      expect(decision_types_for(result)).to eq([])
+    end
+
+    it "starts implementation in strict mode after paid-tests-approved is present" do
+      project.update!(tdd_mode: "strict")
+      pull_request.update!(labels: [ "paid-generated", "paid-automation", "paid-tests-approved" ])
+      stub_github_for_pr(draft: true, reviews: [], checks: [ { name: "rspec", conclusion: "failure" } ])
+
+      result = activity.execute(project_id: project.id)
+
+      expect(automation_scan_results(result).first[:triggers]).to contain_exactly(
+        hash_including(type: "tdd_tests_approved")
+      )
+      expect(decision_types_for(result)).to include("queue_create_pr_run")
+      expect(decision_types_for(result)).not_to include("queue_review_run")
+    end
+
+    it "falls through to the normal draft scan after implementation already started for the approved test revision" do
+      project.update!(tdd_mode: "strict")
+      pull_request.update!(labels: [ "paid-generated", "paid-automation", "paid-tests-approved" ])
+      stub_started_tdd_implementation_after_approval
+
+      result = activity.execute(project_id: project.id)
+
+      expect(automation_scan_results(result).first[:triggers]).to contain_exactly(
+        hash_including(type: "ready_for_owner")
+      )
+      expect(decision_types_for(result)).not_to include("queue_create_pr_run")
+    end
+
+    it "routes strict-mode rejected tests back to test revision instead of implementation" do
+      project.update!(tdd_mode: "strict")
+      pull_request.update!(labels: [ "paid-generated", "paid-automation", "paid-test-changes-requested" ])
+      stub_github_for_pr(draft: true, reviews: [], checks: [ { name: "rspec", conclusion: "failure" } ])
+
+      result = activity.execute(project_id: project.id)
+
+      expect(automation_scan_results(result).first[:triggers]).to contain_exactly(
+        hash_including(type: "tdd_test_changes_requested")
+      )
+      expect(decision_types_for(result)).to include("queue_create_pr_run")
+      expect(decision_types_for(result)).not_to include("queue_review_run")
+    end
+
+    it "queues an automated review run in non-strict mode while tests are awaiting verdict" do
+      project.update!(tdd_mode: "non_strict")
+      enable_paid_agent_review!
+      pull_request
+      stub_github_for_pr(draft: true, reviews: [], checks: [ { name: "rspec", conclusion: "failure" } ])
+
+      result = activity.execute(project_id: project.id)
+
+      expect(automation_scan_results(result).first[:triggers]).to contain_exactly(
+        hash_including(type: "paid_agent_review_pending")
+      )
+      expect(decision_types_for(result)).to include("queue_review_run")
+      expect(decision_types_for(result)).not_to include("queue_create_pr_run")
+    end
+
+    it "applies paid-tests-approved and queues implementation in non-strict mode after a clean paid_agent review" do
+      project.update!(tdd_mode: "non_strict")
+      pull_request
+      stub_non_strict_tdd_review(review_body: "Tests look good. <!-- paid-review-clean -->")
+
+      result = activity.execute(project_id: project.id)
+
+      expect(decision_types_for(result)).to include("queue_create_pr_run")
+      expect(decision_types_for(result)).not_to include("queue_review_run")
+      expect(pull_request.reload.labels).to contain_exactly("paid-generated", "paid-automation", "paid-tests-approved")
+      expect(github_client).to have_received(:remove_label_from_issue)
+        .with(project.full_name, 42, "paid-tests-ready-for-review")
+      expect(github_client).to have_received(:add_labels_to_issue)
+        .with(project.full_name, 42, [ "paid-tests-approved" ])
+    end
+
+    it "does not restore paid-tests-approved from a stale paid_agent review after returning tests to review" do
+      # @spec TDD-PR-006
+      project.update!(tdd_mode: "non_strict")
+      pull_request
+      stub_stale_non_strict_tdd_review(review_body: "Tests look good. <!-- paid-review-clean -->")
+
+      result = activity.execute(project_id: project.id)
+
+      expect_stale_tdd_review_to_request_fresh_review(result, blocked_label: "paid-tests-approved")
+    end
+
+    it "does not reapply paid-test-changes-requested from a stale paid_agent review after tests changed" do
+      # @spec TDD-PR-006
+      project.update!(tdd_mode: "non_strict")
+      pull_request
+      stub_stale_non_strict_tdd_review(review_body: "Add an edge-case spec for the failure path.")
+
+      result = activity.execute(project_id: project.id)
+
+      expect_stale_tdd_review_to_request_fresh_review(result, blocked_label: "paid-test-changes-requested")
+    end
+
+    it "does not reapply paid-test-changes-requested from a stale unresolved paid_agent thread after a newer clean review" do
+      # @spec TDD-PR-006
+      project.update!(tdd_mode: "non_strict")
+      pull_request
+      stub_non_strict_tdd_review_with_stale_thread
+
+      result = activity.execute(project_id: project.id)
+
+      expect(decision_types_for(result)).to include("queue_create_pr_run")
+      expect(decision_types_for(result)).not_to include("queue_review_run")
+      expect(automation_scan_results(result).first[:triggers]).to contain_exactly(
+        hash_including(type: "tdd_tests_approved")
+      )
+      expect(pull_request.reload.labels).to contain_exactly("paid-generated", "paid-automation", "paid-tests-approved")
+    end
+
+    it "ignores other review bots when the paid_agent test review is clean in non-strict mode" do
+      project.update!(tdd_mode: "non_strict")
+      pull_request
+      stub_non_strict_tdd_review_with_mixed_bot_feedback
+
+      result = activity.execute(project_id: project.id)
+
+      expect(decision_types_for(result)).to include("queue_create_pr_run")
+      expect(decision_types_for(result)).not_to include("queue_review_run")
+      expect(automation_scan_results(result).first[:triggers]).to contain_exactly(
+        hash_including(type: "tdd_tests_approved")
+      )
+      expect(pull_request.reload.labels).to contain_exactly("paid-generated", "paid-automation", "paid-tests-approved")
+    end
+
+    it "applies paid-test-changes-requested and queues test revision in non-strict mode after a non-clean paid_agent review" do
+      project.update!(tdd_mode: "non_strict")
+      pull_request
+      stub_non_strict_tdd_review(review_body: "Add an edge-case spec for the failure path.")
+
+      result = activity.execute(project_id: project.id)
+
+      expect(automation_scan_results(result).first[:triggers]).to contain_exactly(
+        hash_including(type: "tdd_test_changes_requested")
+      )
+      expect(decision_types_for(result)).to include("queue_create_pr_run")
+      expect(decision_types_for(result)).not_to include("queue_review_run")
+      expect(pull_request.reload.labels).to contain_exactly("paid-generated", "paid-automation", "paid-test-changes-requested")
+      expect(github_client).to have_received(:remove_label_from_issue)
+        .with(project.full_name, 42, "paid-tests-ready-for-review")
+      expect(github_client).to have_received(:add_labels_to_issue)
+        .with(project.full_name, 42, [ "paid-test-changes-requested" ])
+    end
+  end
+
   private
 
   # Helper to stub GitHub API calls with sensible defaults.

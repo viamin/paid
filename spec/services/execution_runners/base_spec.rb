@@ -80,6 +80,31 @@ RSpec.describe ExecutionRunners::Base do
       expect { described_class.new.cleanup_resource(resource: resource) }
         .to raise_error(NotImplementedError, /cleanup_resource/)
     end
+
+    it "raises NotImplementedError for #provision_services" do
+      expect { described_class.new.provision_services(agent_run: nil, network: "net") }
+        .to raise_error(NotImplementedError, /provision_services/)
+    end
+
+    it "raises NotImplementedError for #cleanup_services" do
+      expect { described_class.new.cleanup_services(agent_run: nil) }
+        .to raise_error(NotImplementedError, /cleanup_services/)
+    end
+
+    it "raises NotImplementedError for #provision_mcp_servers" do
+      expect { described_class.new.provision_mcp_servers(agent_run: nil, network: "net") }
+        .to raise_error(NotImplementedError, /provision_mcp_servers/)
+    end
+
+    it "raises NotImplementedError for #cleanup_mcp_servers" do
+      expect { described_class.new.cleanup_mcp_servers(agent_run: nil) }
+        .to raise_error(NotImplementedError, /cleanup_mcp_servers/)
+    end
+
+    it "raises NotImplementedError for #provision_browser_container" do
+      expect { described_class.new.provision_browser_container(agent_run: nil, network: "net", logger: nil) }
+        .to raise_error(NotImplementedError, /provision_browser_container/)
+    end
   end
 
   describe "abstract class methods" do
@@ -105,7 +130,9 @@ RSpec.describe ExecutionRunners::Base do
       expect(instance_methods).to contain_exactly(
         :provision, :start, :running?, :reconnect, :status, :cancel, :cleanup,
         :resource_kind, :supports_tagging?, :supports_listing?,
-        :supports_resource_listing?, :list_resources, :cleanup_resource
+        :supports_resource_listing?, :list_resources, :cleanup_resource,
+        :provision_services, :cleanup_services, :provision_mcp_servers, :cleanup_mcp_servers,
+        :provision_browser_container
       )
 
       forbidden = %w[docker container_id bind_mount exec_in_container network_name]
