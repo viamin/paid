@@ -54,7 +54,8 @@ module Capacity
       return unless check
 
       current_spend_cents = spend_cents_for(check)
-      return if current_spend_cents > check[:limit_cents]
+      projected_spend_cents = current_spend_cents + projected_cents_for(check)
+      return if projected_spend_cents > check[:limit_cents]
 
       recover_threshold(check, current_spend_cents)
     end

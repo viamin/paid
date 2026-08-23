@@ -247,6 +247,15 @@ class ProcessRunQueueJob < ApplicationJob
           when "project_provisioning_rate_limit"
             park_run_for_capacity(next_run, admission[:rate_limited_until], admission[:reason])
             blocked_project_ids.add(next_run.project_id)
+          when ->(reason) { spend_capacity_denial?(reason) && admission[:rate_limited_until].present? }
+            park_run_for_capacity(next_run, admission[:rate_limited_until], admission[:reason])
+            block_scope_for_spend_denial(
+              admission[:reason],
+              project_id: next_run.project_id,
+              account_id: next_run.project.account_id,
+              blocked_project_ids: blocked_project_ids,
+              blocked_account_ids: blocked_account_ids
+            )
           else
             # Exclude the whole owner for the rest of this pass so a deep
             # backlog for a saturated user cannot consume the iteration budget
@@ -890,7 +899,22 @@ class ProcessRunQueueJob < ApplicationJob
   end
 
   def spend_guard_reached?(admission)
-    admission[:allowed] || admission[:reason].to_s.match?(SPEND_DENIAL_REASON_PATTERN)
+    admission[:allowed] || spend_capacity_denial?(admission[:reason])
+  end
+
+  def spend_capacity_denial?(reason)
+    reason.to_s.match?(SPEND_DENIAL_REASON_PATTERN)
+  end
+
+  def block_scope_for_spend_denial(reason, project_id:, account_id:, blocked_project_ids:, blocked_account_ids:)
+    case reason.to_s
+    when /\Aglobal_/
+      nil
+    when /\Aaccount_/
+      blocked_account_ids.add(account_id)
+    when /\Aproject_/
+      blocked_project_ids.add(project_id)
+    end
   end
 
   def capacity_aware_host_selection?(host_selection, forced_admission_mode, user)

@@ -244,6 +244,54 @@ RSpec.describe ProcessRunQueueJob do
     }
   end
 
+  def scoped_spend_denied_admission(scope:, available_at:)
+    {
+      allowed: false,
+      reason: "#{scope}_infra_spend_hourly_limit_exceeded",
+      mode: "auto",
+      selected_host: "local",
+      available_slots: 0,
+      rate_limited_until: available_at,
+      spend_scope: scope,
+      spend_period: "hourly",
+      spend_action: "park"
+    }
+  end
+
+  def prepare_spend_limited_admission(job:, scope:, available_at:)
+    queued_run = create_queued_run_with_policy(max_concurrent_runs: 5)
+    queued_run.project.created_by.settings.update!(run_concurrency_mode: "auto")
+    stub_policy_decision(local_auto_decision)
+    allow(Rails.logger).to receive(:info)
+    allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(auto_mode_snapshot)
+    allow(Containers::BackendScheduler).to receive(:call).and_return(default_local_host_selection_result)
+    allow(Capacity::RunAdmission).to receive(:preview).and_return(
+      scoped_spend_denied_admission(scope: scope, available_at: available_at)
+    )
+    allow(job).to receive(:next_queued_run_for_scheduler).and_call_original
+    queued_run
+  end
+
+  def expect_spend_limited_run(queued_run:, scope:, available_at:)
+    queued_run.reload
+    expect(queued_run.status).to eq("rate_limited")
+    expect(queued_run.rate_limited_until).to eq(available_at)
+    expect(queued_run.external_metadata["capacity_park_reason"]).to eq("#{scope}_infra_spend_hourly_limit_exceeded")
+  end
+
+  def expect_spend_scope_block(job:, queued_run:, blocked_scope:)
+    case blocked_scope
+    when :account
+      expect(job).to have_received(:next_queued_run_for_scheduler).with(
+        satisfy { |args| args.fetch(:blocked_account_ids).include?(queued_run.project.account_id) }
+      ).at_least(:once)
+    when :project
+      expect(job).to have_received(:next_queued_run_for_scheduler).with(
+        satisfy { |args| args.fetch(:blocked_project_ids).include?(queued_run.project_id) }
+      ).at_least(:once)
+    end
+  end
+
   def stub_unavailable_fallback_hosts(run, registry_bundle)
     disallowed = Containers::Provision::CompatibilityResult.new(
       compatible: false,
@@ -2299,6 +2347,25 @@ RSpec.describe ProcessRunQueueJob do
         expect(queued_run.rate_limited_until).to eq(available_at)
         expect(queued_run.external_metadata["capacity_park_reason"]).to eq("global_provisioning_rate_limit")
       end
+
+      shared_examples "parks spend-limited admission" do |scope:, blocked_scope: nil|
+        # @spec INFRA-SPEND-002
+        it "parks #{scope} spend denials until the spend window resets" do
+          available_at = Time.utc(2026, 8, 17, 12, 5, 0)
+          queued_run = prepare_spend_limited_admission(job: job, scope: scope, available_at: available_at)
+
+          expect(temporal_client).not_to receive(:start_workflow)
+
+          job.perform
+
+          expect_spend_limited_run(queued_run:, scope:, available_at:)
+          expect_spend_scope_block(job:, queued_run:, blocked_scope:)
+        end
+      end
+
+      it_behaves_like "parks spend-limited admission", scope: "global"
+      it_behaves_like "parks spend-limited admission", scope: "account", blocked_scope: :account
+      it_behaves_like "parks spend-limited admission", scope: "project", blocked_scope: :project
 
       it "preserves unrelated external metadata when parking for capacity" do
         queued_run = create(:agent_run, :queued, external_metadata: { "keep" => "value" })
