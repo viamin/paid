@@ -38,7 +38,9 @@ One acceptance-criteria group remains open:
 ### 2026-08-23 Umbrella Audit
 
 Audit recorded against umbrella issue
-[#3441](https://github.com/viamin/paid/issues/3441).
+[#3441](https://github.com/viamin/paid/issues/3441); no umbrella closure is
+claimed here while [#3439](https://github.com/viamin/paid/issues/3439) remains
+open.
 
 What is shipped in the repository as of 2026-08-23:
 
