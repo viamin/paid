@@ -226,6 +226,9 @@ jobs:
       PAID_DEVELOPMENT_DATABASE: paid_test
       PAID_DEVELOPMENT_CABLE_DATABASE: paid_test
       PAID_TEST_DATABASE: paid_test
+      # Keep Rails, libpq shellouts, and any child processes on the same test
+      # database connection flow instead of relying on split DB_* / PG* vars.
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/paid_test
       DB_HOST: localhost
       PGHOST: localhost
       PGPORT: 5432
@@ -370,6 +373,7 @@ jobs:
       PAID_DEVELOPMENT_DATABASE: paid_test
       PAID_DEVELOPMENT_CABLE_DATABASE: paid_test
       PAID_TEST_DATABASE: paid_test
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/paid_test
       DB_HOST: localhost
       PGHOST: localhost
       PGPORT: 5432
@@ -472,6 +476,7 @@ jobs:
       PAID_DEVELOPMENT_DATABASE: paid_test
       PAID_DEVELOPMENT_CABLE_DATABASE: paid_test
       PAID_TEST_DATABASE: paid_test
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/paid_test
       DB_HOST: localhost
       PGHOST: localhost
       PGPORT: 5432
