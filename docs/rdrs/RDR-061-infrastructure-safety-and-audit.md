@@ -5,27 +5,23 @@
 ## Metadata
 
 - **Date**: 2026-08-12
-- **Status**: Partially Implemented
+- **Status**: Implemented
 - **Type**: Operations + Security Architecture
 - **Priority**: P1
 - **Related RDRs**: [RDR-011](RDR-011-observability.md), [RDR-018a](RDR-018a-billing-aggregation.md), [RDR-025a](RDR-025a-runner-quota-tracking.md), [RDR-033](RDR-033-worker-pool-scaling-algorithm.md), [RDR-049](RDR-049-configuration-health-checks.md), [RDR-050](RDR-050-account-queue-fairness-mode.md), [RDR-057](RDR-057-remote-execution-data-contract.md) (data movement audit), [RDR-058](RDR-058-execution-authority-network-and-isolation.md) (network policy and authority audit), [RDR-059](RDR-059-immutable-agent-runtime-images.md) (image digest in audit), [RDR-060](RDR-060-external-execution-resource-ledger.md) (resource ledger IDs in audit events)
-- **Related Issues**: [#3421](https://github.com/viamin/paid/issues/3421) (closeout), [#3553](https://github.com/viamin/paid/issues/3553) (audit-event instrumentation gap), [#3554](https://github.com/viamin/paid/issues/3554) (spend-threshold gap), #3353 (execution concurrency), #3354 (resource requirements), #3355 (infra cost accounting), #3357 (health/shutdown), #3359 (production readiness), #3414 (execution audit trail, partial)
-- **Related Tests**: `spec/services/capacity/run_admission_spec.rb`, `spec/models/execution_control_spec.rb`, `spec/models/execution_audit_event_spec.rb`, `spec/services/config/production_validator_spec.rb`
+- **Related Issues**: [#3421](https://github.com/viamin/paid/issues/3421) (2026-08-21 partial closeout), [#3601](https://github.com/viamin/paid/issues/3601) (2026-08-23 final closeout), [#3553](https://github.com/viamin/paid/issues/3553) (audit-event lifecycle emission, shipped), [#3554](https://github.com/viamin/paid/issues/3554) (spend-threshold enforcement, shipped), #3353 (execution concurrency), #3354 (resource requirements), #3355 (infra cost accounting), #3357 (health/shutdown), #3359 (production readiness), #3414 (execution audit trail)
+- **Related Tests**: `spec/services/capacity/run_admission_spec.rb`, `spec/models/execution_control_spec.rb`, `spec/models/execution_audit_event_spec.rb`, `spec/services/config/production_validator_spec.rb`, `spec/services/capacity/infrastructure_spend_spec.rb`, `spec/services/capacity/infrastructure_spend_guard_spec.rb`, `spec/services/execution_audit_events/lifecycle_spec.rb`, `spec/services/containers/provision_spec.rb`, `spec/temporal/activities/create_agent_run_activity_spec.rb`, `spec/jobs/process_run_queue_job_spec.rb`
 
 ## Implementation Status
 
-RDR-061 is **partially implemented** as of 2026-08-21. The core admission-time
-infrastructure safety rails are shipped for aggregate requested resources,
-per-execution resource maxima, provisioning-rate limits, and execution-disable
-controls. The dedicated `ExecutionAuditEvent` record type is also shipped as an
-append-only, tenant-scoped, secret-safe audit store.
-
-Two acceptance criteria remain open:
-
-- lifecycle execution audit-event emission from provisioning, cleanup, runner
-  selection, image resolution, and network/credential decisions
-- Paid-owned infrastructure spend-threshold enforcement on the pre-provisioning
-  safety path once infra cost accounting is available
+RDR-061 is **implemented** as of 2026-08-23. Every acceptance criterion has
+shipped code and test evidence. The admission-time infrastructure safety
+rails for aggregate requested resources, per-execution resource maxima,
+provisioning-rate limits, and execution-disable controls remain in place. The
+`ExecutionAuditEvent` record type is shipped as an append-only, tenant-scoped,
+secret-safe audit store, and the execution lifecycle now emits that event
+stream end to end. Pre-provisioning infrastructure spend-threshold
+enforcement is also wired into the same admission path.
 
 | Criterion | Status | Evidence |
 |-----------|--------|----------|
@@ -33,17 +29,17 @@ Two acceptance criteria remain open:
 | Provisioning-rate safety rails before provisioning | Implemented | `Capacity::RunAdmission` — `app/services/capacity/run_admission.rb` |
 | Emergency disable at global/account/project/runner/backend scopes | Implemented | `ExecutionControls::RunImpact`; queue/runner/backend enforcement from `docs/intent/execution-disable-controls/` |
 | Append-only, secret-safe execution audit record model | Implemented | `ExecutionAuditEvent` — `app/models/execution_audit_event.rb` |
-| Lifecycle execution audit-event emission | **Gap** | Follow-up [#3553](https://github.com/viamin/paid/issues/3553) |
-| Pre-provisioning infrastructure spend thresholds | **Gap** | Follow-up [#3554](https://github.com/viamin/paid/issues/3554) |
+| Lifecycle execution audit-event emission | Implemented | `ExecutionAuditEvents::Lifecycle` — `app/services/execution_audit_events/lifecycle.rb`, called from `app/services/containers/provision.rb`, `app/services/agent_runs/bind_runner.rb`, `app/models/agent_run.rb`, `app/temporal/activities/create_agent_run_activity.rb`, `app/services/execution_controls/run_impact.rb`, `app/jobs/process_run_queue_job.rb` |
+| Pre-provisioning infrastructure spend thresholds | Implemented | `Capacity::InfrastructureSpendGuard` — `app/services/capacity/infrastructure_spend_guard.rb`, wired into `Capacity::RunAdmission#infrastructure_spend_denial` |
 
 ### 2026-08-21 Closeout
 
 Audit recorded against umbrella issue
 [#3421](https://github.com/viamin/paid/issues/3421). See
 [`audit-report-2026-08-21-rdr-061.md`](audit-report-2026-08-21-rdr-061.md) for
-the full criterion-by-criterion evidence and validation notes.
+the full criterion-by-criterion evidence and validation notes from that pass.
 
-The closeout is **partial**. What shipped:
+That closeout was **partial**. What had shipped by then:
 
 - pre-provisioning aggregate requested CPU/memory/disk ceilings
 - pre-provisioning provisioning-rate ceilings
@@ -51,18 +47,39 @@ The closeout is **partial**. What shipped:
 - global/account/project/runner/backend execution-disable controls
 - append-only, secret-safe `ExecutionAuditEvent` storage and retention
 
-What remains open:
+What remained open at that point:
 
 - lifecycle execution audit-event instrumentation across provisioning and
   cleanup ([#3553](https://github.com/viamin/paid/issues/3553))
 - infrastructure spend-threshold enforcement before provisioning
   ([#3554](https://github.com/viamin/paid/issues/3554))
 
+### 2026-08-23 Closeout
+
+Audit recorded against final closeout issue
+[#3601](https://github.com/viamin/paid/issues/3601). See
+[`audit-report-2026-08-23-rdr-061.md`](audit-report-2026-08-23-rdr-061.md) for
+the full criterion-by-criterion evidence and validation notes.
+
+Both remaining gaps from the 2026-08-21 closeout have since landed:
+
+- [#3553](https://github.com/viamin/paid/issues/3553) added
+  `ExecutionAuditEvents::Lifecycle` and instrumented every call site named in
+  the RDR's Audit Event Model — provisioning, cleanup, runner selection, image
+  resolution, credential-class grants, network-policy grants, and
+  emergency-disable changes.
+- [#3554](https://github.com/viamin/paid/issues/3554) added
+  `Capacity::InfrastructureSpend` and `Capacity::InfrastructureSpendGuard`,
+  wired into `Capacity::RunAdmission` on the same pre-provisioning path as the
+  other safety rails, including preview/finalize semantics for
+  capacity-aware host selection and automatic global emergency escalation on
+  a global daily breach.
+
 Provider quotas and billing alarms remain explicitly documented as
-defense-in-depth backstops, not the primary Paid behavior. Because the two
-remaining gaps are still open and directly map to the RDR acceptance criteria,
-RDR-061 stays **Partially Implemented** and umbrella issue #3421 should remain
-open until those gaps land.
+defense-in-depth backstops, not the primary Paid behavior. With no acceptance
+criteria remaining open, RDR-061 moves to **Implemented** and umbrella issue
+[#3421](https://github.com/viamin/paid/issues/3421) and closeout issue
+[#3601](https://github.com/viamin/paid/issues/3601) can both close.
 
 ## Problem Statement
 
@@ -95,10 +112,17 @@ This is distinct from customer billing. It is an operator safety and audit decis
   closeout work, provides a dedicated append-only, tenant-scoped, secret-safe
   audit store queryable by account/project/run/runner/image/resource and
   retained 400 days via `ExecutionAuditEventRetentionJob` (see
-  `docs/intent/execution-audit/`). The shipped model covers record shape,
-  retention, and application-level append-only behavior, but call sites such as
-  `Containers::Provision` are not yet instrumented to emit the lifecycle event
-  classes defined in this RDR's Audit Event Model section.
+  `docs/intent/execution-audit/`). `ExecutionAuditEvents::Lifecycle`
+  (`app/services/execution_audit_events/lifecycle.rb`) now emits every
+  lifecycle event class from this RDR's Audit Event Model section from
+  `Containers::Provision`, `AgentRuns::BindRunner`, `AgentRun`,
+  `Activities::CreateAgentRunActivity`, `ExecutionControls::RunImpact`, and
+  `ProcessRunQueueJob`.
+- `Capacity::InfrastructureSpend` and `Capacity::InfrastructureSpendGuard`
+  (see `docs/intent/infrastructure-spend-thresholds/`) account infrastructure
+  spend separately from LLM cost and enforce global/account/project/runner
+  hourly and daily spend thresholds on the same pre-provisioning path as
+  `Capacity::RunAdmission`'s other safety rails.
 
 ### Forces and Constraints
 
