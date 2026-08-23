@@ -9,20 +9,20 @@
 - **Type**: Security + Architecture
 - **Priority**: P1
 - **Related RDRs**: [RDR-004](RDR-004-container-isolation.md) (Container Isolation), [RDR-006](RDR-006-secrets-proxy.md) (Secrets Proxy), [RDR-019](RDR-019-remote-container-execution.md) (Remote Container Execution), [RDR-041](RDR-041-subscription-runner-auth-lifecycle.md) (Subscription Runner Managed Auth Lifecycle), [RDR-048](RDR-048-multi-host-docker-backend-support.md) (Multi-Host Docker Backend Support), [RDR-054](RDR-054-prompt-assembly-service.md) (Prompt Assembly Service)
-- **Related Intent**: `CONTAINER-RUNTIME-017`, `CONTAINER-RUNTIME-020`, `EGRESS-POLICY-001..006`, `docs/intent/container-egress-allowlisting/`
-- **Related Issues**: #3434 (account/project allowlist entries and validation), #3435 (required platform and runner destination registry), #3436 (per-run egress policy resolution and snapshot persistence), #3437 (portable runner networking contract propagation), #3438 (production enforcement adapters and fail-closed runtime eligibility — follow-up), #3439 (brokered research access with secret-extraction guards — follow-up), #3440 (settings UI/API and run audit visibility), #3441 (this umbrella issue)
-- **Related Tests**: `spec/models/egress_allowlist_entry_spec.rb`, `spec/models/egress_security_event_spec.rb`, `spec/services/agent_runs/egress_policy/host_pattern_spec.rb`, `spec/services/agent_runs/egress_policy/required_destinations_spec.rb`, `spec/services/agent_runs/egress_policy/resolve_spec.rb`, `spec/requests/account_egress_allowlist_entries_spec.rb`, `spec/requests/projects/egress_allowlist_entries_spec.rb`, `spec/temporal/activities/provision_container_activity_spec.rb`, `spec/services/execution_runners_spec.rb`, `spec/services/execution_runners/local_docker_runner_spec.rb`, `spec/services/containers/provision_spec.rb`, `spec/migrations/expand_egress_allowlist_entries_for_audit_and_ui_dbless_spec.rb`
+- **Related Intent**: `CONTAINER-RUNTIME-017`, `CONTAINER-RUNTIME-020`, `EGRESS-POLICY-001..007`, `docs/intent/container-egress-allowlisting/`
+- **Related Issues**: #3434 (account/project allowlist entries and validation), #3435 (required platform and runner destination registry), #3436 (per-run egress policy resolution and snapshot persistence), #3437 (portable runner networking contract propagation), #3438 (production enforcement adapters and fail-closed runtime eligibility), #3439 (brokered research access with secret-extraction guards — open gap), #3440 (settings UI/API and run audit visibility), #3441 (this umbrella issue)
+- **Related Tests**: `spec/models/egress_allowlist_entry_spec.rb`, `spec/models/egress_security_event_spec.rb`, `spec/services/agent_runs/egress_policy/host_pattern_spec.rb`, `spec/services/agent_runs/egress_policy/required_destinations_spec.rb`, `spec/services/agent_runs/egress_policy/resolve_spec.rb`, `spec/services/agent_runs/egress_policy/gateway_spec.rb`, `spec/services/agent_runs/egress_policy/gateway_adapters/docker_spec.rb`, `spec/services/agent_runs/egress_policy/gateway_adapters/kubernetes_spec.rb`, `spec/services/agent_runs/egress_policy/gateway_adapters/managed_machine_spec.rb`, `spec/requests/account_egress_allowlist_entries_spec.rb`, `spec/requests/projects/egress_allowlist_entries_spec.rb`, `spec/temporal/activities/provision_container_activity_spec.rb`, `spec/services/execution_runners/contract_runner_spec.rb`, `spec/services/execution_runners/local_docker_runner_spec.rb`, `spec/services/containers/provision_spec.rb`, `spec/migrations/expand_egress_allowlist_entries_for_audit_and_ui_dbless_spec.rb`
 
 ## Implementation Status
 
-RDR-055 is **partially implemented** as of 2026-08-21. The tenant-managed
+RDR-055 is **partially implemented** as of 2026-08-23. The tenant-managed
 allowlist model, required-destination registry, per-run snapshot resolution and
-persistence, portable runner-contract propagation, and settings/run-audit UI are
+persistence, portable runner-contract propagation, domain-aware Docker gateway
+enforcement with production fail-closed behavior, and settings/run-audit UI are
 all shipped.
 
-Two acceptance criteria remain open:
+One acceptance-criteria group remains open:
 
-- domain-aware gateway enforcement with production fail-closed behavior
 - brokered research egress with secret-extraction guards
 
 | Criterion | Status | Evidence |
@@ -32,58 +32,50 @@ Two acceptance criteria remain open:
 | Per-run egress snapshot resolution and persistence on `agent_runs.external_metadata["egress_policy"]` | Implemented | `AgentRuns::EgressPolicy::Resolve`, `Snapshot#persist!`; related issue [#3436](https://github.com/viamin/paid/issues/3436) |
 | Provider-neutral networking-policy propagation including `egress_profile` | Implemented | `ExecutionRunners::NetworkingPolicy#egress_profile`, `Containers::Provision#networking_policy_with_egress_profile`; related issue [#3437](https://github.com/viamin/paid/issues/3437) |
 | Tenant UI/API management and run-detail audit visibility | Implemented | egress allowlist controllers and run-detail audit surface; related issue [#3440](https://github.com/viamin/paid/issues/3440) |
-| Domain-aware gateway enforcement with production fail-closed runtime eligibility | **Gap** | Follow-up [#3438](https://github.com/viamin/paid/issues/3438) |
+| Domain-aware gateway enforcement with production fail-closed runtime eligibility | Implemented | `AgentRuns::EgressPolicy::Gateway`, `GatewayAdapters::Docker`, and `ExecutionRunners::{ContractRunner,LocalDockerRunner}` ship Docker enforcement plus fail-closed rejection when a runtime cannot enforce the restricted profile; `GatewayAdapters::{Kubernetes,ManagedMachine}` are contract stubs only. Related issue [#3438](https://github.com/viamin/paid/issues/3438) |
 | Brokered research access with secret-extraction guards | **Gap** | Follow-up [#3439](https://github.com/viamin/paid/issues/3439) |
 
-### 2026-08-21 Closeout
+### 2026-08-23 Umbrella Audit
 
-Audit recorded against the still-open umbrella issue
-[#3441](https://github.com/viamin/paid/issues/3441); no closure claimed.
-This status update moves the RDR from **Draft** to
-**Partially Implemented** without closing the umbrella. See
-[`audit-report-2026-08-21-rdr-055.md`](audit-report-2026-08-21-rdr-055.md) for
-the full criterion-by-criterion audit and gap analysis.
+Audit recorded against umbrella issue
+[#3441](https://github.com/viamin/paid/issues/3441); no umbrella closure is
+claimed here while [#3439](https://github.com/viamin/paid/issues/3439) remains
+open.
 
-What shipped by 2026-08-21 (cross-referenced to the related issues
-and EARS specs):
+What is shipped in the repository as of 2026-08-23:
 
-- the `EgressAllowlistEntry` model, migration, and shared `HostPattern`
-  validator (`EGRESS-POLICY-001`, #3434)
+- the `EgressAllowlistEntry` model, migration, controllers, and shared
+  `HostPattern` validator (`EGRESS-POLICY-001`, #3434, #3440)
 - the `RequiredDestinations` code registry, including runner/provider host
   resolution and the drift-raises contract (`EGRESS-POLICY-002`, #3435)
 - the `Resolve` service, `Snapshot` value object, and deterministic
-  merge/dedupe/provenance pipeline (`EGRESS-POLICY-003`, #3434/#3436)
-- account inheritance, project extension, and the required-destination
-  shadow-proof guarantee (`EGRESS-POLICY-004`, #3434/#3436)
-- read-time defensive re-validation with `DeniedPolicyError` and the
-  pre-provisioning deny snapshot (`EGRESS-POLICY-005`, #3434/#3436)
-- per-run persistence to
-  `agent_runs.external_metadata["egress_policy"]` via
-  `ProvisionContainerActivity`, including the `Containers::ProxyUrl`
-  resolution that threads the planned container host and networking policy
-  into the snapshot (`EGRESS-POLICY-006`, #3436)
+  merge/dedupe/provenance pipeline (`EGRESS-POLICY-003..006`, #3436)
+- account inheritance, project extension, required-destination
+  shadow-proofing, and pre-provision fail-closed deny snapshots
+  (`EGRESS-POLICY-004..006`, #3434, #3436)
 - the `egress_profile` enum on `ExecutionRunners::NetworkingPolicy` plus
   `Containers::Provision#networking_policy_with_egress_profile` so the
-  profile propagates without leaking Docker concepts (`CONTAINER-RUNTIME-020`,
-  #3437)
+  profile propagates through the portable runner contract
+  (`CONTAINER-RUNTIME-020`, #3437)
+- the per-host egress gateway contract, runner eligibility checks,
+  Docker gateway enforcement, contract stubs for Kubernetes and
+  managed-machine runtimes, denial audit persistence, and production
+  fail-closed behavior (`EGRESS-POLICY-007`, #3438)
 - the settings UI/API controllers and the run-detail audit surface that
   renders the persisted snapshot plus denied/redacted `EgressSecurityEvent`
   rows (#3440)
 
-What remains open (children of [#3441](https://github.com/viamin/paid/issues/3441)):
+What remains open:
 
-- the per-host egress gateway and production fail-closed enforcement
-  tracked by [#3438](https://github.com/viamin/paid/issues/3438)
-- the brokered research fetch/search service tracked by
+- the brokered research fetch/search service, request-budgeting, and
+  secret-extraction guards tracked by
   [#3439](https://github.com/viamin/paid/issues/3439)
 
-Because [#3438](https://github.com/viamin/paid/issues/3438) and
-[#3439](https://github.com/viamin/paid/issues/3439) are still open and
-their acceptance criteria (domain-aware gateway enforcement with
-production fail-closed runtime eligibility, and brokered research
-egress with secret-extraction guards) are not yet implemented, this RDR
-stays at **Partially Implemented** until those gaps land. Claiming
-umbrella closeout earlier would overstate the RDR's reach.
+Because the `research` profile acceptance criteria are still unmet and
+issue [#3439](https://github.com/viamin/paid/issues/3439) is still open
+as of 2026-08-23, this RDR remains **Partially Implemented**. Moving it
+to **Implemented** before the broker exists would overstate the shipped
+security boundary.
 
 ## Problem Statement
 
