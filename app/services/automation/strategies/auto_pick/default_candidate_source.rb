@@ -57,6 +57,14 @@ module Automation
             AND closed_prs.pr_review_phase IS DISTINCT FROM 'merged'
         SQL
 
+        MERGED_PR_CORRELATED_SUBQUERY = <<~SQL.squish.freeze
+          SELECT 1 FROM issues merged_prs
+          WHERE merged_prs.project_id = agent_runs.project_id
+            AND merged_prs.github_number = agent_runs.pull_request_number
+            AND merged_prs.is_pull_request = TRUE
+            AND merged_prs.pr_review_phase = 'merged'
+        SQL
+
         # Bounds how long a completed +create_pr+ run without a locally
         # synced resolution keeps its source issue out of auto-pick.
         # +agent_runs.pull_request_number+ is written atomically with the
@@ -233,6 +241,15 @@ module Automation
               # that already recorded a PR number cannot be immediately
               # re-picked while local PR sync is still catching up (#3432).
               .where.not(id: unsynced_pr_produced_issue_ids(project))
+              # Applies regardless of paid_state and is NOT time-bound: unlike
+              # the unsynced-gap guard above, a merged PR is a permanent
+              # resolution. Without this, an issue whose paid_state is later
+              # reset to new/failed/analyzed (by any flow outside the
+              # `completed` recovery branch below) would fall out of the
+              # unsynced-gap guard once PR_SYNC_GRACE_PERIOD elapses and
+              # become auto-pickable again, producing a duplicate PR for
+              # already-shipped work (#3432 review follow-up).
+              .where.not(id: merged_pr_produced_issue_ids(project))
               # Issues abandoned because every available provider hit the per-issue
               # retry cap (#2513) are not auto-pickable until the abandonment is
               # cleared (e.g. by a successful run).
@@ -260,6 +277,21 @@ module Automation
               .where.not(pull_request_number: nil).where.not(issue_id: nil)
               .where("agent_runs.completed_at > ?", PR_SYNC_GRACE_PERIOD.ago)
               .where("NOT EXISTS (#{CLOSED_PR_CORRELATED_SUBQUERY})")
+              .select(:issue_id)
+          end
+
+          # Issue ids with a completed +create_pr+ run whose recorded PR has
+          # synced locally and merged. Unlike +unsynced_pr_produced_issue_ids+
+          # above, this check is unconditional on time and on +paid_state+: a
+          # merged PR is a permanent resolution, so its source issue must stay
+          # ineligible for auto-pick even after the sync grace period elapses
+          # and even if something later resets the issue's +paid_state+ back
+          # to new/failed/analyzed outside the `completed` recovery branch in
+          # +eligible_scope+ (#3432 review follow-up).
+          def merged_pr_produced_issue_ids(project)
+            AgentRun.where(project: project, status: "completed", goal: "create_pr")
+              .where.not(pull_request_number: nil).where.not(issue_id: nil)
+              .where("EXISTS (#{MERGED_PR_CORRELATED_SUBQUERY})")
               .select(:issue_id)
           end
 

@@ -128,6 +128,25 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to be_empty
     end
 
+    it "permanently excludes an issue reset to a pre-completion paid_state after its PR merged, even past the grace window" do
+      # Reviewer follow-up on #3432/#3588: PR_SYNC_GRACE_PERIOD only bounds
+      # the *unsynced* gap. Once the PR issue row has synced and merged, the
+      # source issue must stay ineligible forever -- even if paid_state is
+      # later reset back to "new" (e.g. by StaleRunDetectorJob) and even
+      # after the grace window has long since elapsed -- otherwise auto-pick
+      # would re-pick the issue and open a duplicate PR for already-shipped
+      # work.
+      issue = create(:issue, project: project, paid_state: "new")
+      create(:agent_run, :completed, :automatic, project: project, issue: issue,
+        goal: "create_pr", auto_pick: true, pull_request_number: 42, pull_request_url: "https://example.test/pr/42",
+        completed_at: described_class::PR_SYNC_GRACE_PERIOD.ago - 1.minute)
+      create(:issue, :pull_request, :closed, project: project, github_number: 42, pr_review_phase: "merged")
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to be_empty
+    end
+
     it "recovers eligibility once the PR-sync grace window elapses without a synced PR row" do # @spec EAGER-QUEUE-009
       # Missing/stale PR sync state must not block an issue forever: once
       # PR_SYNC_GRACE_PERIOD has passed with no local PR issue row proving
