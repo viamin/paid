@@ -116,6 +116,18 @@ RSpec.describe Containers::ServiceProvisioner do
     allow(new_container).to receive(:exec).and_return([ [ "(0 rows)" ], [], 0 ])
   end
 
+  def stub_legacy_conflict_adopt(service_host:, running_container:, legacy_json:)
+    allow(Docker::Image).to receive(:create)
+    allow(Docker::Container).to receive(:create)
+      .and_raise(Docker::Error::ConflictError, "Conflict. The container name is already in use")
+    allow(Docker::Container).to receive(:get).with(service_host).and_return(running_container)
+    allow(running_container).to receive_messages(json: legacy_json, stop: nil, delete: nil)
+    allow(Docker::Container).to receive(:get).with(running_container.id).and_return(running_container)
+    allow(running_container).to receive(:exec).and_return([ [ "(0 rows)" ], [], 0 ])
+    allow(provisioner).to receive(:docker_healthcheck_status).and_return(nil)
+    allow(Containers::TcpHealthProbe).to receive(:open?).and_return(true)
+  end
+
   def stub_postgres_container_start(container_id)
     docker_container = instance_double(Docker::Container, id: container_id)
     allow(Docker::Image).to receive(:create)
@@ -269,6 +281,31 @@ RSpec.describe Containers::ServiceProvisioner do
         expect(legacy_container).to have_received(:stop).with(timeout: 10)
         expect(legacy_container).to have_received(:delete).with(force: true, v: true)
         expect(service_container.reload.docker_container_id).to eq("new456")
+        expect(result).to include("DATABASE_URL")
+      end
+
+      it "does not recreate a legacy container while another run still depends on it" do
+        # @spec CONTAINER-RUNTIME-004
+        service_container.update!(status: "running", docker_container_id: "legacy123")
+        other_issue = create(:issue, project: project)
+        create(:agent_run, :running, project: project, issue: other_issue,
+          service_container_ids: [ service_container.id ])
+
+        legacy_container = running_docker_container(
+          id: "legacy123",
+          networks: { NetworkPolicy::NETWORK_NAME => { "Aliases" => [ service_host ] } },
+          json: legacy_hardening_json(provisioner: provisioner, service_container: service_container)
+        )
+        allow(Docker::Container).to receive(:get).with("legacy123").and_return(legacy_container)
+        allow(legacy_container).to receive_messages(exec: [ [ "(0 rows)" ], [], 0 ], stop: nil, delete: nil)
+        allow(Docker::Container).to receive(:create).and_call_original
+
+        result = provisioner.provision(agent_run)
+
+        expect(legacy_container).not_to have_received(:stop)
+        expect(legacy_container).not_to have_received(:delete)
+        expect(Docker::Container).not_to have_received(:create)
+        expect(service_container.reload.docker_container_id).to eq("legacy123")
         expect(result).to include("DATABASE_URL")
       end
 
@@ -577,6 +614,28 @@ RSpec.describe Containers::ServiceProvisioner do
         expect(running_container).to have_received(:stop).with(timeout: 10)
         expect(running_container).to have_received(:delete).with(force: true, v: true)
         expect(service_container.reload.docker_container_id).to eq("new789")
+        expect(result).to include("DATABASE_URL")
+      end
+
+      it "does not recreate a legacy conflicting container while another run still depends on it" do
+        # @spec CONTAINER-RUNTIME-004
+        other_issue = create(:issue, project: project)
+        create(:agent_run, :running, project: project, issue: other_issue,
+          service_container_ids: [ service_container.id ])
+
+        legacy_json = legacy_hardening_json(
+          provisioner: provisioner,
+          service_container: service_container,
+          overrides: { "HostConfig" => { "CapDrop" => [], "SecurityOpt" => [] } }
+        )
+        stub_legacy_conflict_adopt(service_host: service_host, running_container: running_container,
+          legacy_json: legacy_json)
+
+        result = provisioner.provision(agent_run)
+
+        expect(running_container).not_to have_received(:stop)
+        expect(running_container).not_to have_received(:delete)
+        expect(service_container.reload.docker_container_id).to eq("running789")
         expect(result).to include("DATABASE_URL")
       end
 

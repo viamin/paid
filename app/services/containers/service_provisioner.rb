@@ -209,7 +209,7 @@ module Containers
         begin
           with_backend(resolve_backend(service_container: sc, requested_host: requested_host)) do
             sc.with_lock do
-              ensure_running!(sc)
+              ensure_running!(sc, agent_run: agent_run)
             end
 
             if sc.image.include?("postgres")
@@ -422,10 +422,11 @@ module Containers
       @backend || Containers.backend
     end
 
-    def ensure_running!(service_container)
+    def ensure_running!(service_container, agent_run:)
       if service_container.running?
         if (docker_container = running_docker_container(service_container.docker_container_id))
-          if recreate_legacy_container!(service_container, docker_container, docker_container.json, source: "running")
+          if recreate_legacy_container!(service_container, docker_container, docker_container.json,
+            source: "running", agent_run: agent_run)
             # Recreate below with the hardened config.
           else
             ensure_connected_to_network!(service_container)
@@ -438,15 +439,15 @@ module Containers
         end
       end
 
-      start_container!(service_container)
+      start_container!(service_container, agent_run: agent_run)
     end
 
-    def start_container!(service_container)
+    def start_container!(service_container, agent_run:)
       service_container.update!(status: "starting")
       adopted = false
 
       pull_image(service_container.image)
-      docker_container = create_or_replace_container!(service_container)
+      docker_container = create_or_replace_container!(service_container, agent_run: agent_run)
 
       # resolve_name_conflict! may adopt an already-running container,
       # updating status to "running" before returning. Skip start if so.
@@ -537,16 +538,16 @@ module Containers
       # transaction to ensure it is not rolled back.
     end
 
-    def create_or_replace_container!(service_container)
+    def create_or_replace_container!(service_container, agent_run:)
       create_docker_container(service_container)
     rescue Docker::Error::ConflictError, Docker::Error::ServerError => e
       raise unless e.message&.include?("Conflict") && e.message&.include?("already in use")
 
       log_info("service_provisioner.container_name_conflict", name: service_container.name)
-      resolve_name_conflict!(service_container)
+      resolve_name_conflict!(service_container, agent_run: agent_run)
     end
 
-    def resolve_name_conflict!(service_container)
+    def resolve_name_conflict!(service_container, agent_run:)
       existing = backend.get_container(runtime_name(service_container))
       info = existing.json
       labels = info.dig("Config", "Labels") || {}
@@ -561,7 +562,7 @@ module Containers
       end
 
       if info.dig("State", "Running")
-        if recreate_legacy_container!(service_container, existing, info, source: "conflict")
+        if recreate_legacy_container!(service_container, existing, info, source: "conflict", agent_run: agent_run)
           return create_docker_container(service_container)
         end
 
@@ -882,8 +883,22 @@ module Containers
       nil
     end
 
-    def recreate_legacy_container!(service_container, docker_container, info, source:)
+    # Recreates a running container with the current hardening profile, but
+    # only when this agent run is the sole in-flight consumer. Other runs may
+    # already be attached to the shared container (CONTAINER-RUNTIME-004), so
+    # tearing it down here would pull it out from under them; defer the
+    # upgrade to normal #cleanup, which only stops containers once no
+    # in-flight run still references them.
+    def recreate_legacy_container!(service_container, docker_container, info, source:, agent_run:)
       return false unless legacy_hardening_config?(service_container, info)
+
+      if service_container.capacity_inflight_agent_run_count(excluding: agent_run).positive?
+        log_info("service_provisioner.legacy_hardening_recreate_deferred",
+          name: service_container.name,
+          container_id: docker_container.id,
+          source: source)
+        return false
+      end
 
       log_info("service_provisioner.legacy_hardening_recreate",
         name: service_container.name,
