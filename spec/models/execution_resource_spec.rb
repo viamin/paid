@@ -25,9 +25,10 @@ RSpec.describe ExecutionResource do
     end
 
     it "preserves an existing next_cleanup_at set by a prior failure" do
+      scheduled_cleanup_at = 30.minutes.from_now.round(6)
       resource.update!(
         state: "cleanup_pending",
-        next_cleanup_at: 30.minutes.from_now,
+        next_cleanup_at: scheduled_cleanup_at,
         cleanup_attempts: 2
       )
 
@@ -35,7 +36,7 @@ RSpec.describe ExecutionResource do
 
       # record_cleanup_failure! already wrote a future backoff — preserve it
       # instead of resetting the schedule on every transition.
-      expect(resource.reload.next_cleanup_at).to be_within(1.second).of(30.minutes.from_now)
+      expect(resource.reload.next_cleanup_at).to eq(scheduled_cleanup_at)
     end
   end
 
