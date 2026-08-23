@@ -660,6 +660,11 @@ RSpec.describe Activities::FetchIssuesActivity do
     end
 
     context "when the enhance_issue needs-input label is still present" do
+      let(:project) do
+        create(:project, :with_github_installation,
+          label_mappings: { "build" => "paid-build", "plan" => "paid-plan" })
+      end
+
       let!(:issue) do
         create(:issue, :needs_input,
           project: project,
@@ -688,6 +693,7 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
 
       before do
+        allow(Github::AppInstallation).to receive(:token_for).and_return("fake-app-installation-token")
         stub_issues_by_label(nil => [ github_issue ])
       end
 
@@ -714,7 +720,6 @@ RSpec.describe Activities::FetchIssuesActivity do
 
       it "keeps comment-backed clarifying questions in needs-input" do
         issue.update!(needs_input_questions: nil, body: "No clarifying questions here")
-        allow(project).to receive(:paid_bot_author?) { |login| login == "paid-agents[bot]" }
         allow(github_client).to receive(:issue_comments).with(project.full_name, issue.github_number).and_return([
           build_enhancement_comment(
             login: "paid-agents[bot]",
