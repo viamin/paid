@@ -1,28 +1,6 @@
 import { Controller } from "@hotwired/stimulus"
-import { marked } from "marked"
 import hljs from "highlight.js/lib/common"
-
-const SAFE_URL_SCHEMES = /^(https?|mailto):/i
-
-function escapeAttribute(value) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-}
-
-const renderer = new marked.Renderer()
-
-renderer.link = function ({ href, tokens, text }) {
-  const label = tokens ? this.parser.parseInline(tokens) : text
-  if (!href) return label
-  if (!SAFE_URL_SCHEMES.test(href)) return label
-  const escaped = escapeAttribute(href)
-  return `<a href="${escaped}" rel="noopener noreferrer">${label}</a>`
-}
-
-renderer.image = ({ text }) => text || ""
+import { renderMarkdown } from "../lib/safe_markdown"
 
 export default class extends Controller {
   static targets = ["content"]
@@ -43,15 +21,10 @@ export default class extends Controller {
     if (!this.markdownValue || !this.hasContentTarget) return
 
     const rawContent = this.contentTarget.dataset.rawContent || ""
-    const safeContent = this.escapeHtml(rawContent)
 
     try {
       this.disablePlainTextFallback()
-      this.contentTarget.innerHTML = marked.parse(safeContent, {
-        breaks: true,
-        gfm: true,
-        renderer
-      })
+      this.contentTarget.innerHTML = renderMarkdown(rawContent)
 
       this.decorateCodeBlocks()
     } catch {
@@ -123,13 +96,6 @@ export default class extends Controller {
       wrapper.append(header, body)
       body.append(gutter, pre)
     })
-  }
-
-  escapeHtml(content) {
-    return content
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
   }
 
   enablePlainTextFallback() {

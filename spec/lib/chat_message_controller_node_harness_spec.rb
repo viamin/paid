@@ -32,14 +32,21 @@ class ChatMessageControllerNodeHarness
       }
     };
 
+    const safeMarkdownSource = fs.readFileSync("app/javascript/lib/safe_markdown.js", "utf8");
+    const transformedSafeMarkdown = safeMarkdownSource
+      .replace('import { marked } from "marked"', "")
+      .replace("export { SAFE_URL_SCHEMES, escapeHtml, renderMarkdown }", "return { SAFE_URL_SCHEMES, escapeHtml, renderMarkdown }");
+
+    const { renderMarkdown } = new Function("marked", transformedSafeMarkdown)(marked);
+
     const source = fs.readFileSync("app/javascript/controllers/chat_message_controller.js", "utf8");
     const transformed = source
       .replace('import { Controller } from "@hotwired/stimulus"', "class Controller {}")
-      .replace('import { marked } from "marked"', "")
+      .replace('import { renderMarkdown } from "../lib/safe_markdown"', "")
       .replace('import hljs from "highlight.js/lib/common"', "const hljs = { highlightElement() {} }")
       .replace("export default class extends Controller {", "return class ChatMessageController extends Controller {");
 
-    const ChatMessageController = new Function("marked", transformed)(marked);
+    const ChatMessageController = new Function("renderMarkdown", transformed)(renderMarkdown);
 
     function makeController(rawContent) {
       const classes = new Set(["chat-markdown"]);

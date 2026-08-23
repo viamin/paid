@@ -67,7 +67,9 @@
                 Question <%= index + 1 %> of <%= @questions.size %>
               </span>
             </div>
-            <h3 class="text-lg font-medium text-gray-900 mb-4"><%= question %></h3>
+            <h3 class="text-lg font-medium text-gray-900 mb-4"
+                data-controller="markdown-text"
+                data-markdown-text-content-value="<%= question %>"><%= question %></h3>
 
             <%= f.hidden_field "questions[]", value: question, id: "question_#{index}" %>
 

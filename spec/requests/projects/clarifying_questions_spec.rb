@@ -59,6 +59,48 @@ RSpec.describe "Projects::ClarifyingQuestions" do
       end
     end
 
+    context "when a question contains markdown" do
+      let(:markdown_question) { "Should `foo_bar` use **snake_case** or [camelCase](https://example.com)?" }
+      let(:comment_body) do
+        <<~COMMENT
+          <!-- paid:enhance-issue -->
+
+          ## Clarifying questions
+          1. #{markdown_question}
+
+          ## Current context
+          - Some context
+        COMMENT
+      end
+
+      before do
+        allow(github_client).to receive(:issue_comments).and_return([ trusted_comment ])
+      end
+
+      it "wires the raw question text into the markdown-text controller for client-side rendering" do
+        get project_issue_clarifying_questions_path(project, issue)
+
+        heading = Nokogiri::HTML(response.body).at_css('[data-controller="markdown-text"]')
+
+        expect(heading["data-markdown-text-content-value"]).to eq(markdown_question)
+      end
+
+      it "escapes the fallback text so it never renders as raw HTML before JS runs" do
+        get project_issue_clarifying_questions_path(project, issue)
+
+        expect(response.body).to include(CGI.escapeHTML(markdown_question))
+        expect(response.body).not_to include("<strong>snake_case</strong>")
+      end
+
+      it "keeps the hidden field value equal to the raw, unrendered question text" do
+        get project_issue_clarifying_questions_path(project, issue)
+
+        hidden_field = Nokogiri::HTML(response.body).at_css("#question_0")
+
+        expect(hidden_field["value"]).to eq(markdown_question)
+      end
+    end
+
     context "when no clarifying questions found" do
       before do
         allow(github_client).to receive(:issue_comments).and_return([])

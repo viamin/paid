@@ -67,6 +67,9 @@ application.register("local-time", LocalTimeController)
 import LogTruncateController from "./log_truncate_controller"
 application.register("log-truncate", LogTruncateController)
 
+import MarkdownTextController from "./markdown_text_controller"
+application.register("markdown-text", MarkdownTextController)
+
 import MarketplacePickerController from "./marketplace_picker_controller"
 application.register("marketplace-picker", MarketplacePickerController)
 
