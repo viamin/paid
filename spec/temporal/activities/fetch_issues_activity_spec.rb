@@ -500,7 +500,7 @@ RSpec.describe Activities::FetchIssuesActivity do
         stub_issues_by_label(nil => [ github_issue ])
       end
 
-      it "returns a recheck request and suppresses normal label evaluation" do
+      it "returns a recheck request and suppresses normal label evaluation" do # @spec ISSUE-ENHANCEMENT-009
         result = activity.execute(project_id: project.id)
 
         expect(result[:enhance_issue_rechecks]).to contain_exactly(

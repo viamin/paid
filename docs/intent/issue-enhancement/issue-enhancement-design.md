@@ -69,19 +69,26 @@ and authenticates via the DB-stored runner credential. The run itself is
 comment-only at the workflow level — `RunAgentActivity` skips git
 post-processing and `workspace_mount_mode` is `:rw` so clone can populate
 `/workspace` — and the agent prompt instructs the agent accordingly. This
-moved the following claims from aspirational to behavioral, and
-ISSUE-ENHANCEMENT-006 / 007 from `[D]` to `[x]`:
+moved ISSUE-ENHANCEMENT-006 from `[D]` to `[x]` (containerized execution and
+credential unification, RDR R1/R2).
+
+**RDR-052 Phase 2 (#3255) — codebase-grounded questions and re-evaluation.**
+Building on Phase 1's repository access, Phase 2 changed the `enhance_issue`
+prompt and re-evaluation flow to actually ground question-generation and the
+sufficiency verdict in the cloned repository rather than only the
+knowledge-base snapshot. This moved the following claims from aspirational to
+behavioral, and ISSUE-ENHANCEMENT-008 / 009 from `[D]` to `[x]`:
 
 - **Self-answer what the code determines.** The agent explores the repository,
   retrieval results, and knowledge-base context to answer for itself the things
   the code already says — existing models/types, platform targets, persistence
   format, current architecture and patterns. It SHALL NOT ask the human
   clarifying questions whose answers are directly readable from the repository
-  (ISSUE-ENHANCEMENT-006 / RDR R3); it asks only about genuine product, scope,
+  (ISSUE-ENHANCEMENT-008 / RDR R3); it asks only about genuine product, scope,
   or intent ambiguities the code cannot resolve.
 - **Grounded sufficiency verdict.** On re-evaluation, the agent judges readiness
   against the user's answers TOGETHER WITH the actual codebase it reads, not
-  the knowledge-base snapshot alone (ISSUE-ENHANCEMENT-007 / RDR R4). This
+  the knowledge-base snapshot alone (ISSUE-ENHANCEMENT-009 / RDR R4). This
   keeps the readiness gatekeeper at least as informed as the `create_pr` run it
   authorizes.
 - **Grounded implementation context.** When the issue is ready, the posted

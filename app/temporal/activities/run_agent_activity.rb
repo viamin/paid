@@ -3847,6 +3847,8 @@ module Activities
 
     ENHANCE_ISSUE_GOAL_PROMPT_SLUG = "goal.enhance_issue"
 
+    # @spec ISSUE-ENHANCEMENT-008
+    # @spec ISSUE-ENHANCEMENT-009
     FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT = <<~'AUGMENTED'
       {{base_prompt}}
 
