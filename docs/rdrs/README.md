@@ -200,7 +200,7 @@ Scaling & Distribution above).
 
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
-| [RDR-051](RDR-051-lid-aware-agent-runs.md) | LID-Aware Agent Runs and Brownfield Adoption | Partially Implemented | P1 |
+| [RDR-051](RDR-051-lid-aware-agent-runs.md) | LID-Aware Agent Runs and Brownfield Adoption | Implemented | P1 |
 
 ### Feature Creation
 
