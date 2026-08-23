@@ -50,6 +50,18 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
     end
   end
 
+  def fallback_key_export?(run_script)
+    legacy_export = 'echo "RAILS_TEST_KEY=$RAILS_MASTER_KEY_FALLBACK" >> "$GITHUB_ENV"'
+    multiline_export_fragments = [
+      'echo "RAILS_TEST_KEY<<${delimiter}"',
+      "printf '%s\\n' \"$RAILS_MASTER_KEY_FALLBACK\"",
+      'echo "${delimiter}"',
+      '} >> "$GITHUB_ENV"'
+    ]
+
+    run_script.include?(legacy_export) || multiline_export_fragments.all? { |fragment| run_script.include?(fragment) }
+  end
+
   def prepare_workspace_cache_steps_for(path)
     workflow = workflow_config(path)
 
@@ -130,7 +142,7 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
         include("RAILS_MASTER_KEY_FALLBACK" => "${{ secrets.RAILS_MASTER_KEY }}")
       ), "expected #{path} to source the fallback key from RAILS_MASTER_KEY"
       expect(normalize_steps_for(path).map { |step| step.fetch("run") }).to all(
-        include('echo "RAILS_TEST_KEY=$RAILS_MASTER_KEY_FALLBACK" >> "$GITHUB_ENV"')
+        satisfy { |run_script| fallback_key_export?(run_script) }
       ), "expected #{path} to export the fallback key into RAILS_TEST_KEY"
     end
   end
