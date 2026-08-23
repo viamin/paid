@@ -7,7 +7,7 @@ module ExecutionAuditEvents
       "subscription_auth" => ExecutionAuditEvent::CREDENTIAL_CLASS_SUBSCRIPTION_AUTH,
       "direct_outbound" => ExecutionAuditEvent::CREDENTIAL_CLASS_DIRECT_OUTBOUND
     }.freeze
-    RESOURCE_EVENT_PREFIX = "execution.resource."
+    RESOURCE_EVENT_PREFIX = "execution.resource_"
 
     class << self
       def record(event_name:, actor_id:, agent_run: nil, project: nil, account: nil, actor_type: "system",

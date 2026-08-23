@@ -76,8 +76,10 @@ module Activities
       }
       attrs[:parent_workflow_id] = input[:parent_workflow_id] if input[:parent_workflow_id]
 
+      created_new_run = false
       agent_run = ActiveRecord::Base.transaction do
         created_run = find_or_create_agent_run(attrs)
+        created_new_run = created_run.previously_new_record?
         maybe_inject_style_guides!(
           agent_run: created_run,
           prompt_version: prompt_version,
@@ -91,7 +93,7 @@ module Activities
         )
         created_run
       end
-      if agent_run.previously_new_record?
+      if created_new_run
         ExecutionAuditEvents::Lifecycle.record(
           event_name: "execution.requested",
           actor_id: "activities.create_agent_run",
