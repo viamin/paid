@@ -302,6 +302,11 @@ class ProcessRunQueueJob < ApplicationJob
           next
         end
 
+        # Runner spend is enforced only after the run has a concrete runner for
+        # this dispatch attempt. That means late-bound auto-pick runs flow
+        # through the guard immediately below, while rerouted runs are re-queued
+        # and re-enter the same guard on the next loop iteration before they can
+        # dispatch on the newly bound runner.
         if (runner_spend_result = runner_infrastructure_spend_result(next_run, selected_host))
           log_runner_spend_skip(next_run, runner_spend_result)
           blocked_runner_ids.add(next_run.runner_id) if next_run.runner_id
@@ -1181,14 +1186,17 @@ class ProcessRunQueueJob < ApplicationJob
     # due to a network timeout, the workflow may have started server-side.
     # Leaving the ID allows StaleRunDetectorJob to find and cancel the
     # potentially-orphaned workflow rather than losing track of it.
-    return false unless start_workflow!(
+    workflow_handle = start_workflow!(
       agent_run,
       workflow_input: workflow_input,
       workflow_id: workflow_id
     )
-    record_provisioning_start_after_start(
+    return false unless workflow_handle
+
+    return false unless record_provisioning_start_after_start(
       agent_run,
       workflow_id: workflow_id,
+      workflow_handle: workflow_handle,
       planned_container_host: planned_container_host
     )
 
@@ -1240,13 +1248,36 @@ class ProcessRunQueueJob < ApplicationJob
     false
   end
 
-  def record_provisioning_start_after_start(agent_run, workflow_id:, planned_container_host:)
+  def record_provisioning_start_after_start(agent_run, workflow_id:, workflow_handle:, planned_container_host:)
     record_provisioning_start!(agent_run, planned_container_host)
   rescue => e
+    cancel_started_workflow(workflow_handle, agent_run, workflow_id)
+    force_fail_run(agent_run, error: "Failed to persist provisioning metadata after workflow start: #{e.message}")
     Rails.logger.error(
       message: "process_run_queue.provisioning_metadata_persist_failed",
       agent_run_id: agent_run.id,
       workflow_id: workflow_id,
+      error: e.message
+    )
+    false
+  end
+
+  def cancel_started_workflow(workflow_handle, agent_run, workflow_id)
+    workflow_handle.cancel
+  rescue Temporalio::Error::RPCError => e
+    raise unless e.code == Temporalio::Error::RPCError::Code::NOT_FOUND
+
+    Rails.logger.info(
+      message: "process_run_queue.provisioning_metadata_cancel_not_found",
+      agent_run_id: agent_run.id,
+      workflow_id: workflow_id
+    )
+  rescue => e
+    Rails.logger.warn(
+      message: "process_run_queue.provisioning_metadata_cancel_failed",
+      agent_run_id: agent_run.id,
+      workflow_id: workflow_id,
+      error_class: e.class.name,
       error: e.message
     )
   end

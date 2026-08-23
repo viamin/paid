@@ -961,16 +961,17 @@ RSpec.describe ProcessRunQueueJob do
 
     # @spec INFRA-SPEND-002
     # @spec OBSERVABILITY-002
-    it "keeps the run running when provisioning metadata persistence fails after workflow start" do
+    it "cancels and fails the run when provisioning metadata persistence fails after workflow start" do
       queued_run = create(:agent_run, :queued)
 
       allow(job).to receive(:record_provisioning_start!).and_raise(StandardError, "metadata write failed")
+      expect(workflow_handle).to receive(:cancel)
 
       result = job.send(:start_claimed_run, queued_run)
 
-      expect(result).to be(true)
-      expect(queued_run.reload.status).to eq("running")
-      expect(queued_run.error_message).to be_nil
+      expect(result).to be(false)
+      expect(queued_run.reload.status).to eq("failed")
+      expect(queued_run.error_message).to include("metadata write failed")
       expect(queued_run.temporal_workflow_id).to be_present
       expect(queued_run.provisioning_started_at).to be_nil
       expect(queued_run.external_metadata["provisioning_started_at"]).to be_nil
@@ -1674,6 +1675,33 @@ RSpec.describe ProcessRunQueueJob do
         described_class.new.perform
 
         queued_run.reload
+        expect(queued_run.status).to eq("rate_limited")
+        expect(queued_run.rate_limited_until).to eq(available_at)
+        expect(queued_run.external_metadata["capacity_park_reason"]).to eq("runner_infra_spend_hourly_limit_exceeded")
+        expect_runner_spend_skip_log(reason: "runner_infra_spend_hourly_limit_exceeded")
+      end
+
+      # @spec INFRA-SPEND-002
+      # @spec INFRA-SPEND-003
+      it "applies runner spend enforcement after late binding an auto-pick run" do
+        project = create(:project)
+        user = project.created_by
+        runner = user.runners.kept_only.find_by!(runner_key: "claude", auth_type: "subscription")
+        user.runners.kept_only.where.not(id: runner.id).update_all(enabled_for_agent_runs: false)
+        queued_run = create(:agent_run, :queued, project: project, runner: nil, agent_type: "claude_code")
+        allow(Rails.logger).to receive(:info)
+        available_at = Time.utc(2026, 8, 23, 13, 0, 0)
+
+        allow(Capacity::InfrastructureSpendGuard).to receive(:call).and_call_original
+        allow(Capacity::InfrastructureSpendGuard).to receive(:call)
+          .with(hash_including(runner: runner, agent_run: queued_run))
+          .and_return(runner_spend_denied_result(available_at: available_at))
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        queued_run.reload
+        expect(queued_run.runner_id).to eq(runner.id)
         expect(queued_run.status).to eq("rate_limited")
         expect(queued_run.rate_limited_until).to eq(available_at)
         expect(queued_run.external_metadata["capacity_park_reason"]).to eq("runner_infra_spend_hourly_limit_exceeded")

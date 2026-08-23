@@ -48,7 +48,7 @@ module Capacity
 
     def recover_global_daily_threshold!
       limit_cents = Capacity::InfrastructureLimits.current(env: env)[:global_infra_spend_daily_limit_cents].to_i
-      return if limit_cents <= 0
+      return disable_auto_global_control! if limit_cents <= 0
 
       check = threshold_checks.find { |entry| entry[:source] == GLOBAL_DAILY_SOURCE }
       return unless check
@@ -364,6 +364,25 @@ module Capacity
         current_spend_cents,
         current_spend_cents,
         check[:ends_at]
+      )
+    end
+
+    def disable_auto_global_control!
+      control = ExecutionControl.find_by(scope: "global", enabled: true)
+      return unless control&.metadata.to_h["source"] == AUTO_CONTROL_SOURCE
+
+      control.update!(
+        enabled: false,
+        metadata: control.metadata.to_h.merge(
+          "recovered_at" => now.iso8601,
+          "disabled_by_threshold_config" => true
+        )
+      )
+
+      Rails.logger.info(
+        message: "capacity.infrastructure_spend_threshold_disabled",
+        scope: "global",
+        period: "daily"
       )
     end
 

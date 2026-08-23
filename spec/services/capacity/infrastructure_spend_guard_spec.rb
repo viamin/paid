@@ -133,6 +133,29 @@ RSpec.describe Capacity::InfrastructureSpendGuard do
     expect(control.reload.enabled).to be(true)
   end
 
+  # @spec INFRA-SPEND-004
+  it "clears the auto-created global execution control when the threshold is disabled" do
+    allow(Capacity::InfrastructureLimits).to receive(:current).and_return(spend_limits(global_daily: 100))
+    allow(Capacity::InfrastructureSpend).to receive_messages(
+      spent_cents: 90,
+      projected_cents_for_host: 20
+    )
+
+    result = call_guard(now: Time.utc(2026, 8, 23, 12, 15, 0))
+
+    expect(result[:allowed]).to be(false)
+    control = ExecutionControl.find_by!(scope: "global")
+    expect(control.enabled).to be(true)
+
+    allow(Capacity::InfrastructureLimits).to receive(:current).and_return(spend_limits(global_daily: 0))
+
+    described_class.recover_global_daily_threshold!(now: Time.utc(2026, 8, 23, 13, 0, 0))
+
+    expect(control.reload.enabled).to be(false)
+    expect(control.metadata["disabled_by_threshold_config"]).to be(true)
+    expect(control.metadata["recovered_at"]).to be_present
+  end
+
   # @spec INFRA-SPEND-005
   it "previews a breach without publishing notifications, audit events, or execution control changes" do
     allow(Capacity::InfrastructureLimits).to receive(:current).and_return(spend_limits(project_hourly: 100))
