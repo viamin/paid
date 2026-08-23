@@ -10380,6 +10380,34 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       )
     end
 
+    def stub_started_tdd_implementation_after_approval
+      allow(github_client).to receive(:issue_events)
+        .with(project.full_name, 42)
+        .and_return([
+          OpenStruct.new(
+            event: "labeled",
+            actor: OpenStruct.new(login: "viamin"),
+            label: OpenStruct.new(name: "paid-tests-approved"),
+            created_at: 2.hours.ago
+          )
+        ])
+      create(:agent_run,
+        project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        tdd_phase: "test_fixing",
+        status: "completed",
+        created_at: 1.hour.ago,
+        started_at: 1.hour.ago,
+        completed_at: 50.minutes.ago)
+      stub_github_for_pr(
+        draft: true,
+        reviews: [],
+        review_threads: [],
+        checks: [ { name: "rspec", conclusion: "success" } ]
+      )
+    end
+
     def expect_stale_tdd_review_to_request_fresh_review(result, blocked_label:)
       expect(automation_scan_results(result).first[:triggers]).to contain_exactly(
         hash_including(type: "paid_agent_review_pending")
@@ -10416,6 +10444,19 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       )
       expect(decision_types_for(result)).to include("queue_create_pr_run")
       expect(decision_types_for(result)).not_to include("queue_review_run")
+    end
+
+    it "falls through to the normal draft scan after implementation already started for the approved test revision" do
+      project.update!(tdd_mode: "strict")
+      pull_request.update!(labels: [ "paid-generated", "paid-automation", "paid-tests-approved" ])
+      stub_started_tdd_implementation_after_approval
+
+      result = activity.execute(project_id: project.id)
+
+      expect(automation_scan_results(result).first[:triggers]).to contain_exactly(
+        hash_including(type: "ready_for_owner")
+      )
+      expect(decision_types_for(result)).not_to include("queue_create_pr_run")
     end
 
     it "routes strict-mode rejected tests back to test revision instead of implementation" do

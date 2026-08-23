@@ -100,6 +100,7 @@ module Activities
     def execute(input)
       @pr_progress_states = {}
       @live_pr_states = {}
+      @label_applied_at_cache = {}
       # Per-scan caches must be reset each execute: bin/temporal_worker builds
       # activity instances once at boot and the temporalio SDK invokes execute
       # on the same instance for every task, so a memo without a reset outlives
@@ -667,6 +668,11 @@ module Activities
       return :not_applicable unless project.tdd_mode.in?(%w[strict non_strict])
       return :not_applicable unless tdd_test_review_pr?(issue)
 
+      if issue.has_label?(TDD_TESTS_APPROVED_LABEL) &&
+          tdd_implementation_started_for_current_revision?(project, client, issue)
+        return :not_applicable
+      end
+
       return tdd_followup_trigger(issue,
         type: "tdd_tests_approved",
         details: "Test review approved; implementation may begin") if issue.has_label?(TDD_TESTS_APPROVED_LABEL)
@@ -742,6 +748,40 @@ module Activities
         .completed
         .order(completed_at: :desc)
         .first
+    end
+
+    def tdd_implementation_started_for_current_revision?(project, client, issue)
+      approved_at = latest_label_applied_at(client, project, issue, TDD_TESTS_APPROVED_LABEL)
+      return false unless approved_at
+
+      pr_run_history_scope(project, issue)
+        .where(goal: "create_pr", source_pull_request_number: issue.github_number, tdd_phase: "test_fixing")
+        .where.not(status: "retried")
+        .where(created_at: approved_at..)
+        .exists?
+    end
+
+    def latest_label_applied_at(client, project, issue, label)
+      cache_key = [ project.id, issue.github_number, label ]
+      return @label_applied_at_cache[cache_key] if @label_applied_at_cache.key?(cache_key)
+
+      events = client.issue_events(project.full_name, issue.github_number)
+      @label_applied_at_cache[cache_key] = Array(events)
+        .select { |event| event.event == "labeled" && event_label_name(event) == label }
+        .filter_map(&:created_at)
+        .max
+    rescue GithubClient::RateLimitError
+      raise
+    rescue => e
+      logger.warn(
+        message: "github_sync.issue_events_fetch_failed",
+        project_id: project.id,
+        issue_id: issue.id,
+        github_number: issue.github_number,
+        error_class: e.class.name,
+        error: e.message
+      )
+      @label_applied_at_cache[cache_key] = nil
     end
 
     def tdd_test_review_pr?(issue)
