@@ -72,7 +72,7 @@ module Tools
       end
 
       def dispatch_read_only(name:, arguments:, user:, session:)
-        tool_class = read_only_tool_classes_for(user:).find { |klass| klass.tool_name == name }
+        tool_class = read_only_tools_for(session:, user:).find { |klass| klass.tool_name == name }
         raise ArgumentError, "Unknown tool: #{name}" unless tool_class
         raise ArgumentError, "Tool arguments must be a JSON object" unless arguments.is_a?(Hash)
 
