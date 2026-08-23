@@ -54,7 +54,7 @@ module Capacity
       return unless check
 
       current_spend_cents = spend_cents_for(check)
-      projected_spend_cents = current_spend_cents + projected_cents_for(check)
+      projected_spend_cents = current_spend_cents + recovery_projected_cents_for(check)
       return if projected_spend_cents > check[:limit_cents]
 
       recover_threshold(check, current_spend_cents)
@@ -208,6 +208,20 @@ module Capacity
           env: env
         )
       end
+    end
+
+    def recovery_projected_cents_for(check)
+      return projected_cents_for(check) if selected_host.present?
+
+      rate_cents_per_hour = Capacity::InfrastructureLimits.max_rate_cents_per_hour(env: env)
+      return 0 if rate_cents_per_hour <= 0
+
+      projection_seconds = limits[:infra_spend_projection_seconds].to_i
+      return 0 if projection_seconds <= 0
+
+      remaining_seconds = [ check[:ends_at] - now, 0 ].max
+      billed_seconds = [ projection_seconds, remaining_seconds ].min
+      Capacity::InfrastructureSpend.cost_for_seconds(rate_cents_per_hour, billed_seconds)
     end
 
     def check_cache_key(check)

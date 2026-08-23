@@ -81,6 +81,16 @@ module Capacity
         )
       end
 
+      def max_rate_cents_per_hour(env: ENV)
+        configured_rates = env.filter_map do |key, value|
+          next unless key.match?(/\AINFRA_SPEND_RATE_CENTS_PER_HOUR(?:__.+)?\z/)
+
+          Integer(value, exception: false)
+        end
+
+        (configured_rates << integer_env(env, "INFRA_SPEND_RATE_CENTS_PER_HOUR")).compact.max.to_i
+      end
+
       def production_errors(env: ENV)
         REQUIRED_PRODUCTION_KEYS.filter_map do |key|
           value = Integer(env[key], exception: false)
