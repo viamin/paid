@@ -322,6 +322,12 @@ arrows:
     specs: docs/intent/tdd-write-guards/tdd-write-guards-specs.md
     parent: PAID
     taxonomy: runtime
+  tdd-test-review-prs:
+    title: TDD Test-Review PRs
+    path: docs/intent/tdd-test-review-prs/tdd-test-review-prs-design.md
+    specs: docs/intent/tdd-test-review-prs/tdd-test-review-prs-specs.md
+    parent: PAID
+    taxonomy: runtime
   rdr-rollout-guards:
     title: RDR Rollout Guards
     path: docs/intent/rdr-rollout-guards/rdr-rollout-guards-design.md

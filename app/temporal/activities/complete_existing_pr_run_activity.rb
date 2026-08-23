@@ -48,6 +48,7 @@ module Activities
         return result(agent_run.reload) unless completed
 
         record_draft_review_round_if_needed(agent_run)
+        refresh_pull_request_body(client, project, pr, agent_run)
         post_update_comment(client, project, pr.number, agent_run)
 
         agent_run.log!("system", "Pushed updates to existing PR: #{pr.html_url}")
@@ -95,6 +96,25 @@ module Activities
         message: "agent_execution.existing_pr_comment_failed",
         agent_run_id: agent_run.id,
         pr_number: pr_number,
+        error_class: e.class.name,
+        error: e.message
+      )
+    end
+
+    # @spec TDD-PR-001
+    def refresh_pull_request_body(client, project, pr, agent_run)
+      updated_body = PullRequests::ReviewSurface.call(body: pr.body.to_s, agent_run: agent_run)
+      return if updated_body == pr.body.to_s
+
+      client.update_pull_request(project.full_name, pr.number, body: updated_body)
+      sync_pull_request_record(client, project, pr.number)
+    rescue Temporalio::Error::CanceledError
+      raise
+    rescue => e
+      logger.warn(
+        message: "agent_execution.existing_pr_body_refresh_failed",
+        agent_run_id: agent_run.id,
+        pr_number: pr.number,
         error_class: e.class.name,
         error: e.message
       )
@@ -151,6 +171,12 @@ module Activities
         },
         enforce_guardrails: false
       )
+    end
+
+    # @spec TDD-PR-001
+    def sync_pull_request_record(client, project, pr_number)
+      github_issue = client.issue(project.full_name, pr_number)
+      Issues::UpsertFromGithub.call(project: project, github_issue: github_issue)
     end
   end
 end
