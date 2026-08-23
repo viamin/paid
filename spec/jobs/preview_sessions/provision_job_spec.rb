@@ -46,6 +46,26 @@ RSpec.describe PreviewSessions::ProvisionJob do
     expect_preview_ingress_grant(preview_session.reload.agent_run)
   end
 
+  # @spec EXECUTION-AUDIT-004
+  it "records the preview ingress exception grant in the execution audit trail" do
+    preview_session = create(:preview_session, :provisioning, project:, account:, created_by: user, branch_name: "feature/live-preview")
+    provision = instance_double(Previews::Provision, call: true)
+
+    stub_preview_provision(provision)
+
+    described_class.perform_now(preview_session.id)
+
+    event = ExecutionAuditEvent.for_agent_run(preview_session.reload.agent_run)
+      .by_event_name("execution.policy_exception_granted")
+      .last
+
+    expect(event.metadata).to include(
+      "exception_kind" => "preview",
+      "exception_scope" => "paid_mediated_tunnel",
+      "granted_by" => "user:#{user.id}"
+    )
+  end
+
   it "invokes the preview provisioner and completes the synthetic run" do
     preview_session = create(:preview_session, :provisioning, project:, account:, created_by: user, branch_name: "feature/live-preview")
     provision = instance_double(Previews::Provision, call: true)

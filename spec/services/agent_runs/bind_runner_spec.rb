@@ -25,6 +25,22 @@ RSpec.describe AgentRuns::BindRunner do
         expect(run.agent_type).to eq("codex")
         expect(run).to be_valid
       end
+
+      # @spec EXECUTION-AUDIT-004
+      it "records the runner selection in the execution audit trail" do
+        described_class.call(agent_run: run)
+
+        event = ExecutionAuditEvent.for_agent_run(run).by_event_name("execution.runner_selected").last
+        expect(event).to have_attributes(
+          runner_key: "codex",
+          actor_type: "system",
+          actor_id: "agent_runs.bind_runner"
+        )
+        expect(event.metadata).to include(
+          "resolved_runner_id" => runner.id,
+          "resolved_agent_type" => "codex"
+        )
+      end
     end
 
     context "when the resolved agent type is invalid" do
