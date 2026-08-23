@@ -270,6 +270,20 @@ RSpec.describe Activities::FetchIssuesActivity do
       expect(issue.reload.paid_state).to eq("recommend_close")
     end
 
+    it "does not let another issue's produced PR keep this issue completed" do
+      issue = create(:issue, :completed, project: project, github_number: 3441, github_state: "open")
+      other_issue = create(:issue, :completed, project: project, github_number: 3442, github_state: "open")
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3583)
+      create(:agent_run, :completed, project: project, issue: other_issue, goal: "create_pr", pull_request_number: 3584)
+      create(:issue, :pull_request, project: project, github_number: 3584, body: "Closes #3441\nCloses #3442")
+
+      changed = activity.send(:repair_completed_open_issues, project)
+
+      expect(changed).to be true
+      expect(issue.reload.paid_state).to eq("recommend_close")
+      expect(other_issue.reload.paid_state).to eq("completed")
+    end
+
     it "leaves non-PR completed goals alone" do
       issue = create(:issue, :completed, project: project, github_number: 50, github_state: "open")
 

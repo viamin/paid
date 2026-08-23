@@ -753,19 +753,27 @@ module Activities
       ).where.not(pull_request_number: nil).distinct.pluck(:issue_id, :pull_request_number)
       return false if issue_pr_pairs.empty?
 
-      issue_ids = issue_pr_pairs.map(&:first).uniq
-      pr_numbers = issue_pr_pairs.map(&:last).uniq
+      issue_pr_numbers = issue_pr_pairs.each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |(issue_id, pr_number), memo|
+        memo[issue_id] << pr_number
+      end
+      issue_ids = issue_pr_numbers.keys
+      pr_numbers = issue_pr_numbers.values.flatten.uniq
       completed_issues.select! { |issue| issue_ids.include?(issue.id) }
       return false if completed_issues.empty?
 
-      closing_numbers = project.issues
+      closing_numbers_by_pr = project.issues
         .pull_requests_only
         .where(github_state: "open")
         .where(github_number: pr_numbers)
-        .flat_map(&:closing_referenced_issue_numbers)
-        .to_set
+        .each_with_object({}) do |pull_request, memo|
+          memo[pull_request.github_number] = pull_request.closing_referenced_issue_numbers.to_set
+        end
 
-      repaired = completed_issues.reject { |issue| closing_numbers.include?(issue.github_number) }
+      repaired = completed_issues.reject do |issue|
+        issue_pr_numbers.fetch(issue.id, []).any? do |pr_number|
+          closing_numbers_by_pr.fetch(pr_number, Set.new).include?(issue.github_number)
+        end
+      end
       return false if repaired.empty?
 
       visible_repaired = repaired.select { |issue| add_recommend_close_label(project, issue) }
