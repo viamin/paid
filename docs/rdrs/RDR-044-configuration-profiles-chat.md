@@ -5,24 +5,34 @@
 ## Metadata
 
 - **Date**: 2026-07-05
-- **Status**: Partially Implemented
+- **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: High
-- **Related Issues**: #3163 (closeout), #3204 (multi-scope profile application), #3205 (chat/legacy profile coverage reconciliation), #3206 (profile audit + rollback follow-up), #2820 (epic), #2821 (Phase 1), #2822 (Phase 2), #2823 (Phase 3)
+- **Related Issues**: #3595 (final closeout), #3163 (closeout), #3204 (multi-scope profile application), #3205 (chat/legacy profile coverage reconciliation), #3206 (profile audit + rollback follow-up), #2820 (epic), #2821 (Phase 1), #2822 (Phase 2), #2823 (Phase 3)
 - **Related RDRs**: [RDR-028](RDR-028-interactive-chat.md) (Interactive Chat), [RDR-042](RDR-042-change-intent-records.md) (Change Intent Records), [RDR-024](RDR-024-multi-tenancy-isolation-strategy.md) (Multi-Tenancy Isolation), [RDR-023](RDR-023-automation-modularization-architecture.md) (Automation Modularization), [RDR-022](RDR-022-auto-merge-pr-strategy.md) (Auto-Merge Strategy), [RDR-014](RDR-014-learned-orchestration.md) (Learned Orchestration)
 - **Related Tests**: `spec/mcp/tools/{plan_configuration_profile,apply_configuration_profile,update_project_settings,registry,registry_authorization_parity}_spec.rb`, `spec/services/configuration/profiles/{registry,settings,planner,applier}_spec.rb`, `spec/services/chat_sessions/build_system_prompt_spec.rb`, `spec/helpers/chat_sessions_helper_spec.rb`, `spec/views/chat_messages/tool_call_partial_spec.rb`
 
 ## Implementation Status
 
-Partially implemented as of 2026-08-04. The repository now ships a chat-integrated configuration-profile path built around `Configuration::Profiles::*`, the MCP tools `list_configuration_profiles`, `plan_configuration_profile`, `apply_configuration_profile`, and the granular `update_project_settings` write tool. The chat prompt and UI also explicitly support the recommend -> plan -> confirm -> apply flow.
+Implemented as of 2026-08-23. The repository now ships the full chat-driven configuration-profile flow described by this RDR:
 
-The shipped scope is narrower than the original RDR:
+- curated, code-defined operating-mode profiles in `Configuration::Profiles::*`
+- deterministic plan-before-apply tooling through `list_configuration_profiles`, `plan_configuration_profile`, and `apply_configuration_profile`
+- mixed-scope project, user, and tenant setting targets with per-level authorization and skipped-level reporting
+- dedicated `configuration_profile.applied` / `configuration_profile.reverted` audit events with rollback support
+- drift guards that keep the shipped profile catalog aligned with the current operating-mode settings surface
 
-- the chat profile planner/applier currently targets only a bounded project-level slice of settings, not tenant/user/project bundles
-- the chat profile field coverage is materially smaller than the richer operating-mode field set still modeled in the older `ConfigurationProfiles::*` stack
-- chat-applied profiles record generic `project.settings_changed` activity, not dedicated `configuration_profile.applied` / `configuration_profile.reverted` events with a supported rollback path
+See [audit-report-2026-08-23-rdr-044.md](audit-report-2026-08-23-rdr-044.md) for the final closeout audit and [audit-report-2026-08-04-rdr-044.md](audit-report-2026-08-04-rdr-044.md) for the earlier partial reconciliation.
 
-See [audit-report-2026-08-04-rdr-044.md](audit-report-2026-08-04-rdr-044.md). The remaining gaps are tracked by #3204, #3205, and #3206.
+## 2026-08-23 Closeout
+
+The final closeout audit for issue #3595, recorded in [audit-report-2026-08-23-rdr-044.md](audit-report-2026-08-23-rdr-044.md), re-ran the checklist after the previously filed follow-up chain closed. It confirmed that the remaining 2026-08-04 gaps are now satisfied in shipped code and tests:
+
+1. **Multi-scope profile application**: implemented. `Configuration::Profiles::Settings` now includes user- and tenant-level descriptors, and `Planner`/`Applier` expose per-level authorization plus skipped-level reporting.
+2. **Profile coverage reconciliation**: implemented. Every shipped profile covers the canonical operating-mode field set, and drift-guard specs fail if a new posture-relevant column lands without profile coverage or an explicit exemption.
+3. **Dedicated audit and rollback semantics**: implemented. Profile applies emit `configuration_profile.applied` events with previous/applied values, and `Configuration::Profiles::Rollback` restores those values while recording `configuration_profile.reverted`.
+
+This closes the RDR's remaining acceptance gaps. No new child issues were filed by the audit.
 
 ## 2026-08-04 Closeout
 
