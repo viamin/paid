@@ -146,13 +146,13 @@ closeout audit marks the guarded behavior complete and safe to make default.
 ### Cloud Execution Readiness
 
 RDR-057, RDR-058, RDR-059, and RDR-060 were drafted alongside RDR-061 as a
-set of cloud-execution-readiness decisions, but have since been implemented
-(see their entries under Security & Isolation, Agent System, and Scaling &
-Distribution above). RDR-061 remains the open decision in this set.
+set of cloud-execution-readiness decisions and have all since been
+implemented (see their entries under Security & Isolation, Agent System, and
+Scaling & Distribution above).
 
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
-| [RDR-061](RDR-061-infrastructure-safety-and-audit.md) | Infrastructure Safety Rails and Execution Audit Events | Partially Implemented | P1 |
+| [RDR-061](RDR-061-infrastructure-safety-and-audit.md) | Infrastructure Safety Rails and Execution Audit Events | Implemented | P1 |
 
 ### Runner Intelligence
 
