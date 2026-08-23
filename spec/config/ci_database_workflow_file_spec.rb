@@ -149,13 +149,12 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
 
       if workflow_path == ".github/workflows/ci.yml"
         # @spec POSTGRESQL-PERSISTENCE-007
-        it "replays migrations in a dedicated CI job" do
+        it "replays this branch's migrations against the base schema in a dedicated CI job" do
           job = workflow.fetch("jobs").fetch("migrations")
-          setup_step = job.fetch("steps").find { |step| step["name"] == "Replay migrations" }
-          drift_step = job.fetch("steps").find { |step| step["name"] == "Verify canonical schema dump" }
+          replay_step = job.fetch("steps").find { |step| step["name"] == "Replay migrations added on this branch" }
 
-          expect(setup_step).not_to be_nil, "expected migrations job to include a Replay migrations step"
-          expect(drift_step).not_to be_nil, "expected migrations job to verify schema dump drift"
+          expect(replay_step).not_to be_nil,
+            "expected migrations job to include a 'Replay migrations added on this branch' step"
           expect(job.fetch("env")).to include(
             "PAID_DEVELOPMENT_DATABASE" => "paid_test",
             "PAID_DEVELOPMENT_CABLE_DATABASE" => "paid_test",
@@ -164,8 +163,14 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
             "DB_USERNAME" => "postgres",
             "DB_PASSWORD" => "postgres"
           )
-          expect(setup_step.fetch("run")).to eq("bin/rails db:create db:migrate")
-          expect(drift_step.fetch("run").strip).to eq("bin/rails db:schema:dump\ngit diff --exit-code db/schema.rb")
+          # bin/ci-migration-replay loads the base revision's db/schema.rb so only
+          # this branch's migrations remain pending, runs them for real, and
+          # verifies the resulting dump matches the committed schema.
+          expect(replay_step.fetch("run")).to eq("bin/ci-migration-replay HEAD^")
+
+          checkout_step = job.fetch("steps").find { |step| step["uses"]&.start_with?("actions/checkout@") }
+          expect(checkout_step.fetch("with").fetch("fetch-depth")).to eq(2),
+            "bin/ci-migration-replay needs HEAD^ available, so checkout must fetch at least depth 2"
         end
       end
     end

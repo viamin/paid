@@ -104,6 +104,7 @@ yarn audit                   # JS dependency audit
 
 # CI (runs all checks)
 bin/ci                       # Setup, style, security checks
+bin/ci-migration-replay HEAD^  # Run this branch's migrations against the base schema
 
 # Database
 bin/rails db:prepare         # Create and migrate
