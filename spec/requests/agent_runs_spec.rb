@@ -864,6 +864,12 @@ RSpec.describe "AgentRuns" do
         get project_agent_run_path(project, agent_run)
 
         expect(response.body).to include("No denied or redacted events recorded for this run.")
+
+        heading = parsed_html.css("h2").find { |node| node.text.squish == "Denied Egress & Redacted Events" }
+        section = heading.ancestors("div").find { |node| node["class"].to_s.include?("rounded-lg") }
+
+        expect(section["class"]).to include("bg-white")
+        expect(section["class"]).not_to include("amber")
       end
 
       it "shows retry runner options for configured providers" do
