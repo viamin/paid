@@ -807,6 +807,13 @@ RSpec.describe Containers::ServiceProvisioner do
       expect(provisioner.send(:built_in_hardening_profile_for, "selenium/standalone-chromium:latest")[:user]).to eq("seluser")
     end
 
+    it "does not treat substring matches as built-in hardening families" do
+      # @spec CONTAINER-RUNTIME-035
+      profile = provisioner.send(:built_in_hardening_profile_for, "ghcr.io/acme/custom-postgres:1.0")
+
+      expect(profile).to eq(Containers::ServiceProvisioner::DEFAULT_HARDENING_PROFILE)
+    end
+
     context "with an unrecognized image" do
       let(:custom_account) { create(:account) }
       let(:project) { create(:project, account: custom_account) }
@@ -871,6 +878,22 @@ RSpec.describe Containers::ServiceProvisioner do
             )
           )
         )
+      end
+
+      it "rejects unsupported hardening capability overrides" do
+        # @spec CONTAINER-RUNTIME-035
+        service_container.update!(env: {
+          "PAID_SERVICE_HARDENING" => {
+            "cap_add" => [ "SYS_ADMIN" ]
+          }
+        })
+        allow(Docker::Image).to receive(:create)
+
+        expect { provisioner.provision(agent_run) }
+          .to raise_error(
+            Containers::ServiceProvisioner::Error,
+            /PAID_SERVICE_HARDENING\.cap_add contains unsupported capabilities: SYS_ADMIN/
+          )
       end
     end
   end

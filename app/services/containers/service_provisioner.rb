@@ -87,6 +87,7 @@ module Containers
 
     DEFAULT_RESOURCE_LIMITS = { memory: 1 * 1024 * 1024 * 1024, cpu_quota: 100_000, pids_limit: 200 }.freeze
     HARDENING_ENV_KEY = "PAID_SERVICE_HARDENING"
+    SAFE_OVERRIDE_CAPABILITIES = [ "NET_BIND_SERVICE" ].freeze
 
     # @spec CONTAINER-RUNTIME-035
     # Baseline container hardening (issue #3450): every service container
@@ -154,6 +155,13 @@ module Containers
       user: nil,
       tmpfs: {},
       cap_add: []
+    }.freeze
+
+    HARDENING_PROFILE_MATCHERS = {
+      "postgres" => ->(repository) { repository == "postgres" || repository == "library/postgres" },
+      "redis" => ->(repository) { repository == "redis" || repository == "library/redis" },
+      "selenium" => ->(repository) { repository.start_with?("selenium/") && !repository.include?("chromium") },
+      "chromium" => ->(repository) { repository.start_with?("selenium/") && repository.include?("chromium") }
     }.freeze
 
     # Maps an image pattern to the provider-neutral ExecutionRunners::ServiceDeclaration
@@ -645,9 +653,13 @@ module Containers
     end
 
     def built_in_hardening_profile_for(image)
-      HARDENING_PROFILES.each do |pattern, profile|
-        return profile if image.include?(pattern)
+      repository = image_repository(image)
+
+      HARDENING_PROFILES.each do |family, profile|
+        matcher = HARDENING_PROFILE_MATCHERS.fetch(family)
+        return profile if matcher.call(repository)
       end
+
       DEFAULT_HARDENING_PROFILE
     end
 
@@ -672,7 +684,14 @@ module Containers
         cap_add = raw.fetch("cap_add")
         raise Error, "#{HARDENING_ENV_KEY}.cap_add must be an array" unless cap_add.is_a?(Array)
 
-        override[:cap_add] = cap_add.map(&:to_s)
+        normalized_cap_add = cap_add.map { |capability| capability.to_s.upcase }.uniq
+        unsupported = normalized_cap_add - SAFE_OVERRIDE_CAPABILITIES
+        if unsupported.any?
+          raise Error,
+            "#{HARDENING_ENV_KEY}.cap_add contains unsupported capabilities: #{unsupported.join(', ')}"
+        end
+
+        override[:cap_add] = normalized_cap_add
       end
 
       override[:tmpfs] = normalize_tmpfs_overrides(raw.fetch("tmpfs")) if raw.key?("tmpfs")
@@ -698,6 +717,20 @@ module Containers
 
     def docker_tmpfs_mounts(tmpfs)
       tmpfs.transform_values { |options| docker_tmpfs_options(options) }
+    end
+
+    def image_repository(image)
+      segments = image.to_s.split("@", 2).first.split("/")
+      if segments.length > 1 && registry_segment?(segments.first)
+        segments = segments.drop(1)
+      end
+
+      segments[-1] = segments.last.to_s.split(":", 2).first
+      segments.join("/")
+    end
+
+    def registry_segment?(segment)
+      segment.include?(".") || segment.include?(":") || segment == "localhost"
     end
 
     def docker_tmpfs_options(options)
