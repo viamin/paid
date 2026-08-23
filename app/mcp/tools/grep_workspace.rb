@@ -67,17 +67,26 @@ module Tools
     end
 
     def build_result(repo_path, query, stdout, exit_code)
-      return { repo_path:, query:, matches: [], total_matches: 0, truncated: false } if exit_code == 1
+      return {
+        repo_path:,
+        query:,
+        matches: [],
+        total_matches: 0,
+        total_count: 0,
+        truncated: false
+      } if exit_code == 1
 
       truncated_output, output_truncated = truncate_output(stdout)
       matches = parse_matches(truncated_output, output_truncated)
       matches_truncated = matches.length > MAX_MATCHES
+      total_count = [ matches.length, MAX_MATCHES ].min
 
       {
         repo_path: repo_path,
         query: query,
         matches: matches.first(MAX_MATCHES),
-        total_matches: [ matches.length, MAX_MATCHES ].min,
+        total_matches: total_count,
+        total_count: total_count,
         truncated: output_truncated || matches_truncated
       }
     end

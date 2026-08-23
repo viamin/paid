@@ -81,6 +81,7 @@ RSpec.describe Tools::GrepWorkspace do
 
       expect(result[:matches]).to eq([])
       expect(result[:total_matches]).to eq(0)
+      expect(result[:total_count]).to eq(0)
       expect(result[:truncated]).to be false
     end
 
