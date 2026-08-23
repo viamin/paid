@@ -687,7 +687,8 @@ module Activities
 
       last_run = last_completed_run(project, issue)
       status_triggers = check_review_bot_status(reviews, unresolved_threads,
-        project: project, last_run: last_run, client: client, issue: issue)
+        project: project, last_run: last_run, client: client, issue: issue,
+        allowed_bot_logins: paid_agent_review_logins(project))
 
       if status_triggers.any? { |trigger| trigger[:data_incomplete] }
         return draft_trigger_payload(issue, status_triggers)
@@ -2040,8 +2041,9 @@ module Activities
 
     BODY_ONLY_REVIEW_PROVIDER_KEYS = %w[codex paid_agent].freeze
 
-    def check_review_bot_status(reviews, unresolved_threads, project: nil, last_run: nil, client: nil, issue: nil)
-      allowed = allowed_review_bot_logins(project)
+    def check_review_bot_status(reviews, unresolved_threads, project: nil, last_run: nil, client: nil, issue: nil,
+      allowed_bot_logins: nil)
+      allowed = allowed_bot_logins || allowed_review_bot_logins(project)
       latest = latest_allowed_bot_review(reviews, allowed)
       paid_agent_limit_reached_for_latest_review =
         paid_agent_review_limit_reached_for_review?(project, reviews, latest, issue)
@@ -2065,7 +2067,7 @@ module Activities
 
       case status
       when :clean
-        clean_review_thread_triggers(unresolved_threads)
+        clean_review_thread_triggers(unresolved_threads, allowed_bot_logins: allowed)
       when :no_review
         # Only emit a pending trigger when a requestable review bot is
         # configured. When login is nil — reviews globally disabled, or
@@ -2111,7 +2113,7 @@ module Activities
           # thread-fetch failure cannot trigger premature escalation.
           [ { type: "review_bot_review_pending", details: "Latest review bot review was not clean", data_incomplete: true } ]
         else
-          bot_thread_triggers = review_bot_thread_triggers(unresolved_threads)
+          bot_thread_triggers = review_bot_thread_triggers(unresolved_threads, allowed_bot_logins: allowed)
           body_only_pending_triggers = [
             { type: "review_bot_review_pending", details: "Latest review bot review was not clean" },
             { type: "review_bot_comments", details: "Latest review bot review generated comments (body-only)" }
@@ -2169,7 +2171,7 @@ module Activities
           end
         end
       when :unknown
-        review_bot_thread_triggers(unresolved_threads)
+        review_bot_thread_triggers(unresolved_threads, allowed_bot_logins: allowed)
       end
     end
 
@@ -2592,11 +2594,16 @@ module Activities
         .review_diff_touches_reviewed_files?(issue:, review:)
     end
 
-    def review_bot_thread_triggers(unresolved_threads)
+    def review_bot_thread_triggers(unresolved_threads, allowed_bot_logins: nil)
       return [] if unresolved_threads.nil?
 
       review_bot_threads = unresolved_threads.select do |thread|
-        thread[:comments].any? { |c| review_bot?(c[:author]) }
+        thread[:comments].any? do |comment|
+          next false unless review_bot?(comment[:author])
+          next true if allowed_bot_logins.nil?
+
+          allowed_bot_logins.include?(comment[:author]&.downcase)
+        end
       end
 
       return [] if review_bot_threads.empty?
@@ -3206,10 +3213,10 @@ module Activities
       Activities::CompleteExistingPrRunActivity.agent_update_comment?(body)
     end
 
-    def clean_review_thread_triggers(unresolved_threads)
+    def clean_review_thread_triggers(unresolved_threads, allowed_bot_logins: nil)
       return [] if unresolved_threads.nil?
 
-      bot_thread_triggers = review_bot_thread_triggers(unresolved_threads)
+      bot_thread_triggers = review_bot_thread_triggers(unresolved_threads, allowed_bot_logins:)
       return [] if bot_thread_triggers.empty?
 
       [

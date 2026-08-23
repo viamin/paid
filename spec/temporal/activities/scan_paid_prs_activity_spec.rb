@@ -10309,6 +10309,55 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       )
     end
 
+    def stub_non_strict_tdd_review_with_mixed_bot_feedback
+      project.update!(review_settings: {
+        "enabled" => true,
+        "methods" => {
+          "paid_agent" => {
+            "enabled" => true,
+            "termination" => { "max_review_rounds" => 3 }
+          },
+          "copilot" => { "enabled" => true }
+        }
+      })
+      create(:agent_run, :completed,
+        project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        trigger_type: "automatic",
+        completed_at: 3.hours.ago)
+      stub_github_for_pr(
+        draft: true,
+        checks: [ { name: "rspec", conclusion: "failure" } ],
+        reviews: [
+          {
+            id: 1,
+            user_login: "paid-code-reviewer[bot]",
+            state: "COMMENTED",
+            body: "Tests look good. <!-- paid-review-clean -->",
+            submitted_at: 2.hours.ago,
+            commit_id: "abc123"
+          },
+          {
+            id: 2,
+            user_login: "copilot-pull-request-reviewer[bot]",
+            state: "COMMENTED",
+            body: "Please add one more edge case.",
+            submitted_at: 1.hour.ago,
+            commit_id: "abc123"
+          }
+        ],
+        review_threads: [
+          {
+            id: "copilot-thread-1",
+            is_resolved: false,
+            comments: [ { body: "Please add one more edge case.", path: "spec/models/project_spec.rb", line: 10,
+              author: "copilot-pull-request-reviewer[bot]" } ]
+          }
+        ]
+      )
+    end
+
     it "does not start implementation in strict mode while tests are awaiting review" do
       project.update!(tdd_mode: "strict")
       pull_request
@@ -10377,6 +10426,21 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         .with(project.full_name, 42, "paid-tests-ready-for-review")
       expect(github_client).to have_received(:add_labels_to_issue)
         .with(project.full_name, 42, [ "paid-tests-approved" ])
+    end
+
+    it "ignores other review bots when the paid_agent test review is clean in non-strict mode" do
+      project.update!(tdd_mode: "non_strict")
+      pull_request
+      stub_non_strict_tdd_review_with_mixed_bot_feedback
+
+      result = activity.execute(project_id: project.id)
+
+      expect(decision_types_for(result)).to include("queue_create_pr_run")
+      expect(decision_types_for(result)).not_to include("queue_review_run")
+      expect(automation_scan_results(result).first[:triggers]).to contain_exactly(
+        hash_including(type: "tdd_tests_approved")
+      )
+      expect(pull_request.reload.labels).to contain_exactly("paid-generated", "paid-automation", "paid-tests-approved")
     end
 
     it "applies paid-test-changes-requested and queues test revision in non-strict mode after a non-clean paid_agent review" do
