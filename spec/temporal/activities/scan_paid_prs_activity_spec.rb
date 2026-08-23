@@ -10358,6 +10358,41 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       )
     end
 
+    def stub_stale_non_strict_tdd_review(review_body:)
+      create(:agent_run, :completed,
+        project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        trigger_type: "automatic",
+        completed_at: 30.minutes.ago)
+      stub_github_for_pr(
+        draft: true,
+        checks: [ { name: "rspec", conclusion: "failure" } ],
+        reviews: [ {
+          id: 1,
+          user_login: "paid-code-reviewer[bot]",
+          state: "COMMENTED",
+          body: review_body,
+          submitted_at: 2.hours.ago,
+          commit_id: "stale_sha"
+        } ],
+        review_threads: []
+      )
+    end
+
+    def expect_stale_tdd_review_to_request_fresh_review(result, blocked_label:)
+      expect(automation_scan_results(result).first[:triggers]).to contain_exactly(
+        hash_including(type: "paid_agent_review_pending")
+      )
+      expect(decision_types_for(result)).to include("queue_review_run")
+      expect(decision_types_for(result)).not_to include("queue_create_pr_run")
+      expect(pull_request.reload.labels).to contain_exactly("paid-generated", "paid-automation", "paid-tests-ready-for-review")
+      expect(github_client).not_to have_received(:remove_label_from_issue)
+        .with(project.full_name, 42, "paid-tests-ready-for-review")
+      expect(github_client).not_to have_received(:add_labels_to_issue)
+        .with(project.full_name, 42, [ blocked_label ])
+    end
+
     it "does not start implementation in strict mode while tests are awaiting review" do
       project.update!(tdd_mode: "strict")
       pull_request
@@ -10426,6 +10461,28 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         .with(project.full_name, 42, "paid-tests-ready-for-review")
       expect(github_client).to have_received(:add_labels_to_issue)
         .with(project.full_name, 42, [ "paid-tests-approved" ])
+    end
+
+    it "does not restore paid-tests-approved from a stale paid_agent review after returning tests to review" do
+      # @spec TDD-PR-006
+      project.update!(tdd_mode: "non_strict")
+      pull_request
+      stub_stale_non_strict_tdd_review(review_body: "Tests look good. <!-- paid-review-clean -->")
+
+      result = activity.execute(project_id: project.id)
+
+      expect_stale_tdd_review_to_request_fresh_review(result, blocked_label: "paid-tests-approved")
+    end
+
+    it "does not reapply paid-test-changes-requested from a stale paid_agent review after tests changed" do
+      # @spec TDD-PR-006
+      project.update!(tdd_mode: "non_strict")
+      pull_request
+      stub_stale_non_strict_tdd_review(review_body: "Add an edge-case spec for the failure path.")
+
+      result = activity.execute(project_id: project.id)
+
+      expect_stale_tdd_review_to_request_fresh_review(result, blocked_label: "paid-test-changes-requested")
     end
 
     it "ignores other review bots when the paid_agent test review is clean in non-strict mode" do

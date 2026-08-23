@@ -479,7 +479,7 @@ module Activities
         return scan_bot_authored_draft_pr(project, client, issue, pr_data: pr_data)
       end
 
-      tdd_result = scan_tdd_draft_pr(project, client, issue)
+      tdd_result = scan_tdd_draft_pr(project, client, issue, pr_data: pr_data)
       return tdd_result unless tdd_result == :not_applicable
 
       # Hard cap: when the draft round counter is at the project limit and
@@ -663,7 +663,7 @@ module Activities
       draft_trigger_payload(issue, triggers)
     end
 
-    def scan_tdd_draft_pr(project, client, issue)
+    def scan_tdd_draft_pr(project, client, issue, pr_data: nil)
       return :not_applicable unless project.tdd_mode.in?(%w[strict non_strict])
       return :not_applicable unless tdd_test_review_pr?(issue)
 
@@ -677,14 +677,15 @@ module Activities
 
       return nil if project.tdd_mode == "strict"
 
-      scan_non_strict_tdd_draft_pr(project, client, issue)
+      scan_non_strict_tdd_draft_pr(project, client, issue, pr_data: pr_data)
     end
 
-    def scan_non_strict_tdd_draft_pr(project, client, issue)
+    def scan_non_strict_tdd_draft_pr(project, client, issue, pr_data: nil) # @spec TDD-PR-006
       reviews = fetch_reviews(client, project, issue)
       unresolved_threads = fetch_unresolved_threads(client, project, issue)
       return :skipped if reviews.nil? || unresolved_threads.nil?
 
+      reviews = current_tdd_test_review_verdicts(project, issue, reviews, pr_data:)
       last_run = last_completed_run(project, issue)
       status_triggers = check_review_bot_status(reviews, unresolved_threads,
         project: project, last_run: last_run, client: client, issue: issue,
@@ -713,6 +714,34 @@ module Activities
       return draft_trigger_payload(issue, pending_review) if pending_review.any?
 
       draft_trigger_payload(issue, [ { type: "paid_agent_review_pending", details: "No paid_agent review found for PR" } ]) if latest_paid_agent_review.nil?
+    end
+
+    def current_tdd_test_review_verdicts(project, issue, reviews, pr_data: nil)
+      paid_agent_logins = paid_agent_review_logins(project)
+
+      reviews.select do |review|
+        paid_agent_logins.include?(review[:user_login]&.downcase) &&
+          tdd_review_current_for_revision?(project, issue, review, pr_data:)
+      end
+    end
+
+    def tdd_review_current_for_revision?(project, issue, review, pr_data: nil)
+      current_head_sha = pr_head_sha(pr_data)
+      review_commit = review[:commit_id].presence
+      return review_commit == current_head_sha if review_commit && current_head_sha
+
+      baseline = latest_completed_tdd_test_revision_run(project, issue)
+      return false unless baseline&.completed_at && review[:submitted_at]
+
+      review[:submitted_at] >= baseline.completed_at
+    end
+
+    def latest_completed_tdd_test_revision_run(project, issue)
+      pr_run_history_scope(project, issue)
+        .where(goal: "create_pr")
+        .completed
+        .order(completed_at: :desc)
+        .first
     end
 
     def tdd_test_review_pr?(issue)
@@ -2955,7 +2984,10 @@ module Activities
       end
 
       if non_enabled_reviews.empty?
-        return non_enabled_bot_thread_triggers(unresolved_threads, non_enabled_logins)
+        thread_triggers = non_enabled_bot_thread_triggers(unresolved_threads, non_enabled_logins)
+        return thread_triggers if thread_triggers.empty?
+
+        return non_enabled_bot_comment_triggers(nil, thread_triggers)
       end
 
       all_triggers = []
@@ -2969,7 +3001,10 @@ module Activities
           all_triggers.concat(triggers)
         end
 
-      all_triggers.concat(non_enabled_bot_thread_triggers(unresolved_threads, non_enabled_logins)) if all_triggers.empty?
+      if all_triggers.empty?
+        thread_triggers = non_enabled_bot_thread_triggers(unresolved_threads, non_enabled_logins)
+        all_triggers.concat(non_enabled_bot_comment_triggers(nil, thread_triggers)) if thread_triggers.any?
+      end
 
       all_triggers
     end
