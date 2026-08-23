@@ -62,6 +62,8 @@ module Capacity
     private
 
     def evaluate(record_effects:)
+      first_breach = nil
+
       threshold_checks.each do |check|
         next if check[:limit_cents].to_i <= 0
 
@@ -69,13 +71,14 @@ module Capacity
         projected_spend_cents = current_spend_cents + projected_cents_for(check)
         if projected_spend_cents > check[:limit_cents].to_i
           record_breach(check, current_spend_cents, projected_spend_cents, check[:ends_at]) if record_effects
-          return breach_payload(check, current_spend_cents, projected_spend_cents)
+          first_breach ||= breach_payload(check, current_spend_cents, projected_spend_cents)
+          next
         end
 
         recover_threshold(check, current_spend_cents) if record_effects
       end
 
-      { allowed: true }
+      first_breach || { allowed: true }
     end
 
     attr_reader :account, :agent_run, :env, :now, :project, :runner, :selected_host

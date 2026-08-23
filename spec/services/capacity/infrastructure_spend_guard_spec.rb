@@ -16,27 +16,32 @@ RSpec.describe Capacity::InfrastructureSpendGuard do
     allow(ExecutionControls::RunImpact).to receive(:new).and_return(impact)
   end
 
-  def spend_limits(global_daily: 0, project_hourly: 0)
+  def spend_limits(global_daily: 0, account_daily: 0, project_hourly: 0, runner_hourly: 0)
     {
       global_infra_spend_daily_limit_cents: global_daily,
       global_infra_spend_hourly_limit_cents: 0,
-      account_infra_spend_daily_limit_cents: 0,
+      account_infra_spend_daily_limit_cents: account_daily,
       account_infra_spend_hourly_limit_cents: 0,
       project_infra_spend_daily_limit_cents: 0,
       project_infra_spend_hourly_limit_cents: project_hourly,
       runner_infra_spend_daily_limit_cents: 0,
-      runner_infra_spend_hourly_limit_cents: 0
+      runner_infra_spend_hourly_limit_cents: runner_hourly
     }
   end
 
-  def call_guard(now:)
+  def call_guard(now:, runner: nil)
     described_class.call(
       account: account,
       project: project,
       agent_run: agent_run,
+      runner: runner,
       selected_host: "local",
       now: now
     )
+  end
+
+  def notification_for(source:, subject:)
+    Notification.find_by(account: account, source: source, subject: subject)
   end
 
   # @spec INFRA-SPEND-005
@@ -64,6 +69,31 @@ RSpec.describe Capacity::InfrastructureSpendGuard do
     expect(recovery_result).to eq(allowed: true)
     expect(notification.reload.resolved_at).to be_present
     expect(ExecutionAuditEvent.by_event_name(described_class::EVENT_THRESHOLD_RECOVERED).count).to eq(1)
+  end
+
+  # @spec INFRA-SPEND-005
+  it "recovers narrower notifications even when a broader scope still denies admission" do
+    allow(Capacity::InfrastructureLimits).to receive(:current).and_return(
+      spend_limits(account_daily: 100, runner_hourly: 100)
+    )
+    allow(Capacity::InfrastructureSpend).to receive(:spent_cents).and_return(90, 90, 90, 20)
+    allow(Capacity::InfrastructureSpend).to receive(:projected_cents_for_host).and_return(20, 20, 20, 0)
+
+    initial_result = call_guard(now: Time.utc(2026, 8, 23, 12, 15, 0), runner: runner)
+
+    expect(initial_result[:allowed]).to be(false)
+    expect(initial_result[:reason]).to eq("account_infra_spend_daily_limit_exceeded")
+
+    runner_notification = notification_for(source: "infra_spend_threshold_runner_hourly", subject: runner)
+    expect(runner_notification).to be_present
+    expect(runner_notification).to be_active
+
+    recovery_result = call_guard(now: Time.utc(2026, 8, 23, 12, 20, 0), runner: runner)
+
+    expect(recovery_result[:allowed]).to be(false)
+    expect(recovery_result[:reason]).to eq("account_infra_spend_daily_limit_exceeded")
+    expect(runner_notification.reload.resolved_at).to be_present
+    expect(notification_for(source: "infra_spend_threshold_account_daily", subject: account)).to be_active
   end
 
   # @spec INFRA-SPEND-004
