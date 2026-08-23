@@ -39,6 +39,22 @@ RSpec.describe Activities::FetchIssuesActivity do
     )
   end
 
+  def build_enhancement_comment(login:, created_at:, questions:, context: "- Some context")
+    build_comment(
+      login:,
+      created_at:,
+      body: <<~COMMENT
+        <!-- paid:enhance-issue -->
+
+        ## Clarifying questions
+        #{questions.each_with_index.map { |question, index| "#{index + 1}. #{question}" }.join("\n")}
+
+        ## Current context
+        #{context}
+      COMMENT
+    )
+  end
+
   def github_pr_issue(number)
     OpenStruct.new(
       id: 5000 + number,
@@ -690,6 +706,29 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(issue.reload.paid_state).to eq("failed")
         expect(issue.labels).not_to include(project.enhance_issue_needs_input_label_name)
         expect(github_client).to have_received(:remove_labels_from_issue).with(
+          project.full_name,
+          issue.github_number,
+          [ project.enhance_issue_needs_input_label_name ]
+        )
+      end
+
+      it "keeps comment-backed clarifying questions in needs-input" do
+        issue.update!(needs_input_questions: nil, body: "No clarifying questions here")
+        allow(project).to receive(:paid_bot_author?) { |login| login == "paid-agents[bot]" }
+        allow(github_client).to receive(:issue_comments).with(project.full_name, issue.github_number).and_return([
+          build_enhancement_comment(
+            login: "paid-agents[bot]",
+            created_at: 5.minutes.ago,
+            questions: [ "Which behavior should Paid implement?" ],
+            context: "- Waiting for product direction."
+          )
+        ])
+
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload.paid_state).to eq("needs_input")
+        expect(issue.labels).to include(project.enhance_issue_needs_input_label_name)
+        expect(github_client).not_to have_received(:remove_labels_from_issue).with(
           project.full_name,
           issue.github_number,
           [ project.enhance_issue_needs_input_label_name ]

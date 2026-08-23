@@ -461,7 +461,8 @@ module Activities
 
         issue = project.issues.find(issue_data[:id])
         next if issue.is_pull_request? || issue.github_state == "closed" || issue.paid_state != "needs_input"
-        next if question_summary_for(issue).any?
+        next if pending_clarifying_questions_for(project, issue).any?
+        next unless issue.reload.paid_state == "needs_input"
 
         next unless remove_invalid_needs_input_labels(project, issue, labels)
 
@@ -483,11 +484,17 @@ module Activities
       changed
     end
 
-    def question_summary_for(issue)
-      questions = ClarifyingQuestions::Parse.call(comment_body: issue.body)
-      return questions if questions.any?
-
-      Array(issue.needs_input_questions)
+    def pending_clarifying_questions_for(project, issue)
+      ClarifyingQuestions::Load.call(project:, issue:)
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "github_sync.questionless_needs_input_question_lookup_failed",
+        project_id: project.id,
+        issue_id: issue.id,
+        issue_number: issue.github_number,
+        error: e.message
+      )
+      [ :lookup_failed ]
     end
 
     def remove_invalid_needs_input_labels(project, issue, labels)
