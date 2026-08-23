@@ -111,6 +111,38 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to be_empty
     end
 
+    it "excludes an issue reset to a pre-completion paid_state after its create_pr run already recorded a PR number (#3432)" do # @spec EAGER-QUEUE-009
+      # Mirrors the orphan-recovery race from #3432: a completed create_pr
+      # run has already recorded a PR number, but the issue's paid_state
+      # was reset back to "new" (e.g. by StaleRunDetectorJob recovering a
+      # crashed workflow) before the local PR issue row synced. Without the
+      # base-scope-level guard this issue would match the
+      # paid_state: %w[new planning failed analyzed] branch directly,
+      # bypassing the completed-issue PR-produced check entirely.
+      issue = create(:issue, project: project, paid_state: "new")
+      create(:agent_run, :completed, :automatic, project: project, issue: issue,
+        goal: "create_pr", auto_pick: true, pull_request_number: 42, pull_request_url: "https://example.test/pr/42")
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to be_empty
+    end
+
+    it "recovers eligibility once the PR-sync grace window elapses without a synced PR row" do # @spec EAGER-QUEUE-009
+      # Missing/stale PR sync state must not block an issue forever: once
+      # PR_SYNC_GRACE_PERIOD has passed with no local PR issue row proving
+      # the PR is still open or closed-unmerged, the issue becomes eligible
+      # again rather than being stranded.
+      issue = create(:issue, project: project, paid_state: "new")
+      create(:agent_run, :completed, :automatic, project: project, issue: issue,
+        goal: "create_pr", auto_pick: true, pull_request_number: 42, pull_request_url: "https://example.test/pr/42",
+        completed_at: described_class::PR_SYNC_GRACE_PERIOD.ago - 1.minute)
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to contain_exactly(issue.id)
+    end
+
     it "excludes completed issues when the produced PR is still open" do
       issue = create(:issue, project: project, paid_state: "completed")
       create(:agent_run, :completed, :automatic, project: project, issue: issue,

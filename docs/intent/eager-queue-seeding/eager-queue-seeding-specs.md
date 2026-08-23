@@ -81,6 +81,21 @@
   `Issues::ReenqueueEligibleJob`.
   *Test:* `spec/models/issue_spec.rb`.
 
+## Duplicate-PR prevention
+
+- [x] **EAGER-QUEUE-009** — When a project issue has a completed `create_pr`
+  run that recorded a `pull_request_number` within `PR_SYNC_GRACE_PERIOD`,
+  and no local synced PR `Issue` row proves that PR closed without merging,
+  the system SHALL exclude that issue from `eligible_scope` regardless of
+  the issue's current `paid_state`, so auto-pick cannot open a second PR for
+  the same issue while GitHub sync is still catching up. The exclusion
+  SHALL lift immediately once a synced PR row shows the PR closed unmerged,
+  and SHALL lift after `PR_SYNC_GRACE_PERIOD` elapses with no synced PR row
+  at all, so missing or stale sync state cannot block the issue forever.
+  *Code:* `Automation::Strategies::AutoPick::DefaultCandidateSource.unsynced_pr_produced_issue_ids`,
+  `DefaultCandidateSource::PR_SYNC_GRACE_PERIOD`, `DefaultCandidateSource.base_scope`.
+  *Test:* `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
+
 ## Capacity remains the single gate
 
 - [x] **EAGER-QUEUE-008** — Eager seeding SHALL NOT itself limit concurrency

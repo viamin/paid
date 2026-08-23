@@ -85,6 +85,33 @@ old 4-hour ceiling, and `consecutive_auto_pick_failure_count` is bounded at
 are not `failed` (e.g. `analyzed → new`) re-enqueue immediately with no
 delay.
 
+## Duplicate-PR prevention (#3432)
+
+`DefaultCandidateSource.eligible_scope` excludes an issue whose most recent
+completed `create_pr` run already recorded `pull_request_number`, unless the
+local, synced PR `Issue` row proves that PR closed without merging. This
+covers two related situations:
+
+- **Synced open PR** — `Issue.open_pull_request_parent_issue_ids` already
+  excludes issues with a synced, open, `parent_issue_id`-linked PR row.
+- **Unsynced or not-yet-linked PR** — `pull_request_number` is written
+  atomically with the run's terminal `status` (`AgentRun#complete!`), but the
+  local PR `Issue` row (and its `parent_issue_id` linkage) is written later
+  by GitHub sync. `unsynced_pr_produced_issue_ids` closes that gap by
+  excluding the issue directly from `AgentRun` state, bounded by
+  `PR_SYNC_GRACE_PERIOD` (1 hour) so a PR row that never syncs — deleted
+  branch, stale/wrong recorded PR number, sync backlog — does not strand the
+  issue forever. This exclusion applies inside `base_scope`, so it protects
+  every `paid_state` branch of `eligible_scope`, not only the
+  `paid_state: "completed"` recovery branch — closing a race where
+  `StaleRunDetectorJob#recover_orphaned_in_progress_issues` (or any other
+  path) resets `paid_state` back to a pre-completion value after a PR was
+  already opened.
+
+A synced, closed-unmerged PR row always lifts the exclusion immediately
+(no need to wait out the grace window), so legitimate replacement runs after
+an abandoned or rejected PR are not delayed.
+
 ## Fair-stride impact
 
 None. `QUEUE_ORDER` already sorts by project and user in-flight counts ahead
