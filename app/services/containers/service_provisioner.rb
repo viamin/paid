@@ -86,20 +86,22 @@ module Containers
     }.freeze
 
     DEFAULT_RESOURCE_LIMITS = { memory: 1 * 1024 * 1024 * 1024, cpu_quota: 100_000, pids_limit: 200 }.freeze
+    HARDENING_ENV_KEY = "PAID_SERVICE_HARDENING"
 
     # @spec CONTAINER-RUNTIME-035
     # Baseline container hardening (issue #3450): every service container
-    # runs with a read-only root filesystem, all capabilities dropped, and
-    # no-new-privileges, mirroring the hardening already applied to agent
-    # and chat containers (Containers::Provision, Containers::ProvisionForChat).
-    # Known image families get a profiled runtime user and Tmpfs layout for
-    # the writable paths their documented entrypoint actually needs, plus the
-    # minimum capabilities that entrypoint needs back. Unrecognized images
-    # fall back to DEFAULT_HARDENING_PROFILE, a conservative
-    # generic-writable-scratch-space profile with no added capabilities and
-    # the image's default runtime user preserved — account admins wanting a
-    # less restrictive profile for a specific image must still pass
-    # ServiceContainer's image allowlist.
+    # runs with all capabilities dropped and no-new-privileges, mirroring the
+    # hardening already applied to agent and chat containers
+    # (Containers::Provision, Containers::ProvisionForChat). Known image
+    # families get a profiled read-only root filesystem, runtime user, and
+    # Tmpfs layout for the writable paths their documented entrypoint
+    # actually needs, plus the minimum capabilities that entrypoint needs
+    # back. Account admins can opt custom allowlisted images into the same
+    # stronger shape with an override profile stored under HARDENING_ENV_KEY
+    # in ServiceContainer#env. Unrecognized images without an explicit
+    # override keep a writable root filesystem for compatibility with the
+    # existing allowed_service_images contract while still running with
+    # no-new-privileges and all capabilities dropped.
     HARDENING_PROFILES = {
       "postgres" => {
         # Tmpfs pages are accounted against the container's memcg, so the
@@ -109,6 +111,7 @@ module Containers
         # own RSS (shared_buffers, work_mem, WAL buffers, per-connection
         # overhead) so the container isn't OOM-killed as soon as PGDATA
         # usage grows.
+        readonly_rootfs: true,
         user: "postgres",
         tmpfs: {
           "/var/lib/postgresql/data" => { size: 1 * 1024 * 1024 * 1024, mode: "0700", uid: 999, gid: 999 },
@@ -118,6 +121,7 @@ module Containers
         cap_add: [ "CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID" ]
       },
       "redis" => {
+        readonly_rootfs: true,
         user: "redis",
         tmpfs: {
           "/data" => { size: 512 * 1024 * 1024, mode: "1777", uid: 999, gid: 1000 },
@@ -126,6 +130,7 @@ module Containers
         cap_add: []
       },
       "selenium" => {
+        readonly_rootfs: true,
         user: "seluser",
         tmpfs: {
           "/tmp" => { size: 256 * 1024 * 1024, mode: "1777" },
@@ -134,6 +139,7 @@ module Containers
         cap_add: []
       },
       "chromium" => {
+        readonly_rootfs: true,
         user: "seluser",
         tmpfs: {
           "/tmp" => { size: 256 * 1024 * 1024, mode: "1777" },
@@ -144,8 +150,9 @@ module Containers
     }.freeze
 
     DEFAULT_HARDENING_PROFILE = {
+      readonly_rootfs: false,
       user: nil,
-      tmpfs: { "/tmp" => { size: 64 * 1024 * 1024, mode: "1777" } },
+      tmpfs: {},
       cap_add: []
     }.freeze
 
@@ -576,7 +583,7 @@ module Containers
 
     def create_docker_container(service_container)
       limits = resource_limits_for(service_container.image)
-      hardening = hardening_profile_for(service_container.image)
+      hardening = hardening_profile_for(service_container)
       env = container_env_for(service_container)
       host = runtime_name(service_container)
       cap_drop = [ "ALL" ]
@@ -588,7 +595,7 @@ module Containers
         "Image" => service_container.image,
         "name" => host,
         "Env" => env.map { |k, v| "#{k}=#{v}" },
-        "ReadonlyRootfs" => true,
+        "ReadonlyRootfs" => hardening[:readonly_rootfs],
         "CapDrop" => cap_drop,
         "CapAdd" => cap_add,
         "SecurityOpt" => security_opt,
@@ -624,11 +631,69 @@ module Containers
       backend.create_container(options)
     end
 
-    def hardening_profile_for(image)
+    def hardening_profile_for(service_container)
+      image = service_container.respond_to?(:image) ? service_container.image : service_container
+      base = built_in_hardening_profile_for(image)
+      overrides = hardening_overrides_for(service_container)
+
+      {
+        readonly_rootfs: overrides.fetch(:readonly_rootfs, base.fetch(:readonly_rootfs)),
+        user: overrides.key?(:user) ? overrides[:user] : base[:user],
+        tmpfs: base.fetch(:tmpfs).merge(overrides.fetch(:tmpfs, {})),
+        cap_add: overrides.key?(:cap_add) ? overrides[:cap_add] : base[:cap_add]
+      }
+    end
+
+    def built_in_hardening_profile_for(image)
       HARDENING_PROFILES.each do |pattern, profile|
         return profile if image.include?(pattern)
       end
       DEFAULT_HARDENING_PROFILE
+    end
+
+    def hardening_overrides_for(service_container)
+      raw = service_container.respond_to?(:env) ? service_container.env[HARDENING_ENV_KEY] : nil
+      return {} if raw.blank?
+      raise Error, "#{HARDENING_ENV_KEY} must be a JSON object" unless raw.is_a?(Hash)
+
+      override = {}
+      if raw.key?("readonly_rootfs")
+        readonly_rootfs = raw.fetch("readonly_rootfs")
+        unless readonly_rootfs == true || readonly_rootfs == false
+          raise Error, "#{HARDENING_ENV_KEY}.readonly_rootfs must be true or false"
+        end
+
+        override[:readonly_rootfs] = readonly_rootfs
+      end
+
+      override[:user] = raw.fetch("user") if raw.key?("user")
+
+      if raw.key?("cap_add")
+        cap_add = raw.fetch("cap_add")
+        raise Error, "#{HARDENING_ENV_KEY}.cap_add must be an array" unless cap_add.is_a?(Array)
+
+        override[:cap_add] = cap_add.map(&:to_s)
+      end
+
+      override[:tmpfs] = normalize_tmpfs_overrides(raw.fetch("tmpfs")) if raw.key?("tmpfs")
+      override
+    end
+
+    def normalize_tmpfs_overrides(raw_tmpfs)
+      raise Error, "#{HARDENING_ENV_KEY}.tmpfs must be a JSON object" unless raw_tmpfs.is_a?(Hash)
+
+      raw_tmpfs.each_with_object({}) do |(path, options), normalized|
+        raise Error, "#{HARDENING_ENV_KEY}.tmpfs entries must be JSON objects" unless options.is_a?(Hash)
+
+        normalized[path.to_s] = {
+          size: Integer(options.fetch("size")),
+          mode: options.fetch("mode").to_s
+        }
+        normalized[path.to_s][:uid] = Integer(options.fetch("uid")) if options.key?("uid")
+        normalized[path.to_s][:gid] = Integer(options.fetch("gid")) if options.key?("gid")
+      end
+    rescue KeyError, ArgumentError, TypeError => e
+      raise Error, "Invalid #{HARDENING_ENV_KEY}.tmpfs override: #{e.message}"
     end
 
     def docker_tmpfs_mounts(tmpfs)
@@ -645,7 +710,7 @@ module Containers
     end
 
     def container_env_for(service_container)
-      env = service_container.env
+      env = service_container.env.except(HARDENING_ENV_KEY)
 
       return env unless service_container.image.include?("postgres")
 

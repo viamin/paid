@@ -37,6 +37,20 @@ RSpec.describe Containers::ServiceProvisioner do
     allow(docker_container).to receive(:exec).and_return([ [ "(0 rows)" ], [], 0 ])
   end
 
+  def custom_hardening_env
+    {
+      "PAID_SERVICE_HARDENING" => {
+        "readonly_rootfs" => true,
+        "user" => "1000:1000",
+        "cap_add" => [ "NET_BIND_SERVICE" ],
+        "tmpfs" => {
+          "/var/lib/custom" => { "size" => 65_536, "mode" => "0750", "uid" => 1000, "gid" => 1000 }
+        }
+      },
+      "APP_MODE" => "test"
+    }
+  end
+
   def expect_postgres_service_snapshot!(agent_run:, service_container:, service_host:, expected_db:)
     expect(agent_run.service_declaration_snapshot).to eq(
       "container_ids" => [ service_container.id ],
@@ -788,14 +802,17 @@ RSpec.describe Containers::ServiceProvisioner do
 
     it "pins known service families to non-root runtime users" do
       # @spec CONTAINER-RUNTIME-035
-      expect(provisioner.send(:hardening_profile_for, "postgres:16")[:user]).to eq("postgres")
-      expect(provisioner.send(:hardening_profile_for, "redis:7-alpine")[:user]).to eq("redis")
-      expect(provisioner.send(:hardening_profile_for, "selenium/standalone-chromium:latest")[:user]).to eq("seluser")
+      expect(provisioner.send(:built_in_hardening_profile_for, "postgres:16")[:user]).to eq("postgres")
+      expect(provisioner.send(:built_in_hardening_profile_for, "redis:7-alpine")[:user]).to eq("redis")
+      expect(provisioner.send(:built_in_hardening_profile_for, "selenium/standalone-chromium:latest")[:user]).to eq("seluser")
     end
 
     context "with an unrecognized image" do
+      let(:custom_account) { create(:account) }
+      let(:project) { create(:project, account: custom_account) }
+      let(:issue) { create(:issue, project: project) }
+      let(:agent_run) { create(:agent_run, project: project, issue: issue) }
       let(:service_container) do
-        custom_account = create(:account)
         admin = create(:user, account: custom_account)
         admin.add_role(:admin, custom_account)
         create(:user_setting, user: admin, allowed_service_images: [ "custom-service:1.0" ])
@@ -808,7 +825,7 @@ RSpec.describe Containers::ServiceProvisioner do
           env: {})
       end
 
-      it "falls back to the conservative default hardening profile" do
+      it "keeps the root filesystem writable by default for compatibility" do
         # @spec CONTAINER-RUNTIME-035
         allow(Docker::Image).to receive(:create)
         stub_healthy_created_container("abc123")
@@ -817,7 +834,7 @@ RSpec.describe Containers::ServiceProvisioner do
 
         expect(Docker::Container).to have_received(:create).with(
           hash_including(
-            "ReadonlyRootfs" => true,
+            "ReadonlyRootfs" => false,
             "CapDrop" => [ "ALL" ],
             "CapAdd" => [],
             "SecurityOpt" => [ "no-new-privileges:true" ],
@@ -825,11 +842,35 @@ RSpec.describe Containers::ServiceProvisioner do
               "CapDrop" => [ "ALL" ],
               "CapAdd" => [],
               "SecurityOpt" => [ "no-new-privileges:true" ],
-              "Tmpfs" => { "/tmp" => "size=#{64 * 1024 * 1024},mode=1777" }
+              "Tmpfs" => {}
             )
           )
         )
         expect(Docker::Container).to have_received(:create).with(satisfy { |config| !config.key?("User") })
+      end
+
+      it "accepts a reserved hardening override profile from env JSON" do
+        # @spec CONTAINER-RUNTIME-035
+        service_container.update!(env: custom_hardening_env)
+        allow(Docker::Image).to receive(:create)
+        stub_healthy_created_container("abc123")
+
+        provisioner.provision(agent_run)
+
+        expect(Docker::Container).to have_received(:create).with(
+          hash_including(
+            "Env" => [ "APP_MODE=test" ],
+            "ReadonlyRootfs" => true,
+            "User" => "1000:1000",
+            "CapAdd" => [ "NET_BIND_SERVICE" ],
+            "HostConfig" => hash_including(
+              "CapAdd" => [ "NET_BIND_SERVICE" ],
+              "Tmpfs" => {
+                "/var/lib/custom" => "size=65536,mode=0750,uid=1000,gid=1000"
+              }
+            )
+          )
+        )
       end
     end
   end

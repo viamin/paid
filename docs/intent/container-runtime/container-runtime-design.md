@@ -77,20 +77,27 @@ The backend decision for service containers follows the selected run backend or
 the persisted service-container host so reuse, metrics, reconciliation, and
 cleanup stay routed to the daemon that actually owns the container.
 
-Every service container is created with the same baseline hardening already
-applied to agent and chat containers (`CONTAINER-RUNTIME-035`): a read-only
-root filesystem, `no-new-privileges`, and all Linux capabilities dropped.
-`HARDENING_PROFILES` maps known image families (matched by image-name
-substring, the same lookup shape as `RESOURCE_LIMITS`) to the runtime `User`,
-the Tmpfs mounts their documented writable paths need, and the minimum
-capabilities their entrypoint needs back — e.g. Postgres's official image
-publishes a `postgres` user, so its profile runs as `postgres`, mounts
-`PGDATA` and `/var/run/postgresql` with `postgres` ownership, and adds back
-`CHOWN`/`DAC_OVERRIDE`/`FOWNER`/`SETGID`/`SETUID`. Images outside a known
-family fall back to `DEFAULT_HARDENING_PROFILE` (a writable `/tmp` tmpfs, no
-added capabilities, and the image's default user preserved). This hardening is
-orthogonal to `ServiceContainer#image_in_allowlist`, which remains the
-account-admin control over which images may run at all.
+Every service container is created with the same baseline capability controls
+already applied to agent and chat containers (`CONTAINER-RUNTIME-035`):
+`no-new-privileges` and all Linux capabilities dropped. `HARDENING_PROFILES`
+maps known image families (matched by image-name substring, the same lookup
+shape as `RESOURCE_LIMITS`) to whether the root filesystem stays read-only,
+the runtime `User`, the Tmpfs mounts their documented writable paths need,
+and the minimum capabilities their entrypoint needs back — e.g. Postgres's
+official image publishes a `postgres` user, so its profile runs as
+`postgres`, keeps the root filesystem read-only, mounts `PGDATA` and
+`/var/run/postgresql` with `postgres` ownership, and adds back
+`CHOWN`/`DAC_OVERRIDE`/`FOWNER`/`SETGID`/`SETUID`. Account admins can attach
+per-service overrides under the reserved `PAID_SERVICE_HARDENING` key in
+`ServiceContainer#env` to opt an allowlisted custom image into a read-only
+root filesystem, extra Tmpfs mounts, a specific runtime user, or additional
+capabilities. Images outside a known family and without that override keep a
+writable root filesystem for compatibility with the existing
+`allowed_service_images` contract while still running with
+`no-new-privileges`, all capabilities dropped, no added capabilities, and the
+image's default user preserved. This hardening is orthogonal to
+`ServiceContainer#image_in_allowlist`, which remains the account-admin control
+over which images may run at all.
 
 ### Capacity snapshots and admission
 
