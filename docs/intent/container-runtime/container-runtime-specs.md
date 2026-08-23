@@ -515,3 +515,56 @@
   non-executable `omp` launcher, and a Bun version mismatch after install.
   *Tests:* `spec/config/agent_image_build_script_spec.rb`.
   *Code:* `docker/agent/Dockerfile`.
+
+- [x] **CONTAINER-RUNTIME-032** — The system SHALL expose supporting service
+  containers (Postgres, Redis, Selenium/Chromium) through the runner
+  boundary rather than requiring orchestration code to call
+  `Containers::ServiceProvisioner` directly. `ExecutionRunners::Base` SHALL
+  declare `#provision_services`/`#cleanup_services`; `LocalDockerRunner`
+  SHALL implement them as delegates to `Containers::ServiceProvisioner`,
+  preserving its existing reference counting and per-run database isolation.
+  `RunSpec#services` SHALL be populated with provider-neutral
+  `ExecutionRunners::ServiceDeclaration` values (`name`, `image`, `port`,
+  `env`, `type`) captured at provisioning time on the agent run and reused for
+  later manifest generation; when no persisted snapshot exists, the system MAY
+  reconstruct them from the already-provisioned `ServiceContainer` rows
+  without issuing Docker calls.
+  *Tests:* `spec/services/execution_runners/base_spec.rb`,
+  `spec/services/execution_runners/local_docker_runner_spec.rb`,
+  `spec/services/containers/service_provisioner_spec.rb`,
+  `spec/services/execution_runners_spec.rb`,
+  `spec/temporal/activities/provision_services_activity_spec.rb`,
+  `spec/temporal/activities/cleanup_services_activity_spec.rb`,
+  `spec/integration/execution_runners_service_provisioning_integration_spec.rb`.
+  *Code:* `ExecutionRunners::Base`, `ExecutionRunners::LocalDockerRunner`,
+  `ExecutionRunners::ServiceDeclaration`, `ExecutionRunners::RunSpec.from_agent_run`,
+  `Containers::ServiceProvisioner#service_declarations`,
+  `Activities::ProvisionServicesActivity`, `Activities::CleanupServicesActivity`.
+
+- [x] **CONTAINER-RUNTIME-033** — The system SHALL expose `docker_image` MCP
+  sidecar provisioning/cleanup through the runner boundary.
+  `ExecutionRunners::Base` SHALL declare `#provision_mcp_servers`/
+  `#cleanup_mcp_servers`; `LocalDockerRunner` SHALL implement them as
+  delegates to `Containers::McpProvisioner`, unchanged from today's stdio
+  (`npx`) vs. sidecar (`docker_image`) distinction — stdio MCP servers remain
+  agent runtime configuration, not a `ServiceDeclaration`.
+  *Tests:* `spec/services/execution_runners/base_spec.rb`,
+  `spec/services/execution_runners/local_docker_runner_spec.rb`,
+  `spec/temporal/activities/provision_mcp_servers_activity_spec.rb`,
+  `spec/temporal/activities/cleanup_mcp_servers_activity_spec.rb`.
+  *Code:* `ExecutionRunners::Base`, `ExecutionRunners::LocalDockerRunner`,
+  `Containers::McpProvisioner`, `Activities::ProvisionMcpServersActivity`,
+  `Activities::CleanupMcpServersActivity`.
+
+- [x] **CONTAINER-RUNTIME-034** — The system SHALL expose the Playwright/
+  Chromium browser verification container through the runner boundary.
+  `ExecutionRunners::Base` SHALL declare `#provision_browser_container`;
+  `LocalDockerRunner` SHALL implement it as a delegate to
+  `AgentRuns::Verification.call`, unchanged from today's container-ID
+  tracking into `agent_run.mcp_sidecar_container_ids` (shared cleanup path
+  with MCP sidecars).
+  *Tests:* `spec/services/execution_runners/base_spec.rb`,
+  `spec/services/execution_runners/local_docker_runner_spec.rb`,
+  `spec/temporal/activities/provision_browser_container_activity_spec.rb`.
+  *Code:* `ExecutionRunners::Base`, `ExecutionRunners::LocalDockerRunner`,
+  `AgentRuns::Verification`, `Activities::ProvisionBrowserContainerActivity`.

@@ -2435,6 +2435,7 @@ class AgentRun < ApplicationRecord
   ISSUE_PROMPT_ASSEMBLY_KEY = "issue_prompt_assembly"
   RUNTIME_IMAGE_KEY = "runtime_image"
   PROMPT_BUILDER_KEY = "prompt_builder"
+  SERVICE_DECLARATIONS_KEY = "service_declarations"
 
   # Persists prompt-assembly provenance (digest + section list) on the run so
   # configuration bundles and run metadata can fingerprint exactly which
@@ -2478,6 +2479,29 @@ class AgentRun < ApplicationRecord
 
   def runtime_image_selection
     external_metadata.is_a?(Hash) ? external_metadata[RUNTIME_IMAGE_KEY] : nil
+  end
+
+  def record_service_declarations!(declarations, container_ids:)
+    return if declarations.blank?
+
+    metadata = external_metadata.is_a?(Hash) ? external_metadata.dup : {}
+    metadata[SERVICE_DECLARATIONS_KEY] = {
+      "container_ids" => Array(container_ids),
+      "declarations" => ExecutionRunners.json_value(declarations)
+    }
+
+    if persisted?
+      update_columns(external_metadata: metadata)
+    else
+      self.external_metadata = metadata
+    end
+  end
+
+  def service_declaration_snapshot
+    return unless external_metadata.is_a?(Hash)
+
+    snapshot = external_metadata[SERVICE_DECLARATIONS_KEY]
+    snapshot.is_a?(Hash) ? snapshot : nil
   end
 
   # Clears any runtime image selection previously recorded on this run. Used
