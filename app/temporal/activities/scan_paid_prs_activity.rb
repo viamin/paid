@@ -52,6 +52,15 @@ module Activities
     # the marker without matching human-authored text.
     PAID_REVIEW_CLEAN_MARKER = "<!-- paid-review-clean -->"
     PAID_ESCALATED_LABEL = "paid-escalated"
+    TDD_TESTS_READY_FOR_REVIEW_LABEL = Projects::EnsureStandardLabels::LABEL_DEFINITIONS
+      .dig(:tdd_test_review, :name)
+      .freeze
+    TDD_TESTS_APPROVED_LABEL = Projects::EnsureStandardLabels::LABEL_DEFINITIONS
+      .dig(:tdd_tests_approved, :name)
+      .freeze
+    TDD_TEST_CHANGES_REQUESTED_LABEL = Projects::EnsureStandardLabels::LABEL_DEFINITIONS
+      .dig(:tdd_test_changes_requested, :name)
+      .freeze
     TRIGGER_TO_FOCUS = {
       "actionable_labels" => "label_action",
       "changes_requested" => "review_feedback",
@@ -470,6 +479,9 @@ module Activities
         return scan_bot_authored_draft_pr(project, client, issue, pr_data: pr_data)
       end
 
+      tdd_result = scan_tdd_draft_pr(project, client, issue)
+      return tdd_result unless tdd_result == :not_applicable
+
       # Hard cap: when the draft round counter is at the project limit and
       # there are no actionable human review threads to address, escalate
       # instead of queuing another follow-up that would just increment the
@@ -649,6 +661,104 @@ module Activities
 
       log_triggers(project, issue, triggers)
       draft_trigger_payload(issue, triggers)
+    end
+
+    def scan_tdd_draft_pr(project, client, issue)
+      return :not_applicable unless project.tdd_mode.in?(%w[strict non_strict])
+      return :not_applicable unless tdd_test_review_pr?(issue)
+
+      return tdd_followup_trigger(issue,
+        type: "tdd_tests_approved",
+        details: "Test review approved; implementation may begin") if issue.has_label?(TDD_TESTS_APPROVED_LABEL)
+
+      return tdd_followup_trigger(issue,
+        type: "tdd_test_changes_requested",
+        details: "Test review requested changes before implementation") if issue.has_label?(TDD_TEST_CHANGES_REQUESTED_LABEL)
+
+      return nil if project.tdd_mode == "strict"
+
+      scan_non_strict_tdd_draft_pr(project, client, issue)
+    end
+
+    def scan_non_strict_tdd_draft_pr(project, client, issue)
+      reviews = fetch_reviews(client, project, issue)
+      unresolved_threads = fetch_unresolved_threads(client, project, issue)
+      return :skipped if reviews.nil? || unresolved_threads.nil?
+
+      last_run = last_completed_run(project, issue)
+      status_triggers = check_review_bot_status(reviews, unresolved_threads,
+        project: project, last_run: last_run, client: client, issue: issue)
+
+      if status_triggers.any? { |trigger| trigger[:data_incomplete] }
+        return draft_trigger_payload(issue, status_triggers)
+      end
+
+      if tdd_review_rejected?(status_triggers)
+        sync_tdd_test_review_verdict!(client, project, issue, TDD_TEST_CHANGES_REQUESTED_LABEL)
+        return tdd_followup_trigger(issue,
+          type: "tdd_test_changes_requested",
+          details: "Automated test review requested changes before implementation")
+      end
+
+      latest_paid_agent_review = latest_allowed_bot_review(reviews, paid_agent_review_logins(project))
+      if latest_paid_agent_review
+        sync_tdd_test_review_verdict!(client, project, issue, TDD_TESTS_APPROVED_LABEL)
+        return tdd_followup_trigger(issue,
+          type: "tdd_tests_approved",
+          details: "Automated test review approved the proposed tests")
+      end
+
+      pending_review = check_paid_agent_review_status(project, issue)
+      return draft_trigger_payload(issue, pending_review) if pending_review.any?
+
+      draft_trigger_payload(issue, [ { type: "paid_agent_review_pending", details: "No paid_agent review found for PR" } ]) if latest_paid_agent_review.nil?
+    end
+
+    def tdd_test_review_pr?(issue)
+      tdd_review_labels(issue).any?
+    end
+
+    def tdd_review_labels(issue)
+      issue.labels & [
+        TDD_TESTS_READY_FOR_REVIEW_LABEL,
+        TDD_TESTS_APPROVED_LABEL,
+        TDD_TEST_CHANGES_REQUESTED_LABEL
+      ]
+    end
+
+    def tdd_review_rejected?(triggers)
+      Array(triggers).any? do |trigger|
+        %w[review_bot_comments review_bot_threads].include?(trigger[:type].to_s)
+      end
+    end
+
+    def tdd_followup_trigger(issue, type:, details:)
+      log_triggers(issue.project, issue, [ { type: type, details: details } ])
+
+      {
+        focus: "general",
+        issue_id: issue.id,
+        pr_number: issue.github_number,
+        triggers: [ { type: type, details: details } ],
+        phase: issue.pr_review_phase,
+        labels_to_remove: [],
+        current_draft_review_count: issue.draft_review_count
+      }
+    end
+
+    def sync_tdd_test_review_verdict!(client, project, issue, verdict_label)
+      labels_to_remove = [
+        TDD_TESTS_READY_FOR_REVIEW_LABEL,
+        TDD_TESTS_APPROVED_LABEL,
+        TDD_TEST_CHANGES_REQUESTED_LABEL
+      ] - [ verdict_label ]
+
+      labels_to_remove.each do |label|
+        client.remove_label_from_issue(project.full_name, issue.github_number, label) if issue.has_label?(label)
+      end
+      client.add_labels_to_issue(project.full_name, issue.github_number, [ verdict_label ]) unless issue.has_label?(verdict_label)
+
+      issue.update!(labels: (issue.labels - labels_to_remove + [ verdict_label ]).uniq)
     end
 
     # Returns the paid_agent_review_pending trigger when present, or nil.
@@ -1892,6 +2002,11 @@ module Activities
         allowed_bot_logins.include?(r[:user_login]&.downcase)
       end
       bot_reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
+    end
+
+    def paid_agent_review_logins(project)
+      project.enabled_review_bot_logins &
+        ProviderSupport.provider_bot_usernames_for("paid_agent")
     end
 
     # Returns the login that should be explicitly requested for a review-bot
