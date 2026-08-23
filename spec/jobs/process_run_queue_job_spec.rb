@@ -959,6 +959,24 @@ RSpec.describe ProcessRunQueueJob do
       expect(queued_run.external_metadata["requested_resources"]).to be_present
     end
 
+    # @spec INFRA-SPEND-002
+    # @spec OBSERVABILITY-002
+    it "keeps the run running when provisioning metadata persistence fails after workflow start" do
+      queued_run = create(:agent_run, :queued)
+
+      allow(job).to receive(:record_provisioning_start!).and_raise(StandardError, "metadata write failed")
+
+      result = job.send(:start_claimed_run, queued_run)
+
+      expect(result).to be(true)
+      expect(queued_run.reload.status).to eq("running")
+      expect(queued_run.error_message).to be_nil
+      expect(queued_run.temporal_workflow_id).to be_present
+      expect(queued_run.provisioning_started_at).to be_nil
+      expect(queued_run.external_metadata["provisioning_started_at"]).to be_nil
+      expect(queued_run.external_metadata["infrastructure_spend"]).to be_nil
+    end
+
     it "admits a claimed run even when unrelated validations drift after queueing" do
       queued_run = create(:agent_run, :queued)
       other_user = create(:user)

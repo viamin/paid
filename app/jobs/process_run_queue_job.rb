@@ -1181,14 +1181,16 @@ class ProcessRunQueueJob < ApplicationJob
     # due to a network timeout, the workflow may have started server-side.
     # Leaving the ID allows StaleRunDetectorJob to find and cancel the
     # potentially-orphaned workflow rather than losing track of it.
-    Paid.temporal_client.start_workflow(
-      Workflows::AgentExecutionWorkflow,
-      workflow_input,
-      id: workflow_id,
-      task_queue: Paid.agent_task_queue,
-      priority: temporal_priority_for(agent_run)
+    return false unless start_workflow!(
+      agent_run,
+      workflow_input: workflow_input,
+      workflow_id: workflow_id
     )
-    record_provisioning_start!(agent_run, planned_container_host)
+    record_provisioning_start_after_start(
+      agent_run,
+      workflow_id: workflow_id,
+      planned_container_host: planned_container_host
+    )
 
     Rails.logger.info(
       message: "process_run_queue.started_queued_run",
@@ -1196,14 +1198,6 @@ class ProcessRunQueueJob < ApplicationJob
       workflow_id: workflow_id
     )
     true
-  rescue => e
-    force_fail_run(agent_run, error: "Failed to start workflow: #{e.message}")
-    Rails.logger.error(
-      message: "process_run_queue.start_failed",
-      agent_run_id: agent_run.id,
-      error: e.message
-    )
-    false
   end
 
   # @spec OBSERVABILITY-002 — record provisioning_started_at and
@@ -1224,6 +1218,36 @@ class ProcessRunQueueJob < ApplicationJob
       provisioning_started_at: started_at,
       external_metadata: metadata,
       updated_at: Time.current
+    )
+  end
+
+  def start_workflow!(agent_run, workflow_input:, workflow_id:)
+    Paid.temporal_client.start_workflow(
+      Workflows::AgentExecutionWorkflow,
+      workflow_input,
+      id: workflow_id,
+      task_queue: Paid.agent_task_queue,
+      priority: temporal_priority_for(agent_run)
+    )
+  rescue => e
+    force_fail_run(agent_run, error: "Failed to start workflow: #{e.message}")
+    Rails.logger.error(
+      message: "process_run_queue.start_failed",
+      agent_run_id: agent_run.id,
+      workflow_id: workflow_id,
+      error: e.message
+    )
+    false
+  end
+
+  def record_provisioning_start_after_start(agent_run, workflow_id:, planned_container_host:)
+    record_provisioning_start!(agent_run, planned_container_host)
+  rescue => e
+    Rails.logger.error(
+      message: "process_run_queue.provisioning_metadata_persist_failed",
+      agent_run_id: agent_run.id,
+      workflow_id: workflow_id,
+      error: e.message
     )
   end
 
