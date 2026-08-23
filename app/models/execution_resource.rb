@@ -239,9 +239,10 @@ class ExecutionResource < ApplicationRecord # @spec CONTAINER-RUNTIME-032
   def self.safe_agent_run_id(agent_run)
     return nil unless agent_run.is_a?(AgentRun)
 
-    agent_run.id
-  rescue NoMethodError
-    nil
+    attributes = agent_run.instance_variable_get(:@attributes)
+    return nil unless attributes.respond_to?(:fetch_value)
+
+    attributes.fetch_value("id")
   end
   private_class_method :safe_agent_run_id
 end
