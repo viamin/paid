@@ -42,15 +42,16 @@ module Capacity
     end
 
     def spent_cents
-      runs.sum { |run| spend_for_run(run) }
+      warn_about_missing_rates
+      overlapping_runs.sum(Arel.sql(spend_cents_sql)).to_i
     end
 
     private
 
     attr_reader :account, :ends_at, :project, :runner, :starts_at
 
-    def runs
-      @runs ||= TenantContext.with_system_access do
+    def overlapping_runs
+      @overlapping_runs ||= TenantContext.with_system_access do
         scope = AgentRun
           .joins(:project)
           .where.not(provisioning_started_at: nil)
@@ -61,43 +62,62 @@ module Capacity
         scope = scope.where(projects: { account_id: account.id }) if account
         scope = scope.where(project_id: project.id) if project
         scope = scope.where(runner_id: runner.id) if runner
-        scope.to_a
+        scope
       end
     end
 
-    def spend_for_run(run)
-      run_start = [ run.provisioning_started_at, starts_at ].compact.max
-      run_end = [ terminal_time_for(run), ends_at ].compact.min
-      return 0 if run_start.blank? || run_end.blank? || run_end <= run_start
-
-      self.class.cost_for_seconds(rate_cents_per_hour_for_run(run), run_end - run_start)
+    def warn_about_missing_rates
+      runs_missing_rate.find_each do |run|
+        Rails.logger.warn(
+          message: "capacity.infrastructure_spend_rate_missing",
+          agent_run_id: run.id,
+          container_host: run.workspace_volume_host
+        )
+      end
     end
 
-    def terminal_time_for(run)
-      return run.completed_at if run.completed_at.present?
-      return ends_at if AgentRun::ACTIVE_STATUSES.include?(run.status)
-
-      nil
+    def runs_missing_rate
+      overlapping_runs
+        .where("#{rate_cents_per_hour_sql} <= 0")
+        .select(:id, :container_host, :external_metadata)
     end
 
-    # Historical spend accounting must stay fixed once computed. Falling back
-    # to the *current* Capacity::InfrastructureLimits config for a run that
-    # never had a rate stamped into external_metadata (runs in flight when
-    # this feature deployed, or any run whose host rate changes later) would
-    # reprice that run every time this method runs, making dashboards and
-    # threshold checks drift as the env var changes rather than reflecting
-    # what was actually true when the run executed. Treat un-stamped runs as
-    # uncosted instead of guessing from live config.
-    def rate_cents_per_hour_for_run(run)
-      stored_rate = run.external_metadata.dig("infrastructure_spend", "rate_cents_per_hour")
-      return stored_rate.to_i if stored_rate.to_i.positive?
+    def spend_cents_sql
+      @spend_cents_sql ||= <<~SQL.squish
+        ROUND(
+          (
+            #{rate_cents_per_hour_sql} *
+            GREATEST(
+              EXTRACT(EPOCH FROM (
+                LEAST(COALESCE(agent_runs.completed_at, #{quoted_ends_at}), #{quoted_ends_at}) -
+                GREATEST(agent_runs.provisioning_started_at, #{quoted_starts_at})
+              )),
+              0
+            )
+          ) / 3600.0
+        )
+      SQL
+    end
 
-      Rails.logger.warn(
-        message: "capacity.infrastructure_spend_rate_missing",
-        agent_run_id: run.id,
-        container_host: run.workspace_volume_host
-      )
-      0
+    def rate_cents_per_hour_sql
+      @rate_cents_per_hour_sql ||= <<~SQL.squish
+        COALESCE(
+          NULLIF(agent_runs.external_metadata #>> '{infrastructure_spend,rate_cents_per_hour}', ''),
+          '0'
+        )::numeric
+      SQL
+    end
+
+    def quoted_ends_at
+      @quoted_ends_at ||= connection.quote(ends_at)
+    end
+
+    def quoted_starts_at
+      @quoted_starts_at ||= connection.quote(starts_at)
+    end
+
+    def connection
+      ActiveRecord::Base.connection
     end
   end
 end

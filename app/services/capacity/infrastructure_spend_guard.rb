@@ -186,23 +186,39 @@ module Capacity
     end
 
     def spend_cents_for(check)
-      Capacity::InfrastructureSpend.spent_cents(
-        account: check[:scope] == "global" ? nil : check[:account],
-        project: check[:project],
-        runner: check[:runner],
-        starts_at: check[:starts_at],
-        ends_at: now
-      )
+      spend_cents_cache.fetch(check_cache_key(check)) do
+        Capacity::InfrastructureSpend.spent_cents(
+          account: check[:scope] == "global" ? nil : check[:account],
+          project: check[:project],
+          runner: check[:runner],
+          starts_at: check[:starts_at],
+          ends_at: now
+        )
+      end
     end
 
     def projected_cents_for(check)
-      Capacity::InfrastructureSpend.projected_cents_for_host(
-        host: selected_host,
-        starts_at: check[:starts_at],
-        ends_at: check[:ends_at],
-        now: now,
-        env: env
-      )
+      projected_cents_cache.fetch(check[:period]) do
+        Capacity::InfrastructureSpend.projected_cents_for_host(
+          host: selected_host,
+          starts_at: check[:starts_at],
+          ends_at: check[:ends_at],
+          now: now,
+          env: env
+        )
+      end
+    end
+
+    def check_cache_key(check)
+      [ check[:scope], check[:period], check[:account]&.id, check[:project]&.id, check[:runner]&.id ]
+    end
+
+    def spend_cents_cache
+      @spend_cents_cache ||= {}
+    end
+
+    def projected_cents_cache
+      @projected_cents_cache ||= {}
     end
 
     def breach_payload(check, current_spend_cents, projected_spend_cents)
