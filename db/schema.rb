@@ -864,6 +864,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_22_085848) do
     t.bigint "account_id", null: false, comment: "Tenant that owns this policy family."
     t.jsonb "context_selector", default: {}, null: false, comment: "Structured selector used to decide when this policy applies."
     t.datetime "created_at", null: false
+    t.bigint "current_version_id"
     t.text "description", comment: "Long-form summary of what this policy is intended to optimize or protect."
     t.jsonb "metadata", default: {}, null: false, comment: "Additional structured provenance, rollout, and audit details."
     t.string "name", null: false, comment: "Human-readable policy name shown in admin and experiment tooling."
@@ -876,8 +877,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_22_085848) do
     t.index ["account_id", "policy_type", "status"], name: "idx_coordination_policies_account_type_status"
     t.index ["account_id", "project_id", "policy_type", "policy_key"], name: "idx_coordination_policies_project_scope_key", unique: true, where: "(project_id IS NOT NULL)"
     t.index ["account_id"], name: "index_coordination_policies_on_account_id"
+    t.index ["current_version_id"], name: "index_coordination_policies_on_current_version_id"
     t.index ["project_id", "policy_type", "status"], name: "idx_coordination_policies_project_type_status"
     t.index ["project_id"], name: "index_coordination_policies_on_project_id"
+  end
+
+  create_table "coordination_policy_versions", comment: "Immutable policy revisions that carry the executable rules and tunable parameters for a coordination policy.", force: :cascade do |t|
+    t.datetime "activated_at", comment: "When this version became the policy's active revision."
+    t.bigint "coordination_policy_id", null: false, comment: "Owning policy catalog entry."
+    t.datetime "created_at", null: false
+    t.string "idempotency_key"
+    t.text "llm_prompt", comment: "Optional prompt template used when the policy delegates part of the decision to an LLM."
+    t.jsonb "metadata", default: {}, null: false, comment: "Structured provenance such as generator metadata, rollout notes, and approval state."
+    t.jsonb "parameters", default: {}, null: false, comment: "Thresholds, weights, and other tunable policy parameters."
+    t.text "reasoning", comment: "Why this policy version exists and what changed from the prior version."
+    t.datetime "retired_at", comment: "When this version stopped being eligible for runtime selection."
+    t.jsonb "rules", default: {}, null: false, comment: "Structured decision rules executed by coordination services."
+    t.string "status", limit: 30, default: "draft", null: false, comment: "Revision lifecycle state: draft, active, superseded, or retired."
+    t.datetime "updated_at", null: false
+    t.integer "version", null: false, comment: "Monotonic version number within the owning coordination policy."
+    t.index ["coordination_policy_id", "idempotency_key"], name: "index_coordination_policy_versions_on_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
+    t.index ["coordination_policy_id", "status", "created_at"], name: "idx_coordination_policy_versions_policy_status_created"
+    t.index ["coordination_policy_id", "version"], name: "idx_coordination_policy_versions_unique_version", unique: true
+    t.index ["coordination_policy_id"], name: "idx_coordination_policy_versions_one_active", unique: true, where: "((status)::text = 'active'::text)"
+    t.index ["coordination_policy_id"], name: "index_coordination_policy_versions_on_coordination_policy_id"
   end
 
   create_table "cost_budgets", force: :cascade do |t|
@@ -3212,6 +3235,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_22_085848) do
   add_foreign_key "configuration_experiment_variants", "configuration_experiments", on_delete: :cascade
   add_foreign_key "configuration_experiments", "accounts", on_delete: :cascade
   add_foreign_key "configuration_experiments", "configuration_experiment_variants", column: "winner_variant_id", on_delete: :nullify
+  add_foreign_key "coordination_policies", "coordination_policy_versions", column: "current_version_id", on_delete: :nullify
+  add_foreign_key "coordination_policy_versions", "coordination_policies", on_delete: :cascade
   add_foreign_key "container_metrics", "agent_runs", on_delete: :cascade
   add_foreign_key "container_pool_entries", "agent_runs", on_delete: :nullify
   add_foreign_key "container_pool_entries", "projects", on_delete: :cascade

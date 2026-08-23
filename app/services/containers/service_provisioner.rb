@@ -424,10 +424,14 @@ module Containers
 
     def ensure_running!(service_container)
       if service_container.running?
-        if docker_container_alive?(service_container.docker_container_id)
-          ensure_connected_to_network!(service_container)
-          schedule_metrics_collection(service_container)
-          return
+        if (docker_container = running_docker_container(service_container.docker_container_id))
+          if recreate_legacy_container!(service_container, docker_container, docker_container.json, source: "running")
+            # Recreate below with the hardened config.
+          else
+            ensure_connected_to_network!(service_container)
+            schedule_metrics_collection(service_container)
+            return
+          end
         else
           log_info("service_provisioner.container_dead", name: service_container.name)
           service_container.update!(status: "stopped", docker_container_id: nil, container_host: nil)
@@ -557,6 +561,10 @@ module Containers
       end
 
       if info.dig("State", "Running")
+        if recreate_legacy_container!(service_container, existing, info, source: "conflict")
+          return create_docker_container(service_container)
+        end
+
         log_info("service_provisioner.adopted_existing",
           name: service_container.name, container_id: existing.id)
         service_container.update!(
@@ -863,6 +871,50 @@ module Containers
       container.info.dig("State", "Running") == true
     rescue Docker::Error::DockerError, Excon::Error
       false
+    end
+
+    def running_docker_container(container_id)
+      return if container_id.blank?
+
+      container = backend.get_container(container_id)
+      container if container.info.dig("State", "Running") == true
+    rescue Docker::Error::DockerError, Excon::Error
+      nil
+    end
+
+    def recreate_legacy_container!(service_container, docker_container, info, source:)
+      return false unless legacy_hardening_config?(service_container, info)
+
+      log_info("service_provisioner.legacy_hardening_recreate",
+        name: service_container.name,
+        container_id: docker_container.id,
+        source: source)
+      remove_stale_container!(docker_container, runtime_name(service_container))
+      service_container.update!(status: "stopped", docker_container_id: nil, container_host: nil)
+      true
+    end
+
+    def legacy_hardening_config?(service_container, info)
+      hardening = hardening_profile_for(service_container)
+      host_config = info.fetch("HostConfig", {})
+      config = info.fetch("Config", {})
+
+      host_config["ReadonlyRootfs"] != hardening[:readonly_rootfs] ||
+        normalize_string_array(host_config["CapDrop"]) != [ "ALL" ] ||
+        normalize_string_array(host_config["CapAdd"]) != normalize_string_array(hardening[:cap_add]) ||
+        normalize_string_array(host_config["SecurityOpt"]) != [ "no-new-privileges:true" ] ||
+        config["User"].to_s.presence != hardening[:user].presence ||
+        normalize_tmpfs_mounts(host_config["Tmpfs"]) != normalize_tmpfs_mounts(docker_tmpfs_mounts(hardening[:tmpfs]))
+    end
+
+    def normalize_string_array(values)
+      Array(values).map(&:to_s).reject(&:blank?).sort
+    end
+
+    def normalize_tmpfs_mounts(tmpfs)
+      Hash(tmpfs).transform_values do |options|
+        options.to_s.split(",").map(&:strip).reject(&:blank?).sort.join(",")
+      end
     end
 
     def ensure_connected_to_network!(service_container)
