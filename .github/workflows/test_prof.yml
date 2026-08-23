@@ -51,8 +51,12 @@ jobs:
       PAID_DEVELOPMENT_CABLE_DATABASE: paid_test
       PAID_TEST_DATABASE: paid_test
       DB_HOST: localhost
+      PGHOST: localhost
+      PGPORT: 5432
       DB_USERNAME: postgres
+      PGUSER: postgres
       DB_PASSWORD: postgres
+      PGPASSWORD: postgres
       TMPDIR: ${{ github.workspace }}/.tmp-build
       YARN_CACHE_FOLDER: ${{ github.workspace }}/.cache-yarn
       XDG_CACHE_HOME: ${{ github.workspace }}/.cache

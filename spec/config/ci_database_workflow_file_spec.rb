@@ -59,6 +59,10 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
           "PAID_DEVELOPMENT_DATABASE" => "paid_test",
           "PAID_DEVELOPMENT_CABLE_DATABASE" => "paid_test",
           "PAID_TEST_DATABASE" => "paid_test",
+          "PGHOST" => "localhost",
+          "PGPORT" => 5432,
+          "PGUSER" => expectations.fetch("db_username"),
+          "PGPASSWORD" => expectations.fetch("db_password"),
           "DB_USERNAME" => expectations.fetch("db_username"),
           "DB_PASSWORD" => expectations.fetch("db_password"),
           "TMPDIR" => "${{ github.workspace }}/.tmp-build",
@@ -160,6 +164,10 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
             "PAID_DEVELOPMENT_CABLE_DATABASE" => "paid_test",
             "PAID_TEST_DATABASE" => "paid_test",
             "RAILS_TEST_KEY" => "${{ secrets.RAILS_TEST_KEY }}",
+            "PGHOST" => "localhost",
+            "PGPORT" => 5432,
+            "PGUSER" => "postgres",
+            "PGPASSWORD" => "postgres",
             "DB_USERNAME" => "postgres",
             "DB_PASSWORD" => "postgres"
           )

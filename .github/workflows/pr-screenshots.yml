@@ -123,8 +123,12 @@ jobs:
       PAID_TEST_DATABASE: paid_test
       DATABASE_URL: postgres://paid:paid@localhost:5432/paid_test
       DB_HOST: localhost
+      PGHOST: localhost
+      PGPORT: 5432
       DB_USERNAME: paid
+      PGUSER: paid
       DB_PASSWORD: paid
+      PGPASSWORD: paid
       TMPDIR: ${{ github.workspace }}/.tmp-build
       YARN_CACHE_FOLDER: ${{ github.workspace }}/.cache-yarn
       XDG_CACHE_HOME: ${{ github.workspace }}/.cache
