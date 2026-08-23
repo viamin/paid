@@ -1044,6 +1044,26 @@ RSpec.describe ProcessRunQueueJob do
       expect(queued_run.external_metadata["infrastructure_spend"]).to be_nil
     end
 
+    # @spec OBSERVABILITY-002
+    it "keeps the run claimed when Temporal reports NOT_FOUND during post-start cancellation" do
+      queued_run = create(:agent_run, :queued)
+      error = Temporalio::Error::RPCError.allocate
+      allow(error).to receive(:code).and_return(Temporalio::Error::RPCError::Code::NOT_FOUND)
+
+      allow(job).to receive(:record_provisioning_start!).and_raise(StandardError, "metadata write failed")
+      allow(workflow_handle).to receive(:cancel).and_raise(error)
+
+      result = job.send(:start_claimed_run, queued_run)
+
+      expect(result).to be(false)
+      expect(queued_run.reload.status).to eq("queued")
+      expect(queued_run.error_message).to include("metadata write failed")
+      expect(queued_run.temporal_workflow_id).to be_present
+      expect(queued_run.provisioning_started_at).to be_nil
+      expect(queued_run.external_metadata["provisioning_started_at"]).to be_nil
+      expect(queued_run.external_metadata["infrastructure_spend"]).to be_nil
+    end
+
     it "admits a claimed run even when unrelated validations drift after queueing" do
       queued_run = create(:agent_run, :queued)
       other_user = create(:user)

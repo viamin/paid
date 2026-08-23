@@ -1276,8 +1276,8 @@ class ProcessRunQueueJob < ApplicationJob
     record_provisioning_start!(agent_run, planned_container_host)
   rescue => e
     error = "Failed to persist provisioning metadata after workflow start: #{e.message}"
-    cancel_confirmed = cancel_started_workflow(workflow_handle, agent_run, workflow_id)
-    if cancel_confirmed
+    cancellation_outcome = cancel_started_workflow(workflow_handle, agent_run, workflow_id)
+    if cancellation_outcome == :confirmed
       force_fail_run(agent_run, error: error)
     else
       keep_run_claimed_for_cleanup(agent_run, error: error)
@@ -1287,14 +1287,14 @@ class ProcessRunQueueJob < ApplicationJob
       agent_run_id: agent_run.id,
       workflow_id: workflow_id,
       error: e.message,
-      cleanup_pending: !cancel_confirmed
+      cleanup_pending: cancellation_outcome != :confirmed
     )
     false
   end
 
   def cancel_started_workflow(workflow_handle, agent_run, workflow_id)
     workflow_handle.cancel
-    true
+    :confirmed
   rescue Temporalio::Error::RPCError => e
     raise unless e.code == Temporalio::Error::RPCError::Code::NOT_FOUND
 
@@ -1303,7 +1303,7 @@ class ProcessRunQueueJob < ApplicationJob
       agent_run_id: agent_run.id,
       workflow_id: workflow_id
     )
-    true
+    :pending_cleanup
   rescue => e
     Rails.logger.warn(
       message: "process_run_queue.provisioning_metadata_cancel_failed",
@@ -1312,7 +1312,7 @@ class ProcessRunQueueJob < ApplicationJob
       error_class: e.class.name,
       error: e.message
     )
-    false
+    :pending_cleanup
   end
 
   # Queue-start failures are infrastructure failures, not business-rule
