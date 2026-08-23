@@ -240,6 +240,8 @@ class ExecutionResource < ApplicationRecord # @spec CONTAINER-RUNTIME-032
     return nil unless agent_run.is_a?(AgentRun)
 
     agent_run.id
+  rescue NoMethodError
+    nil
   end
   private_class_method :safe_agent_run_id
 end
