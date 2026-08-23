@@ -7,6 +7,7 @@ module ExecutionAuditEvents
       "subscription_auth" => ExecutionAuditEvent::CREDENTIAL_CLASS_SUBSCRIPTION_AUTH,
       "direct_outbound" => ExecutionAuditEvent::CREDENTIAL_CLASS_DIRECT_OUTBOUND
     }.freeze
+    RESOURCE_EVENT_PREFIX = "execution.resource."
 
     class << self
       def record(event_name:, actor_id:, agent_run: nil, project: nil, account: nil, actor_type: "system",
@@ -17,8 +18,10 @@ module ExecutionAuditEvents
         resolved_account = account || project_account(resolved_project)
         resolved_policy = normalize_networking_policy(networking_policy)
         resolved_metadata = base_metadata(
+          event_name: event_name,
           agent_run: run,
           correlation_id: correlation_id,
+          resource_type: resource_type,
           resource_id: resource_id,
           metadata: metadata
         )
@@ -89,7 +92,7 @@ module ExecutionAuditEvents
         end
       end
 
-      def base_metadata(agent_run:, correlation_id:, resource_id:, metadata:)
+      def base_metadata(event_name:, agent_run:, correlation_id:, resource_type:, resource_id:, metadata:)
         result = stringify(metadata)
         workflow_id = normalize_correlation_id(correlation_id || run_temporal_workflow_id(agent_run))
         result["temporal_workflow_id"] ||= workflow_id if workflow_id.present?
@@ -97,7 +100,12 @@ module ExecutionAuditEvents
         result["request_id"] ||= request_id if request_id.present?
         runner_handle_id = run_runner_handle_id(agent_run)
         result["runner_handle_id"] ||= runner_handle_id if runner_handle_id.present?
-        ledger_id = resource_ledger_id_for(agent_run: agent_run, resource_id: resource_id)
+        ledger_id = resource_ledger_id_for(
+          event_name: event_name,
+          agent_run: agent_run,
+          resource_type: resource_type,
+          resource_id: resource_id
+        )
         result["resource_ledger_id"] ||= ledger_id if ledger_id.present?
         result
       end
@@ -109,11 +117,16 @@ module ExecutionAuditEvents
       # rows today. Check the ledger first so linkage upgrades automatically
       # once RESOURCE-LEDGER-005 lands, and fall back to the provisioning
       # intent so the field is actually populated in the meantime.
-      def resource_ledger_id_for(agent_run:, resource_id:)
+      def resource_ledger_id_for(event_name:, agent_run:, resource_type:, resource_id:)
+        return unless resource_event?(event_name: event_name, resource_type: resource_type, resource_id: resource_id)
         return if agent_run.blank? || !agent_run.respond_to?(:execution_resource_ledger_entries)
 
         matching_record_id(agent_run.execution_resource_ledger_entries, agent_run: agent_run, resource_id: resource_id) ||
           matching_record_id(ProvisioningIntent.where(agent_run_id: agent_run.id), agent_run: agent_run, resource_id: resource_id)
+      end
+
+      def resource_event?(event_name:, resource_type:, resource_id:)
+        event_name.to_s.start_with?(RESOURCE_EVENT_PREFIX) || resource_type.present? || resource_id.present?
       end
 
       def matching_record_id(relation, agent_run:, resource_id:)

@@ -118,5 +118,20 @@ RSpec.describe ExecutionAuditEvents::Lifecycle do
 
       expect(event.metadata["resource_ledger_id"]).to eq(ledger_entry.id)
     end
+
+    it "does not link a resource ledger row for non-resource lifecycle events" do
+      agent_run.update!(runner_handle: { "identifier" => "runner-handle-non-resource" })
+      create(:execution_resource_ledger_entry, :active, :with_agent_run,
+        entry_account: project.account, project: project, agent_run: agent_run,
+        provider_resource_id: nil, runner_handle: { "identifier" => "runner-handle-non-resource" })
+
+      event = described_class.record(
+        event_name: "execution.runner_selected",
+        actor_id: "spec",
+        agent_run: agent_run
+      )
+
+      expect(event.metadata).not_to have_key("resource_ledger_id")
+    end
   end
 end
