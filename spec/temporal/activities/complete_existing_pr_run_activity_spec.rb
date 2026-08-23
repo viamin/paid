@@ -15,7 +15,7 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
   let(:activity) { described_class.new }
   let(:github_client) { instance_double(GithubClient) }
   let(:pr_head) { double("pr_head", ref: "fix-branch") } # rubocop:disable RSpec/VerifiedDoubles
-  let(:pr_data) { double("pr_data", number: 42, html_url: "https://github.com/#{project.full_name}/pull/42", head: pr_head) } # rubocop:disable RSpec/VerifiedDoubles
+  let(:pr_data) { double("pr_data", number: 42, html_url: "https://github.com/#{project.full_name}/pull/42", head: pr_head, body: "## Summary\n\nExisting draft body") } # rubocop:disable RSpec/VerifiedDoubles
   let(:summary_response) do
     instance_double(
       AgentHarness::Response,
@@ -45,6 +45,21 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
       .with(project.full_name, 42)
       .and_return(pr_data)
     allow(github_client).to receive(:add_comment)
+    allow(github_client).to receive(:update_pull_request)
+    allow(github_client).to receive(:issue).with(project.full_name, 42).and_return(
+      OpenStruct.new(
+        id: 4242,
+        number: 42,
+        title: "PR title",
+        body: "PR body",
+        state: "open",
+        labels: [],
+        pull_request: OpenStruct.new(html_url: "https://github.com/#{project.full_name}/pull/42"),
+        user: OpenStruct.new(login: "viamin"),
+        created_at: Time.zone.parse("2026-04-14 00:00:00 UTC"),
+        updated_at: Time.zone.parse("2026-04-14 00:01:00 UTC")
+      )
+    )
   end
 
   describe "#execute" do
@@ -201,6 +216,20 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
       result = activity.execute(agent_run_id: agent_run.id)
 
       expect(result[:tdd_returned_to_test_review]).to be(true)
+    end
+
+    it "refreshes the PR body for test-writing follow-up runs" do # @spec TDD-PR-001
+      agent_run.update!(tdd_phase: "test_writing")
+      allow(PullRequests::ReviewSurface).to receive(:call)
+        .and_return("## Summary\n\nExisting draft body\n\n## Test Outline\n\n```text\nWidget\n```")
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(github_client).to have_received(:update_pull_request).with(
+        project.full_name,
+        42,
+        body: include("## Test Outline")
+      )
     end
 
     it "enqueues ProcessRunQueueJob" do

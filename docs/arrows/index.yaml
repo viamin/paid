@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-08-21
+last_updated: 2026-08-22
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -314,6 +314,12 @@ arrows:
     title: Run-Scoped TDD Write Guards
     path: docs/intent/tdd-write-guards/tdd-write-guards-design.md
     specs: docs/intent/tdd-write-guards/tdd-write-guards-specs.md
+    parent: PAID
+    taxonomy: runtime
+  tdd-test-review-prs:
+    title: TDD Test-Review PRs
+    path: docs/intent/tdd-test-review-prs/tdd-test-review-prs-design.md
+    specs: docs/intent/tdd-test-review-prs/tdd-test-review-prs-specs.md
     parent: PAID
     taxonomy: runtime
   rdr-rollout-guards:

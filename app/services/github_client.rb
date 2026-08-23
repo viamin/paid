@@ -308,6 +308,22 @@ class GithubClient
     handle_errors { client.create_pull_request(repo, base, head, title, body, **options) }
   end
 
+  # Updates mutable pull-request metadata such as the body.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Pull request number
+  # @param title [String, nil] Replacement title
+  # @param body [String, nil] Replacement body
+  # @return [Sawyer::Resource] The updated pull request
+  def update_pull_request(repo, number, title: nil, body: nil)
+    params = {}
+    params[:title] = title if title
+    params[:body] = body if body
+
+    path = "#{Octokit::Repository.path repo}/pulls/#{number}"
+    handle_errors { client.patch(path, params) }
+  end
+
   # Fetches an issue-shaped resource by number.
   #
   # Pull requests are also exposed through GitHub's issues API; this is the
