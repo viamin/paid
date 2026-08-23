@@ -14,24 +14,50 @@
   - [RDR-048](RDR-048-multi-host-docker-backend-support.md) (Multi-Host Docker Backend Support)
   - [RDR-057](RDR-057-remote-execution-data-contract.md) (Remote Execution Data Contract)
   - [RDR-058](RDR-058-execution-authority-network-and-isolation.md) (Execution Authority, Network Policy, and Isolation)
-- **Related Issues**: [#3420](https://github.com/viamin/paid/issues/3420) (closeout), [#3409](https://github.com/viamin/paid/issues/3409), [#3410](https://github.com/viamin/paid/issues/3410), [#3411](https://github.com/viamin/paid/issues/3411), [#3352](https://github.com/viamin/paid/issues/3352), [#3344](https://github.com/viamin/paid/issues/3344), [#3346](https://github.com/viamin/paid/issues/3346), [#3358](https://github.com/viamin/paid/issues/3358)
+- **Related Issues**: [#3420](https://github.com/viamin/paid/issues/3420) (2026-08-18 closeout, closed), [#3600](https://github.com/viamin/paid/issues/3600) (2026-08-23 closeout, open), [#3409](https://github.com/viamin/paid/issues/3409) (closed), [#3410](https://github.com/viamin/paid/issues/3410) (closed), [#3411](https://github.com/viamin/paid/issues/3411) (open), [#3352](https://github.com/viamin/paid/issues/3352) (open), [#3344](https://github.com/viamin/paid/issues/3344) (closed), [#3346](https://github.com/viamin/paid/issues/3346) (closed), [#3358](https://github.com/viamin/paid/issues/3358) (open)
 - **Related Tests**: `spec/jobs/agent_run_resource_janitor_job_spec.rb`, `spec/services/execution_runners_spec.rb`, `spec/services/execution_runners/`, `spec/models/worktree_spec.rb`, `spec/services/containers/pool_manager_spec.rb`
 
 ## Implementation Status
 
-**Partially Implemented** as of 2026-08-18. The foundational infrastructure for
-tracking and cleaning up execution resources exists across multiple subsystems,
-but a unified resource ledger table, provisioning intents, provider ownership
-tags, and reconciliation against provider state are not yet implemented.
+**Partially Implemented** as of 2026-08-23. Phase 1 (ledger data model, #3409)
+and Phase 2 (runner integration, #3410) have both shipped since the 2026-08-18
+closeout, adding a crash-window `ProvisioningIntent` ledger, ownership tags,
+and explicit tag/list degradation to the primary Docker runner path. The
+unified `ExecutionResourceLedgerEntry` table still has no write path, and
+reconciliation, idempotent lifecycle, and runner conformance remain open.
 
 | Criterion | Status | Evidence |
 |-----------|--------|----------|
-| Externally provisioned execution resources representable in ledger | **Partial** | `ExecutionResourceLedgerEntry` (#3409) now provides a unified `execution_resource_ledger_entries` table covering every resource kind in scope (`primary_environment`, `service`, `sidecar`, `workspace`, `network`, `preview_tunnel`, `temporary_storage`) with lifecycle states, tenant scoping, and secret-free tags — but no provisioning/cleanup code path writes to it yet. Resources are still tracked ad hoc across `agent_runs` (container_id, container_host, runner_handle), `container_pool_entries`, `worktrees`, `docker_hosts`, MCP sidecar containers (`app/services/containers/mcp_provisioner.rb`), and shared service containers (`app/services/containers/service_provisioner.rb`) until Phase 2 (#3410) wires runner provisioning into the ledger |
-| Provider resources carry stable Paid ownership tags | **Partial** | Docker containers and volumes are labeled during provisioning (`app/services/containers/provision.rb`) with `paid.managed`, `paid.resource`, `paid.project_id`, and `paid.agent_run_id`/`paid.container_pool_entry_id`, plus deterministic `paid-workspace-{id}` volume naming — but `paid.account_id`, `paid.created_at`, and `paid.resource_kind` are not yet applied. MCP sidecar containers (`McpProvisioner#create_sidecar_container`) and service containers (`ServiceProvisioner#create_docker_container`) fall further short: they only apply a narrow, provisioner-specific label pair (`paid.mcp_sidecar`/`paid.agent_run_id`, and `paid.service_container`/`paid.service_container_id` respectively) with no `paid.managed`, `paid.project_id`, `paid.account_id`, `paid.created_at`, or `paid.resource_kind` |
-| Crash-window provisioning intents before provider create calls | **Gap** | `runner_handle` persisted post-provision (#3346); no pre-provision intent record |
-| Reconciliation detects ledger/provider drift and retries cleanup | **Gap** | Janitor job retries failed cleanup; no active drift detection against provider state |
-| Providers without tag/list support degrade explicitly and safely | **Gap** | No explicit degradation model for providers lacking tag/list APIs |
-| Existing Docker janitors work during migration | **Implemented** | `AgentRunResourceJanitorJob`, `CleanupContainerActivity`, `CleanupWorktreeActivity`, `EnqueueJanitorActivity` |
+| Externally provisioned execution resources representable in ledger | **Partial** | `ExecutionResourceLedgerEntry` (#3409) provides a unified `execution_resource_ledger_entries` table covering every resource kind in scope (`primary_environment`, `service`, `sidecar`, `workspace`, `network`, `preview_tunnel`, `temporary_storage`) with lifecycle states, tenant scoping, and secret-free tags — but no provisioning/cleanup code path writes to that table yet (`RESOURCE-LEDGER-005` remains unchecked). Instead, `ExecutionRunners::ProvisioningLedger` (#3410) writes a separate, narrower `ProvisioningIntent` row for the primary agent container via `LocalDockerRunner#provision`. MCP sidecar containers (`app/services/containers/mcp_provisioner.rb`) and shared service containers (`app/services/containers/service_provisioner.rb`) have neither a ledger entry nor a provisioning intent; they remain tracked only via `AgentRun#mcp_sidecar_container_ids` / `ServiceContainer#docker_container_id`. `ContainerPoolEntry` also has no ledger association |
+| Provider resources carry stable Paid ownership tags | **Partial** | `ExecutionRunners::OwnershipTags` (`app/services/execution_runners.rb:668-707`) now builds `paid.environment`/`paid.account`/`paid.project`/`paid.run`/`paid.attempt`/`paid.resource` labels and `LocalDockerRunner#provision` merges them into both container and workspace-volume labels via `Containers::Provision` — but `paid.created_at` is not part of that tag set, and `paid.managed` is applied only to the workspace volume (`volume_options`), not the primary container itself (`container_labels`). MCP sidecar containers (`McpProvisioner#create_sidecar_container`) and service containers (`ServiceProvisioner#create_docker_container`) still apply only their narrow, provisioner-specific label pair (`paid.mcp_sidecar`/`paid.agent_run_id`, and `paid.service_container`/`paid.service_container_id`) with no ownership-tag integration at all |
+| Crash-window provisioning intents before provider create calls | **Partial** | `ExecutionRunners::ProvisioningLedger#record_intent` (`app/services/execution_runners/provisioning_ledger.rb:65-91`) is called from `LocalDockerRunner#provision` (`app/services/execution_runners/local_docker_runner.rb:82-84`) before `Containers::Provision#provision` runs, then `link_created`/`link_handle` advance the row after the create call — closing the crash window for the primary container path (`CONTAINER-RUNTIME-025`/`-027`). MCP sidecar and service-container provisioning still call the Docker create API with no pre-create intent record, so their crash window remains open |
+| Reconciliation detects ledger/provider drift and retries cleanup | **Gap** | No reconciliation service or job compares `ExecutionResourceLedgerEntry`/`ProvisioningIntent` rows against live provider state (`RESOURCE-LEDGER-006` unchecked); `ServiceContainerReconciliationJob` reconciles `ServiceContainer` rows against the Docker daemon directly and is unrelated to the ledger. The janitor job still only retries cleanup it already knows about |
+| Providers without tag/list support degrade explicitly and safely | **Partial** | `ExecutionRunners::ProvisioningLedger` records explicit `tagging_degraded`/`listing_degraded` metadata on the intent row and logs a `warn`-level message (`app/services/execution_runners/provisioning_ledger.rb:151-193`) whenever a runner declares `supports_tagging?`/`supports_listing?` false, covered by `spec/services/execution_runners/local_docker_runner_spec.rb:919-995`. This degradation path is only wired into the primary `LocalDockerRunner`; no other runner or backend exercises it yet |
+| Existing Docker janitors work during migration | **Implemented** | `AgentRunResourceJanitorJob`, `CleanupContainerActivity`, `CleanupWorktreeActivity`, `EnqueueJanitorActivity` — unmodified and still passing |
+
+### 2026-08-23 Closeout
+
+Audit recorded against umbrella issue
+[#3600](https://github.com/viamin/paid/issues/3600). See
+[`audit-report-2026-08-23-rdr-060.md`](audit-report-2026-08-23-rdr-060.md) for
+full criterion-by-criterion evidence and gap analysis.
+
+The closeout remains **partial**. Since the 2026-08-18 closeout, #3409
+(ledger data model) and #3410 (runner/ledger integration with provider tags)
+both shipped: a `ProvisioningIntent` crash-window ledger, ownership-tag
+labeling, and explicit tag/list degradation now cover the primary Docker
+runner's provision path, upgrading three criteria from Gap to Partial.
+However, the core `ExecutionResourceLedgerEntry` table these phases were
+meant to converge on still has no write path (only `ProvisioningIntent`
+does), MCP sidecar and service containers remain entirely outside ledger
+coverage, and reconciliation, idempotent lifecycle, and conformance testing
+have not started.
+
+Three of the umbrella's blocking dependencies remain open:
+[#3411](https://github.com/viamin/paid/issues/3411) (reconciliation),
+[#3352](https://github.com/viamin/paid/issues/3352) (idempotent lifecycle),
+[#3358](https://github.com/viamin/paid/issues/3358) (runner conformance
+suite). This issue stays open pending those three.
 
 ### 2026-08-18 Closeout
 
@@ -211,27 +237,37 @@ runner capability model. When a runner lacks tag support:
 See `docs/intent/execution-resource-ledger/` for the LLD and EARS specs
 (`RESOURCE-LEDGER-001` through `RESOURCE-LEDGER-004`).
 
-### Phase 2: Runner Integration (#3410)
+### Phase 2: Runner Integration (#3410) — Partially Implemented
 
-- Integrate ledger intent creation into `ExecutionRunners::Base#provision`
-- Apply ownership tags via runner-specific implementations
-- Update ledger state on provision success/failure
+- [x] Integrate ledger intent creation into `LocalDockerRunner#provision` via
+      `ExecutionRunners::ProvisioningLedger` (records a `ProvisioningIntent`
+      before the create call, not directly into
+      `ExecutionResourceLedgerEntry` — see the 2026-08-23 closeout)
+- [x] Apply ownership tags via `ExecutionRunners::OwnershipTags`, wired into
+      the primary Docker runner's container and volume labels
+- [x] Update ledger state on provision success/failure
+      (`link_created`/`link_handle`/`mark_failed`)
+- [ ] Extend intent creation and ownership tags to MCP sidecar containers
+      (`app/services/containers/mcp_provisioner.rb`) and service containers
+      (`app/services/containers/service_provisioner.rb`)
+- [ ] Wire writes into `ExecutionResourceLedgerEntry` itself
+      (`RESOURCE-LEDGER-005`)
 
 ### Phase 3: Reconciliation (#3411)
 
-- Build reconciliation service that compares ledger vs provider state
-- Schedule periodic reconciliation jobs
-- Handle orphan detection and cleanup
+- [ ] Build reconciliation service that compares ledger vs provider state
+- [ ] Schedule periodic reconciliation jobs
+- [ ] Handle orphan detection and cleanup
 
 ### Phase 4: Idempotent Lifecycle (#3352)
 
-- Make provision/cleanup operations idempotent using ledger state
-- Handle crash recovery using intent records
+- [ ] Make provision/cleanup operations idempotent using ledger state
+- [ ] Handle crash recovery using intent records
 
 ### Phase 5: Conformance (#3358)
 
-- Runner conformance suite validates ledger integration
-- Provider comparison benchmarks include tag/list capability testing
+- [ ] Runner conformance suite validates ledger integration
+- [ ] Provider comparison benchmarks include tag/list capability testing
 
 ## Alternatives Considered
 
