@@ -32,8 +32,9 @@ This segment covers implementation plan steps 1–5 of RDR-055:
    traffic, plus production fail-closed behavior when enforcement cannot be
    applied.
 
-The `research` egress profile broker (step 6) and the settings UI (step 7)
-remain future work tracked by the RDR.
+The `research` egress profile broker (step 6) remains future work tracked by
+the RDR. The settings UI/API and run-audit surface (step 7) have shipped, but
+they are documented outside this resolver/enforcement-focused segment.
 
 ## Allowlist entries
 

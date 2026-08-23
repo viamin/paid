@@ -14,10 +14,12 @@
 
 ## Implementation Status
 
-RDR-058 is **partially implemented** as of 2026-08-17. The core execution authority,
-provider-neutral networking contract, and container/tenant isolation are all shipped.
-The remaining gap is tenant-configurable egress allowlisting (RDR-055), which is still
-in Draft status.
+RDR-058 is **partially implemented** as of 2026-08-23. The core execution authority,
+provider-neutral networking contract, container/tenant isolation, and
+tenant-configurable egress allowlisting are all shipped. The remaining gap is
+RDR-055's brokered research egress with secret-extraction guards
+([#3439](https://github.com/viamin/paid/issues/3439)), which keeps RDR-055 itself
+**Partially Implemented** rather than Implemented.
 
 | Criterion | Status | Evidence |
 |-----------|--------|----------|
@@ -27,7 +29,8 @@ in Draft status.
 | Preview/debug ingress exceptions are scoped | Implemented | `preview_sessions` and `PreviewProvisionState` — tunnel creation requires an explicit project-owned `preview_session` record; `app/models/preview_session.rb` |
 | Tenant/project/run isolation invariants are tested | Implemented | RLS on `agent_runs`/`projects`: `spec/security/tenant_context_spec.rb`; per-run `proxy_token` scope: `spec/requests/api/secrets_proxy_spec.rb`; per-run named workspace volumes: `spec/services/execution_runners/local_docker_runner_spec.rb` and `spec/services/containers/provision_spec.rb` |
 | Subscription-auth and direct-outbound remain explicit exceptions | Implemented | `NetworkPolicy` defaults to `:proxy` mode; subscription-auth and direct-outbound require explicit `subscription_auth?` / `direct_outbound_runner?` predicates; `spec/services/network_policy_spec.rb` |
-| Tenant-configurable egress allowlisting | **Gap** | RDR-055 is Draft; no per-tenant domain allowlist enforcement shipped; follow-on via RDR-055 implementation |
+| Tenant-configurable egress allowlisting | Implemented | RDR-055's `EgressAllowlistEntry` model, `AgentRuns::EgressPolicy::{Resolve,Gateway}`, and the per-host Docker egress gateway ship the account/project domain allowlist. Restricted runtimes that cannot enforce that profile fail closed, while `GatewayAdapters::{Kubernetes,ManagedMachine}` remain contract stubs pending their runtime implementations; see RDR-055 for full evidence |
+| Brokered research egress with secret-extraction guards | **Gap** | RDR-055 acceptance criterion still open; follow-up [#3439](https://github.com/viamin/paid/issues/3439) |
 
 ### 2026-08-17 Closeout
 
@@ -79,6 +82,10 @@ Of the six blocking children of #3418, three remain open (#3356, #3404, #3405)
 plus RDR-055 itself. The umbrella status of RDR-058 stays **Partially
 Implemented** until those land.
 
+### 2026-08-23 Update — RDR-055 Egress Allowlisting Shipped
+
+RDR-055's tenant-configurable egress allowlisting has since shipped: the `EgressAllowlistEntry` model, `AgentRuns::EgressPolicy::{Resolve,Gateway}`, the per-host Docker egress gateway, and production fail-closed rejection for runtimes that cannot enforce the restricted profile (#3434, #3435, #3436, #3437, #3438) are all merged. The Kubernetes and managed-machine adapter classes included in that work are contract stubs, not shipped enforcement implementations. This supersedes the "RDR-055 is Draft" framing in the 2026-08-17 closeout audit above, which reflected an earlier point in time. RDR-055 itself remains **Partially Implemented**, not Implemented, because its brokered research egress with secret-extraction guards ([#3439](https://github.com/viamin/paid/issues/3439)) is still open; see RDR-055's 2026-08-23 Umbrella Audit for full evidence. Of the six blocking children of #3418, #3356, #3404, and #3405 remain open.
+
 ## Problem Statement
 
 Paid runs untrusted agent code in containers on behalf of multiple tenants. The
@@ -115,8 +122,10 @@ Several prior RDRs address parts of this problem:
   containers without embedding raw tokens in environment variables or images.
 - **RDR-024** (Multi-Tenancy Isolation): Row-level security on core tables
   (`agent_runs`, `projects`) enforces tenant separation at the database layer.
-- **RDR-055** (Egress Allowlisting, Draft): Planned per-tenant domain allowlisting on
-  top of the base platform-required and runner-required destinations.
+- **RDR-055** (Egress Allowlisting, Partially Implemented): Per-tenant domain
+  allowlisting on top of the base platform-required and runner-required
+  destinations has shipped; brokered research egress with secret-extraction
+  guards remains open ([#3439](https://github.com/viamin/paid/issues/3439)).
 - **RDR-057** (Remote Execution Data Contract): `ExecutionInputManifest` and
   `ExecutionOutputManifest` keep secrets out of cross-boundary manifests by
   construction.
@@ -206,9 +215,10 @@ Tenant isolation (RDR-024):
 - Per-run `proxy_token` scope — the secrets proxy rejects requests for any run other
   than the one identified by the token
 
-### Layer 4 — Egress Policy (Planned — RDR-055)
+### Layer 4 — Egress Policy (RDR-055; allowlisting shipped, research profile pending)
 
-The current firewall allows a fixed set of destinations:
+The in-container firewall allows a fixed set of destinations plus the resolved
+per-run egress snapshot:
 
 - GitHub (TCP 443 and 22, from a fetched CIDR list with static fallback)
 - Secrets proxy host (TCP on `SECRETS_PROXY_PORT`)
@@ -216,9 +226,17 @@ The current firewall allows a fixed set of destinations:
 - Service containers (validated IPs and ports)
 - Loopback and established connections
 
-Tenant-configurable domain allowlists are deferred to RDR-055. Until that ships,
-the `allow_destinations` field on `NetworkingPolicy` is populated only by platform-
-required and runner-required destinations; no per-tenant extension is possible.
+Tenant-configurable domain allowlists have shipped via RDR-055:
+`EgressAllowlistEntry` persists account/project domain rules, and
+`AgentRuns::EgressPolicy::Resolve` merges platform-required, runner-required,
+and tenant-allowlisted destinations into a per-run `Snapshot` that populates
+`NetworkingPolicy#allow_destinations`. The per-host Docker egress gateway
+(`AgentRuns::EgressPolicy::Gateway` and its `GatewayAdapters`) enforces the
+snapshot for domain-aware HTTP(S) filtering and fails closed in production
+when it cannot be installed. The remaining RDR-055 gap is brokered research
+egress with secret-extraction guards
+([#3439](https://github.com/viamin/paid/issues/3439)); see RDR-055 for full
+evidence.
 
 ## Acceptance Criteria
 
@@ -256,10 +274,17 @@ required and runner-required destinations; no per-tenant extension is possible.
    `subscription_auth` or `direct_outbound` requires the runner to pass an explicit
    predicate (`subscription_auth?` or `direct_outbound_runner?`).
 
-7. **Tenant-configurable egress allowlisting** *(gap — deferred to RDR-055)*:
-   Production tenants can add project/account-specific destinations to the egress
-   allowlist beyond the platform-required set. The policy snapshot for each run is
-   stored for audit.
+7. **Tenant-configurable egress allowlisting**: Production tenants can add
+   project/account-specific destinations to the egress allowlist beyond the
+   platform-required set via RDR-055's `EgressAllowlistEntry` model. The
+   resolved policy snapshot for each run is stored on
+   `agent_runs.external_metadata["egress_policy"]` for audit.
+
+8. **Brokered research egress with secret-extraction guards** *(gap — RDR-055,
+   [#3439](https://github.com/viamin/paid/issues/3439))*: A research-enabled
+   run can fetch approved web evidence through Paid without broad direct
+   container egress, and outbound requests are scanned for credential-looking
+   content before the call is made. Not yet built.
 
 ## Implementation Notes
 
