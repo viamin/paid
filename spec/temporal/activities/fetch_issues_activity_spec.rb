@@ -115,6 +115,25 @@ RSpec.describe Activities::FetchIssuesActivity do
       relationships_parsed_at: relationships_parsed_at)
   end
 
+  def set_up_reconciled_questionless_issue(project, github_client, updated_issue)
+    issue = create(:issue, :needs_input,
+      project: project,
+      github_issue_id: 6010,
+      github_number: 60,
+      labels: [ project.enhance_issue_needs_input_label_name, "paid-build" ],
+      needs_input_questions: nil,
+      body: "No clarifying questions here",
+      github_updated_at: 2.days.ago,
+      relationships_parsed_at: nil)
+    project.update_columns(last_issue_reconciliation_at: 2.hours.ago, last_issue_sync_at: 1.day.ago)
+    allow(github_client).to receive(:issues).and_return([ updated_issue ])
+    allow(github_client).to receive(:issues).with(project.full_name, hash_including(state: "open"))
+      .and_return([ OpenStruct.new(number: 60, pull_request: nil) ])
+    allow(github_client).to receive(:issue).with(project.full_name, 60)
+      .and_return(github_issue(60, id: 6010, labels: [ project.enhance_issue_needs_input_label_name, "paid-build" ]))
+    issue
+  end
+
   def expect_single_project_show_refresh(project)
     expect(Turbo::StreamsChannel).to have_received(:broadcast_refresh_to)
       .with(project, :project_updates)
@@ -2472,6 +2491,20 @@ RSpec.describe Activities::FetchIssuesActivity do
           activity.execute(project_id: project.id)
 
           expect(issue.reload.labels).to eq([ "enhancement" ])
+        end
+
+        it "repairs reconciled needs-input issues that have no questions to answer" do
+          issue = set_up_reconciled_questionless_issue(project, github_client, updated_issue)
+
+          activity.execute(project_id: project.id)
+
+          expect(issue.reload.paid_state).to eq("failed")
+          expect(issue.labels).not_to include(project.enhance_issue_needs_input_label_name)
+          expect(github_client).to have_received(:remove_labels_from_issue).with(
+            project.full_name,
+            issue.github_number,
+            [ project.enhance_issue_needs_input_label_name ]
+          )
         end
 
         it "continues reconciliation when one open issue fetch fails" do

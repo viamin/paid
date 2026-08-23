@@ -85,6 +85,7 @@ module Activities
           )
           stale_issue_count = stale_issue_result[:closed_count]
           sync_changed ||= stale_issue_result[:changed]
+          sync_changed ||= repair_questionless_needs_input(project, stale_issue_result[:synced_issues])
         end
 
         completed_state_changed = repair_completed_open_issues(project)
@@ -1115,6 +1116,7 @@ module Activities
       return { changed: false, closed_count: 0 } unless issue_reconciliation_due?(project)
 
       open_numbers, truncated = fetch_open_issue_numbers(client, project.full_name)
+      synced_issues = []
 
       project.update_column(:last_issue_reconciliation_at, Time.current)
 
@@ -1130,6 +1132,7 @@ module Activities
         project,
         client,
         open_numbers,
+        synced_issues: synced_issues,
         eager_queue_enabled: eager_queue_enabled,
         eligible_issues: eligible_issues
       )
@@ -1137,6 +1140,7 @@ module Activities
         project,
         client,
         open_numbers,
+        synced_issues: synced_issues,
         eager_queue_enabled: eager_queue_enabled,
         eligible_issues: eligible_issues
       )
@@ -1158,11 +1162,12 @@ module Activities
 
       {
         changed: backfilled_count.positive? || reconciled_count.positive? || count.positive?,
-        closed_count: count
+        closed_count: count,
+        synced_issues: synced_issues
       }
     end
 
-    def backfill_open_issues(project, client, open_issue_numbers, eager_queue_enabled: false, eligible_issues: nil)
+    def backfill_open_issues(project, client, open_issue_numbers, synced_issues:, eager_queue_enabled: false, eligible_issues: nil)
       return 0 if open_issue_numbers.empty?
 
       existing_open_numbers = project.issues
@@ -1175,7 +1180,7 @@ module Activities
       missing_numbers.each_with_index do |number, index|
         heartbeat("fetch_issues.backfill_issue", project_id: project.id, issue_number: number, index: index, total: missing_numbers.size)
         github_issue = client.issue(project.full_name, number)
-        sync_issue(
+        synced_issues << sync_issue(
           project,
           github_issue,
           eager_queue_enabled: eager_queue_enabled,
@@ -1186,7 +1191,7 @@ module Activities
       missing_numbers.size
     end
 
-    def reconcile_open_issue_state(project, client, open_issue_numbers, eager_queue_enabled: false, eligible_issues: nil)
+    def reconcile_open_issue_state(project, client, open_issue_numbers, synced_issues:, eager_queue_enabled: false, eligible_issues: nil)
       reconciliation_cutoff = Time.current - ISSUE_RECONCILIATION_INTERVAL
       existing_open_numbers = project.issues
         .where(github_state: "open", is_pull_request: false, github_number: open_issue_numbers)
@@ -1199,6 +1204,7 @@ module Activities
         heartbeat("fetch_issues.reconcile_issue", project_id: project.id, issue_number: number, index: index, total: existing_open_numbers.size)
         changed_count += 1 if reconcile_one_open_issue(
           project, client, number,
+          synced_issues: synced_issues,
           eager_queue_enabled: eager_queue_enabled,
           eligible_issues: eligible_issues
         )
@@ -1206,13 +1212,14 @@ module Activities
       changed_count
     end
 
-    def reconcile_one_open_issue(project, client, number, eager_queue_enabled: false, eligible_issues: nil)
+    def reconcile_one_open_issue(project, client, number, synced_issues:, eager_queue_enabled: false, eligible_issues: nil)
       github_issue = client.issue(project.full_name, number)
       result = sync_issue(
         project, github_issue,
         eager_queue_enabled: eager_queue_enabled,
         eligible_issues: eligible_issues
       )
+      synced_issues << result
       project.issues.where(id: result[:id]).update_all(reconciled_at: Time.current)
       result[:changed]
     rescue GithubClient::RateLimitError
