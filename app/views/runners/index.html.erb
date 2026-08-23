@@ -23,15 +23,14 @@
       <thead class="bg-gray-50">
         <tr>
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Runner</th>
+          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Status</th>
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Auth</th>
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Agent Runs</th>
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Chat</th>
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Fallback</th>
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Usage (7d)</th>
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Fallback Rate</th>
-          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Rate Limits</th>
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Quota</th>
-          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Status</th>
           <th class="px-4 py-3"></th>
         </tr>
       </thead>
@@ -50,6 +49,24 @@
                 <% end %>
               </div>
             </td>
+            <td data-test-agent-target="status" class="px-4 py-3 text-sm">
+              <% state = @runner_states[runner.state_key] %>
+              <% state ||= @runner_states[runner.runner_key] if runner.subscription? %>
+              <% if state&.rate_limited? %>
+                <span class="inline-flex items-center rounded-md bg-orange-100 px-2 py-1 text-xs font-medium text-orange-700">
+                  Rate Limited
+                </span>
+                <p class="mt-1 text-xs text-gray-500">Resets <%= local_time(state.rate_limited_until, format: :relative) %></p>
+              <% elsif state&.circuit_open? %>
+                <span class="inline-flex items-center rounded-md bg-red-100 px-2 py-1 text-xs font-medium text-red-700">
+                  Circuit Open
+                </span>
+              <% else %>
+                <span class="inline-flex items-center rounded-md bg-green-100 px-2 py-1 text-xs font-medium text-green-700">
+                  Available
+                </span>
+              <% end %>
+            </td>
             <td class="px-4 py-3 text-sm text-gray-700">
               <% if runner.subscription? %>
                 <span class="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">Subscription</span>
@@ -57,14 +74,29 @@
                 <span class="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700">API Key</span>
               <% end %>
             </td>
-            <td class="px-4 py-3 text-sm text-gray-700"><%= runner.enabled_for_agent_runs? ? "Enabled" : "Disabled" %></td>
-            <td class="px-4 py-3 text-sm text-gray-700"><%= runner.enabled_for_chat? ? "Enabled" : "Disabled" %></td>
             <td class="px-4 py-3 text-sm text-gray-700">
-              <% if runner.api_key? && runner.rate_limit_fallback? %>
-                <%= runner.enabled_for_fallback? ? "Enabled (rate-limit only)" : "Disabled (rate-limit only)" %>
-              <% else %>
-                <%= runner.enabled_for_fallback? ? "Enabled" : "Disabled" %>
-              <% end %>
+              <%= check_box_tag "agent_runs_#{runner.id}", "1", runner.enabled_for_agent_runs?,
+                    disabled: true,
+                    title: runner.enabled_for_agent_runs? ? "Enabled" : "Disabled",
+                    aria: { label: "Agent Runs" } %>
+            </td>
+            <td class="px-4 py-3 text-sm text-gray-700">
+              <%= check_box_tag "chat_#{runner.id}", "1", runner.enabled_for_chat?,
+                    disabled: true,
+                    title: runner.enabled_for_chat? ? "Enabled" : "Disabled",
+                    aria: { label: "Chat" } %>
+            </td>
+            <td class="px-4 py-3 text-sm text-gray-700">
+              <% fallback_title =
+                   if runner.api_key? && runner.rate_limit_fallback?
+                     runner.enabled_for_fallback? ? "Enabled (rate-limit only)" : "Disabled (rate-limit only)"
+                   else
+                     runner.enabled_for_fallback? ? "Enabled" : "Disabled"
+                   end %>
+              <%= check_box_tag "fallback_#{runner.id}", "1", runner.enabled_for_fallback?,
+                    disabled: true,
+                    title: fallback_title,
+                    aria: { label: "Fallback" } %>
             </td>
             <% stats = @runner_stats_by_id[runner.id] %>
             <td class="px-4 py-3 text-sm text-gray-700">
@@ -84,13 +116,6 @@
                 <span class="text-xs text-gray-500">(<%= stats[:fallback_switched] %> of <%= stats[:fallback_total] %>)</span>
               <% else %>
                 <span class="text-gray-400">&mdash;</span>
-              <% end %>
-            </td>
-            <td class="px-4 py-3 text-sm text-gray-700">
-              <% if stats && stats[:rate_limit_events_7d] > 0 %>
-                <span class="text-orange-700"><%= stats[:rate_limit_events_7d] %> events</span>
-              <% else %>
-                <span class="text-gray-400">0</span>
               <% end %>
             </td>
             <% quota_state = @runner_states[runner.state_key] %>
@@ -129,24 +154,6 @@
                 <p class="mt-0.5 text-xs text-gray-400">Routing fell back to reactive availability.</p>
               <% else %>
                 <span class="text-gray-400">&mdash;</span>
-              <% end %>
-            </td>
-            <td data-test-agent-target="status" class="px-4 py-3 text-sm">
-              <% state = @runner_states[runner.state_key] %>
-              <% state ||= @runner_states[runner.runner_key] if runner.subscription? %>
-              <% if state&.rate_limited? %>
-                <span class="inline-flex items-center rounded-md bg-orange-100 px-2 py-1 text-xs font-medium text-orange-700">
-                  Rate Limited
-                </span>
-                <p class="mt-1 text-xs text-gray-500">Resets <%= local_time(state.rate_limited_until, format: :relative) %></p>
-              <% elsif state&.circuit_open? %>
-                <span class="inline-flex items-center rounded-md bg-red-100 px-2 py-1 text-xs font-medium text-red-700">
-                  Circuit Open
-                </span>
-              <% else %>
-                <span class="inline-flex items-center rounded-md bg-green-100 px-2 py-1 text-xs font-medium text-green-700">
-                  Available
-                </span>
               <% end %>
             </td>
             <td class="px-4 py-3 text-right text-sm">
@@ -202,43 +209,5 @@
           saved_fallback_runner_tokens: @saved_fallback_runner_tokens,
           subscription_runner_identifiers: @subscription_runner_identifiers,
           runner_state_aliases: @runner_state_aliases %>
-  </div>
-
-  <div class="mt-8 rounded-lg border border-sky-200 bg-sky-50 p-4">
-    <h2 class="text-base font-semibold text-sky-950">Runner Auth Setup</h2>
-    <p class="mt-1 text-sm text-sky-900">
-      By default, Test Agent uses the same containerized auth path as real runs. For Codex and Gemini when using Paid-managed proxy keys, it can instead use the agent-harness auth path. Copilot real runs stay on the container path and copy GitHub Copilot CLI state from <code>~/.copilot</code> into the agent container at runtime when subscription auth is configured.
-    </p>
-
-    <div class="mt-4 space-y-3" data-runner-auth-instructions>
-      <% runner_auth_instruction_blocks.each do |instruction| %>
-        <details class="rounded-md bg-white/80 shadow-sm ring-1 ring-sky-100" data-runner-instruction-key="<%= instruction[:runner_key] %>">
-          <summary class="cursor-pointer list-none px-4 py-3">
-            <div class="flex items-center justify-between gap-3">
-              <div>
-                <h3 class="text-sm font-semibold text-gray-900"><%= instruction[:title] %></h3>
-                <p class="mt-1 text-xs text-gray-600"><%= instruction[:summary] %></p>
-              </div>
-              <% if instruction[:fallback] %>
-                <span class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-                  Generic Checklist
-                </span>
-              <% end %>
-            </div>
-          </summary>
-          <div class="border-t border-sky-100 px-4 py-3">
-            <ul class="list-disc space-y-1 pl-5 text-xs text-gray-700">
-              <% instruction[:items].each do |item| %>
-                <li><%= sanitize(item, tags: %w[code]) %></li>
-              <% end %>
-            </ul>
-          </div>
-        </details>
-      <% end %>
-    </div>
-
-    <p class="mt-4 text-xs text-sky-900">
-      After changing env vars or credential mounts, restart the <code>web</code> and <code>worker</code> services before testing again. See <a href="https://github.com/viamin/paid#provider-auth-setup" class="font-medium underline">README: Runner Auth Setup</a> for the full checklist.
-    </p>
   </div>
 </div>
