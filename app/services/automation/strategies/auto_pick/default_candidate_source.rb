@@ -65,6 +65,18 @@ module Automation
             AND merged_prs.pr_review_phase = 'merged'
         SQL
 
+        # Deliberately does NOT join on parent_issue_id: that linkage is
+        # written by a separate, later sync step than the PR issue row
+        # itself, so a synced-but-not-yet-linked open PR must still match
+        # here on pull_request_number alone (review follow-up on #3432/#3588).
+        OPEN_PR_CORRELATED_SUBQUERY = <<~SQL.squish.freeze
+          SELECT 1 FROM issues open_prs
+          WHERE open_prs.project_id = agent_runs.project_id
+            AND open_prs.github_number = agent_runs.pull_request_number
+            AND open_prs.is_pull_request = TRUE
+            AND open_prs.github_state = 'open'
+        SQL
+
         # Bounds how long a completed +create_pr+ run without a locally
         # synced resolution keeps its source issue out of auto-pick.
         # +agent_runs.pull_request_number+ is written atomically with the
@@ -237,6 +249,15 @@ module Automation
               .where.not(id: blocking_issue_ids)
               .where(source: [ Issue::GITHUB_SOURCE, Issue::SYNTHETIC_CODE_SCANNING_SOURCE ])
               .where.not(id: Issue.open_pull_request_parent_issue_ids(project: project).distinct)
+              # Applies regardless of paid_state, of parent_issue_id linkage,
+              # and of PR_SYNC_GRACE_PERIOD: any still-open PR produced by a
+              # completed create_pr run must keep blocking auto-pick, even
+              # once its Issue row has synced without the parent_issue_id
+              # backfill catching up. open_pull_request_parent_issue_ids above
+              # only catches linked PRs; this closes the gap for open PRs
+              # matched purely by pull_request_number (#3432/#3588 review
+              # follow-up).
+              .where.not(id: open_pr_produced_issue_ids(project))
               # Applies regardless of paid_state so a completed create_pr run
               # that already recorded a PR number cannot be immediately
               # re-picked while local PR sync is still catching up (#3432).
@@ -292,6 +313,20 @@ module Automation
             AgentRun.where(project: project, status: "completed", goal: "create_pr")
               .where.not(pull_request_number: nil).where.not(issue_id: nil)
               .where("EXISTS (#{MERGED_PR_CORRELATED_SUBQUERY})")
+              .select(:issue_id)
+          end
+
+          # Issue ids with a completed +create_pr+ run whose recorded PR has
+          # synced locally and is still open. Unconditional on time and on
+          # +parent_issue_id+: +Issue.open_pull_request_parent_issue_ids+
+          # only blocks once the separate parent_issue_id backfill has run,
+          # so a PR issue row that has synced but not yet been linked back to
+          # its source issue would otherwise fall through once
+          # PR_SYNC_GRACE_PERIOD elapses (#3432/#3588 review follow-up).
+          def open_pr_produced_issue_ids(project)
+            AgentRun.where(project: project, status: "completed", goal: "create_pr")
+              .where.not(pull_request_number: nil).where.not(issue_id: nil)
+              .where("EXISTS (#{OPEN_PR_CORRELATED_SUBQUERY})")
               .select(:issue_id)
           end
 

@@ -147,6 +147,26 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to be_empty
     end
 
+    it "permanently excludes an issue whose synced open PR has no parent_issue_id link yet, even past the grace window" do
+      # Reviewer follow-up on #3432/#3588: open_pull_request_parent_issue_ids
+      # only blocks a PR once the separate parent_issue_id backfill has run.
+      # A PR issue row can sync (github_state: open) before that linkage is
+      # written, and PR_SYNC_GRACE_PERIOD only bounds the *unsynced* gap --
+      # so without a parent_issue_id-independent check, this issue would
+      # become auto-pickable again once the grace window elapses, producing
+      # a duplicate PR for work that already has one open.
+      issue = create(:issue, project: project, paid_state: "new")
+      create(:agent_run, :completed, :automatic, project: project, issue: issue,
+        goal: "create_pr", auto_pick: true, pull_request_number: 42, pull_request_url: "https://example.test/pr/42",
+        completed_at: described_class::PR_SYNC_GRACE_PERIOD.ago - 1.minute)
+      create(:issue, project: project, github_number: 42, is_pull_request: true, github_state: "open",
+        parent_issue_id: nil)
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to be_empty
+    end
+
     it "recovers eligibility once the PR-sync grace window elapses without a synced PR row" do # @spec EAGER-QUEUE-009
       # Missing/stale PR sync state must not block an issue forever: once
       # PR_SYNC_GRACE_PERIOD has passed with no local PR issue row proving
