@@ -315,6 +315,7 @@ module Activities
       )
     end
 
+    # @spec ISSUE-ENHANCEMENT-009
     def detect_enhance_issue_rechecks(project, synced_issues)
       label = project.enhance_issue_needs_input_label_name
       changed = false

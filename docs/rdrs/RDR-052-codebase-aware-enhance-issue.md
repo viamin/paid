@@ -5,12 +5,160 @@
 ## Metadata
 
 - **Date**: 2026-08-05
-- **Status**: Draft
+- **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: P1
 - **Related RDRs**: RDR-051 (LID-aware agent runs — revises its Decision #6 stance on `enhance_issue`), RDR-027 (Auto-enhance and knowledge-base evolution), RDR-004 (Container isolation), RDR-007 (agent-harness), RDR-021 (Knowledge base)
 - **Input**: `docs/brainstorms/codebase-aware-enhance-issue-requirements.md`
-- **Related Issues**: #3254 (Phase 1 — containerized read-only execution), #3255 (Phase 2 — codebase-grounded question generation + re-evaluation), #3256 (closeout audit — blocked on #3254/#3255)
+- **Related Issues**: #3254 (Phase 1 — containerized comment-only execution, shipped), #3255 (Phase 2 — codebase-grounded question generation + re-evaluation, shipped), #3256 (closeout audit that concluded Draft — merged before #3254/#3255 landed, see 2026-08-23 Closeout), #3602 (reconciliation closeout that flips status to Implemented)
+
+## Implementation Status
+
+**Implemented** as of 2026-08-23. Phase 1 (#3254, containerized comment-only
+execution) and Phase 2 (#3255, codebase-grounded question generation and
+re-evaluation) both shipped, but *after* the #3256 closeout audit had already
+concluded (incorrectly, given the timing) that nothing had landed. The
+repository now ships the full codebase-aware `enhance_issue` model described
+by this RDR:
+
+- `enhance_issue` routes through container provisioning and runs as a
+  containerized agent with repository access, authenticating via the
+  DB-stored runner credential instead of `ANTHROPIC_API_KEY` (R1, R2, R7).
+- The agent prompt instructs the agent to explore the repo and self-answer
+  codebase-determinable questions before asking the human, and re-evaluation
+  judges sufficiency against the answers *and* the codebase it reads, not a
+  knowledge-base snapshot alone (R3, R4).
+- The `<!-- paid:enhance-issue -->` marker, needs-input flow, and re-evaluation
+  loop are unchanged (R5, R6), and prior clarifying Q&A composes with the
+  containerized run via the same comment-admission fix from PR #3235 (R8).
+- Comment-only enforcement is **behavioral + workflow-level** rather than the
+  structural `:ro` mount originally planned: the workspace mount is `:rw` (so
+  the platform can clone the repo before the agent starts), and the workflow
+  skips git post-processing (`commit_uncommitted_changes`) for the
+  `enhance_issue` goal so no commit, push, or PR is ever produced. This is a
+  deliberate design delta from the original plan, not a gap — see the
+  2026-08-23 closeout below.
+
+See [audit-report-2026-08-23-rdr-052.md](audit-report-2026-08-23-rdr-052.md)
+for the full criterion-by-criterion evidence and
+[audit-report-2026-08-06-rdr-052.md](audit-report-2026-08-06-rdr-052.md) for
+the earlier (since-superseded) "not shipped" finding.
+
+### 2026-08-23 Closeout
+
+Issue #3602 asked why this RDR still said Draft when its Phase 1/2/closeout issues (#3254, #3255, #3256) were all closed. The root cause is a **race between the closeout audit and the implementation it was auditing**: PR #3265 (the #3256 closeout audit, concluding "not shipped, Draft") merged at 2026-08-06T09:15:13Z, a little over an hour *before* PR #3264 (Phase 2 of #3255) merged at 10:36:16Z. It merged about 19 hours before PR #3267 (Phase 1 of #3254) merged the next day at 04:40:17Z. The audit was accurate the moment it was written; it was simply never re-run once the implementation it was waiting on landed shortly afterward.
+
+Re-running the closeout checklist against the current codebase confirms all
+eight requirements and four acceptance examples are now met with code and
+test evidence:
+
+- **R1 (containerized execution)** — `enhance_issue` is no longer in
+  `OrchestrationStrategies::Defaults.non_container_goals`
+  (`app/services/orchestration_strategies/defaults.rb:221`); the workflow runs
+  it through `ProvisionContainerActivity` and `RunAgentActivity` before
+  `EnhanceIssueActivity` reads the agent's structured output
+  (`app/temporal/workflows/agent_execution_workflow.rb:296-308`,
+  `@spec ISSUE-ENHANCEMENT-006`).
+- **R2 / R7 (credential unification)** — `EnhanceIssueActivity` no longer
+  calls `AgentHarness.send_message`; it parses the containerized agent's
+  output post-run (`app/temporal/activities/enhance_issue_activity.rb`,
+  `#enhance_issue_post_run`), so the run authenticates via the injected
+  runner credential like every other containerized goal.
+- **R3 (self-answer from the codebase)** — the agent prompt instructs the
+  agent to explore the repo and self-answer codebase-determinable questions
+  before asking the human
+  (`app/temporal/activities/run_agent_activity.rb#FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT`,
+  `@spec ISSUE-ENHANCEMENT-008`), pinned by
+  `spec/temporal/activities/run_agent_activity_spec.rb#augment_prompt_for_enhance_issue_goal`.
+- **R4 (grounded re-evaluation)** — `detect_enhance_issue_rechecks`
+  (`app/temporal/activities/fetch_issues_activity.rb`,
+  `@spec ISSUE-ENHANCEMENT-009`) re-queues the same containerized,
+  codebase-grounded `enhance_issue` goal rather than a KB-only recheck,
+  covered by `spec/temporal/activities/fetch_issues_activity_spec.rb`.
+- **R5 / R6 (preserved contract, unchanged routing)** — the
+  `<!-- paid:enhance-issue -->` marker, needs-input labeling, and
+  `analyze_issue` → `enhance_issue` routing are untouched; only the execution
+  model changed.
+- **R8 (composes with #3235)** — `EnhanceIssueActivity#trusted_comments`
+  reuses `ClarifyingQuestions::CommentAdmission` to re-admit Paid's own prior
+  question/answer comments into the containerized run's context.
+- **AE1–AE4** — covered by
+  `spec/temporal/activities/enhance_issue_activity_spec.rb`,
+  `spec/temporal/activities/run_agent_activity_spec.rb`, and
+  `spec/temporal/activities/fetch_issues_activity_spec.rb`; no test or code
+  path depends on `ANTHROPIC_API_KEY` for this goal anymore.
+
+**Design delta from the original plan**: the "Resolved Decisions" section
+below still describes read-only enforcement as structural (`:ro` bind mount).
+The shipped implementation instead mounts the workspace `:rw` — the platform
+must clone the repo into `/workspace` before the agent can read it — and
+enforces "no durable changes" behaviorally (the prompt forbids writes) and at
+the workflow level (`RunAgentActivity` skips `commit_uncommitted_changes` for
+`agent_run.enhance_issue_goal?`, so nothing is ever committed or pushed
+regardless of what the agent does inside the container). AE3 ("no file
+changes/commits") is still met and tested; this is a deliberate,
+documented substitution of enforcement mechanism, not an unmet criterion.
+
+**Minor observation, not blocking**: `CreateAgentRunActivity::NON_CONTAINER_GOALS`
+(`app/temporal/activities/create_agent_run_activity.rb:7`) is a separate,
+narrower constant from `OrchestrationStrategies::Defaults.non_container_goals`
+and still lists `enhance_issue`, so `validate_runnable_runner!` skips upfront
+runner-availability validation for this goal. It has no bearing on R1-R8/AE1-4
+(the goal still provisions and runs containerized once queued) but is stale
+and worth cleaning up opportunistically; not filed as a separate issue.
+
+No child issues were filed by this closeout — there are no remaining gaps
+against the RDR's acceptance criteria. Status flips from Draft to
+**Implemented**.
+
+### 2026-08-06 Closeout Attempt — Blocked (superseded by 2026-08-23)
+
+> Follows the [RDR Closeout Checklist](closeout-checklist.md). Full evidence in
+> [`audit-report-2026-08-06-rdr-052.md`](audit-report-2026-08-06-rdr-052.md).
+
+A closeout audit was performed against this RDR's plan and acceptance criteria
+(R1–R8, AE1–AE4). The audit found that **the implementation has not shipped**.
+The dependency chain it requires — Phase 1 (#3254, containerized read-only
+execution) and Phase 2 (#3255, codebase-grounded question generation and
+re-evaluation) — is absent from the codebase. The shipped `enhance_issue` is
+still the pre-RDR direct-LLM call:
+
+- A non-container goal (`app/temporal/activities/create_agent_run_activity.rb:7`
+  and `app/services/orchestration_strategies/defaults.rb:220` both list
+  `enhance_issue` under `non_container_goals`).
+- Short-circuited to its activity before provisioning
+  (`app/temporal/workflows/agent_execution_workflow.rb:151-159`, ahead of
+  `ProvisionContainerActivity` at `:226`).
+- A direct `AgentHarness.send_message(..., tools: :none)` call
+  (`app/temporal/activities/enhance_issue_activity.rb:186`, `:213-223`) reading
+  its key from ENV — the `ANTHROPIC_API_KEY` gap R2/R7/AE4 target.
+
+Consequently none of R1, R2, R3, R4, R7, AE1, AE2, AE3, or AE4 have shipped code
+or test evidence. R5 and R6 ("preserved output contract", "unchanged routing")
+hold only vacuously — nothing changed. R8's prerequisite (PR #3235 comment
+admission, `enhance_issue_activity.rb:318-326`) is present but composes with the
+direct-LLM run rather than a containerized one. Both open planning questions
+(workflow insertion point; runner under a read-only mount) remain unresolved
+because the work that would resolve them never landed.
+
+Per the closeout checklist, **status is left unchanged at Draft** — not
+"Implemented" (no acceptance criterion has code evidence) and not "Partially
+Implemented" (no core scope shipped). The LID `issue-enhancement` segment is
+coherent for the shipped clarifying-question / comment-admission work and
+correctly carries no EARS claims for the codebase-aware execution model until
+that model exists; `bin/coherence-check.mjs` is clean.
+
+The closeout will be re-opened when #3254 and #3255 merge: re-verify each
+requirement above, add the new execution model's EARS claims to
+`docs/intent/issue-enhancement/` alongside the code, confirm the coherence
+check is clean, and only then flip the RDR and README index to **Implemented**.
+No RDR status change is made in this audit.
+
+**This audit's timing was itself the bug**: PR #3265 above merged at
+2026-08-06T09:15:13Z, roughly 80 minutes before PR #3264 (Phase 2, #3255)
+merged at 10:36:16Z. The "not shipped" conclusion was correct when written and
+became stale within hours — see the 2026-08-23 closeout above for the
+reconciliation.
 
 ## Problem Statement
 
@@ -249,46 +397,3 @@ Read-only is enforced as **structural + behavioral**:
 
 - The `enhance_issue` workflow path (`agent_execution_workflow.rb:151`) currently skips provisioning and short-circuits to the activity — confirm the exact insertion point for the container-provisioning steps. (The chat provisioning path, `app/services/containers/provision_for_chat.rb`, is the closest analog to follow.)
 - Which runner is used for the enhancement run, and does it function correctly under a read-only repo mount? Validate before locking Phase 1.
-
-## 2026-08-06 Closeout Attempt — Blocked (Status Remains Draft)
-
-> Follows the [RDR Closeout Checklist](closeout-checklist.md). Full evidence in
-> [`audit-report-2026-08-06-rdr-052.md`](audit-report-2026-08-06-rdr-052.md).
-
-A closeout audit was performed against this RDR's plan and acceptance criteria
-(R1–R8, AE1–AE4). The audit found that **the implementation has not shipped**.
-The dependency chain it requires — Phase 1 (#3254, containerized read-only
-execution) and Phase 2 (#3255, codebase-grounded question generation and
-re-evaluation) — is absent from the codebase. The shipped `enhance_issue` is
-still the pre-RDR direct-LLM call:
-
-- A non-container goal (`app/temporal/activities/create_agent_run_activity.rb:7`
-  and `app/services/orchestration_strategies/defaults.rb:220` both list
-  `enhance_issue` under `non_container_goals`).
-- Short-circuited to its activity before provisioning
-  (`app/temporal/workflows/agent_execution_workflow.rb:151-159`, ahead of
-  `ProvisionContainerActivity` at `:226`).
-- A direct `AgentHarness.send_message(..., tools: :none)` call
-  (`app/temporal/activities/enhance_issue_activity.rb:186`, `:213-223`) reading
-  its key from ENV — the `ANTHROPIC_API_KEY` gap R2/R7/AE4 target.
-
-Consequently none of R1, R2, R3, R4, R7, AE1, AE2, AE3, or AE4 have shipped code
-or test evidence. R5 and R6 ("preserved output contract", "unchanged routing")
-hold only vacuously — nothing changed. R8's prerequisite (PR #3235 comment
-admission, `enhance_issue_activity.rb:318-326`) is present but composes with the
-direct-LLM run rather than a containerized one. Both open planning questions
-(workflow insertion point; runner under a read-only mount) remain unresolved
-because the work that would resolve them never landed.
-
-Per the closeout checklist, **status is left unchanged at Draft** — not
-"Implemented" (no acceptance criterion has code evidence) and not "Partially
-Implemented" (no core scope shipped). The LID `issue-enhancement` segment is
-coherent for the shipped clarifying-question / comment-admission work and
-correctly carries no EARS claims for the codebase-aware execution model until
-that model exists; `bin/coherence-check.mjs` is clean.
-
-The closeout will be re-opened when #3254 and #3255 merge: re-verify each
-requirement above, add the new execution model's EARS claims to
-`docs/intent/issue-enhancement/` alongside the code, confirm the coherence
-check is clean, and only then flip the RDR and README index to **Implemented**.
-No RDR status change is made in this audit.
