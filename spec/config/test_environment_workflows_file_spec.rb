@@ -98,7 +98,13 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
 
   it "passes the test master key alias anywhere Rails boots in test mode" do
     workflow_paths.each do |path|
-      expect(test_env_blocks_for(path)).to all(include("RAILS_TEST_KEY" => "${{ secrets.RAILS_TEST_KEY }}")),
+      expected_value = if path == ".github/workflows/pr-screenshots.yml"
+        "${{ secrets.RAILS_TEST_KEY != '' && secrets.RAILS_TEST_KEY || secrets.RAILS_MASTER_KEY }}"
+      else
+        "${{ secrets.RAILS_TEST_KEY }}"
+      end
+
+      expect(test_env_blocks_for(path)).to all(include("RAILS_TEST_KEY" => expected_value)),
         "expected #{path} test env blocks to pass RAILS_TEST_KEY explicitly"
     end
   end
@@ -113,7 +119,6 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
   it "normalizes missing test keys from RAILS_MASTER_KEY before Rails boots" do
     %w[
       .github/workflows/ci.yml
-      .github/workflows/pr-screenshots.yml
       .github/workflows/pr-screenshots-publish.yml
       .github/workflows/system_tests.yml
       .github/workflows/test_prof.yml
@@ -128,6 +133,17 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
         include('echo "RAILS_TEST_KEY=$RAILS_MASTER_KEY_FALLBACK" >> "$GITHUB_ENV"')
       ), "expected #{path} to export the fallback key into RAILS_TEST_KEY"
     end
+  end
+
+  it "allows the screenshots workflow to resolve the test key inline without GITHUB_ENV writes" do
+    path = ".github/workflows/pr-screenshots.yml"
+
+    expect(test_env_blocks_for(path)).to all(
+      include("RAILS_TEST_KEY" => "${{ secrets.RAILS_TEST_KEY != '' && secrets.RAILS_TEST_KEY || secrets.RAILS_MASTER_KEY }}")
+    ), "expected #{path} to resolve RAILS_TEST_KEY inline from the explicit secret or fallback master key"
+
+    expect(normalize_steps_for(path)).to be_empty,
+      "expected #{path} not to use a Normalize test master key step"
   end
 
   it "creates workspace-backed temp and cache directories before Ruby and Node setup in test jobs" do
