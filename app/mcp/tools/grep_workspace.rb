@@ -79,7 +79,7 @@ module Tools
       truncated_output, output_truncated = truncate_output(stdout)
       matches = parse_matches(truncated_output, output_truncated)
       matches_truncated = matches.length > MAX_MATCHES
-      total_count = [ matches.length, MAX_MATCHES ].min
+      total_count = matches.length
 
       {
         repo_path: repo_path,

@@ -136,5 +136,19 @@ RSpec.describe Tools::GrepWorkspace do
       expect(result[:matches].length).to be <= Tools::GrepWorkspace::MAX_MATCHES
       expect(result[:truncated]).to be true
     end
+
+    it "reports the full parsed match count even when returning only MAX_MATCHES entries" do
+      many_lines = Array.new(Tools::GrepWorkspace::MAX_MATCHES + 10) { |i| "needle #{i}\n" }.join
+      File.write(File.join(repo.fetch(:host_path), "many-matches.txt"), many_lines)
+      run_cmd!("git", "-C", repo.fetch(:host_path), "add", "many-matches.txt")
+      run_cmd!("git", "-C", repo.fetch(:host_path), "commit", "-m", "add many matches")
+
+      result = tool.call(repo_path: repo.fetch(:repo_path), query: "needle")
+
+      expect(result[:matches].length).to eq(Tools::GrepWorkspace::MAX_MATCHES)
+      expect(result[:total_matches]).to eq(Tools::GrepWorkspace::MAX_MATCHES + 10)
+      expect(result[:total_count]).to eq(Tools::GrepWorkspace::MAX_MATCHES + 10)
+      expect(result[:truncated]).to be true
+    end
   end
 end
