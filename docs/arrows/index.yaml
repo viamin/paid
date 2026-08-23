@@ -316,18 +316,21 @@ arrows:
     specs: docs/intent/tdd-mode/tdd-mode-specs.md
     parent: PAID
     taxonomy: runtime
+    audited: 2026-08-23
   tdd-write-guards:
     title: Run-Scoped TDD Write Guards
     path: docs/intent/tdd-write-guards/tdd-write-guards-design.md
     specs: docs/intent/tdd-write-guards/tdd-write-guards-specs.md
     parent: PAID
     taxonomy: runtime
+    audited: 2026-08-23
   tdd-test-review-prs:
     title: TDD Test-Review PRs
     path: docs/intent/tdd-test-review-prs/tdd-test-review-prs-design.md
     specs: docs/intent/tdd-test-review-prs/tdd-test-review-prs-specs.md
     parent: PAID
     taxonomy: runtime
+    audited: 2026-08-23
   rdr-rollout-guards:
     title: RDR Rollout Guards
     path: docs/intent/rdr-rollout-guards/rdr-rollout-guards-design.md
