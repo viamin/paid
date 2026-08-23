@@ -12,7 +12,8 @@ prefix: INFRA-SPEND
   separately from LLM token/billing cost by deriving it from run
   provisioning/execution records and host-priced infrastructure rates, without
   incrementing `CostBudget` or `project.total_cost_cents`.
-  *Tests:* `spec/services/capacity/infrastructure_spend_guard_spec.rb`,
+  *Tests:* `spec/services/capacity/infrastructure_spend_spec.rb`,
+  `spec/services/capacity/infrastructure_spend_guard_spec.rb`,
   `spec/services/projects/cost_dashboard_stats_spec.rb`
   *Code:* `Capacity::InfrastructureSpend`,
   `ProcessRunQueueJob#start_claimed_run`,

@@ -48,6 +48,12 @@ class ProcessRunQueueJob < ApplicationJob
   }.freeze
   QUEUE_PARKING_EXECUTION_CONTROL_SCOPES = %w[global account project].freeze
 
+  # Reason suffixes InfrastructureSpendGuard uses for a breach (see
+  # Capacity::InfrastructureSpendGuard#evaluate); mirrors how
+  # Capacity::RunAdmission#apply_infrastructure_safety_rails distinguishes a
+  # spend-driven denial from a capacity-driven one.
+  SPEND_DENIAL_REASON_PATTERN = /_infra_spend_(?:hourly|daily)_limit_exceeded\z/
+
   def perform
     # Use a PostgreSQL advisory lock to ensure only one job processes the queue at a time.
     # If another instance is already running, this job exits immediately (no-op).
@@ -651,9 +657,14 @@ class ProcessRunQueueJob < ApplicationJob
     )
   end
 
+  # build_host_admission_evaluations calls this once per *candidate* host, so
+  # it always previews admission (no infrastructure-spend side effects — see
+  # Capacity::RunAdmission.preview). Only the host that select_host_admission
+  # ultimately chooses gets a real, side-effecting spend check, applied once
+  # by finalize_infrastructure_spend!.
   def run_admission_for(agent_run, user, mode:, docker_snapshot:, reserved_agent_memory_bytes:, selected_host:, selected_host_limit:,
     admission_snapshot:)
-    Capacity::RunAdmission.call(
+    Capacity::RunAdmission.preview(
       user: user,
       project: agent_run.project,
       goal: agent_run.goal,
@@ -667,7 +678,30 @@ class ProcessRunQueueJob < ApplicationJob
     )
   end
 
+  # Entry point used by #perform. Resolves the winning host/admission/decision
+  # via #resolve_host_admission — which may speculatively preview several
+  # candidate hosts — then finalizes the infrastructure-spend check for real,
+  # exactly once, against only the host that was actually chosen. See
+  # #finalize_infrastructure_spend! for why this two-step split exists.
   def select_host_admission(agent_run:, user:, host_selection:, forced_admission_mode:, docker_snapshots_by_host:,
+    base_reserved_agent_memory_bytes_by_host:, started_reserved_agent_memory_bytes_by_host:, admission_snapshot:)
+    selected_host, admission, decision = resolve_host_admission(
+      agent_run: agent_run,
+      user: user,
+      host_selection: host_selection,
+      forced_admission_mode: forced_admission_mode,
+      docker_snapshots_by_host: docker_snapshots_by_host,
+      base_reserved_agent_memory_bytes_by_host: base_reserved_agent_memory_bytes_by_host,
+      started_reserved_agent_memory_bytes_by_host: started_reserved_agent_memory_bytes_by_host,
+      admission_snapshot: admission_snapshot
+    )
+
+    finalize_infrastructure_spend!(agent_run: agent_run, user: user, selected_host: selected_host, admission: admission)
+
+    [ selected_host, admission, decision ]
+  end
+
+  def resolve_host_admission(agent_run:, user:, host_selection:, forced_admission_mode:, docker_snapshots_by_host:,
     base_reserved_agent_memory_bytes_by_host:, started_reserved_agent_memory_bytes_by_host:, admission_snapshot:)
     return select_first_available_host_admission(
       agent_run: agent_run,
@@ -816,6 +850,42 @@ class ProcessRunQueueJob < ApplicationJob
         admission: admission
       }
     end
+  end
+
+  # resolve_host_admission previews the spend guard once per *candidate* host
+  # (see #run_admission_for) so an expensive speculative host never publishes
+  # notifications, writes audit events, or flips the global emergency control
+  # before a cheaper candidate is chosen instead — otherwise those side
+  # effects could fire for a host that is never actually used (see review on
+  # #3416 / #3581). Once the winning host is known, re-run the real spend
+  # guard here so a genuine breach against the *selected* host is still
+  # recorded, exactly once per admission decision.
+  #
+  # Spend accrues monotonically within a single queue pass, so this real
+  # check can only confirm — never overturn — a preview denial reached
+  # moments earlier; it is skipped entirely when the preview never reached
+  # the spend guard (i.e. some other capacity ceiling already denied first).
+  def finalize_infrastructure_spend!(agent_run:, user:, selected_host:, admission:)
+    return unless selected_host
+    return unless spend_guard_reached?(admission)
+
+    result = Capacity::InfrastructureSpendGuard.call(
+      account: user.account,
+      project: agent_run.project,
+      agent_run: agent_run,
+      selected_host: selected_host
+    )
+    return if result[:allowed]
+
+    admission[:allowed] = false
+    admission[:reason] = result[:reason]
+    admission[:available_slots] = 0
+    admission[:rate_limited_until] = result[:rate_limited_until]
+    admission.merge!(result.except(:allowed, :reason, :rate_limited_until))
+  end
+
+  def spend_guard_reached?(admission)
+    admission[:allowed] || admission[:reason].to_s.match?(SPEND_DENIAL_REASON_PATTERN)
   end
 
   def capacity_aware_host_selection?(host_selection, forced_admission_mode, user)

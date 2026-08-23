@@ -2212,7 +2212,7 @@ RSpec.describe ProcessRunQueueJob do
         available_at = Time.utc(2026, 8, 17, 12, 5, 0)
         allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(auto_mode_snapshot)
         allow(Containers::BackendScheduler).to receive(:call).and_return(default_local_host_selection_result)
-        allow(Capacity::RunAdmission).to receive(:call).and_return(
+        allow(Capacity::RunAdmission).to receive(:preview).and_return(
           provisioning_rate_denied_admission(available_at: available_at)
         )
 

@@ -9,6 +9,17 @@ module Capacity
       def call(...)
         new(...).call
       end
+
+      # Evaluates admission without recording infrastructure-spend side
+      # effects (notifications, audit events, emergency control). Used by
+      # capacity-aware host selection to compare several candidate hosts
+      # before a final host is chosen — see
+      # ProcessRunQueueJob#build_host_admission_evaluations and
+      # #finalize_infrastructure_spend!, which re-checks the real guard once
+      # against only the winning host.
+      def preview(...)
+        new(...).preview
+      end
     end
 
     def initialize(user:, project: nil, goal: nil, agent_run: nil, docker_snapshot: nil, reserved_agent_memory_bytes: nil, mode: nil,
@@ -27,6 +38,18 @@ module Capacity
     end
 
     def call
+      build_decision(spend_guard_preview: false)
+    end
+
+    def preview
+      build_decision(spend_guard_preview: true)
+    end
+
+    private
+
+    attr_reader :admission_snapshot, :agent_run, :docker_snapshot, :goal, :now, :project, :reserved_agent_memory_bytes, :selected_host, :selected_host_limit, :user
+
+    def build_decision(spend_guard_preview:)
       # @spec CONTAINER-RUNTIME-006
       return owner_missing_result unless user
 
@@ -38,12 +61,8 @@ module Capacity
       end
 
       decorate_capacity_state(decision)
-      apply_infrastructure_safety_rails(decision)
+      apply_infrastructure_safety_rails(decision, spend_guard_preview: spend_guard_preview)
     end
-
-    private
-
-    attr_reader :admission_snapshot, :agent_run, :docker_snapshot, :goal, :now, :project, :reserved_agent_memory_bytes, :selected_host, :selected_host_limit, :user
 
     def owner_missing_result
       {
@@ -253,10 +272,10 @@ module Capacity
       )
     end
 
-    def apply_infrastructure_safety_rails(decision)
+    def apply_infrastructure_safety_rails(decision, spend_guard_preview:)
       return decision unless decision[:allowed]
 
-      if (spend_denial = infrastructure_spend_denial)
+      if (spend_denial = infrastructure_spend_denial(preview: spend_guard_preview))
         decision[:allowed] = false
         decision[:reason] = spend_denial[:reason]
         decision[:available_slots] = 0
@@ -275,8 +294,10 @@ module Capacity
       decision
     end
 
-    def infrastructure_spend_denial
-      result = Capacity::InfrastructureSpendGuard.call(
+    def infrastructure_spend_denial(preview:)
+      guard_method = preview ? :preview : :call
+      result = Capacity::InfrastructureSpendGuard.public_send(
+        guard_method,
         account: user.account,
         project: project,
         agent_run: agent_run,

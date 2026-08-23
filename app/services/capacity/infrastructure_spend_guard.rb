@@ -14,6 +14,16 @@ module Capacity
       new(...).call
     end
 
+    # Evaluates thresholds without recording notifications, audit events, or
+    # flipping the global emergency control. Used when a decision is
+    # speculative — e.g. one of several candidate hosts being compared during
+    # capacity-aware host selection — so side effects are recorded at most
+    # once, against the host that is actually chosen (see
+    # ProcessRunQueueJob#finalize_infrastructure_spend!).
+    def self.preview(...)
+      new(...).preview
+    end
+
     def self.recover_global_daily_threshold!(now: Time.current, env: ENV)
       new(account: nil, project: nil, selected_host: nil, now: now, env: env).recover_global_daily_threshold!
     end
@@ -29,19 +39,11 @@ module Capacity
     end
 
     def call
-      threshold_checks.each do |check|
-        next if check[:limit_cents].to_i <= 0
+      evaluate(record_effects: true)
+    end
 
-        current_spend_cents = spend_cents_for(check)
-        projected_spend_cents = current_spend_cents + projected_cents_for(check)
-        if projected_spend_cents > check[:limit_cents].to_i
-          return breach_result(check, current_spend_cents, projected_spend_cents)
-        end
-
-        recover_threshold(check, current_spend_cents)
-      end
-
-      { allowed: true }
+    def preview
+      evaluate(record_effects: false)
     end
 
     def recover_global_daily_threshold!
@@ -56,6 +58,23 @@ module Capacity
     end
 
     private
+
+    def evaluate(record_effects:)
+      threshold_checks.each do |check|
+        next if check[:limit_cents].to_i <= 0
+
+        current_spend_cents = spend_cents_for(check)
+        projected_spend_cents = current_spend_cents + projected_cents_for(check)
+        if projected_spend_cents > check[:limit_cents].to_i
+          record_breach(check, current_spend_cents, projected_spend_cents, check[:ends_at]) if record_effects
+          return breach_payload(check, current_spend_cents, projected_spend_cents)
+        end
+
+        recover_threshold(check, current_spend_cents) if record_effects
+      end
+
+      { allowed: true }
+    end
 
     attr_reader :account, :agent_run, :env, :now, :project, :runner, :selected_host
 
@@ -167,8 +186,7 @@ module Capacity
         project: check[:project],
         runner: check[:runner],
         starts_at: check[:starts_at],
-        ends_at: now,
-        env: env
+        ends_at: now
       )
     end
 
@@ -182,14 +200,11 @@ module Capacity
       )
     end
 
-    def breach_result(check, current_spend_cents, projected_spend_cents)
-      available_at = check[:ends_at]
-      record_breach(check, current_spend_cents, projected_spend_cents, available_at)
-
+    def breach_payload(check, current_spend_cents, projected_spend_cents)
       {
         allowed: false,
         reason: "#{check[:scope]}_infra_spend_#{check[:period]}_limit_exceeded",
-        rate_limited_until: available_at,
+        rate_limited_until: check[:ends_at],
         spend_scope: check[:scope],
         spend_period: check[:period],
         spend_action: check[:action],

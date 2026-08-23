@@ -693,5 +693,26 @@ RSpec.describe Capacity::RunAdmission do
       expect(result[:projected_spend_cents]).to eq(120)
       expect(result[:infra_spend_limit_cents]).to eq(100)
     end
+
+    # @spec INFRA-SPEND-001
+    it "previews infrastructure spend without invoking the side-effecting guard" do
+      expect(Capacity::InfrastructureSpendGuard).to receive(:preview).and_return(
+        allowed: false,
+        reason: "project_infra_spend_hourly_limit_exceeded",
+        rate_limited_until: Time.zone.parse("2026-08-17 13:00:00 UTC")
+      )
+      expect(Capacity::InfrastructureSpendGuard).not_to receive(:call)
+
+      result = described_class.preview(
+        user: user,
+        project: project,
+        docker_snapshot: docker_snapshot,
+        selected_host: "local",
+        selected_host_limit: 8
+      )
+
+      expect(result[:allowed]).to be(false)
+      expect(result[:reason]).to eq("project_infra_spend_hourly_limit_exceeded")
+    end
   end
 end

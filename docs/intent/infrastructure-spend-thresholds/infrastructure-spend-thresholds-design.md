@@ -43,6 +43,17 @@ This remains intentionally separate from `agent_runs.cost_cents`,
 `project.total_cost_cents`, and `CostBudget`, which continue to represent LLM
 cost only.
 
+Historical accounting must stay fixed once computed. A run only contributes
+spend using the rate stamped into its own
+`external_metadata["infrastructure_spend"]["rate_cents_per_hour"]` at
+admission time — `Capacity::InfrastructureSpend` never falls back to the
+*current* `Capacity::InfrastructureLimits` config for a run that lacks a
+stamped rate (e.g. a run in flight when this feature deployed). Repricing
+from live config would make dashboards and threshold checks drift as the
+host-rate env var changes, rather than reflecting what was actually true when
+the run executed. An un-stamped run is treated as uncosted (contributes `0`)
+and logged as `capacity.infrastructure_spend_rate_missing`, not guessed.
+
 ## Threshold Model
 
 Threshold values come from `Capacity::InfrastructureLimits` and are optional:
@@ -74,6 +85,22 @@ infrastructure safety rails:
 - a global daily breach escalates to an automatic global emergency
   `ExecutionControl`, because the whole deployment is beyond its daily spend
   envelope rather than just temporarily busy
+
+### Speculative Host Evaluation
+
+Capacity-aware host selection (`ProcessRunQueueJob#build_host_admission_evaluations`)
+evaluates admission once per *candidate* host before a winner is chosen. The
+spend guard's side effects — notifications, audit events, and the automatic
+global emergency control — must not fire for a candidate host that is
+speculatively priced out but never actually used. `Capacity::RunAdmission` and
+`Capacity::InfrastructureSpendGuard` each expose a `call`/`preview` method
+pair: `preview` evaluates thresholds and returns the same decision shape as
+`call` but records no side effects. Per-candidate evaluation always uses
+`preview`; once the winning host is known,
+`ProcessRunQueueJob#finalize_infrastructure_spend!` re-runs the real,
+side-effecting `call` exactly once against only that host (skipped when the
+preview never reached the spend guard, i.e. a non-spend capacity ceiling
+already denied the run first).
 
 Recovery is deterministic:
 

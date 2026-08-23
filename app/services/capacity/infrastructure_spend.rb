@@ -1,16 +1,16 @@
 # frozen_string_literal: true
 
 module Capacity
+  # @spec INFRA-SPEND-001
   class InfrastructureSpend
     class << self
-      def spent_cents(account: nil, starts_at:, ends_at: Time.current, project: nil, runner: nil, env: ENV)
+      def spent_cents(account: nil, starts_at:, ends_at: Time.current, project: nil, runner: nil)
         new(
           account: account,
           starts_at: starts_at,
           ends_at: ends_at,
           project: project,
-          runner: runner,
-          env: env
+          runner: runner
         ).spent_cents
       end
 
@@ -33,13 +33,12 @@ module Capacity
       end
     end
 
-    def initialize(account:, starts_at:, ends_at:, project: nil, runner: nil, env: ENV)
+    def initialize(account:, starts_at:, ends_at:, project: nil, runner: nil)
       @account = account
       @starts_at = starts_at
       @ends_at = ends_at
       @project = project
       @runner = runner
-      @env = env
     end
 
     def spent_cents
@@ -48,7 +47,7 @@ module Capacity
 
     private
 
-    attr_reader :account, :ends_at, :env, :project, :runner, :starts_at
+    attr_reader :account, :ends_at, :project, :runner, :starts_at
 
     def runs
       @runs ||= TenantContext.with_system_access do
@@ -80,14 +79,24 @@ module Capacity
       nil
     end
 
+    # Historical spend accounting must stay fixed once computed. Falling back
+    # to the *current* Capacity::InfrastructureLimits config for a run that
+    # never had a rate stamped into external_metadata (runs in flight when
+    # this feature deployed, or any run whose host rate changes later) would
+    # reprice that run every time this method runs, making dashboards and
+    # threshold checks drift as the env var changes rather than reflecting
+    # what was actually true when the run executed. Treat un-stamped runs as
+    # uncosted instead of guessing from live config.
     def rate_cents_per_hour_for_run(run)
       stored_rate = run.external_metadata.dig("infrastructure_spend", "rate_cents_per_hour")
       return stored_rate.to_i if stored_rate.to_i.positive?
 
-      Capacity::InfrastructureLimits.rate_cents_per_hour(
-        host: run.effective_container_host,
-        env: env
-      ).to_i
+      Rails.logger.warn(
+        message: "capacity.infrastructure_spend_rate_missing",
+        agent_run_id: run.id,
+        container_host: run.workspace_volume_host
+      )
+      0
     end
   end
 end

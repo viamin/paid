@@ -85,4 +85,24 @@ RSpec.describe Capacity::InfrastructureSpendGuard do
     expect(control.reload.enabled).to be(false)
     expect(control.metadata["recovered_at"]).to be_present
   end
+
+  # @spec INFRA-SPEND-005
+  it "previews a breach without publishing notifications, audit events, or execution control changes" do
+    allow(Capacity::InfrastructureLimits).to receive(:current).and_return(spend_limits(project_hourly: 100))
+    allow(Capacity::InfrastructureSpend).to receive_messages(spent_cents: 90, projected_cents_for_host: 20)
+
+    result = described_class.preview(
+      account: account,
+      project: project,
+      agent_run: agent_run,
+      selected_host: "local",
+      now: Time.utc(2026, 8, 23, 12, 15, 0)
+    )
+
+    expect(result[:allowed]).to be(false)
+    expect(result[:reason]).to eq("project_infra_spend_hourly_limit_exceeded")
+    expect(Notification.count).to eq(0)
+    expect(ExecutionAuditEvent.by_event_name(described_class::EVENT_THRESHOLD_BREACHED).count).to eq(0)
+    expect(ExecutionControl.find_by(scope: "global")).to be_nil
+  end
 end
