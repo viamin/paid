@@ -92,14 +92,14 @@ module Containers
     # runs with a read-only root filesystem, all capabilities dropped, and
     # no-new-privileges, mirroring the hardening already applied to agent
     # and chat containers (Containers::Provision, Containers::ProvisionForChat).
-    # Known image families get a profiled Tmpfs for the writable paths their
-    # documented entrypoint actually needs, plus the minimum capabilities
-    # that entrypoint needs back (e.g. the official postgres image chowns
-    # PGDATA and drops from root to the postgres user via gosu on first
-    # boot). Unrecognized images fall back to DEFAULT_HARDENING_PROFILE, a
-    # conservative generic-writable-scratch-space profile with no added
-    # capabilities — account admins wanting a less restrictive profile for a
-    # specific image must still pass ServiceContainer's image allowlist.
+    # Known image families get a profiled runtime user and Tmpfs layout for
+    # the writable paths their documented entrypoint actually needs, plus the
+    # minimum capabilities that entrypoint needs back. Unrecognized images
+    # fall back to DEFAULT_HARDENING_PROFILE, a conservative
+    # generic-writable-scratch-space profile with no added capabilities and
+    # the image's default runtime user preserved — account admins wanting a
+    # less restrictive profile for a specific image must still pass
+    # ServiceContainer's image allowlist.
     HARDENING_PROFILES = {
       "postgres" => {
         # Tmpfs pages are accounted against the container's memcg, so the
@@ -109,38 +109,43 @@ module Containers
         # own RSS (shared_buffers, work_mem, WAL buffers, per-connection
         # overhead) so the container isn't OOM-killed as soon as PGDATA
         # usage grows.
+        user: "postgres",
         tmpfs: {
-          "/var/lib/postgresql/data" => "size=#{1 * 1024 * 1024 * 1024},mode=0700",
-          "/var/run/postgresql" => "size=#{64 * 1024 * 1024},mode=1777",
-          "/tmp" => "size=#{128 * 1024 * 1024},mode=1777"
+          "/var/lib/postgresql/data" => { size: 1 * 1024 * 1024 * 1024, mode: "0700", uid: 999, gid: 999 },
+          "/var/run/postgresql" => { size: 64 * 1024 * 1024, mode: "3775", uid: 999, gid: 999 },
+          "/tmp" => { size: 128 * 1024 * 1024, mode: "1777" }
         },
         cap_add: [ "CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID" ]
       },
       "redis" => {
+        user: "redis",
         tmpfs: {
-          "/data" => "size=#{512 * 1024 * 1024},mode=1777",
-          "/tmp" => "size=#{64 * 1024 * 1024},mode=1777"
+          "/data" => { size: 512 * 1024 * 1024, mode: "1777", uid: 999, gid: 1000 },
+          "/tmp" => { size: 64 * 1024 * 1024, mode: "1777" }
         },
         cap_add: []
       },
       "selenium" => {
+        user: "seluser",
         tmpfs: {
-          "/tmp" => "size=#{256 * 1024 * 1024},mode=1777",
-          "/dev/shm" => "size=#{1024 * 1024 * 1024},mode=1777"
+          "/tmp" => { size: 256 * 1024 * 1024, mode: "1777" },
+          "/dev/shm" => { size: 1024 * 1024 * 1024, mode: "1777" }
         },
         cap_add: []
       },
       "chromium" => {
+        user: "seluser",
         tmpfs: {
-          "/tmp" => "size=#{256 * 1024 * 1024},mode=1777",
-          "/dev/shm" => "size=#{1024 * 1024 * 1024},mode=1777"
+          "/tmp" => { size: 256 * 1024 * 1024, mode: "1777" },
+          "/dev/shm" => { size: 1024 * 1024 * 1024, mode: "1777" }
         },
         cap_add: []
       }
     }.freeze
 
     DEFAULT_HARDENING_PROFILE = {
-      tmpfs: { "/tmp" => "size=#{64 * 1024 * 1024},mode=1777" },
+      user: nil,
+      tmpfs: { "/tmp" => { size: 64 * 1024 * 1024, mode: "1777" } },
       cap_add: []
     }.freeze
 
@@ -577,6 +582,7 @@ module Containers
       cap_drop = [ "ALL" ]
       cap_add = hardening[:cap_add]
       security_opt = [ "no-new-privileges:true" ]
+      user = hardening[:user]
 
       options = {
         "Image" => service_container.image,
@@ -596,7 +602,7 @@ module Containers
           "CapDrop" => cap_drop,
           "CapAdd" => cap_add,
           "SecurityOpt" => security_opt,
-          "Tmpfs" => hardening[:tmpfs]
+          "Tmpfs" => docker_tmpfs_mounts(hardening[:tmpfs])
         },
         "NetworkingConfig" => {
           "EndpointsConfig" => {
@@ -610,6 +616,7 @@ module Containers
           "paid.service_container_id" => service_container.id.to_s
         }
       }
+      options["User"] = user if user.present?
 
       healthcheck = healthcheck_for(service_container, env)
       options["Healthcheck"] = healthcheck if healthcheck
@@ -622,6 +629,19 @@ module Containers
         return profile if image.include?(pattern)
       end
       DEFAULT_HARDENING_PROFILE
+    end
+
+    def docker_tmpfs_mounts(tmpfs)
+      tmpfs.transform_values { |options| docker_tmpfs_options(options) }
+    end
+
+    def docker_tmpfs_options(options)
+      [
+        "size=#{options.fetch(:size)}",
+        "mode=#{options.fetch(:mode)}",
+        ("uid=#{options[:uid]}" if options.key?(:uid)),
+        ("gid=#{options[:gid]}" if options.key?(:gid))
+      ].compact.join(",")
     end
 
     def container_env_for(service_container)

@@ -753,6 +753,7 @@ RSpec.describe Containers::ServiceProvisioner do
       expect(Docker::Container).to have_received(:create).with(
         hash_including(
           "ReadonlyRootfs" => true,
+          "User" => "postgres",
           "CapDrop" => [ "ALL" ],
           "SecurityOpt" => [ "no-new-privileges:true" ],
           "HostConfig" => hash_including(
@@ -772,16 +773,24 @@ RSpec.describe Containers::ServiceProvisioner do
 
       expect(Docker::Container).to have_received(:create).with(
         hash_including(
+          "User" => "postgres",
           "CapAdd" => [ "CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID" ],
           "HostConfig" => hash_including(
             "CapAdd" => [ "CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID" ],
             "Tmpfs" => hash_including(
-              "/var/lib/postgresql/data" => a_string_matching(/mode=0700/),
-              "/var/run/postgresql" => a_string_matching(/mode=1777/)
+              "/var/lib/postgresql/data" => a_string_matching(/mode=0700/).and(a_string_matching(/uid=999/)).and(a_string_matching(/gid=999/)),
+              "/var/run/postgresql" => a_string_matching(/mode=3775/).and(a_string_matching(/uid=999/)).and(a_string_matching(/gid=999/))
             )
           )
         )
       )
+    end
+
+    it "pins known service families to non-root runtime users" do
+      # @spec CONTAINER-RUNTIME-035
+      expect(provisioner.send(:hardening_profile_for, "postgres:16")[:user]).to eq("postgres")
+      expect(provisioner.send(:hardening_profile_for, "redis:7-alpine")[:user]).to eq("redis")
+      expect(provisioner.send(:hardening_profile_for, "selenium/standalone-chromium:latest")[:user]).to eq("seluser")
     end
 
     context "with an unrecognized image" do
@@ -820,6 +829,7 @@ RSpec.describe Containers::ServiceProvisioner do
             )
           )
         )
+        expect(Docker::Container).to have_received(:create).with(satisfy { |config| !config.key?("User") })
       end
     end
   end
