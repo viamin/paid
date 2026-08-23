@@ -334,7 +334,7 @@ yet been proven against a real non-tagging/non-listing provider.
 
 `AgentRunResourceJanitorJob`, `CleanupContainerActivity`,
 `CleanupWorktreeActivity`, and `EnqueueJanitorActivity` are unmodified by the
-#3409/#3410 work and continue to pass in full.
+work in #3409/#3410 and continue to pass in full.
 
 **Evidence**:
 
