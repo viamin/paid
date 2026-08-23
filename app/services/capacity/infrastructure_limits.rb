@@ -31,7 +31,17 @@ module Capacity
       "PROVISIONING_RATE_WINDOW_SECONDS" => 600,
       "MAX_GLOBAL_PROVISIONINGS_PER_WINDOW" => 25,
       "MAX_ACCOUNT_PROVISIONINGS_PER_WINDOW" => 10,
-      "MAX_PROJECT_PROVISIONINGS_PER_WINDOW" => 5
+      "MAX_PROJECT_PROVISIONINGS_PER_WINDOW" => 5,
+      "INFRA_SPEND_RATE_CENTS_PER_HOUR" => 0,
+      "INFRA_SPEND_PROJECTION_SECONDS" => 3600,
+      "MAX_GLOBAL_INFRA_SPEND_HOURLY_CENTS" => 0,
+      "MAX_GLOBAL_INFRA_SPEND_DAILY_CENTS" => 0,
+      "MAX_ACCOUNT_INFRA_SPEND_HOURLY_CENTS" => 0,
+      "MAX_ACCOUNT_INFRA_SPEND_DAILY_CENTS" => 0,
+      "MAX_PROJECT_INFRA_SPEND_HOURLY_CENTS" => 0,
+      "MAX_PROJECT_INFRA_SPEND_DAILY_CENTS" => 0,
+      "MAX_RUNNER_INFRA_SPEND_HOURLY_CENTS" => 0,
+      "MAX_RUNNER_INFRA_SPEND_DAILY_CENTS" => 0
     }.freeze
 
     class << self
@@ -49,8 +59,36 @@ module Capacity
           provisioning_rate_window_seconds: integer_env(env, "PROVISIONING_RATE_WINDOW_SECONDS"),
           global_provisionings_per_window_limit: integer_env(env, "MAX_GLOBAL_PROVISIONINGS_PER_WINDOW"),
           account_provisionings_per_window_limit: integer_env(env, "MAX_ACCOUNT_PROVISIONINGS_PER_WINDOW"),
-          project_provisionings_per_window_limit: integer_env(env, "MAX_PROJECT_PROVISIONINGS_PER_WINDOW")
+          project_provisionings_per_window_limit: integer_env(env, "MAX_PROJECT_PROVISIONINGS_PER_WINDOW"),
+          infra_spend_rate_cents_per_hour: rate_cents_per_hour(host: host, env: env),
+          infra_spend_projection_seconds: integer_env(env, "INFRA_SPEND_PROJECTION_SECONDS"),
+          global_infra_spend_hourly_limit_cents: integer_env(env, "MAX_GLOBAL_INFRA_SPEND_HOURLY_CENTS"),
+          global_infra_spend_daily_limit_cents: integer_env(env, "MAX_GLOBAL_INFRA_SPEND_DAILY_CENTS"),
+          account_infra_spend_hourly_limit_cents: integer_env(env, "MAX_ACCOUNT_INFRA_SPEND_HOURLY_CENTS"),
+          account_infra_spend_daily_limit_cents: integer_env(env, "MAX_ACCOUNT_INFRA_SPEND_DAILY_CENTS"),
+          project_infra_spend_hourly_limit_cents: integer_env(env, "MAX_PROJECT_INFRA_SPEND_HOURLY_CENTS"),
+          project_infra_spend_daily_limit_cents: integer_env(env, "MAX_PROJECT_INFRA_SPEND_DAILY_CENTS"),
+          runner_infra_spend_hourly_limit_cents: integer_env(env, "MAX_RUNNER_INFRA_SPEND_HOURLY_CENTS"),
+          runner_infra_spend_daily_limit_cents: integer_env(env, "MAX_RUNNER_INFRA_SPEND_DAILY_CENTS")
         }
+      end
+
+      def rate_cents_per_hour(host: nil, env: ENV)
+        integer_env(
+          env,
+          host_key("INFRA_SPEND_RATE_CENTS_PER_HOUR", host),
+          fallback_key: "INFRA_SPEND_RATE_CENTS_PER_HOUR"
+        )
+      end
+
+      def max_rate_cents_per_hour(env: ENV)
+        configured_rates = env.filter_map do |key, value|
+          next unless key.match?(/\AINFRA_SPEND_RATE_CENTS_PER_HOUR(?:__.+)?\z/)
+
+          Integer(value, exception: false)
+        end
+
+        (configured_rates << integer_env(env, "INFRA_SPEND_RATE_CENTS_PER_HOUR")).compact.max.to_i
       end
 
       def production_errors(env: ENV)

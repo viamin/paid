@@ -1635,8 +1635,8 @@ class AgentRun < ApplicationRecord
   #   prior peek_next_queued_run call)
   #
   # Note: if the transaction commits but the subsequent workflow start fails,
-  # ProcessRunQueueJob leaves the workflow id in place when it marks the run
-  # failed so StaleRunDetectorJob can cancel a potentially orphaned workflow.
+  # ProcessRunQueueJob leaves the workflow id in place and keeps the run
+  # claimed so StaleRunDetectorJob can cancel a potentially orphaned workflow.
   def self.claim_next_queued_run(target_id:)
     transaction do
       run = unclaimed.where(id: target_id).lock("FOR UPDATE SKIP LOCKED").first

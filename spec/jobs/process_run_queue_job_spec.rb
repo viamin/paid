@@ -166,6 +166,13 @@ RSpec.describe ProcessRunQueueJob do
     )
   end
 
+  def expect_runner_spend_skip_log(reason:)
+    expect(Rails.logger).to have_received(:info).with(hash_including(
+      message: "process_run_queue.runner_spend_skip",
+      reason: reason
+    ))
+  end
+
   def stub_capacity_aware_preferred_run(project:)
     user = project.created_by
     user.settings.update!(run_concurrency_mode: "auto", max_concurrent_runs: 20, max_parallel_agents_per_project: 20)
@@ -226,6 +233,65 @@ RSpec.describe ProcessRunQueueJob do
     )
   end
 
+  def runner_spend_denied_result(available_at:)
+    {
+      allowed: false,
+      reason: "runner_infra_spend_hourly_limit_exceeded",
+      rate_limited_until: available_at,
+      spend_scope: "runner",
+      spend_period: "hourly",
+      spend_action: "fail_fast"
+    }
+  end
+
+  def scoped_spend_denied_admission(scope:, available_at:)
+    {
+      allowed: false,
+      reason: "#{scope}_infra_spend_hourly_limit_exceeded",
+      mode: "auto",
+      selected_host: "local",
+      available_slots: 0,
+      rate_limited_until: available_at,
+      spend_scope: scope,
+      spend_period: "hourly",
+      spend_action: "park"
+    }
+  end
+
+  def prepare_spend_limited_admission(job:, scope:, available_at:)
+    queued_run = create_queued_run_with_policy(max_concurrent_runs: 5)
+    queued_run.project.created_by.settings.update!(run_concurrency_mode: "auto")
+    stub_policy_decision(local_auto_decision)
+    allow(Rails.logger).to receive(:info)
+    allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(auto_mode_snapshot)
+    allow(Containers::BackendScheduler).to receive(:call).and_return(default_local_host_selection_result)
+    allow(Capacity::RunAdmission).to receive(:preview).and_return(
+      scoped_spend_denied_admission(scope: scope, available_at: available_at)
+    )
+    allow(job).to receive(:next_queued_run_for_scheduler).and_call_original
+    queued_run
+  end
+
+  def expect_spend_limited_run(queued_run:, scope:, available_at:)
+    queued_run.reload
+    expect(queued_run.status).to eq("rate_limited")
+    expect(queued_run.rate_limited_until).to eq(available_at)
+    expect(queued_run.external_metadata["capacity_park_reason"]).to eq("#{scope}_infra_spend_hourly_limit_exceeded")
+  end
+
+  def expect_spend_scope_block(job:, queued_run:, blocked_scope:)
+    case blocked_scope
+    when :account
+      expect(job).to have_received(:next_queued_run_for_scheduler).with(
+        satisfy { |args| args.fetch(:blocked_account_ids).include?(queued_run.project.account_id) }
+      ).at_least(:once)
+    when :project
+      expect(job).to have_received(:next_queued_run_for_scheduler).with(
+        satisfy { |args| args.fetch(:blocked_project_ids).include?(queued_run.project_id) }
+      ).at_least(:once)
+    end
+  end
+
   def expect_execution_rejected_event(agent_run, reason:, rate_limited_until:)
     event = ExecutionAuditEvent.for_agent_run(agent_run).by_event_name("execution.rejected").last
     expect(event.metadata).to include(
@@ -237,7 +303,7 @@ RSpec.describe ProcessRunQueueJob do
   def stub_global_provisioning_rate_limit(available_at:)
     allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(auto_mode_snapshot)
     allow(Containers::BackendScheduler).to receive(:call).and_return(default_local_host_selection_result)
-    allow(Capacity::RunAdmission).to receive(:call).and_return(
+    allow(Capacity::RunAdmission).to receive(:preview).and_return(
       provisioning_rate_denied_admission(available_at: available_at)
     )
   end
@@ -899,7 +965,7 @@ RSpec.describe ProcessRunQueueJob do
       expect(p1_run.reload.temporal_workflow_id).to be_present
     end
 
-    it "marks run as failed and continues when workflow start fails" do
+    it "keeps the run claimed for stale cleanup and continues when workflow start fails" do
       failing_run = create(:agent_run, :queued, created_at: 2.minutes.ago)
       good_run = create(:agent_run, :queued, created_at: 1.minute.ago)
 
@@ -910,27 +976,112 @@ RSpec.describe ProcessRunQueueJob do
 
       described_class.new.perform
 
-      expect(failing_run.reload.status).to eq("failed")
+      expect(failing_run.reload.status).to eq("queued")
       expect(failing_run.configuration_bundle).to be_present
       expect(failing_run.reload.error_message).to include("Connection refused")
-      # temporal_workflow_id is intentionally kept on failure so
-      # StaleRunDetectorJob can cancel a potentially-orphaned workflow
-      # (e.g. when start_workflow raises due to a network timeout but
-      # the workflow actually started server-side).
+      # temporal_workflow_id is intentionally kept on workflow-start errors so
+      # StaleRunDetectorJob can retry canceling a potentially orphaned
+      # workflow before the run becomes startable again.
       expect(failing_run.reload.temporal_workflow_id).to be_present
+      expect(failing_run.reload.provisioning_started_at).to be_nil
+      expect(failing_run.reload.external_metadata["provisioning_started_at"]).to be_nil
+      expect(failing_run.reload.external_metadata["infrastructure_spend"]).to be_nil
       expect(good_run.reload.status).to eq("running")
     end
 
-    it "enqueues finished-run followups when workflow start fails" do
+    it "does not enqueue finished-run followups when workflow start cleanup is pending" do
       failing_run = create(:agent_run, :queued)
 
       allow(temporal_client).to receive(:start_workflow).and_raise(StandardError, "Connection refused")
 
       described_class.new.perform
 
-      expect(QualityMetricsCollectionJob).to have_been_enqueued.with(failing_run.id)
-      expect(AnomalyDetectionJob).to have_been_enqueued.with(failing_run.id)
-      expect(DashboardBroadcastJob).to have_been_enqueued.with(failing_run.project.account_id)
+      expect(QualityMetricsCollectionJob).not_to have_been_enqueued.with(failing_run.id)
+      expect(AnomalyDetectionJob).not_to have_been_enqueued.with(failing_run.id)
+      expect(failing_run.reload.status).to eq("queued")
+      expect(failing_run.temporal_workflow_id).to be_present
+    end
+
+    # @spec INFRA-SPEND-002
+    # @spec OBSERVABILITY-002
+    it "records provisioning spend metadata only after workflow start succeeds" do
+      queued_run = create(:agent_run, :queued)
+
+      allow(temporal_client).to receive(:start_workflow) do |_wf, input, **_opts|
+        run = AgentRun.find(input[:agent_run_id])
+
+        expect(run.provisioning_started_at).to be_nil
+        expect(run.external_metadata["provisioning_started_at"]).to be_nil
+        expect(run.external_metadata["infrastructure_spend"]).to be_nil
+
+        workflow_handle
+      end
+
+      described_class.new.perform
+
+      queued_run.reload
+      expect(queued_run.status).to eq("running")
+      expect(queued_run.provisioning_started_at).to be_present
+      expect(queued_run.external_metadata["provisioning_started_at"]).to be_present
+      expect(queued_run.external_metadata.dig("infrastructure_spend", "rate_cents_per_hour")).to be_present
+      expect(queued_run.external_metadata["requested_resources"]).to be_present
+    end
+
+    # @spec INFRA-SPEND-002
+    # @spec OBSERVABILITY-002
+    it "cancels and fails the run when provisioning metadata persistence fails after workflow start" do
+      queued_run = create(:agent_run, :queued)
+
+      allow(job).to receive(:record_provisioning_start!).and_raise(StandardError, "metadata write failed")
+      expect(workflow_handle).to receive(:cancel)
+
+      result = job.send(:start_claimed_run, queued_run)
+
+      expect(result).to be(false)
+      expect(queued_run.reload.status).to eq("failed")
+      expect(queued_run.error_message).to include("metadata write failed")
+      expect(queued_run.temporal_workflow_id).to be_present
+      expect(queued_run.provisioning_started_at).to be_nil
+      expect(queued_run.external_metadata["provisioning_started_at"]).to be_nil
+      expect(queued_run.external_metadata["infrastructure_spend"]).to be_nil
+    end
+
+    # @spec OBSERVABILITY-002
+    it "keeps the run claimed when post-start cancellation cannot be confirmed" do
+      queued_run = create(:agent_run, :queued)
+
+      allow(job).to receive(:record_provisioning_start!).and_raise(StandardError, "metadata write failed")
+      allow(workflow_handle).to receive(:cancel).and_raise(StandardError, "cancel timed out")
+
+      result = job.send(:start_claimed_run, queued_run)
+
+      expect(result).to be(false)
+      expect(queued_run.reload.status).to eq("queued")
+      expect(queued_run.error_message).to include("metadata write failed")
+      expect(queued_run.temporal_workflow_id).to be_present
+      expect(queued_run.provisioning_started_at).to be_nil
+      expect(queued_run.external_metadata["provisioning_started_at"]).to be_nil
+      expect(queued_run.external_metadata["infrastructure_spend"]).to be_nil
+    end
+
+    # @spec OBSERVABILITY-002
+    it "keeps the run claimed when Temporal reports NOT_FOUND during post-start cancellation" do
+      queued_run = create(:agent_run, :queued)
+      error = Temporalio::Error::RPCError.allocate
+      allow(error).to receive(:code).and_return(Temporalio::Error::RPCError::Code::NOT_FOUND)
+
+      allow(job).to receive(:record_provisioning_start!).and_raise(StandardError, "metadata write failed")
+      allow(workflow_handle).to receive(:cancel).and_raise(error)
+
+      result = job.send(:start_claimed_run, queued_run)
+
+      expect(result).to be(false)
+      expect(queued_run.reload.status).to eq("queued")
+      expect(queued_run.error_message).to include("metadata write failed")
+      expect(queued_run.temporal_workflow_id).to be_present
+      expect(queued_run.provisioning_started_at).to be_nil
+      expect(queued_run.external_metadata["provisioning_started_at"]).to be_nil
+      expect(queued_run.external_metadata["infrastructure_spend"]).to be_nil
     end
 
     it "admits a claimed run even when unrelated validations drift after queueing" do
@@ -1611,6 +1762,58 @@ RSpec.describe ProcessRunQueueJob do
         expect(queued_run.runner_id).to eq(runner.id)
       end
 
+      # @spec INFRA-SPEND-002
+      it "parks the run when the runner spend threshold is exceeded and no alternative exists" do
+        project = create(:project)
+        user = project.created_by
+        runner = user.runners.kept_only.find_by!(runner_key: "claude", auth_type: "subscription")
+        user.runners.kept_only.where.not(id: runner.id).update_all(enabled_for_agent_runs: false)
+        queued_run = create(:agent_run, :queued, project: project, runner: runner)
+        allow(Rails.logger).to receive(:info)
+        available_at = Time.utc(2026, 8, 23, 13, 0, 0)
+
+        allow(Capacity::InfrastructureSpendGuard).to receive(:call).and_call_original
+        allow(Capacity::InfrastructureSpendGuard).to receive(:call)
+          .with(hash_including(runner: runner, agent_run: queued_run))
+          .and_return(runner_spend_denied_result(available_at: available_at))
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        queued_run.reload
+        expect(queued_run.status).to eq("rate_limited")
+        expect(queued_run.rate_limited_until).to eq(available_at)
+        expect(queued_run.external_metadata["capacity_park_reason"]).to eq("runner_infra_spend_hourly_limit_exceeded")
+        expect_runner_spend_skip_log(reason: "runner_infra_spend_hourly_limit_exceeded")
+      end
+
+      # @spec INFRA-SPEND-002
+      # @spec INFRA-SPEND-003
+      it "applies runner spend enforcement after late binding an auto-pick run" do
+        project = create(:project)
+        user = project.created_by
+        runner = user.runners.kept_only.find_by!(runner_key: "claude", auth_type: "subscription")
+        user.runners.kept_only.where.not(id: runner.id).update_all(enabled_for_agent_runs: false)
+        queued_run = create(:agent_run, :queued, project: project, runner: nil, agent_type: "claude_code")
+        allow(Rails.logger).to receive(:info)
+        available_at = Time.utc(2026, 8, 23, 13, 0, 0)
+
+        allow(Capacity::InfrastructureSpendGuard).to receive(:call).and_call_original
+        allow(Capacity::InfrastructureSpendGuard).to receive(:call)
+          .with(hash_including(runner: runner, agent_run: queued_run))
+          .and_return(runner_spend_denied_result(available_at: available_at))
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        queued_run.reload
+        expect(queued_run.runner_id).to eq(runner.id)
+        expect(queued_run.status).to eq("rate_limited")
+        expect(queued_run.rate_limited_until).to eq(available_at)
+        expect(queued_run.external_metadata["capacity_park_reason"]).to eq("runner_infra_spend_hourly_limit_exceeded")
+        expect_runner_spend_skip_log(reason: "runner_infra_spend_hourly_limit_exceeded")
+      end
+
       # @spec RUNNER-SCHED-005, RUNNER-SCHED-008 — pinned runs blocked by a
       # time-window restriction must be rerouted (or parked), not dispatched.
       context "when a pinned runner is blocked by a time-window restriction" do
@@ -1941,15 +2144,16 @@ RSpec.describe ProcessRunQueueJob do
         breaker = create(:dispatch_circuit_breaker, :half_open, account: account, last_probe_at: nil)
         probe_run = create(:agent_run, :queued, project: project, created_at: 2.minutes.ago)
 
-        allow(temporal_client).to receive(:start_workflow).and_raise(StandardError, "Connection refused")
+      allow(temporal_client).to receive(:start_workflow).and_raise(StandardError, "Connection refused")
 
-        described_class.new.perform
+      described_class.new.perform
 
-        expect(probe_run.reload.status).to eq("failed")
-        # The probe never actually dispatched, so the breaker must stay
-        # probeable instead of blocking recovery for the probe interval.
-        expect(breaker.reload.last_probe_run_id).to be_nil
-        expect(breaker.reload.last_probe_at).to be_nil
+      expect(probe_run.reload.status).to eq("queued")
+      expect(probe_run.reload.temporal_workflow_id).to be_present
+      # The probe never actually dispatched, so the breaker must stay
+      # probeable instead of blocking recovery for the probe interval.
+      expect(breaker.reload.last_probe_run_id).to be_nil
+      expect(breaker.reload.last_probe_at).to be_nil
       end
 
       it "does not stamp the probe when the claim is lost before dispatch" do
@@ -1985,7 +2189,8 @@ RSpec.describe ProcessRunQueueJob do
 
         described_class.new.perform
 
-        expect(failed_probe.reload.status).to eq("failed")
+        expect(failed_probe.reload.status).to eq("queued")
+        expect(failed_probe.reload.temporal_workflow_id).to be_present
         # The failed probe was not stamped, so the next run in the same pass
         # is treated as a fresh probe and the breaker records it on dispatch.
         expect(breaker.reload.last_probe_run_id).to eq(retry_run.id)
@@ -2203,6 +2408,25 @@ RSpec.describe ProcessRunQueueJob do
           rate_limited_until: available_at
         )
       end
+
+      shared_examples "parks spend-limited admission" do |scope:, blocked_scope: nil|
+        # @spec INFRA-SPEND-002
+        it "parks #{scope} spend denials until the spend window resets" do
+          available_at = Time.utc(2026, 8, 17, 12, 5, 0)
+          queued_run = prepare_spend_limited_admission(job: job, scope: scope, available_at: available_at)
+
+          expect(temporal_client).not_to receive(:start_workflow)
+
+          job.perform
+
+          expect_spend_limited_run(queued_run:, scope:, available_at:)
+          expect_spend_scope_block(job:, queued_run:, blocked_scope:)
+        end
+      end
+
+      it_behaves_like "parks spend-limited admission", scope: "global"
+      it_behaves_like "parks spend-limited admission", scope: "account", blocked_scope: :account
+      it_behaves_like "parks spend-limited admission", scope: "project", blocked_scope: :project
 
       it "preserves unrelated external metadata when parking for capacity" do
         queued_run = create(:agent_run, :queued, external_metadata: { "keep" => "value" })

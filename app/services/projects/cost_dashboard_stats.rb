@@ -35,6 +35,9 @@ module Projects
       now = Time.current
       today_start = now.beginning_of_day
       month_start = now.beginning_of_month
+      infra_today = infrastructure_cost_cents(starts_at: today_start, ends_at: now)
+      infra_month = infrastructure_cost_cents(starts_at: month_start, ends_at: now)
+      infra_total = infrastructure_total_cost_cents
 
       completed = project.agent_runs.where(status: "completed")
       run_count = completed.count
@@ -42,9 +45,15 @@ module Projects
 
       {
         total_cost_cents: project.total_cost_cents,
+        infrastructure_cost_cents: infra_total,
+        total_variable_cost_cents: project.total_cost_cents + infra_total,
         total_tokens: project.total_tokens_used,
         cost_today_cents: billable_scope.by_time_period(today_start, now).total_cost_cents,
+        infrastructure_cost_today_cents: infra_today,
+        total_variable_cost_today_cents: billable_scope.by_time_period(today_start, now).total_cost_cents + infra_today,
         cost_this_month_cents: billable_scope.by_time_period(month_start, now).total_cost_cents,
+        infrastructure_cost_this_month_cents: infra_month,
+        total_variable_cost_this_month_cents: billable_scope.by_time_period(month_start, now).total_cost_cents + infra_month,
         avg_cost_per_run_cents: avg_cost,
         total_runs: run_count
       }
@@ -182,6 +191,19 @@ module Projects
           )
         end
       end
+    end
+
+    def infrastructure_cost_cents(starts_at:, ends_at:)
+      Capacity::InfrastructureSpend.spent_cents(
+        account: project.account,
+        project: project,
+        starts_at: starts_at,
+        ends_at: ends_at
+      )
+    end
+
+    def infrastructure_total_cost_cents
+      infrastructure_cost_cents(starts_at: Time.at(0), ends_at: Time.current)
     end
   end
 end
