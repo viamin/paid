@@ -864,7 +864,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_22_085848) do
     t.bigint "account_id", null: false, comment: "Tenant that owns this policy family."
     t.jsonb "context_selector", default: {}, null: false, comment: "Structured selector used to decide when this policy applies."
     t.datetime "created_at", null: false
-    t.bigint "current_version_id"
     t.text "description", comment: "Long-form summary of what this policy is intended to optimize or protect."
     t.jsonb "metadata", default: {}, null: false, comment: "Additional structured provenance, rollout, and audit details."
     t.string "name", null: false, comment: "Human-readable policy name shown in admin and experiment tooling."
@@ -877,30 +876,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_22_085848) do
     t.index ["account_id", "policy_type", "status"], name: "idx_coordination_policies_account_type_status"
     t.index ["account_id", "project_id", "policy_type", "policy_key"], name: "idx_coordination_policies_project_scope_key", unique: true, where: "(project_id IS NOT NULL)"
     t.index ["account_id"], name: "index_coordination_policies_on_account_id"
-    t.index ["current_version_id"], name: "index_coordination_policies_on_current_version_id"
     t.index ["project_id", "policy_type", "status"], name: "idx_coordination_policies_project_type_status"
     t.index ["project_id"], name: "index_coordination_policies_on_project_id"
-  end
-
-  create_table "coordination_policy_versions", comment: "Immutable policy revisions that carry the executable rules and tunable parameters for a coordination policy.", force: :cascade do |t|
-    t.datetime "activated_at", comment: "When this version became the policy's active revision."
-    t.bigint "coordination_policy_id", null: false, comment: "Owning policy catalog entry."
-    t.datetime "created_at", null: false
-    t.string "idempotency_key"
-    t.text "llm_prompt", comment: "Optional prompt template used when the policy delegates part of the decision to an LLM."
-    t.jsonb "metadata", default: {}, null: false, comment: "Structured provenance such as generator metadata, rollout notes, and approval state."
-    t.jsonb "parameters", default: {}, null: false, comment: "Thresholds, weights, and other tunable policy parameters."
-    t.text "reasoning", comment: "Why this policy version exists and what changed from the prior version."
-    t.datetime "retired_at", comment: "When this version stopped being eligible for runtime selection."
-    t.jsonb "rules", default: {}, null: false, comment: "Structured decision rules executed by coordination services."
-    t.string "status", limit: 30, default: "draft", null: false, comment: "Revision lifecycle state: draft, active, superseded, or retired."
-    t.datetime "updated_at", null: false
-    t.integer "version", null: false, comment: "Monotonic version number within the owning coordination policy."
-    t.index ["coordination_policy_id", "idempotency_key"], name: "index_coordination_policy_versions_on_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
-    t.index ["coordination_policy_id", "status", "created_at"], name: "idx_coordination_policy_versions_policy_status_created"
-    t.index ["coordination_policy_id", "version"], name: "idx_coordination_policy_versions_unique_version", unique: true
-    t.index ["coordination_policy_id"], name: "idx_coordination_policy_versions_one_active", unique: true, where: "((status)::text = 'active'::text)"
-    t.index ["coordination_policy_id"], name: "index_coordination_policy_versions_on_coordination_policy_id"
   end
 
   create_table "cost_budgets", force: :cascade do |t|
@@ -3251,9 +3228,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_22_085848) do
   add_foreign_key "coordination_experiments", "accounts", on_delete: :cascade
   add_foreign_key "coordination_experiments", "coordination_experiment_variants", column: "winner_variant_id", on_delete: :nullify
   add_foreign_key "coordination_policies", "accounts", on_delete: :cascade
-  add_foreign_key "coordination_policies", "coordination_policy_versions", column: "current_version_id", on_delete: :nullify
   add_foreign_key "coordination_policies", "projects", on_delete: :cascade
-  add_foreign_key "coordination_policy_versions", "coordination_policies", on_delete: :cascade
   add_foreign_key "cost_budgets", "projects", on_delete: :cascade
   add_foreign_key "decision_record_links", "decision_records", on_delete: :cascade
   add_foreign_key "decision_records", "agent_runs", on_delete: :nullify
@@ -4187,6 +4162,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_22_085848) do
       $function$
   SQL
 
+  create_function :paid_current_account_id, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.paid_current_account_id()
+       RETURNS bigint
+       LANGUAGE sql
+       STABLE
+      AS $function$
+        -- @spec POSTGRESQL-PERSISTENCE-007
+        -- version: 1
+        SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
+      $function$
+  SQL
+
+  create_function :paid_tenant_bypass, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.paid_tenant_bypass()
+       RETURNS boolean
+       LANGUAGE sql
+       STABLE
+      AS $function$
+        -- @spec POSTGRESQL-PERSISTENCE-007
+        -- version: 1
+        SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
+      $function$
+  SQL
+
   create_function :validate_orchestration_decision_strategy_version_scope, sql_definition: <<-'SQL'
       CREATE OR REPLACE FUNCTION public.validate_orchestration_decision_strategy_version_scope()
        RETURNS trigger
@@ -4220,30 +4219,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_22_085848) do
 
         RAISE EXCEPTION 'strategy_version_id must reference a global or same-tenant strategy version';
       END;
-      $function$
-  SQL
-
-  create_function :paid_current_account_id, sql_definition: <<-'SQL'
-      CREATE OR REPLACE FUNCTION public.paid_current_account_id()
-       RETURNS bigint
-       LANGUAGE sql
-       STABLE
-      AS $function$
-        -- @spec POSTGRESQL-PERSISTENCE-007
-        -- version: 1
-        SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
-      $function$
-  SQL
-
-  create_function :paid_tenant_bypass, sql_definition: <<-'SQL'
-      CREATE OR REPLACE FUNCTION public.paid_tenant_bypass()
-       RETURNS boolean
-       LANGUAGE sql
-       STABLE
-      AS $function$
-        -- @spec POSTGRESQL-PERSISTENCE-007
-        -- version: 1
-        SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
       $function$
   SQL
 
@@ -4305,10 +4280,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_22_085848) do
 
   create_trigger :logidze_on_mcp_server_definitions, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_mcp_server_definitions BEFORE INSERT OR UPDATE ON public.mcp_server_definitions FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{env}')
-  SQL
-
-  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
-      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
   SQL
 
   create_trigger :logidze_on_orchestration_strategies, sql_definition: <<-SQL
@@ -4377,5 +4348,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_22_085848) do
 
   create_trigger :logidze_on_users, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_users BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{encrypted_password,reset_password_token,reset_password_sent_at,remember_created_at}')
+  SQL
+
+  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
+      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
   SQL
 end
