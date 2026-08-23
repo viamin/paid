@@ -452,13 +452,13 @@ module Activities
     end
 
     def repair_questionless_needs_input(project, synced_issues, ignored_issue_ids: [])
-      labels = [
+      repair_labels = [
         project.enhance_issue_needs_input_label_name,
         project.label_for_stage("needs_input"),
         Activities::HandleNoOutputIssueRunActivity::PAID_NEEDS_INPUT_LABEL
       ].compact.uniq
       synced_issues = Array(synced_issues)
-      return false if labels.empty? || synced_issues.empty?
+      return false if synced_issues.empty?
 
       ignored_issue_ids = ignored_issue_ids.to_set
       changed = false
@@ -467,16 +467,15 @@ module Activities
         next if ignored_issue_ids.include?(issue_data[:id])
 
         issue = project.issues.find(issue_data[:id])
-        next unless (Array(issue.labels) & labels).any?
         next if issue.is_pull_request? || issue.github_state == "closed" || issue.paid_state != "needs_input"
         next if pending_clarifying_questions_for(project, issue).any?
         next unless issue.reload.paid_state == "needs_input"
 
-        next unless remove_invalid_needs_input_labels(project, issue, labels)
+        next unless remove_invalid_needs_input_labels(project, issue, repair_labels)
 
         issue.update!(
           paid_state: "failed",
-          labels: Array(issue.labels) - labels,
+          labels: Array(issue.labels) - repair_labels,
           needs_input_questions: nil
         )
         changed = true

@@ -115,12 +115,14 @@ RSpec.describe Activities::FetchIssuesActivity do
       relationships_parsed_at: relationships_parsed_at)
   end
 
-  def set_up_reconciled_questionless_issue(project, github_client, updated_issue)
+  def set_up_reconciled_questionless_issue(project, github_client, updated_issue, labels: nil, refreshed_labels: nil)
+    labels ||= [ project.enhance_issue_needs_input_label_name, "paid-build" ]
+    refreshed_labels ||= labels
     issue = create(:issue, :needs_input,
       project: project,
       github_issue_id: 6010,
       github_number: 60,
-      labels: [ project.enhance_issue_needs_input_label_name, "paid-build" ],
+      labels: labels,
       needs_input_questions: nil,
       body: "No clarifying questions here",
       github_updated_at: 2.days.ago,
@@ -130,7 +132,7 @@ RSpec.describe Activities::FetchIssuesActivity do
     allow(github_client).to receive(:issues).with(project.full_name, hash_including(state: "open"))
       .and_return([ OpenStruct.new(number: 60, pull_request: nil) ])
     allow(github_client).to receive(:issue).with(project.full_name, 60)
-      .and_return(github_issue(60, id: 6010, labels: [ project.enhance_issue_needs_input_label_name, "paid-build" ]))
+      .and_return(github_issue(60, id: 6010, labels: refreshed_labels))
     issue
   end
 
@@ -2505,6 +2507,22 @@ RSpec.describe Activities::FetchIssuesActivity do
             issue.github_number,
             [ project.enhance_issue_needs_input_label_name ]
           )
+        end
+
+        it "repairs reconciled questionless needs-input issues after the visible labels are already gone" do
+          issue = set_up_reconciled_questionless_issue(
+            project,
+            github_client,
+            updated_issue,
+            labels: [ "paid-build" ],
+            refreshed_labels: [ "paid-build" ]
+          )
+
+          activity.execute(project_id: project.id)
+
+          expect(issue.reload.paid_state).to eq("failed")
+          expect(issue.labels).to eq([ "paid-build" ])
+          expect(github_client).not_to have_received(:remove_labels_from_issue)
         end
 
         it "continues reconciliation when one open issue fetch fails" do
