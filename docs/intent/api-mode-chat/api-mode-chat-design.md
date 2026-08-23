@@ -78,6 +78,13 @@ What ships today:
   responses are not truncated by the transport default
 - token usage for chat turns is recorded on `token_usages` and surfaced back
   through the chat UI/API totals
+- `Tools::RepoReadClientResolver` resolves repo-read tool calls (`grep_repo`,
+  `read_repo_file`, `list_repo_tree`, `search_issues`) against the project's
+  own GitHub credential first (App installation token, or PAT when the
+  project has no installation), falling back to the chatting user's active
+  token only when the project has no usable credential — so a single chatting
+  user's personal GitHub Code Search/rate-limit quota is not exhausted ahead
+  of the project's own quota bucket
 
 ## What this is not
 

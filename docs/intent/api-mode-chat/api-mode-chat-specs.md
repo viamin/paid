@@ -186,3 +186,18 @@
   *Code:* `app/views/chat_sessions/show.html.erb` (panel header),
   `app/javascript/controllers/chat_controller.js#toggleCapabilityActions`,
   `app/views/chat_sessions/_popup.html.erb` (established pattern).
+
+- [x] **CHAT-API-010** — When a chat repo-read tool (`grep_repo`,
+  `read_repo_file`, `list_repo_tree`, `search_issues`) resolves a GitHub
+  client for a project, the system SHALL prefer the project's own credential
+  (the GitHub App installation token when the project has an active
+  installation, otherwise the project's active PAT) over the chatting user's
+  personal token, and SHALL fall back to an active user token that covers the
+  repo only when the project has no active credential or no usable client can
+  be built for it. A single chatting user's personal GitHub API/Code Search
+  quota SHALL NOT be preferred ahead of the project's own quota bucket for
+  routine repo reads.
+  *Tests:* `spec/mcp/tools/repo_read_client_resolver_spec.rb`.
+  *Code:* `Tools::RepoReadClientResolver#resolve`,
+  `Tools::RepoReadClientResolver#resolve_project_client`,
+  `Tools::RepoReadClientResolver#resolve_user_client`.
