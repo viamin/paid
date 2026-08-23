@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-class ExecutionResource < ApplicationRecord # @spec CONTAINER-RUNTIME-030
+class ExecutionResource < ApplicationRecord # @spec CONTAINER-RUNTIME-032
   RESOURCE_TYPES = %w[environment workspace].freeze
   STATES = %w[active cleanup_pending cleaned].freeze
   CLEANUP_BASE_DELAY = 5.minutes

@@ -7,10 +7,32 @@ RSpec.describe DockerHost, type: :model do
     expect(build(:docker_host)).to be_valid
   end
 
-  it "defaults the required network name" do
+  # @spec CONTAINER-RUNTIME-030
+  it "defaults the required network name to the runtime restricted network" do
     host = create(:docker_host, required_network_name: nil)
 
-    expect(host.required_network_name).to eq("paid-agents")
+    expect(host.required_network_name).to eq(NetworkPolicy::NETWORK_NAME)
+  end
+
+  # @spec CONTAINER-RUNTIME-030
+  it "normalizes arbitrary required network names back to the runtime restricted network" do
+    host = create(:docker_host, required_network_name: "shared-agents")
+
+    expect(host.required_network_name).to eq(NetworkPolicy::NETWORK_NAME)
+  end
+
+  # @spec CONTAINER-RUNTIME-030
+  it "defaults the infra network status to unknown" do
+    host = create(:docker_host, required_infra_network_status: nil)
+
+    expect(host.required_infra_network_status).to eq("unknown")
+  end
+
+  # @spec CONTAINER-RUNTIME-030
+  it "is not placement-ready when the infra network is not verified" do
+    host = create(:docker_host, required_infra_network_status: "unknown")
+
+    expect(host.placement_ready?).to be(false)
   end
 
   it "requires an endpoint for remote hosts" do
@@ -46,6 +68,25 @@ RSpec.describe DockerHost, type: :model do
 
     expect(host.client_tls_material_present?).to be(true)
     expect(host.reload.read_attribute_before_type_cast("client_private_key_pem")).not_to include("BEGIN PRIVATE KEY")
+  end
+
+  # @spec CONTAINER-RUNTIME-030
+  it "excludes hosts with an unverified infra network from placement-ready relations" do
+    ready_host = create(:docker_host)
+    infra_pending_host = create(:docker_host, account: ready_host.account, required_infra_network_status: "unknown")
+
+    expect(ready_host.account.docker_hosts.placement_ready_for_restricted_agent_runs)
+      .to contain_exactly(ready_host, infra_pending_host)
+    expect(ready_host.account.docker_hosts.placement_ready_for_agent_runs).to contain_exactly(ready_host)
+    expect(ready_host.account.docker_hosts.placement_ready_for_agent_runs).not_to include(infra_pending_host)
+  end
+
+  # @spec CONTAINER-RUNTIME-030
+  it "requires the infra network status for local hosts so placement stays aligned with runtime checks" do
+    host = create(:docker_host, :local, required_network_status: "ready", required_infra_network_status: "unknown")
+
+    expect(host.placement_ready?).to be(false)
+    expect(host.account.docker_hosts.placement_ready_for_agent_runs).to be_empty
   end
 
   # @spec EXEC-DISABLE-004

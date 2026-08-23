@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec CONTAINER-RUNTIME-030
+# @spec CONTAINER-RUNTIME-032
 RSpec.describe ExecutionResource do
   describe "#mark_cleanup_pending!" do
     let(:project) { create(:project) }

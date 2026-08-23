@@ -48,9 +48,11 @@ the default execution workspace for normal agent runs.
 ### Host selection and lifecycle routing
 
 `Containers::ResolveHostForRun` converts explicit or preferred host choices
-into run attributes. `Containers::BackendScheduler` then filters candidate
-hosts by compatibility and readiness, with optional first-healthy or
-capacity-aware fallback.
+into run attributes. Restricted/proxy runs consider hosts whose primary
+`paid_agent` network is ready; unrestricted subscription-auth and
+direct-outbound runs additionally require the `paid_internal` infra network.
+`Containers::BackendScheduler` then filters candidate hosts by compatibility
+and readiness, with optional first-healthy or capacity-aware fallback.
 
 In multi-host mode, `container_host` is intentionally not treated as an eager
 claim-time placement field. During the queue claim window, the admitted host is
@@ -461,6 +463,28 @@ restarts.
   `AgentRunResourceJanitorJob` still provide immediate cleanup during the
   migration, while the ledger reconciliation loop becomes the durable source of
   truth for retries and orphan adoption.
+
+### Agent-image install failure diagnostics
+
+The agent image carries contract-owned CLI install recipes from
+`agent-harness`. When a build fails in a post-install assertion, the
+Dockerfile must say which assertion failed and print the small amount of local
+state needed to diagnose it, because the contract/package may be correct while
+the image environment is wrong (for example PATH, launcher location, execute
+bit, or runtime version drift).
+
+The Oh My Pi install block is the concrete guardrail here: after installing Bun
+and the `omp` package, the Dockerfile validates the `omp` launcher and the Bun
+version with explicit failure messages instead of chained silent `test` calls.
+That keeps cross-architecture failures actionable without requiring an operator
+to rerun the whole image build under an interactive shell.
+
+Because the generic Bun installer can pick an `amd64` binary that assumes AVX2,
+the agent image installs the contract-pinned Bun release asset directly,
+verifies it against Bun's published `SHASUMS256.txt`, and falls back to the
+baseline `bun-linux-x64-baseline.zip` asset when `/proc/cpuinfo` does not
+advertise AVX2. That keeps the Oh My Pi install path compatible with older
+`amd64` runners instead of failing inside the post-install assertions.
 
 ## References
 

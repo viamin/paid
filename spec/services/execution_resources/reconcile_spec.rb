@@ -2,8 +2,8 @@
 
 require "rails_helper"
 
-# @spec CONTAINER-RUNTIME-030
-# @spec CONTAINER-RUNTIME-031
+# @spec CONTAINER-RUNTIME-032
+# @spec CONTAINER-RUNTIME-033
 RSpec.describe ExecutionResources::Reconcile do
   let(:account) { create(:account) }
   let(:project) { create(:project, account: account) }
@@ -321,7 +321,7 @@ RSpec.describe ExecutionResources::Reconcile do
   end
 
   it "fails a group instead of resolving an unknown runner_type to the Docker runner" do
-    # @spec CONTAINER-RUNTIME-031
+    # @spec CONTAINER-RUNTIME-033
     resource = create(:execution_resource, project: project, agent_run: agent_run,
       runner_type: "contract", identifier: "contract-resource", host: "local")
 

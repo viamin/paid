@@ -488,7 +488,7 @@
   CLIs against `paid-agent:latest`).
   *Tests:* `spec/services/containers/provision_spec.rb`.
   *Code:* `Containers::Provision` tmpfs configuration.
-- [x] **CONTAINER-RUNTIME-030** — The system SHALL persist a durable
+- [x] **CONTAINER-RUNTIME-032** — The system SHALL persist a durable
   `execution_resources` ledger for agent execution resources so cleanup state
   survives workflow retries, janitor retries, and direct provider drift. A
   successful provision SHALL upsert an `environment` ledger row for the run
@@ -504,7 +504,7 @@
   `AgentRun#cleanup_container`,
   `AgentRunResourceJanitorJob`
 
-- [x] **CONTAINER-RUNTIME-031** — Reconciliation SHALL compare ledger rows with
+- [x] **CONTAINER-RUNTIME-033** — Reconciliation SHALL compare ledger rows with
   runner/provider state when the provider supports tag/list inventory, and
   SHALL degrade to handle-based cleanup with `reduced_confidence` when it does
   not. The reconciliation matrix SHALL cover:
@@ -527,3 +527,30 @@
   `ExecutionResourceReconciliationJob`,
   `ExecutionRunners::Base`,
   `ExecutionRunners::LocalDockerRunner`
+
+- [x] **CONTAINER-RUNTIME-030** — When a remote Docker host is registered
+  through the guided setup wizard, the system SHALL default and verify the
+  host's required networks against the same names the runtime network
+  contract actually uses: `NetworkPolicy::NETWORK_NAME` (`paid_agent`) for
+  the primary/restricted network, and a distinct `required_infra_network_status`
+  tracking `NetworkPolicy::INFRA_NETWORK_NAME` (`paid_internal`) for
+  unrestricted subscription-auth/direct-outbound runs. `DockerHost#placement_ready?`
+  and the unrestricted placement relation SHALL require both networks to be
+  `"ready"`, while restricted/proxy placement SHALL continue to admit hosts
+  whose `paid_agent` network is ready even when `paid_internal` is still
+  pending — closing the gap where the setup UI defaulted to an unused
+  `"paid-agents"` name and never checked `paid_internal` at all, without
+  regressing restricted-only remote placement.
+  *Tests:* `spec/models/docker_host_spec.rb`, `spec/requests/agent_runs_spec.rb`, `spec/services/docker_hosts/setup_action_runner_spec.rb`, `spec/services/docker_hosts/setup_guide_spec.rb`.
+  *Code:* `DockerHost`, `Containers::ResolveHostForRun`, `Projects::AgentRunsController`, `DockerHosts::SetupActionRunner`, `DockerHosts::SetupGuide`.
+- [x] **CONTAINER-RUNTIME-031** — When a contract-owned CLI install block in
+  the agent image fails a post-install Oh My Pi assertion, the Dockerfile
+  SHALL identify which check failed and print enough local diagnostic state to
+  act on the failure without rerunning interactively. For the Oh My Pi block,
+  the image SHALL install the contract-pinned Bun release with checksum
+  verification and SHALL select the baseline `amd64` Bun asset when AVX2 is
+  unavailable, so the install path stays compatible with older runners.
+  The image SHALL also distinguish: missing `omp` on `PATH`, a
+  non-executable `omp` launcher, and a Bun version mismatch after install.
+  *Tests:* `spec/config/agent_image_build_script_spec.rb`.
+  *Code:* `docker/agent/Dockerfile`.
