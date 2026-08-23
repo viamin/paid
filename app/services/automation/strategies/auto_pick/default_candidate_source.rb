@@ -57,6 +57,18 @@ module Automation
             AND closed_prs.pr_review_phase IS DISTINCT FROM 'merged'
         SQL
 
+        # Bounds how long a completed +create_pr+ run without a locally
+        # synced resolution keeps its source issue out of auto-pick.
+        # +agent_runs.pull_request_number+ is written atomically with the
+        # run's terminal +status+ (see AgentRun#complete!), but the local PR
+        # +Issue+ row (and its +parent_issue_id+ linkage) is written later by
+        # GitHub sync. Without a bounded check on that gap, auto-pick can
+        # re-pick the source issue and open a second PR before sync catches
+        # up (#3432). The window is bounded, not permanent, so a PR row that
+        # never syncs (deleted branch, stale/wrong recorded PR number, sync
+        # backlog) does not strand the issue forever.
+        PR_SYNC_GRACE_PERIOD = 1.hour
+
         class << self
           def eligible_issue_ids(displayed_issues)
             return Set.new if displayed_issues.empty?
@@ -99,15 +111,8 @@ module Automation
               )
               .select(:issue_id)
 
-            pr_produced_issue_ids = AgentRun.where(
-              project: project, status: "completed", goal: "create_pr"
-            ).where.not(pull_request_number: nil).where.not(issue_id: nil)
-              .where("NOT EXISTS (#{CLOSED_PR_CORRELATED_SUBQUERY})")
-              .select(:issue_id)
-
             scope = scope.or(
               base.where(paid_state: "completed", id: recoverable_completed_issue_ids)
-                .where.not(id: pr_produced_issue_ids)
             )
 
             blocked_ids = tracker_ids_blocked_by_open_references(scope, project)
@@ -224,6 +229,17 @@ module Automation
               .where.not(id: blocking_issue_ids)
               .where(source: [ Issue::GITHUB_SOURCE, Issue::SYNTHETIC_CODE_SCANNING_SOURCE ])
               .where.not(id: Issue.open_pull_request_parent_issue_ids(project: project).distinct)
+              # Applies regardless of paid_state so a completed create_pr run
+              # that already recorded a PR number cannot be immediately
+              # re-picked while local PR sync is still catching up (#3432).
+              .where.not(id: unsynced_pr_produced_issue_ids(project))
+              # Once a merged PR row is authoritatively linked back to its
+              # source issue via +parent_issue_id+, the issue stays ineligible
+              # regardless of paid_state. This permanent guard intentionally
+              # does NOT trust bare +pull_request_number+ alone past
+              # PR_SYNC_GRACE_PERIOD, so a stale or wrong recorded PR number
+              # cannot strand the issue forever (#3432/#3588 review follow-up).
+              .where.not(id: merged_linked_pr_parent_issue_ids(project))
               # Issues abandoned because every available provider hit the per-issue
               # retry cap (#2513) are not auto-pickable until the abandonment is
               # cleared (e.g. by a successful run).
@@ -237,6 +253,31 @@ module Automation
             project.effective_auto_pick_skip_labels.reduce(base) do |scope, label|
               scope.where.not("labels @> ?::jsonb", [ label ].to_json)
             end
+          end
+
+          # Issue ids with a completed +create_pr+ run that recorded a PR
+          # number within the last {PR_SYNC_GRACE_PERIOD} but has no local,
+          # synced PR +Issue+ row proving that PR is closed without merging.
+          # An open synced PR is already excluded by
+          # +Issue.open_pull_request_parent_issue_ids+; this covers the
+          # window where the PR row hasn't synced at all yet, or sync
+          # hasn't caught up with a just-closed-unmerged PR (#3432).
+          def unsynced_pr_produced_issue_ids(project) # @spec EAGER-QUEUE-009
+            AgentRun.where(project: project, status: "completed", goal: "create_pr")
+              .where.not(pull_request_number: nil).where.not(issue_id: nil)
+              .where("agent_runs.completed_at > ?", PR_SYNC_GRACE_PERIOD.ago)
+              .where("NOT EXISTS (#{CLOSED_PR_CORRELATED_SUBQUERY})")
+              .select(:issue_id)
+          end
+
+          # Issue ids with a merged PR row authoritatively linked back to the
+          # source issue via +parent_issue_id+. Unlike the grace-window check
+          # above, this does not depend on bare +pull_request_number+, so a
+          # stale/wrong recorded PR number cannot permanently block the issue.
+          def merged_linked_pr_parent_issue_ids(project)
+            Issue.where(project: project, is_pull_request: true, pr_review_phase: "merged")
+              .where.not(parent_issue_id: nil)
+              .select(:parent_issue_id)
           end
 
           def without_open_non_pr_subissues(scope)
