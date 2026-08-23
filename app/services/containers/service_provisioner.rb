@@ -574,13 +574,18 @@ module Containers
       hardening = hardening_profile_for(service_container.image)
       env = container_env_for(service_container)
       host = runtime_name(service_container)
+      cap_drop = [ "ALL" ]
+      cap_add = hardening[:cap_add]
+      security_opt = [ "no-new-privileges:true" ]
 
       options = {
         "Image" => service_container.image,
         "name" => host,
         "Env" => env.map { |k, v| "#{k}=#{v}" },
         "ReadonlyRootfs" => true,
-        "SecurityOpt" => [ "no-new-privileges:true" ],
+        "CapDrop" => cap_drop,
+        "CapAdd" => cap_add,
+        "SecurityOpt" => security_opt,
         "HostConfig" => {
           "NetworkMode" => @network,
           "Memory" => limits[:memory],
@@ -588,8 +593,9 @@ module Containers
           "CpuPeriod" => 100_000,
           "CpuQuota" => limits[:cpu_quota],
           "PidsLimit" => limits[:pids_limit],
-          "CapDrop" => [ "ALL" ],
-          "CapAdd" => hardening[:cap_add],
+          "CapDrop" => cap_drop,
+          "CapAdd" => cap_add,
+          "SecurityOpt" => security_opt,
           "Tmpfs" => hardening[:tmpfs]
         },
         "NetworkingConfig" => {

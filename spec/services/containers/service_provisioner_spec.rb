@@ -753,8 +753,12 @@ RSpec.describe Containers::ServiceProvisioner do
       expect(Docker::Container).to have_received(:create).with(
         hash_including(
           "ReadonlyRootfs" => true,
+          "CapDrop" => [ "ALL" ],
           "SecurityOpt" => [ "no-new-privileges:true" ],
-          "HostConfig" => hash_including("CapDrop" => [ "ALL" ])
+          "HostConfig" => hash_including(
+            "CapDrop" => [ "ALL" ],
+            "SecurityOpt" => [ "no-new-privileges:true" ]
+          )
         )
       )
     end
@@ -768,6 +772,7 @@ RSpec.describe Containers::ServiceProvisioner do
 
       expect(Docker::Container).to have_received(:create).with(
         hash_including(
+          "CapAdd" => [ "CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID" ],
           "HostConfig" => hash_including(
             "CapAdd" => [ "CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID" ],
             "Tmpfs" => hash_including(
@@ -804,10 +809,13 @@ RSpec.describe Containers::ServiceProvisioner do
         expect(Docker::Container).to have_received(:create).with(
           hash_including(
             "ReadonlyRootfs" => true,
+            "CapDrop" => [ "ALL" ],
+            "CapAdd" => [],
             "SecurityOpt" => [ "no-new-privileges:true" ],
             "HostConfig" => hash_including(
               "CapDrop" => [ "ALL" ],
               "CapAdd" => [],
+              "SecurityOpt" => [ "no-new-privileges:true" ],
               "Tmpfs" => { "/tmp" => "size=#{64 * 1024 * 1024},mode=1777" }
             )
           )
