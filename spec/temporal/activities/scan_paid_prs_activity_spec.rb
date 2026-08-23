@@ -10358,6 +10358,46 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       )
     end
 
+    # An old paid-agent CHANGES_REQUESTED review left an unresolved inline
+    # thread; GitHub does not auto-resolve threads when that review is later
+    # dismissed, so the thread lingers even after a fresh clean review lands.
+    # The TDD gate must not re-block on it (#3468 follow-up).
+    def stub_non_strict_tdd_review_with_stale_thread
+      enable_paid_agent_review!
+      create(:agent_run, :completed,
+        project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        trigger_type: "automatic",
+        completed_at: 2.hours.ago)
+      stub_github_for_pr(
+        draft: true,
+        checks: [ { name: "rspec", conclusion: "failure" } ],
+        reviews: [ {
+          id: 2,
+          user_login: "paid-code-reviewer[bot]",
+          state: "COMMENTED",
+          body: "Tests look good. <!-- paid-review-clean -->",
+          submitted_at: 10.minutes.ago,
+          commit_id: "abc123"
+        } ],
+        review_threads: [
+          {
+            id: "stale-paid-agent-thread",
+            is_resolved: false,
+            comments: [ {
+              body: "Add an edge-case spec for the failure path.",
+              path: "spec/foo_spec.rb",
+              line: 5,
+              author: "paid-code-reviewer[bot]",
+              created_at: 3.hours.ago,
+              commit_id: "old_sha"
+            } ]
+          }
+        ]
+      )
+    end
+
     def stub_stale_non_strict_tdd_review(review_body:)
       create(:agent_run, :completed,
         project: project,
@@ -10524,6 +10564,22 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       result = activity.execute(project_id: project.id)
 
       expect_stale_tdd_review_to_request_fresh_review(result, blocked_label: "paid-test-changes-requested")
+    end
+
+    it "does not reapply paid-test-changes-requested from a stale unresolved paid_agent thread after a newer clean review" do
+      # @spec TDD-PR-006
+      project.update!(tdd_mode: "non_strict")
+      pull_request
+      stub_non_strict_tdd_review_with_stale_thread
+
+      result = activity.execute(project_id: project.id)
+
+      expect(decision_types_for(result)).to include("queue_create_pr_run")
+      expect(decision_types_for(result)).not_to include("queue_review_run")
+      expect(automation_scan_results(result).first[:triggers]).to contain_exactly(
+        hash_including(type: "tdd_tests_approved")
+      )
+      expect(pull_request.reload.labels).to contain_exactly("paid-generated", "paid-automation", "paid-tests-approved")
     end
 
     it "ignores other review bots when the paid_agent test review is clean in non-strict mode" do

@@ -692,6 +692,7 @@ module Activities
       return :skipped if reviews.nil? || unresolved_threads.nil?
 
       reviews = current_tdd_test_review_verdicts(project, issue, reviews, pr_data:)
+      unresolved_threads = current_tdd_unresolved_threads(project, issue, unresolved_threads, pr_data:)
       last_run = last_completed_run(project, issue)
       status_triggers = check_review_bot_status(reviews, unresolved_threads,
         project: project, last_run: last_run, client: client, issue: issue,
@@ -731,15 +732,44 @@ module Activities
       end
     end
 
+    # Drops paid-agent thread comments left by a stale (pre-revision) test
+    # review from each thread's comment list before the thread is evaluated
+    # by check_review_bot_status. GitHub does not resolve review threads
+    # when the review that created them is dismissed (see
+    # Api::GithubProxyController#dismiss_stale_changes_requested_reviews),
+    # so an old paid-agent change-request thread otherwise survives past a
+    # newer clean review and re-triggers "paid-test-changes-requested",
+    # breaking the freshness guarantee in current_tdd_test_review_verdicts.
+    # Non-paid-agent comments in the same thread are left untouched.
+    def current_tdd_unresolved_threads(project, issue, unresolved_threads, pr_data: nil)
+      paid_agent_logins = paid_agent_review_logins(project)
+
+      unresolved_threads.map do |thread|
+        comments = thread[:comments].reject do |comment|
+          paid_agent_logins.include?(comment[:author]&.downcase) &&
+            !tdd_thread_comment_current_for_revision?(project, issue, comment, pr_data:)
+        end
+        thread.merge(comments: comments)
+      end
+    end
+
     def tdd_review_current_for_revision?(project, issue, review, pr_data: nil)
+      tdd_revision_current?(project, issue, commit: review[:commit_id], timestamp: review[:submitted_at], pr_data:)
+    end
+
+    def tdd_thread_comment_current_for_revision?(project, issue, comment, pr_data: nil)
+      tdd_revision_current?(project, issue, commit: comment[:commit_id], timestamp: comment[:created_at], pr_data:)
+    end
+
+    def tdd_revision_current?(project, issue, commit:, timestamp:, pr_data: nil)
       current_head_sha = pr_head_sha(pr_data)
-      review_commit = review[:commit_id].presence
-      return review_commit == current_head_sha if review_commit && current_head_sha
+      commit = commit.presence
+      return commit == current_head_sha if commit && current_head_sha
 
       baseline = latest_completed_tdd_test_revision_run(project, issue)
-      return false unless baseline&.completed_at && review[:submitted_at]
+      return false unless baseline&.completed_at && timestamp
 
-      review[:submitted_at] >= baseline.completed_at
+      timestamp >= baseline.completed_at
     end
 
     def latest_completed_tdd_test_revision_run(project, issue)
