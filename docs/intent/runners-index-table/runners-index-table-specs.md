@@ -42,3 +42,10 @@
   `RUNNER_AUTH_INSTRUCTION_COPY`.
   *Code:* `app/helpers/runners_helper.rb`.
   *Test:* `spec/helpers/runners_helper_spec.rb`.
+
+- [x] **RUNNERS-INDEX-007** — When the `/runners` index no longer renders an
+  on-page auth setup guide, the "Test Agent" authentication troubleshooting
+  copy SHALL direct operators to the remaining runner auth management surfaces
+  instead of telling them to review a guide on that page.
+  *Code:* `app/javascript/controllers/test_agent_controller.js`.
+  *Test:* `spec/lib/test_agent_controller_node_harness_spec.rb`.

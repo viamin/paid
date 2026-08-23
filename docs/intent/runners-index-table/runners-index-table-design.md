@@ -47,6 +47,10 @@ guidance on the main runners screen.
 
 Because the auth setup card is removed, the helper code that assembled those
 instruction blocks is also removed from `app/helpers/runners_helper.rb`.
+Any auth troubleshooting triggered from the index page's "Test Agent" action
+must therefore point operators to the remaining runner auth management surfaces
+(`Edit Runner` and runner credentials) instead of referencing a page-local
+setup guide that no longer exists.
 
 ## What this is not
 

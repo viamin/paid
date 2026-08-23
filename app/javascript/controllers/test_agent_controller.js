@@ -130,9 +130,10 @@ export default class extends Controller {
   }
 
   troubleshootingFor(errorType) {
+    // @spec RUNNERS-INDEX-007
     const messages = {
       connection: "Could not reach the agent. Verify the runner URL is correct and the agent container is running.",
-      authentication: "Authentication is missing, invalid, or expired. Review the Runner Auth Setup guide on this page and confirm the required API key or local CLI credentials are available to Paid.",
+      authentication: "Authentication is missing, invalid, or expired. Open Edit for this runner and confirm the required API key or runner credentials are available to Paid.",
       timeout: "The agent did not respond in time. Ensure the agent container has sufficient resources and is not in a crash loop.",
       installation: "The runner CLI is not installed in the agent container. Verify the container image includes this runner and that it is on the PATH.",
       rate_limited: "The runner rejected the request due to usage or rate limits. Check the message above for the runner's reset or quota details.",
