@@ -945,7 +945,7 @@ RSpec.describe ProcessRunQueueJob do
       expect(p1_run.reload.temporal_workflow_id).to be_present
     end
 
-    it "marks run as failed and continues when workflow start fails" do
+    it "keeps the run claimed for stale cleanup and continues when workflow start fails" do
       failing_run = create(:agent_run, :queued, created_at: 2.minutes.ago)
       good_run = create(:agent_run, :queued, created_at: 1.minute.ago)
 
@@ -956,13 +956,12 @@ RSpec.describe ProcessRunQueueJob do
 
       described_class.new.perform
 
-      expect(failing_run.reload.status).to eq("failed")
+      expect(failing_run.reload.status).to eq("queued")
       expect(failing_run.configuration_bundle).to be_present
       expect(failing_run.reload.error_message).to include("Connection refused")
-      # temporal_workflow_id is intentionally kept on failure so
-      # StaleRunDetectorJob can cancel a potentially-orphaned workflow
-      # (e.g. when start_workflow raises due to a network timeout but
-      # the workflow actually started server-side).
+      # temporal_workflow_id is intentionally kept on workflow-start errors so
+      # StaleRunDetectorJob can retry canceling a potentially orphaned
+      # workflow before the run becomes startable again.
       expect(failing_run.reload.temporal_workflow_id).to be_present
       expect(failing_run.reload.provisioning_started_at).to be_nil
       expect(failing_run.reload.external_metadata["provisioning_started_at"]).to be_nil
@@ -970,16 +969,17 @@ RSpec.describe ProcessRunQueueJob do
       expect(good_run.reload.status).to eq("running")
     end
 
-    it "enqueues finished-run followups when workflow start fails" do
+    it "does not enqueue finished-run followups when workflow start cleanup is pending" do
       failing_run = create(:agent_run, :queued)
 
       allow(temporal_client).to receive(:start_workflow).and_raise(StandardError, "Connection refused")
 
       described_class.new.perform
 
-      expect(QualityMetricsCollectionJob).to have_been_enqueued.with(failing_run.id)
-      expect(AnomalyDetectionJob).to have_been_enqueued.with(failing_run.id)
-      expect(DashboardBroadcastJob).to have_been_enqueued.with(failing_run.project.account_id)
+      expect(QualityMetricsCollectionJob).not_to have_been_enqueued.with(failing_run.id)
+      expect(AnomalyDetectionJob).not_to have_been_enqueued.with(failing_run.id)
+      expect(failing_run.reload.status).to eq("queued")
+      expect(failing_run.temporal_workflow_id).to be_present
     end
 
     # @spec INFRA-SPEND-002
@@ -1019,6 +1019,24 @@ RSpec.describe ProcessRunQueueJob do
 
       expect(result).to be(false)
       expect(queued_run.reload.status).to eq("failed")
+      expect(queued_run.error_message).to include("metadata write failed")
+      expect(queued_run.temporal_workflow_id).to be_present
+      expect(queued_run.provisioning_started_at).to be_nil
+      expect(queued_run.external_metadata["provisioning_started_at"]).to be_nil
+      expect(queued_run.external_metadata["infrastructure_spend"]).to be_nil
+    end
+
+    # @spec OBSERVABILITY-002
+    it "keeps the run claimed when post-start cancellation cannot be confirmed" do
+      queued_run = create(:agent_run, :queued)
+
+      allow(job).to receive(:record_provisioning_start!).and_raise(StandardError, "metadata write failed")
+      allow(workflow_handle).to receive(:cancel).and_raise(StandardError, "cancel timed out")
+
+      result = job.send(:start_claimed_run, queued_run)
+
+      expect(result).to be(false)
+      expect(queued_run.reload.status).to eq("queued")
       expect(queued_run.error_message).to include("metadata write failed")
       expect(queued_run.temporal_workflow_id).to be_present
       expect(queued_run.provisioning_started_at).to be_nil
@@ -2086,15 +2104,16 @@ RSpec.describe ProcessRunQueueJob do
         breaker = create(:dispatch_circuit_breaker, :half_open, account: account, last_probe_at: nil)
         probe_run = create(:agent_run, :queued, project: project, created_at: 2.minutes.ago)
 
-        allow(temporal_client).to receive(:start_workflow).and_raise(StandardError, "Connection refused")
+      allow(temporal_client).to receive(:start_workflow).and_raise(StandardError, "Connection refused")
 
-        described_class.new.perform
+      described_class.new.perform
 
-        expect(probe_run.reload.status).to eq("failed")
-        # The probe never actually dispatched, so the breaker must stay
-        # probeable instead of blocking recovery for the probe interval.
-        expect(breaker.reload.last_probe_run_id).to be_nil
-        expect(breaker.reload.last_probe_at).to be_nil
+      expect(probe_run.reload.status).to eq("queued")
+      expect(probe_run.reload.temporal_workflow_id).to be_present
+      # The probe never actually dispatched, so the breaker must stay
+      # probeable instead of blocking recovery for the probe interval.
+      expect(breaker.reload.last_probe_run_id).to be_nil
+      expect(breaker.reload.last_probe_at).to be_nil
       end
 
       it "does not stamp the probe when the claim is lost before dispatch" do
@@ -2130,7 +2149,8 @@ RSpec.describe ProcessRunQueueJob do
 
         described_class.new.perform
 
-        expect(failed_probe.reload.status).to eq("failed")
+        expect(failed_probe.reload.status).to eq("queued")
+        expect(failed_probe.reload.temporal_workflow_id).to be_present
         # The failed probe was not stamped, so the next run in the same pass
         # is treated as a fresh probe and the breaker records it on dispatch.
         expect(breaker.reload.last_probe_run_id).to eq(retry_run.id)

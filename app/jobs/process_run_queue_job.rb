@@ -1262,7 +1262,7 @@ class ProcessRunQueueJob < ApplicationJob
       priority: temporal_priority_for(agent_run)
     )
   rescue => e
-    force_fail_run(agent_run, error: "Failed to start workflow: #{e.message}")
+    keep_run_claimed_for_cleanup(agent_run, error: "Failed to start workflow: #{e.message}")
     Rails.logger.error(
       message: "process_run_queue.start_failed",
       agent_run_id: agent_run.id,
@@ -1275,19 +1275,26 @@ class ProcessRunQueueJob < ApplicationJob
   def record_provisioning_start_after_start(agent_run, workflow_id:, workflow_handle:, planned_container_host:)
     record_provisioning_start!(agent_run, planned_container_host)
   rescue => e
-    cancel_started_workflow(workflow_handle, agent_run, workflow_id)
-    force_fail_run(agent_run, error: "Failed to persist provisioning metadata after workflow start: #{e.message}")
+    error = "Failed to persist provisioning metadata after workflow start: #{e.message}"
+    cancel_confirmed = cancel_started_workflow(workflow_handle, agent_run, workflow_id)
+    if cancel_confirmed
+      force_fail_run(agent_run, error: error)
+    else
+      keep_run_claimed_for_cleanup(agent_run, error: error)
+    end
     Rails.logger.error(
       message: "process_run_queue.provisioning_metadata_persist_failed",
       agent_run_id: agent_run.id,
       workflow_id: workflow_id,
-      error: e.message
+      error: e.message,
+      cleanup_pending: !cancel_confirmed
     )
     false
   end
 
   def cancel_started_workflow(workflow_handle, agent_run, workflow_id)
     workflow_handle.cancel
+    true
   rescue Temporalio::Error::RPCError => e
     raise unless e.code == Temporalio::Error::RPCError::Code::NOT_FOUND
 
@@ -1296,6 +1303,7 @@ class ProcessRunQueueJob < ApplicationJob
       agent_run_id: agent_run.id,
       workflow_id: workflow_id
     )
+    true
   rescue => e
     Rails.logger.warn(
       message: "process_run_queue.provisioning_metadata_cancel_failed",
@@ -1304,6 +1312,7 @@ class ProcessRunQueueJob < ApplicationJob
       error_class: e.class.name,
       error: e.message
     )
+    false
   end
 
   # Queue-start failures are infrastructure failures, not business-rule
@@ -1318,6 +1327,19 @@ class ProcessRunQueueJob < ApplicationJob
       completed_at: Time.current,
       error_message: error,
       duration_seconds: agent_run.duration
+    )
+    agent_run.save!(validate: false)
+  end
+
+  # When workflow start or immediate post-start cleanup cannot be confirmed,
+  # keep the run in claimed-queued state so StaleRunDetectorJob retries the
+  # cancellation before this run can be started again.
+  def keep_run_claimed_for_cleanup(agent_run, error:)
+    agent_run.assign_attributes(
+      status: "queued",
+      completed_at: nil,
+      error_message: error,
+      duration_seconds: nil
     )
     agent_run.save!(validate: false)
   end
