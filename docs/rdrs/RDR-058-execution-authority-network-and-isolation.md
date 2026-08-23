@@ -29,7 +29,7 @@ RDR-055's brokered research egress with secret-extraction guards
 | Preview/debug ingress exceptions are scoped | Implemented | `preview_sessions` and `PreviewProvisionState` — tunnel creation requires an explicit project-owned `preview_session` record; `app/models/preview_session.rb` |
 | Tenant/project/run isolation invariants are tested | Implemented | RLS on `agent_runs`/`projects`: `spec/security/tenant_context_spec.rb`; per-run `proxy_token` scope: `spec/requests/api/secrets_proxy_spec.rb`; per-run named workspace volumes: `spec/services/execution_runners/local_docker_runner_spec.rb` and `spec/services/containers/provision_spec.rb` |
 | Subscription-auth and direct-outbound remain explicit exceptions | Implemented | `NetworkPolicy` defaults to `:proxy` mode; subscription-auth and direct-outbound require explicit `subscription_auth?` / `direct_outbound_runner?` predicates; `spec/services/network_policy_spec.rb` |
-| Tenant-configurable egress allowlisting | Implemented | RDR-055's `EgressAllowlistEntry` model, `AgentRuns::EgressPolicy::{Resolve,Gateway}`, and the per-host Docker egress gateway ship the account/project domain allowlist and production fail-closed enforcement; see RDR-055 for full evidence |
+| Tenant-configurable egress allowlisting | Implemented | RDR-055's `EgressAllowlistEntry` model, `AgentRuns::EgressPolicy::{Resolve,Gateway}`, and the per-host Docker egress gateway ship the account/project domain allowlist. Restricted runtimes that cannot enforce that profile fail closed, while `GatewayAdapters::{Kubernetes,ManagedMachine}` remain contract stubs pending their runtime implementations; see RDR-055 for full evidence |
 | Brokered research egress with secret-extraction guards | **Gap** | RDR-055 acceptance criterion still open; follow-up [#3439](https://github.com/viamin/paid/issues/3439) |
 
 ### 2026-08-17 Closeout
@@ -86,8 +86,11 @@ Implemented** until those land.
 
 RDR-055's tenant-configurable egress allowlisting has since shipped: the
 `EgressAllowlistEntry` model, `AgentRuns::EgressPolicy::{Resolve,Gateway}`,
-and the per-host Docker egress gateway with production fail-closed
-enforcement (#3434, #3435, #3436, #3437, #3438) are all merged. This
+the per-host Docker egress gateway, and production fail-closed rejection
+for runtimes that cannot enforce the restricted profile (#3434, #3435,
+#3436, #3437, #3438) are all merged. The Kubernetes and managed-machine
+adapter classes included in that work are contract stubs, not shipped
+enforcement implementations. This
 supersedes the "RDR-055 is Draft" framing in the 2026-08-17 closeout audit
 above, which reflected an earlier point in time. RDR-055 itself remains
 **Partially Implemented**, not Implemented, because its brokered research

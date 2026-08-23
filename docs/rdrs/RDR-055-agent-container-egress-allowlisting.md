@@ -32,7 +32,7 @@ One acceptance-criteria group remains open:
 | Per-run egress snapshot resolution and persistence on `agent_runs.external_metadata["egress_policy"]` | Implemented | `AgentRuns::EgressPolicy::Resolve`, `Snapshot#persist!`; related issue [#3436](https://github.com/viamin/paid/issues/3436) |
 | Provider-neutral networking-policy propagation including `egress_profile` | Implemented | `ExecutionRunners::NetworkingPolicy#egress_profile`, `Containers::Provision#networking_policy_with_egress_profile`; related issue [#3437](https://github.com/viamin/paid/issues/3437) |
 | Tenant UI/API management and run-detail audit visibility | Implemented | egress allowlist controllers and run-detail audit surface; related issue [#3440](https://github.com/viamin/paid/issues/3440) |
-| Domain-aware gateway enforcement with production fail-closed runtime eligibility | Implemented | `AgentRuns::EgressPolicy::Gateway`, `GatewayAdapters::{Docker,Kubernetes,ManagedMachine}`, `ExecutionRunners::{ContractRunner,LocalDockerRunner}`; related issue [#3438](https://github.com/viamin/paid/issues/3438) |
+| Domain-aware gateway enforcement with production fail-closed runtime eligibility | Implemented | `AgentRuns::EgressPolicy::Gateway`, `GatewayAdapters::Docker`, and `ExecutionRunners::{ContractRunner,LocalDockerRunner}` ship Docker enforcement plus fail-closed rejection when a runtime cannot enforce the restricted profile; `GatewayAdapters::{Kubernetes,ManagedMachine}` are contract stubs only. Related issue [#3438](https://github.com/viamin/paid/issues/3438) |
 | Brokered research access with secret-extraction guards | **Gap** | Follow-up [#3439](https://github.com/viamin/paid/issues/3439) |
 
 ### 2026-08-23 Umbrella Audit
@@ -57,9 +57,10 @@ What is shipped in the repository as of 2026-08-23:
   `Containers::Provision#networking_policy_with_egress_profile` so the
   profile propagates through the portable runner contract
   (`CONTAINER-RUNTIME-020`, #3437)
-- the per-host egress gateway contract and adapters, runner eligibility
-  checks, Docker gateway enforcement, denial audit persistence, and
-  production fail-closed behavior (`EGRESS-POLICY-007`, #3438)
+- the per-host egress gateway contract, runner eligibility checks,
+  Docker gateway enforcement, contract stubs for Kubernetes and
+  managed-machine runtimes, denial audit persistence, and production
+  fail-closed behavior (`EGRESS-POLICY-007`, #3438)
 - the settings UI/API controllers and the run-detail audit surface that
   renders the persisted snapshot plus denied/redacted `EgressSecurityEvent`
   rows (#3440)
