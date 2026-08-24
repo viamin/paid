@@ -5,52 +5,101 @@
 ## Metadata
 
 - **Date**: 2026-08-04
-- **Status**: Partially Implemented
+- **Status**: Implemented
 - **Type**: Architecture + Process
 - **Priority**: P1
-- **Related Issues**: #3161 (reconciliation), #3198 (`lid_planning` output contract), #3199 (Planning PR review corrections), #3200 (elicited-intent materialization), #3201 (external-agent exposure)
+- **Related Issues**: #3161 (reconciliation), #3198 (`lid_planning` output contract), #3199 (Planning PR review corrections), #3200 (elicited-intent materialization), #3201 (external-agent exposure), #3598 (final validation closeout)
 - **Related Tests**: `spec/services/projects/detect_lid_mode_spec.rb`, `spec/services/lid/inject_into_prompt_spec.rb`, `spec/services/prompts/build_for_issue_spec.rb`, `spec/services/prompts/build_for_lid_planning_spec.rb`, `spec/temporal/activities/create_pull_request_activity_spec.rb`, `spec/services/lid/coherence_check_spec.rb`
 
 ## Implementation Status
 
-Partially implemented as of **August 4, 2026**. The original draft text is stale: the
-project data model, repository detection, override/redetect UI, LID-aware prompt injection,
-seeded prompt fragment, vendored checker, LID-aware enhancement question style, elicited
-intent prompt section, `lid_planning` goal, planning prompt builder, Planning-PR title/body
-path, docs-only changed-file guard, and PR-description LID phase reporting are all shipped.
-
-Phase-by-phase reconciliation:
+**Implemented** as of 2026-08-23. The earlier partial-status note became stale
+after the reconciliation follow-ups landed: the repo now ships the full
+LID-aware agent-run surface this RDR describes.
 
 - **Phase 0 (detection + data model)**: shipped. `projects.lid_mode`,
-  `projects.lid_detection`, and `projects.lid_mode_overridden` exist; detection runs from
-  the project-conventions collector and project settings support override plus re-detect.
-- **Phase 1 (LID-aware implementation runs)**: shipped. `Lid::InjectIntoPrompt` is wired
-  into `Prompts::BuildForIssue` and `Prompts::BuildForPr`, the
-  `coding.lid_aware_section` prompt exists, the agent image vendors `docs/lid/` and
-  `bin/coherence-check.mjs`, and PR descriptions append LID phase/coherence reporting.
-- **Phase 2 (LID-aware issue enhancement)**: partially shipped. Enhancement already asks
-  plain-language intent questions for all projects, and LID projects surface answered
-  clarifying questions as `# Elicited Intent` in `create_pr` prompts. The stronger
-  materialization promise remains open in #3200.
-- **Phase 3 (`lid_planning` goal)**: shipped. The goal exists end-to-end with
-  prompt building, UI/API trigger surfaces, stored `plan_doc_source`, Planning-PR
-  body handling, docs-only diff validation, and an explicit run-kind-aware
-  output contract (`Lid::PlanningContract`) that enforces the required artifact
-  set for adoption versus refinement runs, plus authored-intent weighting for
-  named plan docs (#3198).
-- **Phase 4 (Planning PR confirmation via review)**: shipped. Planning PRs can
-  carry the expected checklist, and the dedicated `review`-goal correction loop
-  for `[inferred]` review feedback is now shipped: `BuildForPr` detects when a
-  review run acts on a `lid_planning` PR and injects an intent-correction
-  prompt section that instructs the agent to revise the affected LLD/EARS
-  content and replace the `[inferred]` marker with authored rationale (#3199).
-- **Phase 5 (conversion polish, coherence gating, incremental tagging)**: partially
-  shipped. Coherence checking and PR reporting exist for `create_pr`, `review`, and
-  `lid_planning` runs. Incremental `@spec` maturation remains the intended posture.
-  External-agent discovery is now shipped through the authenticated interop API and MCP
-  `get_project` surface: callers can discover the effective `lid_mode`, inspect detection
-  metadata, consume the rendered LID workflow contract, and see that `lid_planning` is
-  supported with Planning-PR correction available via the `review`-goal loop.
+  `projects.lid_detection`, and `projects.lid_mode_overridden` exist; detection
+  runs from the project-conventions collector and project settings support
+  override plus re-detect.
+- **Phase 1 (LID-aware implementation runs)**: shipped. `Lid::InjectIntoPrompt`
+  is wired into issue/PR prompt building, the LID workflow contract tells the
+  agent to walk the arrow, add `@spec` links, and run the coherence checker,
+  and PR descriptions surface LID phase/coherence reporting.
+- **Phase 2 (LID-aware issue enhancement)**: shipped. LID-enabled implementation
+  prompts surface trusted clarifying answers as `# Elicited Intent` and instruct
+  the agent to draft or update the relevant LLD/EARS artifacts before or
+  alongside code changes.
+- **Phase 3 (`lid_planning` goal)**: shipped. Users can queue docs-only
+  planning runs, persist `plan_doc_source`, weight named plan docs as authored
+  intent, and enforce a run-kind-aware output artifact contract at PR creation.
+- **Phase 4 (Planning PR confirmation via review)**: shipped. Review-goal runs
+  detect when a PR came from `lid_planning` and inject an intent-correction
+  prompt path for `[inferred]` review feedback.
+- **Phase 5 (conversion polish, coherence reporting, external exposure)**:
+  shipped. Coherence checking runs for `create_pr`, `review`, and
+  `lid_planning`; failures are persisted as soft-blocks and reported in PRs.
+  External-agent entry points expose the same LID workflow contract and
+  `lid_planning` support through the interop API and MCP `get_project` tool.
+
+Incremental brownfield `@spec` tagging remains the intended operating posture,
+not an open implementation gap. See
+[audit-report-2026-08-23-rdr-051.md](audit-report-2026-08-23-rdr-051.md) for
+the closeout evidence.
+
+### 2026-08-23 Closeout
+
+Issue #3598 re-ran the [RDR Closeout Checklist](closeout-checklist.md) against
+the shipped code and tests instead of treating closed follow-up issues as
+evidence. That audit found every acceptance claim for this RDR represented by
+current code and passing specs:
+
+- **LID-aware prompt discipline (LID-RUNS-001)** is shipped by
+  `Lid::InjectIntoPrompt`, which appends the arrow-walking, tests-first,
+  `@spec`, and coherence-check contract for LID projects
+  (`app/services/lid/inject_into_prompt.rb:5-18`, `:73-158`), with coverage in
+  `spec/services/lid/inject_into_prompt_spec.rb:22-33` and `:54-137`.
+- **`lid_planning` run creation and named plan-doc persistence
+  (LID-RUNS-002)** are shipped by `ProjectsController#start_lid`
+  (`app/controllers/projects_controller.rb:240-288`) and
+  `AgentRun#prompt_for_lid_planning` (`app/models/agent_run.rb:3349-3362`),
+  covered by `spec/requests/projects_spec.rb:3129-3148`.
+- **Elicited-intent materialization in LID runs** ships through the clarified
+  requirements section, which promotes trusted answers to `# Elicited Intent`
+  and instructs LLD/EARS updates before or alongside code changes
+  (`app/services/prompt_assembly/sections/clarified_requirements.rb:3-19`,
+  `:46-59`), covered by
+  `spec/services/prompts/build_for_issue_spec.rb:166-179`.
+- **Coherence persistence and PR surfacing (LID-RUNS-003)** are shipped by
+  `Lid::CoherenceCheck` (`app/services/lid/coherence_check.rb:5-38`, `:97-119`)
+  and the PR body integration in
+  `CreatePullRequestActivity` (`app/temporal/activities/create_pull_request_activity.rb:207-226`),
+  covered by `spec/services/lid/coherence_check_spec.rb:23-40` and
+  `spec/temporal/activities/create_pull_request_activity_spec.rb:207-226`.
+- **Planning-PR review correction (LID-RUNS-004)** is shipped by
+  `AgentRun.planning_run_for_pr` (`app/models/agent_run.rb:1607-1617`) and
+  `Prompts::BuildForPr#planning_pr_revision?` /
+  `#planning_pr_revision_section`
+  (`app/services/prompts/build_for_pr.rb:124-136`, `:564-599`), covered by
+  `spec/services/prompts/build_for_pr_spec.rb:690-760`.
+- **Authored-intent weighting for named plan docs (LID-RUNS-005)** is shipped
+  by `Prompts::BuildForLidPlanning`
+  (`app/services/prompts/build_for_lid_planning.rb:54-122`), covered by
+  `spec/services/prompts/build_for_lid_planning_spec.rb:16-39` and `:56-92`.
+- **External-agent exposure (LID-RUNS-006)** is shipped by
+  `Interop::ExternalAgentLidContract`
+  (`app/services/interop/external_agent_lid_contract.rb:5-60`) and MCP
+  `get_project` (`app/mcp/tools/get_project.rb:23-39`), covered by
+  `spec/requests/project_interoperability_spec.rb:239-259` and
+  `spec/mcp/tools/get_project_spec.rb:46-60`.
+- **The `lid_planning` output contract (LID-RUNS-007)** is shipped by
+  `Lid::PlanningContract` (`app/services/lid/planning_contract.rb:21-96`) and
+  enforced during PR creation
+  (`app/temporal/activities/create_pull_request_activity.rb:666-725`), covered
+  by `spec/services/lid/planning_contract_spec.rb:11-108` and
+  `spec/temporal/activities/create_pull_request_activity_spec.rb:791-844`.
+
+No acceptance criteria remain open, so no child issues were filed by this
+closeout. Status flips from **Partially Implemented** to **Implemented**.
 
 ## Problem Statement
 
