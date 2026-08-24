@@ -344,7 +344,7 @@ RSpec.describe Containers::ServiceProvisioner do
           networks: { NetworkPolicy::NETWORK_NAME => { "Aliases" => [ service_host ] } },
           json: hardened_container_json(provisioner: provisioner, service_container: service_container)
         )
-        _agent_network, infra_network = stub_shared_network_reuse(
+        agent_network, infra_network = stub_shared_network_reuse(
           alive_container: alive_container,
           service_host: service_host
         )
@@ -991,6 +991,31 @@ RSpec.describe Containers::ServiceProvisioner do
               "/var/lib/postgresql/data" => a_string_matching(/mode=0700/).and(a_string_matching(/uid=999/)).and(a_string_matching(/gid=999/)),
               "/var/run/postgresql" => a_string_matching(/mode=3775/).and(a_string_matching(/uid=999/)).and(a_string_matching(/gid=999/))
             )
+          )
+        )
+      )
+    end
+
+    it "merges hardening capability overrides with the built-in profile" do
+      # @spec CONTAINER-RUNTIME-035
+      service_container.update!(env: {
+        "POSTGRES_USER" => "agent",
+        "POSTGRES_PASSWORD" => "agent",
+        "POSTGRES_DB" => "agent_test",
+        "PAID_SERVICE_HARDENING" => {
+          "cap_add" => [ "NET_BIND_SERVICE" ]
+        }
+      })
+      allow(Docker::Image).to receive(:create)
+      stub_healthy_created_container("abc123")
+
+      provisioner.provision(agent_run)
+
+      expect(Docker::Container).to have_received(:create).with(
+        hash_including(
+          "CapAdd" => [ "CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID", "NET_BIND_SERVICE" ],
+          "HostConfig" => hash_including(
+            "CapAdd" => [ "CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID", "NET_BIND_SERVICE" ]
           )
         )
       )

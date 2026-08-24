@@ -657,8 +657,12 @@ module Containers
         readonly_rootfs: overrides.fetch(:readonly_rootfs, base.fetch(:readonly_rootfs)),
         user: overrides.key?(:user) ? overrides[:user] : base[:user],
         tmpfs: base.fetch(:tmpfs).merge(overrides.fetch(:tmpfs, {})),
-        cap_add: overrides.key?(:cap_add) ? overrides[:cap_add] : base[:cap_add]
+        cap_add: merge_hardening_capabilities(base[:cap_add], overrides[:cap_add])
       }
+    end
+
+    def merge_hardening_capabilities(base_capabilities, override_capabilities)
+      (Array(base_capabilities) + Array(override_capabilities)).map(&:to_s).uniq
     end
 
     def built_in_hardening_profile_for(image)
