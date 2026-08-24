@@ -9,8 +9,9 @@
   and server-side validation SHALL accept only exact public hostnames and
   leading-wildcard subdomains, rejecting bare/nested/trailing wildcards,
   wildcard TLDs, URL paths, userinfo, inline ports, query strings, fragments,
-  IP literals (private, loopback, link-local, and metadata), localhost names,
-  single-label hosts, out-of-range ports, and schemes other than http/https.
+  IP literals (private, loopback, link-local, and metadata), hostname rules
+  that embed IP literals, localhost names, single-label hosts, out-of-range
+  ports, and schemes other than http/https.
   *Tests:* `spec/models/egress_allowlist_entry_spec.rb`,
   `spec/services/agent_runs/egress_policy/host_pattern_spec.rb`
   *Code:* `EgressAllowlistEntry`, `AgentRuns::EgressPolicy::HostPattern`
