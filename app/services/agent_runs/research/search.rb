@@ -30,7 +30,7 @@ module AgentRuns
         )
         result_set = extract_results(response.body)
         results = result_set.map(&:payload)
-        payload = { "results" => results }
+        payload = { "trust_level" => "quarantined", "results" => results }
         serialized_payload = JSON.generate(payload)
         usage = BudgetLedger.consume_response!(
           agent_run: agent_run,
@@ -68,18 +68,20 @@ module AgentRuns
         document = Nokogiri::HTML(html.to_s)
         anchors = document.css("a.result__a")
 
+        # Result fields are returned as clean redacted strings so a caller can
+        # round-trip +url+ directly into the fetch endpoint without having to
+        # strip framing. The quarantine wrapping (untrusted-evidence notice)
+        # is hoisted to the top-level payload via +trust_level+, matching the
+        # shape the fetch endpoint already returns.
         anchors.first(MAX_RESULTS).map do |anchor|
           snippet_node = anchor.xpath("following::a[@class='result__snippet'][1]").first ||
             anchor.xpath("following::div[@class='result__snippet'][1]").first
-          snippet_text = snippet_node&.text.to_s.squish
-          sanitized_snippet = ResponseSanitizer.call(body: snippet_text, content_type: "text/plain")
-          sanitized_url = ResponseSanitizer.call(body: anchor["href"].to_s, content_type: "text/plain")
 
           SearchResult.new(
             payload: {
               "title" => SecretGuard.redact_text(anchor.text.to_s.squish),
-              "url" => sanitized_url.content,
-              "snippet" => sanitized_snippet.content
+              "url" => SecretGuard.redact_text(anchor["href"].to_s),
+              "snippet" => SecretGuard.redact_text(snippet_node&.text.to_s.squish.to_s)
             }
           )
         end
@@ -93,25 +95,13 @@ module AgentRuns
         )
         return unless result.blocked?
 
-        EgressSecurityEvent.create!(
-          account: agent_run.project.account,
-          project: agent_run.project,
+        SecretGuard.block_and_record!(
           agent_run: agent_run,
-          event_kind: "redacted_secret_extraction",
-          severity: "critical",
-          source_layer: "broker",
+          result: result,
           destination_host: URI.parse(PROVIDER_URL).host,
-          matched_rule: result.rule,
-          redacted_evidence: result.redacted_evidence,
-          occurred_at: Time.current
-        )
-        audit!(
-          event_name: "execution.research_search_blocked",
-          metadata: {
-            "query" => SecretGuard.redact_text(query),
-            "policy_result" => "blocked_secret",
-            "matched_rule" => result.rule
-          }
+          audit_event: "execution.research_search_blocked",
+          actor_id: "agent_runs.research.search",
+          metadata: { "query" => SecretGuard.redact_text(query) }
         )
         raise RequestInvalidError, "Brokered research blocked a secret-looking query"
       end
@@ -124,25 +114,15 @@ module AgentRuns
         )
         return unless result.blocked?
 
-        EgressSecurityEvent.create!(
-          account: agent_run.project.account,
-          project: agent_run.project,
+        SecretGuard.block_and_record!(
           agent_run: agent_run,
-          event_kind: "redacted_secret_extraction",
-          severity: "critical",
-          source_layer: "broker",
+          result: result,
           destination_host: request_uri.host,
-          matched_rule: result.rule,
-          redacted_evidence: result.redacted_evidence,
-          occurred_at: Time.current
-        )
-        audit!(
-          event_name: "execution.research_search_blocked",
+          audit_event: "execution.research_search_blocked",
+          actor_id: "agent_runs.research.search",
           metadata: {
             "query" => SecretGuard.redact_text(query),
-            "provider_url" => SecretGuard.redact_text(request_uri.to_s),
-            "policy_result" => "blocked_secret",
-            "matched_rule" => result.rule
+            "provider_url" => SecretGuard.redact_text(request_uri.to_s)
           }
         )
         raise RequestInvalidError, "Brokered research blocked a secret-looking request"

@@ -67,25 +67,15 @@ module AgentRuns
         result = SecretGuard.inspect!(agent_run: agent_run, text: text, destination_host: destination_host)
         return unless result.blocked?
 
-        EgressSecurityEvent.create!(
-          account: agent_run.project.account,
-          project: agent_run.project,
+        SecretGuard.block_and_record!(
           agent_run: agent_run,
-          event_kind: "redacted_secret_extraction",
-          severity: "critical",
-          source_layer: "broker",
+          result: result,
           destination_host: destination_host,
-          matched_rule: result.rule,
-          redacted_evidence: result.redacted_evidence,
-          occurred_at: Time.current
-        )
-        audit!(
-          event_name: "execution.research_fetch_blocked",
+          audit_event: "execution.research_fetch_blocked",
+          actor_id: "agent_runs.research.fetcher",
           metadata: {
             "url" => SecretGuard.redact_text(text),
-            "method" => method,
-            "policy_result" => "blocked_secret",
-            "matched_rule" => result.rule
+            "method" => method
           }
         )
         raise RequestInvalidError, "Brokered research blocked a secret-looking request"

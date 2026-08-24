@@ -111,6 +111,34 @@ RSpec.describe AgentRuns::Research::HttpClient do # @spec EGRESS-POLICY-008 # @s
       }.to raise_error(AgentRuns::Research::RequestInvalidError, /non-public/)
     end
 
+    it "rejects non-default ports so the broker cannot target database or mail services" do
+      expect {
+        client.fetch(url: "https://docs.iana.org:6379/", method: "GET")
+      }.to raise_error(AgentRuns::Research::RequestInvalidError, /ports other than 80\/443/)
+      expect(WebMock).not_to have_requested(:any, /docs\.iana\.org/)
+    end
+
+    it "permits the default https port" do
+      stub_a_record("docs.iana.org", public_ip)
+      stub_request(:get, "https://docs.iana.org/guide")
+        .to_return(status: 200, body: "Hello", headers: { "Content-Type" => "text/plain" })
+
+      result = client.fetch(url: "https://docs.iana.org/guide", method: "GET")
+
+      expect(result.uri.to_s).to eq("https://docs.iana.org/guide")
+    end
+
+    it "permits an explicit default http port (URI normalizes to bare scheme)" do
+      stub_a_record("docs.iana.org", public_ip)
+      stub_request(:get, "http://docs.iana.org/guide")
+        .to_return(status: 200, body: "Hello", headers: { "Content-Type" => "text/plain" })
+
+      result = client.fetch(url: "http://docs.iana.org:80/guide", method: "GET")
+
+      expect(result.uri.port).to eq(80)
+      expect(result.body).to eq("Hello")
+    end
+
     it "fails closed when DNS resolution returns no addresses" do
       allow(dns_resolver).to receive(:getresources).and_return([])
 
@@ -140,6 +168,18 @@ RSpec.describe AgentRuns::Research::HttpClient do # @spec EGRESS-POLICY-008 # @s
       expect {
         client.fetch(url: "https://docs.iana.org/start", method: "GET")
       }.to raise_error(AgentRuns::Research::RequestInvalidError, /non-public/)
+    end
+
+    it "rejects redirect hops whose target URL uses a non-default port" do
+      stub_a_record("docs.iana.org", public_ip)
+
+      stub_request(:get, "https://docs.iana.org/start")
+        .to_return(status: 302, headers: { "Location" => "https://docs.iana.org:6379/landing" })
+
+      expect {
+        client.fetch(url: "https://docs.iana.org/start", method: "GET")
+      }.to raise_error(AgentRuns::Research::RequestInvalidError, /ports other than 80\/443/)
+      expect(WebMock).not_to have_requested(:get, "https://docs.iana.org:6379/landing")
     end
 
     it "invokes the request guard for the initial request and each redirect hop" do

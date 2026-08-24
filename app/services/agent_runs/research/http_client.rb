@@ -158,6 +158,9 @@ module AgentRuns
         raise RequestInvalidError, "URL must include a host" if uri.host.blank?
         raise RequestInvalidError, "URL credentials are not allowed" if uri.userinfo.present?
         raise RequestInvalidError, "URL fragments are not allowed" if uri.fragment.present?
+        unless uri.port.in?([ 80, 443 ])
+          raise RequestInvalidError, "URL ports other than 80/443 are not allowed"
+        end
 
         host_error = AgentRuns::EgressPolicy::HostPattern.invalid_reason(uri.host.to_s)
         raise RequestInvalidError, "URL host #{host_error}" if host_error

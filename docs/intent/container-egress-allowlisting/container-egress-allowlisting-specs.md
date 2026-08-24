@@ -101,7 +101,7 @@
   `ExecutionRunners::Base.gateway_adapter`,
   `ExecutionRunners::LocalDockerRunner`
 
-- [ ] **EGRESS-POLICY-008** — The system SHALL expose brokered `research`
+- [x] **EGRESS-POLICY-008** — The system SHALL expose brokered `research`
   fetch/search endpoints only to container-authenticated agent runs whose
   persisted egress-policy snapshot records `egress_profile: "research"`.
   Locked/default runs, unsupported upstream methods, invalid schemes/hosts,
@@ -112,7 +112,7 @@
   *Code:* `Api::Proxy::ResearchController`,
   `AgentRuns::Research::{AccessPolicy,Fetcher,Search}`
 
-- [ ] **EGRESS-POLICY-009** — Before any brokered-research network call, the
+- [x] **EGRESS-POLICY-009** — Before any brokered-research network call, the
   system SHALL block secret-looking outbound URLs/queries using existing
   redaction/secret-scan rules where possible plus exact known-secret
   fingerprints and high-entropy/token-shape checks, recording a redacted

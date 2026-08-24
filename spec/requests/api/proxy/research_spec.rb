@@ -219,11 +219,35 @@ RSpec.describe "Api::Proxy::Research" do # @spec EGRESS-POLICY-008 # @spec EGRES
       get "/api/proxy/research/search", params: { q: "integration guide" }, headers: headers
 
       expect(response).to have_http_status(:ok)
-      result = response.parsed_body.fetch("results").first
+      body = response.parsed_body
+      expect(body.fetch("trust_level")).to eq("quarantined")
+      result = body.fetch("results").first
       expect(result.fetch("title")).to eq("Guide")
-      expect(result.fetch("url")).to include(PromptAssembly::Section::QUARANTINE_NOTICE)
-      expect(result.fetch("url")).to include("https://docs.example.com/guide")
-      expect(result.fetch("snippet")).to include(PromptAssembly::Section::QUARANTINE_NOTICE)
+      expect(result.fetch("url")).to eq("https://docs.example.com/guide")
+      expect(result.fetch("snippet")).to eq("Read the integration guide")
+      # The untrusted-evidence framing is hoisted to the payload level so the
+      # url field stays a clean string the agent can round-trip into the
+      # fetch endpoint.
+      expect(result.fetch("url")).not_to include(PromptAssembly::Section::QUARANTINE_NOTICE)
+      expect(result.fetch("snippet")).not_to include(PromptAssembly::Section::QUARANTINE_NOTICE)
+    end
+
+    it "keeps search-result url fields round-trippable into the fetch endpoint" do
+      stub_request(:get, brokered_url("duckduckgo.com", "/html/", query: "q=integration+guide"))
+        .to_return(status: 200, body: <<~HTML, headers: { "Content-Type" => "text/html" })
+          <html><body>
+            <a class="result__a" href="https://docs.example.com/guide">Guide</a>
+            <a class="result__snippet">Read the integration guide</a>
+          </body></html>
+        HTML
+
+      get "/api/proxy/research/search", params: { q: "integration guide" }, headers: headers
+
+      expect(response).to have_http_status(:ok)
+      result = response.parsed_body.fetch("results").first
+      # An agent should be able to take result["url"] and feed it straight
+      # into /api/proxy/research/fetch without any framing stripping.
+      expect { URI.parse(result.fetch("url")) }.not_to raise_error
     end
 
     it "charges search usage against the full returned payload" do
