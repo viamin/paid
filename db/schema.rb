@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_22_085848) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_24_051625) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2198,7 +2198,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_22_085848) do
     t.boolean "knowledge_evolution_enabled", default: false, null: false
     t.string "knowledge_status", limit: 50, default: "pending", null: false
     t.jsonb "label_mappings", default: {}, null: false
-    t.jsonb "language_profile", default: {}, null: false, comment: "Persisted repo-derived language/framework profile. Drives polyglot test/lint command routing (e.g. { \"languages\": [...], \"test_languages\": [...] }). Populated by detection (#3207) and optional .paid.yml manifest."
     t.datetime "last_agent_run_at"
     t.datetime "last_code_scanning_scan_at"
     t.datetime "last_github_activity_at"
@@ -3235,8 +3234,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_22_085848) do
   add_foreign_key "configuration_experiment_variants", "configuration_experiments", on_delete: :cascade
   add_foreign_key "configuration_experiments", "accounts", on_delete: :cascade
   add_foreign_key "configuration_experiments", "configuration_experiment_variants", column: "winner_variant_id", on_delete: :nullify
-  add_foreign_key "coordination_policies", "coordination_policy_versions", column: "current_version_id", on_delete: :nullify
-  add_foreign_key "coordination_policy_versions", "coordination_policies", on_delete: :cascade
   add_foreign_key "container_metrics", "agent_runs", on_delete: :cascade
   add_foreign_key "container_pool_entries", "agent_runs", on_delete: :nullify
   add_foreign_key "container_pool_entries", "projects", on_delete: :cascade
@@ -3253,7 +3250,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_22_085848) do
   add_foreign_key "coordination_experiments", "accounts", on_delete: :cascade
   add_foreign_key "coordination_experiments", "coordination_experiment_variants", column: "winner_variant_id", on_delete: :nullify
   add_foreign_key "coordination_policies", "accounts", on_delete: :cascade
+  add_foreign_key "coordination_policies", "coordination_policy_versions", column: "current_version_id", on_delete: :nullify
   add_foreign_key "coordination_policies", "projects", on_delete: :cascade
+  add_foreign_key "coordination_policy_versions", "coordination_policies", on_delete: :cascade
   add_foreign_key "cost_budgets", "projects", on_delete: :cascade
   add_foreign_key "decision_record_links", "decision_records", on_delete: :cascade
   add_foreign_key "decision_records", "agent_runs", on_delete: :nullify
@@ -4307,6 +4306,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_22_085848) do
       CREATE TRIGGER logidze_on_mcp_server_definitions BEFORE INSERT OR UPDATE ON public.mcp_server_definitions FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{env}')
   SQL
 
+  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
+      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
+  SQL
+
   create_trigger :logidze_on_orchestration_strategies, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_orchestration_strategies BEFORE INSERT OR UPDATE ON public.orchestration_strategies FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
@@ -4373,9 +4376,5 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_22_085848) do
 
   create_trigger :logidze_on_users, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_users BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{encrypted_password,reset_password_token,reset_password_sent_at,remember_created_at}')
-  SQL
-
-  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
-      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
   SQL
 end
