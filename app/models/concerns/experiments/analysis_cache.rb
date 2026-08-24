@@ -42,17 +42,7 @@ module Experiments
         @call_keyword = call_keyword
       end
 
-      def analyzer_class
-        @analyzer_class
-      end
-
-      def variants_association
-        @variants_association
-      end
-
-      def call_keyword
-        @call_keyword
-      end
+      attr_reader :analyzer_class, :variants_association, :call_keyword
     end
 
     def cached_or_compute_analysis(persist: true)
