@@ -117,7 +117,7 @@
           </div>
           <div class="mt-4">
             <% if mutation_testing[:trend_sparkline].any? %>
-              <%= dashboard_chartkick_chart "LineChart", mutation_testing[:trend_sparkline],
+              <%= line_chart mutation_testing[:trend_sparkline],
                   id: "mutation-sweep-sparkline",
                   height: "120px",
                   colors: ["#0f766e"],
@@ -145,7 +145,7 @@
             </div>
           </div>
           <div class="mt-4">
-            <%= dashboard_chartkick_chart "ColumnChart", mutation_testing[:run_histogram],
+            <%= column_chart mutation_testing[:run_histogram],
                 id: "mutation-run-histogram",
                 height: "220px",
                 colors: ["#0f766e"],

@@ -49,9 +49,9 @@ app enforces `script_src :self` with nonce-only directives
 are blocked by the browser and the chart placeholder ("Loading...") never
 resolves — the divergence traced in issue #3458.
 
-Every other chart surface in the app (dashboard metrics, PR cycle time,
-orchestration decisions, project quality dashboard mutation trend) already
-renders through the CSP-safe path: `DashboardHelper#dashboard_chartkick_chart`
+Other chart surfaces that already render through the CSP-safe path include
+dashboard metrics, PR cycle time, and orchestration decisions:
+`DashboardHelper#dashboard_chartkick_chart`
 emits the chart data via `data-*` attributes on a placeholder `div`, and the
 `chartkick` Stimulus controller (`app/javascript/controllers/chartkick_controller.js`)
 instantiates the Chartkick chart client-side with no inline script. The

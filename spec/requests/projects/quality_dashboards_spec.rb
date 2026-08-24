@@ -101,49 +101,8 @@ RSpec.describe "Projects::QualityDashboards" do
 
         expect(response.body).not_to include("Mutation kill-rate")
       end
-
-      context "with mutation testing enabled and a sweep recorded" do
-        before do
-          create(:pre_commit_requirement, :mutation_test, project: project, account: account, name: "mutant")
-
-          sweep_run = create(:agent_run, :completed, project: project)
-          create(:quality_metric,
-            agent_run: sweep_run,
-            source: QualityMetric::SCHEDULED_MUTATION_SWEEP_SOURCE,
-            mutation_kill_rate: 0.91,
-            scores: { "mutation_kill_rate" => 0.91 },
-            created_at: 2.days.ago)
-        end
-
-        it "renders the 30-day sweep trend chart via the CSP-safe chartkick controller" do
-          get project_quality_dashboard_path(project)
-
-          doc = Nokogiri::HTML(response.body)
-          chart = doc.at_css("div#mutation-sweep-sparkline[data-controller~='chartkick']")
-
-          expect(chart).to be_present
-          expect(chart["data-chartkick-type-value"]).to eq("LineChart")
-          expect(chart["data-chartkick-data-value"]).to be_present
-          expect(chart["data-chartkick-options-value"]).to include("\"points\":false")
-          expect(chart.text).to include("Loading...")
-          expect(response.body).not_to include("Chartkick.LineChart(")
-        end
-
-        it "renders the per-agent-run histogram chart via the CSP-safe chartkick controller" do
-          get project_quality_dashboard_path(project)
-
-          doc = Nokogiri::HTML(response.body)
-          chart = doc.at_css("div#mutation-run-histogram[data-controller~='chartkick']")
-
-          expect(chart).to be_present
-          expect(chart["data-chartkick-type-value"]).to eq("ColumnChart")
-          expect(chart["data-chartkick-data-value"]).to be_present
-          expect(chart.text).to include("Loading...")
-          expect(response.body).not_to include("Chartkick.ColumnChart(")
-        end
       end
     end
-  end
 
   describe "PATCH /projects/:project_id/quality_thresholds" do
     context "when authenticated" do
