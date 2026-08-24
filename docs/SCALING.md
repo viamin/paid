@@ -6,17 +6,18 @@ operational procedures for running Paid in production at various scales.
 For worker-specific tuning details, see [WORKER_POOL_TUNING.md](WORKER_POOL_TUNING.md).
 For monitoring and alerting, see [OBSERVABILITY.md](OBSERVABILITY.md).
 
-## Orchestrator Integrations
+## Scaling Decision Boundaries
 
-Paid's scaling decision layer is infrastructure-agnostic. `Scaling::Orchestrator`
-adapters translate those decisions into platform-specific actions:
+Paid's current scaling code is advisory. `Scaling::WorkerPoolAdvisor`,
+`Scaling::QueueMonitor`, and related tuning docs help operators decide when
+to add or remove capacity, but they do not execute platform-specific scaling
+actions directly.
 
-| Adapter | Primary target | Notes |
-|---------|----------------|-------|
-| `Scaling::Orchestrators::KubernetesAdapter` | Kubernetes Deployments | Direct replica scaling plus resource-limit patching |
-| `Scaling::Orchestrators::DockerSwarmAdapter` | Docker Swarm services | Uses `docker service` CLI commands against a Swarm manager |
-| `Scaling::Orchestrators::EcsAdapter` | Amazon ECS services | Uses the AWS CLI to scale services and roll task-definition revisions |
-| `Scaling::Orchestrators::DockerComposeAdapter` | Local/dev Docker Compose | Development and CI fallback, not a production auto-scaling target |
+Live agent-container placement is handled separately by the container
+runtime path (`Scaling::ResourceAllocator` plus the backends wired through
+`Containers::Provision`). If Paid later needs automated worker-pool scaling
+for a concrete target such as Kubernetes or ECS, that adapter should be
+added against the real migration rather than maintained speculatively.
 
 ## Architecture Overview
 

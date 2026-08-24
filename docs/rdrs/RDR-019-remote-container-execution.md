@@ -545,7 +545,7 @@ Out of scope for initial implementation. The backend interface is designed to ac
 - Clone latency for large repos can be improved with a bare-repo cache on remote hosts — fetch-only after initial clone.
 - Consider adding a `container_host` column to `AgentRun` and `ContainerPoolEntry` to track where each container was created, for debugging, capacity planning, and backend routing.
 - Swarm mode can be initialized on a single node first, then scaled out — making it a natural upgrade from Remote Docker.
-- The `Scaling::Orchestrator` module (adapters for K8s, Swarm, ECS, Compose) solves a different problem — scaling Paid's own worker processes, not provisioning agent containers. Its module + adapter + resolver pattern is a good template for the container backend abstraction.
+- Live scaling of Paid's own worker processes remains a separate problem from provisioning agent containers. If future autoscaling work needs a platform-specific adapter, design it against the concrete migration target rather than preserving speculative registries.
 - Pool management (`PoolManager`) needs host tracking to reconnect to the correct Docker API for each pooled container. This was not in the original RDR scope but is required for Phase 1.
 
 ### Audit Corrections (2026-05-15)
