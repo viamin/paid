@@ -97,19 +97,19 @@ RSpec.describe Prompts::LanguageCommands do # @spec POLYGLOT-TEST-003
     end
 
     it "reads the test_languages array from the persisted profile" do
-      project = create(:project, language_profile: { "test_languages" => [ "ruby", "elixir" ] })
+      project = create(:project, repo_profile: { "test_languages" => [ "ruby", "elixir" ] })
 
       expect(described_class.test_languages(project)).to eq([ "ruby", "elixir" ])
     end
 
     it "falls back to the profile languages list when test_languages is absent" do
-      project = create(:project, language_profile: { "languages" => [ "elixir", "javascript" ] })
+      project = create(:project, repo_profile: { "languages" => [ "elixir", "javascript" ] })
 
       expect(described_class.test_languages(project)).to eq([ "elixir", "javascript" ])
     end
 
     it "normalizes language keys to downcased strings" do
-      project = create(:project, language_profile: { "test_languages" => [ "Ruby", "ELIXIR" ] })
+      project = create(:project, repo_profile: { "test_languages" => [ "Ruby", "ELIXIR" ] })
 
       expect(described_class.test_languages(project)).to eq([ "ruby", "elixir" ])
     end
@@ -125,7 +125,7 @@ RSpec.describe Prompts::LanguageCommands do # @spec POLYGLOT-TEST-003
     end
 
     it "resolves one command per language for a polyglot project" do
-      project = create(:project, language_profile: { "test_languages" => [ "ruby", "elixir", "go" ] })
+      project = create(:project, repo_profile: { "test_languages" => [ "ruby", "elixir", "go" ] })
 
       expect(described_class.test_commands_for(project)).to eq(
         [ "bundle exec rspec", "mix test", "go test ./..." ]
@@ -136,13 +136,13 @@ RSpec.describe Prompts::LanguageCommands do # @spec POLYGLOT-TEST-003
     end
 
     it "drops languages that have no command mapping" do
-      project = create(:project, language_profile: { "test_languages" => [ "ruby", "cobol" ] })
+      project = create(:project, repo_profile: { "test_languages" => [ "ruby", "cobol" ] })
 
       expect(described_class.test_commands_for(project)).to eq([ "bundle exec rspec" ])
     end
 
     it "returns a fallback when no language resolves to a command" do
-      project = create(:project, language_profile: { "test_languages" => [ "cobol" ] })
+      project = create(:project, repo_profile: { "test_languages" => [ "cobol" ] })
 
       expect(described_class.test_commands_for(project)).to eq([ 'echo "No test command configured"' ])
       expect(described_class.lint_commands_for(project)).to eq([ 'echo "No lint command configured"' ])

@@ -3,15 +3,17 @@
 require "rails_helper"
 
 RSpec.describe Containers::ImageResolver do
-  # A lightweight stand-in for Project that exposes only the language-profile
-  # surface the resolver reads. Keeps the spec fast and behavior-focused.
-  def project_double(language_profile: {}, detected_language: nil)
+  # A lightweight stand-in for Project that exposes only the normalized repo-
+  # profile API the resolver reads. Keeps the spec fast and behavior-focused.
+  def project_double(test_languages: [], detected_languages: [], detected_language: nil)
     instance_double(
       Project,
-      language_profile: language_profile,
+      test_languages: test_languages,
+      detected_languages: detected_languages,
       detected_language: detected_language
     ).tap do |dbl|
-      allow(dbl).to receive(:respond_to?).with(:language_profile).and_return(true)
+      allow(dbl).to receive(:respond_to?).with(:test_languages).and_return(true)
+      allow(dbl).to receive(:respond_to?).with(:detected_languages).and_return(true)
       allow(dbl).to receive(:respond_to?).with(:detected_language).and_return(true)
     end
   end
@@ -73,12 +75,12 @@ RSpec.describe Containers::ImageResolver do
     end
 
     it "resolves a base-only polyglot set to the base image" do
-      project = project_double(language_profile: { "languages" => %w[ruby javascript python] })
+      project = project_double(detected_languages: %w[ruby javascript python])
       expect(described_class.resolve(project)).to eq("paid-agent:latest")
     end
 
     it "resolves Ruby + TypeScript (both node/ruby) to the base image" do
-      project = project_double(language_profile: { "languages" => %w[typescript ruby] })
+      project = project_double(detected_languages: %w[typescript ruby])
       expect(described_class.resolve(project)).to eq("paid-agent:latest")
     end
 
@@ -110,18 +112,18 @@ RSpec.describe Containers::ImageResolver do
     end
 
     it "includes base runtimes in a polyglot combo tag, sorted deterministically" do
-      project = project_double(language_profile: { "languages" => %w[elixir javascript ruby python] })
+      project = project_double(detected_languages: %w[elixir javascript ruby python])
       expect(described_class.resolve(project)).to eq("paid-agent:elixir-node-python-ruby")
     end
 
     it "uses test_languages when present" do
-      project = project_double(language_profile: { "test_languages" => %w[go], "languages" => %w[go ruby] })
+      project = project_double(test_languages: %w[go], detected_languages: %w[go ruby])
       expect(described_class.resolve(project)).to eq("paid-agent:go")
     end
 
     it "is deterministic regardless of input order" do
-      a = project_double(language_profile: { "languages" => %w[ruby go javascript] })
-      b = project_double(language_profile: { "languages" => %w[javascript go ruby] })
+      a = project_double(detected_languages: %w[ruby go javascript])
+      b = project_double(detected_languages: %w[javascript go ruby])
       expect(described_class.resolve(a)).to eq(described_class.resolve(b))
     end
   end
@@ -133,13 +135,13 @@ RSpec.describe Containers::ImageResolver do
     end
 
     it "exposes the unsupported languages on the instance" do
-      resolver = described_class.new(project_double(language_profile: { "languages" => %w[ruby java] }))
+      resolver = described_class.new(project_double(detected_languages: %w[ruby java]))
       resolver.resolve
       expect(resolver.unsupported_languages).to contain_exactly("java")
     end
 
     it "still resolves the extended portion of a polyglot set with an unknown language" do
-      project = project_double(language_profile: { "languages" => %w[go java] })
+      project = project_double(detected_languages: %w[go java])
       expect(described_class.resolve(project)).to eq("paid-agent:go")
     end
 
@@ -152,7 +154,7 @@ RSpec.describe Containers::ImageResolver do
       end
 
       it "lists the unsupported languages in the error" do
-        project = project_double(language_profile: { "languages" => %w[ruby haskell clojure] })
+        project = project_double(detected_languages: %w[ruby haskell clojure])
         expect {
           described_class.resolve(project, strict: true)
         }.to raise_error(described_class::UnsupportedRuntimeError) do |error|
@@ -161,7 +163,7 @@ RSpec.describe Containers::ImageResolver do
       end
 
       it "does not raise for a fully supported language set" do
-        project = project_double(language_profile: { "languages" => %w[elixir ruby] })
+        project = project_double(detected_languages: %w[elixir ruby])
         expect {
           described_class.resolve(project, strict: true)
         }.not_to raise_error

@@ -49,6 +49,8 @@ The missing product surface is the shared model RDR-046 describes:
 ## Agent Image Resolution
 
 `Containers::ImageResolver` translates a project's persisted language profile
+(`projects.repo_profile`, surfaced through `Project#test_languages` and
+`Project#detected_languages`)
 into the Docker agent image its execution containers should use
 (POLYGLOT-TEST-004). The base image (`paid-agent:latest`) bundles Ruby, Node,
 and Python — the runtimes every agent container needs. Projects whose detected

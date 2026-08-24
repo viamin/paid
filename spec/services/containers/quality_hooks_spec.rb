@@ -92,7 +92,7 @@ RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUA
     end
 
     it "runs each language's commands for a polyglot repo with a database" do
-      project.update!(language_profile: { "test_languages" => [ "ruby", "elixir" ] })
+      project.update!(repo_profile: { "test_languages" => [ "ruby", "elixir" ] })
       allow(project).to receive(:has_running_database_container?).and_return(true)
       create(
         :pre_commit_requirement,
@@ -112,7 +112,7 @@ RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUA
     end
 
     it "gates only DB-dependent languages for a polyglot repo without a database" do
-      project.update!(language_profile: { "test_languages" => [ "ruby", "go" ] })
+      project.update!(repo_profile: { "test_languages" => [ "ruby", "go" ] })
       allow(project).to receive(:has_running_database_container?).and_return(false)
       host.install_quality_hooks(git_ops, agent_run)
 
@@ -124,7 +124,7 @@ RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUA
     end
 
     it "keeps non-db test commands when the repo profile is polyglot" do # @spec POLYGLOT-TEST-003
-      project.update!(language_profile: { "test_languages" => %w[elixir javascript] })
+      project.update!(repo_profile: { "test_languages" => %w[elixir javascript] })
       allow(project).to receive(:has_running_database_container?).and_return(false)
 
       host.install_quality_hooks(git_ops, agent_run)
