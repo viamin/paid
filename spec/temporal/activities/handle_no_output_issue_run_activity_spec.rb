@@ -20,73 +20,73 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
   end
 
   describe "#execute" do
-    context "when output_present is false (needs_input)" do
-      it "sets issue paid_state to needs_input" do
+    context "when output_present is false" do
+      it "sets issue paid_state to failed" do
         issue = create(:issue, :in_progress, project: project)
         agent_run = create(:agent_run, :running, project: project, issue: issue)
 
         activity.execute(agent_run_id: agent_run.id, output_present: false)
 
-        expect(issue.reload.paid_state).to eq("needs_input")
+        expect(issue.reload.paid_state).to eq("failed")
       end
 
-      it "marks agent run as completed" do
+      it "marks agent run as failed" do
         issue = create(:issue, :in_progress, project: project)
         agent_run = create(:agent_run, :running, project: project, issue: issue)
 
         activity.execute(agent_run_id: agent_run.id, output_present: false)
 
-        expect(agent_run.reload.status).to eq("completed")
+        expect(agent_run.reload.status).to eq("failed")
       end
 
-      it "adds the paid-needs-input label" do
+      it "does not add the paid-needs-input label" do
         issue = create(:issue, :in_progress, project: project)
         agent_run = create(:agent_run, :running, project: project, issue: issue)
 
         activity.execute(agent_run_id: agent_run.id, output_present: false)
 
-        expect(client).to have_received(:add_labels_to_issue)
+        expect(client).not_to have_received(:add_labels_to_issue)
           .with(project.full_name, issue.github_number, [ "paid-needs-input" ])
       end
 
-      it "posts a needs-input comment on the issue" do
+      it "does not post a needs-input comment on the issue" do
         issue = create(:issue, :in_progress, project: project)
         agent_run = create(:agent_run, :running, project: project, issue: issue)
 
         activity.execute(agent_run_id: agent_run.id, output_present: false)
 
-        expect(client).to have_received(:add_comment)
+        expect(client).not_to have_received(:add_comment)
           .with(project.full_name, issue.github_number, a_string_including("Needs Input"))
       end
 
-      it "includes next-step instructions in the comment" do
+      it "does not include needs-input next-step instructions in a comment" do
         issue = create(:issue, :in_progress, project: project)
         agent_run = create(:agent_run, :running, project: project, issue: issue)
 
         activity.execute(agent_run_id: agent_run.id, output_present: false)
 
-        expect(client).to have_received(:add_comment)
+        expect(client).not_to have_received(:add_comment)
           .with(project.full_name, issue.github_number,
             a_string_including("paid-needs-input").and(a_string_including("paid-build")))
       end
 
-      it "logs the completion reason as needs_input" do
+      it "logs the failure reason as infrastructure_error" do
         issue = create(:issue, :in_progress, project: project)
         agent_run = create(:agent_run, :running, project: project, issue: issue)
 
         activity.execute(agent_run_id: agent_run.id, output_present: false)
 
         log = agent_run.agent_run_logs.find_by(log_type: "system")
-        expect(log.content).to include("needs_input")
+        expect(log.content).to include("infrastructure")
       end
 
-      it "returns outcome needs_input" do
+      it "returns outcome infrastructure_error" do
         issue = create(:issue, :in_progress, project: project)
         agent_run = create(:agent_run, :running, project: project, issue: issue)
 
         result = activity.execute(agent_run_id: agent_run.id, output_present: false)
 
-        expect(result[:outcome]).to eq("needs_input")
+        expect(result[:outcome]).to eq("infrastructure_error")
       end
 
       it "classifies hidden provider quota output as provider_error" do
@@ -234,17 +234,17 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
           automation_label_name: "my-auto")
       end
 
-      it "references the automation label in the needs-input comment" do
+      it "does not post a needs-input comment for no-output failures" do
         issue = create(:issue, :in_progress, project: auto_project)
         agent_run = create(:agent_run, :running, project: auto_project, issue: issue)
 
         activity.execute(agent_run_id: agent_run.id, output_present: false)
 
-        expect(client).to have_received(:add_comment)
+        expect(client).not_to have_received(:add_comment)
           .with(auto_project.full_name, issue.github_number, a_string_including("my-auto"))
       end
 
-      it "removes the automation trigger label from the issue in batch" do
+      it "removes the automation trigger label for no-output failures" do
         issue = create(:issue, :in_progress, project: auto_project, labels: [ "my-auto" ])
         agent_run = create(:agent_run, :running, project: auto_project, issue: issue)
 
@@ -252,6 +252,17 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
 
         expect(client).to have_received(:remove_labels_from_issue)
           .with(auto_project.full_name, issue.github_number, [ "my-auto" ])
+      end
+
+      it "keeps failed bookkeeping if trigger label removal fails" do
+        issue = create(:issue, :in_progress, project: auto_project, labels: [ "my-auto" ])
+        agent_run = create(:agent_run, :running, project: auto_project, issue: issue)
+        allow(client).to receive(:remove_labels_from_issue).and_raise(GithubClient::Error, "API error")
+
+        activity.execute(agent_run_id: agent_run.id, output_present: false)
+
+        expect(agent_run.reload.status).to eq("failed")
+        expect(issue.reload.paid_state).to eq("failed")
       end
 
       it "removes the automation trigger label on recommend_close in batch" do
@@ -379,7 +390,7 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         expect(result[:outcome]).to eq("recommend_close")
       end
 
-      it "classifies as needs_input when iterations is zero even with cost > 0" do
+      it "classifies as infrastructure_error when iterations is zero even with cost > 0" do
         issue = create(:issue, :in_progress, project: project)
         agent_run = create(:agent_run, :running, project: project, issue: issue,
           iterations: 0, cost_cents: 50)
@@ -387,8 +398,8 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
 
         result = activity.execute(agent_run_id: agent_run.id, output_present: true)
 
-        expect(result[:outcome]).to eq("needs_input")
-        expect(issue.reload.paid_state).to eq("needs_input")
+        expect(result[:outcome]).to eq("infrastructure_error")
+        expect(issue.reload.paid_state).to eq("failed")
       end
 
       it "detects quota exceeded errors" do
@@ -594,7 +605,7 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         # natural-language mentions of the phrase that the agent might quote
         # back from issue bodies or web fetches. With zero iterations and
         # zero cost the agent did no real work, so the correct fallback is
-        # needs_input (not recommend_close).
+        # infrastructure_error (not recommend_close).
         issue = create(:issue, :in_progress, project: project)
         agent_run = create(:agent_run, :running, project: project, issue: issue,
           iterations: 0, cost_cents: 0)
@@ -602,10 +613,10 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
 
         result = activity.execute(agent_run_id: agent_run.id, output_present: true)
 
-        expect(result[:outcome]).to eq("needs_input")
+        expect(result[:outcome]).to eq("infrastructure_error")
       end
 
-      it "classifies trivial output with zero iterations and zero cost as needs_input" do
+      it "classifies trivial output with zero iterations and zero cost as infrastructure_error" do
         issue = create(:issue, :in_progress, project: project)
         agent_run = create(:agent_run, :running, project: project, issue: issue,
           iterations: 0, cost_cents: 0)
@@ -613,20 +624,20 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
 
         result = activity.execute(agent_run_id: agent_run.id, output_present: true)
 
-        expect(result[:outcome]).to eq("needs_input")
-        expect(issue.reload.paid_state).to eq("needs_input")
+        expect(result[:outcome]).to eq("infrastructure_error")
+        expect(issue.reload.paid_state).to eq("failed")
       end
     end
 
     context "when an issue cycles through outcomes (label hygiene)" do
-      it "clears a stale paid-recommend-close label when the next outcome is needs_input" do
+      it "does not touch recommend-close labels for no-output failures" do
         issue = create(:issue, :in_progress, project: project,
           labels: [ "paid-build", "paid-recommend-close" ])
         agent_run = create(:agent_run, :running, project: project, issue: issue)
 
         activity.execute(agent_run_id: agent_run.id, output_present: false)
 
-        expect(client).to have_received(:remove_label_from_issue)
+        expect(client).not_to have_received(:remove_label_from_issue)
           .with(project.full_name, issue.github_number, "paid-recommend-close")
       end
 
@@ -669,24 +680,20 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         end
       end
 
-      it "redacts provider error lines from needs_input comments" do
+      it "does not post needs-input comments for no-output failures" do
         issue = create(:issue, :in_progress, project: project)
         agent_run = create(:agent_run, :running, project: project, issue: issue)
         agent_run.log!("stderr", "Some context\nrequires more credits\nMore context")
 
         result = activity.execute(agent_run_id: agent_run.id, output_present: false)
 
-        expect(result[:outcome]).to eq("needs_input")
-
-        expect(client).to have_received(:add_comment) do |_repo, _number, body|
-          expect(body).to include("Needs Input")
-          expect(body).not_to include("requires more credits")
-        end
+        expect(result[:outcome]).to eq("infrastructure_error")
+        expect(client).not_to have_received(:add_comment)
       end
     end
 
     context "when GitHub API returns errors" do
-      it "completes the run even when comment posting fails" do
+      it "fails the run without posting a needs-input comment" do
         issue = create(:issue, :in_progress, project: project)
         agent_run = create(:agent_run, :running, project: project, issue: issue)
 
@@ -694,11 +701,12 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
 
         activity.execute(agent_run_id: agent_run.id, output_present: false)
 
-        expect(agent_run.reload.status).to eq("completed")
-        expect(issue.reload.paid_state).to eq("needs_input")
+        expect(client).not_to have_received(:add_comment)
+        expect(agent_run.reload.status).to eq("failed")
+        expect(issue.reload.paid_state).to eq("failed")
       end
 
-      it "completes the run even when label adding fails" do
+      it "fails the run without adding a needs-input label" do
         issue = create(:issue, :in_progress, project: project)
         agent_run = create(:agent_run, :running, project: project, issue: issue)
 
@@ -706,7 +714,8 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
 
         activity.execute(agent_run_id: agent_run.id, output_present: false)
 
-        expect(agent_run.reload.status).to eq("completed")
+        expect(client).not_to have_received(:add_labels_to_issue)
+        expect(agent_run.reload.status).to eq("failed")
       end
     end
   end

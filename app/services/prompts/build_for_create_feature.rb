@@ -73,8 +73,10 @@ module Prompts
          the new RDR file and the README update. Describe the PR so a reviewer
          can find the feature brief for context. Do not include code changes.
       6. **Decompose into an issue tree**: Read the RDR's Implementation Plan
-         and produce one epic issue plus one issue per phase (or per task, for
-         small RDRs). Each issue body must:
+         and produce one epic issue, one issue per phase (or per task, for
+         small RDRs), and one final RDR closeout/validation issue. The closeout
+         issue must depend on the implementation chain and follow
+         `docs/rdrs/closeout-checklist.md`. Each issue body must:
          - Reference the RDR by number (`Part of RDR-0XX`)
          - Link to its parent and child issues via body text using the
            existing convention (`Depends on #N` or `Blocked by #N` inline, or
