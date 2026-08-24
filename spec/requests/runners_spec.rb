@@ -180,6 +180,32 @@ RSpec.describe "Runners" do
         expect(response.body).not_to include("data-runner-auth-instructions")
       end
 
+      # @spec RUNNERS-INDEX-008
+      context "with provider run outcomes" do
+        let(:project) { create(:project, account: user.account) }
+
+        before do
+          create(:agent_run, :completed, project: project, agent_type: "claude_code")
+          create(:agent_run, :failed, project: project, agent_type: "claude_code")
+        end
+
+        %w[7d 30d cumulative].each do |range|
+          it "renders the provider outcomes chart via the CSP-safe chartkick controller for #{range}" do
+            get runners_path(outcome_time_range: range)
+
+            doc = Nokogiri::HTML(response.body)
+            chart = doc.at_css("div#provider-outcomes-chart-0[data-controller~='chartkick']")
+
+            expect(chart).to be_present
+            expect(chart["data-chartkick-type-value"]).to eq("ColumnChart")
+            expect(chart["data-chartkick-options-value"]).to include("\"stacked\":true")
+            expect(chart["data-chartkick-data-value"]).to be_present
+            expect(chart.text).to include("Loading...")
+            expect(response.body).not_to include("Chartkick.ColumnChart(")
+          end
+        end
+      end
+
       it "shows empty state when no addable providers remain" do
         allow(RunnerSupport).to receive(:addable_runner_keys).and_return([ "claude" ])
 
