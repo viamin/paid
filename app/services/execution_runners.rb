@@ -488,7 +488,12 @@ module ExecutionRunners
       requested_resources = Capacity::RequestedResources.for_agent_run(agent_run)
       selection = resolve_runtime_image_selection(agent_run, requested_image: options[:image])
       resources = ExecutionResources.from_legacy(
-        cpu_quota: legacy_resource_option(options[:cpu_quota], options[:cpu_cores], requested_resources[:cpu_quota]),
+        cpu_quota: legacy_resource_option(
+          options[:cpu_quota],
+          options[:cpu_cores],
+          requested_resources[:cpu_quota],
+          scale: 100_000
+        ),
         memory_bytes: legacy_resource_option(options[:memory_bytes], options[:memory_mib], requested_resources[:memory_bytes], scale: 1024 * 1024),
         disk_bytes: legacy_resource_option(options[:disk_bytes], options[:disk_gb], requested_resources[:disk_bytes], scale: 1024 * 1024 * 1024),
         architecture: options[:architecture] || selection.metadata["architecture"],

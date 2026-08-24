@@ -318,6 +318,16 @@ RSpec.describe ExecutionRunners do
     end
 
     # @spec CONTAINER-RUNTIME-027
+    it "scales cpu_cores overrides into the legacy cpu_quota units" do
+      project = create(:project)
+      run = create(:agent_run, project: project)
+
+      built = ExecutionRunners::RunSpec.from_agent_run(run, cpu_cores: 2.0)
+
+      expect(built.resources.cpu_cores).to eq(2.0)
+    end
+
+    # @spec CONTAINER-RUNTIME-027
     it "expands a named profile when explicit requested values are absent" do
       project = create(:project)
       run = create(:agent_run, project: project, external_metadata: {

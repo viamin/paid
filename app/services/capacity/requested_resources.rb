@@ -11,7 +11,8 @@ module Capacity
 
       def for_agent_run(agent_run)
         owner = agent_run.project&.effective_owner
-        for_context(user: owner, project: agent_run.project, external_metadata: agent_run.external_metadata)
+        normalize(agent_run.external_metadata&.dig("requested_resources"), agent_run:) ||
+          defaults_for(user: owner, project: agent_run.project)
       end
 
       def persistable_for(agent_run)
@@ -47,7 +48,7 @@ module Capacity
         }
       end
 
-      def normalize(raw)
+      def normalize(raw, agent_run: nil)
         return if raw.blank?
 
         profile_name = raw["profile"].to_s.presence
@@ -61,7 +62,13 @@ module Capacity
           disk_bytes: raw["disk_bytes"].to_i.nonzero? || preset&.disk_bytes.to_i,
           profile: profile_name
         }
-      rescue ArgumentError
+      rescue ArgumentError => e
+        Rails.logger.warn(
+          message: "capacity.requested_resources.unknown_profile",
+          profile_name: profile_name,
+          error: e.message,
+          agent_run_id: agent_run&.id
+        )
         {
           cpu_quota: raw["cpu_quota"].to_i,
           memory_bytes: raw["memory_bytes"].to_i,
