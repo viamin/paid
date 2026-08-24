@@ -106,6 +106,9 @@ application.register("stop-propagation", StopPropagationController)
 import TestAgentController from "./test_agent_controller"
 application.register("test-agent", TestAgentController)
 
+import TestAllController from "./test_all_controller"
+application.register("test-all", TestAllController)
+
 import ThemeController from "./theme_controller"
 application.register("theme", ThemeController)
 
