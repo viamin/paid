@@ -198,7 +198,10 @@ jobs:
       || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
       || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    # The non-system RSpec slice alone can exceed 38 minutes on a warm local
+    # run, so 45 minutes leaves too little margin for checkout, asset builds,
+    # database setup, and the performance-spec tail on slower GitHub runners.
+    timeout-minutes: 60
 
     services:
       postgres:
