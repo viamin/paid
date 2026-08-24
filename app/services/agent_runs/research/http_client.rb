@@ -59,8 +59,8 @@ module AgentRuns
       # host resolve through to one of these.
       METADATA_IPS = %w[169.254.169.254 fd00:ec2::254].freeze
 
-      def self.fetch(url:, method:, dns_resolver: nil)
-        new(dns_resolver: dns_resolver).fetch(url: url, method: method)
+      def self.fetch(url:, method:, dns_resolver: nil, before_request: nil)
+        new(dns_resolver: dns_resolver).fetch(url: url, method: method, before_request: before_request)
       end
 
       def self.validate_request!(url:, method:)
@@ -73,60 +73,64 @@ module AgentRuns
         @dns_resolver = dns_resolver
       end
 
-      def fetch(url:, method:)
+      def fetch(url:, method:, before_request: nil)
         current_uri = self.class.validate_request!(url: url, method: method)
         redirect_chain = []
 
         loop do
+          before_request&.call(current_uri)
           resolved_address = resolve_safe_address(current_uri)
+          result = perform_request(current_uri, method:, address: resolved_address) do |response|
+            status = response.code.to_i
 
-          response = connection_for(current_uri, address: resolved_address)
-            .run_request(method.downcase.to_sym, request_path(current_uri), nil, request_headers)
-          status = response.status.to_i
+            if redirect_status?(status)
+              location = response["location"].to_s
+              raise RequestInvalidError, "Redirect response was missing a location header" if location.blank?
+              raise RequestInvalidError, "Redirect chain exceeded #{MAX_REDIRECTS} hops" if redirect_chain.length >= MAX_REDIRECTS
 
-          if redirect_status?(status)
-            location = response.headers["location"].to_s
-            raise RequestInvalidError, "Redirect response was missing a location header" if location.blank?
-            raise RequestInvalidError, "Redirect chain exceeded #{MAX_REDIRECTS} hops" if redirect_chain.length >= MAX_REDIRECTS
+              next_uri = normalize_uri(current_uri.merge(location).to_s)
+              redirect_chain << { "status" => status, "location" => next_uri.to_s }
+              current_uri = next_uri
+              next
+            end
 
-            next_uri = normalize_uri(current_uri.merge(location).to_s)
-            redirect_chain << { "status" => status, "location" => next_uri.to_s }
-            current_uri = next_uri
-            next
+            raise UpstreamError, "Brokered research upstream returned status #{status}" unless success_status?(status)
+
+            content_type = response["content-type"].to_s.split(";").first.to_s.downcase
+            raise RequestInvalidError, "Response content type #{content_type.inspect} is not allowed" unless allowed_content_type?(content_type)
+            reject_oversized_content_length!(response)
+
+            body = method == "HEAD" ? "" : read_limited_body(response)
+
+            Result.new(
+              uri: current_uri,
+              status: status,
+              content_type: content_type,
+              body: body,
+              redirect_chain: redirect_chain
+            )
           end
-
-          raise UpstreamError, "Brokered research upstream returned status #{status}" unless success_status?(status)
-
-          body = method == "HEAD" ? "" : response.body.to_s
-          raise RequestInvalidError, "Response exceeded #{MAX_RESPONSE_BYTES} bytes" if body.bytesize > MAX_RESPONSE_BYTES
-
-          content_type = response.headers["content-type"].to_s.split(";").first.to_s.downcase
-          raise RequestInvalidError, "Response content type #{content_type.inspect} is not allowed" unless allowed_content_type?(content_type)
-
-          return Result.new(
-            uri: current_uri,
-            status: status,
-            content_type: content_type,
-            body: body,
-            redirect_chain: redirect_chain
-          )
+          return result if result
         end
       rescue URI::InvalidURIError => error
         raise RequestInvalidError, error.message
-      rescue Faraday::TimeoutError, Faraday::ConnectionFailed => error
-        raise UpstreamError, error.message
-      rescue Faraday::Error => error
+      rescue Net::OpenTimeout, Net::ReadTimeout, Timeout::Error, SocketError, SystemCallError, IOError, EOFError => error
         raise UpstreamError, error.message
       end
 
       private
 
-      def connection_for(uri, address:)
-        Faraday.new(url: origin_for(uri)) do |builder|
-          builder.options.open_timeout = OPEN_TIMEOUT
-          builder.options.timeout = READ_TIMEOUT
-          builder.adapter :net_http do |http|
-            http.ipaddr = address
+      def perform_request(uri, method:, address:)
+        http = Net::HTTP.new(uri.host, uri.port)
+        http.use_ssl = uri.scheme == "https"
+        http.open_timeout = OPEN_TIMEOUT
+        http.read_timeout = READ_TIMEOUT
+        http.ipaddr = address
+
+        http.start do |opened_http|
+          request = request_class_for(method).new(request_path(uri), request_headers)
+          opened_http.request(request) do |response|
+            return yield(response)
           end
         end
       end
@@ -135,12 +139,12 @@ module AgentRuns
         { "User-Agent" => "PaidResearchBroker/1.0" }
       end
 
-      def request_path(uri)
-        uri.request_uri.presence || "/"
+      def request_class_for(method)
+        { "GET" => Net::HTTP::Get, "HEAD" => Net::HTTP::Head }.fetch(method)
       end
 
-      def origin_for(uri)
-        "#{uri.scheme}://#{uri.host}:#{uri.port}"
+      def request_path(uri)
+        uri.request_uri.presence || "/"
       end
 
       def normalize_uri(value)
@@ -243,6 +247,24 @@ module AgentRuns
 
       def allowed_content_type?(content_type)
         ALLOWED_CONTENT_TYPES.include?(content_type)
+      end
+
+      def reject_oversized_content_length!(response)
+        content_length = Integer(response["content-length"], exception: false)
+        return unless content_length && content_length > MAX_RESPONSE_BYTES
+
+        raise RequestInvalidError, "Response exceeded #{MAX_RESPONSE_BYTES} bytes"
+      end
+
+      def read_limited_body(response)
+        body = +""
+
+        response.read_body do |chunk|
+          body << chunk
+          raise RequestInvalidError, "Response exceeded #{MAX_RESPONSE_BYTES} bytes" if body.bytesize > MAX_RESPONSE_BYTES
+        end
+
+        body
       end
     end
   end

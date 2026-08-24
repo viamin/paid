@@ -135,6 +135,23 @@ RSpec.describe "Api::Proxy::Research" do # @spec EGRESS-POLICY-008 # @spec EGRES
       expect(EgressSecurityEvent.last.redacted_evidence).not_to include(agent_run.proxy_token)
     end
 
+    it "blocks redirect hops whose target URL becomes secret-looking" do
+      stub_request(:get, brokered_url("docs.example.com", "/start"))
+        .to_return(status: 302, headers: { "Location" => "https://docs.example.com/final?token=#{agent_run.proxy_token}" })
+
+      get "/api/proxy/research/fetch", params: { url: "https://docs.example.com/start" }, headers: headers
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(WebMock).to have_requested(:get, brokered_url("docs.example.com", "/start"))
+      expect(WebMock).not_to have_requested(:get, brokered_url("docs.example.com", "/final", query: "token=#{agent_run.proxy_token}"))
+      expect(EgressSecurityEvent.last).to have_attributes(
+        agent_run: agent_run,
+        destination_host: "docs.example.com",
+        event_kind: "redacted_secret_extraction"
+      )
+      expect(EgressSecurityEvent.last.redacted_evidence).not_to include(agent_run.proxy_token)
+    end
+
     it "redacts credential-looking response content and returns quarantined evidence framing" do
       stub_request(:get, brokered_url("docs.example.com", "/leak"))
         .to_return(status: 200,

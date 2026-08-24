@@ -50,5 +50,15 @@ RSpec.describe AgentRuns::Research::SecretGuard do # @spec EGRESS-POLICY-009
 
       expect(result.blocked?).to be(false)
     end
+
+    it "permits plain-English token documentation queries" do
+      result = described_class.inspect!(
+        agent_run: agent_run,
+        text: "token authentication guide",
+        destination_host: "duckduckgo.com"
+      )
+
+      expect(result.blocked?).to be(false)
+    end
   end
 end

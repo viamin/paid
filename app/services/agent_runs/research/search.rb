@@ -23,7 +23,11 @@ module AgentRuns
         guard_outbound_secret!
         BudgetLedger.reserve_request!(agent_run: agent_run)
 
-        response = HttpClient.fetch(url: provider_uri.to_s, method: "GET")
+        response = HttpClient.fetch(
+          url: provider_uri.to_s,
+          method: "GET",
+          before_request: ->(request_uri) { guard_redirect_secret!(request_uri) }
+        )
         result_set = extract_results(response.body)
         results = result_set.map(&:payload)
         usage = BudgetLedger.consume_response!(
@@ -109,6 +113,38 @@ module AgentRuns
           }
         )
         raise RequestInvalidError, "Brokered research blocked a secret-looking query"
+      end
+
+      def guard_redirect_secret!(request_uri)
+        result = SecretGuard.inspect!(
+          agent_run: agent_run,
+          text: request_uri.to_s,
+          destination_host: request_uri.host
+        )
+        return unless result.blocked?
+
+        EgressSecurityEvent.create!(
+          account: agent_run.project.account,
+          project: agent_run.project,
+          agent_run: agent_run,
+          event_kind: "redacted_secret_extraction",
+          severity: "critical",
+          source_layer: "broker",
+          destination_host: request_uri.host,
+          matched_rule: result.rule,
+          redacted_evidence: result.redacted_evidence,
+          occurred_at: Time.current
+        )
+        audit!(
+          event_name: "execution.research_search_blocked",
+          metadata: {
+            "query" => SecretGuard.redact_text(query),
+            "provider_url" => SecretGuard.redact_text(request_uri.to_s),
+            "policy_result" => "blocked_secret",
+            "matched_rule" => result.rule
+          }
+        )
+        raise RequestInvalidError, "Brokered research blocked a secret-looking request"
       end
 
       def audit!(event_name:, metadata:)

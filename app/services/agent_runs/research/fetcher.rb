@@ -20,7 +20,11 @@ module AgentRuns
         guard_outbound_secret!(url, uri.host)
         BudgetLedger.reserve_request!(agent_run: agent_run)
 
-        response = HttpClient.fetch(url: url, method: method)
+        response = HttpClient.fetch(
+          url: url,
+          method: method,
+          before_request: ->(request_uri) { guard_outbound_secret!(request_uri.to_s, request_uri.host) }
+        )
         sanitized = ResponseSanitizer.call(body: response.body, content_type: response.content_type)
         usage = BudgetLedger.consume_response!(
           agent_run: agent_run,

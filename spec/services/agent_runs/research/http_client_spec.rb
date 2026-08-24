@@ -21,6 +21,24 @@ RSpec.describe AgentRuns::Research::HttpClient do # @spec EGRESS-POLICY-008 # @s
       allow(dns_resolver).to receive(:getresources).with(host, Resolv::DNS::Resource::IN::AAAA).and_return(aaaa_records)
     end
 
+    def stub_http_response(host:, ip:, content_type:, content_length:)
+      http = instance_double(Net::HTTP)
+      response = instance_double(Net::HTTPOK, code: "200")
+
+      allow(Net::HTTP).to receive(:new).with(host, 443).and_return(http)
+      allow(http).to receive(:use_ssl=).with(true)
+      allow(http).to receive(:open_timeout=).with(5)
+      allow(http).to receive(:read_timeout=).with(10)
+      allow(http).to receive(:ipaddr=).with(ip)
+      allow(http).to receive(:start).and_yield(http)
+      allow(http).to receive(:request).and_yield(response)
+      allow(response).to receive(:[]).with("location").and_return(nil)
+      allow(response).to receive(:[]).with("content-type").and_return(content_type)
+      allow(response).to receive(:[]).with("content-length").and_return(content_length)
+
+      response
+    end
+
     it "pins the socket to a public A record while keeping the original hostname for HTTPS" do
       stub_a_record("docs.iana.org", public_ip)
       allow(Net::HTTP).to receive(:new).and_wrap_original do |original, *args|
@@ -122,6 +140,61 @@ RSpec.describe AgentRuns::Research::HttpClient do # @spec EGRESS-POLICY-008 # @s
       expect {
         client.fetch(url: "https://docs.iana.org/start", method: "GET")
       }.to raise_error(AgentRuns::Research::RequestInvalidError, /non-public/)
+    end
+
+    it "invokes the request guard for the initial request and each redirect hop" do
+      stub_a_record("docs.iana.org", public_ip)
+      guarded_urls = []
+
+      stub_request(:get, "https://docs.iana.org/start")
+        .to_return(status: 302, headers: { "Location" => "https://docs.iana.org/final" })
+      stub_request(:get, "https://docs.iana.org/final")
+        .to_return(status: 200, body: "Hello", headers: { "Content-Type" => "text/plain" })
+
+      client.fetch(
+        url: "https://docs.iana.org/start",
+        method: "GET",
+        before_request: ->(uri) { guarded_urls << uri.to_s }
+      )
+
+      expect(guarded_urls).to eq(
+        [
+          "https://docs.iana.org/start",
+          "https://docs.iana.org/final"
+        ]
+      )
+    end
+
+    it "rejects oversized content-length headers before reading the body" do
+      stub_a_record("docs.iana.org", public_ip)
+      response = stub_http_response(
+        host: "docs.iana.org",
+        ip: public_ip,
+        content_type: "text/plain",
+        content_length: (described_class::MAX_RESPONSE_BYTES + 1).to_s
+      )
+      expect(response).not_to receive(:read_body)
+
+      expect {
+        client.fetch(url: "https://docs.iana.org/guide", method: "GET")
+      }.to raise_error(AgentRuns::Research::RequestInvalidError, /exceeded/)
+    end
+
+    it "aborts chunked responses once they exceed the byte cap" do
+      stub_a_record("docs.iana.org", public_ip)
+      response = stub_http_response(
+        host: "docs.iana.org",
+        ip: public_ip,
+        content_type: "text/plain",
+        content_length: nil
+      )
+      allow(response).to receive(:read_body)
+        .and_yield("a" * (described_class::MAX_RESPONSE_BYTES - 10))
+        .and_yield("b" * 20)
+
+      expect {
+        client.fetch(url: "https://docs.iana.org/guide", method: "GET")
+      }.to raise_error(AgentRuns::Research::RequestInvalidError, /exceeded/)
     end
   end
 

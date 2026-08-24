@@ -16,7 +16,7 @@ module AgentRuns
         /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
         /\bAKIA[0-9A-Z]{16}\b/,
         /\bASIA[0-9A-Z]{16}\b/,
-        /\b(?:Bearer|token|session|cookie)[=: ]+[A-Za-z0-9._~+\/=-]{12,}/i
+        /\b(?:Bearer|token|session|cookie)[=: ]+(?=[A-Za-z0-9._~+\/=-]*\d)[A-Za-z0-9._~+\/=-]{12,}/i
       ].freeze
 
       def self.inspect!(...)
