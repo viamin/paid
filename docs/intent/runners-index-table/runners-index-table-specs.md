@@ -49,3 +49,13 @@
   instead of telling them to review a guide on that page.
   *Code:* `app/javascript/controllers/test_agent_controller.js`.
   *Test:* `spec/lib/test_agent_controller_node_harness_spec.rb`.
+
+- [x] **RUNNERS-INDEX-008** — When the `/runners` index renders the "Provider
+  Run Outcomes" stacked column charts, it SHALL use the CSP-safe
+  `dashboard_chartkick_chart` helper (data attributes + the `chartkick`
+  Stimulus controller) instead of Chartkick's raw `column_chart` helper, and
+  each chart's element id SHALL be derived from the entry's position rather
+  than interpolating the provider name, so the id stays DOM-safe regardless of
+  provider slug contents.
+  *Code:* `app/views/runners/_provider_outcomes.html.erb`.
+  *Test:* `spec/requests/runners_spec.rb`.
