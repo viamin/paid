@@ -8,6 +8,11 @@ module Tools
     MAX_MATCHES = 200
     MAX_OUTPUT_BYTES = 100 * 1024
     MATCH_LINE_PATTERN = /\A(?<path>.*?):(?<line>\d+):(?<content>.*)\z/
+    SEARCH_QUALIFIER_PATTERN = /
+      (?:\A|\s)\K
+      (?:repo|org|user|path|language|filename|extension|symbol|content):\S+
+    /ix
+    PATH_QUALIFIER_PATTERN = /(?:\A|\s)path:(\S+)/i
 
     def self.tool_name = "grep_workspace"
     def self.requires_container? = true
@@ -37,16 +42,17 @@ module Tools
     end
 
     def perform(repo_path:, query:, path_filter: nil)
-      raise ArgumentError, "query must be provided" if query.to_s.strip.blank?
+      sanitized_query = sanitize_query(query)
+      raise ArgumentError, "query must be provided" if sanitized_query.blank?
 
       context = repo_context_for!(repo_path)
       normalized_repo_path = context.fetch(:repo_path)
-      pathspec = validate_path_filter!(normalized_repo_path, path_filter)
+      pathspec = validate_path_filter!(normalized_repo_path, effective_path_filter(query, path_filter))
 
-      stdout, stderr, exit_code = run_grep(normalized_repo_path, query, pathspec)
+      stdout, stderr, exit_code = run_grep(normalized_repo_path, sanitized_query, pathspec)
       raise ArgumentError, stderr.presence || "grep_workspace failed" if exit_code > 1
 
-      build_result(normalized_repo_path, query, stdout, exit_code)
+      build_result(normalized_repo_path, sanitized_query, stdout, exit_code)
     end
 
     private
@@ -56,6 +62,23 @@ module Tools
 
       _, relative_path = normalize_repo_relative_path(repo_path, path_filter)
       relative_path
+    end
+
+    def effective_path_filter(query, explicit_path_filter)
+      sanitized_path_filter(explicit_path_filter).presence || path_filter_from_query(query)
+    end
+
+    def path_filter_from_query(query)
+      match = query.to_s.match(PATH_QUALIFIER_PATTERN)
+      sanitized_path_filter(match&.captures&.first)
+    end
+
+    def sanitize_query(query)
+      query.to_s.gsub(SEARCH_QUALIFIER_PATTERN, "").squish
+    end
+
+    def sanitized_path_filter(path_filter)
+      path_filter.to_s.gsub(SEARCH_QUALIFIER_PATTERN, "").squish.split.first
     end
 
     def run_grep(repo_path, query, pathspec)

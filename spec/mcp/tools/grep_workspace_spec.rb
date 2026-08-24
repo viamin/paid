@@ -76,6 +76,27 @@ RSpec.describe Tools::GrepWorkspace do
       expect(paths.uniq).to eq([ "app/models/widget.rb" ])
     end
 
+    it "accepts grep_repo-style path qualifiers in the query" do
+      result = tool.call(repo_path: repo.fetch(:repo_path), query: "hello path:app/models")
+
+      expect(result[:matches].map { |match| match[:path] }.uniq).to eq([ "app/models/widget.rb" ])
+      expect(result[:matches]).to include(
+        { path: "app/models/widget.rb", line: 2, content: "  def hello" }
+      )
+    end
+
+    it "strips unsupported GitHub code-search qualifiers from the query" do
+      result = tool.call(
+        repo_path: repo.fetch(:repo_path),
+        query: "hello repo:other/private-repo org:secret language:ruby",
+        path_filter: "README.md repo:ignored/private-repo"
+      )
+
+      expect(result[:matches]).to contain_exactly(
+        { path: "README.md", line: 2, content: "hello world" }
+      )
+    end
+
     it "accepts the repo root as a path_filter" do
       result = tool.call(repo_path: repo.fetch(:repo_path), query: "hello", path_filter: ".")
 
