@@ -40,7 +40,7 @@ RSpec.describe "CodexLoginSessions" do
 
         hrefs = Nokogiri::HTML.parse(response.body).css("a").map { |link| link["href"] }
         expect(hrefs).to include(runner_runner_credential_path(runner, credential))
-        expect(hrefs).to include(integration_credentials_path(category: "llm_provider", service_key: "openai"))
+        expect(hrefs).to include(integration_credentials_path(category: "llm_provider", service_key: "codex"))
       end
 
       it "never renders token material" do
@@ -88,7 +88,7 @@ RSpec.describe "CodexLoginSessions" do
 
         hrefs = Nokogiri::HTML.parse(response.body).css("a").map { |link| link["href"] }
         expect(hrefs.grep(/runner_credentials/)).to be_empty
-        expect(hrefs).to include(integration_credentials_path(category: "llm_provider", service_key: "openai"))
+        expect(hrefs).to include(integration_credentials_path(category: "llm_provider", service_key: "codex"))
       end
     end
 
@@ -100,7 +100,7 @@ RSpec.describe "CodexLoginSessions" do
       hidden_return_to = document.at_css("input[name='codex_login_session[metadata][return_to]']")
 
       expect(response).to have_http_status(:ok)
-      expect(cancel_link["href"]).to eq(integration_credentials_path(category: "llm_provider", service_key: "openai"))
+      expect(cancel_link["href"]).to eq(integration_credentials_path(category: "llm_provider", service_key: "codex"))
       expect(hidden_return_to["value"]).to be_nil
     end
   end

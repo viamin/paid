@@ -23,7 +23,7 @@
             <% if @credential_runner %>
               <%= link_to "View credential", runner_runner_credential_path(@credential_runner, @active_runner_credential), class: "font-semibold text-green-900 underline hover:no-underline" %>
             <% end %>
-            <%= link_to "Manage credentials", integration_credentials_path(category: "llm_provider", service_key: "openai"), class: "font-semibold text-green-900 underline hover:no-underline" %>
+            <%= link_to "Manage credentials", integration_credentials_path(category: "llm_provider", service_key: "codex"), class: "font-semibold text-green-900 underline hover:no-underline" %>
           </div>
         </div>
       <% end %>
@@ -50,7 +50,7 @@
 
         <div class="flex items-center gap-3">
           <%= form.submit "Start Codex Login", class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
-          <%= link_to "Cancel", safe_return_path_or(@return_to_path, integration_credentials_path(category: "llm_provider", service_key: "openai")), class: "text-sm font-semibold text-gray-900 hover:text-gray-700" %>
+          <%= link_to "Cancel", safe_return_path_or(@return_to_path, integration_credentials_path(category: "llm_provider", service_key: "codex")), class: "text-sm font-semibold text-gray-900 hover:text-gray-700" %>
         </div>
       <% end %>
     </div>

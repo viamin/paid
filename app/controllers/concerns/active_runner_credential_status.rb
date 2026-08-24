@@ -6,6 +6,11 @@
 module ActiveRunnerCredentialStatus
   private
 
+  def load_active_credential_status(runner_key)
+    @active_runner_credential = active_runner_credential(runner_key)
+    @credential_runner = account_runner_for(runner_key) if @active_runner_credential
+  end
+
   def active_runner_credential(runner_key)
     policy_scope(RunnerCredential).for_runner(runner_key).active.order(created_at: :desc).first
   end
