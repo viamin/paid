@@ -1,22 +1,41 @@
 <% content_for(:title) { "Runners - Paid" } %>
 
-<div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
+<div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8" data-controller="test-all">
   <div class="mb-6 flex items-center justify-between">
     <div>
       <h1 class="text-xl font-semibold text-gray-900">Runners</h1>
       <p class="mt-1 text-sm text-gray-500">Configure runners available for agent runs, chat sessions, and fallback routing.</p>
     </div>
-    <% if @addable_runner_options.any? %>
-      <%= link_to "Add Runner", new_runner_path, class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
-    <% else %>
-      <div class="text-right">
-        <span class="inline-flex items-center rounded-md bg-gray-100 px-3 py-2 text-sm font-semibold text-gray-500">
-          No More Runners Yet
-        </span>
-        <p class="mt-1 text-xs text-gray-500">Ship more runner CLIs in <code>paid-agent</code> to add them here.</p>
-      </div>
-    <% end %>
+    <div class="flex items-center gap-3">
+      <% if @runners.any? %>
+        <button
+          data-action="test-all#testAll"
+          data-test-all-target="button"
+          type="button"
+          class="rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"
+        >
+          Test All
+        </button>
+      <% end %>
+
+      <% if @addable_runner_options.any? %>
+        <%= link_to "Add Runner", new_runner_path, class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      <% else %>
+        <div class="text-right">
+          <span class="inline-flex items-center rounded-md bg-gray-100 px-3 py-2 text-sm font-semibold text-gray-500">
+            No More Runners Yet
+          </span>
+          <p class="mt-1 text-xs text-gray-500">Ship more runner CLIs in <code>paid-agent</code> to add them here.</p>
+        </div>
+      <% end %>
+    </div>
   </div>
+
+  <% if @runners.any? %>
+    <div class="mb-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+      Test Runner uses the same configured runner auth path as normal execution, so results here should match real run behavior.
+    </div>
+  <% end %>
 
   <div class="overflow-x-auto rounded-lg bg-white shadow">
     <table class="min-w-full divide-y divide-gray-200">
@@ -38,6 +57,7 @@
         <% @runners.each do |runner| %>
           <tr
             data-controller="test-agent"
+            data-test-all-target="runner"
             data-test-agent-url-value="<%= test_agent_runner_path(runner) %>"
             data-test-agent-csrf-token-value="<%= form_authenticity_token %>"
           >
@@ -158,7 +178,7 @@
             </td>
             <td class="px-4 py-3 text-right text-sm">
               <div class="inline">
-                <button data-test-agent-target="button" data-action="test-agent#test" type="button" class="font-medium text-emerald-600 hover:text-emerald-500">Test Agent</button>
+                <button data-test-agent-target="button" data-action="test-agent#test" type="button" class="font-medium text-emerald-600 hover:text-emerald-500">Test Runner</button>
                 <div data-test-agent-target="result"></div>
               </div>
               <% if runner.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY %>
