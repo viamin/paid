@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec INBOX-FOUNDATION-007
 RSpec.describe Dashboard::NeedsInputQueue do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
