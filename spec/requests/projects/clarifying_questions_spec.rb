@@ -30,12 +30,12 @@ RSpec.describe "Projects::ClarifyingQuestions" do
   end
 
   def dashboard_queue_path_for(project)
-    dashboard_needs_input_path(project_id: project.id)
+    dashboard_inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
   end
 
   def dashboard_queue_params(project)
     path = dashboard_queue_path_for(project)
-    { queue: "dashboard_needs_input", queue_project_id: project.id, return_to: path }
+    { queue: "dashboard_inbox", queue_project_id: project.id, return_to: path }
   end
 
   describe "GET /projects/:project_id/issues/:issue_id/clarifying_questions" do
@@ -127,12 +127,12 @@ RSpec.describe "Projects::ClarifyingQuestions" do
         project.update!(auto_pick_enabled: true, active: true)
 
         get project_issue_clarifying_questions_path(project, issue), params: {
-          queue: "dashboard_needs_input",
+          queue: "dashboard_inbox",
           queue_project_id: project.id,
           return_to: "//evil.example/path"
         }
 
-        expect(response).to redirect_to(dashboard_needs_input_path(project_id: project.id))
+        expect(response).to redirect_to(dashboard_inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND))
       end
     end
   end
@@ -216,7 +216,7 @@ RSpec.describe "Projects::ClarifyingQuestions" do
         post project_issue_clarifying_questions_path(project, issue), params: {
           questions: questions,
           answers: answers,
-          queue: "dashboard_needs_input",
+          queue: "dashboard_inbox",
           queue_project_id: project.id,
           return_to: queue_return_to
         }
@@ -230,23 +230,23 @@ RSpec.describe "Projects::ClarifyingQuestions" do
         post project_issue_clarifying_questions_path(project, issue), params: {
           questions: questions,
           answers: answers,
-          queue: "dashboard_needs_input",
+          queue: "dashboard_inbox",
           queue_project_id: project.id,
           return_to: "https://evil.example/path"
         }
 
-        expect(response).to redirect_to(dashboard_needs_input_path(project_id: project.id))
+        expect(response).to redirect_to(dashboard_inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND))
       end
 
       it "preserves the validated queue return target when posting fails" do
         project.update!(auto_pick_enabled: true, active: true)
-        return_to = dashboard_needs_input_path(project_id: project.id)
+        return_to = dashboard_inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
         allow(github_client).to receive(:add_comment).and_raise(GithubClient::Error, "boom")
 
         post project_issue_clarifying_questions_path(project, issue), params: {
           questions: questions,
           answers: answers,
-          queue: "dashboard_needs_input",
+          queue: "dashboard_inbox",
           queue_project_id: project.id,
           return_to: return_to
         }
@@ -255,7 +255,7 @@ RSpec.describe "Projects::ClarifyingQuestions" do
           project_issue_clarifying_questions_path(
             project,
             issue,
-            queue: "dashboard_needs_input",
+            queue: "dashboard_inbox",
             queue_project_id: project.id,
             return_to: return_to
           )
@@ -278,12 +278,12 @@ RSpec.describe "Projects::ClarifyingQuestions" do
         post project_issue_clarifying_questions_path(project, issue), params: {
           questions: questions,
           answers: answers,
-          queue: "dashboard_needs_input",
+          queue: "dashboard_inbox",
           queue_project_id: other_project.id,
-          return_to: dashboard_needs_input_path(project_id: other_project.id)
+          return_to: dashboard_inbox_path(project_id: other_project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
         }
 
-        expect(response).to redirect_to(dashboard_needs_input_path(project_id: other_project.id))
+        expect(response).to redirect_to(dashboard_inbox_path(project_id: other_project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND))
       end
     end
 
