@@ -22,6 +22,8 @@ RSpec.describe Inbox::Queue do
     create(:issue, :needs_input, **(defaults.merge(overrides)))
   end
 
+  # @spec INBOX-FOUNDATION-003 @spec INBOX-FOUNDATION-004
+  # @spec INBOX-FOUNDATION-005 @spec INBOX-FOUNDATION-006
   describe ".call" do
     it "returns typed entries with the :clarifying_questions kind" do
       issue = create_needs_input(body: questions_body)
@@ -77,6 +79,7 @@ RSpec.describe Inbox::Queue do
   end
 
   describe "ordering" do
+    # @spec INBOX-FOUNDATION-004
     it "orders oldest-waiting-first by needs_input_since, NULLS LAST" do
       newest = create_needs_input(github_number: 30, body: questions_body)
       oldest = create_needs_input(github_number: 10, body: questions_body)
@@ -115,6 +118,7 @@ RSpec.describe Inbox::Queue do
   end
 
   describe "including PRs" do
+    # @spec INBOX-FOUNDATION-005
     it "includes pull requests alongside issues (drops the is_pull_request: false filter)" do
       issue = create_needs_input(github_number: 10, body: questions_body)
       pr = create(:issue, :needs_input, :pull_request, project: project, github_number: 20, body: questions_body)
@@ -126,6 +130,7 @@ RSpec.describe Inbox::Queue do
   end
 
   describe "scoping" do
+    # @spec INBOX-FOUNDATION-006
     it "only returns entries from auto-pick projects" do
       other_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true)
       in_scope = create_needs_input(github_number: 10, body: questions_body)

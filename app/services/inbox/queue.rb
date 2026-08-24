@@ -28,6 +28,7 @@ module Inbox
       @project = project
     end
 
+    # @spec INBOX-FOUNDATION-003
     def call
       @call ||= ordered_issues.filter_map do |issue|
         questions = question_summary_for(issue)
@@ -53,7 +54,10 @@ module Inbox
     # ordering is stable across calls. Index
     # `index_issues_needs_input_since_active` (partial on paid_state =
     # 'needs_input') supports the leading column.
-    # @spec INBOX-FOUNDATION-004
+    # Includes both issues and pull requests (drops the `is_pull_request:
+    # false` filter); today's needs_input flow only stamps issues, but the
+    # inbox page is structurally ready for future PR-blocking kinds.
+    # @spec INBOX-FOUNDATION-004 @spec INBOX-FOUNDATION-005
     def ordered_issues
       @ordered_issues ||= begin
         ids = scoped_projects.map(&:id)
@@ -68,6 +72,7 @@ module Inbox
       end
     end
 
+    # @spec INBOX-FOUNDATION-006
     def scoped_projects
       projects = auto_pick_projects
       return projects unless project
@@ -75,6 +80,7 @@ module Inbox
       projects.select { |candidate| candidate.id == project.id }
     end
 
+    # @spec INBOX-FOUNDATION-006
     def auto_pick_projects
       @auto_pick_projects ||= Project
         .includes(account: :tenant_setting, created_by: :user_setting)
