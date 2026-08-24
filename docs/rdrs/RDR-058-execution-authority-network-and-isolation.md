@@ -5,32 +5,40 @@
 ## Metadata
 
 - **Date**: 2026-08-17
-- **Status**: Partially Implemented
+- **Status**: Implemented
 - **Type**: Security + Architecture
 - **Priority**: P1
 - **Related RDRs**: [RDR-004](RDR-004-container-isolation.md) (Container Isolation), [RDR-006](RDR-006-secrets-proxy.md) (Secrets Proxy), [RDR-019](RDR-019-remote-container-execution.md) (Remote Container Execution), [RDR-024](RDR-024-multi-tenancy-isolation-strategy.md) (Multi-Tenancy Isolation Strategy), [RDR-041](RDR-041-subscription-runner-auth-lifecycle.md) (Subscription Runner Managed Auth Lifecycle), [RDR-048](RDR-048-multi-host-docker-backend-support.md) (Multi-Host Docker Backend Support), [RDR-055](RDR-055-agent-container-egress-allowlisting.md) (Agent Container Egress Allowlisting), [RDR-057](RDR-057-remote-execution-data-contract.md) (Remote Execution Data Contract)
-- **Related Issues**: [#3418](https://github.com/viamin/paid/issues/3418) (closeout), [#3402](https://github.com/viamin/paid/issues/3402), [#3404](https://github.com/viamin/paid/issues/3404), [#3405](https://github.com/viamin/paid/issues/3405), [#3341](https://github.com/viamin/paid/issues/3341), [#3343](https://github.com/viamin/paid/issues/3343), [#3356](https://github.com/viamin/paid/issues/3356)
+- **Related Issues**: [#3418](https://github.com/viamin/paid/issues/3418) (closeout), [#3402](https://github.com/viamin/paid/issues/3402), [#3404](https://github.com/viamin/paid/issues/3404), [#3405](https://github.com/viamin/paid/issues/3405), [#3341](https://github.com/viamin/paid/issues/3341), [#3343](https://github.com/viamin/paid/issues/3343), [#3356](https://github.com/viamin/paid/issues/3356), [#3599](https://github.com/viamin/paid/issues/3599) (final closeout)
 - **Related Tests**: `spec/services/network_policy_spec.rb`, `spec/services/execution_runners_spec.rb`, `spec/services/execution_runners/`, `spec/models/runner_credential_spec.rb`, `spec/models/runner_auth_attempt_spec.rb`, `spec/models/agent_run_spec.rb`, `spec/requests/runner_credentials_spec.rb`, `spec/security/tenant_context_spec.rb`, `spec/requests/api/secrets_proxy_spec.rb`, `spec/services/containers/provision_spec.rb`
 
 ## Implementation Status
 
-RDR-058 is **partially implemented** as of 2026-08-23. The core execution authority,
-provider-neutral networking contract, container/tenant isolation, and
-tenant-configurable egress allowlisting are all shipped. The remaining gap is
-RDR-055's brokered research egress with secret-extraction guards
-([#3439](https://github.com/viamin/paid/issues/3439)), which keeps RDR-055 itself
-**Partially Implemented** rather than Implemented.
+RDR-058 is **implemented** as of 2026-08-23. All seven criteria that belong to
+this RDR's own scope — per-run authority grants, provider-neutral network
+policy, no-public-ingress-by-default enforcement (including pre-provisioning
+rejection), scoped preview ingress, tenant/project/run isolation invariants,
+and explicit subscription-auth/direct-outbound exceptions, plus
+tenant-configurable egress allowlisting — are shipped with passing test
+coverage. The eighth item, RDR-055's brokered research egress with
+secret-extraction guards ([#3439](https://github.com/viamin/paid/issues/3439)),
+remains open, but the 2026-08-23 final closeout (issue
+[#3599](https://github.com/viamin/paid/issues/3599)) determined that item is
+RDR-055's own implementation scope, gated by RDR-055's own status and umbrella
+issue ([#3441](https://github.com/viamin/paid/issues/3441)) — not further
+RDR-058 work. See [2026-08-23 Final Closeout](#2026-08-23-final-closeout-issue-3599)
+below for the reasoning.
 
 | Criterion | Status | Evidence |
 |-----------|--------|----------|
 | Per-run authority grants are explicit and secret-free by default (`direct_outbound` is the documented exception) | Implemented | `app/models/agent_run.rb` `proxy_token` and persisted `authority_grants` snapshot; `app/services/execution_runners.rb` `ExecutionRunners::AuthorityGrantSet`; `app/controllers/api/secrets_proxy_controller.rb`; RDR-006 |
 | Network policy is provider-neutral and runner-validated before provisioning | Implemented | `app/services/execution_runners.rb` `NetworkingPolicy`; `app/services/containers/provision.rb` `derived_networking_policy`; `app/services/network_policy.rb` |
-| Execution environments have no public ingress by default | Implemented | `app/services/network_policy.rb` — `paid_agent` network is `internal: true` in production (see `NetworkPolicy.create_network`); no container ports exposed; in other environments egress isolation relies on the in-container iptables firewall; `spec/services/network_policy_spec.rb` |
-| Preview/debug ingress exceptions are scoped | Implemented | `preview_sessions` and `PreviewProvisionState` — tunnel creation requires an explicit project-owned `preview_session` record; `app/models/preview_session.rb` |
-| Tenant/project/run isolation invariants are tested | Implemented | RLS on `agent_runs`/`projects`: `spec/security/tenant_context_spec.rb`; per-run `proxy_token` scope: `spec/requests/api/secrets_proxy_spec.rb`; per-run named workspace volumes: `spec/services/execution_runners/local_docker_runner_spec.rb` and `spec/services/containers/provision_spec.rb` |
+| Execution environments have no public ingress by default, including pre-provisioning rejection of unsupported inbound exposure | Implemented | `app/services/execution_runners.rb` `IngressPolicy.default_deny` / `validate_supported!`; `app/services/containers/provision.rb` calls `agent_run.execution_ingress_policy.validate_supported!` before provisioning; `app/services/network_policy.rb` — `paid_agent` network is `internal: true` in production (see `NetworkPolicy.create_network`); no container ports exposed; `docs/intent/execution-ingress/` (`EXEC-INGRESS-001`, `EXEC-INGRESS-002`); `spec/services/network_policy_spec.rb`, `spec/services/containers/provision_spec.rb` |
+| Preview/debug ingress exceptions are scoped | Implemented | `preview_sessions` and `PreviewProvisionState` — tunnel creation requires an explicit project-owned `preview_session` record; `AgentRun.preview_execution_metadata` builds a `default_deny` policy with a single `preview` capability scoped to `paid_mediated_tunnel`; `app/models/preview_session.rb`, `app/models/agent_run.rb` |
+| Tenant/project/run isolation invariants are tested | Implemented | RLS on `agent_runs`/`projects`: `spec/security/tenant_context_spec.rb`; per-run `proxy_token` scope: `spec/requests/api/secrets_proxy_spec.rb`; per-run named workspace volumes, cross-project service-container scoping, cross-account credential scoping, typed provisioning failures, and log-access authorization: `docs/intent/execution-isolation/` (`EXECUTION-ISOLATION-001..005`); `spec/services/containers/provision_spec.rb`, `spec/services/containers/service_provisioner_spec.rb`, `spec/policies/agent_run_policy_spec.rb`, `spec/requests/agent_runs_spec.rb` |
 | Subscription-auth and direct-outbound remain explicit exceptions | Implemented | `NetworkPolicy` defaults to `:proxy` mode; subscription-auth and direct-outbound require explicit `subscription_auth?` / `direct_outbound_runner?` predicates; `spec/services/network_policy_spec.rb` |
 | Tenant-configurable egress allowlisting | Implemented | RDR-055's `EgressAllowlistEntry` model, `AgentRuns::EgressPolicy::{Resolve,Gateway}`, and the per-host Docker egress gateway ship the account/project domain allowlist. Restricted runtimes that cannot enforce that profile fail closed, while `GatewayAdapters::{Kubernetes,ManagedMachine}` remain contract stubs pending their runtime implementations; see RDR-055 for full evidence |
-| Brokered research egress with secret-extraction guards | **Gap** | RDR-055 acceptance criterion still open; follow-up [#3439](https://github.com/viamin/paid/issues/3439) |
+| Brokered research egress with secret-extraction guards | Delegated to RDR-055 | Not RDR-058 implementation scope; tracked entirely under RDR-055's own status and [#3439](https://github.com/viamin/paid/issues/3439). Does not block RDR-058 completion — see 2026-08-23 closeout below |
 
 ### 2026-08-17 Closeout
 
@@ -84,7 +92,78 @@ Implemented** until those land.
 
 ### 2026-08-23 Update — RDR-055 Egress Allowlisting Shipped
 
-RDR-055's tenant-configurable egress allowlisting has since shipped: the `EgressAllowlistEntry` model, `AgentRuns::EgressPolicy::{Resolve,Gateway}`, the per-host Docker egress gateway, and production fail-closed rejection for runtimes that cannot enforce the restricted profile (#3434, #3435, #3436, #3437, #3438) are all merged. The Kubernetes and managed-machine adapter classes included in that work are contract stubs, not shipped enforcement implementations. This supersedes the "RDR-055 is Draft" framing in the 2026-08-17 closeout audit above, which reflected an earlier point in time. RDR-055 itself remains **Partially Implemented**, not Implemented, because its brokered research egress with secret-extraction guards ([#3439](https://github.com/viamin/paid/issues/3439)) is still open; see RDR-055's 2026-08-23 Umbrella Audit for full evidence. Of the six blocking children of #3418, #3356, #3404, and #3405 remain open.
+RDR-055's tenant-configurable egress allowlisting has since shipped: the `EgressAllowlistEntry` model, `AgentRuns::EgressPolicy::{Resolve,Gateway}`, the per-host Docker egress gateway, and production fail-closed rejection for runtimes that cannot enforce the restricted profile (#3434, #3435, #3436, #3437, #3438) are all merged. The Kubernetes and managed-machine adapter classes included in that work are contract stubs, not shipped enforcement implementations. This supersedes the "RDR-055 is Draft" framing in the 2026-08-17 closeout audit above, which reflected an earlier point in time. RDR-055 itself remains **Partially Implemented**, not Implemented, because its brokered research egress with secret-extraction guards ([#3439](https://github.com/viamin/paid/issues/3439)) is still open; see RDR-055's 2026-08-23 Umbrella Audit for full evidence.
+
+> **Correction (2026-08-23 final closeout, below):** the closing sentence of
+> this update as originally written claimed "#3356, #3404, and #3405 remain
+> open." That was incorrect at the time it was written: [#3404](https://github.com/viamin/paid/issues/3404)
+> closed 2026-08-20 (PR [#3489](https://github.com/viamin/paid/pull/3489)) and
+> [#3405](https://github.com/viamin/paid/issues/3405) closed 2026-08-18 (PR
+> [#3491](https://github.com/viamin/paid/pull/3491)) — both before this section's
+> own dateline. Only [#3356](https://github.com/viamin/paid/issues/3356)
+> remains open. See the final closeout section immediately below for the
+> corrected reconciliation.
+
+### 2026-08-23 Final Closeout (issue #3599)
+
+Follows the [RDR Closeout Checklist](https://github.com/viamin/paid/blob/main/docs/rdrs/closeout-checklist.md).
+This closeout revalidates RDR-058 against the current codebase, corrects the
+stale claim above, and resolves the two open questions issue
+[#3599](https://github.com/viamin/paid/issues/3599) posed: whether the
+execution-authority gap has landed, and whether RDR-055's remaining egress
+scope blocks RDR-058 completion. Full criterion-by-criterion evidence is in
+[`audit-report-2026-08-23-rdr-058.md`](audit-report-2026-08-23-rdr-058.md).
+
+**#3404 and #3405 are shipped, not open.** Re-checking issue state (not just
+re-reading the prior audit's assumptions) shows both closed via merged PRs
+before this RDR's own 2026-08-23 dateline: [#3404](https://github.com/viamin/paid/issues/3404)
+via [#3489](https://github.com/viamin/paid/pull/3489) (2026-08-20), and
+[#3405](https://github.com/viamin/paid/issues/3405) via
+[#3491](https://github.com/viamin/paid/pull/3491) (2026-08-18). The code backs
+this up: `docs/intent/execution-ingress/` (`EXEC-INGRESS-001`, `EXEC-INGRESS-002`,
+both `[x]`) documents pre-provisioning ingress-capability rejection via
+`ExecutionRunners::IngressPolicy#validate_supported!`, called from
+`Containers::Provision` before workload provisioning — not merely the
+runtime iptables enforcement the 2026-08-17 audit described. Likewise
+`docs/intent/execution-isolation/` (`EXECUTION-ISOLATION-001..005`, all `[x]`)
+documents isolation invariant tests beyond RLS/`proxy_token`/workspace-volume:
+cross-project service-container scoping, cross-account credential scoping,
+typed provisioning failures, and log-access authorization. Both closeout
+issues' full scope shipped.
+
+**Issue #3356 never actually blocked #3404 or #3405.** The 2026-08-17 audit
+assumed #3404 and #3405 were "blocked behind"
+[#3356](https://github.com/viamin/paid/issues/3356)'s generic
+runner-capability model (`host_paths`, `browser_sidecar`,
+`architecture_arm64`, etc.). In practice, both issues shipped their own
+narrower, purpose-built pre-provisioning validation (`IngressPolicy#validate_supported!`
+for ingress; the `EXECUTION-ISOLATION` invariant suite for isolation) without
+waiting on #3356's broader capability-negotiation framework. #3356 remains
+open and is worth pursuing as its own initiative (multi-runner capability
+comparison, referenced from `[PER-08]` in its title — a provider-evaluation
+concern, not an RDR-058-labeled issue), but it is not a blocking dependency
+for any of RDR-058's shipped criteria. The "execution-authority gap" referred
+to in issue #3599's title and summary has landed via #3404/#3405; #3356 itself
+continues independently.
+
+**RDR-055's remaining egress-broker gap is separate and does not block RDR-058.**
+Criterion 8 (brokered research egress with secret-extraction guards) is the
+sole remaining unmet item, tracked entirely by RDR-055's own umbrella issue
+[#3441](https://github.com/viamin/paid/issues/3441) and its open child
+[#3439](https://github.com/viamin/paid/issues/3439). RDR-055 is a separate RDR
+with its own independent status (Partially Implemented) and closeout process;
+RDR-058 references egress allowlisting for completeness (Layer 4) but does not
+itself implement it. Holding RDR-058 open indefinitely for an item whose
+design, implementation, and closeout are owned end-to-end by a different RDR
+would conflate the two documents' scopes. This closeout descopes criterion 8
+from RDR-058's own completion bar: RDR-058 covers execution authority, network
+policy, and isolation (criteria 1-6) plus the platform/tenant-required egress
+allowlist surface (criterion 7), all of which are shipped and tested; the
+research-broker feature (criterion 8) stays tracked under RDR-055 alone.
+
+**Conclusion**: RDR-058 status changes from Partially Implemented to
+**Implemented**. Issue [#3599](https://github.com/viamin/paid/issues/3599) is
+closed by the PR that carries this update.
 
 ## Problem Statement
 
