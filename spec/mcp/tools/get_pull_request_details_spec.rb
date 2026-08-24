@@ -146,6 +146,48 @@ RSpec.describe Tools::GetPullRequestDetails do
       )
     end
 
+    it "reports a PR merged out-of-band as merged even when a stale merge-permission rejection is still persisted" do
+      # FetchIssuesActivity#close_stale_pull_requests flips pr_review_phase to
+      # "merged" and github_state to "closed" when a PR is merged manually, but
+      # does not clear merge_permission_rejected_at. The auto-merge diagnostic
+      # must surface the merged state instead of the stale rejection.
+      mark_pr_merged_out_of_band(pr)
+      stub_merged_pull_request(merged_at: 1.hour.ago)
+
+      result = tool.call(project_id: project.id, issue_id: pr.id)
+
+      expect(result[:auto_merge]).to eq(
+        last_auto_merge_attempt_at: nil,
+        auto_merge_status: "merged",
+        reason_code: nil,
+        sanitized_message: nil,
+        credential_mode: "personal_access_token",
+        merge_permission_rejected: false,
+        cooldown_until: nil,
+        next_action: "No action required."
+      )
+    end
+
+    it "reports a PR merged out-of-band as merged even when live credentials are unavailable" do
+      # Even without a usable GitHub credential, persisted pr_review_phase:
+      # "merged" is enough to report the merged status — the stale rejection
+      # flag must not block this when project.client cannot be built.
+      mark_pr_merged_out_of_band(pr)
+      installation = create(:github_installation, account: account)
+      project.update!(github_token: nil, github_installation: installation)
+      # Revoke the installation after the project accepts it so the
+      # active-credential guard sees a non-active installation at runtime.
+      installation.update!(revoked_at: Time.current)
+
+      result = tool.call(project_id: project.id, issue_id: pr.id)
+
+      expect(result[:auto_merge]).to include(
+        auto_merge_status: "merged",
+        merge_permission_rejected: false,
+        next_action: "No action required."
+      )
+    end
+
     it "raises for pull requests outside the user's account" do
       other_pr = create(:issue, :pull_request)
 
@@ -163,6 +205,26 @@ RSpec.describe Tools::GetPullRequestDetails do
   def expect_comments(result, comment:, review_comment:)
     expect(result[:comments]).to eq([ { user: "octocat", body: "Conversation comment", created_at: comment.created_at } ])
     expect(result[:review_comments]).to eq([ { user: "reviewer", body: "Line comment", path: "app/models/user.rb", created_at: review_comment[:created_at] } ])
+  end
+
+  def mark_pr_merged_out_of_band(pr)
+    pr.update!(
+      github_state: "closed",
+      pr_review_phase: "merged",
+      merge_permission_rejected_at: 2.hours.ago,
+      merge_permission_rejection_reason: "refusing to allow a GitHub App to create or update without `workflows` permission"
+    )
+  end
+
+  def stub_merged_pull_request(merged_at:)
+    allow(github_client).to receive(:pull_request).and_return(
+      OpenStruct.new(
+        number: pr.github_number,
+        mergeable: true,
+        merged_at: merged_at,
+        head: OpenStruct.new(sha: "abc123")
+      )
+    )
   end
 
   def expected_ready_auto_merge

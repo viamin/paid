@@ -2,8 +2,11 @@
 
 module PullRequests
   # Builds a sanitized auto-merge diagnostic snapshot for PR detail payloads.
-  # Prefers persisted merge-permission rejection history when present, and
-  # otherwise derives the current blocker state from live PR/check data.
+  # Reports a merged PR as `merged` even when a prior merge-permission
+  # rejection is still persisted (e.g. when the PR was merged out-of-band
+  # after the rejection and the rejection flag was never cleared). Otherwise
+  # prefers persisted merge-permission rejection history when present, and
+  # derives the current blocker state from live PR/check data.
   # @spec CHAT-API-011
   class AutoMergeStatus
     include CiStatusVerification
@@ -18,8 +21,14 @@ module PullRequests
     end
 
     def call
-      return merge_permission_rejected_status if issue.merge_permission_rejected?
+      # Check the live/derived merge state before the persisted rejection flag:
+      # `FetchIssuesActivity#close_stale_pull_requests` flips
+      # `pr_review_phase: "merged"` and `github_state: "closed"` when a PR is
+      # merged out-of-band, but does not clear `merge_permission_rejected_at`.
+      # A merged PR must report as `merged` regardless of any stale rejection
+      # history from before it landed.
       return merged_status if merged?
+      return merge_permission_rejected_status if issue.merge_permission_rejected?
       return auto_merge_disabled_status unless project.auto_merge_enabled?
       return credentials_unavailable_status unless client
       return not_mergeable_status unless mergeable?(pull_request)
