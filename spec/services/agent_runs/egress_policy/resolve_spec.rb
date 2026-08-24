@@ -35,6 +35,9 @@ RSpec.describe AgentRuns::EgressPolicy::Resolve do
       expect(snapshot.mode).to eq("proxy_restricted")
       expect(hosts(snapshot.required_destinations)).to include("egress-gateway", "paid-proxy", "github.com", "api.github.com")
       expect(snapshot.required_destinations).to all(include("source" => "platform"))
+      expect(snapshot.required_destinations).to include(hash_including("reason" => "secrets_proxy"))
+      expect(snapshot.required_destinations).to include(hash_including("reason" => "callback_url"))
+      expect(snapshot.required_destinations).to include(hash_including("reason" => "github_proxy"))
     end
 
     it "excludes provider destinations for proxy-restricted runs" do
@@ -192,6 +195,18 @@ RSpec.describe AgentRuns::EgressPolicy::Resolve do
       expect(destinations.count { |d| d["host"] == "github.com" }).to eq(1)
       expect(destinations.find { |d| d["host"] == "github.com" }).to include("source" => "platform", "port" => 443)
     end
+
+    # @spec EGRESS-POLICY-004
+    it "keeps the code-owned preview tunnel destination when a project entry matches its host" do
+      project_entry = create(:egress_allowlist_entry, account: account, project: project, host_pattern: "tunnel.example.com")
+
+      destinations = resolve(preview_destination: { host: "tunnel.example.com", port: 9000 }).destinations
+      tunnel_destinations = destinations.select { |d| d["host"] == "tunnel.example.com" }
+
+      expect(tunnel_destinations.length).to eq(1)
+      expect(tunnel_destinations.first).to include("source" => "run_preview", "category" => "preview_tunnel")
+      expect(destinations).not_to include(hash_including("entry_id" => project_entry.id))
+    end
   end
 
   describe "run-local destinations" do
@@ -209,6 +224,7 @@ RSpec.describe AgentRuns::EgressPolicy::Resolve do
         hash_including(
           "host" => "paid-svc-a#{account.id}-s#{service.id}-pg",
           "port" => 5432,
+          "category" => "service_container",
           "service_container_id" => service.id
         )
       )
@@ -218,8 +234,17 @@ RSpec.describe AgentRuns::EgressPolicy::Resolve do
       snapshot = resolve(preview_destination: { host: "tunnel.example.com", port: 9000 })
 
       expect(snapshot.destinations).to include(
-        hash_including("host" => "tunnel.example.com", "port" => 9000, "source" => "run_preview")
+        hash_including("host" => "tunnel.example.com", "port" => 9000, "source" => "run_preview",
+          "category" => "preview_tunnel")
       )
+    end
+
+    # @spec EGRESS-POLICY-002
+    it "raises on an unknown run-local category instead of silently omitting destinations" do
+      allow(AgentRuns::EgressPolicy::RequiredDestinations).to receive(:run_local_categories)
+        .and_return([ { "source" => "run_local", "category" => "bogus", "reason" => "bogus" } ])
+
+      expect { resolve }.to raise_error(ArgumentError, /Unknown run-local destination category/)
     end
   end
 
