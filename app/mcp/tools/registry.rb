@@ -25,6 +25,7 @@ module Tools
       "Tools::ReadRepoFile",
       "Tools::ListRepoTree",
       "Tools::GrepRepo",
+      "Tools::GrepWorkspace",
       "Tools::WriteRepoFile",
       "Tools::ApplyPatch",
       "Tools::GitDiff",
@@ -71,7 +72,7 @@ module Tools
       end
 
       def dispatch_read_only(name:, arguments:, user:, session:)
-        tool_class = read_only_tool_classes_for(user:).find { |klass| klass.tool_name == name }
+        tool_class = dispatchable_read_only_tools_for(session:, user:).find { |klass| klass.tool_name == name }
         raise ArgumentError, "Unknown tool: #{name}" unless tool_class
         raise ArgumentError, "Tool arguments must be a JSON object" unless arguments.is_a?(Hash)
 
@@ -183,6 +184,10 @@ module Tools
 
       def read_only_tools_for(session:, user:)
         tools_for(session:, user:).reject(&:write_operation?)
+      end
+
+      def dispatchable_read_only_tools_for(session:, user:)
+        (read_only_tool_classes_for(user:) + read_only_tools_for(session:, user:)).uniq
       end
 
       def definitions_for_classes(tool_classes)

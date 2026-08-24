@@ -3,6 +3,16 @@
 require "rails_helper"
 
 RSpec.describe Tools::Registry do
+  def workspace_chat_session(account:, user:, project:)
+    create(
+      :chat_session,
+      :workspace,
+      account: account,
+      created_by: user,
+      clone_manifest: [ { project_id: project.id, path: "/workspace/repo-one" } ]
+    )
+  end
+
   let(:account) { create(:account) }
   let(:user) { create(:user, :member, account: account) }
   let(:write_tool_names) do
@@ -353,6 +363,50 @@ RSpec.describe Tools::Registry do
           session: build(:chat_session, account: account, created_by: user)
         )
       }.to raise_error(ArgumentError, "Unknown tool: trigger_agent_run")
+    end
+
+    it "dispatches standard read-only tools without requiring a chat-scoped session tool surface" do
+      account = create(:account)
+      user = create(:user, :owner, account: account)
+      session = build(:chat_session, account: account, created_by: user)
+
+      tool = instance_double(Tools::ListProjects)
+      allow(Tools::ListProjects).to receive(:new).with(user:, session:).and_return(tool)
+      allow(tool).to receive(:dispatch).with(no_args).and_return(
+        { projects: [] }
+      )
+
+      result = described_class.dispatch_read_only(
+        name: "list_projects",
+        arguments: {},
+        user: user,
+        session: session
+      )
+
+      expect(result).to eq(projects: [])
+    end
+
+    it "dispatches session-scoped read-only chat tools when the session makes them available" do
+      account = create(:account)
+      project = create(:project, account: account)
+      user = create(:user, :owner, account: account)
+      create(:project_membership, :member, user: user, project: project)
+      session = workspace_chat_session(account:, user:, project:)
+
+      tool = instance_double(Tools::GrepWorkspace)
+      allow(Tools::GrepWorkspace).to receive(:new).with(user:, session:).and_return(tool)
+      allow(tool).to receive(:dispatch).with(repo_path: "/workspace/repo-one", query: "needle").and_return(
+        { matches: [] }
+      )
+
+      result = described_class.dispatch_read_only(
+        name: "grep_workspace",
+        arguments: { "repo_path" => "/workspace/repo-one", "query" => "needle" },
+        user: user,
+        session: session
+      )
+
+      expect(result).to eq(matches: [])
     end
   end
 
