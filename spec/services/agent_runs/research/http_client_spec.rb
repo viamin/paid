@@ -21,11 +21,16 @@ RSpec.describe AgentRuns::Research::HttpClient do # @spec EGRESS-POLICY-008 # @s
       allow(dns_resolver).to receive(:getresources).with(host, Resolv::DNS::Resource::IN::AAAA).and_return(aaaa_records)
     end
 
-    it "pins the connection to a public A record and forwards the original Host header" do
+    it "pins the socket to a public A record while keeping the original hostname for HTTPS" do
       stub_a_record("docs.iana.org", public_ip)
+      allow(Net::HTTP).to receive(:new).and_wrap_original do |original, *args|
+        original.call(*args).tap do |http|
+          expect(http).to receive(:ipaddr=).with(public_ip).and_call_original
+        end
+      end
 
-      stub_request(:get, "https://#{public_ip}/guide")
-        .with(headers: { "Host" => "docs.iana.org", "User-Agent" => "PaidResearchBroker/1.0" })
+      stub_request(:get, "https://docs.iana.org/guide")
+        .with(headers: { "User-Agent" => "PaidResearchBroker/1.0" })
         .to_return(status: 200, body: "Hello", headers: { "Content-Type" => "text/plain" })
 
       result = client.fetch(url: "https://docs.iana.org/guide", method: "GET")
@@ -111,7 +116,7 @@ RSpec.describe AgentRuns::Research::HttpClient do # @spec EGRESS-POLICY-008 # @s
       allow(dns_resolver).to receive(:getresources).with("evil.com", Resolv::DNS::Resource::IN::AAAA)
         .and_return([])
 
-      stub_request(:get, "https://#{public_ip}/start")
+      stub_request(:get, "https://docs.iana.org/start")
         .to_return(status: 302, headers: { "Location" => "https://evil.com/landing" })
 
       expect {

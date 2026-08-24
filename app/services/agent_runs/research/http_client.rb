@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "ipaddr"
+require "net/http"
 require "resolv"
 
 module AgentRuns
@@ -73,9 +74,10 @@ module AgentRuns
         redirect_chain = []
 
         loop do
-          pinned_uri = pin_to_safe_address(current_uri)
+          resolved_address = resolve_safe_address(current_uri)
 
-          response = connection.run_request(method.downcase.to_sym, pinned_uri.to_s, nil, pinned_request_headers(current_uri.host))
+          response = connection_for(current_uri, address: resolved_address)
+            .run_request(method.downcase.to_sym, request_path(current_uri), nil, request_headers)
           status = response.status.to_i
 
           if redirect_status?(status)
@@ -115,10 +117,13 @@ module AgentRuns
 
       private
 
-      def connection
-        @connection ||= Faraday.new do |builder|
+      def connection_for(uri, address:)
+        Faraday.new(url: origin_for(uri)) do |builder|
           builder.options.open_timeout = OPEN_TIMEOUT
           builder.options.timeout = READ_TIMEOUT
+          builder.adapter :net_http do |http|
+            http.ipaddr = address
+          end
         end
       end
 
@@ -126,11 +131,12 @@ module AgentRuns
         { "User-Agent" => "PaidResearchBroker/1.0" }
       end
 
-      # +Host+ must echo the original hostname so virtual-hosted upstreams
-      # route correctly after +#pin_to_safe_address+ rewrites the URL host
-      # to an IP.
-      def pinned_request_headers(host)
-        request_headers.merge("Host" => host)
+      def request_path(uri)
+        uri.request_uri.presence || "/"
+      end
+
+      def origin_for(uri)
+        "#{uri.scheme}://#{uri.host}:#{uri.port}"
       end
 
       def normalize_uri(value)
@@ -157,12 +163,13 @@ module AgentRuns
       # +attacker.example+ to resolve to +127.0.0.1+,
       # +169.254.169.254+, or any RFC1918/ULA range, so we resolve and
       # inspect every hop before the underlying HTTP client connects.
-      # Replacing the URL host with the resolved IP (and echoing the
-      # original hostname on the +Host+ header) also closes the
-      # DNS-rebinding window between validation and connection.
+      # The actual socket is then pinned to the resolved IP via
+      # +Net::HTTP#ipaddr+, which closes the DNS-rebinding window while
+      # preserving the original hostname for TLS SNI and certificate
+      # verification.
       # @spec EGRESS-POLICY-008
       # @spec EGRESS-POLICY-009
-      def pin_to_safe_address(uri)
+      def resolve_safe_address(uri)
         addresses = resolve_addresses(uri.host)
         if addresses.empty?
           raise RequestInvalidError, "URL host #{uri.host.inspect} could not be resolved"
@@ -172,9 +179,7 @@ module AgentRuns
           raise RequestInvalidError, "URL host #{uri.host.inspect} resolves to a non-public address"
         end
 
-        pinned = uri.dup
-        pinned.host = addresses.first
-        pinned
+        addresses.first
       end
 
       def resolve_addresses(host)

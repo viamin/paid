@@ -13,7 +13,7 @@ RSpec.describe "Api::Proxy::Research" do # @spec EGRESS-POLICY-008 # @spec EGRES
     }
   end
 
-  # The broker pins every outbound URL to the first public A record it
+  # The broker pins every outbound socket to the first public A record it
   # resolves so DNS rebinding cannot redirect the connection to a
   # private/internal host. These fixtures pin the well-known test
   # hostnames to representative public IPs.
@@ -38,9 +38,8 @@ RSpec.describe "Api::Proxy::Research" do # @spec EGRESS-POLICY-008 # @spec EGRES
     end
   end
 
-  def pinned_url(hostname, path, query: nil)
-    ip = public_host_ips.fetch(hostname)
-    base = "https://#{ip}#{path}"
+  def brokered_url(hostname, path, query: nil)
+    base = "https://#{hostname}#{path}"
     query ? "#{base}?#{query}" : base
   end
 
@@ -78,7 +77,7 @@ RSpec.describe "Api::Proxy::Research" do # @spec EGRESS-POLICY-008 # @spec EGRES
     end
 
     it "enforces a per-run request budget" do
-      stub_request(:get, pinned_url("docs.example.com", "/guide"))
+      stub_request(:get, brokered_url("docs.example.com", "/guide"))
         .to_return(status: 200, body: "Research document", headers: { "Content-Type" => "text/plain" })
 
       3.times do
@@ -93,9 +92,9 @@ RSpec.describe "Api::Proxy::Research" do # @spec EGRESS-POLICY-008 # @spec EGRES
     end
 
     it "follows a bounded redirect chain and reports it in the response" do
-      stub_request(:get, pinned_url("docs.example.com", "/start"))
+      stub_request(:get, brokered_url("docs.example.com", "/start"))
         .to_return(status: 302, headers: { "Location" => "https://docs.example.com/final" })
-      stub_request(:get, pinned_url("docs.example.com", "/final"))
+      stub_request(:get, brokered_url("docs.example.com", "/final"))
         .to_return(status: 200, body: "<html><body>Final research page</body></html>",
           headers: { "Content-Type" => "text/html" })
 
@@ -126,7 +125,7 @@ RSpec.describe "Api::Proxy::Research" do # @spec EGRESS-POLICY-008 # @spec EGRES
     end
 
     it "redacts credential-looking response content and returns quarantined evidence framing" do
-      stub_request(:get, pinned_url("docs.example.com", "/leak"))
+      stub_request(:get, brokered_url("docs.example.com", "/leak"))
         .to_return(status: 200,
           body: "Use key sk_live_abcdefghijklmnopqrst only for testing.",
           headers: { "Content-Type" => "text/plain" })
@@ -143,7 +142,7 @@ RSpec.describe "Api::Proxy::Research" do # @spec EGRESS-POLICY-008 # @spec EGRES
     end
 
     it "persists research usage counters on the run and audits the request" do
-      stub_request(:get, pinned_url("docs.example.com", "/guide"))
+      stub_request(:get, brokered_url("docs.example.com", "/guide"))
         .to_return(status: 200, body: "Research document", headers: { "Content-Type" => "text/plain" })
 
       expect {
@@ -157,7 +156,7 @@ RSpec.describe "Api::Proxy::Research" do # @spec EGRESS-POLICY-008 # @spec EGRES
     end
 
     it "rejects upstream non-2xx fetch responses instead of returning them as successful research" do
-      stub_request(:get, pinned_url("docs.example.com", "/guide"))
+      stub_request(:get, brokered_url("docs.example.com", "/guide"))
         .to_return(status: 500, body: "upstream failed", headers: { "Content-Type" => "text/plain" })
 
       get "/api/proxy/research/fetch", params: { url: "https://docs.example.com/guide" }, headers: headers
@@ -181,7 +180,7 @@ RSpec.describe "Api::Proxy::Research" do # @spec EGRESS-POLICY-008 # @spec EGRES
     end
 
     it "returns quarantined search results from the brokered provider" do
-      stub_request(:get, pinned_url("duckduckgo.com", "/html/", query: "q=integration+guide"))
+      stub_request(:get, brokered_url("duckduckgo.com", "/html/", query: "q=integration+guide"))
         .to_return(status: 200, body: <<~HTML, headers: { "Content-Type" => "text/html" })
           <html><body>
             <a class="result__a" href="https://docs.example.com/guide">Guide</a>
@@ -200,7 +199,7 @@ RSpec.describe "Api::Proxy::Research" do # @spec EGRESS-POLICY-008 # @spec EGRES
     end
 
     it "rejects upstream non-2xx search responses instead of returning an empty result set" do
-      stub_request(:get, pinned_url("duckduckgo.com", "/html/", query: "q=integration+guide"))
+      stub_request(:get, brokered_url("duckduckgo.com", "/html/", query: "q=integration+guide"))
         .to_return(status: 500, body: "<html><body>upstream failed</body></html>",
           headers: { "Content-Type" => "text/html" })
 
