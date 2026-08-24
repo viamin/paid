@@ -86,6 +86,83 @@ module Containers
     }.freeze
 
     DEFAULT_RESOURCE_LIMITS = { memory: 1 * 1024 * 1024 * 1024, cpu_quota: 100_000, pids_limit: 200 }.freeze
+    HARDENING_ENV_KEY = "PAID_SERVICE_HARDENING"
+    SAFE_OVERRIDE_CAPABILITIES = [ "NET_BIND_SERVICE" ].freeze
+
+    # @spec CONTAINER-RUNTIME-035
+    # Baseline container hardening (issue #3450): every service container
+    # runs with all capabilities dropped and no-new-privileges, mirroring the
+    # hardening already applied to agent and chat containers
+    # (Containers::Provision, Containers::ProvisionForChat). Known image
+    # families get a profiled read-only root filesystem, runtime user, and
+    # Tmpfs layout for the writable paths their documented entrypoint
+    # actually needs, plus the minimum capabilities that entrypoint needs
+    # back. Account admins can opt custom allowlisted images into the same
+    # stronger shape with an override profile stored under HARDENING_ENV_KEY
+    # in ServiceContainer#env. Unrecognized images without an explicit
+    # override keep a writable root filesystem for compatibility with the
+    # existing allowed_service_images contract while still running with
+    # no-new-privileges and all capabilities dropped.
+    HARDENING_PROFILES = {
+      "postgres" => {
+        # Tmpfs pages are accounted against the container's memcg, so the
+        # combined tmpfs budget here (1 GiB + 64 MiB + 128 MiB ≈ 1.19 GiB)
+        # is sized to stay well under RESOURCE_LIMITS["postgres"][:memory]
+        # (2 GiB), leaving ~800 MiB of headroom for the postgres process's
+        # own RSS (shared_buffers, work_mem, WAL buffers, per-connection
+        # overhead) so the container isn't OOM-killed as soon as PGDATA
+        # usage grows.
+        readonly_rootfs: true,
+        user: "postgres",
+        tmpfs: {
+          "/var/lib/postgresql/data" => { size: 1 * 1024 * 1024 * 1024, mode: "0700", uid: 999, gid: 999 },
+          "/var/run/postgresql" => { size: 64 * 1024 * 1024, mode: "3775", uid: 999, gid: 999 },
+          "/tmp" => { size: 128 * 1024 * 1024, mode: "1777" }
+        },
+        cap_add: [ "CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID" ]
+      },
+      "redis" => {
+        readonly_rootfs: true,
+        user: "redis",
+        tmpfs: {
+          "/data" => { size: 512 * 1024 * 1024, mode: "1777", uid: 999, gid: 1000 },
+          "/tmp" => { size: 64 * 1024 * 1024, mode: "1777" }
+        },
+        cap_add: []
+      },
+      "selenium" => {
+        readonly_rootfs: true,
+        user: "seluser",
+        tmpfs: {
+          "/tmp" => { size: 256 * 1024 * 1024, mode: "1777" },
+          "/dev/shm" => { size: 1024 * 1024 * 1024, mode: "1777" }
+        },
+        cap_add: []
+      },
+      "chromium" => {
+        readonly_rootfs: true,
+        user: "seluser",
+        tmpfs: {
+          "/tmp" => { size: 256 * 1024 * 1024, mode: "1777" },
+          "/dev/shm" => { size: 1024 * 1024 * 1024, mode: "1777" }
+        },
+        cap_add: []
+      }
+    }.freeze
+
+    DEFAULT_HARDENING_PROFILE = {
+      readonly_rootfs: false,
+      user: nil,
+      tmpfs: {},
+      cap_add: []
+    }.freeze
+
+    HARDENING_PROFILE_MATCHERS = {
+      "postgres" => ->(repository) { repository == "postgres" || repository == "library/postgres" },
+      "redis" => ->(repository) { repository == "redis" || repository == "library/redis" },
+      "selenium" => ->(repository) { repository.start_with?("selenium/") && !repository.include?("chromium") },
+      "chromium" => ->(repository) { repository.start_with?("selenium/") && repository.include?("chromium") }
+    }.freeze
 
     # Maps an image pattern to the provider-neutral ExecutionRunners::ServiceDeclaration
     # type (RDR-054). Matched the same way as ENV_MAPPINGS/RESOURCE_LIMITS: the
@@ -132,7 +209,7 @@ module Containers
         begin
           with_backend(resolve_backend(service_container: sc, requested_host: requested_host)) do
             sc.with_lock do
-              ensure_running!(sc)
+              ensure_running!(sc, agent_run: agent_run)
             end
 
             if sc.image.include?("postgres")
@@ -345,27 +422,32 @@ module Containers
       @backend || Containers.backend
     end
 
-    def ensure_running!(service_container)
+    def ensure_running!(service_container, agent_run:)
       if service_container.running?
-        if docker_container_alive?(service_container.docker_container_id)
-          ensure_connected_to_network!(service_container)
-          schedule_metrics_collection(service_container)
-          return
+        if (docker_container = running_docker_container(service_container.docker_container_id))
+          if recreate_legacy_container!(service_container, docker_container, docker_container.json,
+            source: "running", agent_run: agent_run)
+            # Recreate below with the hardened config.
+          else
+            ensure_connected_to_network!(service_container)
+            schedule_metrics_collection(service_container)
+            return
+          end
         else
           log_info("service_provisioner.container_dead", name: service_container.name)
           service_container.update!(status: "stopped", docker_container_id: nil, container_host: nil)
         end
       end
 
-      start_container!(service_container)
+      start_container!(service_container, agent_run: agent_run)
     end
 
-    def start_container!(service_container)
+    def start_container!(service_container, agent_run:)
       service_container.update!(status: "starting")
       adopted = false
 
       pull_image(service_container.image)
-      docker_container = create_or_replace_container!(service_container)
+      docker_container = create_or_replace_container!(service_container, agent_run: agent_run)
 
       # resolve_name_conflict! may adopt an already-running container,
       # updating status to "running" before returning. Skip start if so.
@@ -456,16 +538,16 @@ module Containers
       # transaction to ensure it is not rolled back.
     end
 
-    def create_or_replace_container!(service_container)
+    def create_or_replace_container!(service_container, agent_run:)
       create_docker_container(service_container)
     rescue Docker::Error::ConflictError, Docker::Error::ServerError => e
       raise unless e.message&.include?("Conflict") && e.message&.include?("already in use")
 
       log_info("service_provisioner.container_name_conflict", name: service_container.name)
-      resolve_name_conflict!(service_container)
+      resolve_name_conflict!(service_container, agent_run: agent_run)
     end
 
-    def resolve_name_conflict!(service_container)
+    def resolve_name_conflict!(service_container, agent_run:)
       existing = backend.get_container(runtime_name(service_container))
       info = existing.json
       labels = info.dig("Config", "Labels") || {}
@@ -480,6 +562,10 @@ module Containers
       end
 
       if info.dig("State", "Running")
+        if recreate_legacy_container!(service_container, existing, info, source: "conflict", agent_run: agent_run)
+          return create_docker_container(service_container)
+        end
+
         log_info("service_provisioner.adopted_existing",
           name: service_container.name, container_id: existing.id)
         service_container.update!(
@@ -514,20 +600,33 @@ module Containers
 
     def create_docker_container(service_container)
       limits = resource_limits_for(service_container.image)
+      hardening = hardening_profile_for(service_container)
       env = container_env_for(service_container)
       host = runtime_name(service_container)
+      cap_drop = [ "ALL" ]
+      cap_add = hardening[:cap_add]
+      security_opt = [ "no-new-privileges:true" ]
+      user = hardening[:user]
 
       options = {
         "Image" => service_container.image,
         "name" => host,
         "Env" => env.map { |k, v| "#{k}=#{v}" },
+        "ReadonlyRootfs" => hardening[:readonly_rootfs],
+        "CapDrop" => cap_drop,
+        "CapAdd" => cap_add,
+        "SecurityOpt" => security_opt,
         "HostConfig" => {
           "NetworkMode" => @network,
           "Memory" => limits[:memory],
           "MemorySwap" => limits[:memory],
           "CpuPeriod" => 100_000,
           "CpuQuota" => limits[:cpu_quota],
-          "PidsLimit" => limits[:pids_limit]
+          "PidsLimit" => limits[:pids_limit],
+          "CapDrop" => cap_drop,
+          "CapAdd" => cap_add,
+          "SecurityOpt" => security_opt,
+          "Tmpfs" => docker_tmpfs_mounts(hardening[:tmpfs])
         },
         "NetworkingConfig" => {
           "EndpointsConfig" => {
@@ -541,6 +640,7 @@ module Containers
           "paid.service_container_id" => service_container.id.to_s
         }
       }
+      options["User"] = user if user.present?
 
       healthcheck = healthcheck_for(service_container, env)
       options["Healthcheck"] = healthcheck if healthcheck
@@ -548,8 +648,158 @@ module Containers
       backend.create_container(options)
     end
 
+    def hardening_profile_for(service_container)
+      image = service_container.respond_to?(:image) ? service_container.image : service_container
+      family = built_in_hardening_family_for(image)
+      base = built_in_hardening_profile_for(image)
+      overrides = hardening_overrides_for(
+        service_container,
+        built_in_family: family,
+        base_profile: base
+      )
+
+      {
+        readonly_rootfs: overrides.fetch(:readonly_rootfs, base.fetch(:readonly_rootfs)),
+        user: overrides.key?(:user) ? overrides[:user] : base[:user],
+        tmpfs: base.fetch(:tmpfs).merge(overrides.fetch(:tmpfs, {})),
+        cap_add: merge_hardening_capabilities(base[:cap_add], overrides[:cap_add])
+      }
+    end
+
+    def merge_hardening_capabilities(base_capabilities, override_capabilities)
+      (Array(base_capabilities) + Array(override_capabilities)).map(&:to_s).uniq
+    end
+
+    def built_in_hardening_profile_for(image)
+      family = built_in_hardening_family_for(image)
+      return HARDENING_PROFILES.fetch(family) if family
+
+      DEFAULT_HARDENING_PROFILE
+    end
+
+    def built_in_hardening_family_for(image)
+      repository = image_repository(image)
+
+      HARDENING_PROFILES.each_key do |family|
+        matcher = HARDENING_PROFILE_MATCHERS.fetch(family)
+        return family if matcher.call(repository)
+      end
+
+      nil
+    end
+
+    def hardening_overrides_for(service_container, built_in_family:, base_profile:)
+      raw = service_container.respond_to?(:env) ? service_container.env[HARDENING_ENV_KEY] : nil
+      return {} if raw.blank?
+      raise Error, "#{HARDENING_ENV_KEY} must be a JSON object" unless raw.is_a?(Hash)
+
+      override = {}
+      if raw.key?("readonly_rootfs")
+        readonly_rootfs = raw.fetch("readonly_rootfs")
+        unless readonly_rootfs == true || readonly_rootfs == false
+          raise Error, "#{HARDENING_ENV_KEY}.readonly_rootfs must be true or false"
+        end
+        if built_in_family && base_profile[:readonly_rootfs] && !readonly_rootfs
+          raise Error,
+            "#{HARDENING_ENV_KEY}.readonly_rootfs cannot disable the built-in #{built_in_family} profile"
+        end
+
+        override[:readonly_rootfs] = readonly_rootfs
+      end
+
+      if raw.key?("user")
+        user = raw.fetch("user")
+        if built_in_family && user.to_s.presence != base_profile[:user].presence
+          raise Error, "#{HARDENING_ENV_KEY}.user cannot override the built-in #{built_in_family} runtime user"
+        end
+
+        override[:user] = user
+      end
+
+      if raw.key?("cap_add")
+        cap_add = raw.fetch("cap_add")
+        raise Error, "#{HARDENING_ENV_KEY}.cap_add must be an array" unless cap_add.is_a?(Array)
+
+        normalized_cap_add = cap_add.map { |capability| capability.to_s.upcase }.uniq
+        unsupported = normalized_cap_add - SAFE_OVERRIDE_CAPABILITIES
+        if unsupported.any?
+          raise Error,
+            "#{HARDENING_ENV_KEY}.cap_add contains unsupported capabilities: #{unsupported.join(', ')}"
+        end
+        if built_in_family
+          extra_capabilities = normalized_cap_add - Array(base_profile[:cap_add]).map(&:to_s)
+          if extra_capabilities.any?
+            raise Error,
+              "#{HARDENING_ENV_KEY}.cap_add cannot add capabilities beyond the built-in " \
+              "#{built_in_family} profile: #{extra_capabilities.join(', ')}"
+          end
+        end
+
+        override[:cap_add] = normalized_cap_add
+      end
+
+      if raw.key?("tmpfs")
+        tmpfs = normalize_tmpfs_overrides(raw.fetch("tmpfs"))
+        if built_in_family
+          overlapping_paths = tmpfs.keys & base_profile.fetch(:tmpfs).keys
+          if overlapping_paths.any?
+            raise Error,
+              "#{HARDENING_ENV_KEY}.tmpfs cannot override built-in #{built_in_family} mounts: " \
+              "#{overlapping_paths.join(', ')}"
+          end
+        end
+
+        override[:tmpfs] = tmpfs
+      end
+      override
+    end
+
+    def normalize_tmpfs_overrides(raw_tmpfs)
+      raise Error, "#{HARDENING_ENV_KEY}.tmpfs must be a JSON object" unless raw_tmpfs.is_a?(Hash)
+
+      raw_tmpfs.each_with_object({}) do |(path, options), normalized|
+        raise Error, "#{HARDENING_ENV_KEY}.tmpfs entries must be JSON objects" unless options.is_a?(Hash)
+
+        normalized[path.to_s] = {
+          size: Integer(options.fetch("size")),
+          mode: options.fetch("mode").to_s
+        }
+        normalized[path.to_s][:uid] = Integer(options.fetch("uid")) if options.key?("uid")
+        normalized[path.to_s][:gid] = Integer(options.fetch("gid")) if options.key?("gid")
+      end
+    rescue KeyError, ArgumentError, TypeError => e
+      raise Error, "Invalid #{HARDENING_ENV_KEY}.tmpfs override: #{e.message}"
+    end
+
+    def docker_tmpfs_mounts(tmpfs)
+      tmpfs.transform_values { |options| docker_tmpfs_options(options) }
+    end
+
+    def image_repository(image)
+      segments = image.to_s.split("@", 2).first.split("/")
+      if segments.length > 1 && registry_segment?(segments.first)
+        segments = segments.drop(1)
+      end
+
+      segments[-1] = segments.last.to_s.split(":", 2).first
+      segments.join("/")
+    end
+
+    def registry_segment?(segment)
+      segment.include?(".") || segment.include?(":") || segment == "localhost"
+    end
+
+    def docker_tmpfs_options(options)
+      [
+        "size=#{options.fetch(:size)}",
+        "mode=#{options.fetch(:mode)}",
+        ("uid=#{options[:uid]}" if options.key?(:uid)),
+        ("gid=#{options[:gid]}" if options.key?(:gid))
+      ].compact.join(",")
+    end
+
     def container_env_for(service_container)
-      env = service_container.env
+      env = service_container.env.except(HARDENING_ENV_KEY)
 
       return env unless service_container.image.include?("postgres")
 
@@ -669,6 +919,55 @@ module Containers
       container.info.dig("State", "Running") == true
     rescue Docker::Error::DockerError, Excon::Error
       false
+    end
+
+    def running_docker_container(container_id)
+      return if container_id.blank?
+
+      container = backend.get_container(container_id)
+      container if container.info.dig("State", "Running") == true
+    rescue Docker::Error::DockerError, Excon::Error
+      nil
+    end
+
+    # Running legacy containers stay in place for the current provision so we
+    # never destroy the only healthy instance before a replacement exists.
+    # Normal #cleanup retires the container after the last in-flight run
+    # releases it, and the next provision recreates it with the hardened
+    # profile.
+    def recreate_legacy_container!(service_container, docker_container, info, source:, agent_run:)
+      return false unless legacy_hardening_config?(service_container, info)
+
+      log_info("service_provisioner.legacy_hardening_recreate_deferred",
+        name: service_container.name,
+        container_id: docker_container.id,
+        source: source,
+        active_consumers: service_container.capacity_inflight_agent_run_count,
+        excluding_current_run: service_container.capacity_inflight_agent_run_count(excluding: agent_run))
+      false
+    end
+
+    def legacy_hardening_config?(service_container, info)
+      hardening = hardening_profile_for(service_container)
+      host_config = info.fetch("HostConfig", {})
+      config = info.fetch("Config", {})
+
+      host_config["ReadonlyRootfs"] != hardening[:readonly_rootfs] ||
+        normalize_string_array(host_config["CapDrop"]) != [ "ALL" ] ||
+        normalize_string_array(host_config["CapAdd"]) != normalize_string_array(hardening[:cap_add]) ||
+        normalize_string_array(host_config["SecurityOpt"]) != [ "no-new-privileges:true" ] ||
+        config["User"].to_s.presence != hardening[:user].presence ||
+        normalize_tmpfs_mounts(host_config["Tmpfs"]) != normalize_tmpfs_mounts(docker_tmpfs_mounts(hardening[:tmpfs]))
+    end
+
+    def normalize_string_array(values)
+      Array(values).map(&:to_s).reject(&:blank?).sort
+    end
+
+    def normalize_tmpfs_mounts(tmpfs)
+      Hash(tmpfs).transform_values do |options|
+        options.to_s.split(",").map(&:strip).reject(&:blank?).sort.join(",")
+      end
     end
 
     def ensure_connected_to_network!(service_container)

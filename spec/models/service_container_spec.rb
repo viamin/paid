@@ -133,5 +133,19 @@ RSpec.describe ServiceContainer do
       service_container = create(:service_container)
       expect(service_container.capacity_inflight_agent_run_count).to eq(0)
     end
+
+    it "excludes the given agent run from the count" do
+      service_container = create(:service_container)
+      project = create(:project)
+      create(:project_service_container, project: project, service_container: service_container)
+
+      excluded_run = create(:agent_run, :running, project: project, issue: create(:issue, project: project),
+        service_container_ids: [ service_container.id ])
+      other_run = create(:agent_run, :running, project: project, issue: create(:issue, project: project),
+        service_container_ids: [ service_container.id ])
+
+      expect(service_container.capacity_inflight_agent_run_count(excluding: excluded_run)).to eq(1)
+      expect(service_container.capacity_inflight_agent_run_count(excluding: other_run)).to eq(1)
+    end
   end
 end

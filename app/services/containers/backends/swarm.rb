@@ -293,9 +293,9 @@ module Containers
               "OpenStdin" => config["OpenStdin"],
               "ReadOnly" => config["ReadonlyRootfs"],
               "Mounts" => build_mounts(host_config),
-              "CapabilityAdd" => config["CapAdd"],
-              "CapabilityDrop" => config["CapDrop"],
-              "Privileges" => privileges_spec(host_config)
+              "CapabilityAdd" => capability_setting(config, host_config, "CapAdd"),
+              "CapabilityDrop" => capability_setting(config, host_config, "CapDrop"),
+              "Privileges" => privileges_spec(config, host_config)
             ),
             "RestartPolicy" => { "Condition" => "none" },
             "Resources" => resource_limits(host_config),
@@ -323,8 +323,12 @@ module Containers
         compact_hash("Limits" => limits.presence)
       end
 
-      def privileges_spec(host_config)
-        security_opts = Array(host_config["SecurityOpt"])
+      def capability_setting(config, host_config, key)
+        config[key].presence || host_config[key]
+      end
+
+      def privileges_spec(config, host_config)
+        security_opts = Array(config["SecurityOpt"]) | Array(host_config["SecurityOpt"])
         no_new_privs = security_opts.any? { |opt| opt.match?(/\Ano-new-privileges\s*[:=]\s*true\z/i) }
 
         compact_hash("NoNewPrivileges" => no_new_privs.presence)
