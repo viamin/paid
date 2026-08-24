@@ -29,3 +29,15 @@
   managed credential exists.
   *Tests:* `spec/services/containers/provision_managed_subscription_auth_2964_spec.rb`.
   *Code:* `Runners::SubscriptionAuthProviders`, `Containers::Provision`.
+
+- [x] **SUBSCRIPTION-RUNNER-AUTH-004** — The Connect Codex (`/codex_login_sessions/new`)
+  and Claude Browser Login (`/claude_login_sessions/new`) pages SHALL surface
+  the account's active managed credential for the matching runner key — name,
+  status, and expiry only, never token material — with a link to the credential
+  and a note that another login creates a second concurrent credential, and
+  SHALL render exactly the fresh login flow when no active credential exists.
+  *Tests:* `spec/requests/codex_login_sessions_spec.rb`,
+  `spec/requests/claude_login_sessions_spec.rb`,
+  `spec/models/runner_credential_spec.rb`.
+  *Code:* `ActiveRunnerCredentialStatus`, `CodexLoginSessionsController`,
+  `ClaudeLoginSessionsController`, `RunnerCredential#expiry_label`.
