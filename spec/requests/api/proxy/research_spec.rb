@@ -13,6 +13,37 @@ RSpec.describe "Api::Proxy::Research" do # @spec EGRESS-POLICY-008 # @spec EGRES
     }
   end
 
+  # The broker pins every outbound URL to the first public A record it
+  # resolves so DNS rebinding cannot redirect the connection to a
+  # private/internal host. These fixtures pin the well-known test
+  # hostnames to representative public IPs.
+  def public_host_ips
+    {
+      "docs.example.com" => "93.184.216.34",
+      "duckduckgo.com" => "52.250.42.157"
+    }.freeze
+  end
+
+  before do
+    stub_resolver = instance_double(Resolv::DNS)
+    allow(Resolv::DNS).to receive(:new).and_return(stub_resolver)
+    allow(stub_resolver).to receive(:timeouts=)
+    public_host_ips.each do |host, ip|
+      allow(stub_resolver).to receive(:getresources)
+        .with(host, Resolv::DNS::Resource::IN::A)
+        .and_return([ Resolv::DNS::Resource::IN::A.new(ip) ])
+      allow(stub_resolver).to receive(:getresources)
+        .with(host, Resolv::DNS::Resource::IN::AAAA)
+        .and_return([])
+    end
+  end
+
+  def pinned_url(hostname, path, query: nil)
+    ip = public_host_ips.fetch(hostname)
+    base = "https://#{ip}#{path}"
+    query ? "#{base}?#{query}" : base
+  end
+
   describe "GET /api/proxy/research/fetch" do
     let(:external_metadata) do
       {
@@ -47,7 +78,7 @@ RSpec.describe "Api::Proxy::Research" do # @spec EGRESS-POLICY-008 # @spec EGRES
     end
 
     it "enforces a per-run request budget" do
-      stub_request(:get, "https://docs.example.com/guide")
+      stub_request(:get, pinned_url("docs.example.com", "/guide"))
         .to_return(status: 200, body: "Research document", headers: { "Content-Type" => "text/plain" })
 
       3.times do
@@ -62,9 +93,9 @@ RSpec.describe "Api::Proxy::Research" do # @spec EGRESS-POLICY-008 # @spec EGRES
     end
 
     it "follows a bounded redirect chain and reports it in the response" do
-      stub_request(:get, "https://docs.example.com/start")
+      stub_request(:get, pinned_url("docs.example.com", "/start"))
         .to_return(status: 302, headers: { "Location" => "https://docs.example.com/final" })
-      stub_request(:get, "https://docs.example.com/final")
+      stub_request(:get, pinned_url("docs.example.com", "/final"))
         .to_return(status: 200, body: "<html><body>Final research page</body></html>",
           headers: { "Content-Type" => "text/html" })
 
@@ -95,7 +126,7 @@ RSpec.describe "Api::Proxy::Research" do # @spec EGRESS-POLICY-008 # @spec EGRES
     end
 
     it "redacts credential-looking response content and returns quarantined evidence framing" do
-      stub_request(:get, "https://docs.example.com/leak")
+      stub_request(:get, pinned_url("docs.example.com", "/leak"))
         .to_return(status: 200,
           body: "Use key sk_live_abcdefghijklmnopqrst only for testing.",
           headers: { "Content-Type" => "text/plain" })
@@ -112,7 +143,7 @@ RSpec.describe "Api::Proxy::Research" do # @spec EGRESS-POLICY-008 # @spec EGRES
     end
 
     it "persists research usage counters on the run and audits the request" do
-      stub_request(:get, "https://docs.example.com/guide")
+      stub_request(:get, pinned_url("docs.example.com", "/guide"))
         .to_return(status: 200, body: "Research document", headers: { "Content-Type" => "text/plain" })
 
       expect {
@@ -140,7 +171,7 @@ RSpec.describe "Api::Proxy::Research" do # @spec EGRESS-POLICY-008 # @spec EGRES
     end
 
     it "returns quarantined search results from the brokered provider" do
-      stub_request(:get, /duckduckgo\.com/)
+      stub_request(:get, pinned_url("duckduckgo.com", "/html/", query: "q=integration+guide"))
         .to_return(status: 200, body: <<~HTML, headers: { "Content-Type" => "text/html" })
           <html><body>
             <a class="result__a" href="https://docs.example.com/guide">Guide</a>
