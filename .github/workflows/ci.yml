@@ -288,13 +288,39 @@ jobs:
       - name: Install JavaScript dependencies
         run: |
           mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME"
-          yarn install --frozen-lockfile && bin/yarn-postinstall
+          retry_with_backoff() {
+            local attempt
+            for attempt in 1 2 3; do
+              if timeout 10m bash -lc "$1"; then
+                return 0
+              fi
+              echo "::warning::$2 (attempt $attempt/3); retrying"
+              sleep "$((attempt * 10))"
+            done
+            return 1
+          }
+          retry_with_backoff \
+            "yarn install --frozen-lockfile && bin/yarn-postinstall" \
+            "JavaScript dependency install timed out or failed"
 
       - name: Install ast-grep
         run: |
           mkdir -p "$HOME/.local/bin"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          INSTALL_DIR="$HOME/.local/bin" bin/install-ast-grep
+          retry_with_backoff() {
+            local attempt
+            for attempt in 1 2 3; do
+              if timeout 5m bash -lc "$1"; then
+                return 0
+              fi
+              echo "::warning::$2 (attempt $attempt/3); retrying"
+              sleep "$((attempt * 10))"
+            done
+            return 1
+          }
+          retry_with_backoff \
+            "INSTALL_DIR=\"$HOME/.local/bin\" bin/install-ast-grep" \
+            "ast-grep install timed out or failed"
 
       - name: Install PostgreSQL client
         run: |
@@ -451,7 +477,7 @@ jobs:
       || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
       || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     services:
       postgres:
