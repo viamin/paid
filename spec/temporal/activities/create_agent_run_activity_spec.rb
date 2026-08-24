@@ -791,7 +791,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
 
       # @spec POLYGLOT-TEST-003
       it "renders every language's command for a polyglot project at runtime" do
-        project.update!(language_profile: { "test_languages" => [ "ruby", "elixir" ] })
+        project.update!(repo_profile: { "test_languages" => [ "ruby", "elixir" ] })
 
         result = activity.execute(project_id: project.id, issue_id: issue.id)
 
