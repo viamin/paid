@@ -184,7 +184,11 @@ module Projects
     def scoped_failure_issues
       project.issues
         .where.not(merge_permission_rejected_at: nil)
-        .or(project.issues.where.not(runner_retry_abandoned_at: nil))
+        .or(
+          project.issues
+            .where.not(runner_retry_abandoned_at: nil)
+            .where("runner_retry_abandon_reason LIKE ?", "#{Issue::PUSH_PERMISSION_ABANDON_PREFIX}%")
+        )
         .order(
           Arel.sql(
             "GREATEST(" \

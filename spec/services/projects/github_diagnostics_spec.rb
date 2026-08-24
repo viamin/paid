@@ -160,6 +160,30 @@ RSpec.describe Projects::GithubDiagnostics do
       )
     end
 
+    it "does not let non-permission retry abandonments crowd out push permission failures" do # @spec GITHUB-SYNC-009
+      project = create(:project, account: account, webhook_secret: "present")
+      permission_failure = create_push_failure(project:, occurred_at: 2.days.ago, updated_at: 2.days.ago)
+
+      (Projects::GithubDiagnostics::RECENT_FAILURE_CANDIDATE_LIMIT + 1).times do |index|
+        create(
+          :issue,
+          project: project,
+          runner_retry_abandoned_at: index.minutes.ago,
+          runner_retry_abandon_reason: "Retry limit reached after transient failure"
+        )
+      end
+
+      failures = described_class.call(project: project).fetch(:recent_permission_failures)
+
+      expect(failures).to contain_exactly(
+        include(
+          issue_id: permission_failure.id,
+          kind: "push",
+          occurred_at: permission_failure.runner_retry_abandoned_at
+        )
+      )
+    end
+
     it "does not mutate persisted github health state when reporting endpoint health" do # @spec GITHUB-SYNC-009
       project = create(:project, account: account, webhook_secret: "present")
       state = create(
