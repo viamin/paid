@@ -101,8 +101,8 @@ RSpec.describe "Projects::QualityDashboards" do
 
         expect(response.body).not_to include("Mutation kill-rate")
       end
-      end
     end
+  end
 
   describe "PATCH /projects/:project_id/quality_thresholds" do
     context "when authenticated" do
