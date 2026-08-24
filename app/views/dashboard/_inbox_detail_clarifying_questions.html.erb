@@ -1,0 +1,30 @@
+<div class="space-y-6">
+  <div>
+    <h3 class="text-sm font-semibold text-gray-900">Pending Questions</h3>
+    <ol class="mt-3 space-y-3">
+      <% entry.questions.each_with_index do |question, index| %>
+        <li class="rounded-lg bg-gray-50 px-4 py-3 text-sm text-gray-700">
+          <span class="mr-2 font-semibold text-gray-500"><%= index + 1 %>.</span>
+          <%= question %>
+        </li>
+      <% end %>
+    </ol>
+  </div>
+
+  <div class="flex items-center gap-3">
+    <%= link_to "Answer Questions",
+          project_issue_clarifying_questions_path(
+            entry.project,
+            entry.issue,
+            queue: "dashboard_inbox",
+            queue_project_id: scoped_project&.id,
+            return_to: dashboard_inbox_path(project_id: scoped_project&.id, kind: selected_kind)
+          ),
+          class: "inline-flex items-center rounded-md bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-sky-500" %>
+    <%= link_to "View Issue",
+          entry.issue.github_url,
+          target: "_blank",
+          rel: "noopener noreferrer",
+          class: "inline-flex items-center rounded-md bg-white px-4 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+  </div>
+</div>

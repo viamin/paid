@@ -105,7 +105,7 @@
                   <%= link_to "Quality", quality_dashboard_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close" } %>
                   <%= link_to "Prompts", prompts_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close" } %>
                   <%= link_to "Prompt Reviews", prompt_reviews_queue_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close" } %>
-                  <%= link_to "Plan Reviews", plan_reviews_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close" } %>
+                  <%= link_to "Inbox", dashboard_inbox_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close" } %>
                   <%= link_to "Knowledge", knowledge_search_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close" } %>
                 </div>
               </div>
@@ -241,7 +241,7 @@
             <%= link_to "Quality", quality_dashboard_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
             <%= link_to "Prompts", prompts_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
             <%= link_to "Prompt Reviews", prompt_reviews_queue_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
-            <%= link_to "Plan Reviews", plan_reviews_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
+            <%= link_to "Inbox", dashboard_inbox_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
             <%= link_to "Knowledge", knowledge_search_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
 
             <p class="<%= mobile_heading_class %>">Operations</p>

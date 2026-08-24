@@ -1,0 +1,58 @@
+<% content_for(:title) { "Inbox - Paid" } %>
+
+<div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6 flex items-center justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-semibold text-gray-900">Inbox</h1>
+      <p class="mt-1 text-sm text-gray-500">
+        <% if @scoped_project %>
+          Human-actionable work waiting in <strong><%= @scoped_project.full_name %></strong>.
+        <% else %>
+          Human-actionable work across your accessible projects.
+        <% end %>
+      </p>
+    </div>
+
+    <div class="flex flex-wrap gap-2">
+      <% [
+        [ "All", nil ],
+        [ "Clarifying Questions", Inbox::Queue::CLARIFYING_QUESTIONS_KIND ],
+        [ "Plan Reviews", Inbox::Queue::PLAN_REVIEW_KIND ]
+      ].each do |label, kind| %>
+        <% active = @selected_kind == kind || (@selected_kind.nil? && kind.nil?) %>
+        <%= link_to label,
+              dashboard_inbox_path(project_id: @scoped_project&.id, kind: kind),
+              class: [
+                "rounded-full px-3 py-1.5 text-sm font-medium",
+                active ? "bg-indigo-600 text-white" : "bg-white text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+              ].join(" ") %>
+      <% end %>
+    </div>
+  </div>
+
+  <% if @inbox_entries.empty? %>
+    <div class="rounded-xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center shadow-sm">
+      <h2 class="text-sm font-semibold text-gray-900">Inbox clear</h2>
+      <p class="mt-1 text-sm text-gray-500">
+        Paid does not currently have any clarifying-question or plan-review items waiting here.
+      </p>
+    </div>
+  <% else %>
+    <div class="grid gap-6 lg:grid-cols-[22rem,1fr]">
+      <aside class="<%= @detail_view ? 'hidden lg:block' : 'block' %>">
+        <%= render "dashboard/inbox_list",
+              entries: @inbox_entries,
+              selected_entry: @selected_entry,
+              scoped_project: @scoped_project,
+              selected_kind: @selected_kind %>
+      </aside>
+
+      <section class="<%= @detail_view ? 'block' : 'hidden lg:block' %>">
+        <%= render "dashboard/inbox_detail",
+              entry: @selected_entry,
+              scoped_project: @scoped_project,
+              selected_kind: @selected_kind %>
+      </section>
+    </div>
+  <% end %>
+</div>

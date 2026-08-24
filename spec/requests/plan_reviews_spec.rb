@@ -29,41 +29,10 @@ RSpec.describe "Plan reviews" do
   end
 
   describe "GET /plan_reviews" do
-    it "shows only still-open pending reviews in the signed-in user's scope" do
-      visible_review = create_plan_review(
-        project:,
-        issue:,
-        workflow_id: "workflow-open",
-        plan_data: { "tasks" => [ { "title" => "Visible task", "description" => "Visible description" } ] }
-      )
-      stale_issue = create(:issue, project:)
-      create_closed_plan_review(project:, issue: stale_issue, workflow_id: "workflow-closed")
-      other_account = create(:account)
-      hidden_project = create(:project, account: other_account)
-      hidden_issue = create(:issue, project: hidden_project)
-      create_plan_review(project: hidden_project, issue: hidden_issue, workflow_id: "workflow-hidden")
-
+    it "redirects the legacy page to the inbox plan-review filter" do
       get plan_reviews_path
 
-      expect(response).to have_http_status(:ok)
-      expect(response.body).to include(visible_review.issue.title, "Visible task")
-      expect(response.body).not_to include(stale_issue.title, hidden_issue.title)
-    end
-
-    it "renders a revise form for each pending review" do
-      visible_review = create_plan_review(
-        project:,
-        issue:,
-        workflow_id: "workflow-open",
-        plan_data: { "tasks" => [ { "title" => "Visible task", "description" => "Visible description" } ] }
-      )
-
-      get plan_reviews_path
-
-      expect(response).to have_http_status(:ok)
-      expect(response.body).to include(revise_plan_review_path(visible_review))
-      expect(response.body).to include(%(name="tasks[][title]"))
-      expect(response.body).to include(%(name="tasks[][description]"))
+      expect(response).to redirect_to(dashboard_inbox_path(kind: Inbox::Queue::PLAN_REVIEW_KIND))
     end
   end
 
@@ -114,7 +83,7 @@ RSpec.describe "Plan reviews" do
 
       post approve_plan_review_path(review)
 
-      expect(response).to redirect_to(plan_reviews_path)
+      expect(response).to redirect_to(dashboard_inbox_path(kind: Inbox::Queue::PLAN_REVIEW_KIND))
       expect(flash[:alert]).to eq("The plan review workflow is no longer active.")
       expect(flash[:notice]).to be_nil
     end
@@ -125,13 +94,14 @@ RSpec.describe "Plan reviews" do
       review = create_plan_review(project:, issue:, workflow_id: "workflow-open")
 
       post revise_plan_review_path(review), params: {
+        return_to: dashboard_inbox_path(kind: Inbox::Queue::PLAN_REVIEW_KIND),
         tasks: [
           { title: "Revised task 1", description: "Better approach" },
           { title: "Revised task 2", description: "Follow-up implementation" }
         ]
       }
 
-      expect(response).to redirect_to(plan_reviews_path)
+      expect(response).to redirect_to(dashboard_inbox_path(kind: Inbox::Queue::PLAN_REVIEW_KIND))
       expect(flash[:notice]).to eq("Plan revised. Sub-issues will be created with the updated plan.")
       expect(workflow_handle).to have_received(:signal).with(
         "revise_plan",
