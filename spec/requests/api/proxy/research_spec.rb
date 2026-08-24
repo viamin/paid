@@ -226,7 +226,7 @@ RSpec.describe "Api::Proxy::Research" do # @spec EGRESS-POLICY-008 # @spec EGRES
       expect(result.fetch("snippet")).to include(PromptAssembly::Section::QUARANTINE_NOTICE)
     end
 
-    it "counts search tokens from sanitizer estimates instead of quarantine wrapper text" do
+    it "charges search usage against the full returned payload" do
       stub_request(:get, brokered_url("duckduckgo.com", "/html/", query: "q=tiny"))
         .to_return(status: 200, body: <<~HTML, headers: { "Content-Type" => "text/html" })
           <html><body>
@@ -239,10 +239,33 @@ RSpec.describe "Api::Proxy::Research" do # @spec EGRESS-POLICY-008 # @spec EGRES
 
       expect(response).to have_http_status(:ok)
       usage = agent_run.reload.external_metadata.fetch("research_usage")
-      expect(usage.fetch("tokens_used")).to eq(AgentRuns::Research::ResponseSanitizer.call(
-        body: "tiny",
-        content_type: "text/plain"
-      ).tokens_estimate)
+      expect(usage.fetch("bytes_used")).to eq(response.body.bytesize)
+      expect(usage.fetch("tokens_used")).to eq((response.body.length / 4.0).ceil)
+    end
+
+    it "rejects oversized titles and urls once the response budget is exhausted" do
+      large_title = "Guide " + ("A" * 256)
+      large_url = "https://docs.example.com/" + ("deep-path/" * 32)
+      agent_run.update!(external_metadata: external_metadata.deep_merge(
+        "research_usage" => {
+          "requests_used" => 0,
+          "bytes_used" => 0,
+          "tokens_used" => AgentRuns::Research::BudgetLedger::TOKEN_LIMIT - 5
+        }
+      ))
+
+      stub_request(:get, brokered_url("duckduckgo.com", "/html/", query: "q=tiny"))
+        .to_return(status: 200, body: <<~HTML, headers: { "Content-Type" => "text/html" })
+          <html><body>
+            <a class="result__a" href="#{large_url}">#{large_title}</a>
+            <a class="result__snippet">tiny</a>
+          </body></html>
+        HTML
+
+      get "/api/proxy/research/search", params: { q: "tiny" }, headers: headers
+
+      expect(response).to have_http_status(:too_many_requests)
+      expect(response.parsed_body.fetch("error")).to include("budget")
     end
 
     it "rejects upstream non-2xx search responses instead of returning an empty result set" do

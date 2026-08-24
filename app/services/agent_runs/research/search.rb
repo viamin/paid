@@ -3,7 +3,7 @@
 module AgentRuns
   module Research
     class Search
-      SearchResult = Data.define(:payload, :snippet_tokens)
+      SearchResult = Data.define(:payload)
 
       PROVIDER_URL = "https://duckduckgo.com/html/".freeze
       MAX_RESULTS = 5
@@ -30,10 +30,12 @@ module AgentRuns
         )
         result_set = extract_results(response.body)
         results = result_set.map(&:payload)
+        payload = { "results" => results }
+        serialized_payload = JSON.generate(payload)
         usage = BudgetLedger.consume_response!(
           agent_run: agent_run,
-          bytes: results.sum { |result| result.fetch("snippet").bytesize },
-          tokens: result_set.sum(&:snippet_tokens)
+          bytes: serialized_payload.bytesize,
+          tokens: estimate_tokens(serialized_payload)
         )
 
         audit!(
@@ -49,7 +51,7 @@ module AgentRuns
           }
         )
 
-        { "results" => results }
+        payload
       end
 
       private
@@ -78,8 +80,7 @@ module AgentRuns
               "title" => SecretGuard.redact_text(anchor.text.to_s.squish),
               "url" => sanitized_url.content,
               "snippet" => sanitized_snippet.content
-            },
-            snippet_tokens: sanitized_snippet.tokens_estimate
+            }
           )
         end
       end
@@ -155,6 +156,10 @@ module AgentRuns
           networking_policy: agent_run.egress_policy_snapshot || {},
           metadata: metadata
         )
+      end
+
+      def estimate_tokens(text)
+        [ (text.to_s.length / 4.0).ceil, 0 ].max
       end
     end
   end
