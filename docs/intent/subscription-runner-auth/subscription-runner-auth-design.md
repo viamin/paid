@@ -36,6 +36,14 @@ Provisioning records managed-versus-host-forwarded auth telemetry and preserves
 the legacy host-path fallback when managed rollout is disabled or when no
 managed credential exists.
 
+The Connect Codex and Claude Browser Login pages surface the account's active
+managed credential (name, status, expiry — never token material) before a new
+login is started, mirroring the one-active-credential guard the runner
+credentials UI applies. The login flows themselves stay permissive: completing a
+login under a different `credential_name` still creates a concurrent active
+credential; the banner warns about it rather than hard-rejecting, so
+rotation-by-relogin under the same name keeps working without a revoke step.
+
 ## Exceptions Preserved
 
 - **Codex remote placement is still gated off.** The managed materializer is

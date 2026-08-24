@@ -51,9 +51,9 @@
       <% end %>
 
       <div class="mt-6 flex items-center gap-3">
-        <%= link_to "Back to Credentials", integration_credentials_path(category: "llm_provider", service_key: "openai"), class: "text-sm font-semibold text-gray-900 hover:text-gray-700" %>
+        <%= link_to "Back to Credentials", integration_credentials_path(category: "llm_provider", service_key: "codex"), class: "text-sm font-semibold text-gray-900 hover:text-gray-700" %>
         <% if @return_to_path.present? %>
-          <%= link_to "Return to Previous Page", safe_return_path_or(@return_to_path, integration_credentials_path(category: "llm_provider", service_key: "openai")), class: "text-sm font-semibold text-gray-900 hover:text-gray-700" %>
+          <%= link_to "Return to Previous Page", safe_return_path_or(@return_to_path, integration_credentials_path(category: "llm_provider", service_key: "codex")), class: "text-sm font-semibold text-gray-900 hover:text-gray-700" %>
         <% end %>
       </div>
     </div>

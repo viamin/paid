@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class ClaudeLoginSessionsController < ApplicationController
+  include ActiveRunnerCredentialStatus
+
   before_action :set_claude_login_session, only: [ :show, :update ]
 
   def new
@@ -10,6 +12,7 @@ class ClaudeLoginSessionsController < ApplicationController
     )
     apply_return_to(@claude_login_session, params[:return_to])
     @return_to_path = normalized_return_to(@claude_login_session.metadata["return_to"])
+    load_active_credential_status("claude")
     authorize @claude_login_session
   end
 
@@ -22,6 +25,7 @@ class ClaudeLoginSessionsController < ApplicationController
       ClaudeLoginSessions::Start.call(session: @claude_login_session)
       redirect_to claude_login_session_path(@claude_login_session.external_id)
     else
+      load_active_credential_status("claude")
       render :new, status: :unprocessable_content
     end
   end

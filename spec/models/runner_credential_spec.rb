@@ -148,4 +148,24 @@ RSpec.describe RunnerCredential do
       expect(credential.display_name).to eq(Runner.display_name_for("claude"))
     end
   end
+
+  # @spec SUBSCRIPTION-RUNNER-AUTH-004
+  describe "#expiry_label" do
+    it "describes a credential without an expiry as long-lived" do
+      expect(build(:runner_credential, expires_at: nil).expiry_label).to eq("long-lived")
+    end
+
+    it "describes a long-lived credential as long-lived even with an expiry set" do
+      credential = build(:runner_credential, :long_lived, expires_at: 1.hour.from_now)
+
+      expect(credential.expiry_label).to eq("long-lived")
+    end
+
+    it "includes the formatted expiry for short-lived credentials" do
+      expires_at = 1.week.from_now
+      credential = build(:runner_credential, expires_at: expires_at)
+
+      expect(credential.expiry_label).to eq("expires #{I18n.l(expires_at, format: :long)}")
+    end
+  end
 end
