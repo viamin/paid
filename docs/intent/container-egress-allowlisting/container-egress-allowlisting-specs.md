@@ -100,3 +100,28 @@
   `AgentRuns::EgressPolicy::GatewayAdapters::{Docker,Kubernetes,ManagedMachine}`,
   `ExecutionRunners::Base.gateway_adapter`,
   `ExecutionRunners::LocalDockerRunner`
+
+- [ ] **EGRESS-POLICY-008** — The system SHALL expose brokered `research`
+  fetch/search endpoints only to container-authenticated agent runs whose
+  persisted egress-policy snapshot records `egress_profile: "research"`.
+  Locked/default runs, unsupported upstream methods, invalid schemes/hosts,
+  disallowed content types, oversized responses, timeout failures, and
+  redirect chains past the configured cap SHALL be rejected before untrusted
+  content is returned to the caller.
+  *Tests:* `spec/requests/api/proxy/research_spec.rb`
+  *Code:* `Api::Proxy::ResearchController`,
+  `AgentRuns::Research::{AccessPolicy,Fetcher,Search}`
+
+- [ ] **EGRESS-POLICY-009** — Before any brokered-research network call, the
+  system SHALL block secret-looking outbound URLs/queries using existing
+  redaction/secret-scan rules where possible plus exact known-secret
+  fingerprints and high-entropy/token-shape checks, recording a redacted
+  security event instead of making the request. Fetched responses SHALL be
+  scanned before prompt injection/storage, redacting or quarantining
+  credential-looking content, wrapping the returned body as quarantined
+  evidence, and enforcing per-run request/byte/token budgets with run-audited
+  accounting.
+  *Tests:* `spec/requests/api/proxy/research_spec.rb`,
+  `spec/services/agent_runs/research/secret_guard_spec.rb`
+  *Code:* `AgentRuns::Research::{BudgetLedger,SecretGuard,ResponseSanitizer}`,
+  `EgressSecurityEvent`, `ExecutionAuditEvents::Lifecycle`

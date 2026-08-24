@@ -21,7 +21,7 @@ records exactly which egress policy applied to it.
 
 ## Scope of this segment
 
-This segment covers implementation plan steps 1–5 of RDR-055:
+This segment covers implementation plan steps 1–6 of RDR-055:
 
 1. the persisted `EgressAllowlistEntry` model (account/project scope),
 2. the required-destination code registry,
@@ -30,11 +30,12 @@ This segment covers implementation plan steps 1–5 of RDR-055:
    translation, and
 5. the per-Docker-host egress gateway that translates domain-aware HTTP(S)
    traffic, plus production fail-closed behavior when enforcement cannot be
-   applied.
+   applied, and
+6. the brokered `research` egress profile with per-run budgets, outbound
+   secret-extraction guards, and quarantined evidence rendering.
 
-The `research` egress profile broker (step 6) remains future work tracked by
-the RDR. The settings UI/API and run-audit surface (step 7) have shipped, but
-they are documented outside this resolver/enforcement-focused segment.
+The settings UI/API and run-audit surface (step 7) have shipped, but they are
+documented outside this resolver/enforcement-focused segment.
 
 ## Allowlist entries
 
@@ -146,3 +147,76 @@ failure as `ProvisionError` so the container never starts without
 enforcement. Non-production environments log the warning instead so local
 development on hosts without iptables (e.g., macOS Docker Desktop, some
 CI runners) is not blocked.
+
+## Research broker
+
+`research` is a distinct egress profile, not a direct-internet exception.
+Containers keep the same locked direct-egress posture; research-enabled runs
+gain a Paid-controlled broker reachable through the normal container-auth API
+surface.
+
+The broker exposes two v1 operations:
+
+- URL fetch for explicit `http`/`https` resources
+- search through a code-owned provider endpoint
+
+Both flows are authenticated with the run proxy token and then hard-gated on
+the resolved per-run egress snapshot: only runs whose persisted snapshot
+records `egress_profile: "research"` may use the broker. A locked/default run
+cannot self-upgrade by calling the endpoint directly.
+
+### Request validation
+
+Brokered research is intentionally narrow:
+
+- only upstream `GET` and `HEAD` are allowed;
+- caller-supplied outbound headers and request bodies are not supported in v1;
+- URLs must parse cleanly, use `http`/`https`, target a public hostname, and
+  omit userinfo and fragments;
+- redirect chains are followed manually with a small hard cap so each hop is
+  re-validated against the same scheme/host/operator policy checks;
+- response content types are allowlisted to text/document formats and the
+  broker aborts on oversized responses or network timeouts.
+
+### Secret-extraction guard
+
+The broker is the v1 DLP checkpoint for research traffic. Before any network
+call it scans the requested URL/search query for:
+
+- existing knowledge-redaction patterns (`Knowledge::Redaction::Scanner`);
+- exact matches against secrets Paid issued for the run (proxy-token forms) and
+  actively stores for the account (integration credentials);
+- additional secret-shaped tokens missed by the shared redactor, including
+  high-entropy strings, OAuth/session bearer shapes, cloud credential prefixes,
+  and PEM/private-key markers.
+
+A blocked request never leaves Paid. Instead the broker records a critical
+`EgressSecurityEvent` with `event_kind: "redacted_secret_extraction"`,
+`source_layer: "broker"`, the destination host when available, a rule summary,
+and redacted evidence/fingerprint only.
+
+Fetched responses are scanned again before they are returned to the caller.
+Credential-looking substrings are redacted with the shared knowledge redactor;
+when the response is mostly secret material the broker marks the result as
+quarantined and returns only redacted evidence framing.
+
+### Budgets and audit
+
+Research usage is enforced per agent run:
+
+- request attempts consume a request budget;
+- successful responses consume byte and estimated-token budgets based on the
+  sanitized evidence returned to the caller.
+
+The running totals live on `agent_runs.external_metadata` so enforcement is
+atomic per run and visible in run audit state. Each broker decision also emits
+an `ExecutionAuditEvent` with the sanitized URL/query, requester, policy
+result, redirect metadata, content-type/size, and budget counters, so
+operators can reconstruct what the run asked for without storing raw secrets.
+
+### Evidence rendering
+
+Returned research content is never surfaced as trusted instructions. The
+broker wraps every returned body/snippet with
+`PromptAssembly::Section::QUARANTINE_NOTICE`, preserving the RDR boundary that
+web content is evidence only, not executable guidance.
