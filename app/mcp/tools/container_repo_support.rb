@@ -78,7 +78,10 @@ module Tools
 
       absolute = File.expand_path(candidate, repo_path)
       resolved_absolute = resolve_container_path(absolute)
-      return [ absolute, absolute.delete_prefix("#{repo_path}/") ] if path_within_root?(resolved_absolute, resolve_container_path(repo_path))
+      if path_within_root?(resolved_absolute, resolve_container_path(repo_path))
+        normalized_relative_path = absolute == repo_path ? "." : absolute.delete_prefix("#{repo_path}/")
+        return [ absolute, normalized_relative_path ]
+      end
 
       raise ArgumentError, "Path escapes the cloned repo: #{relative_path}"
     end

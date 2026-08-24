@@ -750,8 +750,11 @@ RSpec.describe Activities::CreateAgentRunActivity do
       let(:github_client) { instance_double(GithubClient, issue_comments: []) }
 
       let!(:prompt) do
-        Prompt.find_by(slug: "coding.issue_implementation")&.destroy!
-        p = create(:prompt, :global, slug: "coding.issue_implementation")
+        p = Prompt.global.find_or_create_by!(slug: "coding.issue_implementation") do |record|
+          record.name = "Issue implementation"
+          record.category = "coding"
+          record.active = true
+        end
         p.create_version!(
           template: <<~'TEMPLATE'
             Work on {{title}} (#{{issue_number}})

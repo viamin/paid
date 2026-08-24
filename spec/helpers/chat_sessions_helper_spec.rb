@@ -78,6 +78,14 @@ RSpec.describe ChatSessionsHelper do
       expect(helper.chat_tool_summary(message)).to eq("grep_repo · result · 81 matches")
     end
 
+    it "summarizes workspace grep payloads that report total_matches" do
+      message = build(:chat_message, :tool,
+        tool_name: "grep_workspace",
+        tool_result: { "total_matches" => 3, "matches" => [ { "path" => "README.md" } ] })
+
+      expect(helper.chat_tool_summary(message)).to eq("grep_workspace · result · 3 matches")
+    end
+
     it "summarizes list-style result arrays" do
       message = build(:chat_message, :tool,
         tool_name: "list_projects",
