@@ -49,7 +49,10 @@ class Project < ApplicationRecord
     "service_dependencies" => [],
     "setup_commands" => [],
     "detection" => {},
-    "verification_enabled" => false
+    "verification_enabled" => false,
+    # Page load measurement rides along with screenshot capture; follow-up runs
+    # for a confirmed regression are opt-in. @spec PAGE-LOAD-CONFIG-001
+    "performance" => PageLoadPerformance::Settings::DEFAULTS
   }.freeze
   PLAYWRIGHT_MCP_NAME = "paid-system-playwright-browser".freeze
   PLAYWRIGHT_MCP_COMMAND = "@executeautomation/playwright-mcp-server".freeze
@@ -1461,6 +1464,20 @@ class Project < ApplicationRecord
     settings["service_dependencies"] = normalize_string_array(settings["service_dependencies"])
     settings["setup_commands"] = normalize_string_array(settings["setup_commands"])
     settings["detection"] = settings["detection"].is_a?(Hash) ? settings["detection"].deep_stringify_keys : {}
+    settings["performance"] = normalize_page_load_settings(settings["performance"])
+    settings
+  end
+
+  # @spec PAGE-LOAD-CONFIG-001
+  def normalize_page_load_settings(value)
+    stored = value.is_a?(Hash) ? value.deep_stringify_keys : {}
+    settings = PageLoadPerformance::Settings::DEFAULTS.merge(stored)
+    settings["enabled"] = ActiveModel::Type::Boolean.new.cast(settings["enabled"])
+    settings["followup_enabled"] = ActiveModel::Type::Boolean.new.cast(settings["followup_enabled"])
+    settings["comparison_metric"] = settings["comparison_metric"].to_s
+    settings["regression_ratio"] = settings["regression_ratio"].to_f
+    settings["regression_floor_ms"] = settings["regression_floor_ms"].to_i
+    settings["samples"] = settings["samples"].to_i
     settings
   end
 
@@ -1786,8 +1803,40 @@ class Project < ApplicationRecord
     normalized = screenshot_settings.deep_stringify_keys
 
     Screenshots::ConfigParser.validate_partial!(normalized)
+    validate_page_load_settings(normalized["performance"])
   rescue Screenshots::ConfigError => e
     errors.add(:screenshot_settings, e.message)
+  end
+
+  # @spec PAGE-LOAD-CONFIG-002
+  def validate_page_load_settings(performance)
+    return if performance.blank?
+
+    unless performance.is_a?(Hash)
+      errors.add(:screenshot_settings, "performance must be a JSON object")
+      return
+    end
+
+    metric = performance["comparison_metric"]
+    if metric.present? && !PageLoadMeasurement::METRICS.include?(metric.to_s)
+      errors.add(:screenshot_settings,
+        "performance.comparison_metric must be one of #{PageLoadMeasurement::METRICS.join(", ")}")
+    end
+
+    ratio = performance["regression_ratio"]
+    if ratio.present? && ratio.to_f <= 0
+      errors.add(:screenshot_settings, "performance.regression_ratio must be greater than 0")
+    end
+
+    floor = performance["regression_floor_ms"]
+    if floor.present? && floor.to_i.negative?
+      errors.add(:screenshot_settings, "performance.regression_floor_ms must not be negative")
+    end
+
+    samples = performance["samples"]
+    return if samples.blank? || samples.to_i.between?(1, 10)
+
+    errors.add(:screenshot_settings, "performance.samples must be between 1 and 10")
   end
 
   def interop_settings_valid

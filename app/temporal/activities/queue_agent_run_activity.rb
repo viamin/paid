@@ -91,6 +91,7 @@ module Activities
             expected_draft_review_count: expected_draft_review_count,
             status: "queued"
           )
+          snapshot_page_load_evidence!(run, input[:focus_evidence])
           [ run, false ]
         end
       rescue ActiveRecord::RecordNotUnique
@@ -160,6 +161,30 @@ module Activities
         respect_requested: runner_id_provided || agent_type_provided,
         logger: logger
       )
+    end
+
+    # A performance follow-up run carries the regression it was queued for. The
+    # snapshot is taken once, at creation, so a later capture that updates the
+    # finding cannot change what this run was asked to fix.
+    # @spec PAGE-LOAD-FOLLOWUP-004
+    def snapshot_page_load_evidence!(run, provided_evidence)
+      return unless run.focus == "performance_regression"
+
+      evidence = provided_evidence.presence || open_page_load_finding(run)&.evidence
+      return if evidence.blank?
+
+      metadata = run.external_metadata.is_a?(Hash) ? run.external_metadata.deep_dup : {}
+      metadata["page_load_regression"] = evidence.deep_stringify_keys
+      run.update_columns(external_metadata: metadata)
+    end
+
+    def open_page_load_finding(run)
+      PageLoadRegressionFinding
+        .where(project_id: run.project_id, pull_request_number: run.source_pull_request_number)
+        .open_findings
+        .actionable
+        .order(updated_at: :desc)
+        .first
     end
 
     def issue_requires_trust?(goal)

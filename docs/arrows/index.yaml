@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-08-22
+last_updated: 2026-08-24
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -208,6 +208,14 @@ arrows:
     taxonomy: runtime
     status: OK
     audited: 2026-08-04
+  page-load-performance:
+    title: Page Load Performance
+    path: docs/intent/page-load-performance/page-load-performance-design.md
+    specs: docs/intent/page-load-performance/page-load-performance-specs.md
+    parent: PAID
+    taxonomy: runtime
+    status: OK
+    audited: 2026-08-24
   container-egress-allowlisting:
     title: Container Egress Allowlisting
     path: docs/intent/container-egress-allowlisting/container-egress-allowlisting-design.md
