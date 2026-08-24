@@ -136,7 +136,16 @@ RSpec.describe AgentRuns::Research::HttpClient do # @spec EGRESS-POLICY-008 # @s
       expect(public_check.call("192.168.1.1")).to be(false)
     end
 
+    it "rejects other IPv4 special-use ranges that are not publicly routable" do
+      expect(public_check.call("0.0.0.0")).to be(false)
+      expect(public_check.call("100.64.0.1")).to be(false)
+      expect(public_check.call("198.18.0.1")).to be(false)
+      expect(public_check.call("224.0.0.1")).to be(false)
+      expect(public_check.call("240.0.0.1")).to be(false)
+    end
+
     it "rejects IPv6 loopback, link-local, unique-local, and AWS metadata endpoints" do
+      expect(public_check.call("::")).to be(false)
       expect(public_check.call("::1")).to be(false)
       expect(public_check.call("fe80::1")).to be(false)
       expect(public_check.call("fc00::1")).to be(false)

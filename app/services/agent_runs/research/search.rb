@@ -33,7 +33,7 @@ module AgentRuns
           event_name: "execution.research_search_completed",
           metadata: {
             "query" => SecretGuard.redact_text(query),
-            "provider_url" => response.uri.to_s,
+            "provider_url" => SecretGuard.redact_text(response.uri.to_s),
             "result_count" => results.length,
             "policy_result" => "allowed",
             "requests_used" => usage["requests_used"],
@@ -63,12 +63,13 @@ module AgentRuns
           snippet_node = anchor.xpath("following::a[@class='result__snippet'][1]").first ||
             anchor.xpath("following::div[@class='result__snippet'][1]").first
           snippet_text = snippet_node&.text.to_s.squish
-          sanitized = ResponseSanitizer.call(body: snippet_text, content_type: "text/plain")
+          sanitized_snippet = ResponseSanitizer.call(body: snippet_text, content_type: "text/plain")
+          sanitized_url = ResponseSanitizer.call(body: anchor["href"].to_s, content_type: "text/plain")
 
           {
             "title" => SecretGuard.redact_text(anchor.text.to_s.squish),
-            "url" => anchor["href"].to_s,
-            "snippet" => sanitized.content
+            "url" => sanitized_url.content,
+            "snippet" => sanitized_snippet.content
           }
         end
       end

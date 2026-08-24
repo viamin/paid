@@ -184,7 +184,8 @@ RSpec.describe "Api::Proxy::Research" do # @spec EGRESS-POLICY-008 # @spec EGRES
       expect(response).to have_http_status(:ok)
       result = response.parsed_body.fetch("results").first
       expect(result.fetch("title")).to eq("Guide")
-      expect(result.fetch("url")).to eq("https://docs.example.com/guide")
+      expect(result.fetch("url")).to include(PromptAssembly::Section::QUARANTINE_NOTICE)
+      expect(result.fetch("url")).to include("https://docs.example.com/guide")
       expect(result.fetch("snippet")).to include(PromptAssembly::Section::QUARANTINE_NOTICE)
     end
   end

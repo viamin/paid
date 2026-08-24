@@ -23,6 +23,34 @@ module AgentRuns
       OPEN_TIMEOUT = 5
       READ_TIMEOUT = 10
       DNS_TIMEOUT = 3
+      NON_PUBLIC_CIDRS = %w[
+        0.0.0.0/8
+        10.0.0.0/8
+        100.64.0.0/10
+        127.0.0.0/8
+        169.254.0.0/16
+        172.16.0.0/12
+        192.0.0.0/24
+        192.0.2.0/24
+        192.168.0.0/16
+        198.18.0.0/15
+        198.51.100.0/24
+        203.0.113.0/24
+        224.0.0.0/4
+        240.0.0.0/4
+        255.255.255.255/32
+        ::/128
+        ::1/128
+        64:ff9b:1::/48
+        100::/64
+        2001::/23
+        2001:2::/48
+        2001:db8::/32
+        2002::/16
+        fc00::/7
+        fe80::/10
+        ff00::/8
+      ].map { |cidr| IPAddr.new(cidr) }.freeze
 
       # Cloud metadata service endpoints reachable from brokered-research
       # connections. Listed alongside the loopback/link-local/private IPv6
@@ -168,6 +196,7 @@ module AgentRuns
       def public_address?(address)
         ip = IPAddr.new(address)
         return false if ip.loopback? || ip.link_local? || ip.private?
+        return false if non_public_address?(ip)
         return false if metadata_address?(ip)
 
         true
@@ -179,6 +208,10 @@ module AgentRuns
         METADATA_IPS.any? { |address| IPAddr.new(address) == ip }
       rescue IPAddr::Error
         false
+      end
+
+      def non_public_address?(ip)
+        NON_PUBLIC_CIDRS.any? { |range| range.include?(ip) }
       end
 
       def dns_resolver
