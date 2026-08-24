@@ -1,6 +1,15 @@
 # frozen_string_literal: true
 
 module StyleGuideAbTests
+  # Assigns an agent run to a style guide A/B test variant using weighted
+  # random selection that favours underfilled variants to keep the cohort
+  # balanced.
+  #
+  # The variant-selection math lives in Experiments::AssignmentPicker; this
+  # service owns the experiment-specific invariant lookup and assignment
+  # row creation.
+  #
+  # @spec STYLE-GUIDE-EVOLUTION-005
   class Assign
     attr_reader :style_guide_ab_test, :agent_run
 
@@ -13,7 +22,6 @@ module StyleGuideAbTests
       new(...).assign
     end
 
-    # @spec STYLE-GUIDE-EVOLUTION-005
     def assign
       raise ArgumentError, "A/B test is not running" unless style_guide_ab_test.running?
 
@@ -35,28 +43,16 @@ module StyleGuideAbTests
 
     def select_variant
       variants = style_guide_ab_test.style_guide_ab_test_variants.order(:id).to_a
-      raise ArgumentError, "A/B test has no variants" if variants.empty?
-      return variants.first if variants.one?
-
-      assignment_counts = StyleGuideAbTestAssignment.where(
+      counts = StyleGuideAbTestAssignment.where(
         style_guide_ab_test: style_guide_ab_test,
         style_guide_ab_test_variant: variants
       ).group(:style_guide_ab_test_variant_id).count
-      max_count = variants.map { |variant| assignment_counts[variant.id] || 0 }.max
-      weights = variants.map do |variant|
-        count = assignment_counts[variant.id] || 0
-        (max_count - count) + 1
-      end
-      total = weights.sum.to_f
-      roll = rand
-      cumulative = 0.0
 
-      variants.zip(weights).each do |variant, weight|
-        cumulative += weight / total
-        return variant if roll < cumulative
-      end
-
-      variants.last
+      Experiments::AssignmentPicker.pick(
+        variants: variants,
+        counts: counts,
+        strategy: :inversely_weighted
+      )
     end
   end
 end

@@ -32,6 +32,13 @@ class AbTest < ApplicationRecord
   scope :cancelled, -> { where(status: "cancelled") }
   scope :active, -> { where(status: %w[draft running]) }
 
+  include Experiments::AnalysisCache
+  analysis_cache(
+    analyzer_class: AbTests::Analyze,
+    variants_association: :ab_test_variants,
+    call_keyword: :ab_test
+  )
+
   def self.ransackable_attributes(auth_object = nil)
     %w[name status created_at started_at completed_at]
   end
@@ -105,62 +112,18 @@ class AbTest < ApplicationRecord
     ab_test_variants.all? { |v| v.sample_count >= min_samples_per_variant }
   end
 
-  # Returns cached analysis when fresh, otherwise recomputes via AbTests::Analyze.
-  # Pass persist: true (default) from write paths (e.g. RecordResult) to update the DB cache.
-  # Pass persist: false from read paths (e.g. controller show) to keep GET requests read-only
-  # and return the last persisted result rather than recomputing. Returns nil on cache miss
-  # when persist: false — the write path (RecordResult) will populate the cache.
-  def cached_or_compute_analysis(persist: true)
-    current_key = samples_key
-    if cached_analysis.present?
-      return deserialize_analysis if analysis_samples_key == current_key
-      # On read paths, return the stale cached result rather than triggering an
-      # expensive recomputation — the write path (RecordResult) will refresh
-      # the cache at the next analysis interval.
-      return deserialize_analysis unless persist
-    end
-
-    # Read paths never trigger expensive recomputation on cache miss.
-    return nil unless persist
-
-    AbTests::Analyze.call(ab_test: self).tap { |result| persist_analysis!(result, current_key) }
-  end
-
   private
-
-  CACHE_BUCKET_SIZE = ANALYSIS_INTERVAL
 
   def samples_key
     total_samples = ab_test_variants.sum(&:sample_count)
-    total_bucket  = (total_samples / CACHE_BUCKET_SIZE) * CACHE_BUCKET_SIZE
+    total_bucket  = (total_samples / Experiments::AnalysisCache::CACHE_BUCKET_SIZE) * Experiments::AnalysisCache::CACHE_BUCKET_SIZE
 
     variant_buckets = ab_test_variants
                       .sort_by(&:id)
-                      .map { |v| "#{v.id}:#{(v.sample_count / CACHE_BUCKET_SIZE) * CACHE_BUCKET_SIZE}" }
+                      .map { |v| "#{v.id}:#{(v.sample_count / Experiments::AnalysisCache::CACHE_BUCKET_SIZE) * Experiments::AnalysisCache::CACHE_BUCKET_SIZE}" }
                       .join(",")
 
     "total:#{total_bucket}|#{variant_buckets}"
-  end
-
-  def persist_analysis!(result, key)
-    serialized = {
-      status: result.status.to_s,
-      confidence: result.confidence&.to_f,
-      improvement: result.improvement&.to_f,
-      winner_id: result.winner&.id
-    }
-    update_columns(cached_analysis: serialized, analysis_samples_key: key)
-  end
-
-  def deserialize_analysis
-    data = cached_analysis.symbolize_keys
-    winner = data[:winner_id] ? ab_test_variants.find_by(id: data[:winner_id]) : nil
-    AbTests::Analyze::Result.new(
-      status: data[:status]&.to_sym,
-      winner: winner,
-      confidence: data[:confidence],
-      improvement: data[:improvement]
-    )
   end
 
   def variant_count_within_limit
