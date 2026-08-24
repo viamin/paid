@@ -4,11 +4,18 @@ class AddNeedsInputSinceToIssues < ActiveRecord::Migration[8.1]
   disable_ddl_transaction!
 
   def up
-    return if column_exists?(:issues, :needs_input_since)
-
-    add_column :issues, :needs_input_since, :datetime,
-      comment: "When this issue entered paid_state \"needs_input\". Cleared when it leaves. " \
-               "Used by Inbox::Queue to order oldest-waiting-first and to render \"waiting Xh\" labels."
+    # Each step is guarded independently rather than short-circuiting at the
+    # top of #up. The CONCURRENTLY index build can fail mid-deploy after
+    # `add_column` has already committed; an early `return` would then skip
+    # the backfill and the index creation on every subsequent rerun, leaving
+    # `needs_input_since` unindexed and NULL for legacy `needs_input` rows.
+    # Per-step guards make every statement a no-op on rerun and let a partial
+    # failure be resumed cleanly from the first incomplete step.
+    unless column_exists?(:issues, :needs_input_since)
+      add_column :issues, :needs_input_since, :datetime,
+        comment: "When this issue entered paid_state \"needs_input\". Cleared when it leaves. " \
+                 "Used by Inbox::Queue to order oldest-waiting-first and to render \"waiting Xh\" labels."
+    end
 
     # Backfill existing rows: for issues already in needs_input, the safest
     # local fallback is updated_at (the latest GitHub refresh that observed
@@ -17,7 +24,9 @@ class AddNeedsInputSinceToIssues < ActiveRecord::Migration[8.1]
     # that are infeasible at migration time. The UPDATE is wrapped in
     # safety_assured because strong_migrations cannot inspect raw SQL; the
     # statement is safe (a column-default backfill on an existing nullable
-    # column, scoped to rows already in the matching paid_state).
+    # column, scoped to rows already in the matching paid_state). The IS
+    # NULL predicate makes this idempotent so a rerun picks up any rows
+    # the column was added for but the backfill had not yet reached.
     safety_assured do
       execute <<~SQL.squish
         UPDATE issues
