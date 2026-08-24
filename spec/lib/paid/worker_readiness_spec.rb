@@ -12,11 +12,6 @@ RSpec.describe Paid::WorkerReadiness do
     FileUtils.remove_entry(tmpdir) if File.directory?(tmpdir)
   end
 
-  def make_read_only(directory)
-    FileUtils.mkdir_p(directory)
-    FileUtils.chmod(0o555, directory)
-  end
-
   describe ".file_path" do
     it "returns the WORKER_READINESS_FILE env var when set" do
       env = { "WORKER_READINESS_FILE" => file_path }
@@ -82,9 +77,8 @@ RSpec.describe Paid::WorkerReadiness do
     end
 
     it "does not raise when the file cannot be written" do
-      read_only_dir = File.join(tmpdir, "read-only")
-      make_read_only(read_only_dir)
-      env = { "WORKER_READINESS_FILE" => File.join(read_only_dir, "ready") }
+      env = { "WORKER_READINESS_FILE" => file_path }
+      allow(File).to receive(:write).with(file_path, anything).and_raise(Errno::EACCES, file_path)
 
       expect { described_class.mark_ready!(env) }
         .to output(/Failed to write worker readiness file: Errno::EACCES/).to_stderr
@@ -107,12 +101,9 @@ RSpec.describe Paid::WorkerReadiness do
     end
 
     it "does not raise when the file cannot be deleted" do
-      read_only_dir = File.join(tmpdir, "read-only")
-      file_path = File.join(read_only_dir, "ready")
-      FileUtils.mkdir_p(read_only_dir)
       File.write(file_path, "ready")
-      FileUtils.chmod(0o555, read_only_dir)
       env = { "WORKER_READINESS_FILE" => file_path }
+      allow(File).to receive(:delete).with(file_path).and_raise(Errno::EACCES, file_path)
 
       expect { described_class.mark_not_ready!(env) }
         .to output(/Failed to remove worker readiness file: Errno::EACCES/).to_stderr
