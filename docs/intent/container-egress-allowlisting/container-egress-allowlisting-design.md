@@ -57,12 +57,15 @@ legacy or manually-inserted row can never widen a run's policy.
 Required destinations come from code (`AgentRuns::EgressPolicy::RequiredDestinations`),
 never tenant settings:
 
-- **platform** — egress gateway (`egress-gateway:3128`) and the secrets proxy,
-  for every agent run. The secrets-proxy host/port is the endpoint as seen
-  from the run's container, resolved through `Containers::ProxyUrl` from the
-  run's backend and networking policy: `paid-proxy:<port>` for restricted
-  runs on a local backend, `web:<port>` for unrestricted local runs, and the
-  configured external proxy URL for remote backends;
+- **platform** — egress gateway (`egress-gateway:3128`) plus the proxy-backed
+  control-plane endpoints the container is told to call (`PAID_PROXY_URL`,
+  `GITHUB_API_URL`, `KNOWLEDGE_SEARCH_URL`, and the callback/proxy base
+  itself), for every agent run.
+  The proxy host/port is the endpoint as seen from the run's container,
+  resolved through `Containers::ProxyUrl` from the run's backend and
+  networking policy: `paid-proxy:<port>` for restricted runs on a local
+  backend, `web:<port>` for unrestricted local runs, and the configured
+  external proxy URL for remote backends;
 - **github** — `github.com` and `api.github.com` for repo checkout and PR
   operations, for every agent run;
 - **runner provider** — subscription provider hosts (Anthropic, OpenAI,
@@ -70,6 +73,10 @@ never tenant settings:
   `openrouter_free`/`openrouter_pareto` runners, or the configured
   direct-outbound API provider host, only when the run's network mode is
   `subscription_auth` or `direct_outbound`.
+- **run-local categories** — provider-neutral category names
+  (`service_container`, `preview_tunnel`) that remain code-owned in the
+  registry and are expanded into concrete host/port destinations later by the
+  resolver for the specific run.
 
 ## Resolution
 
@@ -80,11 +87,18 @@ never tenant settings:
 3. runner/provider-required destinations (direct-egress modes only),
 4. enabled account-wide entries (by id),
 5. enabled project entries (by id),
-6. run-local service containers and the preview destination.
+6. run-local service containers and the preview destination, driven by the
+   registry's provider-neutral run-local categories.
 
-First occurrence wins on `[host, port]`, so required destinations can never be
-shadowed or removed by tenant entries, and an account entry outranks a
-duplicate project entry. Every destination carries provenance (`source`,
+First occurrence wins on `[host, port]`, so an account entry outranks a
+duplicate project entry. Required destinations can never be shadowed or
+removed by tenant entries: platform/GitHub/provider destinations are simply
+merged first, but the run-local categories (service container, preview
+tunnel) only resolve to concrete hosts *after* the allowlist steps, so
+first-occurrence-wins alone would let a tenant entry win that dedupe race.
+Resolve closes that gap by filtering tenant entries against the resolved
+run-local hosts before merging, not just against the platform/GitHub/provider
+hosts. Every destination carries provenance (`source`,
 `entry_id`/`service_container_id`, `reason`) explaining why it was included.
 
 An unsafe persisted entry is excluded from the destination list, recorded in

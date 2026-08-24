@@ -145,20 +145,25 @@ module AgentRuns
       # widening a required destination's port restriction. Dropping the
       # entry here — rather than merging it — keeps EGRESS-POLICY-004 true:
       # a required destination can never be shadowed or extended by tenant
-      # configuration.
+      # configuration. This includes the resolved run-local destinations
+      # (service containers, preview tunnels): those are code-owned just like
+      # platform/GitHub/provider destinations, so a tenant entry that happens
+      # to match a run-local host must not be allowed to win the dedupe race
+      # in {merged_destinations} by being merged ahead of them.
       # @spec EGRESS-POLICY-004
       def safe_entries
         (account_entries + project_entries).select do |entry|
-          entry.unsafe_reason.nil? && !required_host?(entry)
+          entry.unsafe_reason.nil? && !non_shadowable_host?(entry)
         end
       end
 
-      def required_host?(entry)
-        required_destination_hosts.include?(entry.host_pattern.to_s.strip.downcase)
+      def non_shadowable_host?(entry)
+        non_shadowable_hosts.include?(entry.host_pattern.to_s.strip.downcase)
       end
 
-      def required_destination_hosts
-        @required_destination_hosts ||= required_destinations.map { |destination| destination["host"].to_s.downcase }
+      def non_shadowable_hosts
+        @non_shadowable_hosts ||=
+          (required_destinations + run_local_destinations).map { |destination| destination["host"].to_s.downcase }
       end
 
       def entry_destination(entry)
@@ -210,7 +215,20 @@ module AgentRuns
       end
 
       def run_local_destinations
-        service_destinations + preview_destinations
+        @run_local_destinations ||= RequiredDestinations.run_local_categories.flat_map do |category|
+          resolve_run_local_category(category)
+        end
+      end
+
+      def resolve_run_local_category(category)
+        case category.fetch("category")
+        when "service_container"
+          service_destinations(category)
+        when "preview_tunnel"
+          preview_destinations(category)
+        else
+          raise ArgumentError, "Unknown run-local destination category: #{category.inspect}"
+        end
       end
 
       # Records the Docker network alias provisioning actually grants
@@ -219,12 +237,13 @@ module AgentRuns
       # name, so EGRESS-POLICY-007 enforcement can consume +destinations+
       # verbatim and the audit snapshot matches reachable reality.
       # @spec EGRESS-POLICY-003
-      def service_destinations
+      def service_destinations(category)
         service_containers.map do |service|
           {
             "host" => Containers::ServiceRuntimeNaming.runtime_name(service),
             "port" => service.port,
             "source" => "run_service",
+            "category" => category.fetch("category"),
             "service_container_id" => service.id
           }
         end
@@ -237,14 +256,15 @@ module AgentRuns
         ServiceContainer.where(id: ids, status: "running").order(:id)
       end
 
-      def preview_destinations
+      def preview_destinations(category)
         return [] if preview_destination.blank?
 
         [
           {
             "host" => preview_destination.fetch(:host),
             "port" => preview_destination.fetch(:port),
-            "source" => "run_preview"
+            "source" => "run_preview",
+            "category" => category.fetch("category")
           }
         ]
       end
