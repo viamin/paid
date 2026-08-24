@@ -73,6 +73,7 @@ RSpec.describe Containers::ServiceProvisioner do
     allow(legacy_container).to receive_messages(
       info: running_container_info(networks: { NetworkPolicy::NETWORK_NAME => { "Aliases" => [ service_host ] } }),
       json: legacy_json,
+      exec: [ [ "(0 rows)" ], [], 0 ],
       stop: nil,
       delete: nil
     )
@@ -262,25 +263,24 @@ RSpec.describe Containers::ServiceProvisioner do
         expect(Docker::Container).not_to have_received(:create)
       end
 
-      it "recreates running containers that predate the hardening profile" do
+      it "reuses running legacy containers until cleanup can retire them safely" do
         # @spec CONTAINER-RUNTIME-035
         service_container.update!(status: "running", docker_container_id: "legacy123")
         legacy_container = instance_double(Docker::Container, id: "legacy123")
-        new_container = instance_double(Docker::Container, id: "new456")
         legacy_json = legacy_hardening_json(provisioner: provisioner, service_container: service_container)
 
         stub_recreated_running_container(
           legacy_container: legacy_container,
-          new_container: new_container,
+          new_container: instance_double(Docker::Container, id: "unused456"),
           service_host: service_host,
           legacy_json: legacy_json
         )
 
         result = provisioner.provision(agent_run)
 
-        expect(legacy_container).to have_received(:stop).with(timeout: 10)
-        expect(legacy_container).to have_received(:delete).with(force: true, v: true)
-        expect(service_container.reload.docker_container_id).to eq("new456")
+        expect(legacy_container).not_to have_received(:stop)
+        expect(legacy_container).not_to have_received(:delete)
+        expect(service_container.reload.docker_container_id).to eq("legacy123")
         expect(result).to include("DATABASE_URL")
       end
 
@@ -595,25 +595,20 @@ RSpec.describe Containers::ServiceProvisioner do
         expect(result).to include("DATABASE_URL")
       end
 
-      it "recreates a running conflicting container when it has legacy hardening" do
+      it "adopts a running conflicting legacy container until cleanup can replace it" do
         legacy_json = legacy_hardening_json(
           provisioner: provisioner,
           service_container: service_container,
           overrides: { "HostConfig" => { "CapDrop" => [], "SecurityOpt" => [] } }
         )
-        new_container = instance_double(Docker::Container, id: "new789")
-        stub_legacy_conflict_recreate(
-          service_host: service_host,
-          running_container: running_container,
-          new_container: new_container,
-          legacy_json: legacy_json
-        )
+        stub_legacy_conflict_adopt(service_host: service_host, running_container: running_container,
+          legacy_json: legacy_json)
 
         result = provisioner.provision(agent_run)
 
-        expect(running_container).to have_received(:stop).with(timeout: 10)
-        expect(running_container).to have_received(:delete).with(force: true, v: true)
-        expect(service_container.reload.docker_container_id).to eq("new789")
+        expect(running_container).not_to have_received(:stop)
+        expect(running_container).not_to have_received(:delete)
+        expect(service_container.reload.docker_container_id).to eq("running789")
         expect(result).to include("DATABASE_URL")
       end
 
@@ -996,7 +991,7 @@ RSpec.describe Containers::ServiceProvisioner do
       )
     end
 
-    it "merges hardening capability overrides with the built-in profile" do
+    it "rejects hardening capability overrides that would weaken a built-in profile" do
       # @spec CONTAINER-RUNTIME-035
       service_container.update!(env: {
         "POSTGRES_USER" => "agent",
@@ -1007,18 +1002,50 @@ RSpec.describe Containers::ServiceProvisioner do
         }
       })
       allow(Docker::Image).to receive(:create)
-      stub_healthy_created_container("abc123")
 
-      provisioner.provision(agent_run)
-
-      expect(Docker::Container).to have_received(:create).with(
-        hash_including(
-          "CapAdd" => [ "CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID", "NET_BIND_SERVICE" ],
-          "HostConfig" => hash_including(
-            "CapAdd" => [ "CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID", "NET_BIND_SERVICE" ]
-          )
+      expect { provisioner.provision(agent_run) }
+        .to raise_error(
+          Containers::ServiceProvisioner::Error,
+          /PAID_SERVICE_HARDENING\.cap_add cannot add capabilities beyond the built-in postgres profile: NET_BIND_SERVICE/
         )
-      )
+    end
+
+    it "rejects built-in profile overrides that restore a writable root filesystem" do
+      # @spec CONTAINER-RUNTIME-035
+      service_container.update!(env: {
+        "POSTGRES_USER" => "agent",
+        "POSTGRES_PASSWORD" => "agent",
+        "POSTGRES_DB" => "agent_test",
+        "PAID_SERVICE_HARDENING" => {
+          "readonly_rootfs" => false
+        }
+      })
+      allow(Docker::Image).to receive(:create)
+
+      expect { provisioner.provision(agent_run) }
+        .to raise_error(
+          Containers::ServiceProvisioner::Error,
+          /PAID_SERVICE_HARDENING\.readonly_rootfs cannot disable the built-in postgres profile/
+        )
+    end
+
+    it "rejects built-in profile overrides that switch the runtime user back to root" do
+      # @spec CONTAINER-RUNTIME-035
+      service_container.update!(env: {
+        "POSTGRES_USER" => "agent",
+        "POSTGRES_PASSWORD" => "agent",
+        "POSTGRES_DB" => "agent_test",
+        "PAID_SERVICE_HARDENING" => {
+          "user" => "root"
+        }
+      })
+      allow(Docker::Image).to receive(:create)
+
+      expect { provisioner.provision(agent_run) }
+        .to raise_error(
+          Containers::ServiceProvisioner::Error,
+          /PAID_SERVICE_HARDENING\.user cannot override the built-in postgres runtime user/
+        )
     end
 
     it "pins known service families to non-root runtime users" do
@@ -1110,13 +1137,13 @@ RSpec.describe Containers::ServiceProvisioner do
         })
         allow(Docker::Image).to receive(:create)
 
-        expect { provisioner.provision(agent_run) }
-          .to raise_error(
-            Containers::ServiceProvisioner::Error,
-            /PAID_SERVICE_HARDENING\.cap_add contains unsupported capabilities: SYS_ADMIN/
-          )
-      end
+      expect { provisioner.provision(agent_run) }
+        .to raise_error(
+          Containers::ServiceProvisioner::Error,
+          /PAID_SERVICE_HARDENING\.cap_add contains unsupported capabilities: SYS_ADMIN/
+        )
     end
+  end
   end
 
   describe "Docker HEALTHCHECK-aware health monitoring" do
@@ -1343,6 +1370,25 @@ RSpec.describe Containers::ServiceProvisioner do
       allow(docker_container).to receive(:delete)
 
       expect { provisioner.cleanup(agent_run) }.not_to raise_error
+      expect(service_container.reload.status).to eq("stopped")
+    end
+
+    it "retires a legacy-hardened container during cleanup after the run releases it" do
+      legacy_json = legacy_hardening_json(provisioner: provisioner, service_container: service_container)
+      docker_container = instance_double(Docker::Container, json: legacy_json)
+      agent_run = create(:agent_run, :completed, project: project, issue: issue,
+        service_container_ids: [ service_container.id ])
+
+      allow(Docker::Container).to receive(:get)
+        .with(service_container.docker_container_id).and_return(docker_container)
+      allow(docker_container).to receive(:exec).and_return([ [], [], 0 ])
+      allow(docker_container).to receive(:stop)
+      allow(docker_container).to receive(:delete)
+
+      provisioner.cleanup(agent_run)
+
+      expect(docker_container).to have_received(:stop).with(timeout: 10)
+      expect(docker_container).to have_received(:delete).with(force: true, v: true)
       expect(service_container.reload.status).to eq("stopped")
     end
   end

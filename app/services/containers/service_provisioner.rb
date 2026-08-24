@@ -650,8 +650,13 @@ module Containers
 
     def hardening_profile_for(service_container)
       image = service_container.respond_to?(:image) ? service_container.image : service_container
+      family = built_in_hardening_family_for(image)
       base = built_in_hardening_profile_for(image)
-      overrides = hardening_overrides_for(service_container)
+      overrides = hardening_overrides_for(
+        service_container,
+        built_in_family: family,
+        base_profile: base
+      )
 
       {
         readonly_rootfs: overrides.fetch(:readonly_rootfs, base.fetch(:readonly_rootfs)),
@@ -666,17 +671,24 @@ module Containers
     end
 
     def built_in_hardening_profile_for(image)
-      repository = image_repository(image)
-
-      HARDENING_PROFILES.each do |family, profile|
-        matcher = HARDENING_PROFILE_MATCHERS.fetch(family)
-        return profile if matcher.call(repository)
-      end
+      family = built_in_hardening_family_for(image)
+      return HARDENING_PROFILES.fetch(family) if family
 
       DEFAULT_HARDENING_PROFILE
     end
 
-    def hardening_overrides_for(service_container)
+    def built_in_hardening_family_for(image)
+      repository = image_repository(image)
+
+      HARDENING_PROFILES.each_key do |family|
+        matcher = HARDENING_PROFILE_MATCHERS.fetch(family)
+        return family if matcher.call(repository)
+      end
+
+      nil
+    end
+
+    def hardening_overrides_for(service_container, built_in_family:, base_profile:)
       raw = service_container.respond_to?(:env) ? service_container.env[HARDENING_ENV_KEY] : nil
       return {} if raw.blank?
       raise Error, "#{HARDENING_ENV_KEY} must be a JSON object" unless raw.is_a?(Hash)
@@ -687,11 +699,22 @@ module Containers
         unless readonly_rootfs == true || readonly_rootfs == false
           raise Error, "#{HARDENING_ENV_KEY}.readonly_rootfs must be true or false"
         end
+        if built_in_family && base_profile[:readonly_rootfs] && !readonly_rootfs
+          raise Error,
+            "#{HARDENING_ENV_KEY}.readonly_rootfs cannot disable the built-in #{built_in_family} profile"
+        end
 
         override[:readonly_rootfs] = readonly_rootfs
       end
 
-      override[:user] = raw.fetch("user") if raw.key?("user")
+      if raw.key?("user")
+        user = raw.fetch("user")
+        if built_in_family && user.to_s.presence != base_profile[:user].presence
+          raise Error, "#{HARDENING_ENV_KEY}.user cannot override the built-in #{built_in_family} runtime user"
+        end
+
+        override[:user] = user
+      end
 
       if raw.key?("cap_add")
         cap_add = raw.fetch("cap_add")
@@ -703,11 +726,31 @@ module Containers
           raise Error,
             "#{HARDENING_ENV_KEY}.cap_add contains unsupported capabilities: #{unsupported.join(', ')}"
         end
+        if built_in_family
+          extra_capabilities = normalized_cap_add - Array(base_profile[:cap_add]).map(&:to_s)
+          if extra_capabilities.any?
+            raise Error,
+              "#{HARDENING_ENV_KEY}.cap_add cannot add capabilities beyond the built-in " \
+              "#{built_in_family} profile: #{extra_capabilities.join(', ')}"
+          end
+        end
 
         override[:cap_add] = normalized_cap_add
       end
 
-      override[:tmpfs] = normalize_tmpfs_overrides(raw.fetch("tmpfs")) if raw.key?("tmpfs")
+      if raw.key?("tmpfs")
+        tmpfs = normalize_tmpfs_overrides(raw.fetch("tmpfs"))
+        if built_in_family
+          overlapping_paths = tmpfs.keys & base_profile.fetch(:tmpfs).keys
+          if overlapping_paths.any?
+            raise Error,
+              "#{HARDENING_ENV_KEY}.tmpfs cannot override built-in #{built_in_family} mounts: " \
+              "#{overlapping_paths.join(', ')}"
+          end
+        end
+
+        override[:tmpfs] = tmpfs
+      end
       override
     end
 
@@ -887,30 +930,21 @@ module Containers
       nil
     end
 
-    # Recreates a running container with the current hardening profile, but
-    # only when this agent run is the sole in-flight consumer. Other runs may
-    # already be attached to the shared container (CONTAINER-RUNTIME-004), so
-    # tearing it down here would pull it out from under them; defer the
-    # upgrade to normal #cleanup, which only stops containers once no
-    # in-flight run still references them.
+    # Running legacy containers stay in place for the current provision so we
+    # never destroy the only healthy instance before a replacement exists.
+    # Normal #cleanup retires the container after the last in-flight run
+    # releases it, and the next provision recreates it with the hardened
+    # profile.
     def recreate_legacy_container!(service_container, docker_container, info, source:, agent_run:)
       return false unless legacy_hardening_config?(service_container, info)
 
-      if service_container.capacity_inflight_agent_run_count(excluding: agent_run).positive?
-        log_info("service_provisioner.legacy_hardening_recreate_deferred",
-          name: service_container.name,
-          container_id: docker_container.id,
-          source: source)
-        return false
-      end
-
-      log_info("service_provisioner.legacy_hardening_recreate",
+      log_info("service_provisioner.legacy_hardening_recreate_deferred",
         name: service_container.name,
         container_id: docker_container.id,
-        source: source)
-      remove_stale_container!(docker_container, runtime_name(service_container))
-      service_container.update!(status: "stopped", docker_container_id: nil, container_host: nil)
-      true
+        source: source,
+        active_consumers: service_container.capacity_inflight_agent_run_count,
+        excluding_current_run: service_container.capacity_inflight_agent_run_count(excluding: agent_run))
+      false
     end
 
     def legacy_hardening_config?(service_container, info)
