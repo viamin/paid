@@ -30,7 +30,7 @@ gem "devise"
 
 # Authorization [https://github.com/varvet/pundit]
 gem "pundit"
-gem "avo", "4.1.11"
+gem "avo", "4.1.15"
 
 # Soft-delete for low-volume reference records
 gem "discard"
@@ -66,7 +66,7 @@ gem "aws-sdk-s3", require: false
 # Unified interface for AI agent CLIs [https://github.com/viamin/agent-harness]
 # 0.33.0 ships the opencode-ai bump (>= 1.18.9) that recognizes the
 # zai_coding / glm model family (fixes #3045, tracks viamin/agent-harness#316).
-gem "agent-harness", "0.34.1"
+gem "agent-harness", "0.36.0"
 
 # Runtime model registry for canonical model metadata, pricing, and capabilities.
 gem "ruby_llm", "~> 1.16"
