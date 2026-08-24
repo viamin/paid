@@ -75,6 +75,8 @@ module WorkspaceContainerBackendHelper
 
     repo_host_path = File.join(workspace_root, repo_name)
     run_cmd!("git", "clone", source_root, repo_host_path)
+    run_cmd!("git", "-C", repo_host_path, "config", "user.name", "Spec Bot")
+    run_cmd!("git", "-C", repo_host_path, "config", "user.email", "spec@example.test")
 
     {
       repo_path: File.join("/workspace", repo_name),
