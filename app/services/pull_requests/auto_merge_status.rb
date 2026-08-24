@@ -55,12 +55,12 @@ module PullRequests
       return @client if defined?(@client)
 
       @client = project.client
-    rescue Github::AppInstallation::ConfigurationError
+    rescue Github::AppInstallation::Error
       @client = nil
     end
 
     def merged?
-      return issue.pr_review_phase == "merged" if client.nil?
+      return issue.merged_phase? if client.nil?
 
       merged_at(pull_request).present?
     end
@@ -78,7 +78,7 @@ module PullRequests
         auto_merge_status: "blocked",
         last_auto_merge_attempt_at: issue.merge_permission_rejected_at,
         reason_code: "merge_permission_rejected",
-        sanitized_message: sanitize_message(issue.merge_permission_rejection_reason),
+        sanitized_message: AgentRun::ErrorMessageSanitizer.call(text: issue.merge_permission_rejection_reason),
         merge_permission_rejected: true,
         cooldown_until: issue.merge_permission_rejected_at + Issue::MERGE_PERMISSION_RETRY_COOLDOWN,
         next_action: merge_permission_next_action
@@ -139,7 +139,7 @@ module PullRequests
       status_payload(
         auto_merge_status: "unavailable",
         reason_code: "diagnostics_unavailable",
-        sanitized_message: sanitize_message(message),
+        sanitized_message: AgentRun::ErrorMessageSanitizer.call(text: message),
         next_action: "Retry once GitHub diagnostics are available, or inspect the project's GitHub credential configuration."
       )
     end
@@ -164,15 +164,6 @@ module PullRequests
       project.github_installation_id.present? || project.github_installation.present?
     end
 
-    def sanitize_message(message)
-      return nil if message.blank?
-
-      redacted = Knowledge::Redaction::Redactor.call(text: message.to_s).clean_text
-      AgentRun::RUNNER_ATTEMPT_SECRET_PATTERNS.reduce(redacted) do |result, (pattern, replacement)|
-        result.gsub(pattern, replacement)
-      end.truncate(AgentRun::MAX_RUNNER_ATTEMPT_ERROR_MESSAGE_LENGTH)
-    end
-
     def status_payload(auto_merge_status:, last_auto_merge_attempt_at: nil, reason_code: nil,
       sanitized_message: nil, merge_permission_rejected: false, cooldown_until: nil, next_action: nil)
       {
@@ -180,7 +171,7 @@ module PullRequests
         auto_merge_status:,
         reason_code:,
         sanitized_message:,
-        credential_mode: credential_mode,
+        credential_mode:,
         merge_permission_rejected:,
         cooldown_until:,
         next_action:
