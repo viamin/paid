@@ -42,6 +42,7 @@ module AgentRuns
         return "must have at least two host labels" unless host.count(".") >= 1
 
         labels = host.split(".")
+        return "must not embed an IP literal inside a hostname rule" if embedded_ip_literal?(labels)
         return "has an invalid label (empty, or starting/ending with '-')" unless labels.all? { |label| LABEL_REGEX.match?(label) }
         return "top-level domain must not be a reserved or special-use TLD" if RESERVED_TLDS.include?(labels.last)
         return "top-level domain must be at least two alphabetic characters" unless TLD_REGEX.match?(labels.last)
@@ -80,6 +81,10 @@ module AgentRuns
 
       def ip_literal?(host)
         IPV4_SHAPE_REGEX.match?(host)
+      end
+
+      def embedded_ip_literal?(labels)
+        labels.each_cons(4).any? { |window| ip_literal?(window.join(".")) }
       end
 
       def localhost?(host)
