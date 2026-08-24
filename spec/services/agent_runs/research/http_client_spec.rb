@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "openssl"
 
 RSpec.describe AgentRuns::Research::HttpClient do # @spec EGRESS-POLICY-008 # @spec EGRESS-POLICY-009
   let(:dns_resolver) { instance_double(Resolv::DNS) }
@@ -235,6 +236,30 @@ RSpec.describe AgentRuns::Research::HttpClient do # @spec EGRESS-POLICY-008 # @s
       expect {
         client.fetch(url: "https://docs.iana.org/guide", method: "GET")
       }.to raise_error(AgentRuns::Research::RequestInvalidError, /exceeded/)
+    end
+
+    it "maps TLS handshake failures to upstream errors" do
+      stub_a_record("docs.iana.org", public_ip)
+      http = instance_double(Net::HTTP)
+
+      allow(Net::HTTP).to receive(:new).with("docs.iana.org", 443).and_return(http)
+      allow(http).to receive(:use_ssl=).with(true)
+      allow(http).to receive(:open_timeout=).with(5)
+      allow(http).to receive(:read_timeout=).with(10)
+      allow(http).to receive(:ipaddr=).with(public_ip)
+      allow(http).to receive(:start).and_raise(OpenSSL::SSL::SSLError, "tls handshake failed")
+
+      expect {
+        client.fetch(url: "https://docs.iana.org/guide", method: "GET")
+      }.to raise_error(AgentRuns::Research::UpstreamError, /tls handshake failed/)
+    end
+  end
+
+  describe ".validate_request!" do
+    it "maps invalid URI parsing errors to request validation errors" do
+      expect {
+        described_class.validate_request!(url: "https://docs.example.com/my file.pdf", method: "GET")
+      }.to raise_error(AgentRuns::Research::RequestInvalidError)
     end
   end
 

@@ -87,6 +87,16 @@ RSpec.describe "Api::Proxy::Research" do # @spec EGRESS-POLICY-008 # @spec EGRES
       expect(agent_run.reload.external_metadata.fetch("research_usage", {})).to eq({})
     end
 
+    it "returns a 422 envelope for malformed URLs that URI parsing rejects" do
+      get "/api/proxy/research/fetch",
+        params: { url: "https://docs.example.com/my file.pdf" },
+        headers: headers
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body.fetch("error")).to be_present
+      expect(agent_run.reload.external_metadata.fetch("research_usage", {})).to eq({})
+    end
+
     it "enforces a per-run request budget" do
       stub_request(:get, brokered_url("docs.example.com", "/guide"))
         .to_return(status: 200, body: "Research document", headers: { "Content-Type" => "text/plain" })
@@ -191,6 +201,16 @@ RSpec.describe "Api::Proxy::Research" do # @spec EGRESS-POLICY-008 # @spec EGRES
 
       expect(response).to have_http_status(:bad_gateway)
       expect(response.parsed_body.fetch("error")).to include("status 500")
+    end
+
+    it "maps TLS handshake failures to the brokered upstream error envelope" do
+      stub_request(:get, brokered_url("docs.example.com", "/guide"))
+        .to_raise(OpenSSL::SSL::SSLError.new("tls handshake failed"))
+
+      get "/api/proxy/research/fetch", params: { url: "https://docs.example.com/guide" }, headers: headers
+
+      expect(response).to have_http_status(:bad_gateway)
+      expect(response.parsed_body.fetch("error")).to include("tls handshake failed")
     end
   end
 

@@ -2,6 +2,7 @@
 
 require "ipaddr"
 require "net/http"
+require "openssl"
 require "resolv"
 
 module AgentRuns
@@ -67,6 +68,8 @@ module AgentRuns
         raise RequestInvalidError, "Brokered research only supports GET/HEAD" unless ALLOWED_METHODS.include?(method)
 
         new.send(:normalize_uri, url)
+      rescue URI::InvalidURIError => error
+        raise RequestInvalidError, error.message
       end
 
       def initialize(dns_resolver: nil)
@@ -114,7 +117,8 @@ module AgentRuns
         end
       rescue URI::InvalidURIError => error
         raise RequestInvalidError, error.message
-      rescue Net::OpenTimeout, Net::ReadTimeout, Timeout::Error, SocketError, SystemCallError, IOError, EOFError => error
+      rescue Net::OpenTimeout, Net::ReadTimeout, Timeout::Error, SocketError, SystemCallError, IOError, EOFError,
+             OpenSSL::SSL::SSLError => error
         raise UpstreamError, error.message
       end
 
