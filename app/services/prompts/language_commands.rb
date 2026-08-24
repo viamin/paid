@@ -7,8 +7,10 @@ module Prompts
   # Covers the eight RDR-046 target languages: Ruby, JavaScript, TypeScript,
   # Python, Go, Rust, Elixir, and Swift. Polyglot repos surface more than one
   # command via the #test_commands_for / #lint_commands_for resolvers, which
-  # read the normalized repo-profile API on +Project+ and fall back to the
-  # single detected primary language.
+  # read the raw persisted +repo_profile+ on +Project+ (not the normalized
+  # +Project#test_languages+ API, whose detected-language fallback would mask
+  # an unsupported-only profile) and fall back to the single detected primary
+  # language only when no profile is persisted at all.
   module LanguageCommands
     LANGUAGE_TEST_COMMANDS = {
       "ruby" => "bundle exec rspec",
@@ -52,8 +54,8 @@ module Prompts
 
     # Returns the languages whose test/lint suites should run for a project.
     #
-    # Polyglot repos expose multiple languages through +Project#test_languages+,
-    # which resolves through the persisted repo profile. When no repo profile is
+    # Polyglot repos expose multiple languages through the persisted
+    # +repo_profile+ (see #profile_languages). When no repo profile is
     # present, the single detected primary language is used, preserving the
     # pre-polyglot single-language behavior.
     #
@@ -92,14 +94,25 @@ module Prompts
       Array(commands).join(", then ")
     end
 
-    # Reads the configured language set from the persisted profile without a
-    # detected-language fallback. Returns an empty array when no profile or no
-    # language list is present, so callers can distinguish "polyglot" from
-    # "single detected language".
+    # Reads the configured language set straight from the persisted
+    # +repo_profile+ column, without going through +Project#test_languages+'s
+    # detected-language fallback. That fallback would otherwise mask a
+    # profile whose +test_languages+ resolve to nothing we support (e.g. a
+    # profile persisted as `{ "test_languages" => ["cobol"] }`) as "no
+    # profile at all", silently substituting the detected primary language
+    # instead of surfacing NO_TEST_COMMAND / NO_LINT_COMMAND.
+    #
+    # @param project [Project]
+    # @return [Array<String>] downcased language keys, empty when no profile
+    #   or language list is persisted
     def self.profile_languages(project)
-      return [] unless project.respond_to?(:test_languages)
+      return [] unless project.respond_to?(:repo_profile)
 
-      Array(project.test_languages).map { |language| language.to_s.strip.downcase }.reject(&:blank?)
+      profile = project.repo_profile
+      return [] unless profile.is_a?(Hash)
+
+      raw_languages = profile["test_languages"].presence || profile["languages"]
+      Array(raw_languages).map { |language| language.to_s.strip.downcase }.reject(&:blank?)
     end
     private_class_method :profile_languages
 

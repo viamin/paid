@@ -292,7 +292,7 @@ RSpec.describe Prompts::BuildForIssue do
           allowed_github_usernames: [ "viamin" ],
           service_containers: service_containers_relation,
           detected_language: "ruby",
-          test_languages: [ "ruby", "elixir" ]
+          repo_profile: { "test_languages" => [ "ruby", "elixir" ] }
         ).tap do |p|
           def p.trusted_github_user?(login)
             return false if login.nil?
