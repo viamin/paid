@@ -18,7 +18,15 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
 
   let(:agent_run) { create(:agent_run, container_host: "local") }
   let(:backend) { instance_double(Containers::Backends::Base, identifier: "local") }
-  let(:resources) { ExecutionRunners::ComputeRequirements.new(cpu_quota: 100_000, memory_bytes: 1024, disk_bytes: 2048, pids_limit: 50) }
+  let(:resources) do
+    ExecutionRunners::ExecutionResources.new(
+      cpu_cores: 1.0,
+      memory_mib: 1024,
+      disk_gb: 2,
+      architecture: "x86_64",
+      timeout_seconds: 3600
+    )
+  end
   let(:run_spec) do
     ExecutionRunners::RunSpec.new(
       agent_run: agent_run, project: agent_run.project, image: "paid/agent:latest", command: "claude code",
@@ -85,7 +93,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
         networking_policy: run_spec.networking_policy,
         ownership_labels: ownership_label_map,
         egress_gateway_url: nil,
-        image: "paid/agent:latest", memory_bytes: 1024, cpu_quota: 100_000, pids_limit: 50
+        image: "paid/agent:latest", memory_bytes: 1024 * 1024 * 1024, cpu_quota: 100_000, pids_limit: 500
       ).and_return(provision_service)
       allow(provision_service).to receive(:provision).and_return(
         Containers::Provision::Result.success(container_id: "abc123", container_host: "local")

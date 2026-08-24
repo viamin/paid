@@ -697,9 +697,9 @@ class LocalDockerRunner < Base
       resources = spec.resources
       return options unless resources
 
-      options[:memory_bytes] = resources.memory_bytes if resources.memory_bytes
-      options[:cpu_quota] = resources.cpu_quota if resources.cpu_quota
-      options[:pids_limit] = resources.pids_limit if resources.pids_limit
+      options[:memory_bytes] = resources.memory_bytes if resources.memory_mib
+      options[:cpu_quota] = resources.cpu_quota if resources.cpu_cores
+      options[:pids_limit] = Containers::Provision::DEFAULTS[:pids_limit]
       options
     end
 

@@ -42,17 +42,31 @@ module Capacity
         {
           cpu_quota: Containers::Provision::DEFAULTS[:cpu_quota].to_i,
           memory_bytes: user&.settings&.container_memory_bytes.presence || Containers::Provision::DEFAULTS[:memory_bytes].to_i,
-          disk_bytes: DISK_BYTES_DEFAULT
+          disk_bytes: DISK_BYTES_DEFAULT,
+          profile: nil
         }
       end
 
       def normalize(raw)
         return if raw.blank?
 
+        profile_name = raw["profile"].to_s.presence
+        preset = if profile_name.present?
+          ExecutionRunners::ExecutionResources.profile(profile_name)
+        end
+
+        {
+          cpu_quota: raw["cpu_quota"].to_i.nonzero? || preset&.cpu_quota.to_i,
+          memory_bytes: raw["memory_bytes"].to_i.nonzero? || preset&.memory_bytes.to_i,
+          disk_bytes: raw["disk_bytes"].to_i.nonzero? || preset&.disk_bytes.to_i,
+          profile: profile_name
+        }
+      rescue ArgumentError
         {
           cpu_quota: raw["cpu_quota"].to_i,
           memory_bytes: raw["memory_bytes"].to_i,
-          disk_bytes: raw["disk_bytes"].to_i
+          disk_bytes: raw["disk_bytes"].to_i,
+          profile: nil
         }
       end
 

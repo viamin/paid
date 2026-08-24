@@ -78,7 +78,7 @@
 
 - [x] **CONTAINER-RUNTIME-009** — The system SHALL define immutable value
   objects (`RunSpec`, `RunnerHandle`, `ExecutionResult`, `NetworkingPolicy`,
-  `ServiceDeclaration`, `ComputeRequirements`) as `Data.define` structures that
+  `ServiceDeclaration`, `ExecutionResources`) as `Data.define` structures that
   consolidate the existing `Containers::Provision::Result` patterns and adapt
   `NetworkPolicy::NetworkContract` without Docker-specific identifiers.
   *Tests:* `spec/services/execution_runners_spec.rb`
@@ -426,12 +426,17 @@
   `ProcessRunQueueJob`
 
 - [x] **CONTAINER-RUNTIME-027** — The provider-neutral execution resource spec
-  SHALL include CPU, memory, and disk request fields, and the system SHALL
-  reject a run whose requested per-execution resources exceed the configured
-  infrastructure maxima before provisioning starts.
+  SHALL include explicit CPU, memory, disk, architecture, and timeout request
+  fields on `ExecutionResources`, and the system SHALL reject a run whose
+  requested per-execution resources exceed the configured infrastructure maxima
+  before provisioning starts. The contract SHALL support named presets
+  (`small`, `standard`, `large`) that expand to explicit tuples before the
+  runner receives the spec, and Docker-specific resource keys SHALL stay out of
+  the runner contract.
   *Tests:* `spec/services/execution_runners_spec.rb`,
+  `spec/services/execution_runners/local_docker_runner_spec.rb`,
   `spec/services/capacity/run_admission_spec.rb`
-  *Code:* `ExecutionRunners::ComputeRequirements`,
+  *Code:* `ExecutionRunners::ExecutionResources`,
   `ExecutionRunners::RunSpec`, `Capacity::RunAdmission`
 
 - [x] **CONTAINER-RUNTIME-028** — The system SHALL expose a coarse,
