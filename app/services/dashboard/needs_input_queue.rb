@@ -5,7 +5,8 @@ module Dashboard
   # from the pre-inbox-foundation version: issues only (`is_pull_request:
   # false`), oldest-first within `(owner, repo, github_number, id)` ordering,
   # and a questionless-filter. The implementation delegates to Inbox::Queue
-  # for the queue body and applies the issues-only filter on top.
+  # for the queue body, then restores the legacy dashboard ordering after
+  # applying the issues-only filter.
   #
   # Inbox::Queue is the typed, broader abstraction (issues + PRs, structured
   # entries). Keeping this delegator lets /dashboard/needs_input continue
@@ -29,7 +30,7 @@ module Dashboard
 
     # @spec INBOX-FOUNDATION-007
     def call
-      inbox_entries.filter_map do |inbox_entry|
+      issue_entries = inbox_entries.filter_map do |inbox_entry|
         next unless inbox_entry.issue.is_pull_request == false
 
         Entry.new(
@@ -37,6 +38,10 @@ module Dashboard
           issue: inbox_entry.issue,
           questions: inbox_entry.questions
         )
+      end
+
+      issue_entries.sort_by do |entry|
+        [ entry.project.owner, entry.project.repo, entry.issue.github_number, entry.issue.id ]
       end
     end
 

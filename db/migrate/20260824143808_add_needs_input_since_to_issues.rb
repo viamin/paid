@@ -40,7 +40,7 @@ class AddNeedsInputSinceToIssues < ActiveRecord::Migration[8.1]
     # can do an index-only scan of "open oldest-first" without touching the
     # full issues table. Concurrent build avoids blocking writes on the
     # issues table during deploy (strong_migrations requirement).
-    unless index_exists?(:issues, :needs_input_since, where: "paid_state = 'needs_input'")
+    unless index_exists?(:issues, :needs_input_since, name: "index_issues_needs_input_since_active")
       safety_assured do
         execute <<~SQL.squish
           CREATE INDEX CONCURRENTLY index_issues_needs_input_since_active
