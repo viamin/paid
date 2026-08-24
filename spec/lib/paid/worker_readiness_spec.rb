@@ -7,7 +7,10 @@ RSpec.describe Paid::WorkerReadiness do
   let(:tmpdir) { Dir.mktmpdir }
   let(:file_path) { File.join(tmpdir, "worker-ready") }
 
-  after { FileUtils.remove_entry(tmpdir) if File.directory?(tmpdir) }
+  after do
+    FileUtils.chmod_R(0o755, tmpdir) if File.directory?(tmpdir)
+    FileUtils.remove_entry(tmpdir) if File.directory?(tmpdir)
+  end
 
   describe ".file_path" do
     it "returns the WORKER_READINESS_FILE env var when set" do
@@ -74,8 +77,12 @@ RSpec.describe Paid::WorkerReadiness do
     end
 
     it "does not raise when the file cannot be written" do
-      env = { "WORKER_READINESS_FILE" => "/nonexistent-root/dir/ready" }
-      expect { described_class.mark_ready!(env) }.not_to raise_error
+      env = { "WORKER_READINESS_FILE" => file_path }
+      allow(File).to receive(:write).and_call_original
+      allow(File).to receive(:write).with(file_path, anything).and_raise(Errno::EACCES, file_path)
+
+      expect { described_class.mark_ready!(env) }
+        .to output(/Failed to write worker readiness file: Errno::EACCES/).to_stderr
     end
   end
 
@@ -95,8 +102,13 @@ RSpec.describe Paid::WorkerReadiness do
     end
 
     it "does not raise when the file cannot be deleted" do
-      env = { "WORKER_READINESS_FILE" => "/nonexistent-root/dir/ready" }
-      expect { described_class.mark_not_ready!(env) }.not_to raise_error
+      File.write(file_path, "ready")
+      env = { "WORKER_READINESS_FILE" => file_path }
+      allow(File).to receive(:delete).and_call_original
+      allow(File).to receive(:delete).with(file_path).and_raise(Errno::EACCES, file_path)
+
+      expect { described_class.mark_not_ready!(env) }
+        .to output(/Failed to remove worker readiness file: Errno::EACCES/).to_stderr
     end
   end
 

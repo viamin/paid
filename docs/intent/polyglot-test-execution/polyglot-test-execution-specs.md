@@ -19,7 +19,7 @@
   consumers can read instead of independently re-detecting from different code
   paths.
 
-- [x] **POLYGLOT-TEST-003** — When quality hooks or prompt builders need test
+- [ ] **POLYGLOT-TEST-003** — When quality hooks or prompt builders need test
   and lint commands, the system SHALL derive them from the persisted language
   profile for the configured test languages rather than defaulting every
   project to Ruby commands. The command map SHALL cover the full RDR-046 target
@@ -35,8 +35,18 @@
   `spec/services/containers/quality_hooks_spec.rb`,
   `spec/services/containers/git_operations_spec.rb`,
   `spec/services/prompts/build_for_issue_spec.rb`.
+  *Gap (2026-08-23 closeout):* the command map and multi-command routing logic
+  are fully implemented and pass their specs, but every spec sets
+  `project.language_profile` directly. Production detection
+  (`Projects::DetectRepoProfile`) only ever persists `project.repo_profile`,
+  and `Prompts::LanguageCommands.profile_languages` reads
+  `project.language_profile` instead — a column no production code path
+  writes. Polyglot routing never activates for a real project; it silently
+  falls back to the single detected primary language. See
+  `docs/rdrs/audit-report-2026-08-23-rdr-046.md` and
+  [#3612](https://github.com/viamin/paid/issues/3612).
 
-- [x] **POLYGLOT-TEST-004** — When a project requires additional runtimes, the
+- [ ] **POLYGLOT-TEST-004** — When a project requires additional runtimes, the
   container/image selection path SHALL resolve a language-appropriate agent
   image instead of using one monolithic hardcoded image for every repo.
   Projects whose detected languages are a subset of the base image runtimes
@@ -53,6 +63,14 @@
   `app/services/knowledge/embedding_runner.rb`,
   `app/services/knowledge/analysis_runner.rb`.
   *Test:* `spec/services/containers/image_resolver_spec.rb`.
+  *Gap (2026-08-23 closeout):* the resolver's tag-computation logic is correct
+  and all 5 hardcoded `paid-agent:latest` call sites resolve through it, but
+  (a) `ImageResolver#profile_languages` has the same `language_profile` vs.
+  `repo_profile` disconnect as POLYGLOT-TEST-003, so it never resolves a combo
+  tag for a real project (see [#3612](https://github.com/viamin/paid/issues/3612)),
+  and (b) no Dockerfile or build pipeline in the repository produces the combo
+  images the resolver names — `docker/agent/languages/` does not exist (see
+  [#3613](https://github.com/viamin/paid/issues/3613)).
 
 - [x] **POLYGLOT-TEST-006** — When the image resolver cannot map a detected
   runtime to any supported agent image, it SHALL surface the unsupported
