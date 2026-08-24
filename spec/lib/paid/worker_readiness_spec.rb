@@ -78,6 +78,7 @@ RSpec.describe Paid::WorkerReadiness do
 
     it "does not raise when the file cannot be written" do
       env = { "WORKER_READINESS_FILE" => file_path }
+      allow(File).to receive(:write).and_call_original
       allow(File).to receive(:write).with(file_path, anything).and_raise(Errno::EACCES, file_path)
 
       expect { described_class.mark_ready!(env) }
@@ -103,6 +104,7 @@ RSpec.describe Paid::WorkerReadiness do
     it "does not raise when the file cannot be deleted" do
       File.write(file_path, "ready")
       env = { "WORKER_READINESS_FILE" => file_path }
+      allow(File).to receive(:delete).and_call_original
       allow(File).to receive(:delete).with(file_path).and_raise(Errno::EACCES, file_path)
 
       expect { described_class.mark_not_ready!(env) }
