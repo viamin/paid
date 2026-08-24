@@ -289,38 +289,46 @@ jobs:
         run: |
           mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME"
           retry_with_backoff() {
+            local timeout_limit="$1"
+            local warning_message="$2"
+            shift 2
             local attempt
             for attempt in 1 2 3; do
-              if timeout 10m bash -lc "$1"; then
+              if timeout "$timeout_limit" "$@"; then
                 return 0
               fi
-              echo "::warning::$2 (attempt $attempt/3); retrying"
+              echo "::warning::${warning_message} (attempt $attempt/3); retrying"
               sleep "$((attempt * 10))"
             done
             return 1
           }
           retry_with_backoff \
-            "yarn install --frozen-lockfile && bin/yarn-postinstall" \
-            "JavaScript dependency install timed out or failed"
+            10m \
+            "JavaScript dependency install timed out or failed" \
+            bash -lc 'yarn install --frozen-lockfile && bin/yarn-postinstall'
 
       - name: Install ast-grep
         run: |
           mkdir -p "$HOME/.local/bin"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           retry_with_backoff() {
+            local timeout_limit="$1"
+            local warning_message="$2"
+            shift 2
             local attempt
             for attempt in 1 2 3; do
-              if timeout 5m bash -lc "$1"; then
+              if timeout "$timeout_limit" "$@"; then
                 return 0
               fi
-              echo "::warning::$2 (attempt $attempt/3); retrying"
+              echo "::warning::${warning_message} (attempt $attempt/3); retrying"
               sleep "$((attempt * 10))"
             done
             return 1
           }
           retry_with_backoff \
-            "INSTALL_DIR=\"$HOME/.local/bin\" bin/install-ast-grep" \
-            "ast-grep install timed out or failed"
+            5m \
+            "ast-grep install timed out or failed" \
+            bash -lc 'INSTALL_DIR="$HOME/.local/bin" bin/install-ast-grep'
 
       - name: Install PostgreSQL client
         run: |
