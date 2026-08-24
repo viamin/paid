@@ -2,18 +2,14 @@
 
 class DropLanguageProfileFromProjects < ActiveRecord::Migration[8.1]
   def up
-    return unless column_exists?(:projects, :language_profile)
-
-    # All application references to `language_profile` were removed in this
-    # PR (see RDR-046 follow-up), so there is no attribute-caching hazard
-    # from a mid-deploy old-code/new-schema mismatch.
-    safety_assured { remove_column :projects, :language_profile }
+    # Compatibility release: older web/job processes still read
+    # `projects.language_profile` during a normal migrate-before-restart
+    # deploy, and a rollback needs the persisted value intact. Keep the
+    # column until a later cleanup release can remove it safely.
   end
 
   def down
-    return if column_exists?(:projects, :language_profile)
-
-    add_column :projects, :language_profile, :jsonb, default: {}, null: false,
-      comment: "Deprecated duplicate repo profile column retained only for rollback."
+    # No-op: up intentionally preserves the legacy column for one more
+    # compatibility release, so rollback has nothing to recreate.
   end
 end
