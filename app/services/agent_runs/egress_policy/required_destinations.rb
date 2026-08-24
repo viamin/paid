@@ -17,8 +17,10 @@ module AgentRuns
       EGRESS_GATEWAY_PORT = 3128
       SECRETS_PROXY_HOST = "paid-proxy"
       HTTPS_PORT = 443
+      RUN_LOCAL_CATEGORY_SOURCE = "run_local"
 
       GITHUB_HOSTS = %w[github.com api.github.com].freeze
+      RUN_LOCAL_CATEGORIES = %w[service_container preview_tunnel].freeze
 
       # Runner keys whose upstream provider host set is fixed by the runner
       # itself, not chosen through runner config: subscription-auth CLIs
@@ -72,7 +74,9 @@ module AgentRuns
       def platform(proxy_host: SECRETS_PROXY_HOST, proxy_port: default_proxy_port)
         [
           destination(EGRESS_GATEWAY_HOST, EGRESS_GATEWAY_PORT, source: "platform", reason: "egress_gateway"),
-          destination(proxy_host, proxy_port, source: "platform", reason: "secrets_proxy")
+          destination(proxy_host, proxy_port, source: "platform", reason: "secrets_proxy"),
+          destination(proxy_host, proxy_port, source: "platform", reason: "callback_url"),
+          destination(proxy_host, proxy_port, source: "platform", reason: "github_proxy")
         ]
       end
 
@@ -133,6 +137,18 @@ module AgentRuns
 
       def default_proxy_port
         Rails.application.config.x.paid_proxy_port
+      end
+
+      # Provider-neutral run-local destination categories. Resolve expands
+      # these into concrete host/port destinations for the current run later.
+      def run_local_categories
+        RUN_LOCAL_CATEGORIES.map do |category|
+          {
+            "source" => RUN_LOCAL_CATEGORY_SOURCE,
+            "category" => category,
+            "reason" => category
+          }
+        end
       end
 
       def destination(host, port, source:, reason:)

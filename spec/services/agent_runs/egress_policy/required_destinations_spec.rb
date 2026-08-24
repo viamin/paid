@@ -5,7 +5,7 @@ require "rails_helper"
 # @spec EGRESS-POLICY-002
 RSpec.describe AgentRuns::EgressPolicy::RequiredDestinations do
   describe ".platform" do
-    it "includes the egress gateway and the secrets proxy" do
+    it "includes the egress gateway and the proxy-backed control-plane endpoints" do
       destinations = described_class.platform
 
       expect(destinations).to include(
@@ -15,6 +15,14 @@ RSpec.describe AgentRuns::EgressPolicy::RequiredDestinations do
         { "host" => "paid-proxy", "port" => Rails.application.config.x.paid_proxy_port,
           "source" => "platform", "reason" => "secrets_proxy" }
       )
+      expect(destinations).to include(
+        { "host" => "paid-proxy", "port" => Rails.application.config.x.paid_proxy_port,
+          "source" => "platform", "reason" => "callback_url" }
+      )
+      expect(destinations).to include(
+        { "host" => "paid-proxy", "port" => Rails.application.config.x.paid_proxy_port,
+          "source" => "platform", "reason" => "github_proxy" }
+      )
     end
 
     it "accepts an explicit proxy host and port" do
@@ -22,6 +30,12 @@ RSpec.describe AgentRuns::EgressPolicy::RequiredDestinations do
 
       expect(destinations).to include(
         { "host" => "proxy.internal", "port" => 8080, "source" => "platform", "reason" => "secrets_proxy" }
+      )
+      expect(destinations).to include(
+        { "host" => "proxy.internal", "port" => 8080, "source" => "platform", "reason" => "callback_url" }
+      )
+      expect(destinations).to include(
+        { "host" => "proxy.internal", "port" => 8080, "source" => "platform", "reason" => "github_proxy" }
       )
     end
   end
@@ -121,6 +135,15 @@ RSpec.describe AgentRuns::EgressPolicy::RequiredDestinations do
         described_class::DIRECT_OUTBOUND_PROVIDER_KEYS + proxy_only_runner_keys
 
       expect(classified.sort).to eq(RunnerSupport::CONTAINER_EXECUTABLE_RUNNER_KEYS.to_a.sort)
+    end
+  end
+
+  describe ".run_local_categories" do
+    it "registers provider-neutral run-local destination categories" do
+      expect(described_class.run_local_categories).to contain_exactly(
+        { "source" => "run_local", "category" => "service_container", "reason" => "service_container" },
+        { "source" => "run_local", "category" => "preview_tunnel", "reason" => "preview_tunnel" }
+      )
     end
   end
 end

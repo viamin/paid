@@ -35,6 +35,9 @@ RSpec.describe AgentRuns::EgressPolicy::Resolve do
       expect(snapshot.mode).to eq("proxy_restricted")
       expect(hosts(snapshot.required_destinations)).to include("egress-gateway", "paid-proxy", "github.com", "api.github.com")
       expect(snapshot.required_destinations).to all(include("source" => "platform"))
+      expect(snapshot.required_destinations).to include(hash_including("reason" => "secrets_proxy"))
+      expect(snapshot.required_destinations).to include(hash_including("reason" => "callback_url"))
+      expect(snapshot.required_destinations).to include(hash_including("reason" => "github_proxy"))
     end
 
     it "excludes provider destinations for proxy-restricted runs" do
@@ -209,6 +212,7 @@ RSpec.describe AgentRuns::EgressPolicy::Resolve do
         hash_including(
           "host" => "paid-svc-a#{account.id}-s#{service.id}-pg",
           "port" => 5432,
+          "category" => "service_container",
           "service_container_id" => service.id
         )
       )
@@ -218,7 +222,8 @@ RSpec.describe AgentRuns::EgressPolicy::Resolve do
       snapshot = resolve(preview_destination: { host: "tunnel.example.com", port: 9000 })
 
       expect(snapshot.destinations).to include(
-        hash_including("host" => "tunnel.example.com", "port" => 9000, "source" => "run_preview")
+        hash_including("host" => "tunnel.example.com", "port" => 9000, "source" => "run_preview",
+          "category" => "preview_tunnel")
       )
     end
   end

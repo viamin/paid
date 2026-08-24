@@ -210,7 +210,20 @@ module AgentRuns
       end
 
       def run_local_destinations
-        service_destinations + preview_destinations
+        RequiredDestinations.run_local_categories.flat_map do |category|
+          resolve_run_local_category(category)
+        end
+      end
+
+      def resolve_run_local_category(category)
+        case category.fetch("category")
+        when "service_container"
+          service_destinations(category)
+        when "preview_tunnel"
+          preview_destinations(category)
+        else
+          raise ArgumentError, "Unknown run-local destination category: #{category.inspect}"
+        end
       end
 
       # Records the Docker network alias provisioning actually grants
@@ -219,12 +232,13 @@ module AgentRuns
       # name, so EGRESS-POLICY-007 enforcement can consume +destinations+
       # verbatim and the audit snapshot matches reachable reality.
       # @spec EGRESS-POLICY-003
-      def service_destinations
+      def service_destinations(category)
         service_containers.map do |service|
           {
             "host" => Containers::ServiceRuntimeNaming.runtime_name(service),
             "port" => service.port,
             "source" => "run_service",
+            "category" => category.fetch("category"),
             "service_container_id" => service.id
           }
         end
@@ -237,14 +251,15 @@ module AgentRuns
         ServiceContainer.where(id: ids, status: "running").order(:id)
       end
 
-      def preview_destinations
+      def preview_destinations(category)
         return [] if preview_destination.blank?
 
         [
           {
             "host" => preview_destination.fetch(:host),
             "port" => preview_destination.fetch(:port),
-            "source" => "run_preview"
+            "source" => "run_preview",
+            "category" => category.fetch("category")
           }
         ]
       end

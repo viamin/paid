@@ -17,18 +17,22 @@
 
 - [x] **EGRESS-POLICY-002** — The system SHALL provide a code-owned
   required-destination registry exposing platform destinations (egress
-  gateway, secrets proxy resolved from the run's backend and networking
-  policy via `Containers::ProxyUrl`), GitHub destinations (github.com,
-  api.github.com), and runner/provider destinations, where provider hosts are
-  resolved from the run's runner key (claude → Anthropic, codex → OpenAI,
-  gemini → Google, copilot → GitHub Copilot, openrouter_free /
-  openrouter_pareto → OpenRouter) or its configured direct-outbound API
-  provider, and every container-executable runner key SHALL be classified
-  (fixed-host, config-derived, or explicitly proxy-only) so direct-egress
-  runner traffic never silently drops out of the registry. Registry drift
-  (a pi/omp provider key with no mapped host, or a malformed
-  direct-outbound `base_url`) SHALL raise at resolution rather than
-  silently omitting required destinations from the snapshot.
+  gateway plus the proxy-backed control-plane endpoints the container is told
+  to call: secrets proxy, callback URL, and GitHub proxy, all resolved from
+  the run's backend and networking policy via `Containers::ProxyUrl`), GitHub
+  destinations (github.com, api.github.com), provider-neutral run-local
+  destination categories (`service_container`, `preview_tunnel`) that the
+  resolver materializes later, and runner/provider destinations, where
+  provider hosts are resolved from the run's runner key (claude → Anthropic,
+  codex → OpenAI, gemini → Google, copilot → GitHub Copilot,
+  openrouter_free / openrouter_pareto → OpenRouter) or its configured
+  direct-outbound API provider, and every container-executable runner key
+  SHALL be classified (fixed-host, config-derived, or explicitly proxy-only)
+  so direct-egress runner traffic never silently drops out of the registry.
+  Registry drift (a pi/omp provider key with no mapped host, an unknown
+  run-local category, or a malformed direct-outbound `base_url`) SHALL raise
+  at resolution rather than silently omitting required destinations from the
+  snapshot.
   *Tests:* `spec/services/agent_runs/egress_policy/required_destinations_spec.rb`
   *Code:* `AgentRuns::EgressPolicy::RequiredDestinations`
 
