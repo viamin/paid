@@ -222,6 +222,34 @@ RSpec.describe "Runners" do
         expect(response.body).to include("Add Runner")
       end
 
+      # @spec RUNNERS-INDEX-009
+      it "renders the Test All header control wired to the row test controllers" do
+        get runners_path
+
+        doc = runners_index_document
+        test_all_button = doc.at_css('[data-test-all-target="button"]')
+        runner_row = doc.at_css('tr[data-controller="test-agent"][data-test-all-target="runner"]')
+        row_button = runner_row&.at_css('[data-test-agent-target="button"]')
+
+        expect(doc.at_css('[data-controller="test-all"]')).to be_present
+        expect(test_all_button).to be_present
+        expect(test_all_button.text.strip).to eq("Test All")
+        expect(test_all_button["data-action"]).to eq("test-all#testAll")
+        expect(runner_row).to be_present
+        expect(row_button).to be_present
+        expect(row_button.text.strip).to eq("Test Runner")
+        expect(response.body).not_to include("Test Agent")
+      end
+
+      # @spec RUNNERS-INDEX-009
+      it "omits the Test All header control when no configured runners are present" do
+        Runner.where(user: user).delete_all
+
+        get runners_path
+
+        expect(runners_index_document.at_css('[data-test-all-target="button"]')).to be_nil
+      end
+
       it "does not reuse canonical runner state for api-key entries" do
         runner = user.runners.create!(
           runner_key: "opencode",

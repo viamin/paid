@@ -39,7 +39,7 @@ RSpec.describe "Runner smoke test UI", :runner_smoke, type: :system do
 
     using_wait_time 90 do
       within("tr", text: runner.display_name) do
-        click_button "Test Agent"
+        click_button "Test Runner"
         expect(page).to have_content("Agent is healthy")
       end
     end
