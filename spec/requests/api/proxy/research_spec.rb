@@ -155,6 +155,16 @@ RSpec.describe "Api::Proxy::Research" do # @spec EGRESS-POLICY-008 # @spec EGRES
       expect(usage.fetch("bytes_used")).to be > 0
       expect(usage.fetch("tokens_used")).to be > 0
     end
+
+    it "rejects upstream non-2xx fetch responses instead of returning them as successful research" do
+      stub_request(:get, pinned_url("docs.example.com", "/guide"))
+        .to_return(status: 500, body: "upstream failed", headers: { "Content-Type" => "text/plain" })
+
+      get "/api/proxy/research/fetch", params: { url: "https://docs.example.com/guide" }, headers: headers
+
+      expect(response).to have_http_status(:bad_gateway)
+      expect(response.parsed_body.fetch("error")).to include("status 500")
+    end
   end
 
   describe "GET /api/proxy/research/search" do
@@ -187,6 +197,17 @@ RSpec.describe "Api::Proxy::Research" do # @spec EGRESS-POLICY-008 # @spec EGRES
       expect(result.fetch("url")).to include(PromptAssembly::Section::QUARANTINE_NOTICE)
       expect(result.fetch("url")).to include("https://docs.example.com/guide")
       expect(result.fetch("snippet")).to include(PromptAssembly::Section::QUARANTINE_NOTICE)
+    end
+
+    it "rejects upstream non-2xx search responses instead of returning an empty result set" do
+      stub_request(:get, pinned_url("duckduckgo.com", "/html/", query: "q=integration+guide"))
+        .to_return(status: 500, body: "<html><body>upstream failed</body></html>",
+          headers: { "Content-Type" => "text/html" })
+
+      get "/api/proxy/research/search", params: { q: "integration guide" }, headers: headers
+
+      expect(response).to have_http_status(:bad_gateway)
+      expect(response.parsed_body.fetch("error")).to include("status 500")
     end
   end
 end

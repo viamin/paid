@@ -89,6 +89,8 @@ module AgentRuns
             next
           end
 
+          raise UpstreamError, "Brokered research upstream returned status #{status}" unless success_status?(status)
+
           body = method == "HEAD" ? "" : response.body.to_s
           raise RequestInvalidError, "Response exceeded #{MAX_RESPONSE_BYTES} bytes" if body.bytesize > MAX_RESPONSE_BYTES
 
@@ -224,6 +226,10 @@ module AgentRuns
 
       def redirect_status?(status)
         [ 301, 302, 303, 307, 308 ].include?(status)
+      end
+
+      def success_status?(status)
+        status.between?(200, 299)
       end
 
       def allowed_content_type?(content_type)
