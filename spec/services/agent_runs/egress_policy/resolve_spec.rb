@@ -226,6 +226,14 @@ RSpec.describe AgentRuns::EgressPolicy::Resolve do
           "category" => "preview_tunnel")
       )
     end
+
+    # @spec EGRESS-POLICY-002
+    it "raises on an unknown run-local category instead of silently omitting destinations" do
+      allow(AgentRuns::EgressPolicy::RequiredDestinations).to receive(:run_local_categories)
+        .and_return([ { "source" => "run_local", "category" => "bogus", "reason" => "bogus" } ])
+
+      expect { resolve }.to raise_error(ArgumentError, /Unknown run-local destination category/)
+    end
   end
 
   describe "unsafe entry rejection" do
