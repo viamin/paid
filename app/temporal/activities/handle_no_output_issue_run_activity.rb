@@ -7,14 +7,13 @@ module Activities
   # - `recommend_close`: agent performed real work (iterations/cost > 0) but
   #   produced no code changes (issue may be already satisfied, obsolete, or
   #   not actionable)
-  # - `needs_input`: agent produced no output, or produced output with zero
-  #   iterations and zero cost (no evidence of real work; issue is likely
-  #   underspecified or ambiguous)
+  # - `needs_input`: reserved for future classifications where there are
+  #   concrete questions for a human to answer
   # - `provider_error`: provider returned an error (e.g. credit/quota exhaustion)
   #   before the agent actually ran. The run is failed so retry / provider
   #   fallback handles it instead of parking the issue.
   #
-  # For each outcome (other than `provider_error`), posts a GitHub comment with
+  # For each human-actionable outcome, posts a GitHub comment with
   # actionable next steps and updates the Paid-side issue state so users are not
   # left at a dead end.
   class HandleNoOutputIssueRunActivity < BaseActivity
@@ -104,9 +103,9 @@ module Activities
       track_phase(agent_run_id: agent_run_id, phase_key: "handle_no_output_issue_run", phase_group: "post", agent_run: agent_run, metadata: { outcome: outcome }) do
         case outcome
         when "provider_error"
-          handle_provider_error(agent_run, agent_summary)
+          handle_provider_error(client, agent_run, agent_summary)
         when "infrastructure_error"
-          handle_infrastructure_error(agent_run, agent_summary)
+          handle_infrastructure_error(client, agent_run, agent_summary)
         when "needs_input"
           handle_needs_input(client, agent_run, agent_summary)
           agent_run.complete!
@@ -143,7 +142,7 @@ module Activities
         return "provider_error" if provider_error_output?(diagnostic_output)
         return "infrastructure_error" if infrastructure_error_output?(diagnostic_output)
 
-        return "needs_input"
+        return "infrastructure_error"
       end
 
       # Guard: if the agent produced output but did zero iterations, the
@@ -157,7 +156,7 @@ module Activities
         return "provider_error" if provider_error_output?(diagnostic_output)
         return "infrastructure_error" if infrastructure_error_output?(diagnostic_output)
 
-        return "needs_input"
+        return "infrastructure_error"
       end
 
       "recommend_close"
@@ -241,16 +240,18 @@ module Activities
       text.to_s.encode("UTF-8", invalid: :replace, undef: :replace, replace: "\uFFFD").strip
     end
 
-    def handle_provider_error(agent_run, agent_summary)
+    def handle_provider_error(client, agent_run, agent_summary)
       agent_run.fail!(error: "Provider error detected in output: #{agent_summary.to_s.truncate(500)}")
       agent_run.log!("system", "Failed: provider error detected in output (not a real agent response)")
       transition_issue_to_failed(agent_run)
+      remove_trigger_labels(client, agent_run.project, agent_run.issue, agent_run.id)
     end
 
-    def handle_infrastructure_error(agent_run, agent_summary)
+    def handle_infrastructure_error(client, agent_run, agent_summary)
       agent_run.fail!(error: "Infrastructure error detected in output: #{agent_summary.to_s.truncate(500)}")
       agent_run.log!("system", "Failed: infrastructure error detected in output (container/sandbox failure)")
       transition_issue_to_failed(agent_run)
+      remove_trigger_labels(client, agent_run.project, agent_run.issue, agent_run.id)
     end
 
     # Transitions the issue to "failed" so it doesn't stay stuck in
@@ -340,6 +341,8 @@ module Activities
     end
 
     def remove_trigger_labels(client, project, issue, agent_run_id)
+      return unless issue
+
       labels_to_remove = %w[build plan].filter_map { |stage| project.label_for_stage(stage) }
 
       if project.automation_on_label_enabled? && project.automation_label_name.present?
@@ -350,7 +353,7 @@ module Activities
       return if present_labels.empty?
 
       result = client.remove_labels_from_issue(project.full_name, issue.github_number, present_labels)
-      result[:failed].each do |failure|
+      Array(result&.fetch(:failed, [])).each do |failure|
         logger.warn(
           message: "agent_execution.remove_trigger_label_failed",
           agent_run_id: agent_run_id,
@@ -359,6 +362,13 @@ module Activities
           error: failure[:error]
         )
       end
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "agent_execution.remove_trigger_label_failed",
+        agent_run_id: agent_run_id,
+        issue_number: issue.github_number,
+        error: e.message
+      )
     end
 
     # Redacts lines that match known provider-error patterns so raw

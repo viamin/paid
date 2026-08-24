@@ -112,6 +112,19 @@ planning, research, waiting, tracking, epic, needs-manual-setup
       number, what shipped (with evidence), what is still missing, and the
       conclusion (the status from step 2).
 
+### 8. Close or keep the umbrella issue intentionally
+
+- [ ] If the closeout status is **Implemented** and no gap issues remain, make
+      the closeout PR visibly close the umbrella/closeout issue with GitHub
+      closing language such as `Closes #1234`.
+- [ ] If the closeout status is **Partially Implemented**, **Superseded**, or
+      **Abandoned** and the umbrella should remain open for follow-up work, use
+      non-closing language such as `Tracks #1234` and explain in the RDR why no
+      closure is claimed.
+- [ ] Do not rely on Paid's local `paid_state` as the source of truth for
+      closure; GitHub-visible closing references and issue state must tell the
+      same story a user sees.
+
 ## Linking existing closeout issues
 
 Closeout issues filed before this checklist existed do not need to be rewritten.
