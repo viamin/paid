@@ -365,6 +365,27 @@ RSpec.describe Tools::Registry do
       }.to raise_error(ArgumentError, "Unknown tool: trigger_agent_run")
     end
 
+    it "dispatches standard read-only tools without requiring a chat-scoped session tool surface" do
+      account = create(:account)
+      user = create(:user, :owner, account: account)
+      session = build(:chat_session, account: account, created_by: user)
+
+      tool = instance_double(Tools::ListProjects)
+      allow(Tools::ListProjects).to receive(:new).with(user:, session:).and_return(tool)
+      allow(tool).to receive(:dispatch).with(no_args).and_return(
+        { projects: [] }
+      )
+
+      result = described_class.dispatch_read_only(
+        name: "list_projects",
+        arguments: {},
+        user: user,
+        session: session
+      )
+
+      expect(result).to eq(projects: [])
+    end
+
     it "dispatches session-scoped read-only chat tools when the session makes them available" do
       account = create(:account)
       project = create(:project, account: account)
