@@ -239,7 +239,7 @@ RSpec.describe Activities::FetchIssuesActivity do
       create(:issue, :pull_request, :closed, project: project, github_number: 3583,
         body: "Tracks #3441", pr_review_phase: "merged")
 
-      changed = activity.send(:repair_completed_open_issues, project)
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
 
       expect(changed).to be true
       expect(issue.reload.paid_state).to eq("recommend_close")
@@ -253,7 +253,7 @@ RSpec.describe Activities::FetchIssuesActivity do
       create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3581)
       create(:issue, :pull_request, project: project, github_number: 3581, body: "Closes #3416")
 
-      changed = activity.send(:repair_completed_open_issues, project)
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
 
       expect(changed).to be false
       expect(issue.reload.paid_state).to eq("completed")
@@ -264,7 +264,7 @@ RSpec.describe Activities::FetchIssuesActivity do
       create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3583)
       create(:issue, :pull_request, project: project, github_number: 3581, body: "Closes #3441")
 
-      changed = activity.send(:repair_completed_open_issues, project)
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
 
       expect(changed).to be true
       expect(issue.reload.paid_state).to eq("recommend_close")
@@ -277,7 +277,7 @@ RSpec.describe Activities::FetchIssuesActivity do
       create(:agent_run, :completed, project: project, issue: other_issue, goal: "create_pr", pull_request_number: 3584)
       create(:issue, :pull_request, project: project, github_number: 3584, body: "Closes #3441\nCloses #3442")
 
-      changed = activity.send(:repair_completed_open_issues, project)
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
 
       expect(changed).to be true
       expect(issue.reload.paid_state).to eq("recommend_close")
@@ -287,7 +287,7 @@ RSpec.describe Activities::FetchIssuesActivity do
     it "leaves non-PR completed goals alone" do
       issue = create(:issue, :completed, project: project, github_number: 50, github_state: "open")
 
-      changed = activity.send(:repair_completed_open_issues, project)
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
 
       expect(changed).to be false
       expect(issue.reload.paid_state).to eq("completed")
@@ -298,10 +298,26 @@ RSpec.describe Activities::FetchIssuesActivity do
       create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3583)
       allow(github_client).to receive(:add_labels_to_issue).and_raise(GithubClient::Error.new("temporary failure"))
 
-      changed = activity.send(:repair_completed_open_issues, project)
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
 
       expect(changed).to be false
       expect(issue.reload.paid_state).to eq("completed")
+    end
+
+    it "reuses the already-resolved sync client for recommend-close labeling" do
+      issue = create(:issue, :completed, project: project, github_number: 3441, github_state: "open")
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3583)
+      create(:issue, :pull_request, :closed, project: project, github_number: 3583,
+        body: "Tracks #3441", pr_review_phase: "merged")
+      allow(project).to receive(:client).and_return(nil)
+
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(changed).to be true
+      expect(issue.reload.paid_state).to eq("recommend_close")
+      expect(github_client).to have_received(:add_labels_to_issue).with(
+        project.full_name, issue.github_number, [ "paid-recommend-close" ]
+      )
     end
   end
 
@@ -2537,6 +2553,20 @@ RSpec.describe Activities::FetchIssuesActivity do
           expect(issue.reload.paid_state).to eq("failed")
           expect(issue.labels).to eq([ "paid-build" ])
           expect(github_client).not_to have_received(:remove_labels_from_issue)
+        end
+
+        it "reuses the already-resolved sync client for questionless needs-input cleanup" do
+          issue = set_up_reconciled_questionless_issue(project, github_client, updated_issue)
+          allow(project).to receive(:client).and_return(github_client, nil)
+
+          activity.execute(project_id: project.id)
+
+          expect(issue.reload.paid_state).to eq("failed")
+          expect(github_client).to have_received(:remove_labels_from_issue).with(
+            project.full_name,
+            issue.github_number,
+            [ project.enhance_issue_needs_input_label_name ]
+          )
         end
 
         it "continues reconciliation when one open issue fetch fails" do

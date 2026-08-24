@@ -66,6 +66,7 @@ module Activities
         invalid_needs_input_changed = repair_questionless_needs_input(
           project,
           synced_issues,
+          client: client,
           ignored_issue_ids: enhance_issue_result[:handled_issue_ids]
         )
         sync_changed = invalid_needs_input_changed || sync_changed
@@ -89,10 +90,14 @@ module Activities
           )
           stale_issue_count = stale_issue_result[:closed_count]
           sync_changed = stale_issue_result[:changed] || sync_changed
-          sync_changed = repair_questionless_needs_input(project, stale_issue_result[:synced_issues]) || sync_changed
+          sync_changed = repair_questionless_needs_input(
+            project,
+            stale_issue_result[:synced_issues],
+            client: client
+          ) || sync_changed
         end
 
-        completed_state_changed = repair_completed_open_issues(project)
+        completed_state_changed = repair_completed_open_issues(project, client)
         sync_changed = completed_state_changed || sync_changed
 
         seed_eligible_issues(project, eligible_issues, incremental: incremental)
@@ -451,7 +456,7 @@ module Activities
       changed
     end
 
-    def repair_questionless_needs_input(project, synced_issues, ignored_issue_ids: [])
+    def repair_questionless_needs_input(project, synced_issues, client:, ignored_issue_ids: [])
       repair_labels = [
         project.enhance_issue_needs_input_label_name,
         project.label_for_stage("needs_input"),
@@ -471,7 +476,7 @@ module Activities
         next if pending_clarifying_questions_for(project, issue).any?
         next unless issue.reload.paid_state == "needs_input"
 
-        next unless remove_invalid_needs_input_labels(project, issue, repair_labels)
+        next unless remove_invalid_needs_input_labels(client, project, issue, repair_labels)
 
         issue.update!(
           paid_state: "failed",
@@ -504,11 +509,11 @@ module Activities
       [ :lookup_failed ]
     end
 
-    def remove_invalid_needs_input_labels(project, issue, labels)
+    def remove_invalid_needs_input_labels(client, project, issue, labels)
       present_labels = labels.select { |label| issue.has_label?(label) }
       return true if present_labels.empty?
 
-      result = project.client&.remove_labels_from_issue(project.full_name, issue.github_number, present_labels)
+      result = client&.remove_labels_from_issue(project.full_name, issue.github_number, present_labels)
       failures = Array(result&.fetch(:failed, []))
       failures.each do |failure|
         logger.warn(
@@ -742,7 +747,7 @@ module Activities
         .order(:relationships_parsed_at, :github_updated_at, :id)
     end
 
-    def repair_completed_open_issues(project)
+    def repair_completed_open_issues(project, client)
       completed_issues = project.issues
         .where(github_state: "open", is_pull_request: false, paid_state: "completed")
         .to_a
@@ -776,7 +781,7 @@ module Activities
       end
       return false if repaired.empty?
 
-      visible_repaired = repaired.select { |issue| add_recommend_close_label(project, issue) }
+      visible_repaired = repaired.select { |issue| add_recommend_close_label(client, project, issue) }
       return false if visible_repaired.empty?
 
       project.issues.where(id: visible_repaired.map(&:id)).update_all(paid_state: "recommend_close", updated_at: Time.current)
@@ -788,12 +793,12 @@ module Activities
       true
     end
 
-    def add_recommend_close_label(project, issue)
+    def add_recommend_close_label(client, project, issue)
       label = project.label_for_stage("recommend_close") ||
         Activities::HandleNoOutputIssueRunActivity::PAID_RECOMMEND_CLOSE_LABEL
       return true if issue.has_label?(label)
 
-      project.client.add_labels_to_issue(project.full_name, issue.github_number, [ label ])
+      client.add_labels_to_issue(project.full_name, issue.github_number, [ label ])
       true
     rescue GithubClient::Error => e
       logger.warn(
