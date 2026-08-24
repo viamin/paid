@@ -76,6 +76,13 @@ RSpec.describe Tools::GrepWorkspace do
       expect(paths.uniq).to eq([ "app/models/widget.rb" ])
     end
 
+    it "accepts the repo root as a path_filter" do
+      result = tool.call(repo_path: repo.fetch(:repo_path), query: "hello", path_filter: ".")
+
+      paths = result[:matches].map { |match| match[:path] }
+      expect(paths).to include("README.md", "app/models/widget.rb")
+    end
+
     it "returns no matches without raising when the pattern is absent" do
       result = tool.call(repo_path: repo.fetch(:repo_path), query: "definitely_not_present_xyz")
 
@@ -134,6 +141,21 @@ RSpec.describe Tools::GrepWorkspace do
       result = tool.call(repo_path: repo.fetch(:repo_path), query: "needle")
 
       expect(result[:matches].length).to be <= Tools::GrepWorkspace::MAX_MATCHES
+      expect(result[:truncated]).to be true
+    end
+
+    it "keeps the full match count when raw output truncates" do
+      stub_const("Tools::GrepWorkspace::MAX_OUTPUT_BYTES", 256)
+
+      many_lines = Array.new(40) { |i| "needle #{i} #{'x' * 32}\n" }.join
+      File.write(File.join(repo.fetch(:host_path), "truncated-count.txt"), many_lines)
+      run_cmd!("git", "-C", repo.fetch(:host_path), "add", "truncated-count.txt")
+      run_cmd!("git", "-C", repo.fetch(:host_path), "commit", "-m", "add truncation fixture")
+
+      result = tool.call(repo_path: repo.fetch(:repo_path), query: "needle")
+
+      expect(result[:total_matches]).to eq(40)
+      expect(result[:total_count]).to eq(40)
       expect(result[:truncated]).to be true
     end
 

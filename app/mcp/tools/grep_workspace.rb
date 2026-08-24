@@ -76,10 +76,11 @@ module Tools
         truncated: false
       } if exit_code == 1
 
-      truncated_output, output_truncated = truncate_output(stdout)
+      full_output = stdout.to_s
+      truncated_output, output_truncated = truncate_output(full_output)
       matches = parse_matches(truncated_output, output_truncated)
+      total_count = full_output.lines.count
       matches_truncated = matches.length > MAX_MATCHES
-      total_count = matches.length
 
       {
         repo_path: repo_path,
