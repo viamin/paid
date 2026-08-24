@@ -1,6 +1,20 @@
 # frozen_string_literal: true
 
 module StyleGuideAbTests
+  # Records a quality score for a style guide A/B test assignment and
+  # updates variant aggregates. Supports re-recording an updated score
+  # via `update_existing: true` (used when the underlying signal is
+  # corrected).
+  #
+  # The atomic-claim + variant aggregate update pattern is shared with
+  # AbTests::RecordResult, ConfigurationExperiments::RecordResult, and
+  # StrategyExperiments::RecordResult. The auto-completion loop is shared
+  # via Experiments::Lifecycle, with a style-guide-specific on-complete
+  # hook that auto-promotes the winning style guide version once an
+  # experiment finishes with a winner.
+  #
+  # @spec STYLE-GUIDE-EVOLUTION-011
+  # @spec STYLE-GUIDE-EVOLUTION-012
   class RecordResult
     ANALYSIS_INTERVAL = StyleGuideAbTest::ANALYSIS_INTERVAL
 
@@ -17,22 +31,20 @@ module StyleGuideAbTests
       new(...).record
     end
 
-    # @spec STYLE-GUIDE-EVOLUTION-011
     def record
-      validate_quality_score!
+      Experiments::VariantScoreAggregator::ScoreValidations.validate!(quality_score)
 
       score_recorded = ActiveRecord::Base.transaction { record_assignment_score }
-
-      check_auto_completion if score_recorded
+      Experiments::Lifecycle.maybe_complete(
+        style_guide_ab_test,
+        score_recorded: score_recorded,
+        analysis_interval: ANALYSIS_INTERVAL,
+        force_analysis: update_existing,
+        on_complete: method(:promote_winner_on_complete)
+      )
     end
 
     private
-
-    def validate_quality_score!
-      return if quality_score.is_a?(Numeric) && quality_score.between?(0, 1)
-
-      raise ArgumentError, "quality_score must be a number between 0 and 1"
-    end
 
     def record_assignment_score
       assignment = StyleGuideAbTestAssignment.find_by!(
@@ -48,61 +60,24 @@ module StyleGuideAbTests
 
         assignment.update!(quality_score: quality_score)
         if old_score.present?
-          adjust_variant_aggregates(variant, old_score:, new_score: quality_score)
+          Experiments::VariantScoreAggregator.replace_score!(variant, old_score:, new_score: quality_score)
           clear_analysis_cache
         else
-          add_variant_score(variant, quality_score)
+          Experiments::VariantScoreAggregator.increment_for_score!(variant, quality_score)
         end
-
+        variant.save!
         true
       end
-    end
-
-    # @spec STYLE-GUIDE-EVOLUTION-012
-    def check_auto_completion
-      style_guide_ab_test.reload
-      return unless style_guide_ab_test.running?
-      return unless style_guide_ab_test.sufficient_samples?
-      return unless should_analyze?
-      result = style_guide_ab_test.cached_or_compute_analysis
-      return if result.nil? || result.status == :insufficient_data
-
-      if result.status == :winner_found
-        style_guide_ab_test.complete!(winner: result.winner)
-        StyleGuideAbTests::PromoteWinner.call(style_guide_ab_test: style_guide_ab_test)
-      elsif result.status == :control_wins
-        style_guide_ab_test.complete!
-      end
-    rescue ActiveRecord::RecordInvalid
-      nil
-    end
-
-    def add_variant_score(variant, score)
-      score_decimal = BigDecimal(score.to_s)
-      variant.sample_count += 1
-      variant.total_quality_score = (variant.total_quality_score || BigDecimal("0")) + score_decimal
-      variant.avg_quality_score = variant.total_quality_score / variant.sample_count
-      variant.save!
-    end
-
-    def adjust_variant_aggregates(variant, old_score:, new_score:)
-      old_decimal = BigDecimal(old_score.to_s)
-      new_decimal = BigDecimal(new_score.to_s)
-      variant.total_quality_score = (variant.total_quality_score || BigDecimal("0")) - old_decimal + new_decimal
-      variant.avg_quality_score = variant.sample_count.positive? ? variant.total_quality_score / variant.sample_count : nil
-      variant.save!
     end
 
     def clear_analysis_cache
       style_guide_ab_test.update_columns(cached_analysis: nil, analysis_samples_key: nil)
     end
 
-    def should_analyze?
-      return true if update_existing
+    def promote_winner_on_complete(freshly_completed)
+      return unless freshly_completed.winner_variant
 
-      total_samples = style_guide_ab_test.style_guide_ab_test_variants.sum(:sample_count)
-      min_required = style_guide_ab_test.min_samples_per_variant * style_guide_ab_test.style_guide_ab_test_variants.count
-      total_samples == min_required || (total_samples % ANALYSIS_INTERVAL).zero?
+      StyleGuideAbTests::PromoteWinner.call(style_guide_ab_test: freshly_completed)
     end
   end
 end

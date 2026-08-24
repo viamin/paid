@@ -1,7 +1,17 @@
 # frozen_string_literal: true
 
 module ConfigurationExperiments
+  # Records a quality score for a configuration experiment assignment and
+  # updates variant aggregates. Supports re-recording an updated score via
+  # `update_existing: true` (used when the underlying signal is corrected).
+  #
+  # The atomic-claim + variant aggregate update pattern is shared with
+  # AbTests::RecordResult, StrategyExperiments::RecordResult, and
+  # StyleGuideAbTests::RecordResult. The auto-completion loop is shared via
+  # Experiments::Lifecycle.
   class RecordResult
+    ANALYSIS_INTERVAL = ConfigurationExperiment::ANALYSIS_INTERVAL
+
     attr_reader :configuration_experiment, :agent_run, :quality_score, :update_existing
 
     def initialize(configuration_experiment:, agent_run:, quality_score:, update_existing: false)
@@ -16,16 +26,18 @@ module ConfigurationExperiments
     end
 
     def record
-      validate_quality_score!
+      Experiments::VariantScoreAggregator::ScoreValidations.validate!(quality_score)
 
       score_recorded = ActiveRecord::Base.transaction { record_assignment_score }
-
-      check_auto_completion(configuration_experiment) if score_recorded
+      Experiments::Lifecycle.maybe_complete(
+        configuration_experiment,
+        score_recorded: score_recorded,
+        analysis_interval: ANALYSIS_INTERVAL,
+        force_analysis: update_existing
+      )
     end
 
     private
-
-    ANALYSIS_INTERVAL = ConfigurationExperiment::ANALYSIS_INTERVAL
 
     def record_assignment_score
       assignment = ConfigurationExperimentAssignment.find_by!(
@@ -37,72 +49,22 @@ module ConfigurationExperiments
       variant.with_lock do
         assignment.reload
         old_score = assignment.quality_score
-        if old_score.present? && !update_existing
-          false
+        return false if old_score.present? && !update_existing
+
+        assignment.update!(quality_score: quality_score)
+        if old_score.present?
+          Experiments::VariantScoreAggregator.replace_score!(variant, old_score:, new_score: quality_score)
+          clear_analysis_cache
         else
-          assignment.update!(quality_score: quality_score)
-          if old_score.present?
-            adjust_variant_aggregates(variant, old_score: old_score, new_score: quality_score)
-            clear_analysis_cache
-          else
-            add_variant_score(variant, quality_score)
-          end
-
-          true
+          Experiments::VariantScoreAggregator.increment_for_score!(variant, quality_score)
         end
+        variant.save!
+        true
       end
-    end
-
-    def validate_quality_score!
-      unless quality_score.is_a?(Numeric) && quality_score >= 0 && quality_score <= 1
-        raise ArgumentError, "quality_score must be a number between 0 and 1"
-      end
-    end
-
-    def check_auto_completion(configuration_experiment)
-      configuration_experiment.reload
-      return unless configuration_experiment.running?
-      return unless configuration_experiment.sufficient_samples?
-      return unless should_analyze?(configuration_experiment)
-
-      result = configuration_experiment.cached_or_compute_analysis
-      return if result.status == :insufficient_data
-
-      if result.status == :winner_found
-        configuration_experiment.complete!(winner: result.winner)
-      elsif result.status == :control_wins
-        configuration_experiment.complete!
-      end
-    rescue ActiveRecord::RecordInvalid
-      nil
-    end
-
-    def add_variant_score(variant, score)
-      score_decimal = BigDecimal(score.to_s)
-      variant.sample_count += 1
-      variant.total_quality_score = (variant.total_quality_score || BigDecimal(0)) + score_decimal
-      variant.avg_quality_score = variant.total_quality_score / variant.sample_count
-      variant.save!
-    end
-
-    def adjust_variant_aggregates(variant, old_score:, new_score:)
-      old_decimal = BigDecimal(old_score.to_s)
-      new_decimal = BigDecimal(new_score.to_s)
-      variant.total_quality_score = (variant.total_quality_score || BigDecimal(0)) - old_decimal + new_decimal
-      variant.avg_quality_score = variant.sample_count.positive? ? variant.total_quality_score / variant.sample_count : nil
-      variant.save!
     end
 
     def clear_analysis_cache
       configuration_experiment.update_columns(cached_analysis: nil, analysis_samples_key: nil)
-    end
-
-    def should_analyze?(configuration_experiment)
-      return true if update_existing
-
-      total_samples = configuration_experiment.configuration_experiment_variants.sum(:sample_count)
-      min_required = configuration_experiment.min_samples_per_variant * configuration_experiment.configuration_experiment_variants.count
-      total_samples == min_required || (total_samples % ANALYSIS_INTERVAL).zero?
     end
   end
 end

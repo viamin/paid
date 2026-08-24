@@ -59,9 +59,16 @@ module ScalingExperiments
         .where(scaling_experiment:, assigned_value: eligible_values)
         .group(:assigned_value)
         .count
-      min_count = eligible_values.map { |value| counts.fetch(value, 0) }.min
-      candidates = eligible_values.select { |value| counts.fetch(value, 0) == min_count }
-      candidates[Zlib.crc32("#{scaling_experiment.id}:#{workflow_id}") % candidates.size]
+      # eligible_values are scalar values, not variant records; the picker
+      # handles both via the duck-typed `id` accessor.
+      variants_like = eligible_values.map { |value| Struct.new(:id).new(value) }
+      chosen = Experiments::AssignmentPicker.pick(
+        variants: variants_like,
+        counts: counts,
+        strategy: :hash_balanced,
+        subject_hash: "#{scaling_experiment.id}:#{workflow_id}"
+      )
+      chosen&.id
     end
 
     def build_execution_plan(value)

@@ -42,26 +42,15 @@ module StrategyExperiments
 
     def select_variant
       variants = strategy_experiment.strategy_experiment_variants.order(:id).to_a
-      raise ArgumentError, "strategy experiment has no variants" if variants.empty?
-      return variants.first if variants.size == 1
-
-      assignment_counts = StrategyExperimentAssignment
+      counts = StrategyExperimentAssignment
         .where(strategy_experiment: strategy_experiment, strategy_experiment_variant: variants)
         .group(:strategy_experiment_variant_id)
         .count
-      max_count = variants.map { |v| assignment_counts[v.id] || 0 }.max
-      weights = variants.map { |v| (max_count - (assignment_counts[v.id] || 0)) + 1 }
-      total = weights.sum.to_f
-
-      roll = rand
-      cumulative = 0.0
-
-      variants.zip(weights).each do |variant, weight|
-        cumulative += weight / total
-        return variant if roll < cumulative
-      end
-
-      variants.last
+      Experiments::AssignmentPicker.pick(
+        variants: variants,
+        counts: counts,
+        strategy: :inversely_weighted
+      )
     end
   end
 end
