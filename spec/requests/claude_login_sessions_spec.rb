@@ -20,7 +20,7 @@ RSpec.describe "ClaudeLoginSessions" do
 
     # @spec SUBSCRIPTION-RUNNER-AUTH-004
     context "with an active claude runner credential" do
-      let!(:runner) { Runner.kept_only.find_by(user: owner_user, runner_key: "claude") }
+      let!(:runner) { owner_user.runners.find_or_create_by!(runner_key: "claude") }
       let!(:credential) do
         create(
           :runner_credential,

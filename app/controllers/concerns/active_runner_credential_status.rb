@@ -4,6 +4,8 @@
 # pages so operators see existing auth before starting a redundant login.
 # @spec SUBSCRIPTION-RUNNER-AUTH-004
 module ActiveRunnerCredentialStatus
+  extend ActiveSupport::Concern
+
   private
 
   def load_active_credential_status(runner_key)
