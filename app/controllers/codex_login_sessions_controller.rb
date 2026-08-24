@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class CodexLoginSessionsController < ApplicationController
+  include ActiveRunnerCredentialStatus
+
   before_action :set_codex_login_session, only: [ :show, :update ]
 
   def new
@@ -10,6 +12,7 @@ class CodexLoginSessionsController < ApplicationController
     )
     apply_return_to(@codex_login_session, params[:return_to])
     @return_to_path = normalized_return_to(@codex_login_session.metadata["return_to"])
+    load_active_credential_status
     authorize @codex_login_session
   end
 
@@ -22,6 +25,7 @@ class CodexLoginSessionsController < ApplicationController
       CodexLoginSessions::DeviceFlow.call(session: @codex_login_session)
       redirect_to codex_login_session_path(@codex_login_session.external_id)
     else
+      load_active_credential_status
       render :new, status: :unprocessable_content
     end
   end
@@ -50,6 +54,12 @@ class CodexLoginSessionsController < ApplicationController
   end
 
   private
+
+  # @spec SUBSCRIPTION-RUNNER-AUTH-004
+  def load_active_credential_status
+    @active_runner_credential = active_runner_credential("codex")
+    @credential_runner = account_runner_for("codex") if @active_runner_credential
+  end
 
   def set_codex_login_session
     @codex_login_session = policy_scope(CodexLoginSession).find_by!(external_id: params[:id])

@@ -51,6 +51,13 @@ class RunnerCredential < ApplicationRecord
     Runner.display_name_for(runner_key)
   end
 
+  # @spec SUBSCRIPTION-RUNNER-AUTH-004
+  def expiry_label
+    return "long-lived" if long_lived? || expires_at.nil?
+
+    "expires #{I18n.l(expires_at, format: :long)}"
+  end
+
   private
 
   def created_by_belongs_to_same_account

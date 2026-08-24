@@ -18,6 +18,59 @@ RSpec.describe "ClaudeLoginSessions" do
       expect(response.body).to include("Claude Browser Login")
     end
 
+    # @spec SUBSCRIPTION-RUNNER-AUTH-004
+    context "with an active claude runner credential" do
+      let!(:runner) { Runner.kept_only.find_by(user: owner_user, runner_key: "claude") }
+      let!(:credential) do
+        create(
+          :runner_credential,
+          account: account,
+          runner_key: "claude",
+          name: "Existing Claude Credential",
+          created_by: owner_user,
+          expires_at: 1.week.from_now
+        )
+      end
+
+      it "shows the active credential status with a link to it" do
+        get new_claude_login_session_path
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Active Claude credential")
+        expect(response.body).to include("Existing Claude Credential")
+        expect(response.body).to include("second concurrent active credential")
+
+        hrefs = Nokogiri::HTML.parse(response.body).css("a").map { |link| link["href"] }
+        expect(hrefs).to include(runner_runner_credential_path(runner, credential))
+        expect(hrefs).to include(integration_credentials_path(category: "llm_provider", service_key: "claude"))
+      end
+
+      it "never renders token material" do
+        get new_claude_login_session_path
+
+        expect(response.body).not_to include(credential.token)
+      end
+    end
+
+    # @spec SUBSCRIPTION-RUNNER-AUTH-004
+    context "with only an inactive claude runner credential" do
+      it "renders the fresh login form without a status banner" do
+        create(
+          :runner_credential,
+          account: account,
+          runner_key: "claude",
+          name: "Expired Claude Credential",
+          created_by: owner_user,
+          expires_at: 1.hour.ago
+        )
+
+        get new_claude_login_session_path
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).not_to include("Active Claude credential")
+      end
+    end
+
     it "denies account members without admin privileges" do
       sign_out owner_user
       sign_in member_user

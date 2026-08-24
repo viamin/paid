@@ -16,6 +16,82 @@ RSpec.describe "CodexLoginSessions" do
       expect(response.body).to include("Connect Codex")
     end
 
+    # @spec SUBSCRIPTION-RUNNER-AUTH-004
+    context "with an active codex runner credential" do
+      let!(:runner) { create(:runner, user: owner_user, runner_key: "codex") }
+      let!(:credential) do
+        create(
+          :runner_credential,
+          account: account,
+          runner_key: "codex",
+          name: "Existing Codex Credential",
+          created_by: owner_user,
+          expires_at: 1.week.from_now
+        )
+      end
+
+      it "shows the active credential status with a link to it" do
+        get new_codex_login_session_path
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Active Codex credential")
+        expect(response.body).to include("Existing Codex Credential")
+        expect(response.body).to include("second concurrent active credential")
+
+        hrefs = Nokogiri::HTML.parse(response.body).css("a").map { |link| link["href"] }
+        expect(hrefs).to include(runner_runner_credential_path(runner, credential))
+        expect(hrefs).to include(integration_credentials_path(category: "llm_provider", service_key: "openai"))
+      end
+
+      it "never renders token material" do
+        get new_codex_login_session_path
+
+        expect(response.body).not_to include(credential.token)
+      end
+    end
+
+    # @spec SUBSCRIPTION-RUNNER-AUTH-004
+    context "with only an inactive codex runner credential" do
+      it "renders the fresh login form without a status banner" do
+        create(
+          :runner_credential,
+          account: account,
+          runner_key: "codex",
+          name: "Revoked Codex Credential",
+          created_by: owner_user,
+          revoked_at: 1.hour.ago
+        )
+
+        get new_codex_login_session_path
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).not_to include("Active Codex credential")
+      end
+    end
+
+    # @spec SUBSCRIPTION-RUNNER-AUTH-004
+    context "with an active credential but no codex runner record" do
+      it "shows the banner and links to the credentials hub instead" do
+        create(
+          :runner_credential,
+          account: account,
+          runner_key: "codex",
+          name: "Runnerless Codex Credential",
+          created_by: owner_user,
+          expires_at: 1.week.from_now
+        )
+
+        get new_codex_login_session_path
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Runnerless Codex Credential")
+
+        hrefs = Nokogiri::HTML.parse(response.body).css("a").map { |link| link["href"] }
+        expect(hrefs.grep(/runner_credentials/)).to be_empty
+        expect(hrefs).to include(integration_credentials_path(category: "llm_provider", service_key: "openai"))
+      end
+    end
+
     it "drops unsafe return_to targets before rendering links" do
       get new_codex_login_session_path(return_to: "https://evil.example/phish")
 
