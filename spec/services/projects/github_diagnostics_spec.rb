@@ -59,7 +59,7 @@ RSpec.describe Projects::GithubDiagnostics do
         )
       end
 
-      it "reports app mode, app health, and webhook presence" do
+      it "reports app mode, app health, and webhook presence" do # @spec GITHUB-SYNC-009
         expect(diagnostics).to include(credential_mode: "app")
         expect(diagnostics.dig(:github_app, :installation_present)).to be(true)
         expect(diagnostics.dig(:github_app, :status)).to eq("active")
@@ -68,7 +68,7 @@ RSpec.describe Projects::GithubDiagnostics do
         expect(diagnostics.dig(:webhook, :configured)).to be(true)
       end
 
-      it "reports fallback PAT state using safe token metadata" do
+      it "reports fallback PAT state using safe token metadata" do # @spec GITHUB-SYNC-009
         expect(diagnostics.dig(:pat_fallback, :configured)).to be(true)
         expect(diagnostics.dig(:pat_fallback, :status)).to eq("active")
         expect(diagnostics.dig(:pat_fallback, :health)).to eq("recovering")
@@ -78,7 +78,7 @@ RSpec.describe Projects::GithubDiagnostics do
         )
       end
 
-      it "sanitizes permission failures and redacts secret material" do
+      it "sanitizes permission failures and redacts secret material" do # @spec GITHUB-SYNC-009
         expect(diagnostics.fetch(:recent_permission_failures).map { |failure| failure[:code] })
           .to all(eq("missing_workflows_permission"))
 
@@ -140,5 +140,59 @@ RSpec.describe Projects::GithubDiagnostics do
           .to eq("grant_workflows_permission_or_rotate_pat_fallback")
       end
     end
+
+    it "returns the most recent permission failures by rejection timestamp, not issue update time" do # @spec GITHUB-SYNC-009
+      project = create(:project, account: account, webhook_secret: "present")
+      older_failure = create_merge_failure(project:, occurred_at: 2.days.ago, updated_at: Time.current)
+      newer_failure = create_push_failure(project:, occurred_at: 1.hour.ago, updated_at: 3.days.ago)
+
+      failures = described_class.call(project: project).fetch(:recent_permission_failures)
+
+      expect(failures.first).to include(
+        issue_id: newer_failure.id,
+        kind: "push",
+        occurred_at: newer_failure.runner_retry_abandoned_at
+      )
+      expect(failures.second).to include(
+        issue_id: older_failure.id,
+        kind: "merge",
+        occurred_at: older_failure.merge_permission_rejected_at
+      )
+    end
+
+    it "does not mutate persisted github health state when reporting endpoint health" do # @spec GITHUB-SYNC-009
+      project = create(:project, account: account, webhook_secret: "present")
+      state = create(
+        :github_health_state,
+        endpoint: project.github_health_endpoint,
+        circuit_state: "open",
+        circuit_opened_at: 10.minutes.ago
+      )
+
+      diagnostics = described_class.call(project: project)
+
+      expect(diagnostics.dig(:primary_credential, :health)).to eq("circuit_open")
+      expect(state.reload.circuit_state).to eq("open")
+    end
+  end
+
+  def create_merge_failure(project:, occurred_at:, updated_at:)
+    create(
+      :issue,
+      project: project,
+      merge_permission_rejected_at: occurred_at,
+      merge_permission_rejection_reason: "missing workflows permission",
+      updated_at: updated_at
+    )
+  end
+
+  def create_push_failure(project:, occurred_at:, updated_at:)
+    create(
+      :issue,
+      project: project,
+      runner_retry_abandoned_at: occurred_at,
+      runner_retry_abandon_reason: "#{Issue::PUSH_PERMISSION_ABANDON_PREFIX} missing workflows permission",
+      updated_at: updated_at
+    )
   end
 end

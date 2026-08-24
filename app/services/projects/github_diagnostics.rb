@@ -3,6 +3,7 @@
 module Projects
   class GithubDiagnostics
     RECENT_FAILURE_LIMIT = 5
+    RECENT_FAILURE_CANDIDATE_LIMIT = RECENT_FAILURE_LIMIT * 10
     WORKFLOWS_PERMISSION_CODE = "missing_workflows_permission"
     GENERIC_PERMISSION_CODE = "github_permission_rejected"
 
@@ -76,7 +77,7 @@ module Projects
       }
     end
 
-    def recent_permission_failures
+    def recent_permission_failures # @spec GITHUB-SYNC-009
       scoped_failure_issues.flat_map do |issue|
         failures = []
         if issue.merge_permission_rejected_at.present?
@@ -184,8 +185,15 @@ module Projects
       project.issues
         .where.not(merge_permission_rejected_at: nil)
         .or(project.issues.where.not(runner_retry_abandoned_at: nil))
-        .order(updated_at: :desc)
-        .limit(RECENT_FAILURE_LIMIT * 2)
+        .order(
+          Arel.sql(
+            "GREATEST(" \
+              "COALESCE(merge_permission_rejected_at, TO_TIMESTAMP(0)), " \
+              "COALESCE(runner_retry_abandoned_at, TO_TIMESTAMP(0))" \
+            ") DESC"
+          )
+        )
+        .limit(RECENT_FAILURE_CANDIDATE_LIMIT)
     end
 
     def app_backed?
@@ -254,7 +262,6 @@ module Projects
       state = GithubHealthState.find_by(endpoint: endpoint)
       return "available" unless state
 
-      state.check_circuit_recovery!
       return "rate_limited" if state.rate_limited?
       return "circuit_open" if state.circuit_open?
       return "recovering" if state.circuit_half_open?
