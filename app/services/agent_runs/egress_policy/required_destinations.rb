@@ -7,8 +7,8 @@ module AgentRuns
     # settings, so tenant allowlists can only extend this set.
     #
     # Sources:
-    # - platform: secrets proxy (secrets, callback URL, GitHub proxying) +
-    #   egress gateway, required by every run
+    # - platform: secrets proxy (secrets, callback URL, GitHub proxying,
+    #   knowledge search) + egress gateway, required by every run
     # - github: git checkout and PR operations, required by every run
     # - runner provider: subscription-auth / direct-outbound provider APIs,
     #   required only when the run's network mode calls providers directly
@@ -80,7 +80,8 @@ module AgentRuns
           destination(EGRESS_GATEWAY_HOST, EGRESS_GATEWAY_PORT, source: "platform", reason: "egress_gateway"),
           destination(proxy_host, proxy_port, source: "platform", reason: "secrets_proxy"),
           destination(proxy_host, proxy_port, source: "platform", reason: "callback_url"),
-          destination(proxy_host, proxy_port, source: "platform", reason: "github_proxy")
+          destination(proxy_host, proxy_port, source: "platform", reason: "github_proxy"),
+          destination(proxy_host, proxy_port, source: "platform", reason: "knowledge_search_proxy")
         ]
       end
 

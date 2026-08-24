@@ -195,6 +195,18 @@ RSpec.describe AgentRuns::EgressPolicy::Resolve do
       expect(destinations.count { |d| d["host"] == "github.com" }).to eq(1)
       expect(destinations.find { |d| d["host"] == "github.com" }).to include("source" => "platform", "port" => 443)
     end
+
+    # @spec EGRESS-POLICY-004
+    it "keeps the code-owned preview tunnel destination when a project entry matches its host" do
+      project_entry = create(:egress_allowlist_entry, account: account, project: project, host_pattern: "tunnel.example.com")
+
+      destinations = resolve(preview_destination: { host: "tunnel.example.com", port: 9000 }).destinations
+      tunnel_destinations = destinations.select { |d| d["host"] == "tunnel.example.com" }
+
+      expect(tunnel_destinations.length).to eq(1)
+      expect(tunnel_destinations.first).to include("source" => "run_preview", "category" => "preview_tunnel")
+      expect(destinations).not_to include(hash_including("entry_id" => project_entry.id))
+    end
   end
 
   describe "run-local destinations" do

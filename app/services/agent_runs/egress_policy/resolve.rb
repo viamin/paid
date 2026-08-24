@@ -145,20 +145,25 @@ module AgentRuns
       # widening a required destination's port restriction. Dropping the
       # entry here — rather than merging it — keeps EGRESS-POLICY-004 true:
       # a required destination can never be shadowed or extended by tenant
-      # configuration.
+      # configuration. This includes the resolved run-local destinations
+      # (service containers, preview tunnels): those are code-owned just like
+      # platform/GitHub/provider destinations, so a tenant entry that happens
+      # to match a run-local host must not be allowed to win the dedupe race
+      # in {merged_destinations} by being merged ahead of them.
       # @spec EGRESS-POLICY-004
       def safe_entries
         (account_entries + project_entries).select do |entry|
-          entry.unsafe_reason.nil? && !required_host?(entry)
+          entry.unsafe_reason.nil? && !non_shadowable_host?(entry)
         end
       end
 
-      def required_host?(entry)
-        required_destination_hosts.include?(entry.host_pattern.to_s.strip.downcase)
+      def non_shadowable_host?(entry)
+        non_shadowable_hosts.include?(entry.host_pattern.to_s.strip.downcase)
       end
 
-      def required_destination_hosts
-        @required_destination_hosts ||= required_destinations.map { |destination| destination["host"].to_s.downcase }
+      def non_shadowable_hosts
+        @non_shadowable_hosts ||=
+          (required_destinations + run_local_destinations).map { |destination| destination["host"].to_s.downcase }
       end
 
       def entry_destination(entry)
@@ -210,7 +215,7 @@ module AgentRuns
       end
 
       def run_local_destinations
-        RequiredDestinations.run_local_categories.flat_map do |category|
+        @run_local_destinations ||= RequiredDestinations.run_local_categories.flat_map do |category|
           resolve_run_local_category(category)
         end
       end

@@ -59,7 +59,8 @@ never tenant settings:
 
 - **platform** — egress gateway (`egress-gateway:3128`) plus the proxy-backed
   control-plane endpoints the container is told to call (`PAID_PROXY_URL`,
-  `GITHUB_API_URL`, and the callback/proxy base itself), for every agent run.
+  `GITHUB_API_URL`, `KNOWLEDGE_SEARCH_URL`, and the callback/proxy base
+  itself), for every agent run.
   The proxy host/port is the endpoint as seen from the run's container,
   resolved through `Containers::ProxyUrl` from the run's backend and
   networking policy: `paid-proxy:<port>` for restricted runs on a local
@@ -89,9 +90,15 @@ never tenant settings:
 6. run-local service containers and the preview destination, driven by the
    registry's provider-neutral run-local categories.
 
-First occurrence wins on `[host, port]`, so required destinations can never be
-shadowed or removed by tenant entries, and an account entry outranks a
-duplicate project entry. Every destination carries provenance (`source`,
+First occurrence wins on `[host, port]`, so an account entry outranks a
+duplicate project entry. Required destinations can never be shadowed or
+removed by tenant entries: platform/GitHub/provider destinations are simply
+merged first, but the run-local categories (service container, preview
+tunnel) only resolve to concrete hosts *after* the allowlist steps, so
+first-occurrence-wins alone would let a tenant entry win that dedupe race.
+Resolve closes that gap by filtering tenant entries against the resolved
+run-local hosts before merging, not just against the platform/GitHub/provider
+hosts. Every destination carries provenance (`source`,
 `entry_id`/`service_container_id`, `reason`) explaining why it was included.
 
 An unsafe persisted entry is excluded from the destination list, recorded in

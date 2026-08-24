@@ -23,6 +23,10 @@ RSpec.describe AgentRuns::EgressPolicy::RequiredDestinations do
         { "host" => "paid-proxy", "port" => Rails.application.config.x.paid_proxy_port,
           "source" => "platform", "reason" => "github_proxy" }
       )
+      expect(destinations).to include(
+        { "host" => "paid-proxy", "port" => Rails.application.config.x.paid_proxy_port,
+          "source" => "platform", "reason" => "knowledge_search_proxy" }
+      )
     end
 
     it "accepts an explicit proxy host and port" do
@@ -36,6 +40,9 @@ RSpec.describe AgentRuns::EgressPolicy::RequiredDestinations do
       )
       expect(destinations).to include(
         { "host" => "proxy.internal", "port" => 8080, "source" => "platform", "reason" => "github_proxy" }
+      )
+      expect(destinations).to include(
+        { "host" => "proxy.internal", "port" => 8080, "source" => "platform", "reason" => "knowledge_search_proxy" }
       )
     end
   end

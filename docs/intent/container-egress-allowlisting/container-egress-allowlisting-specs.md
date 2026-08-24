@@ -18,8 +18,9 @@
 - [x] **EGRESS-POLICY-002** — The system SHALL provide a code-owned
   required-destination registry exposing platform destinations (egress
   gateway plus the proxy-backed control-plane endpoints the container is told
-  to call: secrets proxy, callback URL, and GitHub proxy, all resolved from
-  the run's backend and networking policy via `Containers::ProxyUrl`), GitHub
+  to call: secrets proxy, callback URL, GitHub proxy, and knowledge search
+  proxy, all resolved from the run's backend and networking policy via
+  `Containers::ProxyUrl`), GitHub
   destinations (github.com, api.github.com), provider-neutral run-local
   destination categories (`service_container`, `preview_tunnel`) that the
   resolver materializes later, and runner/provider destinations, where
@@ -54,7 +55,10 @@
 - [x] **EGRESS-POLICY-004** — Enabled account entries SHALL be inherited by
   every project run in the account, project entries SHALL extend (never
   replace) the inherited set, and neither scope SHALL be able to remove or
-  shadow a platform-, GitHub-, or provider-required destination.
+  shadow a platform-, GitHub-, provider-, or run-local-required destination
+  (service container, preview tunnel) — including a tenant entry whose host
+  matches a run-local destination resolved only after the allowlist entries
+  are merged.
   *Tests:* `spec/services/agent_runs/egress_policy/resolve_spec.rb`
   *Code:* `AgentRuns::EgressPolicy::Resolve`
 
