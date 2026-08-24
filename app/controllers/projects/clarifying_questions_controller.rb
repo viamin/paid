@@ -82,7 +82,7 @@ module Projects
     end
 
     def queue_mode?
-      queue_param == "dashboard_needs_input"
+      %w[dashboard_needs_input dashboard_inbox].include?(queue_param)
     end
 
     def queue_param
@@ -101,7 +101,19 @@ module Projects
     end
 
     def queue_return_to
-      @queue_return_to ||= dashboard_needs_input_path(project_id: queue_project&.id)
+      @queue_return_to ||= begin
+        requested = params[:return_to].to_s
+        if safe_queue_return_to?(requested)
+          requested
+        elsif queue_param == "dashboard_inbox"
+          dashboard_inbox_path(
+            project_id: queue_project&.id,
+            kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND
+          )
+        else
+          dashboard_needs_input_path(project_id: queue_project&.id)
+        end
+      end
     end
 
     def queue_redirect_params
@@ -123,6 +135,12 @@ module Projects
         project: queue_project,
         after_issue: @issue
       )
+    end
+
+    def safe_queue_return_to?(path)
+      return false if path.blank? || path.include?("://")
+
+      path.start_with?(dashboard_needs_input_path) || path.start_with?(dashboard_inbox_path)
     end
 
     def empty_questions_redirect_path
