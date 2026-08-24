@@ -16,7 +16,8 @@ module AgentRuns
       # @spec EGRESS-POLICY-008
       # @spec EGRESS-POLICY-009
       def call
-        guard_outbound_secret!(url, host_for(url))
+        uri = HttpClient.validate_request!(url: url, method: method)
+        guard_outbound_secret!(url, uri.host)
         BudgetLedger.reserve_request!(agent_run: agent_run)
 
         response = HttpClient.fetch(url: url, method: method)
@@ -94,12 +95,6 @@ module AgentRuns
           networking_policy: agent_run.egress_policy_snapshot || {},
           metadata: metadata
         )
-      end
-
-      def host_for(value)
-        URI.parse(value).host
-      rescue URI::InvalidURIError
-        nil
       end
     end
   end

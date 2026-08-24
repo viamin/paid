@@ -63,14 +63,18 @@ module AgentRuns
         new(dns_resolver: dns_resolver).fetch(url: url, method: method)
       end
 
+      def self.validate_request!(url:, method:)
+        raise RequestInvalidError, "Brokered research only supports GET/HEAD" unless ALLOWED_METHODS.include?(method)
+
+        new.send(:normalize_uri, url)
+      end
+
       def initialize(dns_resolver: nil)
         @dns_resolver = dns_resolver
       end
 
       def fetch(url:, method:)
-        raise RequestInvalidError, "Brokered research only supports GET/HEAD" unless ALLOWED_METHODS.include?(method)
-
-        current_uri = normalize_uri(url)
+        current_uri = self.class.validate_request!(url: url, method: method)
         redirect_chain = []
 
         loop do

@@ -3,6 +3,8 @@
 module AgentRuns
   module Research
     class Search
+      SearchResult = Data.define(:payload, :snippet_tokens)
+
       PROVIDER_URL = "https://duckduckgo.com/html/".freeze
       MAX_RESULTS = 5
 
@@ -22,11 +24,12 @@ module AgentRuns
         BudgetLedger.reserve_request!(agent_run: agent_run)
 
         response = HttpClient.fetch(url: provider_uri.to_s, method: "GET")
-        results = extract_results(response.body)
+        result_set = extract_results(response.body)
+        results = result_set.map(&:payload)
         usage = BudgetLedger.consume_response!(
           agent_run: agent_run,
           bytes: results.sum { |result| result.fetch("snippet").bytesize },
-          tokens: results.sum { |result| result.fetch("snippet").length / 4 }
+          tokens: result_set.sum(&:snippet_tokens)
         )
 
         audit!(
@@ -66,11 +69,14 @@ module AgentRuns
           sanitized_snippet = ResponseSanitizer.call(body: snippet_text, content_type: "text/plain")
           sanitized_url = ResponseSanitizer.call(body: anchor["href"].to_s, content_type: "text/plain")
 
-          {
-            "title" => SecretGuard.redact_text(anchor.text.to_s.squish),
-            "url" => sanitized_url.content,
-            "snippet" => sanitized_snippet.content
-          }
+          SearchResult.new(
+            payload: {
+              "title" => SecretGuard.redact_text(anchor.text.to_s.squish),
+              "url" => sanitized_url.content,
+              "snippet" => sanitized_snippet.content
+            },
+            snippet_tokens: sanitized_snippet.tokens_estimate
+          )
         end
       end
 

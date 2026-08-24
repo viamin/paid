@@ -74,6 +74,17 @@ RSpec.describe "Api::Proxy::Research" do # @spec EGRESS-POLICY-008 # @spec EGRES
 
       expect(response).to have_http_status(:unprocessable_entity)
       expect(response.parsed_body.fetch("error")).to include("GET/HEAD")
+      expect(agent_run.reload.external_metadata.fetch("research_usage", {})).to eq({})
+    end
+
+    it "rejects invalid fetch URLs before consuming research usage" do
+      get "/api/proxy/research/fetch",
+        params: { url: "ftp://docs.example.com/guide" },
+        headers: headers
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body.fetch("error")).to include("http or https")
+      expect(agent_run.reload.external_metadata.fetch("research_usage", {})).to eq({})
     end
 
     it "enforces a per-run request budget" do
@@ -196,6 +207,25 @@ RSpec.describe "Api::Proxy::Research" do # @spec EGRESS-POLICY-008 # @spec EGRES
       expect(result.fetch("url")).to include(PromptAssembly::Section::QUARANTINE_NOTICE)
       expect(result.fetch("url")).to include("https://docs.example.com/guide")
       expect(result.fetch("snippet")).to include(PromptAssembly::Section::QUARANTINE_NOTICE)
+    end
+
+    it "counts search tokens from sanitizer estimates instead of quarantine wrapper text" do
+      stub_request(:get, brokered_url("duckduckgo.com", "/html/", query: "q=tiny"))
+        .to_return(status: 200, body: <<~HTML, headers: { "Content-Type" => "text/html" })
+          <html><body>
+            <a class="result__a" href="https://docs.example.com/guide">Guide</a>
+            <a class="result__snippet">tiny</a>
+          </body></html>
+        HTML
+
+      get "/api/proxy/research/search", params: { q: "tiny" }, headers: headers
+
+      expect(response).to have_http_status(:ok)
+      usage = agent_run.reload.external_metadata.fetch("research_usage")
+      expect(usage.fetch("tokens_used")).to eq(AgentRuns::Research::ResponseSanitizer.call(
+        body: "tiny",
+        content_type: "text/plain"
+      ).tokens_estimate)
     end
 
     it "rejects upstream non-2xx search responses instead of returning an empty result set" do
