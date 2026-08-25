@@ -12,6 +12,7 @@
 RSpec.shared_examples "a secure execution runner" do
   let(:secret_values_excluded_from_handle_metadata) { [] }
   let(:expected_proxy_scope_agent_run_ids) { nil }
+  let(:captured_proxy_scope_credentials) { nil }
   let(:expects_secure_firewall_rules) { true }
 
   it "restricted mode blocks non-allowed traffic" do
@@ -42,5 +43,18 @@ RSpec.shared_examples "a secure execution runner" do
       expect(second_handle.metadata["agent_run_id"]).to eq(expected_proxy_scope_agent_run_ids.fetch(1))
     end
     expect(first_handle.metadata["agent_run_id"]).not_to eq(second_handle.metadata["agent_run_id"])
+
+    next unless captured_proxy_scope_credentials
+
+    expect(captured_proxy_scope_credentials.fetch(0)).to include(
+      agent_run_id: secure_run_spec.agent_run.id,
+      proxy_token: secure_run_spec.agent_run.proxy_token
+    )
+    expect(captured_proxy_scope_credentials.fetch(1)).to include(
+      agent_run_id: second_secure_run_spec.agent_run.id,
+      proxy_token: second_secure_run_spec.agent_run.proxy_token
+    )
+    expect(captured_proxy_scope_credentials.fetch(0)[:proxy_token])
+      .not_to eq(captured_proxy_scope_credentials.fetch(1)[:proxy_token])
   end
 end

@@ -126,6 +126,9 @@ RSpec.shared_examples "an execution runner contract" do
   let(:services_network) { "paid_agent" }
   let(:restricted_firewall_expectation) { nil }
   let(:expects_unrestricted_firewall_rules) { false }
+  let(:contract_abort_patterns) { [ "quota exceeded" ] }
+  let(:aborting_contract_command) { "emit quota warning" }
+  let(:expected_abort_output) { contract_abort_patterns.first }
   let(:missing_handle) do
     valid_handle.with(identifier: "#{valid_handle.identifier}-missing")
   end
@@ -201,8 +204,12 @@ RSpec.shared_examples "an execution runner contract" do
 
     it "detects abort patterns" do
       expect do
-        start_contract_run(handle: valid_handle, command: "abort output")
-      end.to raise_error(ExecutionRunners::OutputAbortError) { |error| expect(error.matched_output).to be_present }
+        start_contract_run(
+          handle: valid_handle,
+          command: aborting_contract_command,
+          abort_patterns: contract_abort_patterns
+        )
+      end.to raise_error(ExecutionRunners::OutputAbortError) { |error| expect(error.matched_output).to eq(expected_abort_output) }
     end
   end
 

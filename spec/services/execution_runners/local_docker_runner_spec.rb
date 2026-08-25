@@ -1811,6 +1811,9 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
   end
 
   it_behaves_like "an execution runner contract" do
+    let(:contract_abort_patterns) { [ "quota exceeded" ] }
+    let(:aborting_contract_command) { "emit quota warning" }
+
     let(:valid_handle) do
       ExecutionRunners::RunnerHandle.new(
         runner_type: :local_docker,
@@ -1847,7 +1850,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
         new: provision_service,
         compatibility_for: Containers::Provision::CompatibilityResult.new(compatible: true, error_message: nil)
       )
-      allow(provision_service).to receive(:execute) do |command, **, &block|
+      allow(provision_service).to receive(:execute) do |command, abort_patterns:, **, &block|
         case command
         when "startup timeout"
           raise Containers::Provision::StartupTimeoutError.new("No output received", diagnostics: { elapsed: 30 })
@@ -1855,8 +1858,14 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
           raise Containers::Provision::IdleTimeoutError.new("Output stalled", diagnostics: { idle_seconds: 30 })
         when "wall timeout"
           raise Containers::Provision::TimeoutError.new("Timed out", diagnostics: { elapsed: 60 })
-        when "abort output"
-          raise Containers::Provision::OutputAbortError.new("aborted", matched_output: "quota exceeded", source: :pattern)
+        when aborting_contract_command
+          if abort_patterns == contract_abort_patterns
+            raise Containers::Provision::OutputAbortError.new("aborted", matched_output: contract_abort_patterns.first,
+              source: :pattern)
+          end
+
+          block&.call(:stdout, "ok\n")
+          Containers::Provision::Result.success(stdout: "ok\n", stderr: "", exit_code: 0)
         when "oom failure"
           Containers::Provision::Result.failure(
             error: "Command exited with code 137",
@@ -1897,6 +1906,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
   end
 
   it_behaves_like "a secure execution runner" do
+    let(:captured_proxy_scope_credentials) { [] }
     let(:secure_run_spec) do
       ExecutionRunners::RunSpec.new(
         **run_spec.to_h.merge(
@@ -1923,7 +1933,11 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     end
 
     before do
-      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      allow(Containers::Provision).to receive(:new) do |**kwargs|
+        run = kwargs.fetch(:agent_run)
+        captured_proxy_scope_credentials << { agent_run_id: run.id, proxy_token: run.proxy_token }
+        provision_service
+      end
       allow(provision_service).to receive_messages(
         provision: Containers::Provision::Result.success(container_id: "abc123", container_host: "local"),
         firewall_service_destinations: []
