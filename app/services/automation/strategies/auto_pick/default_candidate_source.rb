@@ -218,6 +218,13 @@ module Automation
           private
 
           def apply_issue_analysis_backoff(scope, project) # @spec ISSUE-ANALYSIS-010 AUTO-PICK-QUEUE-002
+            # The reset timestamp only matters for rows with a non-null
+            # `issue_analysis_next_attempt_at`. Skip the (expensive) reset
+            # context query when no issue is in active backoff — the
+            # overwhelmingly common case across dequeue-time rechecks,
+            # sweep jobs, and dashboard eligibility breakdowns.
+            return scope unless project.issues.where.not(issue_analysis_next_attempt_at: nil).exists?
+
             now = Time.current
             reset_at = Issues::IssueAnalysisBackoffResetContext.call(project: project)
 

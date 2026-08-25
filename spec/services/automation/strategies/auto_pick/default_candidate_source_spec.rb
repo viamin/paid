@@ -644,6 +644,15 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to contain_exactly(issue.id)
     end
 
+    # @spec AUTO-PICK-QUEUE-002 ISSUE-ANALYSIS-010
+    it "skips the backoff reset-context query when no issue has an active backoff" do
+      _eligible = create(:issue, project: project)
+
+      expect(Issues::IssueAnalysisBackoffResetContext).not_to receive(:call)
+
+      expect(described_class.eligible_scope(project).pluck(:id)).to contain_exactly(_eligible.id)
+    end
+
     it "excludes issues whose creator is not in the allowlist regardless of case" do
       project.update!(allowed_github_usernames: [ "Viamin" ])
       create(:issue, project: project, github_creator_login: "otheruser")
