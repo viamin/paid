@@ -338,6 +338,23 @@ RSpec.describe ExecutionRunners do
     end
 
     # @spec CONTAINER-RUNTIME-027
+    it "coerces string resource overrides (e.g. form params/JSON payloads) to numeric before scaling" do
+      project = create(:project)
+      run = create(:agent_run, project: project)
+
+      built = ExecutionRunners::RunSpec.from_agent_run(
+        run,
+        cpu_cores: "0.5",
+        memory_mib: "512",
+        disk_gb: "2"
+      )
+
+      expect(built.resources.cpu_cores).to eq(0.5)
+      expect(built.resources.memory_mib).to eq(512)
+      expect(built.resources.disk_gb).to eq(2)
+    end
+
+    # @spec CONTAINER-RUNTIME-027
     # The owner timeout deliberately differs from the preset timeout so the
     # assertion proves the profile expands to the full tuple — timeout
     # included — rather than coincidentally matching the owner default.

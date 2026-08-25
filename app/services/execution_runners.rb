@@ -551,11 +551,13 @@ module ExecutionRunners
     end
 
     def self.positive_numeric_option(value)
-      # Use +to_f+ rather than +to_i+ so fractional overrides such as
-      # +cpu_cores: 0.5+ survive the positivity check. Integer callers
-      # (+cpu_quota+, +memory_bytes+, +disk_bytes+, +timeout_seconds+) round-trip
-      # unchanged because +Integer#to_f+ is exact.
-      value if value.to_f.positive?
+      # Coerce Strings (common for params/JSON payloads, e.g. cpu_cores: "0.5")
+      # to a Float so callers that scale the result (+legacy_resource_option+)
+      # multiply a number rather than repeating the raw string. Numeric
+      # callers (+cpu_quota+, +memory_bytes+, +disk_bytes+, +timeout_seconds+)
+      # pass through unchanged so integers round-trip exactly.
+      numeric = value.is_a?(Numeric) ? value : value.to_s.to_f
+      numeric if numeric.positive?
     end
 
     def self.legacy_resource_option(legacy_value, modern_value, fallback, scale: 1)
