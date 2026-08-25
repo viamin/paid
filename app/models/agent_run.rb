@@ -3277,25 +3277,11 @@ class AgentRun < ApplicationRecord
   end
 
   def normalize_log_content(content)
-    text = content.to_s
-    return text.delete("\x00") if text.encoding == Encoding::UTF_8 && text.valid_encoding?
-
-    text.dup.force_encoding(Encoding::UTF_8).scrub.delete("\x00")
+    ErrorMessageSanitizer.normalize_encoding(content.to_s)
   end
 
   def sanitize_runner_attempt_error_message(message)
-    return nil if message.blank?
-
-    normalized = normalize_log_content(message)
-    redacted = Knowledge::Redaction::Redactor.call(text: normalized).clean_text
-    redacted = redact_runner_attempt_secrets(redacted)
-    redacted.truncate(MAX_RUNNER_ATTEMPT_ERROR_MESSAGE_LENGTH)
-  end
-
-  def redact_runner_attempt_secrets(text)
-    RUNNER_ATTEMPT_SECRET_PATTERNS.reduce(text) do |result, (pattern, replacement)|
-      result.gsub(pattern, replacement)
-    end
+    ErrorMessageSanitizer.call(text: message)
   end
 
   def logs_text(log_type:, limit:)
