@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class Issue < ApplicationRecord
-  PAID_STATES = %w[new planning in_progress completed failed needs_input recommend_close analyzed].freeze
+  PAID_STATES = %w[new planning in_progress completed failed needs_input manual_review recommend_close analyzed].freeze
   PR_REVIEW_PHASES = %w[draft restarted ready merged escalated].freeze
   PR_ESCALATION_REASONS = %w[
     operational_failures

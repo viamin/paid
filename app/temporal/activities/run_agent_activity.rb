@@ -3854,16 +3854,17 @@ module Activities
 
       ---
       IMPORTANT: Your goal is to ENHANCE AN EXISTING ISSUE by adding context or asking clarifying questions.
-      Do NOT write code, create PRs, create new issues, or push commits.
+      Do NOT write code, create PRs, create new issues, push commits, or post GitHub comments.
 
-      This run is comment-only: do NOT modify files in /workspace, do NOT commit, push, or
-      create a PR. The workflow discards any /workspace modifications — only the posted
-      comment and label state matter. You can explore and read the repo freely.
+      This run is read-only: do NOT modify files in /workspace, commit, push, create a PR,
+      or mutate GitHub. The workflow discards workspace modifications and posts the validated
+      enhancement comment itself. You can explore and read the repo freely.
       State directories (under /home/agent/) are writable for scratch/tooling needs.
 
-      Read issue #{{issue_number}} in {{repo}} — its description and all comments.  Explore the repository
+      Read issue #{{issue_number}} in {{repo}}. Trusted collaborator comments are already included in
+      the base prompt; do not fetch raw issue comments. Explore the repository
       to self-answer codebase-determinable questions (existing models, platform targets, patterns, etc.)
-      before asking the human.  Only ask about genuine product, scope, or intent ambiguities.
+      before asking the human. Only ask about genuine product, scope, or intent ambiguities.
 
       You can search the project's knowledge base to look up existing code,
       symbols, routes, and patterns before asking questions:
@@ -3874,13 +3875,10 @@ module Activities
         -H "X-Proxy-Token: $PROXY_TOKEN"
       ```
 
-      Use the GitHub API proxy to read issue details and comments:
+      Use the GitHub API proxy only to read issue details:
 
       ```bash
       curl -s --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/{{repo}}/issues/{{issue_number}}" \
-        -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
-        -H "X-Proxy-Token: $PROXY_TOKEN"
-      curl -s --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/{{repo}}/issues/{{issue_number}}/comments" \
         -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
         -H "X-Proxy-Token: $PROXY_TOKEN"
       ```

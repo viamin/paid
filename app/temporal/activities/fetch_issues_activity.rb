@@ -364,7 +364,7 @@ module Activities
         if issue.enhance_issue_rounds >= max_rounds
           limit_reached = true
         else
-          issue.update!(enhance_issue_rounds: issue.enhance_issue_rounds + 1, paid_state: "in_progress")
+          issue.update!(paid_state: "in_progress")
         end
       end
 
@@ -383,13 +383,11 @@ module Activities
     end
 
     def stop_enhance_issue_recheck(project, issue, max_rounds)
-      project.client.add_labels_to_issue(
-        project.full_name,
-        issue.github_number,
-        [ project.enhance_issue_needs_input_label_name ]
+      IssueEnhancements::StopForManualReview.call(
+        project: project,
+        issue: issue,
+        reason: "Paid reached the configured limit of #{max_rounds} enhancement re-evaluation rounds."
       )
-      post_enhance_issue_limit_comment(project, issue, max_rounds)
-      restore_enhance_issue_recheck_signal(project, issue)
 
       logger.info(
         message: "agent_execution.enhance_issue_recheck_limit_reached",
@@ -400,32 +398,6 @@ module Activities
         max_rounds: max_rounds
       )
       nil
-    rescue GithubClient::Error
-      restore_enhance_issue_recheck_signal(project, issue)
-      raise
-    end
-
-    def post_enhance_issue_limit_comment(project, issue, max_rounds)
-      project.client.add_comment(
-        project.full_name,
-        issue.github_number,
-        <<~COMMENT
-          ## Auto-enhancement stopped
-
-          Paid has reached the configured limit of #{max_rounds} enhancement re-evaluation rounds for this issue.
-
-          Manual review is needed before enhancement can continue.
-        COMMENT
-      )
-    end
-
-    def restore_enhance_issue_recheck_signal(project, issue)
-      issue.with_lock do
-        issue.update!(
-          labels: Array(issue.labels) | [ project.enhance_issue_needs_input_label_name ],
-          paid_state: "needs_input"
-        )
-      end
     end
 
     def detect_needs_input_label_removals(project, synced_issues, ignored_issue_ids: [])
