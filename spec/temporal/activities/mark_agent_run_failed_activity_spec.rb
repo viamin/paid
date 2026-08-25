@@ -68,6 +68,28 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
       end
     end
 
+    # @spec ISSUE-ANALYSIS-010
+    it "ignores prior rate_limited runs when sizing the automatic provider exhaustion backoff" do
+      issue = create(:issue, :in_progress, project: project)
+      # rate_limited runs are recovered in-place by StaleRunDetectorJob
+      # (ISSUE-ANALYSIS-006), so they must not inflate the ISSUE-ANALYSIS-010
+      # exhaustion backoff streak. Without the streak filter, a single prior
+      # rate_limited run followed by one exhaustion failure would yield a
+      # 10-minute delay instead of the intended 5 minutes.
+      5.times do
+        create(:agent_run, :rate_limited, project: project, issue: issue,
+          goal: "analyze_issue", auto_pick: true)
+      end
+      agent_run = create(:agent_run, :running, project: project, issue: issue, goal: "analyze_issue", auto_pick: true)
+
+      freeze_time do
+        activity.execute(agent_run_id: agent_run.id, error: "All issue-analysis providers exhausted: claude")
+
+        # streak = 1 (only this run); multiplier = 0; delay = 5 * 2^0 = 5 minutes
+        expect(issue.reload.issue_analysis_next_attempt_at).to eq(5.minutes.from_now)
+      end
+    end
+
     # @spec ISSUE-ANALYSIS-011
     it "does not record an issue-level analyze_issue backoff for manual failures" do
       issue = create(:issue, :in_progress, project: project)

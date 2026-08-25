@@ -928,9 +928,17 @@ class Issue < ApplicationRecord
     [ ISSUE_ANALYSIS_BACKOFF_BASE_DELAY * (2**multiplier), ISSUE_ANALYSIS_BACKOFF_MAX_DELAY ].min
   end
 
+  # Counts recent automatic `analyze_issue` runs whose failure should grow the
+  # ISSUE-ANALYSIS-010 backoff. Excludes `rate_limited` runs because those are
+  # handled by the separate in-place recovery path from ISSUE-ANALYSIS-006
+  # (StaleRunDetectorJob re-queues the run once `rate_limited_until` elapses);
+  # mixing them into this streak would let a single prior rate-limited run push
+  # the first actual exhaustion failure from a 5-minute delay to a 10-minute
+  # delay (multiplier 0 -> 1) even though no exhaustion has happened yet.
   def consecutive_issue_analysis_provider_exhaustion_count
     agent_runs
       .where(auto_pick: true, goal: "analyze_issue")
+      .where.not(status: "rate_limited")
       .finished
       .order(created_at: :desc, id: :desc)
       .limit(ISSUE_ANALYSIS_BACKOFF_HISTORY_LIMIT)
