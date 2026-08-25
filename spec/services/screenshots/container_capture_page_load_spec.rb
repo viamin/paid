@@ -223,6 +223,12 @@ RSpec.describe Screenshots::ContainerCapture do
       expect(script).to include("http_status: status")
     end
 
+    # @spec PAGE-LOAD-REGRESSION-004
+    it "records the measured route's resolved pathname rather than the configured route path" do
+      expect(script).to include('path: new URL(page.url()).pathname')
+      expect(script).not_to include("path: route.path")
+    end
+
     # @spec PAGE-LOAD-MEASURE-006
     it "isolates timing failures so the route's screenshot still runs" do
       expect(script).to include('catch (timingError)')

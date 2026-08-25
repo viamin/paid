@@ -670,7 +670,7 @@ module Screenshots
             }
 
             timings.routes[route.name] = {
-              path: route.path,
+              path: new URL(page.url()).pathname,
               http_status: status,
               samples: collected.length,
               metrics,
