@@ -3,7 +3,8 @@
 # If running the rails server then create or migrate existing database
 # shellcheck disable=SC2198 # ${@: -N:1} slices exactly one positional parameter
 if [ "${@: -2:1}" == "./bin/rails" ] && [ "${@: -1:1}" == "server" ]; then
-  ./bin/rails db:prepare
+  # @spec PROMPT-DEFAULT-SYNC-008
+  ./bin/rails db:prepare prompts:sync_defaults
 fi
 
 exec "${@}"

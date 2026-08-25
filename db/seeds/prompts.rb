@@ -7,47 +7,11 @@
 #   - Iterated on via the PromptsController UI
 #   - Versioned, A/B tested, and tracked for cost/quality metrics
 #
-# When a prompt's template or variables change here, the seed creates a new
-# version (versions are immutable). Use `db:seed:replant` during development
-# if you want to reset history.
+# When a prompt's template or variables change here, synchronization creates a
+# new immutable version and promotes it to current_version.
 
-upsert_global_prompt = lambda do |slug:, name:, description:, category:, template:, variables:|
-  prompt = Prompt.find_or_initialize_by(slug: slug, account_id: nil, project_id: nil)
-
-  if prompt.new_record?
-    prompt.assign_attributes(
-      name: name,
-      description: description,
-      category: category,
-      active: true
-    )
-  else
-    prompt.name ||= name         # preserve user edits; only fill when blank
-    prompt.description ||= description
-    prompt.category ||= category
-    prompt.active = true if prompt.active.nil?
-  end
-
-  prompt.save!
-
-  current = prompt.current_version
-  normalize = ->(t) { t.to_s.strip }
-
-  if current.nil? ||
-     normalize.call(current.template) != normalize.call(template) ||
-     current.variables != variables
-    change_notes = current.nil? ? "Initial version from seeds" : "Updated from seeds: template and/or variables changed"
-
-    prompt.create_version!(
-      template: template,
-      variables: variables,
-      created_by: "seed",
-      change_notes: change_notes
-    )
-
-    Rails.logger.info(message: "seeds.created_prompt", slug: slug)
-  end
-end
+prompt_defaults = []
+upsert_global_prompt = ->(**definition) { prompt_defaults << definition }
 
 var = ->(name, description, required: true) { { "name" => name, "required" => required, "description" => description } }
 
@@ -991,3 +955,8 @@ upsert_global_prompt.call(
     var.call("lid_section", "Rendered LID instructions when the project has or requested LID", required: false)
   ]
 )
+
+# @spec PROMPT-DEFAULT-SYNC-006
+result = Prompts::SyncDefaults.call(definitions: prompt_defaults)
+puts "Prompt defaults synchronized: #{result.prompts_created} created prompts, " \
+  "#{result.versions_created} created versions, #{result.unchanged} unchanged"

@@ -35,6 +35,69 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     ENV["DEV_SUPERVISOR_FAST_DIAGNOSTICS"] = previous
   end
 
+  # @spec PROMPT-DEFAULT-SYNC-007
+  it "synchronizes prompt defaults before completing a lightweight update" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}", "OVERMIND_SOCKET" => ".overmind.sock")
+
+      _stdout, stderr, status = Open3.capture3(env, script_path, "--lightweight", chdir: dir)
+
+      expect(status.success?).to be(true), stderr
+      expect(File.read(File.join(dir, "calls.log"))).to include("rails prompts:sync_defaults\n")
+      expect(read_updater_log(dir)).to match(/Prompt defaults synchronized.*Lightweight update complete/m)
+    end
+  end
+
+  # @spec PROMPT-DEFAULT-SYNC-007
+  it "fails a development update when prompt synchronization fails" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, rails_sync_exit_status: 1)
+      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}", "OVERMIND_SOCKET" => ".overmind.sock")
+
+      _stdout, _stderr, status = Open3.capture3(env, script_path, "--lightweight", chdir: dir)
+
+      expect(status.success?).to be(false)
+      expect(read_updater_log(dir)).to include("ERROR: bin/rails prompts:sync_defaults failed")
+    end
+  end
+
+  # @spec PROMPT-DEFAULT-SYNC-007
+  it "recovers a stopped environment when prompt synchronization fails during a full update" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, start_overmind_running: true, rails_sync_exit_status: 1)
+      create_stale_socket(dir)
+      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}", "OVERMIND_SOCKET" => ".overmind.sock")
+
+      _stdout, _stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+      expect(status.success?).to be(false)
+      expect(File.exist?(File.join(dir, "dev-ran"))).to be(true), -> { read_updater_log(dir) }
+      expect(read_updater_log(dir)).to include("Attempting recovery start because Overmind was stopped during this update.")
+      expect(read_updater_log(dir)).to include("Recovery start succeeded.")
+    end
+  end
+
+  # @spec PROMPT-DEFAULT-SYNC-007
+  it "recovers a stopped environment when an upgraded lightweight update cannot synchronize prompts" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(
+        dir,
+        start_overmind_running: true,
+        pull_diff_files: %w[config/initializers/temporal.rb],
+        rails_sync_exit_status: 1
+      )
+      create_stale_socket(dir)
+      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}", "OVERMIND_SOCKET" => ".overmind.sock")
+
+      _stdout, _stderr, status = Open3.capture3(env, script_path, "--lightweight", chdir: dir)
+
+      expect(status.success?).to be(false)
+      expect(File.exist?(File.join(dir, "dev-ran"))).to be(true), -> { read_updater_log(dir) }
+      expect(read_updater_log(dir)).to include("Recovery start succeeded.")
+    end
+  end
+
   it "removes a stale Overmind socket before restarting the dev environment" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir)
@@ -291,7 +354,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       stdout, stderr, status = run_with_migration_trigger(dir, script_path, "--full")
 
       expect(status.success?).to be(false), -> { "expected failure but got success\nstdout: #{stdout}\nstderr: #{stderr}" }
-      expect_calls(dir, migration_restart_calls[0...-1])
+      expect_calls(dir, migration_restart_calls[0...-2])
 
       updater_log = read_updater_log(dir)
       expect(updater_log).to include("db:migrate: migration failed")
@@ -712,6 +775,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       "setup --skip-server --skip-database",
       "ensure-worktree-databases",
       "rails db:migrate",
+      "rails prompts:sync_defaults",
       "dev"
     ]
   end
@@ -772,6 +836,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     stash_pop_output: "Applied stash",
     pull_diff_files: [],
     rails_migrate_exit_status: 0,
+    rails_sync_exit_status: 0,
     status_successes_after_start: nil
   )
     FileUtils.mkdir_p(File.join(dir, "bin"))
@@ -828,6 +893,14 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
             echo "migration failed" >&2
           fi
           exit #{rails_migrate_exit_status}
+        fi
+        if [ "$*" = "prompts:sync_defaults" ]; then
+          if [ "#{rails_sync_exit_status}" -eq 0 ]; then
+            echo "Prompt defaults synchronized"
+          else
+            echo "prompt sync failed" >&2
+          fi
+          exit #{rails_sync_exit_status}
         fi
         exit 0
       BASH
