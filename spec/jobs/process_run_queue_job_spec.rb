@@ -1638,7 +1638,6 @@ RSpec.describe ProcessRunQueueJob do
         issue: issue,
         custom_prompt: "Fix the bug",
         source_pull_request_number: 42)
-      allow(job).to receive(:unavailable_github_state).and_return(nil)
 
       expect(temporal_client).to receive(:start_workflow).with(
         Workflows::AgentExecutionWorkflow,
@@ -1652,7 +1651,7 @@ RSpec.describe ProcessRunQueueJob do
         anything
       ).and_return(workflow_handle)
 
-      job.perform
+      described_class.new.perform
     end
 
     context "when runner preflight fails" do
