@@ -641,3 +641,20 @@
   `Containers::ServiceProvisioner::DEFAULT_HARDENING_PROFILE`,
   `Containers::ServiceProvisioner#create_docker_container`,
   `Containers::ServiceProvisioner#hardening_profile_for`
+
+- [x] **CONTAINER-RUNTIME-036** — The agent image SHALL install the warden
+  security-scanning CLI (`@sentry/warden`) from a version-pinned npm tarball
+  whose SHA-256 checksum is verified before install, SHALL install it with
+  `--ignore-scripts` and fail the build when `warden --version` does not run,
+  and SHALL vendor the upstream FSL-1.1-ALv2 `LICENSE` plus a default
+  `warden.toml` under `/opt/warden/`. The image SHALL also ship a
+  `warden-scan` wrapper that resolves the scan range inside the container
+  (`WARDEN_BASE_SHA` if set, else the merge-base against
+  `origin/HEAD`/`origin/main`/`origin/master`, else `HEAD~1`), prefers a
+  repo-committed `warden.toml` over the vendored default, and executes
+  `warden run <base>..HEAD --fail-on high`.
+  *Tests:* `spec/config/agent_image_build_script_spec.rb`,
+  `spec/config/toolchain_pins_spec.rb`.
+  *Code:* `docker/agent/Dockerfile`, `docker/agent/warden/LICENSE`,
+  `docker/agent/warden/warden.toml`, `docker/agent/scripts/warden-scan`,
+  `ToolchainPins.warden_group`, `scripts/test-agent-image-inner.sh`.

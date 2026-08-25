@@ -530,6 +530,31 @@ baseline `bun-linux-x64-baseline.zip` asset when `/proc/cpuinfo` does not
 advertise AVX2. That keeps the Oh My Pi install path compatible with older
 `amd64` runners instead of failing inside the post-install assertions.
 
+### Warden security-scanning CLI
+
+The agent image ships [warden](https://github.com/getsentry/warden) (npm
+package `@sentry/warden`) as the security-review CLI behind the
+`security_scan` pre-commit check. Warden publishes no standalone release
+binaries, so the image pins the npm tarball (`WARDEN_VERSION` + `WARDEN_CHECKSUM`
+sha256) and installs it globally with `--ignore-scripts`, then smoke-checks
+`warden --version` so a broken install fails the build loudly.
+
+Warden is FSL-1.1-ALv2 licensed. Shipping the binary inside the image is a
+permitted use, and the redistribution obligation is met by vendoring the exact
+upstream `LICENSE` text into the image at `/opt/warden/LICENSE`. No warden
+source or skill text is copied into Paid.
+
+A default `warden.toml` policy is vendored at `/opt/warden/warden.toml`
+alongside the license, and a `warden-scan` wrapper script (vendored like
+`git-credential-paid`) makes the pre-commit command self-contained: it resolves
+the scan range inside the container (explicit `WARDEN_BASE_SHA` if provided,
+else the merge-base against `origin/HEAD`/`origin/main`/`origin/master`, else
+`HEAD~1`), prefers a repo-committed `warden.toml` over the vendored default,
+and runs `warden run <base>..HEAD --fail-on high`. Warden's analysis lanes are
+model-backed; without a provider key in the container a run fails loudly
+rather than reporting clean code, which is why the matching pre-commit
+requirement defaults to warn mode.
+
 ## References
 
 - `app/services/containers/provision.rb`

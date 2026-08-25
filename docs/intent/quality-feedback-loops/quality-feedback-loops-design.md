@@ -43,6 +43,21 @@ run from proceeding. Mutation-test requirements route through the current
 mutation results reader so surviving mutations become structured quality
 feedback instead of opaque stdout.
 
+### Warden security scan
+
+The `security_scan` check type backs a dedicated, mutation-testing-style
+settings surface for warden: a project fieldset manages a single requirement
+named `warden_scan` (hidden in the generic requirement list), defaulting to
+`failure_behavior: "warn"` and `PreCommitRequirement::WARDEN_DEFAULT_COMMAND`
+(`warden-scan`, the wrapper vendored into the agent image per
+`container-runtime`). The command is self-contained — the wrapper resolves the
+scan range and the effective `warden.toml` inside the container — so
+`Evaluate#resolve_command` keeps no `security_scan` special-casing and other
+`security_scan` requirements (e.g. Brakeman) continue to run verbatim. Warden's
+analysis is model-backed, so a missing provider key surfaces as a loud
+warn-mode failure rather than a false clean pass; accounts that need blocking
+behavior switch the requirement to `block` explicitly.
+
 ## Container Hook Installation
 
 `Containers::QualityHooks` installs the git-hook commands that provide

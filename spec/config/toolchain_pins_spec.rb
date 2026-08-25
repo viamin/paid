@@ -200,6 +200,31 @@ RSpec.describe ToolchainPins, :no_db do
     end
   end
 
+  # @spec CONTAINER-RUNTIME-036
+  describe "the warden group" do
+    subject(:warden) { described_class.group("warden") }
+
+    it "resolves from the npm registry package" do
+      expect(warden.ownership).to eq(:paid)
+      expect(warden.source[:type]).to eq(:npm)
+      expect(warden.source[:package]).to eq("@sentry/warden")
+    end
+
+    it "pins the version and tarball checksum in the agent image" do
+      root = Rails.root
+
+      expect(warden.entries.map(&:kind)).to contain_exactly(:version, :checksum)
+      expect(warden.entries.map(&:path).uniq).to eq([ "docker/agent/Dockerfile" ])
+      expect(warden.current_version(root)).to match(/\A\d+\.\d+\.\d+\z/)
+      expect(warden.current_checksums(root).values.flat_map(&:values)).to all(match(/\A[0-9a-f]{64}\z/))
+    end
+
+    it "names the npm tarball asset so the checksum can be derived from the download" do
+      expect(warden.assets[warden.checksum_entries.first.arch]).to eq("warden.tgz")
+      expect(warden.source[:tarball_asset]).to eq("warden.tgz")
+    end
+  end
+
   # @spec TOOLCHAIN-PIN-030
   describe "agent CLI ownership" do
     it "leaves every agent CLI version to the agent-harness contract" do

@@ -1,0 +1,14 @@
+# Default warden policy for Paid agent containers.
+#
+# Vendored into the image at /opt/warden/warden.toml. The warden-scan wrapper
+# prefers a repo-committed warden.toml when one exists; this file is the
+# fallback so a security review runs even in repos without their own config.
+#
+# Reference: https://warden.sentry.dev/config/
+version = 1
+
+[[skills]]
+name = "security-review"
+
+[[skills.triggers]]
+type = "local"

@@ -31,6 +31,27 @@ RSpec.describe "Projects::PreCommitRequirements" do
         get project_pre_commit_requirements_path(project)
         expect(response.body).to include("bundle exec mutant run --results-dir .mutant/results --since HEAD~1")
       end
+
+      it "renders the warden security scan fieldset with its default command" do # @spec QUALITY-LOOPS-007
+        get project_pre_commit_requirements_path(project)
+
+        expect(response.body).to include("Security Scan (Warden)")
+        expect(response.body).to include("Save Security Scan")
+        expect(response.body).to include("warden-scan")
+      end
+
+      it "lists unrelated security_scan requirements while hiding the managed warden one" do # @spec QUALITY-LOOPS-007
+        create(:pre_commit_requirement, :project_level, project: project,
+          name: "brakeman", check_type: "security_scan", command: "bin/brakeman")
+        create(:pre_commit_requirement, :warden_scan, :project_level, project: project)
+
+        get project_pre_commit_requirements_path(project)
+
+        expect(response.body).to include("brakeman")
+        expect(response.body).to include("bin/brakeman")
+        expect(response.body).not_to include(">warden_scan</h3>")
+        expect(response.body.scan(/value="Save Security Scan"/).length).to eq(1)
+      end
     end
 
     context "when authenticated as member" do
@@ -52,6 +73,7 @@ RSpec.describe "Projects::PreCommitRequirements" do
         get project_pre_commit_requirements_path(project)
 
         expect(response.body).not_to include("Save Mutation Testing")
+        expect(response.body).not_to include("Save Security Scan")
         expect(response.body).not_to include("Add Requirement")
         expect(response.body).not_to include("Delete")
       end
@@ -114,6 +136,25 @@ RSpec.describe "Projects::PreCommitRequirements" do
 
         req = project.pre_commit_requirements.last
         expect(req.check_type).to eq("mutation_test")
+        expect(response).to redirect_to(project_pre_commit_requirements_path(project))
+      end
+
+      it "creates a warden_scan security requirement via the dedicated fieldset" do # @spec QUALITY-LOOPS-007
+        params = {
+          pre_commit_requirement: {
+            name: "warden_scan", command: "warden-scan", check_type: "security_scan",
+            failure_behavior: "warn", position: 1, enabled: true
+          }
+        }
+
+        expect {
+          post project_pre_commit_requirements_path(project), params: params
+        }.to change(PreCommitRequirement, :count).by(1)
+
+        req = project.pre_commit_requirements.find_by(name: "warden_scan")
+        expect(req.check_type).to eq("security_scan")
+        expect(req).to be_enabled
+        expect(req.failure_behavior).to eq("warn")
         expect(response).to redirect_to(project_pre_commit_requirements_path(project))
       end
     end
@@ -198,6 +239,19 @@ RSpec.describe "Projects::PreCommitRequirements" do
         expect(response).to have_http_status(:unprocessable_content)
         expect(response.body).to include("prevented mutation testing from being saved")
         expect(response.body).to include("Save Mutation Testing")
+        expect(response.body).to include("Add Requirement")
+        expect(response.body).not_to include("Update Requirement")
+      end
+
+      it "keeps warden security scan errors inside the warden fieldset" do # @spec QUALITY-LOOPS-007
+        warden_requirement = create(:pre_commit_requirement, :warden_scan, :project_level, project: project)
+
+        patch project_pre_commit_requirement_path(project, warden_requirement),
+          params: { pre_commit_requirement: { command: "" } }
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.body).to include("prevented the security scan from being saved")
+        expect(response.body).to include("Save Security Scan")
         expect(response.body).to include("Add Requirement")
         expect(response.body).not_to include("Update Requirement")
       end

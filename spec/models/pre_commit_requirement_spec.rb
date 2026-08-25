@@ -16,6 +16,12 @@ RSpec.describe PreCommitRequirement do # @spec QUALITY-LOOPS-001
     end
   end
 
+  describe ".warden_default_command" do # @spec QUALITY-LOOPS-007
+    it "returns the self-contained warden wrapper command" do
+      expect(described_class.warden_default_command).to eq("warden-scan")
+    end
+  end
+
   describe "validations" do
     subject { build(:pre_commit_requirement) }
 
