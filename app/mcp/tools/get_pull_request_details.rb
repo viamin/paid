@@ -37,6 +37,7 @@ module Tools
         labels: pr.labels,
         github_creator_login: pr.github_creator_login,
         github_url: pr.github_url,
+        auto_merge: PullRequests::AutoMergeStatus.call(issue: pr, project: project),
         comments: fetch_comments(project, pr),
         review_comments: fetch_review_comments(project, pr),
         agent_runs: pr.agent_runs.recent.limit(5).map { |r| run_summary(r) },

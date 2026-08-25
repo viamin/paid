@@ -201,3 +201,14 @@
   *Code:* `Tools::RepoReadClientResolver#resolve`,
   `Tools::RepoReadClientResolver#resolve_project_client`,
   `Tools::RepoReadClientResolver#resolve_user_client`.
+
+- [x] **CHAT-API-011** — When `get_pull_request_details` returns a pull request,
+  the system SHALL include a sanitized `auto_merge` diagnostic object that
+  exposes only project-scoped derived facts: the latest persisted
+  merge-permission rejection/cooldown when present, otherwise the current
+  mergeability and CI-check gate state when credentials permit. The payload
+  SHALL NOT expose tokens, raw secrets, stack traces, or untrusted comment
+  bodies.
+  *Tests:* `spec/mcp/tools/get_pull_request_details_spec.rb`.
+  *Code:* `Tools::GetPullRequestDetails#perform`,
+  `PullRequests::AutoMergeStatus#call`.
