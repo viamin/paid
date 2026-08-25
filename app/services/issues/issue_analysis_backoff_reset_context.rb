@@ -2,6 +2,11 @@
 
 module Issues
   class IssueAnalysisBackoffResetContext
+    RELEVANT_USER_SETTING_FIELDS = %w[
+      issue_analysis_runner
+      issue_analysis_fallback_runners
+    ].freeze
+
     def self.call(...)
       new(...).call
     end
@@ -14,7 +19,7 @@ module Issues
       return unless owner
 
       [
-        owner.settings&.updated_at,
+        issue_analysis_settings_updated_at,
         owner.runners.maximum(:updated_at),
         owner.runner_states.maximum(:updated_at),
         owner.provider_api_keys.maximum(:updated_at),
@@ -28,6 +33,22 @@ module Issues
 
     def owner
       project.effective_owner
+    end
+
+    def issue_analysis_settings_updated_at
+      settings = owner.settings
+      return unless settings&.log_data
+
+      version = settings.log_data.versions.reverse_each.find do |entry|
+        relevant_setting_change?(entry)
+      end
+      return unless version
+
+      Time.zone.at(version.time.to_f / 1000)
+    end
+
+    def relevant_setting_change?(version)
+      (version.changes.keys & RELEVANT_USER_SETTING_FIELDS).any?
     end
   end
 end

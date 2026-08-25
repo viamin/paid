@@ -121,6 +121,21 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
     end
 
     # @spec AUTO-PICK-QUEUE-002 ISSUE-ANALYSIS-010
+    it "does not treat unrelated user setting changes as resetting the cooldown" do
+      create(:issue, project: project, paid_state: "failed",
+        issue_analysis_next_attempt_at: 10.minutes.from_now,
+        issue_analysis_backoff_set_at: 10.minutes.ago)
+
+      settings = project.effective_owner.settings
+      theme = settings.theme_preference == "dark" ? "light" : "dark"
+      settings.update!(theme_preference: theme)
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to be_empty
+    end
+
+    # @spec AUTO-PICK-QUEUE-002 ISSUE-ANALYSIS-010
     it "treats the cooldown as reset when issue-analysis authentication changes" do
       issue = create(:issue, project: project, paid_state: "failed",
         issue_analysis_next_attempt_at: 10.minutes.from_now,
