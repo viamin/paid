@@ -23,8 +23,10 @@
   enhance-issue needs-input label and move the issue to `paid_state:
   "needs_input"` rather than leaving it auto-pick eligible. If recovery is not
   possible, the run SHALL still fail non-retryably but the issue SHALL move to
-  `paid_state: "needs_input"` so automatic picking does not loop on the same
-  malformed enhancement attempt.
+  `paid_state: "manual_review"` so automatic picking does not loop on the same
+  malformed enhancement attempt. Generic workflow failure handling SHALL NOT
+  overwrite this terminal containment state with `paid_state: "failed"`, and
+  questionless-`needs_input` repair SHALL NOT alter it.
   *Tests:* `spec/temporal/activities/enhance_issue_activity_spec.rb`.
   *Code:* `app/temporal/activities/enhance_issue_activity.rb#enhance_issue_post_run`,
   `app/temporal/activities/enhance_issue_activity.rb#recover_paid_question_comment!`,
@@ -95,11 +97,49 @@
   via the injected runner credential instead of the `ANTHROPIC_API_KEY`
   environment variable. The agent prompt SHALL instruct the agent that the run
   is comment-only: workspace modifications are discarded and the agent SHALL
-  NOT commit, push, or create a pull request. The workflow SHALL post the
-  `<!-- paid:enhance-issue -->` comment and label state without committing,
+  NOT commit, push, create a pull request, or post a GitHub comment. The GitHub
+  proxy SHALL reject mutation requests and restrict reads from an
+  `enhance_issue` run to its associated issue's detail endpoint; only comments
+  admitted by Paid's trusted-comment filter SHALL reach the agent through its
+  base prompt, and unrelated issue bodies SHALL NOT bypass that boundary. After
+  validating the agent's delimited structured output, the workflow SHALL post
+  the `<!-- paid:enhance-issue -->` comment and label state without committing,
   pushing, or creating a pull request.
   *Tests:* `spec/temporal/activities/enhance_issue_activity_spec.rb`.
   *Code:* `app/temporal/activities/enhance_issue_activity.rb#enhance_issue_post_run`,
   `app/temporal/workflows/agent_execution_workflow.rb`,
+  `app/controllers/api/github_proxy_controller.rb`,
   `app/services/containers/provision.rb#workspace_mount_mode`,
   `app/services/orchestration_strategies/defaults.rb#non_container_goals`.
+
+## Runtime contract and bounded execution
+
+- [x] **ISSUE-ENHANCEMENT-010** — When a deployment migrates an existing
+  database whose active global `goal.enhance_issue` prompt does not match the
+  source-controlled structured-output contract, the system SHALL create and
+  promote the expected immutable prompt version under system tenant access.
+  When the expected version is already active, migration SHALL make no prompt
+  change.
+  *Tests:* migration spec for the enhancement prompt synchronization.
+  *Code:* enhancement prompt synchronization migration.
+
+- [x] **ISSUE-ENHANCEMENT-011** — When Paid queues a new automatic
+  `enhance_issue` run, the system SHALL atomically consume one enhancement
+  round regardless of whether the run originated from initial analysis or
+  human-answer re-evaluation. Duplicate queue requests and manual enhancement
+  runs SHALL NOT consume a round. When the configured round limit has already
+  been reached, Paid SHALL NOT create another enhancement run; it SHALL leave
+  the issue in `manual_review` and post at most one marked
+  auto-enhancement-stop comment. Automatic picking SHALL exclude
+  `manual_review`; only an explicit operator-triggered run SHALL resume work.
+  Entering `manual_review` SHALL clear stored clarification questions and remove
+  the enhancement needs-input label so GitHub and Paid do not show contradictory
+  lifecycle states. Only a marker comment authored by Paid's GitHub App SHALL
+  suppress the stop notice; the marker text is unauthenticated, so trusting
+  allowlisted human collaborators would let any one of them forge the marker
+  and silence platform feedback, breaking the convention used by other
+  marker-based status comments.
+  *Tests:* `spec/temporal/activities/queue_agent_run_activity_spec.rb`,
+  `spec/temporal/activities/fetch_issues_activity_spec.rb`.
+  *Code:* `app/temporal/activities/queue_agent_run_activity.rb`,
+  `app/temporal/activities/fetch_issues_activity.rb`.

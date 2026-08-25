@@ -39,6 +39,17 @@ module Api
         return
       end
 
+      # @spec ISSUE-ENHANCEMENT-006
+      if enhancement_mutation?
+        render json: { error: "Enhancement runs have read-only GitHub access" }, status: :forbidden
+        return
+      end
+
+      if enhancement_read_out_of_scope?(path)
+        render json: { error: "Enhancement runs can read only their associated issue details" }, status: :forbidden
+        return
+      end
+
       match = find_allowed_endpoint(request.method, path)
 
       unless match
@@ -96,6 +107,17 @@ module Api
     end
 
     private
+
+    def enhancement_mutation?
+      @agent_run&.enhance_issue_goal? && request.method != "GET"
+    end
+
+    def enhancement_read_out_of_scope?(path)
+      return false unless @agent_run&.enhance_issue_goal? && request.get?
+
+      issue_number = @agent_run.issue&.github_number
+      issue_number.nil? || !path.match?(%r{\Arepos/[^/]+/[^/]+/issues/#{issue_number}\z})
+    end
 
     def find_allowed_endpoint(http_method, path)
       ALLOWED_ENDPOINTS.each do |endpoint|

@@ -149,6 +149,19 @@ RSpec.describe "Api::GithubProxy" do
 
       expect(response).to have_http_status(:created)
     end
+
+    # @spec ISSUE-ENHANCEMENT-006
+    it "rejects comment creation from enhance_issue runs" do
+      agent_run.update!(goal: "enhance_issue")
+
+      post "/api/proxy/github/repos/testowner/testrepo/issues/42/comments",
+        params: { body: "A direct enhancement comment" }.to_json,
+        headers: valid_headers
+
+      expect(response).to have_http_status(:forbidden)
+      expect(response.parsed_body).to eq("error" => "Enhancement runs have read-only GitHub access")
+      expect(WebMock).not_to have_requested(:post, target_url)
+    end
   end
 
   describe "GET /api/proxy/github/repos/:owner/:repo/issues/:number/comments" do
@@ -166,6 +179,45 @@ RSpec.describe "Api::GithubProxy" do
 
       expect(response).to have_http_status(:ok)
       expect(JSON.parse(response.body).first["body"]).to eq("Prior discussion")
+    end
+
+    # @spec ISSUE-ENHANCEMENT-006
+    it "rejects raw comment listing from enhance_issue runs" do
+      agent_run.update!(goal: "enhance_issue")
+
+      get "/api/proxy/github/repos/testowner/testrepo/issues/42/comments",
+        headers: valid_headers
+
+      expect(response).to have_http_status(:forbidden)
+      expect(response.parsed_body).to eq("error" => "Enhancement runs can read only their associated issue details")
+      expect(WebMock).not_to have_requested(:get, target_url)
+    end
+  end
+
+  describe "enhance_issue read scope" do
+    before do
+      agent_run.update!(goal: "enhance_issue", issue: create(:issue, project: project, github_number: 42))
+    end
+
+    # @spec ISSUE-ENHANCEMENT-006
+    it "allows the associated issue details" do
+      target_url = "https://api.github.com/repos/testowner/testrepo/issues/42"
+      stub_request(:get, target_url)
+        .to_return(status: 200, body: issue_response_body, headers: { "Content-Type" => "application/json" })
+
+      get "/api/proxy/github/repos/testowner/testrepo/issues/42", headers: valid_headers
+
+      expect(response).to have_http_status(:ok)
+    end
+
+    # @spec ISSUE-ENHANCEMENT-006
+    it "rejects a different issue body" do
+      target_url = "https://api.github.com/repos/testowner/testrepo/issues/43"
+
+      get "/api/proxy/github/repos/testowner/testrepo/issues/43", headers: valid_headers
+
+      expect(response).to have_http_status(:forbidden)
+      expect(WebMock).not_to have_requested(:get, target_url)
     end
   end
 

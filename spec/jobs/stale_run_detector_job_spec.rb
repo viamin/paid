@@ -614,6 +614,26 @@ RSpec.describe StaleRunDetectorJob do
         expect(issue.reload.paid_state).to eq("in_progress")
       end
 
+      # @spec ISSUE-ENHANCEMENT-011
+      it "preserves an orphaned enhance_issue recheck before QueueAgentRunActivity increments rounds" do
+        # FetchIssuesActivity has just flipped paid_state to in_progress; the
+        # workflow died before QueueAgentRunActivity could consume a round
+        # (and therefore enhance_issue_rounds is still 0). Without the
+        # latest_goal_for safety net, stale recovery would reset this issue
+        # to "new" and auto-pick would queue create_pr.
+        issue = create(:issue,
+          project: project,
+          paid_state: "in_progress",
+          enhance_issue_rounds: 0,
+          labels: [],
+          updated_at: (described_class::ORPHANED_IN_PROGRESS_AGE + 5.minutes).ago)
+        create(:agent_run, :completed, :enhance_issue_goal, project: project, issue: issue, pull_request_number: nil)
+
+        described_class.perform_now
+
+        expect(issue.reload.paid_state).to eq("in_progress")
+      end
+
       it "still resets a non-enhancement orphan with prior enhance_issue history" do
         issue = create(:issue,
           project: project,
