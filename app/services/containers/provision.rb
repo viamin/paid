@@ -237,7 +237,8 @@ module Containers
       end
 
       CompatibilityResult.new(compatible: true, error_message: nil)
-    rescue ProvisionError, ExecutionRunners::ProvisionError => e
+    rescue ProvisionError, ExecutionRunners::ProvisionError,
+           Containers::ImageResolver::Error, Containers::RuntimeImageCatalog::Error => e
       CompatibilityResult.new(compatible: false, error_message: e.message)
     end
 

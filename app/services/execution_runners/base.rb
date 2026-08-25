@@ -241,7 +241,7 @@ module ExecutionRunners
 
       if log_mismatch
         Rails.logger.info(
-          message: "execution_runner.capability_mismatch",
+          message: "execution_runners.capability_mismatch",
           agent_run_id: agent_run&.id,
           runner_type: name,
           backend_identifier: backend&.identifier,

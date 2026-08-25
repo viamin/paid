@@ -277,6 +277,28 @@ RSpec.describe Containers::Provision do
       expect(result.compatible).to be(false)
       expect(result.error_message).to include("browser sidecar")
     end
+
+    # @spec CONTAINER-RUNTIME-038
+    it "returns an incompatible result when deriving default capability requirements hits a retired image reference" do
+      run = create(:agent_run, external_metadata: {})
+      backend = instance_double(Containers::Backends::Base, supports_host_paths?: true)
+      service = instance_double(described_class)
+      error = Containers::RuntimeImageCatalog::UnknownReferenceError.new("unknown image reference")
+
+      allow(described_class).to receive(:new).with(
+        agent_run: run, worktree_path: nil, backend: backend
+      ).and_return(service)
+      allow(service).to receive(:compatibility_validate_backend_mount_support!).with(record_telemetry: false)
+      allow(ExecutionRunners::CapabilityRequirements).to receive(:from_agent_run).with(
+        run,
+        worktree_path: nil
+      ).and_raise(error)
+
+      result = described_class.compatibility_for(agent_run: run, backend:)
+
+      expect(result.compatible).to be(false)
+      expect(result.error_message).to eq("unknown image reference")
+    end
   end
 
   describe "constants" do
