@@ -221,7 +221,7 @@ module ExecutionRunners
     # @return [CapabilitySet]
     # @spec CONTAINER-RUNTIME-036
     def self.capabilities(backend:)
-      CapabilitySet.new(capabilities: [])
+      raise NotImplementedError, "#{name} must implement .#{__method__}"
     end
 
     # Provider-neutral capability validation shared by queue-time compatibility

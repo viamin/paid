@@ -44,14 +44,27 @@ module Containers
       compatibility_failures = {}
       health_failures = {}
       compatibility_requirements = build_capability_requirements
-      candidate_hosts = compatible_candidates_for(
-        requested_host,
-        compatibility_requirements: compatibility_requirements,
-        fallback_policy: fallback_policy,
-        selection_source: selection_source,
-        compatibility_failures: compatibility_failures,
-        health_failures: health_failures
-      )
+      if compatibility_requirements_error
+        record_requirements_failure!(
+          requested_host: requested_host,
+          fallback_policy: fallback_policy,
+          selection_source: selection_source,
+          compatibility_failures: compatibility_failures,
+          error_message: compatibility_requirements_error.message
+        )
+      end
+      candidate_hosts = if compatibility_requirements_error
+        []
+      else
+        compatible_candidates_for(
+          requested_host,
+          compatibility_requirements: compatibility_requirements,
+          fallback_policy: fallback_policy,
+          selection_source: selection_source,
+          compatibility_failures: compatibility_failures,
+          health_failures: health_failures
+        )
+      end
 
       Result.new(
         candidate_hosts: candidate_hosts,
@@ -188,6 +201,28 @@ module Containers
         requested_resources: requested_resources,
         architecture: ExecutionRunners::RunSpec.resolve_architecture(agent_run)
       )
+    rescue Containers::ImageResolver::Error, Containers::RuntimeImageCatalog::Error => e
+      @compatibility_requirements_error = e
+      nil
+    end
+
+    def compatibility_requirements_error
+      @compatibility_requirements_error
+    end
+
+    def record_requirements_failure!(requested_host:, fallback_policy:, selection_source:, compatibility_failures:, error_message:)
+      fallback_candidates = if [
+        HostRegistry::FALLBACK_FIRST_HEALTHY,
+        HostRegistry::FALLBACK_CAPACITY_AWARE
+      ].include?(fallback_policy) && selection_source != "explicit"
+        registry.fallback_candidates_for(requested_host)
+      else
+        []
+      end
+
+      ([ requested_host.to_s ] + fallback_candidates).uniq.each do |host|
+        compatibility_failures[host] = error_message
+      end
     end
   end
 end
