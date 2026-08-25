@@ -120,6 +120,12 @@ end
 #   agent_run              — AgentRun associated with the specs
 #   assert_workspace_cleanup! — helper method that proves cleanup triggers the
 #                                runner's underlying workspace teardown path
+#   assert_runner_cleanup!   — helper method that proves cleanup triggers the
+#                                runner's underlying general teardown path so a
+#                                no-op cleanup cannot satisfy the contract
+#   assert_cancellation!     — helper method that proves cancel triggers the
+#                                runner's underlying stop path so a no-op
+#                                cancellation cannot satisfy the contract
 #
 # Optional `let` bindings:
 #
@@ -234,14 +240,14 @@ RSpec.shared_examples "an execution runner contract" do
   end
 
   describe "#cancel" do
-    it "stops the workload without raising" do
-      expect { runner.cancel(handle: valid_handle) }.not_to raise_error
+    it "stops the underlying workload" do
+      assert_cancellation!
     end
   end
 
   describe "#cleanup" do
     it "removes resources for the handle" do
-      expect { runner.cleanup(handle: valid_handle, force: true) }.not_to raise_error
+      assert_runner_cleanup!
     end
 
     it "is safe to call multiple times" do

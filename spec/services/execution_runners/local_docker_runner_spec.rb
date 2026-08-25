@@ -1820,6 +1820,18 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       runner.cleanup(handle: valid_handle, force: true)
     end
 
+    def assert_runner_cleanup!
+      expect(provision_service).to receive(:cleanup).with(force: true)
+
+      runner.cleanup(handle: valid_handle, force: true)
+    end
+
+    def assert_cancellation!
+      expect(backend).to receive(:stop_container)
+
+      runner.cancel(handle: valid_handle)
+    end
+
     let(:contract_abort_patterns) { [ "quota exceeded" ] }
     let(:aborting_contract_command) { "emit quota warning" }
     let(:completed_provision_service) do
