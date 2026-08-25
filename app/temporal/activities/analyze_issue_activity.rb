@@ -49,6 +49,7 @@ module Activities
 
       context = build_context(agent_run, project, issue)
       response = call_llm(agent_run, prompt_for(project, issue, comments, context))
+      issue.clear_issue_analysis_backoff!
       parsed = parse_response!(agent_run, response)
 
       track_tokens(agent_run, response)
@@ -195,10 +196,15 @@ module Activities
       end
 
       raise Temporalio::Error::ApplicationError.new(
-        "No LLM provider produced an issue analysis",
+        issue_analysis_provider_exhaustion_message(providers),
         type: "AnalyzeIssueLlmFailed",
         non_retryable: true
       )
+    end
+
+    def issue_analysis_provider_exhaustion_message(providers) # @spec ISSUE-ANALYSIS-010
+      suffix = providers.any? ? ": #{providers.join(', ')}" : ""
+      "All issue-analysis providers exhausted#{suffix}"
     end
 
     def response_failed?(response, agent_run, provider)
