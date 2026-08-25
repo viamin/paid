@@ -631,9 +631,9 @@ RSpec.describe Activities::FetchIssuesActivity do
         result = activity.execute(project_id: project.id)
 
         expect(result[:enhance_issue_rechecks]).to contain_exactly(
-          hash_including(issue_id: issue.id, issue_number: issue.github_number, enhance_issue_rounds: 1)
+          hash_including(issue_id: issue.id, issue_number: issue.github_number, enhance_issue_rounds: 0)
         )
-        expect(issue.reload.enhance_issue_rounds).to eq(1)
+        expect(issue.reload.enhance_issue_rounds).to eq(0)
         expect(issue.paid_state).to eq("in_progress")
         expect(result[:issues]).not_to include(hash_including(id: issue.id))
       end
@@ -659,7 +659,7 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(issue.paid_state).to eq("completed")
       end
 
-      it "posts a stop comment and restores needs_input after the max round" do
+      it "posts a stop comment and requires manual review after the max round" do
         project.update!(max_enhance_issue_reevaluation_rounds: 1)
         issue.update!(enhance_issue_rounds: 1)
 
@@ -669,44 +669,36 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(github_client).to have_received(:add_comment).with(
           project.full_name,
           issue.github_number,
-          a_string_including("## Auto-enhancement stopped", "Manual review is needed")
-        )
-        expect(github_client).to have_received(:add_labels_to_issue).with(
-          project.full_name,
-          issue.github_number,
-          [ project.enhance_issue_needs_input_label_name ]
+          a_string_including("## Auto-enhancement stopped", IssueEnhancements::StopForManualReview::COMMENT_MARKER)
         )
         expect(issue.reload.enhance_issue_rounds).to eq(1)
-        expect(issue.paid_state).to eq("needs_input")
-        expect(issue.labels).to include(project.enhance_issue_needs_input_label_name)
+        expect(issue.paid_state).to eq("manual_review")
+        expect(issue.labels).not_to include(project.enhance_issue_needs_input_label_name)
       end
 
-      it "keeps the max-round stop retryable when posting the stop comment fails" do
+      it "contains the loop even when posting the stop comment fails" do
         project.update!(max_enhance_issue_reevaluation_rounds: 1)
         issue.update!(enhance_issue_rounds: 1)
         allow(github_client).to receive(:add_comment).and_raise(GithubClient::Error.new("GitHub unavailable"))
 
-        expect {
-          activity.execute(project_id: project.id)
-        }.to raise_error(GithubClient::Error, "GitHub unavailable")
+        activity.execute(project_id: project.id)
 
         issue.reload
         expect(issue.enhance_issue_rounds).to eq(1)
-        expect(issue.paid_state).to eq("needs_input")
-        expect(issue.labels).to include(project.enhance_issue_needs_input_label_name)
+        expect(issue.paid_state).to eq("manual_review")
+        expect(issue.labels).not_to include(project.enhance_issue_needs_input_label_name)
       end
 
-      it "does not post duplicate stop comments when restoring the GitHub label fails" do
+      it "does not restore the needs-input label at the manual-review boundary" do
         project.update!(max_enhance_issue_reevaluation_rounds: 1)
         issue.update!(enhance_issue_rounds: 1)
         allow(github_client).to receive(:add_labels_to_issue).and_raise(GithubClient::Error.new("GitHub unavailable"))
 
-        expect {
-          activity.execute(project_id: project.id)
-        }.to raise_error(GithubClient::Error, "GitHub unavailable")
+        activity.execute(project_id: project.id)
 
-        expect(github_client).not_to have_received(:add_comment)
-        expect(issue.reload.paid_state).to eq("needs_input")
+        expect(github_client).to have_received(:add_comment).once
+        expect(github_client).not_to have_received(:add_labels_to_issue)
+        expect(issue.reload.paid_state).to eq("manual_review")
       end
     end
 

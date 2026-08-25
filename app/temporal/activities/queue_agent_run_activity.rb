@@ -64,7 +64,8 @@ module Activities
       # queued/active runs for the same issue or PR under concurrency.
       # Falls back to DB unique indexes (RecordNotUnique) as a safety net
       # for races between concurrent activity executions.
-      agent_run, duplicate = AgentRun.transaction do
+      agent_run, duplicate, enhancement_limit_reached = AgentRun.transaction do
+        issue.lock! if automatic_enhancement?(goal, trigger_type, issue)
         existing = find_existing_run(project, issue, source_pull_request_number)
         if existing
           if existing.goal == goal
@@ -72,8 +73,11 @@ module Activities
               count_toward_draft_review_round: count_toward_draft_review_round,
               expected_draft_review_count: expected_draft_review_count)
           end
-          [ existing, true ]
+          [ existing, true, false ]
+        elsif enhancement_round_limit_reached?(project, issue, goal, trigger_type)
+          [ nil, false, true ]
         else
+          consume_enhancement_round!(issue) if automatic_enhancement?(goal, trigger_type, issue)
           run = AgentRun.create!(
             project: project,
             issue: issue,
@@ -91,7 +95,7 @@ module Activities
             expected_draft_review_count: expected_draft_review_count,
             status: "queued"
           )
-          [ run, false ]
+          [ run, false, false ]
         end
       rescue ActiveRecord::RecordNotUnique
         existing = find_existing_run(project, issue, source_pull_request_number)
@@ -108,7 +112,12 @@ module Activities
             expected_draft_review_count: expected_draft_review_count)
         end
 
-        [ existing, true ]
+        [ existing, true, false ]
+      end
+
+      if enhancement_limit_reached
+        stop_for_enhancement_limit(project, issue)
+        return { queued: false, skipped: true, reason: "enhancement_round_limit" }
       end
 
       if duplicate
@@ -150,6 +159,28 @@ module Activities
     end
 
     private
+
+    def automatic_enhancement?(goal, trigger_type, issue)
+      issue.present? && goal == "enhance_issue" && trigger_type == "automatic"
+    end
+
+    def enhancement_round_limit_reached?(project, issue, goal, trigger_type)
+      automatic_enhancement?(goal, trigger_type, issue) &&
+        issue.enhance_issue_rounds >= project.max_enhance_issue_reevaluation_rounds
+    end
+
+    # @spec ISSUE-ENHANCEMENT-011
+    def consume_enhancement_round!(issue)
+      issue.update!(enhance_issue_rounds: issue.enhance_issue_rounds + 1)
+    end
+
+    def stop_for_enhancement_limit(project, issue)
+      IssueEnhancements::StopForManualReview.call(
+        project: project,
+        issue: issue,
+        reason: "Paid reached the configured enhancement-round limit."
+      )
+    end
 
     def resolve_runner_selection(project:, requested_agent_type:, requested_runner_id:, goal:, agent_type_provided:, runner_id_provided:)
       AgentRuns::RunnerResolver.call(
