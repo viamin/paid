@@ -75,6 +75,28 @@ RSpec.describe Runners::ModelCompatibility do
         end
       end
 
+      context "with CLI-version-gated model (gpt-5.3-codex)" do
+        # Pins the agent-harness 0.36.8 fix adopted for #3643
+        # (viamin/agent-harness#366): gpt-5.3-codex is api_key-only, so a
+        # ChatGPT-subscription Codex run must not select it. Before 0.36.8,
+        # agent-harness had no auth-mode gating entry for this model, so this
+        # check fell through to "supported" and the Codex CLI rejected the
+        # request at execution time with "The 'gpt-5.3-codex' model is not
+        # supported when using Codex with a ChatGPT account."
+        let(:model_id) { "gpt-5.3-codex" }
+
+        it "returns unsupported because gpt-5.3-codex requires api_key auth, not subscription" do
+          expect(result).to have_attributes(
+            supported: false,
+            incompatibility_type: :auth_mode_gated_for_model,
+            replacement_model_id: "gpt-5.2-codex",
+            source: "agent_harness"
+          )
+          expect(result.reason).to include("gpt-5.3-codex").and include("api_key")
+          expect(result).to be_unsupported
+        end
+      end
+
       context "with subscription auth and non-OpenAI model" do
         let(:model_id) { "claude-opus-4-5" }
 

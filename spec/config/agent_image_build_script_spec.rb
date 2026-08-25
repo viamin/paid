@@ -78,6 +78,21 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(workflow_source).to include("run: bundle install --jobs 4 --retry 3")
     end
 
+    it "verifies OpenCode execution on a native aarch64 runner, gated on the same relevance check" do
+      # An amd64 CI runner cannot catch an install contract that resolves the
+      # wrong CPU architecture (viamin/agent-harness#365, adopted for #3643) —
+      # only real arm64 hardware exercises the failure. This job installs
+      # OpenCode via the same agent-harness-owned contract the Dockerfile
+      # uses and executes the resulting binary on ubuntu-24.04-arm.
+      expect(workflow_source).to include("image_relevant: ${{ steps.changes.outputs.image_relevant }}")
+      expect(workflow_source).to include("opencode-arm64-smoke:")
+      expect(workflow_source).to include("needs: agent-image")
+      expect(workflow_source).to include("if: needs.agent-image.outputs.image_relevant == 'true'")
+      expect(workflow_source).to include("runs-on: ubuntu-24.04-arm")
+      expect(workflow_source).to include("bundle exec ruby scripts/extract-runner-install-contract.rb opencode")
+      expect(workflow_source).to include("opencode --version")
+    end
+
     it "generates and uploads a smoke-tested image metadata artifact" do
       expect(workflow_source).to include("id: build-paid-agent")
       expect(workflow_source).to include("id: image-digest")
