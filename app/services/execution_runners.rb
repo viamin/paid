@@ -114,6 +114,13 @@ module ExecutionRunners
       new(**preset)
     end
 
+    # Timeout carried by a named profile preset, or nil when +profile_name+
+    # is blank or unknown. Unknown names still raise from {.profile} when the
+    # preset expands, so this lookup stays permissive.
+    def self.profile_timeout(profile_name)
+      PROFILE_PRESETS.dig(profile_name.to_s, :timeout_seconds)
+    end
+
     def self.build(profile_name: nil, cpu_cores: nil, memory_mib: nil, disk_gb: nil, architecture: nil, timeout_seconds: nil)
       preset = profile_name.present? ? profile(profile_name).to_h : {}
       new(
@@ -487,6 +494,7 @@ module ExecutionRunners
       workspace = workspace_strategy_for(agent_run)
       requested_resources = Capacity::RequestedResources.for_agent_run(agent_run)
       selection = resolve_runtime_image_selection(agent_run, requested_image: options[:image])
+      profile_name = options[:resource_profile] || requested_resources[:profile]
       resources = ExecutionResources.from_legacy(
         cpu_quota: legacy_resource_option(
           options[:cpu_quota],
@@ -497,8 +505,13 @@ module ExecutionRunners
         memory_bytes: legacy_resource_option(options[:memory_bytes], options[:memory_mib], requested_resources[:memory_bytes], scale: 1024 * 1024),
         disk_bytes: legacy_resource_option(options[:disk_bytes], options[:disk_gb], requested_resources[:disk_bytes], scale: 1024 * 1024 * 1024),
         architecture: options[:architecture] || selection.metadata["architecture"],
-        timeout_seconds: positive_numeric_option(options[:timeout_seconds]) || timeout_seconds_for(agent_run),
-        profile_name: options[:resource_profile] || requested_resources[:profile]
+        # Timeout precedence: explicit override, then the named profile (a
+        # profile expands to the full resource tuple, timeout included), then
+        # the owner/default timeout.
+        timeout_seconds: positive_numeric_option(options[:timeout_seconds]) ||
+          ExecutionResources.profile_timeout(profile_name) ||
+          timeout_seconds_for(agent_run),
+        profile_name: profile_name
       )
 
       new(

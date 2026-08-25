@@ -338,8 +338,12 @@ RSpec.describe ExecutionRunners do
     end
 
     # @spec CONTAINER-RUNTIME-027
+    # The owner timeout deliberately differs from the preset timeout so the
+    # assertion proves the profile expands to the full tuple — timeout
+    # included — rather than coincidentally matching the owner default.
     it "expands a named profile when explicit requested values are absent" do
       project = create(:project)
+      project.effective_owner.settings.update!(container_timeout_seconds: 1800)
       run = create(:agent_run, project: project, external_metadata: {
         "requested_resources" => {
           "profile" => "large"
@@ -354,9 +358,34 @@ RSpec.describe ExecutionRunners do
           memory_mib: 8192,
           disk_gb: 20,
           architecture: "x86_64",
-          timeout_seconds: project.effective_owner.settings.container_timeout_seconds
+          timeout_seconds: 3600
         )
       )
+    end
+
+    # @spec CONTAINER-RUNTIME-027
+    it "prefers an explicit timeout override over the profile preset" do
+      project = create(:project)
+      run = create(:agent_run, project: project, external_metadata: {
+        "requested_resources" => {
+          "profile" => "large"
+        }
+      })
+
+      built = ExecutionRunners::RunSpec.from_agent_run(run, timeout_seconds: 600)
+
+      expect(built.resources.timeout_seconds).to eq(600)
+    end
+
+    # @spec CONTAINER-RUNTIME-027
+    it "falls back to the owner timeout when no profile or override is requested" do
+      project = create(:project)
+      project.effective_owner.settings.update!(container_timeout_seconds: 1800)
+      run = create(:agent_run, project: project)
+
+      built = ExecutionRunners::RunSpec.from_agent_run(run)
+
+      expect(built.resources.timeout_seconds).to eq(1800)
     end
 
     # @spec IMMUTABLE-IMAGE-001
