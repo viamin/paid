@@ -26,6 +26,7 @@ RSpec.describe "Chat page layout", :js, system_driver: :paid_cuprite, type: :sys
     chat_session = create_mobile_workspace_chat
     visit chat_session_path(chat_session, format: :html)
     expect(page).to have_css("[data-chat-target='container']")
+    expect(page).to have_css("[data-controller='chat'][style*='--chat-panel-offset-top:']")
 
     metrics = chat_layout_metrics
 
@@ -65,7 +66,7 @@ RSpec.describe "Chat page layout", :js, system_driver: :paid_cuprite, type: :sys
       (() => {
         const panel = document.querySelector("[data-controller='chat']");
         const transcript = document.querySelector("[data-chat-target='container']");
-        const header = panel.querySelector("header");
+        const header = panel.querySelector("[data-chat-header='mobile']");
         const composer = transcript.nextElementSibling;
         const rect = (element) => element.getBoundingClientRect();
         const viewportH = Math.round(window.visualViewport?.height || window.innerHeight);
