@@ -83,12 +83,11 @@ module AgentRuns
         scanner_match = Knowledge::Redaction::Scanner.scan(normalized).first
         return blocked_result("matched existing secret-scanning rule", scanner_match.pattern) if scanner_match
 
-        # Token-shape and high-entropy scans only target values where
-        # credentials actually live: query-string parameter values on URLs
-        # (userinfo and fragments are rejected upstream by the broker), or the
-        # raw text in the non-URL search-query flow. Path segments are not
-        # scanned because their letter frequencies are indistinguishable from
-        # random keys at this scale.
+        # Token-shape and high-entropy scans target whole non-URL queries, plus
+        # both query-string parameter names and values on URLs. Path segments
+        # are not scanned because their letter frequencies are indistinguishable
+        # from random keys at this scale, and userinfo/fragments are rejected
+        # upstream by the broker.
         targets = self.class.redaction_targets(normalized)
 
         token_shape = KNOWN_TOKEN_PATTERNS.find { |pattern| targets.any? { |t| t.match?(pattern) } }
@@ -102,14 +101,14 @@ module AgentRuns
       end
 
       # Returns the substrings that should be scanned for high-entropy
-      # credentials. For URLs, that's the query-string parameter values
-      # (userinfo and fragments are rejected upstream by the broker); for
-      # non-URL text, the whole input.
+      # credentials. For URLs, that's the query-string parameter names and
+      # values (userinfo and fragments are rejected upstream by the broker);
+      # for non-URL text, the whole input.
       def self.redaction_targets(text)
         url = parse_url(text)
         return [ text ] if url.nil? || url.query.blank?
 
-        URI.decode_www_form(url.query).filter_map { |_name, value| value.presence }
+        URI.decode_www_form(url.query).flat_map { |name, value| [ name.presence, value.presence ] }.compact
       end
 
       def self.parse_url(text)

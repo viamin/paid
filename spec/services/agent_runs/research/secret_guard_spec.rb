@@ -101,6 +101,17 @@ RSpec.describe AgentRuns::Research::SecretGuard do # @spec EGRESS-POLICY-009
       expect(result.blocked?).to be(true)
       expect(result.rule).to include("entropy")
     end
+
+    it "still blocks high-entropy tokens that appear only in a query parameter name" do
+      result = described_class.inspect!(
+        agent_run: agent_run,
+        text: "https://docs.example.com/guide?AAAAB3NzaC1yc2EAAAADAQABAAABAQDbx8Y5w2g8Rr6KqNnLzP4sT7vH9mQ2kL3pW0zX1cV6=1",
+        destination_host: "docs.example.com"
+      )
+
+      expect(result.blocked?).to be(true)
+      expect(result.rule).to include("entropy")
+    end
   end
 
   describe ".redact_text" do
@@ -116,6 +127,15 @@ RSpec.describe AgentRuns::Research::SecretGuard do # @spec EGRESS-POLICY-009
     it "redacts high-entropy tokens that appear inside query parameter values" do
       redacted = described_class.redact_text(
         "https://docs.example.com/guide?token=AAAAB3NzaC1yc2EAAAADAQABAAABAQDbx8Y5w2g8Rr6KqNnLzP4sT7vH9mQ2kL3pW0zX1cV6"
+      )
+
+      expect(redacted).to include("[REDACTED:high_entropy]")
+      expect(redacted).not_to include("AAAAB3NzaC1yc2EAAAADAQABAAABAQDbx8Y5w2g8Rr6KqNnLzP4sT7vH9mQ2kL3pW0zX1cV6")
+    end
+
+    it "redacts high-entropy tokens that appear inside query parameter names" do
+      redacted = described_class.redact_text(
+        "https://docs.example.com/guide?AAAAB3NzaC1yc2EAAAADAQABAAABAQDbx8Y5w2g8Rr6KqNnLzP4sT7vH9mQ2kL3pW0zX1cV6=1"
       )
 
       expect(redacted).to include("[REDACTED:high_entropy]")
