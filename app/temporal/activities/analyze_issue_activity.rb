@@ -147,14 +147,24 @@ module Activities
 
       providers.each do |provider|
         response = AgentHarness.send_message(prompt, **llm_options(provider))
-        next if response_failed?(response, agent_run, provider)
+        if response_failed?(response, agent_run, provider)
+          reset_at = record_response_failure(user_setting, provider, response)
+          if reset_at
+            rate_limited_count += 1
+            earliest_reset_at = [ earliest_reset_at, reset_at ].compact.min
+          end
+          next
+        end
 
         record_runner_success(user_setting, provider)
         return response
       rescue AgentHarness::RateLimitError => e
         rate_limited_count += 1
         earliest_reset_at = [ earliest_reset_at, e.reset_time ].compact.min
-        record_runner_rate_limit(user_setting, provider, e)
+        record_runner_rate_limit(user_setting, provider, reset_at: e.reset_time)
+        log_provider_failure(agent_run, provider, e)
+      rescue AgentHarness::AuthenticationError => e
+        record_runner_auth_failure(user_setting, provider)
         log_provider_failure(agent_run, provider, e)
       rescue AgentHarness::Error => e
         record_runner_failure(user_setting, provider)
@@ -198,6 +208,35 @@ module Activities
       true
     end
 
+    # @spec ISSUE-ANALYSIS-007 ISSUE-ANALYSIS-009
+    # A response with success? == false is not an exception, so it never hit
+    # the rescue clauses below and the provider's circuit breaker never
+    # learned about the failure (#3639). Classify the response the same way
+    # a raised error would be classified, so rate-limit- and auth-shaped
+    # responses get their specialized state transition instead of counting
+    # as a generic failure. Returns the rate-limit reset time when the
+    # response was classified as rate-limited, otherwise nil.
+    def record_response_failure(user_setting, provider, response)
+      case classify_response_error(response)
+      when :rate_limited
+        reset_at = RunnerSupport.rate_limit_reset_at(RunnerSupport.harness_for(provider), response.error)
+        record_runner_rate_limit(user_setting, provider, reset_at: reset_at)
+        reset_at
+      when :auth_expired
+        record_runner_auth_failure(user_setting, provider)
+        nil
+      else
+        record_runner_failure(user_setting, provider)
+        nil
+      end
+    end
+
+    def classify_response_error(response)
+      return :unknown if response.error.blank?
+
+      AgentHarness::ErrorTaxonomy.classify_message(response.error)
+    end
+
     def log_provider_failure(agent_run, provider, error)
       logger.warn(
         message: "agent_execution.analyze_issue_provider_failed",
@@ -231,8 +270,8 @@ module Activities
     end
 
     # @spec ISSUE-ANALYSIS-007
-    def record_runner_rate_limit(user_setting, provider, error)
-      runner_state_for(user_setting, provider)&.mark_rate_limited!(reset_at: error.reset_time)
+    def record_runner_rate_limit(user_setting, provider, reset_at:)
+      runner_state_for(user_setting, provider)&.mark_rate_limited!(reset_at: reset_at)
     end
 
     # @spec ISSUE-ANALYSIS-007
@@ -241,6 +280,20 @@ module Activities
 
       runner_state_for(user_setting, provider)&.record_failure!(
         threshold: user_setting.circuit_breaker_failure_threshold,
+        decay_window: user_setting.circuit_breaker_timeout_seconds
+      )
+    end
+
+    # @spec ISSUE-ANALYSIS-009
+    # Authentication failures are deterministic, not transient — retrying the
+    # same provider will not succeed until the owner reconnects it. Open the
+    # circuit immediately (threshold: 1) instead of waiting for the generic
+    # failure count to accumulate.
+    def record_runner_auth_failure(user_setting, provider)
+      return unless user_setting
+
+      runner_state_for(user_setting, provider)&.record_failure!(
+        threshold: 1,
         decay_window: user_setting.circuit_breaker_timeout_seconds
       )
     end

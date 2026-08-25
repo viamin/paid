@@ -59,14 +59,40 @@ than silently masking the outage.
 Candidates existing in `chat_providers` does not guarantee they still succeed
 by the time `call_llm` actually calls them — the availability filter reads a
 circuit-breaker snapshot taken before the loop starts, and a burst of traffic
-across the fleet can rate-limit every candidate in the same window. Two things
-happen when a provider attempt fails inside the loop (`ISSUE-ANALYSIS-007`):
+across the fleet can rate-limit every candidate in the same window. A provider
+attempt inside the loop can fail two different ways, and both SHALL update the
+circuit breaker (`ISSUE-ANALYSIS-007`):
 
-- `AgentHarness::RateLimitError` → `RunnerState#mark_rate_limited!` records
-  the provider's `reset_time` so it is excluded from `chat_providers` on the
-  next attempt (this run's retry or a later one) until the window clears.
-- Any other `AgentHarness::Error` → `RunnerState#record_failure!` increments
-  the provider's circuit-breaker failure count, using the owner's configured
+- **Raised `AgentHarness::Error`.** `AgentHarness.send_message` raises when
+  the transport itself detects the failure (e.g. the HTTP text-mode path used
+  for `claude` on 401/429 responses).
+- **Unsuccessful response, no exception.** CLI-backed providers (Codex,
+  OpenCode, and `claude` outside text mode) normally report a nonzero exit as
+  a `Response` with `success?` false and an `error` string, not as a raised
+  exception. `response_failed?` detects this case; before #3639 it logged the
+  failure and moved to the next provider without touching the circuit
+  breaker, so deterministically broken runners never opened and stayed
+  eligible across every subsequent `analyze_issue` run.
+
+Both paths funnel through the same classification so a provider's circuit
+state doesn't depend on which mechanism a given provider happens to use for a
+given failure:
+
+- Rate-limit-shaped (raised `AgentHarness::RateLimitError`, or a response
+  whose `error` text classifies as `:rate_limited` via
+  `AgentHarness::ErrorTaxonomy.classify_message`) → `RunnerState#mark_rate_limited!`
+  records a reset time (the exception's `reset_time`, or
+  `RunnerSupport.rate_limit_reset_at` parsed from the response text) so the
+  provider is excluded from `chat_providers` on the next attempt until the
+  window clears.
+- Authentication-shaped (raised `AgentHarness::AuthenticationError`, or a
+  response classified `:auth_expired`) → `RunnerState#record_failure!` with
+  `threshold: 1`, opening the circuit immediately (`ISSUE-ANALYSIS-009`).
+  Unlike a transient error, a stale credential will not start working again
+  on the next attempt, so there is no reason to spend the owner's configured
+  failure budget rediscovering that on every run.
+- Anything else → `RunnerState#record_failure!` increments the provider's
+  circuit-breaker failure count, using the owner's configured
   threshold/decay window, same as `Knowledge::RunnerExecutor`.
 
 When every attempted provider in the candidate list failed and every one of
