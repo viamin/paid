@@ -28,7 +28,7 @@ RSpec.describe "Chat page layout", :js, system_driver: :paid_cuprite, type: :sys
     expect(page).to have_css("[data-chat-target='container']")
     expect(page).to have_css("[data-controller='chat'][style*='--chat-panel-offset-top:']")
 
-    metrics = chat_layout_metrics
+    metrics = settled_chat_layout_metrics
 
     expect(metrics.fetch("panelBottomGap")).to be_between(0, 2).inclusive
     expect(metrics.fetch("documentOverflow")).to be <= 2
@@ -85,5 +85,24 @@ RSpec.describe "Chat page layout", :js, system_driver: :paid_cuprite, type: :sys
         };
       })()
     JS
+  end
+
+  # Cuprite can observe the inline `--chat-panel-offset-top` style before the
+  # browser has finished the layout pass that applies it. Poll through
+  # Capybara's waiter until the viewport-bound panel has actually settled, then
+  # assert the mobile transcript geometry against the final layout.
+  def settled_chat_layout_metrics
+    page.document.synchronize do
+      metrics = chat_layout_metrics
+      return metrics if settled_chat_layout?(metrics)
+
+      raise Capybara::ExpectationNotMet, "chat layout has not settled yet: #{metrics.inspect}"
+    end
+  end
+
+  def settled_chat_layout?(metrics)
+    metrics.fetch("panelBottomGap").between?(0, 2) &&
+      metrics.fetch("documentOverflow") <= 2 &&
+      metrics.fetch("transcriptH").positive?
   end
 end
