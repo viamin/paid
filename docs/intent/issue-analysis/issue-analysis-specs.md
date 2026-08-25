@@ -79,6 +79,32 @@
   *Code:* `app/temporal/activities/analyze_issue_activity.rb#call_llm`,
   `#record_runner_auth_failure`.
 
+- [x] **ISSUE-ANALYSIS-010** — When an **automatic** `analyze_issue` run fails
+  because every analysis provider is unavailable and no provider call succeeds,
+  the system SHALL persist a bounded next-attempt time on the issue and exclude
+  the issue from auto-pick until that time. The backoff SHALL grow per issue
+  across consecutive automatic provider-exhaustion failures, SHALL be capped,
+  and SHALL be invalidated when a later successful provider call happens or
+  when the owner's relevant issue-analysis runner configuration, runner-health
+  state, or authentication material changes.
+  *Tests:* `spec/temporal/activities/mark_agent_run_failed_activity_spec.rb`,
+  `spec/temporal/activities/analyze_issue_activity_spec.rb`,
+  `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
+  *Code:* `app/models/issue.rb`, `app/temporal/activities/analyze_issue_activity.rb`,
+  `app/temporal/activities/mark_agent_run_failed_activity.rb`,
+  `app/services/automation/strategies/auto_pick/default_candidate_source.rb`,
+  `app/services/issues/issue_analysis_backoff_reset_context.rb`.
+
+- [x] **ISSUE-ANALYSIS-011** — Manual retries of failed `analyze_issue` runs
+  SHALL remain available even while the issue is under automatic
+  provider-exhaustion backoff. Manual failures SHALL NOT extend or clear that
+  automatic cooldown; only a successful provider call clears it.
+  *Tests:* `spec/requests/agent_runs_spec.rb`,
+  `spec/temporal/activities/mark_agent_run_failed_activity_spec.rb`.
+  *Code:* `app/controllers/projects/agent_runs_controller.rb`,
+  `app/temporal/activities/mark_agent_run_failed_activity.rb`,
+  `app/models/issue.rb`.
+
 - [x] **ISSUE-ANALYSIS-008** — When no explicit issue-analysis runner is
   configured and the broadening fallback (`available_chat_runner_keys`) is
   used, economical (lean) runners SHALL be ordered before heavy-exploration

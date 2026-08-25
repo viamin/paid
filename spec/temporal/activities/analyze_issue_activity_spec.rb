@@ -342,7 +342,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
 
       expect {
         activity.execute(agent_run_id: agent_run.id)
-      }.to raise_error(Temporalio::Error::ApplicationError, "No LLM provider produced an issue analysis")
+      }.to raise_error(Temporalio::Error::ApplicationError, "All issue-analysis providers exhausted")
     end
 
     # @spec ISSUE-ANALYSIS-009
@@ -463,7 +463,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
 
       expect {
         activity.execute(agent_run_id: second_run.id)
-      }.to raise_error(Temporalio::Error::ApplicationError, "No LLM provider produced an issue analysis")
+      }.to raise_error(Temporalio::Error::ApplicationError, "All issue-analysis providers exhausted")
 
       # Only the first run's attempt should have called send_message — the
       # second run's candidate list is empty because "claude" is still
@@ -488,7 +488,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
 
       expect {
         activity.execute(agent_run_id: agent_run.id)
-      }.to raise_error(Temporalio::Error::ApplicationError, "No LLM provider produced an issue analysis")
+      }.to raise_error(Temporalio::Error::ApplicationError, "All issue-analysis providers exhausted: claude")
 
       runner_state = project.effective_owner.settings.user.runner_states.find_by(runner_name: "claude")
       expect(runner_state).to be_present
@@ -549,7 +549,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
 
       expect {
         activity.execute(agent_run_id: agent_run.id)
-      }.to raise_error(Temporalio::Error::ApplicationError, "No LLM provider produced an issue analysis")
+      }.to raise_error(Temporalio::Error::ApplicationError, "All issue-analysis providers exhausted: claude")
 
       runner_state = project.effective_owner.settings.user.runner_states.find_by(runner_name: "claude")
       expect(runner_state.circuit_state).to eq("open")
@@ -564,7 +564,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
 
       expect {
         activity.execute(agent_run_id: agent_run.id)
-      }.to raise_error(Temporalio::Error::ApplicationError, "No LLM provider produced an issue analysis")
+      }.to raise_error(Temporalio::Error::ApplicationError, "All issue-analysis providers exhausted: claude")
 
       runner_state = project.effective_owner.settings.user.runner_states.find_by(runner_name: "claude")
       expect(runner_state.circuit_state).to eq("open")
@@ -635,7 +635,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
 
       expect {
         activity.execute(agent_run_id: agent_run.id)
-      }.to raise_error(Temporalio::Error::ApplicationError, "No LLM provider produced an issue analysis")
+      }.to raise_error(Temporalio::Error::ApplicationError, "All issue-analysis providers exhausted")
     end
 
     # @spec ISSUE-ANALYSIS-008
@@ -705,6 +705,22 @@ RSpec.describe Activities::AnalyzeIssueActivity do
         project: project,
         chunk_type: "definition",
         content: "Route: POST /audit_logs records user actions for compliance reporting")
+    end
+  end
+
+  describe "automatic retry backoff" do
+    # @spec ISSUE-ANALYSIS-010
+    it "clears an existing provider-exhaustion cooldown after a successful provider call" do
+      issue.update!(
+        issue_analysis_next_attempt_at: 20.minutes.from_now,
+        issue_analysis_backoff_set_at: 20.minutes.ago
+      )
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      issue.reload
+      expect(issue.issue_analysis_next_attempt_at).to be_nil
+      expect(issue.issue_analysis_backoff_set_at).to be_nil
     end
   end
 

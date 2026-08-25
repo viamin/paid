@@ -13,3 +13,13 @@
   unchanged.
   *Tests:* `spec/models/project_spec.rb`, `spec/services/issues/enqueue_eligible_spec.rb`.
   *Code:* `Project#cancel_queued_auto_pick_runs`, `Issues::EnqueueEligible#call`.
+
+- [x] **AUTO-PICK-QUEUE-002** — When an issue has an active automatic
+  `analyze_issue` provider-exhaustion cooldown, Auto-Pick candidate selection
+  SHALL exclude that issue until its persisted next-attempt time. If the
+  owner's relevant issue-analysis runner configuration, runner-health state, or
+  authentication material changes after the cooldown was recorded, candidate
+  selection SHALL treat the cooldown as reset immediately.
+  *Tests:* `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
+  *Code:* `app/services/automation/strategies/auto_pick/default_candidate_source.rb`,
+  `app/services/issues/issue_analysis_backoff_reset_context.rb`.

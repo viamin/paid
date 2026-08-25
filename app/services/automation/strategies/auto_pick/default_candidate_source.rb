@@ -118,6 +118,8 @@ module Automation
             blocked_ids = tracker_ids_blocked_by_open_references(scope, project)
             scope = scope.where.not(id: blocked_ids) if blocked_ids.present?
 
+            scope = apply_issue_analysis_backoff(scope, project)
+
             scope
           end
 
@@ -214,6 +216,30 @@ module Automation
           end
 
           private
+
+          def apply_issue_analysis_backoff(scope, project) # @spec ISSUE-ANALYSIS-010 AUTO-PICK-QUEUE-002
+            # The reset timestamp only matters for rows with a non-null
+            # `issue_analysis_next_attempt_at`. Skip the (expensive) reset
+            # context query when no issue is in active backoff — the
+            # overwhelmingly common case across dequeue-time rechecks,
+            # sweep jobs, and dashboard eligibility breakdowns.
+            return scope unless project.issues.where.not(issue_analysis_next_attempt_at: nil).exists?
+
+            now = Time.current
+            reset_at = Issues::IssueAnalysisBackoffResetContext.call(project: project)
+
+            if reset_at
+              scope.where(
+                "issues.issue_analysis_next_attempt_at IS NULL OR " \
+                "issues.issue_analysis_next_attempt_at <= ? OR " \
+                "issues.issue_analysis_backoff_set_at < ?",
+                now,
+                reset_at
+              )
+            else
+              scope.where("issues.issue_analysis_next_attempt_at IS NULL OR issues.issue_analysis_next_attempt_at <= ?", now)
+            end
+          end
 
           def base_scope(project, excluding_run_id: nil)
             blocking_runs = AgentRun.where(
