@@ -27,6 +27,17 @@ module ExecutionRunners
 # @spec EGRESS-POLICY-007
 class LocalDockerRunner < Base
     RUNNER_TYPE = :local_docker
+    DECLARED_CAPABILITIES = %i[
+      host_paths
+      service_containers
+      browser_sidecar
+      streaming_logs
+      direct_exec
+      persistent_workspace
+      architecture_x86_64
+      architecture_arm64
+      arbitrary_disk
+    ].freeze
 
     # The kind of execution resource this runner provisions, recorded on the
     # provisioning-intent ledger (RDR-060).
@@ -93,6 +104,13 @@ class LocalDockerRunner < Base
         egress_gateway_url: gateway&.gateway_url,
         **provision_options(spec)
       )
+      service.compatibility_validate_backend_mount_support!(record_telemetry: false)
+      capability_result = self.class.capability_compatibility_for(
+        requirements: spec.capability_requirements,
+        backend: backend,
+        agent_run: spec.agent_run
+      )
+      raise ProvisionError, capability_result.error_message unless capability_result.compatible
       result = service.provision
       # Capture the provider resource identifier immediately so a crash between
       # here and handle persistence still leaves a reconcileable ledger row
@@ -272,6 +290,13 @@ class LocalDockerRunner < Base
       )
       return CompatibilityResult.new(compatible: false, error_message: result.error_message) unless result.compatible
 
+      capability_result = capability_compatibility_for(
+        requirements: spec.capability_requirements,
+        backend: backend,
+        agent_run: spec.agent_run
+      )
+      return capability_result unless capability_result.compatible
+
       policy = spec.networking_policy
       unless supports_policy?(policy)
         return CompatibilityResult.new(
@@ -296,6 +321,15 @@ class LocalDockerRunner < Base
       end
 
       CompatibilityResult.new(compatible: true, error_message: nil)
+    end
+
+    # @spec CONTAINER-RUNTIME-036
+    # @spec CONTAINER-RUNTIME-039
+    def self.capabilities(backend:)
+      capabilities = DECLARED_CAPABILITIES
+      supports_host_paths = !backend.respond_to?(:supports_host_paths?) || backend.supports_host_paths?
+      capabilities -= [ :host_paths ] unless supports_host_paths
+      CapabilitySet.new(capabilities: capabilities)
     end
 
     # Returns true when the registered gateway adapter can enforce the

@@ -407,6 +407,45 @@ cleanup behavior (firewall failure still cleans up the live container). The
 ledger is append-only for the provision lifecycle; cleanup does not delete the
 ledger row, so a full provision → cleanup history remains for auditing.
 
+## Runner capability validation (#3356)
+
+Runner compatibility is now expressed as a small provider-neutral symbol set
+carried on the runner contract, not as a growing list of ad hoc boolean checks
+scattered across Docker-specific code.
+
+- `ExecutionRunners::CapabilitySet` names the currently required execution
+  features Paid actually uses today:
+  `host_paths`, `service_containers`, `browser_sidecar`, `streaming_logs`,
+  `direct_exec`, `persistent_workspace`, `architecture_x86_64`,
+  `architecture_arm64`, and `arbitrary_disk`.
+- `ExecutionRunners::CapabilityRequirements` derives the required subset for a
+  run from deterministic local inputs only: workspace mode / worktree path,
+  service declarations, verification-enabled browser usage, requested
+  architecture, and requested disk. It does not talk to a provider API.
+- `ExecutionRunners::Base.capabilities(backend:)` is the declaration point on
+  the runner contract. Implementations return a capability set for the backend
+  they are evaluating, then `ExecutionRunners::Base.capability_compatibility_for`
+  computes missing capabilities and emits the clear mismatch message/log used by
+  scheduling and fail-fast provisioning.
+- `LocalDockerRunner` declares the full current Paid feature set for ordinary
+  Docker execution. It narrows that declaration only where the backend transport
+  already proves a real limitation today: a backend with
+  `supports_host_paths? == false` drops `host_paths`, so remote Docker still
+  fails bind-mount requirements explicitly while retaining the other Docker
+  capabilities.
+- Validation happens in both pre-provision entry points:
+  `Containers::Provision.compatibility_for` derives requirements from the
+  `AgentRun` for queue-time / host-selection checks, and
+  `LocalDockerRunner.compatible?` derives them from the concrete `RunSpec` for
+  direct runner compatibility checks. `LocalDockerRunner#provision` calls
+  `.compatible?` before any Docker side effect so a late call path still fails
+  fast.
+- Capability mismatches are observable. The runner contract logs
+  `execution_runner.capability_mismatch` with the backend, available
+  capabilities, required capabilities, and missing subset; queue scheduling then
+  surfaces the resulting compatibility failure through the existing
+  `process_run_queue.host_unavailable` / `host_selected` logs.
+
 ### Immutable agent image registry (RDR-059)
 
 `AgentImage` is the system of record for what image actually runs in

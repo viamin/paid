@@ -208,6 +208,10 @@ module Containers
       CODEX_NOTIFY_LINE
     end
 
+    def compatibility_validate_backend_mount_support!(record_telemetry: false)
+      validate_backend_mount_support!(record_telemetry: record_telemetry)
+    end
+
     # @spec EXECUTION-ISOLATION-004
     def self.compatibility_for(agent_run:, backend:, worktree_path: nil)
       agent_run.execution_ingress_policy.validate_supported!
@@ -217,7 +221,18 @@ module Containers
       # RunnerAuthAttempt writes and the associated filesystem probes avoids
       # N × (DB writes + filesystem probes) per queue pass. Telemetry is still
       # recorded during the actual provision call.
-      service.send(:validate_backend_mount_support!, record_telemetry: false)
+      service.compatibility_validate_backend_mount_support!(record_telemetry: false)
+      requirements = ExecutionRunners::CapabilityRequirements.from_agent_run(
+        agent_run,
+        worktree_path: worktree_path
+      )
+      capability_result = ExecutionRunners.resolve(backend: backend).class.capability_compatibility_for(
+        requirements: requirements,
+        backend: backend,
+        agent_run: agent_run
+      )
+      return CompatibilityResult.new(compatible: false, error_message: capability_result.error_message) unless capability_result.compatible
+
       CompatibilityResult.new(compatible: true, error_message: nil)
     rescue ProvisionError, ExecutionRunners::ProvisionError => e
       CompatibilityResult.new(compatible: false, error_message: e.message)

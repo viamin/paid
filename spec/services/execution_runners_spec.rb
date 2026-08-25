@@ -157,6 +157,27 @@ RSpec.describe ExecutionRunners do
       expect(spec.services.first).to be_a(ExecutionRunners::ServiceDeclaration)
     end
 
+    # @spec CONTAINER-RUNTIME-036
+    # @spec CONTAINER-RUNTIME-037
+    it "derives runner capability requirements from the execution description" do
+      allow(project).to receive(:verification_enabled?).and_return(true)
+      bind_mount_spec = described_class.new(**spec_args.merge(
+        workspace: ExecutionRunners::WorkspaceStrategy.bind_mount(reference: "/tmp/worktree"),
+        resources: spec.resources.with(architecture: "arm64", disk_gb: 12)
+      ))
+
+      expect(bind_mount_spec.capability_requirements.to_a).to contain_exactly(
+        :host_paths,
+        :service_containers,
+        :browser_sidecar,
+        :streaming_logs,
+        :direct_exec,
+        :persistent_workspace,
+        :architecture_arm64,
+        :arbitrary_disk
+      )
+    end
+
     it "embeds a WorkspaceStrategy as the workspace contract" do
       expect(spec.workspace).to be_a(ExecutionRunners::WorkspaceStrategy)
     end

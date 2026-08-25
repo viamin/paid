@@ -603,3 +603,49 @@
   `Containers::ServiceProvisioner::DEFAULT_HARDENING_PROFILE`,
   `Containers::ServiceProvisioner#create_docker_container`,
   `Containers::ServiceProvisioner#hardening_profile_for`
+
+- [x] **CONTAINER-RUNTIME-036** — The system SHALL define a minimal,
+  provider-neutral runner capability vocabulary containing exactly the
+  capabilities Paid currently relies on for execution placement:
+  `host_paths`, `service_containers`, `browser_sidecar`, `streaming_logs`,
+  `direct_exec`, `persistent_workspace`, `architecture_x86_64`,
+  `architecture_arm64`, and `arbitrary_disk`. Runner implementations SHALL
+  declare a set of these symbols on the runner contract rather than exposing
+  ad hoc booleans per call site.
+  *Tests:* `spec/services/execution_runners_spec.rb`,
+  `spec/services/execution_runners/local_docker_runner_spec.rb`
+  *Code:* `ExecutionRunners::CapabilitySet`,
+  `ExecutionRunners::CapabilityRequirements`,
+  `ExecutionRunners::Base`,
+  `ExecutionRunners::LocalDockerRunner`
+
+- [x] **CONTAINER-RUNTIME-037** — The system SHALL derive a run's required
+  runner capabilities from local execution intent before provisioning using
+  deterministic inputs only: workspace mode / worktree path, service
+  declarations, verification-enabled browser use, requested architecture, and
+  requested disk. This derivation SHALL be fast and SHALL NOT make provider API
+  calls.
+  *Tests:* `spec/services/execution_runners_spec.rb`,
+  `spec/services/execution_runners/local_docker_runner_spec.rb`
+  *Code:* `ExecutionRunners::CapabilityRequirements`,
+  `ExecutionRunners::RunSpec`
+
+- [x] **CONTAINER-RUNTIME-038** — Before provisioning starts, the system SHALL
+  compare required runner capabilities against the selected runner's declared
+  capability set and reject mismatches with a clear error message that names the
+  missing capabilities. Queue-time compatibility checks and direct
+  runner-compatibility checks SHALL both use this same capability validation so
+  a browser-sidecar run can be rejected before any provisioning side effects.
+  *Tests:* `spec/services/execution_runners/local_docker_runner_spec.rb`,
+  `spec/services/containers/backend_scheduler_spec.rb`
+  *Code:* `ExecutionRunners::Base.capability_compatibility_for`,
+  `Containers::Provision.compatibility_for`,
+  `ExecutionRunners::LocalDockerRunner.compatible?`
+
+- [x] **CONTAINER-RUNTIME-039** — The Docker runner SHALL declare the full
+  current Paid capability set for ordinary Docker execution, and capability
+  mismatches SHALL be logged for observability with the backend identifier plus
+  the available, required, and missing capability symbols.
+  *Tests:* `spec/services/execution_runners/local_docker_runner_spec.rb`
+  *Code:* `ExecutionRunners::LocalDockerRunner.capabilities`,
+  `ExecutionRunners::Base.capability_compatibility_for`

@@ -21,6 +21,28 @@ require "json"
 module ExecutionRunners
   MANIFEST_SCHEMA_VERSION = "remote_execution.v1"
   REQUIRED_OWNERSHIP_TAG_NAMES = %w[environment account project run attempt resource].freeze
+  CAPABILITY_NAMES = %i[
+    host_paths
+    service_containers
+    browser_sidecar
+    streaming_logs
+    direct_exec
+    persistent_workspace
+    architecture_x86_64
+    architecture_arm64
+    arbitrary_disk
+  ].freeze
+  CAPABILITY_LABELS = {
+    host_paths: "host path mounts",
+    service_containers: "service containers",
+    browser_sidecar: "browser sidecar",
+    streaming_logs: "streaming logs",
+    direct_exec: "direct exec",
+    persistent_workspace: "persistent workspace",
+    architecture_x86_64: "x86_64 architecture",
+    architecture_arm64: "arm64 architecture",
+    arbitrary_disk: "arbitrary disk sizing"
+  }.freeze
 
   def self.json_value(value)
     case value
@@ -36,6 +58,92 @@ module ExecutionRunners
       else
         value
       end
+    end
+  end
+
+  def self.normalize_capabilities(capabilities)
+    normalized = Array(capabilities).compact.map(&:to_sym).uniq
+    unknown = normalized - CAPABILITY_NAMES
+    raise ArgumentError, "Unknown runner capabilities: #{unknown.join(', ')}" if unknown.any?
+
+    normalized.freeze
+  end
+
+  def self.normalize_architecture(value)
+    case value.to_s
+    when "amd64", "x86_64" then "x86_64"
+    when "arm64", "aarch64" then "arm64"
+    end
+  end
+
+  def self.architecture_capability(value)
+    case normalize_architecture(value)
+    when "x86_64" then :architecture_x86_64
+    when "arm64" then :architecture_arm64
+    end
+  end
+
+  def self.capability_label(capability)
+    CAPABILITY_LABELS.fetch(capability.to_sym)
+  end
+
+  CapabilitySet = Data.define(:capabilities) do
+    def initialize(capabilities:)
+      super(capabilities: ExecutionRunners.normalize_capabilities(capabilities))
+    end
+
+    def include?(capability)
+      capabilities.include?(capability.to_sym)
+    end
+
+    def missing(required_capabilities)
+      Array(required_capabilities).map(&:to_sym).reject { |capability| include?(capability) }
+    end
+
+    def to_a
+      capabilities
+    end
+  end
+
+  CapabilityRequirements = Data.define(:capabilities) do
+    STATIC_CAPABILITIES = %i[streaming_logs direct_exec persistent_workspace].freeze
+
+    def initialize(capabilities:)
+      super(capabilities: ExecutionRunners.normalize_capabilities(capabilities))
+    end
+
+    def self.from_run_spec(spec)
+      capabilities = base_capabilities
+      capabilities << :host_paths if spec.workspace&.bind_mount?
+      capabilities << :service_containers if spec.services.any?
+      capabilities << :browser_sidecar if spec.project&.verification_enabled?
+      capabilities << :arbitrary_disk if spec.resources&.disk_gb.to_i.positive?
+      capabilities << ExecutionRunners.architecture_capability(spec.resources&.architecture)
+      new(capabilities: capabilities)
+    end
+
+    def self.from_agent_run(agent_run, worktree_path: nil, service_declarations: nil, requested_resources: nil)
+      capabilities = base_capabilities
+      capabilities << :host_paths if worktree_path.presence || agent_run.worktree_path.presence
+      declarations = Array(service_declarations || Containers::ServiceProvisioner.new.service_declarations(agent_run))
+      capabilities << :service_containers if declarations.any?
+      capabilities << :browser_sidecar if agent_run.project.verification_enabled?
+      resources = requested_resources || Capacity::RequestedResources.for_agent_run(agent_run)
+      capabilities << :arbitrary_disk if resources[:disk_bytes].to_i.positive?
+      capabilities << ExecutionRunners.architecture_capability(resources[:architecture])
+      new(capabilities: capabilities)
+    end
+
+    def requires?(capability)
+      capabilities.include?(capability.to_sym)
+    end
+
+    def to_a
+      capabilities
+    end
+
+    private_class_method def self.base_capabilities
+      STATIC_CAPABILITIES.dup
     end
   end
 
@@ -606,6 +714,11 @@ module ExecutionRunners
       positive_numeric_option(owner_timeout) || Containers::Provision::DEFAULTS[:timeout_seconds]
     end
     private_class_method :timeout_seconds_for
+
+    # @spec CONTAINER-RUNTIME-037
+    def capability_requirements
+      CapabilityRequirements.from_run_spec(self)
+    end
 
     # @spec CONTAINER-RUNTIME-018
     def input_manifest
