@@ -52,7 +52,7 @@
     </div>
   </div>
 
-  <div class="border-t border-gray-200 bg-white px-4 py-3 sm:px-6">
+  <div class="shrink-0 border-t border-gray-200 bg-white px-4 py-3 sm:px-6">
     <% if can_create_chat_message %>
       <form data-controller="chat-input"
             data-action="submit->chat-input#send chat-input:send->chat#sendMessage chat:busy->chat-input#disable chat:idle->chat-input#enable"
