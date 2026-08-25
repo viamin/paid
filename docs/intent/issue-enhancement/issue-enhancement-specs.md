@@ -134,9 +134,11 @@
   `manual_review`; only an explicit operator-triggered run SHALL resume work.
   Entering `manual_review` SHALL clear stored clarification questions and remove
   the enhancement needs-input label so GitHub and Paid do not show contradictory
-  lifecycle states. Only a marker comment authored by Paid's GitHub App or an
-  allowlisted credential owner SHALL suppress the stop notice; an untrusted
-  commenter cannot forge the marker to suppress platform feedback.
+  lifecycle states. Only a marker comment authored by Paid's GitHub App SHALL
+  suppress the stop notice; the marker text is unauthenticated, so trusting
+  allowlisted human collaborators would let any one of them forge the marker
+  and silence platform feedback, breaking the convention used by other
+  marker-based status comments.
   *Tests:* `spec/temporal/activities/queue_agent_run_activity_spec.rb`,
   `spec/temporal/activities/fetch_issues_activity_spec.rb`.
   *Code:* `app/temporal/activities/queue_agent_run_activity.rb`,

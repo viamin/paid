@@ -43,16 +43,24 @@ module IssueEnhancements
 
     def comment_present?
       project.client.issue_comments(project.full_name, issue.github_number).any? do |comment|
-        trusted_comment_author?(comment) && comment.body.to_s.include?(COMMENT_MARKER)
+        paid_bot_comment?(comment) && comment.body.to_s.include?(COMMENT_MARKER)
       end
     rescue GithubClient::Error => e
       log_github_failure("comment_lookup", e)
       true
     end
 
-    def trusted_comment_author?(comment)
+    # Restrict dedupe to Paid's own bot-authored marker comments. The marker
+    # text is unauthenticated — any allowlisted human collaborator can post it,
+    # and Project#trusted_github_user? deliberately admits such users — so
+    # broadening the check to trusted humans would let a single forged comment
+    # suppress the platform's stop notice. The bot login is unspoofable: only
+    # Paid's GitHub App can author content as it. This matches the convention
+    # used by other marker-based status comments (see ClarifyingQuestions::
+    # CommentAdmission and EnhanceIssueActivity#paid_bot_comment?).
+    def paid_bot_comment?(comment)
       login = comment.respond_to?(:user) ? comment.user&.login : nil
-      project.paid_bot_author?(login) || project.trusted_github_user?(login)
+      project.paid_bot_author?(login)
     end
 
     def post_comment

@@ -69,6 +69,40 @@ RSpec.describe IssueEnhancements::StopForManualReview do
   end
 
   # @spec ISSUE-ENHANCEMENT-011
+  it "does not let an allowlisted collaborator's marker suppress the Paid stop notice" do
+    # "viamin" is the default allowlisted human collaborator on the project
+    # factory. trusted_github_user? admits them, but the marker text is just a
+    # string — only Paid's bot-authored comments should be honored as a real
+    # platform stop notice.
+    allow(client).to receive(:issue_comments).and_return([
+      OpenStruct.new(
+        body: described_class::COMMENT_MARKER,
+        user: OpenStruct.new(login: "viamin")
+      )
+    ])
+
+    described_class.call(project: project, issue: issue, reason: "Round limit reached.")
+
+    expect(client).to have_received(:add_comment).once
+  end
+
+  # @spec ISSUE-ENHANCEMENT-011
+  it "honors a bot-authored marker comment for dedupe" do
+    allow(project).to receive(:paid_bot_author?).and_call_original
+    allow(project).to receive(:paid_bot_author?).with("paid-agents[bot]").and_return(true)
+    allow(client).to receive(:issue_comments).and_return([
+      OpenStruct.new(
+        body: described_class::COMMENT_MARKER,
+        user: OpenStruct.new(login: "paid-agents[bot]")
+      )
+    ])
+
+    described_class.call(project: project, issue: issue, reason: "Round limit reached.")
+
+    expect(client).not_to have_received(:add_comment)
+  end
+
+  # @spec ISSUE-ENHANCEMENT-011
   it "does not publish again after another worker has already parked the issue" do
     issue.update!(paid_state: "manual_review")
 
