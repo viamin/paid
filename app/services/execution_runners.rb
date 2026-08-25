@@ -518,7 +518,11 @@ module ExecutionRunners
     end
 
     def self.positive_numeric_option(value)
-      value if value.to_i.positive?
+      # Use +to_f+ rather than +to_i+ so fractional overrides such as
+      # +cpu_cores: 0.5+ survive the positivity check. Integer callers
+      # (+cpu_quota+, +memory_bytes+, +disk_bytes+, +timeout_seconds+) round-trip
+      # unchanged because +Integer#to_f+ is exact.
+      value if value.to_f.positive?
     end
 
     def self.legacy_resource_option(legacy_value, modern_value, fallback, scale: 1)

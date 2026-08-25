@@ -328,6 +328,16 @@ RSpec.describe ExecutionRunners do
     end
 
     # @spec CONTAINER-RUNTIME-027
+    it "honors sub-1 cpu_cores overrides instead of dropping them on the positivity check" do
+      project = create(:project)
+      run = create(:agent_run, project: project)
+
+      built = ExecutionRunners::RunSpec.from_agent_run(run, cpu_cores: 0.5)
+
+      expect(built.resources.cpu_cores).to eq(0.5)
+    end
+
+    # @spec CONTAINER-RUNTIME-027
     it "expands a named profile when explicit requested values are absent" do
       project = create(:project)
       run = create(:agent_run, project: project, external_metadata: {
