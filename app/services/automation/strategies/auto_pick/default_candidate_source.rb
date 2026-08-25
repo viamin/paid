@@ -217,7 +217,7 @@ module Automation
 
           private
 
-          def apply_issue_analysis_backoff(scope, project)
+          def apply_issue_analysis_backoff(scope, project) # @spec ISSUE-ANALYSIS-010 AUTO-PICK-QUEUE-002
             now = Time.current
             reset_at = Issues::IssueAnalysisBackoffResetContext.call(project: project)
 

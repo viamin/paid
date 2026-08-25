@@ -824,14 +824,14 @@ class Issue < ApplicationRecord
 
   public
 
-  def issue_analysis_backoff_active?(reset_at: nil, now: Time.current)
+  def issue_analysis_backoff_active?(reset_at: nil, now: Time.current) # @spec ISSUE-ANALYSIS-010 AUTO-PICK-QUEUE-002
     return false if issue_analysis_next_attempt_at.blank? || issue_analysis_next_attempt_at <= now
     return false if reset_at.present? && issue_analysis_backoff_set_at.present? && issue_analysis_backoff_set_at < reset_at
 
     true
   end
 
-  def record_issue_analysis_backoff!(paid_state:, now: Time.current)
+  def record_issue_analysis_backoff!(paid_state:, now: Time.current) # @spec ISSUE-ANALYSIS-010
     next_attempt_at = now + issue_analysis_backoff_delay
     attrs = {
       issue_analysis_next_attempt_at: next_attempt_at,
@@ -853,7 +853,7 @@ class Issue < ApplicationRecord
     next_attempt_at
   end
 
-  def clear_issue_analysis_backoff!(reason: "Cleared after a successful issue-analysis provider call")
+  def clear_issue_analysis_backoff!(reason: "Cleared after a successful issue-analysis provider call") # @spec ISSUE-ANALYSIS-010 ISSUE-ANALYSIS-011
     return if issue_analysis_next_attempt_at.blank? && issue_analysis_backoff_set_at.blank?
 
     update!(issue_analysis_next_attempt_at: nil, issue_analysis_backoff_set_at: nil)

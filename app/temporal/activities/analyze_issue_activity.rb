@@ -202,7 +202,7 @@ module Activities
       )
     end
 
-    def issue_analysis_provider_exhaustion_message(providers)
+    def issue_analysis_provider_exhaustion_message(providers) # @spec ISSUE-ANALYSIS-010
       suffix = providers.any? ? ": #{providers.join(', ')}" : ""
       "All issue-analysis providers exhausted#{suffix}"
     end

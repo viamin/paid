@@ -84,7 +84,7 @@ module Activities
 
     PUSH_PERMISSION_COMMENT_MARKER = "<!-- paid: push-permission-rejection -->"
 
-    def record_issue_analysis_backoff?(agent_run)
+    def record_issue_analysis_backoff?(agent_run) # @spec ISSUE-ANALYSIS-010 ISSUE-ANALYSIS-011
       agent_run.auto_pick? &&
         agent_run.analyze_issue_goal? &&
         agent_run.status == "failed" &&
