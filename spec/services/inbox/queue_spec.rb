@@ -5,24 +5,89 @@ require "rails_helper"
 RSpec.describe Inbox::Queue do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
-  let(:project) { create(:project, account: account, created_by: user, auto_pick_enabled: true, active: true, owner: "acme", repo: "alpha") }
+  let(:project) do
+    create(
+      :project,
+      account: account,
+      created_by: user,
+      auto_pick_enabled: true,
+      active: true,
+      owner: "acme",
+      repo: "alpha"
+    )
+  end
+  let(:questions_body) do
+    <<~BODY
+      <!-- paid:enhance-issue -->
 
+      ## Clarifying questions
+      1. What is the expected behavior?
+    BODY
+  end
+
+  # @spec INBOX-FOUNDATION-003 @spec INBOX-FOUNDATION-004
+  # @spec INBOX-FOUNDATION-005 @spec INBOX-FOUNDATION-006
   describe ".call" do
-    it "returns clarifying-question and open plan-review entries in one queue" do
-      issue = create_needs_input_issue(project: project, question: "What should happen next?")
+    it "returns typed entries for clarifying questions and plan reviews" do
+      issue = create_needs_input(body: questions_body)
       review = create_plan_review(project: project, workflow_id: "planning-workflow-1")
 
       entries = described_class.call(user: user)
 
-      expect(entries.map(&:kind)).to include("clarifying_questions", "plan_review")
-      expect(entries.find { |entry| entry.record == issue }).to have_attributes(
-        issue: issue,
-        questions: [ "What should happen next?" ]
+      expect(entries.map(&:kind)).to include(
+        described_class::CLARIFYING_QUESTIONS_KIND,
+        described_class::PLAN_REVIEW_KIND
       )
-      expect(entries.find { |entry| entry.record == review }).to have_attributes(
-        issue: review.issue,
-        tasks: [ { "title" => "Task 1", "description" => "Do the thing" } ]
+      expect_clarifying_entry(entries, issue)
+      expect_plan_review_entry(entries, review)
+    end
+
+    it "exposes waiting_since from needs_input_since so a future inbox UI can show waiting age" do
+      stamp = 2.days.ago
+      issue = create_needs_input(body: questions_body)
+      issue.update_columns(needs_input_since: stamp)
+
+      entry = described_class.call(user: user, project: project).find { |candidate| candidate.record == issue }
+
+      expect(entry.waiting_since).to be_within(1.second).of(stamp)
+    end
+
+    it "uses locally persisted needs_input_questions for create_feature issues" do
+      feature_issue = create_needs_input(
+        github_number: 20,
+        body: "Need dark mode",
+        needs_input_questions: [
+          "What is the desired behavior?",
+          "What constraints must be respected?"
+        ]
       )
+
+      entries = described_class.call(user: user, project: project)
+
+      feature_entry = entries.find { |entry| entry.issue == feature_issue }
+      expect(feature_entry.questions).to eq([
+        "What is the desired behavior?",
+        "What constraints must be respected?"
+      ])
+    end
+
+    it "skips questionless issues until sync repairs them" do
+      questionless = create_needs_input(github_number: 9, body: "Needs manual retry")
+      answerable = create_needs_input(github_number: 10, body: questions_body)
+
+      entries = described_class.call(user: user, project: project)
+
+      expect(entries.map(&:issue)).to include(answerable)
+      expect(entries.map(&:issue)).not_to include(questionless)
+    end
+
+    it "filters to plan reviews when kind: plan_review is requested" do
+      create_needs_input(body: questions_body)
+      review = create_plan_review(project: project, workflow_id: "planning-workflow-1")
+
+      entries = described_class.call(user: user, kind: described_class::PLAN_REVIEW_KIND)
+
+      expect(entries.map(&:record)).to eq([ review ])
     end
 
     it "excludes plan reviews that are no longer open" do
@@ -38,24 +103,143 @@ RSpec.describe Inbox::Queue do
         outcome: "plan_review_approved"
       )
 
-      entries = described_class.call(user: user, kind: "plan_review")
+      entries = described_class.call(user: user, kind: described_class::PLAN_REVIEW_KIND)
 
       expect(entries).to be_empty
     end
+  end
 
-    it "applies the explicit project scope to both entry kinds" do
-      other_project = create(:project, account: account, created_by: user, auto_pick_enabled: true, active: true, owner: "acme", repo: "beta")
-      create(:issue, :needs_input, project: project, needs_input_questions: [ "Scoped question?" ])
-      create(:issue, :needs_input, project: other_project, needs_input_questions: [ "Other question?" ])
+  describe "ordering" do
+    # @spec INBOX-FOUNDATION-004
+    it "orders clarifying-question entries oldest-waiting-first by needs_input_since, NULLS LAST" do
+      newest = create_needs_input(github_number: 30, body: questions_body)
+      oldest = create_needs_input(github_number: 10, body: questions_body)
+      middle = create_needs_input(github_number: 20, body: questions_body)
+      newest.update_columns(needs_input_since: 1.hour.ago)
+      oldest.update_columns(needs_input_since: 3.hours.ago)
+      middle.update_columns(needs_input_since: 2.hours.ago)
 
-      entries = described_class.call(user: user, project: project)
+      order = described_class.call(
+        user: user,
+        project: project,
+        kind: described_class::CLARIFYING_QUESTIONS_KIND
+      ).map(&:issue)
 
-      expect(entries.map(&:project).uniq).to eq([ project ])
+      expect(order).to eq([ oldest, middle, newest ])
+    end
+
+    it "sorts rows with NULL needs_input_since after rows with a timestamp" do
+      with_time = create_needs_input(github_number: 20, body: questions_body)
+      without_time = create_needs_input(github_number: 10, body: questions_body)
+      with_time.update_columns(needs_input_since: 2.hours.ago)
+      without_time.update_columns(needs_input_since: nil)
+
+      order = described_class.call(
+        user: user,
+        project: project,
+        kind: described_class::CLARIFYING_QUESTIONS_KIND
+      ).map(&:issue)
+
+      expect(order).to eq([ with_time, without_time ])
+    end
+
+    it "tiebreaks by owner, repo, github_number, and id when waiting_since is identical" do
+      same_time = Time.current
+      first = create_needs_input(github_number: 30, body: questions_body)
+      second = create_needs_input(github_number: 10, body: questions_body)
+      third = create_needs_input(github_number: 20, body: questions_body)
+      [ first, second, third ].each { |issue| issue.update_columns(needs_input_since: same_time) }
+
+      order = described_class.call(
+        user: user,
+        project: project,
+        kind: described_class::CLARIFYING_QUESTIONS_KIND
+      ).map(&:issue)
+
+      expect(order).to eq([ second, third, first ])
+    end
+
+    it "orders mixed inbox entries by waiting_since with NULL clarifying timestamps last" do
+      clarifying = create_needs_input(github_number: 10, body: questions_body)
+      clarifying.update_columns(needs_input_since: nil)
+      review = create_plan_review(project: project, workflow_id: "planning-workflow-1")
+
+      order = described_class.call(user: user).map(&:record)
+
+      expect(order).to eq([ review, clarifying ])
     end
   end
 
-  def create_needs_input_issue(project:, question:)
-    create(:issue, :needs_input, project: project, body: "Need help", needs_input_questions: [ question ])
+  describe "including PRs" do
+    # @spec INBOX-FOUNDATION-005
+    it "includes pull requests alongside issues for clarifying-question entries" do
+      issue = create_needs_input(github_number: 10, body: questions_body)
+      pr = create(:issue, :needs_input, :pull_request, project: project, github_number: 20, body: questions_body)
+
+      entries = described_class.call(
+        user: user,
+        project: project,
+        kind: described_class::CLARIFYING_QUESTIONS_KIND
+      )
+
+      expect(entries.map(&:issue)).to contain_exactly(issue, pr)
+    end
+  end
+
+  describe "scoping" do
+    # @spec INBOX-FOUNDATION-006
+    it "only returns clarifying-question entries from auto-pick projects" do
+      other_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true)
+      in_scope = create_needs_input(github_number: 10, body: questions_body)
+      out_of_scope = create_needs_input(github_number: 20, project: other_project, body: questions_body)
+
+      entries = described_class.call(user: user, kind: described_class::CLARIFYING_QUESTIONS_KIND)
+
+      expect(entries.map(&:issue)).to include(in_scope)
+      expect(entries.map(&:issue)).not_to include(out_of_scope)
+    end
+
+    it "narrows to a single project when project: is provided" do
+      scoped_issue = create_needs_input(github_number: 10, body: questions_body)
+      scoped_review = create_plan_review(project: project, workflow_id: "planning-workflow-1")
+      other_project = create(
+        :project,
+        account: account,
+        created_by: user,
+        auto_pick_enabled: true,
+        active: true,
+        owner: "acme",
+        repo: "beta"
+      )
+      create_needs_input(github_number: 11, project: other_project, body: questions_body)
+      create_plan_review(project: other_project, workflow_id: "planning-workflow-2")
+
+      entries = described_class.call(user: user, project: project)
+
+      expect(entries.map(&:record)).to contain_exactly(scoped_issue, scoped_review)
+    end
+
+    it "excludes clarifying-question projects from other accounts" do
+      other_user = create(:user, account: create(:account))
+      other_account_project = create(
+        :project,
+        account: other_user.account,
+        created_by: other_user,
+        auto_pick_enabled: true,
+        active: true
+      )
+      create_needs_input(github_number: 20, project: other_account_project, body: questions_body)
+      mine = create_needs_input(github_number: 10, body: questions_body)
+
+      entries = described_class.call(user: user, kind: described_class::CLARIFYING_QUESTIONS_KIND)
+
+      expect(entries.map(&:issue)).to contain_exactly(mine)
+    end
+  end
+
+  def create_needs_input(overrides = {})
+    defaults = { project: project, github_number: 10 }
+    create(:issue, :needs_input, **defaults.merge(overrides))
   end
 
   def create_plan_review(project:, workflow_id:, issue: create(:issue, project: project), plan_data: nil)
@@ -68,6 +252,32 @@ RSpec.describe Inbox::Queue do
       decision_type: "planning_outcome",
       outcome: "plan_pending_review",
       plan_data: plan_data || { "tasks" => [ { "title" => "Task 1", "description" => "Do the thing" } ] }
+    )
+  end
+
+  def expect_clarifying_entry(entries, issue)
+    clarifying_entry = entries.find { |entry| entry.record == issue }
+
+    expect(clarifying_entry).to have_attributes(
+      id: "#{described_class::CLARIFYING_QUESTIONS_KIND}:#{issue.id}",
+      kind: described_class::CLARIFYING_QUESTIONS_KIND,
+      project: project,
+      issue: issue,
+      questions: [ "What is the expected behavior?" ],
+      tasks: []
+    )
+  end
+
+  def expect_plan_review_entry(entries, review)
+    plan_review_entry = entries.find { |entry| entry.record == review }
+
+    expect(plan_review_entry).to have_attributes(
+      id: "#{described_class::PLAN_REVIEW_KIND}:#{review.id}",
+      kind: described_class::PLAN_REVIEW_KIND,
+      project: project,
+      issue: review.issue,
+      tasks: [ { "title" => "Task 1", "description" => "Do the thing" } ],
+      questions: []
     )
   end
 end

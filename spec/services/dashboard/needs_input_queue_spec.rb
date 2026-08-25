@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec INBOX-FOUNDATION-007
 RSpec.describe Dashboard::NeedsInputQueue do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
@@ -20,6 +21,15 @@ RSpec.describe Dashboard::NeedsInputQueue do
   end
 
   describe ".call" do
+    it "preserves the legacy dashboard ordering instead of needs_input_since ordering" do
+      first_issue.update!(needs_input_since: 2.hours.ago)
+      second_issue.update!(needs_input_since: 3.hours.ago)
+
+      entries = described_class.call(user: user, project: project)
+
+      expect(entries.map(&:issue)).to eq([ first_issue, second_issue ])
+    end
+
     it "skips needs-input issues without a local or body questionnaire" do
       questionless_issue = create(:issue, :needs_input, project: project, github_number: 9, body: "Needs manual retry")
       first_issue
