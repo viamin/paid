@@ -4,8 +4,10 @@
     <ol class="mt-3 space-y-3">
       <% entry.tasks.each_with_index do |task, index| %>
         <li class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-          <p class="text-sm font-semibold text-gray-900"><%= index + 1 %>. <%= task["title"] %></p>
-          <p class="mt-1 text-sm text-gray-600"><%= task["description"] %></p>
+          <p class="text-sm font-semibold text-gray-900"><%= index + 1 %>. <%= render "shared/markdown_text", content: task["title"] %></p>
+          <p class="mt-1 text-sm text-gray-600">
+            <%= render "shared/markdown_text", content: task["description"] %>
+          </p>
         </li>
       <% end %>
     </ol>

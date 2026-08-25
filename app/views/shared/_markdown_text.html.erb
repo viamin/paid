@@ -1,0 +1,10 @@
+<%# locals: content (String, required), tag (Symbol, optional, default :span), class (String, optional) %>
+<%# Renders a single line of inline markdown via the `markdown-text` Stimulus
+    controller. The controller replaces the element's innerHTML with the parsed
+    markdown, falling back to the escaped raw text if parsing fails. Use this
+    partial everywhere a question, heading, or task label needs to support the
+    same inline markdown surface so the wizard, inbox, and any future callers
+    stay in sync. %>
+<%= content_tag(local_assigns.fetch(:tag, :span).to_sym, content,
+      class: local_assigns[:class],
+      data: { controller: "markdown-text", "markdown-text-content-value": content }) %>

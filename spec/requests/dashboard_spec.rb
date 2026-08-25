@@ -1051,6 +1051,68 @@ RSpec.describe "Dashboard" do
       expect(response.body).to include("lg:grid-cols-[22rem,1fr]")
     end
 
+    context "when a clarifying question contains markdown" do
+      let(:markdown_question) { "Should `foo_bar` use **snake_case** or [camelCase](https://example.com)?" }
+      let(:markdown_body) do
+        <<~BODY
+          <!-- paid:enhance-issue -->
+
+          ## Clarifying questions
+          1. #{markdown_question}
+        BODY
+      end
+
+      it "wires the raw question text into the markdown-text controller for client-side rendering" do
+        issue = create(:issue, :needs_input, project: project, title: "Markdown question", body: markdown_body)
+
+        get dashboard_inbox_path(
+          entry_kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+          entry_id: issue.id,
+          view: "detail"
+        )
+
+        question_node = Nokogiri::HTML(response.body).at_css('[data-controller="markdown-text"]')
+
+        expect(question_node).to be_present
+        expect(question_node["data-markdown-text-content-value"]).to eq(markdown_question)
+        expect(response.body).to include(CGI.escapeHTML(markdown_question))
+        expect(response.body).not_to include("<strong>snake_case</strong>")
+      end
+    end
+
+    context "when a plan review task contains markdown" do
+      let(:markdown_title) { "Wire `markdown-text` into the **inbox** partial" }
+      let(:markdown_description) { "Should `description` use **markdown** or [plaintext](https://example.com)?" }
+      let(:review) do
+        create(
+          :decomposition_decision,
+          project: project,
+          issue: plan_review_issue,
+          workflow_id: "planning-workflow-1",
+          decision_key: "planning-workflow-1:plan_review:pending",
+          decision_type: "planning_outcome",
+          outcome: "plan_pending_review",
+          plan_data: { "tasks" => [ { "title" => markdown_title, "description" => markdown_description } ] }
+        )
+      end
+
+      it "wires the raw title and description into the markdown-text controller for client-side rendering" do
+        get dashboard_inbox_path(
+          entry_kind: Inbox::Queue::PLAN_REVIEW_KIND,
+          entry_id: review.id,
+          view: "detail"
+        )
+
+        content_values = Nokogiri::HTML(response.body)
+          .css('[data-controller="markdown-text"]')
+          .map { |node| node["data-markdown-text-content-value"] }
+
+        expect(content_values).to include(markdown_title, markdown_description)
+        expect(response.body).to include(CGI.escapeHTML(markdown_title), CGI.escapeHTML(markdown_description))
+        expect(response.body).not_to include("<strong>inbox</strong>", "<strong>markdown</strong>")
+      end
+    end
+
     def create_inbox_entries_for_dashboard_inbox
       create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
       create(:issue, :needs_input, project: second_project, title: "Beta question", body: questions_body)
