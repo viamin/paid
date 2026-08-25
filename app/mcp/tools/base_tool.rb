@@ -45,6 +45,15 @@ module Tools
       raise NotImplementedError, "#{name}.description must be implemented"
     end
 
+    # The description advertised to the interactive chat agent loop for the
+    # given session. Defaults to the tool's static +description+; tools whose
+    # advertised framing should shift with session/project state (for example
+    # demoting a fallback tool once richer context is available) override this.
+    # @spec CHAT-API-013
+    def self.description_for(session:)
+      description
+    end
+
     def self.input_schema
       { type: "object", properties: {} }
     end

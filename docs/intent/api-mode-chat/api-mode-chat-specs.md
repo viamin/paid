@@ -239,3 +239,19 @@
   `spec/services/prompts/sync_defaults_spec.rb`.
   *Code:* `ChatSessions::BuildSystemPrompt#base_identity`,
   `Tools::GrepRepo.description`, `db/seeds/prompts.rb`.
+
+- [x] **CHAT-API-013** — When the chat agent loop advertises tool definitions
+  for a session (`Tools::Registry.chat_definitions_for`), `grep_repo` SHALL
+  remain in the advertised tool set (GitHub Code Search stays available as a
+  fallback), but its advertised `description` SHALL be demoted with a
+  fallback-only annotation steering the model toward `search_code` whenever
+  the session's current project has `knowledge_status: "ready"`. Sessions with
+  no current project, or whose project's knowledge base is not yet ready
+  (`pending`, `collecting`, `failed`, or `stale`), SHALL see `grep_repo`'s
+  plain, undemoted description. This keeps ordinary code-discovery calls on
+  the knowledge-backed tool instead of the shared GitHub Code Search rate
+  limit (#3392).
+  *Tests:* `spec/mcp/tools/registry_spec.rb`, `spec/mcp/tools/grep_repo_spec.rb`,
+  `spec/mcp/tools/base_tool_spec.rb`.
+  *Code:* `Tools::Registry.chat_definition_for`, `Tools::BaseTool.description_for`,
+  `Tools::GrepRepo.description_for`, `Tools::GrepRepo.knowledge_ready?`.

@@ -315,6 +315,28 @@ RSpec.describe Tools::Registry do
 
       expect(names).not_to include("run_shell")
     end
+
+    it "keeps grep_repo advertised but demotes its description when project knowledge is ready" do
+      # @spec CHAT-API-013
+      project.update!(knowledge_status: "ready")
+
+      definitions = described_class.chat_definitions_for(user: user, session: chat_session)
+      grep_repo = definitions.find { |definition| definition[:name] == "grep_repo" }
+
+      expect(grep_repo).to be_present
+      expect(grep_repo[:description]).to include("Fallback only").and include("search_code")
+    end
+
+    it "advertises grep_repo with its plain description when project knowledge is not ready" do
+      # @spec CHAT-API-013
+      expect(project.knowledge_status).not_to eq("ready")
+
+      definitions = described_class.chat_definitions_for(user: user, session: chat_session)
+      grep_repo = definitions.find { |definition| definition[:name] == "grep_repo" }
+
+      expect(grep_repo).to be_present
+      expect(grep_repo[:description]).to eq(Tools::GrepRepo.description)
+    end
   end
 
   describe ".write_tool?" do
