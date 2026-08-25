@@ -17,6 +17,8 @@ class TestAgentControllerNodeHarness
     function run() {
       const controller = Object.create(TestAgentController.prototype);
       const message = controller.troubleshootingFor("authentication");
+      controller.buttonTarget = { disabled: false, textContent: "" };
+      controller.resultTarget = { innerHTML: "" };
 
       if (message.includes("on this page")) {
         throw new Error(`Expected authentication troubleshooting to avoid page-local setup guidance, got: ${message}`);
@@ -28,6 +30,16 @@ class TestAgentControllerNodeHarness
 
       if (!message.includes("runner credentials")) {
         throw new Error(`Expected authentication troubleshooting to mention runner credentials, got: ${message}`);
+      }
+
+      controller.resetButton();
+      if (controller.buttonTarget.textContent !== "Test Runner") {
+        throw new Error(`Expected resetButton() to restore Test Runner, got: ${controller.buttonTarget.textContent}`);
+      }
+
+      controller.showLoading();
+      if (!controller.resultTarget.innerHTML.includes("Testing runner...")) {
+        throw new Error(`Expected showLoading() to render Testing runner..., got: ${controller.resultTarget.innerHTML}`);
       }
     }
 
@@ -46,7 +58,7 @@ end
 
 RSpec.describe TestAgentControllerNodeHarness, :no_db do
   # @spec RUNNERS-INDEX-007
-  it "keeps auth troubleshooting aligned with the remaining runner auth surfaces" do
+  it "keeps Test Runner copy aligned with the remaining runner auth surfaces" do
     stdout, stderr, status = described_class.run
 
     expect(status.success?).to be(true), <<~MESSAGE

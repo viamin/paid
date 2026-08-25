@@ -51,6 +51,18 @@ RSpec.describe "chat_messages/_tool_call", :no_db, type: :view do
     expect(rendered).not_to match(/<details[^>]*open/)
   end
 
+  it "summarizes workspace grep results that report total_matches" do
+    render partial: "chat_messages/tool_call", locals: {
+      message: tool_message(
+        tool_name: "grep_workspace",
+        tool_result: { "total_matches" => 3, "matches" => [ { "path" => "README.md" } ] }
+      )
+    }
+
+    expect(rendered).to include("grep_workspace")
+    expect(rendered).to include("3 matches")
+  end
+
   it "keeps pending confirmations open for review" do
     render partial: "chat_messages/tool_call", locals: {
       message: tool_message(

@@ -48,6 +48,8 @@ What is in place:
 - clone manifests that persist which repos were added to a session
 - container-only mutation tools (`write_repo_file`, `apply_patch`, `git_*`,
   `run_shell`) that recompute multi-repo authorization per project
+- a container-only read tool (`grep_workspace`) that searches a cloned repo's
+  local checkout instead of falling back to GitHub Code Search
 
 ## Remaining Gap
 

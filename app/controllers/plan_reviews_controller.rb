@@ -3,27 +3,25 @@
 class PlanReviewsController < ApplicationController
   before_action :authenticate_user!
   before_action :set_pending_review, only: %i[approve reject revise]
+  skip_after_action :verify_authorized, only: :index
+  skip_after_action :verify_policy_scoped, only: :index
 
   def index
-    authorize :plan_review, :index?
-    @plan_reviews = plan_review_scope
-      .open_plan_reviews
-      .includes(:project, :issue)
-      .order(created_at: :desc)
+    redirect_to dashboard_inbox_path(kind: Inbox::Queue::PLAN_REVIEW_KIND), status: :see_other
   end
 
   def approve
     authorize @plan_review, :manage?, policy_class: PlanReviewPolicy
     return unless send_signal("approve_plan")
 
-    redirect_to plan_reviews_path, notice: "Plan approved. Sub-issues will be created."
+    redirect_to redirect_target, notice: "Plan approved. Sub-issues will be created."
   end
 
   def reject
     authorize @plan_review, :manage?, policy_class: PlanReviewPolicy
     return unless send_signal("reject_plan")
 
-    redirect_to plan_reviews_path, notice: "Plan rejected. No sub-issues will be created."
+    redirect_to redirect_target, notice: "Plan rejected. No sub-issues will be created."
   end
 
   def revise
@@ -31,7 +29,7 @@ class PlanReviewsController < ApplicationController
     revised_tasks = parse_revised_tasks
     return unless send_signal("revise_plan", revised_tasks)
 
-    redirect_to plan_reviews_path, notice: "Plan revised. Sub-issues will be created with the updated plan."
+    redirect_to redirect_target, notice: "Plan revised. Sub-issues will be created with the updated plan."
   end
 
   private
@@ -46,7 +44,7 @@ class PlanReviewsController < ApplicationController
   rescue Temporalio::Error::RPCError => e
     raise unless e.code == Temporalio::Error::RPCError::Code::NOT_FOUND
 
-    redirect_to plan_reviews_path, alert: "The plan review workflow is no longer active."
+    redirect_to redirect_target, alert: "The plan review workflow is no longer active."
     false
   end
 
@@ -58,5 +56,12 @@ class PlanReviewsController < ApplicationController
 
   def plan_review_scope
     policy_scope(DecompositionDecision, policy_scope_class: PlanReviewPolicy::Scope)
+  end
+
+  def redirect_target
+    requested = params[:return_to].to_s
+    return requested if requested.start_with?(dashboard_inbox_path) && requested.exclude?("://")
+
+    dashboard_inbox_path(kind: Inbox::Queue::PLAN_REVIEW_KIND)
   end
 end

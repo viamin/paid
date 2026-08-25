@@ -41,6 +41,16 @@ installation tokens and present the App bot identity; PAT-backed projects keep
 using their active token. Callers consume an opaque GitHub credential so the
 read/write path does not branch on auth mode.
 
+Project-scoped GitHub diagnostics are exposed as a sanitized read model for
+customer users and chat agents. The diagnostics report derived facts only:
+credential mode, installation/token health, whether the project webhook secret
+is configured, whether PAT push fallback is configured and still active, recent
+permission-rejection reason codes/messages, and the next recommended operator
+or project-owner action for common blockers such as missing `workflows`
+permission or a missing webhook secret. The surface intentionally excludes raw
+tokens, webhook secrets, installation tokens, request payloads, stack traces,
+and host-level logs.
+
 GitHub App installation binding is intentionally conservative. The browser
 callback proves user intent only after state verification or an operator-owned
 self-hosted setup path. The actual install-to-account association is finalized

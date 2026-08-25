@@ -26,6 +26,13 @@ class StyleGuideAbTest < ApplicationRecord
   scope :completed, -> { where(status: "completed") }
   scope :cancelled, -> { where(status: "cancelled") }
 
+  include Experiments::AnalysisCache
+  analysis_cache(
+    analyzer_class: StyleGuideAbTests::Analyze,
+    variants_association: :style_guide_ab_test_variants,
+    call_keyword: :style_guide_ab_test
+  )
+
   def draft?
     status == "draft"
   end
@@ -73,21 +80,16 @@ class StyleGuideAbTest < ApplicationRecord
     style_guide_ab_test_variants.all? { |variant| variant.sample_count >= min_samples_per_variant }
   end
 
-  def cached_or_compute_analysis(persist: true)
-    current_key = samples_key
-    if cached_analysis.present?
-      return deserialize_analysis if analysis_samples_key == current_key
-      return deserialize_analysis unless persist
-    end
-
-    return nil unless persist
-
-    StyleGuideAbTests::Analyze.call(style_guide_ab_test: self).tap do |result|
-      persist_analysis!(result, current_key)
-    end
-  end
-
   private
+
+  def samples_key
+    total_samples = style_guide_ab_test_variants.sum(&:sample_count)
+    total_bucket = (total_samples / Experiments::AnalysisCache::CACHE_BUCKET_SIZE) * Experiments::AnalysisCache::CACHE_BUCKET_SIZE
+    variant_buckets = style_guide_ab_test_variants.sort_by(&:id)
+      .map { |variant| "#{variant.id}:#{(variant.sample_count / Experiments::AnalysisCache::CACHE_BUCKET_SIZE) * Experiments::AnalysisCache::CACHE_BUCKET_SIZE}" }
+      .join(",")
+    "total:#{total_bucket}|#{variant_buckets}"
+  end
 
   def variant_count_within_limit
     return if style_guide_ab_test_variants.size <= MAX_VARIANTS + 1
@@ -107,37 +109,5 @@ class StyleGuideAbTest < ApplicationRecord
     return if winner_variant.style_guide_ab_test_id == id
 
     errors.add(:winner_variant, "must belong to this style guide A/B test")
-  end
-
-  def samples_key
-    total_samples = style_guide_ab_test_variants.sum(&:sample_count)
-    total_bucket = (total_samples / ANALYSIS_INTERVAL) * ANALYSIS_INTERVAL
-    variant_buckets = style_guide_ab_test_variants.sort_by(&:id)
-      .map { |variant| "#{variant.id}:#{(variant.sample_count / ANALYSIS_INTERVAL) * ANALYSIS_INTERVAL}" }
-      .join(",")
-    "total:#{total_bucket}|#{variant_buckets}"
-  end
-
-  def persist_analysis!(result, key)
-    update_columns(
-      cached_analysis: {
-        status: result.status.to_s,
-        confidence: result.confidence&.to_f,
-        improvement: result.improvement&.to_f,
-        winner_id: result.winner&.id
-      },
-      analysis_samples_key: key
-    )
-  end
-
-  def deserialize_analysis
-    data = cached_analysis.symbolize_keys
-    winner = data[:winner_id] ? style_guide_ab_test_variants.find_by(id: data[:winner_id]) : nil
-    StyleGuideAbTests::Analyze::Result.new(
-      status: data[:status]&.to_sym,
-      winner: winner,
-      confidence: data[:confidence],
-      improvement: data[:improvement]
-    )
   end
 end

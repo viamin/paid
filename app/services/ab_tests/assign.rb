@@ -1,8 +1,13 @@
 # frozen_string_literal: true
 
 module AbTests
-  # Assigns an agent run to an A/B test variant using weighted random selection.
-  # Variants with fewer samples get higher weight to ensure balanced distribution.
+  # Assigns an agent run to an A/B test variant using weighted random
+  # selection that favours underfilled variants to keep the cohort
+  # balanced.
+  #
+  # The variant-selection math lives in Experiments::AssignmentPicker; this
+  # service owns the experiment-specific invariant lookup and assignment
+  # row creation.
   #
   # @example
   #   assignment = AbTests::Assign.call(ab_test: test, agent_run: run)
@@ -42,30 +47,15 @@ module AbTests
 
     def select_variant
       variants = ab_test.ab_test_variants.order(:id).to_a
-      raise ArgumentError, "A/B test has no variants" if variants.empty?
-      return variants.first if variants.size == 1
-
-      # Weight inversely by assignment count (not sample_count) so pending
-      # assignments are accounted for, avoiding skew under load.
-      assignment_counts = AbTestAssignment.where(ab_test: ab_test, ab_test_variant: variants)
-                                          .group(:ab_test_variant_id)
-                                          .count
-      max_count = variants.map { |v| assignment_counts[v.id] || 0 }.max
-      weights = variants.map do |v|
-        count = assignment_counts[v.id] || 0
-        (max_count - count) + 1
-      end
-      total = weights.sum.to_f
-
-      roll = rand
-      cumulative = 0.0
-
-      variants.zip(weights).each do |variant, weight|
-        cumulative += weight / total
-        return variant if roll < cumulative
-      end
-
-      variants.last
+      counts = AbTestAssignment.where(ab_test: ab_test, ab_test_variant: variants)
+                              .group(:ab_test_variant_id)
+                              .count
+      Experiments::AssignmentPicker.pick(
+        variants: variants,
+        counts: counts,
+        strategy: :inversely_weighted,
+        random: method(:rand)
+      )
     end
   end
 end

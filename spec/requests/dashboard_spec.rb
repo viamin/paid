@@ -956,7 +956,7 @@ RSpec.describe "Dashboard" do
       get dashboard_eligibility_breakdown_path
 
       document = Nokogiri::HTML(response.body)
-      link = document.at_css(%(a[href="#{dashboard_needs_input_path(project_id: project.id)}"]))
+      link = document.at_css(%(a[href="#{dashboard_inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)}"]))
 
       expect(link).to be_present
       expect(link.text).to include("1 needs input")
@@ -968,7 +968,24 @@ RSpec.describe "Dashboard" do
     let(:account) { create(:account) }
     let(:user) { create(:user, account: account) }
     let(:project) { create(:project, account: account, created_by: user, auto_pick_enabled: true, active: true, owner: "acme", repo: "alpha") }
+
+    before { sign_in user }
+
+    it "redirects the legacy queue path to the inbox filter" do
+      get dashboard_needs_input_path(project_id: project.id)
+
+      expect(response).to redirect_to(
+        dashboard_inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
+      )
+    end
+  end
+
+  describe "GET /dashboard/inbox" do
+    let(:account) { create(:account) }
+    let(:user) { create(:user, account: account) }
+    let(:project) { create(:project, account: account, created_by: user, auto_pick_enabled: true, active: true, owner: "acme", repo: "alpha") }
     let(:second_project) { create(:project, account: account, created_by: user, auto_pick_enabled: true, active: true, owner: "acme", repo: "beta") }
+    let(:plan_review_issue) { create(:issue, project: project, title: "Review me") }
     let(:questions_body) do
       <<~BODY
         <!-- paid:enhance-issue -->
@@ -981,30 +998,23 @@ RSpec.describe "Dashboard" do
 
     before { sign_in user }
 
-    it "lists needs-input issues across auto-pick projects" do
-      create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
-      create(:issue, :needs_input, project: second_project, title: "Beta question", body: questions_body)
-      create(:issue, :closed, :needs_input, project: project, title: "Closed question", body: questions_body)
-      create(:issue, :pull_request, :needs_input, project: project, title: "PR question", body: questions_body)
+    it "lists clarifying-question and plan-review entries across auto-pick projects" do
+      review = create_inbox_entries_for_dashboard_inbox
 
-      get dashboard_needs_input_path
+      get dashboard_inbox_path(entry_kind: Inbox::Queue::PLAN_REVIEW_KIND, entry_id: review.id, view: "detail")
 
       expect(response).to have_http_status(:ok)
-      expect(response.body).to include("Needs Input Queue")
-      expect(response.body).to include(project.full_name)
-      expect(response.body).to include(second_project.full_name)
-      expect(response.body).to include("Alpha question")
-      expect(response.body).to include("Beta question")
-      expect(response.body).to include("What is the expected behavior?")
+      expect(response.body).to include("Inbox", project.full_name, second_project.full_name)
+      expect(response.body).to include("Alpha question", "Beta question", "PR question", "Review me")
+      expect(response.body).to include("Visible task", "What is the expected behavior?")
       expect(response.body).not_to include("Closed question")
-      expect(response.body).not_to include("PR question")
     end
 
     it "supports project scoping" do
       create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
       create(:issue, :needs_input, project: second_project, title: "Beta question", body: questions_body)
 
-      get dashboard_needs_input_path(project_id: project.id)
+      get dashboard_inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
 
       expect(response).to have_http_status(:ok)
       expect(response.body).to include(project.full_name)
@@ -1019,10 +1029,42 @@ RSpec.describe "Dashboard" do
         project_issue_clarifying_questions_path(
           project,
           project.issues.find_by!(title: "Alpha question"),
-          queue: "dashboard_needs_input",
+          queue: "dashboard_inbox",
           queue_project_id: project.id,
-          return_to: dashboard_needs_input_path(project_id: project.id)
+          return_to: dashboard_inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
         )
+      )
+    end
+
+    it "renders a mobile detail state when an entry is selected" do
+      issue = create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
+
+      get dashboard_inbox_path(
+        entry_kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+        entry_id: issue.id,
+        view: "detail"
+      )
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Back to queue")
+      expect(response.body).to include("Answer Questions")
+      expect(response.body).to include("lg:grid-cols-[22rem,1fr]")
+    end
+
+    def create_inbox_entries_for_dashboard_inbox
+      create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
+      create(:issue, :needs_input, project: second_project, title: "Beta question", body: questions_body)
+      create(:issue, :closed, :needs_input, project: project, title: "Closed question", body: questions_body)
+      create(:issue, :pull_request, :needs_input, project: project, title: "PR question", body: questions_body)
+      create(
+        :decomposition_decision,
+        project: project,
+        issue: plan_review_issue,
+        workflow_id: "planning-workflow-1",
+        decision_key: "planning-workflow-1:plan_review:pending",
+        decision_type: "planning_outcome",
+        outcome: "plan_pending_review",
+        plan_data: { "tasks" => [ { "title" => "Visible task", "description" => "Visible description" } ] }
       )
     end
   end
