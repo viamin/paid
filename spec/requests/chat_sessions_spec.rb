@@ -355,8 +355,8 @@ RSpec.describe "ChatSessions" do
         expect(wrapper["class"].split.sort).to include("min-h-0")
       end
 
-      it "height-bounds the chat panel so the conversation container is the scroll container (#3459)" do
-        # @spec CHAT-API-008
+      it "height-bounds the chat panel so the conversation container is the scroll container (#3459, #3635)" do
+        # @spec CHAT-API-008, CHAT-API-009
         # The #3331 fix added `min-h-0` to the inner flex-1 wrapper, but the
         # chat panel's outer wrapper still used `min-h-[70vh]` — a *minimum*,
         # not a bound. When the transcript is long the panel grows beyond the
@@ -367,6 +367,11 @@ RSpec.describe "ChatSessions" do
         # link does nothing and the floating "back to top" button never
         # appears. Mirror the popup's behavior with a viewport-bound height
         # (dvh so the iOS URL bar doesn't break it).
+        #
+        # The `--chat-panel-bottom-space` subtraction tracks the page's actual
+        # bottom padding per breakpoint (1rem below `lg`, 2rem at `lg`+); the
+        # static 2rem used to clamp 16px of mobile panel out and starve the
+        # transcript (#3635).
         get chat_session_path(chat_session)
         expect(response).to have_http_status(:ok)
 
@@ -375,7 +380,9 @@ RSpec.describe "ChatSessions" do
 
         expect(panel).to be_present
         # Anchored so a `max-height:` declaration cannot satisfy it by substring.
-        expect(panel["style"]).to match(/(?:\A|;\s*)height: calc\(100dvh - var\(--chat-panel-offset-top, 0px\) - 2rem\)/)
+        expect(panel["style"]).to match(
+          /(?:\A|;\s*)height: calc\(100dvh - var\(--chat-panel-offset-top, 0px\) - var\(--chat-panel-bottom-space, 2rem\)\)/
+        )
       end
 
       it "uses a definite height rather than a max-height so the conversation's h-full root resolves" do
@@ -521,8 +528,14 @@ RSpec.describe "ChatSessions" do
         panel = doc.at_xpath("//div[@data-controller='chat']")
 
         expect(panel).to be_present
-        # Anchored so a `max-height:` declaration cannot satisfy it by substring.
-        expect(panel["style"]).to match(/(?:\A|;\s*)height: calc\(100dvh - var\(--chat-panel-offset-top, 0px\) - 2rem\)/)
+        # Anchored so a `max-height:` declaration cannot satisfy it by
+        # substring. The bound uses `--chat-panel-bottom-space` so the
+        # subtraction tracks the page's actual bottom padding per breakpoint
+        # (1rem below `lg`, 2rem at `lg`+); see the CHAT-API-009 mobile test
+        # below for the responsive variant.
+        expect(panel["style"]).to match(
+          /(?:\A|;\s*)height: calc\(100dvh - var\(--chat-panel-offset-top, 0px\) - var\(--chat-panel-bottom-space, 2rem\)\)/
+        )
       end
 
       it "renders the auto-approve checkbox reflecting the session state" do

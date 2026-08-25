@@ -2,6 +2,26 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* ========================================
+   Chat panel viewport bound
+
+   The chat show page's outer panel is viewport-bound so the conversation
+   partial becomes the real scroll container on tall viewports. Below `lg`
+   the page only applies `py-4` (16px), but the panel subtraction was the
+   desktop `py-8` (32px) — which clamped 16px of otherwise-usable space out
+   of the panel and starved the mobile transcript. Match the subtraction to
+   the actual page padding at each breakpoint so the panel sits flush with
+   the viewport without leaking the document into a scroll. (@spec CHAT-API-009)
+   ======================================== */
+[data-controller~="chat"] {
+  --chat-panel-bottom-space: 1rem;
+}
+@media (min-width: 1024px) {
+  [data-controller~="chat"] {
+    --chat-panel-bottom-space: 2rem;
+  }
+}
+
 .chat-markdown {
   overflow-wrap: anywhere;
   line-height: 1.7;

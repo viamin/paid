@@ -25,9 +25,11 @@
           `--chat-panel-offset-top` variable instead of a fixed subtraction
           so layout chrome above `<main>` (notably notice/alert flashes)
           still leaves the conversation pane as the real scroll container.
-          The remaining `2rem` subtraction preserves this page's bottom
-          `py-8` padding. dvh (not vh) so the iOS Safari URL bar doesn't
-          shrink the available space.
+          `--chat-panel-bottom-space` matches the page's actual bottom padding
+          at each breakpoint (`1rem` for `py-4` below `lg`, `2rem` for
+          `py-8` at `lg`+); the static subtraction used to clamp 16px out
+          of the panel on mobile, which starved the transcript. dvh (not vh)
+          so the iOS Safari URL bar doesn't shrink the available space.
 
           This must be a definite `height`, never a `max-height`, and must
           carry no `min-h` floor. A `max-height` leaves the panel's own
@@ -40,11 +42,11 @@
           already fitted to the viewport it can only clamp the panel taller
           than the viewport, which is the document-scroll failure this bound
           exists to prevent.
-          (@spec CHAT-API-008, #3459, #3575) %>
+          (@spec CHAT-API-008, CHAT-API-009, #3459, #3575, #3635) %>
       <div class="flex flex-col overflow-x-hidden"
            data-controller="chat"
            data-chat-session-id-value="<%= @chat_session.id %>"
-           style="height: calc(100dvh - var(--chat-panel-offset-top, 0px) - 2rem);">
+           style="height: calc(100dvh - var(--chat-panel-offset-top, 0px) - var(--chat-panel-bottom-space, 2rem));">
         <%# The panel is viewport-bound, so header growth comes straight out
             of the transcript. Below `xl`, swap to a compact header so
             runner/model/workspace controls stay reachable without consuming
@@ -57,22 +59,19 @@
             disclosure is open: clipping content the user just chose to expand
             is worse than a temporarily shorter transcript, and they can
             collapse it again to reclaim the space. (@spec CHAT-API-009) %>
-        <header class="shrink-0 border-b border-gray-200 px-4 py-4 xl:hidden">
+        <header class="shrink-0 border-b border-gray-200 px-4 py-3 xl:hidden">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0 flex-1">
               <h1 class="truncate text-base font-semibold text-gray-900" title="<%= chat_session_title(@chat_session) %>"><%= chat_session_title(@chat_session) %></h1>
-              <p class="mt-1 text-xs text-gray-500">Updated <%= local_time(@chat_session.updated_at, format: :relative) %></p>
             </div>
 
-            <div class="shrink-0 rounded-lg bg-gray-900 px-3 py-2 text-right text-white">
-              <p class="text-[11px] font-medium text-gray-300">Tokens</p>
-              <p class="mt-1 text-sm font-semibold">
-                <span data-chat-target="tokenUsage"><%= number_with_delimiter(@chat_session.total_tokens) %></span>
-              </p>
+            <div class="shrink-0 rounded-md bg-gray-900 px-2.5 py-1 text-right text-white">
+              <span class="text-sm font-semibold" data-chat-target="tokenUsage"><%= number_with_delimiter(@chat_session.total_tokens) %></span>
+              <span class="ml-1 text-[11px] font-medium text-gray-300">tokens</span>
             </div>
           </div>
 
-          <div class="mt-3 flex flex-wrap items-center gap-1.5">
+          <div class="mt-2 flex flex-wrap items-center gap-1.5">
             <%= chat_session_status_badge(@chat_session) %>
             <%= chat_mode_badge(@chat_session) %>
             <%= chat_container_status_badge(@chat_session) %>
@@ -88,8 +87,8 @@
             <% end %>
           </div>
 
-          <details class="group mt-3 rounded-lg border border-gray-200 bg-gray-50">
-            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-gray-700 transition hover:text-gray-900 [&::-webkit-details-marker]:hidden">
+          <details class="group mt-2 rounded-lg border border-gray-200 bg-gray-50">
+            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-1.5 text-sm font-semibold text-gray-700 transition hover:text-gray-900 [&::-webkit-details-marker]:hidden">
               <span>Session details</span>
               <svg class="h-4 w-4 text-gray-400 transition group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" d="m19 9-7 7-7-7" />
@@ -160,8 +159,8 @@
             </div>
           </details>
 
-          <%= tag.details class: "group mt-2 rounded-lg border border-gray-200 bg-gray-50" do %>
-            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-gray-700 transition hover:text-gray-900 [&::-webkit-details-marker]:hidden">
+          <%= tag.details class: "group mt-1 rounded-lg border border-gray-200 bg-gray-50" do %>
+            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-1.5 text-sm font-semibold text-gray-700 transition hover:text-gray-900 [&::-webkit-details-marker]:hidden">
               <span>Workspace</span>
               <svg class="h-4 w-4 text-gray-400 transition group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" d="m19 9-7 7-7-7" />
@@ -301,7 +300,7 @@
           </div>
         </header>
 
-        <div class="min-h-0 flex-1 overflow-hidden px-4 pb-4 pt-5 sm:px-6">
+        <div class="min-h-0 flex-1 overflow-hidden px-4 pb-2 pt-2 sm:px-6 sm:pt-5">
           <%= render "conversation",
                      chat_session: @chat_session,
                      chat_messages: @chat_messages,
