@@ -145,12 +145,36 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
         issue_analysis_next_attempt_at: 10.minutes.from_now,
         issue_analysis_backoff_set_at: 10.minutes.ago)
       api_key = create(:provider_api_key, user: project.effective_owner, api_service_type: "anthropic")
+      # The reset signal is scoped to provider API keys that back a
+      # Runner record the chat-capable fallback set can actually attempt
+      # (PR #3650 review discussion). Without this Runner, rotating the
+      # api_key would be a no-op for issue analysis and must not reset.
+      create(:runner, :api_key, user: project.effective_owner,
+        runner_key: "claude", provider_api_key: api_key)
 
       api_key.update!(api_key: "sk-rotated-#{SecureRandom.hex(8)}")
 
       scope = described_class.eligible_scope(project)
 
       expect(scope.pluck(:id)).to contain_exactly(issue.id)
+    end
+
+    # @spec AUTO-PICK-QUEUE-002 ISSUE-ANALYSIS-010
+    it "does not treat rotation of an unrelated provider api key as resetting the cooldown" do
+      create(:issue, project: project, paid_state: "failed",
+        issue_analysis_next_attempt_at: 10.minutes.from_now,
+        issue_analysis_backoff_set_at: 10.minutes.ago)
+      # An api key not referenced by any chat-capable Runner record (the
+      # default subscription "claude" Runner has provider_api_key_id: nil)
+      # must not clear the cooldown — its rotation cannot change which
+      # providers issue analysis can attempt.
+      api_key = create(:provider_api_key, user: project.effective_owner, api_service_type: "openai")
+
+      api_key.update!(api_key: "sk-rotated-#{SecureRandom.hex(8)}")
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to be_empty
     end
 
     # @spec AUTO-PICK-QUEUE-002 ISSUE-ANALYSIS-010
@@ -206,6 +230,78 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       runner_state = create(:runner_state, :circuit_open, user: project.effective_owner)
 
       runner_state.record_success!(force_close: true)
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to contain_exactly(issue.id)
+    end
+
+    # @spec AUTO-PICK-QUEUE-002 ISSUE-ANALYSIS-010
+    it "does not treat recovery on a runner outside the issue-analysis set as resetting the cooldown" do
+      create(:issue, project: project, paid_state: "failed",
+        issue_analysis_next_attempt_at: 10.minutes.from_now,
+        issue_analysis_backoff_set_at: 10.minutes.ago)
+      # The RunnerState is for "cursor", which has no Runner record on the
+      # owner in this test (the default UserSetting has empty
+      # issue_analysis_runner / fallbacks, and only the default "claude"
+      # Runner exists). A circuit recovery here cannot affect any provider
+      # issue analysis can attempt, so it must not clear the cooldown.
+      runner_state = create(:runner_state, :circuit_open,
+        user: project.effective_owner, runner_name: "cursor")
+
+      runner_state.record_success!(force_close: true)
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to be_empty
+    end
+
+    # @spec AUTO-PICK-QUEUE-002 ISSUE-ANALYSIS-010
+    it "treats the cooldown as reset when an integration credential backing a chat-capable runner rotates" do
+      issue = create(:issue, project: project, paid_state: "failed",
+        issue_analysis_next_attempt_at: 10.minutes.from_now,
+        issue_analysis_backoff_set_at: 10.minutes.ago)
+      credential = create(:integration_credential,
+        service_key: "claude", category: "llm_provider", account: project.account)
+      create(:runner, user: project.effective_owner, runner_key: "claude",
+        auth_type: "api_key", integration_credential: credential)
+
+      credential.update!(secret: "rotated-#{SecureRandom.hex(8)}")
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to contain_exactly(issue.id)
+    end
+
+    # @spec AUTO-PICK-QUEUE-002 ISSUE-ANALYSIS-010
+    it "does not treat rotation of an unrelated integration credential as resetting the cooldown" do
+      create(:issue, project: project, paid_state: "failed",
+        issue_analysis_next_attempt_at: 10.minutes.from_now,
+        issue_analysis_backoff_set_at: 10.minutes.ago)
+      # An integration credential not referenced by any chat-capable Runner
+      # record — e.g. a non-LLM service credential like gitlab — must not
+      # clear the cooldown, since its rotation cannot affect which
+      # providers issue analysis can attempt.
+      credential = create(:integration_credential, :gitlab, account: project.account)
+
+      credential.update!(secret: "rotated-#{SecureRandom.hex(8)}")
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to be_empty
+    end
+
+    # @spec AUTO-PICK-QUEUE-002 ISSUE-ANALYSIS-010
+    it "treats the cooldown as reset when the issue-analysis runner fallback list changes" do
+      issue = create(:issue, project: project, paid_state: "failed",
+        issue_analysis_next_attempt_at: 10.minutes.from_now,
+        issue_analysis_backoff_set_at: 10.minutes.ago)
+      settings = project.effective_owner.settings
+      settings.update!(issue_analysis_runner: "codex")
+      project.effective_owner.settings.reload
+
+      settings.update!(issue_analysis_fallback_runners: [ "opencode" ])
+      project.effective_owner.settings.reload
 
       scope = described_class.eligible_scope(project)
 

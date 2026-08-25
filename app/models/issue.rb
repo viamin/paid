@@ -832,7 +832,8 @@ class Issue < ApplicationRecord
   end
 
   def record_issue_analysis_backoff!(paid_state:, now: Time.current) # @spec ISSUE-ANALYSIS-010
-    next_attempt_at = now + issue_analysis_backoff_delay
+    streak = consecutive_issue_analysis_provider_exhaustion_count
+    next_attempt_at = now + issue_analysis_backoff_delay(streak)
     attrs = {
       issue_analysis_next_attempt_at: next_attempt_at,
       issue_analysis_backoff_set_at: now
@@ -847,7 +848,7 @@ class Issue < ApplicationRecord
       project_id: project_id,
       issue_number: github_number,
       next_attempt_at: next_attempt_at.iso8601,
-      consecutive_failures: consecutive_issue_analysis_provider_exhaustion_count
+      consecutive_failures: streak
     )
 
     next_attempt_at
@@ -923,8 +924,8 @@ class Issue < ApplicationRecord
     [ issue_analysis_next_attempt_at - Time.current, 0 ].max.seconds
   end
 
-  def issue_analysis_backoff_delay
-    multiplier = [ consecutive_issue_analysis_provider_exhaustion_count - 1, 0 ].max
+  def issue_analysis_backoff_delay(streak = consecutive_issue_analysis_provider_exhaustion_count)
+    multiplier = [ streak - 1, 0 ].max
     [ ISSUE_ANALYSIS_BACKOFF_BASE_DELAY * (2**multiplier), ISSUE_ANALYSIS_BACKOFF_MAX_DELAY ].min
   end
 

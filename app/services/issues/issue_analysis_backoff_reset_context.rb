@@ -34,9 +34,9 @@ module Issues
       [
         issue_analysis_settings_updated_at,
         relevant_runner_change_at,
-        owner.runner_states.maximum(:availability_changed_at),
-        owner.provider_api_keys.maximum(:updated_at),
-        owner.account.integration_credentials.maximum(:updated_at)
+        relevant_runner_state_change_at,
+        owner.provider_api_keys.where(id: relevant_provider_api_key_ids).maximum(:updated_at),
+        owner.account.integration_credentials.where(id: relevant_integration_credential_ids).maximum(:updated_at)
       ].compact.max
     end
 
@@ -52,11 +52,58 @@ module Issues
       latest_relevant_version_time(owner.settings, RELEVANT_USER_SETTING_FIELDS)
     end
 
+    # The runners/credentials that issue analysis can actually use. Matches
+    # the union of chat_providers' two paths in
+    # Activities::AnalyzeIssueActivity: the owner's configured
+    # issue_analysis_runner + fallback list, and every chat-enabled Runner
+    # record (the broadening fallback when no explicit selection exists).
+    # Anything outside this set is irrelevant to issue analysis and must not
+    # reset the cooldown — see PR #3650 review discussion.
+    def relevant_runners
+      owner.runners.kept_only.where(runner_key: relevant_runner_keys)
+    end
+
+    def relevant_runner_keys
+      @relevant_runner_keys ||= (
+        configured_issue_analysis_runner_keys + chat_capable_runner_keys
+      ).uniq
+    end
+
+    def configured_issue_analysis_runner_keys
+      settings = owner.settings
+      return [] unless settings
+
+      [ settings.issue_analysis_runner, *Array(settings.issue_analysis_fallback_runners) ]
+        .filter_map { |value| value.to_s.strip.downcase.presence }
+    end
+
+    def chat_capable_runner_keys
+      owner.runners.kept_only.for_chat.distinct.pluck(:runner_key)
+    end
+
+    def relevant_provider_api_key_ids
+      relevant_runners.where.not(provider_api_key_id: nil).distinct.pluck(:provider_api_key_id)
+    end
+
+    def relevant_integration_credential_ids
+      relevant_runners.where.not(integration_credential_id: nil).distinct.pluck(:integration_credential_id)
+    end
+
     # Runner rows are logidze-tracked, so (unlike RunnerState) the reset
     # signal can come from filtering log_data versions instead of a
-    # dedicated column.
+    # dedicated column. Scope to Runner records that back issue analysis —
+    # an unrelated Runner being enabled/disabled must not reset the cooldown.
     def relevant_runner_change_at
-      owner.runners.filter_map { |runner| latest_relevant_version_time(runner, RELEVANT_RUNNER_FIELDS) }.max
+      relevant_runners.filter_map { |runner| latest_relevant_version_time(runner, RELEVANT_RUNNER_FIELDS) }.max
+    end
+
+    # RunnerState is keyed by runner_name (a string), not Runner record id.
+    # Filter to runner_names that issue analysis can actually attempt so a
+    # recovery on an unrelated runner does not falsely clear the cooldown.
+    def relevant_runner_state_change_at
+      return if relevant_runner_keys.empty?
+
+      owner.runner_states.where(runner_name: relevant_runner_keys).maximum(:availability_changed_at)
     end
 
     def latest_relevant_version_time(record, fields)
