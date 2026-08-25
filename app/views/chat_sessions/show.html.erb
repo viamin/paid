@@ -60,7 +60,7 @@
             disclosure is open: clipping content the user just chose to expand
             is worse than a temporarily shorter transcript, and they can
             collapse it again to reclaim the space. (@spec CHAT-API-009) %>
-        <header class="shrink-0 border-b border-gray-200 px-4 py-2.5 xl:hidden" data-chat-header="mobile">
+        <header class="shrink-0 border-b border-gray-200 px-4 py-2 xl:hidden" data-chat-header="mobile">
           <div class="flex items-start justify-between gap-2">
             <div class="min-w-0 flex-1">
               <h1 class="truncate text-base font-semibold text-gray-900" title="<%= chat_session_title(@chat_session) %>"><%= chat_session_title(@chat_session) %></h1>
@@ -78,8 +78,8 @@
             <%= chat_container_status_badge(@chat_session) %>
           </div>
 
-          <details class="group mt-1.5 rounded-lg border border-gray-200 bg-gray-50">
-            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-1.5 text-sm font-semibold text-gray-700 transition hover:text-gray-900 [&::-webkit-details-marker]:hidden">
+          <details class="group mt-1 rounded-lg border border-gray-200 bg-gray-50">
+            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-1 text-sm font-semibold text-gray-700 transition hover:text-gray-900 [&::-webkit-details-marker]:hidden">
               <span>Session details</span>
               <svg class="h-4 w-4 text-gray-400 transition group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" d="m19 9-7 7-7-7" />
@@ -166,8 +166,8 @@
             </div>
           </details>
 
-          <%= tag.details class: "group mt-1.5 rounded-lg border border-gray-200 bg-gray-50" do %>
-            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-1.5 text-sm font-semibold text-gray-700 transition hover:text-gray-900 [&::-webkit-details-marker]:hidden">
+          <%= tag.details class: "group mt-1 rounded-lg border border-gray-200 bg-gray-50" do %>
+            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-1 text-sm font-semibold text-gray-700 transition hover:text-gray-900 [&::-webkit-details-marker]:hidden">
               <span>Workspace</span>
               <svg class="h-4 w-4 text-gray-400 transition group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" d="m19 9-7 7-7-7" />
@@ -307,7 +307,7 @@
           </div>
         </header>
 
-        <div class="min-h-0 flex-1 overflow-hidden px-4 pb-2 pt-2 sm:px-6 sm:pt-5">
+        <div class="min-h-0 flex-1 overflow-hidden px-4 pb-1 pt-1 sm:px-6 sm:pt-5">
           <%= render "conversation",
                      chat_session: @chat_session,
                      chat_messages: @chat_messages,

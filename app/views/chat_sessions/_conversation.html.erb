@@ -1,7 +1,7 @@
 <% can_create_chat_message = policy(ChatMessage.new(chat_session: chat_session)).create? && !chat_session.archived? %>
 
 <div class="flex h-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white">
-  <div class="shrink-0 border-b border-gray-100 bg-white px-4 py-1.5 text-center">
+  <div class="shrink-0 border-b border-gray-100 bg-white px-4 py-1 text-center">
     <button type="button"
             class="text-xs font-medium text-indigo-600 underline-offset-2 transition-colors hover:text-indigo-500 hover:underline focus:outline-none focus:ring-2 focus:ring-indigo-500"
             data-action="click->chat#scrollToInput"
@@ -52,7 +52,7 @@
     </div>
   </div>
 
-  <div class="shrink-0 border-t border-gray-200 bg-white px-4 py-2 sm:px-6 sm:py-3">
+  <div class="shrink-0 border-t border-gray-200 bg-white px-4 py-1.5 sm:px-6 sm:py-3">
     <% if can_create_chat_message %>
       <form data-controller="chat-input"
             data-action="submit->chat-input#send chat-input:send->chat#sendMessage chat:busy->chat-input#disable chat:idle->chat-input#enable"
