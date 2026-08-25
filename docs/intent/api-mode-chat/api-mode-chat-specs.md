@@ -224,3 +224,18 @@
   *Tests:* `spec/mcp/tools/get_pull_request_details_spec.rb`.
   *Code:* `Tools::GetPullRequestDetails#perform`,
   `PullRequests::AutoMergeStatus#call`.
+
+- [x] **CHAT-API-012** — When chat guidance tells the model how to discover
+  code in a repo (the default `base_identity` fallback, the seeded
+  `chat.system_prompt` template, and the `grep_repo` tool description), the
+  guidance SHALL name `read_repo_file` for file reads (never the stale
+  `get_file_content` name), SHALL present `search_code` (Paid's knowledge
+  base) as the first choice for code discovery, and SHALL describe `grep_repo`
+  as GitHub-Code-Search-backed and rate-limit-sensitive, directing the model
+  to it only when knowledge search is unavailable or stale, or when exact
+  GitHub Code Search behavior is needed.
+  *Tests:* `spec/services/chat_sessions/build_system_prompt_spec.rb`,
+  `spec/mcp/tools/grep_repo_spec.rb`,
+  `spec/services/prompts/sync_defaults_spec.rb`.
+  *Code:* `ChatSessions::BuildSystemPrompt#base_identity`,
+  `Tools::GrepRepo.description`, `db/seeds/prompts.rb`.

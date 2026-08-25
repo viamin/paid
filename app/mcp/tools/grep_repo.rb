@@ -12,8 +12,11 @@ module Tools
 
     def self.tool_name = "grep_repo"
 
+    # @spec CHAT-API-012
     def self.description
-      "Search for a string or pattern across a project's GitHub repository using GitHub code search."
+      "Search for a string or pattern across a project's GitHub repository using GitHub code search. " \
+        "Rate-limit sensitive: prefer search_code (knowledge base) first; use grep_repo only when " \
+        "knowledge search is unavailable or stale, or when exact GitHub code search behavior is needed."
     end
 
     def self.input_schema

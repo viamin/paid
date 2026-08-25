@@ -102,4 +102,15 @@ RSpec.describe Prompts::SyncDefaults do
     prompt = Prompt.global.find_by!(slug: "chat.system_prompt")
     expect(prompt.current_version.template).to include("You are an AI assistant helping manage software projects via Paid")
   end
+
+  # @spec PROMPT-DEFAULT-SYNC-006, CHAT-API-012
+  it "seeds the chat system prompt with knowledge-search-first discovery guidance" do
+    load Rails.root.join("db/seeds/prompts.rb")
+
+    template = Prompt.global.find_by!(slug: "chat.system_prompt").current_version.template
+    expect(template).to include("`search_code`")
+    expect(template).to include("`read_repo_file`")
+    expect(template).to include("`grep_repo`")
+    expect(template).not_to include("get_file_content")
+  end
 end

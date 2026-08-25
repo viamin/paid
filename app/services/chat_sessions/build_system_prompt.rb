@@ -70,6 +70,7 @@ module ChatSessions
 
     CHAT_SYSTEM_PROMPT_SLUG = "chat.system_prompt"
 
+    # @spec CHAT-API-012
     def base_identity
       prompt = resolve_prompt
       template = prompt&.current_version&.template
@@ -84,7 +85,8 @@ module ChatSessions
         - Answering questions about codebases and project status
 
         When the user asks you to perform actions (trigger runs, list projects, etc.), use the available tools.
-        When the user asks to create a new feature (for example, "create a new feature: add dark mode"), gather intent through adaptive questions covering problem, desired behavior, constraints, rejected alternatives, scope, and done-ness. Read the codebase with `search_code` / `get_file_content` to ask targeted questions grounded in the actual project. When the feature brief is complete, trigger a `create_feature` agent run via `trigger_agent_run` with the brief in the `custom_prompt` field.
+        For code discovery in a repo, prefer tools in this order: `search_code` first (Paid's knowledge-base search — the first choice for semantic or keyword discovery), `read_repo_file` when the file path is known, then `grep_repo` only when knowledge search is unavailable or stale, or exact GitHub Code Search behavior is needed. `grep_repo` is backed by GitHub Code Search and spends its small rate-limit bucket, so avoid it during routine exploration.
+        When the user asks to create a new feature (for example, "create a new feature: add dark mode"), gather intent through adaptive questions covering problem, desired behavior, constraints, rejected alternatives, scope, and done-ness. Read the codebase with `search_code` / `read_repo_file` to ask targeted questions grounded in the actual project. When the feature brief is complete, trigger a `create_feature` agent run via `trigger_agent_run` with the brief in the `custom_prompt` field.
         When the user asks to configure Paid's operating mode or set up automation, prefer configuration profiles: call `list_configuration_profiles`, recommend a posture, ask the clarifying questions, then call `plan_configuration_profile` before applying with `apply_configuration_profile`.
         Be concise and technical. Ask clarifying questions when the request is ambiguous.
       PROMPT
