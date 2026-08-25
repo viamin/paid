@@ -234,20 +234,22 @@ module ExecutionRunners
     # @return [CompatibilityResult]
     # @spec CONTAINER-RUNTIME-038
     # @spec CONTAINER-RUNTIME-039
-    def self.capability_compatibility_for(requirements:, backend:, agent_run: nil)
+    def self.capability_compatibility_for(requirements:, backend:, agent_run: nil, log_mismatch: true)
       available = capabilities(backend: backend)
       missing = available.missing(requirements.to_a)
       return CompatibilityResult.new(compatible: true, error_message: nil) if missing.empty?
 
-      Rails.logger.info(
-        message: "execution_runner.capability_mismatch",
-        agent_run_id: agent_run&.id,
-        runner_type: name,
-        backend_identifier: backend&.identifier,
-        available_capabilities: available.to_a,
-        required_capabilities: requirements.to_a,
-        missing_capabilities: missing
-      )
+      if log_mismatch
+        Rails.logger.info(
+          message: "execution_runner.capability_mismatch",
+          agent_run_id: agent_run&.id,
+          runner_type: name,
+          backend_identifier: backend&.identifier,
+          available_capabilities: available.to_a,
+          required_capabilities: requirements.to_a,
+          missing_capabilities: missing
+        )
+      end
 
       CompatibilityResult.new(
         compatible: false,

@@ -81,10 +81,27 @@ class LocalDockerRunner < Base
       backend = backend_for(spec)
       policy = spec.networking_policy
       gateway_ready = false
+      environment_provisioned = false
+      service = nil
       raise ProvisionError, "RunSpec requires a NetworkingPolicy" if policy.nil?
       raise ProvisionError, self.class.unsupported_policy_message(policy) unless self.class.supports_policy?(policy)
       raise ProvisionError, "RunSpec requires an IngressPolicy" if spec.ingress_policy.nil?
       spec.ingress_policy.validate_supported!
+      service = Containers::Provision.new(
+        agent_run: spec.agent_run,
+        project: spec.project,
+        worktree_path: self.class.worktree_path_for(spec),
+        backend: backend,
+        networking_policy: policy,
+        **provision_options(spec)
+      )
+      service.compatibility_validate_backend_mount_support!(record_telemetry: false)
+      capability_result = self.class.capability_compatibility_for(
+        requirements: spec.capability_requirements,
+        backend: backend,
+        agent_run: spec.agent_run
+      )
+      raise ProvisionError, capability_result.error_message unless capability_result.compatible
 
       gateway = build_gateway(spec: spec, backend: backend)
       gateway_ready = enforce_gateway!(gateway: gateway)
@@ -104,14 +121,8 @@ class LocalDockerRunner < Base
         egress_gateway_url: gateway&.gateway_url,
         **provision_options(spec)
       )
-      service.compatibility_validate_backend_mount_support!(record_telemetry: false)
-      capability_result = self.class.capability_compatibility_for(
-        requirements: spec.capability_requirements,
-        backend: backend,
-        agent_run: spec.agent_run
-      )
-      raise ProvisionError, capability_result.error_message unless capability_result.compatible
       result = service.provision
+      environment_provisioned = true
       # Capture the provider resource identifier immediately so a crash between
       # here and handle persistence still leaves a reconcileable ledger row
       # (CONTAINER-RUNTIME-027).
@@ -137,11 +148,13 @@ class LocalDockerRunner < Base
       # container may resist removal, and that must not mask the original
       # error.
       cleanup_succeeded = false
-      begin
-        service.cleanup if service
-        cleanup_succeeded = true
-      rescue StandardError
-        # Surface the original provisioning error, not the cleanup error.
+      if environment_provisioned
+        begin
+          service.cleanup if service
+          cleanup_succeeded = true
+        rescue StandardError
+          # Surface the original provisioning error, not the cleanup error.
+        end
       end
       ledger&.mark_failed(intent) if cleanup_succeeded
       raise
@@ -286,7 +299,10 @@ class LocalDockerRunner < Base
 
     def self.compatible?(spec:, backend:)
       result = Containers::Provision.compatibility_for(
-        agent_run: spec.agent_run, backend: backend, worktree_path: worktree_path_for(spec)
+        agent_run: spec.agent_run,
+        backend: backend,
+        worktree_path: worktree_path_for(spec),
+        validate_capabilities: false
       )
       return CompatibilityResult.new(compatible: false, error_message: result.error_message) unless result.compatible
 

@@ -61,6 +61,25 @@ RSpec.describe ExecutionRunners do
     end
   end
 
+  describe ExecutionRunners::CapabilityRequirements do
+    # @spec CONTAINER-RUNTIME-038
+    it "derives queue-time architecture requirements from the same runtime-image source as RunSpec" do
+      project = create(:project)
+      run = create(:agent_run, project: project)
+      requested_resources = Capacity::RequestedResources.for_agent_run(run)
+
+      allow(ExecutionRunners::RunSpec).to receive(:resolve_architecture).with(run).and_return("arm64")
+
+      requirements = described_class.from_agent_run(
+        run,
+        service_declarations: [],
+        requested_resources: requested_resources
+      )
+
+      expect(requirements.to_a).to include(:architecture_arm64)
+    end
+  end
+
   describe ExecutionRunners::RunSpec do
     subject(:spec) { described_class.new(**spec_args) }
 

@@ -21,6 +21,33 @@ require "json"
 module ExecutionRunners
   MANIFEST_SCHEMA_VERSION = "remote_execution.v1"
   REQUIRED_OWNERSHIP_TAG_NAMES = %w[environment account project run attempt resource].freeze
+  EXECUTION_RESOURCE_CPU_QUOTA_PER_CORE = 100_000.0
+  EXECUTION_RESOURCE_MEBIBYTE = 1024 * 1024
+  EXECUTION_RESOURCE_GIBIBYTE = 1024 * 1024 * 1024
+  EXECUTION_RESOURCE_VALID_ARCHITECTURES = %w[x86_64 arm64].freeze
+  EXECUTION_RESOURCE_PROFILE_PRESETS = {
+    "small" => {
+      cpu_cores: 1.0,
+      memory_mib: 2048,
+      disk_gb: 5,
+      architecture: "x86_64",
+      timeout_seconds: 3600
+    },
+    "standard" => {
+      cpu_cores: 2.0,
+      memory_mib: 4096,
+      disk_gb: 10,
+      architecture: "x86_64",
+      timeout_seconds: 3600
+    },
+    "large" => {
+      cpu_cores: 4.0,
+      memory_mib: 8192,
+      disk_gb: 20,
+      architecture: "x86_64",
+      timeout_seconds: 3600
+    }
+  }.freeze
   CAPABILITY_NAMES = %i[
     host_paths
     service_containers
@@ -122,7 +149,7 @@ module ExecutionRunners
       new(capabilities: capabilities)
     end
 
-    def self.from_agent_run(agent_run, worktree_path: nil, service_declarations: nil, requested_resources: nil)
+    def self.from_agent_run(agent_run, worktree_path: nil, service_declarations: nil, requested_resources: nil, architecture: nil)
       capabilities = base_capabilities
       capabilities << :host_paths if worktree_path.presence || agent_run.worktree_path.presence
       declarations = Array(service_declarations || Containers::ServiceProvisioner.new.service_declarations(agent_run))
@@ -130,7 +157,9 @@ module ExecutionRunners
       capabilities << :browser_sidecar if agent_run.project.verification_enabled?
       resources = requested_resources || Capacity::RequestedResources.for_agent_run(agent_run)
       capabilities << :arbitrary_disk if non_catalog_disk_bytes?(resources[:disk_bytes])
-      capabilities << ExecutionRunners.architecture_capability(resources[:architecture])
+      capabilities << ExecutionRunners.architecture_capability(
+        architecture || RunSpec.resolve_architecture(agent_run)
+      )
       new(capabilities: capabilities)
     end
 
@@ -161,12 +190,12 @@ module ExecutionRunners
     end
 
     private_class_method def self.catalog_disk_gbs
-      @catalog_disk_gbs ||= ExecutionResources::PROFILE_PRESETS.values.map { |preset| preset[:disk_gb] } +
-        [ (Capacity::RequestedResources::DISK_BYTES_DEFAULT.to_f / ExecutionResources::GIBIBYTE).ceil ]
+      @catalog_disk_gbs ||= EXECUTION_RESOURCE_PROFILE_PRESETS.values.map { |preset| preset[:disk_gb] } +
+        [ (Capacity::RequestedResources::DISK_BYTES_DEFAULT.to_f / EXECUTION_RESOURCE_GIBIBYTE).ceil ]
     end
 
     private_class_method def self.catalog_disk_bytes
-      @catalog_disk_bytes ||= ExecutionResources::PROFILE_PRESETS.values.map { |preset| preset[:disk_gb] * ExecutionResources::GIBIBYTE } +
+      @catalog_disk_bytes ||= EXECUTION_RESOURCE_PROFILE_PRESETS.values.map { |preset| preset[:disk_gb] * EXECUTION_RESOURCE_GIBIBYTE } +
         [ Capacity::RequestedResources::DISK_BYTES_DEFAULT ]
     end
   end
@@ -207,40 +236,12 @@ module ExecutionRunners
     :architecture,
     :timeout_seconds
   ) do
-    CPU_QUOTA_PER_CORE = 100_000.0
-    MEBIBYTE = 1024 * 1024
-    GIBIBYTE = 1024 * 1024 * 1024
-    VALID_ARCHITECTURES = %w[x86_64 arm64].freeze
-    PROFILE_PRESETS = {
-      "small" => {
-        cpu_cores: 1.0,
-        memory_mib: 2048,
-        disk_gb: 5,
-        architecture: "x86_64",
-        timeout_seconds: 3600
-      },
-      "standard" => {
-        cpu_cores: 2.0,
-        memory_mib: 4096,
-        disk_gb: 10,
-        architecture: "x86_64",
-        timeout_seconds: 3600
-      },
-      "large" => {
-        cpu_cores: 4.0,
-        memory_mib: 8192,
-        disk_gb: 20,
-        architecture: "x86_64",
-        timeout_seconds: 3600
-      }
-    }.freeze
-
     def self.profile_names
-      PROFILE_PRESETS.keys
+      EXECUTION_RESOURCE_PROFILE_PRESETS.keys
     end
 
     def self.profile(name)
-      preset = PROFILE_PRESETS.fetch(name.to_s) do
+      preset = EXECUTION_RESOURCE_PROFILE_PRESETS.fetch(name.to_s) do
         raise ArgumentError, "Unknown execution resource profile: #{name.inspect}"
       end
       new(**preset)
@@ -250,7 +251,7 @@ module ExecutionRunners
     # is blank or unknown. Unknown names still raise from {.profile} when the
     # preset expands, so this lookup stays permissive.
     def self.profile_timeout(profile_name)
-      PROFILE_PRESETS.dig(profile_name.to_s, :timeout_seconds)
+      EXECUTION_RESOURCE_PROFILE_PRESETS.dig(profile_name.to_s, :timeout_seconds)
     end
 
     def self.build(profile_name: nil, cpu_cores: nil, memory_mib: nil, disk_gb: nil, architecture: nil, timeout_seconds: nil)
@@ -267,24 +268,24 @@ module ExecutionRunners
     def self.from_legacy(cpu_quota:, memory_bytes:, disk_bytes:, architecture:, timeout_seconds:, profile_name: nil)
       build(
         profile_name: profile_name,
-        cpu_cores: cpu_quota.to_f / CPU_QUOTA_PER_CORE,
-        memory_mib: (memory_bytes.to_f / MEBIBYTE).ceil,
-        disk_gb: (disk_bytes.to_f / GIBIBYTE).ceil,
+        cpu_cores: cpu_quota.to_f / EXECUTION_RESOURCE_CPU_QUOTA_PER_CORE,
+        memory_mib: (memory_bytes.to_f / EXECUTION_RESOURCE_MEBIBYTE).ceil,
+        disk_gb: (disk_bytes.to_f / EXECUTION_RESOURCE_GIBIBYTE).ceil,
         architecture: architecture,
         timeout_seconds: timeout_seconds
       )
     end
 
     def cpu_quota
-      (cpu_cores.to_f * CPU_QUOTA_PER_CORE).round
+      (cpu_cores.to_f * EXECUTION_RESOURCE_CPU_QUOTA_PER_CORE).round
     end
 
     def memory_bytes
-      memory_mib.to_i * MEBIBYTE
+      memory_mib.to_i * EXECUTION_RESOURCE_MEBIBYTE
     end
 
     def disk_bytes
-      disk_gb.to_i * GIBIBYTE
+      disk_gb.to_i * EXECUTION_RESOURCE_GIBIBYTE
     end
 
     class << self
@@ -307,7 +308,7 @@ module ExecutionRunners
         else
           value.to_s.presence
         end
-        return normalized if normalized.in?(VALID_ARCHITECTURES)
+        return normalized if normalized.in?(EXECUTION_RESOURCE_VALID_ARCHITECTURES)
 
         "x86_64"
       end
@@ -636,7 +637,7 @@ module ExecutionRunners
         ),
         memory_bytes: legacy_resource_option(options[:memory_bytes], options[:memory_mib], requested_resources[:memory_bytes], scale: 1024 * 1024),
         disk_bytes: legacy_resource_option(options[:disk_bytes], options[:disk_gb], requested_resources[:disk_bytes], scale: 1024 * 1024 * 1024),
-        architecture: options[:architecture] || selection.metadata["architecture"],
+        architecture: resolve_architecture(agent_run, options, selection: selection),
         timeout_seconds: resolve_timeout_seconds(agent_run, options, profile_name: profile_name),
         profile_name: profile_name
       )
@@ -682,6 +683,14 @@ module ExecutionRunners
         timeout_seconds_for(agent_run)
     end
 
+    # Resolves the effective requested architecture for both queue-time
+    # capability checks and provision-time RunSpec construction so they do not
+    # drift when the runtime image selection narrows the architecture.
+    def self.resolve_architecture(agent_run, options = {}, selection: nil)
+      options[:architecture].presence ||
+        runtime_image_architecture_for(agent_run, requested_image: options[:image], selection: selection)
+    end
+
     def self.positive_numeric_option(value)
       # Coerce Strings (common for params/JSON payloads, e.g. cpu_cores: "0.5")
       # to a Float so callers that scale the result (+legacy_resource_option+)
@@ -698,6 +707,17 @@ module ExecutionRunners
         fallback
     end
     private_class_method :legacy_resource_option
+
+    def self.runtime_image_architecture_for(agent_run, requested_image:, selection: nil)
+      metadata = selection&.metadata || agent_run.runtime_image_selection
+      return metadata["architecture"] if metadata.present?
+
+      Containers::RuntimeImageSelector.select(
+        project: agent_run.project,
+        requested_image: requested_image
+      ).metadata["architecture"]
+    end
+    private_class_method :runtime_image_architecture_for
 
     # Resolves the run's final runtime image identity, reusing a selection
     # already recorded on the run (a Temporal retry rebuilding the same spec

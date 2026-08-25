@@ -437,9 +437,9 @@ scattered across Docker-specific code.
   `Containers::Provision.compatibility_for` derives requirements from the
   `AgentRun` for queue-time / host-selection checks, and
   `LocalDockerRunner.compatible?` derives them from the concrete `RunSpec` for
-  direct runner compatibility checks. `LocalDockerRunner#provision` calls
-  `.compatible?` before any Docker side effect so a late call path still fails
-  fast.
+  direct runner compatibility checks. `LocalDockerRunner#provision` also runs
+  the same mount-support and capability preflight before `build_gateway`, so a
+  late direct provision path still fails before any Docker side effect.
 - Capability mismatches are observable. The runner contract logs
   `execution_runner.capability_mismatch` with the backend, available
   capabilities, required capabilities, and missing subset; queue scheduling then
