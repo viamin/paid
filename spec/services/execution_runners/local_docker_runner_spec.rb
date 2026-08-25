@@ -18,7 +18,15 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
 
   let(:agent_run) { create(:agent_run, container_host: "local") }
   let(:backend) { instance_double(Containers::Backends::Base, identifier: "local") }
-  let(:resources) { ExecutionRunners::ComputeRequirements.new(cpu_quota: 100_000, memory_bytes: 1024, disk_bytes: 2048, pids_limit: 50) }
+  let(:resources) do
+    ExecutionRunners::ExecutionResources.new(
+      cpu_cores: 1.0,
+      memory_mib: 1024,
+      disk_gb: 2,
+      architecture: "x86_64",
+      timeout_seconds: 3600
+    )
+  end
   let(:run_spec) do
     ExecutionRunners::RunSpec.new(
       agent_run: agent_run, project: agent_run.project, image: "paid/agent:latest", command: "claude code",
@@ -85,7 +93,8 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
         networking_policy: run_spec.networking_policy,
         ownership_labels: ownership_label_map,
         egress_gateway_url: nil,
-        image: "paid/agent:latest", memory_bytes: 1024, cpu_quota: 100_000, pids_limit: 50
+        image: "paid/agent:latest", memory_bytes: 1024 * 1024 * 1024, cpu_quota: 100_000, pids_limit: 500,
+        timeout_seconds: 3600
       ).and_return(provision_service)
       allow(provision_service).to receive(:provision).and_return(
         Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
@@ -98,8 +107,25 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       expect(handle.identifier).to eq("abc123")
       expect(handle.host).to eq("local")
       expect(handle.metadata).to eq(
-        "agent_run_id" => agent_run.id, "worktree_path" => nil, "environment" => { "FOO" => "bar" }
+        "agent_run_id" => agent_run.id, "worktree_path" => nil, "environment" => { "FOO" => "bar" },
+        "timeout_seconds" => 3600
       )
+    end
+
+    # @spec CONTAINER-RUNTIME-027
+    it "forwards the requested timeout to the provisioner instead of the 3600s default" do
+      short_timeout_spec = ExecutionRunners::RunSpec.new(**run_spec.to_h.merge(
+        resources: resources.with(timeout_seconds: 600)
+      ))
+
+      expect(Containers::Provision).to receive(:new)
+        .with(hash_including(timeout_seconds: 600))
+        .and_return(provision_service)
+      allow(provision_service).to receive(:provision).and_return(
+        Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
+      )
+
+      expect(runner.provision(spec: short_timeout_spec).metadata["timeout_seconds"]).to eq(600)
     end
 
     it "uses the agent_run's worktree_path for a bind_mount workspace strategy" do
@@ -165,7 +191,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       expect(reloaded.workspace_ref).to eq(handle.workspace_ref)
 
       allow(Containers::Provision).to receive(:reconnect)
-        .with(agent_run: agent_run, container_id: "abc123", worktree_path: nil)
+        .with(agent_run: agent_run, container_id: "abc123", worktree_path: nil, timeout_seconds: 3600)
         .and_return(provision_service)
       allow(provision_service).to receive_messages(
         execute: Containers::Provision::Result.success(stdout: "ok\n", stderr: "", exit_code: 0),
@@ -1201,6 +1227,17 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
 
       runner.reconnect(handle: path_handle)
     end
+
+    # @spec CONTAINER-RUNTIME-027
+    it "threads the requested timeout from the handle metadata so a reconnected run keeps it" do
+      timed_handle = handle.with(metadata: handle.metadata.merge("timeout_seconds" => 600))
+
+      expect(Containers::Provision).to receive(:reconnect)
+        .with(agent_run: agent_run, container_id: "abc123", worktree_path: nil, timeout_seconds: 600)
+        .and_return(provision_service)
+
+      runner.reconnect(handle: timed_handle)
+    end
   end
 
   describe "#cancel" do
@@ -1738,7 +1775,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       expect(reloaded_handle).to eq(handle)
 
       allow(Containers::Provision).to receive(:reconnect)
-        .with(agent_run: agent_run, container_id: "abc123", worktree_path: nil)
+        .with(agent_run: agent_run, container_id: "abc123", worktree_path: nil, timeout_seconds: 3600)
         .and_return(provision_service)
       allow(provision_service).to receive_messages(provision: Containers::Provision::Result.success(container_id: "abc123", container_host: "local"), execute: Containers::Provision::Result.success(stdout: "ok\n", stderr: "", exit_code: 0))
       allow(provision_service).to receive(:cleanup)
