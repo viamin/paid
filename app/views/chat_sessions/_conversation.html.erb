@@ -1,7 +1,7 @@
 <% can_create_chat_message = policy(ChatMessage.new(chat_session: chat_session)).create? && !chat_session.archived? %>
 
 <div class="flex h-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white">
-  <div class="shrink-0 border-b border-gray-100 bg-white px-4 py-1.5 text-center">
+  <div class="shrink-0 border-b border-gray-100 bg-white px-4 py-1 text-center">
     <button type="button"
             class="text-xs font-medium text-indigo-600 underline-offset-2 transition-colors hover:text-indigo-500 hover:underline focus:outline-none focus:ring-2 focus:ring-indigo-500"
             data-action="click->chat#scrollToInput"
@@ -52,7 +52,7 @@
     </div>
   </div>
 
-  <div class="border-t border-gray-200 bg-white px-4 py-3 sm:px-6">
+  <div class="shrink-0 border-t border-gray-200 bg-white px-4 py-1.5 sm:px-6 sm:py-3">
     <% if can_create_chat_message %>
       <form data-controller="chat-input"
             data-action="submit->chat-input#send chat-input:send->chat#sendMessage chat:busy->chat-input#disable chat:idle->chat-input#enable"
@@ -63,7 +63,7 @@
                     rows="1"
                     maxlength="12000"
                     placeholder="Ask about this project, request code changes, or continue the thread..."
-                    class="max-h-72 min-h-[3.25rem] w-full resize-none rounded-md border-gray-300 px-4 py-3 text-sm leading-6 text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500"
+                    class="max-h-72 min-h-[2.75rem] sm:min-h-[3.25rem] w-full resize-none rounded-md border-gray-300 px-4 py-3 text-sm leading-6 text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500"
                     data-chat-input-target="textarea"
                     data-chat-target="input"
                     data-action="input->chat-input#resize keydown->chat-input#handleKeydown"></textarea>
@@ -82,7 +82,7 @@
       </form>
 
       <%= form_with model: chat_session, url: chat_session_path(chat_session), method: :patch,
-            class: "mt-2 inline-flex items-center gap-2",
+            class: "mt-1 sm:mt-2 inline-flex items-center gap-2",
             data: { action: "change->chat#submitForm", turbo_stream: true } do |form| %>
         <%= form.check_box :auto_approve,
               checked: chat_session.auto_approve?,
