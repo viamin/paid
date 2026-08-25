@@ -114,6 +114,10 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
         issue_analysis_backoff_set_at: 10.minutes.ago)
 
       project.effective_owner.settings.update!(issue_analysis_runner: "codex")
+      # log_data is written by a DB trigger, not the in-memory update!, so the
+      # cached association needs a reload to see it — matching how a fresh
+      # read in a separate process (the real auto-pick job) would observe it.
+      project.effective_owner.settings.reload
 
       scope = described_class.eligible_scope(project)
 
@@ -143,6 +147,65 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       api_key = create(:provider_api_key, user: project.effective_owner, api_service_type: "anthropic")
 
       api_key.update!(api_key: "sk-rotated-#{SecureRandom.hex(8)}")
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to contain_exactly(issue.id)
+    end
+
+    # @spec AUTO-PICK-QUEUE-002 ISSUE-ANALYSIS-010
+    it "does not treat routine runner weight rebalancing as resetting the cooldown" do
+      create(:issue, project: project, paid_state: "failed",
+        issue_analysis_next_attempt_at: 10.minutes.from_now,
+        issue_analysis_backoff_set_at: 10.minutes.ago)
+      runner = create(:runner, user: project.effective_owner, runner_key: "cursor")
+
+      runner.update!(weight: runner.weight + 1)
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to be_empty
+    end
+
+    # @spec AUTO-PICK-QUEUE-002 ISSUE-ANALYSIS-010
+    it "treats the cooldown as reset when a runner is enabled or disabled for agent runs" do
+      issue = create(:issue, project: project, paid_state: "failed",
+        issue_analysis_next_attempt_at: 10.minutes.from_now,
+        issue_analysis_backoff_set_at: 10.minutes.ago)
+      create(:runner, user: project.effective_owner, runner_key: "cursor")
+      runner = create(:runner, user: project.effective_owner, runner_key: "codex")
+
+      runner.update!(enabled_for_agent_runs: false)
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to contain_exactly(issue.id)
+    end
+
+    # @spec AUTO-PICK-QUEUE-002 ISSUE-ANALYSIS-010
+    it "does not treat routine runner quota-snapshot polling as resetting the cooldown" do
+      create(:issue, project: project, paid_state: "failed",
+        issue_analysis_next_attempt_at: 10.minutes.from_now,
+        issue_analysis_backoff_set_at: 10.minutes.ago)
+      runner_state = create(:runner_state, user: project.effective_owner)
+
+      runner_state.record_quota_status!(
+        remaining: 100, limit: 200, reset_at: 1.hour.from_now, unit: "tokens", available: true, source: "provider"
+      )
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to be_empty
+    end
+
+    # @spec AUTO-PICK-QUEUE-002 ISSUE-ANALYSIS-010
+    it "treats the cooldown as reset when a runner's circuit breaker recovers" do
+      issue = create(:issue, project: project, paid_state: "failed",
+        issue_analysis_next_attempt_at: 10.minutes.from_now,
+        issue_analysis_backoff_set_at: 10.minutes.ago)
+      runner_state = create(:runner_state, :circuit_open, user: project.effective_owner)
+
+      runner_state.record_success!(force_close: true)
 
       scope = described_class.eligible_scope(project)
 

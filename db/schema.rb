@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_25_124356) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_25_164147) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2577,6 +2577,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_25_124356) do
   end
 
   create_table "runner_states", force: :cascade do |t|
+    t.datetime "availability_changed_at", comment: "When the circuit-breaker state or rate-limit window last changed. Distinct from updated_at, which also bumps on routine quota-snapshot polling; used to detect genuine availability recovery."
     t.datetime "circuit_opened_at"
     t.string "circuit_state", limit: 20, default: "closed", null: false
     t.datetime "created_at", null: false
