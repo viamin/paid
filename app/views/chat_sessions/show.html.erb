@@ -103,26 +103,29 @@
                               class: "space-y-3",
                               data: { action: "change->chat#submitForm blur->chat#submitTitleOnBlur" } do |form| %>
                   <div>
-                    <%= form.label :title, "Title", class: "block text-xs font-medium uppercase tracking-wide text-gray-500" %>
+                    <%= form.label :title, "Title", for: "chat_session_title_mobile", class: "block text-xs font-medium uppercase tracking-wide text-gray-500" %>
                     <%= form.text_field :title,
                                         value: @chat_session.title,
                                         placeholder: "Untitled chat",
+                                        id: "chat_session_title_mobile",
                                         class: "mt-1 block w-full rounded-md border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
                   </div>
 
                   <div class="grid gap-3 sm:grid-cols-2">
                     <div>
-                      <%= form.label :runner_id, "Runner", class: "block text-sm font-medium text-gray-700" %>
+                      <%= form.label :runner_id, "Runner", for: "chat_session_runner_id_mobile", class: "block text-sm font-medium text-gray-700" %>
                       <%= form.select :runner_id,
                                       options_from_collection_for_select(@available_runners, :id, :display_name, @chat_session.runner_id),
                                       { include_blank: "Default runner" },
+                                      id: "chat_session_runner_id_mobile",
                                       class: "mt-1 block w-full rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
                     </div>
                     <div>
-                      <%= form.label :model, "Model", class: "block text-sm font-medium text-gray-700" %>
+                      <%= form.label :model, "Model", for: "chat_session_model_mobile", class: "block text-sm font-medium text-gray-700" %>
                       <%= form.select :model,
                                       options_for_select(@available_models.map { |model| ["#{model.display_name} (#{model.model_id})", model.model_id] }, @chat_session.model),
                                       { include_blank: "Automatic" },
+                                      id: "chat_session_model_mobile",
                                       class: "mt-1 block w-full rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
                     </div>
                   </div>
@@ -165,7 +168,7 @@
               </svg>
             </summary>
             <div class="px-2 pb-2">
-              <%= render "capability_panel", chat_session: @chat_session %>
+              <%= render "capability_panel", chat_session: @chat_session, dom_id_suffix: "_mobile" %>
             </div>
           <% end %>
         </header>
