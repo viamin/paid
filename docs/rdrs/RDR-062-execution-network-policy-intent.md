@@ -9,7 +9,8 @@
 - **Type**: Architecture + Security
 - **Priority**: P1
 - **Related Issues**: #3403 (implementation), #3341, #3356, #3402 (dependencies)
-- **Related RDRs**: RDR-004 (Container Isolation Strategy), RDR-006 (Secrets Proxy Architecture), RDR-020 (Service Container Architecture), RDR-040 (Runner Model Compatibility Contracts), RDR-048 (Multi-Host Docker Backend Support), RDR-054 (Runner Abstraction Boundary)
+- **Related RDRs**: RDR-004 (Container Isolation Strategy), RDR-006 (Secrets Proxy Architecture), RDR-020 (Service Container Architecture), RDR-040 (Runner Model Compatibility Contracts), RDR-048 (Multi-Host Docker Backend Support)
+- **Related Intent**: `docs/intent/container-runtime/container-runtime-design.md` (runner abstraction boundary; historical execution-runner workstream that was originally filed under the provisional `RDR-054` label)
 - **Related Tests**: `spec/services/execution_runners_spec.rb`, `spec/services/execution_runners/base_spec.rb`, `spec/services/execution_runners/local_docker_runner_spec.rb`, `spec/services/execution_runners/contract_runner_spec.rb`, `spec/services/network_policy_spec.rb`, `spec/services/containers/proxy_url_spec.rb`
 
 ## Implementation Status
