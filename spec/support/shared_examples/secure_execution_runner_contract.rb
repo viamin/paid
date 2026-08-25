@@ -13,20 +13,25 @@ RSpec.shared_examples "a secure execution runner" do
   let(:secret_values_excluded_from_handle_metadata) { [] }
   let(:expected_proxy_scope_agent_run_ids) { nil }
   let(:captured_proxy_scope_credentials) { nil }
-  let(:expects_secure_firewall_rules) { true }
+  let(:secure_networking_effects) { nil }
+  let(:expected_secure_networking_effects) { nil }
 
   it "restricted mode blocks non-allowed traffic" do
     handle = runner.provision(spec: secure_run_spec)
 
     expect(handle).to be_a(ExecutionRunners::RunnerHandle)
-    expect(NetworkPolicy).to have_received(:apply_firewall_rules) if expects_secure_firewall_rules
+    next if expected_secure_networking_effects.nil?
+
+    expect(secure_networking_effects).to eq(expected_secure_networking_effects)
   end
 
   it "keeps secrets out of the persisted handle environment" do
     handle = runner.provision(spec: secure_run_spec)
 
     expect(handle).to be_a(ExecutionRunners::RunnerHandle)
-    expect(NetworkPolicy).to have_received(:apply_firewall_rules) if expects_secure_firewall_rules
+    if expected_secure_networking_effects
+      expect(secure_networking_effects).to eq(expected_secure_networking_effects)
+    end
     secret_values_excluded_from_handle_metadata.each do |secret|
       expect(handle.metadata.to_json).not_to include(secret)
     end

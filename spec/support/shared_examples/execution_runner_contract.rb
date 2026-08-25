@@ -124,8 +124,10 @@ end
 #   services_network — network identifier used for service provisioning
 RSpec.shared_examples "an execution runner contract" do
   let(:services_network) { "paid_agent" }
-  let(:restricted_firewall_expectation) { nil }
-  let(:expects_unrestricted_firewall_rules) { false }
+  let(:restricted_networking_effects) { nil }
+  let(:expected_restricted_networking_effects) { nil }
+  let(:unrestricted_networking_effects) { nil }
+  let(:expected_unrestricted_networking_effects) { nil }
   let(:contract_abort_patterns) { [ "quota exceeded" ] }
   let(:aborting_contract_command) { "emit quota warning" }
   let(:expected_abort_output) { contract_abort_patterns.first }
@@ -256,26 +258,18 @@ RSpec.shared_examples "an execution runner contract" do
       handle = runner.provision(spec: run_spec)
 
       expect(handle).to be_a(ExecutionRunners::RunnerHandle)
-      next unless restricted_firewall_expectation
+      next if expected_restricted_networking_effects.nil?
 
-      expect(NetworkPolicy).to have_received(:apply_firewall_rules).with(
-        restricted_firewall_expectation.fetch(:container),
-        github_ips: restricted_firewall_expectation.fetch(:github_ips),
-        proxy_host: restricted_firewall_expectation.fetch(:proxy_host),
-        service_destinations: restricted_firewall_expectation.fetch(:service_destinations),
-        backend: restricted_firewall_expectation.fetch(:backend)
-      )
+      expect(restricted_networking_effects).to eq(expected_restricted_networking_effects)
     end
 
     it "allows direct outbound behavior when unrestricted" do
       handle = runner.provision(spec: unrestricted_run_spec)
 
       expect(handle).to be_a(ExecutionRunners::RunnerHandle)
-      if expects_unrestricted_firewall_rules
-        expect(NetworkPolicy).to have_received(:apply_firewall_rules)
-      else
-        expect(NetworkPolicy).not_to have_received(:apply_firewall_rules)
-      end
+      next if expected_unrestricted_networking_effects.nil?
+
+      expect(unrestricted_networking_effects).to eq(expected_unrestricted_networking_effects)
     end
   end
 

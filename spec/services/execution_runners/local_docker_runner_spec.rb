@@ -38,6 +38,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
   end
   let(:provision_service) { instance_double(Containers::Provision, container: instance_double(Docker::Container)) }
   let(:started_container) { instance_double(Docker::Container) }
+  let(:firewall_calls) { [] }
   let(:gateway_container) do
     instance_double(Docker::Container,
       info: { "NetworkSettings" => { "Networks" => { "paid_agent" => { "Aliases" => [ "egress-gateway" ] } } } })
@@ -79,7 +80,9 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
   before do
     allow(Containers).to receive(:backend_for).and_return(backend)
     allow(NetworkPolicy).to receive(:ensure_network!).and_return(instance_double(Docker::Network))
-    allow(NetworkPolicy).to receive(:apply_firewall_rules)
+    allow(NetworkPolicy).to receive(:apply_firewall_rules) do |*args, **kwargs|
+      firewall_calls << { args: args, kwargs: kwargs }
+    end
     allow(provision_service).to receive_messages(
       firewall_service_destinations: [],
       container: started_container
@@ -1835,15 +1838,22 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       )
     end
 
-    let(:restricted_firewall_expectation) do
-      {
-        container: started_container,
-        github_ips: NetworkPolicy::DEFAULT_GITHUB_IPS,
-        proxy_host: nil,
-        service_destinations: [],
-        backend: backend
-      }
+    let(:restricted_networking_effects) { firewall_calls }
+    let(:expected_restricted_networking_effects) do
+      [
+        {
+          args: [ started_container ],
+          kwargs: {
+            github_ips: NetworkPolicy::DEFAULT_GITHUB_IPS,
+            proxy_host: nil,
+            service_destinations: [],
+            backend: backend
+          }
+        }
+      ]
     end
+    let(:unrestricted_networking_effects) { firewall_calls }
+    let(:expected_unrestricted_networking_effects) { [] }
 
     before do
       allow(Containers::Provision).to receive_messages(
@@ -1907,6 +1917,21 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
 
   it_behaves_like "a secure execution runner" do
     let(:captured_proxy_scope_credentials) { [] }
+    let(:secure_networking_effects) { firewall_calls }
+    let(:expected_secure_networking_effects) do
+      [
+        {
+          args: [ started_container ],
+          kwargs: {
+            github_ips: NetworkPolicy::DEFAULT_GITHUB_IPS,
+            proxy_host: nil,
+            service_destinations: [],
+            backend: backend
+          }
+        }
+      ]
+    end
+
     let(:secure_run_spec) do
       ExecutionRunners::RunSpec.new(
         **run_spec.to_h.merge(
