@@ -103,6 +103,21 @@ RSpec.describe Tools::GetPullRequestDetails do
       )
     end
 
+    it "reports unavailable diagnostics when fetching checks fails" do
+      allow(github_client).to receive(:check_runs_for_ref).and_raise(
+        GithubClient::Error, "GitHub checks request timed out"
+      )
+
+      result = tool.call(project_id: project.id, issue_id: pr.id)
+
+      expect(result[:auto_merge]).to include(
+        auto_merge_status: "unavailable",
+        reason_code: "diagnostics_unavailable",
+        sanitized_message: "GitHub checks request timed out"
+      )
+      expect(github_client).not_to have_received(:combined_status)
+    end
+
     it "explains a not-mergeable blocker without a prior attempt" do
       allow(github_client).to receive(:pull_request).and_return(
         OpenStruct.new(number: pr.github_number, mergeable: false, merged_at: nil, head: OpenStruct.new(sha: "abc123"))
@@ -188,14 +203,11 @@ RSpec.describe Tools::GetPullRequestDetails do
       )
     end
 
-    it "reports unavailable diagnostics instead of raising when minting the app installation token fails" do
-      # Github::AppInstallation#mint raises the parent Error (not just
-      # ConfigurationError) for non-config failures such as GitHub 5xx
-      # responses; the diagnostic must degrade to a payload, not a 500.
+    it "reports credentials_unavailable instead of raising when minting the app installation token hits a transport error" do
       installation = create(:github_installation, account: account)
       project.update!(github_token: nil, github_installation: installation)
       allow(Github::AppInstallation).to receive(:token_for).and_raise(
-        Github::AppInstallation::Error, "GitHub App installation request failed (status 502): Bad Gateway"
+        Faraday::TimeoutError, "execution expired"
       )
 
       result = tool.call(project_id: project.id, issue_id: pr.id)

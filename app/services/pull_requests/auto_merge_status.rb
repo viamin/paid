@@ -32,7 +32,7 @@ module PullRequests
       return auto_merge_disabled_status unless project.auto_merge_enabled?
       return credentials_unavailable_status unless client
       return not_mergeable_status unless mergeable?(pull_request)
-      return checks_not_green_status unless all_checks_green?(client, project, pull_request)
+      return checks_not_green_status unless all_checks_green!(client, project, pull_request)
 
       ready_status
     rescue GithubClient::Error => e
@@ -68,7 +68,7 @@ module PullRequests
       else
         project.client
       end
-    rescue Github::AppInstallation::Error
+    rescue Github::AppInstallation::Error, Faraday::Error
       @client = nil
     end
 
