@@ -207,6 +207,37 @@ RSpec.describe Tools::GetPullRequestDetails do
       )
     end
 
+    it "reports an inactive (revoked) PAT as credentials_unavailable instead of letting the API call fail" do
+      # `Project#client` returns a GithubClient for any present PAT without
+      # checking `github_token.active?`, so without an up-front guard a
+      # revoked token reaches `pull_request`, raises GithubClient::Error, and
+      # would surface as `diagnostics_unavailable`. The diagnostic should
+      # report the inactive-credential state up front instead.
+      project.github_token.update!(revoked_at: 1.hour.ago)
+
+      result = tool.call(project_id: project.id, issue_id: pr.id)
+
+      expect(result[:auto_merge]).to include(
+        auto_merge_status: "not_attempted",
+        reason_code: "credentials_unavailable",
+        credential_mode: "personal_access_token"
+      )
+      expect(github_client).not_to have_received(:pull_request)
+    end
+
+    it "reports an expired PAT as credentials_unavailable instead of letting the API call fail" do
+      project.github_token.update!(expires_at: 1.day.ago)
+
+      result = tool.call(project_id: project.id, issue_id: pr.id)
+
+      expect(result[:auto_merge]).to include(
+        auto_merge_status: "not_attempted",
+        reason_code: "credentials_unavailable",
+        credential_mode: "personal_access_token"
+      )
+      expect(github_client).not_to have_received(:pull_request)
+    end
+
     it "raises for pull requests outside the user's account" do
       other_pr = create(:issue, :pull_request)
 

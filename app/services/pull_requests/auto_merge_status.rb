@@ -54,7 +54,20 @@ module PullRequests
     def client
       return @client if defined?(@client)
 
-      @client = project.client
+      # `Project#client` already gates the app-backed path via
+      # `github_credential` (which calls `credential_active?`), but the PAT
+      # path goes straight to `github_token&.client` without checking the
+      # token's `active?` flag. A revoked/expired token would otherwise reach
+      # `pull_request`, raise `GithubClient::Error`, and surface as
+      # `diagnostics_unavailable` after an API failure instead of the
+      # intended `credentials_unavailable` state this feature is supposed to
+      # explain. Mirror the app-backed guard here before memoizing so the
+      # inactive-credential case is detected up front.
+      @client = if !app_backed? && project.github_token.present? && !project.github_token.active?
+        nil
+      else
+        project.client
+      end
     rescue Github::AppInstallation::Error
       @client = nil
     end
