@@ -152,7 +152,10 @@ confirm coverage.
   — `:locked` (default), `:research`, or `:open` — so orchestration can
   request a per-run egress posture without referencing Docker- or
   network-specific concepts),
-  `ServiceDeclaration`, and `ComputeRequirements`.
+  `ServiceDeclaration`, and `ExecutionResources` (`cpu_cores`, `memory_mib`,
+  `disk_gb`, `architecture`, `timeout_seconds`). Named presets (`small`,
+  `standard`, `large`) are convenience expansions to explicit
+  `ExecutionResources`; the runner still receives the fully resolved tuple.
 - `ExecutionRunners::LocalDockerRunner` implements `Base` as a thin adapter over
   `Containers::Provision`: `#provision`/`#start`/`#running?`/`#reconnect`/`#status`/
   `#cancel`/`#cleanup` translate `RunSpec`/`RunnerHandle` to `Containers::Provision.new`,

@@ -32,7 +32,7 @@ module NoSharedFilesystemConformance
     ExecutionRunners::ExecutionStatus,
     ExecutionRunners::NetworkingPolicy,
     ExecutionRunners::ServiceDeclaration,
-    ExecutionRunners::ComputeRequirements
+    ExecutionRunners::ExecutionResources
   ].freeze
 
   class << self

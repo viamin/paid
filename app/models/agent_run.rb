@@ -2981,6 +2981,13 @@ class AgentRun < ApplicationRecord
     planned_container_host = options.delete(:container_host)
     pool_host_scope = planned_container_host.presence || container_host.presence
 
+    # Resolved up front (not left to RunSpec.from_agent_run) so a warm-pool
+    # claim honors the same owner-setting/profile timeout precedence as a
+    # fresh provision: PoolManager#acquire only forwards an explicitly
+    # supplied timeout_seconds and would otherwise silently fall back to the
+    # 3600s default for pooled runs (CONTAINER-RUNTIME-027).
+    options[:timeout_seconds] = ExecutionRunners::RunSpec.resolve_timeout_seconds(self, options)
+
     pooled_result = acquire_pooled_container(pool_host_scope: pool_host_scope, **options)
     return pooled_result if pooled_result
 
