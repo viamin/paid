@@ -78,6 +78,18 @@ RSpec.describe CodexLoginSessions::DeviceFlow do
       expect(parsed["tokens"]["refresh_token"]).to eq("refresh-1")
     end
 
+    it "stores the credential under the requested target runner key" do
+      session.update!(metadata: { "target_runner_key" => "opencode" })
+      tokens = { "id_token" => "id-1", "access_token" => "access-1", "refresh_token" => "refresh-1" }
+      client = fake_client(token_responses: [
+        CodexLoginSessions::OAuthClient::TokenResponse.new(status: :success, tokens: tokens, error: nil)
+      ])
+
+      described_class.new(session: session, client: client).poll!(session_token: session.session_token)
+
+      expect(session.reload.runner_credential.runner_key).to eq("opencode")
+    end
+
     it "keeps the session pending while authorization is not complete" do
       client = fake_client(token_responses: [
         CodexLoginSessions::OAuthClient::TokenResponse.new(status: :pending, tokens: nil, error: nil)

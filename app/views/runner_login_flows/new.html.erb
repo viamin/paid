@@ -1,0 +1,42 @@
+<% content_for(:title) { "Connect Runner - Paid" } %>
+
+<div class="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-8">
+    <h1 class="text-2xl font-bold text-gray-900">Connect Runner</h1>
+    <p class="mt-2 text-sm text-gray-500">Choose a runner and start one of the subscription login flows Paid currently supports.</p>
+  </div>
+
+  <div class="grid gap-6 lg:grid-cols-2">
+    <% @runner_login_flows.each do |runner_key, flows| %>
+      <section class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <h2 class="text-lg font-semibold text-gray-900"><%= Runner.display_name_for(runner_key) %></h2>
+            <p class="mt-1 text-xs uppercase tracking-wide text-gray-400"><%= runner_key %></p>
+          </div>
+        </div>
+
+        <div class="mt-4 space-y-4">
+          <% flows.each do |flow| %>
+            <div class="rounded-lg border border-gray-100 bg-gray-50 p-4">
+              <h3 class="text-sm font-semibold text-gray-900"><%= flow.title %></h3>
+              <p class="mt-1 text-sm text-gray-600"><%= flow.summary %></p>
+              <p class="mt-2 text-xs text-gray-500">Upstream: <code><%= flow.upstream %></code></p>
+              <div class="mt-4">
+                <% if flow.claude_session? %>
+                  <%= link_to "Start Flow",
+                        new_claude_login_session_path(flow.route_params(return_to: @return_to_path)),
+                        class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+                <% elsif flow.codex_session? %>
+                  <%= link_to "Start Flow",
+                        new_codex_login_session_path(flow.route_params(return_to: @return_to_path)),
+                        class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+                <% end %>
+              </div>
+            </div>
+          <% end %>
+        </div>
+      </section>
+    <% end %>
+  </div>
+</div>

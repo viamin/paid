@@ -43,6 +43,7 @@ module CodexLoginSessions
         subject: session,
         account: session.account,
         metadata: { credential_name: session.credential_name,
+                    runner_key: session.target_runner_key,
                     details: [ "Started device-code Connect Codex login session." ] }
       )
       session
@@ -114,6 +115,7 @@ module CodexLoginSessions
         subject: credential,
         account: session.account,
         metadata: { credential_name: session.credential_name,
+                    runner_key: session.target_runner_key,
                     details: [ "Captured Codex OAuth credential via device-code login session." ] }
       )
       { status: :completed, completed: true, error: nil }
@@ -123,7 +125,7 @@ module CodexLoginSessions
       parsed = CodexCredentials::Secret.parse(auth_json)
 
       credential = session.account.runner_credentials.find_or_initialize_by(
-        runner_key: "codex",
+        runner_key: session.target_runner_key,
         name: session.credential_name
       )
       credential.assign_attributes(

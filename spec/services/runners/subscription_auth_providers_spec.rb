@@ -21,6 +21,19 @@ RSpec.describe Runners::SubscriptionAuthProviders, :no_db do # @spec SUBSCRIPTIO
       expect(codex_provider.materialization_mode).to eq("native_file")
     end
 
+    it "returns OpenCode and OMP provider adapters that are not yet remote-safe" do
+      opencode_provider = described_class.for_runner("opencode")
+      omp_provider = described_class.for_runner("omp")
+
+      expect(opencode_provider.remote_safe?).to be(false)
+      expect(opencode_provider.rotation_risk).to eq("container_may_rotate")
+      expect(opencode_provider.materialization_mode).to eq("native_file")
+
+      expect(omp_provider.remote_safe?).to be(false)
+      expect(omp_provider.rotation_risk).to eq("container_may_rotate")
+      expect(omp_provider.materialization_mode).to eq("native_file")
+    end
+
     it "returns a Gemini provider adapter that is remote-safe (#2964)" do
       gemini_provider = described_class.for_runner("gemini")
 
@@ -251,6 +264,39 @@ RSpec.describe Runners::SubscriptionAuthProviders, :no_db do # @spec SUBSCRIPTIO
       expect(serialized).not_to include("managed-codex-refresh-token")
       expect(serialized).not_to include("eyJcodex-id-token")
       expect(serialized).not_to include("acc_managed-codex-001")
+    end
+  end
+
+  describe "OpenCode contract" do
+    let(:opencode_provider) { described_class.for_runner("opencode") }
+    let(:valid_auth) { file_fixture("codex_auth_valid.json").read }
+
+    it "materializes the OpenAI auth payload to OpenCode's auth.json path" do
+      status = opencode_provider.status(secret: valid_auth)
+      materialization = opencode_provider.materialize(secret: valid_auth)
+
+      expect(status).to be_valid
+      expect(materialization.supported?).to be(true)
+      expect(materialization.files.keys).to contain_exactly("/home/agent/.local/share/opencode/auth.json")
+      expect(materialization.files.fetch("/home/agent/.local/share/opencode/auth.json")).to include("managed-codex-refresh-token")
+    end
+  end
+
+  describe "OMP contract" do
+    let(:omp_provider) { described_class.for_runner("omp") }
+    let(:valid_credentials) { file_fixture("claude_credentials_valid.json").read }
+
+    it "materializes a Claude native credential as an omp auth-broker import file" do
+      status = omp_provider.status(secret: valid_credentials)
+      materialization = omp_provider.materialize(secret: valid_credentials)
+
+      expect(status).to be_valid
+      expect(materialization.supported?).to be(true)
+      expect(materialization.files.keys).to contain_exactly("/home/agent/.local/share/omp/paid-auth-import.json")
+      payload = JSON.parse(materialization.files.fetch("/home/agent/.local/share/omp/paid-auth-import.json"))
+      expect(payload["type"]).to eq("claude")
+      expect(payload["access_token"]).to eq("valid-access-token")
+      expect(payload["refresh_token"]).to eq("valid-refresh-token")
     end
   end
 

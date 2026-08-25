@@ -41,3 +41,16 @@
   `spec/models/runner_credential_spec.rb`.
   *Code:* `ActiveRunnerCredentialStatus`, `CodexLoginSessionsController`,
   `ClaudeLoginSessionsController`, `RunnerCredential#expiry_label`.
+
+- [x] **SUBSCRIPTION-RUNNER-AUTH-005** — Paid SHALL expose a provider-neutral
+  runner login-flow registry that renders only registered flows, SHALL allow
+  Claude-browser login to target `omp`, SHALL allow OpenAI device-code login to
+  target `opencode`, and SHALL materialize the captured managed credentials into
+  each runner's native auth state with runner-key-specific telemetry.
+  *Tests:* `spec/requests/runner_login_flows_spec.rb`,
+  `spec/services/claude_login_sessions/interactive_login_spec.rb`,
+  `spec/services/codex_login_sessions/device_flow_spec.rb`,
+  `spec/services/containers/provision_runner_login_flows_3463_spec.rb`.
+  *Code:* `RunnerLoginFlows::Registry`, `ClaudeLoginSessionsController`,
+  `CodexLoginSessionsController`, `Runners::SubscriptionAuthProviders`,
+  `Runners::SubscriptionAuthMaterializers`, `Containers::Provision`.

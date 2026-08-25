@@ -364,6 +364,8 @@ module Containers
       seed_gemini_credentials!
       seed_copilot_credentials!
       seed_claude_credentials!
+      seed_omp_credentials!
+      seed_opencode_credentials!
       seed_preview_tunnel_config!
       apply_network_restrictions!
 
@@ -1683,6 +1685,13 @@ module Containers
       )
     end
 
+    def seed_opencode_credentials!
+      return unless opencode_subscription_runner_requested?
+      return unless opencode_managed_credential_active?
+
+      materialize_managed_opencode_credentials!
+    end
+
     # Writes a minimal Codex config.toml for the managed subscription path: only
     # the model pin the CLI should use. The notify hook is appended separately by
     # seed_codex_notify_hook!. No proxy/model_provider block — subscription auth
@@ -1991,6 +2000,15 @@ module Containers
 
       runners = resolved_run_runner_candidates
       return runners.any? { |runner| runner.runner_key == "opencode" } if runners.any?
+
+      RunnerSupport.runner_key_for_agent_type(agent_run.agent_type) == "opencode"
+    end
+
+    def opencode_subscription_runner_requested?
+      return false unless agent_run
+
+      runners = resolved_run_runner_candidates
+      return runners.any? { |runner| runner.runner_key == "opencode" && runner.subscription? } if runners.any?
 
       RunnerSupport.runner_key_for_agent_type(agent_run.agent_type) == "opencode"
     end
@@ -3298,7 +3316,7 @@ module Containers
       return nil unless account
 
       scope = account.runner_credentials.for_runner(runner_key)
-      return scope.where(auth_kind: "oauth_token") if %w[claude codex gemini copilot].include?(runner_key.to_s)
+      return scope.where(auth_kind: "oauth_token") if %w[claude codex opencode omp gemini copilot].include?(runner_key.to_s)
 
       scope
     end
@@ -3496,6 +3514,80 @@ module Containers
       true
     end
 
+    def materialize_managed_opencode_credentials!
+      credential = opencode_managed_runner_credential
+      return false unless credential
+
+      materialization = opencode_managed_materialization
+      return false unless materialization&.supported?
+
+      materialization.files.each do |path, content|
+        write_container_file(path, content)
+      end
+      credential.update_column(:last_used_at, Time.current)
+
+      log_system("container.opencode_credentials_seeded", source: "managed_json")
+      record_auth_attempt!(
+        runner_key: "opencode",
+        attempt_stage: RunnerAuthAttempt::STAGE_MATERIALIZATION,
+        auth_source: :managed,
+        materialization_mode: materialization.mode,
+        runner_credential: credential,
+        result: RunnerAuthAttempt::RESULT_MATERIALIZED,
+        metadata: materialization.redacted_metadata.merge("source" => "managed_json")
+      )
+      true
+    end
+
+    def seed_omp_credentials!
+      return unless omp_subscription_runner_requested?
+
+      materialize_managed_omp_credentials!
+    end
+
+    def materialize_managed_omp_credentials!
+      credential = omp_managed_runner_credential
+      materialization = omp_managed_materialization
+      return false unless credential && materialization&.supported?
+
+      materialization.files.each do |path, content|
+        write_container_file(path, content)
+      end
+
+      _stdout, stderr, status = backend.exec_in_container(
+        container,
+        [ "sh", "-lc", "omp auth-broker import /home/agent/.local/share/omp/paid-auth-import.json --provider anthropic --json" ],
+        user: "agent"
+      )
+      raise Docker::Error::DockerError, Array(stderr).join if status.to_i != 0
+
+      credential.update_column(:last_used_at, Time.current)
+      log_system("container.omp_credentials_seeded", source: "managed_import")
+      record_auth_attempt!(
+        runner_key: "omp",
+        attempt_stage: RunnerAuthAttempt::STAGE_MATERIALIZATION,
+        auth_source: :managed,
+        materialization_mode: materialization.mode,
+        runner_credential: credential,
+        result: RunnerAuthAttempt::RESULT_MATERIALIZED,
+        metadata: materialization.redacted_metadata.merge("source" => "managed_import")
+      )
+      true
+    rescue Docker::Error::DockerError => e
+      log_system("container.omp_credentials_seed_failed", error: e.message)
+      record_auth_attempt!(
+        runner_key: "omp",
+        attempt_stage: RunnerAuthAttempt::STAGE_MATERIALIZATION,
+        auth_source: :managed,
+        materialization_mode: materialization&.mode,
+        runner_credential: credential,
+        result: RunnerAuthAttempt::RESULT_FAILED,
+        failure_reason: "import_failed",
+        metadata: materialization&.redacted_metadata.to_h.merge("source" => "managed_import")
+      )
+      false
+    end
+
     def gemini_subscription_auth?
       if managed_subscription_runner_auth_enabled_for?("gemini")
         return true if gemini_managed_secret && !gemini_managed_secret.blank?
@@ -3536,8 +3628,17 @@ module Containers
       codex_managed_runner_credential.present? && codex_managed_materializable?
     end
 
+    def opencode_managed_credential_active?
+      opencode_managed_runner_credential.present? && opencode_managed_materializable?
+    end
+
     def codex_managed_materializable?
       materialization = codex_managed_materialization
+      materialization&.supported?
+    end
+
+    def opencode_managed_materializable?
+      materialization = opencode_managed_materialization
       materialization&.supported?
     end
 
@@ -3548,11 +3649,39 @@ module Containers
         &.order(created_at: :desc, id: :desc)&.first
     end
 
+    def opencode_managed_runner_credential
+      return @opencode_managed_runner_credential if defined?(@opencode_managed_runner_credential)
+
+      @opencode_managed_runner_credential = managed_subscription_credential_scope_for("opencode")&.active
+        &.order(created_at: :desc, id: :desc)&.first
+    end
+
+    def omp_managed_runner_credential
+      return @omp_managed_runner_credential if defined?(@omp_managed_runner_credential)
+
+      @omp_managed_runner_credential = managed_subscription_credential_scope_for("omp")&.active
+        &.order(created_at: :desc, id: :desc)&.first
+    end
+
     def codex_managed_secret
       return @codex_managed_secret if defined?(@codex_managed_secret)
 
       secret = codex_managed_runner_credential&.token.to_s
       @codex_managed_secret = secret.present? ? CodexCredentials::Secret.parse(secret) : nil
+    end
+
+    def opencode_managed_secret
+      return @opencode_managed_secret if defined?(@opencode_managed_secret)
+
+      secret = opencode_managed_runner_credential&.token.to_s
+      @opencode_managed_secret = secret.present? ? CodexCredentials::Secret.parse(secret) : nil
+    end
+
+    def omp_managed_secret
+      return @omp_managed_secret if defined?(@omp_managed_secret)
+
+      secret = omp_managed_runner_credential&.token.to_s
+      @omp_managed_secret = secret.present? ? ClaudeCredentials::Secret.parse(secret) : nil
     end
 
     def codex_managed_materialization
@@ -3565,8 +3694,36 @@ module Containers
         end
     end
 
+    def opencode_managed_materialization
+      return @opencode_managed_materialization if defined?(@opencode_managed_materialization)
+
+      secret = opencode_managed_runner_credential&.token.to_s
+      @opencode_managed_materialization =
+        if secret.present?
+          opencode_subscription_auth_provider.materialize(secret: secret)
+        end
+    end
+
+    def omp_managed_materialization
+      return @omp_managed_materialization if defined?(@omp_managed_materialization)
+
+      secret = omp_managed_runner_credential&.token.to_s
+      @omp_managed_materialization =
+        if secret.present?
+          omp_subscription_auth_provider.materialize(secret: secret)
+        end
+    end
+
     def codex_subscription_auth_provider
       @codex_subscription_auth_provider ||= Runners::SubscriptionAuthProviders.for_runner("codex")
+    end
+
+    def opencode_subscription_auth_provider
+      @opencode_subscription_auth_provider ||= Runners::SubscriptionAuthProviders.for_runner("opencode")
+    end
+
+    def omp_subscription_auth_provider
+      @omp_subscription_auth_provider ||= Runners::SubscriptionAuthProviders.for_runner("omp")
     end
 
     # Clears the memoized managed Codex caches so a refresh/rotation is picked up
@@ -3599,6 +3756,15 @@ module Containers
       return runners.any? { |runner| runner.runner_key == "codex" && runner.subscription? } if runners.any?
 
       RunnerSupport.runner_key_for_agent_type(agent_run.agent_type) == "codex"
+    end
+
+    def omp_subscription_runner_requested?
+      return false unless agent_run
+
+      runners = resolved_run_runner_candidates
+      return runners.any? { |runner| runner.runner_key == "omp" && runner.subscription? } if runners.any?
+
+      RunnerSupport.runner_key_for_agent_type(agent_run.agent_type) == "omp"
     end
 
     # Memoized: several provision-time guards (opencode/kilo/codex runner

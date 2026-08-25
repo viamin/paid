@@ -36,6 +36,13 @@ Provisioning records managed-versus-host-forwarded auth telemetry and preserves
 the legacy host-path fallback when managed rollout is disabled or when no
 managed credential exists.
 
+The runner login UI is now registry-driven. A single Connect Runner surface
+enumerates only the registered flows, then delegates to the existing Claude
+browser-capture or OpenAI device-code engines with a target `runner_key`.
+This lets Claude-browser login capture credentials for both `claude` and `omp`,
+and lets the OpenAI device-code flow capture credentials for both `codex` and
+`opencode`, while preserving the legacy routes.
+
 The Connect Codex and Claude Browser Login pages surface the account's active
 managed credential (name, status, expiry — never token material) before a new
 login is started, mirroring the one-active-credential guard the runner
@@ -43,6 +50,12 @@ credentials UI applies. The login flows themselves stay permissive: completing a
 login under a different `credential_name` still creates a concurrent active
 credential; the banner warns about it rather than hard-rejecting, so
 rotation-by-relogin under the same name keeps working without a revoke step.
+
+Managed materialization now includes `opencode` and `omp`. OpenCode reuses the
+managed OpenAI `auth.json` payload at its native credentials path, while OMP
+materializes a broker-import JSON derived from the canonical Claude credential
+and installs it through `omp auth-broker import`. Both remain `remote_safe:
+false` until broader refresh/writeback hardening is proven.
 
 ## Exceptions Preserved
 

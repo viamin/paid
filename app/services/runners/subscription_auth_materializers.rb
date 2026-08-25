@@ -69,6 +69,18 @@ module Runners
         rotation_risk: ROTATION_CONTAINER_MAY_ROTATE,
         remote_safe: false
       ),
+      "opencode" => Materializer.new(
+        runner_key: "opencode",
+        materialization_mode: MATERIALIZE_NATIVE_FILE,
+        rotation_risk: ROTATION_CONTAINER_MAY_ROTATE,
+        remote_safe: false
+      ),
+      "omp" => Materializer.new(
+        runner_key: "omp",
+        materialization_mode: MATERIALIZE_NATIVE_FILE,
+        rotation_risk: ROTATION_CONTAINER_MAY_ROTATE,
+        remote_safe: false
+      ),
       "gemini" => Materializer.new(
         runner_key: "gemini",
         materialization_mode: MATERIALIZE_NATIVE_FILE,

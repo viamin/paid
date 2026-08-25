@@ -422,6 +422,191 @@ module Runners
       end
     end
 
+    class OpenCode < Base
+      AUTH_PATH = "/home/agent/.local/share/opencode/auth.json"
+
+      def initialize
+        super(runner_key: "opencode")
+      end
+
+      def status(secret:)
+        classify(secret).first
+      end
+
+      def materialize(secret:)
+        status, parsed = classify(secret)
+        return unsupported_materialization if status.unsupported?
+        return malformed_materialization(status) unless status.materializable?
+
+        Materialization.new(
+          supported: true,
+          mode: SubscriptionAuthMaterializers::MATERIALIZE_NATIVE_FILE,
+          env: {},
+          files: { AUTH_PATH => parsed.auth_json },
+          redacted_metadata: status.redacted_metadata,
+          error: nil
+        )
+      end
+
+      private
+
+      def blank_status
+        Status.new(
+          state: :blank,
+          expires_at: nil,
+          refreshable: false,
+          materialization_mode: materialization_mode,
+          rotation_risk: rotation_risk,
+          remote_safe: remote_safe?,
+          redacted_metadata: { "materialized" => false },
+          error: "blank"
+        )
+      end
+
+      def malformed_status
+        Status.new(
+          state: :malformed,
+          expires_at: nil,
+          refreshable: false,
+          materialization_mode: SubscriptionAuthMaterializers::MATERIALIZE_UNSUPPORTED,
+          rotation_risk: SubscriptionAuthMaterializers::ROTATION_UNSUPPORTED,
+          remote_safe: false,
+          redacted_metadata: { "materialized" => false },
+          error: "malformed"
+        )
+      end
+
+      def malformed_materialization(status)
+        Materialization.new(
+          supported: false,
+          mode: status.materialization_mode,
+          env: {},
+          files: {},
+          redacted_metadata: status.redacted_metadata,
+          error: status.error
+        )
+      end
+
+      def classify(secret)
+        value = secret.to_s
+        return [ blank_status, nil ] if value.blank?
+
+        parsed = CodexCredentials::Secret.parse(value)
+        return [ malformed_status, nil ] unless parsed.codex_auth?
+        return [ malformed_status, nil ] if parsed.access_token.blank? && parsed.refresh_token.blank?
+
+        expires_at = parsed.expires_at
+        expired = expires_at.present? && expires_at <= Time.current
+        [ Status.new(
+          state: expired ? :expired : :valid,
+          expires_at: expires_at,
+          refreshable: parsed.refresh_token.present?,
+          materialization_mode: SubscriptionAuthMaterializers::MATERIALIZE_NATIVE_FILE,
+          rotation_risk: SubscriptionAuthMaterializers::ROTATION_CONTAINER_MAY_ROTATE,
+          remote_safe: remote_safe?,
+          redacted_metadata: parsed.redacted_metadata,
+          error: expired ? "expired" : nil
+        ), parsed ]
+      end
+    end
+
+    class Omp < Base
+      IMPORT_PATH = "/home/agent/.local/share/omp/paid-auth-import.json"
+
+      def initialize
+        super(runner_key: "omp")
+      end
+
+      def status(secret:)
+        classify(secret).first
+      end
+
+      def materialize(secret:)
+        status, parsed = classify(secret)
+        return unsupported_materialization if status.unsupported?
+        return malformed_materialization(status) unless status.materializable?
+
+        Materialization.new(
+          supported: true,
+          mode: SubscriptionAuthMaterializers::MATERIALIZE_NATIVE_FILE,
+          env: {},
+          files: { IMPORT_PATH => build_import_json(parsed) },
+          redacted_metadata: status.redacted_metadata,
+          error: nil
+        )
+      end
+
+      private
+
+      def blank_status
+        Status.new(
+          state: :blank,
+          expires_at: nil,
+          refreshable: false,
+          materialization_mode: materialization_mode,
+          rotation_risk: rotation_risk,
+          remote_safe: remote_safe?,
+          redacted_metadata: { "materialized" => false },
+          error: "blank"
+        )
+      end
+
+      def malformed_status
+        Status.new(
+          state: :malformed,
+          expires_at: nil,
+          refreshable: false,
+          materialization_mode: SubscriptionAuthMaterializers::MATERIALIZE_UNSUPPORTED,
+          rotation_risk: SubscriptionAuthMaterializers::ROTATION_UNSUPPORTED,
+          remote_safe: false,
+          redacted_metadata: { "materialized" => false },
+          error: "malformed"
+        )
+      end
+
+      def malformed_materialization(status)
+        Materialization.new(
+          supported: false,
+          mode: status.materialization_mode,
+          env: {},
+          files: {},
+          redacted_metadata: status.redacted_metadata,
+          error: status.error
+        )
+      end
+
+      def classify(secret)
+        value = secret.to_s
+        return [ blank_status, nil ] if value.blank?
+
+        parsed = ClaudeCredentials::Secret.parse(value)
+        return [ malformed_status, nil ] unless parsed.native_credentials_json?
+        return [ malformed_status, nil ] if parsed.oauth_token.blank?
+
+        expires_at = parsed.expires_at
+        expired = expires_at.present? && expires_at <= Time.current
+        [ Status.new(
+          state: expired ? :expired : :valid,
+          expires_at: expires_at,
+          refreshable: parsed.refresh_token.present?,
+          materialization_mode: SubscriptionAuthMaterializers::MATERIALIZE_NATIVE_FILE,
+          rotation_risk: SubscriptionAuthMaterializers::ROTATION_CONTAINER_MAY_ROTATE,
+          remote_safe: remote_safe?,
+          redacted_metadata: parsed.redacted_metadata,
+          error: expired ? "expired" : nil
+        ), parsed ]
+      end
+
+      def build_import_json(parsed)
+        JSON.generate(
+          "type" => "claude",
+          "access_token" => parsed.oauth_token,
+          "refresh_token" => parsed.refresh_token,
+          "expired" => parsed.expires_at&.utc&.iso8601
+        )
+      end
+    end
+
     # Gemini managed subscription auth (RDR-041 / #2964). The stored secret is
     # the Gemini CLI's native `~/.gemini/oauth_creds.json` (a Google OAuth
     # access/refresh token payload). The adapter regenerates only the fields
@@ -598,6 +783,8 @@ module Runners
     REGISTRY = {
       "claude" => Claude.new,
       "codex" => Codex.new,
+      "opencode" => OpenCode.new,
+      "omp" => Omp.new,
       "gemini" => Gemini.new,
       "copilot" => Copilot.new
     }.freeze
