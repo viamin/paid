@@ -494,7 +494,7 @@ module ExecutionRunners
       workspace = workspace_strategy_for(agent_run)
       requested_resources = Capacity::RequestedResources.for_agent_run(agent_run)
       selection = resolve_runtime_image_selection(agent_run, requested_image: options[:image])
-      profile_name = options[:resource_profile] || requested_resources[:profile]
+      profile_name = profile_name_for(agent_run, options, requested_resources: requested_resources)
       resources = ExecutionResources.from_legacy(
         cpu_quota: legacy_resource_option(
           options[:cpu_quota],
@@ -505,12 +505,7 @@ module ExecutionRunners
         memory_bytes: legacy_resource_option(options[:memory_bytes], options[:memory_mib], requested_resources[:memory_bytes], scale: 1024 * 1024),
         disk_bytes: legacy_resource_option(options[:disk_bytes], options[:disk_gb], requested_resources[:disk_bytes], scale: 1024 * 1024 * 1024),
         architecture: options[:architecture] || selection.metadata["architecture"],
-        # Timeout precedence: explicit override, then the named profile (a
-        # profile expands to the full resource tuple, timeout included), then
-        # the owner/default timeout.
-        timeout_seconds: positive_numeric_option(options[:timeout_seconds]) ||
-          ExecutionResources.profile_timeout(profile_name) ||
-          timeout_seconds_for(agent_run),
+        timeout_seconds: resolve_timeout_seconds(agent_run, options, profile_name: profile_name),
         profile_name: profile_name
       )
 
@@ -528,6 +523,31 @@ module ExecutionRunners
         secrets_config: nil,
         runtime_image_selection: selection
       )
+    end
+
+    # Resolves the named resource profile the same way {.from_agent_run} does,
+    # without requiring a runtime image selection or full resource tuple.
+    # Exposed so callers that need the timeout ahead of a full +RunSpec+ (the
+    # warm-pool claim path, which happens before +.from_agent_run+ runs) can
+    # derive the same profile precedence.
+    def self.profile_name_for(agent_run, options, requested_resources: Capacity::RequestedResources.for_agent_run(agent_run))
+      options[:resource_profile] || requested_resources[:profile]
+    end
+
+    # Resolves the timeout {.from_agent_run} would apply: an explicit
+    # override, then the named profile's timeout (a profile expands to the
+    # full resource tuple, timeout included), then the owner/default timeout.
+    # Exposed as a public entry point so +AgentRun#provision_via_runner+ can
+    # resolve it before the warm-pool claim and pass it into
+    # +Containers::PoolManager#acquire+,
+    # which only forwards an explicitly supplied +timeout_seconds+ and would
+    # otherwise silently apply the 3600s default to pooled claims that should
+    # honor an owner setting or resource profile.
+    # @spec CONTAINER-RUNTIME-027
+    def self.resolve_timeout_seconds(agent_run, options, profile_name: profile_name_for(agent_run, options))
+      positive_numeric_option(options[:timeout_seconds]) ||
+        ExecutionResources.profile_timeout(profile_name) ||
+        timeout_seconds_for(agent_run)
     end
 
     def self.positive_numeric_option(value)

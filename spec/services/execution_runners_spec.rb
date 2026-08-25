@@ -388,6 +388,27 @@ RSpec.describe ExecutionRunners do
       expect(built.resources.timeout_seconds).to eq(1800)
     end
 
+    # @spec CONTAINER-RUNTIME-027
+    it "resolves the same timeout as from_agent_run through the public entry point used by warm-pool claims" do
+      project = create(:project)
+      project.effective_owner.settings.update!(container_timeout_seconds: 1800)
+      run = create(:agent_run, project: project, external_metadata: {
+        "requested_resources" => { "profile" => "large" }
+      })
+
+      expect(ExecutionRunners::RunSpec.resolve_timeout_seconds(run, {})).to eq(
+        ExecutionRunners::RunSpec.from_agent_run(run).resources.timeout_seconds
+      )
+    end
+
+    # @spec CONTAINER-RUNTIME-027
+    it "honors an explicit override when resolving the timeout ahead of a full RunSpec" do
+      project = create(:project)
+      run = create(:agent_run, project: project)
+
+      expect(ExecutionRunners::RunSpec.resolve_timeout_seconds(run, { timeout_seconds: 42 })).to eq(42)
+    end
+
     # @spec IMMUTABLE-IMAGE-001
     it "resolves and records the runtime image selection when building from an agent run" do
       project = create(:project)
