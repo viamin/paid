@@ -184,6 +184,14 @@ arrows:
     taxonomy: configuration
     status: OK
     audited: 2026-08-04
+  prompt-default-sync:
+    title: Prompt Default Synchronization
+    path: docs/intent/prompt-default-sync/prompt-default-sync-design.md
+    specs: docs/intent/prompt-default-sync/prompt-default-sync-specs.md
+    parent: PAID
+    taxonomy: configuration
+    status: OK
+    audited: 2026-08-25
   polyglot-test-execution:
     title: Polyglot Test Execution
     path: docs/intent/polyglot-test-execution/polyglot-test-execution-design.md

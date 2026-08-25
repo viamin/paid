@@ -209,6 +209,7 @@ module ApplicationHelper
     "completed" => { bg: "bg-green-100", text: "text-green-700", label: "Completed" },
     "failed" => { bg: "bg-red-100", text: "text-red-700", label: "Failed" },
     "needs_input" => { bg: "bg-amber-100", text: "text-amber-700", label: "Needs Input" },
+    "manual_review" => { bg: "bg-orange-100", text: "text-orange-700", label: "Manual Review" },
     "recommend_close" => { bg: "bg-orange-100", text: "text-orange-700", label: "Recommend Close" }
   }.freeze
 

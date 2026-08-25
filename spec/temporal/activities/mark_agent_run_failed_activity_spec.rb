@@ -37,6 +37,17 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
       expect(issue.reload.paid_state).to eq("failed")
     end
 
+    # @spec ISSUE-ENHANCEMENT-002
+    it "preserves manual review after an enhancement failure" do
+      issue = create(:issue, project: project, paid_state: "manual_review")
+      agent_run = create(:agent_run, :running, project: project, issue: issue, goal: "enhance_issue")
+
+      activity.execute(agent_run_id: agent_run.id, error: "EnhanceIssueUnparseableOutput")
+
+      expect(agent_run.reload.status).to eq("failed")
+      expect(issue.reload.paid_state).to eq("manual_review")
+    end
+
     it "sets issue paid_state to completed for review-goal runs" do
       issue = create(:issue, :in_progress, :pull_request, project: project)
       agent_run = create(:agent_run, :running, :review_goal, project: project, issue: issue)
