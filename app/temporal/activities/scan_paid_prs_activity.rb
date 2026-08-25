@@ -1198,11 +1198,15 @@ module Activities
       return [] unless PageLoadPerformance::Settings.for(project).followup_enabled?
       return [] if active_page_load_run?(project, pr_number)
 
+      # Signals#trigger keeps only the first matching trigger, so the order
+      # here decides which route a follow-up run targets when a pull request
+      # has several actionable findings: worst regression first, deterministically.
       findings = PageLoadRegressionFinding
         .where(project_id: project.id, pull_request_number: pr_number)
         .open_findings
         .actionable
         .followup_eligible
+        .order(delta_ms: :desc, updated_at: :desc, id: :desc)
 
       findings.map do |finding|
         {

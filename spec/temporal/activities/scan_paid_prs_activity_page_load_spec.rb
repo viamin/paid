@@ -28,6 +28,21 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(triggers.first[:details]).to include("dashboard")
     end
 
+    # @spec PAGE-LOAD-FOLLOWUP-004
+    it "orders findings deterministically, worst regression first, when several are actionable" do
+      # Route names deliberately sort opposite to delta order: without the
+      # explicit ORDER BY, an index-scan plan would pick the wrong route.
+      finding(route_name: "alpha", delta_ms: 200, updated_at: 2.hours.ago)
+      finding(route_name: "zulu", delta_ms: 500, updated_at: 3.hours.ago)
+      finding(route_name: "mike", delta_ms: 500, updated_at: 1.hour.ago)
+
+      triggers = activity.send(:page_load_regression_triggers, project, issue)
+
+      # Signals#trigger keeps only the first match, so the first trigger's
+      # route is the one the follow-up run targets.
+      expect(triggers.map { |t| t[:evidence]["route_name"] }).to eq(%w[mike zulu alpha])
+    end
+
     # @spec PAGE-LOAD-FOLLOWUP-002
     it "emits nothing when the project has not enabled performance follow-up runs" do
       project.update!(screenshot_settings: project.screenshot_settings.deep_merge(
