@@ -438,6 +438,106 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     end
   end
 
+  describe "unsuccessful provider responses" do
+    # Reproduces #3639: CLI-backed providers (Codex, OpenCode, and claude
+    # outside text mode) normally report a failure as a Response with
+    # success? == false and a nonzero exit code, not as a raised exception.
+    # Before the fix, response_failed? logged this and moved to the next
+    # provider without ever touching the circuit breaker.
+    def failed_response(error:, exit_code: 1)
+      instance_double(AgentHarness::Response, success?: false, error: error, exit_code: exit_code)
+    end
+
+    # @spec ISSUE-ANALYSIS-007
+    it "records a circuit-breaker failure for a nonzero-exit unsuccessful response" do
+      allow(AgentHarness).to receive(:send_message).and_return(failed_response(error: "unexpected internal error"))
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError, "No LLM provider produced an issue analysis")
+
+      runner_state = project.effective_owner.settings.user.runner_states.find_by(runner_name: "claude")
+      expect(runner_state).to be_present
+      expect(runner_state.failure_count).to eq(1)
+      expect(runner_state.circuit_state).to eq("closed")
+    end
+
+    # @spec ISSUE-ANALYSIS-007
+    it "opens the circuit once repeated unsuccessful responses reach the configured threshold" do
+      user_setting = project.effective_owner.settings
+      user_setting.update!(circuit_breaker_failure_threshold: 2)
+      allow(AgentHarness).to receive(:send_message).and_return(failed_response(error: "unexpected internal error"))
+
+      expect { activity.execute(agent_run_id: agent_run.id) }.to raise_error(Temporalio::Error::ApplicationError)
+
+      second_issue = create(:issue, :in_progress,
+        project: project, github_number: 43, title: "Second issue", body: "More context needed")
+      second_run = create(:agent_run, project: project, issue: second_issue, goal: "analyze_issue")
+      allow(client).to receive(:issue_comments).with(project.full_name, second_issue.github_number).and_return([])
+
+      expect {
+        activity.execute(agent_run_id: second_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError)
+
+      runner_state = user_setting.user.runner_states.find_by(runner_name: "claude")
+      expect(runner_state.failure_count).to eq(2)
+      expect(runner_state.circuit_state).to eq("open")
+    end
+
+    # @spec ISSUE-ANALYSIS-006 ISSUE-ANALYSIS-007
+    it "parks the run as rate_limited when an unsuccessful response is rate-limit-shaped" do
+      reset_at = 5.minutes.from_now.change(usec: 0)
+      allow(AgentHarness).to receive(:send_message).and_return(
+        failed_response(error: "429 Too Many Requests")
+      )
+      allow(RunnerSupport).to receive(:rate_limit_reset_at).and_return(reset_at)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("RateLimit")
+      }
+
+      agent_run.reload
+      expect(agent_run.status).to eq("rate_limited")
+      expect(agent_run.rate_limited_until).to eq(reset_at)
+
+      runner_state = project.effective_owner.settings.user.runner_states.find_by(runner_name: "claude")
+      expect(runner_state.rate_limited?).to be(true)
+      expect(runner_state.failure_count).to eq(0)
+    end
+
+    # @spec ISSUE-ANALYSIS-009
+    it "opens the circuit immediately for an unsuccessful response classified as an authentication failure" do
+      allow(AgentHarness).to receive(:send_message).and_return(
+        failed_response(error: "401 Unauthorized: invalid API key")
+      )
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError, "No LLM provider produced an issue analysis")
+
+      runner_state = project.effective_owner.settings.user.runner_states.find_by(runner_name: "claude")
+      expect(runner_state.circuit_state).to eq("open")
+      expect(runner_state.failure_count).to eq(1)
+    end
+
+    # @spec ISSUE-ANALYSIS-009
+    it "opens the circuit immediately for a raised AgentHarness::AuthenticationError" do
+      allow(AgentHarness).to receive(:send_message).and_raise(
+        AgentHarness::AuthenticationError.new("invalid credentials", provider: "claude")
+      )
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError, "No LLM provider produced an issue analysis")
+
+      runner_state = project.effective_owner.settings.user.runner_states.find_by(runner_name: "claude")
+      expect(runner_state.circuit_state).to eq("open")
+      expect(runner_state.failure_count).to eq(1)
+    end
+  end
+
   describe "issue analysis runner selection" do
     let(:account) { create(:account) }
     let(:owner) { create(:user, account: account) }
