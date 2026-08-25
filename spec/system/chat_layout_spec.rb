@@ -29,8 +29,10 @@ RSpec.describe "Chat page layout", :js, system_driver: :paid_cuprite, type: :sys
 
     metrics = chat_layout_metrics
 
-    expect(metrics.fetch("documentScrolls")).to be(false)
+    expect(metrics.fetch("panelBottomGap")).to be_between(0, 2).inclusive
+    expect(metrics.fetch("documentOverflow")).to be <= 2
     expect(metrics.fetch("transcriptH")).to be >= 288
+    expect(metrics.fetch("transcriptShare")).to be >= 0.45
   end
 
   def chromium_path
@@ -66,14 +68,19 @@ RSpec.describe "Chat page layout", :js, system_driver: :paid_cuprite, type: :sys
         const header = panel.querySelector("header");
         const composer = transcript.nextElementSibling;
         const rect = (element) => element.getBoundingClientRect();
+        const viewportH = Math.round(window.visualViewport?.height || window.innerHeight);
+        const panelRect = rect(panel);
+        const transcriptRect = rect(transcript);
 
         return {
-          viewportH: Math.round(window.innerHeight),
-          panelH: Math.round(rect(panel).height),
+          viewportH,
+          panelH: Math.round(panelRect.height),
+          panelBottomGap: Math.round(viewportH - panelRect.bottom),
           headerH: Math.round(rect(header).height),
-          transcriptH: Math.round(rect(transcript).height),
+          transcriptH: Math.round(transcriptRect.height),
+          transcriptShare: Number((transcriptRect.height / panelRect.height).toFixed(3)),
           composerH: Math.round(rect(composer).height),
-          documentScrolls: document.documentElement.scrollHeight > window.innerHeight
+          documentOverflow: Math.round(document.documentElement.scrollHeight - viewportH)
         };
       })()
     JS
