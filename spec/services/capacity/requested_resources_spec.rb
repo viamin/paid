@@ -40,5 +40,48 @@ RSpec.describe Capacity::RequestedResources do
 
       expect(Rails.logger).to have_received(:warn).with(unknown_profile_warning_for(run))
     end
+
+    # @spec CONTAINER-RUNTIME-027
+    # A typoed profile with no numeric overrides must not read as a free run:
+    # unset dimensions fall back to the usual default request so admission and
+    # accounting still count them against the ceilings.
+    it "falls back to the default request when the profile is unknown and no numeric overrides are set" do
+      project = create(:project)
+      project.effective_owner.settings.update!(container_memory_bytes: 6.gigabytes)
+      run = create(:agent_run, project: project, external_metadata: {
+        "requested_resources" => { "profile" => "unknown" }
+      })
+
+      allow(Rails.logger).to receive(:warn)
+
+      expect(described_class.for_agent_run(run)).to eq(
+        cpu_quota: Containers::Provision::DEFAULTS[:cpu_quota],
+        memory_bytes: 6.gigabytes,
+        disk_bytes: described_class::DISK_BYTES_DEFAULT,
+        profile: nil
+      )
+
+      expect(Rails.logger).to have_received(:warn).with(unknown_profile_warning_for(run))
+    end
+
+    # @spec CONTAINER-RUNTIME-027
+    it "keeps partial numeric overrides and defaults only the unset dimensions" do
+      project = create(:project)
+      run = create(:agent_run, project: project, external_metadata: {
+        "requested_resources" => {
+          "profile" => "unknown",
+          "memory_bytes" => 5.gigabytes
+        }
+      })
+
+      allow(Rails.logger).to receive(:warn)
+
+      expect(described_class.for_agent_run(run)).to eq(
+        cpu_quota: Containers::Provision::DEFAULTS[:cpu_quota],
+        memory_bytes: 5.gigabytes,
+        disk_bytes: described_class::DISK_BYTES_DEFAULT,
+        profile: nil
+      )
+    end
   end
 end
