@@ -344,6 +344,40 @@ RSpec.describe Activities::AnalyzeIssueActivity do
         activity.execute(agent_run_id: agent_run.id)
       }.to raise_error(Temporalio::Error::ApplicationError, "All issue-analysis providers exhausted")
     end
+
+    # @spec ISSUE-ANALYSIS-009
+    # Regression coverage for the 2026-08-24 issue-analysis provider outage
+    # (#3643, viamin/agent-harness#367): before agent-harness 0.36.8, the
+    # Claude CLI's "Not logged in · Please run /login" JSON envelope was
+    # surfaced as a generic unsuccessful Response, so the failover loop
+    # rescued it under AgentHarness::Error and only burned one of the
+    # owner's generic failure-threshold counts per attempt. 0.36.8 raises
+    # AgentHarness::AuthenticationError directly from the provider's
+    # parse_response for that envelope, which AnalyzeIssueActivity#call_llm
+    # catches and immediately opens the failing provider's circuit breaker
+    # (threshold: 1, ISSUE-ANALYSIS-009) before moving on. This spec proves
+    # the loop end-to-end: claude (primary) raises AuthenticationError,
+    # codex (fallback) returns the analysis, and the caller observes the
+    # healthy provider's response — not a generic provider-exhaustion error.
+    it "opens the failing provider's breaker immediately and returns the next provider's response when claude raises AuthenticationError" do
+      # Drop the outer block's rate-limit on claude — for this spec the
+      # issue-analysis provider list must contain claude so we can prove
+      # the failover loop catches the new AuthenticationError and keeps
+      # going to codex instead of pretending claude was already
+      # unavailable.
+      owner.runner_states.where(runner_name: "claude").destroy_all
+      owner.settings.update!(issue_analysis_runner: "claude", issue_analysis_fallback_runners: [ "codex" ])
+
+      attempted = stub_not_logged_in_failover!
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      # Failover loop tried both providers and returned the healthy one.
+      expect(attempted).to eq([ :claude, :codex ])
+      expect(result).to include(agent_run_id: agent_run.id, sufficient_context: true)
+      expect_circuit_open_after_auth!(owner, runner_name: "claude")
+      expect_breaker_untouched!(owner, runner_name: "codex")
+    end
   end
 
   describe "provider rate limiting" do
@@ -688,5 +722,37 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       expect(issue.issue_analysis_next_attempt_at).to be_nil
       expect(issue.issue_analysis_backoff_set_at).to be_nil
     end
+  end
+
+  # Stub the agent-harness "Not logged in" envelope regression path adopted
+  # for #3643 (viamin/agent-harness#367): claude raises AuthenticationError,
+  # codex returns the LLM response. Returns the order in which providers
+  # were attempted so the caller can assert the failover loop iterated.
+  def stub_not_logged_in_failover!
+    attempted = []
+    allow(AgentHarness).to receive(:send_message) do |_, **opts|
+      attempted << opts[:provider]
+      case opts[:provider]
+      when :claude
+        raise AgentHarness::AuthenticationError.new("Not logged in · Please run /login", provider: "claude")
+      when :codex
+        llm_response
+      end
+    end
+    attempted
+  end
+
+  def expect_circuit_open_after_auth!(user, runner_name:)
+    state = user.runner_states.find_by(runner_name: runner_name)
+    expect(state).to be_present
+    expect(state.circuit_state).to eq("open")
+    expect(state.failure_count).to eq(1)
+  end
+
+  def expect_breaker_untouched!(user, runner_name:)
+    state = user.runner_states.find_by(runner_name: runner_name)
+    expect(state).to be_present
+    expect(state.circuit_state).to eq("closed")
+    expect(state.failure_count).to eq(0)
   end
 end

@@ -7,47 +7,11 @@
 #   - Iterated on via the PromptsController UI
 #   - Versioned, A/B tested, and tracked for cost/quality metrics
 #
-# When a prompt's template or variables change here, the seed creates a new
-# version (versions are immutable). Use `db:seed:replant` during development
-# if you want to reset history.
+# When a prompt's template or variables change here, synchronization creates a
+# new immutable version and promotes it to current_version.
 
-upsert_global_prompt = lambda do |slug:, name:, description:, category:, template:, variables:|
-  prompt = Prompt.find_or_initialize_by(slug: slug, account_id: nil, project_id: nil)
-
-  if prompt.new_record?
-    prompt.assign_attributes(
-      name: name,
-      description: description,
-      category: category,
-      active: true
-    )
-  else
-    prompt.name ||= name         # preserve user edits; only fill when blank
-    prompt.description ||= description
-    prompt.category ||= category
-    prompt.active = true if prompt.active.nil?
-  end
-
-  prompt.save!
-
-  current = prompt.current_version
-  normalize = ->(t) { t.to_s.strip }
-
-  if current.nil? ||
-     normalize.call(current.template) != normalize.call(template) ||
-     current.variables != variables
-    change_notes = current.nil? ? "Initial version from seeds" : "Updated from seeds: template and/or variables changed"
-
-    prompt.create_version!(
-      template: template,
-      variables: variables,
-      created_by: "seed",
-      change_notes: change_notes
-    )
-
-    Rails.logger.info(message: "seeds.created_prompt", slug: slug)
-  end
-end
+prompt_defaults = []
+upsert_global_prompt = ->(**definition) { prompt_defaults << definition }
 
 var = ->(name, description, required: true) { { "name" => name, "required" => required, "description" => description } }
 
@@ -895,16 +859,17 @@ upsert_global_prompt.call(
 
     ---
     IMPORTANT: Your goal is to ENHANCE AN EXISTING ISSUE by adding context or asking clarifying questions.
-    Do NOT write code, create PRs, create new issues, or push commits.
+    Do NOT write code, create PRs, create new issues, push commits, or post GitHub comments.
 
-    This run is comment-only: do NOT modify files in /workspace, do NOT commit, push, or
-    create a PR. The workflow discards any /workspace modifications -- only the posted
-    comment and label state matter. You can explore and read the repo freely.
+    This run is read-only: do NOT modify files in /workspace, commit, push, create a PR,
+    or mutate GitHub. The workflow discards workspace modifications and posts the validated
+    enhancement comment itself. You can explore and read the repo freely.
     State directories (under /home/agent/) are writable for scratch/tooling needs.
 
-    Read issue #{{issue_number}} in {{repo}} -- its description and all comments.  Explore the repository
+    Read issue #{{issue_number}} in {{repo}}. Trusted collaborator comments are already included in
+    the base prompt; do not fetch raw issue comments. Explore the repository
     to self-answer codebase-determinable questions (existing models, platform targets, patterns, etc.)
-    before asking the human.  Only ask about genuine product, scope, or intent ambiguities.
+    before asking the human. Only ask about genuine product, scope, or intent ambiguities.
 
     You can search the project's knowledge base to look up existing code,
     symbols, routes, and patterns before asking questions:
@@ -915,13 +880,10 @@ upsert_global_prompt.call(
       -H "X-Proxy-Token: $PROXY_TOKEN"
     ```
 
-    Use the GitHub API proxy to read issue details and comments:
+    Use the GitHub API proxy only to read issue details:
 
     ```bash
     curl -s --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/{{repo}}/issues/{{issue_number}}" \
-      -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
-      -H "X-Proxy-Token: $PROXY_TOKEN"
-    curl -s --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/{{repo}}/issues/{{issue_number}}/comments" \
       -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
       -H "X-Proxy-Token: $PROXY_TOKEN"
     ```
@@ -993,3 +955,8 @@ upsert_global_prompt.call(
     var.call("lid_section", "Rendered LID instructions when the project has or requested LID", required: false)
   ]
 )
+
+# @spec PROMPT-DEFAULT-SYNC-006
+result = Prompts::SyncDefaults.call(definitions: prompt_defaults)
+puts "Prompt defaults synchronized: #{result.prompts_created} created prompts, " \
+  "#{result.versions_created} created versions, #{result.unchanged} unchanged"

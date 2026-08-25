@@ -148,7 +148,8 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(issue.reload.labels).not_to include(project.enhance_issue_needs_input_label_name)
     end
 
-    it "fails before posting when insufficient context has no parseable questions" do
+    # @spec ISSUE-ENHANCEMENT-002
+    it "parks the issue for manual review when insufficient context has no parseable questions" do
       log_agent_stdout({
         sufficient_context: false,
         comment_body: "## Implementation context\nThis is not actionable yet."
@@ -158,8 +159,8 @@ RSpec.describe Activities::EnhanceIssueActivity do
         activity.execute(agent_run_id: agent_run.id)
       }.to raise_error(Temporalio::Error::ApplicationError) { |error| expect(error.type).to eq("EnhanceIssueUnparseableOutput") }
 
-      expect(client).not_to have_received(:add_comment)
-      expect(issue.reload.paid_state).to eq("needs_input")
+      expect_comment_including("## Auto-enhancement stopped", "could not validate")
+      expect(issue.reload.paid_state).to eq("manual_review")
       expect(issue.needs_input_questions).to be_nil
     end
 
@@ -196,7 +197,8 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(issue.labels).not_to include(project.enhance_issue_enhanced_label_name)
     end
 
-    it "posts a manual-review stop comment instead of reapplying needs-input at the max round" do
+    # @spec ISSUE-ENHANCEMENT-011
+    it "moves the issue to manual review at the max round" do
       issue.update!(enhance_issue_rounds: project.max_enhance_issue_reevaluation_rounds)
       log_agent_stdout({
         sufficient_context: false,
@@ -206,11 +208,9 @@ RSpec.describe Activities::EnhanceIssueActivity do
       result = activity.execute(agent_run_id: agent_run.id)
 
       expect(result[:max_rounds_reached]).to be true
-      expect(result[:label_applied]).to eq(project.enhance_issue_needs_input_label_name)
       expect_comment_including("## Auto-enhancement stopped", "Manual review is needed")
-      expect_label_added(project.enhance_issue_needs_input_label_name)
-      expect(issue.reload.paid_state).to eq("needs_input")
-      expect(issue.labels).to include(project.enhance_issue_needs_input_label_name)
+      expect(issue.reload.paid_state).to eq("manual_review")
+      expect(issue.labels).not_to include(project.enhance_issue_needs_input_label_name)
     end
 
     it "does not post a duplicate enhancement comment when one already exists" do
@@ -314,7 +314,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(issue.labels).not_to include(project.enhance_issue_needs_input_label_name)
     end
 
-    it "keeps an existing max-round stop comment in needs_input" do
+    it "keeps an existing max-round stop comment in manual review" do
       existing_comment = OpenStruct.new(
         body: "#{described_class::COMMENT_MARKER}\n## Auto-enhancement stopped\n\n## Latest context\n## Clarifying questions",
         html_url: "https://github.com/owner/repo/issues/42#issuecomment-0",
@@ -327,8 +327,8 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(result[:already_enhanced]).to be true
       expect(client).not_to have_received(:add_comment)
       expect(agent_run.reload.status).to eq("completed")
-      expect(issue.reload.paid_state).to eq("needs_input")
-      expect_label_added(project.enhance_issue_needs_input_label_name)
+      expect(issue.reload.paid_state).to eq("manual_review")
+      expect(issue.labels).not_to include(project.enhance_issue_needs_input_label_name)
     end
 
     it "ignores untrusted enhancement-marker comments" do
@@ -362,7 +362,28 @@ RSpec.describe Activities::EnhanceIssueActivity do
         expect(error.non_retryable).to be(true)
       }
 
-      expect(issue.reload.paid_state).to eq("needs_input")
+      expect(issue.reload.paid_state).to eq("manual_review")
+    end
+
+    # @spec ISSUE-ENHANCEMENT-002
+    it "rejects a string sufficient_context value instead of treating it as true" do
+      log_agent_stdout({
+        sufficient_context: "false",
+        comment_body: "## Implementation context\nThis must not be treated as ready."
+      }.to_json)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("EnhanceIssueUnparseableOutput")
+      }
+
+      expect(client).not_to have_received(:add_labels_to_issue).with(
+        project.full_name,
+        issue.github_number,
+        [ project.enhance_issue_enhanced_label_name ]
+      )
+      expect(issue.reload.paid_state).to eq("manual_review")
     end
 
     it "recovers a Paid-authored question comment when stdout is invalid JSON" do # @spec ISSUE-ENHANCEMENT-002
@@ -416,7 +437,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
         activity.execute(agent_run_id: agent_run.id)
       }.to raise_error(Temporalio::Error::ApplicationError) { |error| expect(error.type).to eq("EnhanceIssueUnparseableOutput") }
 
-      expect(issue.reload.paid_state).to eq("needs_input")
+      expect(issue.reload.paid_state).to eq("manual_review")
     end
 
     it "does not recover untrusted question-shaped comments" do
@@ -433,7 +454,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
         activity.execute(agent_run_id: agent_run.id)
       }.to raise_error(Temporalio::Error::ApplicationError) { |error| expect(error.type).to eq("EnhanceIssueUnparseableOutput") }
 
-      expect(issue.reload.paid_state).to eq("needs_input")
+      expect(issue.reload.paid_state).to eq("manual_review")
     end
 
     it "parses a markdown-fenced response with a trailing newline after the closing fence" do
@@ -610,8 +631,12 @@ RSpec.describe Activities::EnhanceIssueActivity do
           expect(error.non_retryable).to be(true)
         }
 
-        expect(client).not_to have_received(:add_comment)
-        expect(issue.reload.paid_state).to eq("needs_input")
+        expect(client).to have_received(:add_comment).with(
+          project.full_name,
+          issue.github_number,
+          a_string_including(IssueEnhancements::StopForManualReview::COMMENT_MARKER)
+        )
+        expect(issue.reload.paid_state).to eq("manual_review")
       end
 
       it "raises a non-retryable error when no stdout was captured" do
@@ -621,8 +646,12 @@ RSpec.describe Activities::EnhanceIssueActivity do
           expect(error.type).to eq("EnhanceIssueUnparseableOutput")
         }
 
-        expect(client).not_to have_received(:add_comment)
-        expect(issue.reload.paid_state).to eq("needs_input")
+        expect(client).to have_received(:add_comment).with(
+          project.full_name,
+          issue.github_number,
+          a_string_including(IssueEnhancements::StopForManualReview::COMMENT_MARKER)
+        )
+        expect(issue.reload.paid_state).to eq("manual_review")
       end
     end
   end

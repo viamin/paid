@@ -49,6 +49,8 @@ module Activities
             "in_progress"
           elsif agent_run.review_goal?
             "completed"
+          elsif agent_run.enhance_issue_goal? && agent_run.issue.paid_state == "manual_review"
+            "manual_review"
           else
             "failed"
           end

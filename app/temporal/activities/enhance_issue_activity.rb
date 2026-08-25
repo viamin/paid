@@ -18,6 +18,7 @@ module Activities
     activity_name "EnhanceIssue"
 
     COMMENT_MARKER = "<!-- paid:enhance-issue -->"
+    MANUAL_REVIEW_MARKER = IssueEnhancements::StopForManualReview::COMMENT_MARKER
     # The containerized agent wraps its JSON result between two
     # OUTPUT_DELIMITER lines so the parser can anchor on it even when the
     # runner interleaves its own log output. Kept in sync with the
@@ -112,9 +113,9 @@ module Activities
       return recover_or_raise_parse_error!(agent_run, project, issue, client, comments, "no structured output captured") if raw.blank?
 
       parsed = JSON.parse(strip_markdown_fence(extract_json_payload(raw)), symbolize_names: true)
-      return parsed if parsed.key?(:sufficient_context) && parsed[:comment_body].present?
+      return parsed if parsed[:sufficient_context].in?([ true, false ]) && parsed[:comment_body].is_a?(String) && parsed[:comment_body].present?
 
-      recover_or_raise_parse_error!(agent_run, project, issue, client, comments, "missing sufficient_context or comment_body")
+      recover_or_raise_parse_error!(agent_run, project, issue, client, comments, "sufficient_context must be boolean and comment_body must be a non-empty string")
     rescue JSON::ParserError => e
       recover_or_raise_parse_error!(agent_run, project, issue, client, comments, e.message)
     end
@@ -138,7 +139,13 @@ module Activities
     # comment. A non-retryable error surfaces the problem for investigation
     # without marking the issue enhanced with unparseable content.
     def raise_parse_error!(agent_run, detail)
-      agent_run.issue&.update!(paid_state: "needs_input")
+      if agent_run.issue
+        IssueEnhancements::StopForManualReview.call(
+          project: agent_run.project,
+          issue: agent_run.issue,
+          reason: "Paid could not validate the enhancement agent's structured output."
+        )
+      end
       agent_run.log!("stderr", "Failed to parse agent output: #{detail}")
       raise Temporalio::Error::ApplicationError.new(
         "EnhanceIssue agent produced unparseable structured output: #{detail}",
@@ -199,10 +206,10 @@ module Activities
 
     def reconcile_existing_label_state(client, project, issue, existing_comment)
       if existing_comment.body.to_s.include?("## Auto-enhancement stopped")
-        added = labels_added(client, project, issue, [ project.enhance_issue_needs_input_label_name ])
-        require_label_added!(project.enhance_issue_needs_input_label_name, added)
-        merge_local_labels(issue, add: added)
-        return { applied: added.first, max_rounds_reached: true, sufficient_context: false }
+        removed = labels_removed(client, project, issue, [ project.enhance_issue_needs_input_label_name ])
+        merge_local_labels(issue, remove: removed)
+        issue.update!(paid_state: "manual_review")
+        return { applied: nil, max_rounds_reached: true, sufficient_context: false }
       end
 
       sufficient_context = !existing_comment.body.to_s.include?("## Clarifying questions")
@@ -211,8 +218,8 @@ module Activities
     end
 
     def existing_paid_state(issue, existing_comment)
+      return "manual_review" if existing_comment.body.to_s.include?("## Auto-enhancement stopped")
       return "needs_input" if issue.has_label?(issue.project.enhance_issue_needs_input_label_name)
-      return "needs_input" if existing_comment.body.to_s.include?("## Auto-enhancement stopped")
       return "needs_input" if existing_comment.body.to_s.include?("## Clarifying questions")
 
       "completed"
@@ -304,6 +311,7 @@ module Activities
 
       parsed.merge(
         comment_body: <<~COMMENT
+          #{MANUAL_REVIEW_MARKER}
           ## Auto-enhancement stopped
 
           Paid has reached the configured limit of #{project.max_enhance_issue_reevaluation_rounds} enhancement re-evaluation rounds for this issue.
@@ -345,10 +353,9 @@ module Activities
       end
 
       if max_rounds_reached?(project, issue)
-        added = labels_added(client, project, issue, [ project.enhance_issue_needs_input_label_name ])
-        require_label_added!(project.enhance_issue_needs_input_label_name, added)
-        merge_local_labels(issue, add: added)
-        return { applied: added.first, max_rounds_reached: true }
+        removed = labels_removed(client, project, issue, [ project.enhance_issue_needs_input_label_name ])
+        merge_local_labels(issue, remove: removed)
+        return { applied: nil, max_rounds_reached: true }
       end
 
       added = labels_added(client, project, issue, [ project.enhance_issue_needs_input_label_name ])
@@ -360,6 +367,7 @@ module Activities
 
     def paid_state_for(parsed, project, issue)
       return "completed" if parsed[:sufficient_context]
+      return "manual_review" if max_rounds_reached?(project, issue)
 
       "needs_input"
     end
