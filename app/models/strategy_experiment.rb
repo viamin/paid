@@ -41,6 +41,13 @@ class StrategyExperiment < ApplicationRecord
   scope :completed, -> { where(status: "completed") }
   scope :cancelled, -> { where(status: "cancelled") }
 
+  include Experiments::AnalysisCache
+  analysis_cache(
+    analyzer_class: StrategyExperiments::Analyze,
+    variants_association: :strategy_experiment_variants,
+    call_keyword: :strategy_experiment
+  )
+
   def self.active_for(strategy_name, account:, agent_run: nil)
     experiment = running
       .where(strategy_name: strategy_name, account: account)
@@ -109,21 +116,7 @@ class StrategyExperiment < ApplicationRecord
     Zlib.crc32("#{id}:#{agent_run.class.name}:#{agent_run.id}") % 100 < traffic_percentage
   end
 
-  def cached_or_compute_analysis(persist: true)
-    current_key = samples_key
-    if cached_analysis.present?
-      return deserialize_analysis if analysis_samples_key == current_key
-      return deserialize_analysis unless persist
-    end
-
-    return nil unless persist
-
-    StrategyExperiments::Analyze.call(strategy_experiment: self).tap { |result| persist_analysis!(result, current_key) }
-  end
-
   private
-
-  CACHE_BUCKET_SIZE = ANALYSIS_INTERVAL
 
   def raise_invalid_status!(action)
     errors.add(:base, "cannot #{action} an experiment that is #{status}")
@@ -132,37 +125,14 @@ class StrategyExperiment < ApplicationRecord
 
   def samples_key
     total_samples = strategy_experiment_variants.sum(&:sample_count)
-    total_bucket = (total_samples / CACHE_BUCKET_SIZE) * CACHE_BUCKET_SIZE
+    total_bucket = (total_samples / Experiments::AnalysisCache::CACHE_BUCKET_SIZE) * Experiments::AnalysisCache::CACHE_BUCKET_SIZE
 
     variant_buckets = strategy_experiment_variants
       .sort_by(&:id)
-      .map { |v| "#{v.id}:#{(v.sample_count / CACHE_BUCKET_SIZE) * CACHE_BUCKET_SIZE}" }
+      .map { |v| "#{v.id}:#{(v.sample_count / Experiments::AnalysisCache::CACHE_BUCKET_SIZE) * Experiments::AnalysisCache::CACHE_BUCKET_SIZE}" }
       .join(",")
 
     "total:#{total_bucket}|#{variant_buckets}"
-  end
-
-  def persist_analysis!(result, key)
-    update_columns(
-      cached_analysis: {
-        status: result.status.to_s,
-        confidence: result.confidence&.to_f,
-        improvement: result.improvement&.to_f,
-        winner_id: result.winner&.id
-      },
-      analysis_samples_key: key
-    )
-  end
-
-  def deserialize_analysis
-    data = cached_analysis.symbolize_keys
-    winner = data[:winner_id] ? strategy_experiment_variants.find_by(id: data[:winner_id]) : nil
-    StrategyExperiments::Analyze::Result.new(
-      status: data[:status]&.to_sym,
-      winner: winner,
-      confidence: data[:confidence],
-      improvement: data[:improvement]
-    )
   end
 
   def variant_count_within_limit

@@ -2558,6 +2558,48 @@ RSpec.describe AgentRun do
           expect(agent_run.reload.container_host).to eq("remote")
         end
 
+        # @spec CONTAINER-RUNTIME-027
+        it "resolves the owner timeout before claiming a warm pool container" do
+          agent_run = create(:agent_run, worktree_path: nil)
+          agent_run.project.effective_owner.settings.update!(container_timeout_seconds: 1800)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          pooled_result = Containers::Provision::Result.success(
+            container_id: "warm-container",
+            container_host: "remote",
+            service: instance_double(Containers::Provision),
+            pool_entry_id: 123
+          )
+          pool_manager = instance_double(Containers::PoolManager, acquire: pooled_result)
+          allow(Containers::PoolManager).to receive(:new)
+            .with(project: agent_run.project)
+            .and_return(pool_manager)
+
+          agent_run.provision_container
+
+          expect(pool_manager).to have_received(:acquire).with(hash_including(timeout_seconds: 1800))
+        end
+
+        # @spec CONTAINER-RUNTIME-027
+        it "prefers an explicit timeout override when claiming a warm pool container" do
+          agent_run = create(:agent_run, worktree_path: nil)
+          agent_run.project.effective_owner.settings.update!(container_timeout_seconds: 1800)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          pooled_result = Containers::Provision::Result.success(
+            container_id: "warm-container",
+            container_host: "remote",
+            service: instance_double(Containers::Provision),
+            pool_entry_id: 123
+          )
+          pool_manager = instance_double(Containers::PoolManager, acquire: pooled_result)
+          allow(Containers::PoolManager).to receive(:new)
+            .with(project: agent_run.project)
+            .and_return(pool_manager)
+
+          agent_run.provision_container(timeout_seconds: 120)
+
+          expect(pool_manager).to have_received(:acquire).with(hash_including(timeout_seconds: 120))
+        end
+
         it "enqueues pool replenishment after a cold provision via the runner" do
           agent_run = create(:agent_run, worktree_path: worktree_path)
           FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)

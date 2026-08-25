@@ -31,6 +31,13 @@ class ConfigurationExperiment < ApplicationRecord
   scope :completed, -> { where(status: "completed") }
   scope :cancelled, -> { where(status: "cancelled") }
 
+  include Experiments::AnalysisCache
+  analysis_cache(
+    analyzer_class: ConfigurationExperiments::Analyze,
+    variants_association: :configuration_experiment_variants,
+    call_keyword: :configuration_experiment
+  )
+
   def self.active_for(config_key, project: nil, agent_run: nil)
     for_config_key(config_key, project: project).detect do |experiment|
       experiment.includes_traffic?(agent_run: agent_run, project: project)
@@ -95,31 +102,7 @@ class ConfigurationExperiment < ApplicationRecord
     Zlib.crc32("#{id}:#{rollout_subject.class.name}:#{rollout_subject.id}") % 100 < traffic_percentage
   end
 
-  def cached_or_compute_analysis(persist: true)
-    current_key = samples_key
-    if cached_analysis.present?
-      return deserialize_analysis if analysis_samples_key == current_key
-      return deserialize_analysis unless persist
-    end
-
-    return nil unless persist
-
-    ConfigurationExperiments::Analyze.call(configuration_experiment: self).tap { |result| persist_analysis!(result, current_key) }
-  end
-
   private
-
-  CACHE_BUCKET_SIZE = ANALYSIS_INTERVAL
-
-  private_class_method def self.for_config_key(config_key, project:)
-    candidates = running.where(config_key: config_key)
-    return candidates.where(account_id: nil).order(:id) unless project
-
-    candidates
-      .where(account_id: [ project.account_id, nil ])
-      .order(:id)
-      .sort_by { |experiment| [ experiment.account_id == project.account_id ? 0 : 1, experiment.id ] }
-  end
 
   def raise_invalid_status!(action)
     errors.add(:base, "cannot #{action} an experiment that is #{status}")
@@ -128,37 +111,14 @@ class ConfigurationExperiment < ApplicationRecord
 
   def samples_key
     total_samples = configuration_experiment_variants.sum(&:sample_count)
-    total_bucket = (total_samples / CACHE_BUCKET_SIZE) * CACHE_BUCKET_SIZE
+    total_bucket = (total_samples / Experiments::AnalysisCache::CACHE_BUCKET_SIZE) * Experiments::AnalysisCache::CACHE_BUCKET_SIZE
 
     variant_buckets = configuration_experiment_variants
       .sort_by(&:id)
-      .map { |v| "#{v.id}:#{(v.sample_count / CACHE_BUCKET_SIZE) * CACHE_BUCKET_SIZE}" }
+      .map { |v| "#{v.id}:#{(v.sample_count / Experiments::AnalysisCache::CACHE_BUCKET_SIZE) * Experiments::AnalysisCache::CACHE_BUCKET_SIZE}" }
       .join(",")
 
     "total:#{total_bucket}|#{variant_buckets}"
-  end
-
-  def persist_analysis!(result, key)
-    update_columns(
-      cached_analysis: {
-        status: result.status.to_s,
-        confidence: result.confidence&.to_f,
-        improvement: result.improvement&.to_f,
-        winner_id: result.winner&.id
-      },
-      analysis_samples_key: key
-    )
-  end
-
-  def deserialize_analysis
-    data = cached_analysis.symbolize_keys
-    winner = data[:winner_id] ? configuration_experiment_variants.find_by(id: data[:winner_id]) : nil
-    ConfigurationExperiments::Analyze::Result.new(
-      status: data[:status]&.to_sym,
-      winner: winner,
-      confidence: data[:confidence],
-      improvement: data[:improvement]
-    )
   end
 
   def variant_count_within_limit
@@ -172,5 +132,15 @@ class ConfigurationExperiment < ApplicationRecord
     return if winner_variant.configuration_experiment_id == id
 
     errors.add(:winner_variant, "must belong to this configuration experiment")
+  end
+
+  private_class_method def self.for_config_key(config_key, project:)
+    candidates = running.where(config_key: config_key)
+    return candidates.where(account_id: nil).order(:id) unless project
+
+    candidates
+      .where(account_id: [ project.account_id, nil ])
+      .order(:id)
+      .sort_by { |experiment| [ experiment.account_id == project.account_id ? 0 : 1, experiment.id ] }
   end
 end

@@ -47,11 +47,16 @@ class ServiceContainer < ApplicationRecord
 
   # Counts in-flight capacity runs across all associated projects that reference this container.
   # Includes running runs and claimed queued runs that are still provisioning.
-  def capacity_inflight_agent_run_count
-    AgentRun.capacity_inflight
+  #
+  # @param excluding [AgentRun, nil] a run to omit from the count, e.g. the
+  #   run currently provisioning this container (whose own reference does not
+  #   indicate another run depends on it yet).
+  def capacity_inflight_agent_run_count(excluding: nil)
+    scope = AgentRun.capacity_inflight
       .where(project_id: project_ids)
       .where("service_container_ids @> ?", [ id ].to_json)
-      .count
+    scope = scope.where.not(id: excluding.id) if excluding
+    scope.count
   end
 
   private

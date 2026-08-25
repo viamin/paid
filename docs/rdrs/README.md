@@ -42,6 +42,19 @@ incomplete RDR ship safely:
 Issue implementations for an RDR must preserve the stated guard until the RDR's
 closeout audit marks the guarded behavior complete and safe to make default.
 
+## Implementation Issues and Closeout
+
+RDR implementation issue trees should end with a closeout/validation issue. That
+final issue validates the shipped code, tests, and docs against the RDR plan,
+updates the RDR status, records any remaining gaps, and follows
+[`closeout-checklist.md`](closeout-checklist.md).
+
+When the closeout concludes that the RDR is fully implemented, its PR should
+visibly close the umbrella issue with GitHub closing language such as
+`Closes #1234`. Use non-closing language such as `Tracks #1234` only for
+intermediate or partial closeout work where the umbrella must remain open for
+remaining gap issues.
+
 ## Index
 
 ### Foundation (Core Technology Stack)
@@ -61,7 +74,7 @@ closeout audit marks the guarded behavior complete and safe to make default.
 | [RDR-006](RDR-006-secrets-proxy.md) | Secrets Proxy Architecture | Implemented | High |
 | [RDR-041](RDR-041-subscription-runner-auth-lifecycle.md) | Subscription Runner Managed Auth Lifecycle | Implemented | P1 |
 | [RDR-055](RDR-055-agent-container-egress-allowlisting.md) | Agent Container Egress Allowlisting | Partially Implemented | P1 |
-| [RDR-058](RDR-058-execution-authority-network-and-isolation.md) | Execution Authority, Network Policy, and Isolation | Partially Implemented | P1 |
+| [RDR-058](RDR-058-execution-authority-network-and-isolation.md) | Execution Authority, Network Policy, and Isolation | Implemented | P1 |
 
 ### Agent System
 
@@ -140,19 +153,19 @@ closeout audit marks the guarded behavior complete and safe to make default.
 | [RDR-047](RDR-047-work-category-queue-priority.md) | Work-Category-Aware Queue Priority — PR Continuation Over Fresh Issues | Implemented | P1 |
 | [RDR-049](RDR-049-configuration-health-checks.md) | Configuration Health Checks | Implemented | P1 |
 | [RDR-050](RDR-050-account-queue-fairness-mode.md) | Account-Level Queue Fairness Mode — Strict Priority vs. Cross-Project Fair Share | Implemented | P1 |
-| [RDR-056](RDR-056-strict-test-driven-development-mode.md) | Test-Driven Development Modes with Human Test Review | Accepted | P1 |
+| [RDR-056](RDR-056-strict-test-driven-development-mode.md) | Test-Driven Development Modes with Human Test Review | Implemented | P1 |
 | [RDR-063](RDR-063-operational-supervisor-delivery-health.md) | Operational Supervisor for Delivery Health | Draft | P1 |
 
 ### Cloud Execution Readiness
 
 RDR-057, RDR-058, RDR-059, and RDR-060 were drafted alongside RDR-061 as a
-set of cloud-execution-readiness decisions, but have since been implemented
-(see their entries under Security & Isolation, Agent System, and Scaling &
-Distribution above). RDR-061 remains the open decision in this set.
+set of cloud-execution-readiness decisions and have all since been
+implemented (see their entries under Security & Isolation, Agent System, and
+Scaling & Distribution above).
 
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
-| [RDR-061](RDR-061-infrastructure-safety-and-audit.md) | Infrastructure Safety Rails and Execution Audit Events | Partially Implemented | P1 |
+| [RDR-061](RDR-061-infrastructure-safety-and-audit.md) | Infrastructure Safety Rails and Execution Audit Events | Implemented | P1 |
 
 ### Runner Intelligence
 
@@ -172,7 +185,7 @@ Distribution above). RDR-061 remains the open decision in this set.
 | [RDR-021](RDR-021-knowledge-base.md) | Knowledge Base Architecture | Implemented | High |
 | [RDR-027](RDR-027-auto-enhance-knowledge-evolution.md) | Auto-Enhance and Knowledge Base Evolution | Partially Implemented | High |
 | [RDR-042](RDR-042-change-intent-records.md) | Change Intent Records for the Knowledge Base | Partially Implemented | Medium |
-| [RDR-052](RDR-052-codebase-aware-enhance-issue.md) | Codebase-Aware Issue Enhancement | Draft | P1 |
+| [RDR-052](RDR-052-codebase-aware-enhance-issue.md) | Codebase-Aware Issue Enhancement | Implemented | P1 |
 
 ### AI-Native Evolution (Phase 4)
 
@@ -187,7 +200,7 @@ Distribution above). RDR-061 remains the open decision in this set.
 
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
-| [RDR-051](RDR-051-lid-aware-agent-runs.md) | LID-Aware Agent Runs and Brownfield Adoption | Partially Implemented | P1 |
+| [RDR-051](RDR-051-lid-aware-agent-runs.md) | LID-Aware Agent Runs and Brownfield Adoption | Implemented | P1 |
 
 ### Feature Creation
 

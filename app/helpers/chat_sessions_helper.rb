@@ -310,7 +310,7 @@ module ChatSessionsHelper
   def chat_tool_hash_payload_summary(payload)
     return chat_tool_error_summary(payload) if chat_tool_payload_value(payload, "error").present?
 
-    count = chat_tool_payload_value(payload, "total_count")
+    count = chat_tool_payload_value(payload, "total_count") || chat_tool_payload_value(payload, "total_matches")
     return "#{count} #{'match'.pluralize(count.to_i)}" if count
 
     collection_key = %w[matches projects results items].find { |key| chat_tool_payload_value(payload, key).is_a?(Array) }

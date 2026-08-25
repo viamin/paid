@@ -68,6 +68,8 @@ RSpec.describe Prompts::BuildForCreateFeature do
 
       expect(prompt).to include("Decompose")
       expect(prompt).to include("epic issue")
+      expect(prompt).to include("final RDR closeout/validation issue")
+      expect(prompt).to include("docs/rdrs/closeout-checklist.md")
       expect(prompt).to include("Depends on")
       expect(prompt).to include("Part of RDR-0XX")
     end

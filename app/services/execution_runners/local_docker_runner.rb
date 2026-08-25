@@ -169,7 +169,8 @@ class LocalDockerRunner < Base
       agent_run = AgentRun.find(handle.metadata["agent_run_id"])
       Containers::Provision.reconnect(
         agent_run: agent_run, container_id: handle.identifier,
-        worktree_path: handle.metadata["worktree_path"]
+        worktree_path: handle.metadata["worktree_path"],
+        **reconnect_timeout_option(handle)
       )
     rescue ActiveRecord::RecordNotFound
       # A missing AgentRun means the environment can no longer be reached.
@@ -697,9 +698,10 @@ class LocalDockerRunner < Base
       resources = spec.resources
       return options unless resources
 
-      options[:memory_bytes] = resources.memory_bytes if resources.memory_bytes
-      options[:cpu_quota] = resources.cpu_quota if resources.cpu_quota
-      options[:pids_limit] = resources.pids_limit if resources.pids_limit
+      options[:memory_bytes] = resources.memory_bytes if resources.memory_mib
+      options[:cpu_quota] = resources.cpu_quota if resources.cpu_cores
+      options[:pids_limit] = Containers::Provision::DEFAULTS[:pids_limit]
+      options[:timeout_seconds] = resources.timeout_seconds if resources.timeout_seconds
       options
     end
 
@@ -712,9 +714,24 @@ class LocalDockerRunner < Base
         metadata: {
           "agent_run_id" => spec.agent_run&.id,
           "worktree_path" => self.class.worktree_path_for(spec),
-          "environment" => spec.environment || {}
+          "environment" => spec.environment || {},
+          "timeout_seconds" => spec.resources&.timeout_seconds
         }
       )
+    end
+
+    # The run's requested command timeout travels on the handle metadata
+    # because +Containers::Provision.reconnect+ builds a fresh service whose
+    # options otherwise reset to the 3600s DEFAULTS. Forwarding it keeps the
+    # provider-neutral timeout authoritative for +#start+ executions on a
+    # reconnected container; an explicit +timeout:+ passed to +#start+ still
+    # wins inside +Containers::Provision#execute+.
+    # @spec CONTAINER-RUNTIME-027
+    def reconnect_timeout_option(handle)
+      timeout = handle.metadata["timeout_seconds"]
+      return {} unless timeout
+
+      { timeout_seconds: timeout }
     end
 
     # Translates the {WorkspaceStrategy} into the opaque workspace reference

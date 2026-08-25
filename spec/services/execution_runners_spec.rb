@@ -27,20 +27,37 @@ RSpec.describe ExecutionRunners do
     end
   end
 
-  describe ExecutionRunners::ComputeRequirements do
+  describe ExecutionRunners::ExecutionResources do
     # @spec CONTAINER-RUNTIME-027
-    it "is an immutable Data object with cpu, memory, disk, and pids fields" do
+    it "is an immutable Data object with cpu, memory, disk, architecture, and timeout fields" do
       requirements = described_class.new(
-        cpu_quota: 200_000,
-        memory_bytes: 4 * 1024 ** 3,
-        disk_bytes: 2 * 1024 ** 3,
-        pids_limit: 500
+        cpu_cores: 2.0,
+        memory_mib: 4096,
+        disk_gb: 10,
+        architecture: "x86_64",
+        timeout_seconds: 3600
       )
 
-      expect(requirements.cpu_quota).to eq(200_000)
-      expect(requirements.memory_bytes).to eq(4_294_967_296)
-      expect(requirements.disk_bytes).to eq(2_147_483_648)
-      expect(requirements.pids_limit).to eq(500)
+      expect(requirements.cpu_cores).to eq(2.0)
+      expect(requirements.memory_mib).to eq(4096)
+      expect(requirements.disk_gb).to eq(10)
+      expect(requirements.architecture).to eq("x86_64")
+      expect(requirements.timeout_seconds).to eq(3600)
+    end
+
+    # @spec CONTAINER-RUNTIME-027
+    it "expands named profiles to explicit resource tuples" do
+      resources = described_class.profile("standard")
+
+      expect(resources).to eq(
+        described_class.new(
+          cpu_cores: 2.0,
+          memory_mib: 4096,
+          disk_gb: 10,
+          architecture: "x86_64",
+          timeout_seconds: 3600
+        )
+      )
     end
   end
 
@@ -84,7 +101,13 @@ RSpec.describe ExecutionRunners do
         project: project,
         image: "paid/agent:latest",
         command: "claude code",
-        resources: ExecutionRunners::ComputeRequirements.new(cpu_quota: 1, memory_bytes: 2, disk_bytes: 3, pids_limit: 4),
+        resources: ExecutionRunners::ExecutionResources.new(
+          cpu_cores: 1.0,
+          memory_mib: 2,
+          disk_gb: 3,
+          architecture: "x86_64",
+          timeout_seconds: 4
+        ),
         environment: { "FOO" => "bar" },
         networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted,
         ingress_policy: ExecutionRunners::IngressPolicy.default_deny,
@@ -128,7 +151,7 @@ RSpec.describe ExecutionRunners do
     end
 
     it "embeds the resource, networking, and service declarations" do
-      expect(spec.resources).to be_a(ExecutionRunners::ComputeRequirements)
+      expect(spec.resources).to be_a(ExecutionRunners::ExecutionResources)
       expect(spec.networking_policy).to be_a(ExecutionRunners::NetworkingPolicy)
       expect(spec.ingress_policy).to be_a(ExecutionRunners::IngressPolicy)
       expect(spec.services.first).to be_a(ExecutionRunners::ServiceDeclaration)
@@ -281,15 +304,126 @@ RSpec.describe ExecutionRunners do
         "requested_resources" => {
           "cpu_quota" => 123_000,
           "memory_bytes" => 5.gigabytes,
-          "disk_bytes" => 2.gigabytes
+          "disk_bytes" => 2.gigabytes,
+          "profile" => "small"
         }
       })
 
-      built = ExecutionRunners::RunSpec.from_agent_run(run, memory_bytes: 0)
+      built = ExecutionRunners::RunSpec.from_agent_run(run, memory_mib: 0)
 
-      expect(built.resources.cpu_quota).to eq(123_000)
-      expect(built.resources.memory_bytes).to eq(5.gigabytes)
-      expect(built.resources.disk_bytes).to eq(2.gigabytes)
+      expect(built.resources.cpu_cores).to eq(1.23)
+      expect(built.resources.memory_mib).to eq(5120)
+      expect(built.resources.disk_gb).to eq(2)
+      expect(built.resources.architecture).to eq("x86_64")
+    end
+
+    # @spec CONTAINER-RUNTIME-027
+    it "scales cpu_cores overrides into the legacy cpu_quota units" do
+      project = create(:project)
+      run = create(:agent_run, project: project)
+
+      built = ExecutionRunners::RunSpec.from_agent_run(run, cpu_cores: 2.0)
+
+      expect(built.resources.cpu_cores).to eq(2.0)
+    end
+
+    # @spec CONTAINER-RUNTIME-027
+    it "honors sub-1 cpu_cores overrides instead of dropping them on the positivity check" do
+      project = create(:project)
+      run = create(:agent_run, project: project)
+
+      built = ExecutionRunners::RunSpec.from_agent_run(run, cpu_cores: 0.5)
+
+      expect(built.resources.cpu_cores).to eq(0.5)
+    end
+
+    # @spec CONTAINER-RUNTIME-027
+    it "coerces string resource overrides (e.g. form params/JSON payloads) to numeric before scaling" do
+      project = create(:project)
+      run = create(:agent_run, project: project)
+
+      built = ExecutionRunners::RunSpec.from_agent_run(
+        run,
+        cpu_cores: "0.5",
+        memory_mib: "512",
+        disk_gb: "2"
+      )
+
+      expect(built.resources.cpu_cores).to eq(0.5)
+      expect(built.resources.memory_mib).to eq(512)
+      expect(built.resources.disk_gb).to eq(2)
+    end
+
+    # @spec CONTAINER-RUNTIME-027
+    # The owner timeout deliberately differs from the preset timeout so the
+    # assertion proves the profile expands to the full tuple — timeout
+    # included — rather than coincidentally matching the owner default.
+    it "expands a named profile when explicit requested values are absent" do
+      project = create(:project)
+      project.effective_owner.settings.update!(container_timeout_seconds: 1800)
+      run = create(:agent_run, project: project, external_metadata: {
+        "requested_resources" => {
+          "profile" => "large"
+        }
+      })
+
+      built = ExecutionRunners::RunSpec.from_agent_run(run)
+
+      expect(built.resources).to eq(
+        ExecutionRunners::ExecutionResources.new(
+          cpu_cores: 4.0,
+          memory_mib: 8192,
+          disk_gb: 20,
+          architecture: "x86_64",
+          timeout_seconds: 3600
+        )
+      )
+    end
+
+    # @spec CONTAINER-RUNTIME-027
+    it "prefers an explicit timeout override over the profile preset" do
+      project = create(:project)
+      run = create(:agent_run, project: project, external_metadata: {
+        "requested_resources" => {
+          "profile" => "large"
+        }
+      })
+
+      built = ExecutionRunners::RunSpec.from_agent_run(run, timeout_seconds: 600)
+
+      expect(built.resources.timeout_seconds).to eq(600)
+    end
+
+    # @spec CONTAINER-RUNTIME-027
+    it "falls back to the owner timeout when no profile or override is requested" do
+      project = create(:project)
+      project.effective_owner.settings.update!(container_timeout_seconds: 1800)
+      run = create(:agent_run, project: project)
+
+      built = ExecutionRunners::RunSpec.from_agent_run(run)
+
+      expect(built.resources.timeout_seconds).to eq(1800)
+    end
+
+    # @spec CONTAINER-RUNTIME-027
+    it "resolves the same timeout as from_agent_run through the public entry point used by warm-pool claims" do
+      project = create(:project)
+      project.effective_owner.settings.update!(container_timeout_seconds: 1800)
+      run = create(:agent_run, project: project, external_metadata: {
+        "requested_resources" => { "profile" => "large" }
+      })
+
+      expect(ExecutionRunners::RunSpec.resolve_timeout_seconds(run, {})).to eq(
+        ExecutionRunners::RunSpec.from_agent_run(run).resources.timeout_seconds
+      )
+    end
+
+    # @spec CONTAINER-RUNTIME-027
+    it "honors an explicit override when resolving the timeout ahead of a full RunSpec" do
+      project = create(:project)
+      run = create(:agent_run, project: project)
+
+      expect(ExecutionRunners::RunSpec.resolve_timeout_seconds(run, { timeout_seconds: 42 })).to eq(42)
     end
 
     # @spec IMMUTABLE-IMAGE-001
@@ -1152,7 +1286,13 @@ RSpec.describe ExecutionRunners do
         project: project,
         image: "paid/agent:latest",
         command: "claude code",
-        resources: ExecutionRunners::ComputeRequirements.new(cpu_quota: 100_000, memory_bytes: 1024, disk_bytes: 2048, pids_limit: 50),
+        resources: ExecutionRunners::ExecutionResources.new(
+          cpu_cores: 1.0,
+          memory_mib: 1024,
+          disk_gb: 2,
+          architecture: "x86_64",
+          timeout_seconds: 3600
+        ),
         environment: { "DATABASE_URL" => "postgres://secret@db", "API_TOKEN" => "shh" },
         networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted,
         ingress_policy: ExecutionRunners::IngressPolicy.default_deny,

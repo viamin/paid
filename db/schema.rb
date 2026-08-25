@@ -1490,6 +1490,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_25_052711) do
     t.datetime "merge_permission_rejected_at", comment: "When non-null, the most recent auto-merge attempt was rejected by GitHub because the App installation token lacks a required permission (e.g. `workflows` for a change under .github/workflows/). Such rejections are permanent until the App's permissions change, so this timestamp gates a retry cooldown instead of re-attempting every poll cycle."
     t.text "merge_permission_rejection_reason", comment: "Raw error message from the most recent merge-time GitHub App permission rejection, for operator visibility."
     t.jsonb "needs_input_questions", comment: "Parsed clarifying questions persisted when a needs-input comment is posted, so the dashboard queue can render without a per-issue GitHub API round-trip"
+    t.datetime "needs_input_since", comment: "When this issue entered paid_state \"needs_input\". Cleared when it leaves. Used by Inbox::Queue to order oldest-waiting-first and to render \"waiting Xh\" labels."
     t.datetime "operational_failure_reset_at"
     t.string "paid_state", default: "new", null: false
     t.bigint "parent_issue_id"
@@ -1515,6 +1516,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_25_052711) do
     t.index ["github_creator_login"], name: "index_issues_on_github_creator_login"
     t.index ["labels"], name: "index_issues_on_labels_gin_open_issues", where: "((is_pull_request = false) AND ((github_state)::text = 'open'::text))", using: :gin
     t.index ["labels"], name: "index_issues_on_labels_gin_open_prs", where: "((is_pull_request = true) AND ((github_state)::text = 'open'::text))", using: :gin
+    t.index ["needs_input_since"], name: "index_issues_needs_input_since_active", where: "((paid_state)::text = 'needs_input'::text)"
     t.index ["parent_issue_id"], name: "index_issues_on_parent_issue_id"
     t.index ["project_id", "github_issue_id"], name: "index_issues_on_project_id_and_github_issue_id", unique: true
     t.index ["project_id", "github_number"], name: "index_issues_on_project_id_and_github_number"
@@ -2808,6 +2810,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_25_052711) do
     t.datetime "updated_at", null: false
     t.index ["account_id", "name"], name: "index_service_containers_on_account_id_and_name", unique: true
     t.index ["account_id"], name: "index_service_containers_on_account_id"
+  end
+
+  create_table "solid_cable_messages", force: :cascade do |t|
+    t.binary "channel", null: false
+    t.bigint "channel_hash", null: false
+    t.datetime "created_at", null: false
+    t.binary "payload", null: false
+    t.index ["channel"], name: "index_solid_cable_messages_on_channel"
+    t.index ["channel_hash"], name: "index_solid_cable_messages_on_channel_hash"
+    t.index ["created_at"], name: "index_solid_cable_messages_on_created_at"
   end
 
   create_table "strategies", comment: "Scoped orchestration strategies selected for workflow decisions.", force: :cascade do |t|
@@ -4251,6 +4263,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_25_052711) do
       $function$
   SQL
 
+  create_function :paid_current_account_id, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.paid_current_account_id()
+       RETURNS bigint
+       LANGUAGE sql
+       STABLE
+      AS $function$
+        -- @spec POSTGRESQL-PERSISTENCE-007
+        -- version: 1
+        SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
+      $function$
+  SQL
+
+  create_function :paid_tenant_bypass, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.paid_tenant_bypass()
+       RETURNS boolean
+       LANGUAGE sql
+       STABLE
+      AS $function$
+        -- @spec POSTGRESQL-PERSISTENCE-007
+        -- version: 1
+        SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
+      $function$
+  SQL
+
   create_function :validate_orchestration_decision_strategy_version_scope, sql_definition: <<-'SQL'
       CREATE OR REPLACE FUNCTION public.validate_orchestration_decision_strategy_version_scope()
        RETURNS trigger
@@ -4284,30 +4320,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_25_052711) do
 
         RAISE EXCEPTION 'strategy_version_id must reference a global or same-tenant strategy version';
       END;
-      $function$
-  SQL
-
-  create_function :paid_current_account_id, sql_definition: <<-'SQL'
-      CREATE OR REPLACE FUNCTION public.paid_current_account_id()
-       RETURNS bigint
-       LANGUAGE sql
-       STABLE
-      AS $function$
-        -- @spec POSTGRESQL-PERSISTENCE-007
-        -- version: 1
-        SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
-      $function$
-  SQL
-
-  create_function :paid_tenant_bypass, sql_definition: <<-'SQL'
-      CREATE OR REPLACE FUNCTION public.paid_tenant_bypass()
-       RETURNS boolean
-       LANGUAGE sql
-       STABLE
-      AS $function$
-        -- @spec POSTGRESQL-PERSISTENCE-007
-        -- version: 1
-        SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
       $function$
   SQL
 

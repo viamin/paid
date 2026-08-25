@@ -78,7 +78,7 @@
 
 - [x] **CONTAINER-RUNTIME-009** — The system SHALL define immutable value
   objects (`RunSpec`, `RunnerHandle`, `ExecutionResult`, `NetworkingPolicy`,
-  `ServiceDeclaration`, `ComputeRequirements`) as `Data.define` structures that
+  `ServiceDeclaration`, `ExecutionResources`) as `Data.define` structures that
   consolidate the existing `Containers::Provision::Result` patterns and adapt
   `NetworkPolicy::NetworkContract` without Docker-specific identifiers.
   *Tests:* `spec/services/execution_runners_spec.rb`
@@ -426,12 +426,17 @@
   `ProcessRunQueueJob`
 
 - [x] **CONTAINER-RUNTIME-027** — The provider-neutral execution resource spec
-  SHALL include CPU, memory, and disk request fields, and the system SHALL
-  reject a run whose requested per-execution resources exceed the configured
-  infrastructure maxima before provisioning starts.
+  SHALL include explicit CPU, memory, disk, architecture, and timeout request
+  fields on `ExecutionResources`, and the system SHALL reject a run whose
+  requested per-execution resources exceed the configured infrastructure maxima
+  before provisioning starts. The contract SHALL support named presets
+  (`small`, `standard`, `large`) that expand to explicit tuples before the
+  runner receives the spec, and Docker-specific resource keys SHALL stay out of
+  the runner contract.
   *Tests:* `spec/services/execution_runners_spec.rb`,
+  `spec/services/execution_runners/local_docker_runner_spec.rb`,
   `spec/services/capacity/run_admission_spec.rb`
-  *Code:* `ExecutionRunners::ComputeRequirements`,
+  *Code:* `ExecutionRunners::ExecutionResources`,
   `ExecutionRunners::RunSpec`, `Capacity::RunAdmission`
 
 - [x] **CONTAINER-RUNTIME-028** — The system SHALL expose a coarse,
@@ -568,3 +573,33 @@
   `spec/temporal/activities/provision_browser_container_activity_spec.rb`.
   *Code:* `ExecutionRunners::Base`, `ExecutionRunners::LocalDockerRunner`,
   `AgentRuns::Verification`, `Activities::ProvisionBrowserContainerActivity`.
+
+- [x] **CONTAINER-RUNTIME-035** — When `Containers::ServiceProvisioner`
+  creates a service container (Postgres, Redis, or an account-admin
+  allowlisted image), the system SHALL always apply `no-new-privileges` and
+  drop all Linux capabilities by default. The system SHALL apply a per-image-family
+  hardening profile (`HARDENING_PROFILES`, matched by image-name substring
+  like `RESOURCE_LIMITS`) that declares whether the root filesystem is
+  read-only, the runtime `User`, the Tmpfs mounts for that image's documented
+  writable paths, and the minimum capabilities its entrypoint needs back —
+  e.g. Postgres's official image publishes a `postgres` user and runs
+  correctly without root when `PGDATA` and `/var/run/postgresql` are
+  provisioned with `postgres` ownership, so its profile pins `User=postgres`,
+  keeps the root filesystem read-only, and adds back
+  `CHOWN`/`DAC_OVERRIDE`/`FOWNER`/`SETGID`/`SETUID`. Account admins MAY attach
+  a per-service-container override profile under the reserved
+  `PAID_SERVICE_HARDENING` key in `ServiceContainer#env` to declare
+  `readonly_rootfs`, `user`, `tmpfs`, and `cap_add` for an allowlisted image.
+  An image that does not match a known family and does not declare an override
+  SHALL fall back to `DEFAULT_HARDENING_PROFILE`: `no-new-privileges`, all
+  capabilities dropped, a writable root filesystem preserved for backward
+  compatibility with existing allowlisted images, no added capabilities, and
+  the image's default user preserved. Account-admin control over which images
+  may run at all remains `ServiceContainer#image_in_allowlist`
+  (`UserSetting#allowed_service_images`); this spec governs only the runtime
+  hardening applied to whichever image that allowlist admits.
+  *Tests:* `spec/services/containers/service_provisioner_spec.rb`
+  *Code:* `Containers::ServiceProvisioner::HARDENING_PROFILES`,
+  `Containers::ServiceProvisioner::DEFAULT_HARDENING_PROFILE`,
+  `Containers::ServiceProvisioner#create_docker_container`,
+  `Containers::ServiceProvisioner#hardening_profile_for`

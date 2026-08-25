@@ -11,14 +11,10 @@ class StyleGuideAbTestVariant < ApplicationRecord
   validate :style_guide_ab_test_variant_count_within_limit, on: :create
 
   def record_quality_score!(score)
-    raise ArgumentError, "quality score must be a number between 0 and 1" unless score.is_a?(Numeric) && score.between?(0, 1)
+    Experiments::VariantScoreAggregator::ScoreValidations.validate!(score)
 
     with_lock do
-      score_decimal = BigDecimal(score.to_s)
-      self.sample_count += 1
-      self.total_quality_score = BigDecimal("0") if total_quality_score.nil?
-      self.total_quality_score += score_decimal
-      self.avg_quality_score = total_quality_score / sample_count
+      Experiments::VariantScoreAggregator.increment_for_score!(self, score)
       save!
     end
   end

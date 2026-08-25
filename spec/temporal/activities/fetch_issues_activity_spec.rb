@@ -20,6 +20,7 @@ RSpec.describe Activities::FetchIssuesActivity do
     )
     allow(github_client).to receive(:add_comment)
     allow(github_client).to receive(:add_labels_to_issue)
+    allow(github_client).to receive(:remove_labels_from_issue).and_return({ removed: [], failed: [] })
   end
 
   # Helper: route github_client.issues calls by label (or nil for unlabeled fetches)
@@ -35,6 +36,22 @@ RSpec.describe Activities::FetchIssuesActivity do
       created_at: created_at,
       user: GithubClient::CommentAuthor.new(login: login),
       body: body
+    )
+  end
+
+  def build_enhancement_comment(login:, created_at:, questions:, context: "- Some context")
+    build_comment(
+      login:,
+      created_at:,
+      body: <<~COMMENT
+        <!-- paid:enhance-issue -->
+
+        ## Clarifying questions
+        #{questions.each_with_index.map { |question, index| "#{index + 1}. #{question}" }.join("\n")}
+
+        ## Current context
+        #{context}
+      COMMENT
     )
   end
 
@@ -96,6 +113,27 @@ RSpec.describe Activities::FetchIssuesActivity do
       github_created_at: github_issue.created_at,
       github_updated_at: github_issue.updated_at,
       relationships_parsed_at: relationships_parsed_at)
+  end
+
+  def set_up_reconciled_questionless_issue(project, github_client, updated_issue, labels: nil, refreshed_labels: nil)
+    labels ||= [ project.enhance_issue_needs_input_label_name, "paid-build" ]
+    refreshed_labels ||= labels
+    issue = create(:issue, :needs_input,
+      project: project,
+      github_issue_id: 6010,
+      github_number: 60,
+      labels: labels,
+      needs_input_questions: nil,
+      body: "No clarifying questions here",
+      github_updated_at: 2.days.ago,
+      relationships_parsed_at: nil)
+    project.update_columns(last_issue_reconciliation_at: 2.hours.ago, last_issue_sync_at: 1.day.ago)
+    allow(github_client).to receive(:issues).and_return([ updated_issue ])
+    allow(github_client).to receive(:issues).with(project.full_name, hash_including(state: "open"))
+      .and_return([ OpenStruct.new(number: 60, pull_request: nil) ])
+    allow(github_client).to receive(:issue).with(project.full_name, 60)
+      .and_return(github_issue(60, id: 6010, labels: refreshed_labels))
+    issue
   end
 
   def expect_single_project_show_refresh(project)
@@ -190,6 +228,95 @@ RSpec.describe Activities::FetchIssuesActivity do
           incremental: false,
           error: "queue unavailable"
         )
+      )
+    end
+  end
+
+  describe "#repair_completed_open_issues" do
+    it "parks completed open issues for human closeout when no open PR visibly closes them" do
+      issue = create(:issue, :completed, project: project, github_number: 3441, github_state: "open")
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3583)
+      create(:issue, :pull_request, :closed, project: project, github_number: 3583,
+        body: "Tracks #3441", pr_review_phase: "merged")
+
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(changed).to be true
+      expect(issue.reload.paid_state).to eq("recommend_close")
+      expect(github_client).to have_received(:add_labels_to_issue).with(
+        project.full_name, issue.github_number, [ "paid-recommend-close" ]
+      )
+    end
+
+    it "keeps completed open issues when an open PR visibly closes them" do
+      issue = create(:issue, :completed, project: project, github_number: 3416, github_state: "open")
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3581)
+      create(:issue, :pull_request, project: project, github_number: 3581, body: "Closes #3416")
+
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(changed).to be false
+      expect(issue.reload.paid_state).to eq("completed")
+    end
+
+    it "ignores unrelated open PRs that close the same issue number" do
+      issue = create(:issue, :completed, project: project, github_number: 3441, github_state: "open")
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3583)
+      create(:issue, :pull_request, project: project, github_number: 3581, body: "Closes #3441")
+
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(changed).to be true
+      expect(issue.reload.paid_state).to eq("recommend_close")
+    end
+
+    it "does not let another issue's produced PR keep this issue completed" do
+      issue = create(:issue, :completed, project: project, github_number: 3441, github_state: "open")
+      other_issue = create(:issue, :completed, project: project, github_number: 3442, github_state: "open")
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3583)
+      create(:agent_run, :completed, project: project, issue: other_issue, goal: "create_pr", pull_request_number: 3584)
+      create(:issue, :pull_request, project: project, github_number: 3584, body: "Closes #3441\nCloses #3442")
+
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(changed).to be true
+      expect(issue.reload.paid_state).to eq("recommend_close")
+      expect(other_issue.reload.paid_state).to eq("completed")
+    end
+
+    it "leaves non-PR completed goals alone" do
+      issue = create(:issue, :completed, project: project, github_number: 50, github_state: "open")
+
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(changed).to be false
+      expect(issue.reload.paid_state).to eq("completed")
+    end
+
+    it "keeps completed state when the visible review label cannot be added" do
+      issue = create(:issue, :completed, project: project, github_number: 3441, github_state: "open")
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3583)
+      allow(github_client).to receive(:add_labels_to_issue).and_raise(GithubClient::Error.new("temporary failure"))
+
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(changed).to be false
+      expect(issue.reload.paid_state).to eq("completed")
+    end
+
+    it "reuses the already-resolved sync client for recommend-close labeling" do
+      issue = create(:issue, :completed, project: project, github_number: 3441, github_state: "open")
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3583)
+      create(:issue, :pull_request, :closed, project: project, github_number: 3583,
+        body: "Tracks #3441", pr_review_phase: "merged")
+      allow(project).to receive(:client).and_return(nil)
+
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(changed).to be true
+      expect(issue.reload.paid_state).to eq("recommend_close")
+      expect(github_client).to have_received(:add_labels_to_issue).with(
+        project.full_name, issue.github_number, [ "paid-recommend-close" ]
       )
     end
   end
@@ -500,7 +627,7 @@ RSpec.describe Activities::FetchIssuesActivity do
         stub_issues_by_label(nil => [ github_issue ])
       end
 
-      it "returns a recheck request and suppresses normal label evaluation" do
+      it "returns a recheck request and suppresses normal label evaluation" do # @spec ISSUE-ENHANCEMENT-009
         result = activity.execute(project_id: project.id)
 
         expect(result[:enhance_issue_rechecks]).to contain_exactly(
@@ -584,12 +711,18 @@ RSpec.describe Activities::FetchIssuesActivity do
     end
 
     context "when the enhance_issue needs-input label is still present" do
+      let(:project) do
+        create(:project, :with_github_installation,
+          label_mappings: { "build" => "paid-build", "plan" => "paid-plan" })
+      end
+
       let!(:issue) do
         create(:issue, :needs_input,
           project: project,
           github_issue_id: 9102,
           github_number: 92,
-          labels: [ project.enhance_issue_needs_input_label_name, "paid-build" ])
+          labels: [ project.enhance_issue_needs_input_label_name, "paid-build" ],
+          needs_input_questions: [ "Which behavior should Paid implement?" ])
       end
 
       let(:github_issue) do
@@ -611,6 +744,7 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
 
       before do
+        allow(Github::AppInstallation).to receive(:token_for).and_return("fake-app-installation-token")
         stub_issues_by_label(nil => [ github_issue ])
       end
 
@@ -619,6 +753,53 @@ RSpec.describe Activities::FetchIssuesActivity do
 
         expect(result[:enhance_issue_rechecks]).to be_empty
         expect(result[:issues]).not_to include(hash_including(id: issue.id))
+      end
+
+      it "repairs needs-input issues that have no questions to answer" do
+        issue.update!(needs_input_questions: nil, body: "No clarifying questions here")
+
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload.paid_state).to eq("failed")
+        expect(issue.labels).not_to include(project.enhance_issue_needs_input_label_name)
+        expect(github_client).to have_received(:remove_labels_from_issue).with(
+          project.full_name,
+          issue.github_number,
+          [ project.enhance_issue_needs_input_label_name ]
+        )
+      end
+
+      it "keeps comment-backed clarifying questions in needs-input" do
+        issue.update!(needs_input_questions: nil, body: "No clarifying questions here")
+        allow(github_client).to receive(:issue_comments).with(project.full_name, issue.github_number).and_return([
+          build_enhancement_comment(
+            login: "paid-agents[bot]",
+            created_at: 5.minutes.ago,
+            questions: [ "Which behavior should Paid implement?" ],
+            context: "- Waiting for product direction."
+          )
+        ])
+
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload.paid_state).to eq("needs_input")
+        expect(issue.labels).to include(project.enhance_issue_needs_input_label_name)
+        expect(github_client).not_to have_received(:remove_labels_from_issue).with(
+          project.full_name,
+          issue.github_number,
+          [ project.enhance_issue_needs_input_label_name ]
+        )
+      end
+
+      it "keeps visible needs-input state when invalid label removal fails" do
+        issue.update!(needs_input_questions: nil, body: "No clarifying questions here")
+        allow(github_client).to receive(:remove_labels_from_issue)
+          .and_return({ removed: [], failed: [ { label: project.enhance_issue_needs_input_label_name, error: "api unavailable" } ] })
+
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload.paid_state).to eq("needs_input")
+        expect(issue.labels).to include(project.enhance_issue_needs_input_label_name)
       end
     end
 
@@ -697,6 +878,7 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
 
       it "does not transition when the label is still present" do
+        issue.update!(needs_input_questions: [ "Which behavior should Paid implement?" ])
         github_issue.labels = [
           OpenStruct.new(name: "paid-needs-input"),
           OpenStruct.new(name: "paid-build")
@@ -2343,6 +2525,50 @@ RSpec.describe Activities::FetchIssuesActivity do
           expect(issue.reload.labels).to eq([ "enhancement" ])
         end
 
+        it "repairs reconciled needs-input issues that have no questions to answer" do
+          issue = set_up_reconciled_questionless_issue(project, github_client, updated_issue)
+
+          activity.execute(project_id: project.id)
+
+          expect(issue.reload.paid_state).to eq("failed")
+          expect(issue.labels).not_to include(project.enhance_issue_needs_input_label_name)
+          expect(github_client).to have_received(:remove_labels_from_issue).with(
+            project.full_name,
+            issue.github_number,
+            [ project.enhance_issue_needs_input_label_name ]
+          )
+        end
+
+        it "repairs reconciled questionless needs-input issues after the visible labels are already gone" do
+          issue = set_up_reconciled_questionless_issue(
+            project,
+            github_client,
+            updated_issue,
+            labels: [ "paid-build" ],
+            refreshed_labels: [ "paid-build" ]
+          )
+
+          activity.execute(project_id: project.id)
+
+          expect(issue.reload.paid_state).to eq("failed")
+          expect(issue.labels).to eq([ "paid-build" ])
+          expect(github_client).not_to have_received(:remove_labels_from_issue)
+        end
+
+        it "reuses the already-resolved sync client for questionless needs-input cleanup" do
+          issue = set_up_reconciled_questionless_issue(project, github_client, updated_issue)
+          allow(project).to receive(:client).and_return(github_client, nil)
+
+          activity.execute(project_id: project.id)
+
+          expect(issue.reload.paid_state).to eq("failed")
+          expect(github_client).to have_received(:remove_labels_from_issue).with(
+            project.full_name,
+            issue.github_number,
+            [ project.enhance_issue_needs_input_label_name ]
+          )
+        end
+
         it "continues reconciliation when one open issue fetch fails" do
           issue = create(:issue, project: project, github_issue_id: 6010,
                          github_number: 60, github_state: "open",
@@ -2378,12 +2604,12 @@ RSpec.describe Activities::FetchIssuesActivity do
           }
         end
 
-        it "does not re-fetch issues already reconciled since their last GitHub update" do
+        it "does not re-fetch issues recently reconciled since their last GitHub update" do
           create(:issue, project: project, github_issue_id: 6010,
                  github_number: 60, github_state: "open",
                  labels: [ "enhancement" ],
                  github_updated_at: 2.days.ago,
-                 reconciled_at: 1.hour.ago,
+                 reconciled_at: 30.minutes.ago,
                  relationships_parsed_at: nil)
           allow(github_client).to receive(:issues).and_return([ updated_issue ])
           allow(github_client).to receive(:issues).with(project.full_name, hash_including(state: "open"))
@@ -2393,6 +2619,24 @@ RSpec.describe Activities::FetchIssuesActivity do
           activity.execute(project_id: project.id)
 
           expect(github_client).not_to have_received(:issue).with(project.full_name, 60)
+        end
+
+        it "re-fetches issues reconciled before the reconciliation interval" do
+          issue = create(:issue, project: project, github_issue_id: 6010,
+                         github_number: 60, github_state: "open",
+                         labels: [ "enhancement", "research" ],
+                         github_updated_at: 2.days.ago,
+                         reconciled_at: 2.hours.ago,
+                         relationships_parsed_at: nil)
+          allow(github_client).to receive(:issues).and_return([ updated_issue ])
+          allow(github_client).to receive(:issues).with(project.full_name, hash_including(state: "open"))
+            .and_return([ OpenStruct.new(number: 60, pull_request: nil) ])
+          allow(github_client).to receive(:issue).with(project.full_name, 60)
+            .and_return(github_issue(60, id: 6010, labels: [ "enhancement" ]))
+
+          activity.execute(project_id: project.id)
+
+          expect(issue.reload.labels).to eq([ "enhancement" ])
         end
 
         it "eagerly enqueues reconciled issues when auto-pick is enabled" do

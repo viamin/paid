@@ -750,8 +750,11 @@ RSpec.describe Activities::CreateAgentRunActivity do
       let(:github_client) { instance_double(GithubClient, issue_comments: []) }
 
       let!(:prompt) do
-        Prompt.find_by(slug: "coding.issue_implementation")&.destroy!
-        p = create(:prompt, :global, slug: "coding.issue_implementation")
+        p = Prompt.global.find_or_create_by!(slug: "coding.issue_implementation") do |record|
+          record.name = "Issue implementation"
+          record.category = "coding"
+          record.active = true
+        end
         p.create_version!(
           template: <<~'TEMPLATE'
             Work on {{title}} (#{{issue_number}})
@@ -791,7 +794,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
 
       # @spec POLYGLOT-TEST-003
       it "renders every language's command for a polyglot project at runtime" do
-        project.update!(language_profile: { "test_languages" => [ "ruby", "elixir" ] })
+        project.update!(repo_profile: { "test_languages" => [ "ruby", "elixir" ] })
 
         result = activity.execute(project_id: project.id, issue_id: issue.id)
 

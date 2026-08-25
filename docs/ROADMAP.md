@@ -544,14 +544,14 @@ Deliverables:
 
 **Objective**: Lay groundwork for automatic worker scaling.
 
-**Status**: Complete — `Scaling::WorkerPoolAdvisor` implements hybrid reactive/predictive algorithm with cost caps and cooldown. `Scaling::QueueMonitor` + `QueueMonitorJob` track GoodJob, Temporal, and agent-run queues. `Scaling::Orchestrator` now exposes concrete adapters for Kubernetes, Docker Swarm, ECS, and Docker Compose. Remote container execution is also complete: `Containers::Provision` routes through backend abstractions with `LocalDocker`, `RemoteDocker`, and `Swarm` backends, `container_host` tracking persists backend placement, and operator guides live in `docs/guides/remote-docker-setup.md` and `docs/guides/swarm-setup.md`. Scaling documentation in `docs/SCALING.md`, `docs/runbooks/scaling.md`, `docs/rdrs/RDR-033`, and `docs/rdrs/RDR-019`.
+**Status**: Complete — `Scaling::WorkerPoolAdvisor` implements hybrid reactive/predictive algorithm with cost caps and cooldown. `Scaling::QueueMonitor` + `QueueMonitorJob` track GoodJob, Temporal, and agent-run queues. Remote container execution is also complete: `Containers::Provision` routes through backend abstractions with `LocalDocker`, `RemoteDocker`, and `Swarm` backends, `container_host` tracking persists backend placement, and operator guides live in `docs/guides/remote-docker-setup.md` and `docs/guides/swarm-setup.md`. Scaling documentation in `docs/SCALING.md`, `docs/runbooks/scaling.md`, `docs/rdrs/RDR-033`, and `docs/rdrs/RDR-019`. Live platform-specific worker autoscaling remains deferred until a concrete migration needs it.
 
 Tasks:
 
 - [x] Worker metrics export (#724)
 - [x] Queue depth monitoring (#725)
 - [x] Scaling algorithm design (#726)
-- [x] Integration points for orchestrators (K8s, etc.) (#727)
+- [ ] Live orchestrator integration for a concrete target (K8s, etc.) (#727)
 - [x] Documentation for scaling (#728)
 - [x] Remote container execution across local Docker, remote Docker, and Docker Swarm backends (#2029)
 

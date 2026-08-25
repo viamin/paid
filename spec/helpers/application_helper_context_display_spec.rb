@@ -389,14 +389,24 @@ RSpec.describe ApplicationHelper, :no_db do
       expect(helper.agent_run_goal_text(run)).to eq("Code Review")
     end
 
-    it "returns 'Enhance Issue' for enhance_issue goal" do
+    it "returns 'Issue Enhancement' for enhance_issue goal" do
       run = goal_text_run(goal: "enhance_issue")
-      expect(helper.agent_run_goal_text(run)).to eq("Enhance Issue")
+      expect(helper.agent_run_goal_text(run)).to eq("Issue Enhancement")
     end
 
-    it "returns 'Analyze Issue' for analyze_issue goal" do
+    it "returns 'Issue Analysis' for analyze_issue goal" do
       run = goal_text_run(goal: "analyze_issue")
-      expect(helper.agent_run_goal_text(run)).to eq("Analyze Issue")
+      expect(helper.agent_run_goal_text(run)).to eq("Issue Analysis")
+    end
+
+    it "returns 'LID Planning' for lid_planning goal" do
+      run = goal_text_run(goal: "lid_planning")
+      expect(helper.agent_run_goal_text(run)).to eq("LID Planning")
+    end
+
+    it "returns 'Feature Creation' for create_feature goal" do
+      run = goal_text_run(goal: "create_feature")
+      expect(helper.agent_run_goal_text(run)).to eq("Feature Creation")
     end
 
     it "titleizes unknown goal values" do
@@ -429,6 +439,38 @@ RSpec.describe ApplicationHelper, :no_db do
       result = helper.agent_run_goal_display(run)
 
       expect(result).to include("Some New Goal")
+    end
+  end
+
+  describe "#agent_run_focus_badge" do
+    def focus_run(id:, focus:)
+      Struct.new(:id, :focus, keyword_init: true).new(id: id, focus: focus)
+    end
+
+    it "returns nil for general focus" do
+      run = focus_run(id: 1, focus: "general")
+      expect(helper.agent_run_focus_badge(run)).to be_nil
+    end
+
+    it "returns nil when the run object does not expose focus" do
+      run = Struct.new(:id, keyword_init: true).new(id: 1)
+      expect(helper.agent_run_focus_badge(run)).to be_nil
+    end
+
+    it "returns a badge with the configured label for known non-general focus" do
+      run = focus_run(id: 2, focus: "review_feedback")
+      result = helper.agent_run_focus_badge(run)
+
+      expect(result).to include("Review Feedback")
+      expect(result).to include("bg-violet-100")
+      expect(result).to include('title="Work type: Review Feedback"')
+    end
+
+    it "titleizes unknown focus values into a badge" do
+      run = focus_run(id: 3, focus: "future_focus")
+      result = helper.agent_run_focus_badge(run)
+
+      expect(result).to include("Future Focus")
     end
   end
 end

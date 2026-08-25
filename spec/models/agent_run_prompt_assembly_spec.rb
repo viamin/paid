@@ -35,7 +35,11 @@ RSpec.describe AgentRun do
     end
 
     it "renders the stored prompt version when one was selected at queue time" do
-      prompt_record = create(:prompt, :global, slug: "coding.issue_implementation")
+      prompt_record = Prompt.global.find_or_create_by!(slug: "coding.issue_implementation") do |prompt|
+        prompt.name = "Issue implementation"
+        prompt.category = "coding"
+        prompt.active = true
+      end
       prompt_record.create_version!(
         template: 'Queued template for {{title}} (#{{issue_number}})' \
           "\n\nLint: {{lint_command}}",

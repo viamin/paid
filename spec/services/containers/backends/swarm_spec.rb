@@ -365,6 +365,7 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
       "ReadonlyRootfs" => true,
       "CapAdd" => [ "NET_RAW" ],
       "CapDrop" => [ "ALL" ],
+      "SecurityOpt" => [ "no-new-privileges:true" ],
       "OpenStdin" => false,
       "Tty" => false,
       "HostConfig" => {
@@ -381,6 +382,28 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
         }
       }
     }
+  end
+
+  it "maps capabilities and no-new-privileges from HostConfig when callers use Docker-style nesting" do
+    payload = backend.send(
+      :service_spec,
+      container_config.deep_merge(
+        "CapAdd" => nil,
+        "CapDrop" => nil,
+        "SecurityOpt" => nil,
+        "HostConfig" => {
+          "CapAdd" => [ "NET_RAW" ],
+          "CapDrop" => [ "ALL" ],
+          "SecurityOpt" => [ "no-new-privileges:true" ]
+        }
+      )
+    )
+
+    expect(payload.dig("TaskTemplate", "ContainerSpec", "CapabilityAdd")).to eq([ "NET_RAW" ])
+    expect(payload.dig("TaskTemplate", "ContainerSpec", "CapabilityDrop")).to eq([ "ALL" ])
+    expect(payload.dig("TaskTemplate", "ContainerSpec", "Privileges")).to eq(
+      "NoNewPrivileges" => true
+    )
   end
 
   def expect_service_spec(payload)

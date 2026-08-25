@@ -1635,8 +1635,8 @@ class AgentRun < ApplicationRecord
   #   prior peek_next_queued_run call)
   #
   # Note: if the transaction commits but the subsequent workflow start fails,
-  # ProcessRunQueueJob leaves the workflow id in place when it marks the run
-  # failed so StaleRunDetectorJob can cancel a potentially orphaned workflow.
+  # ProcessRunQueueJob leaves the workflow id in place and keeps the run
+  # claimed so StaleRunDetectorJob can cancel a potentially orphaned workflow.
   def self.claim_next_queued_run(target_id:)
     transaction do
       run = unclaimed.where(id: target_id).lock("FOR UPDATE SKIP LOCKED").first
@@ -2981,6 +2981,13 @@ class AgentRun < ApplicationRecord
     planned_container_host = options.delete(:container_host)
     pool_host_scope = planned_container_host.presence || container_host.presence
 
+    # Resolved up front (not left to RunSpec.from_agent_run) so a warm-pool
+    # claim honors the same owner-setting/profile timeout precedence as a
+    # fresh provision: PoolManager#acquire only forwards an explicitly
+    # supplied timeout_seconds and would otherwise silently fall back to the
+    # 3600s default for pooled runs (CONTAINER-RUNTIME-027).
+    options[:timeout_seconds] = ExecutionRunners::RunSpec.resolve_timeout_seconds(self, options)
+
     pooled_result = acquire_pooled_container(pool_host_scope: pool_host_scope, **options)
     return pooled_result if pooled_result
 
@@ -3270,25 +3277,11 @@ class AgentRun < ApplicationRecord
   end
 
   def normalize_log_content(content)
-    text = content.to_s
-    return text.delete("\x00") if text.encoding == Encoding::UTF_8 && text.valid_encoding?
-
-    text.dup.force_encoding(Encoding::UTF_8).scrub.delete("\x00")
+    ErrorMessageSanitizer.normalize_encoding(content.to_s)
   end
 
   def sanitize_runner_attempt_error_message(message)
-    return nil if message.blank?
-
-    normalized = normalize_log_content(message)
-    redacted = Knowledge::Redaction::Redactor.call(text: normalized).clean_text
-    redacted = redact_runner_attempt_secrets(redacted)
-    redacted.truncate(MAX_RUNNER_ATTEMPT_ERROR_MESSAGE_LENGTH)
-  end
-
-  def redact_runner_attempt_secrets(text)
-    RUNNER_ATTEMPT_SECRET_PATTERNS.reduce(text) do |result, (pattern, replacement)|
-      result.gsub(pattern, replacement)
-    end
+    ErrorMessageSanitizer.call(text: message)
   end
 
   def logs_text(log_type:, limit:)

@@ -9,26 +9,32 @@
   and server-side validation SHALL accept only exact public hostnames and
   leading-wildcard subdomains, rejecting bare/nested/trailing wildcards,
   wildcard TLDs, URL paths, userinfo, inline ports, query strings, fragments,
-  IP literals (private, loopback, link-local, and metadata), localhost names,
-  single-label hosts, out-of-range ports, and schemes other than http/https.
+  IP literals (private, loopback, link-local, and metadata), hostname rules
+  that embed IP literals, localhost names, single-label hosts, out-of-range
+  ports, and schemes other than http/https.
   *Tests:* `spec/models/egress_allowlist_entry_spec.rb`,
   `spec/services/agent_runs/egress_policy/host_pattern_spec.rb`
   *Code:* `EgressAllowlistEntry`, `AgentRuns::EgressPolicy::HostPattern`
 
 - [x] **EGRESS-POLICY-002** — The system SHALL provide a code-owned
   required-destination registry exposing platform destinations (egress
-  gateway, secrets proxy resolved from the run's backend and networking
-  policy via `Containers::ProxyUrl`), GitHub destinations (github.com,
-  api.github.com), and runner/provider destinations, where provider hosts are
-  resolved from the run's runner key (claude → Anthropic, codex → OpenAI,
-  gemini → Google, copilot → GitHub Copilot, openrouter_free /
-  openrouter_pareto → OpenRouter) or its configured direct-outbound API
-  provider, and every container-executable runner key SHALL be classified
-  (fixed-host, config-derived, or explicitly proxy-only) so direct-egress
-  runner traffic never silently drops out of the registry. Registry drift
-  (a pi/omp provider key with no mapped host, or a malformed
-  direct-outbound `base_url`) SHALL raise at resolution rather than
-  silently omitting required destinations from the snapshot.
+  gateway plus the proxy-backed control-plane endpoints the container is told
+  to call: secrets proxy, callback URL, GitHub proxy, and knowledge search
+  proxy, all resolved from the run's backend and networking policy via
+  `Containers::ProxyUrl`), GitHub
+  destinations (github.com, api.github.com), provider-neutral run-local
+  destination categories (`service_container`, `preview_tunnel`) that the
+  resolver materializes later, and runner/provider destinations, where
+  provider hosts are resolved from the run's runner key (claude → Anthropic,
+  codex → OpenAI, gemini → Google, copilot → GitHub Copilot,
+  openrouter_free / openrouter_pareto → OpenRouter) or its configured
+  direct-outbound API provider, and every container-executable runner key
+  SHALL be classified (fixed-host, config-derived, or explicitly proxy-only)
+  so direct-egress runner traffic never silently drops out of the registry.
+  Registry drift (a pi/omp provider key with no mapped host, an unknown
+  run-local category, or a malformed direct-outbound `base_url`) SHALL raise
+  at resolution rather than silently omitting required destinations from the
+  snapshot.
   *Tests:* `spec/services/agent_runs/egress_policy/required_destinations_spec.rb`
   *Code:* `AgentRuns::EgressPolicy::RequiredDestinations`
 
@@ -50,7 +56,10 @@
 - [x] **EGRESS-POLICY-004** — Enabled account entries SHALL be inherited by
   every project run in the account, project entries SHALL extend (never
   replace) the inherited set, and neither scope SHALL be able to remove or
-  shadow a platform-, GitHub-, or provider-required destination.
+  shadow a platform-, GitHub-, provider-, or run-local-required destination
+  (service container, preview tunnel) — including a tenant entry whose host
+  matches a run-local destination resolved only after the allowlist entries
+  are merged.
   *Tests:* `spec/services/agent_runs/egress_policy/resolve_spec.rb`
   *Code:* `AgentRuns::EgressPolicy::Resolve`
 
@@ -91,3 +100,28 @@
   `AgentRuns::EgressPolicy::GatewayAdapters::{Docker,Kubernetes,ManagedMachine}`,
   `ExecutionRunners::Base.gateway_adapter`,
   `ExecutionRunners::LocalDockerRunner`
+
+- [x] **EGRESS-POLICY-008** — The system SHALL expose brokered `research`
+  fetch/search endpoints only to container-authenticated agent runs whose
+  persisted egress-policy snapshot records `egress_profile: "research"`.
+  Locked/default runs, unsupported upstream methods, invalid schemes/hosts,
+  disallowed content types, oversized responses, timeout failures, and
+  redirect chains past the configured cap SHALL be rejected before untrusted
+  content is returned to the caller.
+  *Tests:* `spec/requests/api/proxy/research_spec.rb`
+  *Code:* `Api::Proxy::ResearchController`,
+  `AgentRuns::Research::{AccessPolicy,Fetcher,Search}`
+
+- [x] **EGRESS-POLICY-009** — Before any brokered-research network call, the
+  system SHALL block secret-looking outbound URLs/queries using existing
+  redaction/secret-scan rules where possible plus exact known-secret
+  fingerprints and high-entropy/token-shape checks, recording a redacted
+  security event instead of making the request. Fetched responses SHALL be
+  scanned before prompt injection/storage, redacting or quarantining
+  credential-looking content, wrapping the returned body as quarantined
+  evidence, and enforcing per-run request/byte/token budgets with run-audited
+  accounting.
+  *Tests:* `spec/requests/api/proxy/research_spec.rb`,
+  `spec/services/agent_runs/research/secret_guard_spec.rb`
+  *Code:* `AgentRuns::Research::{BudgetLedger,SecretGuard,ResponseSanitizer}`,
+  `EgressSecurityEvent`, `ExecutionAuditEvents::Lifecycle`

@@ -8,13 +8,13 @@
 - **Status**: Partially Implemented
 - **Type**: Architecture
 - **Priority**: High
-- **Related Issues**: #2845 (closed Phoenix preview/runtime detection work), #2891 (closed project type badge), #3197 (RDR-045 runtime-detection follow-up), #3207 (unified repo language/framework profile), #3208 (container image resolution), #3209 (polyglot test/lint routing), #2844 (closed live preview epic)
+- **Related Issues**: #2845 (closed Phoenix preview/runtime detection work), #2891 (closed project type badge), #3197 (RDR-045 runtime-detection follow-up), #3164 (closed 2026-08-04 reconciliation), #3207 (closed — unified repo language/framework profile), #3208 (closed — container image resolution), #3209 (closed — polyglot test/lint routing), #2844 (closed live preview epic), #3597 (2026-08-23 final validation closeout), #3612 (open — polyglot routing/image resolution read the wrong persisted column), #3613 (open — Docker combo images are never built)
 - **Related RDRs**: [RDR-004](RDR-004-container-isolation.md) (Container Isolation), [RDR-013](RDR-013-code-quality-backpressure.md) (Code Quality Backpressure — Superseded), [RDR-020](RDR-020-service-container-architecture.md) (Service Container Architecture), [RDR-035](RDR-035-style-guide-evolution.md) (Style Guide Evolution), [RDR-045](RDR-045-live-web-app-preview-agent-verification.md) (Live Web App Preview)
-- **Related Tests**: `spec/services/prompts/language_commands_spec.rb`, `spec/services/containers/quality_hooks_spec.rb`, `spec/services/projects/`
+- **Related Tests**: `spec/services/prompts/language_commands_spec.rb`, `spec/services/containers/quality_hooks_spec.rb`, `spec/services/containers/image_resolver_spec.rb`, `spec/services/projects/detect_repo_profile_spec.rb`, `spec/services/projects/repo_profile_spec.rb`, `spec/jobs/enqueue_knowledge_collection_job_spec.rb`
 
 ## Implementation Status
 
-Partially implemented as of Tuesday, August 4, 2026.
+Partially implemented as of Sunday, August 23, 2026 (see [2026-08-23 Closeout](#2026-08-23-closeout) below for the current audit; the July/August history is preserved here for context).
 
 What shipped already:
 
@@ -22,15 +22,18 @@ What shipped already:
 - `Project#detected_language` now normalizes that persisted value for prompt and hook consumers.
 - `Projects::LanguageProfile` and the project-type badge UI ship human-friendly labels such as `Ruby on Rails`, `Phoenix / Elixir`, and `macOS / Swift`.
 - Prompt builders and `Containers::QualityHooks` now read `Project#detected_language` instead of an always-false stub path.
+- `Projects::DetectRepoProfile` (#3207) scans the cloned repo for marker files across all 8 target languages and persists the result to `projects.repo_profile`, with an optional `.paid.yml` manifest override (`Projects::RepoProfileConfig`), hooked into `EnqueueKnowledgeCollectionJob` at import/re-sync time.
+- `LANGUAGE_TEST_COMMANDS` / `LANGUAGE_LINT_COMMANDS` (#3209) now cover all 8 target languages including Elixir (`mix test` / `mix credo --strict`) and Swift (`swift test` / `swift format lint --recursive .`); `DB_DEPENDENT_TEST_LANGUAGES` now includes `elixir` alongside `ruby`.
+- `Containers::QualityHooks` and `Containers::GitOperations#install_git_hooks`/`pre_commit_script` (#3209) support running multiple languages' test/lint commands in sequence in the pre-commit hook.
+- `Containers::ImageResolver` (#3208) computes a base-vs-combo image tag from a project's language set, and all 5 previously hardcoded `"paid-agent:latest"` call sites (`Containers::Provision`, `Containers::ProvisionForChat`, and the 3 `Knowledge::*Runner` services) now resolve through it.
 
 What remains incomplete:
 
-- detection is still only GitHub-primary-language based; there is no shared persisted repo-derived polyglot/framework profile yet
-- test/lint command routing still omits Elixir and Swift and still assumes one language per project
-- `Containers::QualityHooks` still only treats Ruby as DB-dependent and cannot run a polyglot command set
-- execution images are still hardcoded to `paid-agent:latest` with no project/runtime-aware resolver
+- **Critical wiring gap (new finding, 2026-08-23):** `Prompts::LanguageCommands` and `Containers::ImageResolver` read the project's language set from `projects.language_profile`, but the detection service that actually runs in production (`Projects::DetectRepoProfile`) only ever writes `projects.repo_profile` — a separate column added by a different PR in the same follow-up chain. `language_profile` is never populated outside test factories, so polyglot command routing and image-based runtime selection never activate for a real project; both silently fall back to the single detected primary language / base image. Tracked by #3612.
+- Docker language-layer Dockerfiles (`docker/agent/languages/{elixir,go,rust,swift}.dockerfile`) and the build-on-first-use pipeline were never implemented — `Containers::ImageResolver` can resolve a combo tag that no build process in this repository ever produces. Tracked by #3613.
+- The RDR's fuller `.paid.yml` schema (`runtime_versions`, `test_command`, `lint_command`, `setup_steps`) did not ship; only `languages`/`test_languages`/`framework` overrides did. No issue has claimed this scope yet.
 
-Focused follow-up issues now track the remaining gaps: #3207, #3208, and #3209. Because meaningful parts of the RDR have shipped but the execution/runtime path is still incomplete, this RDR should remain **Partially Implemented**, not `Draft`.
+The 2026-08-04 reconciliation (#3164) correctly identified the Phase 1-3 gaps and filed #3207/#3208/#3209 to close them; all three closed with real, tested code. The 2026-08-23 closeout (#3597) found that the individually-shipped pieces do not compose end-to-end: the persisted profile detection writes is not the one command routing and image resolution read. This RDR remains **Partially Implemented**, not `Implemented` — the execution/runtime path is closer than before but still does not work for a real polyglot repo today.
 
 ## Problem Statement
 
@@ -428,3 +431,72 @@ Phase 2 and Phase 4 can proceed in parallel after Phase 1. Phase 3 depends on Ph
 - `ContainerCapture#application_start_command` returns `mix phx.server` for Phoenix project (reads from `language_profile`, not file checks)
 - `Screenshots::DetectFramework` returns Phoenix without performing GitHub API fetch (reads from `language_profile`)
 - Code review bot prompt includes `mix test` for Elixir project (not `bundle exec rspec`)
+
+## 2026-08-23 Closeout
+
+Full audit: [`audit-report-2026-08-23-rdr-046.md`](audit-report-2026-08-23-rdr-046.md).
+Follows the [RDR Closeout Checklist](closeout-checklist.md), run against
+closeout issue [#3597](https://github.com/viamin/paid/issues/3597) now that
+the 2026-08-04 reconciliation (#3164) and its three focused follow-ups
+(#3207, #3208, #3209) are all closed.
+
+**Verified shipped, with code and test evidence** (see the audit report for
+file:line detail):
+
+- Unified detection (`Projects::DetectRepoProfile`) scans for all 8 target
+  languages' marker files, detects framework via the already-local
+  `Screenshots::DetectFramework.detect_framework_only`, supports `.paid.yml`
+  manifest overrides (`Projects::RepoProfileConfig`), and persists to
+  `projects.repo_profile` at import/re-sync time via
+  `EnqueueKnowledgeCollectionJob`.
+- `Project#detected_languages` / `#test_languages` / `#detected_framework`
+  give consumers a single read path over `repo_profile`, falling back to the
+  pre-existing `primary_language` shortcut.
+- The command map covers all 8 languages including Elixir and Swift;
+  `DB_DEPENDENT_TEST_LANGUAGES` includes Elixir alongside Ruby.
+- `Containers::QualityHooks` / `Containers::GitOperations#pre_commit_script`
+  genuinely support running multiple languages' commands in one pre-commit
+  hook.
+- `Containers::ImageResolver` computes correct base-vs-combo image tags with
+  a strict mode for unsupported runtimes, and all 5 previously hardcoded
+  `"paid-agent:latest"` call sites now resolve through it.
+
+**New finding — the shipped pieces do not compose end-to-end.** This audit is
+what the closeout checklist's "issue closed → RDR implemented" anti-pattern
+warning exists for: #3207, #3208, and #3209 each shipped real, tested code
+individually, but nobody verified the *chain* — detection's output flowing
+into command routing and image resolution — against a project that was
+actually detected, only against test doubles/factories that set the consumer
+side directly.
+
+Concretely: `Prompts::LanguageCommands` and `Containers::ImageResolver` both
+read `project.language_profile`, a column that is never written by any
+production code path. `Projects::DetectRepoProfile` (the real detection
+service) writes `project.repo_profile` instead — a different column, added a
+day apart by a different PR in the same follow-up chain, because PR #3258
+(#3209) merged a few hours *before* PR #3252 (#3207) added `repo_profile` to
+`main` that same day. The result: for any real project today, polyglot
+command routing and image-based runtime selection never activate — both
+silently fall back to the single detected primary language and the base
+image, reproducing the original color_matching/`mix test` bug one layer
+downstream of where it used to live. Separately, the Docker combo images
+`Containers::ImageResolver` resolves tags for are never actually built —
+`docker/agent/languages/` does not exist and nothing calls
+`Docker::Image.build`.
+
+**Status decision**: RDR-046 remains **Partially Implemented**, not
+`Implemented`. Two focused child issues are filed for the gaps found by this
+audit (neither carries a `planning` or other auto-pick-skip label):
+
+- [#3612](https://github.com/viamin/paid/issues/3612) — critical: repoint
+  `Prompts::LanguageCommands` and `Containers::ImageResolver` to the
+  project's actual persisted language set (`repo_profile`, via
+  `Project#test_languages`/`#detected_languages`) instead of the dead
+  `language_profile` column, and reconcile or drop the redundant column.
+- [#3613](https://github.com/viamin/paid/issues/3613) — build the Docker
+  combo images (`docker/agent/languages/*.dockerfile`, build-on-first-use
+  pipeline) that `Containers::ImageResolver` already knows how to name.
+
+Closeout issue #3597 is not closed by the PR that lands this audit, because
+RDR-046 is not fully implemented — re-run this closeout once #3612 and #3613
+land.

@@ -63,13 +63,124 @@ module ExecutionRunners
     resolve(backend: nil)
   end
 
-  # Compute resource limits for a workload. Mirrors the provider-neutral
-  # execution request that admission and observability reason about; Docker
-  # runners only consume cpu/memory/pids directly today, while disk_bytes is
-  # used by infrastructure admission and future remote runners.
+  # Provider-neutral execution resource request carried on the runner
+  # contract. Concrete runners translate this to platform-specific resource
+  # controls (Docker quotas, Fly machine sizes, Fargate task sizes, etc.).
   # @spec CONTAINER-RUNTIME-009
   # @spec CONTAINER-RUNTIME-027
-  ComputeRequirements = Data.define(:cpu_quota, :memory_bytes, :disk_bytes, :pids_limit)
+  ExecutionResources = Data.define(
+    :cpu_cores,
+    :memory_mib,
+    :disk_gb,
+    :architecture,
+    :timeout_seconds
+  ) do
+    CPU_QUOTA_PER_CORE = 100_000.0
+    MEBIBYTE = 1024 * 1024
+    GIBIBYTE = 1024 * 1024 * 1024
+    VALID_ARCHITECTURES = %w[x86_64 arm64].freeze
+    PROFILE_PRESETS = {
+      "small" => {
+        cpu_cores: 1.0,
+        memory_mib: 2048,
+        disk_gb: 5,
+        architecture: "x86_64",
+        timeout_seconds: 3600
+      },
+      "standard" => {
+        cpu_cores: 2.0,
+        memory_mib: 4096,
+        disk_gb: 10,
+        architecture: "x86_64",
+        timeout_seconds: 3600
+      },
+      "large" => {
+        cpu_cores: 4.0,
+        memory_mib: 8192,
+        disk_gb: 20,
+        architecture: "x86_64",
+        timeout_seconds: 3600
+      }
+    }.freeze
+
+    def self.profile_names
+      PROFILE_PRESETS.keys
+    end
+
+    def self.profile(name)
+      preset = PROFILE_PRESETS.fetch(name.to_s) do
+        raise ArgumentError, "Unknown execution resource profile: #{name.inspect}"
+      end
+      new(**preset)
+    end
+
+    # Timeout carried by a named profile preset, or nil when +profile_name+
+    # is blank or unknown. Unknown names still raise from {.profile} when the
+    # preset expands, so this lookup stays permissive.
+    def self.profile_timeout(profile_name)
+      PROFILE_PRESETS.dig(profile_name.to_s, :timeout_seconds)
+    end
+
+    def self.build(profile_name: nil, cpu_cores: nil, memory_mib: nil, disk_gb: nil, architecture: nil, timeout_seconds: nil)
+      preset = profile_name.present? ? profile(profile_name).to_h : {}
+      new(
+        cpu_cores: positive_float(cpu_cores) || preset[:cpu_cores],
+        memory_mib: positive_integer(memory_mib) || preset[:memory_mib],
+        disk_gb: positive_integer(disk_gb) || preset[:disk_gb],
+        architecture: normalize_architecture(architecture || preset[:architecture]),
+        timeout_seconds: positive_integer(timeout_seconds) || preset[:timeout_seconds]
+      )
+    end
+
+    def self.from_legacy(cpu_quota:, memory_bytes:, disk_bytes:, architecture:, timeout_seconds:, profile_name: nil)
+      build(
+        profile_name: profile_name,
+        cpu_cores: cpu_quota.to_f / CPU_QUOTA_PER_CORE,
+        memory_mib: (memory_bytes.to_f / MEBIBYTE).ceil,
+        disk_gb: (disk_bytes.to_f / GIBIBYTE).ceil,
+        architecture: architecture,
+        timeout_seconds: timeout_seconds
+      )
+    end
+
+    def cpu_quota
+      (cpu_cores.to_f * CPU_QUOTA_PER_CORE).round
+    end
+
+    def memory_bytes
+      memory_mib.to_i * MEBIBYTE
+    end
+
+    def disk_bytes
+      disk_gb.to_i * GIBIBYTE
+    end
+
+    class << self
+      private
+
+      def positive_integer(value)
+        integer = value.to_i
+        integer if integer.positive?
+      end
+
+      def positive_float(value)
+        float = value.to_f
+        float if float.positive?
+      end
+
+      def normalize_architecture(value)
+        normalized = case value.to_s
+        when "amd64", "x86_64" then "x86_64"
+        when "arm64", "aarch64" then "arm64"
+        else
+          value.to_s.presence
+        end
+        return normalized if normalized.in?(VALID_ARCHITECTURES)
+
+        "x86_64"
+      end
+    end
+  end
 
   # A writable directory inside the workload. A Docker runner translates this
   # to a tmpfs mount; a remote runner translates it to ephemeral disk or
@@ -339,7 +450,7 @@ module ExecutionRunners
     :project,            # Project context
     :image,              # Workload image (final resolved reference)
     :command,            # Agent command to execute
-    :resources,          # ComputeRequirements (cpu, memory, pids)
+    :resources,          # ExecutionResources (cpu, memory, disk, arch, timeout)
     :environment,        # Hash of env vars
     :networking_policy,  # NetworkingPolicy (restricted vs. direct)
     :ingress_policy,     # IngressPolicy (default deny + scoped exceptions)
@@ -377,18 +488,26 @@ module ExecutionRunners
     # internals that used to be the only place this ran.
     # @param agent_run [AgentRun]
     # @param networking_policy [NetworkingPolicy, nil] required networking policy
-    # @param options [Hash] container options (memory_bytes, cpu_quota, etc.)
+    # @param options [Hash] provider-neutral resource overrides
     # @return [RunSpec]
     def self.from_agent_run(agent_run, networking_policy: nil, **options)
       workspace = workspace_strategy_for(agent_run)
       requested_resources = Capacity::RequestedResources.for_agent_run(agent_run)
-      resources = ComputeRequirements.new(
-        cpu_quota: positive_numeric_option(options[:cpu_quota]) || requested_resources[:cpu_quota],
-        memory_bytes: positive_numeric_option(options[:memory_bytes]) || requested_resources[:memory_bytes],
-        disk_bytes: positive_numeric_option(options[:disk_bytes]) || requested_resources[:disk_bytes],
-        pids_limit: positive_numeric_option(options[:pids_limit]) || Containers::Provision::DEFAULTS[:pids_limit]
-      )
       selection = resolve_runtime_image_selection(agent_run, requested_image: options[:image])
+      profile_name = profile_name_for(agent_run, options, requested_resources: requested_resources)
+      resources = ExecutionResources.from_legacy(
+        cpu_quota: legacy_resource_option(
+          options[:cpu_quota],
+          options[:cpu_cores],
+          requested_resources[:cpu_quota],
+          scale: 100_000
+        ),
+        memory_bytes: legacy_resource_option(options[:memory_bytes], options[:memory_mib], requested_resources[:memory_bytes], scale: 1024 * 1024),
+        disk_bytes: legacy_resource_option(options[:disk_bytes], options[:disk_gb], requested_resources[:disk_bytes], scale: 1024 * 1024 * 1024),
+        architecture: options[:architecture] || selection.metadata["architecture"],
+        timeout_seconds: resolve_timeout_seconds(agent_run, options, profile_name: profile_name),
+        profile_name: profile_name
+      )
 
       new(
         agent_run: agent_run,
@@ -406,9 +525,47 @@ module ExecutionRunners
       )
     end
 
-    def self.positive_numeric_option(value)
-      value if value.to_i.positive?
+    # Resolves the named resource profile the same way {.from_agent_run} does,
+    # without requiring a runtime image selection or full resource tuple.
+    # Exposed so callers that need the timeout ahead of a full +RunSpec+ (the
+    # warm-pool claim path, which happens before +.from_agent_run+ runs) can
+    # derive the same profile precedence.
+    def self.profile_name_for(agent_run, options, requested_resources: Capacity::RequestedResources.for_agent_run(agent_run))
+      options[:resource_profile] || requested_resources[:profile]
     end
+
+    # Resolves the timeout {.from_agent_run} would apply: an explicit
+    # override, then the named profile's timeout (a profile expands to the
+    # full resource tuple, timeout included), then the owner/default timeout.
+    # Exposed as a public entry point so +AgentRun#provision_via_runner+ can
+    # resolve it before the warm-pool claim and pass it into
+    # +Containers::PoolManager#acquire+,
+    # which only forwards an explicitly supplied +timeout_seconds+ and would
+    # otherwise silently apply the 3600s default to pooled claims that should
+    # honor an owner setting or resource profile.
+    # @spec CONTAINER-RUNTIME-027
+    def self.resolve_timeout_seconds(agent_run, options, profile_name: profile_name_for(agent_run, options))
+      positive_numeric_option(options[:timeout_seconds]) ||
+        ExecutionResources.profile_timeout(profile_name) ||
+        timeout_seconds_for(agent_run)
+    end
+
+    def self.positive_numeric_option(value)
+      # Coerce Strings (common for params/JSON payloads, e.g. cpu_cores: "0.5")
+      # to a Float so callers that scale the result (+legacy_resource_option+)
+      # multiply a number rather than repeating the raw string. Numeric
+      # callers (+cpu_quota+, +memory_bytes+, +disk_bytes+, +timeout_seconds+)
+      # pass through unchanged so integers round-trip exactly.
+      numeric = value.is_a?(Numeric) ? value : value.to_s.to_f
+      numeric if numeric.positive?
+    end
+
+    def self.legacy_resource_option(legacy_value, modern_value, fallback, scale: 1)
+      positive_numeric_option(legacy_value) ||
+        (positive_numeric_option(modern_value)&.*(scale)) ||
+        fallback
+    end
+    private_class_method :legacy_resource_option
 
     # Resolves the run's final runtime image identity, reusing a selection
     # already recorded on the run (a Temporal retry rebuilding the same spec
@@ -443,6 +600,12 @@ module ExecutionRunners
       WorkspaceStrategy.named_volume
     end
     private_class_method :workspace_strategy_for
+
+    def self.timeout_seconds_for(agent_run)
+      owner_timeout = agent_run.project&.effective_owner&.settings&.container_timeout_seconds
+      positive_numeric_option(owner_timeout) || Containers::Provision::DEFAULTS[:timeout_seconds]
+    end
+    private_class_method :timeout_seconds_for
 
     # @spec CONTAINER-RUNTIME-018
     def input_manifest

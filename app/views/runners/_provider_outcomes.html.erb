@@ -25,7 +25,7 @@
         </div>
 
         <div class="space-y-6">
-          <% provider_outcome_stats.each do |entry| %>
+          <% provider_outcome_stats.each_with_index do |entry, index| %>
             <div class="rounded-md border border-gray-100 bg-gray-50 p-4">
               <div class="mb-3 flex flex-wrap items-baseline gap-4">
                 <h3 class="text-sm font-semibold text-gray-900"><%= entry[:provider] %></h3>
@@ -53,8 +53,8 @@
               <% end %>
 
               <%# Stacked column chart %>
-              <%= column_chart entry[:series],
-                    id: "provider-outcomes-#{entry[:provider]}",
+              <%= dashboard_chartkick_chart "ColumnChart", entry[:series],
+                    id: "provider-outcomes-chart-#{index}",
                     stacked: true,
                     height: "200px",
                     colors: entry[:colors],

@@ -29,6 +29,15 @@ RSpec.describe "Projects::ClarifyingQuestions" do
     allow(GithubClient).to receive(:new).and_return(github_client)
   end
 
+  def dashboard_queue_path_for(project)
+    dashboard_inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
+  end
+
+  def dashboard_queue_params(project)
+    path = dashboard_queue_path_for(project)
+    { queue: "dashboard_inbox", queue_project_id: project.id, return_to: path }
+  end
+
   describe "GET /projects/:project_id/issues/:issue_id/clarifying_questions" do
     context "when enhancement comment with clarifying questions exists" do
       before do
@@ -118,12 +127,12 @@ RSpec.describe "Projects::ClarifyingQuestions" do
         project.update!(auto_pick_enabled: true, active: true)
 
         get project_issue_clarifying_questions_path(project, issue), params: {
-          queue: "dashboard_needs_input",
+          queue: "dashboard_inbox",
           queue_project_id: project.id,
           return_to: "//evil.example/path"
         }
 
-        expect(response).to redirect_to(dashboard_needs_input_path(project_id: project.id))
+        expect(response).to redirect_to(dashboard_inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND))
       end
     end
   end
@@ -180,41 +189,39 @@ RSpec.describe "Projects::ClarifyingQuestions" do
 
       it "redirects to the next queued issue when opened from the dashboard queue" do
         project.update!(auto_pick_enabled: true, active: true)
-        next_issue = create(:issue, :needs_input, project: project, github_number: issue.github_number + 1,
+        create(:issue, :needs_input, project: project, github_number: issue.github_number + 1, body: "Needs manual retry")
+        next_issue = create(:issue, :needs_input, project: project, github_number: issue.github_number + 2,
           needs_input_questions: [ "What should happen next?" ])
-        return_to = dashboard_needs_input_path(project_id: project.id)
+        queue_params = dashboard_queue_params(project)
 
         post project_issue_clarifying_questions_path(project, issue), params: {
           questions: questions,
           answers: answers,
-          queue: "dashboard_needs_input",
-          queue_project_id: project.id,
-          return_to: return_to
+          **queue_params
         }
 
         expect(response).to redirect_to(
           project_issue_clarifying_questions_path(
             project,
             next_issue,
-            queue: "dashboard_needs_input",
-            queue_project_id: project.id,
-            return_to: return_to
+            **queue_params
           )
         )
       end
 
       it "returns to the dashboard queue when the queue is exhausted" do
         project.update!(auto_pick_enabled: true, active: true)
+        queue_return_to = dashboard_queue_path_for(project)
 
         post project_issue_clarifying_questions_path(project, issue), params: {
           questions: questions,
           answers: answers,
-          queue: "dashboard_needs_input",
+          queue: "dashboard_inbox",
           queue_project_id: project.id,
-          return_to: dashboard_needs_input_path(project_id: project.id)
+          return_to: queue_return_to
         }
 
-        expect(response).to redirect_to(dashboard_needs_input_path(project_id: project.id))
+        expect(response).to redirect_to(queue_return_to)
       end
 
       it "falls back to the validated dashboard queue path when return_to is unsafe" do
@@ -223,23 +230,23 @@ RSpec.describe "Projects::ClarifyingQuestions" do
         post project_issue_clarifying_questions_path(project, issue), params: {
           questions: questions,
           answers: answers,
-          queue: "dashboard_needs_input",
+          queue: "dashboard_inbox",
           queue_project_id: project.id,
           return_to: "https://evil.example/path"
         }
 
-        expect(response).to redirect_to(dashboard_needs_input_path(project_id: project.id))
+        expect(response).to redirect_to(dashboard_inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND))
       end
 
       it "preserves the validated queue return target when posting fails" do
         project.update!(auto_pick_enabled: true, active: true)
-        return_to = dashboard_needs_input_path(project_id: project.id)
+        return_to = dashboard_inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
         allow(github_client).to receive(:add_comment).and_raise(GithubClient::Error, "boom")
 
         post project_issue_clarifying_questions_path(project, issue), params: {
           questions: questions,
           answers: answers,
-          queue: "dashboard_needs_input",
+          queue: "dashboard_inbox",
           queue_project_id: project.id,
           return_to: return_to
         }
@@ -248,7 +255,7 @@ RSpec.describe "Projects::ClarifyingQuestions" do
           project_issue_clarifying_questions_path(
             project,
             issue,
-            queue: "dashboard_needs_input",
+            queue: "dashboard_inbox",
             queue_project_id: project.id,
             return_to: return_to
           )
@@ -271,12 +278,12 @@ RSpec.describe "Projects::ClarifyingQuestions" do
         post project_issue_clarifying_questions_path(project, issue), params: {
           questions: questions,
           answers: answers,
-          queue: "dashboard_needs_input",
+          queue: "dashboard_inbox",
           queue_project_id: other_project.id,
-          return_to: dashboard_needs_input_path(project_id: other_project.id)
+          return_to: dashboard_inbox_path(project_id: other_project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
         }
 
-        expect(response).to redirect_to(dashboard_needs_input_path(project_id: other_project.id))
+        expect(response).to redirect_to(dashboard_inbox_path(project_id: other_project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND))
       end
     end
 

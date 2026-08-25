@@ -110,21 +110,26 @@ module Containers
     end
 
     # Reads the project's detected language set, mirroring the precedence used
-    # by +Prompts::LanguageCommands+: the persisted +language_profile+ test
-    # languages take priority, then the broader +languages+ list, then the
-    # single detected primary language as a final fallback.
+    # by +Prompts::LanguageCommands+: +Project#test_languages+ takes priority,
+    # then +Project#detected_languages+, then the single detected primary
+    # language as a final fallback.
     def detected_languages
       @detected_languages ||= begin
-        langs = profile_languages.presence || primary_language_array
+        langs = test_language_array.presence || detected_language_array.presence || primary_language_array
         langs.map { |language| language.to_s.strip.downcase }.reject(&:blank?).uniq
       end
     end
 
-    def profile_languages
-      profile = project.language_profile if project.respond_to?(:language_profile)
-      return [] unless profile.is_a?(Hash)
+    def test_language_array
+      return [] unless project.respond_to?(:test_languages)
 
-      Array(profile["test_languages"].presence || profile["languages"])
+      Array(project.test_languages)
+    end
+
+    def detected_language_array
+      return [] unless project.respond_to?(:detected_languages)
+
+      Array(project.detected_languages)
     end
 
     def primary_language_array

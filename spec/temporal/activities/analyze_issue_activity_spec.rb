@@ -344,6 +344,40 @@ RSpec.describe Activities::AnalyzeIssueActivity do
         activity.execute(agent_run_id: agent_run.id)
       }.to raise_error(Temporalio::Error::ApplicationError, "No LLM provider produced an issue analysis")
     end
+
+    # @spec ISSUE-ANALYSIS-009
+    # Regression coverage for the 2026-08-24 issue-analysis provider outage
+    # (#3643, viamin/agent-harness#367): before agent-harness 0.36.8, the
+    # Claude CLI's "Not logged in · Please run /login" JSON envelope was
+    # surfaced as a generic unsuccessful Response, so the failover loop
+    # rescued it under AgentHarness::Error and only burned one of the
+    # owner's generic failure-threshold counts per attempt. 0.36.8 raises
+    # AgentHarness::AuthenticationError directly from the provider's
+    # parse_response for that envelope, which AnalyzeIssueActivity#call_llm
+    # catches and immediately opens the failing provider's circuit breaker
+    # (threshold: 1, ISSUE-ANALYSIS-009) before moving on. This spec proves
+    # the loop end-to-end: claude (primary) raises AuthenticationError,
+    # codex (fallback) returns the analysis, and the caller observes the
+    # healthy provider's response — not a generic provider-exhaustion error.
+    it "opens the failing provider's breaker immediately and returns the next provider's response when claude raises AuthenticationError" do
+      # Drop the outer block's rate-limit on claude — for this spec the
+      # issue-analysis provider list must contain claude so we can prove
+      # the failover loop catches the new AuthenticationError and keeps
+      # going to codex instead of pretending claude was already
+      # unavailable.
+      owner.runner_states.where(runner_name: "claude").destroy_all
+      owner.settings.update!(issue_analysis_runner: "claude", issue_analysis_fallback_runners: [ "codex" ])
+
+      attempted = stub_not_logged_in_failover!
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      # Failover loop tried both providers and returned the healthy one.
+      expect(attempted).to eq([ :claude, :codex ])
+      expect(result).to include(agent_run_id: agent_run.id, sufficient_context: true)
+      expect_circuit_open_after_auth!(owner, runner_name: "claude")
+      expect_breaker_untouched!(owner, runner_name: "codex")
+    end
   end
 
   describe "provider rate limiting" do
@@ -435,6 +469,106 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       # second run's candidate list is empty because "claude" is still
       # circuit-broken, so it never reaches AgentHarness at all.
       expect(AgentHarness).to have_received(:send_message).once
+    end
+  end
+
+  describe "unsuccessful provider responses" do
+    # Reproduces #3639: CLI-backed providers (Codex, OpenCode, and claude
+    # outside text mode) normally report a failure as a Response with
+    # success? == false and a nonzero exit code, not as a raised exception.
+    # Before the fix, response_failed? logged this and moved to the next
+    # provider without ever touching the circuit breaker.
+    def failed_response(error:, exit_code: 1)
+      instance_double(AgentHarness::Response, success?: false, error: error, exit_code: exit_code)
+    end
+
+    # @spec ISSUE-ANALYSIS-007
+    it "records a circuit-breaker failure for a nonzero-exit unsuccessful response" do
+      allow(AgentHarness).to receive(:send_message).and_return(failed_response(error: "unexpected internal error"))
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError, "No LLM provider produced an issue analysis")
+
+      runner_state = project.effective_owner.settings.user.runner_states.find_by(runner_name: "claude")
+      expect(runner_state).to be_present
+      expect(runner_state.failure_count).to eq(1)
+      expect(runner_state.circuit_state).to eq("closed")
+    end
+
+    # @spec ISSUE-ANALYSIS-007
+    it "opens the circuit once repeated unsuccessful responses reach the configured threshold" do
+      user_setting = project.effective_owner.settings
+      user_setting.update!(circuit_breaker_failure_threshold: 2)
+      allow(AgentHarness).to receive(:send_message).and_return(failed_response(error: "unexpected internal error"))
+
+      expect { activity.execute(agent_run_id: agent_run.id) }.to raise_error(Temporalio::Error::ApplicationError)
+
+      second_issue = create(:issue, :in_progress,
+        project: project, github_number: 43, title: "Second issue", body: "More context needed")
+      second_run = create(:agent_run, project: project, issue: second_issue, goal: "analyze_issue")
+      allow(client).to receive(:issue_comments).with(project.full_name, second_issue.github_number).and_return([])
+
+      expect {
+        activity.execute(agent_run_id: second_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError)
+
+      runner_state = user_setting.user.runner_states.find_by(runner_name: "claude")
+      expect(runner_state.failure_count).to eq(2)
+      expect(runner_state.circuit_state).to eq("open")
+    end
+
+    # @spec ISSUE-ANALYSIS-006 ISSUE-ANALYSIS-007
+    it "parks the run as rate_limited when an unsuccessful response is rate-limit-shaped" do
+      reset_at = 5.minutes.from_now.change(usec: 0)
+      allow(AgentHarness).to receive(:send_message).and_return(
+        failed_response(error: "429 Too Many Requests")
+      )
+      allow(RunnerSupport).to receive(:rate_limit_reset_at).and_return(reset_at)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("RateLimit")
+      }
+
+      agent_run.reload
+      expect(agent_run.status).to eq("rate_limited")
+      expect(agent_run.rate_limited_until).to eq(reset_at)
+
+      runner_state = project.effective_owner.settings.user.runner_states.find_by(runner_name: "claude")
+      expect(runner_state.rate_limited?).to be(true)
+      expect(runner_state.failure_count).to eq(0)
+    end
+
+    # @spec ISSUE-ANALYSIS-009
+    it "opens the circuit immediately for an unsuccessful response classified as an authentication failure" do
+      allow(AgentHarness).to receive(:send_message).and_return(
+        failed_response(error: "401 Unauthorized: invalid API key")
+      )
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError, "No LLM provider produced an issue analysis")
+
+      runner_state = project.effective_owner.settings.user.runner_states.find_by(runner_name: "claude")
+      expect(runner_state.circuit_state).to eq("open")
+      expect(runner_state.failure_count).to eq(1)
+    end
+
+    # @spec ISSUE-ANALYSIS-009
+    it "opens the circuit immediately for a raised AgentHarness::AuthenticationError" do
+      allow(AgentHarness).to receive(:send_message).and_raise(
+        AgentHarness::AuthenticationError.new("invalid credentials", provider: "claude")
+      )
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError, "No LLM provider produced an issue analysis")
+
+      runner_state = project.effective_owner.settings.user.runner_states.find_by(runner_name: "claude")
+      expect(runner_state.circuit_state).to eq("open")
+      expect(runner_state.failure_count).to eq(1)
     end
   end
 
@@ -572,5 +706,37 @@ RSpec.describe Activities::AnalyzeIssueActivity do
         chunk_type: "definition",
         content: "Route: POST /audit_logs records user actions for compliance reporting")
     end
+  end
+
+  # Stub the agent-harness "Not logged in" envelope regression path adopted
+  # for #3643 (viamin/agent-harness#367): claude raises AuthenticationError,
+  # codex returns the LLM response. Returns the order in which providers
+  # were attempted so the caller can assert the failover loop iterated.
+  def stub_not_logged_in_failover!
+    attempted = []
+    allow(AgentHarness).to receive(:send_message) do |_, **opts|
+      attempted << opts[:provider]
+      case opts[:provider]
+      when :claude
+        raise AgentHarness::AuthenticationError.new("Not logged in · Please run /login", provider: "claude")
+      when :codex
+        llm_response
+      end
+    end
+    attempted
+  end
+
+  def expect_circuit_open_after_auth!(user, runner_name:)
+    state = user.runner_states.find_by(runner_name: runner_name)
+    expect(state).to be_present
+    expect(state.circuit_state).to eq("open")
+    expect(state.failure_count).to eq(1)
+  end
+
+  def expect_breaker_untouched!(user, runner_name:)
+    state = user.runner_states.find_by(runner_name: runner_name)
+    expect(state).to be_present
+    expect(state.circuit_state).to eq("closed")
+    expect(state.failure_count).to eq(0)
   end
 end

@@ -57,6 +57,7 @@ Rails.application.routes.draw do
   get "dashboard/auth_health", to: "dashboard#auth_health", as: :dashboard_auth_health
   get "dashboard/knowledge_stats", to: "dashboard#knowledge_stats", as: :dashboard_knowledge_stats
   get "dashboard/pr_cycle_time", to: "dashboard#pr_cycle_time", as: :dashboard_pr_cycle_time
+  get "dashboard/inbox", to: "dashboard#inbox", as: :dashboard_inbox
   get "dashboard/needs_input", to: "dashboard#needs_input", as: :dashboard_needs_input
   post "dashboard/cancel_run/:id", to: "dashboard#cancel_run", as: :dashboard_cancel_run
 
@@ -348,6 +349,8 @@ Rails.application.routes.draw do
     match "proxy/google/*path", to: "secrets_proxy#google", via: :post, format: false
     match "proxy/github/*path", to: "github_proxy#proxy", via: [ :get, :post, :patch ], format: false
     get "proxy/knowledge/search", to: "proxy/knowledge_search#search"
+    get "proxy/research/fetch", to: "proxy/research#fetch"
+    get "proxy/research/search", to: "proxy/research#search"
     get "proxy/git-credentials", to: "git_credentials#show"
 
     get "knowledge/search", to: "knowledge_search#search"
