@@ -270,10 +270,15 @@ resolution, the scoped prompt section, and focus-weighted quality scoring. This
 segment owns the finding and the trigger; that segment owns how a focused run
 is shaped, and it takes the cascade.
 
-The evidence the prompt needs — route, metric, before/after values, sample
-spread, changed files — is persisted on the finding and copied onto the queued
-run's metadata, so the prompt is built from a stable record rather than
-re-measuring or re-querying at prompt time.
+The evidence the prompt needs — route name, route path, metric, before/after
+values, sample spread, changed files — is persisted on the finding and copied
+onto the queued run's metadata, so the prompt is built from a stable record
+rather than re-measuring or re-querying at prompt time. The scanner threads the
+selected trigger's evidence through `Automation::Decision.queue_create_pr_run`
+and the workflow forwards it as `focus_evidence` to the queue activity, so
+when a pull request carries multiple actionable findings the activity scopes
+the lookup by route name and increments the finding that actually triggered
+the run rather than re-selecting by `updated_at`.
 
 ### One finding per route
 

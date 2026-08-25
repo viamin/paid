@@ -4,6 +4,7 @@ require "rails_helper"
 require Rails.root.join("db/migrate/20260824021817_create_page_load_measurements")
 require Rails.root.join("db/migrate/20260824021819_create_page_load_regression_findings")
 require Rails.root.join("db/migrate/20260825015920_add_followup_attempts_to_page_load_regression_findings")
+require Rails.root.join("db/migrate/20260825052711_add_route_path_to_page_load_regression_findings")
 
 RSpec.describe CreatePageLoadMeasurements, :aggregate_failures do
   self.use_transactional_tests = false
@@ -12,6 +13,7 @@ RSpec.describe CreatePageLoadMeasurements, :aggregate_failures do
   let(:measurements_migration) { described_class.new }
   let(:findings_migration) { CreatePageLoadRegressionFindings.new }
   let(:attempts_migration) { AddFollowupAttemptsToPageLoadRegressionFindings.new }
+  let(:route_path_migration) { AddRoutePathToPageLoadRegressionFindings.new }
 
   around do |example|
     ActiveRecord::Migration.suppress_messages do
@@ -52,6 +54,15 @@ RSpec.describe CreatePageLoadMeasurements, :aggregate_failures do
     expect(index.where).to include("open")
   end
 
+  # @spec PAGE-LOAD-FOLLOWUP-004
+  it "stores the regressed route's path on findings" do
+    column = connection.columns(:page_load_regression_findings).find { |c| c.name == "route_path" }
+
+    expect(column).not_to be_nil
+    expect(column.type).to eq(:string)
+    expect(column.limit).to eq(2048)
+  end
+
   private
 
   # Every migration that touches these tables replays here, not just the two
@@ -61,10 +72,12 @@ RSpec.describe CreatePageLoadMeasurements, :aggregate_failures do
     measurements_migration.up
     findings_migration.up
     attempts_migration.migrate(:up)
+    route_path_migration.migrate(:up)
     reset_column_information!
   end
 
   def teardown!
+    route_path_migration.migrate(:down) if connection.column_exists?(:page_load_regression_findings, :route_path)
     findings_migration.down if connection.table_exists?(:page_load_regression_findings)
     measurements_migration.down if connection.table_exists?(:page_load_measurements)
     reset_column_information!

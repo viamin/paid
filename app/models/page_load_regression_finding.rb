@@ -52,6 +52,7 @@ class PageLoadRegressionFinding < ApplicationRecord
   def evidence
     {
       "route_name" => route_name,
+      "route_path" => route_path,
       "comparison_metric" => comparison_metric,
       "baseline_ms" => baseline_ms,
       "current_ms" => current_ms,

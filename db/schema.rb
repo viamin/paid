@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_25_015920) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_25_052711) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1490,7 +1490,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_25_015920) do
     t.datetime "merge_permission_rejected_at", comment: "When non-null, the most recent auto-merge attempt was rejected by GitHub because the App installation token lacks a required permission (e.g. `workflows` for a change under .github/workflows/). Such rejections are permanent until the App's permissions change, so this timestamp gates a retry cooldown instead of re-attempting every poll cycle."
     t.text "merge_permission_rejection_reason", comment: "Raw error message from the most recent merge-time GitHub App permission rejection, for operator visibility."
     t.jsonb "needs_input_questions", comment: "Parsed clarifying questions persisted when a needs-input comment is posted, so the dashboard queue can render without a per-issue GitHub API round-trip"
-    t.datetime "needs_input_since", comment: "When this issue entered paid_state \"needs_input\". Cleared when it leaves. Used by Inbox::Queue to order oldest-waiting-first and to render \"waiting Xh\" labels."
     t.datetime "operational_failure_reset_at"
     t.string "paid_state", default: "new", null: false
     t.bigint "parent_issue_id"
@@ -1516,7 +1515,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_25_015920) do
     t.index ["github_creator_login"], name: "index_issues_on_github_creator_login"
     t.index ["labels"], name: "index_issues_on_labels_gin_open_issues", where: "((is_pull_request = false) AND ((github_state)::text = 'open'::text))", using: :gin
     t.index ["labels"], name: "index_issues_on_labels_gin_open_prs", where: "((is_pull_request = true) AND ((github_state)::text = 'open'::text))", using: :gin
-    t.index ["needs_input_since"], name: "index_issues_needs_input_since_active", where: "((paid_state)::text = 'needs_input'::text)"
     t.index ["parent_issue_id"], name: "index_issues_on_parent_issue_id"
     t.index ["project_id", "github_issue_id"], name: "index_issues_on_project_id_and_github_issue_id", unique: true
     t.index ["project_id", "github_number"], name: "index_issues_on_project_id_and_github_number"
@@ -1972,7 +1970,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_25_015920) do
     t.integer "current_ms", null: false
     t.integer "delta_ms", null: false
     t.decimal "delta_ratio", precision: 8, scale: 4, null: false
-    t.integer "followup_attempts", default: 0, null: false, comment: "Follow-up runs queued for this finding. Caps automated retries so a regression the agent cannot fix stops consuming runner budget."
     t.bigint "project_id", null: false
     t.integer "pull_request_number", null: false
     t.datetime "resolved_at"
@@ -1985,8 +1982,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_25_015920) do
     t.index ["project_id", "pull_request_number", "route_name"], name: "idx_page_load_findings_one_open_per_route", unique: true, where: "((status)::text = 'open'::text)"
     t.index ["project_id", "pull_request_number", "status"], name: "idx_page_load_findings_pr_status"
     t.index ["project_id"], name: "index_page_load_regression_findings_on_project_id"
-    t.check_constraint "followup_attempts >= 0", name: "chk_page_load_findings_attempts_non_negative"
-    t.check_constraint "status::text = ANY (ARRAY['open'::character varying, 'resolved'::character varying, 'superseded'::character varying]::text[])", name: "chk_page_load_findings_status_valid"
+    t.check_constraint "status::text = ANY (ARRAY['open'::character varying::text, 'resolved'::character varying::text, 'superseded'::character varying::text])", name: "chk_page_load_findings_status_valid"
   end
 
   create_table "pending_install_claims", comment: "Server-side claims tying a freshly-returned GitHub App installation to a Paid account, so the signed `installation` webhook can finalize the GithubInstallation row for a first-time install into a brand-new org where the existing signals (project owner match, prior installation row) cannot resolve the account.", force: :cascade do |t|

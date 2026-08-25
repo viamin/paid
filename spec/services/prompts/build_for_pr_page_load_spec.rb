@@ -67,6 +67,13 @@ RSpec.describe Prompts::BuildForPr do
     end
 
     # @spec FOCUSED-RUN-003
+    it "names the route's path so the agent can reproduce the regression" do
+      prompt = builder.build
+
+      expect(prompt).to include("/dashboard")
+    end
+
+    # @spec FOCUSED-RUN-003
     it "defers the other problem classes rather than working them in the same run" do
       prompt = builder.build
 

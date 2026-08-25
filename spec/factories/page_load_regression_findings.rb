@@ -6,6 +6,7 @@ FactoryBot.define do
     account { project.account }
     pull_request_number { 42 }
     route_name { "dashboard" }
+    route_path { "/dashboard" }
     comparison_metric { "lcp_ms" }
     baseline_ms { 640 }
     current_ms { 1100 }

@@ -256,12 +256,23 @@
   *Test:* `spec/temporal/activities/scan_paid_prs_activity_page_load_spec.rb`, `spec/services/page_load_performance/evaluate_regressions_spec.rb`.
 
 - [x] **PAGE-LOAD-FOLLOWUP-004** — When a performance follow-up run is queued,
-  the system SHALL copy the finding's evidence — route, comparison metric,
-  baseline and current values, sample spread, and the pull request's changed
-  files — onto the queued run's metadata, so the prompt is built from a stable
-  record rather than re-measuring.
-  *Code:* `QueueAgentRunActivity#snapshot_page_load_evidence!`, `PageLoadRegressionFinding#evidence`.
-  *Test:* `spec/temporal/activities/queue_agent_run_activity_page_load_spec.rb`.
+  the system SHALL copy the finding's evidence — route name and path,
+  comparison metric, baseline and current values, sample spread, and the pull
+  request's changed files — onto the queued run's metadata, so the prompt is
+  built from a stable record rather than re-measuring. The scanner threads the
+  selected trigger's evidence through `Automation::Decision.queue_create_pr_run`
+  and the workflow forwards it as `focus_evidence` to `QueueAgentRunActivity`,
+  so the activity scopes the finding lookup by route name and ties the
+  follow-up run to the exact route the trigger pointed at rather than
+  re-selecting by `updated_at` when a pull request carries multiple actionable
+  findings.
+  *Code:* `ScanPaidPrsActivity#page_load_regression_triggers`,
+  `Automation::Strategies::AutoReview#focus_evidence_for`,
+  `GitHubPollWorkflow#queue_create_pr_run`,
+  `QueueAgentRunActivity#snapshot_page_load_evidence!`,
+  `PageLoadRegressionFinding#evidence`.
+  *Test:* `spec/temporal/activities/queue_agent_run_activity_page_load_spec.rb`,
+  `spec/services/automation/strategies/auto_review_spec.rb`.
 
 - [x] **PAGE-LOAD-FOLLOWUP-005** — While a performance follow-up run for a
   pull request is queued or running, the system SHALL NOT emit a further

@@ -165,12 +165,16 @@ module Activities
 
     # A performance follow-up run carries the regression it was queued for. The
     # snapshot is taken once, at creation, so a later capture that updates the
-    # finding cannot change what this run was asked to fix.
+    # finding cannot change what this run was asked to fix. When the scanner
+    # threads the trigger's evidence through to this activity the finding is
+    # scoped by route name so concurrent findings on the same pull request do
+    # not shift attribution to a different route than the one that selected
+    # the run.
     # @spec PAGE-LOAD-FOLLOWUP-004
     def snapshot_page_load_evidence!(run, provided_evidence)
       return unless run.focus == "performance_regression"
 
-      finding = open_page_load_finding(run)
+      finding = find_page_load_finding(run, provided_evidence)
       evidence = provided_evidence.presence || finding&.evidence
       return if evidence.blank?
 
@@ -182,13 +186,26 @@ module Activities
       run.update_columns(external_metadata: metadata)
     end
 
-    def open_page_load_finding(run)
-      PageLoadRegressionFinding
+    def find_page_load_finding(run, evidence)
+      scope = PageLoadRegressionFinding
         .where(project_id: run.project_id, pull_request_number: run.source_pull_request_number)
         .open_findings
         .actionable
-        .order(updated_at: :desc)
-        .first
+
+      route_name = route_name_from_evidence(evidence)
+      scope = scope.where(route_name: route_name) if route_name
+
+      scope.order(updated_at: :desc).first
+    end
+
+    # Activity input arrives through BaseActivity::InputNormalizer, which
+    # deep_symbolize_keys the payload, so the evidence can come in with either
+    # string keys (in-process callers, the prompt renderer) or symbol keys
+    # (Temporal-serialized input). Accept either shape.
+    def route_name_from_evidence(evidence)
+      return nil unless evidence.is_a?(Hash)
+
+      evidence[:route_name].presence || evidence["route_name"].presence
     end
 
     def issue_requires_trust?(goal)

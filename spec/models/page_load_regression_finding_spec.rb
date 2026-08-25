@@ -44,4 +44,11 @@ RSpec.describe PageLoadRegressionFinding do
 
     expect(described_class.actionable.open_findings.where(pull_request_number: 42)).to contain_exactly(actionable)
   end
+
+  # @spec PAGE-LOAD-FOLLOWUP-004
+  it "exposes the route path on its evidence so the prompt can name the URL" do
+    finding = create(:page_load_regression_finding, project: project, route_path: "/dashboard")
+
+    expect(finding.evidence).to include("route_path" => "/dashboard")
+  end
 end
