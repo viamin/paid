@@ -115,7 +115,8 @@ provenance from a container that no longer exists.
 ### Carrying the selection on `RunSpec`
 
 `Containers::Provision` is Docker-specific; the provider-neutral
-`ExecutionRunners::RunSpec` (RDR-057/RDR-054) is what any current or future
+`ExecutionRunners::RunSpec` (RDR-057 plus the historical execution-runner
+workstream recorded in the container-runtime LLD) is what any current or future
 runner and the control-plane/runner boundary manifest actually depend on.
 `RunSpec.from_agent_run` resolves the run's final runtime image identity
 itself — reusing a selection already recorded on the run before falling back

@@ -128,13 +128,19 @@ bind-mount compatibility, but those legacy paths are not the current runtime
 requirement for ordinary agent runs and should not be reintroduced as the
 default design.
 
-## Runner abstraction boundary (RDR-054)
+## Runner abstraction boundary (historical execution-runner workstream)
 
 `ExecutionRunners` defines the domain-oriented runner contract that will
 replace direct Docker API access in orchestration code. The interface is driven
 by what `Containers::Provision` actually does today, not speculative
 generalization, and is reviewed against the coupling inventory (#3337) to
 confirm coverage.
+
+This boundary was originally planned under a provisional execution-runner
+`RDR-054` label in issues `#3336`–`#3348`. That number now belongs to the
+Prompt Assembly Service RDR, so the runner-boundary workstream is tracked here
+in the container-runtime LLD plus the later execution-runner RDRs such as
+RDR-057 and RDR-062.
 
 - `ExecutionRunners::Base` is the abstract interface: `provision`, `start`,
   `running?`, `reconnect`, `status`, `cancel`, `cleanup`, `.compatible?`, `.ping`. Method
@@ -170,7 +176,7 @@ confirm coverage.
   currently always returns `LocalDockerRunner`, since every existing backend
   (local Docker, remote Docker, Swarm) is a Docker transport.
 
-### Persisted handle and recovery (RDR-054)
+### Persisted handle and recovery (historical execution-runner workstream)
 
 A `runner_handle` jsonb column on `agent_runs` (alongside, not replacing,
 `container_id`/`container_host`) stores the serialized `RunnerHandle` so a
@@ -184,7 +190,7 @@ fresh. A data migration backfills `runner_handle` from existing
 The column is also added to `container_pool_entries` and `service_containers`
 so future pool and service-container code can store runner handles.
 
-### Supporting services, MCP sidecars, and the browser container (RDR-054, #3343)
+### Supporting services, MCP sidecars, and the browser container (historical execution-runner workstream, #3343)
 
 Postgres/Redis/Selenium service containers, `docker_image` MCP sidecars, and
 the Playwright/Chromium verification container were the last Docker-specific

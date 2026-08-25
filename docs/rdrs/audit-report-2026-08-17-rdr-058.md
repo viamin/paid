@@ -306,9 +306,10 @@ issue [#3418](https://github.com/viamin/paid/issues/3418) are:
   `NetworkPolicy`) is the shipped evidence for criterion 2.
 - [#3343](https://github.com/viamin/paid/issues/3343) — Abstract supporting
   services and sidecars behind the runner boundary. **Open**, but this is
-  RDR-054 scope (services and sidecars, not the primary agent container's
-  authority/network/isolation invariants). The RDR-058 closeout does not
-  block on #3343; the two RDRs cover different boundaries.
+  the historical execution-runner workstream scope (services and sidecars, not
+  the primary agent container's authority/network/isolation invariants). The
+  RDR-058 closeout does not block on #3343; the two workstreams cover
+  different boundaries.
 - [#3356](https://github.com/viamin/paid/issues/3356) — Runner capability
   modeling for pre-provisioning validation. **Open**. See gap 2 above.
   This is the load-bearing gap: #3404 and #3405 are blocked behind it.
@@ -323,7 +324,7 @@ real remainder rather than a five-criterion pass.
 | Dependency | State | Reconciliation |
 |------------|-------|----------------|
 | [#3341](https://github.com/viamin/paid/issues/3341) — isolate networking policy from Docker | Closed | Satisfied. The shipped `ExecutionRunners::NetworkingPolicy` and `NetworkPolicy` translation are the evidence cited under criterion 2. |
-| [#3343](https://github.com/viamin/paid/issues/3343) — abstract services and sidecars behind the runner boundary | Open | Out of RDR-058 scope. RDR-058 audits the primary agent container's authority, network, and isolation invariants; service/sidecar abstraction is a separate RDR-054 workstream. The RDR-058 closeout does not block on #3343 because the two RDRs cover different boundaries. |
+| [#3343](https://github.com/viamin/paid/issues/3343) — abstract services and sidecars behind the runner boundary | Open | Out of RDR-058 scope. RDR-058 audits the primary agent container's authority, network, and isolation invariants; service/sidecar abstraction is a separate historical execution-runner workstream. The RDR-058 closeout does not block on #3343 because the two workstreams cover different boundaries. |
 | [#3356](https://github.com/viamin/paid/issues/3356) — runner capability modeling | Open | Remaining RDR-058 scope (gap 2). Capability declarations and pre-provisioning rejection are not implemented. This is the load-bearing gap: #3404 and #3405 are blocked behind it. |
 | [#3402](https://github.com/viamin/paid/issues/3402) — model per-run execution authority grants | Open | Remaining RDR-058 scope (gap 1). The shipped enforcement is the *transport* and *application* of a default-restricted authority boundary; the *modeled grant object* #3402 requires is not implemented (`RunSpec#secrets_config` is `nil` in every `from_agent_run` path). |
 | [#3404](https://github.com/viamin/paid/issues/3404) — enforce no-public-ingress default with scoped exceptions | Open | Partially satisfied. The shipped network policy and `preview_session` scoping enforce the default; the runner/pre-provision *validation* that rejects unsupported inbound exposure is not implemented (depends on #3356). |
