@@ -52,21 +52,33 @@ module Issues
       latest_relevant_version_time(owner.settings, RELEVANT_USER_SETTING_FIELDS)
     end
 
-    # The runners/credentials that issue analysis can actually use. Matches
-    # the union of chat_providers' two paths in
-    # Activities::AnalyzeIssueActivity: the owner's configured
-    # issue_analysis_runner + fallback list, and every chat-enabled Runner
-    # record (the broadening fallback when no explicit selection exists).
-    # Anything outside this set is irrelevant to issue analysis and must not
-    # reset the cooldown — see PR #3650 review discussion.
+    # The runners/credentials that issue analysis can actually use.
+    # `kept_only` is deliberately NOT applied here: a discarded runner still
+    # needs to be inspected so the `discarded_at` version in log_data is
+    # visible to `relevant_runner_change_at`. Discarding is exactly the kind
+    # of "user removed the exhausted runner's record" signal that should
+    # reset the cooldown — the `runner_key` bound below already limits the
+    # set, and discarded rows contribute credential IDs that may still be
+    # rotated while the row is soft-deleted. See PR #3650 review discussion.
     def relevant_runners
-      owner.runners.kept_only.where(runner_key: relevant_runner_keys)
+      owner.runners.where(runner_key: relevant_runner_keys)
     end
 
+    # Mirrors `chat_providers` in Activities::AnalyzeIssueActivity exactly:
+    # if the owner has configured an issue-analysis runner selection, only
+    # those runners can be attempted (the chat-capable broadening is not
+    # consulted). If the configured list is empty, the runtime broadens to
+    # every chat-enabled Runner record. Using a union instead would let
+    # unrelated chat-capable runner-health flapping reset the cooldown for
+    # issues whose analysis is pinned to an explicit runner — each spurious
+    # reset re-mints a run that re-exhausts and re-records a longer backoff,
+    # turning routine runner flapping into bounded churn. Creating a Runner
+    # record for a previously keyless configured runner still resets via its
+    # credential's `updated_at`, so the exclusive form closes that gap.
     def relevant_runner_keys
       @relevant_runner_keys ||= (
-        configured_issue_analysis_runner_keys + chat_capable_runner_keys
-      ).uniq
+        configured_issue_analysis_runner_keys.presence || chat_capable_runner_keys
+      )
     end
 
     def configured_issue_analysis_runner_keys

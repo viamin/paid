@@ -207,6 +207,31 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
     end
 
     # @spec AUTO-PICK-QUEUE-002 ISSUE-ANALYSIS-010
+    it "treats the cooldown as reset when a chat-capable runner is discarded" do
+      # Discard is the strongest user signal that the exhausted runner
+      # configuration has changed — scanning log_data on the discarded row
+      # must observe the `discarded_at` version even though the row is no
+      # longer in `kept_only`. Pin the runner via `issue_analysis_runner`
+      # so the `runner_key` bound in `relevant_runners` still includes the
+      # discarded row (the configured key stays in
+      # `configured_issue_analysis_runner_keys` after discard). Discarding
+      # an unconfigured chat-capable runner has no effect on the cooldown
+      # because the runtime would never have attempted that runner anyway.
+      issue = create(:issue, project: project, paid_state: "failed",
+        issue_analysis_next_attempt_at: 10.minutes.from_now,
+        issue_analysis_backoff_set_at: 10.minutes.ago)
+      settings = project.effective_owner.settings
+      settings.update!(issue_analysis_runner: "codex")
+      runner = create(:runner, user: project.effective_owner, runner_key: "codex")
+
+      runner.discard!
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to contain_exactly(issue.id)
+    end
+
+    # @spec AUTO-PICK-QUEUE-002 ISSUE-ANALYSIS-010
     it "does not treat routine runner quota-snapshot polling as resetting the cooldown" do
       create(:issue, project: project, paid_state: "failed",
         issue_analysis_next_attempt_at: 10.minutes.from_now,
@@ -250,6 +275,33 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
         user: project.effective_owner, runner_name: "cursor")
 
       runner_state.record_success!(force_close: true)
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to be_empty
+    end
+
+    # @spec AUTO-PICK-QUEUE-002 ISSUE-ANALYSIS-010
+    it "does not treat chat-capable runner recovery as resetting the cooldown when issue-analysis runner is pinned" do
+      # Mirrors `chat_providers` in AnalyzeIssueActivity: when the owner has
+      # explicitly configured an issue-analysis runner, the chat-capable
+      # broadening is never consulted, so a circuit recovery on a runner
+      # the analysis will not attempt must not clear the cooldown. Each
+      # spurious reset re-mints a run that re-exhausts and re-records a
+      # longer backoff, turning routine flapping on unrelated runners into
+      # bounded churn.
+      create(:issue, project: project, paid_state: "failed",
+        issue_analysis_next_attempt_at: 10.minutes.from_now,
+        issue_analysis_backoff_set_at: 10.minutes.ago)
+      project.effective_owner.settings.update!(issue_analysis_runner: "codex")
+      create(:runner, user: project.effective_owner, runner_key: "codex")
+      # `claude` is the default runner, chat-capable, but unreachable when
+      # `issue_analysis_runner` is pinned to "codex" — a recovery here must
+      # not bleed into the pinned codex path.
+      claude_runner_state = create(:runner_state, :circuit_open,
+        user: project.effective_owner, runner_name: "claude")
+
+      claude_runner_state.record_success!(force_close: true)
 
       scope = described_class.eligible_scope(project)
 
