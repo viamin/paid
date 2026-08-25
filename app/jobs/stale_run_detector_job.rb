@@ -215,8 +215,17 @@ class StaleRunDetectorJob < ApplicationJob
   # orphaned but still semantically belongs to the enhance_issue path.
   # Resetting it to "new" would let normal auto-pick queue create_pr
   # instead of the intended enhancement rerun.
+  #
+  # Note: QueueAgentRunActivity is the only place that increments
+  # +enhance_issue_rounds+ in the current flow, so the post-recheck but
+  # pre-QueueAgentRunActivity crash window still has rounds == 0. The
+  # +latest_goal_for+ check covers that window — the only way the issue
+  # could be in_progress with no active run AND not yet labeled needs_input
+  # or enhanced is if a previous enhance_issue run drove the transition.
+  # A fresh create_pr/analyze_issue orphan has a non-enhance latest goal
+  # and is reset normally.
+  # @spec ISSUE-ENHANCEMENT-011
   def orphaned_enhance_issue_recheck?(issue)
-    return false if issue.enhance_issue_rounds.zero?
     return false if issue.has_label?(issue.project.enhance_issue_needs_input_label_name)
     return false if issue.has_label?(issue.project.enhance_issue_enhanced_label_name)
 
