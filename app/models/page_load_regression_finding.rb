@@ -47,10 +47,13 @@ class PageLoadRegressionFinding < ApplicationRecord
   end
 
   # The payload a follow-up run's prompt is built from. Copied onto the run at
-  # queue time so the prompt never re-measures or re-queries.
+  # queue time so the prompt never re-measures or re-queries. The finding id
+  # is the immutable identity the queue activity re-binds to: the same route
+  # can later reopen as a new row, but an id never shifts.
   # @spec PAGE-LOAD-FOLLOWUP-004
   def evidence
     {
+      "finding_id" => id,
       "route_name" => route_name,
       "route_path" => route_path,
       "comparison_metric" => comparison_metric,

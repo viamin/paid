@@ -256,16 +256,16 @@
   *Test:* `spec/temporal/activities/scan_paid_prs_activity_page_load_spec.rb`, `spec/services/page_load_performance/evaluate_regressions_spec.rb`.
 
 - [x] **PAGE-LOAD-FOLLOWUP-004** — When a performance follow-up run is queued,
-  the system SHALL copy the finding's evidence — route name and path,
-  comparison metric, baseline and current values, sample spread, and the pull
-  request's changed files — onto the queued run's metadata, so the prompt is
-  built from a stable record rather than re-measuring. The scanner threads the
-  selected trigger's evidence through `Automation::Decision.queue_create_pr_run`
-  and the workflow forwards it as `focus_evidence` to `QueueAgentRunActivity`,
-  so the activity scopes the finding lookup by route name and ties the
-  follow-up run to the exact route the trigger pointed at rather than
-  re-selecting by `updated_at` when a pull request carries multiple actionable
-  findings.
+  the system SHALL copy the finding's evidence — the finding's id, route name
+  and path, comparison metric, baseline and current values, sample spread, and
+  the pull request's changed files — onto the queued run's metadata, so the
+  prompt is built from a stable record rather than re-measuring. The scanner
+  threads the selected trigger's evidence through
+  `Automation::Decision.queue_create_pr_run` and the workflow forwards it as
+  `focus_evidence` to `QueueAgentRunActivity`, which resolves the finding by
+  the id carried in the evidence, so the queued run and its attempt accounting
+  stay tied to the exact finding that selected the trigger even when a later
+  capture resolves that finding and reopens the same route as a new row.
   *Code:* `ScanPaidPrsActivity#page_load_regression_triggers`,
   `Automation::Strategies::AutoReview#focus_evidence_for`,
   `GitHubPollWorkflow#queue_create_pr_run`,
@@ -282,10 +282,11 @@
 
 - [x] **PAGE-LOAD-FOLLOWUP-006** — The system SHALL emit at most
   `MAX_FOLLOWUP_ATTEMPTS` `page_load_regression` triggers for a given finding,
-  counting each queued follow-up run, so a regression the agent cannot fix stops
-  consuming runner budget instead of requeueing on every scan cycle. When the
-  attempts are exhausted the finding SHALL remain open and reported, and SHALL
-  say in the pull request comment that automated attempts are exhausted.
+  counting each queued follow-up run against the finding whose id the trigger's
+  evidence carries, so a regression the agent cannot fix stops consuming runner
+  budget instead of requeueing on every scan cycle. When the attempts are
+  exhausted the finding SHALL remain open and reported, and SHALL say in the
+  pull request comment that automated attempts are exhausted.
   *Code:* `PageLoadRegressionFinding#followup_exhausted?`,
   `ScanPaidPrsActivity#page_load_regression_triggers`,
   `QueueAgentRunActivity#snapshot_page_load_evidence!`.

@@ -165,11 +165,10 @@ module Activities
 
     # A performance follow-up run carries the regression it was queued for. The
     # snapshot is taken once, at creation, so a later capture that updates the
-    # finding cannot change what this run was asked to fix. When the scanner
-    # threads the trigger's evidence through to this activity the finding is
-    # scoped by route name so concurrent findings on the same pull request do
-    # not shift attribution to a different route than the one that selected
-    # the run.
+    # finding cannot change what this run was asked to fix. The evidence the
+    # scanner threads through carries the finding's id, so the attempt
+    # accounting lands on the exact finding that selected the run even when a
+    # later capture resolved it and reopened the same route as a new row.
     # @spec PAGE-LOAD-FOLLOWUP-004
     def snapshot_page_load_evidence!(run, provided_evidence)
       return unless run.focus == "performance_regression"
@@ -189,9 +188,15 @@ module Activities
     def find_page_load_finding(run, evidence)
       scope = PageLoadRegressionFinding
         .where(project_id: run.project_id, pull_request_number: run.source_pull_request_number)
-        .open_findings
-        .actionable
 
+      # The id is immutable and deliberately ignores status: a finding that
+      # resolved between trigger and queue still owns the attempt this run
+      # spends on it. Re-selecting by route would debit a reopened finding for
+      # a run it never asked for.
+      finding_id = finding_id_from_evidence(evidence)
+      return scope.find_by(id: finding_id) if finding_id
+
+      scope = scope.open_findings.actionable
       route_name = route_name_from_evidence(evidence)
       scope = scope.where(route_name: route_name) if route_name
 
@@ -202,6 +207,12 @@ module Activities
     # deep_symbolize_keys the payload, so the evidence can come in with either
     # string keys (in-process callers, the prompt renderer) or symbol keys
     # (Temporal-serialized input). Accept either shape.
+    def finding_id_from_evidence(evidence)
+      return nil unless evidence.is_a?(Hash)
+
+      evidence[:finding_id].presence || evidence["finding_id"].presence
+    end
+
     def route_name_from_evidence(evidence)
       return nil unless evidence.is_a?(Hash)
 

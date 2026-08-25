@@ -51,4 +51,13 @@ RSpec.describe PageLoadRegressionFinding do
 
     expect(finding.evidence).to include("route_path" => "/dashboard")
   end
+
+  # @spec PAGE-LOAD-FOLLOWUP-004, PAGE-LOAD-FOLLOWUP-006
+  # The finding id is the immutable identifier the queue activity re-binds to:
+  # route names can be reopened as new rows, ids cannot.
+  it "carries its own id on its evidence" do
+    finding = create(:page_load_regression_finding, project: project, route_path: "/dashboard")
+
+    expect(finding.evidence).to include("finding_id" => finding.id)
+  end
 end
