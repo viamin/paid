@@ -1970,10 +1970,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_25_052711) do
     t.integer "current_ms", null: false
     t.integer "delta_ms", null: false
     t.decimal "delta_ratio", precision: 8, scale: 4, null: false
+    t.integer "followup_attempts", default: 0, null: false, comment: "Follow-up runs queued for this finding. Caps automated retries so a regression the agent cannot fix stops consuming runner budget."
     t.bigint "project_id", null: false
     t.integer "pull_request_number", null: false
     t.datetime "resolved_at"
     t.string "route_name", limit: 255, null: false
+    t.string "route_path", limit: 2048, comment: "Path the regressed route resolved to when the finding was raised; copied into the follow-up run's prompt so the agent can reproduce and diagnose the regression."
     t.jsonb "sample_spread", default: {}, null: false, comment: "Min/max of the samples behind each side of the comparison."
     t.string "status", limit: 20, default: "open", null: false, comment: "open, resolved (back within threshold), or superseded (route no longer measured)."
     t.datetime "updated_at", null: false
@@ -1982,6 +1984,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_25_052711) do
     t.index ["project_id", "pull_request_number", "route_name"], name: "idx_page_load_findings_one_open_per_route", unique: true, where: "((status)::text = 'open'::text)"
     t.index ["project_id", "pull_request_number", "status"], name: "idx_page_load_findings_pr_status"
     t.index ["project_id"], name: "index_page_load_regression_findings_on_project_id"
+    t.check_constraint "followup_attempts >= 0", name: "chk_page_load_findings_attempts_non_negative"
     t.check_constraint "status::text = ANY (ARRAY['open'::character varying::text, 'resolved'::character varying::text, 'superseded'::character varying::text])", name: "chk_page_load_findings_status_valid"
   end
 
