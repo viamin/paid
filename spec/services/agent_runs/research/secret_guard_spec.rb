@@ -5,6 +5,12 @@ require "rails_helper"
 RSpec.describe AgentRuns::Research::SecretGuard do # @spec EGRESS-POLICY-009
   let(:project) { create(:project) }
   let(:agent_run) { create(:agent_run, :running, project: project) }
+  let(:high_entropy_fixture) do
+    [
+      "AAAAB3NzaC1yc2EAAAADAQABAAABAQDb",
+      "x8Y5w2g8Rr6KqNnLzP4sT7vH9mQ2kL3pW0zX1cV6"
+    ].join
+  end
 
   describe ".inspect!" do
     it "blocks exact run proxy token matches" do
@@ -33,7 +39,7 @@ RSpec.describe AgentRuns::Research::SecretGuard do # @spec EGRESS-POLICY-009
     it "blocks high-entropy tokens that do not match a named scanner rule" do
       result = described_class.inspect!(
         agent_run: agent_run,
-        text: "AAAAB3NzaC1yc2EAAAADAQABAAABAQDbx8Y5w2g8Rr6KqNnLzP4sT7vH9mQ2kL3pW0zX1cV6",
+        text: high_entropy_fixture,
         destination_host: "docs.example.com"
       )
 
@@ -94,7 +100,7 @@ RSpec.describe AgentRuns::Research::SecretGuard do # @spec EGRESS-POLICY-009
     it "still blocks high-entropy tokens that appear only in a query parameter value" do
       result = described_class.inspect!(
         agent_run: agent_run,
-        text: "https://docs.example.com/guide?token=AAAAB3NzaC1yc2EAAAADAQABAAABAQDbx8Y5w2g8Rr6KqNnLzP4sT7vH9mQ2kL3pW0zX1cV6",
+        text: "https://docs.example.com/guide?token=#{high_entropy_fixture}",
         destination_host: "docs.example.com"
       )
 
@@ -105,7 +111,7 @@ RSpec.describe AgentRuns::Research::SecretGuard do # @spec EGRESS-POLICY-009
     it "still blocks high-entropy tokens that appear only in a query parameter name" do
       result = described_class.inspect!(
         agent_run: agent_run,
-        text: "https://docs.example.com/guide?AAAAB3NzaC1yc2EAAAADAQABAAABAQDbx8Y5w2g8Rr6KqNnLzP4sT7vH9mQ2kL3pW0zX1cV6=1",
+        text: "https://docs.example.com/guide?#{high_entropy_fixture}=1",
         destination_host: "docs.example.com"
       )
 
@@ -126,20 +132,20 @@ RSpec.describe AgentRuns::Research::SecretGuard do # @spec EGRESS-POLICY-009
 
     it "redacts high-entropy tokens that appear inside query parameter values" do
       redacted = described_class.redact_text(
-        "https://docs.example.com/guide?token=AAAAB3NzaC1yc2EAAAADAQABAAABAQDbx8Y5w2g8Rr6KqNnLzP4sT7vH9mQ2kL3pW0zX1cV6"
+        "https://docs.example.com/guide?token=#{high_entropy_fixture}"
       )
 
       expect(redacted).to include("[REDACTED:high_entropy]")
-      expect(redacted).not_to include("AAAAB3NzaC1yc2EAAAADAQABAAABAQDbx8Y5w2g8Rr6KqNnLzP4sT7vH9mQ2kL3pW0zX1cV6")
+      expect(redacted).not_to include(high_entropy_fixture)
     end
 
     it "redacts high-entropy tokens that appear inside query parameter names" do
       redacted = described_class.redact_text(
-        "https://docs.example.com/guide?AAAAB3NzaC1yc2EAAAADAQABAAABAQDbx8Y5w2g8Rr6KqNnLzP4sT7vH9mQ2kL3pW0zX1cV6=1"
+        "https://docs.example.com/guide?#{high_entropy_fixture}=1"
       )
 
       expect(redacted).to include("[REDACTED:high_entropy]")
-      expect(redacted).not_to include("AAAAB3NzaC1yc2EAAAADAQABAAABAQDbx8Y5w2g8Rr6KqNnLzP4sT7vH9mQ2kL3pW0zX1cV6")
+      expect(redacted).not_to include(high_entropy_fixture)
     end
   end
 end

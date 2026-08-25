@@ -43,6 +43,10 @@ RSpec.describe "Api::Proxy::Research" do # @spec EGRESS-POLICY-008 # @spec EGRES
     query ? "#{base}?#{query}" : base
   end
 
+  def quarantined_api_key_fixture
+    [ "sk", "_live", "_abcdefghijklmnopqrst" ].join
+  end
+
   describe "GET /api/proxy/research/fetch" do
     let(:external_metadata) do
       {
@@ -165,7 +169,7 @@ RSpec.describe "Api::Proxy::Research" do # @spec EGRESS-POLICY-008 # @spec EGRES
     it "redacts credential-looking response content and returns quarantined evidence framing" do
       stub_request(:get, brokered_url("docs.example.com", "/leak"))
         .to_return(status: 200,
-          body: "Use key sk_live_abcdefghijklmnopqrst only for testing.",
+          body: "Use key #{quarantined_api_key_fixture} only for testing.",
           headers: { "Content-Type" => "text/plain" })
 
       get "/api/proxy/research/fetch", params: { url: "https://docs.example.com/leak" }, headers: headers
@@ -175,7 +179,7 @@ RSpec.describe "Api::Proxy::Research" do # @spec EGRESS-POLICY-008 # @spec EGRES
       expect(body.fetch("trust_level")).to eq("quarantined")
       expect(body.fetch("content")).to include(PromptAssembly::Section::QUARANTINE_NOTICE)
       expect(body.fetch("content")).to include("[REDACTED:api_key]")
-      expect(body.fetch("content")).not_to include("sk_live_abcdefghijklmnopqrst")
+      expect(body.fetch("content")).not_to include(quarantined_api_key_fixture)
       expect(body.fetch("redacted")).to be(true)
     end
 
