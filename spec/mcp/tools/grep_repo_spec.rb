@@ -111,4 +111,30 @@ RSpec.describe Tools::GrepRepo do
         .to raise_error(ActiveRecord::RecordNotFound)
     end
   end
+
+  describe ".description_for" do
+    # @spec CHAT-API-012
+    it "returns the plain description when the session has no project" do
+      session_without_project = build(:chat_session, account: account, created_by: user)
+
+      expect(described_class.description_for(session: session_without_project)).to eq(described_class.description)
+    end
+
+    it "returns the plain description when the session's project knowledge is not ready" do
+      pending_project = create(:project, account: account, knowledge_status: "collecting")
+      session_with_pending_project = build(:chat_session, account: account, created_by: user, project: pending_project)
+
+      expect(described_class.description_for(session: session_with_pending_project)).to eq(described_class.description)
+    end
+
+    it "demotes the description to a fallback note when the session's project knowledge is ready" do
+      ready_project = create(:project, account: account, knowledge_status: "ready")
+      session_with_ready_project = build(:chat_session, account: account, created_by: user, project: ready_project)
+
+      description = described_class.description_for(session: session_with_ready_project)
+
+      expect(description).to start_with(described_class.description)
+      expect(description).to include("Fallback only").and include("search_code")
+    end
+  end
 end

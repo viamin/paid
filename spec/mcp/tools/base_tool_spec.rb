@@ -121,4 +121,12 @@ RSpec.describe Tools::BaseTool do
         .to raise_error(KeyError, /internal_key/)
     end
   end
+
+  describe ".description_for" do
+    # @spec CHAT-API-012
+    it "defaults to the tool's static description regardless of session" do
+      expect(Tools::BaseToolAuthorizedSpecTool.description_for(session: session))
+        .to eq(Tools::BaseToolAuthorizedSpecTool.description)
+    end
+  end
 end

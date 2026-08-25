@@ -105,7 +105,8 @@ module Tools
       # model itself. See RDR-028.
       def chat_definitions_for(user:, session: nil)
         # @spec CHAT-API-003
-        tools_for(session:, user:).map { |klass| chat_definition_for(klass) }
+        # @spec CHAT-API-012
+        tools_for(session:, user:).map { |klass| chat_definition_for(klass, session:) }
       end
 
       def dispatch_mcp(name:, arguments:, user:, session:)
@@ -212,10 +213,10 @@ module Tools
         )
       end
 
-      def chat_definition_for(klass)
-        return klass.definition unless klass.write_operation?
+      def chat_definition_for(klass, session:)
+        definition = klass.definition.merge(description: klass.description_for(session:))
+        return definition unless klass.write_operation?
 
-        definition = klass.definition
         schema = definition[:inputSchema]
         return definition unless schema.is_a?(Hash)
 

@@ -90,6 +90,14 @@ What ships today:
   auto-merge state. Persisted merge-permission cooldown state is preferred
   when present, and current PR mergeability / check status are used as a
   fallback when no persisted attempt history exists.
+- `Tools::Registry.chat_definition_for` calls each tool class's
+  `description_for(session:)` hook (default: the static `description`) when
+  building chat-advertised tool definitions, so a tool's framing can shift
+  with session/project state without hiding it. `grep_repo` uses this to
+  demote its own description to a fallback-only note once the session's
+  current project has a ready knowledge base, steering the model to
+  `search_code` for ordinary code discovery instead of exhausting shared
+  GitHub Code Search rate limits.
 
 ## What this is not
 
