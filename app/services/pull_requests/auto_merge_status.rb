@@ -35,7 +35,7 @@ module PullRequests
       return checks_not_green_status unless all_checks_green!(client, project, pull_request)
 
       ready_status
-    rescue GithubClient::Error => e
+    rescue GithubClient::Error, Faraday::Error => e
       diagnostics_unavailable_status(e.message)
     end
 

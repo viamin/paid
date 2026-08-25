@@ -118,6 +118,35 @@ RSpec.describe Tools::GetPullRequestDetails do
       expect(github_client).not_to have_received(:combined_status)
     end
 
+    it "reports unavailable diagnostics when a transport error reaches the PR lookup" do
+      allow(github_client).to receive(:pull_request).and_raise(
+        Faraday::TimeoutError, "execution expired"
+      )
+
+      result = tool.call(project_id: project.id, issue_id: pr.id)
+
+      expect(result[:auto_merge]).to include(
+        auto_merge_status: "unavailable",
+        reason_code: "diagnostics_unavailable",
+        sanitized_message: "execution expired"
+      )
+    end
+
+    it "reports unavailable diagnostics when a transport error reaches the checks lookup" do
+      allow(github_client).to receive(:check_runs_for_ref).and_raise(
+        Faraday::TimeoutError, "execution expired"
+      )
+
+      result = tool.call(project_id: project.id, issue_id: pr.id)
+
+      expect(result[:auto_merge]).to include(
+        auto_merge_status: "unavailable",
+        reason_code: "diagnostics_unavailable",
+        sanitized_message: "execution expired"
+      )
+      expect(github_client).not_to have_received(:combined_status)
+    end
+
     it "explains a not-mergeable blocker without a prior attempt" do
       allow(github_client).to receive(:pull_request).and_return(
         OpenStruct.new(number: pr.github_number, mergeable: false, merged_at: nil, head: OpenStruct.new(sha: "abc123"))
