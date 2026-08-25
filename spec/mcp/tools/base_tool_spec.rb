@@ -123,7 +123,7 @@ RSpec.describe Tools::BaseTool do
   end
 
   describe ".description_for" do
-    # @spec CHAT-API-012
+    # @spec CHAT-API-013
     it "defaults to the tool's static description regardless of session" do
       expect(Tools::BaseToolAuthorizedSpecTool.description_for(session: session))
         .to eq(Tools::BaseToolAuthorizedSpecTool.description)

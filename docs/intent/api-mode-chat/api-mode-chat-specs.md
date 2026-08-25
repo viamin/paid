@@ -214,7 +214,33 @@
   `Tools::RepoReadClientResolver#resolve_project_client`,
   `Tools::RepoReadClientResolver#resolve_user_client`.
 
-- [x] **CHAT-API-012** — When the chat agent loop advertises tool definitions
+- [x] **CHAT-API-011** — When `get_pull_request_details` returns a pull request,
+  the system SHALL include a sanitized `auto_merge` diagnostic object that
+  exposes only project-scoped derived facts: the latest persisted
+  merge-permission rejection/cooldown when present, otherwise the current
+  mergeability and CI-check gate state when credentials permit. The payload
+  SHALL NOT expose tokens, raw secrets, stack traces, or untrusted comment
+  bodies.
+  *Tests:* `spec/mcp/tools/get_pull_request_details_spec.rb`.
+  *Code:* `Tools::GetPullRequestDetails#perform`,
+  `PullRequests::AutoMergeStatus#call`.
+
+- [x] **CHAT-API-012** — When chat guidance tells the model how to discover
+  code in a repo (the default `base_identity` fallback, the seeded
+  `chat.system_prompt` template, and the `grep_repo` tool description), the
+  guidance SHALL name `read_repo_file` for file reads (never the stale
+  `get_file_content` name), SHALL present `search_code` (Paid's knowledge
+  base) as the first choice for code discovery, and SHALL describe `grep_repo`
+  as GitHub-Code-Search-backed and rate-limit-sensitive, directing the model
+  to it only when knowledge search is unavailable or stale, or when exact
+  GitHub Code Search behavior is needed.
+  *Tests:* `spec/services/chat_sessions/build_system_prompt_spec.rb`,
+  `spec/mcp/tools/grep_repo_spec.rb`,
+  `spec/services/prompts/sync_defaults_spec.rb`.
+  *Code:* `ChatSessions::BuildSystemPrompt#base_identity`,
+  `Tools::GrepRepo.description`, `db/seeds/prompts.rb`.
+
+- [x] **CHAT-API-013** — When the chat agent loop advertises tool definitions
   for a session (`Tools::Registry.chat_definitions_for`), `grep_repo` SHALL
   remain in the advertised tool set (GitHub Code Search stays available as a
   fallback), but its advertised `description` SHALL be demoted with a
@@ -229,14 +255,3 @@
   `spec/mcp/tools/base_tool_spec.rb`.
   *Code:* `Tools::Registry.chat_definition_for`, `Tools::BaseTool.description_for`,
   `Tools::GrepRepo.description_for`, `Tools::GrepRepo.knowledge_ready?`.
-
-- [x] **CHAT-API-011** — When `get_pull_request_details` returns a pull request,
-  the system SHALL include a sanitized `auto_merge` diagnostic object that
-  exposes only project-scoped derived facts: the latest persisted
-  merge-permission rejection/cooldown when present, otherwise the current
-  mergeability and CI-check gate state when credentials permit. The payload
-  SHALL NOT expose tokens, raw secrets, stack traces, or untrusted comment
-  bodies.
-  *Tests:* `spec/mcp/tools/get_pull_request_details_spec.rb`.
-  *Code:* `Tools::GetPullRequestDetails#perform`,
-  `PullRequests::AutoMergeStatus#call`.

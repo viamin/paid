@@ -90,6 +90,14 @@ What ships today:
   auto-merge state. Persisted merge-permission cooldown state is preferred
   when present, and current PR mergeability / check status are used as a
   fallback when no persisted attempt history exists.
+- the default chat guidance (`ChatSessions::BuildSystemPrompt#base_identity`
+  fallback, the seeded `chat.system_prompt` template, and the `grep_repo`
+  tool description) directs repo code discovery to `search_code` (Paid's
+  knowledge base) first, `read_repo_file` when the path is known, and
+  `grep_repo` only when knowledge search is unavailable or stale, or when
+  exact GitHub Code Search behavior is required — `grep_repo` is backed by
+  GitHub Code Search and spends its small code_search rate-limit bucket, so
+  routine chat exploration must not exhaust it (#3391).
 - `Tools::Registry.chat_definition_for` calls each tool class's
   `description_for(session:)` hook (default: the static `description`) when
   building chat-advertised tool definitions, so a tool's framing can shift
@@ -97,7 +105,7 @@ What ships today:
   demote its own description to a fallback-only note once the session's
   current project has a ready knowledge base, steering the model to
   `search_code` for ordinary code discovery instead of exhausting shared
-  GitHub Code Search rate limits.
+  GitHub Code Search rate limits (#3392).
 
 ## What this is not
 

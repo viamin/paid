@@ -317,7 +317,7 @@ RSpec.describe Tools::Registry do
     end
 
     it "keeps grep_repo advertised but demotes its description when project knowledge is ready" do
-      # @spec CHAT-API-012
+      # @spec CHAT-API-013
       project.update!(knowledge_status: "ready")
 
       definitions = described_class.chat_definitions_for(user: user, session: chat_session)
@@ -328,7 +328,7 @@ RSpec.describe Tools::Registry do
     end
 
     it "advertises grep_repo with its plain description when project knowledge is not ready" do
-      # @spec CHAT-API-012
+      # @spec CHAT-API-013
       expect(project.knowledge_status).not_to eq("ready")
 
       definitions = described_class.chat_definitions_for(user: user, session: chat_session)

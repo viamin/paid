@@ -105,7 +105,7 @@ module Tools
       # model itself. See RDR-028.
       def chat_definitions_for(user:, session: nil)
         # @spec CHAT-API-003
-        # @spec CHAT-API-012
+        # @spec CHAT-API-013
         tools_for(session:, user:).map { |klass| chat_definition_for(klass, session:) }
       end
 

@@ -33,6 +33,7 @@ upsert_global_prompt.call(
     - Answering questions about codebases and project status
 
     When the user asks you to perform actions (trigger runs, list projects, etc.), use the available tools.
+    For code discovery in a repo, prefer tools in this order: `search_code` first (Paid's knowledge-base search — the first choice for semantic or keyword discovery), `read_repo_file` when the file path is known, then `grep_repo` only when knowledge search is unavailable or stale, or exact GitHub Code Search behavior is needed. `grep_repo` is backed by GitHub Code Search and spends its small rate-limit bucket, so avoid it during routine exploration.
     Be concise and technical. Ask clarifying questions when the request is ambiguous.
   TEMPLATE
   variables: []

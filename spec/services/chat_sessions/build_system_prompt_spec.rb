@@ -48,9 +48,22 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
         expect(prompt).to include("gather intent through adaptive questions")
         expect(prompt).to include("problem, desired behavior, constraints, rejected alternatives, scope, and done-ness")
         expect(prompt).to include("search_code")
-        expect(prompt).to include("get_file_content")
+        expect(prompt).to include("read_repo_file")
+        expect(prompt).not_to include("get_file_content")
         expect(prompt).to include("trigger a `create_feature` agent run")
         expect(prompt).to include("custom_prompt")
+      end
+
+      # @spec CHAT-API-012
+      it "prefers knowledge search over GitHub code search for repo discovery" do
+        expect(prompt).to include("`search_code`")
+        expect(prompt).to include("first choice")
+        expect(prompt).to include("`read_repo_file`")
+        expect(prompt).to include("when the file path is known")
+        expect(prompt).to include("`grep_repo`")
+        expect(prompt).to include("GitHub Code Search")
+        expect(prompt).to include("rate-limit")
+        expect(prompt).not_to include("get_file_content")
       end
     end
 

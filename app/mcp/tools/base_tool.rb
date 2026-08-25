@@ -49,6 +49,7 @@ module Tools
     # given session. Defaults to the tool's static +description+; tools whose
     # advertised framing should shift with session/project state (for example
     # demoting a fallback tool once richer context is available) override this.
+    # @spec CHAT-API-013
     def self.description_for(session:)
       description
     end

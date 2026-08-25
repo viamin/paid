@@ -468,6 +468,21 @@ RSpec.describe Issue do
       }.to have_enqueued_job(Issues::ReenqueueEligibleJob).with(issue.id)
     end
 
+    it "uses the persisted analyze_issue next-attempt time for failed issue re-enqueue" do
+      project = create(:project, auto_pick_enabled: true)
+      issue = create(:issue, project: project, paid_state: "in_progress", github_state: "open")
+
+      freeze_time do
+        expect {
+          issue.update!(
+            paid_state: "failed",
+            issue_analysis_next_attempt_at: 7.minutes.from_now,
+            issue_analysis_backoff_set_at: Time.current
+          )
+        }.to have_enqueued_job(Issues::ReenqueueEligibleJob).with(issue.id).at(7.minutes.from_now)
+      end
+    end
+
     it "does not re-enqueue pull requests" do
       project = create(:project, auto_pick_enabled: true)
       issue = create(:issue, :pull_request, project: project, paid_state: "in_progress", github_state: "open")
@@ -2236,6 +2251,23 @@ RSpec.describe Issue do
         project: project, issue: issue, goal: "create_pr", cap: 10
       )
       expect(capped).to contain_exactly("claude")
+    end
+  end
+
+  describe "#clear_issue_analysis_backoff!" do
+    let(:project) { create(:project) }
+    let(:issue) do
+      create(:issue, project: project,
+        issue_analysis_next_attempt_at: 30.minutes.from_now,
+        issue_analysis_backoff_set_at: 5.minutes.ago)
+    end
+
+    it "clears the persisted automatic analyze_issue cooldown" do
+      issue.clear_issue_analysis_backoff!
+
+      issue.reload
+      expect(issue.issue_analysis_next_attempt_at).to be_nil
+      expect(issue.issue_analysis_backoff_set_at).to be_nil
     end
   end
 

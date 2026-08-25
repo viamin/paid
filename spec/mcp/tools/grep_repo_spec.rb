@@ -17,6 +17,17 @@ RSpec.describe Tools::GrepRepo do
     allow(github_client).to receive(:search_code)
   end
 
+  describe ".description" do
+    # @spec CHAT-API-012
+    it "describes grep_repo as GitHub-backed and rate-limit sensitive" do
+      description = described_class.description
+
+      expect(description).to include("GitHub code search")
+      expect(description).to include("Rate-limit sensitive")
+      expect(description).to include("search_code")
+    end
+  end
+
   describe "#call" do
     it "prefers the chatting user's matching GitHub token" do
       items = [
@@ -113,7 +124,7 @@ RSpec.describe Tools::GrepRepo do
   end
 
   describe ".description_for" do
-    # @spec CHAT-API-012
+    # @spec CHAT-API-013
     it "returns the plain description when the session has no project" do
       session_without_project = build(:chat_session, account: account, created_by: user)
 
