@@ -104,6 +104,13 @@ class Issue < ApplicationRecord
   before_save :stamp_paused_at, if: :will_save_change_to_paused?
   after_commit :sync_paused_label_to_github, if: :saved_change_to_paused?
 
+  # Keeps `needs_input_since` synchronized with the `paid_state` transition so
+  # the Inbox::Queue service can order oldest-waiting-first without scattered
+  # updates at every write site. Stamps when the issue enters "needs_input",
+  # clears when it leaves. Idempotent: re-applying the same state is a no-op.
+  # @spec INBOX-FOUNDATION-001
+  before_save :sync_needs_input_since, if: :will_save_change_to_paid_state?
+
   scope :by_paid_state, ->(state) { where(paid_state: state) }
   scope :root_issues, -> { where(parent_issue_id: nil) }
   scope :sub_issues_only, -> { where.not(parent_issue_id: nil) }
@@ -290,6 +297,25 @@ class Issue < ApplicationRecord
 
   def needs_input?
     paid_state == "needs_input" && has_label?(project.enhance_issue_needs_input_label_name)
+  end
+
+  # Stamps `needs_input_since` on entry into `paid_state: "needs_input"` and
+  # clears it on exit. A single model callback owns this transition logic so
+  # every write path that touches `paid_state` converges on the same column
+  # contract without scattered per-site updates.
+  #
+  # `paid_state_changed?` is the gate: re-applying the same state is a no-op,
+  # and writes that don't touch `paid_state` never overwrite a valid timestamp.
+  # The `||=` on entry preserves an existing timestamp when an agent re-applies
+  # the needs_input label to an issue that is already awaiting input, so the
+  # wait time keeps counting from the first transition rather than resetting.
+  # @spec INBOX-FOUNDATION-001
+  def sync_needs_input_since
+    if paid_state == "needs_input"
+      self.needs_input_since ||= Time.current
+    elsif paid_state_was == "needs_input"
+      self.needs_input_since = nil
+    end
   end
 
   def draft_phase?

@@ -73,7 +73,17 @@ module ClarifyingQuestions
       brief = assemble_feature_brief_from_answers(issue)
       existing = agent_run.external_metadata.is_a?(Hash) ? agent_run.external_metadata : {}
       agent_run.update!(external_metadata: existing.merge("feature_brief" => brief))
-      issue.update!(needs_input_questions: nil, labels: Array(issue.labels) - [ label ])
+      # paid_state stays at "needs_input" here (the run is resuming, not being
+      # reset to "new"), so the paid_state-change callback on Issue does NOT
+      # fire — the issue is no longer waiting on a human but the column would
+      # otherwise keep the stale timestamp. Clear it explicitly so the inbox
+      # does not surface this issue as still awaiting input.
+      # @spec INBOX-FOUNDATION-002
+      issue.update!(
+        needs_input_questions: nil,
+        needs_input_since: nil,
+        labels: Array(issue.labels) - [ label ]
+      )
 
       agent_run.resume!(decision_point: "create_feature.needs_input_answered")
       ProcessRunQueueJob.perform_later

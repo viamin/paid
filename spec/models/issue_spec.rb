@@ -1431,6 +1431,63 @@ RSpec.describe Issue do
     end
   end
 
+  # @spec INBOX-FOUNDATION-001
+  describe "#sync_needs_input_since" do
+    let(:project) { create(:project) }
+
+    it "stamps needs_input_since when paid_state transitions into \"needs_input\"" do
+      issue = create(:issue, project: project, paid_state: "new")
+      expect(issue.needs_input_since).to be_nil
+
+      freeze_time = Time.current
+      travel_to(freeze_time) do
+        issue.update!(paid_state: "needs_input")
+      end
+
+      expect(issue.reload.needs_input_since).to be_within(1.second).of(freeze_time)
+    end
+
+    it "clears needs_input_since when paid_state transitions out of \"needs_input\"" do
+      issue = create(:issue, :needs_input, project: project)
+      expect(issue.needs_input_since).to be_present
+
+      issue.update!(paid_state: "new")
+
+      expect(issue.reload.needs_input_since).to be_nil
+    end
+
+    it "preserves the original timestamp when paid_state stays \"needs_input\"" do
+      issue = create(:issue, :needs_input, project: project)
+      original = issue.needs_input_since
+      expect(original).to be_present
+
+      travel_to(1.hour.from_now) do
+        issue.update!(labels: issue.labels | [ "another-label" ])
+        issue.update!(paid_state: "needs_input")
+      end
+
+      expect(issue.reload.needs_input_since).to be_within(1.second).of(original)
+    end
+
+    it "is a no-op when paid_state is unchanged on a write that does not touch it" do
+      issue = create(:issue, project: project, paid_state: "completed")
+      expect(issue.needs_input_since).to be_nil
+
+      issue.update!(title: "Refined title")
+
+      expect(issue.reload.needs_input_since).to be_nil
+    end
+
+    it "clears the timestamp when leaving \"needs_input\" for any other state" do
+      issue = create(:issue, :needs_input, project: project)
+      expect(issue.needs_input_since).to be_present
+
+      issue.update!(paid_state: "completed")
+
+      expect(issue.reload.needs_input_since).to be_nil
+    end
+  end
+
   describe "broadcast callbacks" do
     let(:project) { create(:project) }
 

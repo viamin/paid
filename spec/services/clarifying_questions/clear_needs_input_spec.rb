@@ -145,6 +145,15 @@ RSpec.describe ClarifyingQuestions::ClearNeedsInput do
 
         expect(issue.reload.labels).not_to include(project.enhance_issue_needs_input_label_name)
       end
+
+      it "clears needs_input_since so the inbox does not surface it as still awaiting input" do
+        # @spec INBOX-FOUNDATION-002
+        expect(issue.needs_input_since).to be_present
+
+        described_class.call(project: project, issue: issue)
+
+        expect(issue.reload.needs_input_since).to be_nil
+      end
     end
 
     context "when the issue has no paused create_feature run" do
