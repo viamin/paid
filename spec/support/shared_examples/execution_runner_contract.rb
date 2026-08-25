@@ -103,3 +103,202 @@ RSpec.shared_examples "an ExecutionRunner implementation" do
     end
   end
 end
+
+# Shared contract for concrete execution runners. The expectations stay at the
+# provider-neutral boundary; runner-specific stubbing lives in the including
+# spec so a future non-Docker runner can satisfy the same suite with its own
+# setup.
+#
+# Expected `let` bindings:
+#
+#   runner                 — concrete runner instance
+#   run_spec               — restricted-mode RunSpec
+#   unrestricted_run_spec  — unrestricted-mode RunSpec
+#   backend                — backend/runner descriptor for .compatible?
+#   valid_handle           — persisted handle for lifecycle calls
+#   missing_handle         — handle whose underlying workload is gone
+#   agent_run              — AgentRun associated with the specs
+#
+# Optional `let` bindings:
+#
+#   services_network — network identifier used for service provisioning
+RSpec.shared_examples "an execution runner contract" do
+  let(:services_network) { "paid_agent" }
+  let(:restricted_firewall_expectation) { nil }
+  let(:expects_unrestricted_firewall_rules) { false }
+  let(:missing_handle) do
+    valid_handle.with(identifier: "#{valid_handle.identifier}-missing")
+  end
+
+  def start_contract_run(handle:, command: "echo ok", **overrides, &block)
+    runner.start(
+      handle: handle,
+      command: command,
+      timeout: 60,
+      startup_timeout: 30,
+      idle_timeout: 30,
+      abort_patterns: nil,
+      preparation: nil,
+      heartbeat_path: nil,
+      **overrides,
+      &block
+    )
+  end
+
+  describe "#provision" do
+    it "returns a RunnerHandle with an identifier" do
+      handle = runner.provision(spec: run_spec)
+
+      expect(handle).to be_a(ExecutionRunners::RunnerHandle)
+      expect(handle.identifier).to be_present
+      expect(handle.host).to be_present
+    end
+  end
+
+  describe "#start" do
+    it "streams stdout via the block" do
+      chunks = []
+
+      start_contract_run(handle: valid_handle) do |stream_type, chunk|
+        chunks << [ stream_type, chunk ]
+      end
+
+      expect(chunks).to include([ :stdout, a_string_including("ok") ])
+    end
+
+    it "returns an ExecutionResult with an exit code" do
+      result = start_contract_run(handle: valid_handle)
+
+      expect(result).to be_a(ExecutionRunners::ExecutionResult)
+      expect(result.exit_code).to eq(0)
+    end
+
+    it "classifies startup timeout" do
+      expect do
+        start_contract_run(handle: valid_handle, command: "startup timeout")
+      end.to raise_error(ExecutionRunners::StartupTimeoutError)
+    end
+
+    it "classifies idle timeout" do
+      expect do
+        start_contract_run(handle: valid_handle, command: "idle timeout")
+      end.to raise_error(ExecutionRunners::IdleTimeoutError)
+    end
+
+    it "classifies wall-clock timeout" do
+      expect do
+        start_contract_run(handle: valid_handle, command: "wall timeout")
+      end.to raise_error(ExecutionRunners::TimeoutError)
+    end
+
+    it "detects OOM kills" do
+      result = start_contract_run(handle: valid_handle, command: "oom failure")
+
+      expect(result).to be_failure
+      expect(result.oom_killed).to be(true)
+      expect(result.exit_code).to eq(137)
+    end
+
+    it "detects abort patterns" do
+      expect do
+        start_contract_run(handle: valid_handle, command: "abort output")
+      end.to raise_error(ExecutionRunners::OutputAbortError) { |error| expect(error.matched_output).to be_present }
+    end
+  end
+
+  describe "#running?" do
+    it "returns true when the workload is active" do
+      expect(runner.running?(handle: valid_handle)).to be(true)
+    end
+
+    it "returns false after completion or when the workload is missing" do
+      expect(runner.running?(handle: missing_handle)).to be(false)
+    end
+  end
+
+  describe "#cancel" do
+    it "stops the workload without raising" do
+      expect { runner.cancel(handle: valid_handle) }.not_to raise_error
+    end
+  end
+
+  describe "#cleanup" do
+    it "removes resources for the handle" do
+      expect { runner.cleanup(handle: valid_handle, force: true) }.not_to raise_error
+    end
+
+    it "is safe to call multiple times" do
+      expect { runner.cleanup(handle: missing_handle, force: false) }.not_to raise_error
+      expect { runner.cleanup(handle: missing_handle, force: false) }.not_to raise_error
+    end
+  end
+
+  describe "#reconnect" do
+    it "recovers from a persisted handle" do
+      expect(runner.reconnect(handle: valid_handle)).to be_present
+    end
+
+    it "handles dead or missing workloads through the lifecycle methods" do
+      expect(runner.running?(handle: missing_handle)).to be(false)
+      expect { runner.cleanup(handle: missing_handle, force: true) }.not_to raise_error
+    end
+  end
+
+  describe "networking" do
+    it "applies restricted-mode behavior" do
+      handle = runner.provision(spec: run_spec)
+
+      expect(handle).to be_a(ExecutionRunners::RunnerHandle)
+      next unless restricted_firewall_expectation
+
+      expect(NetworkPolicy).to have_received(:apply_firewall_rules).with(
+        restricted_firewall_expectation.fetch(:container),
+        github_ips: restricted_firewall_expectation.fetch(:github_ips),
+        proxy_host: restricted_firewall_expectation.fetch(:proxy_host),
+        service_destinations: restricted_firewall_expectation.fetch(:service_destinations),
+        backend: restricted_firewall_expectation.fetch(:backend)
+      )
+    end
+
+    it "allows direct outbound behavior when unrestricted" do
+      handle = runner.provision(spec: unrestricted_run_spec)
+
+      expect(handle).to be_a(ExecutionRunners::RunnerHandle)
+      if expects_unrestricted_firewall_rules
+        expect(NetworkPolicy).to have_received(:apply_firewall_rules)
+      else
+        expect(NetworkPolicy).not_to have_received(:apply_firewall_rules)
+      end
+    end
+  end
+
+  describe "workspace" do
+    it "provisions a workspace reference on the handle" do
+      handle = runner.provision(spec: run_spec)
+
+      expect(handle.workspace_ref).to be_present
+    end
+
+    it "cleans up the workspace as part of cleanup" do
+      expect { runner.cleanup(handle: valid_handle, force: true) }.not_to raise_error
+    end
+  end
+
+  describe "services" do
+    it "provisions declared services" do
+      env = runner.provision_services(agent_run: agent_run, network: services_network)
+
+      expect(env).to be_a(Hash)
+    end
+
+    it "provides service environment variables" do
+      env = runner.provision_services(agent_run: agent_run, network: services_network)
+
+      expect(env.keys).to all(be_a(String))
+    end
+
+    it "cleans up services" do
+      expect { runner.cleanup_services(agent_run: agent_run, stale_requeue_count: 0) }.not_to raise_error
+    end
+  end
+end

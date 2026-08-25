@@ -1810,6 +1810,127 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     end
   end
 
+  it_behaves_like "an execution runner contract" do
+    let(:valid_handle) do
+      ExecutionRunners::RunnerHandle.new(
+        runner_type: :local_docker,
+        identifier: "abc123",
+        host: "local",
+        workspace_ref: "paid-workspace-#{agent_run.id}",
+        metadata: {
+          "agent_run_id" => agent_run.id,
+          "worktree_path" => nil,
+          "environment" => { "FOO" => "bar" },
+          "timeout_seconds" => 3600
+        }
+      )
+    end
+    let(:missing_handle) { valid_handle.with(identifier: "missing123") }
+    let(:unrestricted_run_spec) do
+      ExecutionRunners::RunSpec.new(
+        **run_spec.to_h.merge(networking_policy: ExecutionRunners::NetworkingPolicy.direct_outbound)
+      )
+    end
+
+    let(:restricted_firewall_expectation) do
+      {
+        container: started_container,
+        github_ips: NetworkPolicy::DEFAULT_GITHUB_IPS,
+        proxy_host: nil,
+        service_destinations: [],
+        backend: backend
+      }
+    end
+
+    before do
+      allow(Containers::Provision).to receive_messages(
+        new: provision_service,
+        compatibility_for: Containers::Provision::CompatibilityResult.new(compatible: true, error_message: nil)
+      )
+      allow(provision_service).to receive(:execute) do |command, **, &block|
+        case command
+        when "startup timeout"
+          raise Containers::Provision::StartupTimeoutError.new("No output received", diagnostics: { elapsed: 30 })
+        when "idle timeout"
+          raise Containers::Provision::IdleTimeoutError.new("Output stalled", diagnostics: { idle_seconds: 30 })
+        when "wall timeout"
+          raise Containers::Provision::TimeoutError.new("Timed out", diagnostics: { elapsed: 60 })
+        when "abort output"
+          raise Containers::Provision::OutputAbortError.new("aborted", matched_output: "quota exceeded", source: :pattern)
+        when "oom failure"
+          Containers::Provision::Result.failure(
+            error: "Command exited with code 137",
+            stdout: "",
+            stderr: "",
+            exit_code: 137,
+            oom_killed: true,
+            memory_limit_bytes: 4_294_967_296,
+            container_running: false
+          )
+        else
+          block&.call(:stdout, "ok\n")
+          Containers::Provision::Result.success(stdout: "ok\n", stderr: "", exit_code: 0)
+        end
+      end
+      allow(provision_service).to receive_messages(
+        provision: Containers::Provision::Result.success(container_id: "abc123", container_host: "local"),
+        container_running?: true,
+        cleanup: nil,
+        container: started_container,
+        backend: backend,
+        firewall_service_destinations: []
+      )
+      allow(backend).to receive(:stop_container)
+      allow(Containers::ServiceProvisioner).to receive(:new).and_return(instance_double(
+        Containers::ServiceProvisioner,
+        provision: { "DATABASE_URL" => "postgres://agent:agent@pg:5432/agent_test" },
+        cleanup: nil
+      ))
+      allow(NetworkPolicy).to receive(:contract_for_policy).and_call_original
+      allow(AgentRun).to receive(:find).and_call_original
+      allow(Containers::Provision).to receive(:reconnect) do |agent_run:, container_id:, **kwargs|
+        raise Containers::Provision::ProvisionError, "Container #{container_id} not found" if container_id == "missing123"
+
+        provision_service
+      end
+    end
+  end
+
+  it_behaves_like "a secure execution runner" do
+    let(:secure_run_spec) do
+      ExecutionRunners::RunSpec.new(
+        **run_spec.to_h.merge(
+          secrets_config: { "OPENAI_API_KEY" => "sk-test-super-secret" }
+        )
+      )
+    end
+    let(:second_agent_run) { create(:agent_run, container_host: "local") }
+    let(:second_secure_run_spec) do
+      ExecutionRunners::RunSpec.new(
+        **secure_run_spec.to_h.merge(
+          agent_run: second_agent_run,
+          project: second_agent_run.project,
+          environment: { "FOO" => "baz" }
+        )
+      )
+    end
+
+    let(:secret_values_excluded_from_handle_metadata) do
+      [ "sk-test-super-secret", agent_run.proxy_token ]
+    end
+    let(:expected_proxy_scope_agent_run_ids) do
+      [ agent_run.id, second_agent_run.id ]
+    end
+
+    before do
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      allow(provision_service).to receive_messages(
+        provision: Containers::Provision::Result.success(container_id: "abc123", container_host: "local"),
+        firewall_service_destinations: []
+      )
+    end
+  end
+
   # RDR-057 baseline: the Docker runner passes the provider-neutral
   # no-shared-filesystem conformance suite with its platform stubbed. The
   # stubs constrain Containers::Provision to worktree_path: nil — the
