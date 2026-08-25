@@ -101,13 +101,11 @@ module Containers
 
     def compatible_candidates_for(requested_host, compatibility_requirements:, fallback_policy:, selection_source:, compatibility_failures:, health_failures:)
       # @spec CONTAINER-RUNTIME-002
-      candidates = [ requested_host.to_s ]
-      if [
-        HostRegistry::FALLBACK_FIRST_HEALTHY,
-        HostRegistry::FALLBACK_CAPACITY_AWARE
-      ].include?(fallback_policy) && selection_source != "explicit"
-        candidates.concat(registry.fallback_candidates_for(requested_host))
-      end
+      candidates = [ requested_host.to_s ] + fallback_hosts_for(
+        requested_host,
+        fallback_policy: fallback_policy,
+        selection_source: selection_source
+      )
 
       # RDR-048 first_healthy contract: when fallback is disabled, only the
       # requested host is a candidate. Without fallbacks there is nothing
@@ -211,17 +209,31 @@ module Containers
     end
 
     def record_requirements_failure!(requested_host:, fallback_policy:, selection_source:, compatibility_failures:, error_message:)
-      fallback_candidates = if [
+      fallback_candidates = fallback_hosts_for(
+        requested_host,
+        fallback_policy: fallback_policy,
+        selection_source: selection_source
+      )
+
+      ([ requested_host.to_s ] + fallback_candidates).uniq.each do |host|
+        compatibility_failures[host] = error_message
+      end
+    end
+
+    # Shared fallback-policy predicate: candidates beyond the requested host
+    # only exist when the policy allows fallback AND the selection was not
+    # pinned explicitly. Both the compatible-candidates pass and the
+    # requirements-error pass must agree on this set, or a requirements
+    # failure could record (or omit) hosts the compatible-candidates pass
+    # would have tried.
+    def fallback_hosts_for(requested_host, fallback_policy:, selection_source:)
+      if [
         HostRegistry::FALLBACK_FIRST_HEALTHY,
         HostRegistry::FALLBACK_CAPACITY_AWARE
       ].include?(fallback_policy) && selection_source != "explicit"
         registry.fallback_candidates_for(requested_host)
       else
         []
-      end
-
-      ([ requested_host.to_s ] + fallback_candidates).uniq.each do |host|
-        compatibility_failures[host] = error_message
       end
     end
   end

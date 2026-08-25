@@ -441,7 +441,7 @@ scattered across Docker-specific code.
   the same mount-support and capability preflight before `build_gateway`, so a
   late direct provision path still fails before any Docker side effect.
 - Capability mismatches are observable. The runner contract logs
-  `execution_runner.capability_mismatch` with the backend, available
+  `execution_runners.capability_mismatch` with the backend, available
   capabilities, required capabilities, and missing subset; queue scheduling then
   surfaces the resulting compatibility failure through the existing
   `process_run_queue.host_unavailable` / `host_selected` logs.

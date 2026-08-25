@@ -342,6 +342,11 @@ class LocalDockerRunner < Base
     # @spec CONTAINER-RUNTIME-036
     # @spec CONTAINER-RUNTIME-039
     def self.capabilities(backend:)
+      # NOTE: both architecture capabilities are declared unconditionally
+      # because the backend contract cannot prove the daemon's architecture
+      # today; an arm64 image on an x86_64-only daemon still fails at
+      # container-create time. Narrow via DockerHost#daemon_architecture
+      # once the backend/HostDefinition exposes it.
       capabilities = DECLARED_CAPABILITIES
       supports_host_paths = !backend.respond_to?(:supports_host_paths?) || backend.supports_host_paths?
       capabilities -= [ :host_paths ] unless supports_host_paths
