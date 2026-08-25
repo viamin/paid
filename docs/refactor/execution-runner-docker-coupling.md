@@ -1,9 +1,19 @@
 # Execution Runner — Docker Coupling Inventory
 
 > **Status**: Living document. Catalog only — no solutions proposed.
-> **Tracking issue**: [#3337](https://github.com/…) — [RDR-054] Inventory and characterize Docker coupling in agent execution.
+> **Tracking issue**: [#3337](https://github.com/…) — Inventory and characterize Docker coupling in agent execution (historically filed under the provisional execution-runner `RDR-054` label).
 > **Consumed by**: #3338–#3347 (execution-runner abstraction tree). This is the first issue in that tree and the reference these issues build on.
 > **Scope**: Every place Docker concepts appear in the agent execution path, classified by concern and severity, ending with a dependency graph and the natural seams where a runner boundary could be drawn.
+
+## Historical numbering note
+
+The execution-runner issue tree (`#3336`–`#3348`) was created while the runner
+boundary workstream temporarily used the label `RDR-054`. The repository's
+current `docs/rdrs/RDR-054-prompt-assembly-service.md` is a different,
+implemented RDR for prompt assembly. Treat this inventory as part of the
+execution-runner/container-runtime workstream recorded in
+`docs/intent/container-runtime/container-runtime-design.md`, not as part of the
+current prompt-assembly RDR.
 
 ## Purpose and how to read this document
 

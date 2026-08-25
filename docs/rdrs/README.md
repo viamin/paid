@@ -90,7 +90,7 @@ remaining gap issues.
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
 | [RDR-009](RDR-009-prompt-evolution.md) | Prompt Evolution System | Implemented | High |
-| [RDR-054](RDR-054-prompt-assembly-service.md) | Prompt Assembly Service | Draft | P1 |
+| [RDR-054](RDR-054-prompt-assembly-service.md) | Prompt Assembly Service | Implemented | P1 |
 
 ### Operations & Access
 
