@@ -118,6 +118,8 @@ end
 #   valid_handle           — persisted handle for lifecycle calls
 #   missing_handle         — handle whose underlying workload is gone
 #   agent_run              — AgentRun associated with the specs
+#   assert_workspace_cleanup! — helper method that proves cleanup triggers the
+#                                runner's underlying workspace teardown path
 #
 # Optional `let` bindings:
 #
@@ -220,7 +222,13 @@ RSpec.shared_examples "an execution runner contract" do
       expect(runner.running?(handle: valid_handle)).to be(true)
     end
 
-    it "returns false after completion or when the workload is missing" do
+    it "returns false after the workload has completed" do
+      completed_handle = valid_handle.with(identifier: "#{valid_handle.identifier}-completed")
+
+      expect(runner.running?(handle: completed_handle)).to be(false)
+    end
+
+    it "returns false when the workload is missing" do
       expect(runner.running?(handle: missing_handle)).to be(false)
     end
   end
@@ -281,7 +289,7 @@ RSpec.shared_examples "an execution runner contract" do
     end
 
     it "cleans up the workspace as part of cleanup" do
-      expect { runner.cleanup(handle: valid_handle, force: true) }.not_to raise_error
+      assert_workspace_cleanup!
     end
   end
 

@@ -1814,8 +1814,20 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
   end
 
   it_behaves_like "an execution runner contract" do
+    def assert_workspace_cleanup!
+      expect(provision_service).to receive(:cleanup).with(force: true)
+
+      runner.cleanup(handle: valid_handle, force: true)
+    end
+
     let(:contract_abort_patterns) { [ "quota exceeded" ] }
     let(:aborting_contract_command) { "emit quota warning" }
+    let(:completed_provision_service) do
+      instance_double(
+        Containers::Provision,
+        container_running?: false
+      )
+    end
 
     let(:valid_handle) do
       ExecutionRunners::RunnerHandle.new(
@@ -1910,7 +1922,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       allow(Containers::Provision).to receive(:reconnect) do |agent_run:, container_id:, **kwargs|
         raise Containers::Provision::ProvisionError, "Container #{container_id} not found" if container_id == "missing123"
 
-        provision_service
+        container_id == "abc123-completed" ? completed_provision_service : provision_service
       end
     end
   end
