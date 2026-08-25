@@ -68,9 +68,10 @@ RSpec.describe Tools::GetPullRequestDetails do
     end
 
     it "reports a merge-permission rejection with a sanitized message" do
+      raw_token = "ghp_#{"1" * 36}"
       pr.update!(
         merge_permission_rejected_at: Time.current,
-        merge_permission_rejection_reason: "refusing to allow a GitHub App to create or update ghp_123456789012345678901234567890123456 without `workflows` permission"
+        merge_permission_rejection_reason: "refusing to allow a GitHub App to create or update #{raw_token} without `workflows` permission"
       )
 
       result = tool.call(project_id: project.id, issue_id: pr.id)
@@ -83,7 +84,7 @@ RSpec.describe Tools::GetPullRequestDetails do
       )
       expect(result[:auto_merge][:last_auto_merge_attempt_at]).to eq(pr.reload.merge_permission_rejected_at)
       expect(result[:auto_merge][:sanitized_message]).to include("[REDACTED:github_token]")
-      expect(result[:auto_merge][:sanitized_message]).not_to include("ghp_123456789012345678901234567890123456")
+      expect(result[:auto_merge][:sanitized_message]).not_to include(raw_token)
     end
 
     it "explains a checks-not-green blocker without a prior attempt" do
