@@ -98,6 +98,14 @@ What ships today:
   exact GitHub Code Search behavior is required — `grep_repo` is backed by
   GitHub Code Search and spends its small code_search rate-limit bucket, so
   routine chat exploration must not exhaust it (#3391).
+- `Tools::Registry.chat_definition_for` calls each tool class's
+  `description_for(session:)` hook (default: the static `description`) when
+  building chat-advertised tool definitions, so a tool's framing can shift
+  with session/project state without hiding it. `grep_repo` uses this to
+  demote its own description to a fallback-only note once the session's
+  current project has a ready knowledge base, steering the model to
+  `search_code` for ordinary code discovery instead of exhausting shared
+  GitHub Code Search rate limits (#3392).
 
 ## What this is not
 
