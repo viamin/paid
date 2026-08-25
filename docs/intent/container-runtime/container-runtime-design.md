@@ -140,7 +140,8 @@ This boundary was originally planned under a provisional execution-runner
 `RDR-054` label in issues `#3336`–`#3348`. That number now belongs to the
 Prompt Assembly Service RDR, so the runner-boundary workstream is tracked here
 in the container-runtime LLD plus the later execution-runner RDRs such as
-RDR-057 and RDR-062.
+RDR-057 and RDR-062. Final scope reconciliation and closeout for the historical
+issue tree is tracked by `#3661`.
 
 - `ExecutionRunners::Base` is the abstract interface: `provision`, `start`,
   `running?`, `reconnect`, `status`, `cancel`, `cleanup`, `.compatible?`, `.ping`. Method
