@@ -552,11 +552,15 @@ export default class extends Controller {
   }
 
   incrementTokenUsage(tokens) {
-    if (!this.hasTokenUsageTarget || !tokens) return
+    if (!tokens) return
 
-    const current = Number(this.tokenUsageTarget.textContent.replace(/[^0-9]/g, "")) || 0
-    const nextValue = current + (Number(tokens.input) || 0) + (Number(tokens.output) || 0)
-    this.tokenUsageTarget.textContent = nextValue.toLocaleString()
+    const delta = (Number(tokens.input) || 0) + (Number(tokens.output) || 0)
+    if (!delta) return
+
+    this.tokenUsageTargets.forEach((target) => {
+      const current = Number(target.textContent.replace(/[^0-9]/g, "")) || 0
+      target.textContent = (current + delta).toLocaleString()
+    })
   }
 
   scrollToBottom() {

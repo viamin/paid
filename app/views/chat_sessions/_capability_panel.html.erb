@@ -1,5 +1,9 @@
 <% snapshot = chat_session_capability_snapshot(chat_session) %>
 <% can_manage_workspace = policy(chat_session).update? %>
+<%# The show page renders this partial twice (mobile + desktop headers) in
+    the same DOM at once, only one visible via CSS. dom_id_suffix keeps the
+    clone-project select's id/label association unique per instance. %>
+<% dom_id_suffix = local_assigns.fetch(:dom_id_suffix, "") %>
 <div class="rounded-lg border border-gray-200 bg-gray-50 p-4"
      data-chat-target="capabilityPanel"
      data-chat-capability="<%= snapshot[:container_capability] %>">
@@ -31,10 +35,11 @@
     <div class="mt-4 <%= "hidden" unless chat_session.container_ready? %>" data-chat-capability-ready-only="true">
       <%= form_with url: clone_project_chat_session_path(chat_session), method: :post, class: "flex flex-col gap-2 sm:flex-row sm:items-end" do |form| %>
         <div class="min-w-0 flex-1">
-          <%= form.label :project_id, "Clone another project", class: "block text-xs font-medium text-gray-600" %>
+          <%= form.label :project_id, "Clone another project", for: "project_id#{dom_id_suffix}", class: "block text-xs font-medium text-gray-600" %>
           <%= form.select :project_id,
                           options_from_collection_for_select(policy_scope(Project).order(:name), :id, :name),
                           { include_blank: "Choose a project" },
+                          id: "project_id#{dom_id_suffix}",
                           class: "mt-1 block w-full rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
         </div>
         <%= form.submit "Clone into workspace",

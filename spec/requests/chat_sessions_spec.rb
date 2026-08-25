@@ -355,8 +355,8 @@ RSpec.describe "ChatSessions" do
         expect(wrapper["class"].split.sort).to include("min-h-0")
       end
 
-      it "height-bounds the chat panel so the conversation container is the scroll container (#3459)" do
-        # @spec CHAT-API-008
+      it "height-bounds the chat panel so the conversation container is the scroll container (#3459, #3635)" do
+        # @spec CHAT-API-008, CHAT-API-009
         # The #3331 fix added `min-h-0` to the inner flex-1 wrapper, but the
         # chat panel's outer wrapper still used `min-h-[70vh]` — a *minimum*,
         # not a bound. When the transcript is long the panel grows beyond the
@@ -367,6 +367,11 @@ RSpec.describe "ChatSessions" do
         # link does nothing and the floating "back to top" button never
         # appears. Mirror the popup's behavior with a viewport-bound height
         # (dvh so the iOS URL bar doesn't break it).
+        #
+        # The `--chat-panel-bottom-space` subtraction tracks the page's actual
+        # bottom padding per breakpoint (1rem below `lg`, 2rem at `lg`+); the
+        # static 2rem used to clamp 16px of mobile panel out and starve the
+        # transcript (#3635).
         get chat_session_path(chat_session)
         expect(response).to have_http_status(:ok)
 
@@ -375,7 +380,9 @@ RSpec.describe "ChatSessions" do
 
         expect(panel).to be_present
         # Anchored so a `max-height:` declaration cannot satisfy it by substring.
-        expect(panel["style"]).to match(/(?:\A|;\s*)height: calc\(100dvh - var\(--chat-panel-offset-top, 0px\) - 2rem\)/)
+        expect(panel["style"]).to match(
+          /(?:\A|;\s*)height: calc\(100dvh - var\(--chat-panel-offset-top, 0px\) - var\(--chat-panel-bottom-space, 2rem\)\)/
+        )
       end
 
       it "uses a definite height rather than a max-height so the conversation's h-full root resolves" do
@@ -405,7 +412,7 @@ RSpec.describe "ChatSessions" do
         expect(panel["class"].split).not_to include("min-h-[70vh]", "lg:min-h-[70vh]")
       end
 
-      it "collapses the workspace disclosure for an inline-only chat" do
+      it "collapses the desktop workspace disclosure for an inline-only chat" do
         # @spec CHAT-API-009
         # The capability panel's cloned-repo list grows without bound. Inside
         # a viewport-bound panel an unbounded header starves the transcript,
@@ -416,34 +423,58 @@ RSpec.describe "ChatSessions" do
         get chat_session_path(chat_session)
         expect(response).to have_http_status(:ok)
 
-        disclosure = workspace_disclosure_in(response.body)
+        disclosure = desktop_workspace_disclosure_in(response.body)
 
         expect(disclosure).to be_present
         expect(disclosure["open"]).to be_nil
         expect(disclosure.at_xpath(".//summary")&.text).to include("Workspace")
       end
 
-      it "renders the workspace disclosure open when the chat has a workspace" do
+      it "renders the desktop workspace disclosure open when the chat has a workspace" do
         # @spec CHAT-API-009
         # A stopped workspace's only recovery path is the "Reopen with
         # workspace" button inside this panel. Folded away, the chat looks
-        # unrecoverable — so any session that actually has a workspace renders
-        # the disclosure open, in the server response, so it does not depend on
-        # JavaScript having booted.
+        # unrecoverable — so the wide/desktop header renders the disclosure
+        # open, in the server response, so it does not depend on JavaScript
+        # having booted.
         %w[pending provisioning ready failed stopped].each do |capability|
           chat_session.update!(container_capability: capability)
 
           get chat_session_path(chat_session)
           expect(response).to have_http_status(:ok)
 
-          disclosure = workspace_disclosure_in(response.body)
+          disclosure = desktop_workspace_disclosure_in(response.body)
 
           expect(disclosure).to be_present, "no workspace disclosure for #{capability}"
           expect(disclosure["open"]).not_to be_nil, "workspace disclosure folded shut for #{capability}"
         end
       end
 
-      it "bounds the chat panel header so the transcript keeps usable height" do
+      it "uses a compact mobile page header so the transcript remains usable" do
+        # @spec CHAT-API-009
+        # On mobile the desktop header stack is too tall to coexist with the
+        # viewport-bound panel, navbar, history toggle, and composer. Render a
+        # separate compact header below `xl` and keep the transcript-dominating
+        # desktop header out of that layout entirely.
+        get chat_session_path(chat_session)
+        expect(response).to have_http_status(:ok)
+
+        doc = Nokogiri::HTML(response.body)
+        headers = doc.xpath("//div[@data-controller='chat']/header")
+
+        expect(headers.size).to eq(2)
+
+        mobile_header = headers.first
+        desktop_header = headers.last
+
+        expect(mobile_header["class"].split).to include("xl:hidden")
+        expect(mobile_header.text).to include("Session details")
+        expect(mobile_header.text).to include("Workspace")
+
+        expect(desktop_header["class"].split).to include("hidden", "xl:block")
+      end
+
+      it "bounds the desktop chat panel header so the transcript keeps usable height" do
         # @spec CHAT-API-009
         # Structural backstop: no combination of long titles, badges, or
         # workspace state may push the header past its share of the panel.
@@ -454,7 +485,7 @@ RSpec.describe "ChatSessions" do
         expect(response).to have_http_status(:ok)
 
         doc = Nokogiri::HTML(response.body)
-        header = doc.at_xpath("//div[@data-controller='chat']/header")
+        header = desktop_header_in(doc)
 
         expect(header).to be_present
 
@@ -465,7 +496,7 @@ RSpec.describe "ChatSessions" do
         expect(classes).to include("overflow-x-hidden")
       end
 
-      it "relaxes the header cap while the workspace disclosure is open" do
+      it "relaxes the desktop header cap while the workspace disclosure is open" do
         # @spec CHAT-API-009
         # Clipping content the user just chose to expand is worse than a
         # temporarily shorter transcript: without the relaxed cap, opening
@@ -475,7 +506,7 @@ RSpec.describe "ChatSessions" do
         expect(response).to have_http_status(:ok)
 
         doc = Nokogiri::HTML(response.body)
-        header = doc.at_xpath("//div[@data-controller='chat']/header")
+        header = desktop_header_in(doc)
 
         expect(header["class"].split).to include("has-[details[open]]:max-h-[75%]")
       end
@@ -497,8 +528,14 @@ RSpec.describe "ChatSessions" do
         panel = doc.at_xpath("//div[@data-controller='chat']")
 
         expect(panel).to be_present
-        # Anchored so a `max-height:` declaration cannot satisfy it by substring.
-        expect(panel["style"]).to match(/(?:\A|;\s*)height: calc\(100dvh - var\(--chat-panel-offset-top, 0px\) - 2rem\)/)
+        # Anchored so a `max-height:` declaration cannot satisfy it by
+        # substring. The bound uses `--chat-panel-bottom-space` so the
+        # subtraction tracks the page's actual bottom padding per breakpoint
+        # (1rem below `lg`, 2rem at `lg`+); see the CHAT-API-009 mobile test
+        # below for the responsive variant.
+        expect(panel["style"]).to match(
+          /(?:\A|;\s*)height: calc\(100dvh - var\(--chat-panel-offset-top, 0px\) - var\(--chat-panel-bottom-space, 2rem\)\)/
+        )
       end
 
       it "renders the auto-approve checkbox reflecting the session state" do
@@ -1063,9 +1100,15 @@ RSpec.describe "ChatSessions" do
     end
   end
 
-  def workspace_disclosure_in(body)
-    Nokogiri::HTML(body)
-      .at_xpath("//div[@data-chat-target='capabilityPanel']")
+  def desktop_header_in(doc)
+    doc.xpath("//div[@data-controller='chat']/header").last
+  end
+
+  def desktop_workspace_disclosure_in(body)
+    doc = Nokogiri::HTML(body)
+    desktop_header = desktop_header_in(doc)
+    desktop_header
+      &.at_xpath(".//div[@data-chat-target='capabilityPanel']")
       &.ancestors("details")
       &.first
   end
