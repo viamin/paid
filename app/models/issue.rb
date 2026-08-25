@@ -19,6 +19,9 @@ class Issue < ApplicationRecord
   # as the final fallback when no account-level or project-level override is set.
   # Keep in sync with the TenantSetting::DEFAULT_AGENT_SETTINGS default.
   DEFAULT_MAX_RUNNER_FAILURES = 10
+  ISSUE_ANALYSIS_BACKOFF_BASE_DELAY = 5.minutes
+  ISSUE_ANALYSIS_BACKOFF_MAX_DELAY = 1.hour
+  ISSUE_ANALYSIS_BACKOFF_HISTORY_LIMIT = 12
 
   # Default label mirrored to GitHub to surface an issue/PR's paused state.
   # Adding the label in GitHub (or pausing from the UI) flips `paused`;
@@ -797,6 +800,7 @@ class Issue < ApplicationRecord
   # https://github.com/sidekiq/sidekiq/wiki/Error-Handling#automatic-job-retry.
   def auto_pick_reenqueue_delay # @spec EAGER-QUEUE-007
     return unless paid_state == "failed"
+    return issue_analysis_reenqueue_delay if issue_analysis_backoff_active?
 
     n = [ consecutive_auto_pick_failure_count - 1, 0 ].max
     ((n**4) + 15 + (rand(10) * (n + 1))).seconds
@@ -819,6 +823,50 @@ class Issue < ApplicationRecord
   end
 
   public
+
+  def issue_analysis_backoff_active?(reset_at: nil, now: Time.current)
+    return false if issue_analysis_next_attempt_at.blank? || issue_analysis_next_attempt_at <= now
+    return false if reset_at.present? && issue_analysis_backoff_set_at.present? && issue_analysis_backoff_set_at < reset_at
+
+    true
+  end
+
+  def record_issue_analysis_backoff!(paid_state:, now: Time.current)
+    next_attempt_at = now + issue_analysis_backoff_delay
+    attrs = {
+      issue_analysis_next_attempt_at: next_attempt_at,
+      issue_analysis_backoff_set_at: now
+    }
+    attrs[:paid_state] = paid_state if self.paid_state != paid_state
+    update!(attrs)
+
+    Rails.logger.info(
+      message: "issue.issue_analysis_backoff_recorded",
+      component: "agent_execution",
+      issue_id: id,
+      project_id: project_id,
+      issue_number: github_number,
+      next_attempt_at: next_attempt_at.iso8601,
+      consecutive_failures: consecutive_issue_analysis_provider_exhaustion_count
+    )
+
+    next_attempt_at
+  end
+
+  def clear_issue_analysis_backoff!(reason: "Cleared after a successful issue-analysis provider call")
+    return if issue_analysis_next_attempt_at.blank? && issue_analysis_backoff_set_at.blank?
+
+    update!(issue_analysis_next_attempt_at: nil, issue_analysis_backoff_set_at: nil)
+
+    Rails.logger.info(
+      message: "issue.issue_analysis_backoff_cleared",
+      component: "agent_execution",
+      issue_id: id,
+      project_id: project_id,
+      issue_number: github_number,
+      reason: reason
+    )
+  end
 
   # An issue is abandoned for retry-cap purposes once every available provider
   # has hit the per-issue per-provider retry cap. Abandoned issues are excluded
@@ -868,6 +916,29 @@ class Issue < ApplicationRecord
       reason: reason
     )
   end
+
+  private
+
+  def issue_analysis_reenqueue_delay
+    [ issue_analysis_next_attempt_at - Time.current, 0 ].max.seconds
+  end
+
+  def issue_analysis_backoff_delay
+    multiplier = [ consecutive_issue_analysis_provider_exhaustion_count - 1, 0 ].max
+    [ ISSUE_ANALYSIS_BACKOFF_BASE_DELAY * (2**multiplier), ISSUE_ANALYSIS_BACKOFF_MAX_DELAY ].min
+  end
+
+  def consecutive_issue_analysis_provider_exhaustion_count
+    agent_runs
+      .where(auto_pick: true, goal: "analyze_issue")
+      .finished
+      .order(created_at: :desc, id: :desc)
+      .limit(ISSUE_ANALYSIS_BACKOFF_HISTORY_LIMIT)
+      .take_while(&:provider_unavailable?)
+      .count
+  end
+
+  public
 
   # Prefix used to distinguish a terminal push-permission abandonment from a
   # retry-cap abandonment in the free-text +runner_retry_abandon_reason+ field.

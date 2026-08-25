@@ -33,3 +33,12 @@ Enqueue paths may bypass broader project gates after a caller has already
 established eligibility, but they must still respect the canonical
 `auto_pick_enabled` switch at call time so stale sync or retry work cannot
 recreate queued Auto-Pick runs after the operator turns the feature off.
+
+## Issue-analysis cooldown gating
+
+Auto-Pick eligibility also respects issue-level `analyze_issue` cooldowns
+recorded after provider exhaustion. A failed issue that is otherwise eligible
+must stay out of the candidate pool until its persisted next-attempt time,
+unless the owner's issue-analysis runner configuration / runner-health context
+has changed since that cooldown was recorded. Manual retries do not consult
+this gate.

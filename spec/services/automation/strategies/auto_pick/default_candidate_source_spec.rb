@@ -81,6 +81,59 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to contain_exactly(issue.id)
     end
 
+    # @spec AUTO-PICK-QUEUE-002 ISSUE-ANALYSIS-010
+    it "excludes failed issues during an active analyze_issue provider-exhaustion cooldown" do
+      issue = create(:issue, project: project, paid_state: "failed")
+      travel 1.minute do
+        issue.update!(
+          issue_analysis_next_attempt_at: 10.minutes.from_now,
+          issue_analysis_backoff_set_at: Time.current
+        )
+
+        scope = described_class.eligible_scope(project)
+
+        expect(scope.pluck(:id)).to be_empty
+      end
+    end
+
+    # @spec AUTO-PICK-QUEUE-002 ISSUE-ANALYSIS-010
+    it "re-includes failed issues once the analyze_issue provider-exhaustion cooldown expires" do
+      issue = create(:issue, project: project, paid_state: "failed",
+        issue_analysis_next_attempt_at: 1.minute.ago,
+        issue_analysis_backoff_set_at: 11.minutes.ago)
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to contain_exactly(issue.id)
+    end
+
+    # @spec AUTO-PICK-QUEUE-002 ISSUE-ANALYSIS-010
+    it "treats the cooldown as reset when issue-analysis runner configuration changes" do
+      issue = create(:issue, project: project, paid_state: "failed",
+        issue_analysis_next_attempt_at: 10.minutes.from_now,
+        issue_analysis_backoff_set_at: 10.minutes.ago)
+
+      project.effective_owner.settings.update!(issue_analysis_runner: "codex")
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to contain_exactly(issue.id)
+    end
+
+    # @spec AUTO-PICK-QUEUE-002 ISSUE-ANALYSIS-010
+    it "treats the cooldown as reset when issue-analysis authentication changes" do
+      issue = create(:issue, project: project, paid_state: "failed",
+        issue_analysis_next_attempt_at: 10.minutes.from_now,
+        issue_analysis_backoff_set_at: 10.minutes.ago)
+      api_key = create(:provider_api_key, user: project.effective_owner, api_service_type: "anthropic")
+
+      api_key.update!(api_key: "sk-rotated-#{SecureRandom.hex(8)}")
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to contain_exactly(issue.id)
+    end
+
     it "includes completed issues with no PR-producing run (infrastructure failure recovery)" do
       issue = create(:issue, project: project, paid_state: "completed")
       create(:agent_run, :completed, :automatic, project: project, issue: issue,

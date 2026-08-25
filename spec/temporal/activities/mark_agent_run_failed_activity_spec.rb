@@ -37,6 +37,49 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
       expect(issue.reload.paid_state).to eq("failed")
     end
 
+    # @spec ISSUE-ANALYSIS-010
+    it "records an issue-level analyze_issue backoff for automatic provider exhaustion failures" do
+      issue = create(:issue, :in_progress, project: project)
+      agent_run = create(:agent_run, :running, project: project, issue: issue, goal: "analyze_issue", auto_pick: true)
+
+      freeze_time do
+        activity.execute(agent_run_id: agent_run.id, error: "All issue-analysis providers exhausted: claude")
+
+        issue.reload
+        expect(issue.paid_state).to eq("failed")
+        expect(issue.issue_analysis_backoff_set_at).to eq(Time.current)
+        expect(issue.issue_analysis_next_attempt_at).to eq(5.minutes.from_now)
+      end
+    end
+
+    # @spec ISSUE-ANALYSIS-010
+    it "caps the issue-level analyze_issue backoff for repeated automatic provider exhaustion failures" do
+      issue = create(:issue, :in_progress, project: project)
+      12.times do
+        create(:agent_run, :failed, :automatic, project: project, issue: issue,
+          goal: "analyze_issue", auto_pick: true, error_message: "All issue-analysis providers exhausted: claude")
+      end
+      agent_run = create(:agent_run, :running, project: project, issue: issue, goal: "analyze_issue", auto_pick: true)
+
+      freeze_time do
+        activity.execute(agent_run_id: agent_run.id, error: "All issue-analysis providers exhausted: claude")
+
+        expect(issue.reload.issue_analysis_next_attempt_at).to eq(1.hour.from_now)
+      end
+    end
+
+    # @spec ISSUE-ANALYSIS-011
+    it "does not record an issue-level analyze_issue backoff for manual failures" do
+      issue = create(:issue, :in_progress, project: project)
+      agent_run = create(:agent_run, :running, project: project, issue: issue, goal: "analyze_issue", auto_pick: false)
+
+      activity.execute(agent_run_id: agent_run.id, error: "All issue-analysis providers exhausted: claude")
+
+      issue.reload
+      expect(issue.issue_analysis_backoff_set_at).to be_nil
+      expect(issue.issue_analysis_next_attempt_at).to be_nil
+    end
+
     it "sets issue paid_state to completed for review-goal runs" do
       issue = create(:issue, :in_progress, :pull_request, project: project)
       agent_run = create(:agent_run, :running, :review_goal, project: project, issue: issue)

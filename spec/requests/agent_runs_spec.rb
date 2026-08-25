@@ -2756,6 +2756,21 @@ RSpec.describe "AgentRuns" do
         expect(response).to redirect_to(project_agent_run_path(project, new_run))
       end
 
+      # @spec ISSUE-ANALYSIS-011
+      it "allows manual retry of a failed analyze_issue run even when automatic backoff is active" do
+        issue = create(:issue, project: project,
+          issue_analysis_next_attempt_at: 30.minutes.from_now,
+          issue_analysis_backoff_set_at: Time.current)
+        agent_run = create(:agent_run, :failed, project: project, issue: issue, goal: "analyze_issue", agent_type: "claude_code")
+
+        expect {
+          post retry_project_agent_run_path(project, agent_run)
+        }.to change(AgentRun, :count).by(1)
+
+        expect(AgentRun.last.trigger_type).to eq("manual")
+        expect(response).to redirect_to(project_agent_run_path(project, AgentRun.last))
+      end
+
       it "marks the original run as retried" do
         agent_run = create(:agent_run, :failed, project: project)
 
