@@ -75,32 +75,32 @@ module PageLoadPerformance
       delta > settings.regression_floor_ms && delta > before * settings.regression_ratio
     end
 
-  # @spec PAGE-LOAD-REGRESSION-005, PAGE-LOAD-REGRESSION-009
-  def raise_finding(measurement, baseline, metric, before, current)
-    finding = PageLoadRegressionFinding.find_or_initialize_by(
-      project_id: project.id,
-      pull_request_number: measurement.pull_request_number,
-      route_name: measurement.route_name,
-      status: "open"
-    )
-    finding.assign_attributes(
-      account_id: project.account_id,
-      agent_run_id: agent_run.id,
-      comparison_metric: metric,
-      baseline_ms: before,
-      current_ms: current,
-      delta_ms: current - before,
-      delta_ratio: ((current - before).to_f / before).round(4),
-      baseline_commit_sha: baseline.commit_sha,
-      commit_sha: measurement.commit_sha,
-      route_path: measurement.route_path,
-      sample_spread: { "baseline" => baseline.samples[metric], "current" => measurement.samples[metric] }.compact,
-      changed_files: changed_files,
-      actionable: hints.key?(measurement.route_name.to_s)
-    )
-    finding.save!
-    finding
-  end
+    # @spec PAGE-LOAD-REGRESSION-005, PAGE-LOAD-REGRESSION-009
+    def raise_finding(measurement, baseline, metric, before, current)
+      finding = PageLoadRegressionFinding.find_or_initialize_by(
+        project_id: project.id,
+        pull_request_number: measurement.pull_request_number,
+        route_name: measurement.route_name,
+        status: "open"
+      )
+      finding.assign_attributes(
+        account_id: project.account_id,
+        agent_run_id: agent_run.id,
+        comparison_metric: metric,
+        baseline_ms: before,
+        current_ms: current,
+        delta_ms: current - before,
+        delta_ratio: ((current - before).to_f / before).round(4),
+        baseline_commit_sha: baseline.commit_sha,
+        commit_sha: measurement.commit_sha,
+        route_path: measurement.route_path,
+        sample_spread: { "baseline" => baseline.samples[metric], "current" => measurement.samples[metric] }.compact,
+        changed_files: changed_files,
+        actionable: hints.key?(measurement.route_name.to_s)
+      )
+      finding.save!
+      finding
+    end
 
     # @spec PAGE-LOAD-REGRESSION-006
     def resolve_finding(measurement)

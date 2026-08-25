@@ -31,9 +31,11 @@ RSpec.describe PageLoadPerformance::RecordMeasurements do
     }
   end
 
+  let(:viewport) { { "width" => 1280, "height" => 900 } }
+
   # @spec PAGE-LOAD-LEDGER-001
   it "persists one measurement per route with medians, samples, viewport and provenance" do
-    measurements = described_class.call(agent_run: agent_run, document: document)
+    measurements = described_class.call(agent_run: agent_run, document: document, viewport: viewport)
 
     expect(measurements.size).to eq(1)
     expect(measurements.first).to have_attributes(
@@ -58,7 +60,7 @@ RSpec.describe PageLoadPerformance::RecordMeasurements do
 
   # @spec PAGE-LOAD-MEASURE-005
   it "records metrics absent from the document as null" do
-    measurement = described_class.call(agent_run: agent_run, document: document).first
+    measurement = described_class.call(agent_run: agent_run, document: document, viewport: viewport).first
 
     expect(measurement.fcp_ms).to be_nil
     expect(measurement.dcl_ms).to be_nil
@@ -66,11 +68,11 @@ RSpec.describe PageLoadPerformance::RecordMeasurements do
 
   # @spec PAGE-LOAD-LEDGER-003
   it "replaces the earlier measurement when the same commit is captured again" do
-    described_class.call(agent_run: agent_run, document: document)
+    described_class.call(agent_run: agent_run, document: document, viewport: viewport)
     updated = document.deep_dup
     updated["routes"]["dashboard"]["metrics"]["load_ms"]["median"] = 999
 
-    described_class.call(agent_run: agent_run, document: updated)
+    described_class.call(agent_run: agent_run, document: updated, viewport: viewport)
 
     rows = PageLoadMeasurement.where(project: project, pull_request_number: 42, route_name: "dashboard")
     expect(rows.size).to eq(1)
@@ -82,7 +84,7 @@ RSpec.describe PageLoadPerformance::RecordMeasurements do
     document["routes"]["dashboard"]["samples"] = 1
     document["routes"]["dashboard"]["metrics"]["load_ms"] = { "median" => 810, "min" => 810, "max" => 810, "values" => [ 810 ] }
 
-    measurement = described_class.call(agent_run: agent_run, document: document).first
+    measurement = described_class.call(agent_run: agent_run, document: document, viewport: viewport).first
 
     expect(measurement.sample_count).to eq(1)
     expect(measurement.samples.dig("load_ms", "values")).to eq([ 810 ])
@@ -101,15 +103,21 @@ RSpec.describe PageLoadPerformance::RecordMeasurements do
     expect(measurement).to have_attributes(viewport_width: 1280, viewport_height: 900)
   end
 
+  # @spec PAGE-LOAD-MEASURE-014
+  it "raises on a blank viewport instead of reading one back from the container" do
+    expect { described_class.call(agent_run: agent_run, document: document, viewport: nil) }
+      .to raise_error(ArgumentError, /viewport/)
+  end
+
   # @spec PAGE-LOAD-MEASURE-008
   it "records nothing when the document is missing" do
-    expect { described_class.call(agent_run: agent_run, document: nil) }
+    expect { described_class.call(agent_run: agent_run, document: nil, viewport: viewport) }
       .not_to change(PageLoadMeasurement, :count)
   end
 
   # @spec PAGE-LOAD-MEASURE-008
   it "records nothing when the document carries no routes" do
-    expect { described_class.call(agent_run: agent_run, document: { "routes" => {} }) }
+    expect { described_class.call(agent_run: agent_run, document: { "routes" => {} }, viewport: viewport) }
       .not_to change(PageLoadMeasurement, :count)
   end
 end

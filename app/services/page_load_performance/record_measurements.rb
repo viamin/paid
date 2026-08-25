@@ -11,7 +11,7 @@ module PageLoadPerformance
   class RecordMeasurements
     def self.call(...) = new(...).call
 
-    def initialize(agent_run:, document:, viewport: nil, source: "screenshot_capture")
+    def initialize(agent_run:, document:, viewport:, source: "screenshot_capture")
       @agent_run = agent_run
       @document = document
       @viewport = viewport
@@ -78,12 +78,17 @@ module PageLoadPerformance
       end
     end
 
-    # The host knows the viewport it asked the runner to render at. Reading it
-    # back from the container would let a wrong value disqualify every later
-    # comparison as "not comparable" with nothing surfaced.
+    # The viewport is a host fact: the host knows what it asked the runner to
+    # render at, and reading it back from the container document would let a
+    # wrong value silently disqualify every later comparison. The keyword is
+    # required and a blank one raises, so a host that forgets it fails loudly
+    # instead of recording measurements that can never compare.
     # @spec PAGE-LOAD-MEASURE-014
     def viewport
-      @resolved_viewport ||= (@viewport.presence || @document["viewport"]).to_h.stringify_keys
+      resolved = @viewport.to_h.stringify_keys
+      raise ArgumentError, "RecordMeasurements requires the host's viewport" if resolved.blank?
+
+      resolved
     end
 
     def captured_at
