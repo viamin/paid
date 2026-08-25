@@ -28,6 +28,22 @@ RSpec.describe Activities::QueueAgentRunActivity do
       )
     end
 
+    # @spec PAGE-LOAD-FOLLOWUP-006
+    it "counts an attempt against the finding it queued for" do
+      finding = create(:page_load_regression_finding,
+        project: project, pull_request_number: 42, actionable: true)
+
+      described_class.new.execute(
+        project_id: project.id,
+        issue_id: issue.id,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        focus: "performance_regression"
+      )
+
+      expect(finding.reload.followup_attempts).to eq(1)
+    end
+
     # @spec PAGE-LOAD-FOLLOWUP-004
     it "leaves metadata untouched for other focuses" do
       described_class.new.execute(

@@ -26,6 +26,8 @@ module Prompts
     MAX_RECENT_COMMENT_PAGES = 10
     ALREADY_ADDRESSED_MARKER = "PAID_REVIEW_THREADS_ALREADY_ADDRESSED"
     LEGACY_PROMPT_BUILDER = "legacy_prompt_builder"
+    # A perf follow-up needs to see what the PR touched, not the whole diff.
+    PAGE_LOAD_CHANGED_FILE_LIMIT = 50
     PROMPT_ASSEMBLY_BUILDER = "prompt_assembly"
 
     PROMPT_SLUG = "coding.pr_review_rebase"
@@ -444,11 +446,20 @@ module Prompts
 
     # Built from the regression evidence persisted on the run at queue time, so
     # the prompt describes one stable measurement rather than re-measuring.
+    #
+    # Route names and paths come from the repository's screenshot config and the
+    # file list from the pull request's diff, so the section is quarantined like
+    # any other repository-derived context (PROMPT-ASSEMBLY-003) even though the
+    # measurement around it is Paid's own.
     # @spec FOCUSED-RUN-003
     def page_load_regression_section
       evidence = page_load_regression_evidence
       spread = evidence["sample_spread"].to_h
-      files = Array(evidence["changed_files"]).map { |file| "- #{file}" }.join("\n")
+      changed = Array(evidence["changed_files"])
+      files = changed.first(PAGE_LOAD_CHANGED_FILE_LIMIT).map { |file| "- #{file}" }.join("\n")
+      if changed.size > PAGE_LOAD_CHANGED_FILE_LIMIT
+        files += "\n- …and #{changed.size - PAGE_LOAD_CHANGED_FILE_LIMIT} more"
+      end
 
       content = <<~SECTION
         # Page Load Regression
@@ -474,7 +485,7 @@ module Prompts
         key: :page_load_regression,
         source: :page_load_regression,
         content: content,
-        trust_level: :trusted,
+        trust_level: :quarantined,
         required: true,
         inclusion_reason: "page load regression measured on a route this PR touched"
       )

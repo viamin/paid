@@ -11,9 +11,10 @@ module PageLoadPerformance
   class RecordMeasurements
     def self.call(...) = new(...).call
 
-    def initialize(agent_run:, document:, source: "screenshot_capture")
+    def initialize(agent_run:, document:, viewport: nil, source: "screenshot_capture")
       @agent_run = agent_run
       @document = document
+      @viewport = viewport
       @source = source
     end
 
@@ -31,6 +32,7 @@ module PageLoadPerformance
       @routes ||= @document.is_a?(Hash) ? @document["routes"] : nil
     end
 
+    # @spec PAGE-LOAD-LEDGER-003
     def record(route_name, route)
       return nil unless route.is_a?(Hash)
 
@@ -63,6 +65,7 @@ module PageLoadPerformance
       }.merge(medians(metrics))
     end
 
+    # @spec PAGE-LOAD-MEASURE-005
     def medians(metrics)
       PageLoadMeasurement::METRICS.index_with { |name| metrics.dig(name, "median") }.symbolize_keys
     end
@@ -75,8 +78,12 @@ module PageLoadPerformance
       end
     end
 
+    # The host knows the viewport it asked the runner to render at. Reading it
+    # back from the container would let a wrong value disqualify every later
+    # comparison as "not comparable" with nothing surfaced.
+    # @spec PAGE-LOAD-MEASURE-014
     def viewport
-      @viewport ||= @document["viewport"].to_h
+      @resolved_viewport ||= (@viewport.presence || @document["viewport"]).to_h.stringify_keys
     end
 
     def captured_at

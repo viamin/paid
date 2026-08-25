@@ -139,6 +139,21 @@ route is simply absent from the document. A missing or unparseable document
 degrades the capture to today's behavior — screenshots, no timings — and is
 logged rather than raised, since a screenshot comment is still worth posting.
 
+### The timing document is untrusted input
+
+The document is written inside the agent's own container, so the host treats it
+the way it treats any other container output: it is read under a size cap,
+truncated to the route cap, and every field is coerced to the shape the ledger
+stores — names and paths to their column widths, metrics to positive integers
+inside a sane millisecond range, sample arrays to the number of samples that
+were actually requested. A document that fails those checks degrades to "no
+timings for this capture", never to a partial write or an exception mid-insert.
+
+The viewport is the one field the host does not take from the document at all:
+it already knows the viewport it asked the runner to render at, and reading it
+back from the container would let a wrong value silently disqualify every later
+comparison.
+
 ## The ledger
 
 ### Record
@@ -272,6 +287,16 @@ it is created, from the screenshot hints of the capture that produced it. The
 hints are the capture run's derivation of which routes this pull request's diff
 touches, and they are not available to the scanner later. Findings for routes
 the pull request did not touch are recorded and reported with the flag unset.
+
+### Attempts are capped
+
+Each queued follow-up run counts an attempt against the finding, and the
+trigger stops firing once `MAX_FOLLOWUP_ATTEMPTS` is reached. Without the cap a
+regression the agent cannot actually fix would requeue on every scan cycle —
+each run pushes a commit, so the generic no-progress loop breaker reads it as
+progress and never intervenes. An exhausted finding stays open and keeps
+appearing in the pull request comment, which says the automated attempts are
+spent; a human decides what happens next.
 
 ### When a finding closes
 

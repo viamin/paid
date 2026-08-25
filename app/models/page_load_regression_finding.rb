@@ -11,6 +11,10 @@
 # @spec PAGE-LOAD-REGRESSION-005, PAGE-LOAD-REGRESSION-009
 class PageLoadRegressionFinding < ApplicationRecord
   STATUSES = %w[open resolved superseded].freeze
+  # Each queued follow-up counts an attempt. Without a cap, a regression the
+  # agent cannot fix requeues on every scan cycle: each run pushes a commit, so
+  # the generic no-progress loop breaker reads it as progress and never fires.
+  MAX_FOLLOWUP_ATTEMPTS = 2
 
   belongs_to :account
   belongs_to :project
@@ -21,8 +25,18 @@ class PageLoadRegressionFinding < ApplicationRecord
   validates :status, inclusion: { in: STATUSES }
 
   scope :open_findings, -> { where(status: "open") }
+  scope :followup_eligible, -> { where(followup_attempts: ...MAX_FOLLOWUP_ATTEMPTS) }
   scope :actionable, -> { where(actionable: true) }
   scope :for_pull_request, ->(number) { where(pull_request_number: number) }
+
+  # @spec PAGE-LOAD-FOLLOWUP-006
+  def followup_exhausted?
+    followup_attempts >= MAX_FOLLOWUP_ATTEMPTS
+  end
+
+  def record_followup_attempt!
+    increment!(:followup_attempts)
+  end
 
   def resolve!
     update!(status: "resolved", resolved_at: Time.current)

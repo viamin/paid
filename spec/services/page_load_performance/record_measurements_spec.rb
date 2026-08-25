@@ -88,6 +88,19 @@ RSpec.describe PageLoadPerformance::RecordMeasurements do
     expect(measurement.samples.dig("load_ms", "values")).to eq([ 810 ])
   end
 
+  # @spec PAGE-LOAD-MEASURE-014
+  it "records the host's viewport in preference to the container-reported one" do
+    document["viewport"] = { "width" => 9999, "height" => 9999 }
+
+    measurement = described_class.call(
+      agent_run: agent_run,
+      document: document,
+      viewport: { "width" => 1280, "height" => 900 }
+    ).first
+
+    expect(measurement).to have_attributes(viewport_width: 1280, viewport_height: 900)
+  end
+
   # @spec PAGE-LOAD-MEASURE-008
   it "records nothing when the document is missing" do
     expect { described_class.call(agent_run: agent_run, document: nil) }

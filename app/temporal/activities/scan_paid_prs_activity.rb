@@ -1190,7 +1190,8 @@ module Activities
     # resolution, per-PR suppression, and quality-gate admission. This activity
     # decides only whether a finding warrants a trigger; the focus it maps to
     # and its priority are owned by the focused-run vocabulary.
-    # @spec PAGE-LOAD-FOLLOWUP-001, PAGE-LOAD-FOLLOWUP-002, PAGE-LOAD-FOLLOWUP-003
+    # @spec PAGE-LOAD-FOLLOWUP-001, PAGE-LOAD-FOLLOWUP-002, PAGE-LOAD-FOLLOWUP-003,
+    # PAGE-LOAD-FOLLOWUP-006
     def page_load_regression_triggers(project, issue)
       pr_number = issue.github_number
       return [] if pr_number.blank?
@@ -1201,6 +1202,7 @@ module Activities
         .where(project_id: project.id, pull_request_number: pr_number)
         .open_findings
         .actionable
+        .followup_eligible
 
       findings.map do |finding|
         {

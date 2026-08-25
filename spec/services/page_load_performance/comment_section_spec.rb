@@ -47,6 +47,25 @@ RSpec.describe PageLoadPerformance::CommentSection do
     expect(body).to include("700")
   end
 
+  # @spec PAGE-LOAD-REGRESSION-007
+  it "escapes route names so a crafted route cannot break the table" do
+    body = described_class.call(comparisons: [ comparison(status: "regressed", route: "dash|board`x") ])
+
+    expect(body).to include("dash\\|board\\`x")
+    expect(body.lines.count { |line| line.start_with?("|") }).to eq(3)
+  end
+
+  # @spec PAGE-LOAD-FOLLOWUP-006
+  it "says when automated attempts are exhausted" do
+    finding = instance_double(PageLoadRegressionFinding, followup_exhausted?: true)
+    exhausted = PageLoadPerformance::Comparison.new(
+      route_name: "dashboard", status: "regressed", metric: "lcp_ms",
+      baseline_ms: 640, current_ms: 1_100, delta_ms: 460, trailing_median_ms: nil, finding: finding
+    )
+
+    expect(described_class.call(comparisons: [ exhausted ])).to include("attempts exhausted")
+  end
+
   # @spec PAGE-LOAD-MEASURE-008
   it "renders nothing when there are no comparisons" do
     expect(described_class.call(comparisons: [])).to be_nil

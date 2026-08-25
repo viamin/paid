@@ -62,6 +62,20 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(activity.send(:page_load_regression_triggers, project, issue)).to be_empty
     end
 
+    # @spec PAGE-LOAD-FOLLOWUP-006
+    it "stops emitting once the finding's follow-up attempts are exhausted" do
+      finding(actionable: true, followup_attempts: PageLoadRegressionFinding::MAX_FOLLOWUP_ATTEMPTS)
+
+      expect(activity.send(:page_load_regression_triggers, project, issue)).to be_empty
+    end
+
+    # @spec PAGE-LOAD-FOLLOWUP-006
+    it "still emits while attempts remain" do
+      finding(actionable: true, followup_attempts: PageLoadRegressionFinding::MAX_FOLLOWUP_ATTEMPTS - 1)
+
+      expect(activity.send(:page_load_regression_triggers, project, issue).size).to eq(1)
+    end
+
     # @spec PAGE-LOAD-FOLLOWUP-004
     it "carries the finding's evidence on the trigger" do
       finding(route_name: "dashboard", actionable: true, baseline_ms: 640, current_ms: 1_100)

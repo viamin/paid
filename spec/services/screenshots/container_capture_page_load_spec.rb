@@ -124,6 +124,46 @@ RSpec.describe Screenshots::ContainerCapture do
       expect(PageLoadMeasurement.count).to eq(0)
     end
 
+    # @spec PAGE-LOAD-MEASURE-013
+    it "ignores a timing document larger than the size cap" do
+      write_timing_document("x" * (Screenshots::ContainerCapture::MAX_TIMING_DOCUMENT_BYTES + 1))
+
+      result = service.call
+
+      expect(result.status).to eq("captured")
+      expect(PageLoadMeasurement.count).to eq(0)
+    end
+
+    # @spec PAGE-LOAD-MEASURE-013
+    it "drops container-reported metrics that are zero or out of range" do
+      write_timing_document({
+        "captured_at" => Time.current.iso8601,
+        "viewport" => { "width" => 1280, "height" => 900 },
+        "routes" => {
+          "home" => {
+            "path" => "/", "http_status" => 200, "samples" => 3,
+            "metrics" => {
+              "load_ms" => { "median" => 0, "values" => [ 0 ] },
+              "lcp_ms" => { "median" => 640, "values" => [ 640 ] }
+            }
+          }
+        }
+      }.to_json)
+
+      service.call
+
+      expect(PageLoadMeasurement.sole).to have_attributes(load_ms: nil, lcp_ms: 640)
+    end
+
+    # @spec PAGE-LOAD-MEASURE-014
+    it "records the viewport from the resolved screenshot config" do
+      write_timing_document(valid_document)
+
+      service.call
+
+      expect(PageLoadMeasurement.sole).to have_attributes(viewport_width: 1280, viewport_height: 900)
+    end
+
     # @spec PAGE-LOAD-MEASURE-008
     it "completes the capture when the timing document cannot be parsed" do
       write_timing_document("{not json")

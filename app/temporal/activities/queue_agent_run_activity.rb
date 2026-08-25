@@ -170,8 +170,12 @@ module Activities
     def snapshot_page_load_evidence!(run, provided_evidence)
       return unless run.focus == "performance_regression"
 
-      evidence = provided_evidence.presence || open_page_load_finding(run)&.evidence
+      finding = open_page_load_finding(run)
+      evidence = provided_evidence.presence || finding&.evidence
       return if evidence.blank?
+
+      # @spec PAGE-LOAD-FOLLOWUP-006
+      finding&.record_followup_attempt!
 
       metadata = run.external_metadata.is_a?(Hash) ? run.external_metadata.deep_dup : {}
       metadata["page_load_regression"] = evidence.deep_stringify_keys

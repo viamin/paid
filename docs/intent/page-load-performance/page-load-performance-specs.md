@@ -91,6 +91,26 @@
   *Code:* `PageLoadPerformance::Settings::SAMPLE_BUDGET_SECONDS`, `Screenshots::ContainerCapture#capture_runner_script`.
   *Test:* `spec/services/screenshots/container_capture_page_load_spec.rb`, `spec/services/page_load_performance/record_measurements_spec.rb`.
 
+- [x] **PAGE-LOAD-MEASURE-013** — When the host reads the timing document the
+  capture runner wrote, the system SHALL treat it as untrusted container output:
+  it SHALL ignore a document larger than the configured size cap, retain no more
+  routes than the configured route cap, truncate route names and paths to their
+  stored column widths, discard non-positive and out-of-range metric values, and
+  retain no more sample values per metric than were requested.
+  *Code:* `Screenshots::ContainerCapture#read_timing_document`,
+  `PageLoadPerformance::TimingDocument`.
+  *Test:* `spec/services/page_load_performance/timing_document_spec.rb`,
+  `spec/services/screenshots/container_capture_page_load_spec.rb`.
+
+- [x] **PAGE-LOAD-MEASURE-014** — The system SHALL record the viewport a
+  measurement was taken at from the host's resolved screenshot configuration
+  rather than from the container-written timing document, so a container cannot
+  disqualify its own comparisons by reporting a viewport it did not render at.
+  *Code:* `Screenshots::ContainerCapture#record_page_load_performance!`,
+  `PageLoadPerformance::RecordMeasurements`.
+  *Test:* `spec/services/page_load_performance/record_measurements_spec.rb`,
+  `spec/services/screenshots/container_capture_page_load_spec.rb`.
+
 ## Ledger
 
 - [x] **PAGE-LOAD-LEDGER-001** — When container capture produces route timings,
@@ -248,6 +268,18 @@
   `page_load_regression` trigger for that pull request.
   *Code:* `ScanPaidPrsActivity#active_page_load_run?`.
   *Test:* `spec/temporal/activities/scan_paid_prs_activity_page_load_spec.rb`.
+
+- [x] **PAGE-LOAD-FOLLOWUP-006** — The system SHALL emit at most
+  `MAX_FOLLOWUP_ATTEMPTS` `page_load_regression` triggers for a given finding,
+  counting each queued follow-up run, so a regression the agent cannot fix stops
+  consuming runner budget instead of requeueing on every scan cycle. When the
+  attempts are exhausted the finding SHALL remain open and reported, and SHALL
+  say in the pull request comment that automated attempts are exhausted.
+  *Code:* `PageLoadRegressionFinding#followup_exhausted?`,
+  `ScanPaidPrsActivity#page_load_regression_triggers`,
+  `QueueAgentRunActivity#snapshot_page_load_evidence!`.
+  *Test:* `spec/temporal/activities/scan_paid_prs_activity_page_load_spec.rb`,
+  `spec/temporal/activities/queue_agent_run_activity_page_load_spec.rb`.
 
 ## Configuration
 

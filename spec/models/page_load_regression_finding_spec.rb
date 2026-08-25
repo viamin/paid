@@ -24,6 +24,19 @@ RSpec.describe PageLoadRegressionFinding do
     }.not_to raise_error
   end
 
+  # @spec PAGE-LOAD-FOLLOWUP-006
+  it "reports exhaustion once attempts reach the cap" do
+    finding = create(:page_load_regression_finding, project: project,
+      followup_attempts: described_class::MAX_FOLLOWUP_ATTEMPTS - 1)
+
+    expect(finding).not_to be_followup_exhausted
+
+    finding.record_followup_attempt!
+
+    expect(finding).to be_followup_exhausted
+    expect(described_class.followup_eligible).to be_empty
+  end
+
   # @spec PAGE-LOAD-FOLLOWUP-001
   it "scopes actionable open findings for a pull request" do
     actionable = create(:page_load_regression_finding, project: project, actionable: true)

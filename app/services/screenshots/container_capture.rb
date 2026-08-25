@@ -14,6 +14,10 @@ module Screenshots
     OUTPUT_DIR = "tmp/screenshots"
     TRACE_EXTENSION = ".trace.zip"
     TIMING_DOCUMENT = "page-load-timings.json"
+    # The timing document is written inside the agent's container. A capture
+    # measures a handful of routes, so anything past this is not a document
+    # worth parsing into memory.
+    MAX_TIMING_DOCUMENT_BYTES = 2 * 1024 * 1024
     CAPTURE_TIMEOUT_SECONDS = 300
     STARTUP_TIMEOUT_SECONDS = 90
     MEMORY_BYTES = 2 * 1024 * 1024 * 1024
@@ -277,7 +281,11 @@ module Screenshots
       document = read_timing_document
       return if document.blank?
 
-      measurements = PageLoadPerformance::RecordMeasurements.call(agent_run: agent_run, document: document)
+      measurements = PageLoadPerformance::RecordMeasurements.call(
+        agent_run: agent_run,
+        document: document,
+        viewport: { "width" => config.viewport.width, "height" => config.viewport.height }
+      )
       return if measurements.empty?
 
       @page_load_comparisons = PageLoadPerformance::EvaluateRegressions.call(
@@ -296,11 +304,26 @@ module Screenshots
       )
     end
 
+    # @spec PAGE-LOAD-MEASURE-013
     def read_timing_document
       path = File.join(@tmpdir.to_s, OUTPUT_DIR, TIMING_DOCUMENT)
       return nil unless File.exist?(path)
 
-      JSON.parse(File.read(path))
+      size = File.size(path)
+      if size > MAX_TIMING_DOCUMENT_BYTES
+        logger.warn(
+          message: "page_load.document_too_large",
+          agent_run_id: agent_run.id,
+          bytes: size,
+          limit: MAX_TIMING_DOCUMENT_BYTES
+        )
+        return nil
+      end
+
+      PageLoadPerformance::TimingDocument.parse(
+        JSON.parse(File.read(path)),
+        max_samples: [ page_load_settings.samples, 1 ].max
+      )
     rescue JSON::ParserError => e
       logger.warn(message: "page_load.document_unparseable", agent_run_id: agent_run.id, error: e.message)
       nil
@@ -486,7 +509,8 @@ module Screenshots
     # samples each route with tracing off, summarizes to a median, records the
     # navigation's status, and isolates timing failures so a route's screenshot
     # still lands.
-    # @spec PAGE-LOAD-MEASURE-002, PAGE-LOAD-MEASURE-003, PAGE-LOAD-MEASURE-004, PAGE-LOAD-MEASURE-006
+    # @spec PAGE-LOAD-MEASURE-001, PAGE-LOAD-MEASURE-002, PAGE-LOAD-MEASURE-003,
+    # PAGE-LOAD-MEASURE-004, PAGE-LOAD-MEASURE-006, PAGE-LOAD-MEASURE-011
     def capture_runner_script
       <<~JS
         import fs from "fs/promises";
@@ -578,16 +602,23 @@ module Screenshots
           const entry = await page.evaluate(() => {
             const nav = performance.getEntriesByType("navigation")[0];
             if (!nav) return null;
+            // A timing that has not fired yet reads as 0 (loadEventEnd before
+            // the load event, for instance). Reporting that as a measurement
+            // would poison medians and read as a large improvement next time.
+            const ms = (value) => {
+              const rounded = Math.round(value);
+              return Number.isFinite(rounded) && rounded > 0 ? rounded : null;
+            };
             const paint = (name) => {
               const found = performance.getEntriesByType("paint").find((e) => e.name === name);
-              return found ? Math.round(found.startTime) : null;
+              return found ? ms(found.startTime) : null;
             };
             const lcpEntries = performance.getEntriesByType("largest-contentful-paint");
-            const lcp = lcpEntries.length ? Math.round(lcpEntries[lcpEntries.length - 1].startTime) : null;
+            const lcp = lcpEntries.length ? ms(lcpEntries[lcpEntries.length - 1].startTime) : null;
             return {
-              ttfb_ms: Math.round(nav.responseStart),
-              dcl_ms: Math.round(nav.domContentLoadedEventEnd),
-              load_ms: Math.round(nav.loadEventEnd),
+              ttfb_ms: ms(nav.responseStart),
+              dcl_ms: ms(nav.domContentLoadedEventEnd),
+              load_ms: ms(nav.loadEventEnd),
               fcp_ms: paint("first-contentful-paint"),
               lcp_ms: lcp,
             };

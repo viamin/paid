@@ -31,6 +31,7 @@ module PageLoadPerformance
 
     attr_reader :agent_run, :measurements, :hints, :changed_files
 
+    # @spec PAGE-LOAD-REGRESSION-003
     def evaluate(measurement)
       baseline = measurement.baseline
       return comparison(measurement, "no_baseline", nil, nil, nil) if baseline.nil?

@@ -36,9 +36,24 @@ module PageLoadPerformance
     end
 
     def row(comparison)
-      "| `#{comparison.route_name}` | #{comparison.metric || "—"} | #{ms(comparison.baseline_ms)} | " \
+      "| #{route_label(comparison.route_name)} | #{comparison.metric || "—"} | #{ms(comparison.baseline_ms)} | " \
         "#{ms(comparison.current_ms)} | #{delta(comparison)} | #{ms(comparison.trailing_median_ms)} | " \
-        "#{LABELS.fetch(comparison.status, comparison.status)} |"
+        "#{status_label(comparison)} |"
+    end
+
+    # Route names come from the repository's screenshot config, so they are
+    # escaped the way the surrounding screenshot comment escapes its own labels
+    # — an unescaped pipe or backtick would break the table or inject markdown
+    # into a comment Paid posts under its own identity.
+    def route_label(route_name)
+      "`#{route_name.to_s.gsub(/[\\`\[\]()<>|]/) { |char| "\\#{char}" }}`"
+    end
+
+    def status_label(comparison)
+      label = LABELS.fetch(comparison.status, comparison.status)
+      return label unless comparison.finding&.followup_exhausted?
+
+      "#{label} · automated attempts exhausted"
     end
 
     def delta(comparison)

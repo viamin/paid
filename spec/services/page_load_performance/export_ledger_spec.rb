@@ -69,6 +69,22 @@ RSpec.describe PageLoadPerformance::ExportLedger do
     expect(entries.map { |e| e["commit_sha"] }).to eq(%w[bbb2222 aaa1111])
   end
 
+  # @spec PAGE-LOAD-EXPORT-002
+  it "loads only the entries the document keeps, not the project's whole history" do
+    120.times { |i| measurement(commit: "sha#{i}", lcp: 600 + i, captured_at: i.hours.ago) }
+
+    loaded = 0
+    subscriber = ActiveSupport::Notifications.subscribe("sql.active_record") do |*, payload|
+      loaded += 1 if payload[:name] == "PageLoadMeasurement Load"
+    end
+    described_class.call(project: project, storage: storage)
+    ActiveSupport::Notifications.unsubscribe(subscriber)
+
+    entries = JSON.parse(uploaded.values.first).dig("routes", "dashboard", "entries")
+    expect(entries.size).to eq(described_class::ENTRIES_PER_ROUTE)
+    expect(loaded).to be <= 2
+  end
+
   # @spec PAGE-LOAD-EXPORT-003
   it "skips the export when object storage is not configured" do
     allow(Screenshots::Storage).to receive(:configured?).and_return(false)

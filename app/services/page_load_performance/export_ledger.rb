@@ -34,6 +34,7 @@ module PageLoadPerformance
 
     attr_reader :project, :logger
 
+    # @spec PAGE-LOAD-EXPORT-003
     def skip
       logger.info(message: "page_load.export_skipped", project_id: project.id, reason: "storage_unconfigured")
       nil
@@ -59,8 +60,22 @@ module PageLoadPerformance
       end
     end
 
+    # Loading every measurement the project has ever recorded just to keep the
+    # newest ENTRIES_PER_ROUTE of each would grow with retention and PR volume,
+    # inside the capture path. Route names come from one cheap distinct query,
+    # then each route loads only the rows the document will actually hold.
     def measurements_by_route
-      PageLoadMeasurement.where(project_id: project.id).recent_first.group_by(&:route_name)
+      route_names.index_with do |route_name|
+        PageLoadMeasurement
+          .where(project_id: project.id, route_name: route_name)
+          .recent_first
+          .limit(ENTRIES_PER_ROUTE)
+          .to_a
+      end.reject { |_, rows| rows.empty? }
+    end
+
+    def route_names
+      PageLoadMeasurement.where(project_id: project.id).distinct.pluck(:route_name)
     end
 
     def entry(row)

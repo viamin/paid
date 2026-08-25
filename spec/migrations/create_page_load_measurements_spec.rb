@@ -3,6 +3,7 @@
 require "rails_helper"
 require Rails.root.join("db/migrate/20260824021817_create_page_load_measurements")
 require Rails.root.join("db/migrate/20260824021819_create_page_load_regression_findings")
+require Rails.root.join("db/migrate/20260825015920_add_followup_attempts_to_page_load_regression_findings")
 
 RSpec.describe CreatePageLoadMeasurements, :aggregate_failures do
   self.use_transactional_tests = false
@@ -10,6 +11,7 @@ RSpec.describe CreatePageLoadMeasurements, :aggregate_failures do
   let(:connection) { ActiveRecord::Base.connection }
   let(:measurements_migration) { described_class.new }
   let(:findings_migration) { CreatePageLoadRegressionFindings.new }
+  let(:attempts_migration) { AddFollowupAttemptsToPageLoadRegressionFindings.new }
 
   around do |example|
     ActiveRecord::Migration.suppress_messages do
@@ -17,18 +19,12 @@ RSpec.describe CreatePageLoadMeasurements, :aggregate_failures do
       example.run
     ensure
       teardown!
-      measurements_migration.up
-      findings_migration.up
-      reset_column_information!
+      migrate_up!
     end
   end
 
   before do
-    ActiveRecord::Migration.suppress_messages do
-      measurements_migration.up
-      findings_migration.up
-      reset_column_information!
-    end
+    ActiveRecord::Migration.suppress_messages { migrate_up! }
   end
 
   # @spec PAGE-LOAD-LEDGER-002
@@ -57,6 +53,16 @@ RSpec.describe CreatePageLoadMeasurements, :aggregate_failures do
   end
 
   private
+
+  # Every migration that touches these tables replays here, not just the two
+  # that create them: restoring a stale shape would break every later spec in
+  # the same process.
+  def migrate_up!
+    measurements_migration.up
+    findings_migration.up
+    attempts_migration.migrate(:up)
+    reset_column_information!
+  end
 
   def teardown!
     findings_migration.down if connection.table_exists?(:page_load_regression_findings)
