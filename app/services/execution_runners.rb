@@ -117,7 +117,7 @@ module ExecutionRunners
       capabilities << :host_paths if spec.workspace&.bind_mount?
       capabilities << :service_containers if spec.services.any?
       capabilities << :browser_sidecar if spec.project&.verification_enabled?
-      capabilities << :arbitrary_disk if spec.resources&.disk_gb.to_i.positive?
+      capabilities << :arbitrary_disk if non_catalog_disk_gb?(spec.resources&.disk_gb)
       capabilities << ExecutionRunners.architecture_capability(spec.resources&.architecture)
       new(capabilities: capabilities)
     end
@@ -129,7 +129,7 @@ module ExecutionRunners
       capabilities << :service_containers if declarations.any?
       capabilities << :browser_sidecar if agent_run.project.verification_enabled?
       resources = requested_resources || Capacity::RequestedResources.for_agent_run(agent_run)
-      capabilities << :arbitrary_disk if resources[:disk_bytes].to_i.positive?
+      capabilities << :arbitrary_disk if non_catalog_disk_bytes?(resources[:disk_bytes])
       capabilities << ExecutionRunners.architecture_capability(resources[:architecture])
       new(capabilities: capabilities)
     end
@@ -144,6 +144,30 @@ module ExecutionRunners
 
     private_class_method def self.base_capabilities
       STATIC_CAPABILITIES.dup
+    end
+
+    # Every named profile preset, and the bare system default, already carry a
+    # positive disk size — so "positive" can't distinguish a request that
+    # actually needs disk-resize support from routine provisioning. Only a
+    # disk size outside that catalog is genuinely "arbitrary".
+    private_class_method def self.non_catalog_disk_gb?(disk_gb)
+      gb = disk_gb.to_i
+      gb.positive? && !catalog_disk_gbs.include?(gb)
+    end
+
+    private_class_method def self.non_catalog_disk_bytes?(disk_bytes)
+      bytes = disk_bytes.to_i
+      bytes.positive? && !catalog_disk_bytes.include?(bytes)
+    end
+
+    private_class_method def self.catalog_disk_gbs
+      @catalog_disk_gbs ||= ExecutionResources::PROFILE_PRESETS.values.map { |preset| preset[:disk_gb] } +
+        [ (Capacity::RequestedResources::DISK_BYTES_DEFAULT.to_f / ExecutionResources::GIBIBYTE).ceil ]
+    end
+
+    private_class_method def self.catalog_disk_bytes
+      @catalog_disk_bytes ||= ExecutionResources::PROFILE_PRESETS.values.map { |preset| preset[:disk_gb] * ExecutionResources::GIBIBYTE } +
+        [ Capacity::RequestedResources::DISK_BYTES_DEFAULT ]
     end
   end
 
