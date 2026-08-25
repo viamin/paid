@@ -61,13 +61,20 @@ RSpec.describe AgentHarness::Providers::Anthropic do
     # Activities::AnalyzeIssueActivity's response-shaped fallback
     # (#classify_response_error -> AgentHarness::ErrorTaxonomy.classify_message,
     # ISSUE-ANALYSIS-007/009) never sees it for Claude specifically. This pins
-    # the belt-and-suspenders case: the friendly message the provider's own
-    # #classify_error_message normalizes "not logged in" text to still
-    # classifies as :auth_expired under Paid's generic (non-provider-specific)
-    # taxonomy lookup, so any other code path that surfaces it as response
-    # text (rather than a raised error) is still routed correctly.
-    classification = AgentHarness::ErrorTaxonomy.classify_message("Authentication error")
+    # the belt-and-suspenders case: the provider's own #classify_error_message
+    # normalizes "not logged in" text to "Authentication error", which Paid's
+    # generic (non-provider-specific) taxonomy lookup then classifies as
+    # :auth_expired — so any other code path that surfaces it as response text
+    # (rather than a raised error) is still routed correctly.
+    #
+    # The normalization step is asserted explicitly because
+    # ErrorTaxonomy.classify_message("Not logged in · Please run /login") alone
+    # returns :unknown: if Anthropic ever regresses and stops recognizing the
+    # "not logged in" / "please run /login" fragments, this spec must catch it.
+    normalized = claude_provider.send(:classify_error_message, "Not logged in · Please run /login")
+    classification = AgentHarness::ErrorTaxonomy.classify_message(normalized)
 
+    expect(normalized).to eq("Authentication error")
     expect(classification).to eq(:auth_expired)
   end
 end
