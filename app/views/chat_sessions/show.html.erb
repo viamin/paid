@@ -6,7 +6,7 @@
 
 <%= turbo_stream_from current_account, :chat_sessions %>
 
-<div class="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8 lg:py-8">
+<div class="mx-auto max-w-7xl px-4 pt-4 sm:px-6 lg:px-8 lg:py-8">
   <div class="grid gap-4 lg:grid-cols-[22rem_minmax(0,1fr)] lg:gap-6">
     <%= render "sidebar",
                active_session: @chat_session,
@@ -25,11 +25,12 @@
           `--chat-panel-offset-top` variable instead of a fixed subtraction
           so layout chrome above `<main>` (notably notice/alert flashes)
           still leaves the conversation pane as the real scroll container.
-          `--chat-panel-bottom-space` matches the page's actual bottom padding
-          at each breakpoint (`1rem` for `py-4` below `lg`, `2rem` for
-          `py-8` at `lg`+); the static subtraction used to clamp 16px out
-          of the panel on mobile, which starved the transcript. dvh (not vh)
-          so the iOS Safari URL bar doesn't shrink the available space.
+          Below `lg` the page carries no bottom padding at all (`pt-4`, no
+          `pb-*`) and `--chat-panel-bottom-space` is `0`, so the panel runs
+          flush to the viewport edge — every mobile pixel goes to the
+          transcript. At `lg`+ the page keeps symmetric `py-8` padding and
+          the panel subtracts the matching `2rem`. dvh (not vh) so the iOS
+          Safari URL bar doesn't shrink the available space.
 
           This must be a definite `height`, never a `max-height`, and must
           carry no `min-h` floor. A `max-height` leaves the panel's own
@@ -59,7 +60,7 @@
             disclosure is open: clipping content the user just chose to expand
             is worse than a temporarily shorter transcript, and they can
             collapse it again to reclaim the space. (@spec CHAT-API-009) %>
-        <header class="shrink-0 border-b border-gray-200 px-4 py-2.5 xl:hidden">
+        <header class="shrink-0 border-b border-gray-200 px-4 py-2.5 xl:hidden" data-chat-header="mobile">
           <div class="flex items-start justify-between gap-2">
             <div class="min-w-0 flex-1">
               <h1 class="truncate text-base font-semibold text-gray-900" title="<%= chat_session_title(@chat_session) %>"><%= chat_session_title(@chat_session) %></h1>
@@ -178,7 +179,7 @@
           <% end %>
         </header>
 
-        <header class="hidden max-h-[45%] overflow-y-auto overflow-x-hidden border-b border-gray-200 px-4 py-5 sm:px-6 has-[details[open]]:max-h-[75%] xl:block">
+        <header class="hidden max-h-[45%] overflow-y-auto overflow-x-hidden border-b border-gray-200 px-4 py-5 sm:px-6 has-[details[open]]:max-h-[75%] xl:block" data-chat-header="desktop">
           <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div class="min-w-0 flex-1 overflow-hidden">
               <% session_projects = chat_session_projects(@chat_session) %>
