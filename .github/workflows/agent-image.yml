@@ -50,6 +50,8 @@ jobs:
       || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    outputs:
+      image_relevant: ${{ steps.changes.outputs.image_relevant }}
     env:
       PAID_SKIP_DATABASE_RUNTIME_ROLE_GUARD: "true"
       AGENT_IMAGE_PROFILE_NAME: base
@@ -519,3 +521,63 @@ jobs:
       - name: Agent image workflow not needed
         if: steps.changes.outputs.image_relevant != 'true'
         run: echo "No agent-image-managed files or lockfile entries changed."
+
+  # Runs the agent-harness-owned OpenCode install contract on a native
+  # aarch64 host. GitHub's amd64 runners cannot catch an install contract
+  # that resolves the wrong CPU architecture (viamin/agent-harness#365,
+  # adopted for #3643): the amd64 binary those contracts used to select
+  # only fails at runtime with "Dynamic loader not found:
+  # /lib64/ld-linux-x86-64.so.2" on real arm64 hardware, which an amd64 CI
+  # runner never exercises. This job installs OpenCode the same way
+  # docker/agent/Dockerfile does (via the extracted install contract, not a
+  # Paid-specific command) and executes the installed binary, so a
+  # regression that reintroduces an amd64-on-arm64 mismatch fails CI instead
+  # of surfacing as a production outage.
+  opencode-arm64-smoke:
+    needs: agent-image
+    if: needs.agent-image.outputs.image_relevant == 'true'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
+    env:
+      PAID_SKIP_DATABASE_RUNTIME_ROLE_GUARD: "true"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b
+        with:
+          ruby-version: .tool-versions
+
+      - name: Install Ruby dependencies
+        run: bundle install --jobs 4 --retry 3
+
+      - name: Extract OpenCode install command from agent-harness
+        id: opencode-contract
+        run: |
+          contract=$(bundle exec ruby scripts/extract-runner-install-contract.rb opencode)
+          install_command=$(echo "$contract" | sed -n 's/^INSTALL_COMMAND=//p')
+          if [ -z "$install_command" ]; then
+            echo "Failed to extract OpenCode install command from agent-harness" >&2
+            exit 1
+          fi
+          echo "install_command<<PAID_EOF" >> "$GITHUB_OUTPUT"
+          echo "$install_command" >> "$GITHUB_OUTPUT"
+          echo "PAID_EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Install and run OpenCode on aarch64
+        env:
+          OPENCODE_INSTALL_COMMAND: ${{ steps.opencode-contract.outputs.install_command }}
+        run: |
+          echo "Host architecture: $(uname -m)"
+          case "$OPENCODE_INSTALL_COMMAND" in
+            *--ignore-scripts*) ;;
+            *) echo "ERROR: OPENCODE_INSTALL_COMMAND must include --ignore-scripts for supply-chain safety" >&2; exit 1 ;;
+          esac
+          eval "$OPENCODE_INSTALL_COMMAND"
+          opencode --version
+          command -v opencode
+          file "$(command -v opencode)" 2>/dev/null || true
