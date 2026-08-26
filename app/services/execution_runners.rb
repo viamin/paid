@@ -157,7 +157,7 @@ module ExecutionRunners
       capabilities << :service_containers if spec.services.any?
       capabilities << :browser_sidecar if spec.project&.verification_enabled?
       capabilities << :arbitrary_disk if non_catalog_disk_gb?(spec.resources&.disk_gb)
-      capabilities << ExecutionRunners.architecture_capability(spec.resources&.architecture)
+      capabilities << (ExecutionRunners.architecture_capability(spec.resources&.architecture) || :architecture_x86_64)
       new(capabilities: capabilities)
     end
 

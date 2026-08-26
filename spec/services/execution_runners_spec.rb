@@ -62,6 +62,34 @@ RSpec.describe ExecutionRunners do
   end
 
   describe ExecutionRunners::CapabilityRequirements do
+    def build_run_spec(agent_run:, project:, architecture:)
+      ExecutionRunners::RunSpec.new(
+        agent_run: agent_run,
+        project: project,
+        image: "ghcr.io/viamin/paid-agent:latest",
+        command: nil,
+        resources: ExecutionRunners::ExecutionResources.profile("standard").with(architecture: architecture),
+        environment: {},
+        networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted,
+        ingress_policy: ExecutionRunners::IngressPolicy.default_deny,
+        workspace: nil,
+        services: [],
+        secrets_config: nil
+      )
+    end
+
+    # @spec CONTAINER-RUNTIME-042
+    # @spec CONTAINER-RUNTIME-043
+    it "defaults provision-time architecture requirements to x86_64 when the run spec leaves architecture unresolved" do
+      project = create(:project)
+      run = create(:agent_run, project: project)
+      spec = build_run_spec(agent_run: run, project: project, architecture: nil)
+
+      requirements = described_class.from_run_spec(spec)
+
+      expect(requirements.to_a).to include(:architecture_x86_64)
+    end
+
     # @spec CONTAINER-RUNTIME-043
     it "derives queue-time architecture requirements from the same runtime-image source as RunSpec" do
       project = create(:project)
