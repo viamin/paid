@@ -52,10 +52,12 @@ credential; the banner warns about it rather than hard-rejecting, so
 rotation-by-relogin under the same name keeps working without a revoke step.
 
 Managed materialization now includes `opencode` and `omp`. OpenCode reuses the
-managed OpenAI `auth.json` payload at its native credentials path, while OMP
-materializes a broker-import JSON derived from the canonical Claude credential
-and installs it through `omp auth-broker import`. Both remain `remote_safe:
-false` until broader refresh/writeback hardening is proven.
+managed OpenAI `auth.json` payload at its native credentials path and, like
+Codex, keeps that rotating credential on a per-credential lease with pre-run
+refresh and post-run harvest/writeback into the canonical `RunnerCredential`.
+OMP materializes a broker-import JSON derived from the canonical Claude
+credential and installs it through `omp auth-broker import`. Both remain
+`remote_safe: false` until broader remote-hardening is proven.
 
 ## Exceptions Preserved
 

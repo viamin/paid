@@ -270,6 +270,7 @@ RSpec.describe Runners::SubscriptionAuthProviders, :no_db do # @spec SUBSCRIPTIO
   describe "OpenCode contract" do
     let(:opencode_provider) { described_class.for_runner("opencode") }
     let(:valid_auth) { file_fixture("codex_auth_valid.json").read }
+    let(:provisioner) { instance_double(Containers::Provision) }
 
     it "materializes the OpenAI auth payload to OpenCode's auth.json path" do
       status = opencode_provider.status(secret: valid_auth)
@@ -279,6 +280,32 @@ RSpec.describe Runners::SubscriptionAuthProviders, :no_db do # @spec SUBSCRIPTIO
       expect(materialization.supported?).to be(true)
       expect(materialization.files.keys).to contain_exactly("/home/agent/.local/share/opencode/auth.json")
       expect(materialization.files.fetch("/home/agent/.local/share/opencode/auth.json")).to include("managed-codex-refresh-token")
+    end
+
+    it "delegates refresh to the provisioner and reports performed" do
+      allow(provisioner).to receive(:refresh_opencode_managed_credential!).and_return(true)
+
+      result = opencode_provider.refresh(provisioner: provisioner)
+
+      expect(result.supported?).to be(true)
+      expect(result.performed?).to be(true)
+      expect(result.reason).to eq("refreshed")
+    end
+
+    it "reports refresh_skipped when the provisioner does not refresh" do
+      allow(provisioner).to receive(:refresh_opencode_managed_credential!).and_return(nil)
+
+      result = opencode_provider.refresh(provisioner: provisioner)
+
+      expect(result.performed?).to be(false)
+      expect(result.reason).to eq("refresh_skipped")
+    end
+
+    it "delegates harvest to the provisioner" do
+      harvest_result = Runners::SubscriptionAuthProviders::Result.new(supported: true, performed: true, reason: "harvested")
+      allow(provisioner).to receive(:harvest_opencode_managed_credential!).and_return(harvest_result)
+
+      expect(opencode_provider.harvest(provisioner: provisioner)).to eq(harvest_result)
     end
   end
 
