@@ -48,7 +48,8 @@ module OpencodeCredentials
         CodexCredentials::Secret.build(
           "access_token" => access_token,
           "refresh_token" => refresh_token,
-          "account_id" => account_id
+          "account_id" => account_id,
+          "expires_at" => expires_at&.utc&.iso8601
         )
       end
     end
