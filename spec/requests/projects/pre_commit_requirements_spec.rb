@@ -52,6 +52,17 @@ RSpec.describe "Projects::PreCommitRequirements" do
         expect(response.body).not_to include(">warden_scan</h3>")
         expect(response.body.scan(/value="Save Security Scan"/).length).to eq(1)
       end
+
+      it "still lists a warden_scan requirement whose check_type is not security_scan" do # @spec QUALITY-LOOPS-007
+        other_warden = create(:pre_commit_requirement, :project_level, project: project,
+          name: "warden_scan", check_type: "shell_command", command: "bin/warden-cli")
+
+        get project_pre_commit_requirements_path(project)
+
+        expect(response.body).to include(other_warden.command)
+        expect(response.body).to include(">warden_scan</h3>")
+        expect(response.body.scan(/value="Save Security Scan"/).length).to eq(1)
+      end
     end
 
     context "when authenticated as member" do

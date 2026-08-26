@@ -183,7 +183,7 @@
         <% end %>
       </fieldset>
 
-      <% listed_requirements = @pre_commit_requirements.reject { |requirement| requirement.check_type == "mutation_test" || requirement.name == "warden_scan" } %>
+      <% listed_requirements = @pre_commit_requirements.reject { |requirement| requirement.check_type == "mutation_test" || (requirement.name == "warden_scan" && requirement.check_type == "security_scan") } %>
       <div class="mt-6 space-y-6">
         <%= render partial: "projects/pre_commit_requirements/requirement",
           collection: listed_requirements,

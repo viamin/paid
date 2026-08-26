@@ -219,5 +219,13 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(wrapper).to include("warden run")
       expect(wrapper).to include("--fail-on high")
     end
+
+    # @spec CONTAINER-RUNTIME-036
+    it "bridges proxy-routed OpenAI credentials into warden's WARDEN_OPENAI_* convention" do
+      wrapper = Rails.root.join("docker/agent/scripts/warden-scan").read
+
+      expect(wrapper).to include('export WARDEN_OPENAI_API_KEY="${WARDEN_OPENAI_API_KEY:-${OPENAI_API_KEY:-}}"')
+      expect(wrapper).to include('export WARDEN_OPENAI_BASE_URL="${WARDEN_OPENAI_BASE_URL:-${OPENAI_BASE_URL:-}}"')
+    end
   end
 end
