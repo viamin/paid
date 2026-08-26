@@ -64,6 +64,28 @@ RSpec.describe Models::DetectContractDrift do
       end
     end
 
+    context "with a subscription-only auth-mode suppression" do
+      before do
+        create(:llm_model, :openai, model_id: "gpt-5.3-codex", tier: "high", active: true)
+        allow(AgentHarness).to receive(:model_compatibility) do |args|
+          if args[:runner].to_s == "codex" &&
+              args[:model_id] == "gpt-5.3-codex" &&
+              args[:auth_mode] == :subscription
+            unsupported_result(args)
+          else
+            unknown_result(args)
+          end
+        end
+      end
+
+      it "suppresses the known subscription-only codex finding" do
+        result = described_class.call
+
+        expect(result.drift?).to be(false)
+        expect(result.findings).to be_empty
+      end
+    end
+
     context "with an inactive catalog row" do
       let(:inactive_id) { "inactive-#{SecureRandom.hex(4)}" }
 
