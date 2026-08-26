@@ -2062,7 +2062,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_26_082056) do
     t.index ["project_id", "pull_request_number", "status"], name: "idx_page_load_findings_pr_status"
     t.index ["project_id"], name: "index_page_load_regression_findings_on_project_id"
     t.check_constraint "followup_attempts >= 0", name: "chk_page_load_findings_attempts_non_negative"
-    t.check_constraint "status::text = ANY (ARRAY['open'::character varying::text, 'resolved'::character varying::text, 'superseded'::character varying::text])", name: "chk_page_load_findings_status_valid"
+    t.check_constraint "status::text = ANY (ARRAY['open'::character varying, 'resolved'::character varying, 'superseded'::character varying]::text[])", name: "chk_page_load_findings_status_valid"
   end
 
   create_table "pending_install_claims", comment: "Server-side claims tying a freshly-returned GitHub App installation to a Paid account, so the signed `installation` webhook can finalize the GithubInstallation row for a first-time install into a brand-new org where the existing signals (project owner match, prior installation row) cannot resolve the account.", force: :cascade do |t|
@@ -2888,16 +2888,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_26_082056) do
     t.index ["account_id"], name: "index_service_containers_on_account_id"
   end
 
-  create_table "solid_cable_messages", force: :cascade do |t|
-    t.binary "channel", null: false
-    t.bigint "channel_hash", null: false
-    t.datetime "created_at", null: false
-    t.binary "payload", null: false
-    t.index ["channel"], name: "index_solid_cable_messages_on_channel"
-    t.index ["channel_hash"], name: "index_solid_cable_messages_on_channel_hash"
-    t.index ["created_at"], name: "index_solid_cable_messages_on_created_at"
-  end
-
   create_table "strategies", comment: "Scoped orchestration strategies selected for workflow decisions.", force: :cascade do |t|
     t.bigint "account_id", comment: "Owning account for account-scoped and project-scoped strategies."
     t.datetime "created_at", null: false
@@ -3492,6 +3482,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_26_082056) do
   add_foreign_key "orchestration_decisions", "projects", on_delete: :cascade
   add_foreign_key "orchestration_decisions", "strategy_versions", on_delete: :nullify
   add_foreign_key "orchestration_strategies", "accounts"
+  add_foreign_key "page_load_measurements", "accounts", on_delete: :cascade
+  add_foreign_key "page_load_measurements", "agent_runs", on_delete: :nullify
+  add_foreign_key "page_load_measurements", "projects", on_delete: :cascade
+  add_foreign_key "page_load_regression_findings", "accounts", on_delete: :cascade
+  add_foreign_key "page_load_regression_findings", "agent_runs", on_delete: :nullify
+  add_foreign_key "page_load_regression_findings", "projects", on_delete: :cascade
   add_foreign_key "pending_install_claims", "accounts"
   add_foreign_key "pr_templates", "accounts", on_delete: :cascade
   add_foreign_key "pr_templates", "projects", on_delete: :cascade
