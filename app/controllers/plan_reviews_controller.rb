@@ -68,11 +68,10 @@ class PlanReviewsController < ApplicationController
   def normalized_return_to(candidate)
     return if candidate.blank?
 
-    parsed = URI.parse(candidate.to_s)
-    return unless parsed.scheme.nil? && parsed.host.nil?
-    return unless candidate.to_s.start_with?("/") && !candidate.to_s.start_with?("//")
+    candidate = candidate.to_s
+    return unless candidate.start_with?("/") && !candidate.start_with?("//")
 
-    candidate.to_s
+    url_from(candidate)
   rescue URI::InvalidURIError
     nil
   end

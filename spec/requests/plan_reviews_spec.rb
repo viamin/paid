@@ -98,6 +98,17 @@ RSpec.describe "Plan reviews" do
       expect(response).to redirect_to(dashboard_inbox_path(kind: Inbox::Queue::PLAN_REVIEW_KIND))
       expect(workflow_handle).to have_received(:signal).with("approve_plan")
     end
+
+    it "falls back to the inbox for a protocol-relative return_to" do
+      review = create_plan_review(project:, issue:, workflow_id: "workflow-open")
+
+      post approve_plan_review_path(review), params: {
+        return_to: "//evil.example/phish"
+      }
+
+      expect(response).to redirect_to(dashboard_inbox_path(kind: Inbox::Queue::PLAN_REVIEW_KIND))
+      expect(workflow_handle).to have_received(:signal).with("approve_plan")
+    end
   end
 
   describe "POST /plan_reviews/:id/revise" do
