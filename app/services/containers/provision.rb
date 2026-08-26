@@ -3993,7 +3993,7 @@ module Containers
     end
 
     def omp_exec_command?(command)
-      subscription_exec_command?(command, binary: "omp", verb_pattern: /(?!auth-broker\b)\S+/)
+      subscription_exec_command?(command, binary: "omp", verb_pattern: /\A(?!auth-broker\b)\S+/)
     end
 
     def subscription_exec_command?(command, binary:, verb: nil, verb_pattern: nil)
@@ -4022,8 +4022,9 @@ module Containers
 
       boundary = /(?:^|(?:;|&&|\|\||\||\n)\s*|\bthen\s+|\bdo\s+)/
       env_wrapper = /(?:env\s+(?:(?:-u\s+\S+|[A-Za-z_][A-Za-z0-9_]*=\S+)\s+)*)?/
+      script_verb_matcher = subscription_shell_script_verb_matcher(verb_matcher)
 
-      script.match?(/#{boundary}#{env_wrapper}#{binary_pattern}\s+#{verb_matcher}/)
+      script.match?(/#{boundary}#{env_wrapper}#{binary_pattern}\s+#{script_verb_matcher}/)
     end
 
     def unwrap_env_command(parts)
@@ -4055,6 +4056,10 @@ module Containers
       return verb_pattern if verb_pattern
 
       raise ArgumentError, "verb or verb_pattern is required"
+    end
+
+    def subscription_shell_script_verb_matcher(verb_matcher)
+      verb_matcher.source.sub(/\A\\A/, "")
     end
 
     def normalized_command_parts(command)

@@ -454,6 +454,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
   it "does not treat incidental omp mentions in shell scripts as an OMP run command" do
     svc = build_service(agent_run: create(:agent_run, project: project))
 
+    expect(svc.send(:omp_exec_command?, [ "omp", "auth-broker", "list" ])).to be(false)
     expect(svc.send(:omp_exec_command?, [ "sh", "-c", "ls /home/agent/.local/share/omp" ])).to be(false)
     expect(svc.send(:omp_exec_command?, [ "sh", "-c", "echo omp" ])).to be(false)
     expect(svc.send(:omp_exec_command?, [ "sh", "-c", "omp auth-broker import file.json --provider anthropic --json" ])).to be(false)
