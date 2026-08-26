@@ -2416,6 +2416,49 @@ RSpec.describe AgentRun do
           agent_run.cleanup_container(force: true)
           expect(agent_run.reload.container_id).to be_nil
         end
+
+        # @spec EXEC-USAGE-009
+        it "records execution usage once the container is confirmed torn down" do
+          agent_run = create(:agent_run, :completed, worktree_path: worktree_path,
+            container_id: "abc123container", container_host: "local",
+            provisioning_started_at: 2.hours.ago, started_at: 100.minutes.ago, completed_at: 1.hour.ago)
+          allow(Docker::Container).to receive(:get).with("abc123container").and_return(mock_container)
+          allow(mock_container).to receive(:delete)
+
+          agent_run.cleanup_container
+
+          usage = agent_run.reload.execution_usage
+          expect(usage).to be_present
+          expect(usage.runner_backend).to eq("local")
+          expect(usage.provider_resource_id).to eq("abc123container")
+          expect(usage.termination_reason).to eq("completed")
+          expect(agent_run.infra_cost_cents).to eq(usage.infra_cost_cents)
+        end
+
+        # @spec EXEC-USAGE-009
+        it "maps a non-terminal status to an evicted termination reason" do
+          agent_run = create(:agent_run, :rate_limited, worktree_path: worktree_path,
+            container_id: "abc123container", container_host: "local",
+            provisioning_started_at: 2.hours.ago, started_at: 100.minutes.ago)
+          allow(Docker::Container).to receive(:get).with("abc123container").and_return(mock_container)
+          allow(mock_container).to receive(:delete)
+
+          agent_run.cleanup_container
+
+          expect(agent_run.reload.execution_usage.termination_reason).to eq("evicted")
+        end
+
+        # @spec EXEC-USAGE-009
+        it "does not record execution usage for a run that never reached provisioning" do
+          agent_run = create(:agent_run, :completed, worktree_path: worktree_path,
+            container_id: "abc123container", container_host: "local")
+          allow(Docker::Container).to receive(:get).with("abc123container").and_return(mock_container)
+          allow(mock_container).to receive(:delete)
+
+          agent_run.cleanup_container
+
+          expect(agent_run.reload.execution_usage).to be_nil
+        end
       end
 
       describe "#provision_container (runner shim)" do

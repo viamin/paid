@@ -83,3 +83,23 @@ prefix: EXEC-USAGE
   `spec/services/cost_budgets/check_spec.rb`.
   *Code:* `CostBudget`,
   `CostBudgets::Check`.
+
+## Recording and Historical Backfill
+
+- [x] **EXEC-USAGE-009** — `AgentRun#cleanup_container` SHALL call
+  `AgentRuns::RecordExecutionUsage` once the run's cloud resource is
+  confirmed torn down (for any run that reached provisioning and recorded a
+  backend host), so `ExecutionUsage` rows are created by the real run
+  termination path rather than only by test/backfill code.
+  *Tests:* `spec/models/agent_run_spec.rb`.
+  *Code:* `AgentRun#cleanup_container`,
+  `AgentRun#record_execution_usage!`.
+
+- [x] **EXEC-USAGE-010** — A one-time migration SHALL backfill
+  `ExecutionUsage` rows for historical `AgentRun`s that have a stamped
+  `external_metadata["infrastructure_spend"]["rate_cents_per_hour"]` and a
+  `completed_at`, using that stamped rate rather than a re-resolved
+  current-env rate, so `Projects::CostDashboardStats`'s infrastructure
+  totals do not silently drop to zero for runs that predate `ExecutionUsage`.
+  *Tests:* `spec/migrations/backfill_execution_usage_from_infrastructure_spend_stamp_spec.rb`.
+  *Code:* `BackfillExecutionUsageFromInfrastructureSpendStamp`.

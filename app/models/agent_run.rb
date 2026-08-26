@@ -2776,6 +2776,7 @@ class AgentRun < ApplicationRecord
     # the row write below clobbering a container_id the run may have picked
     # up in the meantime via redispatch.
     target_container_id = container_id
+    target_container_host = workspace_volume_host
 
     # Safety net for a worker killed mid-provision: the workspace volume
     # may exist with no container_id to drive a normal cleanup. Run before
@@ -2791,6 +2792,7 @@ class AgentRun < ApplicationRecord
       @current_handle = nil
       clear_container_id_if_unchanged!(target_container_id)
       ExecutionResource.mark_cleaned_for!(agent_run: self)
+      record_execution_usage!(container_id: target_container_id, container_host: target_container_host)
       return
     end
 
@@ -2803,6 +2805,7 @@ class AgentRun < ApplicationRecord
       clear_container_id_if_unchanged!(target_container_id)
     end
     ExecutionResource.mark_cleaned_for!(agent_run: self)
+    record_execution_usage!(container_id: target_container_id, container_host: target_container_host)
   rescue Containers::Provision::Error, ExecutionRunners::Error => e
     ExecutionResource.record_cleanup_failure_for!(agent_run: self, error: e)
     # Container may already be gone; clear the reference anyway
@@ -2816,6 +2819,65 @@ class AgentRun < ApplicationRecord
     # may already be in use by a container that redispatch just claimed.
     cleanup_orphaned_workspace_volume unless preserve_workspace_volume
   end
+
+  # Maps AgentRun::STATUSES to ExecutionUsage::TERMINATION_REASONS. Statuses
+  # with no explicit entry (queued, running, paused, rate_limited, retried)
+  # are recorded as "evicted" by record_execution_usage!'s fallback — the
+  # cloud resource was reclaimed independent of the run reaching a normal
+  # terminal outcome (e.g. ExecutionControlParkCleanupJob tearing down a
+  # parked run's environment).
+  EXECUTION_TERMINATION_REASON_BY_STATUS = {
+    "completed" => "completed",
+    "no_output" => "completed",
+    "cancelled" => "cancelled",
+    "timeout" => "timed_out",
+    "failed" => "failed",
+    "token_budget_exceeded" => "failed",
+    "auth_expired" => "failed"
+  }.freeze
+
+  # Records the per-run infrastructure usage/cost summary once the cloud
+  # resource backing this run has actually been torn down (called from
+  # cleanup_container after the resource is confirmed gone). Skipped for
+  # runs that never reached provisioning or never recorded a backend host,
+  # so no ExecutionUsage row is created for runs with nothing billable.
+  # @spec EXEC-USAGE-009
+  def record_execution_usage!(container_id:, container_host:)
+    return if provisioning_started_at.blank? || container_host.blank?
+
+    resources = Capacity::RequestedResources.for_agent_run(self)
+    AgentRuns::RecordExecutionUsage.call(
+      agent_run: self,
+      runner_backend: container_host,
+      provider_resource_id: container_id,
+      provisioned_at: provisioning_started_at,
+      execution_started_at: started_at,
+      completed_at: completed_at,
+      terminated_at: Time.current,
+      requested_cpu_cores: execution_usage_cpu_cores(resources),
+      requested_memory_mib: execution_usage_memory_mib(resources),
+      requested_disk_gb: execution_usage_disk_gb(resources),
+      termination_reason: EXECUTION_TERMINATION_REASON_BY_STATUS.fetch(status, "evicted")
+    )
+  end
+  private :record_execution_usage!
+
+  # Docker CPU quota is expressed in units where 100_000 = 1 CPU core
+  # (Containers::Provision's CpuPeriod) — convert back to cores.
+  def execution_usage_cpu_cores(resources)
+    (resources[:cpu_quota].to_f / 100_000.0).round(3)
+  end
+  private :execution_usage_cpu_cores
+
+  def execution_usage_memory_mib(resources)
+    (resources[:memory_bytes].to_f / 1.megabyte).round
+  end
+  private :execution_usage_memory_mib
+
+  def execution_usage_disk_gb(resources)
+    (resources[:disk_bytes].to_f / 1.gigabyte).round
+  end
+  private :execution_usage_disk_gb
 
   # Clears container_id (and any also_clear columns) only if container_id
   # still matches the container this method just tore down. A run cleaned up

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_26_184107) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_26_192816) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1310,7 +1310,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_26_184107) do
     t.check_constraint "billed_duration_seconds >= 0", name: "chk_execution_usages_billed_duration_nonneg"
     t.check_constraint "infra_cost_cents >= 0", name: "chk_execution_usages_infra_cost_nonneg"
     t.check_constraint "rate_cents_per_hour >= 0", name: "chk_execution_usages_rate_nonneg"
-    t.check_constraint "termination_reason::text = ANY (ARRAY['completed'::character varying, 'cancelled'::character varying, 'timed_out'::character varying, 'failed'::character varying, 'evicted'::character varying]::text[])", name: "chk_execution_usages_termination_reason_valid"
+    t.check_constraint "termination_reason::text = ANY (ARRAY['completed'::character varying::text, 'cancelled'::character varying::text, 'timed_out'::character varying::text, 'failed'::character varying::text, 'evicted'::character varying::text])", name: "chk_execution_usages_termination_reason_valid"
   end
 
   create_table "external_connector_events", comment: "Events ingested from external connectors (Jira, Linear, Slack, etc.) for coexistence workflows.", force: :cascade do |t|
