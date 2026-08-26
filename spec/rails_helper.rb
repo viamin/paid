@@ -13,6 +13,15 @@ require "test_prof/recipes/rspec/factory_default"
 
 ActiveRecord.verify_foreign_keys_for_fixtures = false
 
+module SpecDatabaseAvailability
+  module_function
+
+  def unavailable?(error)
+    error.is_a?(ActiveRecord::ConnectionNotEstablished) ||
+      error.is_a?(ActiveRecord::NoDatabaseError)
+  end
+end
+
 # Add additional requires below this line. Rails is not loaded until this point!
 
 # Requires supporting ruby files with custom matchers and macros, etc,
@@ -27,14 +36,14 @@ database_available = begin
   true
 rescue ActiveRecord::PendingMigrationError => e
   abort e.to_s.strip
-rescue ActiveRecord::ConnectionNotEstablished => e
-  if ENV["ALLOW_DBLESS_SPECS"] == "true"
-    warn "[WARN] ActiveRecord::ConnectionNotEstablished during test schema maintenance: #{e.message}. " \
+rescue StandardError => e
+  if SpecDatabaseAvailability.unavailable?(e) && ENV["ALLOW_DBLESS_SPECS"] == "true"
+    warn "[WARN] #{e.class} during test schema maintenance: #{e.message}. " \
          "Continuing because ALLOW_DBLESS_SPECS=true; transactional fixtures will be disabled."
     false
-  else
+  elsif SpecDatabaseAvailability.unavailable?(e)
     abort <<~MSG
-      ActiveRecord::ConnectionNotEstablished while preparing the test database.
+      #{e.class} while preparing the test database.
       This usually means your test database is misconfigured or unavailable.
 
       The test suite is configured to fail fast in this situation to avoid misleading
@@ -43,6 +52,8 @@ rescue ActiveRecord::ConnectionNotEstablished => e
       If you intentionally want to run specs without a database (for example, tests
       that only use mocks), set ALLOW_DBLESS_SPECS=true in the environment.
     MSG
+  else
+    raise
   end
 end
 
