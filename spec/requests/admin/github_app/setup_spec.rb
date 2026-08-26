@@ -3,6 +3,7 @@
 require "rails_helper"
 
 # @spec GITHUB-SYNC-007
+# @spec GITHUB-SYNC-010
 RSpec.describe "Admin::GithubApp::Setup" do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account, email: "operator@example.com") }
@@ -65,11 +66,14 @@ RSpec.describe "Admin::GithubApp::Setup" do
       post admin_github_app_setup_path
 
       expect(response).to have_http_status(:found)
-      expect(response.location).to start_with("https://github.com/settings/apps/new?manifest=")
+      location = URI.parse(response.location)
+      manifest_param = CGI.parse(location.query.to_s).fetch("manifest").first
 
-      decoded = Base64.urlsafe_decode64(
-        CGI.unescape(response.location.split("manifest=").last)
-      )
+      expect(location).to be_a(URI::HTTPS)
+      expect(location.host).to eq("github.com")
+      expect(location.path).to eq("/settings/apps/new")
+
+      decoded = Base64.urlsafe_decode64(manifest_param)
       manifest = JSON.parse(decoded)
       expect(manifest["name"]).to be_present
       expect(manifest["public"]).to be(false)

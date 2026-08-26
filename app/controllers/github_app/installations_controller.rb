@@ -42,6 +42,7 @@ module GithubApp
   # Webhook-driven lifecycle updates (suspend, repositories added/removed,
   # uninstall) are handled by `GithubApp::WebhooksController`, not here.
   # @spec GITHUB-SYNC-004
+  # @spec GITHUB-SYNC-010
   class InstallationsController < ApplicationController
     include AuditLogging
 
@@ -63,7 +64,10 @@ module GithubApp
         issued_at: Time.current.to_i
       }
 
-      redirect_to Github::AppRegistry.install_url(state: state), allow_other_host: true
+      redirect_to validated_install_uri(state: state).to_s, allow_other_host: true
+    rescue ActionController::Redirecting::UnsafeRedirectError
+      redirect_to integrations_path,
+        alert: "The paid-agents GitHub App install URL is invalid for this deployment."
     end
 
     # GET /github_app/callback
@@ -201,6 +205,22 @@ module GithubApp
       return nil if stored.blank?
 
       stored[key] || stored[key.to_s]
+    end
+
+    def validated_install_uri(state:)
+      uri = Github::AppRegistry.install_uri(state: state)
+      return uri if trusted_install_uri?(uri)
+
+      raise ActionController::Redirecting::UnsafeRedirectError, "Untrusted GitHub App install redirect URL"
+    end
+
+    def trusted_install_uri?(uri)
+      uri.is_a?(URI::HTTPS) &&
+        uri.host == "github.com" &&
+        uri.path.match?(%r{\A/apps/[^/]+/installations/new\z}) &&
+        Rack::Utils.parse_nested_query(uri.query.to_s).keys == [ "state" ]
+    rescue ArgumentError
+      false
     end
   end
 end
