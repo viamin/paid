@@ -811,7 +811,7 @@ RSpec.describe Containers::Provision do
         expect(agent_run).to receive(:log!).with("system", "container.network.ready",
           metadata: hash_including(network: NetworkPolicy::NETWORK_NAME)).ordered
         expect(agent_run).to receive(:log!).with("system", "container.ownership_batch_fixed",
-          metadata: hash_including(dirs_count: 11)).ordered
+          metadata: hash_including(dirs_count: 12)).ordered
         expect(agent_run).to receive(:log!).with("system", "container.codex_config_seeded",
           metadata: hash_including(auth_source: "api_key_proxy")).ordered
         expect(agent_run).to receive(:log!).with("system", "container.firewall.applied",
@@ -1081,6 +1081,21 @@ RSpec.describe Containers::Provision do
           expect(tmpfs["/home/agent/.local/share/opencode"]).to include("mode=0700")
           # @spec CONTAINER-RUNTIME-029
           expect(tmpfs["/home/agent/.local/share/opencode"]).to include("size=#{256 * 1024 * 1024}")
+          mock_container
+        end
+
+        service.provision
+      end
+
+      # @spec SUBSCRIPTION-RUNNER-AUTH-005
+      it "configures a writable tmpfs for OMP CLI data" do
+        expect(Docker::Container).to receive(:create) do |config|
+          tmpfs = config["HostConfig"]["Tmpfs"]
+          expect(tmpfs).to have_key("/home/agent/.local/share/omp")
+          expect(tmpfs["/home/agent/.local/share/omp"]).to include("mode=0700")
+          # OMP shares the OpenCode SQLite/state layout so it gets the same
+          # 256MB cap as OpenCode (CONTAINER-RUNTIME-029 rationale).
+          expect(tmpfs["/home/agent/.local/share/omp"]).to include("size=#{256 * 1024 * 1024}")
           mock_container
         end
 
