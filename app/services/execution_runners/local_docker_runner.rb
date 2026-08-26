@@ -27,6 +27,17 @@ module ExecutionRunners
   # @spec EGRESS-POLICY-007
   class LocalDockerRunner < Base
     RUNNER_TYPE = :local_docker
+    DECLARED_CAPABILITIES = %i[
+      host_paths
+      service_containers
+      browser_sidecar
+      streaming_logs
+      direct_exec
+      persistent_workspace
+      architecture_x86_64
+      architecture_arm64
+      arbitrary_disk
+    ].freeze
 
     # The kind of execution resource this runner provisions, recorded on the
     # provisioning-intent ledger (RDR-060).
@@ -74,10 +85,27 @@ module ExecutionRunners
       backend = backend_for(spec)
       policy = spec.networking_policy
       gateway_ready = false
+      environment_provisioned = false
+      service = nil
       raise ProvisionError, "RunSpec requires a NetworkingPolicy" if policy.nil?
       raise ProvisionError, self.class.unsupported_policy_message(policy) unless self.class.supports_policy?(policy)
       raise ProvisionError, "RunSpec requires an IngressPolicy" if spec.ingress_policy.nil?
       spec.ingress_policy.validate_supported!
+      service = Containers::Provision.new(
+        agent_run: spec.agent_run,
+        project: spec.project,
+        worktree_path: self.class.worktree_path_for(spec),
+        backend: backend,
+        networking_policy: policy,
+        **provision_options(spec)
+      )
+      service.compatibility_validate_backend_mount_support!(record_telemetry: false)
+      capability_result = self.class.capability_compatibility_for(
+        requirements: spec.capability_requirements,
+        backend: backend,
+        agent_run: spec.agent_run
+      )
+      raise ProvisionError, capability_result.error_message unless capability_result.compatible
 
       gateway = build_gateway(spec: spec, backend: backend)
       gateway_ready = enforce_gateway!(gateway: gateway)
@@ -99,6 +127,7 @@ module ExecutionRunners
         **provision_options(spec)
       )
       result = service.provision
+      environment_provisioned = true
       # Capture the provider resource identifier immediately so a crash between
       # here and handle persistence still leaves a reconcileable ledger row
       # (CONTAINER-RUNTIME-027).
@@ -124,11 +153,13 @@ module ExecutionRunners
       # container may resist removal, and that must not mask the original
       # error.
       cleanup_succeeded = false
-      begin
-        service.cleanup if service
-        cleanup_succeeded = true
-      rescue StandardError
-        # Surface the original provisioning error, not the cleanup error.
+      if environment_provisioned
+        begin
+          service.cleanup if service
+          cleanup_succeeded = true
+        rescue StandardError
+          # Surface the original provisioning error, not the cleanup error.
+        end
       end
       ledger&.mark_failed(intent) if cleanup_succeeded
       raise
@@ -328,9 +359,19 @@ module ExecutionRunners
 
     def self.compatible?(spec:, backend:)
       result = Containers::Provision.compatibility_for(
-        agent_run: spec.agent_run, backend: backend, worktree_path: worktree_path_for(spec)
+        agent_run: spec.agent_run,
+        backend: backend,
+        worktree_path: worktree_path_for(spec),
+        validate_capabilities: false
       )
       return CompatibilityResult.new(compatible: false, error_message: result.error_message) unless result.compatible
+
+      capability_result = capability_compatibility_for(
+        requirements: spec.capability_requirements,
+        backend: backend,
+        agent_run: spec.agent_run
+      )
+      return capability_result unless capability_result.compatible
 
       policy = spec.networking_policy
       unless supports_policy?(policy)
@@ -356,6 +397,20 @@ module ExecutionRunners
       end
 
       CompatibilityResult.new(compatible: true, error_message: nil)
+    end
+
+    # @spec CONTAINER-RUNTIME-041
+    # @spec CONTAINER-RUNTIME-044
+    def self.capabilities(backend:)
+      # TODO(#3336): Narrow the declared architecture capabilities via
+      # DockerHost#daemon_architecture once the backend/HostDefinition exposes
+      # it. Until then the backend contract cannot prove the daemon's
+      # architecture, so an arm64 image on an x86_64-only daemon still fails
+      # at container-create time.
+      capabilities = DECLARED_CAPABILITIES
+      supports_host_paths = !backend.respond_to?(:supports_host_paths?) || backend.supports_host_paths?
+      capabilities -= [ :host_paths ] unless supports_host_paths
+      CapabilitySet.new(capabilities: capabilities)
     end
 
     # Returns true when the registered gateway adapter can enforce the

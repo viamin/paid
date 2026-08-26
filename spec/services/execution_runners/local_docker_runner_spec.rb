@@ -17,7 +17,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
   subject(:runner) { described_class.new }
 
   let(:agent_run) { create(:agent_run, container_host: "local") }
-  let(:backend) { instance_double(Containers::Backends::Base, identifier: "local") }
+  let(:backend) { instance_double(Containers::Backends::Base, identifier: "local", supports_host_paths?: true) }
   let(:resources) do
     ExecutionRunners::ExecutionResources.new(
       cpu_cores: 1.0,
@@ -77,6 +77,23 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     allow(described_class).to receive(:gateway_adapter).and_return(adapter)
   end
 
+  def expect_provision_constructor_for(spec, times: 2)
+    expect(Containers::Provision).to receive(:new).with(
+      hash_including(
+        agent_run: agent_run,
+        project: agent_run.project,
+        worktree_path: spec.workspace.bind_mount? ? spec.workspace.reference : nil,
+        backend: backend,
+        networking_policy: spec.networking_policy,
+        image: "paid/agent:latest",
+        memory_bytes: spec.resources.memory_bytes,
+        cpu_quota: spec.resources.cpu_quota,
+        pids_limit: 500,
+        timeout_seconds: spec.resources.timeout_seconds
+      )
+    ).exactly(times).times.and_return(provision_service)
+  end
+
   before do
     allow(Containers).to receive(:backend_for).and_return(backend)
     allow(NetworkPolicy).to receive(:ensure_network!).and_return(instance_double(Docker::Network))
@@ -84,21 +101,32 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       firewall_calls << { args: args, kwargs: kwargs }
     end
     allow(provision_service).to receive_messages(
+      compatibility_validate_backend_mount_support!: nil,
       firewall_service_destinations: [],
       container: started_container
     )
   end
 
   describe "#provision" do
+    it "runs mount-support and capability preflight before building the gateway or provisioning" do
+      expect(Containers::Provision).to receive(:new).ordered.and_return(provision_service)
+      expect(provision_service).to receive(:compatibility_validate_backend_mount_support!)
+        .with(record_telemetry: false)
+        .ordered
+      expect(described_class).to receive(:capability_compatibility_for)
+        .with(requirements: run_spec.capability_requirements, backend: backend, agent_run: agent_run)
+        .ordered
+        .and_return(ExecutionRunners::CompatibilityResult.new(compatible: true, error_message: nil))
+      expect(Containers::Provision).to receive(:new).ordered.and_return(provision_service)
+      expect(provision_service).to receive(:provision).ordered.and_return(
+        Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
+      )
+
+      runner.provision(spec: run_spec)
+    end
+
     it "delegates to Containers::Provision and returns a RunnerHandle" do
-      expect(Containers::Provision).to receive(:new).with(
-        agent_run: agent_run, project: agent_run.project, worktree_path: nil, backend: backend,
-        networking_policy: run_spec.networking_policy,
-        ownership_labels: ownership_label_map,
-        egress_gateway_url: nil,
-        image: "paid/agent:latest", memory_bytes: 1024 * 1024 * 1024, cpu_quota: 100_000, pids_limit: 500,
-        timeout_seconds: 3600
-      ).and_return(provision_service)
+      expect_provision_constructor_for(run_spec)
       allow(provision_service).to receive(:provision).and_return(
         Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
       )
@@ -121,9 +149,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
         resources: resources.with(timeout_seconds: 600)
       ))
 
-      expect(Containers::Provision).to receive(:new)
-        .with(hash_including(timeout_seconds: 600))
-        .and_return(provision_service)
+      expect_provision_constructor_for(short_timeout_spec)
       allow(provision_service).to receive(:provision).and_return(
         Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
       )
@@ -137,9 +163,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
         workspace: ExecutionRunners::WorkspaceStrategy.bind_mount(reference: "/var/paid/worktrees/1")
       ))
 
-      expect(Containers::Provision).to receive(:new)
-        .with(hash_including(worktree_path: "/var/paid/worktrees/1"))
-        .and_return(provision_service)
+      expect_provision_constructor_for(bind_mount_spec)
       allow(provision_service).to receive(:provision).and_return(
         Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
       )
@@ -478,6 +502,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     it "threads the locked egress profile through to Containers::Provision without inspecting it" do
       expect(Containers::Provision).to receive(:new)
         .with(hash_including(networking_policy: run_spec.networking_policy))
+        .twice
         .and_return(provision_service)
       allow(provision_service).to receive(:provision).and_return(
         Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
@@ -497,6 +522,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       )
       expect(Containers::Provision).to receive(:new)
         .with(hash_including(networking_policy: research_spec.networking_policy))
+        .twice
         .and_return(provision_service)
       allow(provision_service).to receive(:provision).and_return(
         Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
@@ -518,6 +544,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
         .and_return(double(network: NetworkPolicy::INFRA_NETWORK_NAME))
       expect(Containers::Provision).to receive(:new)
         .with(hash_including(networking_policy: open_spec.networking_policy))
+        .twice
         .and_return(provision_service)
       allow(provision_service).to receive(:provision).and_return(
         Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
@@ -695,7 +722,8 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       seed_snapshot!
       stub_failing_gateway!
 
-      expect(Containers::Provision).not_to receive(:new)
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      expect(provision_service).not_to receive(:provision)
 
       expect { runner.provision(spec: run_spec) }
         .to raise_error(ExecutionRunners::ProvisionError, /Egress gateway setup failed/)
@@ -716,7 +744,8 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       allow(adapter).to receive(:remove_allowlist!).with(agent_run: agent_run, backend: backend)
       allow(described_class).to receive(:gateway_adapter).and_return(adapter)
 
-      expect(Containers::Provision).not_to receive(:new)
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      expect(provision_service).not_to receive(:provision)
       expect(adapter).to receive(:remove_allowlist!).with(agent_run: agent_run, backend: backend)
 
       expect { runner.provision(spec: run_spec) }
@@ -751,7 +780,8 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     it "fails closed in production when a restricted run has no persisted egress snapshot" do
       allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new("production"))
 
-      expect(Containers::Provision).not_to receive(:new)
+      allow(Containers::Provision).to receive(:new).and_return(provision_service)
+      expect(provision_service).not_to receive(:provision)
       expect(Rails.logger).to receive(:warn).with(
         hash_including(message: "container.egress_gateway.missing_snapshot", agent_run_id: agent_run.id)
       )
@@ -1653,7 +1683,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
   describe ".compatible?" do
     it "delegates to Containers::Provision.compatibility_for" do
       allow(Containers::Provision).to receive(:compatibility_for)
-        .with(agent_run: agent_run, backend: backend, worktree_path: nil)
+        .with(agent_run: agent_run, backend: backend, worktree_path: nil, validate_capabilities: false)
         .and_return(Containers::Provision::CompatibilityResult.new(compatible: true, error_message: nil))
       allow(backend).to receive(:get_container).with("egress-gateway").and_return(gateway_container)
 
@@ -1661,6 +1691,44 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
 
       expect(result).to be_a(ExecutionRunners::CompatibilityResult)
       expect(result.compatible).to be(true)
+    end
+
+    # @spec CONTAINER-RUNTIME-044
+    it "declares the full current Docker capability set on a host-path-capable backend" do
+      allow(backend).to receive(:supports_host_paths?).and_return(true)
+
+      expect(described_class.capabilities(backend: backend).to_a).to contain_exactly(
+        :host_paths,
+        :service_containers,
+        :browser_sidecar,
+        :streaming_logs,
+        :direct_exec,
+        :persistent_workspace,
+        :architecture_x86_64,
+        :architecture_arm64,
+        :arbitrary_disk
+      )
+    end
+
+    # @spec CONTAINER-RUNTIME-043
+    it "rejects a verification run before provisioning when the runner lacks browser_sidecar support" do
+      allow(Containers::Provision).to receive(:compatibility_for)
+        .and_return(Containers::Provision::CompatibilityResult.new(compatible: true, error_message: nil))
+      allow(agent_run.project).to receive(:verification_enabled?).and_return(true)
+      allow(described_class).to receive(:capabilities)
+        .with(backend: backend)
+        .and_return(ExecutionRunners::CapabilitySet.new(capabilities: described_class::DECLARED_CAPABILITIES - [ :browser_sidecar ]))
+
+      result = described_class.compatible?(spec: run_spec, backend: backend)
+
+      expect(result.compatible).to be(false)
+      expect(result.error_message).to include("browser sidecar")
+      expect(Containers::Provision).to have_received(:compatibility_for).with(
+        agent_run: agent_run,
+        backend: backend,
+        worktree_path: nil,
+        validate_capabilities: false
+      )
     end
 
     it "supports every RDR-062 networking intent (Docker implements every shape)" do
@@ -2070,8 +2138,10 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
 
     before do
       allow(Containers::Provision).to receive(:new) do |**kwargs|
-        run = kwargs.fetch(:agent_run)
-        captured_proxy_scope_credentials << { agent_run_id: run.id, proxy_token: run.proxy_token }
+        if kwargs.key?(:ownership_labels)
+          run = kwargs.fetch(:agent_run)
+          captured_proxy_scope_credentials << { agent_run_id: run.id, proxy_token: run.proxy_token }
+        end
         provision_service
       end
       allow(provision_service).to receive_messages(

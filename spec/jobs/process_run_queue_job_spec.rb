@@ -166,6 +166,23 @@ RSpec.describe ProcessRunQueueJob do
     )
   end
 
+  def retired_runtime_image_error
+    "Runtime image reference \"retired\" is deprecated"
+  end
+
+  def expect_runtime_image_selection_skip(poisoned_run:, eligible_run:, started_ids:)
+    expect(poisoned_run.reload).to have_attributes(
+      status: "failed",
+      error_message: retired_runtime_image_error,
+      temporal_workflow_id: nil
+    )
+    expect(eligible_run.reload.temporal_workflow_id).to be_present
+    expect(started_ids).to include(eligible_run.id)
+    expect(Rails.logger).not_to have_received(:info).with(
+      hash_including(message: "process_run_queue.host_unavailable", agent_run_id: poisoned_run.id)
+    )
+  end
+
   def expect_runner_spend_skip_log(reason:)
     expect(Rails.logger).to have_received(:info).with(hash_including(
       message: "process_run_queue.runner_spend_skip",
@@ -228,6 +245,7 @@ RSpec.describe ProcessRunQueueJob do
       fallback_policy: "disabled",
       selection_source: "default",
       requested_host: "local",
+      requirements_error: nil,
       compatibility_failures: {},
       health_failures: {}
     )
@@ -314,7 +332,7 @@ RSpec.describe ProcessRunQueueJob do
       error_message: "bind mounts unsupported"
     )
     allow(Containers::Provision).to receive(:compatibility_for)
-      .with(agent_run: run, backend: registry_bundle.fetch(:elguapo_backend), worktree_path: nil)
+      .with(hash_including(agent_run: run, backend: registry_bundle.fetch(:elguapo_backend), worktree_path: nil))
       .and_return(disallowed)
     allow(registry_bundle.fetch(:local_backend)).to receive(:ping).and_raise(Docker::Error::DockerError, "local down")
     allow(registry_bundle.fetch(:aws_backend)).to receive(:ping).and_raise(Docker::Error::DockerError, "aws down")
@@ -416,6 +434,31 @@ RSpec.describe ProcessRunQueueJob do
           "local" => a_string_including("local down"),
           "aws-runner-1" => a_string_including("aws down")
         )
+      )
+    end
+
+    it "skips a run whose runtime image selection is invalid and continues dispatching later runs" do
+      project = create(:project)
+      project.created_by.settings.update!(max_concurrent_runs: 2, max_parallel_agents_per_project: 2)
+      poisoned_run = create_preferred_host_run(project: project)
+      eligible_run = create(:agent_run, :queued, project: project, created_at: 1.minute.from_now)
+      stub_multi_host_registry(build_host_registry)
+      allow(Rails.logger).to receive(:info)
+      allow(ExecutionRunners::RunSpec).to receive(:resolve_architecture).and_call_original
+      allow(ExecutionRunners::RunSpec).to receive(:resolve_architecture).with(poisoned_run)
+        .and_raise(Containers::RuntimeImageCatalog::InactiveImageError, retired_runtime_image_error)
+
+      started_ids = []
+      allow(temporal_client).to receive(:start_workflow) do |_wf, input, **_opts|
+        started_ids << input[:agent_run_id]
+        workflow_handle
+      end
+
+      expect { described_class.new.perform }.not_to raise_error
+      expect_runtime_image_selection_skip(
+        poisoned_run: poisoned_run,
+        eligible_run: eligible_run,
+        started_ids: started_ids
       )
     end
 

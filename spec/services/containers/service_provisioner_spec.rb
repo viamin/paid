@@ -264,7 +264,7 @@ RSpec.describe Containers::ServiceProvisioner do
       end
 
       it "reuses running legacy containers until cleanup can retire them safely" do
-        # @spec CONTAINER-RUNTIME-035
+        # @spec CONTAINER-RUNTIME-040
         service_container.update!(status: "running", docker_container_id: "legacy123")
         legacy_container = instance_double(Docker::Container, id: "legacy123")
         legacy_json = legacy_hardening_json(provisioner: provisioner, service_container: service_container)
@@ -949,7 +949,7 @@ RSpec.describe Containers::ServiceProvisioner do
     end
 
     it "creates the container with baseline security hardening" do
-      # @spec CONTAINER-RUNTIME-035
+      # @spec CONTAINER-RUNTIME-040
       allow(Docker::Image).to receive(:create)
       stub_healthy_created_container("abc123")
 
@@ -970,7 +970,7 @@ RSpec.describe Containers::ServiceProvisioner do
     end
 
     it "applies the postgres tmpfs and capability profile for postgres images" do
-      # @spec CONTAINER-RUNTIME-035
+      # @spec CONTAINER-RUNTIME-040
       allow(Docker::Image).to receive(:create)
       stub_healthy_created_container("abc123")
 
@@ -992,7 +992,7 @@ RSpec.describe Containers::ServiceProvisioner do
     end
 
     it "rejects hardening capability overrides that would weaken a built-in profile" do
-      # @spec CONTAINER-RUNTIME-035
+      # @spec CONTAINER-RUNTIME-040
       service_container.update!(env: {
         "POSTGRES_USER" => "agent",
         "POSTGRES_PASSWORD" => "agent",
@@ -1011,7 +1011,7 @@ RSpec.describe Containers::ServiceProvisioner do
     end
 
     it "rejects built-in profile overrides that restore a writable root filesystem" do
-      # @spec CONTAINER-RUNTIME-035
+      # @spec CONTAINER-RUNTIME-040
       service_container.update!(env: {
         "POSTGRES_USER" => "agent",
         "POSTGRES_PASSWORD" => "agent",
@@ -1030,7 +1030,7 @@ RSpec.describe Containers::ServiceProvisioner do
     end
 
     it "rejects built-in profile overrides that switch the runtime user back to root" do
-      # @spec CONTAINER-RUNTIME-035
+      # @spec CONTAINER-RUNTIME-040
       service_container.update!(env: {
         "POSTGRES_USER" => "agent",
         "POSTGRES_PASSWORD" => "agent",
@@ -1049,14 +1049,14 @@ RSpec.describe Containers::ServiceProvisioner do
     end
 
     it "pins known service families to non-root runtime users" do
-      # @spec CONTAINER-RUNTIME-035
+      # @spec CONTAINER-RUNTIME-040
       expect(provisioner.send(:built_in_hardening_profile_for, "postgres:16")[:user]).to eq("postgres")
       expect(provisioner.send(:built_in_hardening_profile_for, "redis:7-alpine")[:user]).to eq("redis")
       expect(provisioner.send(:built_in_hardening_profile_for, "selenium/standalone-chromium:latest")[:user]).to eq("seluser")
     end
 
     it "does not treat substring matches as built-in hardening families" do
-      # @spec CONTAINER-RUNTIME-035
+      # @spec CONTAINER-RUNTIME-040
       profile = provisioner.send(:built_in_hardening_profile_for, "ghcr.io/acme/custom-postgres:1.0")
 
       expect(profile).to eq(Containers::ServiceProvisioner::DEFAULT_HARDENING_PROFILE)
@@ -1081,7 +1081,7 @@ RSpec.describe Containers::ServiceProvisioner do
       end
 
       it "keeps the root filesystem writable by default for compatibility" do
-        # @spec CONTAINER-RUNTIME-035
+        # @spec CONTAINER-RUNTIME-040
         allow(Docker::Image).to receive(:create)
         stub_healthy_created_container("abc123")
 
@@ -1105,7 +1105,7 @@ RSpec.describe Containers::ServiceProvisioner do
       end
 
       it "accepts a reserved hardening override profile from env JSON" do
-        # @spec CONTAINER-RUNTIME-035
+        # @spec CONTAINER-RUNTIME-040
         service_container.update!(env: custom_hardening_env)
         allow(Docker::Image).to receive(:create)
         stub_healthy_created_container("abc123")
@@ -1129,7 +1129,7 @@ RSpec.describe Containers::ServiceProvisioner do
       end
 
       it "rejects unsupported hardening capability overrides" do
-        # @spec CONTAINER-RUNTIME-035
+        # @spec CONTAINER-RUNTIME-040
         service_container.update!(env: {
           "PAID_SERVICE_HARDENING" => {
             "cap_add" => [ "SYS_ADMIN" ]

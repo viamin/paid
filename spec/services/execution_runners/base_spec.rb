@@ -98,6 +98,11 @@ RSpec.describe ExecutionRunners::Base do
   end
 
   describe "abstract class methods" do
+    it "raises NotImplementedError for .capabilities" do
+      expect { described_class.capabilities(backend: instance_double(Containers::Backends::Base)) }
+        .to raise_error(NotImplementedError, /capabilities/)
+    end
+
     it "raises NotImplementedError for .compatible?" do
       expect { described_class.compatible?(spec: spec, backend: instance_double(Containers::Backends::Base)) }
         .to raise_error(NotImplementedError, /compatible/)
