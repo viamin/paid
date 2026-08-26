@@ -244,6 +244,51 @@ module ExecutionRunners
       raise NotImplementedError, "#{self.class} must implement ##{__method__}"
     end
 
+    # Declares the capability set this runner supports on the given backend.
+    # Backends can narrow a runner's baseline capability set when the transport
+    # already proves a real limitation (for example, a remote Docker backend
+    # without host-path mounts).
+    #
+    # @param backend [Object]
+    # @return [CapabilitySet]
+    # @spec CONTAINER-RUNTIME-041
+    def self.capabilities(backend:)
+      raise NotImplementedError, "#{name} must implement .#{__method__}"
+    end
+
+    # Provider-neutral capability validation shared by queue-time compatibility
+    # checks and direct runner preflight. Logs the mismatch so host placement
+    # and fail-fast provision paths surface the same observability signal.
+    #
+    # @param requirements [CapabilityRequirements]
+    # @param backend [Object]
+    # @param agent_run [AgentRun, nil]
+    # @return [CompatibilityResult]
+    # @spec CONTAINER-RUNTIME-043
+    # @spec CONTAINER-RUNTIME-044
+    def self.capability_compatibility_for(requirements:, backend:, agent_run: nil, log_mismatch: true)
+      available = capabilities(backend: backend)
+      missing = available.missing(requirements.to_a)
+      return CompatibilityResult.new(compatible: true, error_message: nil) if missing.empty?
+
+      if log_mismatch
+        Rails.logger.info(
+          message: "execution_runners.capability_mismatch",
+          agent_run_id: agent_run&.id,
+          runner_type: name,
+          backend_identifier: backend&.identifier,
+          available_capabilities: available.to_a,
+          required_capabilities: requirements.to_a,
+          missing_capabilities: missing
+        )
+      end
+
+      CompatibilityResult.new(
+        compatible: false,
+        error_message: "Runner lacks required capabilities: #{format_capabilities(missing)}."
+      )
+    end
+
     # Check compatibility before provisioning (e.g. host-path requirements).
     # Called for every candidate during scheduling, so it must be cheap and
     # must not mutate state or record telemetry.
@@ -292,5 +337,10 @@ module ExecutionRunners
     def self.ping
       raise NotImplementedError, "#{name} must implement .#{__method__}"
     end
+
+    def self.format_capabilities(capabilities)
+      Array(capabilities).map { |capability| ExecutionRunners.capability_label(capability) }.join(", ")
+    end
+    private_class_method :format_capabilities
   end
 end

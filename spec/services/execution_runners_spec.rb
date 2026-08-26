@@ -61,6 +61,90 @@ RSpec.describe ExecutionRunners do
     end
   end
 
+  describe ExecutionRunners::CapabilityRequirements do
+    def build_run_spec(agent_run:, project:, architecture:)
+      ExecutionRunners::RunSpec.new(
+        agent_run: agent_run,
+        project: project,
+        image: "ghcr.io/viamin/paid-agent:latest",
+        command: nil,
+        resources: ExecutionRunners::ExecutionResources.profile("standard").with(architecture: architecture),
+        environment: {},
+        networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted,
+        ingress_policy: ExecutionRunners::IngressPolicy.default_deny,
+        workspace: nil,
+        services: [],
+        secrets_config: nil
+      )
+    end
+
+    # @spec CONTAINER-RUNTIME-042
+    # @spec CONTAINER-RUNTIME-043
+    it "defaults provision-time architecture requirements to x86_64 when the run spec leaves architecture unresolved" do
+      project = create(:project)
+      run = create(:agent_run, project: project)
+      spec = build_run_spec(agent_run: run, project: project, architecture: nil)
+
+      requirements = described_class.from_run_spec(spec)
+
+      expect(requirements.to_a).to include(:architecture_x86_64)
+    end
+
+    # @spec CONTAINER-RUNTIME-043
+    it "derives queue-time architecture requirements from the same runtime-image source as RunSpec" do
+      project = create(:project)
+      run = create(:agent_run, project: project)
+      requested_resources = Capacity::RequestedResources.for_agent_run(run)
+
+      allow(ExecutionRunners::RunSpec).to receive(:resolve_architecture).with(run).and_return("arm64")
+
+      requirements = described_class.from_agent_run(
+        run,
+        service_declarations: [],
+        requested_resources: requested_resources
+      )
+
+      expect(requirements.to_a).to include(:architecture_arm64)
+    end
+
+    # @spec CONTAINER-RUNTIME-042
+    # @spec CONTAINER-RUNTIME-043
+    it "defaults queue-time architecture requirements to x86_64 when the runtime image selection is unresolved" do
+      project = create(:project)
+      run = create(:agent_run, project: project)
+      requested_resources = Capacity::RequestedResources.for_agent_run(run)
+
+      allow(ExecutionRunners::RunSpec).to receive(:resolve_architecture).with(run).and_return(nil)
+
+      requirements = described_class.from_agent_run(
+        run,
+        service_declarations: [],
+        requested_resources: requested_resources
+      )
+
+      expect(requirements.to_a).to include(:architecture_x86_64)
+    end
+
+    # @spec CONTAINER-RUNTIME-042
+    # @spec CONTAINER-RUNTIME-043
+    it "treats queue-time disk requirements with the same rounded gibibyte catalog as provision time" do
+      project = create(:project)
+      run = create(:agent_run, project: project)
+      requested_resources = Capacity::RequestedResources.for_agent_run(run).merge(
+        disk_bytes: 2 * ExecutionRunners::EXECUTION_RESOURCE_GIBIBYTE
+      )
+
+      requirements = described_class.from_agent_run(
+        run,
+        service_declarations: [],
+        requested_resources: requested_resources,
+        architecture: "x86_64"
+      )
+
+      expect(requirements.to_a).not_to include(:arbitrary_disk)
+    end
+  end
+
   describe ExecutionRunners::RunSpec do
     subject(:spec) { described_class.new(**spec_args) }
 
@@ -155,6 +239,27 @@ RSpec.describe ExecutionRunners do
       expect(spec.networking_policy).to be_a(ExecutionRunners::NetworkingPolicy)
       expect(spec.ingress_policy).to be_a(ExecutionRunners::IngressPolicy)
       expect(spec.services.first).to be_a(ExecutionRunners::ServiceDeclaration)
+    end
+
+    # @spec CONTAINER-RUNTIME-041
+    # @spec CONTAINER-RUNTIME-042
+    it "derives runner capability requirements from the execution description" do
+      allow(project).to receive(:verification_enabled?).and_return(true)
+      bind_mount_spec = described_class.new(**spec_args.merge(
+        workspace: ExecutionRunners::WorkspaceStrategy.bind_mount(reference: "/tmp/worktree"),
+        resources: spec.resources.with(architecture: "arm64", disk_gb: 12)
+      ))
+
+      expect(bind_mount_spec.capability_requirements.to_a).to contain_exactly(
+        :host_paths,
+        :service_containers,
+        :browser_sidecar,
+        :streaming_logs,
+        :direct_exec,
+        :persistent_workspace,
+        :architecture_arm64,
+        :arbitrary_disk
+      )
     end
 
     it "embeds a WorkspaceStrategy as the workspace contract" do

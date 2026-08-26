@@ -89,7 +89,7 @@ module Containers
     HARDENING_ENV_KEY = "PAID_SERVICE_HARDENING"
     SAFE_OVERRIDE_CAPABILITIES = [ "NET_BIND_SERVICE" ].freeze
 
-    # @spec CONTAINER-RUNTIME-035
+    # @spec CONTAINER-RUNTIME-040
     # Baseline container hardening (issue #3450): every service container
     # runs with all capabilities dropped and no-new-privileges, mirroring the
     # hardening already applied to agent and chat containers

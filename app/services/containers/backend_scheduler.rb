@@ -7,6 +7,7 @@ module Containers
       :fallback_policy,
       :selection_source,
       :requested_host,
+      :requirements_error,
       :compatibility_failures,
       :health_failures,
       keyword_init: true
@@ -43,19 +44,26 @@ module Containers
       fallback_policy = selection_fallback_policy(selection_source)
       compatibility_failures = {}
       health_failures = {}
-      candidate_hosts = compatible_candidates_for(
-        requested_host,
-        fallback_policy: fallback_policy,
-        selection_source: selection_source,
-        compatibility_failures: compatibility_failures,
-        health_failures: health_failures
-      )
+      compatibility_requirements = build_capability_requirements
+      candidate_hosts = if compatibility_requirements_error
+        []
+      else
+        compatible_candidates_for(
+          requested_host,
+          compatibility_requirements: compatibility_requirements,
+          fallback_policy: fallback_policy,
+          selection_source: selection_source,
+          compatibility_failures: compatibility_failures,
+          health_failures: health_failures
+        )
+      end
 
       Result.new(
         candidate_hosts: candidate_hosts,
         fallback_policy: fallback_policy,
         selection_source: selection_source,
         requested_host: requested_host,
+        requirements_error: compatibility_requirements_error&.message,
         compatibility_failures: compatibility_failures,
         health_failures: health_failures
       )
@@ -63,7 +71,7 @@ module Containers
 
     private
 
-    attr_reader :agent_run, :registry
+    attr_reader :agent_run, :registry, :compatibility_requirements_error
 
     def requested_host_and_source
       selection = agent_run.container_host_selection
@@ -84,15 +92,13 @@ module Containers
       selection["fallback"].presence || registry.fallback_policy
     end
 
-    def compatible_candidates_for(requested_host, fallback_policy:, selection_source:, compatibility_failures:, health_failures:)
+    def compatible_candidates_for(requested_host, compatibility_requirements:, fallback_policy:, selection_source:, compatibility_failures:, health_failures:)
       # @spec CONTAINER-RUNTIME-002
-      candidates = [ requested_host.to_s ]
-      if [
-        HostRegistry::FALLBACK_FIRST_HEALTHY,
-        HostRegistry::FALLBACK_CAPACITY_AWARE
-      ].include?(fallback_policy) && selection_source != "explicit"
-        candidates.concat(registry.fallback_candidates_for(requested_host))
-      end
+      candidates = [ requested_host.to_s ] + fallback_hosts_for(
+        requested_host,
+        fallback_policy: fallback_policy,
+        selection_source: selection_source
+      )
 
       # RDR-048 first_healthy contract: when fallback is disabled, only the
       # requested host is a candidate. Without fallbacks there is nothing
@@ -113,7 +119,7 @@ module Containers
           next false
         end
 
-        compatibility = backend_compatibility_for(host)
+        compatibility = backend_compatibility_for(host, requirements: compatibility_requirements)
         unless compatibility[:compatible]
           compatibility_failures[host] = compatibility[:error]
           next false
@@ -140,14 +146,15 @@ module Containers
       @disabled_backend_identifiers ||= DockerHost.disabled_placement_identifiers(agent_run.project.account_id)
     end
 
-    def backend_compatibility_for(host)
+    def backend_compatibility_for(host, requirements:)
       host_definition = registry.host(host)
       return { compatible: false, error: "Host #{host} is not configured" } unless host_definition
 
       compatibility = Containers::Provision.compatibility_for(
         agent_run: agent_run,
         backend: host_definition.backend,
-        worktree_path: agent_run.worktree_path.presence
+        worktree_path: requested_worktree_path,
+        requirements: requirements
       )
 
       return { compatible: true } if compatibility.compatible
@@ -168,6 +175,43 @@ module Containers
       ) unless host_definition
 
       Containers::HealthCheck.ping(host_definition.backend)
+    end
+
+    def requested_worktree_path
+      @requested_worktree_path ||= agent_run.worktree_path.presence
+    end
+
+    def build_capability_requirements
+      requested_resources = Capacity::RequestedResources.for_agent_run(agent_run)
+      service_declarations = Containers::ServiceProvisioner.new.service_declarations(agent_run)
+
+      ExecutionRunners::CapabilityRequirements.from_agent_run(
+        agent_run,
+        worktree_path: requested_worktree_path,
+        service_declarations: service_declarations,
+        requested_resources: requested_resources,
+        architecture: ExecutionRunners::RunSpec.resolve_architecture(agent_run)
+      )
+    rescue Containers::ImageResolver::Error, Containers::RuntimeImageCatalog::Error => e
+      @compatibility_requirements_error = e
+      nil
+    end
+
+    # Shared fallback-policy predicate: candidates beyond the requested host
+    # only exist when the policy allows fallback AND the selection was not
+    # pinned explicitly. Both the compatible-candidates pass and the
+    # requirements-error pass must agree on this set, or a requirements
+    # failure could record (or omit) hosts the compatible-candidates pass
+    # would have tried.
+    def fallback_hosts_for(requested_host, fallback_policy:, selection_source:)
+      if [
+        HostRegistry::FALLBACK_FIRST_HEALTHY,
+        HostRegistry::FALLBACK_CAPACITY_AWARE
+      ].include?(fallback_policy) && selection_source != "explicit"
+        registry.fallback_candidates_for(requested_host)
+      else
+        []
+      end
     end
   end
 end

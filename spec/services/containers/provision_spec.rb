@@ -236,18 +236,68 @@ RSpec.describe Containers::Provision do
     # @spec EXEC-INGRESS-001
     it "treats an ordinary run with no ingress metadata as default-deny compatible" do
       run = create(:agent_run, external_metadata: {})
-      backend = instance_double(Containers::Backends::Base)
+      backend = instance_double(Containers::Backends::Base, supports_host_paths?: true)
       service = instance_double(described_class)
 
       allow(described_class).to receive(:new).with(
         agent_run: run, worktree_path: nil, backend: backend
       ).and_return(service)
-      allow(service).to receive(:send).with(:validate_backend_mount_support!, record_telemetry: false)
+      allow(service).to receive(:compatibility_validate_backend_mount_support!).with(record_telemetry: false)
 
       result = described_class.compatibility_for(agent_run: run, backend:)
 
       expect(result.compatible).to be(true)
       expect(result.error_message).to be_nil
+    end
+
+    # @spec CONTAINER-RUNTIME-042
+    # @spec CONTAINER-RUNTIME-043
+    it "rejects a verification run before provisioning when the resolved runner lacks browser_sidecar" do
+      run = create(:agent_run, external_metadata: {})
+      run.project.update!(screenshot_settings: run.project.effective_screenshot_settings.merge("verification_enabled" => true))
+      backend = instance_double(Containers::Backends::Base, supports_host_paths?: true, identifier: "cloud-1")
+      service = instance_double(described_class)
+      runner_class = Class.new do
+        def self.capability_compatibility_for(...)
+          ExecutionRunners::CompatibilityResult.new(
+            compatible: false,
+            error_message: "Runner lacks required capabilities: browser sidecar."
+          )
+        end
+      end
+
+      allow(described_class).to receive(:new).with(
+        agent_run: run, worktree_path: nil, backend: backend
+      ).and_return(service)
+      allow(service).to receive(:compatibility_validate_backend_mount_support!).with(record_telemetry: false)
+      allow(ExecutionRunners).to receive(:resolve).with(backend: backend).and_return(runner_class.new)
+
+      result = described_class.compatibility_for(agent_run: run, backend:)
+
+      expect(result.compatible).to be(false)
+      expect(result.error_message).to include("browser sidecar")
+    end
+
+    # @spec CONTAINER-RUNTIME-043
+    it "returns an incompatible result when deriving default capability requirements hits a retired image reference" do
+      run = create(:agent_run, external_metadata: {})
+      backend = instance_double(Containers::Backends::Base, supports_host_paths?: true)
+      service = instance_double(described_class)
+      error = Containers::RuntimeImageCatalog::UnknownReferenceError.new("unknown image reference")
+
+      allow(described_class).to receive(:new).with(
+        agent_run: run, worktree_path: nil, backend: backend
+      ).and_return(service)
+      allow(service).to receive(:compatibility_validate_backend_mount_support!).with(record_telemetry: false)
+      allow(ExecutionRunners::CapabilityRequirements).to receive(:from_agent_run).with(
+        run,
+        worktree_path: nil
+      ).and_raise(error)
+
+      result = described_class.compatibility_for(agent_run: run, backend:)
+
+      expect(result.compatible).to be(false)
+      expect(result.error_message).to eq("unknown image reference")
     end
   end
 
