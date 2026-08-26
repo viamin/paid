@@ -111,6 +111,10 @@ module Activities
       # label after the owner genuinely removed it, reintroducing the silent
       # no-op the escalated-phase-as-hold was meant to fix.
       @escalation_label_removals = {}
+      # Same rationale as @escalation_label_removals above: a snapshot staged
+      # for an issue in one pass must not be persisted on the next pass if the
+      # current pass never reached `stage_auto_merge_snapshot` for it.
+      @auto_merge_snapshots = {}
 
       project_id = input[:project_id]
       project = Project.find_by(id: project_id)
@@ -3549,12 +3553,21 @@ module Activities
     end
 
     def persist_scan_metadata(issue, scanned_at)
+      # `scan_merge_conflict_only` calls this for a PR that was eligible for a
+      # rescan but never reached `stage_auto_merge_snapshot`. Without this
+      # guard the persisted snapshot from the previous full scan would be wiped
+      # to nil — AutoMergeStatus would then report `diagnostics_unavailable`
+      # until the next full scan, even when a valid blocker (e.g. stale
+      # approval) had just been recorded (#3653).
+      staged_this_pass = auto_merge_snapshots.key?(issue.id)
       snapshot = auto_merge_snapshots.delete(issue.id)
-      issue.update_columns(
-        last_pr_scan_at: scanned_at,
-        auto_merge_blockers: snapshot,
-        auto_merge_evaluated_at: snapshot.present? ? scanned_at : nil
-      )
+
+      attributes = { last_pr_scan_at: scanned_at }
+      if staged_this_pass
+        attributes[:auto_merge_blockers] = snapshot
+        attributes[:auto_merge_evaluated_at] = snapshot.present? ? scanned_at : nil
+      end
+      issue.update_columns(attributes)
     end
 
     def auto_merge_snapshots

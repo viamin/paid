@@ -461,6 +461,45 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         end
       end
 
+      it "preserves a prior auto-merge snapshot when only the merge-conflict rescan path runs" do
+        project.update!(auto_fix_merge_conflicts: true)
+        prior_evaluated_at = 30.minutes.ago
+        pr_issue.update!(
+          last_pr_scan_at: 1.hour.ago,
+          github_updated_at: 2.hours.ago,
+          auto_merge_blockers: stale_approval_snapshot,
+          auto_merge_evaluated_at: prior_evaluated_at
+        )
+        stub_github_for_pr(mergeable: false)
+
+        freeze_time do
+          activity.execute(project_id: project.id)
+
+          pr_issue.reload
+          expect(pr_issue.last_pr_scan_at).to eq(Time.current)
+          expect(pr_issue.auto_merge_blockers).to eq(stale_approval_snapshot)
+          expect(pr_issue.auto_merge_evaluated_at).to be_within(1.second).of(prior_evaluated_at)
+        end
+      end
+
+      it "resets the per-execute auto-merge snapshot cache so prior-pass staging cannot leak" do
+        project.update!(auto_fix_merge_conflicts: true)
+        pr_issue.update!(
+          last_pr_scan_at: 1.hour.ago,
+          github_updated_at: 2.hours.ago
+        )
+        leaked_snapshot = { "failed" => [ { "leaked" => true } ], "not_evaluated" => [] }
+        activity.instance_variable_set(:@auto_merge_snapshots, { pr_issue.id => leaked_snapshot })
+        stub_github_for_pr(mergeable: false)
+
+        activity.execute(project_id: project.id)
+
+        pr_issue.reload
+        expect(pr_issue.auto_merge_blockers).to be_nil
+        expect(pr_issue.auto_merge_evaluated_at).to be_nil
+        expect(activity.instance_variable_get(:@auto_merge_snapshots)).to eq({})
+      end
+
       it "checks lifecycle gate queries at most once per PR scan" do
         pr_issue.update!(pr_review_phase: "ready")
         stub_github_for_pr(checks: [ { name: "rspec", conclusion: "success" } ], reviews: [])
@@ -10725,6 +10764,21 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           "next_action" => "Resolve the earlier auto-merge blockers first, then let Paid re-evaluate dependency resolution."
         }
       ]
+    }
+  end
+
+  def stale_approval_snapshot
+    {
+      "failed" => [
+        {
+          "signal" => "reviews_fresh",
+          "status" => "failed",
+          "reason_code" => "stale_approval",
+          "sanitized_message" => "The owner approval is stale for the current HEAD commit.",
+          "next_action" => "Ask @viamin to re-approve this pull request for the current HEAD commit, then wait for the next automatic merge evaluation."
+        }
+      ],
+      "not_evaluated" => []
     }
   end
 end
