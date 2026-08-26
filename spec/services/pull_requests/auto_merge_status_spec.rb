@@ -1,11 +1,12 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "ostruct"
 
 # @spec AUTO-MERGE-005
 # @spec CHAT-API-011
 RSpec.describe PullRequests::AutoMergeStatus do
-  subject(:status) { described_class.call(issue:, project:) }
+  subject(:status) { described_class.call(issue:, project:, live_pull_request:) }
 
   let(:account) { create(:account) }
   let(:project) do
@@ -15,6 +16,7 @@ RSpec.describe PullRequests::AutoMergeStatus do
       owner_reviewer_login: "viamin")
   end
   let(:issue) { create(:issue, :pull_request, project: project) }
+  let(:live_pull_request) { nil }
 
   it "reports a stale approval blocker from the persisted snapshot" do
     persist_auto_merge_snapshot!(
@@ -57,6 +59,26 @@ RSpec.describe PullRequests::AutoMergeStatus do
       auto_merge_status: "merged",
       merge_permission_rejected: false,
       next_action: "No action required."
+    )
+  end
+
+  it "reports merged when GitHub already shows merged_at but the local PR row is still open" do
+    issue.update!(
+      pr_review_phase: "ready",
+      github_state: "open",
+      merge_permission_rejected_at: 2.hours.ago,
+      merge_permission_rejection_reason: "missing workflows permission",
+      auto_merge_blockers: snapshot_hash(failed: [ stale_approval_blocker ], not_evaluated: []),
+      auto_merge_evaluated_at: Time.current
+    )
+    live_pr = OpenStruct.new(merged: false, merged_at: 1.hour.ago)
+    allow(self).to receive(:live_pull_request).and_return(live_pr)
+
+    expect(status).to include(
+      auto_merge_status: "merged",
+      merge_permission_rejected: false,
+      next_action: "No action required.",
+      blockers: []
     )
   end
 

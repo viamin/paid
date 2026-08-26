@@ -10,17 +10,19 @@ module PullRequests
   # @spec CHAT-API-011
   # @spec AUTO-MERGE-005
   class AutoMergeStatus
-    def self.call(issue:, project:)
-      new(issue:, project:).call
+    def self.call(issue:, project:, live_pull_request: nil)
+      new(issue:, project:, live_pull_request:).call
     end
 
-    def initialize(issue:, project:)
+    def initialize(issue:, project:, live_pull_request:)
       @issue = issue
       @project = project
+      @live_pull_request = live_pull_request
     end
 
     def call
       return merged_status if merged?
+      return merged_status if live_merged?
       return merge_permission_rejected_status if issue.merge_permission_rejected?
       return auto_merge_disabled_status unless project.auto_merge_enabled?
       return credentials_unavailable_status unless credentials_available?
@@ -34,10 +36,14 @@ module PullRequests
 
     private
 
-    attr_reader :issue, :project
+    attr_reader :issue, :project, :live_pull_request
 
     def merged?
       issue.merged_phase?
+    end
+
+    def live_merged?
+      live_pull_request&.merged == true || live_pull_request&.merged_at.present?
     end
 
     def merge_permission_rejected_status

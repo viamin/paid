@@ -198,6 +198,27 @@ RSpec.describe Tools::GetPullRequestDetails do
       )
     end
 
+    it "reports merged when GitHub already shows merged_at but the local PR row is still open" do
+      pr.update!(
+        pr_review_phase: "ready",
+        github_state: "open",
+        merge_permission_rejected_at: 1.hour.ago,
+        merge_permission_rejection_reason: "missing workflows permission",
+        auto_merge_blockers: { "failed" => [ not_mergeable_blocker ], "not_evaluated" => [] },
+        auto_merge_evaluated_at: Time.current
+      )
+      stub_merged_pull_request(merged_at: 5.minutes.ago)
+
+      result = tool.call(project_id: project.id, issue_id: pr.id)
+
+      expect(result[:auto_merge]).to include(
+        auto_merge_status: "merged",
+        merge_permission_rejected: false,
+        next_action: "No action required.",
+        blockers: []
+      )
+    end
+
     it "reports a PR merged out-of-band as merged even when live credentials are unavailable" do
       # Even without a usable GitHub credential, persisted pr_review_phase:
       # "merged" is enough to report the merged status — the stale rejection

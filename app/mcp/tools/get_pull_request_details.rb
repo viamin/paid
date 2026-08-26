@@ -25,6 +25,7 @@ module Tools
       project = project_for(project_id)
 
       pr = project.issues.pull_requests_only.find(issue_id)
+      live_pull_request = fetch_pull_request(project, pr)
 
       {
         id: pr.id,
@@ -37,7 +38,7 @@ module Tools
         labels: pr.labels,
         github_creator_login: pr.github_creator_login,
         github_url: pr.github_url,
-        auto_merge: PullRequests::AutoMergeStatus.call(issue: pr, project: project),
+        auto_merge: PullRequests::AutoMergeStatus.call(issue: pr, project: project, live_pull_request: live_pull_request),
         comments: fetch_comments(project, pr),
         review_comments: fetch_review_comments(project, pr),
         agent_runs: pr.agent_runs.recent.limit(5).map { |r| run_summary(r) },
@@ -77,6 +78,31 @@ module Tools
     rescue StandardError => e
       Rails.logger.warn(message: "mcp.fetch_pr_review_comments_failed", error: e.message, issue_id: pr.id)
       []
+    end
+
+    def fetch_pull_request(project, pr)
+      return nil unless pull_request_credentials_available?(project)
+
+      client = project.client
+      return nil unless client
+
+      client.pull_request(project.full_name, pr.github_number)
+    rescue Github::AppInstallation::ConfigurationError, GithubClient::Error => e
+      Rails.logger.warn(
+        message: "mcp.fetch_pr_details_pull_request_failed",
+        error: e.message,
+        error_class: e.class.name,
+        issue_id: pr.id
+      )
+      nil
+    end
+
+    def pull_request_credentials_available?(project)
+      if project.github_installation_id.present? || project.github_installation.present?
+        project.github_installation&.active? == true
+      else
+        project.github_token&.active? == true
+      end
     end
 
     def run_summary(run)
