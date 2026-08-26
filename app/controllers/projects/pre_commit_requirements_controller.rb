@@ -71,11 +71,13 @@ module Projects
     def load_requirements
       @pre_commit_requirements = @project.pre_commit_requirements.ordered
       @mutation_requirement = mutation_requirement_for_form
+      @warden_requirement = warden_requirement_for_form
       @can_manage_pre_commit_requirements = policy(@project).update?
     end
 
     def assign_failed_requirement
       return if @pre_commit_requirement.check_type == "mutation_test"
+      return if warden_scan?(@pre_commit_requirement)
 
       @new_requirement = @pre_commit_requirement
     end
@@ -93,6 +95,25 @@ module Projects
           position: 0,
           enabled: false
         )
+    end
+
+    def warden_requirement_for_form # @spec QUALITY-LOOPS-007
+      return @pre_commit_requirement if warden_scan?(@pre_commit_requirement)
+
+      @project.pre_commit_requirements.find_by(name: "warden_scan", check_type: "security_scan") ||
+        @project.pre_commit_requirements.build(
+          account: @project.account,
+          name: "warden_scan",
+          check_type: "security_scan",
+          command: PreCommitRequirement::WARDEN_DEFAULT_COMMAND,
+          failure_behavior: "warn",
+          position: 1,
+          enabled: false
+        )
+    end
+
+    def warden_scan?(requirement)
+      requirement&.name == "warden_scan" && requirement&.check_type == "security_scan"
     end
 
     def pre_commit_requirement_params

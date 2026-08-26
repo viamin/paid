@@ -244,6 +244,25 @@ RUN RTK_VERSION=0.45.0 \
 RUN CODEGRAPH_VERSION=1.5.0 \
     && npm install -g --ignore-scripts "@colbymchenry/codegraph@${CODEGRAPH_VERSION}"
 
+# Install warden (agent-security review CLI behind the security_scan
+# pre-commit check). Warden publishes no standalone release binaries — the npm
+# tarball is the distribution channel — so the pin verifies the tarball SHA-256
+# directly (same hard-pin convention as ast-grep/scc/rtk above).
+# License: FSL-1.1-ALv2. Usage is a permitted purpose; the vendored upstream
+# LICENSE is installed at /opt/warden/LICENSE to keep the redistribution notice
+# intact. No warden source is copied into Paid.
+# Supply-chain hardening: --ignore-scripts — the package has no lifecycle scripts.
+# https://github.com/getsentry/warden
+# @spec CONTAINER-RUNTIME-036
+RUN WARDEN_VERSION=0.48.0 \
+    && WARDEN_CHECKSUM="5594241bef25c72887bf62ea646fb73fccd50767b01b153638c40976bc551376" \
+    && TARBALL="warden-${WARDEN_VERSION}.tgz" \
+    && curl -fsSL -o "${TARBALL}" "https://registry.npmjs.org/@sentry/warden/-/warden-${WARDEN_VERSION}.tgz" \
+    && echo "${WARDEN_CHECKSUM}  ${TARBALL}" | sha256sum -c - \
+    && npm install -g --ignore-scripts "./${TARBALL}" \
+    && rm "${TARBALL}" \
+    && warden --version
+
 # Create non-root user for security before provider-specific setup. Keeping
 # this separate from any one provider narrows the blast radius of future edits.
 RUN useradd -m -s /bin/bash agent \
@@ -538,9 +557,14 @@ RUN if [ -z "${CURSOR_ARTIFACT_URL}" ]; then echo "ERROR: CURSOR_ARTIFACT_URL bu
 # Install git credential helper for proxy-based authentication.
 # This allows git clone/push inside the container without exposing GitHub tokens.
 COPY docker/agent/scripts/git-credential-paid /usr/local/bin/git-credential-paid
+COPY docker/agent/scripts/warden-scan /usr/local/bin/warden-scan
+# Vendor warden's FSL-1.1-ALv2 license notice (redistribution obligation) and
+# the default scan policy; warden-scan prefers a repo-committed warden.toml.
+COPY docker/agent/warden /opt/warden
 COPY docs/lid /opt/paid-lid/docs/lid
 COPY bin/coherence-check.mjs /opt/paid-lid/bin/coherence-check.mjs
-RUN chmod +x /usr/local/bin/git-credential-paid
+RUN chmod +x /usr/local/bin/git-credential-paid \
+    && chmod +x /usr/local/bin/warden-scan
 RUN chmod +x /opt/paid-lid/bin/coherence-check.mjs
 
 # Configure git at system level so it works with ReadonlyRootfs.

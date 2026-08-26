@@ -100,7 +100,90 @@
         <% end %>
       </fieldset>
 
-      <% listed_requirements = @pre_commit_requirements.reject { |requirement| requirement.check_type == "mutation_test" } %>
+      <fieldset id="security-scan" class="mt-6 space-y-4 rounded-md border border-gray-200 p-4">
+        <legend class="px-1 text-sm font-semibold text-gray-900">Security Scan (Warden)</legend>
+        <p class="text-sm text-gray-600">
+          Scan the run's changes for security findings before the pull request is created.
+          Uses <a href="https://github.com/getsentry/warden" class="text-indigo-600 hover:text-indigo-500" target="_blank" rel="noopener noreferrer">getsentry/warden</a> via the <code class="rounded bg-gray-100 px-1 text-xs">warden-scan</code> wrapper installed in the agent image.
+        </p>
+
+        <% if @can_manage_pre_commit_requirements %>
+          <% if @warden_requirement.errors.any? %>
+            <div class="rounded-md bg-red-50 p-4">
+              <h3 class="text-sm font-medium text-red-800"><%= pluralize(@warden_requirement.errors.count, "error") %> prevented the security scan from being saved:</h3>
+              <ul class="mt-2 list-disc pl-5 text-sm text-red-700">
+                <% @warden_requirement.errors.full_messages.each do |msg| %>
+                  <li><%= msg %></li>
+                <% end %>
+              </ul>
+            </div>
+          <% end %>
+
+          <%= form_with model: [ @project, @warden_requirement ], class: "space-y-4" do |f| %>
+            <%= f.hidden_field :name, value: "warden_scan" %>
+            <%= f.hidden_field :check_type, value: "security_scan" %>
+            <%= f.hidden_field :position, value: @warden_requirement.position || 1 %>
+
+            <div class="flex items-center">
+              <%= f.check_box :enabled, id: "warden_scan_enabled", class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
+              <%= f.label :enabled, "Enable warden security scan", for: "warden_scan_enabled", class: "ml-3 block text-sm font-medium leading-6 text-gray-900" %>
+              <% if @warden_requirement.enabled? %>
+                <span class="ml-2 inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Active</span>
+              <% end %>
+            </div>
+
+            <div>
+              <%= f.label :command, "Command", for: "warden_scan_command", class: "block text-sm font-medium leading-6 text-gray-900" %>
+              <div class="mt-1">
+                <%= f.text_field :command, id: "warden_scan_command", value: @warden_requirement.command.presence || PreCommitRequirement::WARDEN_DEFAULT_COMMAND, required: true, autocomplete: "off", class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+              </div>
+              <p class="mt-1 text-xs text-gray-500">
+                Default: <code class="rounded bg-gray-100 px-1"><%= PreCommitRequirement::WARDEN_DEFAULT_COMMAND %></code>. A repo-committed <code class="rounded bg-gray-100 px-1">warden.toml</code> overrides the image default policy.
+              </p>
+            </div>
+
+            <div>
+              <%= f.label :failure_behavior, "Failure behavior", for: "warden_scan_failure_behavior", class: "block text-sm font-medium leading-6 text-gray-900" %>
+              <div class="mt-1">
+                <%= f.select :failure_behavior,
+                  options_for_select(
+                    [
+                      [ "Warn (log result, do not block)", "warn" ],
+                      [ "Block (fail the pre-commit check)", "block" ]
+                    ],
+                    @warden_requirement.failure_behavior.presence || "warn"
+                  ),
+                  {},
+                  id: "warden_scan_failure_behavior",
+                  class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+              </div>
+              <p class="mt-1 text-xs text-gray-500">Choose <strong>Warn</strong> to start with; warden needs a model provider at runtime, so keep it non-blocking until the scan passes reliably in your containers.</p>
+            </div>
+
+            <% if @warden_requirement.updated_at %>
+              <p class="text-xs text-gray-500">Last updated: <%= @warden_requirement.updated_at.strftime("%b %-d, %Y") %></p>
+            <% end %>
+
+            <%= f.submit "Save Security Scan", class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 cursor-pointer" %>
+          <% end %>
+        <% elsif @warden_requirement.persisted? %>
+          <div class="space-y-3 text-sm">
+            <div class="flex items-center gap-x-2">
+              <% if @warden_requirement.enabled? %>
+                <span class="inline-flex items-center rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20">Enabled</span>
+              <% else %>
+                <span class="inline-flex items-center rounded-md bg-gray-50 px-2 py-1 text-xs font-medium text-gray-600 ring-1 ring-inset ring-gray-500/10">Disabled</span>
+              <% end %>
+              <span class="inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700"><%= @warden_requirement.failure_behavior %></span>
+            </div>
+            <code class="block rounded bg-gray-50 px-3 py-2 text-sm text-gray-700"><%= @warden_requirement.command %></code>
+          </div>
+        <% else %>
+          <p class="text-sm text-gray-500">The warden security scan has not been configured.</p>
+        <% end %>
+      </fieldset>
+
+      <% listed_requirements = @pre_commit_requirements.reject { |requirement| requirement.check_type == "mutation_test" || (requirement.name == "warden_scan" && requirement.check_type == "security_scan") } %>
       <div class="mt-6 space-y-6">
         <%= render partial: "projects/pre_commit_requirements/requirement",
           collection: listed_requirements,
