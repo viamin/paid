@@ -13,9 +13,15 @@
         <p class="mt-1 text-sm text-gray-500"><%= entry.project.full_name %></p>
       </div>
 
-      <%= link_to "Back to queue",
-            dashboard_inbox_path(project_id: scoped_project&.id, kind: selected_kind),
-            class: "inline-flex rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 lg:hidden" %>
+      <%= link_to inbox_path(project: scoped_project, kind: selected_kind),
+            data: {
+              turbo_frame: "_top",
+              action: "click->inbox-master-detail#close"
+            },
+            class: "inline-flex rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 lg:hidden" do %>
+        <span aria-hidden="true">&larr;</span>
+        <span class="ml-1">Back to queue</span>
+      <% end %>
     </div>
   </div>
 

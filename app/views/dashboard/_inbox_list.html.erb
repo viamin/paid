@@ -9,13 +9,11 @@
     <% entries.each do |entry| %>
       <% selected = entry == selected_entry %>
       <li>
-        <%= link_to dashboard_inbox_path(
-              project_id: scoped_project&.id,
-              kind: selected_kind,
-              entry_kind: entry.kind,
-              entry_id: entry.record.id,
-              view: "detail"
-            ),
+        <%= link_to inbox_detail_path(entry),
+            data: {
+              turbo_frame: "inbox-detail",
+              action: "click->inbox-master-detail#open"
+            },
             class: [
               "block px-4 py-4 transition-colors",
               selected ? "bg-indigo-50" : "hover:bg-gray-50"

@@ -19,7 +19,7 @@ module Projects
     end
 
     def create
-      next_issue = next_queue_issue
+      next_issue = next_queue_issue if queue_mode?
       questions_and_answers = build_questions_and_answers(questions: current_questions)
 
       ClarifyingQuestions::SubmitAnswers.call(
@@ -28,21 +28,17 @@ module Projects
         questions_and_answers: questions_and_answers
       )
 
-      if queue_mode? && next_issue
-        redirect_to project_issue_clarifying_questions_path(
-          next_issue.project,
-          next_issue,
-          queue_redirect_params
-        ), notice: "Answers posted to GitHub issue ##{@issue.github_number}. Next questionnaire ready."
+      if inbox_mode?
+        inbox_redirect_target(next_entry: inbox_next_entry)
       elsif queue_mode?
-        redirect_to queue_return_to, notice: "Answers posted to GitHub issue ##{@issue.github_number}. You've completed the needs-input queue."
+        redirect_after_queue(next_issue)
       else
         redirect_to project_path(@project), notice: "Answers posted to GitHub issue ##{@issue.github_number}. The agent will pick them up on the next run."
       end
     rescue ArgumentError => e
-      redirect_to project_issue_clarifying_questions_path(@project, @issue, queue_redirect_params), alert: e.message
+      redirect_to failure_redirect_path, alert: e.message
     rescue GithubClient::Error => e
-      redirect_to project_issue_clarifying_questions_path(@project, @issue, queue_redirect_params), alert: "Failed to post answers: #{e.message}"
+      redirect_to failure_redirect_path, alert: "Failed to post answers: #{e.message}"
     end
 
     private
@@ -83,6 +79,29 @@ module Projects
 
     def queue_mode?
       %w[dashboard_needs_input dashboard_inbox].include?(queue_param)
+    end
+
+    # The inbox detail pane is a one-page form that submits with `inbox=1`.
+    # On success the controller redirects to the next inbox entry so the
+    # frame auto-loads; on error it bounces back into the same frame so the
+    # user can correct the answer without losing their work.
+    def inbox_mode?
+      params[:inbox].to_s == "1"
+    end
+
+    # Picks the redirect target for the legacy wizard-style queue flow.
+    # When a follow-up issue exists, chain the user to it; when the queue
+    # is drained, fall back to the validated return target.
+    def redirect_after_queue(next_issue)
+      if next_issue
+        redirect_to project_issue_clarifying_questions_path(
+          next_issue.project,
+          next_issue,
+          queue_redirect_params
+        ), notice: "Answers posted to GitHub issue ##{@issue.github_number}. Next questionnaire ready."
+      else
+        redirect_to queue_return_to, notice: "Answers posted to GitHub issue ##{@issue.github_number}. You've completed the needs-input queue."
+      end
     end
 
     def queue_param
@@ -169,6 +188,58 @@ module Projects
       return false if params[:queue_project_id].present? && queue_project.nil?
 
       queue_scope_issues(project: queue_project).any? { |issue| issue.id == @issue.id }
+    end
+
+    # Builds the success-redirect path the inbox form lands on. When a next
+    # entry is available, auto-advance points the detail frame at it; when
+    # the queue is drained, falls back to the bare inbox index so the
+    # Turbo Frame reloads the empty state.
+    def inbox_redirect_target(next_entry:)
+      target_params = {
+        project_id: @project.id,
+        kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+        selected: next_entry ? "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{next_entry.record.id}" : nil
+      }.compact
+
+      notice_suffix = next_entry ? "Loading next questionnaire." : "You've completed the clarifying-questions queue."
+      redirect_to dashboard_inbox_path(**target_params),
+        notice: "Answers posted to GitHub issue ##{@issue.github_number}. #{notice_suffix}"
+    end
+
+    # Resolves the next inbox entry from the same scope the user was browsing
+    # (project filter + clarifying-questions kind). Returns nil when the
+    # queue is drained so the redirect collapses to the bare inbox index.
+    def inbox_next_entry
+      project_scope = inbox_scoped_project
+      Inbox::Queue
+        .call(user: current_user, project: project_scope, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
+        .reject { |entry| entry.record.id == @issue.id && entry.kind == Inbox::Queue::CLARIFYING_QUESTIONS_KIND }
+        .first
+    end
+
+    def inbox_scoped_project
+      return @inbox_scoped_project if defined?(@inbox_scoped_project)
+
+      @inbox_scoped_project = if params[:inbox_project_id].present?
+        policy_scope(Project).find_by(id: params[:inbox_project_id])
+      end
+    end
+
+    # The inbox form posts inside a Turbo Frame; on failure the redirect must
+    # land inside the same frame so the user keeps their answers and the
+    # pane scrolls back into view.
+    def failure_redirect_path
+      if inbox_mode?
+        dashboard_inbox_path(
+          project_id: @project.id,
+          kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+          selected: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{@issue.id}"
+        )
+      elsif queue_mode?
+        project_issue_clarifying_questions_path(@project, @issue, queue_redirect_params)
+      else
+        project_issue_clarifying_questions_path(@project, @issue)
+      end
     end
   end
 end

@@ -76,6 +76,24 @@ class DashboardController < ApplicationController
     @detail_view = params[:view] == "detail"
   end
 
+  # Renders only the inbox detail frame so list links can navigate without a
+  # full page reload (Hotwire/Turbo Frame). The route exists at the
+  # dedicated #3676 InboxController; here it lives on DashboardController so
+  # selection + auto-advance can land before the URL scheme migrates.
+  def inbox_detail
+    @scoped_project = scoped_needs_input_project
+    @selected_kind = valid_inbox_kind
+    @inbox_entries = Inbox::Queue.call(user: current_user, project: @scoped_project, kind: @selected_kind)
+    @selected_entry = resolve_selected_entry(@inbox_entries)
+
+    render "dashboard/inbox_detail_frame",
+      locals: {
+        entry: @selected_entry,
+        scoped_project: @scoped_project,
+        selected_kind: @selected_kind
+      }
+  end
+
   def metrics
     @time_range = valid_time_range
     @stats = Dashboard::Stats.call(
@@ -243,10 +261,22 @@ class DashboardController < ApplicationController
     Inbox::Queue::KINDS.include?(kind) ? kind : nil
   end
 
+  # Accepts both the legacy `entry_kind` + `entry_id` params (existing inbox
+  # links) and the new combined `selected` selector (`kind:record_id`) used by
+  # the auto-advance redirect on submit. Falls back to the first entry when
+  # nothing matches so an empty inbox renders the empty state instead of
+  # raising.
   def resolve_selected_entry(entries)
-    selected = entries.find do |entry|
-      entry.kind == params[:entry_kind].to_s && entry.record.id.to_s == params[:entry_id].to_s
-    end
+    kind, record_id = inbox_selected_components
+    selected = entries.find { |entry| entry.kind == kind && entry.record.id.to_s == record_id }
     selected || entries.first
+  end
+
+  def inbox_selected_components
+    combined = params[:selected].to_s
+    return params[:entry_kind].to_s, params[:entry_id].to_s if combined.blank?
+
+    kind, record_id = combined.split(":", 2)
+    [ kind.to_s, record_id.to_s ]
   end
 end

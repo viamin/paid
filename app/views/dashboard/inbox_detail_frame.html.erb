@@ -1,0 +1,6 @@
+<%= turbo_frame_tag "inbox-detail" do %>
+  <%= render "dashboard/inbox_detail",
+        entry: entry,
+        scoped_project: scoped_project,
+        selected_kind: selected_kind %>
+<% end %>

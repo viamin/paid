@@ -302,6 +302,123 @@ RSpec.describe "Projects::ClarifyingQuestions" do
       end
     end
 
+    context "when submitted from the inbox detail pane" do
+      let(:questions) { [ "What is the expected behavior?", "Should this be behind a flag?" ] }
+      let(:answers) { [ "X is a feature", "Yes, by default" ] }
+      let(:issue) do
+        create(:issue, :needs_input, project: project, body: issue_body, needs_input_questions: questions)
+      end
+
+      before do
+        allow(github_client).to receive(:issue_comments).and_return([ trusted_comment ])
+      end
+
+      it "redirects to the next inbox entry when more are waiting in the same scope" do
+        project.update!(auto_pick_enabled: true, active: true)
+        next_issue = create(:issue, :needs_input, project: project,
+          github_number: issue.github_number + 2,
+          needs_input_questions: [ "What should happen next?" ])
+
+        post project_issue_clarifying_questions_path(project, issue), params: {
+          questions: questions,
+          answers: answers,
+          inbox: "1",
+          inbox_project_id: project.id
+        }
+
+        expect(response).to redirect_to(
+          dashboard_inbox_path(
+            project_id: project.id,
+            kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+            selected: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{next_issue.id}"
+          )
+        )
+      end
+
+      it "redirects to the bare inbox when the queue is drained" do
+        project.update!(auto_pick_enabled: true, active: true)
+
+        post project_issue_clarifying_questions_path(project, issue), params: {
+          questions: questions,
+          answers: answers,
+          inbox: "1",
+          inbox_project_id: project.id
+        }
+
+        expect(response).to redirect_to(
+          dashboard_inbox_path(
+            project_id: project.id,
+            kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND
+          )
+        )
+        expect(response).not_to have_attributes(location: /selected=/)
+      end
+
+      it "ignores inbox_project_id scope and falls back to the issue project when out of scope" do
+        project.update!(auto_pick_enabled: true, active: true)
+        other_project = create(
+          :project,
+          account: account,
+          created_by: user,
+          auto_pick_enabled: true,
+          active: true
+        )
+
+        post project_issue_clarifying_questions_path(project, issue), params: {
+          questions: questions,
+          answers: answers,
+          inbox: "1",
+          inbox_project_id: other_project.id
+        }
+
+        expect(response).to redirect_to(
+          dashboard_inbox_path(
+            project_id: project.id,
+            kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND
+          )
+        )
+      end
+
+      it "redirects back to the inbox frame when validation fails" do
+        project.update!(auto_pick_enabled: true, active: true)
+
+        post project_issue_clarifying_questions_path(project, issue), params: {
+          questions: questions,
+          answers: [ "X is a feature", "" ],
+          inbox: "1",
+          inbox_project_id: project.id
+        }
+
+        expect(response).to redirect_to(
+          dashboard_inbox_path(
+            project_id: project.id,
+            kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+            selected: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{issue.id}"
+          )
+        )
+      end
+
+      it "redirects back to the inbox frame when the GitHub post fails" do
+        project.update!(auto_pick_enabled: true, active: true)
+        allow(github_client).to receive(:add_comment).and_raise(GithubClient::Error, "boom")
+
+        post project_issue_clarifying_questions_path(project, issue), params: {
+          questions: questions,
+          answers: answers,
+          inbox: "1",
+          inbox_project_id: project.id
+        }
+
+        expect(response).to redirect_to(
+          dashboard_inbox_path(
+            project_id: project.id,
+            kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+            selected: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{issue.id}"
+          )
+        )
+      end
+    end
+
     context "when the submitted questions no longer match the current questions" do
       before do
         allow(github_client).to receive(:issue_comments).and_return([ trusted_comment ])
