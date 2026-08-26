@@ -2051,8 +2051,10 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
 
     before do
       allow(Containers::Provision).to receive(:new) do |**kwargs|
-        run = kwargs.fetch(:agent_run)
-        captured_proxy_scope_credentials << { agent_run_id: run.id, proxy_token: run.proxy_token }
+        if kwargs.key?(:ownership_labels)
+          run = kwargs.fetch(:agent_run)
+          captured_proxy_scope_credentials << { agent_run_id: run.id, proxy_token: run.proxy_token }
+        end
         provision_service
       end
       allow(provision_service).to receive_messages(

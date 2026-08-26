@@ -157,8 +157,9 @@ module ExecutionRunners
       capabilities << :browser_sidecar if agent_run.project.verification_enabled?
       resources = requested_resources || Capacity::RequestedResources.for_agent_run(agent_run)
       capabilities << :arbitrary_disk if non_catalog_disk_bytes?(resources[:disk_bytes])
-      capabilities << ExecutionRunners.architecture_capability(
-        architecture || RunSpec.resolve_architecture(agent_run)
+      capabilities << (
+        ExecutionRunners.architecture_capability(architecture || RunSpec.resolve_architecture(agent_run)) ||
+          :architecture_x86_64
       )
       new(capabilities: capabilities)
     end
@@ -185,18 +186,13 @@ module ExecutionRunners
     end
 
     private_class_method def self.non_catalog_disk_bytes?(disk_bytes)
-      bytes = disk_bytes.to_i
-      bytes.positive? && !catalog_disk_bytes.include?(bytes)
+      gb = (disk_bytes.to_f / EXECUTION_RESOURCE_GIBIBYTE).ceil
+      gb.positive? && !catalog_disk_gbs.include?(gb)
     end
 
     private_class_method def self.catalog_disk_gbs
       @catalog_disk_gbs ||= EXECUTION_RESOURCE_PROFILE_PRESETS.values.map { |preset| preset[:disk_gb] } +
         [ (Capacity::RequestedResources::DISK_BYTES_DEFAULT.to_f / EXECUTION_RESOURCE_GIBIBYTE).ceil ]
-    end
-
-    private_class_method def self.catalog_disk_bytes
-      @catalog_disk_bytes ||= EXECUTION_RESOURCE_PROFILE_PRESETS.values.map { |preset| preset[:disk_gb] * EXECUTION_RESOURCE_GIBIBYTE } +
-        [ Capacity::RequestedResources::DISK_BYTES_DEFAULT ]
     end
   end
 

@@ -78,6 +78,43 @@ RSpec.describe ExecutionRunners do
 
       expect(requirements.to_a).to include(:architecture_arm64)
     end
+
+    # @spec CONTAINER-RUNTIME-037
+    # @spec CONTAINER-RUNTIME-038
+    it "defaults queue-time architecture requirements to x86_64 when the runtime image selection is unresolved" do
+      project = create(:project)
+      run = create(:agent_run, project: project)
+      requested_resources = Capacity::RequestedResources.for_agent_run(run)
+
+      allow(ExecutionRunners::RunSpec).to receive(:resolve_architecture).with(run).and_return(nil)
+
+      requirements = described_class.from_agent_run(
+        run,
+        service_declarations: [],
+        requested_resources: requested_resources
+      )
+
+      expect(requirements.to_a).to include(:architecture_x86_64)
+    end
+
+    # @spec CONTAINER-RUNTIME-037
+    # @spec CONTAINER-RUNTIME-038
+    it "treats queue-time disk requirements with the same rounded gibibyte catalog as provision time" do
+      project = create(:project)
+      run = create(:agent_run, project: project)
+      requested_resources = Capacity::RequestedResources.for_agent_run(run).merge(
+        disk_bytes: 2 * ExecutionRunners::EXECUTION_RESOURCE_GIBIBYTE
+      )
+
+      requirements = described_class.from_agent_run(
+        run,
+        service_declarations: [],
+        requested_resources: requested_resources,
+        architecture: "x86_64"
+      )
+
+      expect(requirements.to_a).not_to include(:arbitrary_disk)
+    end
   end
 
   describe ExecutionRunners::RunSpec do
