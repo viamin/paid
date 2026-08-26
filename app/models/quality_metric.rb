@@ -34,6 +34,13 @@ class QualityMetric < ApplicationRecord
       "iterations" => 0.09,
       "mutation_kill_rate" => MUTATION_KILL_RATE_WEIGHT
     },
+    "performance_regression" => {
+      "focus_resolved" => 0.54,
+      "iterations" => 0.18,
+      "tests_pass" => 0.09,
+      "lint_clean" => 0.09,
+      "ci_passed" => 0.10
+    },
     "review_feedback" => {
       "focus_resolved" => 0.54,
       "iterations" => 0.18,

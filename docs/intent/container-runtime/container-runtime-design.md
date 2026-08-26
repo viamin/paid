@@ -549,6 +549,45 @@ development: its platform is stubbed with the constraint that
 clone path), while legacy bind-mount runs remain a compatibility path
 outside the conformance scenario.
 
+### Execution resource ledger reconciliation (#3411)
+
+Provision-time `runner_handle` persistence solves retry-time recovery for a
+single workflow attempt, but it is not enough to keep cleanup durable across
+provider drift, worker death, or reconciliation gaps. A separate
+`execution_resources` ledger stores the provider-owned execution environments
+Paid believes exist, plus cleanup state that survives job retries and workflow
+restarts.
+
+- Provisioning (runner and legacy Docker paths) upserts a single `environment`
+  ledger row per `AgentRun`. The row records the provider identity
+  (`runner_type`, `host`, `identifier`), the serialized `runner_handle` for
+  handle-based fallback cleanup, and the opaque `workspace_ref`.
+- Cleanup transitions the row from `active` to `cleanup_pending` before the
+  provider call. If cleanup succeeds, the row becomes `cleaned`. If cleanup
+  fails, the row remains `cleanup_pending` with durable failure metadata
+  (`cleanup_attempts`, `next_cleanup_at`, `last_cleanup_error*`) so later
+  reconciliation can retry with backoff even after the run record has cleared
+  its direct container references.
+- `ExecutionResourceReconciliationJob` groups ledger rows by runner/provider and
+  asks the runner for a tagged resource listing when supported. That lets Paid
+  compare “what the ledger says exists” against “what the provider still
+  reports”, mark provider-missing rows cleaned (only when the owning agent run
+  is finished or there is no owning run; a still-running run whose listing is
+  missing is left active with `reduced_confidence` so a transient listing gap
+  cannot sever the live link between the agent and its container), retry
+  `cleanup_pending` resources that are still present, and adopt
+  tagged-but-untracked orphan resources for missing or finished runs into the
+  ledger before cleaning them up.
+- Providers without tag/list support do not block migration. Reconciliation
+  falls back to `runner_handle`-based cleanup for `cleanup_pending` rows and
+  marks those passes `reduced_confidence`, because the system cannot prove the
+  provider inventory matches the ledger and cannot adopt unknown orphans from a
+  direct listing.
+- Existing Docker janitors remain in place. `DockerOrphanCleanupJob` and
+  `AgentRunResourceJanitorJob` still provide immediate cleanup during the
+  migration, while the ledger reconciliation loop becomes the durable source of
+  truth for retries and orphan adoption.
+
 ### Agent-image install failure diagnostics
 
 The agent image carries contract-owned CLI install recipes from
@@ -571,12 +610,40 @@ baseline `bun-linux-x64-baseline.zip` asset when `/proc/cpuinfo` does not
 advertise AVX2. That keeps the Oh My Pi install path compatible with older
 `amd64` runners instead of failing inside the post-install assertions.
 
+### Warden security-scanning CLI
+
+The agent image ships [warden](https://github.com/getsentry/warden) (npm
+package `@sentry/warden`) as the security-review CLI behind the
+`security_scan` pre-commit check. Warden publishes no standalone release
+binaries, so the image pins the npm tarball (`WARDEN_VERSION` + `WARDEN_CHECKSUM`
+sha256) and installs it globally with `--ignore-scripts`, then smoke-checks
+`warden --version` so a broken install fails the build loudly.
+
+Warden is FSL-1.1-ALv2 licensed. Shipping the binary inside the image is a
+permitted use, and the redistribution obligation is met by vendoring the exact
+upstream `LICENSE` text into the image at `/opt/warden/LICENSE`. No warden
+source or skill text is copied into Paid.
+
+A default `warden.toml` policy is vendored at `/opt/warden/warden.toml`
+alongside the license, and a `warden-scan` wrapper script (vendored like
+`git-credential-paid`) makes the pre-commit command self-contained: it resolves
+the scan range inside the container (explicit `WARDEN_BASE_SHA` if provided,
+else the merge-base against `origin/HEAD`/`origin/main`/`origin/master`, else
+`HEAD~1`), prefers a repo-committed `warden.toml` over the vendored default,
+and runs `warden run <base>..HEAD --fail-on high`. Warden's analysis lanes are
+model-backed; without a provider key in the container a run fails loudly
+rather than reporting clean code, which is why the matching pre-commit
+requirement defaults to warn mode.
+
 ## References
 
 - `app/services/containers/provision.rb`
 - `app/services/execution_runners.rb`
 - `app/services/execution_runners/base.rb`
 - `app/services/execution_runners/local_docker_runner.rb`
+- `app/models/execution_resource.rb`
+- `app/services/execution_resources/reconcile.rb`
+- `app/jobs/execution_resource_reconciliation_job.rb`
 - `app/services/execution_runners/provisioning_ledger.rb`
 - `app/models/provisioning_intent.rb`
 - `app/services/containers/resolve_host_for_run.rb`

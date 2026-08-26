@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-class ExecutionResourceReconciliationJob < ApplicationJob
+class ExecutionResourceReconciliationJob < ApplicationJob # @spec CONTAINER-RUNTIME-033
   include GoodJob::ActiveJobExtensions::Concurrency
 
   queue_as :maintenance

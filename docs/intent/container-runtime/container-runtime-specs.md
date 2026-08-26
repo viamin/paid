@@ -531,6 +531,45 @@
   CLIs against `paid-agent:latest`).
   *Tests:* `spec/services/containers/provision_spec.rb`.
   *Code:* `Containers::Provision` tmpfs configuration.
+- [x] **CONTAINER-RUNTIME-032** — The system SHALL persist a durable
+  `execution_resources` ledger for agent execution resources so cleanup state
+  survives workflow retries, janitor retries, and direct provider drift. A
+  successful provision SHALL upsert an `environment` ledger row for the run
+  containing the provider identity (`runner_type`, `host`, `identifier`), the
+  serialized `runner_handle`, and the opaque `workspace_ref`. Cleanup SHALL
+  transition the row to `cleanup_pending` before provider cleanup starts,
+  record durable failure metadata (`cleanup_attempts`, `next_cleanup_at`,
+  `last_cleanup_error`, `last_cleanup_error_class`, `last_cleanup_failed_at`)
+  when cleanup fails, and mark the row `cleaned` when cleanup completes.
+  *Tests:* `spec/jobs/agent_run_resource_janitor_job_spec.rb`,
+  `spec/services/execution_resources/reconcile_spec.rb`
+  *Code:* `ExecutionResource`,
+  `AgentRun#cleanup_container`,
+  `AgentRunResourceJanitorJob`
+
+- [x] **CONTAINER-RUNTIME-033** — Reconciliation SHALL compare ledger rows with
+  runner/provider state when the provider supports tag/list inventory, and
+  SHALL degrade to handle-based cleanup with `reduced_confidence` when it does
+  not. The reconciliation matrix SHALL cover:
+  active-ledger/provider-missing when the owning agent run is finished (or
+  unauthenticated) (mark cleaned — the listing gap is authoritative because
+  no live container is expected to be hanging on to the identifier),
+  active-ledger/provider-missing when the owning agent run is still in
+  progress (mark reconciled with `reduced_confidence` and leave the row
+  active so a transient listing gap cannot sever the live link between a
+  running agent and its container),
+  provider-tagged/no-active-ledger orphans for missing or finished runs
+  (adopt into the ledger and clean up),
+  cleanup-pending/provider-present (retry cleanup with durable backoff), and
+  provider-cannot-list (use the persisted `runner_handle` only and surface
+  reduced confidence). Existing Docker janitors SHALL remain active during the
+  migration.
+  *Tests:* `spec/services/execution_resources/reconcile_spec.rb`,
+  `spec/config/good_job_configuration_spec.rb`
+  *Code:* `ExecutionResources::Reconcile`,
+  `ExecutionResourceReconciliationJob`,
+  `ExecutionRunners::Base`,
+  `ExecutionRunners::LocalDockerRunner`
 
 - [x] **CONTAINER-RUNTIME-030** — When a remote Docker host is registered
   through the guided setup wizard, the system SHALL default and verify the
@@ -641,6 +680,23 @@
   `Containers::ServiceProvisioner::DEFAULT_HARDENING_PROFILE`,
   `Containers::ServiceProvisioner#create_docker_container`,
   `Containers::ServiceProvisioner#hardening_profile_for`
+
+- [x] **CONTAINER-RUNTIME-036** — The agent image SHALL install the warden
+  security-scanning CLI (`@sentry/warden`) from a version-pinned npm tarball
+  whose SHA-256 checksum is verified before install, SHALL install it with
+  `--ignore-scripts` and fail the build when `warden --version` does not run,
+  and SHALL vendor the upstream FSL-1.1-ALv2 `LICENSE` plus a default
+  `warden.toml` under `/opt/warden/`. The image SHALL also ship a
+  `warden-scan` wrapper that resolves the scan range inside the container
+  (`WARDEN_BASE_SHA` if set, else the merge-base against
+  `origin/HEAD`/`origin/main`/`origin/master`, else `HEAD~1`), prefers a
+  repo-committed `warden.toml` over the vendored default, and executes
+  `warden run <base>..HEAD --fail-on high`.
+  *Tests:* `spec/config/agent_image_build_script_spec.rb`,
+  `spec/config/toolchain_pins_spec.rb`.
+  *Code:* `docker/agent/Dockerfile`, `docker/agent/warden/LICENSE`,
+  `docker/agent/warden/warden.toml`, `docker/agent/scripts/warden-scan`,
+  `ToolchainPins.warden_group`, `scripts/test-agent-image-inner.sh`.
 
 - [x] **CONTAINER-RUNTIME-041** — The system SHALL define a minimal,
   provider-neutral runner capability vocabulary containing exactly the

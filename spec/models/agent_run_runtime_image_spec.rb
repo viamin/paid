@@ -74,7 +74,12 @@ RSpec.describe AgentRun do
 
   describe "#clear_runner_reference!" do
     it "clears the recorded runtime image selection alongside container_id and runner_handle" do
-      agent_run = create(:agent_run, container_id: "dead-container-id", runner_handle: { "runner_type" => "local_docker" })
+      agent_run = create(
+        :agent_run,
+        container_id: "dead-container-id",
+        container_host: "remote",
+        runner_handle: { "runner_type" => "local_docker" }
+      )
       agent_run.record_runtime_image_selection!(
         "requested_image" => "paid-agent:latest",
         "resolved_image" => "ghcr.io/acme/paid-agent@sha256:#{'a' * 64}",
@@ -84,6 +89,7 @@ RSpec.describe AgentRun do
       agent_run.send(:clear_runner_reference!)
 
       expect(agent_run.reload.container_id).to be_nil
+      expect(agent_run.container_host).to be_nil
       expect(agent_run.runner_handle).to be_nil
       expect(agent_run.runtime_image_selection).to be_nil
     end

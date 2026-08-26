@@ -1235,6 +1235,38 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_25_233720) do
     t.check_constraint "status::text = ANY (ARRAY['provisioning'::character varying::text, 'active'::character varying::text, 'cleanup_pending'::character varying::text, 'deleted'::character varying::text, 'orphaned'::character varying::text, 'cleanup_failed'::character varying::text])", name: "chk_execution_resource_ledger_status_valid"
   end
 
+  create_table "execution_resources", comment: "Durable execution-resource ledger rows tracked against provider state for reconciliation and cleanup retry.", force: :cascade do |t|
+    t.bigint "account_id", comment: "Owning account for resources linked to a known Paid account."
+    t.datetime "adopted_at"
+    t.bigint "agent_run_id", comment: "Agent run that owns the tracked environment when the resource is tied to a specific run."
+    t.datetime "cleaned_at"
+    t.integer "cleanup_attempts", default: 0, null: false, comment: "How many durable cleanup retries have been recorded for this row."
+    t.datetime "created_at", null: false
+    t.string "host", default: "", null: false, comment: "Owning backend host or empty string when the provider has no host dimension."
+    t.string "identifier", null: false, comment: "Provider-native resource identifier."
+    t.string "last_cleanup_error", comment: "Last cleanup failure message recorded for retry."
+    t.string "last_cleanup_error_class", comment: "Class name of the last cleanup failure recorded for retry."
+    t.datetime "last_cleanup_failed_at"
+    t.jsonb "metadata", default: {}, null: false, comment: "Provider-specific reconciliation metadata."
+    t.datetime "next_cleanup_at"
+    t.bigint "project_id", comment: "Owning project for resources linked to a known Paid project."
+    t.datetime "reconciled_at"
+    t.boolean "reduced_confidence", default: false, null: false, comment: "True when reconciliation had to degrade without provider list/tag support."
+    t.string "resource_type", null: false, comment: "Tracked execution resource type: environment or workspace."
+    t.jsonb "runner_handle", comment: "Persisted RunnerHandle used for handle-based cleanup when provider listing is unavailable."
+    t.string "runner_type", null: false, comment: "Execution runner/provider type that owns the resource."
+    t.string "state", default: "active", null: false, comment: "Ledger lifecycle state: active, cleanup_pending, or cleaned."
+    t.jsonb "tags", default: {}, null: false, comment: "Provider-reported labels/tags captured for reconciliation and orphan adoption."
+    t.datetime "updated_at", null: false
+    t.string "workspace_ref", comment: "Opaque workspace reference carried by the runner handle for cleanup and reconciliation."
+    t.index ["account_id"], name: "index_execution_resources_on_account_id"
+    t.index ["agent_run_id", "resource_type"], name: "idx_execution_resources_agent_run_resource_type", unique: true, where: "(agent_run_id IS NOT NULL)"
+    t.index ["agent_run_id"], name: "index_execution_resources_on_agent_run_id"
+    t.index ["project_id"], name: "index_execution_resources_on_project_id"
+    t.index ["runner_type", "host", "identifier"], name: "idx_execution_resources_provider_identity", unique: true
+    t.index ["state", "next_cleanup_at"], name: "idx_execution_resources_cleanup_schedule"
+  end
+
   create_table "external_connector_events", comment: "Events ingested from external connectors (Jira, Linear, Slack, etc.) for coexistence workflows.", force: :cascade do |t|
     t.bigint "account_id", null: false, comment: "Account this connector event belongs to."
     t.string "connector_key", null: false, comment: "Connector source key from Interop::Catalog (e.g. jira, linear, slack)."
@@ -1952,6 +1984,70 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_25_233720) do
     t.index ["active"], name: "index_orchestration_strategies_on_active"
     t.index ["strategy_type", "account_id"], name: "idx_orchestration_strategies_active_type_account", unique: true, where: "(active = true)", nulls_not_distinct: true
     t.index ["strategy_type"], name: "index_orchestration_strategies_on_strategy_type"
+  end
+
+  create_table "page_load_measurements", comment: "Page load timings captured while screenshotting a pull request's changed routes. One row per route per capture; the durable source of truth behind the per-project page-load ledger export.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "agent_run_id", comment: "The capture run that produced the measurement; nullified when the run is pruned."
+    t.datetime "captured_at", null: false
+    t.string "commit_sha", limit: 64, null: false
+    t.datetime "created_at", null: false
+    t.integer "dcl_ms", comment: "Median DOMContentLoaded, milliseconds from navigation start."
+    t.integer "fcp_ms", comment: "Median first contentful paint; null when the page produced no qualifying paint."
+    t.integer "http_status", comment: "Status of the measured navigation. A change here disqualifies comparison."
+    t.integer "lcp_ms", comment: "Median largest contentful paint; null when no LCP entry was observed."
+    t.integer "load_ms", comment: "Median load event end, milliseconds from navigation start."
+    t.bigint "project_id", null: false
+    t.integer "pull_request_number", null: false
+    t.string "route_name", limit: 255, null: false, comment: "Screenshot route name; the series key for trend and regression comparison."
+    t.string "route_path", limit: 2048, comment: "Path the route resolved to. A change here disqualifies comparison against an earlier capture."
+    t.integer "sample_count", default: 1, null: false
+    t.jsonb "samples", default: {}, null: false, comment: "Per-metric raw sample values with min/max, so measurement noise stays inspectable."
+    t.string "source", limit: 40, default: "screenshot_capture", null: false, comment: "Which pipeline measured this: screenshot_capture today."
+    t.integer "ttfb_ms", comment: "Median time to first byte, milliseconds from navigation start."
+    t.datetime "updated_at", null: false
+    t.integer "viewport_height"
+    t.integer "viewport_width"
+    t.index ["account_id"], name: "index_page_load_measurements_on_account_id"
+    t.index ["agent_run_id"], name: "index_page_load_measurements_on_agent_run_id"
+    t.index ["captured_at"], name: "idx_page_load_measurements_captured_at"
+    t.index ["project_id", "pull_request_number", "commit_sha", "route_name"], name: "idx_page_load_measurements_capture_route", unique: true
+    t.index ["project_id", "pull_request_number", "route_name"], name: "idx_page_load_measurements_pr_route"
+    t.index ["project_id", "route_name", "captured_at"], name: "idx_page_load_measurements_route_recent", order: { captured_at: :desc }
+    t.index ["project_id"], name: "index_page_load_measurements_on_project_id"
+    t.check_constraint "sample_count >= 1", name: "chk_page_load_measurements_sample_count"
+    t.check_constraint "source::text = 'screenshot_capture'::text", name: "chk_page_load_measurements_source_valid"
+  end
+
+  create_table "page_load_regression_findings", comment: "Confirmed page load regressions on a pull request. At most one open finding per pull request and route; actionable findings drive the performance_regression follow-up run.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.boolean "actionable", default: false, null: false, comment: "True when the route was in the capture's screenshot hints — a page this pull request actually touched."
+    t.bigint "agent_run_id", comment: "The capture run that raised the finding."
+    t.string "baseline_commit_sha", limit: 64, null: false
+    t.integer "baseline_ms", null: false
+    t.jsonb "changed_files", default: [], null: false, comment: "The pull request's changed files at the time of the finding, carried into the follow-up run's prompt."
+    t.string "commit_sha", limit: 64, null: false
+    t.string "comparison_metric", limit: 20, null: false, comment: "Metric the comparison used: lcp_ms or the load_ms fallback."
+    t.datetime "created_at", null: false
+    t.integer "current_ms", null: false
+    t.integer "delta_ms", null: false
+    t.decimal "delta_ratio", precision: 8, scale: 4, null: false
+    t.integer "followup_attempts", default: 0, null: false, comment: "Follow-up runs queued for this finding. Caps automated retries so a regression the agent cannot fix stops consuming runner budget."
+    t.bigint "project_id", null: false
+    t.integer "pull_request_number", null: false
+    t.datetime "resolved_at"
+    t.string "route_name", limit: 255, null: false
+    t.string "route_path", limit: 2048, comment: "Path the regressed route resolved to when the finding was raised; copied into the follow-up run's prompt so the agent can reproduce and diagnose the regression."
+    t.jsonb "sample_spread", default: {}, null: false, comment: "Min/max of the samples behind each side of the comparison."
+    t.string "status", limit: 20, default: "open", null: false, comment: "open, resolved (back within threshold), or superseded (route no longer measured)."
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_page_load_regression_findings_on_account_id"
+    t.index ["agent_run_id"], name: "index_page_load_regression_findings_on_agent_run_id"
+    t.index ["project_id", "pull_request_number", "route_name"], name: "idx_page_load_findings_one_open_per_route", unique: true, where: "((status)::text = 'open'::text)"
+    t.index ["project_id", "pull_request_number", "status"], name: "idx_page_load_findings_pr_status"
+    t.index ["project_id"], name: "index_page_load_regression_findings_on_project_id"
+    t.check_constraint "followup_attempts >= 0", name: "chk_page_load_findings_attempts_non_negative"
+    t.check_constraint "status::text = ANY (ARRAY['open'::character varying::text, 'resolved'::character varying::text, 'superseded'::character varying::text])", name: "chk_page_load_findings_status_valid"
   end
 
   create_table "pending_install_claims", comment: "Server-side claims tying a freshly-returned GitHub App installation to a Paid account, so the signed `installation` webhook can finalize the GithubInstallation row for a first-time install into a brand-new org where the existing signals (project owner match, prior installation row) cannot resolve the account.", force: :cascade do |t|
@@ -2777,6 +2873,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_25_233720) do
     t.index ["account_id"], name: "index_service_containers_on_account_id"
   end
 
+  create_table "solid_cable_messages", force: :cascade do |t|
+    t.binary "channel", null: false
+    t.bigint "channel_hash", null: false
+    t.datetime "created_at", null: false
+    t.binary "payload", null: false
+    t.index ["channel"], name: "index_solid_cable_messages_on_channel"
+    t.index ["channel_hash"], name: "index_solid_cable_messages_on_channel_hash"
+    t.index ["created_at"], name: "index_solid_cable_messages_on_created_at"
+  end
+
   create_table "strategies", comment: "Scoped orchestration strategies selected for workflow decisions.", force: :cascade do |t|
     t.bigint "account_id", comment: "Owning account for account-scoped and project-scoped strategies."
     t.datetime "created_at", null: false
@@ -3319,6 +3425,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_25_233720) do
   add_foreign_key "execution_resource_ledger_entries", "accounts", on_delete: :cascade
   add_foreign_key "execution_resource_ledger_entries", "agent_runs", on_delete: :nullify
   add_foreign_key "execution_resource_ledger_entries", "projects", on_delete: :nullify
+  add_foreign_key "execution_resources", "accounts", on_delete: :nullify
+  add_foreign_key "execution_resources", "agent_runs", on_delete: :nullify
+  add_foreign_key "execution_resources", "projects", on_delete: :nullify
   add_foreign_key "external_connector_events", "accounts"
   add_foreign_key "external_connector_events", "projects"
   add_foreign_key "failure_classifications", "agent_runs", on_delete: :cascade

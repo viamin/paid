@@ -35,6 +35,7 @@ module ExecutionControls
       # of a rescue-and-log swallow.
       workflow_id = nil
       container_id = nil
+      runner_handle = nil
       parked = false
 
       agent_run.with_lock do
@@ -53,11 +54,18 @@ module ExecutionControls
           next
         end
 
-        # Snapshot the resource IDs under the lock: the park mutation below
-        # nulls them on the row, and the cleanup job needs the ids the row
-        # held immediately beforehand to find the workflow/container.
+        # Snapshot the resource IDs (and, for runner-backed runs, the handle)
+        # under the lock: the park mutation below nulls temporal_workflow_id
+        # and container_id on the row, and the cleanup job needs the ids the
+        # row held immediately beforehand to find the workflow/container.
+        # runner_handle is snapshotted too and passed to the job explicitly
+        # instead of being re-read off the row when the job runs — if the run
+        # is resumed and re-dispatched before the job executes, the row's
+        # runner_handle would already point at the replacement environment,
+        # and reconstructing from it there would tear down the wrong one.
         workflow_id = agent_run.temporal_workflow_id.presence
         container_id = agent_run.container_id.presence
+        runner_handle = agent_run.runner_handle.presence
         park_record!(agent_run)
         parked = true
       end
@@ -65,7 +73,7 @@ module ExecutionControls
       return unless parked
 
       if workflow_id.present? || container_id.present?
-        ExecutionControlParkCleanupJob.perform_later(agent_run.id, workflow_id, container_id)
+        ExecutionControlParkCleanupJob.perform_later(agent_run.id, workflow_id, container_id, runner_handle)
       end
 
       record_run_event!("agent_run.execution_parked", agent_run, result: "execution_control_capacity")

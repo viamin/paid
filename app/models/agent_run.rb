@@ -24,7 +24,7 @@ class AgentRun < ApplicationRecord
   # container-executable runner key"). When you add a runner key, add its
   # agent_type here too.
   AGENT_TYPES = %w[claude_code cursor codex copilot gemini opencode openrouter_free openrouter_pareto kilocode pi omp api devin factory internal_agent].freeze
-  FOCUSES = %w[general ci_fix review_feedback merge_conflict conversation issue_implementation label_action].freeze # @spec FOCUSED-RUN-001
+  FOCUSES = %w[general ci_fix review_feedback merge_conflict conversation performance_regression issue_implementation label_action].freeze # @spec FOCUSED-RUN-001
   # analyze_issue is automation-only (triggered via Automation::Decision), not exposed in the manual run form.
   GOALS = %w[create_pr create_issue review enhance_issue analyze_issue lid_planning create_feature].freeze
   # RDR-056 (Strict TDD): the run-scoped write-guard phase for projects with
@@ -2764,22 +2764,27 @@ class AgentRun < ApplicationRecord
 
     return if target_container_id.blank? && @container_service.nil? && @current_handle.nil?
 
+    ExecutionResource.schedule_cleanup_for!(agent_run: self)
+
     if Containers::PoolManager.cleanup_claimed_container(agent_run: self, force: force)
       @container_service = nil
       @current_handle = nil
       clear_container_id_if_unchanged!(target_container_id)
+      ExecutionResource.mark_cleaned_for!(agent_run: self)
       return
     end
 
     if execution_runner_enabled? && @current_handle
-      cleanup_via_runner(force: force)
+      cleanup_via_runner(force: force, expected_container_id: target_container_id)
     else
       ensure_container_service!
       @container_service.cleanup(force: force, preserve_workspace_volume: preserve_workspace_volume)
       @container_service = nil
       clear_container_id_if_unchanged!(target_container_id)
     end
-  rescue Containers::Provision::Error, ExecutionRunners::Error
+    ExecutionResource.mark_cleaned_for!(agent_run: self)
+  rescue Containers::Provision::Error, ExecutionRunners::Error => e
+    ExecutionResource.record_cleanup_failure_for!(agent_run: self, error: e)
     # Container may already be gone; clear the reference anyway
     @container_service = nil
     @current_handle = nil
@@ -2799,7 +2804,7 @@ class AgentRun < ApplicationRecord
   # unconditional write here would silently wipe the new container's id out
   # from under the run that is now using it.
   def clear_container_id_if_unchanged!(expected_container_id, also_clear: {})
-    updates = also_clear.merge(container_id: nil)
+    updates = also_clear.merge(container_id: nil, container_host: nil)
     self.class.where(id: id, container_id: expected_container_id).update_all(updates)
     assign_attributes(updates) if container_id == expected_container_id
   end
@@ -2841,6 +2846,7 @@ class AgentRun < ApplicationRecord
       self.runner_handle = handle_hash
       self.container_id = @current_handle.identifier
       self.container_host = @current_handle.host
+      ExecutionResource.track_environment!(agent_run: self, handle: @current_handle)
       Rails.logger.info(
         message: "container_manager.recovered_in_flight_runner_handle",
         agent_run_id: id,
@@ -2861,6 +2867,7 @@ class AgentRun < ApplicationRecord
       .update_all(container_id: container.id, container_host: host)
     self.container_id = container.id
     self.container_host = host
+    ExecutionResource.track_environment!(agent_run: self, identifier: container.id, host: host)
     Rails.logger.info(
       message: "container_manager.recovered_in_flight_container",
       agent_run_id: id,
@@ -2999,6 +3006,7 @@ class AgentRun < ApplicationRecord
     @current_handle = runner.provision(spec: spec)
     update!(container_id: @current_handle.identifier, container_host: @current_handle.host,
             runner_handle: @current_handle.to_storage)
+    ExecutionResource.track_environment!(agent_run: self, handle: @current_handle)
     PoolReplenishmentJob.perform_later(project_id)
 
     Containers::Provision::Result.success(
@@ -3019,6 +3027,7 @@ class AgentRun < ApplicationRecord
 
     if handle && runner.running?(handle: handle)
       @current_handle = handle
+      ExecutionResource.track_environment!(agent_run: self, handle: handle)
       Rails.logger.info(
         message: "container_manager.provision_reused_existing",
         agent_run_id: id,
@@ -3095,14 +3104,20 @@ class AgentRun < ApplicationRecord
   end
 
   # Cleans up through the runner interface. Idempotent on missing resources.
-  def cleanup_via_runner(force: false)
+  #
+  # +expected_container_id+ mirrors clear_container_id_if_unchanged! below: a
+  # caller operating on a stale snapshot (e.g. ExecutionControlParkCleanupJob
+  # tearing down a parked run's old environment) must not wipe out
+  # container_id/runner_handle if the row has since been re-dispatched to a
+  # different environment out from under it.
+  def cleanup_via_runner(force: false, expected_container_id: nil)
     runner = ExecutionRunners.resolve_for(self)
     runner.cleanup(handle: @current_handle, force: force)
   rescue ExecutionRunners::ProvisionError
     nil
   ensure
     @current_handle = nil
-    update!(container_id: nil, runner_handle: nil)
+    clear_container_id_if_unchanged!(expected_container_id, also_clear: { runner_handle: nil })
   end
 
   # Clears persisted container reference columns after a stale runner handle is
@@ -3114,7 +3129,7 @@ class AgentRun < ApplicationRecord
   # inconsistent state mid-reconciliation).
   def clear_runner_reference!
     @current_handle = nil
-    update_columns(container_id: nil, runner_handle: nil)
+    update_columns(container_id: nil, container_host: nil, runner_handle: nil)
     clear_runtime_image_selection!
   end
 
@@ -3426,6 +3441,7 @@ class AgentRun < ApplicationRecord
 
     if service&.container_running?
       @container_service = service
+      ExecutionResource.track_environment!(agent_run: self)
       Rails.logger.info(
         message: "container_manager.provision_reused_existing",
         agent_run_id: id,
@@ -3486,6 +3502,11 @@ class AgentRun < ApplicationRecord
     result = @container_service.provision
     if result.success?
       update!(container_id: result[:container_id], container_host: result[:container_host])
+      ExecutionResource.track_environment!(
+        agent_run: self,
+        identifier: result[:container_id],
+        host: result[:container_host]
+      )
       PoolReplenishmentJob.perform_later(project_id)
     end
     result

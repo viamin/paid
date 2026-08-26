@@ -45,8 +45,11 @@ module Screenshots
     # @param video_url [String, nil] Presigned URL to a Playwright session video
     #   (.webm) uploaded alongside the screenshots
     # @param status [String] Comment state: success, no_ui_changes, or capture_failed
+    # @param page_load_section [String, nil] Rendered page load table for the
+    #   captured routes (see {PageLoadPerformance::CommentSection})
     def initialize(github_client:, repo:, pr_number:, commit_sha:, screenshots:,
-      previous_screenshots: {}, artifact_name: nil, trace_url: nil, video_url: nil, status: "success")
+      previous_screenshots: {}, artifact_name: nil, trace_url: nil, video_url: nil, status: "success",
+      page_load_section: nil)
       @github_client = github_client
       @repo = repo
       @pr_number = pr_number
@@ -57,6 +60,7 @@ module Screenshots
       @trace_url = trace_url
       @video_url = video_url
       @status = status
+      @page_load_section = page_load_section
     end
 
     # Posts or updates the PR comment with screenshot images.
@@ -189,6 +193,11 @@ module Screenshots
           filename = screenshot[:video_filename].presence || "#{screenshot[:route_name]}.webm"
           lines << "- [#{escape_markdown_label(filename)}](#{screenshot[:video_url]}) — #{route_label(screenshot[:route_name])}"
         end
+        lines << ""
+      end
+
+      if @page_load_section.present?
+        lines << @page_load_section
         lines << ""
       end
 

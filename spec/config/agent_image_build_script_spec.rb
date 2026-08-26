@@ -181,5 +181,51 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(helper_path).to exist
       expect(dockerfile_source).to include("COPY docker/agent/scripts/git-credential-paid /usr/local/bin/git-credential-paid")
     end
+
+    # @spec CONTAINER-RUNTIME-036
+    it "installs warden from a checksum-verified npm tarball with scripts disabled" do
+      expect(dockerfile_source).to include("RUN WARDEN_VERSION=")
+      expect(dockerfile_source).to include("https://registry.npmjs.org/@sentry/warden/-/warden-${WARDEN_VERSION}.tgz")
+      expect(dockerfile_source).to include('WARDEN_CHECKSUM="')
+      expect(dockerfile_source).to include("sha256sum -c -")
+      expect(dockerfile_source).to include("npm install -g --ignore-scripts \"./${TARBALL}\"")
+      expect(dockerfile_source).to include("warden --version")
+    end
+
+    # @spec CONTAINER-RUNTIME-036
+    it "vendors the warden license notice, default policy, and scan wrapper" do
+      license_path = Rails.root.join("docker/agent/warden/LICENSE")
+      policy_path = Rails.root.join("docker/agent/warden/warden.toml")
+      wrapper_path = Rails.root.join("docker/agent/scripts/warden-scan")
+
+      expect(license_path).to exist
+      expect(license_path.read).to include("FSL-1.1-ALv2")
+      expect(policy_path).to exist
+      expect(policy_path.read).to include("security-review")
+      expect(wrapper_path).to exist
+      expect(wrapper_path).to be_executable
+      expect(dockerfile_source).to include("COPY docker/agent/scripts/warden-scan /usr/local/bin/warden-scan")
+      expect(dockerfile_source).to include("COPY docker/agent/warden /opt/warden")
+    end
+
+    # @spec CONTAINER-RUNTIME-036
+    it "gives the warden scan wrapper repo-config preference and an in-container base resolution" do
+      wrapper = Rails.root.join("docker/agent/scripts/warden-scan").read
+
+      expect(wrapper).to include("WARDEN_BASE_SHA")
+      expect(wrapper).to include("origin/HEAD")
+      expect(wrapper).to include("HEAD~1")
+      expect(wrapper).to include("--config-path /opt/warden/warden.toml")
+      expect(wrapper).to include("warden run")
+      expect(wrapper).to include("--fail-on high")
+    end
+
+    # @spec CONTAINER-RUNTIME-036
+    it "bridges proxy-routed OpenAI credentials into warden's WARDEN_OPENAI_* convention" do
+      wrapper = Rails.root.join("docker/agent/scripts/warden-scan").read
+
+      expect(wrapper).to include('export WARDEN_OPENAI_API_KEY="${WARDEN_OPENAI_API_KEY:-${OPENAI_API_KEY:-}}"')
+      expect(wrapper).to include('export WARDEN_OPENAI_BASE_URL="${WARDEN_OPENAI_BASE_URL:-${OPENAI_BASE_URL:-}}"')
+    end
   end
 end

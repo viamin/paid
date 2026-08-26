@@ -65,6 +65,12 @@ RSpec.describe AgentRun do
     it { is_expected.to validate_inclusion_of(:goal).in_array(described_class::GOALS) }
     it { is_expected.to validate_presence_of(:focus) }
     it { is_expected.to validate_inclusion_of(:focus).in_array(described_class::FOCUSES) }
+
+    # @spec FOCUSED-RUN-001
+    it "accepts the performance_regression focus" do
+      expect(described_class::FOCUSES).to include("performance_regression")
+    end
+
     it { is_expected.to validate_inclusion_of(:execution_origin).in_array(described_class::EXECUTION_ORIGINS) }
     it { is_expected.to validate_presence_of(:trigger_type) }
     # @spec TDD-GUARD-001
@@ -2835,6 +2841,7 @@ RSpec.describe AgentRun do
 
           reloaded = agent_run.reload
           expect(reloaded.container_id).to be_nil
+          expect(reloaded.container_host).to be_nil
           expect(reloaded.runner_handle).to be_nil
         end
       end
@@ -3025,6 +3032,30 @@ RSpec.describe AgentRun do
 
           expect(mock_runner).not_to have_received(:cleanup)
           expect(agent_run.reload.container_id).to be_nil
+        end
+
+        it "does not clobber container_id/runner_handle when the row was redispatched to a different environment before cleanup completes" do
+          # Mirrors ExecutionControlParkCleanupJob: a caller may hold a stale
+          # in-memory container_id snapshot while the persisted row has since
+          # moved on to a new environment. cleanup_via_runner must only clear
+          # the row's container_id/runner_handle if they still match the
+          # snapshot it is tearing down -- otherwise it wipes out tracking for
+          # the environment that replaced it.
+          agent_run = create(:agent_run, worktree_path: worktree_path, container_id: "runner-container-123",
+            runner_handle: mock_handle.to_storage)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          agent_run.instance_variable_set(:@current_handle, mock_handle)
+          mock_handle.metadata["agent_run_id"] = agent_run.id
+
+          new_handle_hash = mock_handle.with(identifier: "new-container-999").to_storage
+          described_class.where(id: agent_run.id).update_all(container_id: "new-container-999", runner_handle: new_handle_hash)
+
+          agent_run.cleanup_container(force: true)
+
+          expect(mock_runner).to have_received(:cleanup).with(handle: mock_handle, force: true)
+          reloaded = agent_run.reload
+          expect(reloaded.container_id).to eq("new-container-999")
+          expect(reloaded.runner_handle).to eq(new_handle_hash)
         end
       end
 

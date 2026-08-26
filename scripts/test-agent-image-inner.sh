@@ -52,6 +52,7 @@ check_tool "   ast-grep" ast-grep --version
 check_tool "   scc" scc --version
 check_tool "   rtk" rtk --version
 check_tool "   CodeGraph" codegraph --version
+check_tool "   warden" warden --version
 
 echo ""
 echo "2. Agent CLIs (help should succeed without auth):"

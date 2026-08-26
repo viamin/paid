@@ -111,12 +111,6 @@ Rails.application.configure do
       class: "DockerOrphanCleanupJob",
       description: "Remove orphaned Docker containers and volumes"
     },
-    execution_resource_reconciliation: {
-      cron: "5-59/5 * * * *",
-      class: "ExecutionResourceReconciliationJob",
-      queue: "maintenance",
-      description: "Reconcile external execution resources and retry orphan cleanup"
-    },
     recover_missing_pull_request_labels: {
       cron: "0 * * * *",
       class: "RecoverMissingPullRequestLabelsJob",
@@ -174,6 +168,15 @@ Rails.application.configure do
       cron: "1-59/5 * * * *",
       class: "ServiceContainerReconciliationJob",
       description: "Reconcile service container DB records against Docker state"
+    },
+    # Stagger onto the previously-unused 5-minute offset so the Docker-heavy
+    # reconciliation job does not co-fire with container_pool_replenishment
+    # and chat_idle_reaper on minute 4/9/14/... — good_job_control_concurrency_with
+    # only smooths in-GoodJob overlap, not the wall-clock burst on the daemon.
+    execution_resource_reconciliation: {
+      cron: "5-59/5 * * * *",
+      class: "ExecutionResourceReconciliationJob",
+      description: "Reconcile execution resource ledger rows against runner/provider state"
     },
     container_pool_replenishment: {
       cron: "4-59/5 * * * *",

@@ -1,3 +1,4 @@
+<%# @spec OPERATOR-INBOX-006 %>
 <div class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
   <div class="border-b border-gray-200 px-4 py-4 sm:px-6">
     <div class="flex items-start justify-between gap-4">
@@ -6,7 +7,7 @@
           <span class="rounded-full px-2 py-0.5 text-xs font-medium <%= entry.plan_review? ? 'bg-amber-100 text-amber-800' : 'bg-sky-100 text-sky-800' %>">
             <%= entry.kind.humanize %>
           </span>
-          <span class="text-xs text-gray-500">Waiting <%= time_ago_in_words(entry.waiting_since) %></span>
+          <span class="text-xs text-gray-500" data-testid="inbox-detail-waiting-age"><%= entry.waiting_since ? "Waiting #{time_ago_in_words(entry.waiting_since)}" : "Waiting —" %></span>
         </div>
         <h2 class="mt-2 text-xl font-semibold text-gray-900">#<%= entry.issue.github_number %> <%= entry.title %></h2>
         <p class="mt-1 text-sm text-gray-500"><%= entry.project.full_name %></p>

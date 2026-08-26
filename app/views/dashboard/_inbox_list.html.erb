@@ -1,3 +1,4 @@
+<%# @spec OPERATOR-INBOX-006 %>
 <div class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
   <div class="border-b border-gray-200 px-4 py-4">
     <h2 class="text-sm font-semibold text-gray-900">Queue</h2>
@@ -32,7 +33,7 @@
               </p>
               <p class="mt-1 text-sm text-gray-500"><%= entry.summary.presence || "Waiting for review" %></p>
             </div>
-            <span class="shrink-0 text-xs text-gray-400"><%= time_ago_in_words(entry.waiting_since) %></span>
+            <span class="shrink-0 text-xs text-gray-400" data-testid="inbox-list-waiting-age"><%= entry.waiting_since ? time_ago_in_words(entry.waiting_since) : "Waiting —" %></span>
           </div>
         <% end %>
       </li>
