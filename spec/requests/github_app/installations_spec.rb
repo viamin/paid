@@ -28,6 +28,15 @@ RSpec.describe "GithubApp::Installations lifecycle" do
       expect(request.session[:github_app_install_state]).to be_present
     end
 
+    it "escapes the GitHub App slug before redirecting" do
+      allow(Github::AppRegistry).to receive(:slug).and_return("paid-agents/../../evil")
+      allow(Github::AppRegistry).to receive(:install_url).and_call_original
+
+      get github_app_install_path
+
+      expect(response.location).to start_with("https://github.com/apps/paid-agents%2F..%2F..%2Fevil/installations/new?state=")
+    end
+
     it "persists the current account in the install state" do
       get github_app_install_path
       state = request.session[:github_app_install_state]

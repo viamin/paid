@@ -102,5 +102,13 @@ RSpec.describe Github::AppRegistry do
       url = described_class.install_url(state: "csrf-token")
       expect(url).to eq("https://github.com/apps/paid-agents/installations/new?state=csrf-token")
     end
+
+    it "escapes the slug before embedding it in the GitHub path" do
+      allow(described_class).to receive(:slug).and_return("paid-agents/../../evil")
+
+      url = described_class.install_url(state: "csrf-token")
+
+      expect(url).to eq("https://github.com/apps/paid-agents%2F..%2F..%2Fevil/installations/new?state=csrf-token")
+    end
   end
 end

@@ -33,15 +33,21 @@ module Github
     end
 
     def self.install_url(state: nil)
-      url = "https://github.com/apps/#{slug}/installations/new"
-      return url if state.blank?
+      uri = URI::HTTPS.build(host: "github.com", path: install_path)
+      return uri.to_s if state.blank?
 
-      "#{url}?state=#{state}"
+      "#{uri}?#{URI.encode_www_form(state: state)}"
     end
 
     def self.credentials_dig(key)
       Rails.application.credentials.dig(key).presence
     end
+
+    def self.install_path
+      "/apps/#{ERB::Util.url_encode(slug.to_s)}/installations/new"
+    end
+
     private_class_method :credentials_dig
+    private_class_method :install_path
   end
 end
