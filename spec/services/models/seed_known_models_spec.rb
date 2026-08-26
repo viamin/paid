@@ -186,7 +186,7 @@ RSpec.describe Models::SeedKnownModels do
       described_class.call
 
       expect(LlmModel.find_by!(model_id: "gpt-5.5-pro").active).to be(false)
-      expect(LlmModel.find_by!(model_id: "gpt-5.3-codex").active).to be(true)
+      expect(LlmModel.find_by!(model_id: "gpt-5.3-codex").active).to be(false)
     end
   end
 

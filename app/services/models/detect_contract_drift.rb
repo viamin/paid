@@ -24,16 +24,6 @@ module Models
     # model in the active catalog is also flagged for subscription runners.
     AUTH_MODES = %w[subscription api_key].freeze
 
-    # Temporary suppression for models that remain globally valid in the
-    # catalog but are known to be unavailable only on one auth path. Keep the
-    # suppression local to contract-drift reporting rather than flipping the
-    # row inactive, because +active+ gates all catalog consumers.
-    SUPPRESSED_AUTH_MODE_GATED_FINDINGS = {
-      "codex" => {
-        "subscription" => %w[gpt-5.3-codex].freeze
-      }.freeze
-    }.freeze
-
     # Cap the number of findings per (provider, runner_key, auth_type) tuple
     # so a single misconfigured model does not balloon the issue body.
     MAX_FINDINGS_PER_GROUP = 50
@@ -74,7 +64,6 @@ module Models
               auth_type: auth_type
             )
             next unless result.unsupported?
-            next if suppressed_auth_mode_gated_finding?(runner_key:, auth_type:, model_id: model.model_id, result:)
 
             key = [ model.provider, runner_key, auth_type ]
             grouped[key] ||= []
@@ -110,15 +99,6 @@ module Models
       matches.concat(standard_runners & @runner_keys)
       matches.concat(@runner_keys & Runners::DefaultTierModelIds::DIRECT_OUTBOUND_RUNNER_KEYS)
       matches.uniq
-    end
-
-    def suppressed_auth_mode_gated_finding?(runner_key:, auth_type:, model_id:, result:)
-      return false unless result.incompatibility_type == :auth_mode_gated_for_model
-
-      suppressed_model_ids = SUPPRESSED_AUTH_MODE_GATED_FINDINGS
-        .fetch(runner_key, {})
-        .fetch(auth_type, [])
-      suppressed_model_ids.include?(model_id)
     end
 
     def build_finding(group, entries)
