@@ -87,11 +87,13 @@ module PullRequests
     end
 
     def merge_permission_rejected_status
+      attempt = latest_attempt
       status_payload(
         auto_merge_status: "blocked",
-        last_auto_merge_attempt_at: issue.merge_permission_rejected_at,
-        reason_code: "merge_permission_rejected",
-        sanitized_message: AgentRun::ErrorMessageSanitizer.call(text: issue.merge_permission_rejection_reason),
+        last_auto_merge_attempt_at: attempt&.attempted_at || issue.merge_permission_rejected_at,
+        reason_code: attempt&.reason_code || AutoMergeAttempts::Record::REASON_MISSING_WORKFLOWS_PERMISSION,
+        sanitized_message: attempt&.sanitized_message || AgentRun::ErrorMessageSanitizer.call(text: issue.merge_permission_rejection_reason),
+        credential_mode: attempt&.credential_mode,
         merge_permission_rejected: true,
         cooldown_until: issue.merge_permission_rejected_at + Issue::MERGE_PERMISSION_RETRY_COOLDOWN,
         next_action: merge_permission_next_action
@@ -101,6 +103,7 @@ module PullRequests
     def merged_status
       status_payload(
         auto_merge_status: "merged",
+        last_auto_merge_attempt_at: latest_attempt&.attempted_at,
         next_action: "No action required."
       )
     end
@@ -108,6 +111,7 @@ module PullRequests
     def auto_merge_disabled_status
       status_payload(
         auto_merge_status: "not_attempted",
+        last_auto_merge_attempt_at: latest_attempt&.attempted_at,
         reason_code: "auto_merge_disabled",
         sanitized_message: "Auto-merge is not enabled for this project.",
         next_action: "Enable auto-merge for the project or merge this pull request manually."
@@ -117,6 +121,7 @@ module PullRequests
     def credentials_unavailable_status
       status_payload(
         auto_merge_status: "not_attempted",
+        last_auto_merge_attempt_at: latest_attempt&.attempted_at,
         reason_code: "credentials_unavailable",
         sanitized_message: "Live auto-merge diagnostics are unavailable because the project has no active GitHub credential.",
         next_action: "Configure an active GitHub App installation or personal access token for this project."
@@ -126,6 +131,7 @@ module PullRequests
     def not_mergeable_status
       status_payload(
         auto_merge_status: "blocked",
+        last_auto_merge_attempt_at: latest_attempt&.attempted_at,
         reason_code: "not_mergeable",
         sanitized_message: "GitHub is not reporting this pull request as mergeable yet.",
         next_action: "Resolve merge conflicts or other mergeability blockers, then wait for the next automatic check."
@@ -135,6 +141,7 @@ module PullRequests
     def checks_not_green_status
       status_payload(
         auto_merge_status: "blocked",
+        last_auto_merge_attempt_at: latest_attempt&.attempted_at,
         reason_code: "checks_not_green",
         sanitized_message: "Required checks are not green yet.",
         next_action: "Wait for required checks to pass, then let auto-merge evaluate the pull request again."
@@ -144,6 +151,7 @@ module PullRequests
     def ready_status
       status_payload(
         auto_merge_status: "ready",
+        last_auto_merge_attempt_at: latest_attempt&.attempted_at,
         next_action: "Wait for the next automatic merge evaluation or merge this pull request manually."
       )
     end
@@ -151,6 +159,7 @@ module PullRequests
     def diagnostics_unavailable_status(message)
       status_payload(
         auto_merge_status: "unavailable",
+        last_auto_merge_attempt_at: latest_attempt&.attempted_at,
         reason_code: "diagnostics_unavailable",
         sanitized_message: AgentRun::ErrorMessageSanitizer.call(text: message),
         next_action: "Retry once GitHub diagnostics are available, or inspect the project's GitHub credential configuration."
@@ -178,17 +187,21 @@ module PullRequests
     end
 
     def status_payload(auto_merge_status:, last_auto_merge_attempt_at: nil, reason_code: nil,
-      sanitized_message: nil, merge_permission_rejected: false, cooldown_until: nil, next_action: nil)
+      sanitized_message: nil, credential_mode: nil, merge_permission_rejected: false, cooldown_until: nil, next_action: nil)
       {
         last_auto_merge_attempt_at:,
         auto_merge_status:,
         reason_code:,
         sanitized_message:,
-        credential_mode:,
+        credential_mode: credential_mode || self.credential_mode,
         merge_permission_rejected:,
         cooldown_until:,
         next_action:
       }
+    end
+
+    def latest_attempt
+      @latest_attempt ||= issue.auto_merge_attempts.recent.first
     end
   end
 end

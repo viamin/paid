@@ -78,28 +78,8 @@ module Projects
     end
 
     def recent_permission_failures # @spec GITHUB-SYNC-009
-      scoped_failure_issues.flat_map do |issue|
-        failures = []
-        if issue.merge_permission_rejected_at.present?
-          failures << build_failure(
-            issue: issue,
-            kind: "merge",
-            occurred_at: issue.merge_permission_rejected_at,
-            reason: issue.merge_permission_rejection_reason
-          )
-        end
-
-        if issue.push_permission_abandoned?
-          failures << build_failure(
-            issue: issue,
-            kind: "push",
-            occurred_at: issue.runner_retry_abandoned_at,
-            reason: issue.runner_retry_abandon_reason.to_s.delete_prefix("#{Issue::PUSH_PERMISSION_ABANDON_PREFIX} ").presence
-          )
-        end
-
-        failures
-      end.sort_by { |failure| failure[:occurred_at] || Time.at(0) }
+      (merge_permission_failures + push_permission_failures)
+        .sort_by { |failure| failure[:occurred_at] || Time.at(0) }
         .reverse
         .first(RECENT_FAILURE_LIMIT)
     end
@@ -166,8 +146,29 @@ module Projects
       }
     end
 
+    def build_failure_from_attempt(attempt)
+      code, fallback_message = classify_reason(attempt.reason_code)
+
+      {
+        kind: "merge",
+        code: code,
+        message: attempt.sanitized_message.presence || fallback_message,
+        issue_id: attempt.issue_id,
+        issue_number: attempt.issue.github_number,
+        pull_request: attempt.issue.is_pull_request?,
+        occurred_at: attempt.attempted_at
+      }
+    end
+
     def classify_reason(reason)
       normalized = reason.to_s.downcase
+      if normalized == AutoMergeAttempts::Record::REASON_MISSING_WORKFLOWS_PERMISSION
+        return [
+          WORKFLOWS_PERMISSION_CODE,
+          "GitHub rejected the operation because the App lacks the `workflows` permission required for workflow file changes."
+        ]
+      end
+
       if normalized.include?("workflows") && normalized.include?("permission")
         return [
           WORKFLOWS_PERMISSION_CODE,
@@ -181,22 +182,62 @@ module Projects
       ]
     end
 
-    def scoped_failure_issues
+    def merge_permission_failures
+      attempts = merge_permission_attempts
+      attempts.map { |attempt| build_failure_from_attempt(attempt) } +
+        legacy_merge_permission_failures(excluding_issue_ids: attempts.map(&:issue_id))
+    end
+
+    def merge_permission_attempts
+      project.auto_merge_attempts
+        .includes(:issue)
+        .permission_blockers
+        .recent
+        .limit(RECENT_FAILURE_CANDIDATE_LIMIT)
+        .to_a
+        .uniq(&:issue_id)
+    end
+
+    # Blockers recorded before the auto_merge_attempts table existed live only
+    # on the issue columns, and no backfill copies them into the new table yet,
+    # so already-blocked PRs would lose diagnostics on upgrade without this
+    # fallback. New rejections write both stores, so issues already covered by
+    # attempt rows are excluded to avoid double-reporting the same blocker.
+    # TODO(#3454): drop this fallback once historical blockers are backfilled
+    # into auto_merge_attempts.
+    def legacy_merge_permission_failures(excluding_issue_ids:)
+      legacy_merge_permission_issues(excluding_issue_ids).map do |issue|
+        build_failure(
+          issue: issue,
+          kind: "merge",
+          occurred_at: issue.merge_permission_rejected_at,
+          reason: issue.merge_permission_rejection_reason
+        )
+      end
+    end
+
+    def legacy_merge_permission_issues(excluding_issue_ids)
+      scope = project.issues.where.not(merge_permission_rejected_at: nil)
+      scope = scope.where.not(id: excluding_issue_ids) if excluding_issue_ids.present?
+      scope.order(merge_permission_rejected_at: :desc).limit(RECENT_FAILURE_CANDIDATE_LIMIT)
+    end
+
+    def push_permission_failures
+      scoped_push_failure_issues.map do |issue|
+        build_failure(
+          issue: issue,
+          kind: "push",
+          occurred_at: issue.runner_retry_abandoned_at,
+          reason: issue.runner_retry_abandon_reason.to_s.delete_prefix("#{Issue::PUSH_PERMISSION_ABANDON_PREFIX} ").presence
+        )
+      end
+    end
+
+    def scoped_push_failure_issues
       project.issues
-        .where.not(merge_permission_rejected_at: nil)
-        .or(
-          project.issues
-            .where.not(runner_retry_abandoned_at: nil)
-            .where("runner_retry_abandon_reason LIKE ?", "#{Issue::PUSH_PERMISSION_ABANDON_PREFIX}%")
-        )
-        .order(
-          Arel.sql(
-            "GREATEST(" \
-              "COALESCE(merge_permission_rejected_at, TO_TIMESTAMP(0)), " \
-              "COALESCE(runner_retry_abandoned_at, TO_TIMESTAMP(0))" \
-            ") DESC"
-          )
-        )
+        .where.not(runner_retry_abandoned_at: nil)
+        .where("runner_retry_abandon_reason LIKE ?", "#{Issue::PUSH_PERMISSION_ABANDON_PREFIX}%")
+        .order(runner_retry_abandoned_at: :desc)
         .limit(RECENT_FAILURE_CANDIDATE_LIMIT)
     end
 

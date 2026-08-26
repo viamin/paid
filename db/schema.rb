@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_25_233720) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_26_082056) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -367,6 +367,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_25_233720) do
     t.index ["status", "completed_at"], name: "index_agent_runs_on_status_completed_at"
     t.index ["status"], name: "index_agent_runs_on_status"
     t.index ["temporal_workflow_id"], name: "index_agent_runs_on_temporal_workflow_id"
+  end
+
+  create_table "auto_merge_attempts", comment: "Sanitized history of auto-merge decisions and blockers for pull requests.", force: :cascade do |t|
+    t.string "actor_path", null: false, comment: "Automation path that evaluated the PR, such as review_auto_merge or dependabot_auto_merge."
+    t.datetime "attempted_at", null: false, comment: "When the merge, skip, or blocker decision was recorded."
+    t.datetime "created_at", null: false
+    t.string "credential_mode", comment: "Credential path used for the decisive attempt, such as github_app, pat, or pat_fallback."
+    t.bigint "issue_id", null: false, comment: "Local pull-request issue row the auto-merge evaluation targeted."
+    t.bigint "project_id", null: false, comment: "Project that owned the auto-merge evaluation."
+    t.string "reason_code", comment: "Sanitized machine-readable explanation for the outcome."
+    t.text "sanitized_message"
+    t.string "status", null: false, comment: "Outcome category for the attempt, such as merged, skipped, blocked, or failed."
+    t.datetime "updated_at", null: false
+    t.index ["issue_id", "attempted_at"], name: "index_auto_merge_attempts_on_issue_id_and_attempted_at"
+    t.index ["project_id", "attempted_at"], name: "index_auto_merge_attempts_on_project_id_and_attempted_at"
   end
 
   create_table "billing_invoices", force: :cascade do |t|
@@ -3335,6 +3350,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_25_233720) do
   add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
   add_foreign_key "agent_runs", "runners", name: "fk_agent_runs_runner_id", on_delete: :nullify
   add_foreign_key "agent_runs", "users", column: "initiating_user_id", on_delete: :nullify
+  add_foreign_key "auto_merge_attempts", "issues"
+  add_foreign_key "auto_merge_attempts", "projects"
   add_foreign_key "billing_invoices", "accounts"
   add_foreign_key "billing_invoices", "billing_periods"
   add_foreign_key "billing_line_items", "billing_invoices"

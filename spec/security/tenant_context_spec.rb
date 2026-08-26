@@ -8,6 +8,7 @@ require Rails.root.join("db/migrate/20260426011810_enable_rls_on_llm_output_metr
 require Rails.root.join("db/migrate/20260426231639_enable_rls_on_chat_tables")
 require Rails.root.join("db/migrate/20260427225726_enable_rls_on_knowledge_recommendations")
 require Rails.root.join("db/migrate/20260503093418_enable_rls_on_issue_merge_subscriptions")
+require Rails.root.join("db/migrate/20260826082056_enable_rls_on_auto_merge_attempts")
 require Rails.root.join("db/migrate/20260428140000_create_exception_incidents")
 require Rails.root.join("db/migrate/20260512120010_add_logidze_to_exception_incidents")
 require Rails.root.join("db/migrate/20260508120219_create_failure_classifications")
@@ -252,6 +253,7 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       EnableRlsOnKnowledgeUsageStats.new.down if knowledge_usage_stats_has_rls?
       EnableRlsOnNotificationRuleStates.new.down
       EnableRlsOnIssueMergeSubscriptions.new.down if issue_merge_subscriptions_has_rls?
+      EnableRlsOnAutoMergeAttempts.new.down if auto_merge_attempts_have_rls?
       CreateFailureClassifications.new.down if failure_classifications_table_exists?
       EnableTenantRowLevelSecurity.new.down
       EnableTenantRowLevelSecurity.new.up
@@ -261,6 +263,7 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       EnableRlsOnChatTables.new.up unless chat_tables_have_rls?
       EnableRlsOnKnowledgeRecommendations.new.up unless knowledge_recommendations_has_rls?
       EnableRlsOnIssueMergeSubscriptions.new.up unless issue_merge_subscriptions_has_rls?
+      EnableRlsOnAutoMergeAttempts.new.up unless auto_merge_attempts_have_rls?
       CreateExceptionIncidents.new.up unless exception_incidents_table_exists?
       restore_exception_incidents_logidze!
       CreateFailureClassifications.new.up unless failure_classifications_table_exists?
@@ -300,6 +303,7 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       EnableRlsOnKnowledgeUsageStats.new.down if knowledge_usage_stats_has_rls?
       EnableRlsOnNotificationRuleStates.new.down
       EnableRlsOnIssueMergeSubscriptions.new.down if issue_merge_subscriptions_has_rls?
+      EnableRlsOnAutoMergeAttempts.new.down if auto_merge_attempts_have_rls?
       CreateFailureClassifications.new.down if failure_classifications_table_exists?
       EnableTenantRowLevelSecurity.new.down
 
@@ -310,6 +314,7 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       EnableRlsOnChatTables.new.up unless chat_tables_have_rls?
       EnableRlsOnKnowledgeRecommendations.new.up unless knowledge_recommendations_has_rls?
       EnableRlsOnIssueMergeSubscriptions.new.up unless issue_merge_subscriptions_has_rls?
+      EnableRlsOnAutoMergeAttempts.new.up unless auto_merge_attempts_have_rls?
       CreateExceptionIncidents.new.up unless exception_incidents_table_exists?
       restore_exception_incidents_logidze!
       CreateFailureClassifications.new.up unless failure_classifications_table_exists?
@@ -352,6 +357,12 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
   def issue_merge_subscriptions_has_rls?
     ActiveRecord::Base.connection.select_value(
       "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'issue_merge_subscriptions' AND policyname = 'tenant_isolation'"
+    ).to_i.positive?
+  end
+
+  def auto_merge_attempts_have_rls?
+    ActiveRecord::Base.connection.select_value(
+      "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'auto_merge_attempts' AND policyname = 'tenant_isolation'"
     ).to_i.positive?
   end
 

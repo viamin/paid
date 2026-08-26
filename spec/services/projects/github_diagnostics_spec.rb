@@ -45,11 +45,12 @@ RSpec.describe Projects::GithubDiagnostics do
           circuit_opened_at: 10.minutes.ago
         )
         create(
-          :issue,
-          :pull_request,
+          :auto_merge_attempt,
           project: project,
-          merge_permission_rejected_at: 2.hours.ago,
-          merge_permission_rejection_reason: "403 - refusing to allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows` permission"
+          issue: create(:issue, :pull_request, project: project),
+          attempted_at: 2.hours.ago,
+          reason_code: AutoMergeAttempts::Record::REASON_MISSING_WORKFLOWS_PERMISSION,
+          sanitized_message: "GitHub rejected the operation because the App lacks the `workflows` permission required for workflow file changes."
         )
         create(
           :issue,
@@ -120,11 +121,11 @@ RSpec.describe Projects::GithubDiagnostics do
       before do
         project.update!(git_push_pat_fallback_enabled: true, git_push_fallback_token: fallback_token)
         create(
-          :issue,
-          :pull_request,
+          :auto_merge_attempt,
           project: project,
-          merge_permission_rejected_at: Time.current,
-          merge_permission_rejection_reason: "missing workflows permission"
+          issue: create(:issue, :pull_request, project: project),
+          attempted_at: Time.current,
+          reason_code: AutoMergeAttempts::Record::REASON_MISSING_WORKFLOWS_PERMISSION
         )
       end
 
@@ -154,10 +155,52 @@ RSpec.describe Projects::GithubDiagnostics do
         occurred_at: newer_failure.runner_retry_abandoned_at
       )
       expect(failures.second).to include(
-        issue_id: older_failure.id,
+        issue_id: older_failure.issue_id,
         kind: "merge",
-        occurred_at: older_failure.merge_permission_rejected_at
+        occurred_at: older_failure.attempted_at
       )
+    end
+
+    it "surfaces merge blockers recorded on the issue before attempt history existed" do # @spec GITHUB-SYNC-009
+      project = create(:project, account: account, webhook_secret: "present")
+      issue = create(
+        :issue,
+        :pull_request,
+        project: project,
+        merge_permission_rejected_at: 30.minutes.ago,
+        merge_permission_rejection_reason: "refusing to allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows` permission"
+      )
+
+      diagnostics = described_class.call(project: project)
+
+      expect(diagnostics.fetch(:recent_permission_failures)).to contain_exactly(
+        include(issue_id: issue.id, kind: "merge", code: "missing_workflows_permission")
+      )
+      expect(diagnostics.dig(:recommended_action, :code))
+        .to eq("grant_workflows_permission_or_enable_pat_fallback")
+    end
+
+    it "reports a legacy issue blocker once when the issue also has attempt rows" do # @spec GITHUB-SYNC-009
+      project = create(:project, account: account, webhook_secret: "present")
+      issue = create(
+        :issue,
+        :pull_request,
+        project: project,
+        merge_permission_rejected_at: 30.minutes.ago,
+        merge_permission_rejection_reason: "refusing to allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows` permission"
+      )
+      create(
+        :auto_merge_attempt,
+        project: project,
+        issue: issue,
+        attempted_at: 5.minutes.ago,
+        reason_code: AutoMergeAttempts::Record::REASON_MISSING_WORKFLOWS_PERMISSION
+      )
+
+      failures = described_class.call(project: project).fetch(:recent_permission_failures)
+
+      expect(failures.size).to eq(1)
+      expect(failures.first).to include(issue_id: issue.id, kind: "merge")
     end
 
     it "does not let non-permission retry abandonments crowd out push permission failures" do # @spec GITHUB-SYNC-009
@@ -184,6 +227,25 @@ RSpec.describe Projects::GithubDiagnostics do
       )
     end
 
+    it "collapses repeated blocked attempts for one PR to a single recent entry" do # @spec GITHUB-SYNC-009
+      project = create(:project, account: account, webhook_secret: "present")
+      chronic_issue = create(:issue, :pull_request, project: project)
+      other_issue = create(:issue, :pull_request, project: project)
+      other_issue.update!(
+        runner_retry_abandoned_at: 10.minutes.ago,
+        runner_retry_abandon_reason: "#{Issue::PUSH_PERMISSION_ABANDON_PREFIX} missing workflows permission"
+      )
+      chronic_attempts = create_chronic_blocked_attempts(project: project, issue: chronic_issue)
+      most_recent_chronic = chronic_attempts.max_by(&:attempted_at)
+
+      failures = described_class.call(project: project).fetch(:recent_permission_failures)
+
+      chronic_entries = failures.select { |failure| failure[:issue_id] == chronic_issue.id }
+      expect(chronic_entries.size).to eq(1)
+      expect(chronic_entries.first).to include(kind: "merge", occurred_at: most_recent_chronic.attempted_at)
+      expect(failures).to include(include(issue_id: other_issue.id, kind: "push"))
+    end
+
     it "does not mutate persisted github health state when reporting endpoint health" do # @spec GITHUB-SYNC-009
       project = create(:project, account: account, webhook_secret: "present")
       state = create(
@@ -201,13 +263,24 @@ RSpec.describe Projects::GithubDiagnostics do
   end
 
   def create_merge_failure(project:, occurred_at:, updated_at:)
-    create(
-      :issue,
+    create(:auto_merge_attempt,
       project: project,
-      merge_permission_rejected_at: occurred_at,
-      merge_permission_rejection_reason: "missing workflows permission",
-      updated_at: updated_at
-    )
+      issue: create(:issue, :pull_request, project: project, updated_at: updated_at),
+      attempted_at: occurred_at,
+      reason_code: AutoMergeAttempts::Record::REASON_MISSING_WORKFLOWS_PERMISSION,
+      updated_at: updated_at)
+  end
+
+  def create_chronic_blocked_attempts(project:, issue:)
+    3.times.map do |index|
+      create(
+        :auto_merge_attempt,
+        project: project,
+        issue: issue,
+        attempted_at: (3 - index).hours.ago,
+        reason_code: AutoMergeAttempts::Record::REASON_MISSING_WORKFLOWS_PERMISSION
+      )
+    end
   end
 
   def create_push_failure(project:, occurred_at:, updated_at:)

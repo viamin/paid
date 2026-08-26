@@ -48,6 +48,13 @@ rejected for a missing workflow permission. Terminal workflow-permission
 failures reuse the PR row's merge-permission cooldown so Paid does not retry
 the same permanent failure every poll cycle.
 
+Auto-merge diagnostics are persisted as sanitized product data. Each merge
+path appends an `AutoMergeAttempt` row for meaningful outcomes (merge, skip,
+blocker, failure) so the UI, support workflows, and chat agents can explain
+what happened without raw logs, tokens, webhook secrets, or stack traces.
+Attempt rows are tenant-scoped through PostgreSQL row-level security keyed on
+`projects.account_id`, so access follows project visibility.
+
 ## What this is not
 
 - **Not a blanket bypass of human control.** Projects must opt in through
