@@ -28,6 +28,7 @@ entries into one responsive page.
    - a desktop split-pane layout with the queue on the left and detail on the
      right
    - a mobile master-detail flow where selecting an item opens the detail pane
+   - a neutral `Waiting —` label when a legacy entry has no waiting timestamp
 4. Existing action endpoints stay as the mutation surface:
    - clarifying-question answers still post through
      `Projects::ClarifyingQuestionsController`
@@ -57,6 +58,9 @@ actions without leaving the inbox.
   `/plan_reviews` redirect to the inbox instead of rendering parallel surfaces.
 - **Selection is query-param based**: `entry_kind`, `entry_id`, and `view`
   drive server-rendered selection with no client-side state requirement.
+- **Missing waiting timestamps remain visible**: legacy entries with a nullable
+  waiting timestamp stay actionable and render `Waiting —` instead of deriving
+  an inaccurate age or failing the inbox page.
 - **Temporal signaling remains controller-driven**: the inbox changes the UI
   surface, not the workflow contract. `approve_plan`, `reject_plan`, and
   `revise_plan` remain the bridge into `Workflows::PlanningWorkflow`.

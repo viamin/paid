@@ -40,3 +40,11 @@
   and SHALL return to that inbox scope after the queue is exhausted.
   *Code:* `app/controllers/projects/clarifying_questions_controller.rb`.
   *Test:* `spec/requests/projects/clarifying_questions_spec.rb`.
+
+- [x] **OPERATOR-INBOX-006** — When an actionable inbox entry has no waiting
+  timestamp, the system SHALL keep the entry visible and SHALL render
+  `Waiting —` in both the queue list and selected-entry detail instead of
+  deriving an age or failing the inbox page.
+  *Code:* `app/views/dashboard/_inbox_list.html.erb`,
+  `app/views/dashboard/_inbox_detail.html.erb`.
+  *Test:* `spec/requests/dashboard_spec.rb`.

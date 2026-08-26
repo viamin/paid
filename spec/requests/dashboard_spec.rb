@@ -1051,6 +1051,23 @@ RSpec.describe "Dashboard" do
       expect(response.body).to include("lg:grid-cols-[22rem,1fr]")
     end
 
+    # @spec OPERATOR-INBOX-006
+    it "renders an unknown waiting age for a legacy entry without a timestamp" do
+      issue = create(:issue, :needs_input, project: project, title: "Legacy question", body: questions_body)
+      issue.update_columns(needs_input_since: nil)
+
+      get dashboard_inbox_path(
+        entry_kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+        entry_id: issue.id,
+        view: "detail"
+      )
+
+      expect(response).to have_http_status(:ok)
+      document = Nokogiri::HTML(response.body)
+      expect(document.at_css("[data-testid='inbox-list-waiting-age']").text.strip).to eq("Waiting —")
+      expect(document.at_css("[data-testid='inbox-detail-waiting-age']").text.strip).to eq("Waiting —")
+    end
+
     context "when a clarifying question contains markdown" do
       let(:markdown_question) { "Should `foo_bar` use **snake_case** or [camelCase](https://example.com)?" }
       let(:markdown_body) do
