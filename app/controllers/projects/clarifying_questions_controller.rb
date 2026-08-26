@@ -102,8 +102,8 @@ module Projects
 
     def queue_return_to
       @queue_return_to ||= begin
-        requested = params[:return_to].to_s
-        if safe_queue_return_to?(requested)
+        requested = normalized_return_to(params[:return_to])
+        if requested.present? && safe_queue_return_to?(requested)
           requested
         elsif queue_param == "dashboard_inbox"
           dashboard_inbox_path(
@@ -138,9 +138,20 @@ module Projects
     end
 
     def safe_queue_return_to?(path)
-      return false if path.blank? || path.include?("://")
+      return false if path.blank?
 
       path.start_with?(dashboard_needs_input_path) || path.start_with?(dashboard_inbox_path)
+    end
+
+    def normalized_return_to(candidate)
+      return if candidate.blank?
+
+      candidate = candidate.to_s
+      return unless candidate.start_with?("/") && !candidate.start_with?("//")
+
+      url_from(candidate)
+    rescue URI::InvalidURIError
+      nil
     end
 
     def empty_questions_redirect_path

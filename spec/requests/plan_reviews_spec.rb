@@ -87,6 +87,17 @@ RSpec.describe "Plan reviews" do
       expect(flash[:alert]).to eq("The plan review workflow is no longer active.")
       expect(flash[:notice]).to be_nil
     end
+
+    it "falls back to the inbox when return_to is unsafe" do
+      review = create_plan_review(project:, issue:, workflow_id: "workflow-open")
+
+      post approve_plan_review_path(review), params: {
+        return_to: "https://evil.example/phish"
+      }
+
+      expect(response).to redirect_to(dashboard_inbox_path(kind: Inbox::Queue::PLAN_REVIEW_KIND))
+      expect(workflow_handle).to have_received(:signal).with("approve_plan")
+    end
   end
 
   describe "POST /plan_reviews/:id/revise" do
