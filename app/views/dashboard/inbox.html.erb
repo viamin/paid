@@ -41,6 +41,12 @@
         Paid does not currently have any clarifying-question or plan-review items waiting here.
       </p>
     </div>
+  <%# Split-pane activates at Tailwind's `lg` breakpoint (≥1024px) instead of
+      the `md` (≥768px) called out in #3506: the answer form renders multi-row
+      textareas and a sticky submit, so the 22rem list + flexible detail grid
+      needs the wider viewport to avoid cramping the textareas into a
+      sub-300px column. Below `lg` the master-detail Stimulus controller takes
+      over and stacks the panes. %>
   <% else %>
     <div class="grid gap-6 lg:grid-cols-[22rem,1fr]"
          data-inbox-master-detail-target="panes">
