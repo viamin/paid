@@ -1646,7 +1646,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       expect(result.compatible).to be(true)
     end
 
-    # @spec CONTAINER-RUNTIME-039
+    # @spec CONTAINER-RUNTIME-044
     it "declares the full current Docker capability set on a host-path-capable backend" do
       allow(backend).to receive(:supports_host_paths?).and_return(true)
 
@@ -1663,7 +1663,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       )
     end
 
-    # @spec CONTAINER-RUNTIME-038
+    # @spec CONTAINER-RUNTIME-043
     it "rejects a verification run before provisioning when the runner lacks browser_sidecar support" do
       allow(Containers::Provision).to receive(:compatibility_for)
         .and_return(Containers::Provision::CompatibilityResult.new(compatible: true, error_message: nil))

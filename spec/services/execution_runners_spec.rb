@@ -62,7 +62,7 @@ RSpec.describe ExecutionRunners do
   end
 
   describe ExecutionRunners::CapabilityRequirements do
-    # @spec CONTAINER-RUNTIME-038
+    # @spec CONTAINER-RUNTIME-043
     it "derives queue-time architecture requirements from the same runtime-image source as RunSpec" do
       project = create(:project)
       run = create(:agent_run, project: project)
@@ -79,8 +79,8 @@ RSpec.describe ExecutionRunners do
       expect(requirements.to_a).to include(:architecture_arm64)
     end
 
-    # @spec CONTAINER-RUNTIME-037
-    # @spec CONTAINER-RUNTIME-038
+    # @spec CONTAINER-RUNTIME-042
+    # @spec CONTAINER-RUNTIME-043
     it "defaults queue-time architecture requirements to x86_64 when the runtime image selection is unresolved" do
       project = create(:project)
       run = create(:agent_run, project: project)
@@ -97,8 +97,8 @@ RSpec.describe ExecutionRunners do
       expect(requirements.to_a).to include(:architecture_x86_64)
     end
 
-    # @spec CONTAINER-RUNTIME-037
-    # @spec CONTAINER-RUNTIME-038
+    # @spec CONTAINER-RUNTIME-042
+    # @spec CONTAINER-RUNTIME-043
     it "treats queue-time disk requirements with the same rounded gibibyte catalog as provision time" do
       project = create(:project)
       run = create(:agent_run, project: project)
@@ -213,8 +213,8 @@ RSpec.describe ExecutionRunners do
       expect(spec.services.first).to be_a(ExecutionRunners::ServiceDeclaration)
     end
 
-    # @spec CONTAINER-RUNTIME-036
-    # @spec CONTAINER-RUNTIME-037
+    # @spec CONTAINER-RUNTIME-041
+    # @spec CONTAINER-RUNTIME-042
     it "derives runner capability requirements from the execution description" do
       allow(project).to receive(:verification_enabled?).and_return(true)
       bind_mount_spec = described_class.new(**spec_args.merge(

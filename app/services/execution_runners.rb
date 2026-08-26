@@ -784,7 +784,7 @@ module ExecutionRunners
     end
     private_class_method :timeout_seconds_for
 
-    # @spec CONTAINER-RUNTIME-037
+    # @spec CONTAINER-RUNTIME-042
     def capability_requirements
       CapabilityRequirements.from_run_spec(self)
     end

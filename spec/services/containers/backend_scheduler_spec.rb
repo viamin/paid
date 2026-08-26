@@ -129,7 +129,7 @@ RSpec.describe Containers::BackendScheduler do
     expect(result.health_failures.keys).to contain_exactly("elguapo", "local", "aws-runner-1")
   end
 
-  # @spec CONTAINER-RUNTIME-038
+  # @spec CONTAINER-RUNTIME-043
   # @spec IMMUTABLE-IMAGE-001
   it "contains runtime image selection errors as compatibility failures for every candidate host" do
     agent_run.update!(external_metadata: preferred_host_selection)
@@ -148,7 +148,7 @@ RSpec.describe Containers::BackendScheduler do
     expect(Containers::Provision).not_to have_received(:compatibility_for)
   end
 
-  # @spec CONTAINER-RUNTIME-038
+  # @spec CONTAINER-RUNTIME-043
   it "derives capability requirements once per scheduling pass and reuses them for every candidate host" do
     agent_run.update!(external_metadata: preferred_host_selection)
     requested_resources = Capacity::RequestedResources.for_agent_run(agent_run)

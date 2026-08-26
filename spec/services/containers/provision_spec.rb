@@ -250,8 +250,8 @@ RSpec.describe Containers::Provision do
       expect(result.error_message).to be_nil
     end
 
-    # @spec CONTAINER-RUNTIME-037
-    # @spec CONTAINER-RUNTIME-038
+    # @spec CONTAINER-RUNTIME-042
+    # @spec CONTAINER-RUNTIME-043
     it "rejects a verification run before provisioning when the resolved runner lacks browser_sidecar" do
       run = create(:agent_run, external_metadata: {})
       run.project.update!(screenshot_settings: run.project.effective_screenshot_settings.merge("verification_enabled" => true))
@@ -278,7 +278,7 @@ RSpec.describe Containers::Provision do
       expect(result.error_message).to include("browser sidecar")
     end
 
-    # @spec CONTAINER-RUNTIME-038
+    # @spec CONTAINER-RUNTIME-043
     it "returns an incompatible result when deriving default capability requirements hits a retired image reference" do
       run = create(:agent_run, external_metadata: {})
       backend = instance_double(Containers::Backends::Base, supports_host_paths?: true)

@@ -78,7 +78,7 @@ the persisted service-container host so reuse, metrics, reconciliation, and
 cleanup stay routed to the daemon that actually owns the container.
 
 Every service container is created with the same baseline capability controls
-already applied to agent and chat containers (`CONTAINER-RUNTIME-035`):
+already applied to agent and chat containers (`CONTAINER-RUNTIME-040`):
 `no-new-privileges` and all Linux capabilities dropped. `HARDENING_PROFILES`
 maps known image families (matched by image-name substring, the same lookup
 shape as `RESOURCE_LIMITS`) to whether the root filesystem stays read-only,
@@ -417,16 +417,18 @@ scattered across Docker-specific code.
   features Paid actually uses today:
   `host_paths`, `service_containers`, `browser_sidecar`, `streaming_logs`,
   `direct_exec`, `persistent_workspace`, `architecture_x86_64`,
-  `architecture_arm64`, and `arbitrary_disk`.
+  `architecture_arm64`, and `arbitrary_disk` (`CONTAINER-RUNTIME-041`).
 - `ExecutionRunners::CapabilityRequirements` derives the required subset for a
   run from deterministic local inputs only: workspace mode / worktree path,
   service declarations, verification-enabled browser usage, requested
-  architecture, and requested disk. It does not talk to a provider API.
+  architecture, and requested disk (`CONTAINER-RUNTIME-042`). It does not talk
+  to a provider API.
 - `ExecutionRunners::Base.capabilities(backend:)` is the declaration point on
   the runner contract. Implementations return a capability set for the backend
   they are evaluating, then `ExecutionRunners::Base.capability_compatibility_for`
   computes missing capabilities and emits the clear mismatch message/log used by
-  scheduling and fail-fast provisioning.
+  scheduling and fail-fast provisioning (`CONTAINER-RUNTIME-043`,
+  `CONTAINER-RUNTIME-044`).
 - `LocalDockerRunner` declares the full current Paid feature set for ordinary
   Docker execution. It narrows that declaration only where the backend transport
   already proves a real limitation today: a backend with

@@ -251,7 +251,7 @@ module ExecutionRunners
     #
     # @param backend [Object]
     # @return [CapabilitySet]
-    # @spec CONTAINER-RUNTIME-036
+    # @spec CONTAINER-RUNTIME-041
     def self.capabilities(backend:)
       raise NotImplementedError, "#{name} must implement .#{__method__}"
     end
@@ -264,8 +264,8 @@ module ExecutionRunners
     # @param backend [Object]
     # @param agent_run [AgentRun, nil]
     # @return [CompatibilityResult]
-    # @spec CONTAINER-RUNTIME-038
-    # @spec CONTAINER-RUNTIME-039
+    # @spec CONTAINER-RUNTIME-043
+    # @spec CONTAINER-RUNTIME-044
     def self.capability_compatibility_for(requirements:, backend:, agent_run: nil, log_mismatch: true)
       available = capabilities(backend: backend)
       missing = available.missing(requirements.to_a)

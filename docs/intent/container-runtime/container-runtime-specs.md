@@ -612,7 +612,7 @@
   *Code:* `ExecutionRunners::Base`, `ExecutionRunners::LocalDockerRunner`,
   `AgentRuns::Verification`, `Activities::ProvisionBrowserContainerActivity`.
 
-- [x] **CONTAINER-RUNTIME-035** — When `Containers::ServiceProvisioner`
+- [x] **CONTAINER-RUNTIME-040** — When `Containers::ServiceProvisioner`
   creates a service container (Postgres, Redis, or an account-admin
   allowlisted image), the system SHALL always apply `no-new-privileges` and
   drop all Linux capabilities by default. The system SHALL apply a per-image-family
@@ -642,7 +642,7 @@
   `Containers::ServiceProvisioner#create_docker_container`,
   `Containers::ServiceProvisioner#hardening_profile_for`
 
-- [x] **CONTAINER-RUNTIME-036** — The system SHALL define a minimal,
+- [x] **CONTAINER-RUNTIME-041** — The system SHALL define a minimal,
   provider-neutral runner capability vocabulary containing exactly the
   capabilities Paid currently relies on for execution placement:
   `host_paths`, `service_containers`, `browser_sidecar`, `streaming_logs`,
@@ -657,7 +657,7 @@
   `ExecutionRunners::Base`,
   `ExecutionRunners::LocalDockerRunner`
 
-- [x] **CONTAINER-RUNTIME-037** — The system SHALL derive a run's required
+- [x] **CONTAINER-RUNTIME-042** — The system SHALL derive a run's required
   runner capabilities from local execution intent before provisioning using
   deterministic inputs only: workspace mode / worktree path, service
   declarations, verification-enabled browser use, requested architecture, and
@@ -668,7 +668,7 @@
   *Code:* `ExecutionRunners::CapabilityRequirements`,
   `ExecutionRunners::RunSpec`
 
-- [x] **CONTAINER-RUNTIME-038** — Before provisioning starts, the system SHALL
+- [x] **CONTAINER-RUNTIME-043** — Before provisioning starts, the system SHALL
   compare required runner capabilities against the selected runner's declared
   capability set and reject mismatches with a clear error message that names the
   missing capabilities. Queue-time compatibility checks and direct
@@ -680,7 +680,7 @@
   `Containers::Provision.compatibility_for`,
   `ExecutionRunners::LocalDockerRunner.compatible?`
 
-- [x] **CONTAINER-RUNTIME-039** — The Docker runner SHALL declare the full
+- [x] **CONTAINER-RUNTIME-044** — The Docker runner SHALL declare the full
   current Paid capability set for ordinary Docker execution, and capability
   mismatches SHALL be logged for observability with the backend identifier plus
   the available, required, and missing capability symbols.
