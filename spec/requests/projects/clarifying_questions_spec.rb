@@ -176,6 +176,9 @@ RSpec.describe "Projects::ClarifyingQuestions" do
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("What should happen after approval?")
         expect(response.body).to include(pull_request.github_url)
+        expect(response.body).to include(
+          "Submit your answers? They will be posted as a comment on the GitHub pull request."
+        )
       end
     end
   end
