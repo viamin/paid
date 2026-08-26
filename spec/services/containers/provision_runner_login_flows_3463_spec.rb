@@ -46,14 +46,15 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
     end
   end
 
-  def create_managed_oauth_credential(runner_key:, fixture_name:)
+  def create_managed_oauth_credential(runner_key:, fixture_name:, **attrs)
     create(
       :runner_credential,
       account: account,
       created_by: owner,
       runner_key: runner_key,
       auth_kind: "oauth_token",
-      token: file_fixture(fixture_name).read
+      token: file_fixture(fixture_name).read,
+      **attrs
     )
   end
 
@@ -69,6 +70,21 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
     agent_run = create(:agent_run, project: project, runner: runner)
     credential = create_managed_oauth_credential(runner_key: "omp", fixture_name: "claude_credentials_valid.json")
     [ agent_run, credential ]
+  end
+
+  def create_expired_managed_credential_with_newer_revoked_row(runner_key:, fixture_name:)
+    credential = create_managed_oauth_credential(
+      runner_key: runner_key,
+      fixture_name: fixture_name,
+      expires_at: 5.minutes.ago
+    )
+    create_managed_oauth_credential(
+      runner_key: runner_key,
+      fixture_name: fixture_name,
+      expires_at: 1.year.from_now,
+      revoked_at: 1.minute.ago
+    )
+    credential
   end
 
   def opencode_run_command
@@ -108,6 +124,55 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
   def managed_codex_tokens
     payload = JSON.parse(file_fixture("codex_auth_valid.json").read)
     payload.fetch("tokens")
+  end
+
+  def far_future_expiry
+    Time.parse("2100-01-01T00:00:00Z")
+  end
+
+  def stub_opencode_refresh!(svc, credential)
+    allow(svc).to receive(:refresh_opencode_managed_credential!) do
+      credential.update!(token: rotated_canonical_auth, expires_at: far_future_expiry)
+      true
+    end
+  end
+
+  def seed_opencode_and_read_payload(agent_run:, credential:)
+    svc = build_service(agent_run: agent_run)
+    written = {}
+
+    allow(svc).to receive(:write_container_file) { |path, content| written[path] = content }
+    stub_opencode_refresh!(svc, credential)
+
+    expect(svc.send(:seed_opencode_credentials!)).to be(true)
+    JSON.parse(written.fetch("/home/agent/.local/share/opencode/auth.json"))
+  end
+
+  def rotated_omp_canonical_auth
+    payload = JSON.parse(file_fixture("claude_credentials_valid.json").read)
+    payload.fetch("claudeAiOauth")["accessToken"] = "omp-rotated-access-token"
+    payload.fetch("claudeAiOauth")["refreshToken"] = "omp-rotated-refresh-token"
+    JSON.generate(payload)
+  end
+
+  def stub_omp_refresh!(svc, credential)
+    allow(svc).to receive(:refresh_omp_managed_credential!) do
+      credential.update!(token: rotated_omp_canonical_auth, expires_at: far_future_expiry)
+      true
+    end
+  end
+
+  def seed_omp_and_read_payload(agent_run:, credential:)
+    svc = build_service(agent_run: agent_run)
+    written = {}
+
+    allow(svc).to receive(:container).and_return(container)
+    allow(svc).to receive(:write_container_file) { |path, content| written[path] = content }
+    stub_omp_refresh!(svc, credential)
+    stub_omp_exec(success: true, stdout: [ '{"ok":true}' ])
+
+    expect(svc.send(:seed_omp_credentials!)).to be(true)
+    JSON.parse(written.fetch("/home/agent/.local/share/omp/paid-auth-import.json"))
   end
 
   def omp_import_command
@@ -187,17 +252,18 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
     runner = create(:runner, user: owner, runner_key: "opencode", auth_type: "subscription")
     agent_run = create(:agent_run, project: project, runner: runner)
     credential = create_managed_oauth_credential(runner_key: "opencode", fixture_name: "codex_auth_expired.json")
-    svc = build_service(agent_run: agent_run)
-    written = {}
+    payload = seed_opencode_and_read_payload(agent_run: agent_run, credential: credential)
+    expect(payload.dig("openai", "refresh")).to eq("opencode-rotated-refresh-token")
+  end
 
-    allow(svc).to receive(:write_container_file) { |path, content| written[path] = content }
-    allow(svc).to receive(:refresh_opencode_managed_credential!) do
-      credential.update!(token: rotated_canonical_auth, expires_at: Time.parse("2100-01-01T00:00:00Z"))
-      true
-    end
-
-    expect(svc.send(:seed_opencode_credentials!)).to be(true)
-    payload = JSON.parse(written.fetch("/home/agent/.local/share/opencode/auth.json"))
+  it "refreshes an expired opencode row instead of treating it as missing" do
+    runner = create(:runner, user: owner, runner_key: "opencode", auth_type: "subscription")
+    agent_run = create(:agent_run, project: project, runner: runner)
+    credential = create_expired_managed_credential_with_newer_revoked_row(
+      runner_key: "opencode",
+      fixture_name: "codex_auth_expired.json"
+    )
+    payload = seed_opencode_and_read_payload(agent_run: agent_run, credential: credential)
     expect(payload.dig("openai", "refresh")).to eq("opencode-rotated-refresh-token")
   end
 
@@ -307,22 +373,19 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
     runner = create(:runner, user: owner, runner_key: "omp", auth_type: "subscription")
     agent_run = create(:agent_run, project: project, runner: runner)
     credential = create_managed_oauth_credential(runner_key: "omp", fixture_name: "claude_credentials_valid.json")
-    svc = build_service(agent_run: agent_run)
-    written = {}
-    rotated = JSON.parse(file_fixture("claude_credentials_valid.json").read)
-    rotated.fetch("claudeAiOauth")["accessToken"] = "omp-rotated-access-token"
-    rotated.fetch("claudeAiOauth")["refreshToken"] = "omp-rotated-refresh-token"
+    payload = seed_omp_and_read_payload(agent_run: agent_run, credential: credential)
+    expect(payload["access_token"]).to eq("omp-rotated-access-token")
+    expect(payload["refresh_token"]).to eq("omp-rotated-refresh-token")
+  end
 
-    allow(svc).to receive(:container).and_return(container)
-    allow(svc).to receive(:write_container_file) { |path, content| written[path] = content }
-    allow(svc).to receive(:refresh_omp_managed_credential!) do
-      credential.update!(token: JSON.generate(rotated), expires_at: Time.parse("2100-01-01T00:00:00Z"))
-      true
-    end
-    stub_omp_exec(success: true, stdout: [ '{"ok":true}' ])
-
-    expect(svc.send(:seed_omp_credentials!)).to be(true)
-    payload = JSON.parse(written.fetch("/home/agent/.local/share/omp/paid-auth-import.json"))
+  it "refreshes an expired omp row instead of treating it as missing" do
+    runner = create(:runner, user: owner, runner_key: "omp", auth_type: "subscription")
+    agent_run = create(:agent_run, project: project, runner: runner)
+    credential = create_expired_managed_credential_with_newer_revoked_row(
+      runner_key: "omp",
+      fixture_name: "claude_credentials_valid.json"
+    )
+    payload = seed_omp_and_read_payload(agent_run: agent_run, credential: credential)
     expect(payload["access_token"]).to eq("omp-rotated-access-token")
     expect(payload["refresh_token"]).to eq("omp-rotated-refresh-token")
   end

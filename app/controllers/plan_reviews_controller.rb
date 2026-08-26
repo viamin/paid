@@ -64,5 +64,4 @@ class PlanReviewsController < ApplicationController
 
     dashboard_inbox_path(kind: Inbox::Queue::PLAN_REVIEW_KIND)
   end
-
 end

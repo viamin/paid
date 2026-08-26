@@ -3430,6 +3430,12 @@ module Containers
       scope
     end
 
+    # OpenCode and OMP can refresh an expired short-lived credential before
+    # materialization, so their managed lookup must exclude only revoked rows.
+    def latest_non_revoked_managed_subscription_credential_for(runner_key)
+      managed_subscription_credential_scope_for(runner_key)&.where(revoked_at: nil)&.order(created_at: :desc, id: :desc)&.first
+    end
+
     def managed_subscription_runner_auth_enabled?
       project.is_a?(Project) && FeatureFlags.enabled?(:managed_subscription_runner_auth, project: project)
     end
@@ -3811,15 +3817,13 @@ module Containers
     def opencode_managed_runner_credential
       return @opencode_managed_runner_credential if defined?(@opencode_managed_runner_credential)
 
-      @opencode_managed_runner_credential = managed_subscription_credential_scope_for("opencode")&.active
-        &.order(created_at: :desc, id: :desc)&.first
+      @opencode_managed_runner_credential = latest_non_revoked_managed_subscription_credential_for("opencode")
     end
 
     def omp_managed_runner_credential
       return @omp_managed_runner_credential if defined?(@omp_managed_runner_credential)
 
-      @omp_managed_runner_credential = managed_subscription_credential_scope_for("omp")&.active
-        &.order(created_at: :desc, id: :desc)&.first
+      @omp_managed_runner_credential = latest_non_revoked_managed_subscription_credential_for("omp")
     end
 
     def codex_managed_secret
