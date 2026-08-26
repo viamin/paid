@@ -198,6 +198,32 @@ module Runners
           error: status.error
         )
       end
+
+      def classify_codex_auth_secret(secret)
+        value = secret.to_s
+        return [ blank_status, nil ] if value.blank?
+
+        parsed = CodexCredentials::Secret.parse(value)
+        return [ malformed_status, nil ] unless parsed.codex_auth?
+        return [ malformed_status, nil ] if parsed.access_token.blank? && parsed.refresh_token.blank?
+
+        [ codex_auth_status(parsed), parsed ]
+      end
+
+      def codex_auth_status(parsed)
+        expires_at = parsed.expires_at
+        expired = expires_at.present? && expires_at <= Time.current
+        Status.new(
+          state: expired ? :expired : :valid,
+          expires_at: expires_at,
+          refreshable: parsed.refresh_token.present?,
+          materialization_mode: SubscriptionAuthMaterializers::MATERIALIZE_NATIVE_FILE,
+          rotation_risk: SubscriptionAuthMaterializers::ROTATION_CONTAINER_MAY_ROTATE,
+          remote_safe: remote_safe?,
+          redacted_metadata: parsed.redacted_metadata,
+          error: expired ? "expired" : nil
+        )
+      end
     end
 
     class Claude < Base
@@ -363,25 +389,7 @@ module Runners
       private
 
       def classify(secret)
-        value = secret.to_s
-        return [ blank_status, nil ] if value.blank?
-
-        parsed = CodexCredentials::Secret.parse(value)
-        return [ malformed_status, nil ] unless parsed.codex_auth?
-        return [ malformed_status, nil ] if parsed.access_token.blank? && parsed.refresh_token.blank?
-
-        expires_at = parsed.expires_at
-        expired = expires_at.present? && expires_at <= Time.current
-        [ Status.new(
-          state: expired ? :expired : :valid,
-          expires_at: expires_at,
-          refreshable: parsed.refresh_token.present?,
-          materialization_mode: SubscriptionAuthMaterializers::MATERIALIZE_NATIVE_FILE,
-          rotation_risk: SubscriptionAuthMaterializers::ROTATION_CONTAINER_MAY_ROTATE,
-          remote_safe: remote_safe?,
-          redacted_metadata: parsed.redacted_metadata,
-          error: expired ? "expired" : nil
-        ), parsed ]
+        classify_codex_auth_secret(secret)
       end
     end
 
@@ -427,25 +435,7 @@ module Runners
       private
 
       def classify(secret)
-        value = secret.to_s
-        return [ blank_status, nil ] if value.blank?
-
-        parsed = CodexCredentials::Secret.parse(value)
-        return [ malformed_status, nil ] unless parsed.codex_auth?
-        return [ malformed_status, nil ] if parsed.access_token.blank? && parsed.refresh_token.blank?
-
-        expires_at = parsed.expires_at
-        expired = expires_at.present? && expires_at <= Time.current
-        [ Status.new(
-          state: expired ? :expired : :valid,
-          expires_at: expires_at,
-          refreshable: parsed.refresh_token.present?,
-          materialization_mode: SubscriptionAuthMaterializers::MATERIALIZE_NATIVE_FILE,
-          rotation_risk: SubscriptionAuthMaterializers::ROTATION_CONTAINER_MAY_ROTATE,
-          remote_safe: remote_safe?,
-          redacted_metadata: parsed.redacted_metadata,
-          error: expired ? "expired" : nil
-        ), parsed ]
+        classify_codex_auth_secret(secret)
       end
 
       def build_auth_json(parsed)
@@ -461,7 +451,7 @@ module Runners
       end
 
       def expires_ms(parsed)
-        ((parsed.expires_at || Time.at(0, in: "UTC")).to_f * 1000).to_i
+        parsed.expires_at&.then { |expires_at| (expires_at.to_f * 1000).to_i }
       end
     end
 

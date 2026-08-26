@@ -153,8 +153,8 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
 
     expect(result.performed?).to be(true)
     parsed = JSON.parse(credential.reload.token)
-    expect(parsed["tokens"]["access_token"]).to eq("eyJopencode-rotated-access-token")
-    expect(parsed["tokens"]["refresh_token"]).to eq("v1.opencode-rotated-refresh-token")
+    expect(parsed["tokens"]["access_token"]).to eq("opencode-rotated-access-token")
+    expect(parsed["tokens"]["refresh_token"]).to eq("opencode-rotated-refresh-token")
 
     attempt = RunnerAuthAttempt.where(runner_key: "opencode", attempt_stage: "harvest").last
     expect(attempt.result).to eq("harvested")

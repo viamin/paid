@@ -293,6 +293,24 @@ RSpec.describe Runners::SubscriptionAuthProviders, :no_db do # @spec SUBSCRIPTIO
       )
     end
 
+    it "omits expires when the managed auth payload has no expiry" do
+      auth_without_expiry = JSON.parse(valid_auth)
+      auth_without_expiry.fetch("tokens").delete("expires_at")
+      auth_without_expiry.fetch("tokens")["access_token"] = "opaque-access-token"
+
+      materialization = opencode_provider.materialize(secret: JSON.generate(auth_without_expiry))
+      payload = JSON.parse(materialization.files.fetch("/home/agent/.local/share/opencode/auth.json"))
+
+      expect(payload).to eq(
+        "openai" => {
+          "type" => "oauth",
+          "access" => auth_without_expiry.fetch("tokens").fetch("access_token"),
+          "refresh" => auth_without_expiry.fetch("tokens").fetch("refresh_token"),
+          "accountId" => "acc_managed-codex-001"
+        }
+      )
+    end
+
     it "delegates refresh to the provisioner and reports performed" do
       allow(provisioner).to receive(:refresh_opencode_managed_credential!).and_return(true)
 
