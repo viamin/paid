@@ -71,7 +71,7 @@ module Containers
 
     private
 
-    attr_reader :agent_run, :registry
+    attr_reader :agent_run, :registry, :compatibility_requirements_error
 
     def requested_host_and_source
       selection = agent_run.container_host_selection
@@ -195,10 +195,6 @@ module Containers
     rescue Containers::ImageResolver::Error, Containers::RuntimeImageCatalog::Error => e
       @compatibility_requirements_error = e
       nil
-    end
-
-    def compatibility_requirements_error
-      @compatibility_requirements_error
     end
 
     # Shared fallback-policy predicate: candidates beyond the requested host
