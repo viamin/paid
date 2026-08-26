@@ -73,16 +73,18 @@ module UpstreamRegistries
     # tarball checksum names the asset it wants; the URL is carried so
     # Release#checksum_for can derive the SHA-256 from the download.
     def npm(package, tarball_asset: nil)
-      data = npm_registry(package)
-      version = data.dig("dist-tags", "latest")
+      cache(:npm_release, [ package, tarball_asset ]) do
+        data = npm_registry(package)
+        version = data.dig("dist-tags", "latest")
 
-      assets = {}
-      if tarball_asset
-        url = data.dig("versions", version, "dist", "tarball")
-        assets[tarball_asset] = { digest: "", url: url } if url
+        assets = {}
+        if tarball_asset
+          url = data.dig("versions", version, "dist", "tarball")
+          assets[tarball_asset] = { digest: "", url: url } if url
+        end
+
+        Release.new(version: version, published_at: Time.parse(data.dig("time", version)), assets: assets)
       end
-
-      Release.new(version: version, published_at: Time.parse(data.dig("time", version)), assets: assets)
     end
 
     def npm_publish_time(package, version)
