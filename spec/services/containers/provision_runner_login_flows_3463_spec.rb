@@ -315,6 +315,13 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
     expect(attempt.auth_source).to eq("managed")
   end
 
+  it "reads the rotated OMP broker state from the XDG data directory" do
+    svc = build_service(agent_run: create(:agent_run, project: project))
+
+    expect(svc.send(:omp_harvest_python_script)).to include("/home/agent/.local/share/omp/agent/agent.db")
+    expect(svc.send(:omp_harvest_python_script)).not_to include("/home/agent/.omp/agent/agent.db")
+  end
+
   it "serializes omp runs sharing the same managed credential and harvests under the lock" do
     agent_run, credential = build_omp_subscription_run
     svc = build_service(agent_run: agent_run)
@@ -390,5 +397,14 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
 
     expect(svc.send(:seed_omp_credentials!)).to be(true)
     expect(svc).to have_received(:log_system).with("container.omp_credentials_cleanup_failed", error: "rm failed")
+  end
+
+  it "does not treat incidental omp mentions in shell scripts as an OMP run command" do
+    svc = build_service(agent_run: create(:agent_run, project: project))
+
+    expect(svc.send(:omp_exec_command?, [ "sh", "-c", "ls /home/agent/.local/share/omp" ])).to be(false)
+    expect(svc.send(:omp_exec_command?, [ "sh", "-c", "echo omp" ])).to be(false)
+    expect(svc.send(:omp_exec_command?, [ "sh", "-c", "omp auth-broker import file.json --provider anthropic --json" ])).to be(false)
+    expect(svc.send(:omp_exec_command?, [ "sh", "-c", "omp -p ping" ])).to be(true)
   end
 end

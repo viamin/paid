@@ -1988,18 +1988,6 @@ module Containers
         metadata: metadata)
     end
 
-    def record_opencode_lease_attempt!(state:, started_at:, auth_source: :managed,
-      materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_NATIVE_FILE,
-      runner_credential: nil, metadata: {})
-      record_subscription_lease_attempt!(runner_key: "opencode",
-        state: state,
-        started_at: started_at,
-        auth_source: auth_source,
-        materialization_mode: materialization_mode,
-        runner_credential: runner_credential,
-        metadata: metadata)
-    end
-
     def record_subscription_lease_attempt!(runner_key:, state:, started_at:, auth_source:, materialization_mode:,
       runner_credential:, metadata:)
       duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
@@ -3994,29 +3982,10 @@ module Containers
     end
 
     def omp_exec_command?(command)
-      parts = normalized_command_parts(command)
-      return false if parts.empty?
-
-      if parts.first == "env"
-        index = 1
-        while index < parts.length
-          case parts[index]
-          when "-u"
-            index += 2
-          else
-            break
-          end
-        end
-        parts = parts[index..] || []
-      end
-
-      return false if parts.empty?
-      return parts[2]&.match?(/\bomp\b/) && !parts[2]&.match?(/\bomp\s+auth-broker\b/) if parts.first(2) == [ "sh", "-c" ]
-
-      parts.first == "omp" && parts[1] != "auth-broker"
+      subscription_exec_command?(command, binary: "omp", verb_pattern: /(?!auth-broker\b)\S+/)
     end
 
-    def subscription_exec_command?(command, binary:, verb:)
+    def subscription_exec_command?(command, binary:, verb: nil, verb_pattern: nil)
       parts = normalized_command_parts(command)
       return false if parts.empty?
 
@@ -4033,11 +4002,25 @@ module Containers
         parts = parts[index..] || []
       end
 
-      return true if parts[0] == "sh" && parts[1] == "-c" && parts[2]&.match?(/\b#{Regexp.escape(binary)}\s+#{Regexp.escape(verb)}\b/)
+      binary_pattern = Regexp.escape(binary)
+      verb_matcher = subscription_exec_verb_matcher(verb, verb_pattern)
 
-      parts.first(2) == [ binary, verb ]
+      return true if parts[0] == "sh" &&
+        parts[1] == "-c" &&
+        parts[2]&.match?(/(^|[;&|\n]\s*)#{binary_pattern}\s+#{verb_matcher}/)
+
+      return parts.first(2) == [ binary, verb ] if verb
+
+      parts.first == binary && parts[1]&.match?(verb_matcher)
     rescue ArgumentError
       false
+    end
+
+    def subscription_exec_verb_matcher(verb, verb_pattern)
+      return /\b#{Regexp.escape(verb)}\b/ if verb
+      return verb_pattern if verb_pattern
+
+      raise ArgumentError, "verb or verb_pattern is required"
     end
 
     def normalized_command_parts(command)
@@ -4778,7 +4761,7 @@ module Containers
     def omp_harvest_python_script
       <<~PY
         import sqlite3
-        db = "/home/agent/.omp/agent/agent.db"
+        db = "/home/agent/.local/share/omp/agent/agent.db"
         conn = sqlite3.connect(db)
         try:
           row = conn.execute(
