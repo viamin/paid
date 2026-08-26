@@ -87,4 +87,23 @@ RSpec.describe "Dashboard inbox split pane", system_driver: :rack_test, type: :s
     expect(page).to have_content("Inbox clear")
     expect(page).to have_no_css("turbo-frame#inbox-detail")
   end
+
+  it "renders the read-only question list with a GitHub link when the entry is a PR" do
+    create(:issue, :pull_request, :needs_input, project: project, title: "PR question", body: questions_body)
+    pr = project.issues.first
+
+    sign_in_as(user)
+    visit dashboard_inbox_path(
+      project_id: project.id,
+      kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+      view: "detail",
+      entry_kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+      entry_id: pr.id
+    )
+
+    expect(page).to have_no_css("textarea[name='answers[]']")
+    expect(page).to have_no_button("Submit Answers")
+    expect(page).to have_content("Answer these questions on GitHub. The inbox answer form only supports issues.")
+    expect(page).to have_link("View Pull Request", href: "#{project.github_url}/pull/#{pr.github_number}")
+  end
 end

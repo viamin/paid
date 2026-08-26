@@ -1,53 +1,86 @@
 <div class="space-y-6">
   <% if entry.questions.any? %>
-    <%# Repopulate textareas when a previous submit bounced back via flash so
-        the operator can correct the error in place instead of retyping. %>
-    <% pending_answers = flash[:inbox_pending_answers]&.dig(entry.record.id.to_s) %>
-    <%= form_with url: project_issue_clarifying_questions_path(entry.project, entry.issue),
-                  method: :post,
-                  data: { turbo_frame: "_top" },
-                  class: "space-y-6" do |f| %>
-      <%= hidden_field_tag :inbox, "1" %>
-      <%= hidden_field_tag :selected, inbox_selected_param(entry) %>
-      <%# Carry the active inbox kind filter (nil for the "All" tab) so the
-          controller's success/failure redirect can stay in the same tab the
-          operator was working in instead of forcing the clarifying-questions
-          filter. %>
-      <%= hidden_field_tag :inbox_kind, selected_kind.to_s %>
-      <% if scoped_project %>
-        <%= hidden_field_tag :inbox_project_id, scoped_project.id %>
-      <% end %>
-
+    <%# The one-page answer form posts to the issue-only clarifying-questions
+        endpoint; PR-backed needs-input entries surface in the inbox queue but
+        the controller scopes its lookup with `issues_only` (PRs would 404 on
+        submit). Render a read-only question list with a "View on GitHub"
+        link for PRs so the operator can answer there instead of seeing a
+        form that silently breaks. %>
+    <% if entry.issue.is_pull_request? %>
       <div class="space-y-4">
         <h3 class="text-sm font-semibold text-gray-900">Clarifying Questions</h3>
-        <% entry.questions.each_with_index do |question, index| %>
-          <div class="rounded-lg bg-gray-50 px-4 py-3">
-            <label for="<%= dom_id(entry.record, "answer_#{index}") %>" class="block text-sm font-medium text-gray-700">
-              <span class="mr-2 font-semibold text-gray-500"><%= index + 1 %>.</span>
-              <%= render "shared/markdown_text", content: question %>
-            </label>
-            <%= hidden_field_tag "questions[]", question, id: dom_id(entry.record, "question_#{index}") %>
-            <%= text_area_tag "answers[]", pending_answers&.at(index),
-                  id: dom_id(entry.record, "answer_#{index}"),
-                  rows: 4,
-                  required: true,
-                  placeholder: "Enter your answer...",
-                  data: { testid: "inbox-answer-#{index}" },
-                  class: "mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" %>
-          </div>
-        <% end %>
+        <ol class="space-y-3">
+          <% entry.questions.each_with_index do |question, index| %>
+            <li class="rounded-lg bg-gray-50 px-4 py-3">
+              <p class="block text-sm font-medium text-gray-700">
+                <span class="mr-2 font-semibold text-gray-500"><%= index + 1 %>.</span>
+                <%= render "shared/markdown_text", content: question %>
+              </p>
+            </li>
+          <% end %>
+        </ol>
+        <p class="text-sm text-gray-500" data-testid="inbox-pr-answer-notice">
+          Answer these questions on GitHub. The inbox answer form only supports issues.
+        </p>
       </div>
 
       <div class="flex items-center justify-end gap-3">
-        <%= link_to "View Issue",
+        <%= link_to "View Pull Request",
               entry.issue.github_url,
               target: "_blank",
               rel: "noopener noreferrer",
               class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
-        <%= f.submit "Submit Answers",
-              class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 cursor-pointer",
-              data: { turbo_confirm: "Submit your answers? They will be posted as a comment on the GitHub issue." } %>
       </div>
+    <% else %>
+      <%# Repopulate textareas when a previous submit bounced back via flash so
+          the operator can correct the error in place instead of retyping. %>
+      <% pending_answers = flash[:inbox_pending_answers]&.dig(entry.record.id.to_s) %>
+      <%= form_with url: project_issue_clarifying_questions_path(entry.project, entry.issue),
+                    method: :post,
+                    data: { turbo_frame: "_top" },
+                    class: "space-y-6" do |f| %>
+        <%= hidden_field_tag :inbox, "1" %>
+        <%= hidden_field_tag :selected, inbox_selected_param(entry) %>
+        <%# Carry the active inbox kind filter (nil for the "All" tab) so the
+            controller's success/failure redirect can stay in the same tab the
+            operator was working in instead of forcing the clarifying-questions
+            filter. %>
+        <%= hidden_field_tag :inbox_kind, selected_kind.to_s %>
+        <% if scoped_project %>
+          <%= hidden_field_tag :inbox_project_id, scoped_project.id %>
+        <% end %>
+
+        <div class="space-y-4">
+          <h3 class="text-sm font-semibold text-gray-900">Clarifying Questions</h3>
+          <% entry.questions.each_with_index do |question, index| %>
+            <div class="rounded-lg bg-gray-50 px-4 py-3">
+              <label for="<%= dom_id(entry.record, "answer_#{index}") %>" class="block text-sm font-medium text-gray-700">
+                <span class="mr-2 font-semibold text-gray-500"><%= index + 1 %>.</span>
+                <%= render "shared/markdown_text", content: question %>
+              </label>
+              <%= hidden_field_tag "questions[]", question, id: dom_id(entry.record, "question_#{index}") %>
+              <%= text_area_tag "answers[]", pending_answers&.at(index),
+                    id: dom_id(entry.record, "answer_#{index}"),
+                    rows: 4,
+                    required: true,
+                    placeholder: "Enter your answer...",
+                    data: { testid: "inbox-answer-#{index}" },
+                    class: "mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" %>
+            </div>
+          <% end %>
+        </div>
+
+        <div class="flex items-center justify-end gap-3">
+          <%= link_to "View Issue",
+                entry.issue.github_url,
+                target: "_blank",
+                rel: "noopener noreferrer",
+                class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+          <%= f.submit "Submit Answers",
+                class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 cursor-pointer",
+                data: { turbo_confirm: "Submit your answers? They will be posted as a comment on the GitHub issue." } %>
+        </div>
+      <% end %>
     <% end %>
   <% else %>
     <p class="text-sm text-gray-500">No clarifying questions are pending for this issue.</p>

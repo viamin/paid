@@ -1207,6 +1207,27 @@ RSpec.describe "Dashboard" do
       expect(form.at_css("input[type='submit']")).to be_present
     end
 
+    it "skips the answer form for PR-backed clarifying-question entries so submit does not 404" do
+      pr = create(:issue, :pull_request, :needs_input, project: project, title: "PR question", body: questions_body)
+
+      get dashboard_inbox_path(
+        entry_kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+        entry_id: pr.id,
+        view: "detail"
+      )
+
+      expect(response).to have_http_status(:ok)
+      document = Nokogiri::HTML(response.body)
+      frame = document.at_css("turbo-frame#inbox-detail")
+      detail_section = frame.at_css(".px-4.py-5")
+
+      expect(detail_section.at_css(%(form[action="#{project_issue_clarifying_questions_path(project, pr)}"]))).to be_nil
+      expect(detail_section.css("textarea[name='answers[]']")).to be_empty
+      expect(detail_section.at_css(%(input[type='submit'][value='Submit Answers']))).to be_nil
+      expect(detail_section.at_css("[data-testid='inbox-pr-answer-notice']")).to be_present
+      expect(detail_section.at_css(%(a[href="#{project.github_url}/pull/#{pr.github_number}"]))).to be_present
+    end
+
     it "renders a mobile detail state when an entry is selected" do
       issue = create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
 
