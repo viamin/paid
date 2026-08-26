@@ -79,7 +79,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
     [
       "sh",
       "-c",
-      'if [ "$PAID_CODEX_SUBSCRIPTION_AUTH" = "1" ]; then env -u OPENAI_API_KEY opencode run "$1"; else opencode run "$1"; fi',
+      'if [ "$PAID_OPENCODE_SUBSCRIPTION_AUTH" = "1" ]; then env -u OPENAI_API_KEY opencode run "$1"; else opencode run "$1"; fi',
       "--",
       "ping"
     ]
@@ -459,5 +459,65 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
     expect(svc.send(:omp_exec_command?, [ "sh", "-c", "echo omp" ])).to be(false)
     expect(svc.send(:omp_exec_command?, [ "sh", "-c", "omp auth-broker import file.json --provider anthropic --json" ])).to be(false)
     expect(svc.send(:omp_exec_command?, [ "sh", "-c", "omp -p ping" ])).to be(true)
+  end
+
+  it "sets PAID_OPENCODE_SUBSCRIPTION_AUTH=1 when an opencode managed credential is active" do
+    runner = create(:runner, user: owner, runner_key: "opencode", auth_type: "subscription")
+    agent_run = create(:agent_run, project: project, runner: runner)
+    create_managed_oauth_credential(runner_key: "opencode", fixture_name: "codex_auth_valid.json")
+    svc = build_service(agent_run: agent_run)
+
+    env_entries = svc.send(:run_scoped_environment, "http://paid-proxy:3000")
+
+    expect(env_entries).to include("PAID_OPENCODE_SUBSCRIPTION_AUTH=1")
+    expect(env_entries).to include("PAID_OMP_SUBSCRIPTION_AUTH=0")
+    opencode_entries = env_entries.select { |e| e.start_with?("PAID_OPENCODE_SUBSCRIPTION_AUTH=") }
+    expect(opencode_entries).to eq([ "PAID_OPENCODE_SUBSCRIPTION_AUTH=1" ])
+  end
+
+  it "sets PAID_OMP_SUBSCRIPTION_AUTH=1 when an omp managed credential is active" do
+    runner = create(:runner, user: owner, runner_key: "omp", auth_type: "subscription")
+    agent_run = create(:agent_run, project: project, runner: runner)
+    create_managed_oauth_credential(runner_key: "omp", fixture_name: "claude_credentials_valid.json")
+    svc = build_service(agent_run: agent_run)
+
+    env_entries = svc.send(:run_scoped_environment, "http://paid-proxy:3000")
+
+    expect(env_entries).to include("PAID_OMP_SUBSCRIPTION_AUTH=1")
+    expect(env_entries).not_to include("PAID_OPENCODE_SUBSCRIPTION_AUTH=1")
+    omp_entries = env_entries.select { |e| e.start_with?("PAID_OMP_SUBSCRIPTION_AUTH=") }
+    expect(omp_entries).to eq([ "PAID_OMP_SUBSCRIPTION_AUTH=1" ])
+  end
+
+  it "leaves the opencode/omp subscription flags at 0 when only a codex managed credential is active" do
+    runner = create(:runner, user: owner, runner_key: "codex", auth_type: "subscription")
+    agent_run = create(:agent_run, project: project, runner: runner)
+    create_managed_oauth_credential(runner_key: "codex", fixture_name: "codex_auth_valid.json")
+    svc = build_service(agent_run: agent_run)
+
+    env_entries = svc.send(:run_scoped_environment, "http://paid-proxy:3000")
+
+    opencode_entries = env_entries.select { |e| e.start_with?("PAID_OPENCODE_SUBSCRIPTION_AUTH=") }
+    omp_entries = env_entries.select { |e| e.start_with?("PAID_OMP_SUBSCRIPTION_AUTH=") }
+    expect(opencode_entries).to eq([ "PAID_OPENCODE_SUBSCRIPTION_AUTH=0" ])
+    expect(omp_entries).to eq([ "PAID_OMP_SUBSCRIPTION_AUTH=0" ])
+  end
+
+  it "lets the harness cli_env_overrides set PAID_OPENCODE_SUBSCRIPTION_AUTH but app-managed wins" do
+    opencode_runner = instance_double(
+      AgentHarness::Providers::Opencode,
+      cli_env_overrides: { "PAID_OPENCODE_SUBSCRIPTION_AUTH" => "1" }
+    )
+    allow(AgentHarness).to receive(:provider).and_call_original
+    allow(AgentHarness).to receive(:provider).with(:opencode).and_return(opencode_runner)
+
+    runner = create(:runner, user: owner, runner_key: "opencode", auth_type: "subscription")
+    agent_run = create(:agent_run, project: project, runner: runner)
+    svc = build_service(agent_run: agent_run)
+
+    env_entries = svc.send(:run_scoped_environment, "http://paid-proxy:3000")
+
+    opencode_entries = env_entries.select { |e| e.start_with?("PAID_OPENCODE_SUBSCRIPTION_AUTH=") }
+    expect(opencode_entries).to eq([ "PAID_OPENCODE_SUBSCRIPTION_AUTH=0" ])
   end
 end
