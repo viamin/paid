@@ -2464,10 +2464,17 @@ class AgentRun < ApplicationRecord
     external_metadata.is_a?(Hash) ? external_metadata[ISSUE_ANALYSIS_DIAGNOSTICS_KEY] : nil
   end
 
+  # Replace the per-phase diagnostics blob rather than merging it. Each
+  # `record_issue_analysis_diagnostics!` call describes the currently active
+  # phase (running/completed/failed) on the analyze_issue run, and the
+  # timeout-path reader (`issue_analysis_timeout_message`) reports only the
+  # last phase's data. Merging would let failure-only keys from a prior phase
+  # (`error_class`, `error_message`) survive into a later `running` write,
+  # leaving diagnostics that describe the new phase but still carry the
+  # previous attempt's error details.
   def record_issue_analysis_diagnostics!(attributes)
     metadata = external_metadata.is_a?(Hash) ? external_metadata.deep_dup : {}
-    current = metadata[ISSUE_ANALYSIS_DIAGNOSTICS_KEY].is_a?(Hash) ? metadata[ISSUE_ANALYSIS_DIAGNOSTICS_KEY].deep_dup : {}
-    metadata[ISSUE_ANALYSIS_DIAGNOSTICS_KEY] = current.merge(attributes.deep_stringify_keys)
+    metadata[ISSUE_ANALYSIS_DIAGNOSTICS_KEY] = attributes.deep_stringify_keys
     persist_external_metadata_update!(metadata)
   end
 

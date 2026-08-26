@@ -533,14 +533,14 @@ module Activities
         phase_key: phase_key,
         phase_label: AgentRunPhase::PHASE_LABELS.fetch(phase_key, phase_key.to_s.tr("_", " ").titleize),
         heartbeat_strategy: phase_key == "analyze_issue_provider_attempt" ? "provider_attempt_periodic" : "none",
-        cancellation_strategy: phase_key == "analyze_issue_provider_attempt" ? "cooperative_activity_heartbeat" : "activity_timeout_only"
+        cancellation_strategy: phase_key == "analyze_issue_provider_attempt" ? "cooperative_activity_heartbeat" : "activity_timeout_only",
+        budget_seconds: budget_seconds
       )
       agent_run.record_issue_analysis_diagnostics!(
         base_metadata.merge(
           status: "running",
           started_at: started_at.iso8601,
-          finished_at: nil,
-          budget_seconds: budget_seconds
+          finished_at: nil
         )
       )
 

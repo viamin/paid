@@ -403,6 +403,40 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       expect_circuit_open_after_auth!(owner, runner_name: "claude")
       expect_breaker_untouched!(owner, runner_name: "codex")
     end
+
+    # @spec ISSUE-ANALYSIS-012
+    # Regression for the merge-vs-replace review (paid-code-reviewer on #3687):
+    # when the first provider attempt records error_class / error_message on
+    # failure and the second attempt then runs to completion, the
+    # `record_issue_analysis_diagnostics!` writer must replace the prior
+    # payload — otherwise the diagnostics describe provider 2 but still
+    # carry provider 1's failure details. A 10-minute outer timeout would
+    # then emit a timeout message that pins the failing provider instead of
+    # the one the worker was last executing.
+    it "replaces failed-attempt diagnostics when the failover provider succeeds" do
+      owner.runner_states.where(runner_name: "claude").destroy_all
+      owner.settings.update!(issue_analysis_runner: "claude", issue_analysis_fallback_runners: [ "codex" ])
+
+      stub_not_logged_in_failover!
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      diagnostics = agent_run.reload.issue_analysis_diagnostics
+      expect(diagnostics).to include(
+        "phase_key" => "analyze_issue_provider_attempt",
+        "provider" => "codex",
+        "attempt" => 2,
+        "status" => "completed",
+        "cancellation_strategy" => "cooperative_activity_heartbeat"
+      )
+      expect(diagnostics).not_to have_key("error_class")
+      expect(diagnostics).not_to have_key("error_message")
+      expect(diagnostics["error_class"]).to be_nil
+
+      expect(agent_run.issue_analysis_timeout_message).to eq(
+        "Activity task timed out during Analyze Issue Provider Attempt · provider codex · attempt 2 · budget 90s"
+      )
+    end
   end
 
   describe "provider rate limiting" do
