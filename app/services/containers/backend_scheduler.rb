@@ -7,6 +7,7 @@ module Containers
       :fallback_policy,
       :selection_source,
       :requested_host,
+      :requirements_error,
       :compatibility_failures,
       :health_failures,
       keyword_init: true
@@ -44,15 +45,6 @@ module Containers
       compatibility_failures = {}
       health_failures = {}
       compatibility_requirements = build_capability_requirements
-      if compatibility_requirements_error
-        record_requirements_failure!(
-          requested_host: requested_host,
-          fallback_policy: fallback_policy,
-          selection_source: selection_source,
-          compatibility_failures: compatibility_failures,
-          error_message: compatibility_requirements_error.message
-        )
-      end
       candidate_hosts = if compatibility_requirements_error
         []
       else
@@ -71,6 +63,7 @@ module Containers
         fallback_policy: fallback_policy,
         selection_source: selection_source,
         requested_host: requested_host,
+        requirements_error: compatibility_requirements_error&.message,
         compatibility_failures: compatibility_failures,
         health_failures: health_failures
       )
@@ -206,18 +199,6 @@ module Containers
 
     def compatibility_requirements_error
       @compatibility_requirements_error
-    end
-
-    def record_requirements_failure!(requested_host:, fallback_policy:, selection_source:, compatibility_failures:, error_message:)
-      fallback_candidates = fallback_hosts_for(
-        requested_host,
-        fallback_policy: fallback_policy,
-        selection_source: selection_source
-      )
-
-      ([ requested_host.to_s ] + fallback_candidates).uniq.each do |host|
-        compatibility_failures[host] = error_message
-      end
     end
 
     # Shared fallback-policy predicate: candidates beyond the requested host

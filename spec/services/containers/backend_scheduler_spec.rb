@@ -131,7 +131,7 @@ RSpec.describe Containers::BackendScheduler do
 
   # @spec CONTAINER-RUNTIME-043
   # @spec IMMUTABLE-IMAGE-001
-  it "contains runtime image selection errors as compatibility failures for every candidate host" do
+  it "surfaces runtime image selection errors as run-intrinsic scheduler failures" do
     agent_run.update!(external_metadata: preferred_host_selection)
     allow(ExecutionRunners::RunSpec).to receive(:resolve_architecture)
       .with(agent_run)
@@ -140,11 +140,8 @@ RSpec.describe Containers::BackendScheduler do
     result = described_class.call(agent_run: agent_run, registry: registry)
 
     expect(result.candidate_hosts).to eq([])
-    expect(result.compatibility_failures).to eq(
-      "elguapo" => "Runtime image reference \"retired\" is deprecated",
-      "local" => "Runtime image reference \"retired\" is deprecated",
-      "aws-runner-1" => "Runtime image reference \"retired\" is deprecated"
-    )
+    expect(result.requirements_error).to eq("Runtime image reference \"retired\" is deprecated")
+    expect(result.compatibility_failures).to eq({})
     expect(Containers::Provision).not_to have_received(:compatibility_for)
   end
 

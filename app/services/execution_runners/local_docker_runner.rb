@@ -377,7 +377,7 @@ class LocalDockerRunner < Base
     # @spec CONTAINER-RUNTIME-041
     # @spec CONTAINER-RUNTIME-044
     def self.capabilities(backend:)
-      # TODO(#3356): Narrow the declared architecture capabilities via
+      # TODO(#3336): Narrow the declared architecture capabilities via
       # DockerHost#daemon_architecture once the backend/HostDefinition exposes
       # it. Until then the backend contract cannot prove the daemon's
       # architecture, so an arm64 image on an x86_64-only daemon still fails

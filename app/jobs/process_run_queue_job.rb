@@ -206,6 +206,12 @@ class ProcessRunQueueJob < ApplicationJob
 
         host_selection = Containers::BackendScheduler.call(agent_run: next_run)
         unless host_selection.candidate_hosts.any?
+          if host_selection.requirements_error.present?
+            force_fail_run(next_run, error: host_selection.requirements_error)
+            skipped_ids.add(next_run.id)
+            next
+          end
+
           log_host_selection_skip(next_run, host_selection)
           skipped_ids.add(next_run.id)
           next

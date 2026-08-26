@@ -171,19 +171,15 @@ RSpec.describe ProcessRunQueueJob do
   end
 
   def expect_runtime_image_selection_skip(poisoned_run:, eligible_run:, started_ids:)
-    expect(poisoned_run.reload.temporal_workflow_id).to be_nil
+    expect(poisoned_run.reload).to have_attributes(
+      status: "failed",
+      error_message: retired_runtime_image_error,
+      temporal_workflow_id: nil
+    )
     expect(eligible_run.reload.temporal_workflow_id).to be_present
     expect(started_ids).to include(eligible_run.id)
-    expect_host_unavailable_log(
-      run_id: poisoned_run.id,
-      requested_host: "elguapo",
-      fallback_chain: [ "elguapo", "local", "aws-runner-1" ],
-      compatibility_failures: {
-        "elguapo" => retired_runtime_image_error,
-        "local" => retired_runtime_image_error,
-        "aws-runner-1" => retired_runtime_image_error
-      },
-      health_failures: {}
+    expect(Rails.logger).not_to have_received(:info).with(
+      hash_including(message: "process_run_queue.host_unavailable", agent_run_id: poisoned_run.id)
     )
   end
 
@@ -249,6 +245,7 @@ RSpec.describe ProcessRunQueueJob do
       fallback_policy: "disabled",
       selection_source: "default",
       requested_host: "local",
+      requirements_error: nil,
       compatibility_failures: {},
       health_failures: {}
     )
