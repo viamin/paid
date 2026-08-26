@@ -52,15 +52,20 @@
   `call_llm` SHALL update that provider's `RunnerState` circuit-breaker record,
   whether the failure surfaces as a raised `AgentHarness::Error` or as a
   `response.success? == false` result with no exception raised — the latter is
-  how CLI-backed providers normally report a nonzero exit, and previously
-  fell through `response_failed?` straight to the next provider without
-  recording anything (#3639), letting deterministically broken runners stay
-  circuit-closed indefinitely. Both paths classify the failure the same way:
-  rate-limit-shaped failures call `mark_rate_limited!` (`ISSUE-ANALYSIS-007`),
-  authentication-shaped failures open the circuit immediately
-  (`ISSUE-ANALYSIS-009`), and everything else calls `record_failure!` at the
-  owner's configured threshold.
-  *Tests:* `spec/temporal/activities/analyze_issue_activity_spec.rb` ("provider rate limiting", "unsuccessful provider responses").
+  how CLI-backed providers normally report a nonzero exit. The
+  `UnsuccessfulResponseError` bridge inside `call_llm` promotes the
+  response-shaped failure to an exception so it is detected *inside* the
+  tracked phase block; without that bridge the phase recorder would mark the
+  attempt as `completed` and a later timeout during the failover provider
+  would pin the wrong provider/status in the run's phase history
+  (`ISSUE-ANALYSIS-012`). Before #3639 the failure was logged and the loop
+  moved on without ever touching the circuit breaker, letting deterministically
+  broken runners stay circuit-closed indefinitely. Both paths classify the
+  failure the same way: rate-limit-shaped failures call `mark_rate_limited!`
+  (`ISSUE-ANALYSIS-007`), authentication-shaped failures open the circuit
+  immediately (`ISSUE-ANALYSIS-009`), and everything else calls
+  `record_failure!` at the owner's configured threshold.
+  *Tests:* `spec/temporal/activities/analyze_issue_activity_spec.rb` ("provider rate limiting", "unsuccessful provider responses", "provider fallback").
   *Code:* `app/temporal/activities/analyze_issue_activity.rb#call_llm`,
   `#record_response_failure`, `#classify_response_error`,
   `#record_runner_rate_limit`, `#record_runner_failure`.
@@ -104,6 +109,22 @@
   *Code:* `app/controllers/projects/agent_runs_controller.rb`,
   `app/temporal/activities/mark_agent_run_failed_activity.rb`,
   `app/models/issue.rb`.
+
+- [x] **ISSUE-ANALYSIS-012** — When `AnalyzeIssueActivity` approaches or
+  exceeds its 10-minute outer timeout, the system SHALL persist sub-phase
+  timing for knowledge search, context-bundle construction, and each provider
+  attempt, and SHALL retain the last known analyze-issue phase/provider in run
+  diagnostics so a generic Temporal timeout can still be categorized. A timed
+  out automatic analysis SHALL remain a failed run, not an automatic retry or
+  parked state, unless the failure had already been positively classified as
+  the all-rate-limited case in `ISSUE-ANALYSIS-006`.
+  *Tests:* `spec/temporal/activities/analyze_issue_activity_spec.rb`,
+  `spec/temporal/activities/mark_agent_run_failed_activity_spec.rb`.
+  *Code:* `app/temporal/activities/base_activity.rb`,
+  `app/temporal/activities/analyze_issue_activity.rb`,
+  `app/temporal/activities/mark_agent_run_failed_activity.rb`,
+  `app/models/agent_run.rb`,
+  `app/models/agent_run_phase.rb`.
 
 - [x] **ISSUE-ANALYSIS-008** — When no explicit issue-analysis runner is
   configured and the broadening fallback (`available_chat_runner_keys`) is

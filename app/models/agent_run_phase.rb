@@ -6,6 +6,9 @@ class AgentRunPhase < ApplicationRecord
 
   PHASE_LABELS = {
     "create_agent_run" => "Create Agent Run",
+    "analyze_issue_knowledge_search" => "Analyze Issue Knowledge Search",
+    "analyze_issue_context_bundle" => "Analyze Issue Context Bundle",
+    "analyze_issue_provider_attempt" => "Analyze Issue Provider Attempt",
     "provision_services" => "Provision Services",
     "provision_container" => "Provision Container",
     "provision_mcp_servers" => "Provision MCP Servers",
