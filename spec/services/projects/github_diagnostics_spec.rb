@@ -227,6 +227,25 @@ RSpec.describe Projects::GithubDiagnostics do
       )
     end
 
+    it "collapses repeated blocked attempts for one PR to a single recent entry" do # @spec GITHUB-SYNC-009
+      project = create(:project, account: account, webhook_secret: "present")
+      chronic_issue = create(:issue, :pull_request, project: project)
+      other_issue = create(:issue, :pull_request, project: project)
+      other_issue.update!(
+        runner_retry_abandoned_at: 10.minutes.ago,
+        runner_retry_abandon_reason: "#{Issue::PUSH_PERMISSION_ABANDON_PREFIX} missing workflows permission"
+      )
+      chronic_attempts = create_chronic_blocked_attempts(project: project, issue: chronic_issue)
+      most_recent_chronic = chronic_attempts.max_by(&:attempted_at)
+
+      failures = described_class.call(project: project).fetch(:recent_permission_failures)
+
+      chronic_entries = failures.select { |failure| failure[:issue_id] == chronic_issue.id }
+      expect(chronic_entries.size).to eq(1)
+      expect(chronic_entries.first).to include(kind: "merge", occurred_at: most_recent_chronic.attempted_at)
+      expect(failures).to include(include(issue_id: other_issue.id, kind: "push"))
+    end
+
     it "does not mutate persisted github health state when reporting endpoint health" do # @spec GITHUB-SYNC-009
       project = create(:project, account: account, webhook_secret: "present")
       state = create(
@@ -250,6 +269,18 @@ RSpec.describe Projects::GithubDiagnostics do
       attempted_at: occurred_at,
       reason_code: AutoMergeAttempts::Record::REASON_MISSING_WORKFLOWS_PERMISSION,
       updated_at: updated_at)
+  end
+
+  def create_chronic_blocked_attempts(project:, issue:)
+    3.times.map do |index|
+      create(
+        :auto_merge_attempt,
+        project: project,
+        issue: issue,
+        attempted_at: (3 - index).hours.ago,
+        reason_code: AutoMergeAttempts::Record::REASON_MISSING_WORKFLOWS_PERMISSION
+      )
+    end
   end
 
   def create_push_failure(project:, occurred_at:, updated_at:)
