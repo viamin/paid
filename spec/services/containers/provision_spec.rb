@@ -811,7 +811,7 @@ RSpec.describe Containers::Provision do
         expect(agent_run).to receive(:log!).with("system", "container.network.ready",
           metadata: hash_including(network: NetworkPolicy::NETWORK_NAME)).ordered
         expect(agent_run).to receive(:log!).with("system", "container.ownership_batch_fixed",
-          metadata: hash_including(dirs_count: 12)).ordered
+          metadata: hash_including(dirs_count: 13)).ordered
         expect(agent_run).to receive(:log!).with("system", "container.codex_config_seeded",
           metadata: hash_including(auth_source: "api_key_proxy")).ordered
         expect(agent_run).to receive(:log!).with("system", "container.firewall.applied",
@@ -857,6 +857,7 @@ RSpec.describe Containers::Provision do
               script.include?("/home/agent/.cache") &&
               script.include?("/home/agent/.gemini") &&
               script.include?("/home/agent/.cursor-agent") &&
+              script.include?("/home/agent/.config/omp") &&
               script.include?("chown agent:agent /home/agent/.codex")
           } ],
           user: "root"
@@ -1081,6 +1082,19 @@ RSpec.describe Containers::Provision do
           expect(tmpfs["/home/agent/.local/share/opencode"]).to include("mode=0700")
           # @spec CONTAINER-RUNTIME-029
           expect(tmpfs["/home/agent/.local/share/opencode"]).to include("size=#{256 * 1024 * 1024}")
+          mock_container
+        end
+
+        service.provision
+      end
+
+      # @spec SUBSCRIPTION-RUNNER-AUTH-005
+      it "configures a writable tmpfs for OMP CLI config" do
+        expect(Docker::Container).to receive(:create) do |config|
+          tmpfs = config["HostConfig"]["Tmpfs"]
+          expect(tmpfs).to have_key("/home/agent/.config/omp")
+          expect(tmpfs["/home/agent/.config/omp"]).to include("mode=0700")
+          expect(tmpfs["/home/agent/.config/omp"]).to include("size=#{64 * 1024 * 1024}")
           mock_container
         end
 

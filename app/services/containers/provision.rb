@@ -2344,6 +2344,7 @@ module Containers
         "/home/agent/.local/share/kilo",
         "/home/agent/.config/opencode",
         "/home/agent/.local/share/opencode",
+        "/home/agent/.config/omp",
         "/home/agent/.local/share/omp",
         "/home/agent/.copilot"
       ]
@@ -2374,6 +2375,7 @@ module Containers
       fix_kilocode_data_tmpfs_ownership!
       fix_opencode_config_tmpfs_ownership!
       fix_opencode_data_tmpfs_ownership!
+      fix_omp_config_tmpfs_ownership!
       fix_omp_data_tmpfs_ownership!
       fix_copilot_tmpfs_ownership!
     end
@@ -2458,6 +2460,12 @@ module Containers
     # user can write to it. Tmpfs mounts are created as root-owned.
     def fix_opencode_data_tmpfs_ownership!
       fix_tmpfs_ownership!(".local/share/opencode")
+    end
+
+    # Fixes ownership of the ~/.config/omp tmpfs so the non-root agent user can
+    # write to it. Tmpfs mounts are created as root-owned.
+    def fix_omp_config_tmpfs_ownership!
+      fix_tmpfs_ownership!(".config/omp")
     end
 
     # Fixes ownership of the ~/.local/share/omp tmpfs so the non-root agent user
@@ -2755,6 +2763,7 @@ module Containers
     #   /home/agent/.local/share/kilo - tmpfs (256MB, for Kilocode CLI data)
     #   /home/agent/.config/opencode         - tmpfs (64MB, for OpenCode CLI config)
     #   /home/agent/.local/share/opencode    - tmpfs (256MB, for OpenCode CLI data)
+    #   /home/agent/.config/omp              - tmpfs (64MB, for OMP CLI config)
     #   /home/agent/.local/share/omp         - tmpfs (256MB, for OMP CLI data + auth import file)
     #   /home/agent/.copilot                 - tmpfs (64MB, for GitHub Copilot CLI config)
     # All other paths are read-only via ReadonlyRootfs.
@@ -2892,11 +2901,13 @@ module Containers
 
       # OMP (Oh My Pi) stores config under ~/.config/omp and data under
       # ~/.local/share/omp — the same layout as OpenCode. Ownership is fixed by
-      # fix_omp_data_tmpfs_ownership! after container start. The tmpfs must
-      # exist before seed_omp_credentials! writes the broker import file, since
-      # write_container_file redirects into the target path without mkdir -p
-      # and the read-only rootfs would otherwise reject the write.
+      # fix_omp_config_tmpfs_ownership! and fix_omp_data_tmpfs_ownership! after
+      # container start. The data tmpfs must exist before seed_omp_credentials!
+      # writes the broker import file, since write_container_file redirects into
+      # the target path without mkdir -p and the read-only rootfs would
+      # otherwise reject the write.
       # @spec SUBSCRIPTION-RUNNER-AUTH-005
+      tmpfs["/home/agent/.config/omp"] = "size=#{64 * 1024 * 1024},mode=0700"
       tmpfs["/home/agent/.local/share/omp"] = "size=#{256 * 1024 * 1024},mode=0700"
 
       # GitHub Copilot CLI stores config and auth state under ~/.copilot.
