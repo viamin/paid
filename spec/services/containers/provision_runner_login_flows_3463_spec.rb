@@ -75,8 +75,22 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
     [ "env", "-u", "OPENAI_HEADER_X_AGENT_RUN_ID", "-u", "OPENAI_HEADER_X_PROXY_TOKEN", "opencode", "run", "ping" ]
   end
 
+  def wrapped_opencode_run_command
+    [
+      "sh",
+      "-c",
+      'if [ "$PAID_CODEX_SUBSCRIPTION_AUTH" = "1" ]; then env -u OPENAI_API_KEY opencode run "$1"; else opencode run "$1"; fi',
+      "--",
+      "ping"
+    ]
+  end
+
   def omp_run_command
     [ "omp", "-p", "ping" ]
+  end
+
+  def wrapped_omp_run_command
+    [ "sh", "-c", 'env ANTHROPIC_API_KEY="$KEY" omp -p "$1"', "--", "ping" ]
   end
 
   def expected_opencode_auth_payload(access:, refresh:)
@@ -232,6 +246,25 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
     expect(attempt.runner_credential).to eq(credential)
   end
 
+  it "serializes wrapped opencode shell commands under the same managed credential lock" do
+    agent_run, credential = build_opencode_subscription_run
+    svc = build_service(agent_run: agent_run)
+
+    allow(svc).to receive_messages(
+      opencode_managed_runner_credential: credential,
+      codex_auth_lock_timeout: 5
+    )
+    allow(svc).to receive(:harvest_opencode_managed_credential!)
+
+    lockfile = svc.send(:opencode_managed_auth_lockfile_path)
+    FileUtils.rm_f(lockfile)
+
+    sorted = collect_serialized_intervals(svc, command: wrapped_opencode_run_command)
+    expect(sorted.size).to eq(2)
+    expect(sorted[1][0]).to be >= sorted[0][1]
+    expect(svc).to have_received(:harvest_opencode_managed_credential!).twice
+  end
+
   it "treats opencode refresh exchange as unsupported until :opencode support exists" do
     runner = create(:runner, user: owner, runner_key: "opencode", auth_type: "subscription")
     agent_run = create(:agent_run, project: project, runner: runner)
@@ -343,6 +376,25 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
     attempt = RunnerAuthAttempt.where(runner_key: "omp", attempt_stage: "lease").last
     expect(attempt.lease_state).to eq("acquired")
     expect(attempt.runner_credential).to eq(credential)
+  end
+
+  it "serializes wrapped omp shell commands under the same managed credential lock" do
+    agent_run, credential = build_omp_subscription_run
+    svc = build_service(agent_run: agent_run)
+
+    allow(svc).to receive_messages(
+      omp_managed_runner_credential: credential,
+      codex_auth_lock_timeout: 5
+    )
+    allow(svc).to receive(:harvest_omp_managed_credential!)
+
+    lockfile = svc.send(:omp_managed_auth_lockfile_path)
+    FileUtils.rm_f(lockfile)
+
+    sorted = collect_serialized_intervals(svc, command: wrapped_omp_run_command)
+    expect(sorted.size).to eq(2)
+    expect(sorted[1][0]).to be >= sorted[0][1]
+    expect(svc).to have_received(:harvest_omp_managed_credential!).twice
   end
 
   it "refreshes the canonical omp credential via the Claude exchange on a temp managed directory" do

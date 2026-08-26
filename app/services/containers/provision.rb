@@ -3989,31 +3989,54 @@ module Containers
       parts = normalized_command_parts(command)
       return false if parts.empty?
 
-      if parts.first == "env"
-        index = 1
-        while index < parts.length
-          case parts[index]
-          when "-u"
-            index += 2
-          else
-            break
-          end
-        end
-        parts = parts[index..] || []
-      end
+      parts = unwrap_env_command(parts)
 
       binary_pattern = Regexp.escape(binary)
       verb_matcher = subscription_exec_verb_matcher(verb, verb_pattern)
 
-      return true if parts[0] == "sh" &&
-        parts[1] == "-c" &&
-        parts[2]&.match?(/(^|[;&|\n]\s*)#{binary_pattern}\s+#{verb_matcher}/)
+      return true if subscription_shell_script_exec_command?(parts, binary_pattern:, verb_matcher:)
 
       return parts.first(2) == [ binary, verb ] if verb
 
       parts.first == binary && parts[1]&.match?(verb_matcher)
     rescue ArgumentError
       false
+    end
+
+    def subscription_shell_script_exec_command?(parts, binary_pattern:, verb_matcher:)
+      return false unless parts[0] == "sh" && parts[1] == "-c"
+
+      script = parts[2].to_s
+      return false if script.empty?
+
+      boundary = /(?:^|(?:;|&&|\|\||\||\n)\s*|\bthen\s+|\bdo\s+)/
+      env_wrapper = /(?:env\s+(?:(?:-u\s+\S+|[A-Za-z_][A-Za-z0-9_]*=\S+)\s+)*)?/
+
+      script.match?(/#{boundary}#{env_wrapper}#{binary_pattern}\s+#{verb_matcher}/)
+    end
+
+    def unwrap_env_command(parts)
+      return parts unless parts.first == "env"
+
+      index = 1
+      while index < parts.length
+        token = parts[index]
+
+        case token
+        when "-u"
+          index += 2
+        else
+          break unless env_assignment_token?(token)
+
+          index += 1
+        end
+      end
+
+      parts[index..] || []
+    end
+
+    def env_assignment_token?(token)
+      token.to_s.match?(/\A[A-Za-z_][A-Za-z0-9_]*=.*\z/)
     end
 
     def subscription_exec_verb_matcher(verb, verb_pattern)

@@ -3698,6 +3698,10 @@ RSpec.describe Containers::Provision do
       expect(service.send(:codex_exec_command?, [ "env", "-u", "OPENAI_API_KEY", "codex", "exec", "--json", "prompt" ])).to be true
     end
 
+    it "detects an env assignment wrapped codex exec command" do
+      expect(service.send(:codex_exec_command?, [ "env", 'OPENAI_API_KEY="$KEY"', "codex", "exec", "--json", "prompt" ])).to be true
+    end
+
     it "detects codex exec inside an sh -c api-key auth wrapper" do
       script = 'env OPENAI_API_KEY="$KEY" codex exec --json "$1"'
       expect(service.send(:codex_exec_command?, [ "sh", "-c", script, "--", "prompt" ])).to be true
@@ -3708,8 +3712,17 @@ RSpec.describe Containers::Provision do
       expect(service.send(:codex_exec_command?, [ "sh", "-c", script, "--", "prompt" ])).to be true
     end
 
+    it "detects codex exec after an && shell operator" do
+      script = 'test -n "$OPENAI_API_KEY" && env OPENAI_API_KEY="$OPENAI_API_KEY" codex exec --json "$1"'
+      expect(service.send(:codex_exec_command?, [ "sh", "-c", script, "--", "prompt" ])).to be true
+    end
+
     it "detects codex exec inside an sh -c wrapper passed as a string" do
       expect(service.send(:codex_exec_command?, %(sh -c 'codex exec --json "$1"' -- prompt))).to be true
+    end
+
+    it "returns false for an echoed codex exec string" do
+      expect(service.send(:codex_exec_command?, [ "sh", "-c", 'echo "codex exec --json $1"' ])).to be false
     end
 
     it "returns false for a non-codex agent command" do
@@ -3744,6 +3757,13 @@ RSpec.describe Containers::Provision do
 
     it "rewrites an env -u wrapped codex exec command to redirect stdin from /dev/null" do
       rewritten = service.send(:close_stdin_for_codex_exec, [ "env", "-u", "OPENAI_API_KEY", "codex", "exec", "--json", "prompt" ])
+
+      expect(rewritten.first(2)).to eq([ "sh", "-lc" ])
+      expect(rewritten.last).to end_with(" < /dev/null")
+    end
+
+    it "rewrites an env assignment wrapped codex exec command to redirect stdin from /dev/null" do
+      rewritten = service.send(:close_stdin_for_codex_exec, [ "env", 'OPENAI_API_KEY="$KEY"', "codex", "exec", "--json", "prompt" ])
 
       expect(rewritten.first(2)).to eq([ "sh", "-lc" ])
       expect(rewritten.last).to end_with(" < /dev/null")
