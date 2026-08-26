@@ -8,7 +8,7 @@ class CreateExecutionUsage < ActiveRecord::Migration[8.1]
     return if table_exists?(:execution_usages)
 
     create_table :execution_usages, comment: "Per-run infrastructure usage summary used to estimate cloud-provider cost separately from LLM token cost." do |t|
-      t.references :agent_run, null: false, foreign_key: { on_delete: :cascade }
+      t.references :agent_run, null: false, index: false, foreign_key: { on_delete: :cascade }
       t.string :runner_backend, limit: 64, null: false, comment: "Execution runner/backend key used for per-host rate resolution (e.g. local, fly_machine)."
       t.string :provider_resource_id, limit: 255, comment: "Cloud-provider resource identifier for cost reconciliation (Fly Machine ID, Cloud Run execution ID, etc.)."
       t.datetime :provisioned_at, null: false, comment: "When the run's cloud resource was first provisioned."

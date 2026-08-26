@@ -49,8 +49,26 @@ class AgentRuns::RecordExecutionUsage
       env: env
     )
 
-    usage = ExecutionUsage.find_or_initialize_by(agent_run_id: agent_run.id)
-    usage.assign_attributes(
+    attributes = execution_usage_attributes(billed: billed, estimate: estimate)
+    usage = ExecutionUsage.create_or_find_by!(agent_run_id: agent_run.id) do |record|
+      record.assign_attributes(attributes)
+    end
+    usage.update!(attributes) unless usage.previously_new_record?
+
+    agent_run.update_columns(
+      runner_backend: runner_backend,
+      billed_duration_seconds: billed,
+      infra_cost_cents: estimate.infra_cost_cents,
+      updated_at: Time.current
+    )
+
+    { usage: usage, infra_cost_cents: estimate.infra_cost_cents, rate_cents_per_hour: estimate.rate_cents_per_hour }
+  end
+
+  private
+
+  def execution_usage_attributes(billed:, estimate:)
+    {
       runner_backend: runner_backend,
       provider_resource_id: provider_resource_id,
       provisioned_at: provisioned_at,
@@ -64,20 +82,8 @@ class AgentRuns::RecordExecutionUsage
       termination_reason: termination_reason,
       infra_cost_cents: estimate.infra_cost_cents,
       rate_cents_per_hour: estimate.rate_cents_per_hour
-    )
-    usage.save!
-
-    agent_run.update_columns(
-      runner_backend: runner_backend,
-      billed_duration_seconds: billed,
-      infra_cost_cents: estimate.infra_cost_cents,
-      updated_at: Time.current
-    )
-
-    { usage: usage, infra_cost_cents: estimate.infra_cost_cents, rate_cents_per_hour: estimate.rate_cents_per_hour }
+    }
   end
-
-  private
 
   def failure(message)
     Rails.logger.warn(
