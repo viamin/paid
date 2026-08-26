@@ -2,6 +2,15 @@
 
 module Projects
   class ClarifyingQuestionsController < ApplicationController
+    # Per-answer byte cap for the inbox form's pending-answers flash payload.
+    # Each answer is trimmed to this length before storage.
+    MAX_PENDING_ANSWER_BYTES = 2_000
+    # Total byte cap for the entire pending-answers payload (all answers for
+    # one issue). CookieStore sessions have a ~4KB ceiling; we leave headroom
+    # for the rest of the session so we never overflow and silently drop the
+    # prefill rather than corrupt the cookie.
+    MAX_PENDING_ANSWERS_BYTES = 3_000
+
     before_action :authenticate_user!
     before_action :set_project
     before_action :set_issue
@@ -36,8 +45,10 @@ module Projects
         redirect_to project_path(@project), notice: "Answers posted to GitHub issue ##{@issue.github_number}. The agent will pick them up on the next run."
       end
     rescue ArgumentError => e
+      remember_pending_inbox_answers
       redirect_to failure_redirect_path, alert: e.message
     rescue GithubClient::Error => e
+      remember_pending_inbox_answers
       redirect_to failure_redirect_path, alert: "Failed to post answers: #{e.message}"
     end
 
@@ -250,6 +261,28 @@ module Projects
         kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
         record: @issue
       )
+    end
+
+    # When the inbox form fails we redirect back into the same frame, which
+    # otherwise renders every textarea empty. Stash the submitted answers in
+    # a one-shot flash keyed by issue id so the inbox detail partial can
+    # repopulate them in place instead of forcing the operator to retype.
+    # The cookie session has a ~4KB ceiling, so we cap the payload and fall
+    # back to the empty form (current behavior) if it would overflow rather
+    # than risk corrupting the session.
+    def remember_pending_inbox_answers
+      return unless inbox_mode?
+      return if @issue.blank?
+
+      submitted = Array(params[:answers]).map { |answer| answer.to_s }
+      return if submitted.empty?
+
+      trimmed = submitted.map { |answer| answer.byteslice(0, MAX_PENDING_ANSWER_BYTES) }
+      return if trimmed.sum(&:bytesize) > MAX_PENDING_ANSWERS_BYTES
+
+      pending = flash[:inbox_pending_answers] || {}
+      pending[@issue.id.to_s] = trimmed
+      flash[:inbox_pending_answers] = pending
     end
   end
 end

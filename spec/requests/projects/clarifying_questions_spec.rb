@@ -439,6 +439,88 @@ RSpec.describe "Projects::ClarifyingQuestions" do
           )
         )
       end
+
+      it "repopulates the inbox textareas from flash when validation fails" do
+        project.update!(auto_pick_enabled: true, active: true)
+
+        submit_inbox_answers(
+          issue:,
+          questions:,
+          answers: [ "X is a feature", "" ],
+          inbox_project_id: project.id
+        )
+
+        follow_redirect!
+
+        document = Nokogiri::HTML(response.body)
+        detail_frame = document.at_css("turbo-frame#inbox-detail")
+        textareas = detail_frame.css("textarea[name='answers[]']")
+
+        expect(textareas.size).to eq(2)
+        expect(textareas[0].text).to include("X is a feature")
+        expect(textareas[1].text.strip).to eq("")
+      end
+
+      it "repopulates the inbox textareas from flash when the GitHub post fails" do
+        project.update!(auto_pick_enabled: true, active: true)
+        allow(github_client).to receive(:add_comment).and_raise(GithubClient::Error, "boom")
+
+        post project_issue_clarifying_questions_path(project, issue), params: {
+          questions: questions,
+          answers: [ "First answer", "Second answer" ],
+          inbox: "1",
+          inbox_project_id: project.id
+        }
+
+        follow_redirect!
+
+        document = Nokogiri::HTML(response.body)
+        textareas = document.at_css("turbo-frame#inbox-detail").css("textarea[name='answers[]']")
+
+        expect(textareas.map(&:text).map(&:strip)).to eq([ "First answer", "Second answer" ])
+      end
+
+      it "consumes the pending-answers flash after a single redirect so a refresh clears them" do
+        project.update!(auto_pick_enabled: true, active: true)
+        detail_path = dashboard_inbox_path(
+          project_id: project.id,
+          kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+          selected: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{issue.id}",
+          view: "detail"
+        )
+        submit_inbox_answers(issue:, questions:, answers: [ "First answer", "" ], inbox_project_id: project.id)
+        follow_redirect!
+
+        textareas = Nokogiri::HTML(response.body).at_css("turbo-frame#inbox-detail").css("textarea[name='answers[]']")
+        expect(textareas.map(&:text).map(&:strip)).to eq([ "First answer", "" ])
+
+        get detail_path
+
+        refreshed = Nokogiri::HTML(response.body).at_css("turbo-frame#inbox-detail").css("textarea[name='answers[]']")
+        expect(refreshed.map(&:text).map(&:strip)).to eq([ "", "" ])
+      end
+
+      it "drops the prefill when submitted answers overflow the cookie budget" do
+        project.update!(auto_pick_enabled: true, active: true)
+        allow(github_client).to receive(:add_comment).and_raise(GithubClient::Error, "boom")
+        oversized_first = "x" * (Projects::ClarifyingQuestionsController::MAX_PENDING_ANSWER_BYTES + 50)
+        oversized_second = "y" * (Projects::ClarifyingQuestionsController::MAX_PENDING_ANSWER_BYTES + 50)
+
+        submit_inbox_answers(
+          issue:,
+          questions:,
+          answers: [ oversized_first, oversized_second ],
+          inbox_project_id: project.id
+        )
+
+        follow_redirect!
+
+        textareas = Nokogiri::HTML(response.body)
+          .at_css("turbo-frame#inbox-detail")
+          .css("textarea[name='answers[]']")
+
+        expect(textareas.map(&:text).map(&:strip)).to eq([ "", "" ])
+      end
     end
 
     context "when the submitted questions no longer match the current questions" do

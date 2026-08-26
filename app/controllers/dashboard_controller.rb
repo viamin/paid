@@ -86,6 +86,9 @@ class DashboardController < ApplicationController
     @inbox_entries = Inbox::Queue.call(user: current_user, project: @scoped_project, kind: @selected_kind)
     @selected_entry = resolve_selected_entry(@inbox_entries)
 
+    # Stale entry URLs (bookmarks, refreshed tabs) can hit this frame after the
+    # underlying record is gone. Render the frame's empty state instead of
+    # crashing the partial on `entry.plan_review?`/etc. dereferences.
     render "dashboard/inbox_detail_frame",
       locals: {
         entry: @selected_entry,

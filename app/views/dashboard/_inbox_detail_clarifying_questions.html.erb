@@ -1,5 +1,8 @@
 <div class="space-y-6">
   <% if entry.questions.any? %>
+    <%# Repopulate textareas when a previous submit bounced back via flash so
+        the operator can correct the error in place instead of retyping. %>
+    <% pending_answers = flash[:inbox_pending_answers]&.dig(entry.record.id.to_s) %>
     <%= form_with url: project_issue_clarifying_questions_path(entry.project, entry.issue),
                   method: :post,
                   data: { turbo_frame: "_top" },
@@ -19,7 +22,7 @@
               <%= render "shared/markdown_text", content: question %>
             </label>
             <%= hidden_field_tag "questions[]", question, id: dom_id(entry.record, "question_#{index}") %>
-            <%= text_area_tag "answers[]", nil,
+            <%= text_area_tag "answers[]", pending_answers&.at(index),
                   id: dom_id(entry.record, "answer_#{index}"),
                   rows: 4,
                   required: true,

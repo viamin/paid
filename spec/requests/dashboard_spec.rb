@@ -1026,6 +1026,27 @@ RSpec.describe "Dashboard" do
       expect(form.css("textarea[name='answers[]']").size).to eq(2)
     end
 
+    it "renders an empty-state frame when the inbox detail URL targets a missing entry" do
+      get dashboard_inbox_entry_path(entry_kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND, entry_id: "999999")
+
+      expect(response).to have_http_status(:ok)
+      document = Nokogiri::HTML(response.body)
+      frame = document.at_css("turbo-frame#inbox-detail")
+
+      expect(frame).to be_present
+      expect(frame.css("form").size).to eq(0)
+      expect(response.body).to include("Entry not available")
+      expect(response.body).to include("Back to inbox")
+    end
+
+    it "renders an empty-state frame when a plan-review entry URL targets a missing review" do
+      get dashboard_inbox_entry_path(entry_kind: Inbox::Queue::PLAN_REVIEW_KIND, entry_id: "999999")
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Entry not available")
+      expect(response.body).not_to include("Submit Answers")
+    end
+
     it "renders the inbox detail turbo frame scoped to the project filter" do
       issue = create(:issue, :needs_input, project: second_project, title: "Beta question", body: questions_body)
 
