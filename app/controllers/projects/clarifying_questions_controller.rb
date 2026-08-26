@@ -262,7 +262,7 @@ module Projects
       {
         project_id: inbox_scoped_project&.id,
         kind: inbox_kind,
-        selected: selected_entry && inbox_selected_param(selected_entry),
+        selected: selected_entry && helpers.inbox_selected_param(selected_entry),
         view: detail_view ? "detail" : nil
       }.compact
     end
@@ -277,10 +277,6 @@ module Projects
       else
         "You've completed the clarifying-questions queue."
       end
-    end
-
-    def inbox_selected_param(entry)
-      "#{entry.kind}:#{entry.record.id}"
     end
 
     # The inbox form posts inside a Turbo Frame; on failure the redirect must
