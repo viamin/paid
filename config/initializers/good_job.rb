@@ -111,6 +111,12 @@ Rails.application.configure do
       class: "DockerOrphanCleanupJob",
       description: "Remove orphaned Docker containers and volumes"
     },
+    execution_resource_reconciliation: {
+      cron: "5-59/5 * * * *",
+      class: "ExecutionResourceReconciliationJob",
+      queue: "maintenance",
+      description: "Reconcile external execution resources and retry orphan cleanup"
+    },
     recover_missing_pull_request_labels: {
       cron: "0 * * * *",
       class: "RecoverMissingPullRequestLabelsJob",

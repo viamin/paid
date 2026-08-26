@@ -63,6 +63,10 @@ class LocalDockerRunner < Base
       true
     end
 
+    def supports_tag_reconciliation?
+      false
+    end
+
     # @spec CONTAINER-RUNTIME-025
     # @spec CONTAINER-RUNTIME-026
     # @spec CONTAINER-RUNTIME-027
@@ -82,14 +86,15 @@ class LocalDockerRunner < Base
       ensure_agent_network!(backend: backend, policy: policy)
       ledger = provisioning_ledger
       attempt = ledger.next_attempt_for(agent_run: spec.agent_run)
-      intent = ledger.record_intent(agent_run: spec.agent_run, attempt: attempt)
+      recorded_at = Time.current
+      intent = ledger.record_intent(agent_run: spec.agent_run, attempt: attempt, recorded_at: recorded_at)
       service = Containers::Provision.new(
         agent_run: spec.agent_run,
         project: spec.project,
         worktree_path: self.class.worktree_path_for(spec),
         backend: backend,
         networking_policy: policy,
-        ownership_labels: ledger.ownership_labels_for(agent_run: spec.agent_run, attempt: attempt),
+        ownership_labels: ledger.ownership_labels_for(agent_run: spec.agent_run, attempt: attempt, recorded_at: recorded_at),
         egress_gateway_url: gateway&.gateway_url,
         **provision_options(spec)
       )
@@ -214,6 +219,36 @@ class LocalDockerRunner < Base
       nil
     ensure
       teardown_gateway!(handle: handle)
+    end
+
+    def list_resources_by_tags(tags:, resource_kind: nil)
+      filters = label_filters_for(tags:, resource_kind:)
+
+      Containers.all_backends.flat_map do |backend|
+        backend.list_containers(all: true, filters: { label: filters }.to_json).map do |container|
+          build_managed_resource(container: container, backend: backend)
+        end
+      rescue Docker::Error::DockerError, Excon::Error => e
+        Rails.logger.warn(
+          message: "execution_runners.resource_listing_failed",
+          runner_type: RUNNER_TYPE.to_s,
+          backend: backend.identifier,
+          error_class: e.class.name,
+          error: e.message
+        )
+        []
+      end
+    end
+
+    def cleanup_resource(resource:, force: false)
+      backend = Containers.backend_for(resource.host.presence)
+      container = backend.get_container(resource.identifier)
+      backend.stop_container(container, timeout: force ? 0 : 10)
+      backend.delete_container(container, force: true, v: true)
+    rescue Docker::Error::ClientError, Docker::Error::NotFoundError
+      nil
+    rescue Docker::Error::DockerError, Excon::Error => e
+      raise ProvisionError, e.message
     end
 
     # @spec CONTAINER-RUNTIME-032
@@ -391,6 +426,26 @@ class LocalDockerRunner < Base
     # are attributed to the deployment that created them.
     def provisioning_environment
       Rails.env.to_s
+    end
+
+    def label_filters_for(tags:, resource_kind:)
+      filters = tags.map do |key, value|
+        value.nil? ? key : "#{key}=#{value}"
+      end
+      filters << "paid.resource=#{resource_kind}" if resource_kind.present?
+      filters
+    end
+
+    def build_managed_resource(container:, backend:)
+      labels = container.info.fetch("Labels", {})
+      ExecutionRunners::ManagedResource.new(
+        runner_type: RUNNER_TYPE.to_s,
+        resource_kind: labels["paid.resource"].presence || RESOURCE_KIND,
+        identifier: container.id,
+        host: backend.identifier,
+        ownership_tags: labels.select { |key, _value| key.start_with?("paid.") },
+        metadata: {}
+      )
     end
 
     # Maps the raw Docker state inspection to an ExecutionStatus state:

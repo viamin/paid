@@ -57,6 +57,20 @@ RSpec.describe ExecutionRunners::Base do
         .to raise_error(NotImplementedError, /cleanup/)
     end
 
+    it "raises NotImplementedError for #cleanup_resource" do
+      resource = ExecutionRunners::ManagedResource.new(
+        runner_type: "local_docker",
+        resource_kind: "container",
+        identifier: "abc123",
+        host: "local",
+        ownership_tags: {},
+        metadata: {}
+      )
+
+      expect { described_class.new.cleanup_resource(resource: resource, force: true) }
+        .to raise_error(NotImplementedError, /cleanup_resource/)
+    end
+
     it "raises NotImplementedError for #provision_services" do
       expect { described_class.new.provision_services(agent_run: nil, network: "net") }
         .to raise_error(NotImplementedError, /provision_services/)
@@ -105,9 +119,10 @@ RSpec.describe ExecutionRunners::Base do
 
       expect(instance_methods).to contain_exactly(
         :provision, :start, :running?, :reconnect, :status, :cancel, :cleanup,
+        :list_resources_by_tags, :cleanup_resource,
         :provision_services, :cleanup_services, :provision_mcp_servers, :cleanup_mcp_servers,
         :provision_browser_container,
-        :resource_kind, :supports_tagging?, :supports_listing?
+        :resource_kind, :supports_tagging?, :supports_listing?, :supports_tag_reconciliation?
       )
 
       forbidden = %w[docker container_id bind_mount exec_in_container network_name]

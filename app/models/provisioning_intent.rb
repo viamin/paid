@@ -56,4 +56,16 @@ class ProvisioningIntent < ApplicationRecord
   def orphaned?
     created? && provider_resource_id.present? && runner_handle.blank?
   end
+
+  def mark_reconciled_cleanup!(cleanup_id: nil)
+    updated_metadata = metadata.deep_dup
+    updated_metadata["cleanup_reconciled"] = true
+    updated_metadata["execution_resource_cleanup_id"] = cleanup_id if cleanup_id.present?
+
+    update!(
+      status: STATUS_FAILED,
+      reconciled_at: Time.current,
+      metadata: updated_metadata
+    )
+  end
 end

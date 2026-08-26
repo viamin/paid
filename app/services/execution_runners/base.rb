@@ -51,6 +51,15 @@ module ExecutionRunners
       false
     end
 
+    # Whether periodic broad tag-based reconciliation should poll this runner.
+    # Defaults to false so a runner must opt in explicitly; a platform with an
+    # existing legacy janitor can still implement direct orphan cleanup without
+    # participating in broad sweeps.
+    # @return [Boolean]
+    def supports_tag_reconciliation?
+      false
+    end
+
     # Provision the execution environment (workspace, network, services, secrets).
     #
     # @param spec [RunSpec] immutable description of what to execute
@@ -143,6 +152,29 @@ module ExecutionRunners
     # @param force [Boolean] force-kill rather than graceful stop
     # @return [void]
     def cleanup(handle:, force: false)
+      raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+    end
+
+    # Discover live provider resources carrying the given ownership tags.
+    # Runners that do not support provider-side listing may return an empty
+    # array and keep +#supports_tag_reconciliation?+ false.
+    #
+    # @param tags [Hash{String=>String,nil}] ownership tags to match; nil values
+    #   mean "tag key exists"
+    # @param resource_kind [String, nil] optional resource-kind filter
+    # @return [Array<ExecutionRunners::ManagedResource>]
+    def list_resources_by_tags(tags:, resource_kind: nil)
+      []
+    end
+
+    # Clean up a discovered provider resource without requiring a previously
+    # persisted runner handle. Used by orphan reconciliation for crash-window
+    # resources that were created before the handle was recorded.
+    #
+    # @param resource [ExecutionRunners::ManagedResource]
+    # @param force [Boolean]
+    # @return [void]
+    def cleanup_resource(resource:, force: false)
       raise NotImplementedError, "#{self.class} must implement ##{__method__}"
     end
 

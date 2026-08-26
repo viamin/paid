@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_25_164147) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_25_233720) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1174,6 +1174,32 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_25_164147) do
     t.index ["runner_id"], name: "index_execution_controls_on_runner_id"
     t.index ["scope"], name: "idx_execution_controls_global_scope_singleton", unique: true, where: "((scope)::text = 'global'::text)"
     t.index ["scope"], name: "index_execution_controls_on_scope"
+  end
+
+  create_table "execution_resource_cleanups", comment: "Durable retry queue for cleanup of runner-managed external execution resources.", force: :cascade do |t|
+    t.bigint "account_id", comment: "Owning account when known."
+    t.bigint "agent_run_id", comment: "Owning agent run when known."
+    t.integer "attempts", default: 0, null: false, comment: "Number of failed cleanup attempts."
+    t.datetime "completed_at", comment: "When cleanup was confirmed complete."
+    t.datetime "created_at", null: false
+    t.datetime "last_attempted_at", comment: "When cleanup was last attempted."
+    t.text "last_error", comment: "Last transient cleanup error."
+    t.datetime "next_attempt_at", null: false, comment: "When the cleanup should be retried next."
+    t.jsonb "ownership_tags", default: {}, null: false, comment: "Stable Paid ownership tags copied from the live resource or provisioning intent."
+    t.bigint "project_id", comment: "Owning project when known."
+    t.string "provider_resource_host", limit: 200, default: "", null: false, comment: "Owning backend host when applicable; blank when the provider has no host-local identity."
+    t.string "provider_resource_id", limit: 200, null: false, comment: "Provider identifier of the resource to delete."
+    t.bigint "provisioning_intent_id", comment: "Crash-window provisioning intent that led to this cleanup request, when present."
+    t.string "resource_kind", limit: 100, null: false, comment: "Runner-declared resource kind."
+    t.string "runner_type", limit: 50, null: false, comment: "Runner type used to clean up the resource."
+    t.string "status", limit: 50, default: "pending", null: false, comment: "Cleanup queue state: pending | completed."
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_execution_resource_cleanups_on_account_id"
+    t.index ["agent_run_id"], name: "index_execution_resource_cleanups_on_agent_run_id"
+    t.index ["project_id"], name: "index_execution_resource_cleanups_on_project_id"
+    t.index ["provisioning_intent_id"], name: "index_execution_resource_cleanups_on_provisioning_intent_id"
+    t.index ["runner_type", "resource_kind", "provider_resource_id", "provider_resource_host"], name: "index_execution_resource_cleanups_on_provider_reference", unique: true
+    t.index ["status", "next_attempt_at"], name: "index_execution_resource_cleanups_on_status_and_next_attempt_at"
   end
 
   create_table "execution_resource_ledger_entries", comment: "Durable ledger of externally provisioned execution resources (containers, sidecars, workspaces, networks, tunnels, temporary storage) tracked across their provisioning-to-cleanup lifecycle.", force: :cascade do |t|
@@ -3286,6 +3312,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_25_164147) do
   add_foreign_key "execution_controls", "docker_hosts"
   add_foreign_key "execution_controls", "projects"
   add_foreign_key "execution_controls", "runners"
+  add_foreign_key "execution_resource_cleanups", "accounts", on_delete: :nullify
+  add_foreign_key "execution_resource_cleanups", "agent_runs", on_delete: :nullify
+  add_foreign_key "execution_resource_cleanups", "projects", on_delete: :nullify
+  add_foreign_key "execution_resource_cleanups", "provisioning_intents", on_delete: :nullify
   add_foreign_key "execution_resource_ledger_entries", "accounts", on_delete: :cascade
   add_foreign_key "execution_resource_ledger_entries", "agent_runs", on_delete: :nullify
   add_foreign_key "execution_resource_ledger_entries", "projects", on_delete: :nullify
