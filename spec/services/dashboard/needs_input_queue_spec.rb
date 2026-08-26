@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec INBOX-FOUNDATION-007
 RSpec.describe Dashboard::NeedsInputQueue do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
@@ -20,25 +21,34 @@ RSpec.describe Dashboard::NeedsInputQueue do
   end
 
   describe ".call" do
-    it "excludes needs-input issues without a local or body questionnaire" do
-      stale_issue = create(:issue, :needs_input, project: project, github_number: 9, body: "Needs manual retry")
+    it "preserves the legacy dashboard ordering instead of needs_input_since ordering" do
+      first_issue.update!(needs_input_since: 2.hours.ago)
+      second_issue.update!(needs_input_since: 3.hours.ago)
+
+      entries = described_class.call(user: user, project: project)
+
+      expect(entries.map(&:issue)).to eq([ first_issue, second_issue ])
+    end
+
+    it "skips needs-input issues without a local or body questionnaire" do
+      questionless_issue = create(:issue, :needs_input, project: project, github_number: 9, body: "Needs manual retry")
       first_issue
 
       entries = described_class.call(user: user, project: project)
 
       expect(entries.map(&:issue)).to include(first_issue)
-      expect(entries.map(&:issue)).not_to include(stale_issue)
+      expect(entries.map(&:issue)).not_to include(questionless_issue)
     end
 
-    it "excludes issues whose body only looks like a questionnaire" do
-      stale_issue = create(:issue, :needs_input, project: project, github_number: 9,
+    it "skips issues whose body only looks like a questionnaire" do
+      marker_only_issue = create(:issue, :needs_input, project: project, github_number: 9,
         body: "#{ClarifyingQuestions::Parse::ENHANCEMENT_MARKER}\n\n## Clarifying questions\nNo numbered questions here.")
       first_issue
 
       entries = described_class.call(user: user, project: project)
 
       expect(entries.map(&:issue)).to include(first_issue)
-      expect(entries.map(&:issue)).not_to include(stale_issue)
+      expect(entries.map(&:issue)).not_to include(marker_only_issue)
     end
 
     it "returns clarifying questions persisted locally for create_feature issues without an API round-trip" do
@@ -74,15 +84,15 @@ RSpec.describe Dashboard::NeedsInputQueue do
       expect(described_class.next_issue(user: user, project: project, after_issue: stale_issue)).to be_nil
     end
 
-    it "skips questionless issues when advancing to the next queued issue" do
+    it "skips questionless issues when advancing through the queue" do
       first_issue
       questionless = create(:issue, :needs_input, project: project, github_number: 11, body: "Needs manual retry")
-      third_issue = create(:issue, :needs_input, project: project, github_number: 12, body: questions_body)
+      answerable = create(:issue, :needs_input, project: project, github_number: 12, body: questions_body)
 
       entries = described_class.call(user: user, project: project).map(&:issue)
 
       expect(entries).not_to include(questionless)
-      expect(described_class.next_issue(user: user, project: project, after_issue: first_issue)).to eq(third_issue)
+      expect(described_class.next_issue(user: user, project: project, after_issue: first_issue)).to eq(answerable)
     end
   end
 end

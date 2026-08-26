@@ -19,6 +19,15 @@ class RunnerState < ApplicationRecord
   validates :half_open_success_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :half_open_failure_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
 
+  # Tracks only circuit-breaker/rate-limit transitions, distinct from
+  # +updated_at+ which also bumps on routine quota-snapshot polling
+  # (Runners::RefreshQuotaSnapshotsJob runs every 15 minutes). Callers that
+  # need "did this runner's availability actually change" (e.g. resetting an
+  # issue-analysis backoff cooldown) must use this column instead of
+  # +updated_at+, or they will treat routine polling as a recovery signal.
+  before_save :track_availability_change,
+    if: -> { will_save_change_to_circuit_state? || will_save_change_to_rate_limited_until? }
+
   scope :for_runner, ->(name) { where(runner_name: name) }
 
   # Returns true if the runner is currently rate limited.
@@ -349,6 +358,10 @@ class RunnerState < ApplicationRecord
 
   def integer_or_nil(value)
     Integer(value, exception: false)
+  end
+
+  def track_availability_change
+    self.availability_changed_at = Time.current
   end
 
   public

@@ -209,6 +209,7 @@ module ApplicationHelper
     "completed" => { bg: "bg-green-100", text: "text-green-700", label: "Completed" },
     "failed" => { bg: "bg-red-100", text: "text-red-700", label: "Failed" },
     "needs_input" => { bg: "bg-amber-100", text: "text-amber-700", label: "Needs Input" },
+    "manual_review" => { bg: "bg-orange-100", text: "text-orange-700", label: "Manual Review" },
     "recommend_close" => { bg: "bg-orange-100", text: "text-orange-700", label: "Recommend Close" }
   }.freeze
 
@@ -514,15 +515,33 @@ module ApplicationHelper
     mobile_tooltip_wrapper(inner, context[:tooltip], tooltip_id, aria_label: "Show context details")
   end
 
-  AGENT_RUN_GOAL_LABEL_OVERRIDES = {
+  AGENT_RUN_GOAL_LABELS = {
     "create_pr" => "PR Creation",
     "create_issue" => "Issue Creation",
-    "review" => "Code Review"
+    "review" => "Code Review",
+    "enhance_issue" => "Issue Enhancement",
+    "analyze_issue" => "Issue Analysis",
+    "lid_planning" => "LID Planning",
+    "create_feature" => "Feature Creation"
   }.freeze
 
-  AGENT_RUN_GOAL_LABELS = AgentRun::GOALS.index_with do |goal|
-    AGENT_RUN_GOAL_LABEL_OVERRIDES.fetch(goal, goal.to_s.titleize)
-  end.freeze
+  AGENT_RUN_FOCUS_LABELS = {
+    "ci_fix" => "CI Fix",
+    "review_feedback" => "Review Feedback",
+    "merge_conflict" => "Merge Conflict",
+    "conversation" => "Conversation",
+    "issue_implementation" => "Issue Implementation",
+    "label_action" => "Label Action"
+  }.freeze
+
+  AGENT_RUN_FOCUS_BADGE_CLASSES = {
+    "ci_fix" => "bg-rose-100 text-rose-700",
+    "review_feedback" => "bg-violet-100 text-violet-700",
+    "merge_conflict" => "bg-amber-100 text-amber-700",
+    "conversation" => "bg-sky-100 text-sky-700",
+    "issue_implementation" => "bg-emerald-100 text-emerald-700",
+    "label_action" => "bg-teal-100 text-teal-700"
+  }.freeze
 
   def agent_run_goal_display(run)
     text = agent_run_goal_text(run)
@@ -533,6 +552,22 @@ module ApplicationHelper
 
   def agent_run_goal_text(run)
     AGENT_RUN_GOAL_LABELS.fetch(run.goal, run.goal.to_s.titleize)
+  end
+
+  # Renders the work-type focus badge for an agent run, shown only when the
+  # run is focused (focus != "general"). Most runs are general, so this stays
+  # out of the way and surfaces the distinction only where it actually answers
+  # "why is this run different?" — e.g. PR follow-up runs addressing review
+  # comments (focus: review_feedback) vs. fresh-issue PR runs (focus: general).
+  def agent_run_focus_badge(run)
+    focus = run.respond_to?(:focus) ? run.focus.to_s : ""
+    return nil if focus.blank? || focus == "general"
+
+    label = AGENT_RUN_FOCUS_LABELS.fetch(focus, focus.tr("_", " ").titleize)
+    classes = AGENT_RUN_FOCUS_BADGE_CLASSES.fetch(focus, "bg-slate-100 text-slate-700")
+    tag.span(label,
+      class: "inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium #{classes}",
+      title: "Work type: #{label}")
   end
 
   # Destination for a "Back to X" link. Deterministic by default: the link

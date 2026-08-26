@@ -171,6 +171,40 @@ RSpec.describe Activities::QueueAgentRunActivity do
       expect(agent_run.goal).to eq("review")
     end
 
+    # @spec ISSUE-ENHANCEMENT-011
+    it "consumes an enhancement round when a new automatic run is queued" do
+      expect {
+        activity.execute(project_id: project.id, issue_id: issue.id, goal: "enhance_issue")
+      }.to change { issue.reload.enhance_issue_rounds }.from(0).to(1)
+    end
+
+    # @spec ISSUE-ENHANCEMENT-011
+    it "does not consume an enhancement round for a manual run" do
+      expect {
+        activity.execute(
+          project_id: project.id,
+          issue_id: issue.id,
+          goal: "enhance_issue",
+          trigger_type: "manual"
+        )
+      }.not_to change { issue.reload.enhance_issue_rounds }
+    end
+
+    # @spec ISSUE-ENHANCEMENT-011
+    it "parks the issue instead of queueing past the automatic enhancement limit" do
+      issue.update!(enhance_issue_rounds: project.max_enhance_issue_reevaluation_rounds)
+      comments_url = %r{https://api.github.com/repos/#{project.full_name}/issues/#{issue.github_number}/comments}
+      stub_request(:get, comments_url).to_return(status: 200, body: "[]", headers: { "Content-Type" => "application/json" })
+      stub_request(:post, comments_url).to_return(status: 201, body: "{}", headers: { "Content-Type" => "application/json" })
+
+      result = activity.execute(project_id: project.id, issue_id: issue.id, goal: "enhance_issue")
+
+      expect(result).to include(queued: false, skipped: true, reason: "enhancement_round_limit")
+      expect(issue.reload.paid_state).to eq("manual_review")
+      expect(AgentRun.where(project: project, issue: issue, goal: "enhance_issue")).to be_empty
+      expect(WebMock).to have_requested(:post, comments_url).once
+    end
+
     it "persists an explicit tdd_phase override for refactor follow-up runs" do
       result = activity.execute(
         project_id: project.id,
@@ -348,6 +382,17 @@ RSpec.describe Activities::QueueAgentRunActivity do
         expect(result[:duplicate]).to be true
         expect(AgentRun.where(project: project, issue: issue).count).to eq(1)
         expect(ProcessRunQueueJob).not_to have_been_enqueued
+      end
+
+      # @spec ISSUE-ENHANCEMENT-011
+      it "does not consume an enhancement round for a duplicate queue request" do
+        existing = create(:agent_run, :queued, project: project, issue: issue, goal: "enhance_issue")
+
+        expect {
+          result = activity.execute(project_id: project.id, issue_id: issue.id, goal: "enhance_issue")
+          expect(result[:agent_run_id]).to eq(existing.id)
+          expect(result[:duplicate]).to be true
+        }.not_to change { issue.reload.enhance_issue_rounds }
       end
 
       it "returns existing run when an active run exists for the same issue" do

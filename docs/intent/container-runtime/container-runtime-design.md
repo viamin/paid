@@ -77,6 +77,28 @@ The backend decision for service containers follows the selected run backend or
 the persisted service-container host so reuse, metrics, reconciliation, and
 cleanup stay routed to the daemon that actually owns the container.
 
+Every service container is created with the same baseline capability controls
+already applied to agent and chat containers (`CONTAINER-RUNTIME-035`):
+`no-new-privileges` and all Linux capabilities dropped. `HARDENING_PROFILES`
+maps known image families (matched by image-name substring, the same lookup
+shape as `RESOURCE_LIMITS`) to whether the root filesystem stays read-only,
+the runtime `User`, the Tmpfs mounts their documented writable paths need,
+and the minimum capabilities their entrypoint needs back — e.g. Postgres's
+official image publishes a `postgres` user, so its profile runs as
+`postgres`, keeps the root filesystem read-only, mounts `PGDATA` and
+`/var/run/postgresql` with `postgres` ownership, and adds back
+`CHOWN`/`DAC_OVERRIDE`/`FOWNER`/`SETGID`/`SETUID`. Account admins can attach
+per-service overrides under the reserved `PAID_SERVICE_HARDENING` key in
+`ServiceContainer#env` to opt an allowlisted custom image into a read-only
+root filesystem, extra Tmpfs mounts, a specific runtime user, or additional
+capabilities. Images outside a known family and without that override keep a
+writable root filesystem for compatibility with the existing
+`allowed_service_images` contract while still running with
+`no-new-privileges`, all capabilities dropped, no added capabilities, and the
+image's default user preserved. This hardening is orthogonal to
+`ServiceContainer#image_in_allowlist`, which remains the account-admin control
+over which images may run at all.
+
 ### Capacity snapshots and admission
 
 `Capacity::DockerSnapshot` is the per-backend Docker visibility layer for
@@ -106,13 +128,20 @@ bind-mount compatibility, but those legacy paths are not the current runtime
 requirement for ordinary agent runs and should not be reintroduced as the
 default design.
 
-## Runner abstraction boundary (RDR-054)
+## Runner abstraction boundary (historical execution-runner workstream)
 
 `ExecutionRunners` defines the domain-oriented runner contract that will
 replace direct Docker API access in orchestration code. The interface is driven
 by what `Containers::Provision` actually does today, not speculative
 generalization, and is reviewed against the coupling inventory (#3337) to
 confirm coverage.
+
+This boundary was originally planned under a provisional execution-runner
+`RDR-054` label in issues `#3336`–`#3348`. That number now belongs to the
+Prompt Assembly Service RDR, so the runner-boundary workstream is tracked here
+in the container-runtime LLD plus the later execution-runner RDRs such as
+RDR-057 and RDR-062. Final scope reconciliation and closeout for the historical
+issue tree is tracked by `#3661`.
 
 - `ExecutionRunners::Base` is the abstract interface: `provision`, `start`,
   `running?`, `reconnect`, `status`, `cancel`, `cleanup`, `.compatible?`, `.ping`. Method
@@ -130,7 +159,10 @@ confirm coverage.
   — `:locked` (default), `:research`, or `:open` — so orchestration can
   request a per-run egress posture without referencing Docker- or
   network-specific concepts),
-  `ServiceDeclaration`, and `ComputeRequirements`.
+  `ServiceDeclaration`, and `ExecutionResources` (`cpu_cores`, `memory_mib`,
+  `disk_gb`, `architecture`, `timeout_seconds`). Named presets (`small`,
+  `standard`, `large`) are convenience expansions to explicit
+  `ExecutionResources`; the runner still receives the fully resolved tuple.
 - `ExecutionRunners::LocalDockerRunner` implements `Base` as a thin adapter over
   `Containers::Provision`: `#provision`/`#start`/`#running?`/`#reconnect`/`#status`/
   `#cancel`/`#cleanup` translate `RunSpec`/`RunnerHandle` to `Containers::Provision.new`,
@@ -145,7 +177,7 @@ confirm coverage.
   currently always returns `LocalDockerRunner`, since every existing backend
   (local Docker, remote Docker, Swarm) is a Docker transport.
 
-### Persisted handle and recovery (RDR-054)
+### Persisted handle and recovery (historical execution-runner workstream)
 
 A `runner_handle` jsonb column on `agent_runs` (alongside, not replacing,
 `container_id`/`container_host`) stores the serialized `RunnerHandle` so a
@@ -159,7 +191,7 @@ fresh. A data migration backfills `runner_handle` from existing
 The column is also added to `container_pool_entries` and `service_containers`
 so future pool and service-container code can store runner handles.
 
-### Supporting services, MCP sidecars, and the browser container (RDR-054, #3343)
+### Supporting services, MCP sidecars, and the browser container (historical execution-runner workstream, #3343)
 
 Postgres/Redis/Selenium service containers, `docker_image` MCP sidecars, and
 the Playwright/Chromium verification container were the last Docker-specific

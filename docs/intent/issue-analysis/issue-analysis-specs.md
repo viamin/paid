@@ -49,13 +49,61 @@
   *Code:* `app/temporal/activities/analyze_issue_activity.rb#call_llm`, `#raise_llm_failure!`.
 
 - [x] **ISSUE-ANALYSIS-007** — Every provider failure encountered inside
-  `call_llm` SHALL update that provider's `RunnerState` circuit-breaker record
-  (`mark_rate_limited!` for rate-limit errors, `record_failure!` for other
-  `AgentHarness::Error`s) so a subsequent `analyze_issue` attempt — on this run
-  or a later one — skips providers already known to be unavailable rather than
-  re-discovering the same outage from scratch.
-  *Tests:* `spec/temporal/activities/analyze_issue_activity_spec.rb` ("provider rate limiting").
-  *Code:* `app/temporal/activities/analyze_issue_activity.rb#record_runner_rate_limit`, `#record_runner_failure`.
+  `call_llm` SHALL update that provider's `RunnerState` circuit-breaker record,
+  whether the failure surfaces as a raised `AgentHarness::Error` or as a
+  `response.success? == false` result with no exception raised — the latter is
+  how CLI-backed providers normally report a nonzero exit, and previously
+  fell through `response_failed?` straight to the next provider without
+  recording anything (#3639), letting deterministically broken runners stay
+  circuit-closed indefinitely. Both paths classify the failure the same way:
+  rate-limit-shaped failures call `mark_rate_limited!` (`ISSUE-ANALYSIS-007`),
+  authentication-shaped failures open the circuit immediately
+  (`ISSUE-ANALYSIS-009`), and everything else calls `record_failure!` at the
+  owner's configured threshold.
+  *Tests:* `spec/temporal/activities/analyze_issue_activity_spec.rb` ("provider rate limiting", "unsuccessful provider responses").
+  *Code:* `app/temporal/activities/analyze_issue_activity.rb#call_llm`,
+  `#record_response_failure`, `#classify_response_error`,
+  `#record_runner_rate_limit`, `#record_runner_failure`.
+
+- [x] **ISSUE-ANALYSIS-009** — When a provider failure — raised
+  (`AgentHarness::AuthenticationError`) or returned as an unsuccessful
+  response whose error text classifies as `:auth_expired`
+  (`AgentHarness::ErrorTaxonomy.classify_message`) — is authentication-shaped,
+  the system SHALL open that provider's circuit breaker immediately
+  (`record_failure!(threshold: 1, ...)`) instead of counting it toward the
+  owner's generic failure threshold. Authentication failures are deterministic
+  (the credential will not spontaneously start working on retry), so waiting
+  for the generic threshold wastes attempts against a provider known to be
+  broken until the owner reconnects it.
+  *Tests:* `spec/temporal/activities/analyze_issue_activity_spec.rb` ("unsuccessful provider responses", "provider rate limiting").
+  *Code:* `app/temporal/activities/analyze_issue_activity.rb#call_llm`,
+  `#record_runner_auth_failure`.
+
+- [x] **ISSUE-ANALYSIS-010** — When an **automatic** `analyze_issue` run fails
+  because every analysis provider is unavailable and no provider call succeeds,
+  the system SHALL persist a bounded next-attempt time on the issue and exclude
+  the issue from auto-pick until that time. The backoff SHALL grow per issue
+  across consecutive automatic provider-exhaustion failures, SHALL be capped,
+  and SHALL be invalidated when a later successful provider call happens or
+  when the owner's relevant issue-analysis runner configuration, runner-health
+  state, or authentication material changes.
+  *Tests:* `spec/temporal/activities/mark_agent_run_failed_activity_spec.rb`,
+  `spec/temporal/activities/analyze_issue_activity_spec.rb`,
+  `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
+  *Code:* `app/models/issue.rb`, `app/temporal/activities/analyze_issue_activity.rb`,
+  `app/temporal/activities/mark_agent_run_failed_activity.rb`,
+  `app/services/automation/strategies/auto_pick/default_candidate_source.rb`,
+  `app/services/issues/issue_analysis_backoff_reset_context.rb`.
+
+- [x] **ISSUE-ANALYSIS-011** — Manual retries of failed `analyze_issue` runs
+  SHALL remain available even while the issue is under automatic
+  provider-exhaustion backoff. Manual failures SHALL NOT extend or clear that
+  automatic cooldown; only a successful provider call clears it.
+  *Tests:* `spec/requests/agent_runs_spec.rb`,
+  `spec/temporal/activities/mark_agent_run_failed_activity_spec.rb`.
+  *Code:* `app/controllers/projects/agent_runs_controller.rb`,
+  `app/temporal/activities/mark_agent_run_failed_activity.rb`,
+  `app/models/issue.rb`.
 
 - [x] **ISSUE-ANALYSIS-008** — When no explicit issue-analysis runner is
   configured and the broadening fallback (`available_chat_runner_keys`) is

@@ -6,12 +6,16 @@ module Capacity
 
     class << self
       def for_context(user:, project:, external_metadata: nil)
-        normalize(external_metadata&.dig("requested_resources")) || defaults_for(user: user, project: project)
+        normalize(external_metadata&.dig("requested_resources"), user: user, project: project) ||
+          defaults_for(user: user, project: project)
       end
 
       def for_agent_run(agent_run)
         owner = agent_run.project&.effective_owner
-        for_context(user: owner, project: agent_run.project, external_metadata: agent_run.external_metadata)
+        normalize(
+          agent_run.external_metadata&.dig("requested_resources"),
+          user: owner, project: agent_run.project, agent_run: agent_run
+        ) || defaults_for(user: owner, project: agent_run.project)
       end
 
       def persistable_for(agent_run)
@@ -42,17 +46,47 @@ module Capacity
         {
           cpu_quota: Containers::Provision::DEFAULTS[:cpu_quota].to_i,
           memory_bytes: user&.settings&.container_memory_bytes.presence || Containers::Provision::DEFAULTS[:memory_bytes].to_i,
-          disk_bytes: DISK_BYTES_DEFAULT
+          disk_bytes: DISK_BYTES_DEFAULT,
+          profile: nil
         }
       end
 
-      def normalize(raw)
+      def normalize(raw, user: nil, project: nil, agent_run: nil)
         return if raw.blank?
 
+        profile_name = raw["profile"].to_s.presence
+        preset = if profile_name.present?
+          ExecutionRunners::ExecutionResources.profile(profile_name)
+        end
+
         {
-          cpu_quota: raw["cpu_quota"].to_i,
-          memory_bytes: raw["memory_bytes"].to_i,
-          disk_bytes: raw["disk_bytes"].to_i
+          cpu_quota: raw["cpu_quota"].to_i.nonzero? || preset&.cpu_quota.to_i,
+          memory_bytes: raw["memory_bytes"].to_i.nonzero? || preset&.memory_bytes.to_i,
+          disk_bytes: raw["disk_bytes"].to_i.nonzero? || preset&.disk_bytes.to_i,
+          profile: profile_name
+        }
+      rescue ArgumentError => e
+        Rails.logger.warn(
+          message: "capacity.requested_resources.unknown_profile",
+          profile_name: profile_name,
+          error: e.message,
+          agent_run_id: agent_run&.id
+        )
+        requested_with_default_fallback(raw, user: user, project: project)
+      end
+
+      # An unknown profile must not zero out the request: admission and
+      # accounting would treat the run as free while execution still consumes
+      # the provisioner defaults. Explicit numeric overrides survive; fields
+      # the requester left unset fall back to the usual default request
+      # (CONTAINER-RUNTIME-027).
+      def requested_with_default_fallback(raw, user:, project:)
+        defaults = defaults_for(user: user, project: project)
+        {
+          cpu_quota: raw["cpu_quota"].to_i.nonzero? || defaults[:cpu_quota],
+          memory_bytes: raw["memory_bytes"].to_i.nonzero? || defaults[:memory_bytes],
+          disk_bytes: raw["disk_bytes"].to_i.nonzero? || defaults[:disk_bytes],
+          profile: nil
         }
       end
 

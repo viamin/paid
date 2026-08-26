@@ -12,9 +12,30 @@ module Tools
 
     def self.tool_name = "grep_repo"
 
+    # @spec CHAT-API-012
     def self.description
-      "Search for a string or pattern across a project's GitHub repository using GitHub code search."
+      "Search for a string or pattern across a project's GitHub repository using GitHub code search. " \
+        "Rate-limit sensitive: prefer search_code (knowledge base) first; use grep_repo only when " \
+        "knowledge search is unavailable or stale, or when exact GitHub code search behavior is needed."
     end
+
+    # Demotes this tool to a fallback once the session's project has a ready
+    # knowledge base, so the model prefers the knowledge-backed `search_code`
+    # for ordinary code discovery instead of burning shared GitHub Code
+    # Search rate limits on every lookup (#3392).
+    # @spec CHAT-API-013
+    def self.description_for(session:)
+      return description unless knowledge_ready?(session)
+
+      "#{description} Fallback only: the project's knowledge base is ready, so prefer " \
+        "search_code for ordinary code discovery. Use grep_repo only when GitHub code " \
+        "search is specifically needed, e.g. content not indexed in the knowledge base."
+    end
+
+    def self.knowledge_ready?(session)
+      session&.project&.knowledge_status == "ready"
+    end
+    private_class_method :knowledge_ready?
 
     def self.input_schema
       {

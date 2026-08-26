@@ -25,6 +25,7 @@ module Tools
       "Tools::ReadRepoFile",
       "Tools::ListRepoTree",
       "Tools::GrepRepo",
+      "Tools::GrepWorkspace",
       "Tools::WriteRepoFile",
       "Tools::ApplyPatch",
       "Tools::GitDiff",
@@ -71,7 +72,7 @@ module Tools
       end
 
       def dispatch_read_only(name:, arguments:, user:, session:)
-        tool_class = read_only_tool_classes_for(user:).find { |klass| klass.tool_name == name }
+        tool_class = dispatchable_read_only_tools_for(session:, user:).find { |klass| klass.tool_name == name }
         raise ArgumentError, "Unknown tool: #{name}" unless tool_class
         raise ArgumentError, "Tool arguments must be a JSON object" unless arguments.is_a?(Hash)
 
@@ -104,7 +105,8 @@ module Tools
       # model itself. See RDR-028.
       def chat_definitions_for(user:, session: nil)
         # @spec CHAT-API-003
-        tools_for(session:, user:).map { |klass| chat_definition_for(klass) }
+        # @spec CHAT-API-013
+        tools_for(session:, user:).map { |klass| chat_definition_for(klass, session:) }
       end
 
       def dispatch_mcp(name:, arguments:, user:, session:)
@@ -185,6 +187,10 @@ module Tools
         tools_for(session:, user:).reject(&:write_operation?)
       end
 
+      def dispatchable_read_only_tools_for(session:, user:)
+        (read_only_tool_classes_for(user:) + read_only_tools_for(session:, user:)).uniq
+      end
+
       def definitions_for_classes(tool_classes)
         tool_classes.map(&:definition)
       end
@@ -207,10 +213,10 @@ module Tools
         )
       end
 
-      def chat_definition_for(klass)
-        return klass.definition unless klass.write_operation?
+      def chat_definition_for(klass, session:)
+        definition = klass.definition.merge(description: klass.description_for(session:))
+        return definition unless klass.write_operation?
 
-        definition = klass.definition
         schema = definition[:inputSchema]
         return definition unless schema.is_a?(Hash)
 

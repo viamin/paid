@@ -44,15 +44,16 @@ module CoordinationExperiments
 
     def select_variant
       variants = coordination_experiment.coordination_experiment_variants.order(:id).to_a
-      raise ArgumentError, "coordination experiment has no variants" if variants.empty?
-
       counts = CoordinationExperimentAssignment
         .where(coordination_experiment:, coordination_experiment_variant: variants)
         .group(:coordination_experiment_variant_id)
         .count
-      min_count = variants.map { |variant| counts.fetch(variant.id, 0) }.min
-      candidates = variants.select { |variant| counts.fetch(variant.id, 0) == min_count }
-      candidates[Zlib.crc32("#{coordination_experiment.id}:#{workflow_id}") % candidates.size]
+      Experiments::AssignmentPicker.pick(
+        variants: variants,
+        counts: counts,
+        strategy: :hash_balanced,
+        subject_hash: "#{coordination_experiment.id}:#{workflow_id}"
+      )
     end
   end
 end

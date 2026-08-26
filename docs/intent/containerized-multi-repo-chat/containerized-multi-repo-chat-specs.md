@@ -54,3 +54,13 @@
   `propose_pull_request` is not registered. This is the motivating cross-repo
   coordination capability for this segment and the single remaining RDR-037
   requirement.
+
+- [x] **MULTI-REPO-CHAT-007** — When a chat session holds a cloned workspace
+  repo, the system SHALL offer a read-only `grep_workspace` tool that searches
+  the local checkout inside the workspace container instead of GitHub Code
+  Search, scoping the search path through the same clone-manifest containment
+  and per-project authorization checks as the other container-scoped tools,
+  and bounding both the number of matches and the raw output size returned.
+  *Tests:* `spec/mcp/tools/grep_workspace_spec.rb`.
+  *Code:* `Tools::GrepWorkspace`, `Tools::ContainerRepoSupport#repo_context_for!`,
+  `Tools::ContainerRepoSupport#normalize_repo_relative_path`.

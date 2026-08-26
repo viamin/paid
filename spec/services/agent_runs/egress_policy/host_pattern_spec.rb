@@ -34,6 +34,12 @@ RSpec.describe AgentRuns::EgressPolicy::HostPattern do
       expect(described_class.invalid_reason("*.localhost.localdomain")).to eq("must not target localhost")
     end
 
+    it "rejects hostnames that embed IPv4 literals inside a domain rule" do
+      expect(described_class.invalid_reason("127.0.0.1.example.com")).to eq("must not embed an IP literal inside a hostname rule")
+      expect(described_class.invalid_reason("api.169.254.169.254.example.com")).to eq("must not embed an IP literal inside a hostname rule")
+      expect(described_class.invalid_reason("*.10.1.2.3.example.com")).to eq("must not embed an IP literal inside a hostname rule")
+    end
+
     it "rejects hostnames longer than 253 characters" do
       expect(described_class.invalid_reason(("a" * 251) + ".io")).to eq("is longer than 253 characters")
     end

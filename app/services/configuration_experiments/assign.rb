@@ -31,12 +31,12 @@ module ConfigurationExperiments
         return existing
       end
 
-      variant = select_variant
+      chosen_variant = select_variant
 
       begin
         ConfigurationExperimentAssignment.create!(
           configuration_experiment: configuration_experiment,
-          configuration_experiment_variant: variant,
+          configuration_experiment_variant: chosen_variant,
           agent_run: agent_run
         )
       rescue ActiveRecord::RecordNotUnique
@@ -53,26 +53,15 @@ module ConfigurationExperiments
       return validate_variant!(variant) if variant.present?
 
       variants = configuration_experiment.configuration_experiment_variants.order(:id).to_a
-      raise ArgumentError, "configuration experiment has no variants" if variants.empty?
-      return variants.first if variants.size == 1
-
-      assignment_counts = ConfigurationExperimentAssignment
+      counts = ConfigurationExperimentAssignment
         .where(configuration_experiment: configuration_experiment, configuration_experiment_variant: variants)
         .group(:configuration_experiment_variant_id)
         .count
-      max_count = variants.map { |variant| assignment_counts[variant.id] || 0 }.max
-      weights = variants.map { |variant| (max_count - (assignment_counts[variant.id] || 0)) + 1 }
-      total = weights.sum.to_f
-
-      roll = rand
-      cumulative = 0.0
-
-      variants.zip(weights).each do |variant, weight|
-        cumulative += weight / total
-        return variant if roll < cumulative
-      end
-
-      variants.last
+      Experiments::AssignmentPicker.pick(
+        variants: variants,
+        counts: counts,
+        strategy: :inversely_weighted
+      )
     end
 
     def validate_variant!(candidate)

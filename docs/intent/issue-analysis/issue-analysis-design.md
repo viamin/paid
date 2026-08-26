@@ -59,14 +59,40 @@ than silently masking the outage.
 Candidates existing in `chat_providers` does not guarantee they still succeed
 by the time `call_llm` actually calls them — the availability filter reads a
 circuit-breaker snapshot taken before the loop starts, and a burst of traffic
-across the fleet can rate-limit every candidate in the same window. Two things
-happen when a provider attempt fails inside the loop (`ISSUE-ANALYSIS-007`):
+across the fleet can rate-limit every candidate in the same window. A provider
+attempt inside the loop can fail two different ways, and both SHALL update the
+circuit breaker (`ISSUE-ANALYSIS-007`):
 
-- `AgentHarness::RateLimitError` → `RunnerState#mark_rate_limited!` records
-  the provider's `reset_time` so it is excluded from `chat_providers` on the
-  next attempt (this run's retry or a later one) until the window clears.
-- Any other `AgentHarness::Error` → `RunnerState#record_failure!` increments
-  the provider's circuit-breaker failure count, using the owner's configured
+- **Raised `AgentHarness::Error`.** `AgentHarness.send_message` raises when
+  the transport itself detects the failure (e.g. the HTTP text-mode path used
+  for `claude` on 401/429 responses).
+- **Unsuccessful response, no exception.** CLI-backed providers (Codex,
+  OpenCode, and `claude` outside text mode) normally report a nonzero exit as
+  a `Response` with `success?` false and an `error` string, not as a raised
+  exception. `response_failed?` detects this case; before #3639 it logged the
+  failure and moved to the next provider without touching the circuit
+  breaker, so deterministically broken runners never opened and stayed
+  eligible across every subsequent `analyze_issue` run.
+
+Both paths funnel through the same classification so a provider's circuit
+state doesn't depend on which mechanism a given provider happens to use for a
+given failure:
+
+- Rate-limit-shaped (raised `AgentHarness::RateLimitError`, or a response
+  whose `error` text classifies as `:rate_limited` via
+  `AgentHarness::ErrorTaxonomy.classify_message`) → `RunnerState#mark_rate_limited!`
+  records a reset time (the exception's `reset_time`, or
+  `RunnerSupport.rate_limit_reset_at` parsed from the response text) so the
+  provider is excluded from `chat_providers` on the next attempt until the
+  window clears.
+- Authentication-shaped (raised `AgentHarness::AuthenticationError`, or a
+  response classified `:auth_expired`) → `RunnerState#record_failure!` with
+  `threshold: 1`, opening the circuit immediately (`ISSUE-ANALYSIS-009`).
+  Unlike a transient error, a stale credential will not start working again
+  on the next attempt, so there is no reason to spend the owner's configured
+  failure budget rediscovering that on every run.
+- Anything else → `RunnerState#record_failure!` increments the provider's
+  circuit-breaker failure count, using the owner's configured
   threshold/decay window, same as `Knowledge::RunnerExecutor`.
 
 When every attempted provider in the candidate list failed and every one of
@@ -81,6 +107,39 @@ retries automatically once providers recover instead of requiring a human to
 manually re-trigger it. Any other outcome (a genuine mix of failure types, or
 an empty candidate list to begin with) keeps the original non-retryable
 `AnalyzeIssueLlmFailed` behavior — those are not transient rate-limit storms.
+
+## Automatic retry backoff after provider exhaustion
+
+Non-rate-limit provider exhaustion is still an availability outage, but unlike
+`ISSUE-ANALYSIS-006` it does not have a provider-supplied reset time. When an
+**automatic** `analyze_issue` run fails with provider exhaustion
+(`ISSUE-ANALYSIS-010`), the issue records a bounded next-attempt timestamp on
+the `issues` row itself. The normal `paid_state = "failed"` re-enqueue hook is
+reused, but its delay is overridden to that persisted next-attempt time so the
+issue does not immediately re-enter auto-pick and churn.
+
+The backoff is issue-local and capped: repeated automatic exhaustion failures
+for the same issue grow the wait window exponentially up to a fixed maximum.
+This keeps multiple eligible issues from amplifying one provider outage into an
+unbounded retry storm while still guaranteeing another bounded attempt later.
+
+The cooldown is only for automatic selection. Manual retries remain allowed
+(`ISSUE-ANALYSIS-011`) because they do not flow through auto-pick eligibility.
+However, a manual retry failure does not extend or clear the automatic cooldown
+by itself; only a successful provider call clears it.
+
+Clearing conditions:
+
+- A successful `call_llm` provider response clears the issue-level exhaustion
+  cooldown immediately, before JSON parsing, because provider availability has
+  already recovered even if the response body later proves malformed.
+- Relevant owner-side runner changes invalidate the cooldown for auto-pick
+  eligibility: the owner's issue-analysis runner selection, available chat
+  runners, runner-state health snapshots, and runner authentication material
+  (provider API keys / integration credentials) all contribute to a reset
+  context timestamp. If that timestamp is newer than the recorded backoff, the
+  issue is treated as immediately eligible again without waiting for the
+  original timer to elapse.
 
 ## Inputs and trust
 

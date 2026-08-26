@@ -468,6 +468,21 @@ RSpec.describe Issue do
       }.to have_enqueued_job(Issues::ReenqueueEligibleJob).with(issue.id)
     end
 
+    it "uses the persisted analyze_issue next-attempt time for failed issue re-enqueue" do
+      project = create(:project, auto_pick_enabled: true)
+      issue = create(:issue, project: project, paid_state: "in_progress", github_state: "open")
+
+      freeze_time do
+        expect {
+          issue.update!(
+            paid_state: "failed",
+            issue_analysis_next_attempt_at: 7.minutes.from_now,
+            issue_analysis_backoff_set_at: Time.current
+          )
+        }.to have_enqueued_job(Issues::ReenqueueEligibleJob).with(issue.id).at(7.minutes.from_now)
+      end
+    end
+
     it "does not re-enqueue pull requests" do
       project = create(:project, auto_pick_enabled: true)
       issue = create(:issue, :pull_request, project: project, paid_state: "in_progress", github_state: "open")
@@ -1389,7 +1404,7 @@ RSpec.describe Issue do
 
   describe "paid state machine values" do
     it "defines valid PAID_STATES" do
-      expect(described_class::PAID_STATES).to eq(%w[new planning in_progress completed failed needs_input recommend_close analyzed])
+      expect(described_class::PAID_STATES).to eq(%w[new planning in_progress completed failed needs_input manual_review recommend_close analyzed])
     end
 
     it "defaults paid_state to new" do
@@ -1428,6 +1443,63 @@ RSpec.describe Issue do
       issue = build(:issue, :needs_input, project: project, labels: [ "paid-needs-input" ])
 
       expect(issue).not_to be_needs_input
+    end
+  end
+
+  # @spec INBOX-FOUNDATION-001
+  describe "#sync_needs_input_since" do
+    let(:project) { create(:project) }
+
+    it "stamps needs_input_since when paid_state transitions into \"needs_input\"" do
+      issue = create(:issue, project: project, paid_state: "new")
+      expect(issue.needs_input_since).to be_nil
+
+      freeze_time = Time.current
+      travel_to(freeze_time) do
+        issue.update!(paid_state: "needs_input")
+      end
+
+      expect(issue.reload.needs_input_since).to be_within(1.second).of(freeze_time)
+    end
+
+    it "clears needs_input_since when paid_state transitions out of \"needs_input\"" do
+      issue = create(:issue, :needs_input, project: project)
+      expect(issue.needs_input_since).to be_present
+
+      issue.update!(paid_state: "new")
+
+      expect(issue.reload.needs_input_since).to be_nil
+    end
+
+    it "preserves the original timestamp when paid_state stays \"needs_input\"" do
+      issue = create(:issue, :needs_input, project: project)
+      original = issue.needs_input_since
+      expect(original).to be_present
+
+      travel_to(1.hour.from_now) do
+        issue.update!(labels: issue.labels | [ "another-label" ])
+        issue.update!(paid_state: "needs_input")
+      end
+
+      expect(issue.reload.needs_input_since).to be_within(1.second).of(original)
+    end
+
+    it "is a no-op when paid_state is unchanged on a write that does not touch it" do
+      issue = create(:issue, project: project, paid_state: "completed")
+      expect(issue.needs_input_since).to be_nil
+
+      issue.update!(title: "Refined title")
+
+      expect(issue.reload.needs_input_since).to be_nil
+    end
+
+    it "clears the timestamp when leaving \"needs_input\" for any other state" do
+      issue = create(:issue, :needs_input, project: project)
+      expect(issue.needs_input_since).to be_present
+
+      issue.update!(paid_state: "completed")
+
+      expect(issue.reload.needs_input_since).to be_nil
     end
   end
 
@@ -2179,6 +2251,23 @@ RSpec.describe Issue do
         project: project, issue: issue, goal: "create_pr", cap: 10
       )
       expect(capped).to contain_exactly("claude")
+    end
+  end
+
+  describe "#clear_issue_analysis_backoff!" do
+    let(:project) { create(:project) }
+    let(:issue) do
+      create(:issue, project: project,
+        issue_analysis_next_attempt_at: 30.minutes.from_now,
+        issue_analysis_backoff_set_at: 5.minutes.ago)
+    end
+
+    it "clears the persisted automatic analyze_issue cooldown" do
+      issue.clear_issue_analysis_backoff!
+
+      issue.reload
+      expect(issue.issue_analysis_next_attempt_at).to be_nil
+      expect(issue.issue_analysis_backoff_set_at).to be_nil
     end
   end
 

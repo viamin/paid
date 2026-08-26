@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_22_085848) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_25_233720) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1176,6 +1176,32 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_22_085848) do
     t.index ["scope"], name: "index_execution_controls_on_scope"
   end
 
+  create_table "execution_resource_cleanups", comment: "Durable retry queue for cleanup of runner-managed external execution resources.", force: :cascade do |t|
+    t.bigint "account_id", comment: "Owning account when known."
+    t.bigint "agent_run_id", comment: "Owning agent run when known."
+    t.integer "attempts", default: 0, null: false, comment: "Number of failed cleanup attempts."
+    t.datetime "completed_at", comment: "When cleanup was confirmed complete."
+    t.datetime "created_at", null: false
+    t.datetime "last_attempted_at", comment: "When cleanup was last attempted."
+    t.text "last_error", comment: "Last transient cleanup error."
+    t.datetime "next_attempt_at", null: false, comment: "When the cleanup should be retried next."
+    t.jsonb "ownership_tags", default: {}, null: false, comment: "Stable Paid ownership tags copied from the live resource or provisioning intent."
+    t.bigint "project_id", comment: "Owning project when known."
+    t.string "provider_resource_host", limit: 200, default: "", null: false, comment: "Owning backend host when applicable; blank when the provider has no host-local identity."
+    t.string "provider_resource_id", limit: 200, null: false, comment: "Provider identifier of the resource to delete."
+    t.bigint "provisioning_intent_id", comment: "Crash-window provisioning intent that led to this cleanup request, when present."
+    t.string "resource_kind", limit: 100, null: false, comment: "Runner-declared resource kind."
+    t.string "runner_type", limit: 50, null: false, comment: "Runner type used to clean up the resource."
+    t.string "status", limit: 50, default: "pending", null: false, comment: "Cleanup queue state: pending | completed."
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_execution_resource_cleanups_on_account_id"
+    t.index ["agent_run_id"], name: "index_execution_resource_cleanups_on_agent_run_id"
+    t.index ["project_id"], name: "index_execution_resource_cleanups_on_project_id"
+    t.index ["provisioning_intent_id"], name: "index_execution_resource_cleanups_on_provisioning_intent_id"
+    t.index ["runner_type", "resource_kind", "provider_resource_id", "provider_resource_host"], name: "index_execution_resource_cleanups_on_provider_reference", unique: true
+    t.index ["status", "next_attempt_at"], name: "index_execution_resource_cleanups_on_status_and_next_attempt_at"
+  end
+
   create_table "execution_resource_ledger_entries", comment: "Durable ledger of externally provisioned execution resources (containers, sidecars, workspaces, networks, tunnels, temporary storage) tracked across their provisioning-to-cleanup lifecycle.", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.datetime "activated_at", comment: "When the resource transitioned to active."
@@ -1517,11 +1543,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_22_085848) do
     t.string "github_state", null: false
     t.datetime "github_updated_at", null: false
     t.boolean "is_pull_request", default: false, null: false
+    t.datetime "issue_analysis_backoff_set_at", comment: "When the current automatic analyze_issue provider-exhaustion backoff window was recorded."
+    t.datetime "issue_analysis_next_attempt_at", comment: "When automatic analyze_issue retries become eligible again after provider exhaustion."
     t.jsonb "labels", default: [], null: false
     t.datetime "last_pr_scan_at"
     t.datetime "merge_permission_rejected_at", comment: "When non-null, the most recent auto-merge attempt was rejected by GitHub because the App installation token lacks a required permission (e.g. `workflows` for a change under .github/workflows/). Such rejections are permanent until the App's permissions change, so this timestamp gates a retry cooldown instead of re-attempting every poll cycle."
     t.text "merge_permission_rejection_reason", comment: "Raw error message from the most recent merge-time GitHub App permission rejection, for operator visibility."
     t.jsonb "needs_input_questions", comment: "Parsed clarifying questions persisted when a needs-input comment is posted, so the dashboard queue can render without a per-issue GitHub API round-trip"
+    t.datetime "needs_input_since", comment: "When this issue entered paid_state \"needs_input\". Cleared when it leaves. Used by Inbox::Queue to order oldest-waiting-first and to render \"waiting Xh\" labels."
     t.datetime "operational_failure_reset_at"
     t.string "paid_state", default: "new", null: false
     t.bigint "parent_issue_id"
@@ -1547,6 +1576,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_22_085848) do
     t.index ["github_creator_login"], name: "index_issues_on_github_creator_login"
     t.index ["labels"], name: "index_issues_on_labels_gin_open_issues", where: "((is_pull_request = false) AND ((github_state)::text = 'open'::text))", using: :gin
     t.index ["labels"], name: "index_issues_on_labels_gin_open_prs", where: "((is_pull_request = true) AND ((github_state)::text = 'open'::text))", using: :gin
+    t.index ["needs_input_since"], name: "index_issues_needs_input_since_active", where: "((paid_state)::text = 'needs_input'::text)"
     t.index ["parent_issue_id"], name: "index_issues_on_parent_issue_id"
     t.index ["project_id", "github_issue_id"], name: "index_issues_on_project_id_and_github_issue_id", unique: true
     t.index ["project_id", "github_number"], name: "index_issues_on_project_id_and_github_number"
@@ -2605,6 +2635,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_22_085848) do
   end
 
   create_table "runner_states", force: :cascade do |t|
+    t.datetime "availability_changed_at", comment: "When the circuit-breaker state or rate-limit window last changed. Distinct from updated_at, which also bumps on routine quota-snapshot polling; used to detect genuine availability recovery."
     t.datetime "circuit_opened_at"
     t.string "circuit_state", limit: 20, default: "closed", null: false
     t.datetime "created_at", null: false
@@ -3313,6 +3344,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_22_085848) do
   add_foreign_key "execution_controls", "docker_hosts"
   add_foreign_key "execution_controls", "projects"
   add_foreign_key "execution_controls", "runners"
+  add_foreign_key "execution_resource_cleanups", "accounts", on_delete: :nullify
+  add_foreign_key "execution_resource_cleanups", "agent_runs", on_delete: :nullify
+  add_foreign_key "execution_resource_cleanups", "projects", on_delete: :nullify
+  add_foreign_key "execution_resource_cleanups", "provisioning_intents", on_delete: :nullify
   add_foreign_key "execution_resource_ledger_entries", "accounts", on_delete: :cascade
   add_foreign_key "execution_resource_ledger_entries", "agent_runs", on_delete: :nullify
   add_foreign_key "execution_resource_ledger_entries", "projects", on_delete: :nullify
@@ -4222,6 +4257,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_22_085848) do
       $function$
   SQL
 
+  create_function :paid_current_account_id, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.paid_current_account_id()
+       RETURNS bigint
+       LANGUAGE sql
+       STABLE
+      AS $function$
+        -- @spec POSTGRESQL-PERSISTENCE-007
+        -- version: 1
+        SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
+      $function$
+  SQL
+
+  create_function :paid_tenant_bypass, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.paid_tenant_bypass()
+       RETURNS boolean
+       LANGUAGE sql
+       STABLE
+      AS $function$
+        -- @spec POSTGRESQL-PERSISTENCE-007
+        -- version: 1
+        SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
+      $function$
+  SQL
+
   create_function :validate_orchestration_decision_strategy_version_scope, sql_definition: <<-'SQL'
       CREATE OR REPLACE FUNCTION public.validate_orchestration_decision_strategy_version_scope()
        RETURNS trigger
@@ -4255,30 +4314,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_22_085848) do
 
         RAISE EXCEPTION 'strategy_version_id must reference a global or same-tenant strategy version';
       END;
-      $function$
-  SQL
-
-  create_function :paid_current_account_id, sql_definition: <<-'SQL'
-      CREATE OR REPLACE FUNCTION public.paid_current_account_id()
-       RETURNS bigint
-       LANGUAGE sql
-       STABLE
-      AS $function$
-        -- @spec POSTGRESQL-PERSISTENCE-007
-        -- version: 1
-        SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
-      $function$
-  SQL
-
-  create_function :paid_tenant_bypass, sql_definition: <<-'SQL'
-      CREATE OR REPLACE FUNCTION public.paid_tenant_bypass()
-       RETURNS boolean
-       LANGUAGE sql
-       STABLE
-      AS $function$
-        -- @spec POSTGRESQL-PERSISTENCE-007
-        -- version: 1
-        SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
       $function$
   SQL
 

@@ -132,8 +132,7 @@ RSpec.describe GoodJob, :no_db do # @spec RAILS-CONTROL-PLANE-003
         docker_orphan_cleanup recover_missing_pull_request_labels models_sync
         free_models_sync
         ab_test_analysis process_run_queue auto_pick_queue_backfill
-        auto_pick_eligibility_sweep service_container_reconciliation
-        execution_resource_reconciliation screenshot_cleanup
+        auto_pick_eligibility_sweep service_container_reconciliation execution_resource_reconciliation screenshot_cleanup
         knowledge_audit_retention delayed_human_feedback notifications_check_runner_quotas
         runner_quota_balance account_health_check_sweep
         claude_auth_health_check style_guide_evolution

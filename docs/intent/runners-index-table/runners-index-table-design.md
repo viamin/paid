@@ -23,6 +23,12 @@ This segment narrows the table to the signals operators can act on immediately:
 - render capability booleans as clearly non-interactive native checkboxes; and
 - remove duplicated or distracting support content from the index page.
 
+The index page also acts as the fastest health-check surface for configured
+runners. When operators have several runners configured, testing them one row
+at a time adds friction without adding useful review checkpoints. The page
+therefore needs a header-level trigger that reuses the existing per-row test
+flow instead of inventing a second, aggregated health-check path.
+
 ## Behavior
 
 `app/views/runners/index.html.erb` renders one table row per runner. The index
@@ -33,11 +39,42 @@ page SHALL:
 - render `Agent Runs`, `Chat`, and `Fallback` using disabled
   `check_box_tag` inputs so the page communicates state without implying inline
   toggle behavior;
+- render a `Test All` control in the header area when at least one runner row
+  is present, and keep it hidden when the table has no configured runners;
+- have the `Test All` control invoke the existing per-row test controller for
+  every rendered runner row so each row keeps its current loading, success,
+  error, and rate-limit UI behavior;
+- disable the `Test All` control while a batch is in progress and update its
+  label with completion progress (`Testing... 2/7` style) until all row tests
+  settle, after which the control returns to an idle state that reflects batch
+  completion; and
 - keep the fallback-specific `rate-limit only` qualifier for API-key fallback
   runners by moving that explanation into the checkbox tooltip instead of inline
   cell text; and
 - remove the top-level `Rate Limits` column while leaving the existing
   rate-limit event count available in the "Runner Usage Details" section.
+
+## Provider Run Outcomes charts (CSP-safe rendering)
+
+The "Provider Run Outcomes" section below the table (rendered by
+`app/views/runners/_provider_outcomes.html.erb`) originally used Chartkick's
+raw `column_chart` helper, which emits an inline `<script>` per chart. This
+app enforces `script_src :self` with nonce-only directives
+(`config/initializers/content_security_policy.rb`), so those inline scripts
+are blocked by the browser and the chart placeholder ("Loading...") never
+resolves — the divergence traced in issue #3458.
+
+Other chart surfaces that already render through the CSP-safe path include
+dashboard metrics, PR cycle time, and orchestration decisions:
+`DashboardHelper#dashboard_chartkick_chart`
+emits the chart data via `data-*` attributes on a placeholder `div`, and the
+`chartkick` Stimulus controller (`app/javascript/controllers/chartkick_controller.js`)
+instantiates the Chartkick chart client-side with no inline script. The
+provider outcomes partial now uses the same helper, and:
+
+- element ids are derived from the entry's index in `provider_outcome_stats`
+  (`provider-outcomes-chart-#{index}`) rather than interpolating the provider
+  name, since provider slugs are not guaranteed to be DOM-safe identifiers.
 
 ## Removed content
 
@@ -47,7 +84,7 @@ guidance on the main runners screen.
 
 Because the auth setup card is removed, the helper code that assembled those
 instruction blocks is also removed from `app/helpers/runners_helper.rb`.
-Any auth troubleshooting triggered from the index page's "Test Agent" action
+Any auth troubleshooting triggered from the index page's "Test Runner" action
 must therefore point operators to the remaining runner auth management surfaces
 (`Edit Runner` and runner credentials) instead of referencing a page-local
 setup guide that no longer exists.

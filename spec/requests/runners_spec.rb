@@ -180,6 +180,32 @@ RSpec.describe "Runners" do
         expect(response.body).not_to include("data-runner-auth-instructions")
       end
 
+      # @spec RUNNERS-INDEX-008
+      context "with provider run outcomes" do
+        let(:project) { create(:project, account: user.account) }
+
+        before do
+          create(:agent_run, :completed, project: project, agent_type: "claude_code")
+          create(:agent_run, :failed, project: project, agent_type: "claude_code")
+        end
+
+        %w[7d 30d cumulative].each do |range|
+          it "renders the provider outcomes chart via the CSP-safe chartkick controller for #{range}" do
+            get runners_path(outcome_time_range: range)
+
+            doc = Nokogiri::HTML(response.body)
+            chart = doc.at_css("div#provider-outcomes-chart-0[data-controller~='chartkick']")
+
+            expect(chart).to be_present
+            expect(chart["data-chartkick-type-value"]).to eq("ColumnChart")
+            expect(chart["data-chartkick-options-value"]).to include("\"stacked\":true")
+            expect(chart["data-chartkick-data-value"]).to be_present
+            expect(chart.text).to include("Loading...")
+            expect(response.body).not_to include("Chartkick.ColumnChart(")
+          end
+        end
+      end
+
       it "shows empty state when no addable providers remain" do
         allow(RunnerSupport).to receive(:addable_runner_keys).and_return([ "claude" ])
 
@@ -194,6 +220,34 @@ RSpec.describe "Runners" do
         get runners_path
 
         expect(response.body).to include("Add Runner")
+      end
+
+      # @spec RUNNERS-INDEX-009
+      it "renders the Test All header control wired to the row test controllers" do
+        get runners_path
+
+        doc = runners_index_document
+        test_all_button = doc.at_css('[data-test-all-target="button"]')
+        runner_row = doc.at_css('tr[data-controller="test-agent"][data-test-all-target="runner"]')
+        row_button = runner_row&.at_css('[data-test-agent-target="button"]')
+
+        expect(doc.at_css('[data-controller="test-all"]')).to be_present
+        expect(test_all_button).to be_present
+        expect(test_all_button.text.strip).to eq("Test All")
+        expect(test_all_button["data-action"]).to eq("test-all#testAll")
+        expect(runner_row).to be_present
+        expect(row_button).to be_present
+        expect(row_button.text.strip).to eq("Test Runner")
+        expect(response.body).not_to include("Test Agent")
+      end
+
+      # @spec RUNNERS-INDEX-009
+      it "omits the Test All header control when no configured runners are present" do
+        Runner.where(user: user).delete_all
+
+        get runners_path
+
+        expect(runners_index_document.at_css('[data-test-all-target="button"]')).to be_nil
       end
 
       it "does not reuse canonical runner state for api-key entries" do

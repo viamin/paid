@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class Issue < ApplicationRecord
-  PAID_STATES = %w[new planning in_progress completed failed needs_input recommend_close analyzed].freeze
+  PAID_STATES = %w[new planning in_progress completed failed needs_input manual_review recommend_close analyzed].freeze
   PR_REVIEW_PHASES = %w[draft restarted ready merged escalated].freeze
   PR_ESCALATION_REASONS = %w[
     operational_failures
@@ -19,6 +19,9 @@ class Issue < ApplicationRecord
   # as the final fallback when no account-level or project-level override is set.
   # Keep in sync with the TenantSetting::DEFAULT_AGENT_SETTINGS default.
   DEFAULT_MAX_RUNNER_FAILURES = 10
+  ISSUE_ANALYSIS_BACKOFF_BASE_DELAY = 5.minutes
+  ISSUE_ANALYSIS_BACKOFF_MAX_DELAY = 1.hour
+  ISSUE_ANALYSIS_BACKOFF_HISTORY_LIMIT = 12
 
   # Default label mirrored to GitHub to surface an issue/PR's paused state.
   # Adding the label in GitHub (or pausing from the UI) flips `paused`;
@@ -103,6 +106,13 @@ class Issue < ApplicationRecord
   # failure is logged, and the next sync reconciles the label.
   before_save :stamp_paused_at, if: :will_save_change_to_paused?
   after_commit :sync_paused_label_to_github, if: :saved_change_to_paused?
+
+  # Keeps `needs_input_since` synchronized with the `paid_state` transition so
+  # the Inbox::Queue service can order oldest-waiting-first without scattered
+  # updates at every write site. Stamps when the issue enters "needs_input",
+  # clears when it leaves. Idempotent: re-applying the same state is a no-op.
+  # @spec INBOX-FOUNDATION-001
+  before_save :sync_needs_input_since, if: :will_save_change_to_paid_state?
 
   scope :by_paid_state, ->(state) { where(paid_state: state) }
   scope :root_issues, -> { where(parent_issue_id: nil) }
@@ -290,6 +300,25 @@ class Issue < ApplicationRecord
 
   def needs_input?
     paid_state == "needs_input" && has_label?(project.enhance_issue_needs_input_label_name)
+  end
+
+  # Stamps `needs_input_since` on entry into `paid_state: "needs_input"` and
+  # clears it on exit. A single model callback owns this transition logic so
+  # every write path that touches `paid_state` converges on the same column
+  # contract without scattered per-site updates.
+  #
+  # `paid_state_changed?` is the gate: re-applying the same state is a no-op,
+  # and writes that don't touch `paid_state` never overwrite a valid timestamp.
+  # The `||=` on entry preserves an existing timestamp when an agent re-applies
+  # the needs_input label to an issue that is already awaiting input, so the
+  # wait time keeps counting from the first transition rather than resetting.
+  # @spec INBOX-FOUNDATION-001
+  def sync_needs_input_since
+    if paid_state == "needs_input"
+      self.needs_input_since ||= Time.current
+    elsif paid_state_was == "needs_input"
+      self.needs_input_since = nil
+    end
   end
 
   def draft_phase?
@@ -771,6 +800,7 @@ class Issue < ApplicationRecord
   # https://github.com/sidekiq/sidekiq/wiki/Error-Handling#automatic-job-retry.
   def auto_pick_reenqueue_delay # @spec EAGER-QUEUE-007
     return unless paid_state == "failed"
+    return issue_analysis_reenqueue_delay if issue_analysis_backoff_active?
 
     n = [ consecutive_auto_pick_failure_count - 1, 0 ].max
     ((n**4) + 15 + (rand(10) * (n + 1))).seconds
@@ -793,6 +823,51 @@ class Issue < ApplicationRecord
   end
 
   public
+
+  def issue_analysis_backoff_active?(reset_at: nil, now: Time.current) # @spec ISSUE-ANALYSIS-010 AUTO-PICK-QUEUE-002
+    return false if issue_analysis_next_attempt_at.blank? || issue_analysis_next_attempt_at <= now
+    return false if reset_at.present? && issue_analysis_backoff_set_at.present? && issue_analysis_backoff_set_at < reset_at
+
+    true
+  end
+
+  def record_issue_analysis_backoff!(paid_state:, now: Time.current) # @spec ISSUE-ANALYSIS-010
+    streak = consecutive_issue_analysis_provider_exhaustion_count
+    next_attempt_at = now + issue_analysis_backoff_delay(streak)
+    attrs = {
+      issue_analysis_next_attempt_at: next_attempt_at,
+      issue_analysis_backoff_set_at: now
+    }
+    attrs[:paid_state] = paid_state if self.paid_state != paid_state
+    update!(attrs)
+
+    Rails.logger.info(
+      message: "issue.issue_analysis_backoff_recorded",
+      component: "agent_execution",
+      issue_id: id,
+      project_id: project_id,
+      issue_number: github_number,
+      next_attempt_at: next_attempt_at.iso8601,
+      consecutive_failures: streak
+    )
+
+    next_attempt_at
+  end
+
+  def clear_issue_analysis_backoff!(reason: "Cleared after a successful issue-analysis provider call") # @spec ISSUE-ANALYSIS-010 ISSUE-ANALYSIS-011
+    return if issue_analysis_next_attempt_at.blank? && issue_analysis_backoff_set_at.blank?
+
+    update!(issue_analysis_next_attempt_at: nil, issue_analysis_backoff_set_at: nil)
+
+    Rails.logger.info(
+      message: "issue.issue_analysis_backoff_cleared",
+      component: "agent_execution",
+      issue_id: id,
+      project_id: project_id,
+      issue_number: github_number,
+      reason: reason
+    )
+  end
 
   # An issue is abandoned for retry-cap purposes once every available provider
   # has hit the per-issue per-provider retry cap. Abandoned issues are excluded
@@ -842,6 +917,37 @@ class Issue < ApplicationRecord
       reason: reason
     )
   end
+
+  private
+
+  def issue_analysis_reenqueue_delay
+    [ issue_analysis_next_attempt_at - Time.current, 0 ].max.seconds
+  end
+
+  def issue_analysis_backoff_delay(streak = consecutive_issue_analysis_provider_exhaustion_count)
+    multiplier = [ streak - 1, 0 ].max
+    [ ISSUE_ANALYSIS_BACKOFF_BASE_DELAY * (2**multiplier), ISSUE_ANALYSIS_BACKOFF_MAX_DELAY ].min
+  end
+
+  # Counts recent automatic `analyze_issue` runs whose failure should grow the
+  # ISSUE-ANALYSIS-010 backoff. Excludes `rate_limited` runs because those are
+  # handled by the separate in-place recovery path from ISSUE-ANALYSIS-006
+  # (StaleRunDetectorJob re-queues the run once `rate_limited_until` elapses);
+  # mixing them into this streak would let a single prior rate-limited run push
+  # the first actual exhaustion failure from a 5-minute delay to a 10-minute
+  # delay (multiplier 0 -> 1) even though no exhaustion has happened yet.
+  def consecutive_issue_analysis_provider_exhaustion_count
+    agent_runs
+      .where(auto_pick: true, goal: "analyze_issue")
+      .where.not(status: "rate_limited")
+      .finished
+      .order(created_at: :desc, id: :desc)
+      .limit(ISSUE_ANALYSIS_BACKOFF_HISTORY_LIMIT)
+      .take_while(&:provider_unavailable?)
+      .count
+  end
+
+  public
 
   # Prefix used to distinguish a terminal push-permission abandonment from a
   # retry-cap abandonment in the free-text +runner_retry_abandon_reason+ field.

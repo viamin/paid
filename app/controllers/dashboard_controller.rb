@@ -62,8 +62,18 @@ class DashboardController < ApplicationController
   end
 
   def needs_input
+    redirect_to dashboard_inbox_path(
+      project_id: params[:project_id],
+      kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND
+    ), status: :see_other
+  end
+
+  def inbox
     @scoped_project = scoped_needs_input_project
-    @needs_input_entries = Dashboard::NeedsInputQueue.call(user: current_user, project: @scoped_project)
+    @selected_kind = valid_inbox_kind
+    @inbox_entries = Inbox::Queue.call(user: current_user, project: @scoped_project, kind: @selected_kind)
+    @selected_entry = resolve_selected_entry(@inbox_entries)
+    @detail_view = params[:view] == "detail"
   end
 
   def metrics
@@ -226,5 +236,17 @@ class DashboardController < ApplicationController
     project = policy_scope(Project).find(params[:project_id])
     authorize project, :show?
     project
+  end
+
+  def valid_inbox_kind
+    kind = params[:kind].to_s
+    Inbox::Queue::KINDS.include?(kind) ? kind : nil
+  end
+
+  def resolve_selected_entry(entries)
+    selected = entries.find do |entry|
+      entry.kind == params[:entry_kind].to_s && entry.record.id.to_s == params[:entry_id].to_s
+    end
+    selected || entries.first
   end
 end

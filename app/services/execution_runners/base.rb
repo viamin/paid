@@ -51,6 +51,15 @@ module ExecutionRunners
       false
     end
 
+    # Whether periodic broad tag-based reconciliation should poll this runner.
+    # Defaults to false so a runner must opt in explicitly; a platform with an
+    # existing legacy janitor can still implement direct orphan cleanup without
+    # participating in broad sweeps.
+    # @return [Boolean]
+    def supports_tag_reconciliation?
+      false
+    end
+
     # Provision the execution environment (workspace, network, services, secrets).
     #
     # @param spec [RunSpec] immutable description of what to execute
@@ -146,26 +155,26 @@ module ExecutionRunners
       raise NotImplementedError, "#{self.class} must implement ##{__method__}"
     end
 
-    # Whether the runner can list tagged resources directly from the provider.
-    # Runners without this capability fall back to handle-based cleanup only,
-    # so reconciliation must report reduced confidence.
-    def supports_resource_listing?
-      false
+    # Discover live provider resources carrying the given ownership tags.
+    # Runners that do not support provider-side listing may return an empty
+    # array and keep +#supports_tag_reconciliation?+ false.
+    #
+    # @param tags [Hash{String=>String,nil}] ownership tags to match; nil values
+    #   mean "tag key exists"
+    # @param resource_kind [String, nil] optional resource-kind filter
+    # @return [Array<ExecutionRunners::ManagedResource>]
+    def list_resources_by_tags(tags:, resource_kind: nil)
+      []
     end
 
-    # List provider-tagged resources owned by Paid for reconciliation.
+    # Clean up a discovered provider resource without requiring a previously
+    # persisted runner handle. Used by orphan reconciliation for crash-window
+    # resources that were created before the handle was recorded.
     #
-    # @param host [String, nil] host scope when the provider exposes one
-    # @return [Array<ExecutionRunners::TrackedResource>]
-    def list_resources(host: nil)
-      raise NotImplementedError, "#{self.class} must implement ##{__method__}"
-    end
-
-    # Clean up a provider-reported resource directly by identifier.
-    #
-    # @param resource [ExecutionRunners::TrackedResource]
+    # @param resource [ExecutionRunners::ManagedResource]
+    # @param force [Boolean]
     # @return [void]
-    def cleanup_resource(resource:)
+    def cleanup_resource(resource:, force: false)
       raise NotImplementedError, "#{self.class} must implement ##{__method__}"
     end
 

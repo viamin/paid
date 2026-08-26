@@ -48,6 +48,12 @@ class ProcessRunQueueJob < ApplicationJob
   }.freeze
   QUEUE_PARKING_EXECUTION_CONTROL_SCOPES = %w[global account project].freeze
 
+  # Reason suffixes InfrastructureSpendGuard uses for a breach (see
+  # Capacity::InfrastructureSpendGuard#evaluate); mirrors how
+  # Capacity::RunAdmission#apply_infrastructure_safety_rails distinguishes a
+  # spend-driven denial from a capacity-driven one.
+  SPEND_DENIAL_REASON_PATTERN = /_infra_spend_(?:hourly|daily)_limit_exceeded\z/
+
   def perform
     # Use a PostgreSQL advisory lock to ensure only one job processes the queue at a time.
     # If another instance is already running, this job exits immediately (no-op).
@@ -59,6 +65,8 @@ class ProcessRunQueueJob < ApplicationJob
         log_github_unavailable(github_state)
         return
       end
+
+      Capacity::InfrastructureSpendGuard.recover_global_daily_threshold!
 
       consecutive_failures = 0
       starts_count = 0
@@ -250,6 +258,15 @@ class ProcessRunQueueJob < ApplicationJob
           when "project_provisioning_rate_limit"
             park_run_for_capacity(next_run, admission[:rate_limited_until], admission[:reason])
             blocked_project_ids.add(next_run.project_id)
+          when ->(reason) { spend_capacity_denial?(reason) && admission[:rate_limited_until].present? }
+            park_run_for_capacity(next_run, admission[:rate_limited_until], admission[:reason])
+            block_scope_for_spend_denial(
+              admission[:reason],
+              project_id: next_run.project_id,
+              account_id: next_run.project.account_id,
+              blocked_project_ids: blocked_project_ids,
+              blocked_account_ids: blocked_account_ids
+            )
           else
             # Exclude the whole owner for the rest of this pass so a deep
             # backlog for a saturated user cannot consume the iteration budget
@@ -302,6 +319,21 @@ class ProcessRunQueueJob < ApplicationJob
           blocked_runner_ids.add(preflight_result.runner_id) if preflight_result.runner_id
           reroute_unavailable_runner(next_run, blocked_runner_ids, skipped_ids, reroute_cache,
             disabled_runner_ids: execution_control_snapshot[:disabled_runner_ids])
+          next
+        end
+
+        # Runner spend is enforced only after the run has a concrete runner for
+        # this dispatch attempt. That means late-bound auto-pick runs flow
+        # through the guard immediately below, while rerouted runs are re-queued
+        # and re-enter the same guard on the next loop iteration before they can
+        # dispatch on the newly bound runner.
+        if (runner_spend_result = runner_infrastructure_spend_result(next_run, selected_host))
+          log_runner_spend_skip(next_run, runner_spend_result)
+          blocked_runner_ids.add(next_run.runner_id) if next_run.runner_id
+          reroute_unavailable_runner(next_run, blocked_runner_ids, skipped_ids, reroute_cache,
+            disabled_runner_ids: execution_control_snapshot[:disabled_runner_ids],
+            available_at: runner_spend_result[:rate_limited_until],
+            park_reason: runner_spend_result[:reason])
           next
         end
 
@@ -439,14 +471,19 @@ class ProcessRunQueueJob < ApplicationJob
   # instead of being restored and churned on every queue pass. The parked_until
   # time is cached alongside reroute resolutions so runs sharing a reroute
   # context park without another resolver call.
-  def reroute_unavailable_runner(agent_run, blocked_runner_ids, skipped_ids, reroute_cache, disabled_runner_ids: nil)
+  def reroute_unavailable_runner(agent_run, blocked_runner_ids, skipped_ids, reroute_cache, disabled_runner_ids: nil,
+    available_at: nil, park_reason: nil)
     original_id = agent_run.runner_id
     cache_key = reroute_cache_key(agent_run, original_id)
 
     if reroute_cache.key?(cache_key)
       cached = reroute_cache[cache_key]
       return skipped_ids.add(agent_run.id) if cached.nil?
-      return park_run_for_time_window(agent_run, cached[:parked_until]) if cached.key?(:parked_until)
+      if cached.key?(:parked_until)
+        return park_run_for_capacity(agent_run, cached[:parked_until], cached[:park_reason]) if cached[:park_reason].present?
+
+        return park_run_for_time_window(agent_run, cached[:parked_until])
+      end
       return apply_cached_reroute(agent_run, cached) unless blocked_runner_ids.include?(cached[:runner_id])
     end
 
@@ -466,11 +503,15 @@ class ProcessRunQueueJob < ApplicationJob
       # time restriction would never park — they'd churn every pass. Rate-limited
       # runners in +blocked_runner_ids+ are NOT time-window-blocked, so counting
       # them (by not excluding) correctly suppresses parking while they recover.
-      park_until = Runners::TimeWindowPark.call(agent_run)
+      park_until = available_at || Runners::TimeWindowPark.call(agent_run)
       agent_run.update_columns(runner_id: original_id)
       if park_until
-        park_run_for_time_window(agent_run, park_until)
-        reroute_cache[cache_key] = { parked_until: park_until }
+        if park_reason.present?
+          park_run_for_capacity(agent_run, park_until, park_reason)
+        else
+          park_run_for_time_window(agent_run, park_until)
+        end
+        reroute_cache[cache_key] = { parked_until: park_until, park_reason: park_reason }
       else
         reroute_cache[cache_key] = nil
         skipped_ids.add(agent_run.id)
@@ -514,6 +555,33 @@ class ProcessRunQueueJob < ApplicationJob
       runner_id: result.runner_id,
       reason: result.reason,
       project_id: agent_run.project_id
+    )
+  end
+
+  def runner_infrastructure_spend_result(agent_run, selected_host)
+    return unless agent_run.runner
+
+    result = Capacity::InfrastructureSpendGuard.call(
+      account: agent_run.project.account,
+      project: agent_run.project,
+      agent_run: agent_run,
+      runner: agent_run.runner,
+      selected_host: selected_host
+    )
+    return if result[:allowed]
+    return unless result[:spend_scope] == "runner"
+
+    result
+  end
+
+  def log_runner_spend_skip(agent_run, result)
+    Rails.logger.info(
+      message: "process_run_queue.runner_spend_skip",
+      agent_run_id: agent_run.id,
+      project_id: agent_run.project_id,
+      runner_id: agent_run.runner_id,
+      reason: result[:reason],
+      rate_limited_until: result[:rate_limited_until]&.iso8601
     )
   end
 
@@ -614,9 +682,14 @@ class ProcessRunQueueJob < ApplicationJob
     )
   end
 
+  # build_host_admission_evaluations calls this once per *candidate* host, so
+  # it always previews admission (no infrastructure-spend side effects — see
+  # Capacity::RunAdmission.preview). Only the host that select_host_admission
+  # ultimately chooses gets a real, side-effecting spend check, applied once
+  # by finalize_infrastructure_spend!.
   def run_admission_for(agent_run, user, mode:, docker_snapshot:, reserved_agent_memory_bytes:, selected_host:, selected_host_limit:,
     admission_snapshot:)
-    Capacity::RunAdmission.call(
+    Capacity::RunAdmission.preview(
       user: user,
       project: agent_run.project,
       goal: agent_run.goal,
@@ -630,7 +703,30 @@ class ProcessRunQueueJob < ApplicationJob
     )
   end
 
+  # Entry point used by #perform. Resolves the winning host/admission/decision
+  # via #resolve_host_admission — which may speculatively preview several
+  # candidate hosts — then finalizes the infrastructure-spend check for real,
+  # exactly once, against only the host that was actually chosen. See
+  # #finalize_infrastructure_spend! for why this two-step split exists.
   def select_host_admission(agent_run:, user:, host_selection:, forced_admission_mode:, docker_snapshots_by_host:,
+    base_reserved_agent_memory_bytes_by_host:, started_reserved_agent_memory_bytes_by_host:, admission_snapshot:)
+    selected_host, admission, decision = resolve_host_admission(
+      agent_run: agent_run,
+      user: user,
+      host_selection: host_selection,
+      forced_admission_mode: forced_admission_mode,
+      docker_snapshots_by_host: docker_snapshots_by_host,
+      base_reserved_agent_memory_bytes_by_host: base_reserved_agent_memory_bytes_by_host,
+      started_reserved_agent_memory_bytes_by_host: started_reserved_agent_memory_bytes_by_host,
+      admission_snapshot: admission_snapshot
+    )
+
+    finalize_infrastructure_spend!(agent_run: agent_run, user: user, selected_host: selected_host, admission: admission)
+
+    [ selected_host, admission, decision ]
+  end
+
+  def resolve_host_admission(agent_run:, user:, host_selection:, forced_admission_mode:, docker_snapshots_by_host:,
     base_reserved_agent_memory_bytes_by_host:, started_reserved_agent_memory_bytes_by_host:, admission_snapshot:)
     return select_first_available_host_admission(
       agent_run: agent_run,
@@ -778,6 +874,57 @@ class ProcessRunQueueJob < ApplicationJob
         index: index,
         admission: admission
       }
+    end
+  end
+
+  # resolve_host_admission previews the spend guard once per *candidate* host
+  # (see #run_admission_for) so an expensive speculative host never publishes
+  # notifications, writes audit events, or flips the global emergency control
+  # before a cheaper candidate is chosen instead — otherwise those side
+  # effects could fire for a host that is never actually used (see review on
+  # #3416 / #3581). Once the winning host is known, re-run the real spend
+  # guard here so a genuine breach against the *selected* host is still
+  # recorded, exactly once per admission decision.
+  #
+  # Spend accrues monotonically within a single queue pass, so this real
+  # check can only confirm — never overturn — a preview denial reached
+  # moments earlier; it is skipped entirely when the preview never reached
+  # the spend guard (i.e. some other capacity ceiling already denied first).
+  def finalize_infrastructure_spend!(agent_run:, user:, selected_host:, admission:)
+    return unless selected_host
+    return unless spend_guard_reached?(admission)
+
+    result = Capacity::InfrastructureSpendGuard.call(
+      account: user.account,
+      project: agent_run.project,
+      agent_run: agent_run,
+      selected_host: selected_host
+    )
+    return if result[:allowed]
+
+    admission[:allowed] = false
+    admission[:reason] = result[:reason]
+    admission[:available_slots] = 0
+    admission[:rate_limited_until] = result[:rate_limited_until]
+    admission.merge!(result.except(:allowed, :reason, :rate_limited_until))
+  end
+
+  def spend_guard_reached?(admission)
+    admission[:allowed] || spend_capacity_denial?(admission[:reason])
+  end
+
+  def spend_capacity_denial?(reason)
+    reason.to_s.match?(SPEND_DENIAL_REASON_PATTERN)
+  end
+
+  def block_scope_for_spend_denial(reason, project_id:, account_id:, blocked_project_ids:, blocked_account_ids:)
+    case reason.to_s
+    when /\Aglobal_/
+      nil
+    when /\Aaccount_/
+      blocked_account_ids.add(account_id)
+    when /\Aproject_/
+      blocked_project_ids.add(project_id)
     end
   end
 
@@ -1046,18 +1193,11 @@ class ProcessRunQueueJob < ApplicationJob
     # and capacity accounting. Keep started_at tied to actual agent execution
     # in RunAgentActivity so max_execution_seconds and stale-running thresholds
     # do not start burning down during Temporal admission/provisioning.
-    # @spec OBSERVABILITY-002 — record provisioning_started_at and
-    # requested_resources so admission telemetry can correlate rate-limited
-    # runs with the exact resource envelope they were admitted against.
     update_attributes = {
       temporal_workflow_id: workflow_id,
       status: "running",
       completed_at: nil,
-      provisioning_started_at: Time.current,
-      external_metadata: agent_run.external_metadata.merge(
-        "provisioning_started_at" => Time.current.iso8601,
-        "requested_resources" => Capacity::RequestedResources.persistable_for(agent_run)
-      )
+      external_metadata: agent_run.external_metadata
     }
     if planned_container_host.present?
       update_attributes[:container_host] = nil
@@ -1081,12 +1221,18 @@ class ProcessRunQueueJob < ApplicationJob
     # due to a network timeout, the workflow may have started server-side.
     # Leaving the ID allows StaleRunDetectorJob to find and cancel the
     # potentially-orphaned workflow rather than losing track of it.
-    Paid.temporal_client.start_workflow(
-      Workflows::AgentExecutionWorkflow,
-      workflow_input,
-      id: workflow_id,
-      task_queue: Paid.agent_task_queue,
-      priority: temporal_priority_for(agent_run)
+    workflow_handle = start_workflow!(
+      agent_run,
+      workflow_input: workflow_input,
+      workflow_id: workflow_id
+    )
+    return false unless workflow_handle
+
+    return false unless record_provisioning_start_after_start(
+      agent_run,
+      workflow_id: workflow_id,
+      workflow_handle: workflow_handle,
+      planned_container_host: planned_container_host
     )
 
     ExecutionAuditEvents::Lifecycle.record(
@@ -1106,14 +1252,89 @@ class ProcessRunQueueJob < ApplicationJob
       workflow_id: workflow_id
     )
     true
+  end
+
+  # @spec OBSERVABILITY-002 — record provisioning_started_at and
+  # requested_resources only after Temporal accepted the workflow start so
+  # failed dispatch attempts do not create phantom infrastructure spend.
+  def record_provisioning_start!(agent_run, planned_container_host)
+    started_at = Time.current
+    metadata = agent_run.external_metadata.merge(
+      "provisioning_started_at" => started_at.iso8601,
+      "requested_resources" => Capacity::RequestedResources.persistable_for(agent_run),
+      "infrastructure_spend" => {
+        "rate_cents_per_hour" => Capacity::InfrastructureLimits.rate_cents_per_hour(host: planned_container_host),
+        "projection_seconds" => Capacity::InfrastructureLimits.current(host: planned_container_host)[:infra_spend_projection_seconds]
+      }
+    )
+
+    agent_run.update_columns(
+      provisioning_started_at: started_at,
+      external_metadata: metadata,
+      updated_at: Time.current
+    )
+  end
+
+  def start_workflow!(agent_run, workflow_input:, workflow_id:)
+    Paid.temporal_client.start_workflow(
+      Workflows::AgentExecutionWorkflow,
+      workflow_input,
+      id: workflow_id,
+      task_queue: Paid.agent_task_queue,
+      priority: temporal_priority_for(agent_run)
+    )
   rescue => e
-    force_fail_run(agent_run, error: "Failed to start workflow: #{e.message}")
+    keep_run_claimed_for_cleanup(agent_run, error: "Failed to start workflow: #{e.message}")
     Rails.logger.error(
       message: "process_run_queue.start_failed",
       agent_run_id: agent_run.id,
+      workflow_id: workflow_id,
       error: e.message
     )
     false
+  end
+
+  def record_provisioning_start_after_start(agent_run, workflow_id:, workflow_handle:, planned_container_host:)
+    record_provisioning_start!(agent_run, planned_container_host)
+  rescue => e
+    error = "Failed to persist provisioning metadata after workflow start: #{e.message}"
+    cancellation_outcome = cancel_started_workflow(workflow_handle, agent_run, workflow_id)
+    if cancellation_outcome == :confirmed
+      force_fail_run(agent_run, error: error)
+    else
+      keep_run_claimed_for_cleanup(agent_run, error: error)
+    end
+    Rails.logger.error(
+      message: "process_run_queue.provisioning_metadata_persist_failed",
+      agent_run_id: agent_run.id,
+      workflow_id: workflow_id,
+      error: e.message,
+      cleanup_pending: cancellation_outcome != :confirmed
+    )
+    false
+  end
+
+  def cancel_started_workflow(workflow_handle, agent_run, workflow_id)
+    workflow_handle.cancel
+    :confirmed
+  rescue Temporalio::Error::RPCError => e
+    raise unless e.code == Temporalio::Error::RPCError::Code::NOT_FOUND
+
+    Rails.logger.info(
+      message: "process_run_queue.provisioning_metadata_cancel_not_found",
+      agent_run_id: agent_run.id,
+      workflow_id: workflow_id
+    )
+    :pending_cleanup
+  rescue => e
+    Rails.logger.warn(
+      message: "process_run_queue.provisioning_metadata_cancel_failed",
+      agent_run_id: agent_run.id,
+      workflow_id: workflow_id,
+      error_class: e.class.name,
+      error: e.message
+    )
+    :pending_cleanup
   end
 
   # Queue-start failures are infrastructure failures, not business-rule
@@ -1128,6 +1349,19 @@ class ProcessRunQueueJob < ApplicationJob
       completed_at: Time.current,
       error_message: error,
       duration_seconds: agent_run.duration
+    )
+    agent_run.save!(validate: false)
+  end
+
+  # When workflow start or immediate post-start cleanup cannot be confirmed,
+  # keep the run in claimed-queued state so StaleRunDetectorJob retries the
+  # cancellation before this run can be started again.
+  def keep_run_claimed_for_cleanup(agent_run, error:)
+    agent_run.assign_attributes(
+      status: "queued",
+      completed_at: nil,
+      error_message: error,
+      duration_seconds: nil
     )
     agent_run.save!(validate: false)
   end

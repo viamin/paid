@@ -78,7 +78,7 @@
 
 - [x] **CONTAINER-RUNTIME-009** — The system SHALL define immutable value
   objects (`RunSpec`, `RunnerHandle`, `ExecutionResult`, `NetworkingPolicy`,
-  `ServiceDeclaration`, `ComputeRequirements`) as `Data.define` structures that
+  `ServiceDeclaration`, `ExecutionResources`) as `Data.define` structures that
   consolidate the existing `Containers::Provision::Result` patterns and adapt
   `NetworkPolicy::NetworkContract` without Docker-specific identifiers.
   *Tests:* `spec/services/execution_runners_spec.rb`
@@ -349,6 +349,44 @@
   `spec/models/provisioning_intent_spec.rb`
   *Code:* `ExecutionRunners::ProvisioningLedger`,
   `ProvisioningIntent`
+
+- [x] **CONTAINER-RUNTIME-035** — The runner contract SHALL expose
+  provider-neutral resource reconciliation hooks for externally managed primary
+  execution environments: listing resources by stable Paid ownership tags when
+  the runner supports provider-side listing, and cleaning up a discovered
+  resource by provider identifier without requiring a previously persisted
+  runner handle. A runner whose platform already has a legacy janitor path MAY
+  disable broad tag sweeps while still supporting direct cleanup of a known
+  orphan resource.
+  *Tests:* `spec/services/execution_runners/base_spec.rb`,
+  `spec/services/execution_runners/local_docker_runner_spec.rb`,
+  `spec/jobs/execution_resource_reconciliation_job_spec.rb`
+  *Code:* `ExecutionRunners::Base`, `ExecutionRunners::ManagedResource`,
+  `ExecutionRunners::LocalDockerRunner`,
+  `ExecutionRunners::ResourceReconciler`
+
+- [x] **CONTAINER-RUNTIME-036** — A periodic reconciliation process SHALL:
+  1. enqueue cleanup for crash-window provisioning intents whose provider
+  resource exists without a linked runner handle;
+  2. when the runner supports tag reconciliation, discover provider resources
+  carrying stable Paid ownership tags whose `paid.run_id` has no corresponding
+  active `AgentRun`; and
+  3. retry transient cleanup failures from a durable database-backed queue with
+  backoff until cleanup succeeds or an operator intervenes.
+  *Tests:* `spec/jobs/execution_resource_reconciliation_job_spec.rb`,
+  `spec/models/execution_resource_cleanup_spec.rb`
+  *Code:* `ExecutionResourceCleanup`,
+  `ExecutionRunners::ResourceReconciler`,
+  `ExecutionResourceReconciliationJob`
+
+- [x] **CONTAINER-RUNTIME-037** — The repository SHALL document the external
+  resource failure-window matrix covering provision, start, cancellation,
+  timeout, completion, crash, orphan discovery, and cleanup retry behavior, and
+  SHALL reference that matrix as conformance input for the runner conformance
+  suite tracked by `#3347`.
+  *Tests:* documentation-only acceptance; referenced from the conformance suite
+  issue and LID docs
+  *Code:* `docs/intent/container-runtime/external-resource-failure-matrix.md`
 - [x] **CONTAINER-RUNTIME-021** — The system SHALL persist an `AgentImage`
   registry record that represents the immutable production identity of an
   agent container image as `(account_id, registry, repository, digest,
@@ -426,12 +464,17 @@
   `ProcessRunQueueJob`
 
 - [x] **CONTAINER-RUNTIME-027** — The provider-neutral execution resource spec
-  SHALL include CPU, memory, and disk request fields, and the system SHALL
-  reject a run whose requested per-execution resources exceed the configured
-  infrastructure maxima before provisioning starts.
+  SHALL include explicit CPU, memory, disk, architecture, and timeout request
+  fields on `ExecutionResources`, and the system SHALL reject a run whose
+  requested per-execution resources exceed the configured infrastructure maxima
+  before provisioning starts. The contract SHALL support named presets
+  (`small`, `standard`, `large`) that expand to explicit tuples before the
+  runner receives the spec, and Docker-specific resource keys SHALL stay out of
+  the runner contract.
   *Tests:* `spec/services/execution_runners_spec.rb`,
+  `spec/services/execution_runners/local_docker_runner_spec.rb`,
   `spec/services/capacity/run_admission_spec.rb`
-  *Code:* `ExecutionRunners::ComputeRequirements`,
+  *Code:* `ExecutionRunners::ExecutionResources`,
   `ExecutionRunners::RunSpec`, `Capacity::RunAdmission`
 
 - [x] **CONTAINER-RUNTIME-028** — The system SHALL expose a coarse,
@@ -607,3 +650,33 @@
   `spec/temporal/activities/provision_browser_container_activity_spec.rb`.
   *Code:* `ExecutionRunners::Base`, `ExecutionRunners::LocalDockerRunner`,
   `AgentRuns::Verification`, `Activities::ProvisionBrowserContainerActivity`.
+
+- [x] **CONTAINER-RUNTIME-035** — When `Containers::ServiceProvisioner`
+  creates a service container (Postgres, Redis, or an account-admin
+  allowlisted image), the system SHALL always apply `no-new-privileges` and
+  drop all Linux capabilities by default. The system SHALL apply a per-image-family
+  hardening profile (`HARDENING_PROFILES`, matched by image-name substring
+  like `RESOURCE_LIMITS`) that declares whether the root filesystem is
+  read-only, the runtime `User`, the Tmpfs mounts for that image's documented
+  writable paths, and the minimum capabilities its entrypoint needs back —
+  e.g. Postgres's official image publishes a `postgres` user and runs
+  correctly without root when `PGDATA` and `/var/run/postgresql` are
+  provisioned with `postgres` ownership, so its profile pins `User=postgres`,
+  keeps the root filesystem read-only, and adds back
+  `CHOWN`/`DAC_OVERRIDE`/`FOWNER`/`SETGID`/`SETUID`. Account admins MAY attach
+  a per-service-container override profile under the reserved
+  `PAID_SERVICE_HARDENING` key in `ServiceContainer#env` to declare
+  `readonly_rootfs`, `user`, `tmpfs`, and `cap_add` for an allowlisted image.
+  An image that does not match a known family and does not declare an override
+  SHALL fall back to `DEFAULT_HARDENING_PROFILE`: `no-new-privileges`, all
+  capabilities dropped, a writable root filesystem preserved for backward
+  compatibility with existing allowlisted images, no added capabilities, and
+  the image's default user preserved. Account-admin control over which images
+  may run at all remains `ServiceContainer#image_in_allowlist`
+  (`UserSetting#allowed_service_images`); this spec governs only the runtime
+  hardening applied to whichever image that allowlist admits.
+  *Tests:* `spec/services/containers/service_provisioner_spec.rb`
+  *Code:* `Containers::ServiceProvisioner::HARDENING_PROFILES`,
+  `Containers::ServiceProvisioner::DEFAULT_HARDENING_PROFILE`,
+  `Containers::ServiceProvisioner#create_docker_container`,
+  `Containers::ServiceProvisioner#hardening_profile_for`

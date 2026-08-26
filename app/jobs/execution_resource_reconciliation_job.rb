@@ -11,16 +11,13 @@ class ExecutionResourceReconciliationJob < ApplicationJob # @spec CONTAINER-RUNT
     key: "execution_resource_reconciliation"
   )
 
+  # @spec CONTAINER-RUNTIME-036
   def perform
-    result = ExecutionResources::Reconcile.new.call
+    result = ExecutionRunners::ResourceReconciler.call
 
     Rails.logger.info(
-      message: "container_manager.execution_resource_reconciliation_complete",
-      checked: result.checked,
-      adopted: result.adopted,
-      cleaned: result.cleaned,
-      failures: result.failures,
-      reduced_confidence: result.reduced_confidence
+      message: "execution_resources.reconciliation_complete",
+      **result
     )
   end
 end

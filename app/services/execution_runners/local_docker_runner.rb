@@ -63,6 +63,10 @@ module ExecutionRunners
       true
     end
 
+    def supports_tag_reconciliation?
+      false
+    end
+
     # @spec CONTAINER-RUNTIME-025
     # @spec CONTAINER-RUNTIME-026
     # @spec CONTAINER-RUNTIME-027
@@ -82,14 +86,15 @@ module ExecutionRunners
       ensure_agent_network!(backend: backend, policy: policy)
       ledger = provisioning_ledger
       attempt = ledger.next_attempt_for(agent_run: spec.agent_run)
-      intent = ledger.record_intent(agent_run: spec.agent_run, attempt: attempt)
+      recorded_at = Time.current
+      intent = ledger.record_intent(agent_run: spec.agent_run, attempt: attempt, recorded_at: recorded_at)
       service = Containers::Provision.new(
         agent_run: spec.agent_run,
         project: spec.project,
         worktree_path: self.class.worktree_path_for(spec),
         backend: backend,
         networking_policy: policy,
-        ownership_labels: ledger.ownership_labels_for(agent_run: spec.agent_run, attempt: attempt),
+        ownership_labels: ledger.ownership_labels_for(agent_run: spec.agent_run, attempt: attempt, recorded_at: recorded_at),
         egress_gateway_url: gateway&.gateway_url,
         **provision_options(spec)
       )
@@ -169,7 +174,8 @@ module ExecutionRunners
       agent_run = AgentRun.find(handle.metadata["agent_run_id"])
       Containers::Provision.reconnect(
         agent_run: agent_run, container_id: handle.identifier,
-        worktree_path: handle.metadata["worktree_path"]
+        worktree_path: handle.metadata["worktree_path"],
+        **reconnect_timeout_option(handle)
       )
     rescue ActiveRecord::RecordNotFound
       # A missing AgentRun means the environment can no longer be reached.
@@ -215,8 +221,23 @@ module ExecutionRunners
       teardown_gateway!(handle: handle)
     end
 
-    def supports_resource_listing?
-      true
+    def list_resources_by_tags(tags:, resource_kind: nil)
+      filters = label_filters_for(tags:, resource_kind:)
+
+      Containers.all_backends.flat_map do |backend|
+        backend.list_containers(all: true, filters: { label: filters }.to_json).map do |container|
+          build_managed_resource(container: container, backend: backend)
+        end
+      rescue Docker::Error::DockerError, Excon::Error => e
+        Rails.logger.warn(
+          message: "execution_runners.resource_listing_failed",
+          runner_type: RUNNER_TYPE.to_s,
+          backend: backend.identifier,
+          error_class: e.class.name,
+          error: e.message
+        )
+        []
+      end
     end
 
     def list_resources(host: nil)
@@ -225,7 +246,24 @@ module ExecutionRunners
       list_environment_resources(backend:) + list_workspace_resources(backend:)
     end
 
-    def cleanup_resource(resource:)
+    def cleanup_resource(resource:, force: false)
+      return cleanup_tracked_resource(resource:) if resource.respond_to?(:resource_type)
+
+      cleanup_managed_resource(resource:, force: force)
+    end
+
+    def cleanup_managed_resource(resource:, force:)
+      backend = Containers.backend_for(resource.host.presence)
+      container = backend.get_container(resource.identifier)
+      backend.stop_container(container, timeout: force ? 0 : 10)
+      backend.delete_container(container, force: true, v: true)
+    rescue Docker::Error::ClientError, Docker::Error::NotFoundError
+      nil
+    rescue Docker::Error::DockerError, Excon::Error => e
+      raise ProvisionError, e.message
+    end
+
+    def cleanup_tracked_resource(resource:)
       backend = Containers.backend_for(resource.host)
 
       case resource.resource_type.to_s
@@ -413,6 +451,26 @@ module ExecutionRunners
     # are attributed to the deployment that created them.
     def provisioning_environment
       Rails.env.to_s
+    end
+
+    def label_filters_for(tags:, resource_kind:)
+      filters = tags.map do |key, value|
+        value.nil? ? key : "#{key}=#{value}"
+      end
+      filters << "paid.resource=#{resource_kind}" if resource_kind.present?
+      filters
+    end
+
+    def build_managed_resource(container:, backend:)
+      labels = container.info.fetch("Labels", {})
+      ExecutionRunners::ManagedResource.new(
+        runner_type: RUNNER_TYPE.to_s,
+        resource_kind: labels["paid.resource"].presence || RESOURCE_KIND,
+        identifier: container.id,
+        host: backend.identifier,
+        ownership_tags: labels.select { |key, _value| key.start_with?("paid.") },
+        metadata: {}
+      )
     end
 
     # Maps the raw Docker state inspection to an ExecutionStatus state:
@@ -720,9 +778,10 @@ module ExecutionRunners
       resources = spec.resources
       return options unless resources
 
-      options[:memory_bytes] = resources.memory_bytes if resources.memory_bytes
-      options[:cpu_quota] = resources.cpu_quota if resources.cpu_quota
-      options[:pids_limit] = resources.pids_limit if resources.pids_limit
+      options[:memory_bytes] = resources.memory_bytes if resources.memory_mib
+      options[:cpu_quota] = resources.cpu_quota if resources.cpu_cores
+      options[:pids_limit] = Containers::Provision::DEFAULTS[:pids_limit]
+      options[:timeout_seconds] = resources.timeout_seconds if resources.timeout_seconds
       options
     end
 
@@ -735,9 +794,24 @@ module ExecutionRunners
         metadata: {
           "agent_run_id" => spec.agent_run&.id,
           "worktree_path" => self.class.worktree_path_for(spec),
-          "environment" => spec.environment || {}
+          "environment" => spec.environment || {},
+          "timeout_seconds" => spec.resources&.timeout_seconds
         }
       )
+    end
+
+    # The run's requested command timeout travels on the handle metadata
+    # because +Containers::Provision.reconnect+ builds a fresh service whose
+    # options otherwise reset to the 3600s DEFAULTS. Forwarding it keeps the
+    # provider-neutral timeout authoritative for +#start+ executions on a
+    # reconnected container; an explicit +timeout:+ passed to +#start+ still
+    # wins inside +Containers::Provision#execute+.
+    # @spec CONTAINER-RUNTIME-027
+    def reconnect_timeout_option(handle)
+      timeout = handle.metadata["timeout_seconds"]
+      return {} unless timeout
+
+      { timeout_seconds: timeout }
     end
 
     # Translates the {WorkspaceStrategy} into the opaque workspace reference

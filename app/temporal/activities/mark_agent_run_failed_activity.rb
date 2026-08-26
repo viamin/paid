@@ -43,16 +43,21 @@ module Activities
       # pump and mint a duplicate run that supersedes this one — the churn loop
       # that caused hundreds of wasted runs per issue.
       if agent_run.issue && agent_run.status.in?(AgentRun::FAILURE_STATUSES)
+        issue = agent_run.issue
         target_state =
           if agent_run.recoverable_rate_limited?
             "in_progress"
           elsif agent_run.review_goal?
             "completed"
+          elsif agent_run.enhance_issue_goal? && agent_run.issue.paid_state == "manual_review"
+            "manual_review"
           else
             "failed"
           end
-        if agent_run.issue.paid_state != target_state
-          agent_run.issue.update!(paid_state: target_state)
+        if record_issue_analysis_backoff?(agent_run)
+          issue.record_issue_analysis_backoff!(paid_state: target_state)
+        elsif issue.paid_state != target_state
+          issue.update!(paid_state: target_state)
         end
 
         # A GitHub App permission rejection is permanent — it fails identically
@@ -80,6 +85,13 @@ module Activities
     private
 
     PUSH_PERMISSION_COMMENT_MARKER = "<!-- paid: push-permission-rejection -->"
+
+    def record_issue_analysis_backoff?(agent_run) # @spec ISSUE-ANALYSIS-010 ISSUE-ANALYSIS-011
+      agent_run.auto_pick? &&
+        agent_run.analyze_issue_goal? &&
+        agent_run.status == "failed" &&
+        agent_run.provider_unavailable?
+    end
 
     def check_auth_failure(agent_run, error_message)
       checker = GithubTokens::AuthFailureChecker.new(error_message: error_message)

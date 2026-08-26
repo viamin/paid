@@ -139,26 +139,36 @@
 
 - [x] **CHAT-API-009** — While the chat session show page's conversation
   panel is bound to the viewport (CHAT-API-008), the panel header SHALL stay
-  compact enough to leave the transcript a usable share of the panel, without
-  ever hiding a workspace control the user needs.
+  compact enough to leave the transcript a usable share of the panel on the
+  smallest supported mobile viewport, without making workspace recovery or
+  configuration actions unreachable.
 
   The workspace capability panel — whose cloned-repo list grows without
-  bound — SHALL sit behind a `<details>` disclosure. The disclosure SHALL
-  render **open in the server response** for any session that has a workspace
-  (`container_capability` other than `none`), and collapsed only for
-  inline-only chats. A stopped workspace's sole recovery path is the "Reopen
-  with workspace" button inside that panel, and a ready workspace's clone
-  affordance and repo list live there too; folding them away leaves a stopped
-  chat looking unrecoverable. Server-rendering the `open` state (rather than
-  relying on a click) keeps those controls reachable before, and without,
-  JavaScript. When a live `capability_changed` broadcast *reveals* one of
-  those actions — i.e. the action transitions from hidden to shown — the
+  bound — SHALL sit behind a `<details>` disclosure. On the desktop/wide page
+  header, the disclosure SHALL render **open in the server response** for any
+  session that has a workspace (`container_capability` other than `none`), and
+  collapsed only for inline-only chats. On the compact mobile page header, the
+  disclosure MAY render collapsed by default so the transcript remains usable,
+  provided the workspace state stays visible in the header badges and the
+  disclosure summary remains plainly reachable without JavaScript. When a live
+  `capability_changed` broadcast *reveals* one of the actions inside the
+  capability panel — i.e. the action transitions from hidden to shown — the
   controller SHALL unfold the surrounding `<details>` with it, since un-hiding
   a control inside a collapsed disclosure reveals nothing; it SHALL NOT unfold
   the disclosure when it is hiding an action or when the action was already
   visible before the toggle, or same-state snapshot broadcasts (e.g. a
   `clone_manifest` rebroadcast that still carries `container_capability:
   "ready"`) would fight a user who intentionally collapsed the disclosure.
+
+  Below `xl`, the page SHALL switch to a compact header pattern that keeps the
+  transcript as the dominant region: a short title/token row, a badge row, and
+  collapsed disclosures for session/workspace controls. Runner/model selectors,
+  title editing, and archive controls remain reachable inside the compact
+  session disclosure. On a 390×844 viewport with the panel viewport-bound and a
+  visible mobile history toggle, the transcript region
+  (`[data-chat-target="container"]`) SHALL retain at least 18rem of height and
+  the document itself SHALL remain non-scrolling so the transcript stays the
+  real scroll container.
 
   The header SHALL carry a percentage `max-height` with its own
   `overflow-y-auto` so no combination of long titles, badges, or workspace
@@ -175,10 +185,12 @@
   workspace panel consume most of a viewport-bound panel and the transcript
   renders in a sliver too short to read (#3575).
   *Tests:* `spec/requests/chat_sessions_spec.rb` ("collapses the workspace
-  disclosure for an inline-only chat", "renders the workspace disclosure open
-  when the chat has a workspace", "bounds the chat panel header so the
-  transcript keeps usable height", "relaxes the header cap while the workspace
-  disclosure is open"), `spec/system/chat_workspace_reopen_spec.rb`,
+  disclosure for an inline-only chat", "renders the desktop workspace
+  disclosure open when the chat has a workspace", "uses a compact mobile page
+  header so the transcript remains usable", "bounds the desktop chat panel
+  header so the transcript keeps usable height", "relaxes the desktop header
+  cap while the workspace disclosure is open"), `spec/system/chat_layout_spec.rb`,
+  `spec/system/chat_workspace_reopen_spec.rb`,
   `spec/lib/chat_controller_node_harness_spec.rb`
   ("testStoppedCapabilityUnfoldsItsDisclosure",
   "testHiddenCapabilityActionLeavesDisclosureAlone",
@@ -201,3 +213,45 @@
   *Code:* `Tools::RepoReadClientResolver#resolve`,
   `Tools::RepoReadClientResolver#resolve_project_client`,
   `Tools::RepoReadClientResolver#resolve_user_client`.
+
+- [x] **CHAT-API-011** — When `get_pull_request_details` returns a pull request,
+  the system SHALL include a sanitized `auto_merge` diagnostic object that
+  exposes only project-scoped derived facts: the latest persisted
+  merge-permission rejection/cooldown when present, otherwise the current
+  mergeability and CI-check gate state when credentials permit. The payload
+  SHALL NOT expose tokens, raw secrets, stack traces, or untrusted comment
+  bodies.
+  *Tests:* `spec/mcp/tools/get_pull_request_details_spec.rb`.
+  *Code:* `Tools::GetPullRequestDetails#perform`,
+  `PullRequests::AutoMergeStatus#call`.
+
+- [x] **CHAT-API-012** — When chat guidance tells the model how to discover
+  code in a repo (the default `base_identity` fallback, the seeded
+  `chat.system_prompt` template, and the `grep_repo` tool description), the
+  guidance SHALL name `read_repo_file` for file reads (never the stale
+  `get_file_content` name), SHALL present `search_code` (Paid's knowledge
+  base) as the first choice for code discovery, and SHALL describe `grep_repo`
+  as GitHub-Code-Search-backed and rate-limit-sensitive, directing the model
+  to it only when knowledge search is unavailable or stale, or when exact
+  GitHub Code Search behavior is needed.
+  *Tests:* `spec/services/chat_sessions/build_system_prompt_spec.rb`,
+  `spec/mcp/tools/grep_repo_spec.rb`,
+  `spec/services/prompts/sync_defaults_spec.rb`.
+  *Code:* `ChatSessions::BuildSystemPrompt#base_identity`,
+  `Tools::GrepRepo.description`, `db/seeds/prompts.rb`.
+
+- [x] **CHAT-API-013** — When the chat agent loop advertises tool definitions
+  for a session (`Tools::Registry.chat_definitions_for`), `grep_repo` SHALL
+  remain in the advertised tool set (GitHub Code Search stays available as a
+  fallback), but its advertised `description` SHALL be demoted with a
+  fallback-only annotation steering the model toward `search_code` whenever
+  the session's current project has `knowledge_status: "ready"`. Sessions with
+  no current project, or whose project's knowledge base is not yet ready
+  (`pending`, `collecting`, `failed`, or `stale`), SHALL see `grep_repo`'s
+  plain, undemoted description. This keeps ordinary code-discovery calls on
+  the knowledge-backed tool instead of the shared GitHub Code Search rate
+  limit (#3392).
+  *Tests:* `spec/mcp/tools/registry_spec.rb`, `spec/mcp/tools/grep_repo_spec.rb`,
+  `spec/mcp/tools/base_tool_spec.rb`.
+  *Code:* `Tools::Registry.chat_definition_for`, `Tools::BaseTool.description_for`,
+  `Tools::GrepRepo.description_for`, `Tools::GrepRepo.knowledge_ready?`.

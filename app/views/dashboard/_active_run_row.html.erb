@@ -11,7 +11,15 @@
   <td class="px-4 py-3 text-sm text-gray-500">
     <%= agent_run_context_display(run) %>
   </td>
-  <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500"><%= agent_run_goal_display(run) %></td>
+  <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500">
+    <div class="flex flex-col gap-1">
+      <%= agent_run_goal_display(run) %>
+      <% focus_badge = agent_run_focus_badge(run) %>
+      <% if focus_badge %>
+        <%= focus_badge %>
+      <% end %>
+    </div>
+  </td>
   <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500"><%= agent_run_runner_display(run, local_assigns[:runner_displays]) %></td>
   <td class="whitespace-nowrap px-4 py-3 text-sm">
     <% run_tier = run.model_selection&.tier %>

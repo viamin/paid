@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-08-22
+last_updated: 2026-08-23
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -184,6 +184,14 @@ arrows:
     taxonomy: configuration
     status: OK
     audited: 2026-08-04
+  prompt-default-sync:
+    title: Prompt Default Synchronization
+    path: docs/intent/prompt-default-sync/prompt-default-sync-design.md
+    specs: docs/intent/prompt-default-sync/prompt-default-sync-specs.md
+    parent: PAID
+    taxonomy: configuration
+    status: OK
+    audited: 2026-08-25
   polyglot-test-execution:
     title: Polyglot Test Execution
     path: docs/intent/polyglot-test-execution/polyglot-test-execution-design.md
@@ -236,6 +244,12 @@ arrows:
     title: Billing Aggregation
     path: docs/intent/billing-aggregation/billing-aggregation-design.md
     specs: docs/intent/billing-aggregation/billing-aggregation-specs.md
+    parent: PAID
+    taxonomy: operations
+  infrastructure-spend-thresholds:
+    title: Infrastructure Spend Thresholds
+    path: docs/intent/infrastructure-spend-thresholds/infrastructure-spend-thresholds-design.md
+    specs: docs/intent/infrastructure-spend-thresholds/infrastructure-spend-thresholds-specs.md
     parent: PAID
     taxonomy: operations
     status: OK
@@ -310,18 +324,21 @@ arrows:
     specs: docs/intent/tdd-mode/tdd-mode-specs.md
     parent: PAID
     taxonomy: runtime
+    audited: 2026-08-23
   tdd-write-guards:
     title: Run-Scoped TDD Write Guards
     path: docs/intent/tdd-write-guards/tdd-write-guards-design.md
     specs: docs/intent/tdd-write-guards/tdd-write-guards-specs.md
     parent: PAID
     taxonomy: runtime
+    audited: 2026-08-23
   tdd-test-review-prs:
     title: TDD Test-Review PRs
     path: docs/intent/tdd-test-review-prs/tdd-test-review-prs-design.md
     specs: docs/intent/tdd-test-review-prs/tdd-test-review-prs-specs.md
     parent: PAID
     taxonomy: runtime
+    audited: 2026-08-23
   rdr-rollout-guards:
     title: RDR Rollout Guards
     path: docs/intent/rdr-rollout-guards/rdr-rollout-guards-design.md

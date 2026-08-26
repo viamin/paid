@@ -18,7 +18,15 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
 
   let(:agent_run) { create(:agent_run, container_host: "local") }
   let(:backend) { instance_double(Containers::Backends::Base, identifier: "local") }
-  let(:resources) { ExecutionRunners::ComputeRequirements.new(cpu_quota: 100_000, memory_bytes: 1024, disk_bytes: 2048, pids_limit: 50) }
+  let(:resources) do
+    ExecutionRunners::ExecutionResources.new(
+      cpu_cores: 1.0,
+      memory_mib: 1024,
+      disk_gb: 2,
+      architecture: "x86_64",
+      timeout_seconds: 3600
+    )
+  end
   let(:run_spec) do
     ExecutionRunners::RunSpec.new(
       agent_run: agent_run, project: agent_run.project, image: "paid/agent:latest", command: "claude code",
@@ -30,6 +38,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
   end
   let(:provision_service) { instance_double(Containers::Provision, container: instance_double(Docker::Container)) }
   let(:started_container) { instance_double(Docker::Container) }
+  let(:firewall_calls) { [] }
   let(:gateway_container) do
     instance_double(Docker::Container,
       info: { "NetworkSettings" => { "Networks" => { "paid_agent" => { "Aliases" => [ "egress-gateway" ] } } } })
@@ -71,7 +80,9 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
   before do
     allow(Containers).to receive(:backend_for).and_return(backend)
     allow(NetworkPolicy).to receive(:ensure_network!).and_return(instance_double(Docker::Network))
-    allow(NetworkPolicy).to receive(:apply_firewall_rules)
+    allow(NetworkPolicy).to receive(:apply_firewall_rules) do |*args, **kwargs|
+      firewall_calls << { args: args, kwargs: kwargs }
+    end
     allow(provision_service).to receive_messages(
       firewall_service_destinations: [],
       container: started_container
@@ -85,7 +96,8 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
         networking_policy: run_spec.networking_policy,
         ownership_labels: ownership_label_map,
         egress_gateway_url: nil,
-        image: "paid/agent:latest", memory_bytes: 1024, cpu_quota: 100_000, pids_limit: 50
+        image: "paid/agent:latest", memory_bytes: 1024 * 1024 * 1024, cpu_quota: 100_000, pids_limit: 500,
+        timeout_seconds: 3600
       ).and_return(provision_service)
       allow(provision_service).to receive(:provision).and_return(
         Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
@@ -98,8 +110,25 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       expect(handle.identifier).to eq("abc123")
       expect(handle.host).to eq("local")
       expect(handle.metadata).to eq(
-        "agent_run_id" => agent_run.id, "worktree_path" => nil, "environment" => { "FOO" => "bar" }
+        "agent_run_id" => agent_run.id, "worktree_path" => nil, "environment" => { "FOO" => "bar" },
+        "timeout_seconds" => 3600
       )
+    end
+
+    # @spec CONTAINER-RUNTIME-027
+    it "forwards the requested timeout to the provisioner instead of the 3600s default" do
+      short_timeout_spec = ExecutionRunners::RunSpec.new(**run_spec.to_h.merge(
+        resources: resources.with(timeout_seconds: 600)
+      ))
+
+      expect(Containers::Provision).to receive(:new)
+        .with(hash_including(timeout_seconds: 600))
+        .and_return(provision_service)
+      allow(provision_service).to receive(:provision).and_return(
+        Containers::Provision::Result.success(container_id: "abc123", container_host: "local")
+      )
+
+      expect(runner.provision(spec: short_timeout_spec).metadata["timeout_seconds"]).to eq(600)
     end
 
     it "uses the agent_run's worktree_path for a bind_mount workspace strategy" do
@@ -165,7 +194,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       expect(reloaded.workspace_ref).to eq(handle.workspace_ref)
 
       allow(Containers::Provision).to receive(:reconnect)
-        .with(agent_run: agent_run, container_id: "abc123", worktree_path: nil)
+        .with(agent_run: agent_run, container_id: "abc123", worktree_path: nil, timeout_seconds: 3600)
         .and_return(provision_service)
       allow(provision_service).to receive_messages(
         execute: Containers::Provision::Result.success(stdout: "ok\n", stderr: "", exit_code: 0),
@@ -999,6 +1028,46 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     end
   end
 
+  describe "reconciliation hooks" do
+    it "lists resources by ownership tag filters" do
+      container = instance_double(
+        Docker::Container,
+        id: "abc123",
+        info: {
+          "Labels" => ownership_label_map.merge("paid.resource" => "container")
+        }
+      )
+      allow(Containers).to receive(:all_backends).and_return([ backend ])
+      allow(backend).to receive(:list_containers).with(
+        all: true,
+        filters: { label: [ "paid.run_id=#{agent_run.id}", "paid.resource=container" ] }.to_json
+      ).and_return([ container ])
+
+      resources = runner.list_resources_by_tags(tags: { "paid.run_id" => agent_run.id.to_s }, resource_kind: "container")
+
+      expect(resources.map(&:identifier)).to eq([ "abc123" ])
+      expect(resources.first.ownership_tags).to include("paid.run_id" => agent_run.id.to_s)
+    end
+
+    it "cleans up a discovered resource by identifier and host" do
+      resource = ExecutionRunners::ManagedResource.new(
+        runner_type: "local_docker",
+        resource_kind: "container",
+        identifier: "abc123",
+        host: "local",
+        ownership_tags: ownership_label_map,
+        metadata: {}
+      )
+      container = instance_double(Docker::Container)
+      allow(Containers).to receive(:backend_for).with("local").and_return(backend)
+      allow(backend).to receive(:get_container).with("abc123").and_return(container)
+      allow(backend).to receive(:stop_container).with(container, timeout: 0)
+      allow(backend).to receive(:delete_container).with(container, force: true, v: true)
+
+      expect { runner.cleanup_resource(resource: resource, force: true) }.not_to raise_error
+    end
+  end
+
   describe "#start" do
     let(:handle) do
       ExecutionRunners::RunnerHandle.new(
@@ -1200,6 +1269,17 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
         .and_return(provision_service)
 
       runner.reconnect(handle: path_handle)
+    end
+
+    # @spec CONTAINER-RUNTIME-027
+    it "threads the requested timeout from the handle metadata so a reconnected run keeps it" do
+      timed_handle = handle.with(metadata: handle.metadata.merge("timeout_seconds" => 600))
+
+      expect(Containers::Provision).to receive(:reconnect)
+        .with(agent_run: agent_run, container_id: "abc123", worktree_path: nil, timeout_seconds: 600)
+        .and_return(provision_service)
+
+      runner.reconnect(handle: timed_handle)
     end
   end
 
@@ -1785,7 +1865,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       expect(reloaded_handle).to eq(handle)
 
       allow(Containers::Provision).to receive(:reconnect)
-        .with(agent_run: agent_run, container_id: "abc123", worktree_path: nil)
+        .with(agent_run: agent_run, container_id: "abc123", worktree_path: nil, timeout_seconds: 3600)
         .and_return(provision_service)
       allow(provision_service).to receive_messages(provision: Containers::Provision::Result.success(container_id: "abc123", container_host: "local"), execute: Containers::Provision::Result.success(stdout: "ok\n", stderr: "", exit_code: 0))
       allow(provision_service).to receive(:cleanup)
@@ -1817,6 +1897,187 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
         container_running?: true, container: instance_double(Docker::Container), backend: backend, cleanup: nil
       )
       allow(provision_service).to receive_messages(firewall_service_destinations: [])
+    end
+  end
+
+  it_behaves_like "an execution runner contract" do
+    def assert_workspace_cleanup!
+      expect(provision_service).to receive(:cleanup).with(force: true)
+
+      runner.cleanup(handle: valid_handle, force: true)
+    end
+
+    def assert_runner_cleanup!
+      expect(provision_service).to receive(:cleanup).with(force: true)
+
+      runner.cleanup(handle: valid_handle, force: true)
+    end
+
+    def assert_cancellation!
+      expect(backend).to receive(:stop_container)
+
+      runner.cancel(handle: valid_handle)
+    end
+
+    let(:contract_abort_patterns) { [ "quota exceeded" ] }
+    let(:aborting_contract_command) { "emit quota warning" }
+    let(:completed_provision_service) do
+      instance_double(
+        Containers::Provision,
+        container_running?: false
+      )
+    end
+
+    let(:valid_handle) do
+      ExecutionRunners::RunnerHandle.new(
+        runner_type: :local_docker,
+        identifier: "abc123",
+        host: "local",
+        workspace_ref: "paid-workspace-#{agent_run.id}",
+        metadata: {
+          "agent_run_id" => agent_run.id,
+          "worktree_path" => nil,
+          "environment" => { "FOO" => "bar" },
+          "timeout_seconds" => 3600
+        }
+      )
+    end
+    let(:missing_handle) { valid_handle.with(identifier: "missing123") }
+    let(:unrestricted_run_spec) do
+      ExecutionRunners::RunSpec.new(
+        **run_spec.to_h.merge(networking_policy: ExecutionRunners::NetworkingPolicy.direct_outbound)
+      )
+    end
+
+    let(:restricted_networking_effects) { firewall_calls }
+    let(:expected_restricted_networking_effects) do
+      [
+        {
+          args: [ started_container ],
+          kwargs: {
+            github_ips: NetworkPolicy::DEFAULT_GITHUB_IPS,
+            proxy_host: nil,
+            service_destinations: [],
+            backend: backend
+          }
+        }
+      ]
+    end
+    let(:unrestricted_networking_effects) { firewall_calls }
+    let(:expected_unrestricted_networking_effects) { [] }
+
+    before do
+      allow(Containers::Provision).to receive_messages(
+        new: provision_service,
+        compatibility_for: Containers::Provision::CompatibilityResult.new(compatible: true, error_message: nil)
+      )
+      allow(provision_service).to receive(:execute) do |command, abort_patterns:, **, &block|
+        case command
+        when "startup timeout"
+          raise Containers::Provision::StartupTimeoutError.new("No output received", diagnostics: { elapsed: 30 })
+        when "idle timeout"
+          raise Containers::Provision::IdleTimeoutError.new("Output stalled", diagnostics: { idle_seconds: 30 })
+        when "wall timeout"
+          raise Containers::Provision::TimeoutError.new("Timed out", diagnostics: { elapsed: 60 })
+        when aborting_contract_command
+          if abort_patterns == contract_abort_patterns
+            raise Containers::Provision::OutputAbortError.new("aborted", matched_output: contract_abort_patterns.first,
+              source: :pattern)
+          end
+
+          block&.call(:stdout, "ok\n")
+          Containers::Provision::Result.success(stdout: "ok\n", stderr: "", exit_code: 0)
+        when "oom failure"
+          Containers::Provision::Result.failure(
+            error: "Command exited with code 137",
+            stdout: "",
+            stderr: "",
+            exit_code: 137,
+            oom_killed: true,
+            memory_limit_bytes: 4_294_967_296,
+            container_running: false
+          )
+        else
+          block&.call(:stdout, "ok\n")
+          Containers::Provision::Result.success(stdout: "ok\n", stderr: "", exit_code: 0)
+        end
+      end
+      allow(provision_service).to receive_messages(
+        provision: Containers::Provision::Result.success(container_id: "abc123", container_host: "local"),
+        container_running?: true,
+        cleanup: nil,
+        container: started_container,
+        backend: backend,
+        firewall_service_destinations: []
+      )
+      allow(backend).to receive(:stop_container)
+      allow(Containers::ServiceProvisioner).to receive(:new).and_return(instance_double(
+        Containers::ServiceProvisioner,
+        provision: { "DATABASE_URL" => "postgres://agent:agent@pg:5432/agent_test" },
+        cleanup: nil
+      ))
+      allow(NetworkPolicy).to receive(:contract_for_policy).and_call_original
+      allow(AgentRun).to receive(:find).and_call_original
+      allow(Containers::Provision).to receive(:reconnect) do |agent_run:, container_id:, **kwargs|
+        raise Containers::Provision::ProvisionError, "Container #{container_id} not found" if container_id == "missing123"
+
+        container_id == "abc123-completed" ? completed_provision_service : provision_service
+      end
+    end
+  end
+
+  it_behaves_like "a secure execution runner" do
+    let(:captured_proxy_scope_credentials) { [] }
+    let(:secure_networking_effects) { firewall_calls }
+    let(:expected_secure_networking_effects) do
+      [
+        {
+          args: [ started_container ],
+          kwargs: {
+            github_ips: NetworkPolicy::DEFAULT_GITHUB_IPS,
+            proxy_host: nil,
+            service_destinations: [],
+            backend: backend
+          }
+        }
+      ]
+    end
+
+    let(:secure_run_spec) do
+      ExecutionRunners::RunSpec.new(
+        **run_spec.to_h.merge(
+          secrets_config: { "OPENAI_API_KEY" => "sk-test-super-secret" }
+        )
+      )
+    end
+    let(:second_agent_run) { create(:agent_run, container_host: "local") }
+    let(:second_secure_run_spec) do
+      ExecutionRunners::RunSpec.new(
+        **secure_run_spec.to_h.merge(
+          agent_run: second_agent_run,
+          project: second_agent_run.project,
+          environment: { "FOO" => "baz" }
+        )
+      )
+    end
+
+    let(:secret_values_excluded_from_handle_metadata) do
+      [ "sk-test-super-secret", agent_run.proxy_token ]
+    end
+    let(:expected_proxy_scope_agent_run_ids) do
+      [ agent_run.id, second_agent_run.id ]
+    end
+
+    before do
+      allow(Containers::Provision).to receive(:new) do |**kwargs|
+        run = kwargs.fetch(:agent_run)
+        captured_proxy_scope_credentials << { agent_run_id: run.id, proxy_token: run.proxy_token }
+        provision_service
+      end
+      allow(provision_service).to receive_messages(
+        provision: Containers::Provision::Result.success(container_id: "abc123", container_host: "local"),
+        firewall_service_destinations: []
+      )
     end
   end
 

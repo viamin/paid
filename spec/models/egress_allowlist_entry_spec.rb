@@ -51,6 +51,8 @@ RSpec.describe EgressAllowlistEntry do
         api.example.com?x=1
         api.example.com#anchor
         203.0.113.10
+        127.0.0.1.example.com
+        api.169.254.169.254.example.com
         api.localhost
         *.localhost
         example
@@ -109,6 +111,13 @@ RSpec.describe EgressAllowlistEntry do
 
       expect(entry).not_to be_valid
       expect(entry.errors[:host_pattern].join).to match(/metadata/i)
+    end
+
+    it "rejects hostnames that embed IP literals inside a domain rule" do
+      entry = build(:egress_allowlist_entry, account: account, host_pattern: "127.0.0.1.example.com")
+
+      expect(entry).not_to be_valid
+      expect(entry.errors[:host_pattern].join).to include("hostname")
     end
 
     it "rejects malformed hostnames" do

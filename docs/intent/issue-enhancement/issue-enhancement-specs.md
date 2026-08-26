@@ -23,27 +23,28 @@
   enhance-issue needs-input label and move the issue to `paid_state:
   "needs_input"` rather than leaving it auto-pick eligible. If recovery is not
   possible, the run SHALL still fail non-retryably but the issue SHALL move to
-  `paid_state: "needs_input"` so automatic picking does not loop on the same
-  malformed enhancement attempt.
+  `paid_state: "manual_review"` so automatic picking does not loop on the same
+  malformed enhancement attempt. Generic workflow failure handling SHALL NOT
+  overwrite this terminal containment state with `paid_state: "failed"`, and
+  questionless-`needs_input` repair SHALL NOT alter it.
   *Tests:* `spec/temporal/activities/enhance_issue_activity_spec.rb`.
   *Code:* `app/temporal/activities/enhance_issue_activity.rb#enhance_issue_post_run`,
   `app/temporal/activities/enhance_issue_activity.rb#recover_paid_question_comment!`,
   `app/services/clarifying_questions/load.rb`.
 
-- [D] **ISSUE-ENHANCEMENT-006** — When generating clarifying questions, the
+- [x] **ISSUE-ENHANCEMENT-008** — When generating clarifying questions, the
   system SHALL ground question-generation in the actual repository: it SHALL
   self-answer codebase-determinable questions (existing models, platform
   targets, persistence format, current patterns) from the code and SHALL NOT
   ask the human clarifying questions whose answers are directly readable from
   the repository, asking only about genuine product, scope, or intent
   ambiguities the code cannot resolve (RDR-052 R3).
-  *Deferred:* Requires the read-only containerized execution path that lands
-  with RDR-052 Phase 1 (#3254). Today `enhance_issue` is a direct LLM call
-  (`tools: :none`, `enhance_issue` in `skip_clone` at
-  `app/temporal/workflows/agent_execution_workflow.rb:234`) with no
-  repository access; the prompt is grounded in the supplied retrieval
-  results and knowledge-base context only. Restored when the agent has
-  actual filesystem / repo access.
+  *Tests:* `spec/temporal/activities/run_agent_activity_spec.rb#augment_prompt_for_enhance_issue_goal`.
+  *Code:* `app/temporal/activities/run_agent_activity.rb#FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT`,
+  `app/temporal/activities/run_agent_activity.rb#augment_prompt_for_enhance_issue_goal`.
+  Shipped with RDR-052 Phase 1/2 (#3254, #3255): the run is now a
+  containerized agent with repository access, and the prompt instructs it to
+  explore the repo and self-answer before asking the human.
 
 - [x] **ISSUE-ENHANCEMENT-005** — When issue enhancement re-evaluates an issue
   after the user answers clarifying questions, the system SHALL include the
@@ -58,16 +59,19 @@
   `app/services/clarifying_questions/comment_admission.rb`,
   `app/models/project.rb#paid_bot_author?`.
 
-- [D] **ISSUE-ENHANCEMENT-007** — When re-evaluating an issue after the user
+- [x] **ISSUE-ENHANCEMENT-009** — When re-evaluating an issue after the user
   answers clarifying questions, the system SHALL judge answer-sufficiency
   against the user's answers TOGETHER WITH the actual codebase it reads, not
   against the supplied knowledge-base context alone, so the readiness verdict
   is grounded in the real code (RDR-052 R4).
-  *Deferred:* Same dependency as ISSUE-ENHANCEMENT-006 — the agent has no
-  repository access until #3254 lands. Today the re-evaluation prompt
-  instructs the agent to weigh the user's answers against the supplied
-  knowledge-base context, which is the strongest grounding available
-  pre-Phase 1.
+  *Tests:* `spec/temporal/activities/fetch_issues_activity_spec.rb`
+  (`"when the enhance_issue needs-input label is removed"`).
+  *Code:* `app/temporal/activities/fetch_issues_activity.rb#detect_enhance_issue_rechecks`,
+  `app/temporal/activities/run_agent_activity.rb#FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT`.
+  Shipped with RDR-052 Phase 1/2 (#3254, #3255): re-evaluation re-queues the
+  same containerized, codebase-grounded `enhance_issue` goal rather than a
+  KB-only re-check, so the verdict reads the repo alongside the prior
+  answers (admitted via ISSUE-ENHANCEMENT-005).
 
 ## LID-aware prompt materialization
 
@@ -93,11 +97,49 @@
   via the injected runner credential instead of the `ANTHROPIC_API_KEY`
   environment variable. The agent prompt SHALL instruct the agent that the run
   is comment-only: workspace modifications are discarded and the agent SHALL
-  NOT commit, push, or create a pull request. The workflow SHALL post the
-  `<!-- paid:enhance-issue -->` comment and label state without committing,
+  NOT commit, push, create a pull request, or post a GitHub comment. The GitHub
+  proxy SHALL reject mutation requests and restrict reads from an
+  `enhance_issue` run to its associated issue's detail endpoint; only comments
+  admitted by Paid's trusted-comment filter SHALL reach the agent through its
+  base prompt, and unrelated issue bodies SHALL NOT bypass that boundary. After
+  validating the agent's delimited structured output, the workflow SHALL post
+  the `<!-- paid:enhance-issue -->` comment and label state without committing,
   pushing, or creating a pull request.
   *Tests:* `spec/temporal/activities/enhance_issue_activity_spec.rb`.
   *Code:* `app/temporal/activities/enhance_issue_activity.rb#enhance_issue_post_run`,
   `app/temporal/workflows/agent_execution_workflow.rb`,
+  `app/controllers/api/github_proxy_controller.rb`,
   `app/services/containers/provision.rb#workspace_mount_mode`,
   `app/services/orchestration_strategies/defaults.rb#non_container_goals`.
+
+## Runtime contract and bounded execution
+
+- [x] **ISSUE-ENHANCEMENT-010** — When a deployment migrates an existing
+  database whose active global `goal.enhance_issue` prompt does not match the
+  source-controlled structured-output contract, the system SHALL create and
+  promote the expected immutable prompt version under system tenant access.
+  When the expected version is already active, migration SHALL make no prompt
+  change.
+  *Tests:* migration spec for the enhancement prompt synchronization.
+  *Code:* enhancement prompt synchronization migration.
+
+- [x] **ISSUE-ENHANCEMENT-011** — When Paid queues a new automatic
+  `enhance_issue` run, the system SHALL atomically consume one enhancement
+  round regardless of whether the run originated from initial analysis or
+  human-answer re-evaluation. Duplicate queue requests and manual enhancement
+  runs SHALL NOT consume a round. When the configured round limit has already
+  been reached, Paid SHALL NOT create another enhancement run; it SHALL leave
+  the issue in `manual_review` and post at most one marked
+  auto-enhancement-stop comment. Automatic picking SHALL exclude
+  `manual_review`; only an explicit operator-triggered run SHALL resume work.
+  Entering `manual_review` SHALL clear stored clarification questions and remove
+  the enhancement needs-input label so GitHub and Paid do not show contradictory
+  lifecycle states. Only a marker comment authored by Paid's GitHub App SHALL
+  suppress the stop notice; the marker text is unauthenticated, so trusting
+  allowlisted human collaborators would let any one of them forge the marker
+  and silence platform feedback, breaking the convention used by other
+  marker-based status comments.
+  *Tests:* `spec/temporal/activities/queue_agent_run_activity_spec.rb`,
+  `spec/temporal/activities/fetch_issues_activity_spec.rb`.
+  *Code:* `app/temporal/activities/queue_agent_run_activity.rb`,
+  `app/temporal/activities/fetch_issues_activity.rb`.

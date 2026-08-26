@@ -4387,7 +4387,16 @@ module Containers
       hostname = Socket.gethostname
       container = local_runtime_backend.get_container(hostname)
       @current_container_mounts = container.info["Mounts"] || []
-    rescue Docker::Error::DockerError
+    rescue Docker::Error::DockerError, Excon::Error
+      # Current-container mount detection is a best-effort convenience for
+      # translating local config paths to Docker-host paths. If the local
+      # runtime backend is unavailable or sandboxed (for example in tests
+      # that block Docker HTTP), treat it as "no mounts known" so fallback
+      # recovery can continue. Mirrors detected_config_mount above.
+      @current_container_mounts = nil
+    rescue Exception => error
+      raise unless defined?(WebMock::NetConnectNotAllowedError) && error.is_a?(WebMock::NetConnectNotAllowedError)
+
       @current_container_mounts = nil
     end
 

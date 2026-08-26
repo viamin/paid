@@ -57,27 +57,17 @@ RSpec.describe ExecutionRunners::Base do
         .to raise_error(NotImplementedError, /cleanup/)
     end
 
-    it "returns false for #supports_resource_listing?" do
-      expect(described_class.new.supports_resource_listing?).to be(false)
-    end
-
-    it "raises NotImplementedError for #list_resources" do
-      expect { described_class.new.list_resources(host: "local") }
-        .to raise_error(NotImplementedError, /list_resources/)
-    end
-
     it "raises NotImplementedError for #cleanup_resource" do
-      resource = ExecutionRunners::TrackedResource.new(
-        runner_type: :local_docker,
-        resource_type: "environment",
-        identifier: "resource-1",
+      resource = ExecutionRunners::ManagedResource.new(
+        runner_type: "local_docker",
+        resource_kind: "container",
+        identifier: "abc123",
         host: "local",
-        workspace_ref: nil,
-        tags: {},
+        ownership_tags: {},
         metadata: {}
       )
 
-      expect { described_class.new.cleanup_resource(resource: resource) }
+      expect { described_class.new.cleanup_resource(resource: resource, force: true) }
         .to raise_error(NotImplementedError, /cleanup_resource/)
     end
 
@@ -129,10 +119,10 @@ RSpec.describe ExecutionRunners::Base do
 
       expect(instance_methods).to contain_exactly(
         :provision, :start, :running?, :reconnect, :status, :cancel, :cleanup,
-        :resource_kind, :supports_tagging?, :supports_listing?,
-        :supports_resource_listing?, :list_resources, :cleanup_resource,
+        :list_resources_by_tags, :cleanup_resource,
         :provision_services, :cleanup_services, :provision_mcp_servers, :cleanup_mcp_servers,
-        :provision_browser_container
+        :provision_browser_container,
+        :resource_kind, :supports_tagging?, :supports_listing?, :supports_tag_reconciliation?
       )
 
       forbidden = %w[docker container_id bind_mount exec_in_container network_name]

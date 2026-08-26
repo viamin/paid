@@ -22,8 +22,8 @@ for that reconciliation:
 - coherence-check execution for `create_pr`, `review`, and `lid_planning`
 - Planning PR body generation and PR-description reporting for LID work
 
-This segment records that shipped surface and the remaining gaps that still
-need explicit LID coverage.
+This segment records the shipped surface that the 2026-08-23 RDR-051 closeout
+audited as fully implemented.
 
 ## Shipped Behavior
 
@@ -64,19 +64,20 @@ assuming callers will infer it from run metadata:
   agents using Paid's MCP surface can discover it without out-of-band docs
 - `lid_planning` is explicitly supported for external orchestration through the
   existing run-trigger surface, including named plan docs
-- Planning-PR correction remains explicitly unsupported for external agents
-  until the dedicated correction loop in `LID-RUNS-004` ships
+- Planning-PR correction support is advertised to external agents through the
+  same LID contract once the dedicated review-goal correction loop shipped
 
-## Active Gap
+## Closeout Status
 
-RDR-051 is still partially implemented. The remaining work is not "teach the
-agent LID exists" but "complete the surrounding lifecycle":
+RDR-051 is implemented. The follow-up gaps that previously kept this segment in
+partial status are now shipped:
 
-- add the dedicated review-goal correction loop for Planning PR feedback
-  (LID-RUNS-004)
-- finish the stronger materialization path from elicited issue intent into LLD
-  and EARS artifacts outside the native `create_pr` prompt path
-- expose the same LID-aware behavior cleanly to external-agent entry points
+- the review-goal correction loop for Planning PR feedback (`LID-RUNS-004`)
+- the elicited-intent materialization path in LID-enabled implementation prompts
+- the external-agent LID contract through the interop API and MCP surfaces
+
+Incremental brownfield `@spec` tagging remains the intended operating posture,
+not a closeout blocker.
 
 ## What this is not
 

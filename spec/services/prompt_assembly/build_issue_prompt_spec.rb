@@ -182,7 +182,11 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
     end
 
     it "strips a legacy embedded rules suffix from the queued prompt version before appending safety rules" do
-      prompt_record = create(:prompt, :global, slug: "coding.issue_implementation")
+      prompt_record = Prompt.global.find_or_create_by!(slug: "coding.issue_implementation") do |prompt|
+        prompt.name = "Issue implementation"
+        prompt.category = "coding"
+        prompt.active = true
+      end
       prompt_record.create_version!(
         template: <<~TEMPLATE,
           # Task

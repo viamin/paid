@@ -48,31 +48,39 @@ module Activities
           heartbeat("fetch_issues.sync_issue", project_id: project.id, github_issue_id: gi.id, index: index, total: github_issues.size)
           sync_issue(project, gi, eager_queue_enabled: eager_queue_enabled, eligible_issues: eligible_issues)
         end
-        sync_changed ||= synced_issues.any? { |issue_data| issue_data[:changed] }
+        sync_changed = synced_issues.any? { |issue_data| issue_data[:changed] }
         relationship_changes = parse_issue_relationships(project, synced_issues)
-        sync_changed ||= relationship_changes
+        sync_changed = relationship_changes || sync_changed
 
         enhance_issue_result = detect_enhance_issue_rechecks(project, synced_issues)
         enhance_issue_rechecks = enhance_issue_result[:rechecks]
-        sync_changed ||= enhance_issue_result[:changed]
+        sync_changed = enhance_issue_result[:changed] || sync_changed
 
         needs_input_changed = detect_needs_input_label_removals(
           project,
           synced_issues,
           ignored_issue_ids: enhance_issue_result[:handled_issue_ids]
         )
-        sync_changed ||= needs_input_changed
+        sync_changed = needs_input_changed || sync_changed
+
+        invalid_needs_input_changed = repair_questionless_needs_input(
+          project,
+          synced_issues,
+          client: client,
+          ignored_issue_ids: enhance_issue_result[:handled_issue_ids]
+        )
+        sync_changed = invalid_needs_input_changed || sync_changed
 
         paused_changed = sync_paused_state(project, synced_issues)
-        sync_changed ||= paused_changed
+        sync_changed = paused_changed || sync_changed
 
         closed_count = close_stale_issues(project, github_issues, truncated: truncated, incremental: incremental)
-        sync_changed ||= closed_count.positive?
+        sync_changed = closed_count.positive? || sync_changed
 
         if incremental && !truncated
           stale_pr_result = reconcile_open_pull_requests(project, client)
           stale_pr_count = stale_pr_result[:closed_count]
-          sync_changed ||= stale_pr_result[:changed]
+          sync_changed = stale_pr_result[:changed] || sync_changed
 
           stale_issue_result = reconcile_open_issues(
             project,
@@ -81,8 +89,17 @@ module Activities
             eligible_issues: eligible_issues
           )
           stale_issue_count = stale_issue_result[:closed_count]
-          sync_changed ||= stale_issue_result[:changed]
+          sync_changed = stale_issue_result[:changed] || sync_changed
+          sync_changed = repair_questionless_needs_input(
+            project,
+            stale_issue_result[:synced_issues],
+            client: client
+          ) || sync_changed
         end
+
+        completed_state_changed = repair_completed_open_issues(project, client)
+        sync_changed = completed_state_changed || sync_changed
+
         seed_eligible_issues(project, eligible_issues, incremental: incremental)
       end
 
@@ -315,6 +332,7 @@ module Activities
       )
     end
 
+    # @spec ISSUE-ENHANCEMENT-009
     def detect_enhance_issue_rechecks(project, synced_issues)
       label = project.enhance_issue_needs_input_label_name
       changed = false
@@ -346,7 +364,7 @@ module Activities
         if issue.enhance_issue_rounds >= max_rounds
           limit_reached = true
         else
-          issue.update!(enhance_issue_rounds: issue.enhance_issue_rounds + 1, paid_state: "in_progress")
+          issue.update!(paid_state: "in_progress")
         end
       end
 
@@ -365,13 +383,11 @@ module Activities
     end
 
     def stop_enhance_issue_recheck(project, issue, max_rounds)
-      project.client.add_labels_to_issue(
-        project.full_name,
-        issue.github_number,
-        [ project.enhance_issue_needs_input_label_name ]
+      IssueEnhancements::StopForManualReview.call(
+        project: project,
+        issue: issue,
+        reason: "Paid reached the configured limit of #{max_rounds} enhancement re-evaluation rounds."
       )
-      post_enhance_issue_limit_comment(project, issue, max_rounds)
-      restore_enhance_issue_recheck_signal(project, issue)
 
       logger.info(
         message: "agent_execution.enhance_issue_recheck_limit_reached",
@@ -382,32 +398,6 @@ module Activities
         max_rounds: max_rounds
       )
       nil
-    rescue GithubClient::Error
-      restore_enhance_issue_recheck_signal(project, issue)
-      raise
-    end
-
-    def post_enhance_issue_limit_comment(project, issue, max_rounds)
-      project.client.add_comment(
-        project.full_name,
-        issue.github_number,
-        <<~COMMENT
-          ## Auto-enhancement stopped
-
-          Paid has reached the configured limit of #{max_rounds} enhancement re-evaluation rounds for this issue.
-
-          Manual review is needed before enhancement can continue.
-        COMMENT
-      )
-    end
-
-    def restore_enhance_issue_recheck_signal(project, issue)
-      issue.with_lock do
-        issue.update!(
-          labels: Array(issue.labels) | [ project.enhance_issue_needs_input_label_name ],
-          paid_state: "needs_input"
-        )
-      end
     end
 
     def detect_needs_input_label_removals(project, synced_issues, ignored_issue_ids: [])
@@ -436,6 +426,87 @@ module Activities
       end
 
       changed
+    end
+
+    def repair_questionless_needs_input(project, synced_issues, client:, ignored_issue_ids: [])
+      repair_labels = [
+        project.enhance_issue_needs_input_label_name,
+        project.label_for_stage("needs_input"),
+        Activities::HandleNoOutputIssueRunActivity::PAID_NEEDS_INPUT_LABEL
+      ].compact.uniq
+      synced_issues = Array(synced_issues)
+      return false if synced_issues.empty?
+
+      ignored_issue_ids = ignored_issue_ids.to_set
+      changed = false
+      synced_issues.each_with_index do |issue_data, index|
+        heartbeat("fetch_issues.questionless_needs_input", project_id: project.id, issue_id: issue_data[:id], index: index, total: synced_issues.size)
+        next if ignored_issue_ids.include?(issue_data[:id])
+
+        issue = project.issues.find(issue_data[:id])
+        next if issue.is_pull_request? || issue.github_state == "closed" || issue.paid_state != "needs_input"
+        next if pending_clarifying_questions_for(project, issue).any?
+        next unless issue.reload.paid_state == "needs_input"
+
+        next unless remove_invalid_needs_input_labels(client, project, issue, repair_labels)
+
+        issue.update!(
+          paid_state: "failed",
+          labels: Array(issue.labels) - repair_labels,
+          needs_input_questions: nil
+        )
+        changed = true
+
+        logger.info(
+          message: "github_sync.questionless_needs_input_repaired",
+          project_id: project.id,
+          issue_id: issue.id,
+          issue_number: issue.github_number
+        )
+      end
+
+      changed
+    end
+
+    def pending_clarifying_questions_for(project, issue)
+      ClarifyingQuestions::Load.call(project:, issue:)
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "github_sync.questionless_needs_input_question_lookup_failed",
+        project_id: project.id,
+        issue_id: issue.id,
+        issue_number: issue.github_number,
+        error: e.message
+      )
+      [ :lookup_failed ]
+    end
+
+    def remove_invalid_needs_input_labels(client, project, issue, labels)
+      present_labels = labels.select { |label| issue.has_label?(label) }
+      return true if present_labels.empty?
+
+      result = client&.remove_labels_from_issue(project.full_name, issue.github_number, present_labels)
+      failures = Array(result&.fetch(:failed, []))
+      failures.each do |failure|
+        logger.warn(
+          message: "github_sync.questionless_needs_input_label_remove_failed",
+          project_id: project.id,
+          issue_id: issue.id,
+          issue_number: issue.github_number,
+          label: failure[:label],
+          error: failure[:error]
+        )
+      end
+      failures.empty? && result.present?
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "github_sync.questionless_needs_input_label_remove_failed",
+        project_id: project.id,
+        issue_id: issue.id,
+        issue_number: issue.github_number,
+        error: e.message
+      )
+      false
     end
 
     # GitHub -> App: mirrors the presence/absence of the `paid-paused` label
@@ -646,6 +717,70 @@ module Activities
         .where.not(github_updated_at: nil)
         .where("relationships_parsed_at IS NULL OR relationships_parsed_at < github_updated_at")
         .order(:relationships_parsed_at, :github_updated_at, :id)
+    end
+
+    def repair_completed_open_issues(project, client)
+      completed_issues = project.issues
+        .where(github_state: "open", is_pull_request: false, paid_state: "completed")
+        .to_a
+      return false if completed_issues.empty?
+
+      issue_pr_pairs = AgentRun.where(
+        project: project, status: "completed", goal: "create_pr", issue_id: completed_issues.map(&:id)
+      ).where.not(pull_request_number: nil).distinct.pluck(:issue_id, :pull_request_number)
+      return false if issue_pr_pairs.empty?
+
+      issue_pr_numbers = issue_pr_pairs.each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |(issue_id, pr_number), memo|
+        memo[issue_id] << pr_number
+      end
+      issue_ids = issue_pr_numbers.keys
+      pr_numbers = issue_pr_numbers.values.flatten.uniq
+      completed_issues.select! { |issue| issue_ids.include?(issue.id) }
+      return false if completed_issues.empty?
+
+      closing_numbers_by_pr = project.issues
+        .pull_requests_only
+        .where(github_state: "open")
+        .where(github_number: pr_numbers)
+        .each_with_object({}) do |pull_request, memo|
+          memo[pull_request.github_number] = pull_request.closing_referenced_issue_numbers.to_set
+        end
+
+      repaired = completed_issues.reject do |issue|
+        issue_pr_numbers.fetch(issue.id, []).any? do |pr_number|
+          closing_numbers_by_pr.fetch(pr_number, Set.new).include?(issue.github_number)
+        end
+      end
+      return false if repaired.empty?
+
+      visible_repaired = repaired.select { |issue| add_recommend_close_label(client, project, issue) }
+      return false if visible_repaired.empty?
+
+      project.issues.where(id: visible_repaired.map(&:id)).update_all(paid_state: "recommend_close", updated_at: Time.current)
+      logger.info(
+        message: "github_sync.completed_open_issues_repaired",
+        project_id: project.id,
+        issue_numbers: visible_repaired.map(&:github_number)
+      )
+      true
+    end
+
+    def add_recommend_close_label(client, project, issue)
+      label = project.label_for_stage("recommend_close") ||
+        Activities::HandleNoOutputIssueRunActivity::PAID_RECOMMEND_CLOSE_LABEL
+      return true if issue.has_label?(label)
+
+      client.add_labels_to_issue(project.full_name, issue.github_number, [ label ])
+      true
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "github_sync.completed_open_issue_label_failed",
+        project_id: project.id,
+        issue_id: issue.id,
+        issue_number: issue.github_number,
+        error: e.message
+      )
+      false
     end
 
     def resolve_external_dependencies(project, synced_numbers)
@@ -972,6 +1107,7 @@ module Activities
       return { changed: false, closed_count: 0 } unless issue_reconciliation_due?(project)
 
       open_numbers, truncated = fetch_open_issue_numbers(client, project.full_name)
+      synced_issues = []
 
       project.update_column(:last_issue_reconciliation_at, Time.current)
 
@@ -987,6 +1123,7 @@ module Activities
         project,
         client,
         open_numbers,
+        synced_issues: synced_issues,
         eager_queue_enabled: eager_queue_enabled,
         eligible_issues: eligible_issues
       )
@@ -994,6 +1131,7 @@ module Activities
         project,
         client,
         open_numbers,
+        synced_issues: synced_issues,
         eager_queue_enabled: eager_queue_enabled,
         eligible_issues: eligible_issues
       )
@@ -1015,11 +1153,12 @@ module Activities
 
       {
         changed: backfilled_count.positive? || reconciled_count.positive? || count.positive?,
-        closed_count: count
+        closed_count: count,
+        synced_issues: questionless_needs_input_candidates(project, synced_issues, open_numbers)
       }
     end
 
-    def backfill_open_issues(project, client, open_issue_numbers, eager_queue_enabled: false, eligible_issues: nil)
+    def backfill_open_issues(project, client, open_issue_numbers, synced_issues:, eager_queue_enabled: false, eligible_issues: nil)
       return 0 if open_issue_numbers.empty?
 
       existing_open_numbers = project.issues
@@ -1032,7 +1171,7 @@ module Activities
       missing_numbers.each_with_index do |number, index|
         heartbeat("fetch_issues.backfill_issue", project_id: project.id, issue_number: number, index: index, total: missing_numbers.size)
         github_issue = client.issue(project.full_name, number)
-        sync_issue(
+        synced_issues << sync_issue(
           project,
           github_issue,
           eager_queue_enabled: eager_queue_enabled,
@@ -1043,11 +1182,12 @@ module Activities
       missing_numbers.size
     end
 
-    def reconcile_open_issue_state(project, client, open_issue_numbers, eager_queue_enabled: false, eligible_issues: nil)
+    def reconcile_open_issue_state(project, client, open_issue_numbers, synced_issues:, eager_queue_enabled: false, eligible_issues: nil)
+      reconciliation_cutoff = Time.current - ISSUE_RECONCILIATION_INTERVAL
       existing_open_numbers = project.issues
         .where(github_state: "open", is_pull_request: false, github_number: open_issue_numbers)
         .where("github_updated_at < ?", project.last_issue_sync_at)
-        .where("reconciled_at IS NULL OR reconciled_at < github_updated_at")
+        .where("reconciled_at IS NULL OR reconciled_at < github_updated_at OR reconciled_at < ?", reconciliation_cutoff)
         .pluck(:github_number)
 
       changed_count = 0
@@ -1055,6 +1195,7 @@ module Activities
         heartbeat("fetch_issues.reconcile_issue", project_id: project.id, issue_number: number, index: index, total: existing_open_numbers.size)
         changed_count += 1 if reconcile_one_open_issue(
           project, client, number,
+          synced_issues: synced_issues,
           eager_queue_enabled: eager_queue_enabled,
           eligible_issues: eligible_issues
         )
@@ -1062,13 +1203,14 @@ module Activities
       changed_count
     end
 
-    def reconcile_one_open_issue(project, client, number, eager_queue_enabled: false, eligible_issues: nil)
+    def reconcile_one_open_issue(project, client, number, synced_issues:, eager_queue_enabled: false, eligible_issues: nil)
       github_issue = client.issue(project.full_name, number)
       result = sync_issue(
         project, github_issue,
         eager_queue_enabled: eager_queue_enabled,
         eligible_issues: eligible_issues
       )
+      synced_issues << result
       project.issues.where(id: result[:id]).update_all(reconciled_at: Time.current)
       result[:changed]
     rescue GithubClient::RateLimitError
@@ -1087,6 +1229,16 @@ module Activities
     def issue_reconciliation_due?(project)
       last = project.last_issue_reconciliation_at
       last.nil? || last < ISSUE_RECONCILIATION_INTERVAL.ago
+    end
+
+    def questionless_needs_input_candidates(project, synced_issues, open_numbers)
+      candidate_ids = synced_issues.filter_map { |issue_data| issue_data[:id] }
+      candidate_ids.concat(
+        project.issues
+          .where(github_state: "open", is_pull_request: false, paid_state: "needs_input", github_number: open_numbers)
+          .pluck(:id)
+      )
+      candidate_ids.uniq.map { |id| { id: id } }
     end
 
     def fetch_open_issue_numbers(client, repo_full_name)

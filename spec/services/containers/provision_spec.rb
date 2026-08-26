@@ -457,7 +457,7 @@ RSpec.describe Containers::Provision do
     end
 
     it "resolves a polyglot combo image from the language profile" do
-      project.update!(language_profile: { "languages" => %w[Elixir JavaScript Ruby] })
+      project.update!(repo_profile: { "languages" => %w[Elixir JavaScript Ruby] })
 
       svc = described_class.new(agent_run: agent_run, worktree_path: worktree_path)
 

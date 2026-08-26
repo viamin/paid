@@ -69,19 +69,26 @@ and authenticates via the DB-stored runner credential. The run itself is
 comment-only at the workflow level — `RunAgentActivity` skips git
 post-processing and `workspace_mount_mode` is `:rw` so clone can populate
 `/workspace` — and the agent prompt instructs the agent accordingly. This
-moved the following claims from aspirational to behavioral, and
-ISSUE-ENHANCEMENT-006 / 007 from `[D]` to `[x]`:
+moved ISSUE-ENHANCEMENT-006 from `[D]` to `[x]` (containerized execution and
+credential unification, RDR R1/R2).
+
+**RDR-052 Phase 2 (#3255) — codebase-grounded questions and re-evaluation.**
+Building on Phase 1's repository access, Phase 2 changed the `enhance_issue`
+prompt and re-evaluation flow to actually ground question-generation and the
+sufficiency verdict in the cloned repository rather than only the
+knowledge-base snapshot. This moved the following claims from aspirational to
+behavioral, and ISSUE-ENHANCEMENT-008 / 009 from `[D]` to `[x]`:
 
 - **Self-answer what the code determines.** The agent explores the repository,
   retrieval results, and knowledge-base context to answer for itself the things
   the code already says — existing models/types, platform targets, persistence
   format, current architecture and patterns. It SHALL NOT ask the human
   clarifying questions whose answers are directly readable from the repository
-  (ISSUE-ENHANCEMENT-006 / RDR R3); it asks only about genuine product, scope,
+  (ISSUE-ENHANCEMENT-008 / RDR R3); it asks only about genuine product, scope,
   or intent ambiguities the code cannot resolve.
 - **Grounded sufficiency verdict.** On re-evaluation, the agent judges readiness
   against the user's answers TOGETHER WITH the actual codebase it reads, not
-  the knowledge-base snapshot alone (ISSUE-ENHANCEMENT-007 / RDR R4). This
+  the knowledge-base snapshot alone (ISSUE-ENHANCEMENT-009 / RDR R4). This
   keeps the readiness gatekeeper at least as informed as the `create_pr` run it
   authorizes.
 - **Grounded implementation context.** When the issue is ready, the posted
@@ -157,3 +164,74 @@ After the agent finishes exploring the repo and producing structured output,
 `EnhanceIssueActivity` (post-run mode) reads the agent's JSON output from the
 run logs, builds the comment with the marker, posts it via the GitHub client,
 and applies label state — preserving the existing output contract.
+
+The container agent does not post the enhancement comment itself. Its GitHub
+proxy authorization is read-only, and its only durable result is the delimited
+structured payload consumed by `EnhanceIssueActivity`. Keeping the external
+write after validation prevents a run from both producing a GitHub side effect
+and failing as though no useful result existed. The prompt explains this
+contract, while the proxy enforces it mechanically.
+
+Read-only access does not imply that every GitHub body is safe prompt input.
+The base issue prompt includes comments admitted by Paid's trusted-user filter;
+the enhancement run's proxy restricts reads to the associated issue-detail
+endpoint. An untrusted comment or unrelated issue body therefore cannot bypass
+that filter by instructing the container agent to fetch it. The agent may still
+fetch the trusted issue creator's issue description and inspect the repository.
+
+## Prompt deployment
+
+The global `goal.enhance_issue` prompt is runtime configuration required by the
+enhancement parser. A source-controlled prompt contract is incomplete until the
+corresponding global `PromptVersion` is active in an existing deployment.
+
+Changes to this required prompt ship through an idempotent data migration that
+creates and promotes the expected immutable prompt version under system tenant
+access. The seed remains the canonical definition for new databases, while the
+migration advances populated databases during normal `db:migrate` deployment.
+The code fallback and seeded/migrated template carry the same structured-output
+contract.
+
+## Failure containment and attempt limits
+
+Every automatic `enhance_issue` execution counts as an enhancement round when
+it is queued, regardless of whether it originated from initial analysis or from
+a human-answer re-evaluation. Counting only needs-input label removal events
+allows analysis-created follow-ups to bypass the configured limit.
+
+When an enhancement run cannot produce valid structured output, Paid fails the
+run non-retryably and parks the issue in the distinct `manual_review` state.
+This state transition is the terminal owner of the issue state for that
+failure; generic workflow failure handling must not overwrite it with the
+auto-pick-eligible `failed` state. Manual-review issues are not treated as
+answerable questionnaires and are not repaired by the questionless
+`needs_input` cleanup path. Automation resumes only through an explicit
+operator-triggered run.
+Moving into manual review also clears stored clarification questions and removes
+the needs-input label. This keeps the Paid state, GitHub label, and operator UI
+from simultaneously claiming that the issue awaits an answer and a manual
+review.
+
+When the configured enhancement-round limit has already been reached, Paid
+does not queue another enhancement run. It moves the issue to `manual_review`
+and posts at most one marked stop comment. Repeated poll or queue ticks are
+idempotent and do not create additional stop comments. The containment service
+uses a short row-locked state transition to elect one notifier, then performs
+GitHub I/O after releasing the database lock. Concurrent queue or poll workers
+therefore cannot both publish a stop notice, and a slow GitHub request does not
+hold an issue row lock.
+
+## Decisions and alternatives
+
+| Decision | Rationale | Alternatives considered |
+|---|---|---|
+| Advance required global prompt contracts with idempotent data migrations. | Existing deployments run migrations during setup, while seeds are normally applied only when a database is created. Immutable prompt versions preserve lineage. | Running all seeds on every deploy risks unrelated mutable seed changes; relying on operator-run seeds permits code/runtime contract drift. |
+| Let `EnhanceIssueActivity` own GitHub comment creation after payload validation and deny mutation through the enhancement run's proxy authorization. | The platform can make the external side effect consistent with the run result and attach the required marker; enforcement does not depend on prompt compliance. | Direct agent posting occurs before validation and cannot be rolled back when parsing fails. |
+| Park malformed or round-exhausted enhancement in a distinct `manual_review` state. | Manual intervention is not an answerable questionnaire. A distinct state prevents questionless-needs-input repair from re-arming auto-pick and gives operators an unambiguous lifecycle state. | `needs_input` is reserved for parseable questions and is automatically repaired when questionless; `paused` represents an operator-imposed operational pause rather than an enhancement outcome; `failed` re-enters auto-pick. |
+| Count queued automatic enhancement attempts, not only answered-question re-evaluations. | All attempts consume resources and can produce side effects; a cap must cover every entry path. | Counting label removals misses initial-analysis follow-ups and permits an unbounded loop. |
+
+## Open questions and future decisions
+
+- Duplicate comments created before these invariants were enforced require an
+  explicit operator cleanup decision; automatic deletion is outside the
+  enhancement lifecycle.

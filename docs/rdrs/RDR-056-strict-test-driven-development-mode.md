@@ -5,7 +5,7 @@
 ## Metadata
 
 - **Date**: 2026-08-16
-- **Status**: Accepted (implementation not started — see [Implementation Notes](#implementation-notes))
+- **Status**: Implemented (2026-08-23 — see [2026-08-23 Closeout](#2026-08-23-closeout))
 - **Type**: Architecture + Process
 - **Priority**: P1
 - **Related RDRs**:
@@ -14,8 +14,8 @@
   - [RDR-046](RDR-046-polyglot-language-detection-and-test-execution.md) (Polyglot Language Detection and Test Execution)
   - [RDR-051](RDR-051-lid-aware-agent-runs.md) (LID-Aware Agent Runs)
   - [RDR-053](RDR-053-new-feature-creation.md) (New Feature Creation)
-- **Related Issues**: #3470 (closeout, this audit), #3466, #3467, #3468, #3469 (implementation — not reflected in shipped code as of this audit, see below)
-- **Related Tests**: None yet — no implementation exists to test
+- **Related Issues**: #3603 (this closeout), #3466, #3467, #3468, #3469, #3470 (implementation and closeout chain — all closed and shipped as of the 2026-08-23 audit, see below)
+- **Related Tests**: `spec/models/project_spec.rb`, `spec/models/agent_run_spec.rb`, `spec/services/tdd/write_guard_spec.rb`, `spec/services/tdd/return_to_test_review_spec.rb`, `spec/services/pull_requests/review_surface_spec.rb`, `spec/services/containers/quality_hooks_spec.rb`, `spec/services/projects/ensure_standard_labels_spec.rb`, `spec/controllers/api/github_proxy_controller_tdd_spec.rb`, `spec/temporal/activities/scan_paid_prs_activity_spec.rb`, `spec/temporal/activities/create_pull_request_activity_spec.rb`, `spec/temporal/activities/complete_existing_pr_run_activity_spec.rb`
 
 ## Problem Statement
 
@@ -352,3 +352,41 @@ correction for whoever merges or edits the PR.
 
 Re-run this audit once #3466–#3469 land, and only then advance the status to
 **Partially Implemented** or **Implemented** as appropriate.
+
+## 2026-08-23 Closeout
+
+**Reconciliation audit (2026-08-23, issue #3603):** Issues #3466–#3469 (the four
+implementation issues named "not found" above) and #3470 (the closeout umbrella
+issue) are all now closed. Per the closeout checklist's own warning against
+"issue closed → RDR implemented," this closeout re-ran the full codebase audit
+against every `## Validation` claim in this RDR rather than trusting issue
+state. Full findings, evidence, and executed test output are recorded in
+[`audit-report-2026-08-23-rdr-056.md`](audit-report-2026-08-23-rdr-056.md).
+
+Every checklist item that the 2026-08-21 audit found "Not found" now has
+shipped code and passing tests:
+
+| Closeout checklist item | 2026-08-21 result | 2026-08-23 result | Evidence |
+|---|---|---|---|
+| Project-level TDD modes exist and default to `off` | Not found | **Found** | `Project::TDD_MODES` (`app/models/project.rb:36`), `tdd_mode` column (`db/schema.rb:2243`), defaults to `"off"`. |
+| Three `paid-` prefixed test-review labels are created/synced | Not found | **Found** | `Projects::EnsureStandardLabels::LABEL_DEFINITIONS` (`app/services/projects/ensure_standard_labels.rb:36-50`). |
+| Strict mode produces test-only draft PRs and waits for human test approval | Not found | **Found** | `AgentRun#inferred_tdd_phase` (`app/models/agent_run.rb:1702-1719`), `Tdd::WriteGuard` + `CreatePullRequestActivity` enforcement (`app/temporal/activities/create_pull_request_activity.rb:47,812-`). |
+| Non-strict mode uses an automated test-review verdict with the same approval labels | Not found | **Found** (reuses the existing `review` goal rather than a new `test_review` goal — see audit report §4) | `scan_non_strict_tdd_draft_pr` (`app/temporal/activities/scan_paid_prs_activity.rb:689-724`). |
+| Implementation runs do not start until `paid-tests-approved` is present | Not found | **Found** | `scan_tdd_draft_pr` (`scan_paid_prs_activity.rb:665-687`) + `inferred_tdd_phase`. |
+| Rejected tests route back to test-writing, not implementation | Not found | **Found** | `tdd_test_changes_requested` trigger (`scan_paid_prs_activity.rb:680-682`). |
+| Every PR with tests includes the documentation-style test outline | Not found | **Found** | `PullRequests::ReviewSurface#test_outline_section` (`app/services/pull_requests/review_surface.rb:40-70+`). |
+| LID projects expose changed LID docs, coherence status, and specs before implementation | Not found | **Found** | `PullRequests::ReviewSurface` LID Phase Report section + `CreatePullRequestActivity`. |
+| Run-scoped pre-commit checks enforce test-writing / implementation-fixing / refactor write boundaries | Not found | **Found** | `Tdd::WriteGuard` (`app/services/tdd/write_guard.rb`). |
+| Mutation testing runs after green and cannot mutate the approved-test boundary | Not found | **Found** | `Containers::QualityHooks#install_quality_hooks` (`app/services/containers/quality_hooks.rb:23-26`) + `Tdd::ReturnToTestReview` (`app/services/tdd/return_to_test_review.rb`). |
+
+All associated specs pass (2,267 examples across the files listed in this
+RDR's `Related Tests`, 0 failures — see the audit report's Validation
+Evidence section), and the three LID segments covering this RDR
+(`docs/intent/tdd-mode/`, `docs/intent/tdd-write-guards/`,
+`docs/intent/tdd-test-review-prs/`) have every EARS spec marked `[x]`
+implemented with no active gaps.
+
+**Disposition:** Status changes from **Accepted** to **Implemented**. No
+child gap issues are filed — none of the RDR's validation criteria have an
+open gap. This closes out #3470 (the implementation-closeout umbrella issue)
+retroactively: the work #3470 was blocked on has shipped.

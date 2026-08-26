@@ -75,3 +75,16 @@
   SHALL be logged and SHALL NOT abort the full sync.
   *Code:* `app/temporal/activities/fetch_issues_activity.rb`.
   *Test:* `spec/temporal/activities/fetch_issues_activity_spec.rb`.
+
+- [x] **GITHUB-SYNC-009** — When a project is read through the chat-accessible
+  project-details surface, the system SHALL expose sanitized GitHub
+  credential/webhook diagnostics for that project, including credential mode,
+  installation or PAT health, webhook-secret presence, PAT push-fallback
+  status, recent permission-related failure reason codes/messages, and a next
+  recommended action for common blockers, while excluding raw tokens, webhook
+  secrets, installation tokens, request bodies, stack traces, and cross-tenant
+  data.
+  *Code:* `app/services/projects/github_diagnostics.rb`,
+  `app/mcp/tools/get_project.rb`.
+  *Test:* `spec/services/projects/github_diagnostics_spec.rb`,
+  `spec/mcp/tools/get_project_spec.rb`.
