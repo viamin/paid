@@ -24,7 +24,7 @@ class AgentRun < ApplicationRecord
   # container-executable runner key"). When you add a runner key, add its
   # agent_type here too.
   AGENT_TYPES = %w[claude_code cursor codex copilot gemini opencode openrouter_free openrouter_pareto kilocode pi omp api devin factory internal_agent].freeze
-  FOCUSES = %w[general ci_fix review_feedback merge_conflict conversation issue_implementation label_action].freeze # @spec FOCUSED-RUN-001
+  FOCUSES = %w[general ci_fix review_feedback merge_conflict conversation performance_regression issue_implementation label_action].freeze # @spec FOCUSED-RUN-001
   # analyze_issue is automation-only (triggered via Automation::Decision), not exposed in the manual run form.
   GOALS = %w[create_pr create_issue review enhance_issue analyze_issue lid_planning create_feature].freeze
   # RDR-056 (Strict TDD): the run-scoped write-guard phase for projects with

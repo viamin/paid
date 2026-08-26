@@ -293,6 +293,7 @@ module Automation
       end
 
       def followup_decisions(signals)
+        focus_evidence = focus_evidence_for(signals)
         if signals.draft_phase?
           [
             Automation::Decision.queue_create_pr_run(
@@ -300,7 +301,8 @@ module Automation
               source_pull_request_number: signals.pr_number,
               focus: signals.focus,
               count_toward_draft_review_round: true,
-              expected_draft_review_count: signals.draft_review_count
+              expected_draft_review_count: signals.draft_review_count,
+              focus_evidence: focus_evidence
             )
           ]
         else
@@ -308,7 +310,8 @@ module Automation
             Automation::Decision.queue_create_pr_run(
               issue_id: signals.issue_id,
               source_pull_request_number: signals.pr_number,
-              focus: signals.focus
+              focus: signals.focus,
+              focus_evidence: focus_evidence
             ),
             Automation::Decision.record_pr_followup(
               issue_id: signals.issue_id,
@@ -317,6 +320,19 @@ module Automation
             )
           ]
         end
+      end
+
+      # Carries the selected trigger's evidence so the queue activity can tie the
+      # follow-up run to the exact finding (or finding candidate) the trigger
+      # pointed at, rather than re-selecting by updated_at. Only the
+      # performance_regression focus reads evidence today; other focuses ignore
+      # it. Returns nil for unrelated focuses so the decision payload stays
+      # compact and the workflow doesn't forward a useless key.
+      def focus_evidence_for(signals)
+        return nil unless signals.focus == "performance_regression"
+
+        trigger = signals.trigger("page_load_regression")
+        trigger&.dig(:evidence)
       end
 
       # A dismissal the scan attributed to the owner (they removed the

@@ -26,7 +26,8 @@ score judges it against only that thing.
 `focus` decides *what PR problem* the agent targets within a run.
 
 Focus values (`AgentRun::FOCUSES`): `general`, `ci_fix`, `review_feedback`,
-`merge_conflict`, `conversation`, `issue_implementation`, `label_action`.
+`merge_conflict`, `conversation`, `performance_regression`,
+`issue_implementation`, `label_action`.
 `general` is the unscoped default and reproduces the legacy all-in-one
 behavior; manual/quick runs keep it. The column is non-null with a
 `"general"` default, so every run — old or new — resolves to a focus.
@@ -39,7 +40,7 @@ type to a focus, and `FOCUS_PRIORITY` selects the single highest-priority
 focus present:
 
 ```
-merge_conflict > ci_fix > review_feedback > conversation > issue_implementation > label_action
+merge_conflict > ci_fix > review_feedback > conversation > performance_regression > issue_implementation > label_action
 ```
 
 Triggers that map to no focus (or none present) fall back to `general`. The
@@ -81,6 +82,7 @@ state (`record_focus_resolution` → `focus_resolution_scores`):
 | `review_feedback` | no unresolved review threads remain |
 | `merge_conflict` | PR is mergeable |
 | `conversation` | no actionable conversation trigger remains |
+| `performance_regression` | the page load finding the run targeted is resolved |
 | `issue_implementation` | linked-issue requirements met |
 | `label_action` | actionable labels cleared |
 

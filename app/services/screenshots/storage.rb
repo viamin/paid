@@ -145,6 +145,17 @@ module Screenshots
       raise StorageError, "S3 upload failed: #{e.message}"
     end
 
+    # Uploads an in-memory document (the page load ledger) under a caller-built
+    # key. Unlike the artifact uploads above, the body is generated rather than
+    # read from a captured file.
+    # @spec PAGE-LOAD-EXPORT-001
+    def upload_document(key:, body:, content_type: "application/json")
+      s3_client.put_object(bucket: bucket, key: key, body: body, content_type: content_type)
+      key
+    rescue Aws::S3::Errors::ServiceError => e
+      raise StorageError, "S3 document upload failed: #{e.message}"
+    end
+
     def upload_trace(file_path:, org:, repo:, pr_number:, commit_sha:)
       key = trace_object_key(org:, repo:, pr_number:, commit_sha:)
       put_object(file_path:, key:, content_type: "application/zip")

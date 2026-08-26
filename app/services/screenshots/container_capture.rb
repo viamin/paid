@@ -13,6 +13,11 @@ module Screenshots
     CHROME_URL = "ws://#{CHROME_ALIAS}:3000"
     OUTPUT_DIR = "tmp/screenshots"
     TRACE_EXTENSION = ".trace.zip"
+    TIMING_DOCUMENT = "page-load-timings.json"
+    # The timing document is written inside the agent's container. A capture
+    # measures a handful of routes, so anything past this is not a document
+    # worth parsing into memory.
+    MAX_TIMING_DOCUMENT_BYTES = 2 * 1024 * 1024
     CAPTURE_TIMEOUT_SECONDS = 300
     STARTUP_TIMEOUT_SECONDS = 90
     MEMORY_BYTES = 2 * 1024 * 1024 * 1024
@@ -53,6 +58,7 @@ module Screenshots
       @hints = {}
       @trace_path = nil
       @video_path = nil
+      @page_load_comparisons = []
     end
 
     def call
@@ -87,6 +93,7 @@ module Screenshots
         start_chrome!
         @preview_provision.boot!(start_tunnel: false, allow_seed: true)
         screenshot_paths = run_capture!(ui_files)
+        record_page_load_performance!(changed_files)
         artifact_manifest = publish_result!(screenshot_paths)
 
         update_status(
@@ -232,6 +239,8 @@ module Screenshots
         "SCREENSHOT_CONFIG_JSON" => screenshot_config_json,
         "SCREENSHOT_OUTPUT_DIR" => OUTPUT_DIR,
         "SCREENSHOT_RECORD_VIDEO" => record_video? ? "1" : "0",
+        "SCREENSHOT_SAMPLES" => page_load_samples.to_s,
+        "SCREENSHOT_SAMPLE_BUDGET_SECONDS" => page_load_settings.sample_budget_seconds.to_s,
         "CHANGED_FILES" => ui_files.join("\n")
       )
 
@@ -249,6 +258,79 @@ module Screenshots
       collected_screenshots
     rescue Containers::Provision::ExecutionError => e
       raise "screenshot capture failed: #{e.message}"
+    end
+
+    def page_load_settings
+      @page_load_settings ||= PageLoadPerformance::Settings.for(project)
+    end
+
+    # Zero samples tells the runner to navigate each route once, exactly as it
+    # did before measurement existed.
+    # @spec PAGE-LOAD-MEASURE-009
+    def page_load_samples
+      page_load_settings.enabled? ? page_load_settings.samples : 0
+    end
+
+    # Records what the runner measured and evaluates it against the previous
+    # capture on this pull request. Measurement never fails the capture: the
+    # screenshots are worth publishing either way.
+    # @spec PAGE-LOAD-MEASURE-007, PAGE-LOAD-MEASURE-008
+    def record_page_load_performance!(changed_files)
+      return unless page_load_settings.enabled?
+
+      document = read_timing_document
+      return if document.blank?
+
+      measurements = PageLoadPerformance::RecordMeasurements.call(
+        agent_run: agent_run,
+        document: document,
+        viewport: { "width" => config.viewport.width, "height" => config.viewport.height }
+      )
+      return if measurements.empty?
+
+      @page_load_comparisons = PageLoadPerformance::EvaluateRegressions.call(
+        agent_run: agent_run,
+        measurements: measurements,
+        hints: @hints,
+        changed_files: Array(changed_files).map { |file| file.respond_to?(:filename) ? file.filename : file.to_s }
+      )
+      PageLoadPerformance::ExportLedger.call(project: project)
+    rescue StandardError => e
+      logger.warn(
+        message: "page_load.record_failed",
+        project_id: project.id,
+        agent_run_id: agent_run.id,
+        error: e.message
+      )
+    end
+
+    # @spec PAGE-LOAD-MEASURE-013
+    def read_timing_document
+      path = File.join(@tmpdir.to_s, OUTPUT_DIR, TIMING_DOCUMENT)
+      return nil unless File.exist?(path)
+
+      size = File.size(path)
+      if size > MAX_TIMING_DOCUMENT_BYTES
+        logger.warn(
+          message: "page_load.document_too_large",
+          agent_run_id: agent_run.id,
+          bytes: size,
+          limit: MAX_TIMING_DOCUMENT_BYTES
+        )
+        return nil
+      end
+
+      PageLoadPerformance::TimingDocument.parse(
+        JSON.parse(File.read(path)),
+        max_samples: [ page_load_settings.samples, 1 ].max
+      )
+    rescue JSON::ParserError => e
+      logger.warn(message: "page_load.document_unparseable", agent_run_id: agent_run.id, error: e.message)
+      nil
+    end
+
+    def page_load_comment_section
+      PageLoadPerformance::CommentSection.call(comparisons: @page_load_comparisons)
     end
 
     def publish_result!(screenshot_paths)
@@ -275,7 +357,8 @@ module Screenshots
         screenshots: uploaded,
         previous_screenshots: previous_artifacts.transform_values { |formats| formats[:png] }.compact,
         trace_url: trace_artifact&.dig("locator", "url"),
-        video_url: video_artifact&.dig("locator", "url")
+        video_url: video_artifact&.dig("locator", "url"),
+        page_load_section: page_load_comment_section
       )
 
       @published_url = uploaded.first&.fetch(:url, nil)
@@ -421,6 +504,13 @@ module Screenshots
       path
     end
 
+    # The capture program that runs inside the preview container. Sampling
+    # lives here because only this process holds the browser: it warms up once,
+    # samples each route with tracing off, summarizes to a median, records the
+    # navigation's status, and isolates timing failures so a route's screenshot
+    # still lands.
+    # @spec PAGE-LOAD-MEASURE-001, PAGE-LOAD-MEASURE-002, PAGE-LOAD-MEASURE-003,
+    # PAGE-LOAD-MEASURE-004, PAGE-LOAD-MEASURE-006, PAGE-LOAD-MEASURE-011
     def capture_runner_script
       <<~JS
         import fs from "fs/promises";
@@ -429,6 +519,11 @@ module Screenshots
         const config = JSON.parse(process.env.SCREENSHOT_CONFIG_JSON);
         const outputDir = process.env.SCREENSHOT_OUTPUT_DIR;
         const recordVideo = process.env.SCREENSHOT_RECORD_VIDEO === "1";
+        const samples = Number(process.env.SCREENSHOT_SAMPLES || "0");
+        const sampleBudgetMs = Number(process.env.SCREENSHOT_SAMPLE_BUDGET_SECONDS || "0") * 1000;
+        const timings = { captured_at: new Date().toISOString(), viewport: config.viewport, routes: {} };
+        let samplingStartedAt = null;
+        let warmedUp = false;
 
         await fs.mkdir(outputDir, { recursive: true });
 
@@ -488,11 +583,102 @@ module Screenshots
         await authenticate();
 
         for (const route of config.routes) {
+          await measureRoute(route);
           await captureRoute(route);
+        }
+
+        if (samples > 0) {
+          await fs.writeFile(`${outputDir}/#{TIMING_DOCUMENT}`, JSON.stringify(timings));
         }
 
         await context.close();
         await browser.close();
+
+        // Timings come from navigations run with tracing off: trace capture
+        // inflates load timings unevenly, so measuring under it would make
+        // captures incomparable.
+        async function collectTiming(target) {
+          const response = await page.goto(target, { waitUntil: "networkidle" });
+          const entry = await page.evaluate(() => {
+            const nav = performance.getEntriesByType("navigation")[0];
+            if (!nav) return null;
+            // A timing that has not fired yet reads as 0 (loadEventEnd before
+            // the load event, for instance). Reporting that as a measurement
+            // would poison medians and read as a large improvement next time.
+            const ms = (value) => {
+              const rounded = Math.round(value);
+              return Number.isFinite(rounded) && rounded > 0 ? rounded : null;
+            };
+            const paint = (name) => {
+              const found = performance.getEntriesByType("paint").find((e) => e.name === name);
+              return found ? ms(found.startTime) : null;
+            };
+            const lcpEntries = performance.getEntriesByType("largest-contentful-paint");
+            const lcp = lcpEntries.length ? ms(lcpEntries[lcpEntries.length - 1].startTime) : null;
+            return {
+              ttfb_ms: ms(nav.responseStart),
+              dcl_ms: ms(nav.domContentLoadedEventEnd),
+              load_ms: ms(nav.loadEventEnd),
+              fcp_ms: paint("first-contentful-paint"),
+              lcp_ms: lcp,
+            };
+          });
+
+          return { metrics: entry, status: response ? response.status() : null };
+        }
+
+        function summarize(values) {
+          const present = values.filter((v) => typeof v === "number" && !Number.isNaN(v));
+          if (!present.length) return null;
+          const sorted = [...present].sort((a, b) => a - b);
+          const middle = Math.floor(sorted.length / 2);
+          const median = sorted.length % 2 ? sorted[middle] : Math.round((sorted[middle - 1] + sorted[middle]) / 2);
+          return { median, min: sorted[0], max: sorted[sorted.length - 1], values: present };
+        }
+
+        // The warm-up navigation is discarded: without it, application boot and
+        // cold caches land on whichever route the diff happened to put first.
+        async function measureRoute(route) {
+          if (samples < 1) return;
+
+          const target = new URL(route.path, config.base_url).toString();
+
+          try {
+            if (!warmedUp) {
+              await page.goto(target, { waitUntil: "networkidle" });
+              warmedUp = true;
+              samplingStartedAt = Date.now();
+            }
+
+            const budgetSpent = sampleBudgetMs > 0 && Date.now() - samplingStartedAt > sampleBudgetMs;
+            const attempts = budgetSpent ? 1 : samples;
+            const collected = [];
+            let status = null;
+
+            for (let i = 0; i < attempts; i += 1) {
+              const result = await collectTiming(target);
+              status = result.status;
+              if (result.metrics) collected.push(result.metrics);
+            }
+
+            if (!collected.length) return;
+
+            const metrics = {};
+            for (const key of ["ttfb_ms", "dcl_ms", "load_ms", "fcp_ms", "lcp_ms"]) {
+              const summary = summarize(collected.map((m) => m[key]));
+              if (summary) metrics[key] = summary;
+            }
+
+            timings.routes[route.name] = {
+              path: new URL(page.url()).pathname,
+              http_status: status,
+              samples: collected.length,
+              metrics,
+            };
+          } catch (timingError) {
+            console.error("timing collection failed:", timingError.message);
+          }
+        }
 
         async function captureRoute(route) {
           let tracing = false;
