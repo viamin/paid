@@ -2483,7 +2483,7 @@ class AgentRun < ApplicationRecord
     return base_message if diagnostics.blank?
 
     details = []
-    details << diagnostics["phase_label"].presence || diagnostics["phase_key"].to_s.tr("_", " ")
+    details << (diagnostics["phase_label"].presence || diagnostics["phase_key"].to_s.tr("_", " "))
     details << "provider #{diagnostics['provider']}" if diagnostics["provider"].present?
     details << "attempt #{diagnostics['attempt']}" if diagnostics["attempt"].present?
     details << "budget #{diagnostics['budget_seconds']}s" if diagnostics["budget_seconds"].present?

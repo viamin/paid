@@ -6367,6 +6367,20 @@ RSpec.describe AgentRun do
   describe "#issue_analysis_timeout_message" do
     let(:agent_run) { create(:agent_run, external_metadata: {}) }
 
+    it "falls back to phase_key when phase_label is blank" do
+      # @spec ISSUE-ANALYSIS-012
+      agent_run.record_issue_analysis_diagnostics!(
+        phase_key: "analyze_issue_context_bundle",
+        phase_label: "",
+        status: "running",
+        budget_seconds: 60
+      )
+
+      expect(agent_run.issue_analysis_timeout_message).to eq(
+        "Activity task timed out (last known analyze_issue phase: analyze issue context bundle · budget 60s)"
+      )
+    end
+
     it "enriches the base message with the last known phase diagnostics" do
       agent_run.record_issue_analysis_diagnostics!(
         phase_key: "analyze_issue_provider_attempt",
