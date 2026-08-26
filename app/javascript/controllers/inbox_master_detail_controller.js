@@ -1,22 +1,24 @@
 import { Controller } from "@hotwired/stimulus"
 
-// Tracks whether the inbox detail pane is currently the visible pane on
-// mobile. Visibility is driven by Tailwind responsive classes rendered on
-// the server (`view=detail` URL param); the controller exists so click
-// handlers can sync the in-page state when list links are followed inside
-// the inbox-detail Turbo frame, and so the state survives across navigations
-// inside the frame.
+// Keeps the inbox list/detail panes in sync with the current mobile
+// master-detail state while leaving desktop split-pane rendering intact.
 export default class extends Controller {
+  static targets = ["list", "detailSection"]
   static values = { detailOpen: Boolean }
 
   connect() {
     this.mediaQuery = window.matchMedia("(min-width: 1024px)")
     this.boundResetOnDesktop = this.resetOnDesktop.bind(this)
     this.mediaQuery.addEventListener("change", this.boundResetOnDesktop)
+    this.syncPaneVisibility()
   }
 
   disconnect() {
     this.mediaQuery.removeEventListener("change", this.boundResetOnDesktop)
+  }
+
+  detailOpenValueChanged() {
+    this.syncPaneVisibility()
   }
 
   open() {
@@ -29,5 +31,33 @@ export default class extends Controller {
 
   resetOnDesktop(event) {
     if (event.matches) this.detailOpenValue = false
+  }
+
+  syncPaneVisibility() {
+    if (!this.hasListTarget || !this.hasDetailSectionTarget) return
+
+    if (this.mediaQuery.matches) {
+      this.show(this.listTarget)
+      this.show(this.detailSectionTarget)
+      return
+    }
+
+    if (this.detailOpenValue) {
+      this.hide(this.listTarget)
+      this.show(this.detailSectionTarget)
+    } else {
+      this.show(this.listTarget)
+      this.hide(this.detailSectionTarget)
+    }
+  }
+
+  show(element) {
+    element.classList.remove("hidden")
+    element.classList.add("block")
+  }
+
+  hide(element) {
+    element.classList.remove("block")
+    element.classList.add("hidden")
   }
 }

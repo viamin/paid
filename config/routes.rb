@@ -61,7 +61,7 @@ Rails.application.routes.draw do
   get "dashboard/inbox/entries/:entry_kind/:entry_id",
     to: "dashboard#inbox_detail",
     as: :dashboard_inbox_entry,
-    constraints: { entry_kind: /clarifying_questions|plan_review/ }
+    constraints: { entry_kind: Regexp.union(Inbox::Queue::KINDS) }
   get "dashboard/needs_input", to: "dashboard#needs_input", as: :dashboard_needs_input
   post "dashboard/cancel_run/:id", to: "dashboard#cancel_run", as: :dashboard_cancel_run
 

@@ -36,20 +36,5 @@ module Inbox
     def inbox_selected_param(entry)
       "#{entry.kind}:#{entry.record.id}"
     end
-
-    # Returns the next inbox entry after the given one, within the same
-    # project/kind scope. Falls back to nil when the queue is drained so
-    # the caller can redirect to the bare inbox index.
-    def inbox_next_entry(after:, user:, project: nil, kind: nil)
-      entries = Inbox::Queue.call(user: user, project: project, kind: kind)
-      return nil if entries.empty?
-
-      return entries.first if after.nil?
-
-      index = entries.index { |candidate| candidate.record.id == after.record.id && candidate.kind == after.kind }
-      return nil if index.nil?
-
-      entries[index + 1]
-    end
   end
 end

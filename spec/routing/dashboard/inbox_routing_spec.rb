@@ -25,4 +25,19 @@ RSpec.describe "dashboard inbox routing", :no_db do
       "/dashboard/inbox/entries/clarifying_questions/42"
     )
   end
+
+  it "routes every registered inbox entry kind through the detail endpoint" do
+    Inbox::Queue::KINDS.each do |kind|
+      expect(get: "/dashboard/inbox/entries/#{kind}/42").to route_to(
+        controller: "dashboard",
+        action: "inbox_detail",
+        entry_kind: kind,
+        entry_id: "42"
+      )
+    end
+  end
+
+  it "rejects unknown inbox entry kinds" do
+    expect(get: "/dashboard/inbox/entries/not-a-kind/42").not_to be_routable
+  end
 end
