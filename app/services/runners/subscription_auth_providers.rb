@@ -161,6 +161,43 @@ module Runners
           error: "unsupported"
         )
       end
+
+      def blank_status
+        Status.new(
+          state: :blank,
+          expires_at: nil,
+          refreshable: false,
+          materialization_mode: materialization_mode,
+          rotation_risk: rotation_risk,
+          remote_safe: remote_safe?,
+          redacted_metadata: { "materialized" => false },
+          error: "blank"
+        )
+      end
+
+      def malformed_status
+        Status.new(
+          state: :malformed,
+          expires_at: nil,
+          refreshable: false,
+          materialization_mode: SubscriptionAuthMaterializers::MATERIALIZE_UNSUPPORTED,
+          rotation_risk: SubscriptionAuthMaterializers::ROTATION_UNSUPPORTED,
+          remote_safe: false,
+          redacted_metadata: { "materialized" => false },
+          error: "malformed"
+        )
+      end
+
+      def malformed_materialization(status)
+        Materialization.new(
+          supported: false,
+          mode: status.materialization_mode,
+          env: {},
+          files: {},
+          redacted_metadata: status.redacted_metadata,
+          error: status.error
+        )
+      end
     end
 
     class Claude < Base
@@ -222,43 +259,6 @@ module Runners
       end
 
       private
-
-      def blank_status
-        Status.new(
-          state: :blank,
-          expires_at: nil,
-          refreshable: false,
-          materialization_mode: materialization_mode,
-          rotation_risk: rotation_risk,
-          remote_safe: remote_safe?,
-          redacted_metadata: { "materialized" => false },
-          error: "blank"
-        )
-      end
-
-      def malformed_status
-        Status.new(
-          state: :malformed,
-          expires_at: nil,
-          refreshable: false,
-          materialization_mode: SubscriptionAuthMaterializers::MATERIALIZE_UNSUPPORTED,
-          rotation_risk: SubscriptionAuthMaterializers::ROTATION_UNSUPPORTED,
-          remote_safe: false,
-          redacted_metadata: { "materialized" => false },
-          error: "malformed"
-        )
-      end
-
-      def malformed_materialization(status)
-        Materialization.new(
-          supported: false,
-          mode: status.materialization_mode,
-          env: {},
-          files: {},
-          redacted_metadata: status.redacted_metadata,
-          error: status.error
-        )
-      end
 
       # Parses `secret` exactly once and returns `[Status, Parsed]`. Both
       # `status` and `materialize` delegate here so the credential is never
@@ -362,43 +362,6 @@ module Runners
 
       private
 
-      def blank_status
-        Status.new(
-          state: :blank,
-          expires_at: nil,
-          refreshable: false,
-          materialization_mode: materialization_mode,
-          rotation_risk: rotation_risk,
-          remote_safe: remote_safe?,
-          redacted_metadata: { "materialized" => false },
-          error: "blank"
-        )
-      end
-
-      def malformed_status
-        Status.new(
-          state: :malformed,
-          expires_at: nil,
-          refreshable: false,
-          materialization_mode: SubscriptionAuthMaterializers::MATERIALIZE_UNSUPPORTED,
-          rotation_risk: SubscriptionAuthMaterializers::ROTATION_UNSUPPORTED,
-          remote_safe: false,
-          redacted_metadata: { "materialized" => false },
-          error: "malformed"
-        )
-      end
-
-      def malformed_materialization(status)
-        Materialization.new(
-          supported: false,
-          mode: status.materialization_mode,
-          env: {},
-          files: {},
-          redacted_metadata: status.redacted_metadata,
-          error: status.error
-        )
-      end
-
       def classify(secret)
         value = secret.to_s
         return [ blank_status, nil ] if value.blank?
@@ -442,7 +405,7 @@ module Runners
           supported: true,
           mode: SubscriptionAuthMaterializers::MATERIALIZE_NATIVE_FILE,
           env: {},
-          files: { AUTH_PATH => parsed.auth_json },
+          files: { AUTH_PATH => build_auth_json(parsed) },
           redacted_metadata: status.redacted_metadata,
           error: nil
         )
@@ -462,43 +425,6 @@ module Runners
       end
 
       private
-
-      def blank_status
-        Status.new(
-          state: :blank,
-          expires_at: nil,
-          refreshable: false,
-          materialization_mode: materialization_mode,
-          rotation_risk: rotation_risk,
-          remote_safe: remote_safe?,
-          redacted_metadata: { "materialized" => false },
-          error: "blank"
-        )
-      end
-
-      def malformed_status
-        Status.new(
-          state: :malformed,
-          expires_at: nil,
-          refreshable: false,
-          materialization_mode: SubscriptionAuthMaterializers::MATERIALIZE_UNSUPPORTED,
-          rotation_risk: SubscriptionAuthMaterializers::ROTATION_UNSUPPORTED,
-          remote_safe: false,
-          redacted_metadata: { "materialized" => false },
-          error: "malformed"
-        )
-      end
-
-      def malformed_materialization(status)
-        Materialization.new(
-          supported: false,
-          mode: status.materialization_mode,
-          env: {},
-          files: {},
-          redacted_metadata: status.redacted_metadata,
-          error: status.error
-        )
-      end
 
       def classify(secret)
         value = secret.to_s
@@ -520,6 +446,22 @@ module Runners
           redacted_metadata: parsed.redacted_metadata,
           error: expired ? "expired" : nil
         ), parsed ]
+      end
+
+      def build_auth_json(parsed)
+        JSON.generate(
+          "openai" => {
+            "type" => "oauth",
+            "access" => parsed.access_token,
+            "refresh" => parsed.refresh_token,
+            "expires" => expires_ms(parsed),
+            "accountId" => parsed.account_id
+          }.compact
+        )
+      end
+
+      def expires_ms(parsed)
+        ((parsed.expires_at || Time.at(0, in: "UTC")).to_f * 1000).to_i
       end
     end
 
@@ -550,43 +492,6 @@ module Runners
       end
 
       private
-
-      def blank_status
-        Status.new(
-          state: :blank,
-          expires_at: nil,
-          refreshable: false,
-          materialization_mode: materialization_mode,
-          rotation_risk: rotation_risk,
-          remote_safe: remote_safe?,
-          redacted_metadata: { "materialized" => false },
-          error: "blank"
-        )
-      end
-
-      def malformed_status
-        Status.new(
-          state: :malformed,
-          expires_at: nil,
-          refreshable: false,
-          materialization_mode: SubscriptionAuthMaterializers::MATERIALIZE_UNSUPPORTED,
-          rotation_risk: SubscriptionAuthMaterializers::ROTATION_UNSUPPORTED,
-          remote_safe: false,
-          redacted_metadata: { "materialized" => false },
-          error: "malformed"
-        )
-      end
-
-      def malformed_materialization(status)
-        Materialization.new(
-          supported: false,
-          mode: status.materialization_mode,
-          env: {},
-          files: {},
-          redacted_metadata: status.redacted_metadata,
-          error: status.error
-        )
-      end
 
       def classify(secret)
         value = secret.to_s

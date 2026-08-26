@@ -15,11 +15,22 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
   let(:owner) { create(:user, account: account) }
   let(:project) { create(:project, account: account, created_by: owner) }
   let(:container) { instance_double(Docker::Container) }
-  let(:rotated_auth) do
+  let(:rotated_canonical_auth) do
     payload = JSON.parse(file_fixture("codex_auth_valid.json").read)
-    payload["tokens"]["access_token"] = "eyJopencode-rotated-access-token"
-    payload["tokens"]["refresh_token"] = "v1.opencode-rotated-refresh-token"
+    payload["tokens"]["access_token"] = "opencode-rotated-access-token"
+    payload["tokens"]["refresh_token"] = "opencode-rotated-refresh-token"
     JSON.generate(payload)
+  end
+  let(:rotated_auth) do
+    JSON.generate(
+      "openai" => {
+        "type" => "oauth",
+        "access" => "opencode-rotated-access-token",
+        "refresh" => "opencode-rotated-refresh-token",
+        "expires" => 4_102_444_800_000,
+        "accountId" => "acc_managed-codex-001"
+      }
+    )
   end
 
   def build_service(agent_run:)
@@ -48,6 +59,23 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
 
   def opencode_run_command
     [ "env", "-u", "OPENAI_HEADER_X_AGENT_RUN_ID", "-u", "OPENAI_HEADER_X_PROXY_TOKEN", "opencode", "run", "ping" ]
+  end
+
+  def expected_opencode_auth_payload(access:, refresh:)
+    {
+      "openai" => {
+        "type" => "oauth",
+        "access" => access,
+        "refresh" => refresh,
+        "expires" => 4_102_444_800_000,
+        "accountId" => "acc_managed-codex-001"
+      }
+    }
+  end
+
+  def managed_codex_tokens
+    payload = JSON.parse(file_fixture("codex_auth_valid.json").read)
+    payload.fetch("tokens")
   end
 
   def collect_serialized_intervals(svc)
@@ -81,6 +109,12 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
 
     expect(svc.send(:seed_opencode_credentials!)).to be(true)
     expect(written.keys).to include("/home/agent/.local/share/opencode/auth.json")
+    expect(JSON.parse(written.fetch("/home/agent/.local/share/opencode/auth.json"))).to eq(
+      expected_opencode_auth_payload(
+        access: managed_codex_tokens.fetch("access_token"),
+        refresh: managed_codex_tokens.fetch("refresh_token")
+      )
+    )
 
     attempt = RunnerAuthAttempt.where(runner_key: "opencode", attempt_stage: "materialization").last
     expect(attempt.runner_credential).to eq(credential)
@@ -96,12 +130,13 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
 
     allow(svc).to receive(:write_container_file) { |path, content| written[path] = content }
     allow(svc).to receive(:refresh_opencode_managed_credential!) do
-      credential.update!(token: rotated_auth, expires_at: Time.parse("2100-01-01T00:00:00Z"))
+      credential.update!(token: rotated_canonical_auth, expires_at: Time.parse("2100-01-01T00:00:00Z"))
       true
     end
 
     expect(svc.send(:seed_opencode_credentials!)).to be(true)
-    expect(written.fetch("/home/agent/.local/share/opencode/auth.json")).to include("opencode-rotated-refresh-token")
+    payload = JSON.parse(written.fetch("/home/agent/.local/share/opencode/auth.json"))
+    expect(payload.dig("openai", "refresh")).to eq("opencode-rotated-refresh-token")
   end
 
   it "harvests rotated OpenCode auth.json back into the canonical credential" do
@@ -149,6 +184,23 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
     expect(attempt.runner_credential).to eq(credential)
   end
 
+  it "treats opencode refresh exchange as unsupported until :opencode support exists" do
+    runner = create(:runner, user: owner, runner_key: "opencode", auth_type: "subscription")
+    agent_run = create(:agent_run, project: project, runner: runner)
+    credential = create_managed_oauth_credential(runner_key: "opencode", fixture_name: "codex_auth_valid.json")
+    svc = build_service(agent_run: agent_run)
+
+    allow(svc).to receive(:opencode_managed_runner_credential).and_return(credential)
+    allow(AgentHarness::Authentication).to receive(:respond_to?).and_call_original
+    allow(AgentHarness::Authentication).to receive(:respond_to?).with(:exchange_refresh_token).and_return(true)
+    allow(AgentHarness::Authentication).to receive(:respond_to?).with(:exchange_refresh_token_supported?).and_return(true)
+    allow(AgentHarness::Authentication).to receive(:exchange_refresh_token_supported?).with(:opencode).and_return(false)
+    allow(AgentHarness::Authentication).to receive(:exchange_refresh_token)
+
+    expect(svc.send(:exchange_opencode_refresh_token!, credential)).to be(false)
+    expect(AgentHarness::Authentication).not_to have_received(:exchange_refresh_token)
+  end
+
   it "imports a managed omp credential through omp auth-broker" do
     runner = create(:runner, user: owner, runner_key: "omp", auth_type: "subscription")
     agent_run = create(:agent_run, project: project, runner: runner)
@@ -162,6 +214,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
 
     expect(svc.send(:seed_omp_credentials!)).to be(true)
     expect(written.keys).to include("/home/agent/.local/share/omp/paid-auth-import.json")
+    expect(JSON.parse(written.fetch("/home/agent/.local/share/omp/paid-auth-import.json"))["expired"]).to eq("2100-01-01T00:00:00Z")
     expect(local_backend).to have_received(:exec_in_container).with(
       container,
       [ "sh", "-lc", "omp auth-broker import /home/agent/.local/share/omp/paid-auth-import.json --provider anthropic --json" ],

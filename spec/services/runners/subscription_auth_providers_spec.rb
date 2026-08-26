@@ -275,11 +275,22 @@ RSpec.describe Runners::SubscriptionAuthProviders, :no_db do # @spec SUBSCRIPTIO
     it "materializes the OpenAI auth payload to OpenCode's auth.json path" do
       status = opencode_provider.status(secret: valid_auth)
       materialization = opencode_provider.materialize(secret: valid_auth)
+      fixture_payload = JSON.parse(valid_auth)
+      fixture_tokens = fixture_payload.fetch("tokens")
 
       expect(status).to be_valid
       expect(materialization.supported?).to be(true)
       expect(materialization.files.keys).to contain_exactly("/home/agent/.local/share/opencode/auth.json")
-      expect(materialization.files.fetch("/home/agent/.local/share/opencode/auth.json")).to include("managed-codex-refresh-token")
+      payload = JSON.parse(materialization.files.fetch("/home/agent/.local/share/opencode/auth.json"))
+      expect(payload).to eq(
+        "openai" => {
+          "type" => "oauth",
+          "access" => fixture_tokens.fetch("access_token"),
+          "refresh" => fixture_tokens.fetch("refresh_token"),
+          "expires" => 4_102_444_800_000,
+          "accountId" => "acc_managed-codex-001"
+        }
+      )
     end
 
     it "delegates refresh to the provisioner and reports performed" do
@@ -324,6 +335,7 @@ RSpec.describe Runners::SubscriptionAuthProviders, :no_db do # @spec SUBSCRIPTIO
       expect(payload["type"]).to eq("claude")
       expect(payload["access_token"]).to eq("valid-access-token")
       expect(payload["refresh_token"]).to eq("valid-refresh-token")
+      expect(payload["expired"]).to eq("2100-01-01T00:00:00Z")
     end
   end
 

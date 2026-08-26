@@ -1895,79 +1895,54 @@ module Containers
     # managed credential serialize on a per-credential lockfile and harvest the
     # rotated state back into the canonical RunnerCredential before releasing.
     def with_codex_managed_auth_lock
-      lockfile = codex_managed_auth_lockfile_path
-      lock_timeout = codex_auth_lock_timeout
-      lease_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-
-      File.open(lockfile, File::WRONLY | File::CREAT, 0o600) do |f|
-        log_system("container.codex_auth_lock.waiting", lockfile: lockfile, lock_timeout_seconds: lock_timeout)
-
-        acquired = false
-        acquired = acquire_lock_with_timeout(f, lock_timeout)
-
-        if acquired
-          log_system("container.codex_auth_lock.acquired", lockfile: lockfile)
-          record_codex_lease_attempt!(state: RunnerAuthAttempt::LEASE_ACQUIRED, started_at: lease_started_at,
-            auth_source: :managed,
-            materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_NATIVE_FILE,
-            runner_credential: codex_managed_runner_credential,
-            metadata: { lockfile: lockfile })
-          result = yield
-          harvest_codex_managed_credential!
-          result
-        else
-          log_system("container.codex_auth_lock.timeout",
-            lockfile: lockfile,
-            lock_timeout_seconds: lock_timeout)
-          log_system("container.codex_managed_harvest_skipped_without_lock",
-            credential_id: codex_managed_runner_credential&.id)
-          record_codex_lease_attempt!(state: RunnerAuthAttempt::LEASE_TIMEOUT, started_at: lease_started_at,
-            auth_source: :managed,
-            materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_NATIVE_FILE,
-            runner_credential: codex_managed_runner_credential,
-            metadata: { lockfile: lockfile, lock_timeout_seconds: lock_timeout })
-          yield
-        end
-      ensure
-        if acquired
-          f.flock(File::LOCK_UN)
-          acquired = false
-          log_system("container.codex_auth_lock.released", lockfile: lockfile)
-        end
-      end
+      with_subscription_managed_auth_lock(
+        runner_key: "codex",
+        runner_credential: codex_managed_runner_credential,
+        lockfile: codex_managed_auth_lockfile_path,
+        skipped_event: "container.codex_managed_harvest_skipped_without_lock"
+      ) { yield }
     end
 
     def with_opencode_managed_auth_lock
-      lockfile = opencode_managed_auth_lockfile_path
+      with_subscription_managed_auth_lock(
+        runner_key: "opencode",
+        runner_credential: opencode_managed_runner_credential,
+        lockfile: opencode_managed_auth_lockfile_path,
+        skipped_event: "container.opencode_managed_harvest_skipped_without_lock"
+      ) { yield }
+    end
+
+    def with_subscription_managed_auth_lock(runner_key:, runner_credential:, lockfile:, skipped_event:)
       lock_timeout = codex_auth_lock_timeout
       lease_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
       File.open(lockfile, File::WRONLY | File::CREAT, 0o600) do |f|
-        log_system("container.opencode_auth_lock.waiting", lockfile: lockfile, lock_timeout_seconds: lock_timeout)
+        log_system("container.#{runner_key}_auth_lock.waiting", lockfile: lockfile, lock_timeout_seconds: lock_timeout)
 
         acquired = false
         acquired = acquire_lock_with_timeout(f, lock_timeout)
 
         if acquired
-          log_system("container.opencode_auth_lock.acquired", lockfile: lockfile)
-          record_opencode_lease_attempt!(state: RunnerAuthAttempt::LEASE_ACQUIRED, started_at: lease_started_at,
+          log_system("container.#{runner_key}_auth_lock.acquired", lockfile: lockfile)
+          record_subscription_lease_attempt!(runner_key: runner_key,
+            state: RunnerAuthAttempt::LEASE_ACQUIRED,
+            started_at: lease_started_at,
             auth_source: :managed,
             materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_NATIVE_FILE,
-            runner_credential: opencode_managed_runner_credential,
+            runner_credential: runner_credential,
             metadata: { lockfile: lockfile })
           result = yield
-          harvest_opencode_managed_credential!
+          harvest_managed_subscription_credential!(runner_key)
           result
         else
-          log_system("container.opencode_auth_lock.timeout",
-            lockfile: lockfile,
-            lock_timeout_seconds: lock_timeout)
-          log_system("container.opencode_managed_harvest_skipped_without_lock",
-            credential_id: opencode_managed_runner_credential&.id)
-          record_opencode_lease_attempt!(state: RunnerAuthAttempt::LEASE_TIMEOUT, started_at: lease_started_at,
+          log_system("container.#{runner_key}_auth_lock.timeout", lockfile: lockfile, lock_timeout_seconds: lock_timeout)
+          log_system(skipped_event, credential_id: runner_credential&.id)
+          record_subscription_lease_attempt!(runner_key: runner_key,
+            state: RunnerAuthAttempt::LEASE_TIMEOUT,
+            started_at: lease_started_at,
             auth_source: :managed,
             materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_NATIVE_FILE,
-            runner_credential: opencode_managed_runner_credential,
+            runner_credential: runner_credential,
             metadata: { lockfile: lockfile, lock_timeout_seconds: lock_timeout })
           yield
         end
@@ -1975,7 +1950,7 @@ module Containers
         if acquired
           f.flock(File::LOCK_UN)
           acquired = false
-          log_system("container.opencode_auth_lock.released", lockfile: lockfile)
+          log_system("container.#{runner_key}_auth_lock.released", lockfile: lockfile)
         end
       end
     end
@@ -1983,30 +1958,29 @@ module Containers
     def record_codex_lease_attempt!(state:, started_at:, auth_source: :host_forwarded,
       materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_HOST_MOUNT,
       runner_credential: nil, metadata: {})
-      duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
-      result = case state
-      when RunnerAuthAttempt::LEASE_ACQUIRED then RunnerAuthAttempt::RESULT_LEASE_ACQUIRED
-      when RunnerAuthAttempt::LEASE_WAITED then RunnerAuthAttempt::RESULT_LEASE_WAITED
-      when RunnerAuthAttempt::LEASE_TIMEOUT then RunnerAuthAttempt::RESULT_LEASE_TIMEOUT
-      else RunnerAuthAttempt::RESULT_FAILED
-      end
-
-      record_auth_attempt!(
-        runner_key: "codex",
-        attempt_stage: RunnerAuthAttempt::STAGE_LEASE,
+      record_subscription_lease_attempt!(runner_key: "codex",
+        state: state,
+        started_at: started_at,
         auth_source: auth_source,
         materialization_mode: materialization_mode,
         runner_credential: runner_credential,
-        lease_state: state,
-        result: result,
-        duration_ms: duration_ms,
-        metadata: metadata
-      )
+        metadata: metadata)
     end
 
     def record_opencode_lease_attempt!(state:, started_at:, auth_source: :managed,
       materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_NATIVE_FILE,
       runner_credential: nil, metadata: {})
+      record_subscription_lease_attempt!(runner_key: "opencode",
+        state: state,
+        started_at: started_at,
+        auth_source: auth_source,
+        materialization_mode: materialization_mode,
+        runner_credential: runner_credential,
+        metadata: metadata)
+    end
+
+    def record_subscription_lease_attempt!(runner_key:, state:, started_at:, auth_source:, materialization_mode:,
+      runner_credential:, metadata:)
       duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
       result = case state
       when RunnerAuthAttempt::LEASE_ACQUIRED then RunnerAuthAttempt::RESULT_LEASE_ACQUIRED
@@ -2016,7 +1990,7 @@ module Containers
       end
 
       record_auth_attempt!(
-        runner_key: "opencode",
+        runner_key: runner_key,
         attempt_stage: RunnerAuthAttempt::STAGE_LEASE,
         auth_source: auth_source,
         materialization_mode: materialization_mode,
@@ -3954,30 +3928,14 @@ module Containers
     end
 
     def codex_exec_command?(command)
-      parts = normalized_command_parts(command)
-      return false if parts.empty?
-
-      if parts.first == "env"
-        index = 1
-        while index < parts.length
-          case parts[index]
-          when "-u"
-            index += 2
-          else
-            break
-          end
-        end
-        parts = parts[index..] || []
-      end
-
-      return true if parts[0] == "sh" && parts[1] == "-c" && parts[2]&.match?(/\bcodex\s+exec\b/)
-
-      parts.first(2) == %w[codex exec]
-    rescue ArgumentError
-      false
+      subscription_exec_command?(command, binary: "codex", verb: "exec")
     end
 
     def opencode_exec_command?(command)
+      subscription_exec_command?(command, binary: "opencode", verb: "run")
+    end
+
+    def subscription_exec_command?(command, binary:, verb:)
       parts = normalized_command_parts(command)
       return false if parts.empty?
 
@@ -3994,9 +3952,9 @@ module Containers
         parts = parts[index..] || []
       end
 
-      return true if parts[0] == "sh" && parts[1] == "-c" && parts[2]&.match?(/\bopencode\s+run\b/)
+      return true if parts[0] == "sh" && parts[1] == "-c" && parts[2]&.match?(/\b#{Regexp.escape(binary)}\s+#{Regexp.escape(verb)}\b/)
 
-      parts.first(2) == %w[opencode run]
+      parts.first(2) == [ binary, verb ]
     rescue ArgumentError
       false
     end
@@ -4091,21 +4049,29 @@ module Containers
     CODEX_MANAGED_AUTH_LOCK_BASE_PATH = "/tmp/codex-managed-auth"
 
     def codex_managed_auth_lockfile_path
-      credential_id = codex_managed_runner_credential&.id
-      return "#{CODEX_MANAGED_AUTH_LOCK_BASE_PATH}-missing.lock" unless credential_id
-
-      digest = Digest::SHA256.hexdigest("codex-managed:#{credential_id}")[0, 16]
-      "#{CODEX_MANAGED_AUTH_LOCK_BASE_PATH}-#{digest}.lock"
+      managed_auth_lockfile_path(
+        runner_key: "codex",
+        credential: codex_managed_runner_credential,
+        base_path: CODEX_MANAGED_AUTH_LOCK_BASE_PATH
+      )
     end
 
     OPENCODE_MANAGED_AUTH_LOCK_BASE_PATH = "/tmp/opencode-managed-auth"
 
     def opencode_managed_auth_lockfile_path
-      credential_id = opencode_managed_runner_credential&.id
-      return "#{OPENCODE_MANAGED_AUTH_LOCK_BASE_PATH}-missing.lock" unless credential_id
+      managed_auth_lockfile_path(
+        runner_key: "opencode",
+        credential: opencode_managed_runner_credential,
+        base_path: OPENCODE_MANAGED_AUTH_LOCK_BASE_PATH
+      )
+    end
 
-      digest = Digest::SHA256.hexdigest("opencode-managed:#{credential_id}")[0, 16]
-      "#{OPENCODE_MANAGED_AUTH_LOCK_BASE_PATH}-#{digest}.lock"
+    def managed_auth_lockfile_path(runner_key:, credential:, base_path:)
+      credential_id = credential&.id
+      return "#{base_path}-missing.lock" unless credential_id
+
+      digest = Digest::SHA256.hexdigest("#{runner_key}-managed:#{credential_id}")[0, 16]
+      "#{base_path}-#{digest}.lock"
     end
 
     # Public boundary for the Codex managed refresh (RDR-041 / #2962). Refreshes
@@ -4220,10 +4186,14 @@ module Containers
     # Uses the RunnerCredential row lock so refresh is safe across hosts once
     # remote placement is enabled; pairs with the file-based exec lease.
     def with_codex_managed_refresh_lease(credential)
-      credential.with_lock { yield }
+      with_managed_refresh_lease(credential) { yield }
     end
 
     def with_opencode_managed_refresh_lease(credential)
+      with_managed_refresh_lease(credential) { yield }
+    end
+
+    def with_managed_refresh_lease(credential)
       credential.with_lock { yield }
     end
 
@@ -4265,9 +4235,17 @@ module Containers
     end
 
     def codex_refresh_exchange_supported?
+      refresh_exchange_supported?(:codex)
+    end
+
+    def opencode_refresh_exchange_supported?
+      refresh_exchange_supported?(:opencode)
+    end
+
+    def refresh_exchange_supported?(runner_key)
       AgentHarness::Authentication.respond_to?(:exchange_refresh_token) &&
         AgentHarness::Authentication.respond_to?(:exchange_refresh_token_supported?) &&
-        AgentHarness::Authentication.exchange_refresh_token_supported?(:codex)
+        AgentHarness::Authentication.exchange_refresh_token_supported?(runner_key)
     end
 
     def apply_codex_refresh_result!(credential, refreshed_payload)
@@ -4318,7 +4296,7 @@ module Containers
     end
 
     def exchange_opencode_refresh_token!(credential)
-      unless codex_refresh_exchange_supported?
+      unless opencode_refresh_exchange_supported?
         log_system("container.opencode_auth_refresh.unsupported",
           note: "agent-harness opencode refresh not yet available; skipping server-side exchange")
         return false
@@ -4347,16 +4325,17 @@ module Containers
 
     def apply_opencode_refresh_result!(credential, refreshed_payload)
       token = refreshed_payload.is_a?(Hash) ? refreshed_payload.dig(:token) || JSON.generate(refreshed_payload) : refreshed_payload.to_s
-      parsed = CodexCredentials::Secret.parse(token.to_s)
-      unless valid_codex_refresh_response?(parsed)
+      parsed = OpencodeCredentials::Secret.parse(token.to_s)
+      canonical_auth = parsed.codex_auth_json
+      unless parsed.opencode_auth? && parsed.access_token.present? && canonical_auth.present?
         raise InvalidCodexRefreshResponse.new(
           "OpenCode refresh response is not a usable auth.json",
-          reason: parsed.codex_auth? ? "missing_access_token" : "not_codex_auth"
+          reason: parsed.opencode_auth? ? "missing_access_token" : "not_opencode_auth"
         )
       end
 
       credential.assign_attributes(
-        token: token.to_s,
+        token: canonical_auth,
         expires_at: parsed.expires_at || credential.expires_at,
         revoked_at: nil,
         metadata: credential.metadata.to_h.merge(
@@ -4366,6 +4345,15 @@ module Containers
         ).compact
       )
       credential.save!
+    end
+
+    def harvest_managed_subscription_credential!(runner_key)
+      case runner_key
+      when "codex" then harvest_codex_managed_credential!
+      when "opencode" then harvest_opencode_managed_credential!
+      else
+        raise ArgumentError, "Unsupported managed harvest runner: #{runner_key}"
+      end
     end
 
     def record_opencode_refresh_attempt!(credential, started_at, refresh_state:, result:, failure_reason: nil)
@@ -4502,8 +4490,8 @@ module Containers
       end
 
       rotated = Base64.strict_decode64(encoded)
-      parsed = CodexCredentials::Secret.parse(rotated)
-      unless parsed.codex_auth?
+      parsed = OpencodeCredentials::Secret.parse(rotated)
+      unless parsed.opencode_auth?
         record_opencode_harvest_attempt!(credential, started_at,
           result: RunnerAuthAttempt::RESULT_HARVEST_FAILED, failure_reason: "malformed_rotated_credential")
         return opencode_harvest_result(performed: false, reason: "malformed_rotated_credential")
@@ -4528,9 +4516,12 @@ module Containers
       opencode_harvest_result(performed: false, reason: "harvest_failed")
     end
 
-    def update_opencode_managed_credential_from_rotation!(credential, rotated_auth_json, parsed)
+    def update_opencode_managed_credential_from_rotation!(credential, _rotated_auth_json, parsed)
+      canonical_auth = parsed.codex_auth_json
+      raise ArgumentError, "OpenCode rotation is missing canonical auth material" if canonical_auth.blank?
+
       credential.assign_attributes(
-        token: rotated_auth_json,
+        token: canonical_auth,
         expires_at: parsed.expires_at || credential.expires_at,
         last_used_at: Time.current,
         revoked_at: nil,
