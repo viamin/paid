@@ -33,10 +33,13 @@ module Github
     end
 
     def self.install_url(state: nil)
-      uri = URI::HTTPS.build(host: "github.com", path: install_path)
-      return uri.to_s if state.blank?
+      install_uri(state: state).to_s
+    end
 
-      "#{uri}?#{URI.encode_www_form(state: state)}"
+    def self.install_uri(state: nil)
+      uri = URI::HTTPS.build(host: "github.com", path: install_path)
+      uri.query = URI.encode_www_form(state: state) if state.present?
+      uri
     end
 
     def self.credentials_dig(key)

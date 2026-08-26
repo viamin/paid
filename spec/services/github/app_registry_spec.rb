@@ -111,4 +111,15 @@ RSpec.describe Github::AppRegistry do
       expect(url).to eq("https://github.com/apps/paid-agents%2F..%2F..%2Fevil/installations/new?state=csrf-token")
     end
   end
+
+  describe ".install_uri" do
+    it "returns a GitHub HTTPS URI for the install flow" do
+      uri = described_class.install_uri(state: "csrf-token")
+
+      expect(uri).to be_a(URI::HTTPS)
+      expect(uri.host).to eq("github.com")
+      expect(uri.path).to eq("/apps/paid-agents/installations/new")
+      expect(uri.query).to eq("state=csrf-token")
+    end
+  end
 end

@@ -3,6 +3,26 @@
 require "rails_helper"
 
 RSpec.describe QualityMetrics::DashboardStats do
+  let(:expected_ci_passed_focus_weights) do
+    {
+      "ci_fix" => 0.45,
+      "merge_conflict" => 0.135,
+      "issue_implementation" => 0.135,
+      "performance_regression" => 0.10
+    }
+  end
+
+  let(:expected_focus_resolved_focus_weights) do
+    {
+      "review_feedback" => 0.54,
+      "merge_conflict" => 0.63,
+      "conversation" => 0.54,
+      "label_action" => 0.54,
+      "issue_implementation" => 0.45,
+      "performance_regression" => 0.54
+    }
+  end
+
   describe ".metrics_reference", :no_db do
     it "includes focus-specific weights for create_pr metrics" do
       result = described_class.metrics_reference
@@ -10,18 +30,8 @@ RSpec.describe QualityMetrics::DashboardStats do
       ci_passed = result.find { |metric| metric[:key] == "ci_passed" }
       focus_resolved = result.find { |metric| metric[:key] == "focus_resolved" }
 
-      expect(ci_passed[:weights_by_focus]).to eq(
-        "ci_fix" => 0.45,
-        "merge_conflict" => 0.135,
-        "issue_implementation" => 0.135
-      )
-      expect(focus_resolved[:weights_by_focus]).to eq(
-        "review_feedback" => 0.54,
-        "merge_conflict" => 0.63,
-        "conversation" => 0.54,
-        "label_action" => 0.54,
-        "issue_implementation" => 0.45
-      )
+      expect(ci_passed[:weights_by_focus]).to eq(expected_ci_passed_focus_weights)
+      expect(focus_resolved[:weights_by_focus]).to eq(expected_focus_resolved_focus_weights)
     end
   end
 
@@ -182,18 +192,8 @@ RSpec.describe QualityMetrics::DashboardStats do
       expect(pr_created[:weights_by_goal]).to eq("create_pr" => 0.225)
       expect(pr_created[:weights_by_focus]).to eq({})
       expect(pr_created[:goal_types]).to include("create_pr")
-      expect(ci_passed[:weights_by_focus]).to eq(
-        "ci_fix" => 0.45,
-        "merge_conflict" => 0.135,
-        "issue_implementation" => 0.135
-      )
-      expect(focus_resolved[:weights_by_focus]).to eq(
-        "review_feedback" => 0.54,
-        "merge_conflict" => 0.63,
-        "conversation" => 0.54,
-        "label_action" => 0.54,
-        "issue_implementation" => 0.45
-      )
+      expect(ci_passed[:weights_by_focus]).to eq(expected_ci_passed_focus_weights)
+      expect(focus_resolved[:weights_by_focus]).to eq(expected_focus_resolved_focus_weights)
     end
 
     it "includes mutation kill-rate metadata for create_pr metrics" do

@@ -19,6 +19,7 @@ module Admin
     # Once the App is configured, new projects can use the App-managed
     # auth flow via `GithubApp::InstallationsController`.
     # @spec GITHUB-SYNC-007
+    # @spec GITHUB-SYNC-010
     class SetupController < ApplicationController
       include OperatorConsole::RequestContext
       include AuditLogging
@@ -52,7 +53,7 @@ module Admin
 
         manifest = build_manifest(state: state)
         encoded = Base64.urlsafe_encode64(manifest.to_json, padding: false)
-        redirect_to "https://github.com/settings/apps/new?manifest=#{encoded}", allow_other_host: true
+        redirect_to github_manifest_creation_uri(encoded_manifest: encoded).to_s, allow_other_host: true
       end
 
       # GET /admin/github_app/setup/callback
@@ -172,6 +173,14 @@ module Admin
         uri = URI.parse(admin_github_app_setup_callback_url)
         uri.query = { state: state }.to_query
         uri.to_s
+      end
+
+      def github_manifest_creation_uri(encoded_manifest:)
+        URI::HTTPS.build(
+          host: "github.com",
+          path: "/settings/apps/new",
+          query: URI.encode_www_form(manifest: encoded_manifest)
+        )
       end
 
       # GitHub requires the post-install `setup_url` to be a fully-qualified
