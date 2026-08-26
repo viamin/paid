@@ -32,6 +32,13 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
       }
     )
   end
+  let(:rotated_omp_auth) do
+    JSON.generate(
+      "access" => "omp-rotated-access-token",
+      "refresh" => "omp-rotated-refresh-token",
+      "expires" => 4_102_444_800_000
+    )
+  end
 
   def build_service(agent_run:)
     described_class.new(agent_run: agent_run, project: project, backend: local_backend).tap do |svc|
@@ -57,8 +64,19 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
     [ agent_run, credential ]
   end
 
+  def build_omp_subscription_run
+    runner = create(:runner, user: owner, runner_key: "omp", auth_type: "subscription")
+    agent_run = create(:agent_run, project: project, runner: runner)
+    credential = create_managed_oauth_credential(runner_key: "omp", fixture_name: "claude_credentials_valid.json")
+    [ agent_run, credential ]
+  end
+
   def opencode_run_command
     [ "env", "-u", "OPENAI_HEADER_X_AGENT_RUN_ID", "-u", "OPENAI_HEADER_X_PROXY_TOKEN", "opencode", "run", "ping" ]
+  end
+
+  def omp_run_command
+    [ "omp", "-p", "ping" ]
   end
 
   def expected_opencode_auth_payload(access:, refresh:)
@@ -108,7 +126,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
     )
   end
 
-  def collect_serialized_intervals(svc)
+  def collect_serialized_intervals(svc, command:)
     intervals = []
     mutex = Mutex.new
     critical_section = lambda do
@@ -120,7 +138,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
 
     threads = Array.new(2) do
       Thread.new do
-        svc.send(:with_codex_auth_lock, opencode_run_command) { critical_section.call }
+        svc.send(:with_codex_auth_lock, command) { critical_section.call }
       end
     end
     threads.each(&:join)
@@ -204,7 +222,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
     lockfile = svc.send(:opencode_managed_auth_lockfile_path)
     FileUtils.rm_f(lockfile)
 
-    sorted = collect_serialized_intervals(svc)
+    sorted = collect_serialized_intervals(svc, command: opencode_run_command)
     expect(sorted.size).to eq(2)
     expect(sorted[1][0]).to be >= sorted[0][1]
     expect(svc).to have_received(:harvest_opencode_managed_credential!).twice
@@ -250,6 +268,97 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
     attempt = RunnerAuthAttempt.where(runner_key: "omp", attempt_stage: "materialization").last
     expect(attempt.runner_credential).to eq(credential)
     expect(attempt.auth_source).to eq("managed")
+  end
+
+  it "refreshes an omp managed credential before import and re-resolves the rotated payload" do
+    runner = create(:runner, user: owner, runner_key: "omp", auth_type: "subscription")
+    agent_run = create(:agent_run, project: project, runner: runner)
+    credential = create_managed_oauth_credential(runner_key: "omp", fixture_name: "claude_credentials_valid.json")
+    svc = build_service(agent_run: agent_run)
+    written = {}
+    rotated = JSON.parse(file_fixture("claude_credentials_valid.json").read)
+    rotated.fetch("claudeAiOauth")["accessToken"] = "omp-rotated-access-token"
+    rotated.fetch("claudeAiOauth")["refreshToken"] = "omp-rotated-refresh-token"
+
+    allow(svc).to receive(:container).and_return(container)
+    allow(svc).to receive(:write_container_file) { |path, content| written[path] = content }
+    allow(svc).to receive(:refresh_omp_managed_credential!) do
+      credential.update!(token: JSON.generate(rotated), expires_at: Time.parse("2100-01-01T00:00:00Z"))
+      true
+    end
+    stub_omp_exec(success: true, stdout: [ '{"ok":true}' ])
+
+    expect(svc.send(:seed_omp_credentials!)).to be(true)
+    payload = JSON.parse(written.fetch("/home/agent/.local/share/omp/paid-auth-import.json"))
+    expect(payload["access_token"]).to eq("omp-rotated-access-token")
+    expect(payload["refresh_token"]).to eq("omp-rotated-refresh-token")
+  end
+
+  it "harvests rotated OMP broker state back into the canonical credential" do
+    runner = create(:runner, user: owner, runner_key: "omp", auth_type: "subscription")
+    agent_run = create(:agent_run, project: project, runner: runner)
+    credential = create_managed_oauth_credential(runner_key: "omp", fixture_name: "claude_credentials_valid.json")
+    svc = build_service(agent_run: agent_run)
+
+    allow(svc).to receive(:container).and_return(container)
+    allow(local_backend).to receive(:exec_in_container).and_return([ [ rotated_omp_auth ], [], 0 ])
+
+    result = svc.send(:harvest_omp_managed_credential!)
+
+    expect(result.performed?).to be(true)
+    parsed = JSON.parse(credential.reload.token)
+    expect(parsed.dig("claudeAiOauth", "accessToken")).to eq("omp-rotated-access-token")
+    expect(parsed.dig("claudeAiOauth", "refreshToken")).to eq("omp-rotated-refresh-token")
+
+    attempt = RunnerAuthAttempt.where(runner_key: "omp", attempt_stage: "harvest").last
+    expect(attempt.result).to eq("harvested")
+    expect(attempt.auth_source).to eq("managed")
+  end
+
+  it "serializes omp runs sharing the same managed credential and harvests under the lock" do
+    agent_run, credential = build_omp_subscription_run
+    svc = build_service(agent_run: agent_run)
+
+    allow(svc).to receive_messages(
+      omp_managed_runner_credential: credential,
+      codex_auth_lock_timeout: 5
+    )
+    allow(svc).to receive(:harvest_omp_managed_credential!)
+
+    lockfile = svc.send(:omp_managed_auth_lockfile_path)
+    FileUtils.rm_f(lockfile)
+
+    sorted = collect_serialized_intervals(svc, command: omp_run_command)
+    expect(sorted.size).to eq(2)
+    expect(sorted[1][0]).to be >= sorted[0][1]
+    expect(svc).to have_received(:harvest_omp_managed_credential!).twice
+
+    attempt = RunnerAuthAttempt.where(runner_key: "omp", attempt_stage: "lease").last
+    expect(attempt.lease_state).to eq("acquired")
+    expect(attempt.runner_credential).to eq(credential)
+  end
+
+  it "refreshes the canonical omp credential via the Claude exchange on a temp managed directory" do
+    _agent_run, credential = build_omp_subscription_run
+    svc = build_service(agent_run: create(:agent_run, project: project))
+    rotated = JSON.parse(file_fixture("claude_credentials_valid.json").read)
+    rotated.fetch("claudeAiOauth")["accessToken"] = "omp-refreshed-access-token"
+
+    allow(svc).to receive(:omp_managed_runner_credential).and_return(credential)
+    allow(AgentHarness::Authentication).to receive(:respond_to?).and_call_original
+    allow(AgentHarness::Authentication).to receive(:respond_to?).with(:exchange_refresh_token).and_return(true)
+    allow(AgentHarness::Authentication).to receive(:respond_to?).with(:exchange_refresh_token_supported?).and_return(true)
+    allow(AgentHarness::Authentication).to receive(:exchange_refresh_token_supported?).with(:claude).and_return(true)
+    allow(AgentHarness::Authentication).to receive(:exchange_refresh_token) do
+      path = File.join(ENV.fetch("CLAUDE_CONFIG_DIR"), ".credentials.json")
+      File.write(path, JSON.generate(rotated))
+    end
+
+    expect(svc.send(:exchange_omp_refresh_token!, credential)).to be(true)
+    expect(credential.reload.token).to include("omp-refreshed-access-token")
+
+    attempt = RunnerAuthAttempt.where(runner_key: "omp", attempt_stage: "refresh").last
+    expect(attempt).to be_nil
   end
 
   it "removes the temporary omp auth-broker import file after a failed import" do

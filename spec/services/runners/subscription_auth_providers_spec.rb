@@ -341,6 +341,7 @@ RSpec.describe Runners::SubscriptionAuthProviders, :no_db do # @spec SUBSCRIPTIO
   describe "OMP contract" do
     let(:omp_provider) { described_class.for_runner("omp") }
     let(:valid_credentials) { file_fixture("claude_credentials_valid.json").read }
+    let(:provisioner) { instance_double(Containers::Provision) }
 
     it "materializes a Claude native credential as an omp auth-broker import file" do
       status = omp_provider.status(secret: valid_credentials)
@@ -354,6 +355,32 @@ RSpec.describe Runners::SubscriptionAuthProviders, :no_db do # @spec SUBSCRIPTIO
       expect(payload["access_token"]).to eq("valid-access-token")
       expect(payload["refresh_token"]).to eq("valid-refresh-token")
       expect(payload["expired"]).to eq("2100-01-01T00:00:00Z")
+    end
+
+    it "delegates refresh to the provisioner and reports performed" do
+      allow(provisioner).to receive(:refresh_omp_managed_credential!).and_return(true)
+
+      result = omp_provider.refresh(provisioner: provisioner)
+
+      expect(result.supported?).to be(true)
+      expect(result.performed?).to be(true)
+      expect(result.reason).to eq("refreshed")
+    end
+
+    it "reports refresh_skipped when the provisioner does not refresh" do
+      allow(provisioner).to receive(:refresh_omp_managed_credential!).and_return(nil)
+
+      result = omp_provider.refresh(provisioner: provisioner)
+
+      expect(result.performed?).to be(false)
+      expect(result.reason).to eq("refresh_skipped")
+    end
+
+    it "delegates harvest to the provisioner" do
+      harvest_result = Runners::SubscriptionAuthProviders::Result.new(supported: true, performed: true, reason: "harvested")
+      allow(provisioner).to receive(:harvest_omp_managed_credential!).and_return(harvest_result)
+
+      expect(omp_provider.harvest(provisioner: provisioner)).to eq(harvest_result)
     end
   end
 

@@ -47,9 +47,10 @@
   Claude-browser login to target `omp`, SHALL allow OpenAI device-code login to
   target `opencode`, and SHALL materialize the captured managed credentials into
   each runner's native auth state with runner-key-specific telemetry. For
-  OpenCode's managed `auth.json`, Paid SHALL also run the same pre-run
-  refresh-plus-lease lifecycle as Codex and SHALL harvest rotated auth state
-  back into the canonical `RunnerCredential`.
+  OpenCode's managed `auth.json` and OMP's managed Claude subscription
+  credential, Paid SHALL also run the same pre-run refresh-plus-lease lifecycle
+  as Codex and SHALL harvest rotated auth state back into the canonical
+  `RunnerCredential`.
   *Tests:* `spec/requests/runner_login_flows_spec.rb`,
   `spec/services/claude_login_sessions/interactive_login_spec.rb`,
   `spec/services/codex_login_sessions/device_flow_spec.rb`,

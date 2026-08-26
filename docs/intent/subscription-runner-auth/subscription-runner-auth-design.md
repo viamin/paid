@@ -56,7 +56,10 @@ managed OpenAI `auth.json` payload at its native credentials path and, like
 Codex, keeps that rotating credential on a per-credential lease with pre-run
 refresh and post-run harvest/writeback into the canonical `RunnerCredential`.
 OMP materializes a broker-import JSON derived from the canonical Claude
-credential and installs it through `omp auth-broker import`. Both remain
+credential, refreshes that canonical Claude credential before materialization
+when it is near expiry, installs it through `omp auth-broker import`, and
+harvests the broker's rotated OAuth state back into the canonical
+`RunnerCredential` before releasing the per-credential lease. Both remain
 `remote_safe: false` until broader remote-hardening is proven.
 
 ## Exceptions Preserved

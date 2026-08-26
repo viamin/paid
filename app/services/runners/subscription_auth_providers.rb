@@ -481,6 +481,19 @@ module Runners
         )
       end
 
+      def refresh(provisioner:)
+        performed = !!provisioner.refresh_omp_managed_credential!
+        Result.new(
+          supported: true,
+          performed: performed,
+          reason: performed ? "refreshed" : "refresh_skipped"
+        )
+      end
+
+      def harvest(provisioner:)
+        provisioner.harvest_omp_managed_credential!
+      end
+
       private
 
       def classify(secret)
