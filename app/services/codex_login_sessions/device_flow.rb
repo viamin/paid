@@ -173,7 +173,9 @@ module CodexLoginSessions
         actor: session.created_by,
         subject: session,
         account: session.account,
-        metadata: { credential_name: session.credential_name, details: Array(message) }
+        metadata: { credential_name: session.credential_name,
+                    runner_key: session.target_runner_key,
+                    details: Array(message) }
       )
       { status: :failed, completed: false, error: message }
     rescue StandardError
