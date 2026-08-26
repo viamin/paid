@@ -130,11 +130,10 @@ module Projects
       return unless queue_mode?
       return unless valid_queue_scope?
 
-      Dashboard::NeedsInputQueue.next_issue(
-        user: current_user,
-        project: queue_project,
-        after_issue: @issue
-      )
+      current_index = queue_scope_issues(project: queue_project).index { |issue| issue.id == @issue.id }
+      return if current_index.nil?
+
+      queue_scope_issues(project: queue_project)[(current_index + 1)..]&.first
     end
 
     def safe_queue_return_to?(path)
@@ -159,13 +158,27 @@ module Projects
     end
 
     def issue_kind_label
-      @issue.is_pull_request? ? "PR" : "issue"
+      helpers.issue_kind_label(@issue, style: :short_lower)
     end
 
     def queue_scope_issues(project:)
       @queue_scope_issues ||= {}
-      @queue_scope_issues.fetch(project&.id) do
-        @queue_scope_issues[project&.id] = Dashboard::NeedsInputQueue.call(user: current_user, project: project).map(&:issue)
+      cache_key = [ queue_param, project&.id ]
+      @queue_scope_issues.fetch(cache_key) do
+        @queue_scope_issues[cache_key] = queue_scope_entries(project: project).map(&:issue)
+      end
+    end
+
+    # @spec OPERATOR-INBOX-007
+    def queue_scope_entries(project:)
+      if queue_param == "dashboard_inbox"
+        Inbox::Queue.call(
+          user: current_user,
+          project: project,
+          kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND
+        )
+      else
+        Dashboard::NeedsInputQueue.call(user: current_user, project: project)
       end
     end
 

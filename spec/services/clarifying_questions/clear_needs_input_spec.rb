@@ -170,6 +170,7 @@ RSpec.describe ClarifyingQuestions::ClearNeedsInput do
         expect(issue.reload.needs_input_questions).to be_nil
       end
 
+      # @spec OPERATOR-INBOX-007
       it "clears a PR-backed needs-input record without issue-only assumptions" do
         pull_request = create(
           :issue,

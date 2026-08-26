@@ -56,7 +56,8 @@
   plus PR-aware GitHub link copy anywhere the inbox distinguishes issues from
   pull requests.
   *Code:* `app/controllers/projects/clarifying_questions_controller.rb`,
-  `app/helpers/application_helper.rb`,
+  `app/helpers/dashboard_helper.rb`,
+  `app/helpers/issues_helper.rb`,
   `app/views/dashboard/_inbox_list.html.erb`,
   `app/views/dashboard/_inbox_detail.html.erb`,
   `app/views/dashboard/_inbox_detail_clarifying_questions.html.erb`,

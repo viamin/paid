@@ -55,6 +55,11 @@ question-producing flows remain issue-centric: `enhance_issue` and
 questionless-repair paths. That producer gap is intentional follow-up work, not
 an inbox rendering constraint.
 
+When the operator opens a clarifying-question entry from `dashboard_inbox`,
+the answer flow resolves queue membership and next-entry traversal from
+`Inbox::Queue` filtered to `clarifying_questions`, so PR-backed records keep
+the same continuation behavior as issue-backed records.
+
 ### `plan_review`
 
 Backed by `DecompositionDecision.open_plan_reviews`, scoped through

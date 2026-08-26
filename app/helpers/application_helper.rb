@@ -264,7 +264,7 @@ module ApplicationHelper
   # AddPausedToIssues migration comment), so the PR copy must not promise that
   # automation will stop.
   def issue_pause_confirm_message(issue)
-    kind = issue.is_pull_request? ? "PR" : "issue"
+    kind = issue_kind_label(issue, style: :short_lower)
     number = issue.github_number
     label = Issue::PAUSED_LABEL
     if issue.is_pull_request?
@@ -272,32 +272,6 @@ module ApplicationHelper
     else
       "Pause #{kind} ##{number}? Automation will skip it and a #{label} label is added on GitHub."
     end
-  end
-
-  def inbox_path_for(scoped_project:, selected_kind:)
-    dashboard_inbox_path(project_id: scoped_project&.id, kind: selected_kind)
-  end
-
-  def inbox_entry_path(entry:, scoped_project:, selected_kind:, view: "detail")
-    dashboard_inbox_path(
-      project_id: scoped_project&.id,
-      kind: selected_kind,
-      entry_kind: entry.kind,
-      entry_id: entry.record.id,
-      view: view
-    )
-  end
-
-  def inbox_issue_kind_label(issue)
-    issue.is_pull_request? ? "PR" : "Issue"
-  end
-
-  def inbox_issue_badge_classes(issue)
-    issue.is_pull_request? ? "bg-violet-100 text-violet-800" : "bg-slate-100 text-slate-700"
-  end
-
-  def inbox_issue_link_label(issue)
-    issue.is_pull_request? ? "View PR" : "View Issue"
   end
 
   def issue_lifecycle_legend_tooltip

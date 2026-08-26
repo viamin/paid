@@ -45,6 +45,29 @@ RSpec.describe "Projects::ClarifyingQuestions" do
     )
   end
 
+  def create_pr_needs_input(project:, questions:, github_number:)
+    create(
+      :issue,
+      :needs_input,
+      :pull_request,
+      project: project,
+      github_number: github_number,
+      body: issue_body,
+      needs_input_questions: questions
+    )
+  end
+
+  def create_issue_needs_input(project:, questions:, github_number:)
+    create(
+      :issue,
+      :needs_input,
+      project: project,
+      github_number: github_number,
+      body: issue_body,
+      needs_input_questions: questions
+    )
+  end
+
   def expect_pr_answers_cleared(pull_request)
     expect(github_client).to have_received(:remove_label_from_issue).with(
       project.full_name,
@@ -160,6 +183,7 @@ RSpec.describe "Projects::ClarifyingQuestions" do
         allow(github_client).to receive(:issue_comments).and_return([])
       end
 
+      # @spec OPERATOR-INBOX-007
       it "loads the clarifying-questions page for the PR-backed record" do
         pull_request = create(
           :issue,
@@ -341,6 +365,7 @@ RSpec.describe "Projects::ClarifyingQuestions" do
         allow(github_client).to receive(:issue_comments).and_return([])
       end
 
+      # @spec OPERATOR-INBOX-007
       it "accepts the PR-backed record and returns to the inbox scope" do
         project.update!(auto_pick_enabled: true, active: true)
         pull_request = create(
@@ -364,6 +389,29 @@ RSpec.describe "Projects::ClarifyingQuestions" do
         expect(response).to redirect_to(dashboard_queue_path_for(project))
         follow_redirect!
         expect(response.body).to include("Answers posted to GitHub PR ##{pull_request.github_number}")
+      end
+
+      # @spec OPERATOR-INBOX-007
+      it "advances to the next inbox entry after answering a PR-backed queue item" do
+        project.update!(auto_pick_enabled: true, active: true)
+        pull_request = create_pr_needs_input(project:, questions:, github_number: 10)
+        next_issue = create_issue_needs_input(
+          project: project,
+          questions: [ "What should happen next?" ],
+          github_number: 20
+        )
+        queue_params = dashboard_queue_params(project)
+
+        post project_issue_clarifying_questions_path(project, pull_request),
+          params: pr_answer_params(project:, questions:, answers:)
+
+        expect(response).to redirect_to(
+          project_issue_clarifying_questions_path(
+            project,
+            next_issue,
+            **queue_params
+          )
+        )
       end
     end
 

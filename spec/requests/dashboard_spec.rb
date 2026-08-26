@@ -1051,6 +1051,7 @@ RSpec.describe "Dashboard" do
       expect(response.body).to include("lg:grid-cols-[22rem,1fr]")
     end
 
+    # @spec OPERATOR-INBOX-007
     it "renders PR clarifying entries with a PR badge and PR-specific GitHub link text" do
       pull_request = create(:issue, :needs_input, :pull_request, project: project, title: "PR question", body: questions_body)
 
