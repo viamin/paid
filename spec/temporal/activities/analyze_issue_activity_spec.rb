@@ -216,6 +216,31 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       )
     end
 
+    it "persists phase timing and last-known diagnostics for context assembly and provider attempts" do
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect_issue_analysis_phase_records!(agent_run.reload)
+      expect_issue_analysis_diagnostics!(agent_run)
+    end
+
+    it "flags a provider attempt when it exceeds its phase budget" do
+      allow(activity).to receive(:monotonic_now).and_return(
+        0.0,
+        0.1, 30.2,
+        30.3, 40.0,
+        40.1, 131.0
+      )
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      provider_phase = agent_run.reload.agent_run_phases.find_by!(phase_key: "analyze_issue_provider_attempt")
+      expect(provider_phase.metadata).to include(
+        "budget_seconds" => described_class::LLM_TIMEOUT,
+        "budget_exceeded" => true
+      )
+      expect(provider_phase.metadata.fetch("elapsed_ms")).to be > described_class::LLM_TIMEOUT * 1000
+    end
+
     it "continues with fallback context when the knowledge base is unavailable" do
       allow(Knowledge::Search).to receive(:call).and_raise(StandardError, "index unavailable")
       allow(Knowledge::ContextBundle::Build).to receive(:call).and_raise(StandardError, "bundle unavailable")
@@ -754,5 +779,36 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     expect(state).to be_present
     expect(state.circuit_state).to eq("closed")
     expect(state.failure_count).to eq(0)
+  end
+
+  def expect_issue_analysis_phase_records!(agent_run)
+    phases = agent_run.agent_run_phases.index_by(&:phase_key)
+
+    expect(phases.keys).to include(
+      "analyze_issue_knowledge_search",
+      "analyze_issue_context_bundle",
+      "analyze_issue_provider_attempt"
+    )
+    expect(phases.fetch("analyze_issue_knowledge_search").metadata).to include(
+      "budget_seconds" => described_class::KNOWLEDGE_SEARCH_BUDGET,
+      "budget_exceeded" => false
+    )
+    expect(phases.fetch("analyze_issue_provider_attempt").metadata).to include(
+      "provider" => "claude",
+      "attempt" => 1,
+      "heartbeat_active" => true,
+      "budget_seconds" => described_class::LLM_TIMEOUT
+    )
+  end
+
+  def expect_issue_analysis_diagnostics!(agent_run)
+    expect(agent_run.issue_analysis_diagnostics).to include(
+      "phase_key" => "analyze_issue_provider_attempt",
+      "provider" => "claude",
+      "attempt" => 1,
+      "status" => "completed",
+      "heartbeat_strategy" => "provider_attempt_periodic",
+      "cancellation_strategy" => "cooperative_activity_heartbeat"
+    )
   end
 end

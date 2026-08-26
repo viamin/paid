@@ -20,6 +20,8 @@ module Activities
     CLAUDE_MODEL = "claude-sonnet-4-6"
     MAX_SEARCH_RESULTS = 10
     MAX_COMMENTS = 50
+    KNOWLEDGE_SEARCH_BUDGET = 60
+    CONTEXT_BUNDLE_BUDGET = 60
 
     def execute(input)
       agent_run_id = input[:agent_run_id]
@@ -84,8 +86,20 @@ module Activities
 
     def build_context(agent_run, project, issue)
       # @spec KNOWLEDGE-005
-      search = knowledge_search(agent_run, project, issue)
-      bundle = context_bundle(agent_run, project, issue)
+      search = track_issue_analysis_phase(
+        agent_run: agent_run,
+        phase_key: "analyze_issue_knowledge_search",
+        budget_seconds: KNOWLEDGE_SEARCH_BUDGET
+      ) do
+        knowledge_search(agent_run, project, issue)
+      end
+      bundle = track_issue_analysis_phase(
+        agent_run: agent_run,
+        phase_key: "analyze_issue_context_bundle",
+        budget_seconds: CONTEXT_BUNDLE_BUDGET
+      ) do
+        context_bundle(agent_run, project, issue)
+      end
 
       {
         search_results: search[:results],
@@ -146,8 +160,22 @@ module Activities
       rate_limited_count = 0
       earliest_reset_at = nil
 
-      providers.each do |provider|
-        response = AgentHarness.send_message(prompt, **llm_options(provider))
+      providers.each_with_index do |provider, index|
+        response = track_issue_analysis_phase(
+          agent_run: agent_run,
+          phase_key: "analyze_issue_provider_attempt",
+          budget_seconds: LLM_TIMEOUT,
+          metadata: { provider: provider, attempt: index + 1, heartbeat_active: true }
+        ) do
+          with_periodic_heartbeat(
+            "analyze_issue.provider_attempt",
+            agent_run_id: agent_run.id,
+            provider: provider,
+            attempt: index + 1
+          ) do
+            AgentHarness.send_message(prompt, **llm_options(provider))
+          end
+        end
         if response_failed?(response, agent_run, provider)
           reset_at = record_response_failure(user_setting, provider, response)
           if reset_at
@@ -497,6 +525,53 @@ module Activities
         error: response.respond_to?(:error) ? response.error : nil,
         exit_code: response.respond_to?(:exit_code) ? response.exit_code : nil
       )
+    end
+
+    def track_issue_analysis_phase(agent_run:, phase_key:, budget_seconds:, metadata: {})
+      started_at = Time.current
+      base_metadata = metadata.merge(
+        phase_key: phase_key,
+        phase_label: AgentRunPhase::PHASE_LABELS.fetch(phase_key, phase_key.to_s.tr("_", " ").titleize),
+        heartbeat_strategy: phase_key == "analyze_issue_provider_attempt" ? "provider_attempt_periodic" : "none",
+        cancellation_strategy: phase_key == "analyze_issue_provider_attempt" ? "cooperative_activity_heartbeat" : "activity_timeout_only"
+      )
+      agent_run.record_issue_analysis_diagnostics!(
+        base_metadata.merge(
+          status: "running",
+          started_at: started_at.iso8601,
+          finished_at: nil,
+          budget_seconds: budget_seconds
+        )
+      )
+
+      track_phase(
+        agent_run_id: agent_run.id,
+        phase_key: phase_key,
+        phase_group: "agent",
+        agent_run: agent_run,
+        metadata: metadata,
+        started_at: started_at,
+        budget_seconds: budget_seconds
+      ) do
+        yield
+      end.tap do
+        agent_run.record_issue_analysis_diagnostics!(
+          base_metadata.merge(
+            status: "completed",
+            finished_at: Time.current.iso8601
+          )
+        )
+      end
+    rescue => e
+      agent_run.record_issue_analysis_diagnostics!(
+        base_metadata.merge(
+          status: "failed",
+          finished_at: Time.current.iso8601,
+          error_class: e.class.name,
+          error_message: e.message.to_s.truncate(200)
+        )
+      )
+      raise
     end
   end
 end

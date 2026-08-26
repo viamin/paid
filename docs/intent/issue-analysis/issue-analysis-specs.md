@@ -105,6 +105,22 @@
   `app/temporal/activities/mark_agent_run_failed_activity.rb`,
   `app/models/issue.rb`.
 
+- [x] **ISSUE-ANALYSIS-012** — When `AnalyzeIssueActivity` approaches or
+  exceeds its 10-minute outer timeout, the system SHALL persist sub-phase
+  timing for knowledge search, context-bundle construction, and each provider
+  attempt, and SHALL retain the last known analyze-issue phase/provider in run
+  diagnostics so a generic Temporal timeout can still be categorized. A timed
+  out automatic analysis SHALL remain a failed run, not an automatic retry or
+  parked state, unless the failure had already been positively classified as
+  the all-rate-limited case in `ISSUE-ANALYSIS-006`.
+  *Tests:* `spec/temporal/activities/analyze_issue_activity_spec.rb`,
+  `spec/temporal/activities/mark_agent_run_failed_activity_spec.rb`.
+  *Code:* `app/temporal/activities/base_activity.rb`,
+  `app/temporal/activities/analyze_issue_activity.rb`,
+  `app/temporal/activities/mark_agent_run_failed_activity.rb`,
+  `app/models/agent_run.rb`,
+  `app/models/agent_run_phase.rb`.
+
 - [x] **ISSUE-ANALYSIS-008** — When no explicit issue-analysis runner is
   configured and the broadening fallback (`available_chat_runner_keys`) is
   used, economical (lean) runners SHALL be ordered before heavy-exploration

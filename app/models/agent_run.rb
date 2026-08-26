@@ -2433,6 +2433,7 @@ class AgentRun < ApplicationRecord
 
   PROMPT_ASSEMBLY_KEY = "prompt_assembly"
   ISSUE_PROMPT_ASSEMBLY_KEY = "issue_prompt_assembly"
+  ISSUE_ANALYSIS_DIAGNOSTICS_KEY = "issue_analysis_diagnostics"
   RUNTIME_IMAGE_KEY = "runtime_image"
   PROMPT_BUILDER_KEY = "prompt_builder"
   SERVICE_DECLARATIONS_KEY = "service_declarations"
@@ -2459,6 +2460,32 @@ class AgentRun < ApplicationRecord
     external_metadata.is_a?(Hash) ? external_metadata[ISSUE_PROMPT_ASSEMBLY_KEY] : nil
   end
 
+  def issue_analysis_diagnostics
+    external_metadata.is_a?(Hash) ? external_metadata[ISSUE_ANALYSIS_DIAGNOSTICS_KEY] : nil
+  end
+
+  def record_issue_analysis_diagnostics!(attributes)
+    metadata = external_metadata.is_a?(Hash) ? external_metadata.deep_dup : {}
+    current = metadata[ISSUE_ANALYSIS_DIAGNOSTICS_KEY].is_a?(Hash) ? metadata[ISSUE_ANALYSIS_DIAGNOSTICS_KEY].deep_dup : {}
+    metadata[ISSUE_ANALYSIS_DIAGNOSTICS_KEY] = current.merge(attributes.deep_stringify_keys)
+    persist_external_metadata_update!(metadata)
+  end
+
+  def issue_analysis_timeout_message(base_message = "Activity task timed out")
+    diagnostics = issue_analysis_diagnostics
+    return base_message if diagnostics.blank?
+
+    details = []
+    details << diagnostics["phase_label"].presence || diagnostics["phase_key"].to_s.tr("_", " ")
+    details << "provider #{diagnostics['provider']}" if diagnostics["provider"].present?
+    details << "attempt #{diagnostics['attempt']}" if diagnostics["attempt"].present?
+    details << "budget #{diagnostics['budget_seconds']}s" if diagnostics["budget_seconds"].present?
+
+    return base_message if details.empty?
+
+    "#{base_message} during #{details.join(' · ')}"
+  end
+
   def prompt_assembly_digest
     prompt_assembly_provenance&.dig("digest")
   end
@@ -2476,6 +2503,15 @@ class AgentRun < ApplicationRecord
       self.external_metadata = metadata
     end
   end
+
+  def persist_external_metadata_update!(metadata)
+    if persisted?
+      update_columns(external_metadata: metadata)
+    else
+      self.external_metadata = metadata
+    end
+  end
+  private :persist_external_metadata_update!
 
   def runtime_image_selection
     external_metadata.is_a?(Hash) ? external_metadata[RUNTIME_IMAGE_KEY] : nil
