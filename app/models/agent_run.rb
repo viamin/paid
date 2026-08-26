@@ -2503,12 +2503,7 @@ class AgentRun < ApplicationRecord
 
     metadata = external_metadata.is_a?(Hash) ? external_metadata.dup : {}
     metadata[RUNTIME_IMAGE_KEY] = selection
-
-    if persisted?
-      update_columns(external_metadata: metadata)
-    else
-      self.external_metadata = metadata
-    end
+    persist_external_metadata_update!(metadata)
   end
 
   def persist_external_metadata_update!(metadata)
@@ -2532,12 +2527,7 @@ class AgentRun < ApplicationRecord
       "container_ids" => Array(container_ids),
       "declarations" => ExecutionRunners.json_value(declarations)
     }
-
-    if persisted?
-      update_columns(external_metadata: metadata)
-    else
-      self.external_metadata = metadata
-    end
+    persist_external_metadata_update!(metadata)
   end
 
   def service_declaration_snapshot
