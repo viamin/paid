@@ -23,6 +23,25 @@ module Activities
     KNOWLEDGE_SEARCH_BUDGET = 60
     CONTEXT_BUNDLE_BUDGET = 60
 
+    # Bridges a response-shaped failure (`AgentHarness::Response` with
+    # `success? == false`) onto the existing rescue-clause path so the phase
+    # recorder marks the attempt as `failed` instead of `completed`. CLI-backed
+    # providers (Codex, OpenCode, claude outside text mode) normally report
+    # nonzero exits as an unsuccessful Response, not as a raised error, so
+    # without this promotion the `analyze_issue_provider_attempt` phase
+    # would silently carry a misleading `completed` status — which then makes
+    # a later timeout during the failover provider report the wrong
+    # provider/status in the `agent_run_phases` history.
+    class UnsuccessfulResponseError < StandardError
+      attr_reader :response
+
+      def initialize(response)
+        @response = response
+        error_message = response.respond_to?(:error) ? response.error.to_s : "unknown"
+        super("Provider returned unsuccessful response: #{error_message}")
+      end
+    end
+
     def execute(input)
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
@@ -173,20 +192,29 @@ module Activities
             provider: provider,
             attempt: index + 1
           ) do
-            AgentHarness.send_message(prompt, **llm_options(provider))
+            llm_response = AgentHarness.send_message(prompt, **llm_options(provider))
+            # Promote response-shaped failures to an exception so the phase
+            # recorder marks this attempt as `failed` (ISSUE-ANALYSIS-012).
+            # Without the raise the tracked block would return normally and
+            # both `agent_run_phases` and `issue_analysis_diagnostics` would
+            # carry a misleading `completed` status for the failed attempt —
+            # a later timeout during the failover provider would then pin
+            # the wrong provider/status in the run's history.
+            if llm_response.respond_to?(:success?) && !llm_response.success?
+              raise UnsuccessfulResponseError.new(llm_response)
+            end
+            llm_response
           end
         end
-        if response_failed?(response, agent_run, provider)
-          reset_at = record_response_failure(user_setting, provider, response)
-          if reset_at
-            rate_limited_count += 1
-            earliest_reset_at = [ earliest_reset_at, reset_at ].compact.min
-          end
-          next
-        end
-
         record_runner_success(user_setting, provider)
         return response
+      rescue UnsuccessfulResponseError => e
+        log_failed_response(agent_run, provider, e.response)
+        reset_at = record_response_failure(user_setting, provider, e.response)
+        if reset_at
+          rate_limited_count += 1
+          earliest_reset_at = [ earliest_reset_at, reset_at ].compact.min
+        end
       rescue AgentHarness::RateLimitError => e
         rate_limited_count += 1
         earliest_reset_at = [ earliest_reset_at, e.reset_time ].compact.min
@@ -233,13 +261,6 @@ module Activities
     def issue_analysis_provider_exhaustion_message(providers) # @spec ISSUE-ANALYSIS-010
       suffix = providers.any? ? ": #{providers.join(', ')}" : ""
       "All issue-analysis providers exhausted#{suffix}"
-    end
-
-    def response_failed?(response, agent_run, provider)
-      return false unless response.respond_to?(:success?) && !response.success?
-
-      log_failed_response(agent_run, provider, response)
-      true
     end
 
     # @spec ISSUE-ANALYSIS-007 ISSUE-ANALYSIS-009

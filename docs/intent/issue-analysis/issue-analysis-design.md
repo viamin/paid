@@ -69,10 +69,18 @@ circuit breaker (`ISSUE-ANALYSIS-007`):
 - **Unsuccessful response, no exception.** CLI-backed providers (Codex,
   OpenCode, and `claude` outside text mode) normally report a nonzero exit as
   a `Response` with `success?` false and an `error` string, not as a raised
-  exception. `response_failed?` detects this case; before #3639 it logged the
-  failure and moved to the next provider without touching the circuit
-  breaker, so deterministically broken runners never opened and stayed
-  eligible across every subsequent `analyze_issue` run.
+  exception. `call_llm` detects this case inside the tracked provider-attempt
+  phase and promotes it to an internal `UnsuccessfulResponseError`, which then
+  flows through the same rescue clauses as a raised error. Before the
+  `UnsuccessfulResponseError` bridge, the equivalent check ran *after* the
+  phase block returned normally, so `agent_run_phases` and
+  `issue_analysis_diagnostics` recorded the attempt as `completed` even when
+  it had failed — and a later timeout during the failover provider would
+  leave behind a misleading history that pinned the failing provider with a
+  `completed` status. Before #3639, the failure was logged and the loop moved
+  on without ever touching the circuit breaker, so deterministically broken
+  runners never opened and stayed eligible across every subsequent
+  `analyze_issue` run.
 
 Both paths funnel through the same classification so a provider's circuit
 state doesn't depend on which mechanism a given provider happens to use for a
