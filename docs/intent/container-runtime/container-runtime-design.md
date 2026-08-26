@@ -508,6 +508,45 @@ development: its platform is stubbed with the constraint that
 clone path), while legacy bind-mount runs remain a compatibility path
 outside the conformance scenario.
 
+### Execution resource ledger reconciliation (#3411)
+
+Provision-time `runner_handle` persistence solves retry-time recovery for a
+single workflow attempt, but it is not enough to keep cleanup durable across
+provider drift, worker death, or reconciliation gaps. A separate
+`execution_resources` ledger stores the provider-owned execution environments
+Paid believes exist, plus cleanup state that survives job retries and workflow
+restarts.
+
+- Provisioning (runner and legacy Docker paths) upserts a single `environment`
+  ledger row per `AgentRun`. The row records the provider identity
+  (`runner_type`, `host`, `identifier`), the serialized `runner_handle` for
+  handle-based fallback cleanup, and the opaque `workspace_ref`.
+- Cleanup transitions the row from `active` to `cleanup_pending` before the
+  provider call. If cleanup succeeds, the row becomes `cleaned`. If cleanup
+  fails, the row remains `cleanup_pending` with durable failure metadata
+  (`cleanup_attempts`, `next_cleanup_at`, `last_cleanup_error*`) so later
+  reconciliation can retry with backoff even after the run record has cleared
+  its direct container references.
+- `ExecutionResourceReconciliationJob` groups ledger rows by runner/provider and
+  asks the runner for a tagged resource listing when supported. That lets Paid
+  compare “what the ledger says exists” against “what the provider still
+  reports”, mark provider-missing rows cleaned (only when the owning agent run
+  is finished or there is no owning run; a still-running run whose listing is
+  missing is left active with `reduced_confidence` so a transient listing gap
+  cannot sever the live link between the agent and its container), retry
+  `cleanup_pending` resources that are still present, and adopt
+  tagged-but-untracked orphan resources for missing or finished runs into the
+  ledger before cleaning them up.
+- Providers without tag/list support do not block migration. Reconciliation
+  falls back to `runner_handle`-based cleanup for `cleanup_pending` rows and
+  marks those passes `reduced_confidence`, because the system cannot prove the
+  provider inventory matches the ledger and cannot adopt unknown orphans from a
+  direct listing.
+- Existing Docker janitors remain in place. `DockerOrphanCleanupJob` and
+  `AgentRunResourceJanitorJob` still provide immediate cleanup during the
+  migration, while the ledger reconciliation loop becomes the durable source of
+  truth for retries and orphan adoption.
+
 ### Agent-image install failure diagnostics
 
 The agent image carries contract-owned CLI install recipes from
@@ -536,6 +575,9 @@ advertise AVX2. That keeps the Oh My Pi install path compatible with older
 - `app/services/execution_runners.rb`
 - `app/services/execution_runners/base.rb`
 - `app/services/execution_runners/local_docker_runner.rb`
+- `app/models/execution_resource.rb`
+- `app/services/execution_resources/reconcile.rb`
+- `app/jobs/execution_resource_reconciliation_job.rb`
 - `app/services/execution_runners/provisioning_ledger.rb`
 - `app/models/provisioning_intent.rb`
 - `app/services/containers/resolve_host_for_run.rb`

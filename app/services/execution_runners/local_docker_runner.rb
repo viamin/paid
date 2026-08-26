@@ -1,31 +1,31 @@
 # frozen_string_literal: true
 
 module ExecutionRunners
-# Thin adapter that wraps the existing +Containers::Provision+ Docker
-# orchestrator behind the provider-neutral +ExecutionRunners::Base+
-# interface (RDR-054). Translates {RunSpec}/{RunnerHandle}/{ExecutionResult}
-# domain objects to and from +Containers::Provision+ calls.
-#
-# This runner owns the +NetworkingPolicy+ → Docker-network translation: it
-# is the only place that calls +NetworkPolicy.ensure_network!+ and
-# +NetworkPolicy.apply_firewall_rules+. +Containers::Provision+ accepts the
-# +networking_policy+ for read-only Docker-config decisions (proxy URL,
-# network name) but skips its own network/firewall side effects when a
-# policy is provided.
-#
-# +RunnerHandle#metadata+ carries everything needed to reconnect to the
-# container on a later call (agent_run id, worktree_path, environment),
-# since +#start+/+#running?+/+#cancel+/+#cleanup+ only receive the handle.
-#
-# @spec CONTAINER-RUNTIME-010
-# @spec CONTAINER-RUNTIME-011
-# @spec CONTAINER-RUNTIME-012
-# @spec CONTAINER-RUNTIME-013
-# @spec CONTAINER-RUNTIME-014
-# @spec CONTAINER-RUNTIME-017
-# @spec CONTAINER-RUNTIME-028
-# @spec EGRESS-POLICY-007
-class LocalDockerRunner < Base
+  # Thin adapter that wraps the existing +Containers::Provision+ Docker
+  # orchestrator behind the provider-neutral +ExecutionRunners::Base+
+  # interface (RDR-054). Translates {RunSpec}/{RunnerHandle}/{ExecutionResult}
+  # domain objects to and from +Containers::Provision+ calls.
+  #
+  # This runner owns the +NetworkingPolicy+ → Docker-network translation: it
+  # is the only place that calls +NetworkPolicy.ensure_network!+ and
+  # +NetworkPolicy.apply_firewall_rules+. +Containers::Provision+ accepts the
+  # +networking_policy+ for read-only Docker-config decisions (proxy URL,
+  # network name) but skips its own network/firewall side effects when a
+  # policy is provided.
+  #
+  # +RunnerHandle#metadata+ carries everything needed to reconnect to the
+  # container on a later call (agent_run id, worktree_path, environment),
+  # since +#start+/+#running?+/+#cancel+/+#cleanup+ only receive the handle.
+  #
+  # @spec CONTAINER-RUNTIME-010
+  # @spec CONTAINER-RUNTIME-011
+  # @spec CONTAINER-RUNTIME-012
+  # @spec CONTAINER-RUNTIME-013
+  # @spec CONTAINER-RUNTIME-014
+  # @spec CONTAINER-RUNTIME-017
+  # @spec CONTAINER-RUNTIME-028
+  # @spec EGRESS-POLICY-007
+  class LocalDockerRunner < Base
     RUNNER_TYPE = :local_docker
 
     # The kind of execution resource this runner provisions, recorded on the
@@ -240,7 +240,19 @@ class LocalDockerRunner < Base
       end
     end
 
+    def list_resources(host: nil)
+      backend = Containers.backend_for(host)
+
+      list_environment_resources(backend:) + list_workspace_resources(backend:)
+    end
+
     def cleanup_resource(resource:, force: false)
+      return cleanup_tracked_resource(resource:) if resource.respond_to?(:resource_type)
+
+      cleanup_managed_resource(resource:, force: force)
+    end
+
+    def cleanup_managed_resource(resource:, force:)
       backend = Containers.backend_for(resource.host.presence)
       container = backend.get_container(resource.identifier)
       backend.stop_container(container, timeout: force ? 0 : 10)
@@ -249,6 +261,19 @@ class LocalDockerRunner < Base
       nil
     rescue Docker::Error::DockerError, Excon::Error => e
       raise ProvisionError, e.message
+    end
+
+    def cleanup_tracked_resource(resource:)
+      backend = Containers.backend_for(resource.host)
+
+      case resource.resource_type.to_s
+      when "environment"
+        cleanup_environment_resource(backend:, identifier: resource.identifier)
+      when "workspace"
+        cleanup_workspace_resource(backend:, identifier: resource.identifier, host: resource.host)
+      else
+        raise ProvisionError, "Unsupported tracked resource type #{resource.resource_type.inspect}"
+      end
     end
 
     # @spec CONTAINER-RUNTIME-032
@@ -809,5 +834,83 @@ class LocalDockerRunner < Base
         )
       end
     end
-end
+    def list_environment_resources(backend:)
+      backend.list_containers(all: true, filters: { label: [ "paid.agent_run_id" ] }.to_json).map do |container|
+        labels = container.info["Labels"] || container.info.dig("Config", "Labels") || {}
+        ExecutionRunners::TrackedResource.new(
+          runner_type: RUNNER_TYPE,
+          resource_type: "environment",
+          identifier: container.id,
+          host: backend.container_host_for(container),
+          workspace_ref: nil,
+          tags: labels,
+          metadata: {}
+        )
+      end
+    rescue Docker::Error::DockerError => e
+      raise ProvisionError, e.message
+    end
+
+    def list_workspace_resources(backend:)
+      backend.list_volumes.filter_map do |volume|
+        labels = volume_labels(volume)
+        next unless labels["paid.resource"] == "workspace_volume"
+        next if labels["paid.container_pool_entry_id"].present?
+
+        ExecutionRunners::TrackedResource.new(
+          runner_type: RUNNER_TYPE,
+          resource_type: "workspace",
+          identifier: volume.id,
+          host: volume_host(volume, backend:),
+          workspace_ref: volume.id,
+          tags: labels,
+          metadata: {}
+        )
+      end
+    rescue Docker::Error::DockerError => e
+      raise ProvisionError, e.message
+    end
+
+    # Multi-host backends (e.g. Swarm) return a volume handle carrying its own
+    # per-node labels/host instead of a plain Docker::Volume with `#info` -
+    # fall back to `#info` for single-host backends where the volume object
+    # is the real docker-api client object.
+    def volume_labels(volume)
+      return volume.labels || {} if volume.respond_to?(:labels)
+
+      volume.info["Labels"] || {}
+    end
+
+    # A leaked volume must be tracked under the node host that actually owns
+    # it, not the backend's generic identifier - Swarm's `get_volume(host:)`
+    # looks up the node by that host, so a wrong value makes later cleanup
+    # silently no-op against a nonexistent node instead of removing the volume.
+    def volume_host(volume, backend:)
+      return volume.host.to_s if volume.respond_to?(:host) && volume.host.present?
+
+      backend.identifier.to_s
+    end
+
+    def cleanup_environment_resource(backend:, identifier:)
+      container = backend.get_container(identifier)
+      begin
+        backend.stop_container(container, timeout: 10)
+      rescue Docker::Error::NotFoundError, Docker::Error::ClientError
+        nil
+      end
+      backend.delete_container(container, force: true, v: true)
+    rescue Docker::Error::NotFoundError
+      nil
+    rescue Docker::Error::DockerError => e
+      raise ProvisionError, e.message
+    end
+
+    def cleanup_workspace_resource(backend:, identifier:, host:)
+      backend.delete_volume(backend.get_volume(identifier, host: host))
+    rescue Docker::Error::NotFoundError
+      nil
+    rescue Docker::Error::DockerError => e
+      raise ProvisionError, e.message
+    end
+  end
 end

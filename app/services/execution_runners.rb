@@ -835,9 +835,12 @@ module ExecutionRunners
     # @param record [Object] a record responding to +#runner_handle+
     # @return [RunnerHandle, nil]
     def self.from_record(record)
-      return nil if record.runner_handle.blank?
+      return nil unless record.respond_to?(:runner_handle)
 
-      from_json(record.runner_handle)
+      stored_handle = record.runner_handle
+      return nil if stored_handle.blank?
+
+      from_json(stored_handle)
     end
 
     # Serializes the handle to a JSON-native hash suitable for persisting in a
@@ -848,6 +851,20 @@ module ExecutionRunners
       as_json
     end
   end
+
+  # Provider-reported execution resource used during reconciliation. This is a
+  # lower-level inventory shape than RunnerHandle: a handle is what Paid stores
+  # to reconnect to a known environment, while TrackedResource is what a runner
+  # reports back when asked "what do you currently have tagged for Paid?".
+  TrackedResource = Data.define(
+    :runner_type,
+    :resource_type,
+    :identifier,
+    :host,
+    :workspace_ref,
+    :tags,
+    :metadata
+  )
 
   # Stable Paid ownership-tag set applied to every provisioned execution
   # resource so a leaked/orphaned resource can be attributed and reconciled
