@@ -527,6 +527,50 @@ RSpec.describe "Projects::ClarifyingQuestions" do
         expect(textareas.map(&:text).map(&:strip)).to eq([ "", "" ])
       end
 
+      it "drops the prefill when the submitted questions no longer match the issue" do
+        project.update!(auto_pick_enabled: true, active: true)
+
+        # The trusted_comment body resolves to two questions via
+        # ClarifyingQuestions::Load, but the operator submitted answers for
+        # a tampered/different question set. The question-mismatch guard
+        # raises ArgumentError and we must NOT rehydrate textareas by index
+        # since the saved answers belong to a different prompt set.
+        submit_inbox_answers(
+          issue:,
+          questions: [ "Tampered question?" ],
+          answers: [ "Tampered answer" ],
+          inbox_project_id: project.id
+        )
+
+        follow_redirect!
+
+        textareas = Nokogiri::HTML(response.body)
+          .at_css("turbo-frame#inbox-detail")
+          .css("textarea[name='answers[]']")
+
+        expect(textareas.map(&:text).map(&:strip)).to eq([ "", "" ])
+      end
+
+      it "still preserves the prefill on transient GitHub failures even if the question set drifts later" do
+        project.update!(auto_pick_enabled: true, active: true)
+        allow(github_client).to receive(:add_comment).and_raise(GithubClient::Error, "boom")
+
+        submit_inbox_answers(
+          issue:,
+          questions:,
+          answers: [ "First answer", "Second answer" ],
+          inbox_project_id: project.id
+        )
+
+        follow_redirect!
+
+        textareas = Nokogiri::HTML(response.body)
+          .at_css("turbo-frame#inbox-detail")
+          .css("textarea[name='answers[]']")
+
+        expect(textareas.map(&:text).map(&:strip)).to eq([ "First answer", "Second answer" ])
+      end
+
       context "when submitted from the All inbox tab" do
         it "preserves the All-tab kind filter on auto-advance so the operator stays in the mixed queue" do
           project.update!(auto_pick_enabled: true, active: true)

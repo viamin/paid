@@ -45,7 +45,7 @@ module Projects
         redirect_to project_path(@project), notice: "Answers posted to GitHub issue ##{@issue.github_number}. The agent will pick them up on the next run."
       end
     rescue ArgumentError => e
-      remember_pending_inbox_answers
+      remember_pending_inbox_answers if pending_answers_apply_to_current_questions?
       redirect_to failure_redirect_path, alert: e.message
     rescue GithubClient::Error => e
       remember_pending_inbox_answers
@@ -86,6 +86,16 @@ module Projects
       questions.each_with_index.map do |question, i|
         { question: question, answer: answers[i].to_s.strip }
       end
+    end
+
+    # True when the operator's submitted questions still match the issue's
+    # current questions. Used to gate the inbox prefill so we don't line up
+    # saved answers with a different question set after a question-mismatch
+    # failure: rehydrating by index would show old answers under the new
+    # questions and let the operator repost them against prompts that no
+    # longer match.
+    def pending_answers_apply_to_current_questions?
+      Array(params[:questions]).map { |question| question.to_s.strip } == current_questions
     end
 
     def queue_mode?
