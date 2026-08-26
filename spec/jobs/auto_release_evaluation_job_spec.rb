@@ -6,6 +6,7 @@ require "ostruct"
 RSpec.describe AutoReleaseEvaluationJob do
   let(:project) { create(:project, auto_release_granularity: "all") }
   let(:client) { instance_double(GithubClient) }
+  let!(:issue) { create(:issue, :pull_request, project: project, github_number: 100) }
 
   let(:pr_data) do
     OpenStruct.new(
@@ -51,6 +52,12 @@ RSpec.describe AutoReleaseEvaluationJob do
         project.full_name, 100, [ "paid-auto-released" ]
       )
       expect(client).to have_received(:add_comment)
+      expect(project.auto_merge_attempts.recent.first).to have_attributes(
+        issue: issue,
+        actor_path: AutoMergeAttempts::Record::ACTOR_AUTO_RELEASE,
+        status: "merged",
+        credential_mode: "pat"
+      )
     end
 
     it "skips when project has auto_release_granularity off" do
@@ -67,6 +74,10 @@ RSpec.describe AutoReleaseEvaluationJob do
       described_class.perform_now(project.id)
 
       expect(client).not_to have_received(:merge_pull_request)
+      expect(project.auto_merge_attempts.recent.first).to have_attributes(
+        status: "skipped",
+        reason_code: AutoMergeAttempts::Record::REASON_GRANULARITY_MISMATCH
+      )
     end
 
     it "merges patch bumps with patch_only granularity" do
@@ -94,6 +105,24 @@ RSpec.describe AutoReleaseEvaluationJob do
       described_class.perform_now(project.id)
 
       expect(client).not_to have_received(:merge_pull_request)
+      expect(project.auto_merge_attempts.recent.first).to have_attributes(
+        status: "skipped",
+        reason_code: AutoMergeAttempts::Record::REASON_CHECKS_NOT_GREEN
+      )
+    end
+
+    it "does not persist duplicate skip rows on repeated evaluations with the same blocker" do
+      allow(client).to receive(:check_runs_for_ref).and_return(
+        [ { conclusion: "failure", name: "ci" } ]
+      )
+
+      2.times { described_class.perform_now(project.id) }
+
+      expect(project.auto_merge_attempts.where(
+        issue: issue,
+        status: "skipped",
+        reason_code: AutoMergeAttempts::Record::REASON_CHECKS_NOT_GREEN
+      ).count).to eq(1)
     end
 
     it "skips when CI checks are pending (no conclusion)" do
@@ -294,6 +323,10 @@ RSpec.describe AutoReleaseEvaluationJob do
       )
 
       expect { described_class.perform_now(project.id) }.not_to raise_error
+      expect(project.auto_merge_attempts.recent.first).to have_attributes(
+        status: "failed",
+        reason_code: AutoMergeAttempts::Record::REASON_EXPECTED_MERGE_FAILURE
+      )
     end
 
     context "with granularity matrix" do

@@ -69,20 +69,17 @@ RSpec.describe Tools::GetPullRequestDetails do
 
     it "reports a merge-permission rejection with a sanitized message" do
       raw_token = "ghp_#{"1" * 36}"
-      pr.update!(
-        merge_permission_rejected_at: Time.current,
-        merge_permission_rejection_reason: "refusing to allow a GitHub App to create or update #{raw_token} without `workflows` permission"
-      )
+      record_blocked_attempt(raw_token:)
 
       result = tool.call(project_id: project.id, issue_id: pr.id)
 
       expect(result[:auto_merge]).to include(
         auto_merge_status: "blocked",
-        reason_code: "merge_permission_rejected",
-        credential_mode: "personal_access_token",
+        reason_code: "missing_workflows_permission",
+        credential_mode: "pat",
         merge_permission_rejected: true
       )
-      expect(result[:auto_merge][:last_auto_merge_attempt_at]).to eq(pr.reload.merge_permission_rejected_at)
+      expect(result[:auto_merge][:last_auto_merge_attempt_at]).to eq(pr.auto_merge_attempts.recent.first.attempted_at)
       expect(result[:auto_merge][:sanitized_message]).to include("[REDACTED:github_token]")
       expect(result[:auto_merge][:sanitized_message]).not_to include(raw_token)
     end
@@ -102,6 +99,19 @@ RSpec.describe Tools::GetPullRequestDetails do
         cooldown_until: nil,
         next_action: "Wait for required checks to pass, then let auto-merge evaluate the pull request again."
       )
+    end
+
+    it "reports the latest persisted attempt timestamp alongside live ready status" do
+      attempt = create(:auto_merge_attempt, project: project, issue: pr, status: "skipped", reason_code: "checks_not_green")
+
+      result = tool.call(project_id: project.id, issue_id: pr.id)
+
+      expect(result[:auto_merge]).to eq(expected_auto_merge(
+        status: "ready",
+        credential_mode: "personal_access_token",
+        last_auto_merge_attempt_at: attempt.attempted_at,
+        next_action: "Wait for the next automatic merge evaluation or merge this pull request manually."
+      ))
     end
 
     it "reports unavailable diagnostics when fetching checks fails" do
@@ -184,7 +194,7 @@ RSpec.describe Tools::GetPullRequestDetails do
 
       expect(result[:auto_merge]).to include(
         auto_merge_status: "blocked",
-        reason_code: "merge_permission_rejected",
+        reason_code: "missing_workflows_permission",
         credential_mode: "github_app_with_pat_fallback",
         merge_permission_rejected: true,
         next_action: "Check the configured PAT fallback credential and the GitHub App permissions, then merge manually or wait for the next automatic check."
@@ -305,6 +315,24 @@ RSpec.describe Tools::GetPullRequestDetails do
       pr_review_phase: "merged",
       merge_permission_rejected_at: 2.hours.ago,
       merge_permission_rejection_reason: "refusing to allow a GitHub App to create or update without `workflows` permission"
+    )
+  end
+
+  def record_blocked_attempt(raw_token:)
+    message = "refusing to allow a GitHub App to create or update #{raw_token} without `workflows` permission"
+    AutoMergeAttempts::Record.call(
+      project: project,
+      issue: pr,
+      attempted_at: Time.current,
+      actor_path: AutoMergeAttempts::Record::ACTOR_REVIEW_AUTO_MERGE,
+      status: "blocked",
+      reason_code: AutoMergeAttempts::Record::REASON_MISSING_WORKFLOWS_PERMISSION,
+      message: message,
+      credential_mode: "pat"
+    )
+    pr.update!(
+      merge_permission_rejected_at: Time.current,
+      merge_permission_rejection_reason: message
     )
   end
 

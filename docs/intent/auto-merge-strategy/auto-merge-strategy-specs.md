@@ -33,3 +33,20 @@
   later successful merge.
   *Code:* `app/jobs/dependabot_auto_merge_job.rb`.
   *Test:* `spec/jobs/dependabot_auto_merge_job_spec.rb`.
+
+- [x] **AUTO-MERGE-004** — When Paid evaluates an auto-merge path, the system
+  SHALL persist a project-scoped, PR-scoped sanitized attempt record for merge,
+  skip, blocker, and expected failure outcomes. Stored diagnostics SHALL redact
+  secret material and SHALL NOT persist raw tokens, webhook secrets, raw stack
+  traces, or untrusted comment bodies. Attempt rows SHALL be tenant-scoped via
+  row-level security keyed on the project's account.
+  *Code:* `app/services/auto_merge_attempts/record.rb`,
+  `app/models/auto_merge_attempt.rb`, `app/jobs/dependabot_auto_merge_job.rb`,
+  `app/jobs/auto_release_evaluation_job.rb`,
+  `app/temporal/activities/merge_pull_request_activity.rb`,
+  `db/migrate/20260826020009_create_auto_merge_attempts.rb`.
+  *Test:* `spec/models/auto_merge_attempt_spec.rb`,
+  `spec/migrations/create_auto_merge_attempts_spec.rb`,
+  `spec/jobs/dependabot_auto_merge_job_spec.rb`,
+  `spec/jobs/auto_release_evaluation_job_spec.rb`,
+  `spec/temporal/activities/merge_pull_request_activity_spec.rb`.
