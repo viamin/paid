@@ -2,7 +2,7 @@
     Rendered inside both the issue and PR rows, so it stays compact. %>
 <%= tag.span id: dom_id(issue, :pause_toggle), class: "inline-flex items-center" do %>
   <% if policy(issue).toggle_pause? %>
-    <% kind = issue.is_pull_request? ? "PR" : "issue" %>
+    <% kind = issue_kind_label(issue, style: :short_lower) %>
     <% form_data = { action_button: true } %>
     <% form_data[:turbo_confirm] = issue_pause_confirm_message(issue) unless issue.paused? %>
     <%= button_to toggle_pause_project_issue_path(project, issue),

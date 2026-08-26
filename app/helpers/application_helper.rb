@@ -264,7 +264,7 @@ module ApplicationHelper
   # AddPausedToIssues migration comment), so the PR copy must not promise that
   # automation will stop.
   def issue_pause_confirm_message(issue)
-    kind = issue.is_pull_request? ? "PR" : "issue"
+    kind = issue_kind_label(issue, style: :short_lower)
     number = issue.github_number
     label = Issue::PAUSED_LABEL
     if issue.is_pull_request?

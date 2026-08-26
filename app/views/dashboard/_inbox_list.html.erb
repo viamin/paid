@@ -9,13 +9,7 @@
     <% entries.each do |entry| %>
       <% selected = entry == selected_entry %>
       <li>
-        <%= link_to dashboard_inbox_path(
-              project_id: scoped_project&.id,
-              kind: selected_kind,
-              entry_kind: entry.kind,
-              entry_id: entry.record.id,
-              view: "detail"
-            ),
+        <%= link_to inbox_entry_path(entry:, scoped_project:, selected_kind:, view: "detail"),
             class: [
               "block px-4 py-4 transition-colors",
               selected ? "bg-indigo-50" : "hover:bg-gray-50"
@@ -26,6 +20,11 @@
                 <span class="rounded-full px-2 py-0.5 text-xs font-medium <%= entry.plan_review? ? 'bg-amber-100 text-amber-800' : 'bg-sky-100 text-sky-800' %>">
                   <%= entry.kind.humanize %>
                 </span>
+                <% if entry.clarifying_questions? %>
+                  <span class="rounded-full px-2 py-0.5 text-xs font-medium <%= inbox_issue_badge_classes(entry.issue) %>">
+                    <%= inbox_issue_kind_label(entry.issue) %>
+                  </span>
+                <% end %>
                 <span class="truncate text-xs text-gray-500"><%= entry.project.full_name %></span>
               </div>
               <p class="mt-2 text-sm font-medium text-gray-900">

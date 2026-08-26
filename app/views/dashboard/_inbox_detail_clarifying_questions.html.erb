@@ -18,10 +18,10 @@
             entry.issue,
             queue: "dashboard_inbox",
             queue_project_id: scoped_project&.id,
-            return_to: dashboard_inbox_path(project_id: scoped_project&.id, kind: selected_kind)
+            return_to: inbox_path_for(scoped_project:, selected_kind:)
           ),
           class: "inline-flex items-center rounded-md bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-sky-500" %>
-    <%= link_to "View Issue",
+    <%= link_to inbox_issue_link_label(entry.issue),
           entry.issue.github_url,
           target: "_blank",
           rel: "noopener noreferrer",

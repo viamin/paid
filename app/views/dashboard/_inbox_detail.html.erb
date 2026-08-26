@@ -7,6 +7,11 @@
           <span class="rounded-full px-2 py-0.5 text-xs font-medium <%= entry.plan_review? ? 'bg-amber-100 text-amber-800' : 'bg-sky-100 text-sky-800' %>">
             <%= entry.kind.humanize %>
           </span>
+          <% if entry.clarifying_questions? %>
+            <span class="rounded-full px-2 py-0.5 text-xs font-medium <%= inbox_issue_badge_classes(entry.issue) %>">
+              <%= inbox_issue_kind_label(entry.issue) %>
+            </span>
+          <% end %>
           <span class="text-xs text-gray-500" data-testid="inbox-detail-waiting-age"><%= entry.waiting_since ? "Waiting #{time_ago_in_words(entry.waiting_since)}" : "Waiting —" %></span>
         </div>
         <h2 class="mt-2 text-xl font-semibold text-gray-900">#<%= entry.issue.github_number %> <%= entry.title %></h2>
@@ -14,7 +19,7 @@
       </div>
 
       <%= link_to "Back to queue",
-            dashboard_inbox_path(project_id: scoped_project&.id, kind: selected_kind),
+            inbox_path_for(scoped_project:, selected_kind:),
             class: "inline-flex rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 lg:hidden" %>
     </div>
   </div>
