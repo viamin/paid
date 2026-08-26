@@ -4,12 +4,13 @@ require "rails_helper"
 
 # @spec AUTO-MERGE-001
 # @spec AUTO-MERGE-002
+# @spec AUTO-MERGE-005
 RSpec.describe Automation::Strategies::AutoMerge, :no_db do
   subject(:strategy) { described_class.new }
 
   let(:project) do
     Class.new do
-      attr_accessor :merge_method, :auto_fix_merge_conflicts
+      attr_accessor :merge_method, :auto_fix_merge_conflicts, :owner_reviewer_login
 
       def auto_merge_enabled? = true
     end.new
@@ -55,8 +56,91 @@ RSpec.describe Automation::Strategies::AutoMerge, :no_db do
     allow(project).to receive_messages(
       auto_merge_enabled?: true,
       merge_method: "squash",
-      auto_fix_merge_conflicts: false
+      auto_fix_merge_conflicts: false,
+      owner_reviewer_login: "viamin"
     )
+  end
+
+  describe "#analyze" do
+    def blocker_payloads(analysis, kind)
+      analysis.public_send("#{kind}_blockers").map(&:to_h)
+    end
+
+    def blocker(signal:, status:, reason_code:, sanitized_message:, next_action:)
+      {
+        signal:,
+        status:,
+        reason_code:,
+        sanitized_message:,
+        next_action:
+      }
+    end
+
+    it "reports a stale approval as the only failed blocker and marks dependencies as not evaluated" do
+      analysis = strategy.analyze(
+        human_signals(reviews_fresh: false, dependencies_resolved: false),
+        owner_reviewer_login: "viamin"
+      )
+
+      expect(analysis).not_to be_eligible
+      expect(blocker_payloads(analysis, :failed)).to eq([ stale_approval_blocker ])
+      expect(blocker_payloads(analysis, :not_evaluated)).to eq([ dependency_not_evaluated_blocker ])
+    end
+
+    it "reports multiple simultaneous blockers in evaluation order" do
+      analysis = strategy.analyze(
+        human_signals(owner_approved: false, checks_green: false, mergeable: false),
+        owner_reviewer_login: "viamin"
+      )
+
+      expect(blocker_payloads(analysis, :failed)).to eq(multiple_failed_blockers)
+    end
+
+    def stale_approval_blocker
+      blocker(
+        signal: "reviews_fresh",
+        status: "failed",
+        reason_code: "stale_approval",
+        sanitized_message: "The owner approval is stale for the current HEAD commit.",
+        next_action: "Ask @viamin to re-approve this pull request for the current HEAD commit, then wait for the next automatic merge evaluation."
+      )
+    end
+
+    def dependency_not_evaluated_blocker
+      blocker(
+        signal: "dependencies_resolved",
+        status: "not_evaluated",
+        reason_code: "dependencies_unresolved",
+        sanitized_message: "Dependency resolution was not evaluated because an earlier auto-merge gate already failed.",
+        next_action: "Resolve the earlier auto-merge blockers first, then let Paid re-evaluate dependency resolution."
+      )
+    end
+
+    def multiple_failed_blockers
+      [
+        blocker(
+          signal: "owner_approved",
+          status: "failed",
+          reason_code: "owner_approval_missing",
+          sanitized_message: "The required owner approval is missing.",
+          next_action: "Ask @viamin to approve this pull request, then wait for the next automatic merge evaluation."
+        ),
+        blocker(
+          signal: "checks_green",
+          status: "failed",
+          reason_code: "checks_not_green",
+          sanitized_message: "Required checks are not green yet.",
+          next_action: "Wait for required checks to pass, then let auto-merge evaluate the pull request again."
+        ),
+        blocker(
+          signal: "mergeable",
+          status: "failed",
+          reason_code: "not_mergeable",
+          sanitized_message: "GitHub is not reporting this pull request as mergeable yet.",
+          next_action: "Resolve merge conflicts or other mergeability blockers, then wait for the next automatic check."
+        )
+      ]
+    end
   end
 
   describe "#evaluate" do

@@ -137,24 +137,23 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         mergeable: true
       )
     end
-    let(:merge_result) do
-      Automation::Result.new(decisions: [ Automation::Decision.merge(issue_id: 123, pr_number: 42) ])
+    let(:analysis) do
+      Automation::Strategies::AutoMerge::Evaluation.new(eligible: true, blockers: [])
     end
 
     it "selects the auto-merge strategy through Automation::Strategies::Select" do
       allow(Automation::Strategies::Select).to receive(:call)
         .with(strategy_type: :auto_merge, project: project)
         .and_return(selected_strategy)
-      allow(selected_strategy).to receive(:evaluate).and_return(merge_result)
+      allow(selected_strategy).to receive(:analyze).and_return(analysis)
 
       result = activity.send(:evaluate_auto_merge, project, signals)
 
-      expect(result).to be(true)
+      expect(result).to eq(analysis)
       expect(Automation::Strategies::Select).to have_received(:call)
         .with(strategy_type: :auto_merge, project: project)
-      expect(selected_strategy).to have_received(:evaluate).with(
-        have_attributes(project: project)
-      )
+      expect(selected_strategy).to have_received(:analyze)
+        .with(signals, owner_reviewer_login: project.owner_reviewer_login)
     end
   end
 
@@ -435,6 +434,31 @@ RSpec.describe Activities::ScanPaidPrsActivity do
             ]
           )
         )
+      end
+
+      it "persists failed and not-evaluated auto-merge blockers with last_pr_scan_at" do
+        project.update!(auto_merge_mode: "all", owner_reviewer_login: "viamin")
+        pr_issue.update!(pr_review_phase: "ready")
+        stub_github_for_pr(
+          checks: [ { name: "rspec", conclusion: "success" } ],
+          reviews: [ { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current } ]
+        )
+        allow(activity).to receive_messages(
+          owner_approved_or_self_authored?: true,
+          no_outstanding_review_feedback?: true,
+          all_blocking_review_methods_complete?: true,
+          review_stale_for_head?: true
+        )
+        expect(activity).not_to receive(:dependencies_resolved?)
+
+        freeze_time do
+          activity.execute(project_id: project.id)
+
+          pr_issue.reload
+          expect(pr_issue.last_pr_scan_at).to eq(Time.current)
+          expect(pr_issue.auto_merge_evaluated_at).to eq(Time.current)
+          expect(pr_issue.auto_merge_blockers).to eq(expected_auto_merge_blockers)
+        end
       end
 
       it "checks lifecycle gate queries at most once per PR scan" do
@@ -10679,5 +10703,28 @@ RSpec.describe Activities::ScanPaidPrsActivity do
   def default_clean_copilot_review
     [ { id: 100, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
       body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago } ]
+  end
+
+  def expected_auto_merge_blockers
+    {
+      "failed" => [
+        {
+          "signal" => "reviews_fresh",
+          "status" => "failed",
+          "reason_code" => "stale_approval",
+          "sanitized_message" => "The owner approval is stale for the current HEAD commit.",
+          "next_action" => "Ask @viamin to re-approve this pull request for the current HEAD commit, then wait for the next automatic merge evaluation."
+        }
+      ],
+      "not_evaluated" => [
+        {
+          "signal" => "dependencies_resolved",
+          "status" => "not_evaluated",
+          "reason_code" => "dependencies_unresolved",
+          "sanitized_message" => "Dependency resolution was not evaluated because an earlier auto-merge gate already failed.",
+          "next_action" => "Resolve the earlier auto-merge blockers first, then let Paid re-evaluate dependency resolution."
+        }
+      ]
+    }
   end
 end

@@ -142,7 +142,7 @@ module Activities
               result = scan_merge_conflict_only(project, client, issue)
               if result && result != :skipped
                 scanned_count += 1
-                issue.update_column(:last_pr_scan_at, Time.current)
+                persist_scan_metadata(issue, Time.current)
                 pending_review_states << pending_review_state(issue, result)
                 progress_states << serialized_pr_progress_state(project, issue)
                 collect_scan_result(issue, result, prs_to_trigger, automation_results,
@@ -159,7 +159,7 @@ module Activities
           lifecycle_signals = build_lifecycle_signals(project, issue)
           next if result == :skipped
           scanned_count += 1
-          issue.update_column(:last_pr_scan_at, Time.current)
+          persist_scan_metadata(issue, Time.current)
           pending_review_states << pending_review_state(issue, result)
           progress_states << serialized_pr_progress_state(project, issue)
           collect_scan_result(issue, result, prs_to_trigger, automation_results, lifecycle: lifecycle_signals)
@@ -3391,6 +3391,7 @@ module Activities
     # Evaluates human-authored PR merge eligibility via the AutoMerge
     # strategy. Collects signals from provider data and delegates the
     # decision to {Automation::Strategies::AutoMerge}.
+    # @spec AUTO-MERGE-005
     def auto_merge_eligible?(project, client, issue, pr_data:, checks:, reviews:, unresolved_threads: nil)
       return false unless project.auto_merge_enabled? && pr_data.present?
 
@@ -3433,20 +3434,16 @@ module Activities
         skip_auto_merge: skip_label
       )
 
-      if skip_label
-        logger.info(
-          message: "pr_scanner.auto_merge_skipped_by_label",
-          project_id: project.id,
-          pr_number: issue.github_number,
-          label: Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL
-        )
-      end
+      log_skip_auto_merge(project, issue) if skip_label
 
-      evaluate_auto_merge(project, signals)
+      analysis = evaluate_auto_merge(project, signals)
+      stage_auto_merge_snapshot(issue, analysis)
+      analysis.eligible?
     end
 
     # Evaluates bot-authored PR merge eligibility via the AutoMerge
     # strategy. Bot PRs skip owner-approval and review-feedback gates.
+    # @spec AUTO-MERGE-005
     def auto_merge_eligible_bot?(project, client, issue, checks:, mergeable:)
       dependabot_eligible = project.auto_merge_dependabot?
       checks_green = !checks.nil? && checks.any? && all_checks_green?(checks)
@@ -3474,16 +3471,11 @@ module Activities
         skip_auto_merge: skip_label
       )
 
-      if skip_label
-        logger.info(
-          message: "pr_scanner.auto_merge_skipped_by_label",
-          project_id: project.id,
-          pr_number: issue.github_number,
-          label: Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL
-        )
-      end
+      log_skip_auto_merge(project, issue) if skip_label
 
-      evaluate_auto_merge(project, signals)
+      analysis = evaluate_auto_merge(project, signals)
+      stage_auto_merge_snapshot(issue, analysis)
+      analysis.eligible?
     end
 
     def human_dependency_check_required?(owner_approved:, checks_green:, mergeable:,
@@ -3534,14 +3526,8 @@ module Activities
     end
 
     def evaluate_auto_merge(project, signals)
-      context = Automation::Context.build(
-        record: nil,
-        project: project,
-        metadata: { Automation::Strategies::AutoMerge::SIGNALS_KEY => signals }
-      )
-      result = Automation::StrategyCoordinator.new(project: project)
-        .evaluate(context:, strategy_types: %i[auto_merge])
-      result.decisions.any? { |d| d.type == "merge" }
+      Automation::Strategies::Select.call(strategy_type: :auto_merge, project: project)
+        .analyze(signals, owner_reviewer_login: project.owner_reviewer_login)
     end
 
     def pull_request_collector(project, client: nil)
@@ -3559,6 +3545,35 @@ module Activities
         project_id: project.id,
         pr_number: issue.github_number,
         triggers: triggers.map { |t| t[:type] }
+      )
+    end
+
+    def persist_scan_metadata(issue, scanned_at)
+      snapshot = auto_merge_snapshots.delete(issue.id)
+      issue.update_columns(
+        last_pr_scan_at: scanned_at,
+        auto_merge_blockers: snapshot,
+        auto_merge_evaluated_at: snapshot.present? ? scanned_at : nil
+      )
+    end
+
+    def auto_merge_snapshots
+      @auto_merge_snapshots ||= {}
+    end
+
+    def stage_auto_merge_snapshot(issue, analysis)
+      auto_merge_snapshots[issue.id] = {
+        "failed" => analysis.failed_blockers.map(&:to_h).map(&:stringify_keys),
+        "not_evaluated" => analysis.not_evaluated_blockers.map(&:to_h).map(&:stringify_keys)
+      }
+    end
+
+    def log_skip_auto_merge(project, issue)
+      logger.info(
+        message: "pr_scanner.auto_merge_skipped_by_label",
+        project_id: project.id,
+        pr_number: issue.github_number,
+        label: Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL
       )
     end
   end

@@ -21,6 +21,10 @@ RSpec.describe Tools::GetPullRequestDetails do
   end
 
   before do
+    pr.update!(
+      auto_merge_blockers: { "failed" => [], "not_evaluated" => [] },
+      auto_merge_evaluated_at: Time.current
+    )
     allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive_messages(
       recent_issue_comments: [],
@@ -77,15 +81,16 @@ RSpec.describe Tools::GetPullRequestDetails do
         auto_merge_status: "blocked",
         reason_code: "missing_workflows_permission",
         credential_mode: "pat",
-        merge_permission_rejected: true
+        merge_permission_rejected: true,
+        blockers: []
       )
       expect(result[:auto_merge][:last_auto_merge_attempt_at]).to eq(pr.auto_merge_attempts.recent.first.attempted_at)
       expect(result[:auto_merge][:sanitized_message]).to include("[REDACTED:github_token]")
       expect(result[:auto_merge][:sanitized_message]).not_to include(raw_token)
     end
 
-    it "explains a checks-not-green blocker without a prior attempt" do
-      allow(github_client).to receive(:combined_status).and_return({ state: "failure", total_count: 1 })
+    it "explains a checks-not-green blocker from the persisted snapshot without a prior attempt" do
+      persist_auto_merge_snapshot!(checks_not_green_blocker)
 
       result = tool.call(project_id: project.id, issue_id: pr.id)
 
@@ -97,11 +102,12 @@ RSpec.describe Tools::GetPullRequestDetails do
         credential_mode: "personal_access_token",
         merge_permission_rejected: false,
         cooldown_until: nil,
-        next_action: "Wait for required checks to pass, then let auto-merge evaluate the pull request again."
+        next_action: "Wait for required checks to pass, then let auto-merge evaluate the pull request again.",
+        blockers: [ checks_not_green_blocker ]
       )
     end
 
-    it "reports the latest persisted attempt timestamp alongside live ready status" do
+    it "reports the latest persisted attempt timestamp alongside ready status" do
       attempt = create(:auto_merge_attempt, project: project, issue: pr, status: "skipped", reason_code: "checks_not_green")
 
       result = tool.call(project_id: project.id, issue_id: pr.id)
@@ -114,54 +120,21 @@ RSpec.describe Tools::GetPullRequestDetails do
       ))
     end
 
-    it "reports unavailable diagnostics when fetching checks fails" do
-      allow(github_client).to receive(:check_runs_for_ref).and_raise(
-        GithubClient::Error, "GitHub checks request timed out"
-      )
+    it "reports unavailable diagnostics when no persisted snapshot is available yet" do
+      pr.update!(auto_merge_blockers: nil, auto_merge_evaluated_at: nil)
 
       result = tool.call(project_id: project.id, issue_id: pr.id)
 
       expect(result[:auto_merge]).to include(
         auto_merge_status: "unavailable",
         reason_code: "diagnostics_unavailable",
-        sanitized_message: "GitHub checks request timed out"
-      )
-      expect(github_client).not_to have_received(:combined_status)
-    end
-
-    it "reports unavailable diagnostics when a transport error reaches the PR lookup" do
-      allow(github_client).to receive(:pull_request).and_raise(
-        Faraday::TimeoutError, "execution expired"
-      )
-
-      result = tool.call(project_id: project.id, issue_id: pr.id)
-
-      expect(result[:auto_merge]).to include(
-        auto_merge_status: "unavailable",
-        reason_code: "diagnostics_unavailable",
-        sanitized_message: "execution expired"
+        sanitized_message: "Auto-merge diagnostics are unavailable until Paid completes a PR scan for this pull request.",
+        blockers: []
       )
     end
 
-    it "reports unavailable diagnostics when a transport error reaches the checks lookup" do
-      allow(github_client).to receive(:check_runs_for_ref).and_raise(
-        Faraday::TimeoutError, "execution expired"
-      )
-
-      result = tool.call(project_id: project.id, issue_id: pr.id)
-
-      expect(result[:auto_merge]).to include(
-        auto_merge_status: "unavailable",
-        reason_code: "diagnostics_unavailable",
-        sanitized_message: "execution expired"
-      )
-      expect(github_client).not_to have_received(:combined_status)
-    end
-
-    it "explains a not-mergeable blocker without a prior attempt" do
-      allow(github_client).to receive(:pull_request).and_return(
-        OpenStruct.new(number: pr.github_number, mergeable: false, merged_at: nil, head: OpenStruct.new(sha: "abc123"))
-      )
+    it "explains a not-mergeable blocker from the persisted snapshot without a prior attempt" do
+      persist_auto_merge_snapshot!(not_mergeable_blocker)
 
       result = tool.call(project_id: project.id, issue_id: pr.id)
 
@@ -173,7 +146,8 @@ RSpec.describe Tools::GetPullRequestDetails do
         credential_mode: "personal_access_token",
         merge_permission_rejected: false,
         cooldown_until: nil,
-        next_action: "Resolve merge conflicts or other mergeability blockers, then wait for the next automatic check."
+        next_action: "Resolve merge conflicts or other mergeability blockers, then wait for the next automatic check.",
+        blockers: [ not_mergeable_blocker ]
       )
     end
 
@@ -219,7 +193,8 @@ RSpec.describe Tools::GetPullRequestDetails do
         credential_mode: "personal_access_token",
         merge_permission_rejected: false,
         cooldown_until: nil,
-        next_action: "No action required."
+        next_action: "No action required.",
+        blockers: []
       )
     end
 
@@ -239,23 +214,23 @@ RSpec.describe Tools::GetPullRequestDetails do
       expect(result[:auto_merge]).to include(
         auto_merge_status: "merged",
         merge_permission_rejected: false,
-        next_action: "No action required."
+        next_action: "No action required.",
+        blockers: []
       )
     end
 
-    it "reports credentials_unavailable instead of raising when minting the app installation token hits a transport error" do
+    it "reports credentials_unavailable when the app installation is inactive" do
       installation = create(:github_installation, account: account)
       project.update!(github_token: nil, github_installation: installation)
-      allow(Github::AppInstallation).to receive(:token_for).and_raise(
-        Faraday::TimeoutError, "execution expired"
-      )
+      installation.update!(revoked_at: Time.current)
 
       result = tool.call(project_id: project.id, issue_id: pr.id)
 
       expect(result[:auto_merge]).to include(
         auto_merge_status: "not_attempted",
         reason_code: "credentials_unavailable",
-        credential_mode: "github_app"
+        credential_mode: "github_app",
+        blockers: []
       )
     end
 
@@ -272,7 +247,8 @@ RSpec.describe Tools::GetPullRequestDetails do
       expect(result[:auto_merge]).to include(
         auto_merge_status: "not_attempted",
         reason_code: "credentials_unavailable",
-        credential_mode: "personal_access_token"
+        credential_mode: "personal_access_token",
+        blockers: []
       )
       expect(github_client).not_to have_received(:pull_request)
     end
@@ -285,7 +261,8 @@ RSpec.describe Tools::GetPullRequestDetails do
       expect(result[:auto_merge]).to include(
         auto_merge_status: "not_attempted",
         reason_code: "credentials_unavailable",
-        credential_mode: "personal_access_token"
+        credential_mode: "personal_access_token",
+        blockers: []
       )
       expect(github_client).not_to have_received(:pull_request)
     end
@@ -301,7 +278,6 @@ RSpec.describe Tools::GetPullRequestDetails do
   def expect_comment_fetches
     expect(github_client).to have_received(:recent_issue_comments).with(project.full_name, pr.github_number)
     expect(github_client).to have_received(:pull_request_review_comments).with(project.full_name, pr.github_number, per_page: 20)
-    expect(github_client).to have_received(:pull_request).with(project.full_name, pr.github_number)
   end
 
   def expect_comments(result, comment:, review_comment:)
@@ -355,7 +331,7 @@ RSpec.describe Tools::GetPullRequestDetails do
   end
 
   def expected_auto_merge(status:, reason_code: nil, sanitized_message: nil, credential_mode: "personal_access_token",
-    merge_permission_rejected: false, next_action:, last_auto_merge_attempt_at: nil, cooldown_until: nil)
+    merge_permission_rejected: false, next_action:, last_auto_merge_attempt_at: nil, cooldown_until: nil, blockers: [])
     {
       last_auto_merge_attempt_at:,
       auto_merge_status: status,
@@ -364,7 +340,45 @@ RSpec.describe Tools::GetPullRequestDetails do
       credential_mode:,
       merge_permission_rejected:,
       cooldown_until:,
-      next_action:
+      next_action:,
+      blockers:
+    }
+  end
+
+  def persist_auto_merge_snapshot!(blocker)
+    pr.update!(
+      auto_merge_blockers: { "failed" => [ blocker ], "not_evaluated" => [] },
+      auto_merge_evaluated_at: Time.current
+    )
+  end
+
+  def checks_not_green_blocker
+    blocker(
+      signal: "checks_green",
+      status: "failed",
+      reason_code: "checks_not_green",
+      sanitized_message: "Required checks are not green yet.",
+      next_action: "Wait for required checks to pass, then let auto-merge evaluate the pull request again."
+    )
+  end
+
+  def not_mergeable_blocker
+    blocker(
+      signal: "mergeable",
+      status: "failed",
+      reason_code: "not_mergeable",
+      sanitized_message: "GitHub is not reporting this pull request as mergeable yet.",
+      next_action: "Resolve merge conflicts or other mergeability blockers, then wait for the next automatic check."
+    )
+  end
+
+  def blocker(signal:, status:, reason_code:, sanitized_message:, next_action:)
+    {
+      "signal" => signal,
+      "status" => status,
+      "reason_code" => reason_code,
+      "sanitized_message" => sanitized_message,
+      "next_action" => next_action
     }
   end
 end
