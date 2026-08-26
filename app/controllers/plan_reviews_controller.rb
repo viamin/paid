@@ -59,9 +59,20 @@ class PlanReviewsController < ApplicationController
   end
 
   def redirect_target
-    requested = params[:return_to].to_s
-    return requested if requested.start_with?(dashboard_inbox_path) && requested.exclude?("://")
+    requested = normalized_return_to(params[:return_to])
+    return requested if requested.present? && requested.start_with?(dashboard_inbox_path)
 
     dashboard_inbox_path(kind: Inbox::Queue::PLAN_REVIEW_KIND)
+  end
+
+  def normalized_return_to(candidate)
+    return if candidate.blank?
+
+    candidate = candidate.to_s
+    return unless candidate.start_with?("/") && !candidate.start_with?("//")
+
+    url_from(candidate)
+  rescue URI::InvalidURIError
+    nil
   end
 end

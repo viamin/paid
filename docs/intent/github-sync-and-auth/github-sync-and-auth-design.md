@@ -64,6 +64,11 @@ manifest flow under `/admin/github_app/setup`. That flow exchanges GitHub's
 one-time setup code, persists credentials when possible, and otherwise surfaces
 the one-time secret material for manual completion.
 
+Browser redirects in the App install/setup flows are hard-pinned to
+`https://github.com` and the expected GitHub App paths. If an internal URL
+builder ever produces any other destination, the controller fails closed rather
+than emitting the redirect.
+
 ## Projects V2 abandonment
 
 RDR-012 originally included a GitHub Projects V2 branch. As of the 2026-07-09

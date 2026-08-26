@@ -103,6 +103,18 @@ RSpec.describe "CodexLoginSessions" do
       expect(cancel_link["href"]).to eq(integration_credentials_path(category: "llm_provider", service_key: "codex"))
       expect(hidden_return_to["value"]).to be_nil
     end
+
+    it "drops protocol-relative return_to targets before rendering links" do
+      get new_codex_login_session_path(return_to: "//evil.example/phish")
+
+      document = Nokogiri::HTML.parse(response.body)
+      cancel_link = document.at_css("a[href^='/integration_credentials']")
+      hidden_return_to = document.at_css("input[name='codex_login_session[metadata][return_to]']")
+
+      expect(response).to have_http_status(:ok)
+      expect(cancel_link["href"]).to eq(integration_credentials_path(category: "llm_provider", service_key: "codex"))
+      expect(hidden_return_to["value"]).to be_nil
+    end
   end
 
   describe "POST /codex_login_sessions" do
@@ -131,6 +143,19 @@ RSpec.describe "CodexLoginSessions" do
           credential_name: "Codex Connect Login",
           metadata: {
             return_to: "https://evil.example/phish"
+          }
+        }
+      }
+
+      expect(CodexLoginSession.order(:id).last.metadata["return_to"]).to be_nil
+    end
+
+    it "drops a protocol-relative return_to before persisting metadata" do
+      post codex_login_sessions_path, params: {
+        codex_login_session: {
+          credential_name: "Codex Connect Login",
+          metadata: {
+            return_to: "//evil.example/phish"
           }
         }
       }

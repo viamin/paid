@@ -64,6 +64,18 @@
   *Code:* `app/controllers/admin/github_app/setup_controller.rb`.
   *Test:* `spec/requests/admin/github_app/setup_spec.rb`.
 
+- [x] **GITHUB-SYNC-010** — When a browser-initiated GitHub App install or
+  self-hosted manifest registration redirect is emitted, the system SHALL
+  construct only `https://github.com` destinations for the expected GitHub App
+  install or manifest paths, and SHALL fail closed instead of redirecting to
+  any other host or path.
+  *Code:* `app/controllers/github_app/installations_controller.rb`,
+  `app/controllers/admin/github_app/setup_controller.rb`,
+  `app/services/github/app_registry.rb`.
+  *Test:* `spec/requests/github_app/installations_spec.rb`,
+  `spec/requests/admin/github_app/setup_spec.rb`,
+  `spec/services/github/app_registry_spec.rb`.
+
 - [x] **GITHUB-SYNC-008** — When the hourly issue reconciliation runs, the
   system SHALL re-fetch and re-upsert every locally-open issue whose
   `github_updated_at` predates the watermark and has not been reconciled since

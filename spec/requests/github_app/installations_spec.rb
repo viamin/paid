@@ -3,6 +3,7 @@
 require "rails_helper"
 
 # @spec GITHUB-SYNC-004
+# @spec GITHUB-SYNC-010
 RSpec.describe "GithubApp::Installations lifecycle" do
   include Warden::Test::Helpers
 
@@ -20,12 +21,26 @@ RSpec.describe "GithubApp::Installations lifecycle" do
   end
 
   describe "GET /github_app/install" do
-    it "stores a CSRF state in the session and redirects to GitHub" do
+    it "stores a CSRF state in the session and redirects only to the GitHub App install path" do
       get github_app_install_path
 
-      expect(response).to redirect_to(/\Ahttps:\/\/github\.com\/apps\/paid-agents\/installations\/new\?state=/)
+      location = URI.parse(response.location)
+
+      expect(location).to be_a(URI::HTTPS)
+      expect(location.host).to eq("github.com")
+      expect(location.path).to eq("/apps/paid-agents/installations/new")
+      expect(CGI.parse(location.query.to_s).keys).to eq([ "state" ])
       expect(response).to have_http_status(:found)
       expect(request.session[:github_app_install_state]).to be_present
+    end
+
+    it "escapes the GitHub App slug before redirecting" do
+      allow(Github::AppRegistry).to receive(:slug).and_return("paid-agents/../../evil")
+      allow(Github::AppRegistry).to receive(:install_url).and_call_original
+
+      get github_app_install_path
+
+      expect(response.location).to start_with("https://github.com/apps/paid-agents%2F..%2F..%2Fevil/installations/new?state=")
     end
 
     it "persists the current account in the install state" do
@@ -41,6 +56,15 @@ RSpec.describe "GithubApp::Installations lifecycle" do
 
       expect(response).to redirect_to(integrations_path)
       expect(flash[:alert]).to match(/not configured/i)
+    end
+
+    it "fails closed when the computed install URL is not a GitHub HTTPS install path" do
+      allow(Github::AppRegistry).to receive(:install_uri).and_return(URI::HTTPS.build(host: "evil.example.com", path: "/"))
+
+      get github_app_install_path
+
+      expect(response).to redirect_to(integrations_path)
+      expect(flash[:alert]).to match(/install url is invalid/i)
     end
   end
 
