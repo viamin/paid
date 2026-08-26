@@ -47,6 +47,14 @@ class AutoReleaseEvaluationJob < ApplicationJob
         project_id: project.id,
         pr_number: release_pr.number
       )
+      record_attempt(
+        project,
+        release_pr.number,
+        status: "failed",
+        reason_code: AutoMergeAttempts::Record::REASON_PARSE_FAILED,
+        message: "Paid could not classify the release PR for auto-merge.",
+        credential_mode: credential_mode(project)
+      )
       return
     end
 
@@ -59,6 +67,14 @@ class AutoReleaseEvaluationJob < ApplicationJob
         bump: result.bump,
         granularity: project.auto_release_granularity
       )
+      record_attempt(
+        project,
+        result.pr_number,
+        status: "skipped",
+        reason_code: AutoMergeAttempts::Record::REASON_GRANULARITY_MISMATCH,
+        message: "Release bump #{result.bump} exceeds the project's #{project.auto_release_granularity} auto-release policy.",
+        credential_mode: credential_mode(project)
+      )
       return
     end
 
@@ -69,6 +85,14 @@ class AutoReleaseEvaluationJob < ApplicationJob
         pr_number: result.pr_number,
         reason: "checks_not_green",
         bump: result.bump
+      )
+      record_attempt(
+        project,
+        result.pr_number,
+        status: "skipped",
+        reason_code: AutoMergeAttempts::Record::REASON_CHECKS_NOT_GREEN,
+        message: "Required checks are not green yet.",
+        credential_mode: credential_mode(project)
       )
       return
     end
@@ -140,9 +164,23 @@ class AutoReleaseEvaluationJob < ApplicationJob
       bump: result.bump,
       granularity: project.auto_release_granularity
     )
+    record_attempt(
+      project,
+      result.pr_number,
+      status: "merged",
+      credential_mode: credential_mode(project)
+    )
   rescue GithubClient::ApiError => e
     raise unless EXPECTED_MERGE_STATUSES.include?(e.status)
 
+    record_attempt(
+      project,
+      result.pr_number,
+      status: "failed",
+      reason_code: AutoMergeAttempts::Record::REASON_EXPECTED_MERGE_FAILURE,
+      message: e.message,
+      credential_mode: credential_mode(project)
+    )
     Rails.logger.warn(
       message: "auto_release.merge_failed_expected",
       project_id: project.id,
@@ -174,5 +212,20 @@ class AutoReleaseEvaluationJob < ApplicationJob
       pr_number: result.pr_number,
       error: e.message
     )
+  end
+
+  def pull_request_issue(project, pr_number)
+    project.issues.find_by(github_number: pr_number, is_pull_request: true)
+  end
+
+  def record_attempt(project, pr_number, **attributes)
+    issue = pull_request_issue(project, pr_number)
+    return unless issue
+
+    AutoMergeAttempts::Record.call(project: project, issue: issue, actor_path: AutoMergeAttempts::Record::ACTOR_AUTO_RELEASE, **attributes)
+  end
+
+  def credential_mode(project)
+    project.github_auth_source == "app" ? "github_app" : "pat"
   end
 end

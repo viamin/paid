@@ -7,6 +7,7 @@ require "ostruct"
 RSpec.describe DependabotAutoMergeJob do
   let(:project) { create(:project, auto_merge_mode: "dependabot_only") }
   let(:client) { instance_double(GithubClient) }
+  let(:issue) { create(:issue, :pull_request, project: project, github_number: 42) }
 
   let(:dependabot_pr) do
     OpenStruct.new(
@@ -38,6 +39,8 @@ RSpec.describe DependabotAutoMergeJob do
 
   describe "#perform" do
     it "merges a Dependabot PR when all conditions are met" do
+      issue
+
       described_class.perform_now(project.id)
 
       expect(client).to have_received(:pull_requests).with(project.full_name, state: "open")
@@ -49,6 +52,12 @@ RSpec.describe DependabotAutoMergeJob do
         project.full_name, 42, [ "paid-auto-merged-dependabot" ]
       )
       expect(client).to have_received(:add_comment)
+      expect(project.auto_merge_attempts.recent.first).to have_attributes(
+        issue: issue,
+        actor_path: AutoMergeAttempts::Record::ACTOR_DEPENDABOT_AUTO_MERGE,
+        status: "merged",
+        credential_mode: "pat"
+      )
     end
 
     it "skips when project has auto_merge_mode off" do
@@ -60,6 +69,7 @@ RSpec.describe DependabotAutoMergeJob do
     end
 
     it "skips when CI checks are not green" do
+      issue
       allow(client).to receive(:check_runs_for_ref).and_return(
         [ { conclusion: "failure", name: "ci" } ]
       )
@@ -67,6 +77,10 @@ RSpec.describe DependabotAutoMergeJob do
       described_class.perform_now(project.id)
 
       expect(client).not_to have_received(:merge_pull_request)
+      expect(project.auto_merge_attempts.recent.first).to have_attributes(
+        status: "skipped",
+        reason_code: AutoMergeAttempts::Record::REASON_CHECKS_NOT_GREEN
+      )
     end
 
     it "skips when CI checks are pending (no conclusion)" do
@@ -88,6 +102,7 @@ RSpec.describe DependabotAutoMergeJob do
     end
 
     it "skips when PR has the paid-skip-auto-merge label" do
+      issue
       labeled_pr = OpenStruct.new(
         number: 42,
         title: "Bump rails from 7.0.0 to 7.1.0",
@@ -102,6 +117,10 @@ RSpec.describe DependabotAutoMergeJob do
       described_class.perform_now(project.id)
 
       expect(client).not_to have_received(:merge_pull_request)
+      expect(project.auto_merge_attempts.recent.first).to have_attributes(
+        status: "skipped",
+        reason_code: AutoMergeAttempts::Record::REASON_SKIP_LABEL
+      )
     end
 
     it "skips when PR is not authored by Dependabot" do
@@ -284,7 +303,7 @@ RSpec.describe DependabotAutoMergeJob do
       end
 
       it "records terminal fallback merge rejection on the synced PR row" do
-        issue = create(:issue, :pull_request, project: project, github_number: 42)
+        issue
         rejection = "refusing to allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows` permission"
         allow(client).to receive(:merge_pull_request).and_raise(
           GithubClient::ApiError.new(rejection, status: 403)
@@ -297,14 +316,16 @@ RSpec.describe DependabotAutoMergeJob do
 
         expect(issue.reload).to be_merge_permission_rejected
         expect(issue.merge_permission_rejection_reason).to eq(rejection)
+        expect(project.auto_merge_attempts.recent.first).to have_attributes(
+          issue: issue,
+          status: "blocked",
+          reason_code: AutoMergeAttempts::Record::REASON_MISSING_WORKFLOWS_PERMISSION,
+          credential_mode: "pat_fallback"
+        )
       end
 
       it "skips merge attempts while a permission rejection is cooling down" do
-        create(
-          :issue,
-          :pull_request,
-          project: project,
-          github_number: 42,
+        issue.update!(
           merge_permission_rejected_at: 1.hour.ago,
           merge_permission_rejection_reason: "missing workflows permission"
         )
@@ -317,11 +338,7 @@ RSpec.describe DependabotAutoMergeJob do
       end
 
       it "clears stale permission rejection after a successful fallback merge" do
-        issue = create(
-          :issue,
-          :pull_request,
-          project: project,
-          github_number: 42,
+        issue.update!(
           merge_permission_rejected_at: 7.hours.ago,
           merge_permission_rejection_reason: "missing workflows permission"
         )

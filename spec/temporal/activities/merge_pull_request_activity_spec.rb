@@ -28,6 +28,11 @@ RSpec.describe Activities::MergePullRequestActivity do
 
         expect(result).to include(merged: false, skipped: true)
         expect(Automation::Providers::Resolver).not_to have_received(:repository_for)
+        expect(project.auto_merge_attempts.recent.first).to have_attributes(
+          issue: issue,
+          status: "skipped",
+          reason_code: AutoMergeAttempts::Record::REASON_AUTO_MERGE_DISABLED
+        )
       end
 
       it "does not update issue phase" do
@@ -47,6 +52,11 @@ RSpec.describe Activities::MergePullRequestActivity do
 
         expect(result).to include(merged: false, skipped: true)
         expect(Automation::Providers::Resolver).not_to have_received(:repository_for)
+        expect(project.auto_merge_attempts.recent.first).to have_attributes(
+          issue: issue,
+          status: "skipped",
+          reason_code: AutoMergeAttempts::Record::REASON_SKIP_LABEL
+        )
       end
 
       it "does not update issue phase" do
@@ -120,6 +130,11 @@ RSpec.describe Activities::MergePullRequestActivity do
         result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
 
         expect(result[:merged]).to be true
+        expect(project.auto_merge_attempts.recent.first).to have_attributes(
+          issue: issue,
+          actor_path: AutoMergeAttempts::Record::ACTOR_REVIEW_AUTO_MERGE,
+          status: "merged"
+        )
       end
 
       it "delivers merge subscription notifications" do
@@ -421,6 +436,12 @@ RSpec.describe Activities::MergePullRequestActivity do
         issue.reload
         expect(issue.merge_permission_rejected?).to be(true)
         expect(issue.merge_permission_rejection_reason).to eq(rejection_message)
+        expect(project.auto_merge_attempts.recent.first).to have_attributes(
+          issue: issue,
+          status: "blocked",
+          reason_code: AutoMergeAttempts::Record::REASON_MISSING_WORKFLOWS_PERMISSION,
+          credential_mode: "pat"
+        )
       end
 
       it "posts a comment explaining the actionable cause" do
@@ -542,6 +563,11 @@ RSpec.describe Activities::MergePullRequestActivity do
           activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
 
           expect(issue.reload.merge_permission_rejected?).to be(false)
+          expect(project.auto_merge_attempts.recent.first).to have_attributes(
+            issue: issue,
+            status: "merged",
+            credential_mode: "pat_fallback"
+          )
         end
 
         it "still labels and comments via the App-authenticated provider" do
@@ -578,6 +604,12 @@ RSpec.describe Activities::MergePullRequestActivity do
           activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
 
           expect(issue.reload.merge_permission_rejected?).to be(true)
+          expect(project.auto_merge_attempts.recent.first).to have_attributes(
+            issue: issue,
+            status: "blocked",
+            reason_code: AutoMergeAttempts::Record::REASON_MISSING_WORKFLOWS_PERMISSION,
+            credential_mode: "pat_fallback"
+          )
         end
 
         it "posts a comment noting the fallback credential also failed" do

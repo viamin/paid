@@ -91,6 +91,14 @@ class DependabotAutoMergeJob < ApplicationJob
       pr_number: pr_number_from(pr_data),
       reason: "skip_auto_merge_label"
     )
+    record_attempt(
+      project,
+      pr_number_from(pr_data),
+      status: "skipped",
+      reason_code: AutoMergeAttempts::Record::REASON_SKIP_LABEL,
+      message: "Auto-merge skipped because the PR has the #{SKIP_AUTO_MERGE_LABEL} label.",
+      credential_mode: primary_credential_mode(project)
+    )
     true
   end
 
@@ -104,6 +112,14 @@ class DependabotAutoMergeJob < ApplicationJob
         pr_number: pr_num,
         reason: "not_mergeable"
       )
+      record_attempt(
+        project,
+        pr_num,
+        status: "skipped",
+        reason_code: AutoMergeAttempts::Record::REASON_NOT_MERGEABLE,
+        message: "GitHub is not reporting this pull request as mergeable yet.",
+        credential_mode: primary_credential_mode(project)
+      )
       return true
     end
 
@@ -113,6 +129,14 @@ class DependabotAutoMergeJob < ApplicationJob
         project_id: project.id,
         pr_number: pr_num,
         reason: "checks_not_green"
+      )
+      record_attempt(
+        project,
+        pr_num,
+        status: "skipped",
+        reason_code: AutoMergeAttempts::Record::REASON_CHECKS_NOT_GREEN,
+        message: "Required checks are not green yet.",
+        credential_mode: primary_credential_mode(project)
       )
       return true
     end
@@ -129,6 +153,14 @@ class DependabotAutoMergeJob < ApplicationJob
       message: "dependabot_auto_merge.merge_permission_cooldown",
       project_id: project.id,
       pr_number: pr_num
+    )
+    record_attempt(
+      project,
+      pr_num,
+      status: "skipped",
+      reason_code: AutoMergeAttempts::Record::REASON_MERGE_PERMISSION_COOLDOWN,
+      message: "Auto-merge is waiting for the merge-permission cooldown window to elapse.",
+      credential_mode: primary_credential_mode(project)
     )
     true
   end
@@ -180,7 +212,7 @@ class DependabotAutoMergeJob < ApplicationJob
   def merge_dependabot_pr(client, project, pr_data)
     pr_number = pr_number_from(pr_data)
 
-    merge_dependabot_pr_with(client, project, pr_number)
+    merge_dependabot_pr_with(client, project, pr_number, credential_mode: primary_credential_mode(project))
   rescue GithubClient::ApiError => e
     fallback_client = workflow_permission_rejection?(e) && project.git_push_fallback_client
     if fallback_client
@@ -190,19 +222,39 @@ class DependabotAutoMergeJob < ApplicationJob
         pr_number: pr_number
       )
       begin
-        return merge_dependabot_pr_with(fallback_client, project, pr_number)
+        return merge_dependabot_pr_with(fallback_client, project, pr_number, credential_mode: "pat_fallback")
       rescue GithubClient::ApiError => fallback_error
-        return handle_expected_merge_failure(project, pr_number, fallback_error, message: "dependabot_auto_merge.pat_fallback_failed")
+        return handle_expected_merge_failure(
+          project,
+          pr_number,
+          fallback_error,
+          message: "dependabot_auto_merge.pat_fallback_failed",
+          credential_mode: "pat_fallback"
+        )
       end
     end
 
-    handle_expected_merge_failure(project, pr_number, e, message: "dependabot_auto_merge.merge_failed_expected")
+    handle_expected_merge_failure(
+      project,
+      pr_number,
+      e,
+      message: "dependabot_auto_merge.merge_failed_expected",
+      credential_mode: primary_credential_mode(project)
+    )
   end
 
-  def handle_expected_merge_failure(project, pr_number, error, message:)
+  def handle_expected_merge_failure(project, pr_number, error, message:, credential_mode:)
     raise unless expected_merge_failure?(error)
 
     record_merge_permission_rejection(project, pr_number, error.message) if workflow_permission_rejection?(error)
+    record_attempt(
+      project,
+      pr_number,
+      status: workflow_permission_rejection?(error) ? "blocked" : "failed",
+      reason_code: workflow_permission_rejection?(error) ? AutoMergeAttempts::Record::REASON_MISSING_WORKFLOWS_PERMISSION : AutoMergeAttempts::Record::REASON_EXPECTED_MERGE_FAILURE,
+      message: error.message,
+      credential_mode: credential_mode
+    )
 
     Rails.logger.warn(
       message: message,
@@ -214,7 +266,7 @@ class DependabotAutoMergeJob < ApplicationJob
     false
   end
 
-  def merge_dependabot_pr_with(client, project, pr_number)
+  def merge_dependabot_pr_with(client, project, pr_number, credential_mode:)
     client.merge_pull_request(
       project.full_name, pr_number,
       merge_method: project.merge_method
@@ -227,6 +279,12 @@ class DependabotAutoMergeJob < ApplicationJob
       message: "dependabot_auto_merge.merged",
       project_id: project.id,
       pr_number: pr_number
+    )
+    record_attempt(
+      project,
+      pr_number,
+      status: "merged",
+      credential_mode: credential_mode
     )
     true
   end
@@ -254,6 +312,17 @@ class DependabotAutoMergeJob < ApplicationJob
 
   def pull_request_issue(project, pr_number)
     project.issues.find_by(github_number: pr_number, is_pull_request: true)
+  end
+
+  def primary_credential_mode(project)
+    project.github_auth_source == "app" ? "github_app" : "pat"
+  end
+
+  def record_attempt(project, pr_number, **attributes)
+    issue = pull_request_issue(project, pr_number)
+    return unless issue
+
+    AutoMergeAttempts::Record.call(project: project, issue: issue, actor_path: AutoMergeAttempts::Record::ACTOR_DEPENDABOT_AUTO_MERGE, **attributes)
   end
 
   def add_label(client, project, pr_number)
