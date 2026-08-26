@@ -51,6 +51,7 @@ module Screenshots
       "application" => SHARED_TARGET_KEYS,
       "cost_dashboard" => %i[project_cost_dashboard project_cost_snapshot],
       "health_check" => [ :project_health_check ],
+      "issues" => %i[dashboard project_show project_issue_clarifying_questions],
       "integrations" => %i[integrations integrations_new],
       "knowledge" => %i[knowledge_search project_knowledge_search project_knowledge_browse project_context_intake project_knowledge_recommendations],
       "quality_metrics" => %i[quality_dashboard project_quality_dashboard],
