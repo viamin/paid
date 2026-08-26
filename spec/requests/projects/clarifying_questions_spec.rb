@@ -313,37 +313,44 @@ RSpec.describe "Projects::ClarifyingQuestions" do
         allow(github_client).to receive(:issue_comments).and_return([ trusted_comment ])
       end
 
+      def submit_inbox_answers(issue:, questions:, answers:, inbox_project_id: nil)
+        post project_issue_clarifying_questions_path(project, issue), params: {
+          questions: questions,
+          answers: answers,
+          inbox: "1",
+          inbox_project_id: inbox_project_id
+        }.compact
+      end
+
+      def expect_inbox_redirect(project_id: nil, selected:, view: "detail")
+        expect(response).to redirect_to(
+          dashboard_inbox_path(
+            project_id: project_id,
+            kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+            selected: selected,
+            view: view
+          )
+        )
+      end
+
       it "redirects to the next inbox entry when more are waiting in the same scope" do
         project.update!(auto_pick_enabled: true, active: true)
         next_issue = create(:issue, :needs_input, project: project,
           github_number: issue.github_number + 2,
           needs_input_questions: [ "What should happen next?" ])
 
-        post project_issue_clarifying_questions_path(project, issue), params: {
-          questions: questions,
-          answers: answers,
-          inbox: "1",
-          inbox_project_id: project.id
-        }
+        submit_inbox_answers(issue:, questions:, answers:, inbox_project_id: project.id)
 
-        expect(response).to redirect_to(
-          dashboard_inbox_path(
-            project_id: project.id,
-            kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
-            selected: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{next_issue.id}"
-          )
+        expect_inbox_redirect(
+          project_id: project.id,
+          selected: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{next_issue.id}"
         )
       end
 
       it "redirects to the bare inbox when the queue is drained" do
         project.update!(auto_pick_enabled: true, active: true)
 
-        post project_issue_clarifying_questions_path(project, issue), params: {
-          questions: questions,
-          answers: answers,
-          inbox: "1",
-          inbox_project_id: project.id
-        }
+        submit_inbox_answers(issue:, questions:, answers:, inbox_project_id: project.id)
 
         expect(response).to redirect_to(
           dashboard_inbox_path(
@@ -354,7 +361,7 @@ RSpec.describe "Projects::ClarifyingQuestions" do
         expect(response).not_to have_attributes(location: /selected=/)
       end
 
-      it "ignores inbox_project_id scope and falls back to the issue project when out of scope" do
+      it "preserves the all-projects inbox scope when auto-advancing" do
         project.update!(auto_pick_enabled: true, active: true)
         other_project = create(
           :project,
@@ -363,39 +370,53 @@ RSpec.describe "Projects::ClarifyingQuestions" do
           auto_pick_enabled: true,
           active: true
         )
+        next_issue = create(:issue, :needs_input, project: other_project,
+          github_number: issue.github_number + 2,
+          needs_input_questions: [ "What should happen next?" ])
 
-        post project_issue_clarifying_questions_path(project, issue), params: {
-          questions: questions,
-          answers: answers,
-          inbox: "1",
-          inbox_project_id: other_project.id
-        }
+        submit_inbox_answers(issue:, questions:, answers:)
 
-        expect(response).to redirect_to(
-          dashboard_inbox_path(
-            project_id: project.id,
-            kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND
-          )
+        expect_inbox_redirect(selected: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{next_issue.id}")
+      end
+
+      it "preserves an explicit inbox project scope even when the submitted issue is outside it" do
+        project.update!(auto_pick_enabled: true, active: true)
+        other_project = create(
+          :project,
+          account: account,
+          created_by: user,
+          auto_pick_enabled: true,
+          active: true
+        )
+        next_issue = create(:issue, :needs_input, project: other_project,
+          github_number: issue.github_number + 2,
+          needs_input_questions: [ "What should happen next?" ])
+
+        submit_inbox_answers(issue:, questions:, answers:, inbox_project_id: other_project.id)
+
+        expect_inbox_redirect(
+          project_id: other_project.id,
+          selected: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{next_issue.id}"
         )
       end
 
       it "redirects back to the inbox frame when validation fails" do
         project.update!(auto_pick_enabled: true, active: true)
 
-        post project_issue_clarifying_questions_path(project, issue), params: {
-          questions: questions,
-          answers: [ "X is a feature", "" ],
-          inbox: "1",
-          inbox_project_id: project.id
-        }
+        submit_inbox_answers(issue:, questions:, answers: [ "X is a feature", "" ], inbox_project_id: project.id)
 
-        expect(response).to redirect_to(
-          dashboard_inbox_path(
-            project_id: project.id,
-            kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
-            selected: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{issue.id}"
-          )
+        expect_inbox_redirect(
+          project_id: project.id,
+          selected: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{issue.id}"
         )
+      end
+
+      it "redirects back to the all-projects inbox detail state when validation fails there" do
+        project.update!(auto_pick_enabled: true, active: true)
+
+        submit_inbox_answers(issue:, questions:, answers: [ "X is a feature", "" ])
+
+        expect_inbox_redirect(selected: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{issue.id}")
       end
 
       it "redirects back to the inbox frame when the GitHub post fails" do
@@ -413,7 +434,8 @@ RSpec.describe "Projects::ClarifyingQuestions" do
           dashboard_inbox_path(
             project_id: project.id,
             kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
-            selected: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{issue.id}"
+            selected: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{issue.id}",
+            view: "detail"
           )
         )
       end

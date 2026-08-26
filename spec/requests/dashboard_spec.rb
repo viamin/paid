@@ -1037,6 +1037,26 @@ RSpec.describe "Dashboard" do
       expect(response.body).not_to include(project.full_name)
     end
 
+    it "threads the current inbox scope through list detail links" do
+      issue = create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
+
+      get dashboard_inbox_path(
+        project_id: project.id,
+        kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND
+      )
+
+      document = Nokogiri::HTML(response.body)
+      link = document.at_css(%(a[href="#{dashboard_inbox_entry_path(
+        entry_kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+        entry_id: issue.id,
+        project_id: project.id,
+        kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+        view: "detail"
+      )}"]))
+
+      expect(link).to be_present
+    end
+
     it "selects the entry referenced by the combined selected param" do
       create(:issue, :needs_input, project: project, github_number: 11, body: questions_body)
       second_issue = create(:issue, :needs_input, project: project, github_number: 22, body: questions_body)

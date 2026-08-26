@@ -23,10 +23,13 @@ module Inbox
     # Builds the URL for the inbox detail Turbo Frame. Today the detail frame
     # is rendered by `DashboardController#inbox_detail`; the dedicated
     # `Inbox::EntriesController#show` endpoint arrives with #3676.
-    def inbox_detail_path(entry)
+    def inbox_detail_path(entry, project: nil, kind: nil, view: "detail")
       dashboard_inbox_entry_path(
         entry_kind: entry.kind,
-        entry_id: entry.record.id
+        entry_id: entry.record.id,
+        project_id: project&.id,
+        kind: kind,
+        view: view
       )
     end
 

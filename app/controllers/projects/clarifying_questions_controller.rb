@@ -195,14 +195,8 @@ module Projects
     # the queue is drained, falls back to the bare inbox index so the
     # Turbo Frame reloads the empty state.
     def inbox_redirect_target(next_entry:)
-      target_params = {
-        project_id: @project.id,
-        kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
-        selected: next_entry ? "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{next_entry.record.id}" : nil
-      }.compact
-
       notice_suffix = next_entry ? "Loading next questionnaire." : "You've completed the clarifying-questions queue."
-      redirect_to dashboard_inbox_path(**target_params),
+      redirect_to dashboard_inbox_path(**inbox_redirect_params(selected_entry: next_entry, detail_view: next_entry.present?)),
         notice: "Answers posted to GitHub issue ##{@issue.github_number}. #{notice_suffix}"
     end
 
@@ -225,21 +219,37 @@ module Projects
       end
     end
 
+    def inbox_redirect_params(selected_entry:, detail_view:)
+      {
+        project_id: inbox_scoped_project&.id,
+        kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+        selected: selected_entry && inbox_selected_param(selected_entry),
+        view: detail_view ? "detail" : nil
+      }.compact
+    end
+
+    def inbox_selected_param(entry)
+      "#{entry.kind}:#{entry.record.id}"
+    end
+
     # The inbox form posts inside a Turbo Frame; on failure the redirect must
     # land inside the same frame so the user keeps their answers and the
     # pane scrolls back into view.
     def failure_redirect_path
       if inbox_mode?
-        dashboard_inbox_path(
-          project_id: @project.id,
-          kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
-          selected: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{@issue.id}"
-        )
+        dashboard_inbox_path(**inbox_redirect_params(selected_entry: inbox_current_entry, detail_view: true))
       elsif queue_mode?
         project_issue_clarifying_questions_path(@project, @issue, queue_redirect_params)
       else
         project_issue_clarifying_questions_path(@project, @issue)
       end
+    end
+
+    def inbox_current_entry
+      Inbox::Queue::Entry.new(
+        kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+        record: @issue
+      )
     end
   end
 end
