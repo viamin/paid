@@ -405,14 +405,13 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     end
 
     # @spec ISSUE-ANALYSIS-012
-    # Regression for the merge-vs-replace review (paid-code-reviewer on #3687):
-    # when the first provider attempt records error_class / error_message on
-    # failure and the second attempt then runs to completion, the
-    # `record_issue_analysis_diagnostics!` writer must replace the prior
-    # payload — otherwise the diagnostics describe provider 2 but still
-    # carry provider 1's failure details. A 10-minute outer timeout would
-    # then emit a timeout message that pins the failing provider instead of
-    # the one the worker was last executing.
+    # Regression: when the first provider attempt records error_class /
+    # error_message on failure and the second attempt then runs to
+    # completion, `record_issue_analysis_diagnostics!` must replace the
+    # prior payload — otherwise the diagnostics describe provider 2 but
+    # still carry provider 1's failure details, and a later outer-timeout
+    # message would pin the failing provider instead of the one the
+    # worker was last executing.
     it "replaces failed-attempt diagnostics when the failover provider succeeds" do
       owner.runner_states.where(runner_name: "claude").destroy_all
       owner.settings.update!(issue_analysis_runner: "claude", issue_analysis_fallback_runners: [ "codex" ])
@@ -431,7 +430,6 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       )
       expect(diagnostics).not_to have_key("error_class")
       expect(diagnostics).not_to have_key("error_message")
-      expect(diagnostics["error_class"]).to be_nil
 
       expect(agent_run.issue_analysis_timeout_message).to eq(
         "Activity task timed out (last known analyze_issue phase: Analyze Issue Provider Attempt · provider codex · attempt 2 · budget 90s)"
@@ -439,17 +437,16 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     end
 
     # @spec ISSUE-ANALYSIS-012
-    # Regression for the response-vs-exception review (paid-code-reviewer on
-    # #3687): CLI-backed providers report a nonzero exit as a Response with
-    # `success? == false`, not as a raised exception. Before the fix, the
-    # call_llm block returned that Response normally, so the phase recorder
-    # marked the attempt as `completed` in both `agent_run_phases` and
-    # `issue_analysis_diagnostics`. A later timeout during the failover
-    # provider would then leave behind a misleading history — provider 1
-    # pinned with `completed` even though it failed. The fix promotes the
-    # response-shaped failure into an exception inside the tracked phase so
-    # the attempt is recorded as `failed` while still funnelling through the
-    # same circuit-breaker classification as a raised error.
+    # Regression: CLI-backed providers report a nonzero exit as a Response
+    # with `success? == false`, not as a raised exception. The tracked
+    # `analyze_issue_provider_attempt` phase block must therefore promote
+    # that response-shaped failure into an internal exception so the phase
+    # recorder marks the attempt as `failed` in `agent_run_phases` while
+    # still funnelling through the same circuit-breaker classification as
+    # a raised error. The diagnostics must then describe the failover
+    # provider (the one the worker was last executing), not the failed
+    # primary — otherwise a later outer-timeout message pins the wrong
+    # provider.
     it "marks a response-shaped failure as failed in agent_run_phases and replaces diagnostics on failover" do
       owner.runner_states.where(runner_name: "claude").destroy_all
       owner.settings.update!(issue_analysis_runner: "claude", issue_analysis_fallback_runners: [ "codex" ])
