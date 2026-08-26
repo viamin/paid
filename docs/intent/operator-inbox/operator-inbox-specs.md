@@ -48,3 +48,19 @@
   *Code:* `app/views/dashboard/_inbox_list.html.erb`,
   `app/views/dashboard/_inbox_detail.html.erb`.
   *Test:* `spec/requests/dashboard_spec.rb`.
+
+- [x] **OPERATOR-INBOX-007** — When a clarifying-question inbox entry is backed
+  by a pull request record, the system SHALL load that PR through the existing
+  clarifying-questions controller, SHALL preserve the inbox answer flow and
+  local needs-input clearing behavior, and SHALL render a distinct `PR` badge
+  plus PR-aware GitHub link copy anywhere the inbox distinguishes issues from
+  pull requests.
+  *Code:* `app/controllers/projects/clarifying_questions_controller.rb`,
+  `app/helpers/application_helper.rb`,
+  `app/views/dashboard/_inbox_list.html.erb`,
+  `app/views/dashboard/_inbox_detail.html.erb`,
+  `app/views/dashboard/_inbox_detail_clarifying_questions.html.erb`,
+  `app/services/clarifying_questions/clear_needs_input.rb`.
+  *Test:* `spec/requests/dashboard_spec.rb`,
+  `spec/requests/projects/clarifying_questions_spec.rb`,
+  `spec/services/clarifying_questions/clear_needs_input_spec.rb`.

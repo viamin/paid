@@ -41,7 +41,19 @@ entries into one responsive page.
 
 Backed by `Dashboard::NeedsInputQueue`, preserving the existing project
 visibility and question parsing rules. The inbox wraps each queue row with a
-typed entry and links to the existing answer form.
+typed entry, constructs selection links through one shared helper, and
+distinguishes issue-backed vs. PR-backed rows with a secondary badge and
+GitHub-link label (`View Issue` / `View PR`) so future PR-specific inbox kinds
+reuse the same presentation rules instead of forking them.
+
+Producer-side note: the inbox and answer form now support PR-backed records
+end-to-end when the record already has parseable clarifying questions in its
+body or persisted `needs_input_questions`. As of August 26, 2026, the shipped
+question-producing flows remain issue-centric: `enhance_issue` and
+`create_feature` persist clarifying questions for issue records, and
+`FetchIssuesActivity` still skips PR rows in the enhancement recheck /
+questionless-repair paths. That producer gap is intentional follow-up work, not
+an inbox rendering constraint.
 
 ### `plan_review`
 

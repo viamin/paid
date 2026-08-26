@@ -45,6 +45,18 @@ RSpec.describe "Projects::ClarifyingQuestions" do
     )
   end
 
+  def expect_pr_answers_cleared(pull_request)
+    expect(github_client).to have_received(:remove_label_from_issue).with(
+      project.full_name,
+      pull_request.github_number,
+      project.enhance_issue_needs_input_label_name
+    )
+    expect(pull_request.reload).to have_attributes(
+      paid_state: "new",
+      needs_input_questions: nil
+    )
+  end
+
   describe "GET /projects/:project_id/issues/:issue_id/clarifying_questions" do
     context "when enhancement comment with clarifying questions exists" do
       before do
@@ -345,7 +357,10 @@ RSpec.describe "Projects::ClarifyingQuestions" do
           pull_request.github_number,
           a_string_matching(/Clarifying question answers/)
         )
+        expect_pr_answers_cleared(pull_request)
         expect(response).to redirect_to(dashboard_queue_path_for(project))
+        follow_redirect!
+        expect(response.body).to include("Answers posted to GitHub PR ##{pull_request.github_number}")
       end
     end
 

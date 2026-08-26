@@ -12,7 +12,7 @@ module Projects
       @questions = ClarifyingQuestions::Load.call(project: @project, issue: @issue)
 
       if @questions.empty?
-        redirect_to empty_questions_redirect_path, alert: "No clarifying questions found for issue ##{@issue.github_number}."
+        redirect_to empty_questions_redirect_path, alert: "No clarifying questions found for #{issue_kind_label} ##{@issue.github_number}."
       end
     rescue GithubClient::Error => e
       redirect_to empty_questions_redirect_path, alert: "Failed to load clarifying questions: #{e.message}"
@@ -33,11 +33,11 @@ module Projects
           next_issue.project,
           next_issue,
           queue_redirect_params
-        ), notice: "Answers posted to GitHub issue ##{@issue.github_number}. Next questionnaire ready."
+        ), notice: "Answers posted to GitHub #{issue_kind_label} ##{@issue.github_number}. Next questionnaire ready."
       elsif queue_mode?
-        redirect_to queue_return_to, notice: "Answers posted to GitHub issue ##{@issue.github_number}. You've completed the needs-input queue."
+        redirect_to queue_return_to, notice: "Answers posted to GitHub #{issue_kind_label} ##{@issue.github_number}. You've completed the needs-input queue."
       else
-        redirect_to project_path(@project), notice: "Answers posted to GitHub issue ##{@issue.github_number}. The agent will pick them up on the next run."
+        redirect_to project_path(@project), notice: "Answers posted to GitHub #{issue_kind_label} ##{@issue.github_number}. The agent will pick them up on the next run."
       end
     rescue ArgumentError => e
       redirect_to project_issue_clarifying_questions_path(@project, @issue, queue_redirect_params), alert: e.message
@@ -156,6 +156,10 @@ module Projects
 
     def empty_questions_redirect_path
       queue_mode? ? queue_return_to : project_path(@project)
+    end
+
+    def issue_kind_label
+      @issue.is_pull_request? ? "PR" : "issue"
     end
 
     def queue_scope_issues(project:)
