@@ -286,6 +286,22 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
     expect(containers.last).to eq(standalone)
   end
 
+  it "surfaces labels and the owning node hostname for each listed volume" do
+    volume = instance_double(Docker::Volume, id: "paid-workspace-42", info: { "Labels" => { "paid.resource" => "workspace_volume" } })
+    without_partial_double_verification do
+      allow(Docker::Volume).to receive(:all).with({}, kind_of(Docker::Connection)).and_return([ volume ])
+    end
+
+    handles = backend.list_volumes
+
+    expect(handles.length).to eq(1)
+    expect(handles.first).to have_attributes(
+      id: "paid-workspace-42",
+      host: "worker-1",
+      labels: { "paid.resource" => "workspace_volume" }
+    )
+  end
+
   it "looks up volumes on each worker connection" do
     volume = instance_double(Docker::Volume)
 

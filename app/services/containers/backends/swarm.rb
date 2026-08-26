@@ -13,7 +13,7 @@ module Containers
       TASK_READY_TIMEOUT = 30
       TASK_POLL_INTERVAL = 0.25
 
-      VolumeHandle = Struct.new(:backend, :id, :host, keyword_init: true) do
+      VolumeHandle = Struct.new(:backend, :id, :host, :labels, keyword_init: true) do
         def remove(**options)
           backend.delete_volume(self, **options)
         end
@@ -215,7 +215,7 @@ module Containers
       def list_volumes
         healthy_nodes.flat_map do |node|
           Docker::Volume.all({}, node_connection(node)).map do |volume|
-            VolumeHandle.new(backend: self, id: volume.id, host: node_hostname(node))
+            VolumeHandle.new(backend: self, id: volume.id, host: node_hostname(node), labels: volume.info["Labels"] || {})
           end
         end
       end
