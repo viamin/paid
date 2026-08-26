@@ -1989,7 +1989,8 @@ RSpec.describe Project do
           "service_dependencies" => [],
           "setup_commands" => [],
           "detection" => {},
-          "verification_enabled" => false
+          "verification_enabled" => false,
+          "performance" => PageLoadPerformance::Settings::DEFAULTS
         )
       end
 
@@ -2005,7 +2006,8 @@ RSpec.describe Project do
           "service_dependencies" => [],
           "setup_commands" => [],
           "detection" => {},
-          "verification_enabled" => false
+          "verification_enabled" => false,
+          "performance" => PageLoadPerformance::Settings::DEFAULTS
         )
       end
     end
@@ -2041,7 +2043,8 @@ RSpec.describe Project do
           "service_dependencies" => [],
           "setup_commands" => [],
           "detection" => {},
-          "verification_enabled" => false
+          "verification_enabled" => false,
+          "performance" => PageLoadPerformance::Settings::DEFAULTS
         )
       end
     end
@@ -2322,18 +2325,8 @@ RSpec.describe Project do
         reloaded = described_class.find(project.id)
 
         expect(reloaded.screenshot_settings).to eq(settings)
-        expect(reloaded.effective_screenshot_settings).to eq(
-          "enabled" => true,
-          "driver" => "cuprite",
-          "config_path" => ".paid/screenshots.yml",
-          "auto_capture" => true,
-          "record_video" => false,
-          "service_dependencies" => [],
-          "setup_commands" => [],
-          "detection" => {},
-          "verification_enabled" => false,
-          "viewport" => { "width" => 1440, "height" => 900 }
-        )
+        expect(reloaded.effective_screenshot_settings)
+          .to eq(described_class::DEFAULT_SCREENSHOT_SETTINGS.merge(settings))
       end
 
       it "rejects unknown review methods" do

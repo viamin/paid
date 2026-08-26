@@ -65,6 +65,12 @@ RSpec.describe AgentRun do
     it { is_expected.to validate_inclusion_of(:goal).in_array(described_class::GOALS) }
     it { is_expected.to validate_presence_of(:focus) }
     it { is_expected.to validate_inclusion_of(:focus).in_array(described_class::FOCUSES) }
+
+    # @spec FOCUSED-RUN-001
+    it "accepts the performance_regression focus" do
+      expect(described_class::FOCUSES).to include("performance_regression")
+    end
+
     it { is_expected.to validate_inclusion_of(:execution_origin).in_array(described_class::EXECUTION_ORIGINS) }
     it { is_expected.to validate_presence_of(:trigger_type) }
     # @spec TDD-GUARD-001

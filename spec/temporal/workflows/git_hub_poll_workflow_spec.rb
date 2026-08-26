@@ -523,6 +523,21 @@ RSpec.describe Workflows::GitHubPollWorkflow do
           timeout: 30)
     end
 
+    # @spec PAGE-LOAD-FOLLOWUP-004
+    it "forwards the focus evidence on a PR-scoped performance_regression decision" do
+      evidence = { route_name: "dashboard", route_path: "/dashboard", comparison_metric: "lcp_ms" }
+      evaluation = { decisions: [ { type: "queue_create_pr_run", issue_id: 10, source_pull_request_number: 42,
+                                    focus: "performance_regression", focus_evidence: evidence } ] }
+
+      workflow.send(:handle_automation_result, evaluation, project_id)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(project_id: project_id, issue_id: 10, source_pull_request_number: 42,
+            goal: "create_pr", focus: "performance_regression", focus_evidence: evidence),
+          timeout: 30)
+    end
+
     it "queues analyze_issue run for queue_analyze_issue_run decisions" do
       evaluation = { decisions: [ { type: "queue_analyze_issue_run", issue_id: 10 } ] }
 

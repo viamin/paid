@@ -5,6 +5,10 @@ require_relative "../../app/services/screenshots/capture_targets"
 require_relative "capture_orchestrator"
 
 module Screenshots
+  # The rake/CI capture path. It captures screenshots only: page load
+  # measurement is scoped to the container capture path, which is the one with
+  # a run, a pull request, and a per-project ledger to record against.
+  # @spec PAGE-LOAD-MEASURE-010
   class Capture
     def self.call(output_dir: "tmp/screenshots", changed_files: [], repo_path: Rails.root.to_s, project: nil)
       new(output_dir:, changed_files:, repo_path:, project:).call

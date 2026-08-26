@@ -26,6 +26,8 @@ module Prompts
     MAX_RECENT_COMMENT_PAGES = 10
     ALREADY_ADDRESSED_MARKER = "PAID_REVIEW_THREADS_ALREADY_ADDRESSED"
     LEGACY_PROMPT_BUILDER = "legacy_prompt_builder"
+    # A perf follow-up needs to see what the PR touched, not the whole diff.
+    PAGE_LOAD_CHANGED_FILE_LIMIT = 50
     PROMPT_ASSEMBLY_BUILDER = "prompt_assembly"
 
     PROMPT_SLUG = "coding.pr_review_rebase"
@@ -228,6 +230,7 @@ module Prompts
         (issue_requirements_section if include_issue_requirements_section?),
         (merge_conflicts_section if include_merge_conflicts_section?),
         (ci_failures_section if include_ci_failures_section?),
+        (page_load_regression_section if include_page_load_regression_section?),
         *review_section_with_excluded,
         (planning_pr_revision_section if planning_pr_revision?),
         *conversation_section_with_excluded,
@@ -439,6 +442,64 @@ module Prompts
         required: true,
         inclusion_reason: "failing CI checks present on branch"
       )
+    end
+
+    # Built from the regression evidence persisted on the run at queue time, so
+    # the prompt describes one stable measurement rather than re-measuring.
+    #
+    # Route names and paths come from the repository's screenshot config and the
+    # file list from the pull request's diff, so the section is quarantined like
+    # any other repository-derived context (PROMPT-ASSEMBLY-003) even though the
+    # measurement around it is Paid's own.
+    # @spec FOCUSED-RUN-003
+    def page_load_regression_section
+      evidence = page_load_regression_evidence
+      spread = evidence["sample_spread"].to_h
+      changed = Array(evidence["changed_files"])
+      files = changed.first(PAGE_LOAD_CHANGED_FILE_LIMIT).map { |file| "- #{file}" }.join("\n")
+      if changed.size > PAGE_LOAD_CHANGED_FILE_LIMIT
+        files += "\n- …and #{changed.size - PAGE_LOAD_CHANGED_FILE_LIMIT} more"
+      end
+
+      content = <<~SECTION
+        # Page Load Regression
+
+        This PR made `#{evidence["route_name"]}` (#{evidence["route_path"]}) measurably slower.
+
+        - Metric: #{evidence["comparison_metric"]}
+        - Before (#{evidence["baseline_commit_sha"]}): #{evidence["baseline_ms"]} ms
+        - After (#{evidence["commit_sha"]}): #{evidence["current_ms"]} ms
+        - Slower by: #{evidence["delta_ms"]} ms
+        - Sample spread: #{spread.to_json}
+
+        Files this PR changed:
+
+        #{files.presence || "- (not recorded)"}
+
+        Find what in this PR's changes made the page slower and fix it. Do not
+        remove the page's functionality or weaken tests to reclaim the time. If
+        the cost is unavoidable, say so in a PR comment instead of guessing.
+      SECTION
+
+      PromptAssembly::Section.new(
+        key: :page_load_regression,
+        source: :page_load_regression,
+        content: content,
+        trust_level: :quarantined,
+        required: true,
+        inclusion_reason: "page load regression measured on a route this PR touched"
+      )
+    end
+
+    def include_page_load_regression_section?
+      include_section?(:page_load_regression) && page_load_regression_evidence.present?
+    end
+
+    def page_load_regression_evidence
+      metadata = @agent_run&.external_metadata
+      return {} unless metadata.is_a?(Hash)
+
+      metadata["page_load_regression"].to_h
     end
 
     def ci_failure_output_section(output)
@@ -702,6 +763,7 @@ module Prompts
         "review_feedback" => :code_review,
         "merge_conflict" => :merge_conflicts,
         "conversation" => :conversation,
+        "performance_regression" => :page_load_regression,
         "issue_implementation" => :issue_requirements
       }[focus]
     end
@@ -752,6 +814,7 @@ module Prompts
         "review_feedback" => includes_review_threads?,
         "merge_conflict" => include_merge_conflicts_section?,
         "conversation" => include_conversation_section?,
+        "performance_regression" => include_page_load_regression_section?,
         "issue_implementation" => include_issue_requirements_section?
       }.fetch(focus, false)
     end
@@ -766,6 +829,7 @@ module Prompts
         "review_feedback" => "Address the unresolved code review comments on this PR",
         "merge_conflict" => "Resolve the merge conflicts on this PR",
         "conversation" => "Address the actionable conversation comments on this PR",
+        "performance_regression" => "Fix the page load regression this PR introduced",
         "issue_implementation" => "Close implementation gaps against the linked issue for this PR",
         "label_action" => "Handle the actionable labels on this PR"
       }.fetch(focus, "Complete the scoped task for this PR")

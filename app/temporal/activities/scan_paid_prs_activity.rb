@@ -67,6 +67,7 @@ module Activities
       "ci_failure" => "ci_fix",
       "conversation_comments" => "conversation",
       "merge_conflicts" => "merge_conflict",
+      "page_load_regression" => "performance_regression",
       "paid_agent_review_pending" => "review_feedback",
       "review_bot_comments" => "review_feedback",
       "review_bot_review_pending" => "review_feedback",
@@ -79,6 +80,7 @@ module Activities
       review_feedback
       merge_conflict
       conversation
+      performance_regression
       issue_implementation
       label_action
     ].freeze
@@ -87,6 +89,7 @@ module Activities
       ci_fix
       review_feedback
       conversation
+      performance_regression
       issue_implementation
       label_action
     ].freeze
@@ -1157,6 +1160,7 @@ module Activities
       triggers.concat(changes_requested_from_reviews(project, reviews, last_run))
       triggers.concat(check_actionable_labels(project, issue))
       triggers.concat(check_merge_conflicts(project, pr_data))
+      triggers.concat(page_load_regression_triggers(project, issue))
       triggers.concat(non_bot_review_gate_triggers(project, issue, pr_data, reviews, checks))
 
       # When a critical signal source failed but we found actionable
@@ -1179,6 +1183,47 @@ module Activities
       end
 
       triggers
+    end
+
+    # A confirmed page load regression on a page this pull request touched
+    # becomes a trigger like any other PR problem, so it inherits focus
+    # resolution, per-PR suppression, and quality-gate admission. This activity
+    # decides only whether a finding warrants a trigger; the focus it maps to
+    # and its priority are owned by the focused-run vocabulary.
+    # @spec PAGE-LOAD-FOLLOWUP-001, PAGE-LOAD-FOLLOWUP-002, PAGE-LOAD-FOLLOWUP-003,
+    # PAGE-LOAD-FOLLOWUP-006
+    def page_load_regression_triggers(project, issue)
+      pr_number = issue.github_number
+      return [] if pr_number.blank?
+      return [] unless PageLoadPerformance::Settings.for(project).followup_enabled?
+      return [] if active_page_load_run?(project, pr_number)
+
+      # Signals#trigger keeps only the first matching trigger, so the order
+      # here decides which route a follow-up run targets when a pull request
+      # has several actionable findings: worst regression first, deterministically.
+      findings = PageLoadRegressionFinding
+        .where(project_id: project.id, pull_request_number: pr_number)
+        .open_findings
+        .actionable
+        .followup_eligible
+        .order(delta_ms: :desc, updated_at: :desc, id: :desc)
+
+      findings.map do |finding|
+        {
+          type: "page_load_regression",
+          details: "#{finding.route_name} slowed from #{finding.baseline_ms}ms to #{finding.current_ms}ms " \
+                   "(#{finding.comparison_metric})",
+          evidence: finding.evidence
+        }
+      end
+    end
+
+    # @spec PAGE-LOAD-FOLLOWUP-005
+    def active_page_load_run?(project, pr_number)
+      AgentRun
+        .where(project_id: project.id, source_pull_request_number: pr_number, focus: "performance_regression")
+        .where(status: AgentRun::AUTO_PICK_BLOCKING_STATUSES)
+        .exists?
     end
 
     def resolve_focus(triggers) # @spec FOCUSED-RUN-002

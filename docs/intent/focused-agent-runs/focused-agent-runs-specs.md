@@ -9,7 +9,7 @@
 - [x] **FOCUSED-RUN-001** — The system SHALL persist a non-null `focus`
   column on `agent_runs` defaulting to `"general"`, validated against the
   fixed set `general, ci_fix, review_feedback, merge_conflict, conversation,
-  issue_implementation, label_action`, so every run resolves to a defined
+  performance_regression, issue_implementation, label_action`, so every run resolves to a defined
   focus and legacy/all-in-one runs behave exactly as before.
   *Code:* `AgentRun::FOCUSES`, `AgentRun` focus validation, `AgentRun#focused?`.
   *Test:* `spec/models/agent_run_spec.rb`.
@@ -34,6 +34,9 @@
   (Deferred)" section instructing the agent to ignore fix-forward for the
   other present problem classes; `general` and `label_action` runs SHALL
   include all applicable sections unchanged.
+  A `performance_regression` run's section SHALL be built from the regression
+  evidence persisted on the run (route, comparison metric, baseline and current
+  values, sample spread) rather than from live measurement.
   *Code:* `Prompts::BuildForPr#focused?`, `#include_section?`,
   `#scoped_section_for_focus`, `#focused_priority_list`,
   `#other_issues_section`, `#deferred_issue_descriptions`.
@@ -55,8 +58,9 @@
 - [x] **FOCUSED-RUN-005** — On the scan cycle after a focused run completes,
   the system SHALL write a `focus_resolved` score (1.0 resolved / 0.0 not)
   back to that run's automated `QualityMetric` by re-checking the current PR
-  state for its focus, deferring (no write) while CI checks for a `ci_fix`
-  run are still pending, and SHALL recompute the composite score with the
+  state for its focus — for a `performance_regression` run, whether the page
+  load finding it was queued for has resolved — deferring (no write) while CI
+  checks for a `ci_fix` run are still pending, and SHALL recompute the composite score with the
   focus-specific weights once the value lands.
   *Code:* `ScanPaidPrsActivity#record_focus_resolution`,
   `#focus_resolution_scores`, `#focus_resolution_pending?`,

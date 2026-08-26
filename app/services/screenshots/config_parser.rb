@@ -29,6 +29,7 @@ module Screenshots
       service_dependencies
       detection
       verification_enabled
+      performance
     ].freeze
     VALID_ROUTE_KEYS = %w[path name requires_auth seed_key].freeze
     VALID_AUTH_KEYS = %w[strategy login_path fields credentials].freeze

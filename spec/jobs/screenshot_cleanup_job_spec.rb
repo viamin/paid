@@ -51,4 +51,24 @@ RSpec.describe ScreenshotCleanupJob do
       end
     end
   end
+
+  describe "page load measurement retention" do
+    let(:project) { create(:project) }
+    let(:storage) { instance_double(Screenshots::Storage, cleanup_old_screenshots: 0) }
+
+    before do
+      allow(Screenshots::Storage).to receive_messages(configured?: true, new: storage)
+    end
+
+    # @spec PAGE-LOAD-LEDGER-004
+    it "prunes measurements older than the screenshot retention period" do
+      stale = create(:page_load_measurement, project: project, commit_sha: "old111", captured_at: 45.days.ago)
+      fresh = create(:page_load_measurement, project: project, commit_sha: "new222", captured_at: 1.day.ago)
+
+      described_class.perform_now
+
+      expect(PageLoadMeasurement.where(id: stale.id)).to be_empty
+      expect(PageLoadMeasurement.where(id: fresh.id)).to be_present
+    end
+  end
 end

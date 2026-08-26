@@ -382,6 +382,44 @@ RSpec.describe Automation::Strategies::AutoReview do
         { type: "record_pr_followup", issue_id: pull_request.id, labels_to_remove: [], expected_followup_count: nil }
       ])
     end
+
+    # @spec PAGE-LOAD-FOLLOWUP-004
+    it "threads the page_load_regression trigger's evidence through to the queue decision" do
+      evidence = { route_name: "dashboard", route_path: "/dashboard", comparison_metric: "lcp_ms" }
+
+      result = evaluate(scan: {
+        issue_id: pull_request.id,
+        pr_number: 42,
+        phase: "ready",
+        current_followup_count: 0,
+        labels_to_remove: [],
+        focus: "performance_regression",
+        triggers: [ { type: "page_load_regression", details: "dashboard slowed", evidence: evidence } ]
+      })
+
+      expect(result.to_h[:decisions].first).to include(
+        type: "queue_create_pr_run",
+        issue_id: pull_request.id,
+        source_pull_request_number: 42,
+        focus: "performance_regression",
+        focus_evidence: evidence
+      )
+    end
+
+    # @spec PAGE-LOAD-FOLLOWUP-004
+    it "omits focus_evidence for non-performance_regression focuses" do
+      result = evaluate(scan: {
+        issue_id: pull_request.id,
+        pr_number: 42,
+        phase: "ready",
+        current_followup_count: 0,
+        labels_to_remove: [],
+        triggers: [ { type: "ci_failure", details: "test-suite", evidence: { "route_name" => "any" } } ]
+      })
+
+      decision = result.to_h[:decisions].find { |d| d[:type] == "queue_create_pr_run" }
+      expect(decision).not_to have_key(:focus_evidence)
+    end
   end
 
   describe "#outcomes_for" do
