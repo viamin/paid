@@ -374,4 +374,21 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
     expect(svc.send(:seed_omp_credentials!)).to be(false)
     expect_omp_import_and_cleanup
   end
+
+  it "logs a cleanup failure when the omp import file removal exits non-zero" do
+    runner = create(:runner, user: owner, runner_key: "omp", auth_type: "subscription")
+    agent_run = create(:agent_run, project: project, runner: runner)
+    create_managed_oauth_credential(runner_key: "omp", fixture_name: "claude_credentials_valid.json")
+    svc = build_service(agent_run: agent_run)
+
+    allow(svc).to receive(:container).and_return(container)
+    allow(svc).to receive(:write_container_file)
+    stub_omp_exec(success: true, stdout: [ '{"ok":true}' ])
+    allow(local_backend).to receive(:exec_in_container)
+      .with(container, omp_cleanup_command, user: "agent")
+      .and_return([ [], [ "rm failed" ], 1 ])
+
+    expect(svc.send(:seed_omp_credentials!)).to be(true)
+    expect(svc).to have_received(:log_system).with("container.omp_credentials_cleanup_failed", error: "rm failed")
+  end
 end

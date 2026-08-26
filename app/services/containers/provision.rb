@@ -3685,11 +3685,12 @@ module Containers
     end
 
     def cleanup_omp_import_file!
-      backend.exec_in_container(
+      _stdout, stderr, status = backend.exec_in_container(
         container,
         [ "sh", "-lc", "rm -f /home/agent/.local/share/omp/paid-auth-import.json" ],
         user: "agent"
       )
+      raise Docker::Error::DockerError, Array(stderr).join if status.to_i != 0
     rescue Docker::Error::DockerError => e
       log_system("container.omp_credentials_cleanup_failed", error: e.message)
     end
