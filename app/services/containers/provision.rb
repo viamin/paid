@@ -3654,6 +3654,18 @@ module Containers
         metadata: materialization&.redacted_metadata.to_h.merge("source" => "managed_import")
       )
       false
+    ensure
+      cleanup_omp_import_file!
+    end
+
+    def cleanup_omp_import_file!
+      backend.exec_in_container(
+        container,
+        [ "sh", "-lc", "rm -f /home/agent/.local/share/omp/paid-auth-import.json" ],
+        user: "agent"
+      )
+    rescue Docker::Error::DockerError => e
+      log_system("container.omp_credentials_cleanup_failed", error: e.message)
     end
 
     def gemini_subscription_auth?

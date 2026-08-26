@@ -78,6 +78,36 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
     payload.fetch("tokens")
   end
 
+  def omp_import_command
+    [ "sh", "-lc", "omp auth-broker import /home/agent/.local/share/omp/paid-auth-import.json --provider anthropic --json" ]
+  end
+
+  def omp_cleanup_command
+    [ "sh", "-lc", "rm -f /home/agent/.local/share/omp/paid-auth-import.json" ]
+  end
+
+  def stub_omp_exec(success:, stderr: [], stdout: [])
+    allow(local_backend).to receive(:exec_in_container)
+      .with(container, omp_import_command, user: "agent")
+      .and_return([ stdout, stderr, success ? 0 : 1 ])
+    allow(local_backend).to receive(:exec_in_container)
+      .with(container, omp_cleanup_command, user: "agent")
+      .and_return([ [], [], 0 ])
+  end
+
+  def expect_omp_import_and_cleanup
+    expect(local_backend).to have_received(:exec_in_container).with(
+      container,
+      omp_import_command,
+      user: "agent"
+    )
+    expect(local_backend).to have_received(:exec_in_container).with(
+      container,
+      omp_cleanup_command,
+      user: "agent"
+    )
+  end
+
   def collect_serialized_intervals(svc)
     intervals = []
     mutex = Mutex.new
@@ -210,19 +240,29 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
 
     allow(svc).to receive(:container).and_return(container)
     allow(svc).to receive(:write_container_file) { |path, content| written[path] = content }
-    allow(local_backend).to receive(:exec_in_container).and_return([ [ '{"ok":true}' ], [], 0 ])
+    stub_omp_exec(success: true, stdout: [ '{"ok":true}' ])
 
     expect(svc.send(:seed_omp_credentials!)).to be(true)
     expect(written.keys).to include("/home/agent/.local/share/omp/paid-auth-import.json")
     expect(JSON.parse(written.fetch("/home/agent/.local/share/omp/paid-auth-import.json"))["expired"]).to eq("2100-01-01T00:00:00Z")
-    expect(local_backend).to have_received(:exec_in_container).with(
-      container,
-      [ "sh", "-lc", "omp auth-broker import /home/agent/.local/share/omp/paid-auth-import.json --provider anthropic --json" ],
-      user: "agent"
-    )
+    expect_omp_import_and_cleanup
 
     attempt = RunnerAuthAttempt.where(runner_key: "omp", attempt_stage: "materialization").last
     expect(attempt.runner_credential).to eq(credential)
     expect(attempt.auth_source).to eq("managed")
+  end
+
+  it "removes the temporary omp auth-broker import file after a failed import" do
+    runner = create(:runner, user: owner, runner_key: "omp", auth_type: "subscription")
+    agent_run = create(:agent_run, project: project, runner: runner)
+    create_managed_oauth_credential(runner_key: "omp", fixture_name: "claude_credentials_valid.json")
+    svc = build_service(agent_run: agent_run)
+
+    allow(svc).to receive(:container).and_return(container)
+    allow(svc).to receive(:write_container_file)
+    stub_omp_exec(success: false, stderr: [ "boom" ])
+
+    expect(svc.send(:seed_omp_credentials!)).to be(false)
+    expect_omp_import_and_cleanup
   end
 end
