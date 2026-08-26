@@ -57,8 +57,8 @@ module ExecutionRunners
     # @param attempt [Integer]
     # @return [Hash{String=>String}] provider label map
     # @spec CONTAINER-RUNTIME-026
-    def ownership_labels_for(agent_run:, attempt: 0)
-      ownership_tags_for(agent_run, attempt: attempt)&.to_label_map || {}
+    def ownership_labels_for(agent_run:, attempt: 0, recorded_at: Time.current)
+      ownership_tags_for(agent_run, attempt: attempt, recorded_at: recorded_at)&.to_label_map || {}
     end
 
     # Records a pending provisioning-intent row BEFORE the provider create call.
@@ -67,7 +67,7 @@ module ExecutionRunners
     # create a resource it cannot reconcile.
     # @return [ProvisioningIntent, nil]
     # @spec CONTAINER-RUNTIME-025
-    def record_intent(agent_run:, attempt: 0)
+    def record_intent(agent_run:, attempt: 0, recorded_at: Time.current)
       return unless recording?
 
       warn_capability_degradations
@@ -83,7 +83,7 @@ module ExecutionRunners
         # resource, so an unsupported-tagging degradation records no tags
         # rather than intended-but-unapplied tags that reconciliation could
         # never match against a live resource.
-        ownership_tags: ownership_labels_for(agent_run: agent_run, attempt: attempt),
+        ownership_tags: ownership_labels_for(agent_run: agent_run, attempt: attempt, recorded_at: recorded_at),
         tagging_supported: @supports_tagging,
         status: ProvisioningIntent::STATUS_PENDING,
         metadata: degradation_metadata
@@ -140,11 +140,11 @@ module ExecutionRunners
     # The ownership tags for a resource, or nil when the runner cannot tag (so
     # no tags are recorded or applied). Single source of truth for both the
     # provider labels and the ledger row.
-    def ownership_tags_for(agent_run, attempt:)
+    def ownership_tags_for(agent_run, attempt:, recorded_at:)
       return nil unless recording? && @supports_tagging
 
       OwnershipTags.for(agent_run: agent_run, resource_kind: @resource_kind,
-                        environment: @environment, attempt: attempt)
+                        environment: @environment, attempt: attempt, recorded_at: recorded_at)
     end
 
     # Metadata recording an explicit degradation when the runner cannot tag.
