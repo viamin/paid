@@ -28,11 +28,17 @@ RSpec.describe Projects::CostDashboardStats do
     it "separates infrastructure cost from llm cost while exposing total variable cost" do
       travel_to(Time.zone.local(2024, 1, 15, 12, 0, 0)) do
         run = create(:agent_run, project: project, status: "completed", cost_cents: 300,
-          provisioning_started_at: 2.hours.ago, completed_at: 1.hour.ago,
-          external_metadata: {
-            "infrastructure_spend" => { "rate_cents_per_hour" => 120 }
-          })
+          provisioning_started_at: 2.hours.ago, completed_at: 1.hour.ago)
         create(:token_usage, agent_run: run, cost_cents: 300, request_type: "agent")
+        create(:execution_usage,
+          agent_run: run,
+          runner_backend: "local",
+          provisioned_at: 2.hours.ago,
+          terminated_at: 1.hour.ago,
+          billed_duration_seconds: 3600,
+          termination_reason: "completed",
+          infra_cost_cents: 120,
+          rate_cents_per_hour: 120)
 
         result = described_class.call(project: project)
 
@@ -44,6 +50,28 @@ RSpec.describe Projects::CostDashboardStats do
         expect(result[:summary][:total_variable_cost_today_cents]).to eq(420)
         expect(result[:summary][:infrastructure_cost_this_month_cents]).to eq(120)
         expect(result[:summary][:total_variable_cost_this_month_cents]).to eq(420)
+      end
+    end
+
+    # @spec EXEC-USAGE-003
+    it "does not double-count ContainerMetric samples in infrastructure cost" do
+      travel_to(Time.zone.local(2024, 1, 15, 12, 0, 0)) do
+        run = create(:agent_run, project: project, status: "completed", cost_cents: 100)
+        create(:token_usage, agent_run: run, cost_cents: 100, request_type: "agent")
+        create(:container_metric,
+          agent_run: run,
+          container_id: "abc",
+          cpu_percent: 50.0,
+          memory_bytes: 1024,
+          memory_limit_bytes: 4096,
+          memory_percent: 25.0,
+          recorded_at: 1.hour.ago)
+
+        result = described_class.call(project: project)
+
+        expect(result[:summary][:infrastructure_cost_cents]).to eq(0)
+        expect(result[:summary][:infrastructure_cost_today_cents]).to eq(0)
+        expect(result[:summary][:infrastructure_cost_this_month_cents]).to eq(0)
       end
     end
 

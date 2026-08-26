@@ -134,6 +134,25 @@ RSpec.describe CostBudgets::Check do
       expect(agent_run.reload.status).to eq("running")
       expect(AgentRuns::Cancel).not_to have_received(:call)
     end
+
+    # @spec EXEC-USAGE-008
+    it "does not include infra_cost_cents in per_run budget enforcement" do
+      create(:cost_budget, :per_run, :hard_stop, project: project,
+        limit_cents: 100, current_usage_cents: 0)
+
+      # Stamp a large infra cost on the run directly so we can confirm the
+      # per-run budget enforcement ignores it (only LLM token cost drives the
+      # current_usage_cents tally).
+      agent_run.update!(infra_cost_cents: 9_999)
+
+      TokenUsageTracker.track(
+        tracked_run: agent_run,
+        usage: { tokens_input: 10, tokens_output: 10 }
+      )
+
+      expect(agent_run.reload.status).to eq("running")
+      expect(AgentRuns::Cancel).not_to have_received(:call)
+    end
   end
 
   describe "rollover and alerts" do

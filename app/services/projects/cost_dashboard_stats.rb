@@ -194,12 +194,14 @@ module Projects
     end
 
     def infrastructure_cost_cents(starts_at:, ends_at:)
-      Capacity::InfrastructureSpend.spent_cents(
-        account: project.account,
-        project: project,
-        starts_at: starts_at,
-        ends_at: ends_at
-      )
+      TenantContext.with_system_access do
+        scope = ExecutionUsage
+          .joins(agent_run: :project)
+          .where(projects: { id: project.id })
+          .where(terminated_at: starts_at..ends_at)
+
+        scope.sum(:infra_cost_cents).to_i
+      end
     end
 
     def infrastructure_total_cost_cents

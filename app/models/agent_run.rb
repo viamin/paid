@@ -203,6 +203,7 @@ class AgentRun < ApplicationRecord
   has_many :bundle_outcomes, dependent: :destroy
   has_many :strategy_experiment_assignments, dependent: :destroy
   has_many :container_metrics, dependent: :delete_all
+  has_one :execution_usage, dependent: :destroy
   has_many :quality_metrics, dependent: :destroy
   has_many :style_guide_run_exposures, dependent: :destroy
   has_many :orchestration_decisions, dependent: :nullify
@@ -282,6 +283,9 @@ class AgentRun < ApplicationRecord
   validates :tokens_input, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :tokens_output, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :cost_cents, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
+  validates :infra_cost_cents, numericality: { greater_than_or_equal_to: 0 }
+  validates :billed_duration_seconds, numericality: { greater_than_or_equal_to: 0 }
+  validates :runner_backend, length: { maximum: 64 }, allow_nil: true
   validates :duration_seconds, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :source_pull_request_number, numericality: { greater_than: 0 }, allow_nil: true
   validates :expected_draft_review_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true
@@ -384,6 +388,8 @@ class AgentRun < ApplicationRecord
   # because `internal_agent` is shared with legitimate externally-ingested runs
   # (AgentRuns::IngestExternal). See `synthetic_operational_run?`.
   scope :excluding_synthetic, -> { where(synthetic: false) }
+  scope :with_execution_usage, -> { joins(:execution_usage) }
+  scope :by_runner_backend, ->(backend) { where(runner_backend: backend.to_s) }
 
   # Transcript/diagnostic payload columns are never rendered by list views
   # (dashboard cards, queue preview, activity stream); skipping them keeps
@@ -1890,6 +1896,20 @@ class AgentRun < ApplicationRecord
 
   def total_tokens
     tokens_input.to_i + tokens_output.to_i
+  end
+
+  # @spec EXEC-USAGE-006
+  # Sum of LLM cost (cost_cents) and infra cost (infra_cost_cents).
+  # Both columns are denormalized on the run, so this is a single-row
+  # calculation without joining execution_usages.
+  def total_cost_cents
+    cost_cents.to_i + infra_cost_cents.to_i
+  end
+
+  # @spec EXEC-USAGE-006
+  # Whether this run has any infra usage recorded.
+  def has_execution_usage?
+    execution_usage.present?
   end
 
   # Returns total tokens consumed across all streaming turns.

@@ -6274,4 +6274,82 @@ RSpec.describe AgentRun do
       end
     end
   end
+
+  describe "execution usage denormalization" do
+    # @spec EXEC-USAGE-002
+    it "has_one :execution_usage that is destroyed with the run" do
+      agent_run = create(:agent_run, :completed)
+      create(:execution_usage, agent_run: agent_run)
+
+      expect { agent_run.destroy }.to change(ExecutionUsage, :count).by(-1)
+    end
+
+    # @spec EXEC-USAGE-006
+    it "returns total_cost_cents as the sum of LLM and infra cost" do
+      agent_run = create(:agent_run, :completed, cost_cents: 123, infra_cost_cents: 45)
+
+      expect(agent_run.total_cost_cents).to eq(168)
+    end
+
+    it "treats nil infra_cost_cents as zero for the total" do
+      agent_run = build(:agent_run, cost_cents: 100, infra_cost_cents: nil)
+      expect(agent_run.total_cost_cents).to eq(100)
+    end
+
+    it "reports has_execution_usage? from the association" do
+      agent_run = create(:agent_run, :completed)
+      expect(agent_run.has_execution_usage?).to be(false)
+
+      create(:execution_usage, agent_run: agent_run)
+      expect(agent_run.reload.has_execution_usage?).to be(true)
+    end
+
+    describe "validations" do
+      subject { build(:agent_run) }
+
+      it { is_expected.to validate_numericality_of(:infra_cost_cents).is_greater_than_or_equal_to(0) }
+      it { is_expected.to validate_numericality_of(:billed_duration_seconds).is_greater_than_or_equal_to(0) }
+      it { is_expected.to validate_length_of(:runner_backend).is_at_most(64) }
+    end
+
+    describe "scopes" do
+      let(:project) { create(:project) }
+
+      let(:local_run) do
+        run = create(:agent_run, :completed, project: project, runner_backend: "local")
+        create(:execution_usage,
+          agent_run: run,
+          runner_backend: "local",
+          provisioned_at: 2.hours.ago,
+          terminated_at: 1.hour.ago,
+          termination_reason: "completed")
+        run
+      end
+
+      let(:fly_run) do
+        run = create(:agent_run, :completed, project: project, runner_backend: "fly_machine")
+        create(:execution_usage,
+          agent_run: run,
+          runner_backend: "fly_machine",
+          provisioned_at: 2.hours.ago,
+          terminated_at: 1.hour.ago,
+          termination_reason: "completed")
+        run
+      end
+
+      let(:plain_run) { create(:agent_run, :completed, project: project) }
+
+      before { local_run; fly_run; plain_run }
+
+      it "with_execution_usage returns only runs with a usage row" do
+        expect(described_class.with_execution_usage).to contain_exactly(local_run, fly_run)
+      end
+
+      it "by_runner_backend filters on the denormalized column" do
+        expect(described_class.by_runner_backend("local")).to contain_exactly(local_run)
+        expect(described_class.by_runner_backend("fly_machine")).to contain_exactly(fly_run)
+        expect(described_class.by_runner_backend("missing")).to be_empty
+      end
+    end
+  end
 end
