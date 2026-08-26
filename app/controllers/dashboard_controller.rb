@@ -84,7 +84,7 @@ class DashboardController < ApplicationController
     @scoped_project = scoped_needs_input_project
     @selected_kind = valid_inbox_kind
     @inbox_entries = Inbox::Queue.call(user: current_user, project: @scoped_project, kind: @selected_kind)
-    @selected_entry = resolve_selected_entry(@inbox_entries)
+    @selected_entry = resolve_selected_entry(@inbox_entries, fallback_to_first: false)
 
     # Stale entry URLs (bookmarks, refreshed tabs) can hit this frame after the
     # underlying record is gone. Render the frame's empty state instead of
@@ -264,15 +264,26 @@ class DashboardController < ApplicationController
     Inbox::Queue::KINDS.include?(kind) ? kind : nil
   end
 
-  # Accepts both the legacy `entry_kind` + `entry_id` params (existing inbox
-  # links) and the new combined `selected` selector (`kind:record_id`) used by
-  # the auto-advance redirect on submit. Falls back to the first entry when
-  # nothing matches so an empty inbox renders the empty state instead of
-  # raising.
-  def resolve_selected_entry(entries)
+  # Resolves the inbox entry the request is asking about.
+  #
+  # When an explicit selection (`entry_kind`+`entry_id` path params or the
+  # combined `selected` query param used by the auto-advance redirect) names a
+  # record in the queue, the matching entry is returned. If the named record
+  # is gone (stale URL), the `fallback_to_first` flag controls what happens:
+  #
+  # * `true` (default) — used by the full inbox page. Falls back to the first
+  #   entry so the page still renders something instead of crashing on
+  #   `entry.kind`. Existing behavior; the stale selection is silently dropped.
+  # * `false` — used by the standalone detail frame. Returns `nil` so the
+  #   empty-state template surfaces instead of showing the operator an
+  #   unrelated questionnaire when they hit a bookmarked/refreshed URL for a
+  #   record that has already been resolved.
+  def resolve_selected_entry(entries, fallback_to_first: true)
     kind, record_id = inbox_selected_components
     selected = entries.find { |entry| entry.kind == kind && entry.record.id.to_s == record_id }
-    selected || entries.first
+    return selected if selected
+
+    fallback_to_first ? entries.first : nil
   end
 
   def inbox_selected_components

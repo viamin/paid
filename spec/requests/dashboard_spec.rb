@@ -1047,6 +1047,60 @@ RSpec.describe "Dashboard" do
       expect(response.body).not_to include("Submit Answers")
     end
 
+    it "renders an empty-state frame when other entries remain but the URL targets a missing entry" do
+      create(:issue, :needs_input, project: project, title: "Live question", body: questions_body)
+
+      get dashboard_inbox_entry_path(entry_kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND, entry_id: "999999")
+
+      expect(response).to have_http_status(:ok)
+      document = Nokogiri::HTML(response.body)
+      frame = document.at_css("turbo-frame#inbox-detail")
+
+      expect(frame).to be_present
+      expect(frame.css("form").size).to eq(0)
+      expect(response.body).to include("Entry not available")
+      expect(response.body).to include("Back to inbox")
+      expect(response.body).not_to include("Live question")
+    end
+
+    it "falls back to the first entry on the full inbox page when an explicit selection is stale" do
+      create(:issue, :needs_input, project: project, title: "Live question", body: questions_body)
+
+      get dashboard_inbox_path(
+        project_id: project.id,
+        kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+        entry_kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+        entry_id: "999999"
+      )
+
+      expect(response).to have_http_status(:ok)
+      document = Nokogiri::HTML(response.body)
+      form = document.at_css(%(form[action^="#{project_issue_clarifying_questions_path(project, project.issues.first)}"]))
+
+      expect(form).to be_present
+    end
+
+    it "marks list rows with the inbox-master-detail row target so click navigation can update the highlight" do
+      issue = create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
+
+      get dashboard_inbox_path(
+        project_id: project.id,
+        kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND
+      )
+
+      document = Nokogiri::HTML(response.body)
+      link = document.at_css(%(a[href="#{dashboard_inbox_entry_path(
+        entry_kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+        entry_id: issue.id,
+        project_id: project.id,
+        kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+        view: "detail"
+      )}"]))
+
+      expect(link).to be_present
+      expect(link["data-inbox-master-detail-target"]).to eq("row")
+    end
+
     it "renders the inbox detail turbo frame scoped to the project filter" do
       issue = create(:issue, :needs_input, project: second_project, title: "Beta question", body: questions_body)
 
