@@ -55,7 +55,7 @@ summary stays queryable without scanning the time-series.
 
 ## Cost Estimation
 
-`ExecutionUsage::CostEstimator` is the only component that mints an
+`ExecutionUsageCostEstimator` is the only component that mints an
 `infra_cost_cents` value today. Given:
 
 - `billed_duration_seconds` (or a `(provisioned_at, terminated_at)` pair it
@@ -137,6 +137,22 @@ successfully remove a resource after an earlier cleanup attempt failed.
 Those fallback paths must call the same recorder entry point after they
 confirm teardown, or a run can continue accruing billable time and then be
 cleaned later without ever writing its final usage/cost summary.
+
+Because those paths overlap rather than take turns — the janitor still runs
+after the primary cleanup path succeeded, and it counts an already-absent
+volume as "cleaned" — the recorder is first-write-wins. The earliest recorded
+termination is the one the resource actually had, so a later pass that tore
+nothing down cannot re-price the row against its own `Time.current` and
+inflate `billed_duration_seconds` / `infra_cost_cents`. The run's
+denormalized columns are mirrored from the persisted row rather than from the
+estimate just computed, which keeps them equal to the recorded spend and lets
+a run whose column write was lost after the row was inserted self-heal on the
+next cleanup pass.
+
+Provider-reported cost replacing the estimate (see Non-Goals) is a
+deliberate, out-of-band correction of `infra_cost_cents` — not a cleanup-path
+re-record — so first-write-wins is enforced in the recorder rather than as
+model-level column immutability.
 
 ## Dependencies
 

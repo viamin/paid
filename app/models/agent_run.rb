@@ -2845,8 +2845,6 @@ class AgentRun < ApplicationRecord
     record_execution_usage!(container_id: container_id, container_host: container_host, terminated_at: terminated_at)
   end
 
-  private
-
   def record_execution_usage!(container_id:, container_host:, terminated_at:)
     return if provisioning_started_at.blank? || container_host.blank?
 

@@ -6327,6 +6327,28 @@ RSpec.describe AgentRun do
       expect { agent_run.destroy }.to change(ExecutionUsage, :count).by(-1)
     end
 
+    # @spec EXEC-USAGE-011
+    it "keeps billed lifetime stable when a fallback cleanup pass re-records after teardown" do
+      agent_run = create(:agent_run, :completed, container_host: "local",
+        provisioning_started_at: 2.hours.ago, started_at: 100.minutes.ago, completed_at: 1.hour.ago)
+      agent_run.record_execution_usage_after_cleanup!(
+        container_id: "abc123container", container_host: "local", terminated_at: 1.hour.ago
+      )
+      first = agent_run.reload.execution_usage
+
+      agent_run.record_execution_usage_after_cleanup!(
+        container_id: nil, container_host: "local", terminated_at: Time.current
+      )
+
+      agent_run.reload
+      expect(ExecutionUsage.where(agent_run_id: agent_run.id).count).to eq(1)
+      expect(agent_run.execution_usage.terminated_at).to be_within(1.second).of(first.terminated_at)
+      expect(agent_run.execution_usage.billed_duration_seconds).to eq(first.billed_duration_seconds)
+      expect(agent_run.execution_usage.provider_resource_id).to eq("abc123container")
+      expect(agent_run.billed_duration_seconds).to eq(first.billed_duration_seconds)
+      expect(agent_run.infra_cost_cents).to eq(first.infra_cost_cents)
+    end
+
     # @spec EXEC-USAGE-006
     it "returns total_cost_cents as the sum of LLM and infra cost" do
       agent_run = create(:agent_run, :completed, cost_cents: 123, infra_cost_cents: 45)

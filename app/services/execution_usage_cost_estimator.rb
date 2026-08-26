@@ -25,10 +25,6 @@ class ExecutionUsageCostEstimator
     new(...).call
   end
 
-  def self.estimate(billed_duration_seconds:, runner_backend:, env: ENV)
-    new(billed_duration_seconds: billed_duration_seconds, runner_backend: runner_backend, env: env).call
-  end
-
   def initialize(billed_duration_seconds:, runner_backend:, env: ENV)
     @billed_duration_seconds = billed_duration_seconds
     @runner_backend = runner_backend

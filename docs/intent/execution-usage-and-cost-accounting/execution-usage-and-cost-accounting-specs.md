@@ -19,9 +19,9 @@ prefix: EXEC-USAGE
   `requested_disk_gb`, `termination_reason`, `infra_cost_cents`, and the
   snapshotted `rate_cents_per_hour` used to estimate it.
   *Tests:* `spec/models/execution_usage_spec.rb`,
-  `spec/services/execution_usage/cost_estimator_spec.rb`.
+  `spec/services/execution_usage_cost_estimator_spec.rb`.
   *Code:* `ExecutionUsage`,
-  `ExecutionUsage::CostEstimator`.
+  `ExecutionUsageCostEstimator`.
 
 - [x] **EXEC-USAGE-002** — `AgentRun` SHALL denormalize `runner_backend` and
   `infra_cost_cents` from `ExecutionUsage` so a single-row aggregate query
@@ -41,21 +41,21 @@ prefix: EXEC-USAGE
 
 ## Cost Estimator
 
-- [x] **EXEC-USAGE-004** — `ExecutionUsage::CostEstimator` SHALL compute
+- [x] **EXEC-USAGE-004** — `ExecutionUsageCostEstimator` SHALL compute
   estimated infra cost as `billed_duration_seconds / 3600 *
   rate_cents_per_hour`, rounded to the nearest cent, where `rate_cents_per_hour`
   is resolved from `Capacity::InfrastructureLimits.rate_cents_per_hour(host:)`
   keyed by the record's `runner_backend`. A run with no resolvable rate
   SHALL contribute `0` cost and SHALL NOT raise.
-  *Tests:* `spec/services/execution_usage/cost_estimator_spec.rb`.
-  *Code:* `ExecutionUsage::CostEstimator`,
+  *Tests:* `spec/services/execution_usage_cost_estimator_spec.rb`.
+  *Code:* `ExecutionUsageCostEstimator`,
   `Capacity::InfrastructureLimits`.
 
 - [x] **EXEC-USAGE-005** — The estimator SHALL snapshot the resolved
   `rate_cents_per_hour` onto the `ExecutionUsage` row it returns so later
   rate-config changes do not retroactively re-price historical runs.
-  *Tests:* `spec/services/execution_usage/cost_estimator_spec.rb`.
-  *Code:* `ExecutionUsage::CostEstimator`.
+  *Tests:* `spec/services/execution_usage_cost_estimator_spec.rb`.
+  *Code:* `ExecutionUsageCostEstimator`.
 
 ## Total Cost Queries
 
@@ -94,7 +94,7 @@ prefix: EXEC-USAGE
   so `ExecutionUsage` rows are created by the real termination path even
   when the normal cleanup attempt fails and a later janitor/stale cleanup
   tears the resource down.
-  *Tests:* `spec/models/agent_run_spec.rb`.
+  *Tests:* `spec/models/agent_run_spec.rb`,
   `spec/jobs/agent_run_resource_janitor_job_spec.rb`,
   `spec/services/agent_runs/cleanup_stale_spec.rb`.
   *Code:* `AgentRun#cleanup_container`,
@@ -110,3 +110,17 @@ prefix: EXEC-USAGE
   totals do not silently drop to zero for runs that predate `ExecutionUsage`.
   *Tests:* `spec/migrations/backfill_execution_usage_from_infrastructure_spend_stamp_spec.rb`.
   *Code:* `BackfillExecutionUsageFromInfrastructureSpendStamp`.
+
+- [x] **EXEC-USAGE-011** — When an `ExecutionUsage` row already exists for a
+  run, `AgentRuns::RecordExecutionUsage` SHALL preserve the first recorded
+  termination — `terminated_at` and the `billed_duration_seconds`,
+  `infra_cost_cents`, and `rate_cents_per_hour` derived from it — instead of
+  re-pricing the row against a later timestamp, and SHALL mirror the
+  persisted row (never a freshly computed estimate) onto the run's
+  denormalized columns. A fallback cleanup pass that tears nothing down
+  (`AgentRunResourceJanitorJob` counts an already-absent volume as cleaned)
+  therefore cannot overstate infra spend for a resource that was released
+  once.
+  *Tests:* `spec/services/agent_runs/record_execution_usage_spec.rb`,
+  `spec/models/agent_run_spec.rb`.
+  *Code:* `AgentRuns::RecordExecutionUsage`.

@@ -3,7 +3,7 @@
 require "rails_helper"
 
 RSpec.describe ExecutionUsageCostEstimator do
-  describe ".call / .estimate" do
+  describe ".call" do
     it "multiplies billed duration by the per-runner rate" do
       env = { "INFRA_SPEND_RATE_CENTS_PER_HOUR__LOCAL" => "240" }
 
@@ -97,16 +97,6 @@ RSpec.describe ExecutionUsageCostEstimator do
 
       expect(fly.infra_cost_cents).to eq(500)
       expect(local.infra_cost_cents).to eq(10)
-    end
-  end
-
-  describe ".estimate" do
-    it "is an alias for .call" do
-      env = { "INFRA_SPEND_RATE_CENTS_PER_HOUR__LOCAL" => "60" }
-
-      result = described_class.estimate(billed_duration_seconds: 1800, runner_backend: "local", env: env)
-      expect(result.infra_cost_cents).to eq(30)
-      expect(result.rate_cents_per_hour).to eq(60)
     end
   end
 end

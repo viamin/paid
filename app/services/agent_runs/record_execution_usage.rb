@@ -1,12 +1,20 @@
 # frozen_string_literal: true
 
 # Records the per-run infrastructure usage summary onto the
-# +AgentRun+ and creates (or updates) its +ExecutionUsage+ row at
-# termination. The cost is estimated via +ExecutionUsage::CostEstimator+
+# +AgentRun+ and creates its +ExecutionUsage+ row at
+# termination. The cost is estimated via +ExecutionUsageCostEstimator+
 # from the run's host-keyed rate and the provider-billed lifetime, so
 # runs that never reached provisioning never produce an
 # +ExecutionUsage+ row and contribute zero infra cost.
+#
+# Recording is first-write-wins: the fallback cleanup paths
+# (+AgentRunResourceJanitorJob+, +AgentRuns::CleanupStale+) re-enter this
+# service after +AgentRun#cleanup_container+ may already have closed the run
+# out, so the earliest recorded termination is the one the resource actually
+# had. See +recorded_usage+.
 class AgentRuns::RecordExecutionUsage
+  DENORMALIZED_AGENT_RUN_COLUMNS = %i[runner_backend billed_duration_seconds infra_cost_cents].freeze
+
   attr_reader :agent_run, :runner_backend, :provider_resource_id,
     :provisioned_at, :execution_started_at, :completed_at,
     :terminated_at, :requested_cpu_cores, :requested_memory_mib,
@@ -42,32 +50,29 @@ class AgentRuns::RecordExecutionUsage
     return failure("termination_reason is required") if termination_reason.blank?
     return failure("terminated_at must be on or after provisioned_at") if terminated_at < provisioned_at
 
-    billed = (terminated_at - provisioned_at).to_i
-    estimate = ExecutionUsageCostEstimator.call(
-      billed_duration_seconds: billed,
-      runner_backend: runner_backend,
-      env: env
-    )
+    usage = recorded_usage
+    denormalize_onto_agent_run(usage)
 
-    attributes = execution_usage_attributes(billed: billed, estimate: estimate)
-    usage = ExecutionUsage.create_or_find_by!(agent_run_id: agent_run.id) do |record|
-      record.assign_attributes(attributes)
-    end
-    usage.update!(attributes) unless usage.previously_new_record?
-
-    agent_run.update_columns(
-      runner_backend: runner_backend,
-      billed_duration_seconds: billed,
-      infra_cost_cents: estimate.infra_cost_cents,
-      updated_at: Time.current
-    )
-
-    { usage: usage, infra_cost_cents: estimate.infra_cost_cents, rate_cents_per_hour: estimate.rate_cents_per_hour }
+    { usage: usage, infra_cost_cents: usage.infra_cost_cents, rate_cents_per_hour: usage.rate_cents_per_hour }
   end
 
   private
 
-  def execution_usage_attributes(billed:, estimate:)
+  # The billed lifetime is frozen at the first recorded termination. A later
+  # cleanup pass tears nothing down — the janitor counts an already-absent
+  # volume as cleaned — so re-pricing the row against its +Time.current+
+  # would overstate spend for a resource that was only released once.
+  # @spec EXEC-USAGE-011
+  def recorded_usage
+    usage = ExecutionUsage.create_or_find_by!(agent_run_id: agent_run.id) do |record|
+      record.assign_attributes(execution_usage_attributes)
+    end
+    log_preserved_recording(usage) unless usage.previously_new_record?
+    usage
+  end
+
+  def execution_usage_attributes
+    estimate = cost_estimate
     {
       runner_backend: runner_backend,
       provider_resource_id: provider_resource_id,
@@ -75,7 +80,7 @@ class AgentRuns::RecordExecutionUsage
       execution_started_at: execution_started_at,
       completed_at: completed_at,
       terminated_at: terminated_at,
-      billed_duration_seconds: billed,
+      billed_duration_seconds: billed_duration_seconds,
       requested_cpu_cores: requested_cpu_cores,
       requested_memory_mib: requested_memory_mib,
       requested_disk_gb: requested_disk_gb,
@@ -83,6 +88,40 @@ class AgentRuns::RecordExecutionUsage
       infra_cost_cents: estimate.infra_cost_cents,
       rate_cents_per_hour: estimate.rate_cents_per_hour
     }
+  end
+
+  def billed_duration_seconds
+    (terminated_at - provisioned_at).to_i
+  end
+
+  def cost_estimate
+    ExecutionUsageCostEstimator.call(
+      billed_duration_seconds: billed_duration_seconds,
+      runner_backend: runner_backend,
+      env: env
+    )
+  end
+
+  # Mirrors the persisted row — never the estimate just computed — so the run's
+  # denormalized columns always equal the recorded spend, and a run whose column
+  # write was lost after the row was inserted self-heals on the next pass.
+  # @spec EXEC-USAGE-002
+  # @spec EXEC-USAGE-011
+  def denormalize_onto_agent_run(usage)
+    columns = DENORMALIZED_AGENT_RUN_COLUMNS.index_with { |column| usage.public_send(column) }
+    return if columns.all? { |column, value| agent_run.public_send(column) == value }
+
+    agent_run.update_columns(**columns, updated_at: Time.current)
+  end
+
+  def log_preserved_recording(usage)
+    Rails.logger.debug(
+      message: "agent_execution.execution_usage_already_recorded",
+      agent_run_id: agent_run.id,
+      execution_usage_id: usage.id,
+      recorded_billed_duration_seconds: usage.billed_duration_seconds,
+      skipped_billed_duration_seconds: billed_duration_seconds
+    )
   end
 
   def failure(message)

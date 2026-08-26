@@ -5,7 +5,7 @@
 # captured at termination, so cloud-provider spend can be measured
 # separately from LLM token cost. See
 # docs/intent/execution-usage-and-cost-accounting/ for the spec.
-class ExecutionUsage < ApplicationRecord
+class ExecutionUsage < ApplicationRecord # @spec EXEC-USAGE-001
   TERMINATION_REASONS = %w[completed cancelled timed_out failed evicted].freeze
 
   belongs_to :agent_run
