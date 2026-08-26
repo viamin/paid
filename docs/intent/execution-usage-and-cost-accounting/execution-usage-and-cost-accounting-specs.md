@@ -67,8 +67,9 @@ prefix: EXEC-USAGE
 
 - [x] **EXEC-USAGE-007** — `Projects::CostDashboardStats#summary` SHALL
   expose `total_variable_cost_cents` as the sum of LLM cost
-  (`project.total_cost_cents`) and infra cost (from
-  `execution_usages.infra_cost_cents`), with no double-counting across
+  (`project.total_cost_cents`) and infra cost, using `ExecutionUsage`
+  rows for terminated resources and overlap-based stamped-rate accounting
+  for still-live or not-yet-cleaned runs, with no double-counting across
   the two sources.
   *Tests:* `spec/services/projects/cost_dashboard_stats_spec.rb`.
   *Code:* `Projects::CostDashboardStats`.
@@ -89,11 +90,17 @@ prefix: EXEC-USAGE
 - [x] **EXEC-USAGE-009** — `AgentRun#cleanup_container` SHALL call
   `AgentRuns::RecordExecutionUsage` once the run's cloud resource is
   confirmed torn down (for any run that reached provisioning and recorded a
-  backend host), so `ExecutionUsage` rows are created by the real run
-  termination path rather than only by test/backfill code.
+  backend host), and fallback cleanup paths SHALL reuse the same recorder,
+  so `ExecutionUsage` rows are created by the real termination path even
+  when the normal cleanup attempt fails and a later janitor/stale cleanup
+  tears the resource down.
   *Tests:* `spec/models/agent_run_spec.rb`.
+  `spec/jobs/agent_run_resource_janitor_job_spec.rb`,
+  `spec/services/agent_runs/cleanup_stale_spec.rb`.
   *Code:* `AgentRun#cleanup_container`,
-  `AgentRun#record_execution_usage!`.
+  `AgentRun#record_execution_usage_after_cleanup!`,
+  `AgentRunResourceJanitorJob`,
+  `AgentRuns::CleanupStale`.
 
 - [x] **EXEC-USAGE-010** — A one-time migration SHALL backfill
   `ExecutionUsage` rows for historical `AgentRun`s that have a stamped

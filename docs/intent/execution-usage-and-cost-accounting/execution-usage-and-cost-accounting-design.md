@@ -92,12 +92,14 @@ project, and per account via `AgentRun.total_cost_cents`.
 
 `Projects::CostDashboardStats` already exposes `infrastructure_cost_cents`
 alongside `total_cost_cents` (LLM). Once `ExecutionUsage` rows exist, the
-dashboard switches its infra total to `SUM(execution_usages.infra_cost_cents)`
-so the query matches the new table and not the external-metadata stamp.
-The shape of the API is unchanged — the only difference is that `infra_cost_cents`
-now reflects the per-run summary rather than the admission-time stamp,
-and a run with no `ExecutionUsage` row contributes `0` instead of
-contributing from the live rate.
+dashboard reads terminated runs from `ExecutionUsage`, but keeps the prior
+overlap-based window semantics for period stats by combining those
+terminated summaries with stamped-rate overlap for runs that are still
+live or have finished execution but have not yet been cleaned. That keeps
+today/month totals reflecting in-flight infrastructure spend immediately
+instead of waiting for cleanup to persist the terminal summary row. The
+shape of the API is unchanged; only the source of truth for terminated
+runs moves from the admission-time stamp to the per-run summary.
 
 ## Why Not Fold This Into `ContainerMetric`?
 
@@ -125,6 +127,16 @@ planner from changing.
   rate in `external_metadata["infrastructure_spend"]` get an
   `ExecutionUsage` row from a one-time backfill so dashboards agree with
   the threshold path during the transition.
+
+## Cleanup Fallbacks
+
+`AgentRun#cleanup_container` is the primary place that records
+`ExecutionUsage`, but it is not the only place a resource can be torn
+down. `AgentRunResourceJanitorJob` and `AgentRuns::CleanupStale` can both
+successfully remove a resource after an earlier cleanup attempt failed.
+Those fallback paths must call the same recorder entry point after they
+confirm teardown, or a run can continue accruing billable time and then be
+cleaned later without ever writing its final usage/cost summary.
 
 ## Dependencies
 

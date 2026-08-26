@@ -194,18 +194,80 @@ module Projects
     end
 
     def infrastructure_cost_cents(starts_at:, ends_at:)
-      TenantContext.with_system_access do
-        scope = ExecutionUsage
-          .joins(agent_run: :project)
-          .where(projects: { id: project.id })
-          .where(terminated_at: starts_at..ends_at)
-
-        scope.sum(:infra_cost_cents).to_i
-      end
+      historical_infrastructure_cost_cents(starts_at:, ends_at:) +
+        pending_infrastructure_cost_cents(starts_at:, ends_at:)
     end
 
     def infrastructure_total_cost_cents
       infrastructure_cost_cents(starts_at: Time.at(0), ends_at: Time.current)
+    end
+
+    def historical_infrastructure_cost_cents(starts_at:, ends_at:)
+      TenantContext.with_system_access do
+        ExecutionUsage
+          .joins(agent_run: :project)
+          .where(projects: { id: project.id })
+          .where("execution_usages.provisioned_at < ?", ends_at)
+          .where("execution_usages.terminated_at >= ?", starts_at)
+          .sum(Arel.sql(execution_usage_overlap_cost_sql(starts_at:, ends_at:)))
+          .to_i
+      end
+    end
+
+    def pending_infrastructure_cost_cents(starts_at:, ends_at:)
+      TenantContext.with_system_access do
+        AgentRun
+          .joins(:project)
+          .where(projects: { id: project.id })
+          .where.missing(:execution_usage)
+          .where.not(provisioning_started_at: nil)
+          .where("agent_runs.provisioning_started_at < ?", ends_at)
+          .where("agent_runs.completed_at IS NULL OR agent_runs.completed_at >= ?", starts_at)
+          .where("agent_runs.completed_at IS NOT NULL OR agent_runs.status IN (?)", AgentRun::ACTIVE_STATUSES)
+          .sum(Arel.sql(agent_run_overlap_cost_sql(starts_at:, ends_at:)))
+          .to_i
+      end
+    end
+
+    def execution_usage_overlap_cost_sql(starts_at:, ends_at:)
+      <<~SQL.squish
+        ROUND(
+          (
+            execution_usages.rate_cents_per_hour *
+            GREATEST(
+              EXTRACT(EPOCH FROM (
+                LEAST(execution_usages.terminated_at, #{quote_time(ends_at)}) -
+                GREATEST(execution_usages.provisioned_at, #{quote_time(starts_at)})
+              )),
+              0
+            )
+          ) / 3600.0
+        )
+      SQL
+    end
+
+    def agent_run_overlap_cost_sql(starts_at:, ends_at:)
+      <<~SQL.squish
+        ROUND(
+          (
+            COALESCE(
+              NULLIF(agent_runs.external_metadata #>> '{infrastructure_spend,rate_cents_per_hour}', ''),
+              '0'
+            )::numeric *
+            GREATEST(
+              EXTRACT(EPOCH FROM (
+                LEAST(COALESCE(agent_runs.completed_at, #{quote_time(ends_at)}), #{quote_time(ends_at)}) -
+                GREATEST(agent_runs.provisioning_started_at, #{quote_time(starts_at)})
+              )),
+              0
+            )
+          ) / 3600.0
+        )
+      SQL
+    end
+
+    def quote_time(time)
+      ActiveRecord::Base.connection.quote(time)
     end
   end
 end

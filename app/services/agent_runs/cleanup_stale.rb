@@ -55,6 +55,7 @@ module AgentRuns
     def captured_resources(agent_run)
       {
         container_id: agent_run.container_id,
+        container_host: agent_run.workspace_volume_host,
         service_container_ids: agent_run.service_container_ids.dup,
         service_environment: agent_run.service_environment&.dup,
         stale_requeue_count: agent_run.stale_requeue_count
@@ -152,11 +153,12 @@ module AgentRuns
     end
 
     def cleanup_resources(agent_run, old_resources)
-      cleanup_container(agent_run, old_resources[:container_id])
+      cleanup_container(agent_run, old_resources)
       cleanup_service_containers(agent_run, old_resources)
     end
 
-    def cleanup_container(agent_run, old_container_id)
+    def cleanup_container(agent_run, old_resources)
+      old_container_id = old_resources[:container_id]
       return if old_container_id.blank?
 
       AgentRun.where(id: agent_run.id, container_id: old_container_id).update_all(container_id: nil)
@@ -167,6 +169,9 @@ module AgentRuns
         worktree_path: agent_run.worktree_path
       )
       service.cleanup(force: true)
+      record_execution_usage(agent_run, old_resources)
+    rescue Docker::Error::NotFoundError
+      record_execution_usage(agent_run, old_resources)
     rescue => e
       Rails.logger.warn(
         message: "agent_runs.cleanup_stale_container_failed",
@@ -174,6 +179,13 @@ module AgentRuns
         project_id: project.id,
         error_class: e.class.name,
         error: e.message
+      )
+    end
+
+    def record_execution_usage(agent_run, old_resources)
+      agent_run.record_execution_usage_after_cleanup!(
+        container_id: old_resources[:container_id],
+        container_host: old_resources[:container_host]
       )
     end
 

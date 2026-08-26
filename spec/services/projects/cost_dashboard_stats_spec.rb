@@ -30,15 +30,11 @@ RSpec.describe Projects::CostDashboardStats do
         run = create(:agent_run, project: project, status: "completed", cost_cents: 300,
           provisioning_started_at: 2.hours.ago, completed_at: 1.hour.ago)
         create(:token_usage, agent_run: run, cost_cents: 300, request_type: "agent")
-        create(:execution_usage,
-          agent_run: run,
-          runner_backend: "local",
+        create_execution_usage(run,
           provisioned_at: 2.hours.ago,
           terminated_at: 1.hour.ago,
           billed_duration_seconds: 3600,
-          termination_reason: "completed",
-          infra_cost_cents: 120,
-          rate_cents_per_hour: 120)
+          infra_cost_cents: 120)
 
         result = described_class.call(project: project)
 
@@ -50,6 +46,28 @@ RSpec.describe Projects::CostDashboardStats do
         expect(result[:summary][:total_variable_cost_today_cents]).to eq(420)
         expect(result[:summary][:infrastructure_cost_this_month_cents]).to eq(120)
         expect(result[:summary][:total_variable_cost_this_month_cents]).to eq(420)
+      end
+    end
+
+    it "preserves overlap-based infrastructure accounting for terminated and pending runs" do
+      travel_to(Time.zone.local(2024, 1, 15, 12, 0, 0)) do
+        finished_run = create(:agent_run, project: project, status: "completed", cost_cents: 300,
+          provisioning_started_at: Time.zone.local(2024, 1, 14, 23, 0, 0),
+          completed_at: Time.zone.local(2024, 1, 15, 1, 0, 0))
+        create_execution_usage(finished_run,
+          provisioned_at: Time.zone.local(2024, 1, 14, 23, 0, 0),
+          terminated_at: Time.zone.local(2024, 1, 15, 1, 0, 0),
+          billed_duration_seconds: 7200,
+          infra_cost_cents: 240)
+
+        pending_run = create_pending_run
+
+        result = described_class.call(project: project)
+
+        expect(pending_run.execution_usage).to be_nil
+        expect(result[:summary][:infrastructure_cost_cents]).to eq(300)
+        expect(result[:summary][:infrastructure_cost_today_cents]).to eq(180)
+        expect(result[:summary][:infrastructure_cost_this_month_cents]).to eq(300)
       end
     end
 
@@ -208,6 +226,27 @@ RSpec.describe Projects::CostDashboardStats do
       expect(budget).not_to have_key(:usage_percent)
       expect(budget).not_to have_key(:current_usage_cents)
       expect(budget).not_to have_key(:remaining_cents)
+    end
+
+    def create_execution_usage(agent_run, provisioned_at:, terminated_at:, billed_duration_seconds:, infra_cost_cents:)
+      create(:execution_usage,
+        agent_run: agent_run,
+        runner_backend: "local",
+        provisioned_at: provisioned_at,
+        terminated_at: terminated_at,
+        billed_duration_seconds: billed_duration_seconds,
+        termination_reason: "completed",
+        infra_cost_cents: infra_cost_cents,
+        rate_cents_per_hour: 120)
+    end
+
+    def create_pending_run
+      create(:agent_run, project: project, status: "running",
+        provisioning_started_at: 30.minutes.ago,
+        started_at: 25.minutes.ago,
+        external_metadata: {
+          "infrastructure_spend" => { "rate_cents_per_hour" => 120 }
+        })
     end
   end
 end

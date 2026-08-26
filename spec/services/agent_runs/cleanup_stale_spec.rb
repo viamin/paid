@@ -129,7 +129,9 @@ RSpec.describe AgentRuns::CleanupStale do
     it "cleans up run and service containers" do
       stale_run = create(:agent_run, :running, project: project,
         started_at: AgentRun.stale_running_cutoff - 1.minute,
+        provisioning_started_at: 2.hours.ago,
         container_id: "container-123",
+        container_host: "local",
         service_container_ids: [ 1, 2 ])
       relation = instance_double(ActiveRecord::Relation)
       container_service = instance_double(Containers::Provision, cleanup: true)
@@ -144,6 +146,9 @@ RSpec.describe AgentRuns::CleanupStale do
 
       expect(container_service).to have_received(:cleanup).with(force: true)
       expect(provisioner).to have_received(:cleanup).with(stale_run, stale_requeue_count: 0)
+      expect(stale_run.reload.execution_usage).to be_present
+      expect(stale_run.execution_usage.provider_resource_id).to eq("container-123")
+      expect(stale_run.execution_usage.termination_reason).to eq("timed_out")
     end
 
     it "passes captured service environment to service cleanup when requeuing claimed runs" do

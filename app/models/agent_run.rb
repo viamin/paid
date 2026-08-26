@@ -2792,7 +2792,7 @@ class AgentRun < ApplicationRecord
       @current_handle = nil
       clear_container_id_if_unchanged!(target_container_id)
       ExecutionResource.mark_cleaned_for!(agent_run: self)
-      record_execution_usage!(container_id: target_container_id, container_host: target_container_host)
+      record_execution_usage_after_cleanup!(container_id: target_container_id, container_host: target_container_host)
       return
     end
 
@@ -2805,7 +2805,7 @@ class AgentRun < ApplicationRecord
       clear_container_id_if_unchanged!(target_container_id)
     end
     ExecutionResource.mark_cleaned_for!(agent_run: self)
-    record_execution_usage!(container_id: target_container_id, container_host: target_container_host)
+    record_execution_usage_after_cleanup!(container_id: target_container_id, container_host: target_container_host)
   rescue Containers::Provision::Error, ExecutionRunners::Error => e
     ExecutionResource.record_cleanup_failure_for!(agent_run: self, error: e)
     # Container may already be gone; clear the reference anyway
@@ -2837,12 +2837,17 @@ class AgentRun < ApplicationRecord
   }.freeze
 
   # Records the per-run infrastructure usage/cost summary once the cloud
-  # resource backing this run has actually been torn down (called from
-  # cleanup_container after the resource is confirmed gone). Skipped for
-  # runs that never reached provisioning or never recorded a backend host,
-  # so no ExecutionUsage row is created for runs with nothing billable.
+  # resource backing this run has actually been torn down. Used by the
+  # primary cleanup path and the fallback janitors so delayed cleanup still
+  # closes out billable lifetime accounting exactly once per run.
   # @spec EXEC-USAGE-009
-  def record_execution_usage!(container_id:, container_host:)
+  def record_execution_usage_after_cleanup!(container_id:, container_host:, terminated_at: Time.current)
+    record_execution_usage!(container_id: container_id, container_host: container_host, terminated_at: terminated_at)
+  end
+
+  private
+
+  def record_execution_usage!(container_id:, container_host:, terminated_at:)
     return if provisioning_started_at.blank? || container_host.blank?
 
     resources = Capacity::RequestedResources.for_agent_run(self)
@@ -2853,7 +2858,7 @@ class AgentRun < ApplicationRecord
       provisioned_at: provisioning_started_at,
       execution_started_at: started_at,
       completed_at: completed_at,
-      terminated_at: Time.current,
+      terminated_at: terminated_at,
       requested_cpu_cores: execution_usage_cpu_cores(resources),
       requested_memory_mib: execution_usage_memory_mib(resources),
       requested_disk_gb: execution_usage_disk_gb(resources),

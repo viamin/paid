@@ -22,12 +22,17 @@ class AgentRunResourceJanitorJob < ApplicationJob
     return unless agent_run.finished?
     return if agent_run.container_retained?
 
+    resource_snapshot = captured_resource_snapshot(agent_run)
     tracked_resource = ExecutionResource.environments.find_by(agent_run: agent_run)
     resource_was_active = tracked_resource&.active?
     tracked_resource = ExecutionResource.schedule_cleanup_for!(agent_run: agent_run)
     container_cleaned = cleanup_container(agent_run)
     volume_cleaned = cleanup_volume(agent_run)
-    ExecutionResource.mark_cleaned_for!(agent_run: agent_run) if resource_was_active || container_cleaned || volume_cleaned
+    cleanup_succeeded = resource_was_active || container_cleaned || volume_cleaned
+    if cleanup_succeeded
+      ExecutionResource.mark_cleaned_for!(agent_run: agent_run)
+      record_execution_usage(agent_run, resource_snapshot)
+    end
 
     Rails.logger.info(
       message: "container_manager.janitor_complete",
@@ -43,6 +48,20 @@ class AgentRunResourceJanitorJob < ApplicationJob
   end
 
   private
+
+  def captured_resource_snapshot(agent_run)
+    {
+      container_id: agent_run.container_id,
+      container_host: agent_run.workspace_volume_host
+    }
+  end
+
+  def record_execution_usage(agent_run, resource_snapshot)
+    agent_run.record_execution_usage_after_cleanup!(
+      container_id: resource_snapshot[:container_id],
+      container_host: resource_snapshot[:container_host]
+    )
+  end
 
   def cleanup_container(agent_run)
     container_id = agent_run.container_id

@@ -18,7 +18,13 @@ RSpec.describe AgentRunResourceJanitorJob do # @spec CONTAINER-RUNTIME-032
       end
 
       it "attempts to remove the container when container_id is present" do
-        agent_run.update_columns(container_id: "abc123")
+        agent_run.update_columns(
+          container_id: "abc123",
+          container_host: "local",
+          provisioning_started_at: 2.hours.ago,
+          started_at: 90.minutes.ago,
+          completed_at: 1.hour.ago
+        )
         container = instance_double(Docker::Container, stop: true, delete: true)
         allow(backend).to receive(:get_container).with("abc123").and_return(container)
         allow(backend).to receive(:stop_container).with(container, timeout: 10)
@@ -31,6 +37,9 @@ RSpec.describe AgentRunResourceJanitorJob do # @spec CONTAINER-RUNTIME-032
         expect(backend).to have_received(:stop_container).with(container, timeout: 10)
         expect(backend).to have_received(:delete_container).with(container, force: true, v: true)
         expect(agent_run.reload.container_id).to be_nil
+        expect(agent_run.execution_usage).to be_present
+        expect(agent_run.execution_usage.provider_resource_id).to eq("abc123")
+        expect(agent_run.execution_usage.termination_reason).to eq("completed")
       end
 
       it "removes the workspace volume for non-worktree runs" do
