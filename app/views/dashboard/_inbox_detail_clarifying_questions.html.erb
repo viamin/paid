@@ -13,7 +13,7 @@
           controller's success/failure redirect can stay in the same tab the
           operator was working in instead of forcing the clarifying-questions
           filter. %>
-      <%= hidden_field_tag :inbox_kind, selected_kind %>
+      <%= hidden_field_tag :inbox_kind, selected_kind.to_s %>
       <% if scoped_project %>
         <%= hidden_field_tag :inbox_project_id, scoped_project.id %>
       <% end %>
