@@ -52,7 +52,7 @@ module Projects
     end
 
     def set_issue
-      @issue = @project.issues.issues_only.find(params[:issue_id])
+      @issue = @project.issues.find(params[:issue_id])
     end
 
     def authorize_project_show

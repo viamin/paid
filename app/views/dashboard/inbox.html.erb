@@ -14,14 +14,14 @@
     </div>
 
     <div class="flex flex-wrap gap-2">
-      <% [
-        [ "All", nil ],
-        [ "Clarifying Questions", Inbox::Queue::CLARIFYING_QUESTIONS_KIND ],
-        [ "Plan Reviews", Inbox::Queue::PLAN_REVIEW_KIND ]
-      ].each do |label, kind| %>
-        <% active = @selected_kind == kind || (@selected_kind.nil? && kind.nil?) %>
-        <%= link_to label,
-              dashboard_inbox_path(project_id: @scoped_project&.id, kind: kind),
+        <% [
+          [ "All", nil ],
+          [ "Clarifying Questions", Inbox::Queue::CLARIFYING_QUESTIONS_KIND ],
+          [ "Plan Reviews", Inbox::Queue::PLAN_REVIEW_KIND ]
+        ].each do |label, kind| %>
+          <% active = @selected_kind == kind || (@selected_kind.nil? && kind.nil?) %>
+          <%= link_to label,
+              inbox_path_for(scoped_project: @scoped_project, selected_kind: kind),
               class: [
                 "rounded-full px-3 py-1.5 text-sm font-medium",
                 active ? "bg-indigo-600 text-white" : "bg-white text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50"

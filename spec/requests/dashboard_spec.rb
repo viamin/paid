@@ -1051,6 +1051,24 @@ RSpec.describe "Dashboard" do
       expect(response.body).to include("lg:grid-cols-[22rem,1fr]")
     end
 
+    it "renders PR clarifying entries with a PR badge and PR-specific GitHub link text" do
+      pull_request = create(:issue, :needs_input, :pull_request, project: project, title: "PR question", body: questions_body)
+
+      get dashboard_inbox_path(
+        entry_kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+        entry_id: pull_request.id,
+        view: "detail"
+      )
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("View PR")
+      document = Nokogiri::HTML(response.body)
+      pr_link = document.at_css(%(a[href="#{pull_request.github_url}"]))
+      expect(pr_link).to be_present
+      expect(pr_link.text).to eq("View PR")
+      expect(document.css("span").map { |node| node.text.squish }).to include("PR")
+    end
+
     # @spec OPERATOR-INBOX-006
     it "renders an unknown waiting age for a legacy entry without a timestamp" do
       issue = create(:issue, :needs_input, project: project, title: "Legacy question", body: questions_body)

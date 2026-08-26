@@ -38,6 +38,13 @@ RSpec.describe "Projects::ClarifyingQuestions" do
     { queue: "dashboard_inbox", queue_project_id: project.id, return_to: path }
   end
 
+  def pr_answer_params(project:, questions:, answers:)
+    dashboard_queue_params(project).merge(
+      questions: questions,
+      answers: answers
+    )
+  end
+
   describe "GET /projects/:project_id/issues/:issue_id/clarifying_questions" do
     context "when enhancement comment with clarifying questions exists" do
       before do
@@ -133,6 +140,30 @@ RSpec.describe "Projects::ClarifyingQuestions" do
         }
 
         expect(response).to redirect_to(dashboard_inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND))
+      end
+    end
+
+    context "when the needs-input record is a pull request" do
+      before do
+        allow(github_client).to receive(:issue_comments).and_return([])
+      end
+
+      it "loads the clarifying-questions page for the PR-backed record" do
+        pull_request = create(
+          :issue,
+          :needs_input,
+          :pull_request,
+          project: project,
+          title: "Tighten inbox PR flow",
+          body: issue_body,
+          needs_input_questions: [ "What should happen after approval?" ]
+        )
+
+        get project_issue_clarifying_questions_path(project, pull_request)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("What should happen after approval?")
+        expect(response.body).to include(pull_request.github_url)
       end
     end
   end
@@ -284,6 +315,37 @@ RSpec.describe "Projects::ClarifyingQuestions" do
         }
 
         expect(response).to redirect_to(dashboard_inbox_path(project_id: other_project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND))
+      end
+    end
+
+    context "when posting answers for a PR-backed needs-input record" do
+      let(:questions) { [ "What should happen after approval?" ] }
+      let(:answers) { [ "Resume the PR workflow." ] }
+
+      before do
+        allow(github_client).to receive(:issue_comments).and_return([])
+      end
+
+      it "accepts the PR-backed record and returns to the inbox scope" do
+        project.update!(auto_pick_enabled: true, active: true)
+        pull_request = create(
+          :issue,
+          :needs_input,
+          :pull_request,
+          project: project,
+          body: issue_body,
+          needs_input_questions: questions
+        )
+
+        post project_issue_clarifying_questions_path(project, pull_request),
+          params: pr_answer_params(project:, questions:, answers:)
+
+        expect(github_client).to have_received(:add_comment).with(
+          project.full_name,
+          pull_request.github_number,
+          a_string_matching(/Clarifying question answers/)
+        )
+        expect(response).to redirect_to(dashboard_queue_path_for(project))
       end
     end
 

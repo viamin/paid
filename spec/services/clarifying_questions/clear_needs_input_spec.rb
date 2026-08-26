@@ -169,6 +169,22 @@ RSpec.describe ClarifyingQuestions::ClearNeedsInput do
 
         expect(issue.reload.needs_input_questions).to be_nil
       end
+
+      it "clears a PR-backed needs-input record without issue-only assumptions" do
+        pull_request = create(
+          :issue,
+          :needs_input,
+          :pull_request,
+          project: project,
+          needs_input_questions: [ "What should happen after approval?" ]
+        )
+
+        described_class.call(project: project, issue: pull_request)
+
+        expect(pull_request.reload.paid_state).to eq("new")
+        expect(pull_request.needs_input_questions).to be_nil
+        expect(pull_request.labels).not_to include(project.enhance_issue_needs_input_label_name)
+      end
     end
   end
 
