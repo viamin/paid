@@ -8,6 +8,7 @@ module Activities
       agent_run_id = input[:agent_run_id]
       error = input[:error]
       agent_run = AgentRun.find(agent_run_id)
+      error = timeout_error_with_diagnostics(agent_run, error)
 
       agent_run.with_lock do
         agent_run.reload
@@ -85,6 +86,13 @@ module Activities
     private
 
     PUSH_PERMISSION_COMMENT_MARKER = "<!-- paid: push-permission-rejection -->"
+
+    def timeout_error_with_diagnostics(agent_run, error)
+      return error unless error == "Activity task timed out"
+      return error unless agent_run.analyze_issue_goal?
+
+      agent_run.issue_analysis_timeout_message(error)
+    end
 
     def record_issue_analysis_backoff?(agent_run) # @spec ISSUE-ANALYSIS-010 ISSUE-ANALYSIS-011
       agent_run.auto_pick? &&
