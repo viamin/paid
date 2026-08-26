@@ -17,7 +17,7 @@ RSpec.describe Automation::Signals::PullRequestCollector do
     )
   end
   let(:client) { instance_double(GithubClient) }
-  let(:logger) { instance_double(ActiveSupport::Logger, warn: nil) }
+  let(:logger) { instance_double(ActiveSupport::Logger, warn: nil, info: nil) }
   let(:collector) { described_class.new(providers: providers, client: client, logger: logger) }
   let(:issue) { instance_double(Issue, github_number: 42) }
 
@@ -247,6 +247,256 @@ RSpec.describe Automation::Signals::PullRequestCollector do
       expect(logger).to have_received(:warn).with(
         hash_including(message: "pr_scanner.signal_check_failed", signal: "review_comments")
       )
+    end
+  end
+
+  # @spec AUTO-MERGE-005
+  describe "#only_base_merge_commits_since?" do
+    let(:approval_sha) { "approved_sha" }
+    let(:head_sha) { "head_sha" }
+    let(:merge_sha) { "merge_sha" }
+    let(:first_parent_sha) { "first_parent_sha" }
+    let(:second_parent_sha) { "second_parent_sha" }
+    let(:base_tip_sha) { "base_tip_sha" }
+    let(:base_ref) { OpenStruct.new(object: OpenStruct.new(sha: base_tip_sha)) }
+
+    let(:merge_commit) do
+      OpenStruct.new(
+        sha: merge_sha,
+        commit: OpenStruct.new(tree: OpenStruct.new(sha: "merge_tree")),
+        parents: [
+          OpenStruct.new(sha: first_parent_sha),
+          OpenStruct.new(sha: second_parent_sha)
+        ]
+      )
+    end
+
+    let(:first_parent_commit) do
+      OpenStruct.new(
+        commit: OpenStruct.new(tree: OpenStruct.new(sha: "merge_tree"))
+      )
+    end
+
+    before do
+      allow(client).to receive(:ref)
+        .with("acme/widgets", "heads/main")
+        .and_return(base_ref)
+    end
+
+    it "returns true when the post-approval range contains only clean base merges" do
+      allow(client).to receive(:compare)
+        .with("acme/widgets", approval_sha, head_sha)
+        .and_return(OpenStruct.new(status: "ahead", commits: [ OpenStruct.new(sha: merge_sha) ]))
+      allow(client).to receive(:commit)
+        .with("acme/widgets", merge_sha)
+        .and_return(merge_commit)
+      allow(client).to receive(:commit)
+        .with("acme/widgets", first_parent_sha)
+        .and_return(first_parent_commit)
+      allow(client).to receive(:compare)
+        .with("acme/widgets", second_parent_sha, base_tip_sha)
+        .and_return(OpenStruct.new(status: "ahead"))
+
+      result = collector.only_base_merge_commits_since?(
+        approval_sha: approval_sha, head_sha: head_sha, base_branch: "main", issue: issue
+      )
+
+      expect(result).to be(true)
+    end
+
+    it "returns false (fail closed) when the post-approval range contains a non-merge commit" do
+      allow(client).to receive(:compare)
+        .with("acme/widgets", approval_sha, head_sha)
+        .and_return(OpenStruct.new(
+          status: "ahead",
+          commits: [ OpenStruct.new(sha: "real_commit_sha") ]
+        ))
+      allow(client).to receive(:commit)
+        .with("acme/widgets", "real_commit_sha")
+        .and_return(OpenStruct.new(
+          sha: "real_commit_sha",
+          commit: OpenStruct.new(tree: OpenStruct.new(sha: "real_tree")),
+          parents: [ OpenStruct.new(sha: "real_parent_sha") ]
+        ))
+
+      result = collector.only_base_merge_commits_since?(
+        approval_sha: approval_sha, head_sha: head_sha, base_branch: "main", issue: issue
+      )
+
+      expect(result).to be(false)
+    end
+
+    it "returns false when a merge commit resolved conflicts (tree differs from first parent)" do
+      allow(client).to receive(:compare)
+        .with("acme/widgets", approval_sha, head_sha)
+        .and_return(OpenStruct.new(status: "ahead", commits: [ OpenStruct.new(sha: merge_sha) ]))
+      allow(client).to receive(:commit)
+        .with("acme/widgets", merge_sha)
+        .and_return(merge_commit)
+      allow(client).to receive(:commit)
+        .with("acme/widgets", first_parent_sha)
+        .and_return(OpenStruct.new(
+          commit: OpenStruct.new(tree: OpenStruct.new(sha: "different_tree"))
+        ))
+
+      result = collector.only_base_merge_commits_since?(
+        approval_sha: approval_sha, head_sha: head_sha, base_branch: "main", issue: issue
+      )
+
+      expect(result).to be(false)
+    end
+
+    it "returns false when a merge commit merges in a branch that is not the PR base" do
+      allow(client).to receive(:compare)
+        .with("acme/widgets", approval_sha, head_sha)
+        .and_return(OpenStruct.new(status: "ahead", commits: [ OpenStruct.new(sha: merge_sha) ]))
+      allow(client).to receive(:commit)
+        .with("acme/widgets", merge_sha)
+        .and_return(merge_commit)
+      allow(client).to receive(:commit)
+        .with("acme/widgets", first_parent_sha)
+        .and_return(first_parent_commit)
+      allow(client).to receive(:compare)
+        .with("acme/widgets", second_parent_sha, base_tip_sha)
+        .and_return(OpenStruct.new(status: "diverged"))
+
+      result = collector.only_base_merge_commits_since?(
+        approval_sha: approval_sha, head_sha: head_sha, base_branch: "main", issue: issue
+      )
+
+      expect(result).to be(false)
+    end
+
+    it "returns false when the range mixes a clean base merge with a non-merge author commit" do
+      real_commit_sha = "real_commit_sha"
+      allow(client).to receive(:compare)
+        .with("acme/widgets", approval_sha, head_sha)
+        .and_return(OpenStruct.new(
+          status: "ahead",
+          commits: [
+            OpenStruct.new(sha: merge_sha),
+            OpenStruct.new(sha: real_commit_sha)
+          ]
+        ))
+      allow(client).to receive(:commit)
+        .with("acme/widgets", merge_sha)
+        .and_return(merge_commit)
+      allow(client).to receive(:commit)
+        .with("acme/widgets", first_parent_sha)
+        .and_return(first_parent_commit)
+      allow(client).to receive(:compare)
+        .with("acme/widgets", second_parent_sha, base_tip_sha)
+        .and_return(OpenStruct.new(status: "ahead"))
+      allow(client).to receive(:commit)
+        .with("acme/widgets", real_commit_sha)
+        .and_return(OpenStruct.new(
+          sha: real_commit_sha,
+          commit: OpenStruct.new(tree: OpenStruct.new(sha: "real_tree")),
+          parents: [ OpenStruct.new(sha: "real_parent_sha") ]
+        ))
+
+      result = collector.only_base_merge_commits_since?(
+        approval_sha: approval_sha, head_sha: head_sha, base_branch: "main", issue: issue
+      )
+
+      expect(result).to be(false)
+    end
+
+    it "returns false when compare reports the history diverged (force-push dropped the approval)" do
+      allow(client).to receive(:compare)
+        .with("acme/widgets", approval_sha, head_sha)
+        .and_return(OpenStruct.new(status: "diverged", commits: []))
+
+      result = collector.only_base_merge_commits_since?(
+        approval_sha: approval_sha, head_sha: head_sha, base_branch: "main", issue: issue
+      )
+
+      expect(result).to be(false)
+    end
+
+    it "returns false when a commit lookup fails mid-range (fail closed)" do
+      allow(client).to receive(:compare)
+        .with("acme/widgets", approval_sha, head_sha)
+        .and_return(OpenStruct.new(status: "ahead", commits: [ OpenStruct.new(sha: merge_sha) ]))
+      allow(client).to receive(:commit)
+        .with("acme/widgets", merge_sha)
+        .and_raise(GithubClient::Error, "boom")
+
+      result = collector.only_base_merge_commits_since?(
+        approval_sha: approval_sha, head_sha: head_sha, base_branch: "main", issue: issue
+      )
+
+      expect(result).to be(false)
+      expect(logger).to have_received(:warn).with(
+        hash_including(message: "pr_scanner.signal_check_failed", signal: "clean_base_merge_check")
+      )
+    end
+
+    it "returns true when approval_sha equals head_sha (no new commits since approval)" do
+      allow(client).to receive(:compare)
+
+      result = collector.only_base_merge_commits_since?(
+        approval_sha: head_sha, head_sha: head_sha, base_branch: "main", issue: issue
+      )
+
+      expect(result).to be(true)
+      expect(client).not_to have_received(:compare)
+    end
+
+    it "returns false when any required input is blank" do
+      cases = [
+        { approval_sha: nil, head_sha: head_sha, base_branch: "main" },
+        { approval_sha: approval_sha, head_sha: nil, base_branch: "main" },
+        { approval_sha: approval_sha, head_sha: head_sha, base_branch: nil },
+        { approval_sha: "", head_sha: "", base_branch: "main" },
+        { approval_sha: approval_sha, head_sha: head_sha, base_branch: "" },
+        { approval_sha: "", head_sha: "", base_branch: "" }
+      ]
+
+      cases.each do |kwargs|
+        result = collector.only_base_merge_commits_since?(**kwargs, issue: issue)
+        expect(result).to be(false), "expected false for #{kwargs.inspect}"
+      end
+    end
+
+    it "logs the classification decision so a stall is diagnosable" do
+      allow(client).to receive(:compare)
+        .with("acme/widgets", approval_sha, head_sha)
+        .and_return(OpenStruct.new(status: "ahead", commits: [ OpenStruct.new(sha: merge_sha) ]))
+      allow(client).to receive(:commit)
+        .with("acme/widgets", merge_sha)
+        .and_return(merge_commit)
+      allow(client).to receive(:commit)
+        .with("acme/widgets", first_parent_sha)
+        .and_return(first_parent_commit)
+      allow(client).to receive(:compare)
+        .with("acme/widgets", second_parent_sha, base_tip_sha)
+        .and_return(OpenStruct.new(status: "ahead"))
+
+      collector.only_base_merge_commits_since?(
+        approval_sha: approval_sha, head_sha: head_sha, base_branch: "main", issue: issue
+      )
+
+      expect(logger).to have_received(:info).with(
+        hash_including(
+          message: "pr_scanner.review_freshness_range_classified",
+          approval_sha: approval_sha,
+          head_sha: head_sha,
+          commit_count: 1
+        )
+      )
+    end
+
+    it "re-raises authentication failures so the scan can fail loudly" do
+      allow(client).to receive(:compare)
+        .with("acme/widgets", approval_sha, head_sha)
+        .and_raise(GithubClient::AuthenticationError, "bad credentials")
+
+      expect {
+        collector.only_base_merge_commits_since?(
+          approval_sha: approval_sha, head_sha: head_sha, base_branch: "main", issue: issue
+        )
+      }.to raise_error(GithubClient::AuthenticationError)
     end
   end
 

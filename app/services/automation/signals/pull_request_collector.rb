@@ -193,6 +193,44 @@ module Automation
         nil
       end
 
+      # Returns true when every commit in the range between +approval_sha+
+      # (inclusive) and +head_sha+ (exclusive) is a clean merge of the
+      # PR's base branch into the feature branch — i.e. no author-side
+      # content changed since the approval. See AUTO-MERGE-005: a clean
+      # merge carries an identical tree to its first parent and merges a
+      # side that is reachable from the base branch tip, so no new code
+      # reached the PR head.
+      #
+      # Fails closed (returns false) on any non-merge commit, on a merge
+      # whose tree differs from its first parent (conflict resolution or
+      # author-side change), on a merge whose second parent is not
+      # reachable from the base branch tip, on a force-push that removed
+      # the approved commit from HEAD's history, or when the range cannot
+      # be classified. The classification decision is logged so a stall is
+      # diagnosable.
+      def only_base_merge_commits_since?(approval_sha:, head_sha:, base_branch:, issue: nil)
+        return false if approval_sha.blank? || head_sha.blank? || base_branch.blank?
+        return true if approval_sha == head_sha
+
+        comparison = client.compare(providers.repo, approval_sha, head_sha)
+        status = comparison&.status.to_s
+
+        # Force-push or other history rewrites that drop the approval
+        # commit from HEAD's lineage cannot be classified as content-free.
+        return false unless %w[ahead identical].include?(status)
+
+        commits = Array(comparison.commits)
+
+        log_classification(issue, approval_sha:, head_sha:, commit_count: commits.size)
+
+        commits.all? { |c| clean_base_merge?(c.sha.to_s, base_branch:) }
+      rescue GithubClient::AuthenticationError
+        raise
+      rescue GithubClient::Error, StandardError => e
+        log_signal_error("clean_base_merge_range", issue, e) if issue
+        false
+      end
+
       # Returns true when the diff between the review's commit and the PR
       # HEAD touches a file named in the review's inline comments.
       def review_diff_touches_reviewed_files?(issue:, review:, pr_data: nil)
@@ -243,6 +281,76 @@ module Automation
 
       def pull_request_merged?(pr_data)
         dependency_value(pr_data, :merged) == true || dependency_value(pr_data, :merged_at).present?
+      end
+
+      # Returns true when +commit_sha+ is a clean merge of +base_branch+ into
+      # the feature branch: a two-parent merge whose tree is identical to its
+      # first parent (no conflict resolution or author-side edit) and whose
+      # second parent is reachable from the current base branch tip. Any
+      # deviation — single-parent commit, octopus merge, conflict-resolving
+      # merge, merge from a non-base branch, or an unresolvable parent
+      # lookup — returns false so the staleness check can fail closed.
+      def clean_base_merge?(commit_sha, base_branch:)
+        commit = client.commit(providers.repo, commit_sha)
+        return false unless commit
+
+        parents = Array(commit.parents)
+        return false unless parents.size == 2
+
+        first_parent = client.commit(providers.repo, parents[0].sha.to_s)
+        return false unless first_parent
+
+        merge_tree = commit.commit&.tree&.sha.to_s
+        first_parent_tree = first_parent.commit&.tree&.sha.to_s
+        return false if merge_tree.empty? || merge_tree != first_parent_tree
+
+        base_tip_sha = base_branch_tip_sha(base_branch)
+        return false if base_tip_sha.blank?
+
+        ancestor_of_base?(parents[1].sha.to_s, base_tip_sha)
+      rescue GithubClient::AuthenticationError
+        raise
+      rescue GithubClient::Error, StandardError => e
+        logger.warn(
+          message: "pr_scanner.signal_check_failed",
+          signal: "clean_base_merge_check",
+          project_id: providers.project.id,
+          commit_sha: commit_sha,
+          error: e.message
+        )
+        false
+      end
+
+      def base_branch_tip_sha(base_branch)
+        ref = client.ref(providers.repo, "heads/#{base_branch}")
+        ref&.object&.sha.to_s.presence
+      rescue GithubClient::Error, StandardError
+        nil
+      end
+
+      # True when +ancestor_sha+ is reachable from +descendant_sha+ (i.e.
+      # the descendant's history contains the ancestor, including the
+      # identity case where they are the same commit). Uses the compare API
+      # rather than a parent walk so deep histories do not blow up the
+      # number of GitHub calls per staleness check.
+      def ancestor_of_base?(ancestor_sha, descendant_sha)
+        return true if ancestor_sha == descendant_sha
+
+        comparison = client.compare(providers.repo, ancestor_sha, descendant_sha)
+        %w[ahead identical].include?(comparison&.status.to_s)
+      end
+
+      def log_classification(issue, approval_sha:, head_sha:, commit_count:)
+        return unless issue
+
+        logger.info(
+          message: "pr_scanner.review_freshness_range_classified",
+          project_id: providers.project.id,
+          pr_number: issue.github_number,
+          approval_sha: approval_sha,
+          head_sha: head_sha,
+          commit_count: commit_count
+        )
       end
 
       # Accepts Sawyer::Resource objects (method access), Hashes with

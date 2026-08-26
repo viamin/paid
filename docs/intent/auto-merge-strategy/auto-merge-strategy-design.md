@@ -32,7 +32,16 @@ into either a merge decision or a noop.
 Human-authored PRs take the stricter path. They require owner approval,
 successful checks, mergeability, fresh reviews for the current head, no
 outstanding blocking review feedback, and resolved dependencies before a merge
-decision is emitted.
+decision is emitted. A blocking approval is treated as fresh when every commit
+in the post-approval range is a clean merge of the PR's base branch into the
+feature branch — i.e. a merge commit whose second-parent side is reachable
+from the base branch tip and whose tree is identical to its first-parent tree.
+This prevents `chore: merge origin/main` refreshes (including those produced by
+Paid's own `auto_fix_merge_conflicts` path) from dropping a PR out of
+auto-merge eligibility when they introduce no author-side content. Any commit
+that cannot be positively classified as content-free continues to invalidate
+the approval (fail closed), and the classification decision is logged so a
+stall is diagnosable.
 
 Bot-authored dependency PRs take the narrower trusted path. Dependabot-like PRs
 may skip owner-approval and review-feedback gates, but they still require the

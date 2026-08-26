@@ -264,6 +264,25 @@ class GithubClient
     end
   end
 
+  # Compares two commits and returns the raw comparison payload
+  # (status, ahead_by, behind_by, commits, files). Used by callers that
+  # need the relationship between the two commits — e.g. whether the
+  # base is reachable from the head (ahead), an ancestor (behind), the
+  # same commit (identical), or on a divergent branch (diverged) — and
+  # the minimal commit metadata (sha + message) for the range between
+  # them. Callers needing only the changed-file list should use
+  # +compare_changed_files+; callers needing only the summary should use
+  # +compare_summary+.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param base [String] Base commit SHA
+  # @param head [String] Head commit SHA
+  # @return [Sawyer::Resource] Raw comparison object with +status+,
+  #   +ahead_by+, +behind_by+, +commits+, and +files+ attributes
+  def compare(repo, base, head)
+    handle_errors { client.compare(repo, base, head) }
+  end
+
   # Compares two commits and returns bounded metadata suitable for public
   # change-summary generation.
   #

@@ -50,3 +50,26 @@
   `spec/jobs/dependabot_auto_merge_job_spec.rb`,
   `spec/jobs/auto_release_evaluation_job_spec.rb`,
   `spec/temporal/activities/merge_pull_request_activity_spec.rb`.
+
+- [x] **AUTO-MERGE-005** — When a blocking approval exists for a human-authored
+  pull request and the PR HEAD commit timestamp is newer than the latest
+  blocking approval timestamp, the system SHALL mark the approval as stale
+  (treating the PR as not freshly approved) only when at least one commit in
+  the post-approval range introduces content attributable to the PR author.
+  Commits in that range SHALL be classified as content-free, and the approval
+  retained as fresh, when each of them is a merge commit whose second-parent
+  side is reachable from the PR's base branch tip AND whose tree is identical
+  to its first-parent tree (no conflict resolution, no author-side change).
+  Any commit that cannot be positively classified as content-free SHALL
+  continue to mark the approval stale (fail closed). The classification
+  decision SHALL be logged with the commit SHAs inspected so a stall is
+  diagnosable.
+  *Code:*
+  `app/services/automation/signals/pull_request_collector.rb`
+  (`#only_base_merge_commits_since?`, `#clean_base_merge?`),
+  `app/temporal/activities/scan_paid_prs_activity.rb`
+  (`#review_stale_for_head?`, `#blocking_approvals_for`,
+  `#latest_approval_for`).
+  *Test:*
+  `spec/services/automation/signals/pull_request_collector_spec.rb`,
+  `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.
