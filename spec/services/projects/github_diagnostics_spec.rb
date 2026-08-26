@@ -161,6 +161,48 @@ RSpec.describe Projects::GithubDiagnostics do
       )
     end
 
+    it "surfaces merge blockers recorded on the issue before attempt history existed" do # @spec GITHUB-SYNC-009
+      project = create(:project, account: account, webhook_secret: "present")
+      issue = create(
+        :issue,
+        :pull_request,
+        project: project,
+        merge_permission_rejected_at: 30.minutes.ago,
+        merge_permission_rejection_reason: "refusing to allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows` permission"
+      )
+
+      diagnostics = described_class.call(project: project)
+
+      expect(diagnostics.fetch(:recent_permission_failures)).to contain_exactly(
+        include(issue_id: issue.id, kind: "merge", code: "missing_workflows_permission")
+      )
+      expect(diagnostics.dig(:recommended_action, :code))
+        .to eq("grant_workflows_permission_or_enable_pat_fallback")
+    end
+
+    it "reports a legacy issue blocker once when the issue also has attempt rows" do # @spec GITHUB-SYNC-009
+      project = create(:project, account: account, webhook_secret: "present")
+      issue = create(
+        :issue,
+        :pull_request,
+        project: project,
+        merge_permission_rejected_at: 30.minutes.ago,
+        merge_permission_rejection_reason: "refusing to allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows` permission"
+      )
+      create(
+        :auto_merge_attempt,
+        project: project,
+        issue: issue,
+        attempted_at: 5.minutes.ago,
+        reason_code: AutoMergeAttempts::Record::REASON_MISSING_WORKFLOWS_PERMISSION
+      )
+
+      failures = described_class.call(project: project).fetch(:recent_permission_failures)
+
+      expect(failures.size).to eq(1)
+      expect(failures.first).to include(issue_id: issue.id, kind: "merge")
+    end
+
     it "does not let non-permission retry abandonments crowd out push permission failures" do # @spec GITHUB-SYNC-009
       project = create(:project, account: account, webhook_secret: "present")
       permission_failure = create_push_failure(project:, occurred_at: 2.days.ago, updated_at: 2.days.ago)

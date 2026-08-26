@@ -183,12 +183,42 @@ module Projects
     end
 
     def merge_permission_failures
+      attempts = merge_permission_attempts
+      attempts.map { |attempt| build_failure_from_attempt(attempt) } +
+        legacy_merge_permission_failures(excluding_issue_ids: attempts.map(&:issue_id))
+    end
+
+    def merge_permission_attempts
       project.auto_merge_attempts
         .includes(:issue)
         .permission_blockers
         .recent
         .limit(RECENT_FAILURE_CANDIDATE_LIMIT)
-        .map { |attempt| build_failure_from_attempt(attempt) }
+        .to_a
+    end
+
+    # Blockers recorded before the auto_merge_attempts table existed live only
+    # on the issue columns, and no backfill copies them into the new table yet,
+    # so already-blocked PRs would lose diagnostics on upgrade without this
+    # fallback. New rejections write both stores, so issues already covered by
+    # attempt rows are excluded to avoid double-reporting the same blocker.
+    # TODO(#3454): drop this fallback once historical blockers are backfilled
+    # into auto_merge_attempts.
+    def legacy_merge_permission_failures(excluding_issue_ids:)
+      legacy_merge_permission_issues(excluding_issue_ids).map do |issue|
+        build_failure(
+          issue: issue,
+          kind: "merge",
+          occurred_at: issue.merge_permission_rejected_at,
+          reason: issue.merge_permission_rejection_reason
+        )
+      end
+    end
+
+    def legacy_merge_permission_issues(excluding_issue_ids)
+      scope = project.issues.where.not(merge_permission_rejected_at: nil)
+      scope = scope.where.not(id: excluding_issue_ids) if excluding_issue_ids.present?
+      scope.order(merge_permission_rejected_at: :desc).limit(RECENT_FAILURE_CANDIDATE_LIMIT)
     end
 
     def push_permission_failures
