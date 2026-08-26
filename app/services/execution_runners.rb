@@ -20,7 +20,19 @@ require "json"
 # @see ExecutionRunners::Base
 module ExecutionRunners
   MANIFEST_SCHEMA_VERSION = "remote_execution.v1"
-  REQUIRED_OWNERSHIP_TAG_NAMES = %w[environment account project run attempt resource].freeze
+  REQUIRED_OWNERSHIP_TAG_NAMES = %w[
+    environment
+    account
+    project
+    run
+    attempt
+    resource
+    account_id
+    project_id
+    run_id
+    created_at
+  ].freeze
+  REQUIRED_RECONCILIATION_TAG_NAMES = %w[account_id project_id run_id created_at].freeze
   EXECUTION_RESOURCE_CPU_QUOTA_PER_CORE = 100_000.0
   EXECUTION_RESOURCE_MEBIBYTE = 1024 * 1024
   EXECUTION_RESOURCE_GIBIBYTE = 1024 * 1024 * 1024
@@ -218,6 +230,23 @@ module ExecutionRunners
     resolve(backend: Containers.backend_for(agent_run.workspace_volume_host))
   rescue Containers::Backends::Resolver::UnknownBackendError
     resolve(backend: nil)
+  end
+
+  # Resolve a runner from its persisted type identifier (e.g. from the durable
+  # cleanup queue). Extend this as new runner implementations land.
+  def self.for_type(runner_type)
+    case runner_type.to_s
+    when "local_docker" then LocalDockerRunner.new
+    else
+      raise ArgumentError, "Unknown execution runner type: #{runner_type.inspect}"
+    end
+  end
+
+  # Runners whose reconciliation hooks should be polled periodically. Docker's
+  # legacy broad orphan sweeps remain owned by DockerOrphanCleanupJob, but the
+  # runner still participates in direct cleanup of crash-window orphan intents.
+  def self.reconciliation_runners
+    [ LocalDockerRunner.new ]
   end
 
   # Provider-neutral execution resource request carried on the runner
@@ -981,7 +1010,7 @@ module ExecutionRunners
   # The six tag names are the contract every Paid-managed execution resource
   # carries: environment, account, project, run, attempt, and resource kind.
   # @spec CONTAINER-RUNTIME-026
-  OwnershipTags = Data.define(:environment, :account_id, :project_id, :run_id, :attempt, :resource_kind) do
+  OwnershipTags = Data.define(:environment, :account_id, :project_id, :run_id, :attempt, :resource_kind, :created_at) do
     LABEL_PREFIX = "paid."
 
     # Builds the ownership tags from an agent-run context. The environment is
@@ -989,7 +1018,7 @@ module ExecutionRunners
     # Rails.env concept can still attribute resources). Returns nil when no
     # resource kind is supplied, signalling the runner cannot attribute the
     # resource and must skip the ledger.
-    def self.for(agent_run:, resource_kind:, environment:, attempt: 0)
+    def self.for(agent_run:, resource_kind:, environment:, attempt: 0, recorded_at: Time.current)
       return nil if resource_kind.blank?
 
       project = agent_run&.project
@@ -999,7 +1028,8 @@ module ExecutionRunners
         project_id: project&.id,
         run_id: agent_run&.id,
         attempt: Integer(attempt || 0),
-        resource_kind: resource_kind.to_s
+        resource_kind: resource_kind.to_s,
+        created_at: normalize_recorded_at(recorded_at)
       )
     end
 
@@ -1013,14 +1043,27 @@ module ExecutionRunners
         "project" => project_id,
         "run" => run_id,
         "attempt" => attempt,
-        "resource" => resource_kind
+        "resource" => resource_kind,
+        "account_id" => account_id,
+        "project_id" => project_id,
+        "run_id" => run_id,
+        "created_at" => created_at
       }
 
       ExecutionRunners::REQUIRED_OWNERSHIP_TAG_NAMES.to_h do |name|
         [ "#{LABEL_PREFIX}#{name}", values_by_name.fetch(name).to_s ]
       end
     end
+
+    def self.normalize_recorded_at(value)
+      value = Time.zone.parse(value.to_s) unless value.respond_to?(:iso8601)
+      value.utc.iso8601
+    end
   end
+
+  # Provider-neutral snapshot of a live runner-managed resource discovered
+  # during reconciliation.
+  ManagedResource = Data.define(:runner_type, :resource_kind, :identifier, :host, :ownership_tags, :metadata)
 
   # Provider-neutral networking policy, replacing Docker network names.
   # Adapted from +NetworkPolicy::NetworkContract+ but drops the Docker-specific

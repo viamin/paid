@@ -13,7 +13,19 @@ FactoryBot.define do
     runner_type { "local_docker" }
     environment { "test" }
     attempt { 0 }
-    ownership_tags { { "paid.environment" => "test", "paid.account" => account_id.to_s, "paid.resource" => "container" } }
+    ownership_tags do
+      {
+        "paid.environment" => "test",
+        "paid.account" => account_id.to_s,
+        "paid.account_id" => account_id.to_s,
+        "paid.project" => project.id.to_s,
+        "paid.project_id" => project.id.to_s,
+        "paid.run" => agent_run.id.to_s,
+        "paid.run_id" => agent_run.id.to_s,
+        "paid.resource" => "container",
+        "paid.created_at" => Time.current.utc.iso8601
+      }
+    end
     tagging_supported { true }
     status { "pending" }
     metadata { {} }

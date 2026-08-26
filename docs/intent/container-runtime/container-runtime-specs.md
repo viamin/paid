@@ -349,6 +349,44 @@
   `spec/models/provisioning_intent_spec.rb`
   *Code:* `ExecutionRunners::ProvisioningLedger`,
   `ProvisioningIntent`
+
+- [x] **CONTAINER-RUNTIME-035** — The runner contract SHALL expose
+  provider-neutral resource reconciliation hooks for externally managed primary
+  execution environments: listing resources by stable Paid ownership tags when
+  the runner supports provider-side listing, and cleaning up a discovered
+  resource by provider identifier without requiring a previously persisted
+  runner handle. A runner whose platform already has a legacy janitor path MAY
+  disable broad tag sweeps while still supporting direct cleanup of a known
+  orphan resource.
+  *Tests:* `spec/services/execution_runners/base_spec.rb`,
+  `spec/services/execution_runners/local_docker_runner_spec.rb`,
+  `spec/jobs/execution_resource_reconciliation_job_spec.rb`
+  *Code:* `ExecutionRunners::Base`, `ExecutionRunners::ManagedResource`,
+  `ExecutionRunners::LocalDockerRunner`,
+  `ExecutionRunners::ResourceReconciler`
+
+- [x] **CONTAINER-RUNTIME-036** — A periodic reconciliation process SHALL:
+  1. enqueue cleanup for crash-window provisioning intents whose provider
+  resource exists without a linked runner handle;
+  2. when the runner supports tag reconciliation, discover provider resources
+  carrying stable Paid ownership tags whose `paid.run_id` has no corresponding
+  active `AgentRun`; and
+  3. retry transient cleanup failures from a durable database-backed queue with
+  backoff until cleanup succeeds or an operator intervenes.
+  *Tests:* `spec/jobs/execution_resource_reconciliation_job_spec.rb`,
+  `spec/models/execution_resource_cleanup_spec.rb`
+  *Code:* `ExecutionResourceCleanup`,
+  `ExecutionRunners::ResourceReconciler`,
+  `ExecutionResourceReconciliationJob`
+
+- [x] **CONTAINER-RUNTIME-037** — The repository SHALL document the external
+  resource failure-window matrix covering provision, start, cancellation,
+  timeout, completion, crash, orphan discovery, and cleanup retry behavior, and
+  SHALL reference that matrix as conformance input for the runner conformance
+  suite tracked by `#3347`.
+  *Tests:* documentation-only acceptance; referenced from the conformance suite
+  issue and LID docs
+  *Code:* `docs/intent/container-runtime/external-resource-failure-matrix.md`
 - [x] **CONTAINER-RUNTIME-021** — The system SHALL persist an `AgentImage`
   registry record that represents the immutable production identity of an
   agent container image as `(account_id, registry, repository, digest,

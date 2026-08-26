@@ -1058,6 +1058,46 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     end
   end
 
+  describe "reconciliation hooks" do
+    it "lists resources by ownership tag filters" do
+      container = instance_double(
+        Docker::Container,
+        id: "abc123",
+        info: {
+          "Labels" => ownership_label_map.merge("paid.resource" => "container")
+        }
+      )
+      allow(Containers).to receive(:all_backends).and_return([ backend ])
+      allow(backend).to receive(:list_containers).with(
+        all: true,
+        filters: { label: [ "paid.run_id=#{agent_run.id}", "paid.resource=container" ] }.to_json
+      ).and_return([ container ])
+
+      resources = runner.list_resources_by_tags(tags: { "paid.run_id" => agent_run.id.to_s }, resource_kind: "container")
+
+      expect(resources.map(&:identifier)).to eq([ "abc123" ])
+      expect(resources.first.ownership_tags).to include("paid.run_id" => agent_run.id.to_s)
+    end
+
+    it "cleans up a discovered resource by identifier and host" do
+      resource = ExecutionRunners::ManagedResource.new(
+        runner_type: "local_docker",
+        resource_kind: "container",
+        identifier: "abc123",
+        host: "local",
+        ownership_tags: ownership_label_map,
+        metadata: {}
+      )
+      container = instance_double(Docker::Container)
+      allow(Containers).to receive(:backend_for).with("local").and_return(backend)
+      allow(backend).to receive(:get_container).with("abc123").and_return(container)
+      allow(backend).to receive(:stop_container).with(container, timeout: 0)
+      allow(backend).to receive(:delete_container).with(container, force: true, v: true)
+
+      expect { runner.cleanup_resource(resource: resource, force: true) }.not_to raise_error
+    end
+  end
+
   describe "#start" do
     let(:handle) do
       ExecutionRunners::RunnerHandle.new(
