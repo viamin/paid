@@ -2,30 +2,39 @@
 
 require "rails_helper"
 require Rails.root.join("db/migrate/20260826020009_create_auto_merge_attempts")
+require Rails.root.join("db/migrate/20260826082056_enable_rls_on_auto_merge_attempts")
 
 RSpec.describe CreateAutoMergeAttempts, :aggregate_failures do
   # @spec AUTO-MERGE-004
   self.use_transactional_tests = false
 
-  let(:migration) { described_class.new }
+  let(:create_migration) { described_class.new }
+  let(:rls_migration) { EnableRlsOnAutoMergeAttempts.new }
   let(:connection) { ActiveRecord::Base.connection }
 
   around do |example|
     table_existed = connection.table_exists?(:auto_merge_attempts)
+    rls_existed = tenant_policy_present?
 
-    migration.down if table_existed
+    rls_migration.down if rls_existed
+    create_migration.down if table_existed
     clear_schema_metadata!(connection)
 
     example.run
   ensure
-    migration.down if connection.table_exists?(:auto_merge_attempts)
+    rls_migration.down if tenant_policy_present?
+    create_migration.down if connection.table_exists?(:auto_merge_attempts)
 
-    migration.up if table_existed
+    if table_existed
+      create_migration.up
+      rls_migration.up if rls_existed
+    end
     clear_schema_metadata!(connection)
   end
 
   it "creates the sanitized auto-merge attempt table with indexes and tenant RLS" do
-    migration.up
+    create_migration.up
+    rls_migration.up
 
     expect(connection.data_source_exists?("auto_merge_attempts")).to be(true)
     expect_schema
@@ -34,9 +43,11 @@ RSpec.describe CreateAutoMergeAttempts, :aggregate_failures do
   end
 
   it "rolls back cleanly" do
-    migration.up
+    create_migration.up
+    rls_migration.up
 
-    expect { migration.down }.not_to raise_error
+    expect { rls_migration.down }.not_to raise_error
+    expect { create_migration.down }.not_to raise_error
     expect(connection.data_source_exists?("auto_merge_attempts")).to be(false)
   end
 

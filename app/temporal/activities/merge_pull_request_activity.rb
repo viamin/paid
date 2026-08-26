@@ -37,7 +37,7 @@ module Activities
           status: "skipped",
           reason_code: AutoMergeAttempts::Record::REASON_AUTO_MERGE_DISABLED,
           message: "Auto-merge is not enabled for this project.",
-          credential_mode: primary_credential_mode(project)
+          credential_mode: AutoMergeAttempt.primary_credential_mode(project)
         )
         return { merged: false, skipped: true, pr_number: pr_number }
       end
@@ -55,7 +55,7 @@ module Activities
           status: "skipped",
           reason_code: AutoMergeAttempts::Record::REASON_SKIP_LABEL,
           message: "Auto-merge skipped because the PR has the #{Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL} label.",
-          credential_mode: primary_credential_mode(project)
+          credential_mode: AutoMergeAttempt.primary_credential_mode(project)
         )
         return { merged: false, skipped: true, pr_number: pr_number }
       end
@@ -104,7 +104,7 @@ module Activities
           status: "skipped",
           reason_code: AutoMergeAttempts::Record::REASON_MERGE_PERMISSION_COOLDOWN,
           message: "Auto-merge is waiting for the merge-permission cooldown window to elapse.",
-          credential_mode: primary_credential_mode(project)
+          credential_mode: AutoMergeAttempt.primary_credential_mode(project)
         )
         return { merged: false, skipped: true, pr_number: pr_number }
       else
@@ -132,7 +132,7 @@ module Activities
           add_auto_merge_label(provider, project, repo, pr_number)
           add_merge_comment(provider, project, repo, pr_number)
         end
-        record_attempt(project, issue, status: "merged", credential_mode: effective_credential_mode(project))
+        record_attempt(project, issue, status: "merged", credential_mode: effective_credential_mode(project)) unless pr_data.merged
       end
 
       { merged: merged, pr_number: pr_number }
@@ -179,7 +179,7 @@ module Activities
           status: "blocked",
           reason_code: AutoMergeAttempts::Record::REASON_MISSING_WORKFLOWS_PERMISSION,
           message: message,
-          credential_mode: "pat_fallback"
+          credential_mode: AutoMergeAttempt::CREDENTIAL_MODE_PAT_FALLBACK
         )
         return false
       end
@@ -221,7 +221,7 @@ module Activities
         project_id: project.id,
         pr_number: pr_number
       )
-      @effective_credential_mode = "pat_fallback" if result.merged
+      @effective_credential_mode = AutoMergeAttempt::CREDENTIAL_MODE_PAT_FALLBACK if result.merged
       result.merged ? :merged : :retryable_failure
     rescue Automation::Providers::RepositoryProvider::ProviderError => e
       logger.warn(
@@ -241,7 +241,7 @@ module Activities
         status: "blocked",
         reason_code: AutoMergeAttempts::Record::REASON_MISSING_WORKFLOWS_PERMISSION,
         message: message,
-        credential_mode: fallback_attempted ? "pat_fallback" : primary_credential_mode(project)
+        credential_mode: fallback_attempted ? AutoMergeAttempt::CREDENTIAL_MODE_PAT_FALLBACK : AutoMergeAttempt.primary_credential_mode(project)
       )
       post_merge_permission_comment(project, issue, pr_number, fallback_attempted:)
     end
@@ -307,12 +307,8 @@ module Activities
       AutoMergeAttempts::Record.call(project: project, issue: issue, actor_path: AutoMergeAttempts::Record::ACTOR_REVIEW_AUTO_MERGE, **attributes)
     end
 
-    def primary_credential_mode(project)
-      project.github_auth_source == "app" ? "github_app" : "pat"
-    end
-
     def effective_credential_mode(project)
-      @effective_credential_mode || primary_credential_mode(project)
+      @effective_credential_mode || AutoMergeAttempt.primary_credential_mode(project)
     end
 
     def add_auto_merge_label(provider, project, repo, pr_number)

@@ -7,8 +7,8 @@ FactoryBot.define do
     attempted_at { Time.current }
     actor_path { AutoMergeAttempts::Record::ACTOR_REVIEW_AUTO_MERGE }
     status { "blocked" }
-    reason_code { AutoMergeAttempts::Record::REASON_MISSING_WORKFLOWS_PERMISSION }
+    reason_code { AutoMergeAttempt::REASON_MISSING_WORKFLOWS_PERMISSION }
     sanitized_message { "Missing workflows permission." }
-    credential_mode { "github_app" }
+    credential_mode { AutoMergeAttempt::CREDENTIAL_MODE_GITHUB_APP }
   end
 end

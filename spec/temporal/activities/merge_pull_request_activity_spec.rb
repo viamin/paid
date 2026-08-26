@@ -143,6 +143,12 @@ RSpec.describe Activities::MergePullRequestActivity do
 
         activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
       end
+
+      it "does not persist a paid merge attempt for an out-of-band merge" do
+        activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(issue.auto_merge_attempts).to be_empty
+      end
     end
 
     context "when merging a PR that was escalated" do
