@@ -54,6 +54,28 @@ RSpec.describe AutoMergeAttempt do
 
       expect(attempt.sanitized_message).to eq("merge request failed")
     end
+
+    # @spec AUTO-MERGE-004
+    it "deduplicates consecutive identical skip outcomes for the same issue" do
+      issue = create(:issue, :pull_request)
+      first = duplicate_skip_attempt(issue)
+      second = duplicate_skip_attempt(issue)
+
+      expect(second).to eq(first)
+      expect(issue.auto_merge_attempts.count).to eq(1)
+    end
+
+    def duplicate_skip_attempt(issue)
+      described_class.call(
+        project: issue.project,
+        issue: issue,
+        actor_path: AutoMergeAttempts::Record::ACTOR_DEPENDABOT_AUTO_MERGE,
+        status: "skipped",
+        reason_code: AutoMergeAttempts::Record::REASON_CHECKS_NOT_GREEN,
+        message: "Required checks are not green yet.",
+        credential_mode: "pat"
+      )
+    end
   end
 
   # @spec AUTO-MERGE-004

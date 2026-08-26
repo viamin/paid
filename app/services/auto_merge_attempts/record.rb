@@ -27,6 +27,8 @@ module AutoMergeAttempts
 
     def call(project:, issue:, actor_path:, status:, reason_code: nil, sanitized_message: nil, message: nil,
       credential_mode: nil, attempted_at: Time.current)
+      return latest_attempt(issue) if duplicate_skip?(issue, status, reason_code)
+
       AutoMergeAttempt.create!(
         project: project,
         issue: issue,
@@ -40,6 +42,17 @@ module AutoMergeAttempts
     end
 
     private
+
+    def duplicate_skip?(issue, status, reason_code)
+      return false unless status == "skipped"
+
+      latest = latest_attempt(issue)
+      latest&.status == status && latest.reason_code == reason_code
+    end
+
+    def latest_attempt(issue)
+      issue.auto_merge_attempts.recent.first
+    end
 
     def sanitize_message(message)
       sanitized = AgentRun::ErrorMessageSanitizer.call(text: message)

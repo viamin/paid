@@ -381,9 +381,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_26_020009) do
     t.string "status", null: false, comment: "Outcome category for the attempt, such as merged, skipped, blocked, or failed."
     t.datetime "updated_at", null: false
     t.index ["issue_id", "attempted_at"], name: "index_auto_merge_attempts_on_issue_id_and_attempted_at"
-    t.index ["issue_id"], name: "index_auto_merge_attempts_on_issue_id"
     t.index ["project_id", "attempted_at"], name: "index_auto_merge_attempts_on_project_id_and_attempted_at"
-    t.index ["project_id"], name: "index_auto_merge_attempts_on_project_id"
   end
 
   create_table "billing_invoices", force: :cascade do |t|
@@ -4356,6 +4354,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_26_020009) do
        LANGUAGE sql
        STABLE
       AS $function$
+        -- @spec POSTGRESQL-PERSISTENCE-007
+        -- version: 1
         SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
       $function$
   SQL
@@ -4366,6 +4366,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_26_020009) do
        LANGUAGE sql
        STABLE
       AS $function$
+        -- @spec POSTGRESQL-PERSISTENCE-007
+        -- version: 1
         SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
       $function$
   SQL

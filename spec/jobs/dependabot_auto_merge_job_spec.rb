@@ -337,6 +337,20 @@ RSpec.describe DependabotAutoMergeJob do
         expect(fallback_client).not_to have_received(:merge_pull_request)
       end
 
+      it "does not persist duplicate cooldown skip rows on repeated evaluations" do
+        issue.update!(
+          merge_permission_rejected_at: 1.hour.ago,
+          merge_permission_rejection_reason: "missing workflows permission"
+        )
+
+        2.times { described_class.perform_now(project.id) }
+
+        expect(issue.auto_merge_attempts.where(
+          status: "skipped",
+          reason_code: AutoMergeAttempts::Record::REASON_MERGE_PERMISSION_COOLDOWN
+        ).count).to eq(1)
+      end
+
       it "clears stale permission rejection after a successful fallback merge" do
         issue.update!(
           merge_permission_rejected_at: 7.hours.ago,

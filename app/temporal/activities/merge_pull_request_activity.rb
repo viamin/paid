@@ -98,6 +98,14 @@ module Activities
           project_id: project.id,
           pr_number: pr_number
         )
+        record_attempt(
+          project,
+          issue,
+          status: "skipped",
+          reason_code: AutoMergeAttempts::Record::REASON_MERGE_PERMISSION_COOLDOWN,
+          message: "Auto-merge is waiting for the merge-permission cooldown window to elapse.",
+          credential_mode: primary_credential_mode(project)
+        )
         return { merged: false, skipped: true, pr_number: pr_number }
       else
         attempt_merge(provider, project, issue, repo, pr_number)
@@ -171,7 +179,7 @@ module Activities
           status: "blocked",
           reason_code: AutoMergeAttempts::Record::REASON_MISSING_WORKFLOWS_PERMISSION,
           message: message,
-          credential_mode: primary_credential_mode(project)
+          credential_mode: "pat_fallback"
         )
         return false
       end

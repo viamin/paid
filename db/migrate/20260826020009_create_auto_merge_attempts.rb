@@ -5,9 +5,9 @@ class CreateAutoMergeAttempts < ActiveRecord::Migration[8.1]
   def up
     create_table :auto_merge_attempts,
       comment: "Sanitized history of auto-merge decisions and blockers for pull requests." do |t|
-      t.references :project, null: false, foreign_key: true,
+      t.references :project, null: false, foreign_key: true, index: false,
         comment: "Project that owned the auto-merge evaluation."
-      t.references :issue, null: false, foreign_key: true,
+      t.references :issue, null: false, foreign_key: true, index: false,
         comment: "Local pull-request issue row the auto-merge evaluation targeted."
       t.datetime :attempted_at, null: false,
         comment: "When the merge, skip, or blocker decision was recorded."

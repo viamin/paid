@@ -111,6 +111,20 @@ RSpec.describe AutoReleaseEvaluationJob do
       )
     end
 
+    it "does not persist duplicate skip rows on repeated evaluations with the same blocker" do
+      allow(client).to receive(:check_runs_for_ref).and_return(
+        [ { conclusion: "failure", name: "ci" } ]
+      )
+
+      2.times { described_class.perform_now(project.id) }
+
+      expect(project.auto_merge_attempts.where(
+        issue: issue,
+        status: "skipped",
+        reason_code: AutoMergeAttempts::Record::REASON_CHECKS_NOT_GREEN
+      ).count).to eq(1)
+    end
+
     it "skips when CI checks are pending (no conclusion)" do
       allow(client).to receive(:check_runs_for_ref).and_return(
         [ { conclusion: nil, name: "ci" } ]

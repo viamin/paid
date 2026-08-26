@@ -471,6 +471,11 @@ RSpec.describe Activities::MergePullRequestActivity do
 
         expect(provider).to have_received(:fetch_pull_request).twice
         expect(provider).to have_received(:merge_pull_request).once
+        expect(project.auto_merge_attempts.recent.first).to have_attributes(
+          issue: issue,
+          status: "skipped",
+          reason_code: AutoMergeAttempts::Record::REASON_MERGE_PERMISSION_COOLDOWN
+        )
       end
 
       it "still observes an out-of-band merge during the cooldown and clears the blocked state" do
@@ -636,6 +641,12 @@ RSpec.describe Activities::MergePullRequestActivity do
           expect(result[:merged]).to be false
           expect(issue.reload.merge_permission_rejected?).to be(true)
           expect(issue.merge_permission_rejection_reason).to eq(rejection_message)
+          expect(project.auto_merge_attempts.recent.first).to have_attributes(
+            issue: issue,
+            status: "blocked",
+            reason_code: AutoMergeAttempts::Record::REASON_MISSING_WORKFLOWS_PERMISSION,
+            credential_mode: "pat_fallback"
+          )
         end
 
         it "does not post the merge-permission comment" do

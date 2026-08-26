@@ -70,6 +70,10 @@ RSpec.describe CreateAutoMergeAttempts, :aggregate_failures do
       "index_auto_merge_attempts_on_issue_id_and_attempted_at",
       "index_auto_merge_attempts_on_project_id_and_attempted_at"
     )
+    expect(index_names).not_to include(
+      "index_auto_merge_attempts_on_issue_id",
+      "index_auto_merge_attempts_on_project_id"
+    )
   end
 
   def expect_rls
