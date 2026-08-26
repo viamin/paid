@@ -204,7 +204,7 @@ def resolve_release(group)
 
   case source.fetch(:type)
   when :npm
-    UpstreamRegistries.npm(source.fetch(:package))
+    UpstreamRegistries.npm(source.fetch(:package), tarball_asset: source[:tarball_asset])
   when :github_release
     UpstreamRegistries.github_release(
       source.fetch(:repo),

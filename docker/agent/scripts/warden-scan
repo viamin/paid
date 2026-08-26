@@ -1,0 +1,60 @@
+#!/bin/bash
+# Warden security-scan wrapper for Paid agent containers.
+#
+# Installed at /usr/local/bin/warden-scan in the agent image. The default
+# warden security_scan pre-commit requirement runs this script so the check is
+# self-contained inside the container: it resolves the commit range to scan,
+# picks the effective warden config, and execs the pinned warden CLI.
+#
+# Behavior:
+#   - Scan range: WARDEN_BASE_SHA when set; otherwise the merge-base of HEAD
+#     against origin/HEAD, origin/main, or origin/master (first one present);
+#     otherwise HEAD~1.
+#   - Config: a repo-committed warden.toml is preferred; the image default at
+#     /opt/warden/warden.toml is the fallback.
+#   - Egress: WARDEN_OFFLINE defaults to 1 so restricted containers do not
+#     hang on remote-skill fetches or model-catalog refresh. Override by
+#     exporting WARDEN_OFFLINE=0.
+#   - Credentials: warden's WARDEN_{PROVIDER}_* convention is bridged from the
+#     proxy-routed OPENAI_API_KEY / OPENAI_BASE_URL that Containers::Provision
+#     already injects, so model-backed skills authenticate through the
+#     secrets proxy instead of failing every run with a missing key. An
+#     explicitly-set WARDEN_OPENAI_* value always wins so projects can pin a
+#     different provider.
+#   - Exit status: warden's own — 0 clean, 1 when findings meet --fail-on or
+#     the run errors. Provider/auth failures also exit non-zero; they surface
+#     as warn-mode Quality Warnings instead of a fake clean pass.
+
+set -euo pipefail
+
+# Extra arguments pass through to `warden run` (e.g. --skill, --json).
+extra_args=("$@")
+
+export WARDEN_OFFLINE="${WARDEN_OFFLINE:-1}"
+export WARDEN_OPENAI_API_KEY="${WARDEN_OPENAI_API_KEY:-${OPENAI_API_KEY:-}}"
+export WARDEN_OPENAI_BASE_URL="${WARDEN_OPENAI_BASE_URL:-${OPENAI_BASE_URL:-}}"
+
+base_ref=""
+if [ -n "${WARDEN_BASE_SHA:-}" ]; then
+    base_ref="${WARDEN_BASE_SHA}"
+else
+    for ref in origin/HEAD origin/main origin/master; do
+        if git rev-parse --verify --quiet "${ref}^{commit}" >/dev/null 2>&1; then
+            # merge-base can still fail on unrelated histories; fall through
+            # to the next candidate instead of aborting the scan.
+            base_ref=$(git merge-base HEAD "${ref}" 2>/dev/null || true)
+            [ -n "${base_ref}" ] && break
+        fi
+    done
+fi
+
+if [ -z "${base_ref}" ]; then
+    base_ref="HEAD~1"
+fi
+
+config_args=()
+if [ ! -f warden.toml ] && [ -f /opt/warden/warden.toml ]; then
+    config_args=(--config-path /opt/warden/warden.toml)
+fi
+
+exec warden run "${base_ref}..HEAD" --fail-on high "${config_args[@]}" "${extra_args[@]}"

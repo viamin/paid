@@ -49,3 +49,18 @@
   to the legacy single `request_login` field when the array is absent or empty.
   *Code:* `app/services/automation/review_bot_trigger.rb`.
   *Test:* `spec/services/automation/review_bot_trigger_spec.rb`.
+
+- [x] **QUALITY-LOOPS-007** — The project pre-commit requirements surface
+  SHALL provide a dedicated warden security-scan fieldset managing the
+  requirement named `warden_scan` with `check_type: "security_scan"`, SHALL
+  default a new one to `failure_behavior: "warn"` and to
+  `PreCommitRequirement::WARDEN_DEFAULT_COMMAND` (`warden-scan`), SHALL keep
+  that requirement's validation errors inside the warden fieldset (out of the
+  generic add/update forms), and SHALL still list unrelated `security_scan`
+  requirements in the generic list. `security_scan` commands SHALL execute
+  verbatim in the container with no evaluator special-casing.
+  *Code:* `app/models/pre_commit_requirement.rb`,
+  `app/controllers/projects/pre_commit_requirements_controller.rb`,
+  `app/views/projects/pre_commit_requirements/index.html.erb`.
+  *Test:* `spec/models/pre_commit_requirement_spec.rb`,
+  `spec/requests/projects/pre_commit_requirements_spec.rb`.

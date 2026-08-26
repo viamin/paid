@@ -4,6 +4,7 @@ class PreCommitRequirement < ApplicationRecord
   has_logidze
   CHECK_TYPES = %w[shell_command test_suite coverage security_scan mutation_test].freeze
   MUTATION_TEST_DEFAULT_COMMAND = "bundle exec mutant run --results-dir .mutant/results --since HEAD~1 --use rspec --jobs 1".freeze
+  WARDEN_DEFAULT_COMMAND = "warden-scan".freeze
   FAILURE_BEHAVIORS = %w[block warn auto_fix].freeze
 
   belongs_to :account
@@ -49,6 +50,10 @@ class PreCommitRequirement < ApplicationRecord
 
   def self.mutation_test_default_command
     MUTATION_TEST_DEFAULT_COMMAND
+  end
+
+  def self.warden_default_command # @spec QUALITY-LOOPS-007
+    WARDEN_DEFAULT_COMMAND
   end
 
   def auto_fix?

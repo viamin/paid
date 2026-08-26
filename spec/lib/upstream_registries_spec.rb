@@ -88,6 +88,37 @@ RSpec.describe UpstreamRegistries, :no_db do
     end
   end
 
+  describe ".npm" do
+    let(:package_url) { "https://registry.npmjs.org/%40sentry%2Fwarden" }
+    let(:tarball_url) { "https://registry.npmjs.org/@sentry/warden/-/warden-0.48.0.tgz" }
+
+    before do
+      stub_request(:get, package_url).to_return(
+        status: 200,
+        body: {
+          "dist-tags" => { "latest" => "0.48.0" },
+          "time" => { "0.48.0" => "2026-08-01T02:03:04Z" },
+          "versions" => {
+            "0.48.0" => {
+              "dist" => { "tarball" => tarball_url }
+            }
+          }
+        }.to_json,
+        headers: { "Content-Type" => "application/json" }
+      )
+    end
+
+    it "caches checksum-capable lookups separately from assetless ones" do
+      stub_request(:get, tarball_url).to_return(status: 200, body: "warden-tarball")
+
+      assetless = described_class.npm("@sentry/warden")
+      tarball_backed = described_class.npm("@sentry/warden", tarball_asset: "warden.tgz")
+
+      expect(assetless.assets).to eq({})
+      expect(tarball_backed.checksum_for("warden.tgz")).to eq(Digest::SHA256.hexdigest("warden-tarball"))
+    end
+  end
+
   describe ".docker_hub_versions" do
     # @spec TOOLCHAIN-PIN-020
     it "returns only the requested major, ordered oldest first, with publish times" do

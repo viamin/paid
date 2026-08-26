@@ -50,6 +50,13 @@ FactoryBot.define do
       command { "bin/brakeman" }
     end
 
+    trait :warden_scan do
+      name { "warden_scan" }
+      check_type { "security_scan" }
+      command { "warden-scan" }
+      failure_behavior { "warn" }
+    end
+
     trait :mutation_test do
       check_type { "mutation_test" }
       command { "bundle exec mutant run --results-dir .mutant/results --since HEAD~1 --use rspec --jobs 1" }

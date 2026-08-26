@@ -185,7 +185,7 @@ module ToolchainPins
   class << self
     def groups
       @groups ||= [ yarn_group, ast_grep_group, scc_group, rathole_group, rtk_group,
-                    codegraph_group, postgresql_group ].freeze
+                    codegraph_group, warden_group, postgresql_group ].freeze
     end
 
     def group(name)
@@ -446,6 +446,34 @@ module ToolchainPins
             path: AGENT_DOCKERFILE,
             pattern: /^(RUN CODEGRAPH_VERSION=)(\S+)( \\\s*)$/,
             kind: :version
+          )
+        ]
+      )
+    end
+
+    # Warden ships as an npm package with no standalone release binaries, so
+    # its "release asset" is the versioned npm tarball the image downloads. The
+    # checksum entry is architecture-independent (a single nil arch), and
+    # UpstreamRegistries derives the tarball SHA-256 from the download because
+    # npm publishes no digest in the sha256 form the image build verifies.
+    #
+    # @spec CONTAINER-RUNTIME-036
+    def warden_group
+      Group.new(
+        name: "warden",
+        ownership: :paid,
+        source: { type: :npm, package: "@sentry/warden", tarball_asset: "warden.tgz" },
+        assets: { nil => "warden.tgz" },
+        entries: [
+          Entry.new(
+            path: AGENT_DOCKERFILE,
+            pattern: /^(RUN WARDEN_VERSION=)(\S+)( \\\s*)$/,
+            kind: :version
+          ),
+          Entry.new(
+            path: AGENT_DOCKERFILE,
+            pattern: /^(\s*&& WARDEN_CHECKSUM=")([0-9a-f]+)(".*)$/,
+            kind: :checksum
           )
         ]
       )
