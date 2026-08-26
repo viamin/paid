@@ -64,6 +64,36 @@ RSpec.describe Models::DetectContractDrift do
       end
     end
 
+    context "with an active gpt-5.3-codex catalog row" do
+      before do
+        create(:llm_model, :openai, model_id: "gpt-5.3-codex", tier: "high", active: true)
+        allow(AgentHarness).to receive(:model_compatibility) do |args|
+          if args[:runner].to_s == "codex" &&
+              args[:model_id] == "gpt-5.3-codex" &&
+              args[:auth_mode] == :subscription
+            unsupported_result(args)
+          else
+            unknown_result(args)
+          end
+        end
+      end
+
+      it "reports the codex subscription incompatibility instead of suppressing it" do
+        result = described_class.call
+
+        expect(result.drift?).to be(true)
+        expect(result.findings).to include(
+          hash_including(
+            provider: "openai",
+            runner_key: "codex",
+            auth_type: "subscription",
+            models: include("gpt-5.3-codex"),
+            incompatibility_types: include(:auth_mode_gated_for_model)
+          )
+        )
+      end
+    end
+
     context "with an inactive catalog row" do
       let(:inactive_id) { "inactive-#{SecureRandom.hex(4)}" }
 

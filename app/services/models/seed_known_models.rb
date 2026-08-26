@@ -198,7 +198,8 @@ module Models
         supports_tools: true,
         supports_json_output: true,
         capability_score: 9.6,
-        tier: "high"
+        tier: "high",
+        active: false
       },
       {
         model_id: "gpt-5.3-codex-spark",
