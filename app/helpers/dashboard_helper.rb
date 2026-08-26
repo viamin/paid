@@ -1,6 +1,9 @@
 # frozen_string_literal: true
 
 module DashboardHelper
+  INBOX_PR_BADGE_CLASSES = "bg-purple-100 text-purple-700".freeze
+  INBOX_ISSUE_BADGE_CLASSES = "bg-slate-100 text-slate-700".freeze
+
   PHASE_GROUP_LABELS = {
     "queue" => "Queue",
     "setup" => "Setup",
@@ -183,5 +186,36 @@ module DashboardHelper
       }
     end
     annotations
+  end
+
+  # @spec OPERATOR-INBOX-007
+  def inbox_path_for(scoped_project:, selected_kind:)
+    dashboard_inbox_path(project_id: scoped_project&.id, kind: selected_kind)
+  end
+
+  # @spec OPERATOR-INBOX-007
+  def inbox_entry_path(entry:, scoped_project:, selected_kind:, view: "detail")
+    dashboard_inbox_path(
+      project_id: scoped_project&.id,
+      kind: selected_kind,
+      entry_kind: entry.kind,
+      entry_id: entry.record.id,
+      view: view
+    )
+  end
+
+  # @spec OPERATOR-INBOX-007
+  def inbox_issue_kind_label(issue)
+    issue_kind_label(issue)
+  end
+
+  # @spec OPERATOR-INBOX-007
+  def inbox_issue_badge_classes(issue)
+    issue.is_pull_request? ? INBOX_PR_BADGE_CLASSES : INBOX_ISSUE_BADGE_CLASSES
+  end
+
+  # @spec OPERATOR-INBOX-007
+  def inbox_issue_link_label(issue)
+    "View #{issue_kind_label(issue)}"
   end
 end
