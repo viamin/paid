@@ -195,7 +195,7 @@ module Projects
         .recent
         .limit(RECENT_FAILURE_CANDIDATE_LIMIT)
         .to_a
-        .uniq { |attempt| attempt.issue_id }
+        .uniq(&:issue_id)
     end
 
     # Blockers recorded before the auto_merge_attempts table existed live only
