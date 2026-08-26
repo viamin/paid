@@ -434,7 +434,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       expect(diagnostics["error_class"]).to be_nil
 
       expect(agent_run.issue_analysis_timeout_message).to eq(
-        "Activity task timed out during Analyze Issue Provider Attempt · provider codex · attempt 2 · budget 90s"
+        "Activity task timed out (last known analyze_issue phase: Analyze Issue Provider Attempt · provider codex · attempt 2 · budget 90s)"
       )
     end
   end

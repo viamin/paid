@@ -166,7 +166,7 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
       agent_run.reload
       expect(agent_run.status).to eq("failed")
       expect(agent_run.error_message).to eq(
-        "Activity task timed out during Analyze Issue Provider Attempt · provider codex · attempt 2 · budget 90s"
+        "Activity task timed out (last known analyze_issue phase: Analyze Issue Provider Attempt · provider codex · attempt 2 · budget 90s)"
       )
     end
 

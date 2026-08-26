@@ -6367,7 +6367,7 @@ RSpec.describe AgentRun do
   describe "#issue_analysis_timeout_message" do
     let(:agent_run) { create(:agent_run, external_metadata: {}) }
 
-    it "enriches the base message with the current phase's diagnostics" do
+    it "enriches the base message with the last known phase diagnostics" do
       agent_run.record_issue_analysis_diagnostics!(
         phase_key: "analyze_issue_provider_attempt",
         phase_label: "Analyze Issue Provider Attempt",
@@ -6380,7 +6380,7 @@ RSpec.describe AgentRun do
       message = agent_run.issue_analysis_timeout_message
 
       expect(message).to eq(
-        "Activity task timed out during Analyze Issue Provider Attempt · provider codex · attempt 2 · budget 90s"
+        "Activity task timed out (last known analyze_issue phase: Analyze Issue Provider Attempt · provider codex · attempt 2 · budget 90s)"
       )
     end
 
@@ -6408,7 +6408,7 @@ RSpec.describe AgentRun do
 
       expect(message).not_to include("rate limited")
       expect(message).to eq(
-        "Activity task timed out during Analyze Issue Provider Attempt · provider codex · attempt 2 · budget 90s"
+        "Activity task timed out (last known analyze_issue phase: Analyze Issue Provider Attempt · provider codex · attempt 2 · budget 90s)"
       )
     end
   end

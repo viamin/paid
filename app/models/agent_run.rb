@@ -2490,7 +2490,7 @@ class AgentRun < ApplicationRecord
 
     return base_message if details.empty?
 
-    "#{base_message} during #{details.join(' · ')}"
+    "#{base_message} (last known analyze_issue phase: #{details.join(' · ')})"
   end
 
   def prompt_assembly_digest
