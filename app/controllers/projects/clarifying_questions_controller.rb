@@ -206,18 +206,19 @@ module Projects
     # the queue is drained, falls back to the bare inbox index so the
     # Turbo Frame reloads the empty state.
     def inbox_redirect_target(next_entry:)
-      notice_suffix = next_entry ? "Loading next questionnaire." : "You've completed the clarifying-questions queue."
+      notice_suffix = next_entry ? "Loading next entry." : inbox_drained_notice
       redirect_to dashboard_inbox_path(**inbox_redirect_params(selected_entry: next_entry, detail_view: next_entry.present?)),
         notice: "Answers posted to GitHub issue ##{@issue.github_number}. #{notice_suffix}"
     end
 
     # Resolves the next inbox entry from the same scope the user was browsing
-    # (project filter + clarifying-questions kind). Returns nil when the
-    # queue is drained so the redirect collapses to the bare inbox index.
+    # (project filter + inbox-kind filter, including nil for the mixed "All"
+    # tab). Returns nil when the queue is drained so the redirect collapses
+    # to the bare inbox index.
     def inbox_next_entry
       project_scope = inbox_scoped_project
       Inbox::Queue
-        .call(user: current_user, project: project_scope, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
+        .call(user: current_user, project: project_scope, kind: inbox_kind)
         .reject { |entry| entry.record.id == @issue.id && entry.kind == Inbox::Queue::CLARIFYING_QUESTIONS_KIND }
         .first
     end
@@ -230,13 +231,42 @@ module Projects
       end
     end
 
+    # The inbox-kind filter the operator was viewing when they submitted.
+    # Submitted by the inbox form via a hidden field; nil signals the
+    # mixed "All" tab. When the form predates that field (or the value is
+    # unrecognised) we fall back to the clarifying-questions scope so a
+    # stale cached form keeps its pre-fix redirect behavior instead of
+    # silently dumping the user into a different tab.
+    def inbox_kind
+      return @inbox_kind if defined?(@inbox_kind)
+
+      raw = params[:inbox_kind].to_s
+      @inbox_kind = if params.key?(:inbox_kind)
+        Inbox::Queue::KINDS.include?(raw) ? raw : nil
+      else
+        Inbox::Queue::CLARIFYING_QUESTIONS_KIND
+      end
+    end
+
     def inbox_redirect_params(selected_entry:, detail_view:)
       {
         project_id: inbox_scoped_project&.id,
-        kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+        kind: inbox_kind,
         selected: selected_entry && inbox_selected_param(selected_entry),
         view: detail_view ? "detail" : nil
       }.compact
+    end
+
+    # Notice copy when the operator has finished their clarifying answer and
+    # there is nothing else waiting in the scope they were browsing. On the
+    # mixed "All" tab there may still be plan-review entries after, so the
+    # wording is intentionally generic there.
+    def inbox_drained_notice
+      if inbox_kind.nil?
+        "No more clarifying questions waiting in this view."
+      else
+        "You've completed the clarifying-questions queue."
+      end
     end
 
     def inbox_selected_param(entry)

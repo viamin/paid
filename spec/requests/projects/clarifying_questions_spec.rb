@@ -313,20 +313,25 @@ RSpec.describe "Projects::ClarifyingQuestions" do
         allow(github_client).to receive(:issue_comments).and_return([ trusted_comment ])
       end
 
-      def submit_inbox_answers(issue:, questions:, answers:, inbox_project_id: nil)
-        post project_issue_clarifying_questions_path(project, issue), params: {
+      def submit_inbox_answers(issue:, questions:, answers:, inbox_project_id: nil, inbox_kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
+        params = {
           questions: questions,
           answers: answers,
           inbox: "1",
+          # The form always submits `inbox_kind` (empty string for the "All"
+          # tab); emulate that exactly so the controller sees the field even
+          # when the operator was viewing the mixed queue.
+          inbox_kind: inbox_kind.nil? ? "" : inbox_kind,
           inbox_project_id: inbox_project_id
         }.compact
+        post project_issue_clarifying_questions_path(project, issue), params: params
       end
 
-      def expect_inbox_redirect(project_id: nil, selected:, view: "detail")
+      def expect_inbox_redirect(project_id: nil, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND, selected:, view: "detail")
         expect(response).to redirect_to(
           dashboard_inbox_path(
             project_id: project_id,
-            kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+            kind: kind,
             selected: selected,
             view: view
           )
@@ -520,6 +525,97 @@ RSpec.describe "Projects::ClarifyingQuestions" do
           .css("textarea[name='answers[]']")
 
         expect(textareas.map(&:text).map(&:strip)).to eq([ "", "" ])
+      end
+
+      context "when submitted from the All inbox tab" do
+        it "preserves the All-tab kind filter on auto-advance so the operator stays in the mixed queue" do
+          project.update!(auto_pick_enabled: true, active: true)
+          next_issue = create(:issue, :needs_input, project: project,
+            github_number: issue.github_number + 2,
+            needs_input_questions: [ "What should happen next?" ])
+
+          submit_inbox_answers(issue:, questions:, answers:,
+            inbox_project_id: project.id, inbox_kind: nil)
+
+          expect_inbox_redirect(
+            project_id: project.id,
+            kind: nil,
+            selected: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{next_issue.id}"
+          )
+          expect(response.location).not_to include("kind=")
+        end
+
+        it "auto-advances into the next plan-review entry when a plan-review is next in the All-tab queue" do
+          project.update!(auto_pick_enabled: true, active: true)
+          plan_review_issue = create(:issue, project: project,
+            github_number: issue.github_number + 2,
+            paid_state: "new")
+          next_review = create(:decomposition_decision,
+            project: project,
+            issue: plan_review_issue,
+            workflow_id: "planning-workflow-1",
+            decision_key: "planning-workflow-1:plan_review:pending",
+            decision_type: "planning_outcome",
+            outcome: DecompositionDecision::PLAN_PENDING_REVIEW_OUTCOME,
+            plan_data: { "tasks" => [ { "title" => "Visible task", "description" => "Visible description" } ] })
+
+          submit_inbox_answers(issue:, questions:, answers:,
+            inbox_project_id: project.id, inbox_kind: nil)
+
+          expect_inbox_redirect(
+            project_id: project.id,
+            kind: nil,
+            selected: "#{Inbox::Queue::PLAN_REVIEW_KIND}:#{next_review.id}"
+          )
+        end
+
+        it "preserves the All-tab kind filter when the mixed queue is drained of clarifying questions" do
+          project.update!(auto_pick_enabled: true, active: true)
+
+          submit_inbox_answers(issue:, questions:, answers:,
+            inbox_project_id: project.id, inbox_kind: nil)
+
+          expect(response).to redirect_to(dashboard_inbox_path(project_id: project.id))
+          expect(response.location).not_to include("kind=")
+          expect(response.location).not_to include("selected=")
+        end
+
+        it "keeps the operator on the All tab when validation fails" do
+          project.update!(auto_pick_enabled: true, active: true)
+
+          submit_inbox_answers(
+            issue:, questions:,
+            answers: [ "X is a feature", "" ],
+            inbox_project_id: project.id,
+            inbox_kind: nil
+          )
+
+          expect_inbox_redirect(
+            project_id: project.id,
+            kind: nil,
+            selected: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{issue.id}"
+          )
+          expect(response.location).not_to include("kind=")
+        end
+      end
+
+      context "when submitted from a Plan Reviews inbox tab" do
+        it "preserves the plan-review kind filter on the failure redirect back into the frame" do
+          project.update!(auto_pick_enabled: true, active: true)
+
+          submit_inbox_answers(
+            issue:, questions:,
+            answers: [ "X is a feature", "" ],
+            inbox_project_id: project.id,
+            inbox_kind: Inbox::Queue::PLAN_REVIEW_KIND
+          )
+
+          expect_inbox_redirect(
+            project_id: project.id,
+            kind: Inbox::Queue::PLAN_REVIEW_KIND,
+            selected: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{issue.id}"
+          )
+        end
       end
     end
 

@@ -1150,6 +1150,19 @@ RSpec.describe "Dashboard" do
       expect(detail_form.at_css(%(input[name="inbox"][value="1"]))).to be_present
     end
 
+    it "embeds the active inbox-kind filter in the answer form so submit preserves the tab" do
+      create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
+
+      get dashboard_inbox_path
+
+      document = Nokogiri::HTML(response.body)
+      form = document.at_css(%(form[action="#{project_issue_clarifying_questions_path(project, project.issues.first)}"]))
+
+      expect(form).to be_present
+      expect(form.at_css(%(input[name="inbox_kind"]))).to be_present
+      expect(form.at_css(%(input[name="inbox_kind"]))["value"]).to eq("")
+    end
+
     it "supports project scoping" do
       create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
       create(:issue, :needs_input, project: second_project, title: "Beta question", body: questions_body)

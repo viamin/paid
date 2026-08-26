@@ -46,8 +46,20 @@ RSpec.describe "Dashboard inbox split pane", system_driver: :rack_test, type: :s
 
     expect(form).to have_field("inbox", type: :hidden, with: "1")
     expect(form).to have_field("inbox_project_id", type: :hidden, with: project.id.to_s)
+    expect(form).to have_field("inbox_kind", type: :hidden, with: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
     expect(form).to have_css("textarea[name='answers[]']", count: 2)
     expect(form).to have_button("Submit Answers")
+  end
+
+  it "embeds an empty inbox_kind when the All tab is active so the submit preserves the mixed scope" do
+    create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
+
+    sign_in_as(user)
+    visit dashboard_inbox_path(project_id: project.id)
+
+    form = page.find(%(form[action="#{project_issue_clarifying_questions_path(project, project.issues.first)}"]))
+
+    expect(form).to have_field("inbox_kind", type: :hidden, with: "")
   end
 
   it "wires the mobile master-detail collapse via a Stimulus controller" do
