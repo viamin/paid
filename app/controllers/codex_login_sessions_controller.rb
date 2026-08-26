@@ -92,17 +92,6 @@ class CodexLoginSessionsController < ApplicationController
     end
   end
 
-  def normalized_return_to(candidate)
-    return if candidate.blank?
-
-    candidate = candidate.to_s
-    return unless candidate.start_with?("/") && !candidate.start_with?("//")
-
-    url_from(candidate)
-  rescue URI::InvalidURIError
-    nil
-  end
-
   def apply_target_runner_key(session, runner_key)
     session.metadata = session.metadata.to_h.merge("target_runner_key" => runner_key)
   end

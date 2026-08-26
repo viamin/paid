@@ -293,11 +293,12 @@ class NetworkPolicy
     end
 
     def omp_subscription_auth?
-      # OMP brokers its Claude-style credentials; a file-backed `.omp/agent.db`
-      # or `~/.local/share/omp/agent.db` is the runtime signal that omp is
-      # running in subscription mode rather than host-forwarded mode.
+      # OMP brokers its Claude-style credentials; a file-backed
+      # `.config/omp/agent/agent.db` or `~/.local/share/omp/agent/agent.db` is
+      # the runtime signal that omp is running in subscription mode rather than
+      # host-forwarded mode.
       paths = [ omp_config_dir, omp_data_dir ].compact
-      paths.any? { |base| File.file?(File.join(base, "agent.db")) }
+      paths.any? { |base| credential_present?(base, omp_agent_db_path) }
     end
 
     # Returns the Claude config directory path, checking the explicit
@@ -382,32 +383,36 @@ class NetworkPolicy
     # Returns the OMP config directory (XDG_CONFIG_HOME path).
     def omp_config_dir
       if ENV["OMP_CONFIG_DIR"].present?
-        return ENV["OMP_CONFIG_DIR"] if credential_present?(ENV["OMP_CONFIG_DIR"], "agent.db")
+        return ENV["OMP_CONFIG_DIR"] if credential_present?(ENV["OMP_CONFIG_DIR"], omp_agent_db_path)
       end
 
       home = home_dir
       return nil unless home.present?
 
       xdg = File.join(home, ".config", "omp")
-      xdg if credential_present?(xdg, "agent.db")
+      xdg if credential_present?(xdg, omp_agent_db_path)
     end
 
     # Returns the OMP data directory (XDG_DATA_HOME path).
     def omp_data_dir
       if ENV["OMP_DATA_DIR"].present?
-        return ENV["OMP_DATA_DIR"] if credential_present?(ENV["OMP_DATA_DIR"], "agent.db")
+        return ENV["OMP_DATA_DIR"] if credential_present?(ENV["OMP_DATA_DIR"], omp_agent_db_path)
       end
 
       home = home_dir
       return nil unless home.present?
 
       xdg = File.join(home, ".local", "share", "omp")
-      xdg if credential_present?(xdg, "agent.db")
+      xdg if credential_present?(xdg, omp_agent_db_path)
     end
 
     # Returns true when the directory exists and contains the given credential file.
     def credential_present?(dir, filename)
       Dir.exist?(dir) && File.file?(File.join(dir, filename))
+    end
+
+    def omp_agent_db_path
+      File.join("agent", "agent.db")
     end
 
     def home_dir

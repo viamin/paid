@@ -229,7 +229,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
 
     allow(svc).to receive_messages(
       opencode_managed_runner_credential: credential,
-      codex_auth_lock_timeout: 5
+      subscription_auth_lock_timeout: 5
     )
     allow(svc).to receive(:harvest_opencode_managed_credential!)
 
@@ -252,7 +252,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
 
     allow(svc).to receive_messages(
       opencode_managed_runner_credential: credential,
-      codex_auth_lock_timeout: 5
+      subscription_auth_lock_timeout: 5
     )
     allow(svc).to receive(:harvest_opencode_managed_credential!)
 
@@ -361,7 +361,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
 
     allow(svc).to receive_messages(
       omp_managed_runner_credential: credential,
-      codex_auth_lock_timeout: 5
+      subscription_auth_lock_timeout: 5
     )
     allow(svc).to receive(:harvest_omp_managed_credential!)
 
@@ -384,7 +384,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
 
     allow(svc).to receive_messages(
       omp_managed_runner_credential: credential,
-      codex_auth_lock_timeout: 5
+      subscription_auth_lock_timeout: 5
     )
     allow(svc).to receive(:harvest_omp_managed_credential!)
 

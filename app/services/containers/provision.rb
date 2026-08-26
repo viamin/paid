@@ -38,6 +38,17 @@ module Containers
     CODEX_NOTIFY_LINE = 'notify = ["sh", "-lc", "date +%s > /paid-heartbeat/.paid-heartbeat"]'
     HEARTBEAT_MOUNT_POINT = "/paid-heartbeat"
     MAX_STREAMING_LINE_BUFFER_BYTES = 64 * 1024
+    SUBSCRIPTION_EXEC_VERBS = {
+      "codex" => "exec",
+      "opencode" => "run"
+    }.freeze
+    SUBSCRIPTION_EXEC_VERB_MATCHERS = SUBSCRIPTION_EXEC_VERBS.transform_values do |verb|
+      /\b#{Regexp.escape(verb)}\b/
+    end.merge(
+      "omp" => /\A(?!auth-broker\b)\S+/
+    ).freeze
+    SUBSCRIPTION_SHELL_COMMAND_BOUNDARY = /(?:^|(?:;|&&|\|\||\||\n)\s*|\bthen\s+|\bdo\s+)/
+    SUBSCRIPTION_SHELL_ENV_WRAPPER = /(?:env\s+(?:(?:-u\s+\S+|[A-Za-z_][A-Za-z0-9_]*=\S+)\s+)*)?/
 
     # Maximum clock skew tolerance (seconds) between the Docker daemon's
     # `wait:` timer and Ruby's CLOCK_MONOTONIC when reclassifying a Docker
@@ -1864,7 +1875,7 @@ module Containers
 
     def with_codex_host_auth_lock
       lockfile = codex_auth_lockfile_path
-      lock_timeout = codex_auth_lock_timeout
+      lock_timeout = subscription_auth_lock_timeout
       lease_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
       File.open(lockfile, File::WRONLY | File::CREAT, 0o600) do |f|
@@ -1934,7 +1945,7 @@ module Containers
     end
 
     def with_subscription_managed_auth_lock(runner_key:, runner_credential:, lockfile:, skipped_event:)
-      lock_timeout = codex_auth_lock_timeout
+      lock_timeout = subscription_auth_lock_timeout
       lease_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
       File.open(lockfile, File::WRONLY | File::CREAT, 0o600) do |f|
@@ -2021,7 +2032,7 @@ module Containers
       end
     end
 
-    def codex_auth_lock_timeout
+    def subscription_auth_lock_timeout
       config = codex_harness_provider.auth_lock_config
       timeout = config&.dig(:timeout)
       timeout.is_a?(Numeric) ? timeout : 30
@@ -4018,29 +4029,29 @@ module Containers
     end
 
     def codex_exec_command?(command)
-      subscription_exec_command?(command, binary: "codex", verb: "exec")
+      subscription_exec_command?(command, binary: "codex")
     end
 
     def opencode_exec_command?(command)
-      subscription_exec_command?(command, binary: "opencode", verb: "run")
+      subscription_exec_command?(command, binary: "opencode")
     end
 
     def omp_exec_command?(command)
-      subscription_exec_command?(command, binary: "omp", verb_pattern: /\A(?!auth-broker\b)\S+/)
+      subscription_exec_command?(command, binary: "omp")
     end
 
-    def subscription_exec_command?(command, binary:, verb: nil, verb_pattern: nil)
+    def subscription_exec_command?(command, binary:)
       parts = normalized_command_parts(command)
       return false if parts.empty?
 
       parts = unwrap_env_command(parts)
+      expected_verb = SUBSCRIPTION_EXEC_VERBS[binary]
+      verb_matcher = subscription_exec_verb_matcher(binary)
 
       binary_pattern = Regexp.escape(binary)
-      verb_matcher = subscription_exec_verb_matcher(verb, verb_pattern)
-
       return true if subscription_shell_script_exec_command?(parts, binary_pattern:, verb_matcher:)
 
-      return parts.first(2) == [ binary, verb ] if verb
+      return parts.first(2) == [ binary, expected_verb ] if expected_verb
 
       parts.first == binary && parts[1]&.match?(verb_matcher)
     rescue ArgumentError
@@ -4053,11 +4064,9 @@ module Containers
       script = parts[2].to_s
       return false if script.empty?
 
-      boundary = /(?:^|(?:;|&&|\|\||\||\n)\s*|\bthen\s+|\bdo\s+)/
-      env_wrapper = /(?:env\s+(?:(?:-u\s+\S+|[A-Za-z_][A-Za-z0-9_]*=\S+)\s+)*)?/
       script_verb_matcher = subscription_shell_script_verb_matcher(verb_matcher)
 
-      script.match?(/#{boundary}#{env_wrapper}#{binary_pattern}\s+#{script_verb_matcher}/)
+      script.match?(/#{SUBSCRIPTION_SHELL_COMMAND_BOUNDARY}#{SUBSCRIPTION_SHELL_ENV_WRAPPER}#{binary_pattern}\s+#{script_verb_matcher}/)
     end
 
     def unwrap_env_command(parts)
@@ -4084,11 +4093,10 @@ module Containers
       token.to_s.match?(/\A[A-Za-z_][A-Za-z0-9_]*=.*\z/)
     end
 
-    def subscription_exec_verb_matcher(verb, verb_pattern)
-      return /\b#{Regexp.escape(verb)}\b/ if verb
-      return verb_pattern if verb_pattern
-
-      raise ArgumentError, "verb or verb_pattern is required"
+    def subscription_exec_verb_matcher(binary)
+      SUBSCRIPTION_EXEC_VERB_MATCHERS.fetch(binary) do
+        raise ArgumentError, "unsupported subscription binary: #{binary}"
+      end
     end
 
     def subscription_shell_script_verb_matcher(verb_matcher)
