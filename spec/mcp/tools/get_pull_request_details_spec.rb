@@ -255,6 +255,42 @@ RSpec.describe Tools::GetPullRequestDetails do
       )
     end
 
+    # @spec CHAT-API-011
+    it "returns persisted diagnostics when app installation token minting fails" do
+      installation = create(:github_installation, account: account)
+      project.update!(github_token: nil, github_installation: installation)
+      allow(Github::AppInstallation).to receive(:token_for).and_raise(
+        Github::AppInstallation::Error,
+        "GitHub App installation request failed (status 401): Bad credentials"
+      )
+
+      result = tool.call(project_id: project.id, issue_id: pr.id)
+
+      expect(result[:auto_merge]).to eq(expected_ready_auto_merge.merge(credential_mode: "github_app"))
+      expect(Github::AppInstallation).to have_received(:token_for).with(
+        installation_id: installation.github_installation_id,
+        repo_full_name: project.full_name
+      )
+    end
+
+    # @spec CHAT-API-011
+    it "returns persisted diagnostics when the app installation token request times out" do
+      installation = create(:github_installation, account: account)
+      project.update!(github_token: nil, github_installation: installation)
+      allow(Github::AppInstallation).to receive(:token_for).and_raise(
+        Faraday::TimeoutError,
+        "execution expired"
+      )
+
+      result = tool.call(project_id: project.id, issue_id: pr.id)
+
+      expect(result[:auto_merge]).to eq(expected_ready_auto_merge.merge(credential_mode: "github_app"))
+      expect(Github::AppInstallation).to have_received(:token_for).with(
+        installation_id: installation.github_installation_id,
+        repo_full_name: project.full_name
+      )
+    end
+
     it "reports an inactive (revoked) PAT as credentials_unavailable instead of letting the API call fail" do
       # `Project#client` returns a GithubClient for any present PAT without
       # checking `github_token.active?`, so without an up-front guard a

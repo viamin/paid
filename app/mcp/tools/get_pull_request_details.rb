@@ -21,6 +21,7 @@ module Tools
       }
     end
 
+    # @spec CHAT-API-011
     def perform(project_id:, issue_id:)
       project = project_for(project_id)
 
@@ -87,7 +88,7 @@ module Tools
       return nil unless client
 
       client.pull_request(project.full_name, pr.github_number)
-    rescue Github::AppInstallation::ConfigurationError, GithubClient::Error => e
+    rescue Github::AppInstallation::Error, GithubClient::Error, Faraday::Error => e
       Rails.logger.warn(
         message: "mcp.fetch_pr_details_pull_request_failed",
         error: e.message,
