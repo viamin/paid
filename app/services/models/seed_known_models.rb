@@ -184,6 +184,14 @@ module Models
         capability_score: 9.5,
         tier: "high"
       },
+      # gpt-5.3-codex is api_key-only on the Codex runner per the
+      # agent-harness 0.36.8 compatibility contract
+      # (viamin/agent-harness#366). The catalog contract drift detector
+      # flags it as :auth_mode_gated_for_model against codex (subscription),
+      # and selection already rejects it for subscription runs at the
+      # runner-contract check. Marking inactive here keeps the model out of
+      # the active selection pool and stops the drift finding from re-firing
+      # the daily model-health issue until the runner contract catches up.
       {
         model_id: "gpt-5.3-codex",
         display_name: "GPT-5.3 Codex",
@@ -198,7 +206,8 @@ module Models
         supports_tools: true,
         supports_json_output: true,
         capability_score: 9.6,
-        tier: "high"
+        tier: "high",
+        active: false
       },
       {
         model_id: "gpt-5.3-codex-spark",

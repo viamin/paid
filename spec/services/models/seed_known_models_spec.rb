@@ -186,6 +186,10 @@ RSpec.describe Models::SeedKnownModels do
       described_class.call
 
       expect(LlmModel.find_by!(model_id: "gpt-5.5-pro").active).to be(false)
+      # gpt-5.3-codex is api_key-only on the Codex runner per the
+      # agent-harness 0.36.8 contract; marked inactive so the daily catalog
+      # contract drift detector stops re-firing model-health issues (#3682).
+      expect(LlmModel.find_by!(model_id: "gpt-5.3-codex").active).to be(false)
     end
   end
 
