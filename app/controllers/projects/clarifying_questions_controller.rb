@@ -146,10 +146,11 @@ module Projects
     def normalized_return_to(candidate)
       return if candidate.blank?
 
-      candidate = candidate.to_s
-      return unless candidate.start_with?("/") && !candidate.start_with?("//")
+      parsed = URI.parse(candidate.to_s)
+      return unless parsed.scheme.nil? && parsed.host.nil?
+      return unless candidate.to_s.start_with?("/") && !candidate.to_s.start_with?("//")
 
-      url_from(candidate)
+      candidate.to_s
     rescue URI::InvalidURIError
       nil
     end
