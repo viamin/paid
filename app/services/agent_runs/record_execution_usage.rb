@@ -61,14 +61,16 @@ class AgentRuns::RecordExecutionUsage
   # The billed lifetime is frozen at the first recorded termination. A later
   # cleanup pass tears nothing down — the janitor counts an already-absent
   # volume as cleaned — so re-pricing the row against its +Time.current+
-  # would overstate spend for a resource that was only released once.
+  # would overstate spend for a resource that was only released once. A true
+  # re-provisioned retry is a new billing cycle and replaces the old row.
   # @spec EXEC-USAGE-011
   def recorded_usage
-    usage = ExecutionUsage.create_or_find_by!(agent_run_id: agent_run.id) do |record|
-      record.assign_attributes(execution_usage_attributes)
-    end
-    log_preserved_recording(usage) unless usage.previously_new_record?
-    usage
+    existing = ExecutionUsage.find_by(agent_run_id: agent_run.id)
+    return preserve_recording(existing) if preserve_existing_recording?(existing)
+
+    replace_recording(existing)
+  rescue ActiveRecord::RecordNotUnique
+    retry
   end
 
   def execution_usage_attributes
@@ -98,8 +100,13 @@ class AgentRuns::RecordExecutionUsage
     ExecutionUsageCostEstimator.call(
       billed_duration_seconds: billed_duration_seconds,
       runner_backend: runner_backend,
+      rate_cents_per_hour: stamped_rate_cents_per_hour,
       env: env
     )
+  end
+
+  def stamped_rate_cents_per_hour
+    agent_run.external_metadata&.dig("infrastructure_spend", "rate_cents_per_hour")
   end
 
   # Mirrors the persisted row — never the estimate just computed — so the run's
@@ -122,6 +129,22 @@ class AgentRuns::RecordExecutionUsage
       recorded_billed_duration_seconds: usage.billed_duration_seconds,
       skipped_billed_duration_seconds: billed_duration_seconds
     )
+  end
+
+  def preserve_existing_recording?(existing)
+    existing.present? && provisioned_at <= existing.terminated_at
+  end
+
+  def preserve_recording(existing)
+    log_preserved_recording(existing)
+    existing
+  end
+
+  def replace_recording(existing)
+    ExecutionUsage.transaction(requires_new: true) do
+      existing&.destroy!
+      ExecutionUsage.create!(agent_run_id: agent_run.id, **execution_usage_attributes)
+    end
   end
 
   def failure(message)

@@ -25,9 +25,10 @@ class ExecutionUsageCostEstimator
     new(...).call
   end
 
-  def initialize(billed_duration_seconds:, runner_backend:, env: ENV)
+  def initialize(billed_duration_seconds:, runner_backend:, rate_cents_per_hour: nil, env: ENV)
     @billed_duration_seconds = billed_duration_seconds
     @runner_backend = runner_backend
+    @rate_cents_per_hour = rate_cents_per_hour
     @env = env
   end
 
@@ -47,9 +48,11 @@ class ExecutionUsageCostEstimator
 
   private
 
-  attr_reader :billed_duration_seconds, :runner_backend, :env
+  attr_reader :billed_duration_seconds, :runner_backend, :rate_cents_per_hour, :env
 
   def resolved_rate
+    stamped_rate = rate_cents_per_hour.to_i
+    return stamped_rate if stamped_rate.positive?
     return 0 if runner_backend.blank?
 
     Capacity::InfrastructureLimits.rate_cents_per_hour(host: runner_backend, env: env).to_i

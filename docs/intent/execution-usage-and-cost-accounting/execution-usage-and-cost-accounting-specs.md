@@ -43,9 +43,10 @@ prefix: EXEC-USAGE
 
 - [x] **EXEC-USAGE-004** — `ExecutionUsageCostEstimator` SHALL compute
   estimated infra cost as `billed_duration_seconds / 3600 *
-  rate_cents_per_hour`, rounded to the nearest cent, where `rate_cents_per_hour`
-  is resolved from `Capacity::InfrastructureLimits.rate_cents_per_hour(host:)`
-  keyed by the record's `runner_backend`. A run with no resolvable rate
+  rate_cents_per_hour`, rounded to the nearest cent, using a caller-supplied
+  stamped `rate_cents_per_hour` when present and otherwise resolving the rate
+  from `Capacity::InfrastructureLimits.rate_cents_per_hour(host:)` keyed by
+  the record's `runner_backend`. A run with no stamped or resolvable rate
   SHALL contribute `0` cost and SHALL NOT raise.
   *Tests:* `spec/services/execution_usage_cost_estimator_spec.rb`.
   *Code:* `ExecutionUsageCostEstimator`,
@@ -112,15 +113,16 @@ prefix: EXEC-USAGE
   *Code:* `BackfillExecutionUsageFromInfrastructureSpendStamp`.
 
 - [x] **EXEC-USAGE-011** — When an `ExecutionUsage` row already exists for a
-  run, `AgentRuns::RecordExecutionUsage` SHALL preserve the first recorded
-  termination — `terminated_at` and the `billed_duration_seconds`,
+  run and the current `provisioned_at` is on or before that row's
+  `terminated_at`, `AgentRuns::RecordExecutionUsage` SHALL preserve the first
+  recorded termination — `terminated_at` and the `billed_duration_seconds`,
   `infra_cost_cents`, and `rate_cents_per_hour` derived from it — instead of
   re-pricing the row against a later timestamp, and SHALL mirror the
   persisted row (never a freshly computed estimate) onto the run's
-  denormalized columns. A fallback cleanup pass that tears nothing down
-  (`AgentRunResourceJanitorJob` counts an already-absent volume as cleaned)
-  therefore cannot overstate infra spend for a resource that was released
-  once.
+  denormalized columns. When the current `provisioned_at` is after the
+  existing row's `terminated_at`, the recorder SHALL replace that row as a
+  new billing cycle so park/resume and stale requeue re-provisioning record
+  the later execution rather than freezing the old `evicted` termination.
   *Tests:* `spec/services/agent_runs/record_execution_usage_spec.rb`,
   `spec/models/agent_run_spec.rb`.
   *Code:* `AgentRuns::RecordExecutionUsage`.

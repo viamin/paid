@@ -72,7 +72,11 @@ The estimator deliberately snapshots `rate_cents_per_hour` onto the
 `ExecutionUsage` row. That keeps historical accounting fixed once computed:
 later env-var rate changes do not retroactively re-price old runs, which
 the existing `Capacity::InfrastructureSpend` already enforces for its
-external-metadata stamp. Same invariant, different record.
+external-metadata stamp. Same invariant, different record. The live
+recorder and the historical backfill therefore both prefer the run's
+admission-time `external_metadata["infrastructure_spend"]["rate_cents_per_hour"]`
+when it exists, falling back to current rate resolution only for runs that
+lack a stamp.
 
 ## `AgentRun` Aggregate Fields
 
@@ -140,10 +144,18 @@ cleaned later without ever writing its final usage/cost summary.
 
 Because those paths overlap rather than take turns — the janitor still runs
 after the primary cleanup path succeeded, and it counts an already-absent
-volume as "cleaned" — the recorder is first-write-wins. The earliest recorded
-termination is the one the resource actually had, so a later pass that tore
-nothing down cannot re-price the row against its own `Time.current` and
-inflate `billed_duration_seconds` / `infra_cost_cents`. The run's
+volume as "cleaned" — the recorder preserves the existing row for any
+re-entry whose `provisioned_at` is on or before the recorded
+`terminated_at`. That keeps an overlapping fallback pass from re-pricing the
+same resource lifetime against its own `Time.current` and inflating
+`billed_duration_seconds` / `infra_cost_cents`.
+
+The important exception is true re-provisioning: park/resume and stale
+claimed requeue can tear one resource down, later provision a new one for the
+same `AgentRun`, and finally clean that later resource up. When the current
+`provisioned_at` is after the existing row's `terminated_at`, the recorder
+replaces the row so the run's accounting reflects the later billing cycle
+instead of freezing the old `evicted` termination forever. The run's
 denormalized columns are mirrored from the persisted row rather than from the
 estimate just computed, which keeps them equal to the recorded spend and lets
 a run whose column write was lost after the row was inserted self-heal on the
