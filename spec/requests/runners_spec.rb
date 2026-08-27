@@ -1007,6 +1007,20 @@ RSpec.describe "Runners" do
       expect(response.body).to include('name="runner[config][opencode][model]"')
     end
 
+    # @spec DIRECT-OUTBOUND-CATALOG-008
+    it "does not preselect a provider's models before an API key is chosen on a new OpenCode runner" do
+      create(:provider_api_key, user: user, api_service_type: "openrouter", name: "OpenRouter")
+      create(:llm_model, model_id: "moonshotai/kimi-k2-0905", provider: "openrouter", display_name: "Kimi K2")
+      allow(RunnerSupport).to receive(:addable_runner_keys).and_return(%w[opencode])
+
+      get new_runner_path(form_variant: "api_key", runner_key: "opencode")
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include('data-current-service-type=""')
+      expect(response.body).to include('<option value="">Select an API key first</option>')
+      expect(response.body).not_to include('<option value="moonshotai/kimi-k2-0905"')
+    end
+
     it "defaults back to subscription when the requested runner already has an active managed credential" do
       create(:provider_api_key, user: user, api_service_type: "anthropic", name: "Anthropic")
       create(:runner_credential, account: user.account, created_by: user, runner_key: "claude", long_lived: true)

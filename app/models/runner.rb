@@ -1684,8 +1684,17 @@ class Runner < ApplicationRecord
       .find(&:present?)
   end
 
+  # New records must not default to a provider before the user has actually
+  # selected an API key -- the model list depends on the selected key, and the
+  # initial state should stay on "Select an API key first". Persisted rows
+  # (including pre-migration rows with only a legacy config value) keep
+  # falling back to `default` so existing runners don't change behavior.
   def derived_api_provider_for(api_key, legacy_value:, default:)
-    api_key&.api_service_type.presence || legacy_value.to_s.presence || default
+    return api_key.api_service_type if api_key.present?
+    return legacy_value.to_s if legacy_value.present?
+    return default if persisted?
+
+    nil
   end
 
   def direct_outbound_catalog_model_id_candidates(model_id)

@@ -1219,6 +1219,38 @@ RSpec.describe Runner do
     end
 
     # @spec DIRECT-OUTBOUND-CATALOG-008
+    it "does not default a new record's api provider before a key is selected" do
+      runner = build(
+        :runner,
+        user: user,
+        runner_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: nil,
+        config: {}
+      )
+
+      expect(runner.opencode_api_provider).to be_nil
+      expect(runner.opencode_required_api_service_type).to be_nil
+    end
+
+    # @spec DIRECT-OUTBOUND-CATALOG-008
+    it "falls back to the default provider for a persisted record with no key or legacy value" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
+      create(:llm_model, model_id: "claude-sonnet-4-20250514", provider: "anthropic", tier: "mid")
+      runner = create(
+        :runner,
+        user: user,
+        runner_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "model" => "claude-sonnet-4-20250514" } }
+      )
+      runner.provider_api_key = nil
+
+      expect(runner.opencode_api_provider).to eq(Runner::OPENCODE_DEFAULT_API_PROVIDER)
+    end
+
+    # @spec DIRECT-OUTBOUND-CATALOG-008
     it "validates the selected model against the provider derived from the API key" do
       api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
       create(:llm_model, model_id: "moonshotai/kimi-k2-0905", provider: "openrouter", tier: "mid")
