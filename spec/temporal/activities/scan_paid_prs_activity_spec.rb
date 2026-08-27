@@ -10816,7 +10816,15 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           "next_action" => "Merge this pull request manually or use a supported dependency-update bot such as Dependabot."
         }
       ],
-      "not_evaluated" => []
+      "not_evaluated" => [
+        {
+          "signal" => "dependencies_resolved",
+          "status" => "not_evaluated",
+          "reason_code" => "dependencies_unresolved",
+          "sanitized_message" => "Dependency resolution was not evaluated because an earlier auto-merge gate already failed.",
+          "next_action" => "Resolve the earlier auto-merge blockers first, then let Paid re-evaluate dependency resolution."
+        }
+      ]
     }
   end
 end
