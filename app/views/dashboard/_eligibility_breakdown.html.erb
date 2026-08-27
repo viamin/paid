@@ -25,7 +25,7 @@
                 </span>
               <% end %>
               <% if bd.needs_input.positive? %>
-                <%= link_to dashboard_inbox_path(project_id: bd.project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND),
+                <%= link_to inbox_path(project_id: bd.project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND),
                       class: "inline-flex items-center gap-1 text-amber-700 hover:text-amber-800",
                       data: { turbo_frame: "_top" },
                       title: "Issues where Paid needs human clarification before proceeding" do %>
