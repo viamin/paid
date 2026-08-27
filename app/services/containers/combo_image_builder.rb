@@ -14,7 +14,10 @@ module Containers
   # previous layer's *tag*, never its build id. Backends that build on
   # multiple hosts (e.g. swarm) run each layer's build independently per
   # node and only the tag, not the id, is guaranteed to resolve consistently
-  # wherever the next layer happens to build.
+  # wherever the next layer happens to build. Intermediate tags are untagged
+  # immediately once the whole chain succeeds — they exist only to give the
+  # next layer a FROM target, and Docker's content-addressed layer store
+  # keeps the shared layers alive under the final tag regardless.
   #
   # Built images carry labels recording the base image digest they were built
   # against, when they were built, and which extended runtime each layer added.
@@ -152,11 +155,14 @@ module Containers
       log(:info, "agent_image.build.start", image: image, layers: layers, nocache: nocache)
       digest = base_image_digest
       from = ImageResolver::BASE_IMAGE
+      intermediate_tags = []
       layers.each_with_index do |token, index|
         tag = index == layers.size - 1 ? image : intermediate_tag(image, index)
         build_layer(token, from: from, tag: tag, base_digest: digest, nocache: nocache)
+        intermediate_tags << tag unless tag == image
         from = tag
       end
+      untag_intermediates(intermediate_tags)
       duration_ms = elapsed_ms(started)
       log(:info, "agent_image.build.success", image: image, layers: layers, duration_ms: duration_ms)
       Result.new(image: image, status: :built, duration_ms: duration_ms)
@@ -213,6 +219,21 @@ module Containers
 
     def intermediate_tag(image, index)
       "#{INTERMEDIATE_TAG_PREFIX}:#{image.split(":", 2).last}--layer#{index}"
+    end
+
+    # Intermediate tags exist only to give the next layer a stable FROM
+    # target; once the chain finishes, the final layer's image already holds
+    # every layer's content (Docker's content-addressed layer store keeps
+    # them alive independent of the tag), so the private tags are dropped
+    # immediately rather than left to accumulate. Best-effort: a failed
+    # untag leaves an orphaned `paid-agent-build:*` tag but never fails the
+    # build the caller is waiting on.
+    def untag_intermediates(tags)
+      tags.each do |tag|
+        backend.delete_image(tag)
+      rescue Docker::Error::DockerError => e
+        log(:warn, "agent_image.build.intermediate_untag_failed", tag: tag, error: "#{e.class}: #{e.message}")
+      end
     end
 
     # Bounded capture of the streamed build output for failure messages —

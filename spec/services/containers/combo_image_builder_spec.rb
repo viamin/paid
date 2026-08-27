@@ -79,6 +79,7 @@ RSpec.describe Containers::ComboImageBuilder do
       # node from build_image rather than a single image.
       per_node_images = [ instance_double(Docker::Image, id: "sha256:#{'1' * 64}"), instance_double(Docker::Image, id: "sha256:#{'2' * 64}") ]
       allow(backend).to receive(:build_image).and_return(per_node_images)
+      allow(backend).to receive(:delete_image)
 
       described_class.ensure_available("paid-agent:go-rust", backend: backend)
 
@@ -95,6 +96,33 @@ RSpec.describe Containers::ComboImageBuilder do
           buildargs: { "BASE_IMAGE" => intermediate_tag }.to_json
         )
       ).once
+    end
+
+    it "untags intermediate chain layers once the whole chain builds successfully" do
+      stub_combo_absent("paid-agent:go-rust")
+      per_node_images = [ instance_double(Docker::Image, id: "sha256:#{'1' * 64}"), instance_double(Docker::Image, id: "sha256:#{'2' * 64}") ]
+      allow(backend).to receive(:build_image).and_return(per_node_images)
+      allow(backend).to receive(:delete_image)
+
+      described_class.ensure_available("paid-agent:go-rust", backend: backend)
+
+      expect(backend).to have_received(:delete_image).with("paid-agent-build:go-rust--layer0").once
+      expect(backend).not_to have_received(:delete_image).with("paid-agent:go-rust")
+    end
+
+    it "does not fail the build when untagging an intermediate layer fails" do
+      stub_combo_absent("paid-agent:go-rust")
+      per_node_images = [ instance_double(Docker::Image, id: "sha256:#{'1' * 64}") ]
+      allow(backend).to receive(:build_image).and_return(per_node_images)
+      allow(backend).to receive(:delete_image).and_raise(Docker::Error::NotFoundError.new("already gone"))
+
+      expect(Rails.logger).to receive(:public_send).with(
+        :warn, hash_including(message: "agent_image.build.intermediate_untag_failed", tag: "paid-agent-build:go-rust--layer0")
+      )
+
+      result = described_class.ensure_available("paid-agent:go-rust", backend: backend)
+
+      expect(result.status).to eq(:built)
     end
 
     it "rebuilds a polyglot combo including base-language tokens" do
