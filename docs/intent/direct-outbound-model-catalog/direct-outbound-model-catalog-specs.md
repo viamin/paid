@@ -47,3 +47,13 @@
   direct-outbound runner is saved, the system SHALL stop persisting
   `config[runner_key]["api_provider"]`; legacy stored values remain a fallback
   only for pre-existing rows that have not yet been rewritten.
+- [x] **DIRECT-OUTBOUND-CATALOG-009** — When the runner form renders the model
+  dropdown for an existing API-key direct-outbound runner whose configured
+  model is outside the active catalog for its derived provider (deactivated
+  or manually entered), the system SHALL still render that model as a
+  selectable, pre-selected option, so saving an unrelated field never
+  silently clears or invalidates it.
+- [x] **DIRECT-OUTBOUND-CATALOG-010** — When the derived provider for an
+  API-key direct-outbound runner has no active catalog rows and no currently
+  configured model to preserve, the runner form SHALL render a manual
+  model-id text field instead of a permanently disabled, empty select.

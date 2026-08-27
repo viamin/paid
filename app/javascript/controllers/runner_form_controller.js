@@ -47,6 +47,7 @@ export default class extends Controller {
     "piSettings",
     "ompSettings",
     "dynamicModelSelect",
+    "dynamicModelManualInput",
     "tierSettings",
     "tierSelect",
   ]
@@ -178,6 +179,11 @@ export default class extends Controller {
       const optionsByServiceType = this.modelOptionsByServiceType(select)
       const options = serviceType ? optionsByServiceType[serviceType] || [] : []
       const selectedValue = select.value
+      // No catalog rows (and no preserved current-model entry) for this
+      // provider: fall back to a manual text entry instead of a dead,
+      // permanently-disabled select (see LlmModel::CUSTOM_MODEL_OPTION).
+      const manualEntry = matches && Boolean(serviceType) && options.length === 0
+      const manualInput = this.manualModelInputFor(currentRunnerKey)
 
       this.replaceDynamicModelOptions(select, options, serviceType)
 
@@ -186,9 +192,19 @@ export default class extends Controller {
         select.value = selectedValue
       }
 
+      select.hidden = manualEntry
       select.disabled = !matches || !serviceType || options.length === 0
       select.dataset.currentServiceType = serviceType || ""
+
+      if (manualInput) {
+        manualInput.hidden = !manualEntry
+        manualInput.disabled = !manualEntry
+      }
     })
+  }
+
+  manualModelInputFor(runnerKey) {
+    return (this.dynamicModelManualInputTargets || []).find((target) => target.dataset.runnerKey === runnerKey)
   }
 
   runnerApiKeyMode() {

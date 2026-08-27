@@ -1282,6 +1282,59 @@ RSpec.describe "Runners" do
       expect(response.body).to include('name="runner[config][omp][model]"')
     end
 
+    # @spec DIRECT-OUTBOUND-CATALOG-009
+    it "preserves a required OpenCode model that has since been deactivated in the catalog" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+      runner = user.runners.create!(
+        runner_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "model" => "retired/model-x" } }
+      )
+      LlmModel.find_by!(model_id: "retired/model-x").update!(active: false)
+
+      get edit_runner_path(runner)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to match(%r{<option value="retired/model-x"\s+selected>})
+    end
+
+    # @spec DIRECT-OUTBOUND-CATALOG-009
+    it "preserves an optional Pi model that has since been deactivated in the catalog" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "deepseek")
+      runner = user.runners.create!(
+        runner_key: "pi",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "pi" => { "model" => "deepseek-legacy" } }
+      )
+      LlmModel.find_by!(model_id: "deepseek-legacy").update!(active: false)
+
+      get edit_runner_path(runner)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to match(/<option value="deepseek-legacy"\s+selected>/)
+    end
+
+    # @spec DIRECT-OUTBOUND-CATALOG-010
+    it "renders a manual model entry field when the derived provider has no catalog rows and no saved model" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "mistral")
+      runner = user.runners.create!(
+        runner_key: "pi",
+        auth_type: "api_key",
+        provider_api_key: api_key
+      )
+
+      get edit_runner_path(runner)
+
+      expect(response).to have_http_status(:ok)
+      manual_input = response.body[/<input[^>]*name="runner\[config\]\[pi\]\[model\]"[^>]*data-runner-form-target="dynamicModelManualInput"[^>]*>/]
+      select_tag = response.body[/<select[^>]*name="runner\[config\]\[pi\]\[model\]"[^>]*>/m]
+      expect(manual_input).to be_present
+      expect(manual_input).not_to include("disabled")
+      expect(select_tag).to include("disabled")
+    end
+
     it "renders complexity_thresholds inputs with balanced bracket names so Rack parses them as a nested hash" do
       runner = user.runners.find_by!(runner_key: "claude")
 
