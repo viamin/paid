@@ -235,8 +235,8 @@ class RunnersController < ApplicationController
     end
     attrs = raw_params.permit(
       *permitted,
-      config: { opencode: [ :api_provider, :model ], kilocode: [ :api_provider, :model, :preflight_timeout_seconds ],
-                pi: [ :api_provider, :model ], omp: [ :api_provider, :model ] },
+      config: { opencode: [ :model ], kilocode: [ :model, :preflight_timeout_seconds ],
+                pi: [ :model ], omp: [ :model ] },
       tier_model_ids: LlmModel::TIERS,
       complexity_thresholds: Runner::COMPLEXITY_THRESHOLD_KEYS
     )
@@ -298,6 +298,7 @@ class RunnersController < ApplicationController
     # Single-instance keys are subtracted once the user already has one so
     # the "Add Runner" CTA reflects reality.
     @available_api_keys = current_user.provider_api_keys.ordered
+    @available_api_keys_by_service_type = group_api_keys_by_service_type(@available_api_keys)
     candidate_api_key_keys = addable_keys.select do |key|
       @available_api_keys.any? { |ak| compatible_api_key_for_runner?(api_key: ak, runner_key: key) }
     end
@@ -550,6 +551,7 @@ class RunnersController < ApplicationController
       time_range: @outcome_time_range
     )
     @available_api_keys = current_user.provider_api_keys.ordered
+    @available_api_keys_by_service_type = group_api_keys_by_service_type(@available_api_keys)
     existing_subscription_keys = @runners.select(&:subscription?).map(&:runner_key)
     # Only single-instance runner keys are hidden from the index "Add Runner"
     # CTA once added; other api_key runners allow legitimate duplicates.
@@ -686,8 +688,8 @@ class RunnersController < ApplicationController
   end
 
   def compatible_api_key_for_runner?(api_key:, runner_key:)
-    # Direct-outbound runners support multiple API key types depending on the
-    # selected api_provider, so check against all compatible service types.
+    # Direct-outbound runners derive their effective provider from the selected
+    # API key, so any service type in that runner's compatible set is valid.
     if %w[opencode kilocode].include?(runner_key)
       return resource_model_class::DIRECT_OUTBOUND_SERVICE_TYPES.include?(api_key.api_service_type)
     end
@@ -733,6 +735,12 @@ class RunnersController < ApplicationController
 
   def api_key_only_runner?(runner_key)
     runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
+  end
+
+  def group_api_keys_by_service_type(api_keys)
+    api_keys.group_by(&:api_service_type).sort_by do |service_type, _keys|
+      RunnerSupport.api_service_type_label(service_type)
+    end
   end
 
   def enabled_agent_runner_identifiers

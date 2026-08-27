@@ -26,31 +26,6 @@ function loadRunnerApiServiceType() {
 
 const RUNNER_API_SERVICE_TYPE = loadRunnerApiServiceType()
 
-// OpenCode, KiloCode, Pi, and Oh My Pi support multiple upstream API providers, each with its
-// own API key type. The mapping is derived from data-service-type attributes on
-// the <option> elements rendered by the backend (Runner::DIRECT_OUTBOUND_API_PROVIDERS),
-// keeping the backend as the single source of truth.
-function loadDirectOutboundApiProviderServiceTypes() {
-  const selects = document.querySelectorAll(
-    "[data-runner-form-target='directOutboundApiProviderSelect']"
-  )
-  for (const select of selects) {
-    const mapping = {}
-    let found = false
-    for (const option of select.options) {
-      const serviceType = option.dataset?.serviceType
-      if (option.value && serviceType) {
-        mapping[option.value] = serviceType
-        found = true
-      }
-    }
-    if (found) return mapping
-  }
-
-  // Fallback if backend has not yet rendered the options (e.g. no runner form on page).
-  return {}
-}
-
 // Runner keys that use dynamic api_provider selection.
 const DYNAMIC_API_RUNNER_KEYS = new Set(["opencode", "kilocode", "pi", "omp"])
 
@@ -71,7 +46,7 @@ export default class extends Controller {
     "kilocodeSettings",
     "piSettings",
     "ompSettings",
-    "directOutboundApiProviderSelect",
+    "dynamicModelSelect",
     "tierSettings",
     "tierSelect",
   ]
@@ -154,6 +129,7 @@ export default class extends Controller {
 
     this.refreshTierSettings(runnerKey)
     this.refreshApiKeyOptions(runnerKey)
+    this.refreshDynamicModelOptions(runnerKey)
   }
 
   refreshTierSettings(runnerKey = this.currentRunnerKey()) {
@@ -173,8 +149,6 @@ export default class extends Controller {
 
   refreshApiKeyOptions(runnerKey = this.currentRunnerKey()) {
     if (!this.hasApiKeySelectTarget) return
-
-    const requiredServiceType = this.requiredApiServiceTypeFor(runnerKey)
     let selectedOptionVisible = false
 
     this.apiKeyOptionTargets.forEach((option) => {
@@ -184,9 +158,7 @@ export default class extends Controller {
       }
 
       const serviceType = option.dataset.apiServiceType || ""
-      // When requiredServiceType is null (unknown/unmapped runner), hide all
-      // API key options — the runner has no compatible API key type.
-      const visible = requiredServiceType !== null && serviceType === requiredServiceType
+      const visible = this.apiKeyVisibleForRunner(runnerKey, serviceType)
       option.hidden = !visible
       if (visible && option.selected) {
         selectedOptionVisible = true
@@ -196,6 +168,27 @@ export default class extends Controller {
     if (!selectedOptionVisible) {
       this.apiKeySelectTarget.value = ""
     }
+  }
+
+  refreshDynamicModelOptions(runnerKey = this.currentRunnerKey()) {
+    this.dynamicModelSelectTargets.forEach((select) => {
+      const currentRunnerKey = select.dataset.runnerKey
+      const matches = currentRunnerKey === runnerKey && this.runnerApiKeyMode()
+      const serviceType = this.requiredApiServiceTypeFor(currentRunnerKey)
+      const optionsByServiceType = this.modelOptionsByServiceType(select)
+      const options = serviceType ? optionsByServiceType[serviceType] || [] : []
+      const selectedValue = select.value
+
+      this.replaceDynamicModelOptions(select, options, serviceType)
+
+      const values = options.map((option) => option[1])
+      if (values.includes(selectedValue)) {
+        select.value = selectedValue
+      }
+
+      select.disabled = !matches || !serviceType || options.length === 0
+      select.dataset.currentServiceType = serviceType || ""
+    })
   }
 
   runnerApiKeyMode() {
@@ -208,14 +201,16 @@ export default class extends Controller {
   requiredApiServiceTypeFor(runnerKey) {
     if (!runnerKey) return null
 
-    // OpenCode, KiloCode, Pi, and Oh My Pi determine their required API key type from
-    // the selected api_provider dropdown.
+    // OpenCode, KiloCode, Pi, and Oh My Pi derive their effective provider from
+    // the selected API key's service type.
     if (DYNAMIC_API_RUNNER_KEYS.has(runnerKey)) {
-      const apiProvider = this.currentDirectOutboundApiProvider(runnerKey)
-      // Compute at runtime rather than module-load time so that the mapping
-      // is correct even when the first page load didn't include the runner form
-      // (Turbo navigation doesn't reload JS modules).
-      return loadDirectOutboundApiProviderServiceTypes()[apiProvider] || null
+      const selectedApiKey = this.selectedApiKeyOption()
+      if (selectedApiKey?.dataset.apiServiceType) return selectedApiKey.dataset.apiServiceType
+
+      const modelSelect = this.dynamicModelSelectTargets.find(
+        (target) => target.dataset.runnerKey === runnerKey
+      )
+      return modelSelect?.dataset.currentServiceType || null
     }
 
     // Returns null for unknown/unmapped runners (e.g. copilot), which causes
@@ -224,11 +219,46 @@ export default class extends Controller {
     return RUNNER_API_SERVICE_TYPE[runnerKey] || null
   }
 
-  currentDirectOutboundApiProvider(runnerKey) {
-    const select = this.directOutboundApiProviderSelectTargets.find(
-      (el) => el.dataset.runnerKey === runnerKey
-    )
-    return select?.value || "openrouter"
+  apiKeyVisibleForRunner(runnerKey, serviceType) {
+    if (!runnerKey) return false
+    if (DYNAMIC_API_RUNNER_KEYS.has(runnerKey)) {
+      return this.dynamicServiceTypesFor(runnerKey).has(serviceType)
+    }
+
+    const requiredServiceType = this.requiredApiServiceTypeFor(runnerKey)
+    return requiredServiceType !== null && serviceType === requiredServiceType
+  }
+
+  dynamicServiceTypesFor(runnerKey) {
+    const select = this.dynamicModelSelectTargets.find((target) => target.dataset.runnerKey === runnerKey)
+    return new Set(Object.keys(this.modelOptionsByServiceType(select)))
+  }
+
+  modelOptionsByServiceType(select) {
+    if (!select?.dataset.modelOptionsByServiceType) return {}
+
+    try {
+      const parsed = JSON.parse(select.dataset.modelOptionsByServiceType)
+      return parsed && typeof parsed === "object" ? parsed : {}
+    } catch {
+      return {}
+    }
+  }
+
+  replaceDynamicModelOptions(select, options, serviceType) {
+    const placeholder = serviceType ? "Select a model" : "Select an API key first"
+    select.options.length = 0
+    select.add(new Option(placeholder, ""))
+
+    options.forEach(([label, value]) => {
+      select.add(new Option(label, value))
+    })
+  }
+
+  selectedApiKeyOption() {
+    if (!this.hasApiKeySelectTarget) return null
+
+    return this.apiKeySelectTarget.selectedOptions[0] || null
   }
 
   currentRunnerKey() {
