@@ -882,6 +882,22 @@ RSpec.describe Runner do
         expect(runner.errors[:config]).to include("must include an OpenCode model id")
       end
 
+      it "rejects an unsupported model policy value on a subscription-auth runner" do
+        runner.runner_key = "opencode"
+        runner.config = { "opencode" => { "model_policy" => "bogus" } }
+
+        expect(runner).not_to be_valid
+        expect(runner.errors[:config]).to include("must include a supported OpenCode model policy")
+      end
+
+      it "rejects the free policy on a subscription-auth runner with a non-openrouter API provider" do
+        runner.runner_key = "opencode"
+        runner.config = { "opencode" => { "api_provider" => "minimax", "model_policy" => "free" } }
+
+        expect(runner).not_to be_valid
+        expect(runner.errors[:config]).to include("OpenCode free model policy requires the OpenRouter API provider")
+      end
+
       it "treats a free-policy opencode runner as free_model_policy?" do
         runner.runner_key = "opencode"
         runner.config = { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } }
@@ -1221,6 +1237,29 @@ RSpec.describe Runner do
       )
 
       expect(runner.display_name).to eq("Oh My Pi deepseek-chat (API Key)")
+    end
+  end
+
+  # @spec MODEL-POLICY-006
+  describe "runner-option cache invalidation for opencode model_policy changes" do
+    it "invalidates the cache when model_policy flips without changing model" do
+      api_key = create(:provider_api_key, api_service_type: "openrouter")
+      create(:llm_model, :free, model_id: "meta-llama/llama-4-maverick", tier: "mid")
+      runner = create(
+        :runner,
+        user: api_key.user,
+        runner_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        enabled_for_agent_runs: false,
+        enabled_for_chat: false,
+        enabled_for_fallback: false,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "meta-llama/llama-4-maverick" } }
+      )
+
+      expect(AgentRun).to receive(:invalidate_runner_options_cache).with(account_id: api_key.user.account_id)
+
+      runner.update!(config: { "opencode" => { "api_provider" => "openrouter", "model" => "meta-llama/llama-4-maverick", "model_policy" => "free" } })
     end
   end
 

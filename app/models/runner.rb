@@ -200,6 +200,7 @@ class Runner < ApplicationRecord
   validate :subscription_must_have_standard_fallback_role
   validate :api_key_entry_must_be_unique
   validate :free_model_policy_runner_must_be_unique_per_credential
+  validate :opencode_model_policy_must_be_valid
   validate :opencode_api_key_config_must_be_valid
   validate :opencode_free_policy_runner_must_not_be_enabled
   validate :kilocode_api_key_config_must_be_valid
@@ -1111,7 +1112,7 @@ class Runner < ApplicationRecord
 
     case runner_key
     when "opencode"
-      config.dig("opencode", "model")
+      [ config.dig("opencode", "model"), config.dig("opencode", "model_policy") ]
     when "kilocode"
       config.dig("kilocode", "model")
     when "pi"
@@ -1259,7 +1260,31 @@ class Runner < ApplicationRecord
     errors.add(:auth_type, "must be API key for OpenRouter Pareto")
   end
 
+  # Runs for every opencode runner regardless of auth type, unlike
+  # opencode_api_key_config_must_be_valid below: model_policy determines
+  # whether the runner is free_model_policy? (which feeds validators and
+  # dispatch logic for subscription and api_key rows alike), so a crafted
+  # value must fail loudly instead of silently passing when auth_type isn't
+  # api_key.
   # @spec MODEL-POLICY-001 MODEL-POLICY-002 MODEL-POLICY-003
+  def opencode_model_policy_must_be_valid
+    return unless runner_key == "opencode"
+
+    unless MODEL_POLICIES.include?(opencode_model_policy)
+      errors.add(:config, "must include a supported OpenCode model policy")
+      return
+    end
+
+    return unless opencode_model_policy == "free"
+
+    # Phase-1 gate: free-model routing is only wired up for OpenRouter.
+    # Pi/OMP/KiloCode free policies land in a follow-up issue.
+    return if opencode_api_provider == "openrouter"
+
+    errors.add(:config, "OpenCode free model policy requires the OpenRouter API provider")
+  end
+
+  # @spec MODEL-POLICY-002 MODEL-POLICY-003
   def opencode_api_key_config_must_be_valid
     return unless runner_key == "opencode"
     return unless api_key?
@@ -1268,19 +1293,7 @@ class Runner < ApplicationRecord
       errors.add(:config, "must include a supported OpenCode API provider")
     end
 
-    unless MODEL_POLICIES.include?(opencode_model_policy)
-      errors.add(:config, "must include a supported OpenCode model policy")
-    end
-
-    if opencode_model_policy == "free"
-      # Phase-1 gate: free-model routing is only wired up for OpenRouter.
-      # Pi/OMP/KiloCode free policies land in a follow-up issue.
-      unless opencode_api_provider == "openrouter"
-        errors.add(:config, "OpenCode free model policy requires the OpenRouter API provider")
-      end
-    elsif opencode_model_id.blank?
-      errors.add(:config, "must include an OpenCode model id")
-    end
+    errors.add(:config, "must include an OpenCode model id") if opencode_model_policy != "free" && opencode_model_id.blank?
 
     if opencode_config["preflight_timeout_seconds"].present? &&
         (opencode_preflight_timeout_seconds.nil? || opencode_preflight_timeout_seconds < MIN_PREFLIGHT_TIMEOUT_SECONDS)
