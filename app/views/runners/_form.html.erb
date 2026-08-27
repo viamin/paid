@@ -89,7 +89,7 @@
       <%= link_to "Connect Runner flow picker", new_runner_login_flow_path(return_to: request.fullpath), class: "font-medium text-indigo-600 hover:text-indigo-500" %>
       to capture a managed runner credential without host shell access when that flow is supported.
     </p>
-    <% if is_new && @managed_credential_preferred_runner_key == "claude" %>
+    <% if is_new && managed_credential_preferred_runner_key == "claude" %>
       <p class="mt-2 text-xs text-gray-500">Paid prefers it over host-mounted Claude auth.</p>
     <% end %>
   </div>
