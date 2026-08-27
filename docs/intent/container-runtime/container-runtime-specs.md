@@ -387,6 +387,26 @@
   *Tests:* documentation-only acceptance; referenced from the conformance suite
   issue and LID docs
   *Code:* `docs/intent/container-runtime/external-resource-failure-matrix.md`
+
+- [x] **CONTAINER-RUNTIME-038** — The repository SHALL document how to
+  implement and review a future second execution runner without relying on
+  Docker-specific tribal knowledge. The documentation SHALL name the shared
+  runner contract and domain objects (`RunSpec`, `RunnerHandle`,
+  `ExecutionResult`, `ExecutionStatus`, networking/workspace/service/resource
+  shapes), the registration points (`ExecutionRunners.resolve`,
+  `ExecutionRunners.for_type`, and reconciliation registration), the shared
+  contract and no-shared-filesystem conformance coverage a new runner must
+  pass, the existing in-memory fake/test runner path (`ContractRunner`) for
+  optional spikes, the control-plane-to-runner ownership split, and the
+  step-by-step author/reviewer workflow for registration, compatibility
+  validation, handle-based recovery, and closeout. The documentation SHALL
+  also call out the current Docker-specific leaks that still remain.
+  The documentation SHALL also state explicitly that the historical
+  execution-runner `RDR-054` issue label no longer maps to the current
+  `docs/rdrs/RDR-054-prompt-assembly-service.md`.
+  *Tests:* documentation-only acceptance
+  *Code:* `docs/intent/container-runtime/runner-authoring-guide.md`,
+  `docs/intent/container-runtime/container-runtime-design.md`
 - [x] **CONTAINER-RUNTIME-021** — The system SHALL persist an `AgentImage`
   registry record that represents the immutable production identity of an
   agent container image as `(account_id, registry, repository, digest,
