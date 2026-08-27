@@ -6505,6 +6505,29 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(automation_scan_results(result).size).to eq(1)
         expect(automation_scan_results(result).first[:triggers].first[:type]).to eq("owner_approved")
       end
+
+      it "uses the pull request base ref instead of the project default branch" do
+        collector = instance_double(
+          Automation::Signals::PullRequestCollector,
+          fetch_head_commit_date: 1.hour.ago,
+          only_base_merge_commits_since?: true
+        )
+        issue = Issue.find_by!(project: project, github_number: 42)
+        pr_data = build_review_stale_pr_data(head_sha:, base_ref: "release/2026.08")
+        reviews = build_review_stale_reviews(approval_sha:)
+
+        allow(activity).to receive(:pull_request_collector).with(project, client: github_client).and_return(collector)
+
+        stale = activity.send(:review_stale_for_head?, github_client, project, issue, pr_data, reviews)
+
+        expect(stale).to be(false)
+        expect(collector).to have_received(:only_base_merge_commits_since?).with(
+          approval_sha: approval_sha,
+          head_sha: head_sha,
+          base_branch: "release/2026.08",
+          issue: issue
+        )
+      end
     end
 
     context "when a post-approval merge commit resolved conflicts" do
@@ -10888,6 +10911,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     mergeable: true,
     draft: false,
     author_login: "someone-else",
+    base_branch: "main",
     head_repo_fork: false,
     checks: [ { name: "ci", conclusion: "success" } ],
     review_threads: [],
@@ -10900,6 +10924,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     head_sha: "abc123"
   )
     pr_data = OpenStruct.new(
+      base: OpenStruct.new(ref: base_branch),
       head: OpenStruct.new(sha: head_sha, repo: OpenStruct.new(fork: head_repo_fork)),
       mergeable: mergeable,
       draft: draft,
@@ -10945,14 +10970,30 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago } ]
   end
 
+  def build_review_stale_pr_data(head_sha:, base_ref:)
+    OpenStruct.new(head: OpenStruct.new(sha: head_sha), base_ref: base_ref)
+  end
+
+  def build_review_stale_reviews(approval_sha:)
+    [ {
+      id: 1,
+      user_login: "viamin",
+      state: "APPROVED",
+      body: "",
+      submitted_at: 2.hours.ago,
+      commit_id: approval_sha
+    } ]
+  end
+
   # Stubs a clean two-parent merge of the base branch at HEAD — the merge's
   # tree equals its first parent's tree (no conflict resolution) and its
   # second parent is reachable from the base branch tip. The merge's
   # first parent is the approved commit so the FP walk terminates in a
   # single step.
-  def stub_clean_base_merge(head_sha:, first_parent_sha:, second_parent_sha:, approval_sha:)
+  def stub_clean_base_merge(head_sha:, first_parent_sha:, second_parent_sha:, approval_sha:, base_branch: nil)
     base_tip_sha = "main_tip_sha"
     merge_tree_sha = "merge_tree_sha"
+    base_branch ||= project.default_branch
     merge_commit = build_merge_commit(
       sha: head_sha,
       tree_sha: merge_tree_sha,
@@ -10973,7 +11014,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       .with(project.full_name, first_parent_sha)
       .and_return(first_parent_commit)
     allow(github_client).to receive(:ref)
-      .with(project.full_name, "heads/#{project.default_branch}")
+      .with(project.full_name, "heads/#{base_branch}")
       .and_return(OpenStruct.new(object: OpenStruct.new(sha: base_tip_sha)))
     allow(github_client).to receive(:compare)
       .with(project.full_name, second_parent_sha, base_tip_sha)

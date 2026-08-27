@@ -3022,7 +3022,8 @@ module Activities
       return false if blocking_approvals.empty?
 
       head_sha = pr_data&.head&.sha
-      return true if head_sha.blank? || project.default_branch.blank?
+      base_branch = pr_data&.base_ref
+      return true if head_sha.blank? || base_branch.blank?
 
       collector = pull_request_collector(project, client:)
 
@@ -3043,7 +3044,7 @@ module Activities
         !collector.only_base_merge_commits_since?(
           approval_sha: commit_id,
           head_sha: head_sha,
-          base_branch: project.default_branch,
+          base_branch: base_branch,
           issue: issue
         )
       end
