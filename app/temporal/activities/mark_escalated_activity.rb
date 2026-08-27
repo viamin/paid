@@ -91,14 +91,26 @@ module Activities
     end
 
     # The approval-wait escalation was decided from a ready-phase scan. If the
-    # PR left the ready phase before this activity ran — approved and merged,
-    # closed, converted to draft — the wait is over and escalating now would
-    # be stale. Cheap DB-only re-validation; the deep "still green and
-    # unapproved" check is the scan's judgment, and a race-window escalation
-    # self-clears on the next scan once the approval lands.
+    # PR left the ready phase, was closed, picked up a non-approval blocker
+    # (failing CI, new review feedback, unresolved dependency, the
+    # skip-auto-merge label), or became owner-approved before this activity
+    # ran, the wait is over and escalating now would be stale — it would
+    # tell the owner to approve a PR that is actually blocked for another
+    # reason. Re-runs the scan's blocked_only_on_approval? check against
+    # fresh GitHub data; the next scan self-clears any race-window
+    # escalation that does sneak through.
     # @spec PR-ESCALATION-027
     def approval_wait_still_holds?(issue)
-      issue.github_state == "open" && issue.ready_phase?
+      project = issue.project
+      client = project.client
+      return false unless client
+
+      PullRequests::BlockedOnlyOnApproval.call(
+        project: project,
+        client: client,
+        issue: issue,
+        logger: logger
+      )
     end
 
     def operational_failure_breaker_holds?(issue, progress_state)

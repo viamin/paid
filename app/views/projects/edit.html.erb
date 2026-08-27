@@ -419,6 +419,14 @@
           </div>
 
           <div>
+            <%= form.label :pr_approval_escalation_hours, "PR Approval Escalation (hours)", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <div class="mt-2">
+              <%= form.number_field :pr_approval_escalation_hours, min: 0, max: 86_400, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            </div>
+            <p class="mt-1 text-xs text-gray-500">Hours a green pull request may sit blocked only on owner approval before escalating past the inbox entry and review re-request. Set to 0 to disable the escalation.</p>
+          </div>
+
+          <div>
             <%= form.label :max_issue_runner_failures, "Max Issue Runner Failures", class: "block text-sm font-medium leading-6 text-gray-900" %>
             <div class="mt-2">
               <%= form.number_field :max_issue_runner_failures, min: 1, max: 1000, placeholder: @project.account&.tenant_setting&.effective_agent_settings&.dig("max_issue_runner_failures") || Issue::DEFAULT_MAX_RUNNER_FAILURES, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
