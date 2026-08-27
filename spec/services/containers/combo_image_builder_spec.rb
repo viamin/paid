@@ -19,6 +19,10 @@ RSpec.describe Containers::ComboImageBuilder do
     allow(backend).to receive(:get_image).with(image).and_raise(Docker::Error::NotFoundError.new("not found"))
   end
 
+  def json_labels_including(labels)
+    satisfy { |json| labels <= JSON.parse(json) }
+  end
+
   before do
     stub_base_present
     allow(Rails.logger).to receive(:public_send)
@@ -51,7 +55,7 @@ RSpec.describe Containers::ComboImageBuilder do
         /# Go language layer/, hash_including(
           t: "paid-agent:go",
           buildargs: { "BASE_IMAGE" => "paid-agent:latest" }.to_json,
-          labels: hash_including(described_class::BASE_DIGEST_LABEL => base_image.id)
+          labels: json_labels_including(described_class::BASE_DIGEST_LABEL => base_image.id)
         )
       )
     end
@@ -61,6 +65,7 @@ RSpec.describe Containers::ComboImageBuilder do
       allow(backend).to receive(:get_image).with("paid-agent:go").and_return(
         combo_image(labels: { described_class::BASE_DIGEST_LABEL => base_image.id })
       )
+      allow(backend).to receive(:build_image)
 
       result = described_class.ensure_available("paid-agent:go", backend: backend)
 

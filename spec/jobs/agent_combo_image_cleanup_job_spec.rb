@@ -11,7 +11,7 @@ RSpec.describe AgentComboImageCleanupJob do
 
   before do
     allow(Containers).to receive(:all_backends).and_return([ backend ])
-    allow(Project).to receive(:find_each)
+    allow(Project).to receive(:find_each).and_return([])
   end
 
   def stub_combo_images(*entries)
@@ -43,7 +43,7 @@ RSpec.describe AgentComboImageCleanupJob do
 
     it "keeps a combo tag still referenced by a project" do
       project = instance_double(Project)
-      allow(Project).to receive(:find_each).and_yield(project)
+      allow(Project).to receive(:find_each).and_return([ project ])
       allow(Containers::ImageResolver).to receive(:resolve).with(project).and_return(tag)
       stub_combo_images(image: tag, id: "sha256:abc", labels: stale_labels)
       allow(backend).to receive(:delete_image)
