@@ -2,8 +2,13 @@
 
 module Projects
   class ClarifyingQuestionsController < ApplicationController
-    # Per-answer byte cap for the inbox form's pending-answers flash payload.
-    # Each answer is trimmed to this length before storage.
+    # Per-answer byte cap applied to each answer before the total-budget
+    # check below runs. MAX_PENDING_ANSWERS_BYTES (the total budget) is
+    # smaller than this cap, so any answer long enough to actually need this
+    # trim already exceeds the total budget on its own -- the total-budget
+    # check is the only bound that determines whether the prefill survives.
+    # This cap exists to bound the cost of the byteslice/scrub/JSON-encode
+    # work below on unbounded input, not to keep long answers around.
     MAX_PENDING_ANSWER_BYTES = 2_000
     # Total byte cap for the entire pending-answers payload (all answers for
     # one issue), measured on the JSON-serialized form (matching how the

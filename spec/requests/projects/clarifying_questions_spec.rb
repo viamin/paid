@@ -708,9 +708,14 @@ RSpec.describe "Projects::ClarifyingQuestions" do
         expect(textareas.map(&:text).map(&:strip)).to eq([ "", "" ])
       end
 
-      it "does not overflow the session cookie when ASCII answers approach the documented per-answer caps" do
+      it "drops the prefill when combined answer bytes exceed the total budget without needing per-answer trimming" do
         project.update!(auto_pick_enabled: true, active: true)
         allow(github_client).to receive(:add_comment).and_raise(GithubClient::Error, "boom")
+        # Both answers individually stay under MAX_PENDING_ANSWER_BYTES (no
+        # per-answer trim kicks in), but their combined JSON-encoded size
+        # exceeds MAX_PENDING_ANSWERS_BYTES (the total budget), so the whole
+        # prefill is still dropped rather than partially written to the
+        # session cookie.
         first_answer = "a" * 1_990
         second_answer = "b" * 1_000
 
@@ -725,6 +730,10 @@ RSpec.describe "Projects::ClarifyingQuestions" do
         }.not_to raise_error
 
         expect(response).to have_http_status(:ok)
+        textareas = Nokogiri::HTML(response.body)
+          .at_css("turbo-frame#inbox-detail")
+          .css("textarea[name='answers[]']")
+        expect(textareas.map(&:text).map(&:strip)).to eq([ "", "" ])
       end
 
       it "drops the prefill when the submitted questions no longer match the issue" do
