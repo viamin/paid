@@ -50,10 +50,11 @@ module Screenshots
     HELPER_TARGETS = {
       "application" => SHARED_TARGET_KEYS,
       "cost_dashboard" => %i[project_cost_dashboard project_cost_snapshot],
-      "health_check" => [ :project_health_check ],
+      "inbox/path" => [ :dashboard ],
       "issues" => %i[dashboard project_show project_issue_clarifying_questions],
       "integrations" => %i[integrations integrations_new],
       "knowledge" => %i[knowledge_search project_knowledge_search project_knowledge_browse project_context_intake project_knowledge_recommendations],
+      "projects/health_check" => [ :project_health_check ],
       "quality_metrics" => %i[quality_dashboard project_quality_dashboard],
       "roi_dashboard" => %i[account_roi_dashboard project_roi_dashboard],
       "workflow" => [ :workflow_status ]
@@ -526,8 +527,11 @@ module Screenshots
       SHARED_TARGET_KEYS
     end
 
+    # Keys in HELPER_TARGETS are helper paths relative to app/helpers with the
+    # "_helper.rb" suffix dropped, so nested helpers like "inbox/path" map by
+    # their full relative path rather than a collision-prone basename.
     def targets_for_helper(path)
-      helper_name = File.basename(path).delete_suffix("_helper.rb")
+      helper_name = path.delete_prefix("app/helpers/").delete_suffix("_helper.rb")
       explicit_targets = HELPER_TARGETS[helper_name]
       return explicit_targets if explicit_targets
 

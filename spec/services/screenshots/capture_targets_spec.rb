@@ -87,6 +87,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "workflow_status" ])
     end
 
+    it "maps nested helper files by their path under app/helpers" do
+      targets = described_class.call(changed_files: [ "app/helpers/inbox/path_helper.rb" ])
+
+      expect(targets.map(&:slug)).to eq([ "dashboard" ])
+    end
+
     it "maps issue helper changes to the rendered inbox and issue surfaces" do
       targets = described_class.call(changed_files: [ "app/helpers/issues_helper.rb" ])
 

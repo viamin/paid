@@ -1010,6 +1010,159 @@ RSpec.describe "Dashboard" do
       expect(response.body).not_to include("Closed question")
     end
 
+    it "renders the inbox detail turbo frame at the dedicated entry endpoint" do
+      issue = create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
+
+      get dashboard_inbox_entry_path(entry_kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND, entry_id: issue.id)
+
+      expect(response).to have_http_status(:ok)
+      document = Nokogiri::HTML(response.body)
+      frame = document.at_css("turbo-frame#inbox-detail")
+      form = frame.at_css(%(form[action="#{project_issue_clarifying_questions_path(project, issue)}"]))
+
+      expect(frame).to be_present
+      expect(form).to be_present
+      expect(form.at_css(%(input[name="inbox"][value="1"]))).to be_present
+      expect(form.css("textarea[name='answers[]']").size).to eq(2)
+    end
+
+    it "renders an empty-state frame when the inbox detail URL targets a missing entry" do
+      get dashboard_inbox_entry_path(entry_kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND, entry_id: "999999")
+
+      expect(response).to have_http_status(:ok)
+      document = Nokogiri::HTML(response.body)
+      frame = document.at_css("turbo-frame#inbox-detail")
+
+      expect(frame).to be_present
+      expect(frame.css("form").size).to eq(0)
+      expect(response.body).to include("Entry not available")
+      expect(response.body).to include("Back to inbox")
+    end
+
+    it "renders an empty-state frame when a plan-review entry URL targets a missing review" do
+      get dashboard_inbox_entry_path(entry_kind: Inbox::Queue::PLAN_REVIEW_KIND, entry_id: "999999")
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Entry not available")
+      expect(response.body).not_to include("Submit Answers")
+    end
+
+    it "renders an empty-state frame when other entries remain but the URL targets a missing entry" do
+      create(:issue, :needs_input, project: project, title: "Live question", body: questions_body)
+
+      get dashboard_inbox_entry_path(entry_kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND, entry_id: "999999")
+
+      expect(response).to have_http_status(:ok)
+      document = Nokogiri::HTML(response.body)
+      frame = document.at_css("turbo-frame#inbox-detail")
+
+      expect(frame).to be_present
+      expect(frame.css("form").size).to eq(0)
+      expect(response.body).to include("Entry not available")
+      expect(response.body).to include("Back to inbox")
+      expect(response.body).not_to include("Live question")
+    end
+
+    it "falls back to the first entry on the full inbox page when an explicit selection is stale" do
+      create(:issue, :needs_input, project: project, title: "Live question", body: questions_body)
+
+      get dashboard_inbox_path(
+        project_id: project.id,
+        kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+        entry_kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+        entry_id: "999999"
+      )
+
+      expect(response).to have_http_status(:ok)
+      document = Nokogiri::HTML(response.body)
+      form = document.at_css(%(form[action^="#{project_issue_clarifying_questions_path(project, project.issues.first)}"]))
+
+      expect(form).to be_present
+    end
+
+    it "marks list rows with the inbox-master-detail row target so click navigation can update the highlight" do
+      issue = create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
+
+      get dashboard_inbox_path(
+        project_id: project.id,
+        kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND
+      )
+
+      document = Nokogiri::HTML(response.body)
+      link = document.at_css(%(a[href="#{dashboard_inbox_entry_path(
+        entry_kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+        entry_id: issue.id,
+        project_id: project.id,
+        kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+        view: "detail"
+      )}"]))
+
+      expect(link).to be_present
+      expect(link["data-inbox-master-detail-target"]).to eq("row")
+    end
+
+    it "renders the inbox detail turbo frame scoped to the project filter" do
+      issue = create(:issue, :needs_input, project: second_project, title: "Beta question", body: questions_body)
+
+      get dashboard_inbox_entry_path(entry_kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND, entry_id: issue.id),
+        params: { project_id: second_project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND }
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Beta question")
+      expect(response.body).not_to include(project.full_name)
+    end
+
+    it "threads the current inbox scope through list detail links" do
+      issue = create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
+
+      get dashboard_inbox_path(
+        project_id: project.id,
+        kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND
+      )
+
+      document = Nokogiri::HTML(response.body)
+      link = document.at_css(%(a[href="#{dashboard_inbox_entry_path(
+        entry_kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+        entry_id: issue.id,
+        project_id: project.id,
+        kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+        view: "detail"
+      )}"]))
+
+      expect(link).to be_present
+    end
+
+    it "selects the entry referenced by the combined selected param" do
+      create(:issue, :needs_input, project: project, github_number: 11, body: questions_body)
+      second_issue = create(:issue, :needs_input, project: project, github_number: 22, body: questions_body)
+
+      get dashboard_inbox_path(
+        project_id: project.id,
+        kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+        selected: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{second_issue.id}"
+      )
+
+      expect(response).to have_http_status(:ok)
+      document = Nokogiri::HTML(response.body)
+      detail_form = document.at_css(%(form[action="#{project_issue_clarifying_questions_path(project, second_issue)}"]))
+
+      expect(detail_form).to be_present
+      expect(detail_form.at_css(%(input[name="inbox"][value="1"]))).to be_present
+    end
+
+    it "embeds the active inbox-kind filter in the answer form so submit preserves the tab" do
+      create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
+
+      get dashboard_inbox_path
+
+      document = Nokogiri::HTML(response.body)
+      form = document.at_css(%(form[action="#{project_issue_clarifying_questions_path(project, project.issues.first)}"]))
+
+      expect(form).to be_present
+      expect(form.at_css(%(input[name="inbox_kind"]))).to be_present
+      expect(form.at_css(%(input[name="inbox_kind"]))["value"]).to eq("")
+    end
+
     it "supports project scoping" do
       create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
       create(:issue, :needs_input, project: second_project, title: "Beta question", body: questions_body)
@@ -1022,18 +1175,57 @@ RSpec.describe "Dashboard" do
       expect(response.body).not_to include(second_project.full_name)
       expect(response.body).not_to include("Beta question")
       document = Nokogiri::HTML(response.body)
-      link = document.at_css("a[href*='#{project_issue_clarifying_questions_path(project, project.issues.find_by!(title: "Alpha question"))}']")
+      scoped_issue = project.issues.find_by!(title: "Alpha question")
+      form = document.at_css(%(form[action="#{project_issue_clarifying_questions_path(project, scoped_issue)}"]))
 
-      expect(link).to be_present
-      expect(link["href"]).to eq(
-        project_issue_clarifying_questions_path(
-          project,
-          project.issues.find_by!(title: "Alpha question"),
-          queue: "dashboard_inbox",
-          queue_project_id: project.id,
-          return_to: dashboard_inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
-        )
+      expect(form).to be_present
+      expect(form.at_css(%(input[name="inbox"][value="1"]))).to be_present
+      expect(form.at_css(%(input[name="inbox_project_id"][value="#{project.id}"]))).to be_present
+      questions = form.css("textarea[name='answers[]']")
+
+      expect(questions.size).to eq(2)
+    end
+
+    it "renders the inline one-page answer form in the selected entry detail" do
+      issue = create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
+
+      get dashboard_inbox_path(
+        entry_kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+        entry_id: issue.id,
+        view: "detail"
       )
+
+      expect(response).to have_http_status(:ok)
+      document = Nokogiri::HTML(response.body)
+      frame = document.at_css("turbo-frame#inbox-detail")
+      form = frame.at_css(%(form[action="#{project_issue_clarifying_questions_path(project, issue)}"]))
+
+      expect(frame).to be_present
+      expect(form).to be_present
+      expect(form.at_css(%(input[name="inbox"][value="1"]))).to be_present
+      expect(form.css("textarea[name='answers[]']").size).to eq(2)
+      expect(form.at_css("input[type='submit']")).to be_present
+    end
+
+    it "renders the answer form for PR-backed clarifying-question entries" do
+      pr = create(:issue, :pull_request, :needs_input, project: project, title: "PR question", body: questions_body)
+
+      get dashboard_inbox_path(
+        entry_kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+        entry_id: pr.id,
+        view: "detail"
+      )
+
+      expect(response).to have_http_status(:ok)
+      document = Nokogiri::HTML(response.body)
+      frame = document.at_css("turbo-frame#inbox-detail")
+      detail_section = frame.at_css(".px-4.py-5")
+      form = detail_section.at_css(%(form[action="#{project_issue_clarifying_questions_path(project, pr)}"]))
+
+      expect(form).to be_present
+      expect(form.at_css(%(input[name="inbox"][value="1"]))).to be_present
+      expect(form.css("textarea[name='answers[]']").size).to eq(2)
+      expect(detail_section.at_css(%(a[href="#{project.github_url}/pull/#{pr.github_number}"]))).to be_present
     end
 
     it "renders a mobile detail state when an entry is selected" do
@@ -1047,8 +1239,13 @@ RSpec.describe "Dashboard" do
 
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("Back to queue")
-      expect(response.body).to include("Answer Questions")
+      expect(response.body).to include("Submit Answers")
       expect(response.body).to include("lg:grid-cols-[22rem,1fr]")
+      document = Nokogiri::HTML(response.body)
+      master_detail = document.at_css("[data-controller~='inbox-master-detail']")
+
+      expect(master_detail).to be_present
+      expect(master_detail["data-inbox-master-detail-detail-open-value"]).to eq("true")
     end
 
     # @spec OPERATOR-INBOX-007

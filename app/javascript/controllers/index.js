@@ -58,6 +58,9 @@ application.register("goal-toggle", GoalToggleController)
 import HelloController from "./hello_controller"
 application.register("hello", HelloController)
 
+import InboxMasterDetailController from "./inbox_master_detail_controller"
+application.register("inbox-master-detail", InboxMasterDetailController)
+
 import LiveDashboardController from "./live_dashboard_controller"
 application.register("live-dashboard", LiveDashboardController)
 

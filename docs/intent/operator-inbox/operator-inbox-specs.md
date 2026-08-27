@@ -65,3 +65,16 @@
   *Test:* `spec/requests/dashboard_spec.rb`,
   `spec/requests/projects/clarifying_questions_spec.rb`,
   `spec/services/clarifying_questions/clear_needs_input_spec.rb`.
+
+- [x] **OPERATOR-INBOX-008** — When a clarifying-question inbox entry is
+  selected, the system SHALL render every question and answer field inline in
+  the detail pane as a single one-page form; on successful submission the
+  system SHALL auto-advance the detail pane to the next actionable entry in
+  the operator's current scope (or the drained empty state); on a validation
+  or GitHub-post failure the system SHALL redirect back into the same detail
+  frame and SHALL repopulate the submitted answers from a one-shot flash so
+  the operator does not retype them, bounded to a byte budget that keeps the
+  serialized session cookie under its size ceiling.
+  *Code:* `app/controllers/projects/clarifying_questions_controller.rb`,
+  `app/views/dashboard/_inbox_detail_clarifying_questions.html.erb`.
+  *Test:* `spec/requests/projects/clarifying_questions_spec.rb`.

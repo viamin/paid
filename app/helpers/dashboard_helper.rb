@@ -189,22 +189,6 @@ module DashboardHelper
   end
 
   # @spec OPERATOR-INBOX-007
-  def inbox_path_for(scoped_project:, selected_kind:)
-    dashboard_inbox_path(project_id: scoped_project&.id, kind: selected_kind)
-  end
-
-  # @spec OPERATOR-INBOX-007
-  def inbox_entry_path(entry:, scoped_project:, selected_kind:, view: "detail")
-    dashboard_inbox_path(
-      project_id: scoped_project&.id,
-      kind: selected_kind,
-      entry_kind: entry.kind,
-      entry_id: entry.record.id,
-      view: view
-    )
-  end
-
-  # @spec OPERATOR-INBOX-007
   def inbox_issue_kind_label(issue)
     issue_kind_label(issue)
   end

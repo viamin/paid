@@ -413,6 +413,28 @@ RSpec.describe "Projects::ClarifyingQuestions" do
           )
         )
       end
+
+      # @spec OPERATOR-INBOX-007
+      it "accepts the inline inbox form submission for a PR-backed entry" do
+        pull_request = create_pr_needs_input(project:, questions:, github_number: 10)
+
+        post project_issue_clarifying_questions_path(project, pull_request),
+          params: {
+            inbox: "1",
+            questions: questions,
+            answers: answers
+          }
+
+        expect(github_client).to have_received(:add_comment).with(
+          project.full_name,
+          pull_request.github_number,
+          a_string_matching(/Clarifying question answers/)
+        )
+        expect_pr_answers_cleared(pull_request)
+        expect(response).to redirect_to(dashboard_inbox_path(kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND))
+        follow_redirect!
+        expect(response.body).to include("Answers posted to GitHub PR ##{pull_request.github_number}")
+      end
     end
 
     context "when some answers are blank" do
@@ -427,6 +449,426 @@ RSpec.describe "Projects::ClarifyingQuestions" do
         }
 
         expect(response).to redirect_to(project_issue_clarifying_questions_path(project, issue))
+      end
+    end
+
+    # @spec OPERATOR-INBOX-008
+    context "when submitted from the inbox detail pane" do
+      let(:questions) { [ "What is the expected behavior?", "Should this be behind a flag?" ] }
+      let(:answers) { [ "X is a feature", "Yes, by default" ] }
+      let(:issue) do
+        create(:issue, :needs_input, project: project, body: issue_body, needs_input_questions: questions)
+      end
+
+      before do
+        allow(github_client).to receive(:issue_comments).and_return([ trusted_comment ])
+      end
+
+      def submit_inbox_answers(issue:, questions:, answers:, inbox_project_id: nil, inbox_kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
+        params = {
+          questions: questions,
+          answers: answers,
+          inbox: "1",
+          # The form always submits `inbox_kind` (empty string for the "All"
+          # tab); emulate that exactly so the controller sees the field even
+          # when the operator was viewing the mixed queue.
+          inbox_kind: inbox_kind.nil? ? "" : inbox_kind,
+          inbox_project_id: inbox_project_id
+        }.compact
+        post project_issue_clarifying_questions_path(project, issue), params: params
+      end
+
+      def expect_inbox_redirect(project_id: nil, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND, selected:, view: "detail")
+        expect(response).to redirect_to(
+          dashboard_inbox_path(
+            project_id: project_id,
+            kind: kind,
+            selected: selected,
+            view: view
+          )
+        )
+      end
+
+      it "redirects to the next inbox entry when more are waiting in the same scope" do
+        project.update!(auto_pick_enabled: true, active: true)
+        next_issue = create(:issue, :needs_input, project: project,
+          github_number: issue.github_number + 2,
+          needs_input_questions: [ "What should happen next?" ])
+
+        submit_inbox_answers(issue:, questions:, answers:, inbox_project_id: project.id)
+
+        expect_inbox_redirect(
+          project_id: project.id,
+          selected: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{next_issue.id}"
+        )
+      end
+
+      it "redirects to the bare inbox when the queue is drained" do
+        project.update!(auto_pick_enabled: true, active: true)
+
+        submit_inbox_answers(issue:, questions:, answers:, inbox_project_id: project.id)
+
+        expect(response).to redirect_to(
+          dashboard_inbox_path(
+            project_id: project.id,
+            kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND
+          )
+        )
+        expect(response).not_to have_attributes(location: /selected=/)
+      end
+
+      it "preserves the all-projects inbox scope when auto-advancing" do
+        project.update!(auto_pick_enabled: true, active: true)
+        other_project = create(
+          :project,
+          account: account,
+          created_by: user,
+          auto_pick_enabled: true,
+          active: true
+        )
+        next_issue = create(:issue, :needs_input, project: other_project,
+          github_number: issue.github_number + 2,
+          needs_input_questions: [ "What should happen next?" ])
+
+        submit_inbox_answers(issue:, questions:, answers:)
+
+        expect_inbox_redirect(selected: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{next_issue.id}")
+      end
+
+      it "preserves an explicit inbox project scope even when the submitted issue is outside it" do
+        project.update!(auto_pick_enabled: true, active: true)
+        other_project = create(
+          :project,
+          account: account,
+          created_by: user,
+          auto_pick_enabled: true,
+          active: true
+        )
+        next_issue = create(:issue, :needs_input, project: other_project,
+          github_number: issue.github_number + 2,
+          needs_input_questions: [ "What should happen next?" ])
+
+        submit_inbox_answers(issue:, questions:, answers:, inbox_project_id: other_project.id)
+
+        expect_inbox_redirect(
+          project_id: other_project.id,
+          selected: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{next_issue.id}"
+        )
+      end
+
+      it "redirects back to the inbox frame when validation fails" do
+        project.update!(auto_pick_enabled: true, active: true)
+
+        submit_inbox_answers(issue:, questions:, answers: [ "X is a feature", "" ], inbox_project_id: project.id)
+
+        expect_inbox_redirect(
+          project_id: project.id,
+          selected: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{issue.id}"
+        )
+      end
+
+      it "redirects back to the all-projects inbox detail state when validation fails there" do
+        project.update!(auto_pick_enabled: true, active: true)
+
+        submit_inbox_answers(issue:, questions:, answers: [ "X is a feature", "" ])
+
+        expect_inbox_redirect(selected: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{issue.id}")
+      end
+
+      it "redirects back to the inbox frame when the GitHub post fails" do
+        project.update!(auto_pick_enabled: true, active: true)
+        allow(github_client).to receive(:add_comment).and_raise(GithubClient::Error, "boom")
+
+        post project_issue_clarifying_questions_path(project, issue), params: {
+          questions: questions,
+          answers: answers,
+          inbox: "1",
+          inbox_project_id: project.id
+        }
+
+        expect(response).to redirect_to(
+          dashboard_inbox_path(
+            project_id: project.id,
+            kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+            selected: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{issue.id}",
+            view: "detail"
+          )
+        )
+      end
+
+      it "repopulates the inbox textareas from flash when validation fails" do
+        project.update!(auto_pick_enabled: true, active: true)
+
+        submit_inbox_answers(
+          issue:,
+          questions:,
+          answers: [ "X is a feature", "" ],
+          inbox_project_id: project.id
+        )
+
+        follow_redirect!
+
+        document = Nokogiri::HTML(response.body)
+        detail_frame = document.at_css("turbo-frame#inbox-detail")
+        textareas = detail_frame.css("textarea[name='answers[]']")
+
+        expect(textareas.size).to eq(2)
+        expect(textareas[0].text).to include("X is a feature")
+        expect(textareas[1].text.strip).to eq("")
+      end
+
+      it "repopulates the inbox textareas from flash when the GitHub post fails" do
+        project.update!(auto_pick_enabled: true, active: true)
+        allow(github_client).to receive(:add_comment).and_raise(GithubClient::Error, "boom")
+
+        post project_issue_clarifying_questions_path(project, issue), params: {
+          questions: questions,
+          answers: [ "First answer", "Second answer" ],
+          inbox: "1",
+          inbox_project_id: project.id
+        }
+
+        follow_redirect!
+
+        document = Nokogiri::HTML(response.body)
+        textareas = document.at_css("turbo-frame#inbox-detail").css("textarea[name='answers[]']")
+
+        expect(textareas.map(&:text).map(&:strip)).to eq([ "First answer", "Second answer" ])
+      end
+
+      it "consumes the pending-answers flash after a single redirect so a refresh clears them" do
+        project.update!(auto_pick_enabled: true, active: true)
+        detail_path = dashboard_inbox_path(
+          project_id: project.id,
+          kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+          selected: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{issue.id}",
+          view: "detail"
+        )
+        submit_inbox_answers(issue:, questions:, answers: [ "First answer", "" ], inbox_project_id: project.id)
+        follow_redirect!
+
+        textareas = Nokogiri::HTML(response.body).at_css("turbo-frame#inbox-detail").css("textarea[name='answers[]']")
+        expect(textareas.map(&:text).map(&:strip)).to eq([ "First answer", "" ])
+
+        get detail_path
+
+        refreshed = Nokogiri::HTML(response.body).at_css("turbo-frame#inbox-detail").css("textarea[name='answers[]']")
+        expect(refreshed.map(&:text).map(&:strip)).to eq([ "", "" ])
+      end
+
+      it "drops the prefill when submitted answers overflow the cookie budget" do
+        project.update!(auto_pick_enabled: true, active: true)
+        allow(github_client).to receive(:add_comment).and_raise(GithubClient::Error, "boom")
+        oversized_first = "x" * (Projects::ClarifyingQuestionsController::MAX_PENDING_ANSWER_BYTES + 50)
+        oversized_second = "y" * (Projects::ClarifyingQuestionsController::MAX_PENDING_ANSWER_BYTES + 50)
+
+        submit_inbox_answers(
+          issue:,
+          questions:,
+          answers: [ oversized_first, oversized_second ],
+          inbox_project_id: project.id
+        )
+
+        follow_redirect!
+
+        textareas = Nokogiri::HTML(response.body)
+          .at_css("turbo-frame#inbox-detail")
+          .css("textarea[name='answers[]']")
+
+        expect(textareas.map(&:text).map(&:strip)).to eq([ "", "" ])
+      end
+
+      it "scrubs an answer truncated mid multi-byte character instead of corrupting the session" do
+        project.update!(auto_pick_enabled: true, active: true)
+        allow(github_client).to receive(:add_comment).and_raise(GithubClient::Error, "boom")
+        max_bytes = Projects::ClarifyingQuestionsController::MAX_PENDING_ANSWER_BYTES
+        # Byte 2,000 falls inside the multi-byte "日" character, so a bare
+        # `byteslice` here would leave an invalid UTF-8 tail. This answer's
+        # trimmed size also exceeds the total pending-answers budget, so the
+        # safe outcome is the documented drop-to-empty fallback -- the
+        # regression this guards against is a raised JSON::GeneratorError
+        # (or an ArgumentError from invalid encoding) when the flash is
+        # committed to the session cookie, not the exact prefilled content.
+        boundary_split_answer = ("x" * (max_bytes - 2)) + "日" + ("z" * 50)
+
+        expect {
+          submit_inbox_answers(
+            issue:,
+            questions:,
+            answers: [ boundary_split_answer, "Second answer" ],
+            inbox_project_id: project.id
+          )
+          follow_redirect!
+        }.not_to raise_error
+
+        textareas = Nokogiri::HTML(response.body)
+          .at_css("turbo-frame#inbox-detail")
+          .css("textarea[name='answers[]']")
+
+        expect(textareas.map(&:text).map(&:strip)).to eq([ "", "" ])
+      end
+
+      it "drops the prefill when combined answer bytes exceed the total budget without needing per-answer trimming" do
+        project.update!(auto_pick_enabled: true, active: true)
+        allow(github_client).to receive(:add_comment).and_raise(GithubClient::Error, "boom")
+        # Both answers individually stay under MAX_PENDING_ANSWER_BYTES (no
+        # per-answer trim kicks in), but their combined JSON-encoded size
+        # exceeds MAX_PENDING_ANSWERS_BYTES (the total budget), so the whole
+        # prefill is still dropped rather than partially written to the
+        # session cookie.
+        first_answer = "a" * 1_990
+        second_answer = "b" * 1_000
+
+        expect {
+          submit_inbox_answers(
+            issue:,
+            questions:,
+            answers: [ first_answer, second_answer ],
+            inbox_project_id: project.id
+          )
+          follow_redirect!
+        }.not_to raise_error
+
+        expect(response).to have_http_status(:ok)
+        textareas = Nokogiri::HTML(response.body)
+          .at_css("turbo-frame#inbox-detail")
+          .css("textarea[name='answers[]']")
+        expect(textareas.map(&:text).map(&:strip)).to eq([ "", "" ])
+      end
+
+      it "drops the prefill when the submitted questions no longer match the issue" do
+        project.update!(auto_pick_enabled: true, active: true)
+
+        # The trusted_comment body resolves to two questions via
+        # ClarifyingQuestions::Load, but the operator submitted answers for
+        # a tampered/different question set. The question-mismatch guard
+        # raises ArgumentError and we must NOT rehydrate textareas by index
+        # since the saved answers belong to a different prompt set.
+        submit_inbox_answers(
+          issue:,
+          questions: [ "Tampered question?" ],
+          answers: [ "Tampered answer" ],
+          inbox_project_id: project.id
+        )
+
+        follow_redirect!
+
+        textareas = Nokogiri::HTML(response.body)
+          .at_css("turbo-frame#inbox-detail")
+          .css("textarea[name='answers[]']")
+
+        expect(textareas.map(&:text).map(&:strip)).to eq([ "", "" ])
+      end
+
+      it "still preserves the prefill on transient GitHub failures even if the question set drifts later" do
+        project.update!(auto_pick_enabled: true, active: true)
+        allow(github_client).to receive(:add_comment).and_raise(GithubClient::Error, "boom")
+
+        submit_inbox_answers(
+          issue:,
+          questions:,
+          answers: [ "First answer", "Second answer" ],
+          inbox_project_id: project.id
+        )
+
+        follow_redirect!
+
+        textareas = Nokogiri::HTML(response.body)
+          .at_css("turbo-frame#inbox-detail")
+          .css("textarea[name='answers[]']")
+
+        expect(textareas.map(&:text).map(&:strip)).to eq([ "First answer", "Second answer" ])
+      end
+
+      context "when submitted from the All inbox tab" do
+        it "preserves the All-tab kind filter on auto-advance so the operator stays in the mixed queue" do
+          project.update!(auto_pick_enabled: true, active: true)
+          next_issue = create(:issue, :needs_input, project: project,
+            github_number: issue.github_number + 2,
+            needs_input_questions: [ "What should happen next?" ])
+
+          submit_inbox_answers(issue:, questions:, answers:,
+            inbox_project_id: project.id, inbox_kind: nil)
+
+          expect_inbox_redirect(
+            project_id: project.id,
+            kind: nil,
+            selected: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{next_issue.id}"
+          )
+          expect(response.location).not_to include("kind=")
+        end
+
+        it "auto-advances into the next plan-review entry when a plan-review is next in the All-tab queue" do
+          project.update!(auto_pick_enabled: true, active: true)
+          plan_review_issue = create(:issue, project: project,
+            github_number: issue.github_number + 2,
+            paid_state: "new")
+          next_review = create(:decomposition_decision,
+            project: project,
+            issue: plan_review_issue,
+            workflow_id: "planning-workflow-1",
+            decision_key: "planning-workflow-1:plan_review:pending",
+            decision_type: "planning_outcome",
+            outcome: DecompositionDecision::PLAN_PENDING_REVIEW_OUTCOME,
+            plan_data: { "tasks" => [ { "title" => "Visible task", "description" => "Visible description" } ] })
+
+          submit_inbox_answers(issue:, questions:, answers:,
+            inbox_project_id: project.id, inbox_kind: nil)
+
+          expect_inbox_redirect(
+            project_id: project.id,
+            kind: nil,
+            selected: "#{Inbox::Queue::PLAN_REVIEW_KIND}:#{next_review.id}"
+          )
+        end
+
+        it "preserves the All-tab kind filter when the mixed queue is drained of clarifying questions" do
+          project.update!(auto_pick_enabled: true, active: true)
+
+          submit_inbox_answers(issue:, questions:, answers:,
+            inbox_project_id: project.id, inbox_kind: nil)
+
+          expect(response).to redirect_to(dashboard_inbox_path(project_id: project.id))
+          expect(response.location).not_to include("kind=")
+          expect(response.location).not_to include("selected=")
+        end
+
+        it "keeps the operator on the All tab when validation fails" do
+          project.update!(auto_pick_enabled: true, active: true)
+
+          submit_inbox_answers(
+            issue:, questions:,
+            answers: [ "X is a feature", "" ],
+            inbox_project_id: project.id,
+            inbox_kind: nil
+          )
+
+          expect_inbox_redirect(
+            project_id: project.id,
+            kind: nil,
+            selected: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{issue.id}"
+          )
+          expect(response.location).not_to include("kind=")
+        end
+      end
+
+      context "when submitted from a Plan Reviews inbox tab" do
+        it "preserves the plan-review kind filter on the failure redirect back into the frame" do
+          project.update!(auto_pick_enabled: true, active: true)
+
+          submit_inbox_answers(
+            issue:, questions:,
+            answers: [ "X is a feature", "" ],
+            inbox_project_id: project.id,
+            inbox_kind: Inbox::Queue::PLAN_REVIEW_KIND
+          )
+
+          expect_inbox_redirect(
+            project_id: project.id,
+            kind: Inbox::Queue::PLAN_REVIEW_KIND,
+            selected: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{issue.id}"
+          )
+        end
       end
     end
 
