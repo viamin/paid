@@ -252,15 +252,35 @@ RSpec.describe Automation::Signals::PullRequestCollector do
 
   # @spec AUTO-MERGE-005
   describe "#only_base_merge_commits_since?" do
-    let(:approval_sha) { "approved_sha" }
-    let(:head_sha) { "head_sha" }
-    let(:merge_sha) { "merge_sha" }
-    let(:first_parent_sha) { "first_parent_sha" }
-    let(:second_parent_sha) { "second_parent_sha" }
-    let(:base_tip_sha) { "base_tip_sha" }
-    let(:base_ref) { OpenStruct.new(object: OpenStruct.new(sha: base_tip_sha)) }
+    def approval_sha
+      "approved_sha"
+    end
 
-    let(:merge_commit) do
+    def head_sha
+      "head_sha"
+    end
+
+    def merge_sha
+      "merge_sha"
+    end
+
+    def first_parent_sha
+      "first_parent_sha"
+    end
+
+    def second_parent_sha
+      "second_parent_sha"
+    end
+
+    def base_tip_sha
+      "base_tip_sha"
+    end
+
+    def base_ref
+      OpenStruct.new(object: OpenStruct.new(sha: base_tip_sha))
+    end
+
+    def merge_commit
       OpenStruct.new(
         sha: merge_sha,
         commit: OpenStruct.new(tree: OpenStruct.new(sha: "merge_tree")),
@@ -271,10 +291,50 @@ RSpec.describe Automation::Signals::PullRequestCollector do
       )
     end
 
-    let(:first_parent_commit) do
+    def first_parent_commit
       OpenStruct.new(
         commit: OpenStruct.new(tree: OpenStruct.new(sha: "merge_tree"))
       )
+    end
+
+    # Stubs a post-approval range whose commits are all clean base
+    # merges: the approval→head comparison, the merge + first-parent
+    # commit lookups, the base ref, and second-parent reachability.
+    # Examples override whichever piece they make dirty.
+    def stub_clean_base_merge_range(commit_shas: [ merge_sha ])
+      allow(client).to receive(:compare)
+        .with("acme/widgets", approval_sha, head_sha)
+        .and_return(OpenStruct.new(
+          status: "ahead",
+          ahead_by: commit_shas.size,
+          commits: commit_shas.map { |sha| OpenStruct.new(sha: sha) }
+        ))
+      allow(client).to receive(:commit)
+        .with("acme/widgets", merge_sha)
+        .and_return(merge_commit)
+      allow(client).to receive(:commit)
+        .with("acme/widgets", first_parent_sha)
+        .and_return(first_parent_commit)
+      allow(client).to receive(:ref)
+        .with("acme/widgets", "heads/main")
+        .and_return(base_ref)
+      allow(client).to receive(:compare)
+        .with("acme/widgets", second_parent_sha, base_tip_sha)
+        .and_return(OpenStruct.new(status: "ahead"))
+    end
+
+    # Stubs a comparison page that is truncated: GitHub caps the compare
+    # response's commit list (250) while +ahead_by+ reports the true
+    # range size.
+    def stub_truncated_compare
+      allow(client).to receive(:commit)
+      allow(client).to receive(:compare)
+        .with("acme/widgets", approval_sha, head_sha)
+        .and_return(OpenStruct.new(
+          status: "ahead",
+          ahead_by: 300,
+          commits: Array.new(250) { |i| OpenStruct.new(sha: "merge_#{i}") }
+        ))
     end
 
     before do
@@ -284,18 +344,7 @@ RSpec.describe Automation::Signals::PullRequestCollector do
     end
 
     it "returns true when the post-approval range contains only clean base merges" do
-      allow(client).to receive(:compare)
-        .with("acme/widgets", approval_sha, head_sha)
-        .and_return(OpenStruct.new(status: "ahead", commits: [ OpenStruct.new(sha: merge_sha) ]))
-      allow(client).to receive(:commit)
-        .with("acme/widgets", merge_sha)
-        .and_return(merge_commit)
-      allow(client).to receive(:commit)
-        .with("acme/widgets", first_parent_sha)
-        .and_return(first_parent_commit)
-      allow(client).to receive(:compare)
-        .with("acme/widgets", second_parent_sha, base_tip_sha)
-        .and_return(OpenStruct.new(status: "ahead"))
+      stub_clean_base_merge_range
 
       result = collector.only_base_merge_commits_since?(
         approval_sha: approval_sha, head_sha: head_sha, base_branch: "main", issue: issue
@@ -309,6 +358,7 @@ RSpec.describe Automation::Signals::PullRequestCollector do
         .with("acme/widgets", approval_sha, head_sha)
         .and_return(OpenStruct.new(
           status: "ahead",
+          ahead_by: 1,
           commits: [ OpenStruct.new(sha: "real_commit_sha") ]
         ))
       allow(client).to receive(:commit)
@@ -327,12 +377,7 @@ RSpec.describe Automation::Signals::PullRequestCollector do
     end
 
     it "returns false when a merge commit resolved conflicts (tree differs from first parent)" do
-      allow(client).to receive(:compare)
-        .with("acme/widgets", approval_sha, head_sha)
-        .and_return(OpenStruct.new(status: "ahead", commits: [ OpenStruct.new(sha: merge_sha) ]))
-      allow(client).to receive(:commit)
-        .with("acme/widgets", merge_sha)
-        .and_return(merge_commit)
+      stub_clean_base_merge_range
       allow(client).to receive(:commit)
         .with("acme/widgets", first_parent_sha)
         .and_return(OpenStruct.new(
@@ -347,15 +392,7 @@ RSpec.describe Automation::Signals::PullRequestCollector do
     end
 
     it "returns false when a merge commit merges in a branch that is not the PR base" do
-      allow(client).to receive(:compare)
-        .with("acme/widgets", approval_sha, head_sha)
-        .and_return(OpenStruct.new(status: "ahead", commits: [ OpenStruct.new(sha: merge_sha) ]))
-      allow(client).to receive(:commit)
-        .with("acme/widgets", merge_sha)
-        .and_return(merge_commit)
-      allow(client).to receive(:commit)
-        .with("acme/widgets", first_parent_sha)
-        .and_return(first_parent_commit)
+      stub_clean_base_merge_range
       allow(client).to receive(:compare)
         .with("acme/widgets", second_parent_sha, base_tip_sha)
         .and_return(OpenStruct.new(status: "diverged"))
@@ -368,29 +405,11 @@ RSpec.describe Automation::Signals::PullRequestCollector do
     end
 
     it "returns false when the range mixes a clean base merge with a non-merge author commit" do
-      real_commit_sha = "real_commit_sha"
-      allow(client).to receive(:compare)
-        .with("acme/widgets", approval_sha, head_sha)
+      stub_clean_base_merge_range(commit_shas: [ merge_sha, "real_commit_sha" ])
+      allow(client).to receive(:commit)
+        .with("acme/widgets", "real_commit_sha")
         .and_return(OpenStruct.new(
-          status: "ahead",
-          commits: [
-            OpenStruct.new(sha: merge_sha),
-            OpenStruct.new(sha: real_commit_sha)
-          ]
-        ))
-      allow(client).to receive(:commit)
-        .with("acme/widgets", merge_sha)
-        .and_return(merge_commit)
-      allow(client).to receive(:commit)
-        .with("acme/widgets", first_parent_sha)
-        .and_return(first_parent_commit)
-      allow(client).to receive(:compare)
-        .with("acme/widgets", second_parent_sha, base_tip_sha)
-        .and_return(OpenStruct.new(status: "ahead"))
-      allow(client).to receive(:commit)
-        .with("acme/widgets", real_commit_sha)
-        .and_return(OpenStruct.new(
-          sha: real_commit_sha,
+          sha: "real_commit_sha",
           commit: OpenStruct.new(tree: OpenStruct.new(sha: "real_tree")),
           parents: [ OpenStruct.new(sha: "real_parent_sha") ]
         ))
@@ -417,7 +436,7 @@ RSpec.describe Automation::Signals::PullRequestCollector do
     it "returns false when a commit lookup fails mid-range (fail closed)" do
       allow(client).to receive(:compare)
         .with("acme/widgets", approval_sha, head_sha)
-        .and_return(OpenStruct.new(status: "ahead", commits: [ OpenStruct.new(sha: merge_sha) ]))
+        .and_return(OpenStruct.new(status: "ahead", ahead_by: 1, commits: [ OpenStruct.new(sha: merge_sha) ]))
       allow(client).to receive(:commit)
         .with("acme/widgets", merge_sha)
         .and_raise(GithubClient::Error, "boom")
@@ -430,6 +449,36 @@ RSpec.describe Automation::Signals::PullRequestCollector do
       expect(logger).to have_received(:warn).with(
         hash_including(message: "pr_scanner.signal_check_failed", signal: "clean_base_merge_check")
       )
+    end
+
+    it "returns false (fail closed) when the compare page is truncated (ahead_by exceeds returned commits)" do
+      stub_truncated_compare
+
+      result = collector.only_base_merge_commits_since?(
+        approval_sha: approval_sha, head_sha: head_sha, base_branch: "main", issue: issue
+      )
+
+      expect(result).to be(false)
+      expect(client).not_to have_received(:commit)
+      expect(logger).to have_received(:warn).with(hash_including(
+        message: "pr_scanner.review_freshness_range_truncated",
+        ahead_by: 300,
+        returned_commits: 250
+      ))
+    end
+
+    it "returns false (fail closed) when the comparison omits ahead_by" do
+      allow(client).to receive(:commit)
+      allow(client).to receive(:compare)
+        .with("acme/widgets", approval_sha, head_sha)
+        .and_return(OpenStruct.new(status: "ahead", commits: [ OpenStruct.new(sha: merge_sha) ]))
+
+      result = collector.only_base_merge_commits_since?(
+        approval_sha: approval_sha, head_sha: head_sha, base_branch: "main", issue: issue
+      )
+
+      expect(result).to be(false)
+      expect(client).not_to have_received(:commit)
     end
 
     it "returns true when approval_sha equals head_sha (no new commits since approval)" do
@@ -460,18 +509,7 @@ RSpec.describe Automation::Signals::PullRequestCollector do
     end
 
     it "logs the classification decision so a stall is diagnosable" do
-      allow(client).to receive(:compare)
-        .with("acme/widgets", approval_sha, head_sha)
-        .and_return(OpenStruct.new(status: "ahead", commits: [ OpenStruct.new(sha: merge_sha) ]))
-      allow(client).to receive(:commit)
-        .with("acme/widgets", merge_sha)
-        .and_return(merge_commit)
-      allow(client).to receive(:commit)
-        .with("acme/widgets", first_parent_sha)
-        .and_return(first_parent_commit)
-      allow(client).to receive(:compare)
-        .with("acme/widgets", second_parent_sha, base_tip_sha)
-        .and_return(OpenStruct.new(status: "ahead"))
+      stub_clean_base_merge_range
 
       collector.only_base_merge_commits_since?(
         approval_sha: approval_sha, head_sha: head_sha, base_branch: "main", issue: issue

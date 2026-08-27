@@ -61,9 +61,13 @@
   side is reachable from the PR's base branch tip AND whose tree is identical
   to its first-parent tree (no conflict resolution, no author-side change).
   Any commit that cannot be positively classified as content-free SHALL
-  continue to mark the approval stale (fail closed). The classification
-  decision SHALL be logged with the commit SHAs inspected so a stall is
-  diagnosable.
+  continue to mark the approval stale (fail closed). When the comparison
+  cannot return the full post-approval range — GitHub's compare API caps
+  the returned commit list while `ahead_by` reports the true range size —
+  the range SHALL be treated as unclassifiable, the approval SHALL be
+  marked stale (fail closed), and the truncation SHALL be logged. The
+  classification decision SHALL be logged with the commit SHAs inspected
+  so a stall is diagnosable.
   *Code:*
   `app/services/automation/signals/pull_request_collector.rb`
   (`#only_base_merge_commits_since?`, `#clean_base_merge?`),

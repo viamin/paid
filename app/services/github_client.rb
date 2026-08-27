@@ -270,9 +270,12 @@ class GithubClient
   # base is reachable from the head (ahead), an ancestor (behind), the
   # same commit (identical), or on a divergent branch (diverged) — and
   # the minimal commit metadata (sha + message) for the range between
-  # them. Callers needing only the changed-file list should use
-  # +compare_changed_files+; callers needing only the summary should use
-  # +compare_summary+.
+  # them. The +commits+ list is capped by GitHub (250 entries per
+  # response) while +ahead_by+ reports the true range size, so callers
+  # enumerating the range must treat +ahead_by+ > +commits.size+ as a
+  # truncated (incomplete) range. Callers needing only the changed-file
+  # list should use +compare_changed_files+; callers needing only the
+  # summary should use +compare_summary+.
   #
   # @param repo [String] Repository in "owner/name" format
   # @param base [String] Base commit SHA

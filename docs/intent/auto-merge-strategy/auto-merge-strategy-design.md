@@ -40,8 +40,10 @@ This prevents `chore: merge origin/main` refreshes (including those produced by
 Paid's own `auto_fix_merge_conflicts` path) from dropping a PR out of
 auto-merge eligibility when they introduce no author-side content. Any commit
 that cannot be positively classified as content-free continues to invalidate
-the approval (fail closed), and the classification decision is logged so a
-stall is diagnosable.
+the approval (fail closed), as does a post-approval range the comparison cannot
+fully return (GitHub's compare API caps the returned commit list while
+`ahead_by` reports the true range size; a truncated range is unclassifiable),
+and the classification decision is logged so a stall is diagnosable.
 
 Bot-authored dependency PRs take the narrower trusted path. Dependabot-like PRs
 may skip owner-approval and review-feedback gates, but they still require the

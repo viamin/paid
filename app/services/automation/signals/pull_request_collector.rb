@@ -205,9 +205,11 @@ module Automation
       # whose tree differs from its first parent (conflict resolution or
       # author-side change), on a merge whose second parent is not
       # reachable from the base branch tip, on a force-push that removed
-      # the approved commit from HEAD's history, or when the range cannot
-      # be classified. The classification decision is logged so a stall is
-      # diagnosable.
+      # the approved commit from HEAD's history, on a comparison whose
+      # returned commit page is truncated (GitHub caps the compare
+      # response, so the range cannot be fully enumerated), or when the
+      # range cannot be classified. The classification decision is logged
+      # so a stall is diagnosable.
       def only_base_merge_commits_since?(approval_sha:, head_sha:, base_branch:, issue: nil)
         return false if approval_sha.blank? || head_sha.blank? || base_branch.blank?
         return true if approval_sha == head_sha
@@ -220,6 +222,18 @@ module Automation
         return false unless %w[ahead identical].include?(status)
 
         commits = Array(comparison.commits)
+        ahead_by = comparison.ahead_by
+
+        # GitHub's compare API caps the returned commit list (250 per
+        # response) while +ahead_by+ reports the true range size. When the
+        # page is truncated — or the payload omits +ahead_by+ — the
+        # un-returned commits are invisible to this check, so the range
+        # cannot be fully classified: fail closed (approval stale) rather
+        # than approve an unseen range.
+        if ahead_by.blank? || ahead_by.to_i > commits.size
+          log_truncated_range(issue, approval_sha:, head_sha:, ahead_by:, returned: commits.size)
+          return false
+        end
 
         log_classification(issue, approval_sha:, head_sha:, commit_count: commits.size)
 
@@ -350,6 +364,20 @@ module Automation
           approval_sha: approval_sha,
           head_sha: head_sha,
           commit_count: commit_count
+        )
+      end
+
+      # Truncated compare pages fail closed; the warn makes the resulting
+      # stall diagnosable as a deliberate freshness decision.
+      def log_truncated_range(issue, approval_sha:, head_sha:, ahead_by:, returned:)
+        logger.warn(
+          message: "pr_scanner.review_freshness_range_truncated",
+          project_id: providers.project.id,
+          pr_number: issue&.github_number,
+          approval_sha: approval_sha,
+          head_sha: head_sha,
+          ahead_by: ahead_by,
+          returned_commits: returned
         )
       end
 

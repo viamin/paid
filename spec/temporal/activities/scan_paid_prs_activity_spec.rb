@@ -6622,6 +6622,44 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when the post-approval range exceeds the compare API commit page (truncated range)" do
+      let(:approval_sha) { "approved_sha" }
+      let(:head_sha) { "abc123" }
+
+      before do
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "",
+              submitted_at: 2.hours.ago, commit_id: approval_sha }
+          ],
+          head_committed_at: 1.hour.ago,
+          head_sha: head_sha
+        )
+        # GitHub caps the compare response's commit list (250) while
+        # ahead_by reports the true range size; the un-pageable tail is
+        # invisible to the freshness check.
+        allow(github_client).to receive(:compare)
+          .with(project.full_name, approval_sha, head_sha)
+          .and_return(OpenStruct.new(
+            status: "ahead",
+            ahead_by: 300,
+            commits: Array.new(250) { |i| OpenStruct.new(sha: "merge_#{i}") }
+          ))
+      end
+
+      it "blocks auto-merge by failing closed" do
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to eq([])
+      end
+    end
+
     # --- Blocking review method completeness ---
 
     context "when ci_action review method is enabled but action has not passed" do
@@ -10881,7 +10919,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     allow(github_client).to receive(:compare)
       .with(project.full_name, approval_sha, head_sha)
-      .and_return(OpenStruct.new(status: "ahead", commits: [ OpenStruct.new(sha: head_sha) ]))
+      .and_return(OpenStruct.new(status: "ahead", ahead_by: 1, commits: [ OpenStruct.new(sha: head_sha) ]))
     allow(github_client).to receive(:commit)
       .with(project.full_name, head_sha)
       .and_return(merge_commit)
@@ -10911,7 +10949,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     allow(github_client).to receive(:compare)
       .with(project.full_name, approval_sha, head_sha)
-      .and_return(OpenStruct.new(status: "ahead", commits: [ OpenStruct.new(sha: head_sha) ]))
+      .and_return(OpenStruct.new(status: "ahead", ahead_by: 1, commits: [ OpenStruct.new(sha: head_sha) ]))
     allow(github_client).to receive(:commit)
       .with(project.full_name, head_sha)
       .and_return(merge_commit)
@@ -10948,6 +10986,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       .with(project.full_name, approval_sha, head_sha)
       .and_return(OpenStruct.new(
         status: "ahead",
+        ahead_by: 2,
         commits: [ OpenStruct.new(sha: merge_sha), OpenStruct.new(sha: real_commit_sha) ]
       ))
     allow(github_client).to receive(:commit)
@@ -10984,7 +11023,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     allow(github_client).to receive(:compare)
       .with(project.full_name, approval_sha, head_sha)
-      .and_return(OpenStruct.new(status: "ahead", commits: [ OpenStruct.new(sha: head_sha) ]))
+      .and_return(OpenStruct.new(status: "ahead", ahead_by: 1, commits: [ OpenStruct.new(sha: head_sha) ]))
     allow(github_client).to receive(:commit)
       .with(project.full_name, head_sha)
       .and_return(merge_commit)
