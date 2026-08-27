@@ -55,9 +55,11 @@ class AgentComboImageCleanupJob < ApplicationJob
   # token math over persisted profiles), so the sweep stays read-only until a
   # prune decision is made.
   def referenced_combo_tags
-    Project.find_each.filter_map do |project|
-      image = Containers::ImageResolver.resolve(project)
-      Containers::ImageResolver.combo?(image) ? image : nil
+    TenantContext.with_system_access do
+      Project.find_each.filter_map do |project|
+        image = Containers::ImageResolver.resolve(project)
+        Containers::ImageResolver.combo?(image) ? image : nil
+      end
     end.to_set
   end
 

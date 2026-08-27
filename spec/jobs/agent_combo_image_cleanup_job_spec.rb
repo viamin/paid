@@ -19,6 +19,29 @@ RSpec.describe AgentComboImageCleanupJob do
   end
 
   describe "#perform" do
+    it "looks up referenced combo tags within system access, bypassing tenant RLS" do
+      in_system_access = false
+      found_in_system_access = nil
+      allow(TenantContext).to receive(:with_system_access) do |&block|
+        in_system_access = true
+        block.call
+      ensure
+        in_system_access = false
+      end
+      allow(Project).to receive(:find_each) do
+        found_in_system_access = in_system_access
+        []
+      end
+      stub_combo_images(image: tag, id: "sha256:abc", labels: stale_labels)
+      allow(backend).to receive(:list_containers).and_return([])
+      allow(backend).to receive(:delete_image)
+
+      job.perform
+
+      expect(TenantContext).to have_received(:with_system_access)
+      expect(found_in_system_access).to be(true)
+    end
+
     it "queries container usage by ancestor image, not the unsupported image filter" do
       stub_combo_images(image: tag, id: "sha256:abc", labels: stale_labels)
       allow(backend).to receive(:list_containers)
