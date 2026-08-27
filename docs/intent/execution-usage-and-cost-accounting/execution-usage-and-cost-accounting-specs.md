@@ -109,6 +109,12 @@ prefix: EXEC-USAGE
   `completed_at`, using that stamped rate rather than a re-resolved
   current-env rate, so `Projects::CostDashboardStats`'s infrastructure
   totals do not silently drop to zero for runs that predate `ExecutionUsage`.
+  The backfill SHALL skip runs whose environment may still be live —
+  currently retained containers (unexpired `container_retained_until`) and
+  runs with an environment `ExecutionResource` in the `active` or
+  `cleanup_pending` state — so those runs keep accruing via the rowless
+  overlap path (EXEC-USAGE-007) until real cleanup records their actual
+  termination, instead of being frozen at `completed_at`.
   *Tests:* `spec/migrations/backfill_execution_usage_from_infrastructure_spend_stamp_spec.rb`.
   *Code:* `BackfillExecutionUsageFromInfrastructureSpendStamp`.
 

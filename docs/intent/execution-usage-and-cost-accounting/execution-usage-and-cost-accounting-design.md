@@ -130,7 +130,14 @@ planner from changing.
 - Backfill beyond estimating historical runs. Existing runs with a stamped
   rate in `external_metadata["infrastructure_spend"]` get an
   `ExecutionUsage` row from a one-time backfill so dashboards agree with
-  the threshold path during the transition.
+  the threshold path during the transition. The backfill only freezes runs
+  whose environment is already gone: runs with an unexpired
+  `container_retained_until` or an environment `ExecutionResource` in the
+  `active` / `cleanup_pending` state are skipped so they keep accruing via
+  the rowless overlap path until real cleanup records their actual
+  termination — freezing them at `completed_at` would undercount their
+  still-open billable lifetime, and the recorder's first-write-wins rule
+  would preserve that short row over the later true termination.
 
 ## Cleanup Fallbacks
 

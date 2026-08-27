@@ -12,6 +12,14 @@
 # to zero. Uses the stamped rate (not a re-resolved current-env rate) so the
 # backfilled totals match what Capacity::InfrastructureSpend already reported
 # for the same runs.
+#
+# Runs whose environment is still live — the container is currently retained
+# (unexpired container_retained_until) or its ExecutionResource environment is
+# active/cleanup_pending — are skipped: their billable lifetime is still open,
+# so they keep accruing via the rowless (pending) spend path until the real
+# teardown records the actual terminated_at. Freezing them at completed_at now
+# would undercount them, and RecordExecutionUsage's first-write-wins semantics
+# would preserve the short backfilled row over the later true termination.
 class BackfillExecutionUsageFromInfrastructureSpendStamp < ActiveRecord::Migration[8.1]
   class MigrationAgentRun < ApplicationRecord
     self.table_name = "agent_runs"
@@ -50,12 +58,32 @@ class BackfillExecutionUsageFromInfrastructureSpendStamp < ActiveRecord::Migrati
   end
 
   def candidates
-    MigrationAgentRun
+    scope = MigrationAgentRun
       .where.not(provisioning_started_at: nil)
       .where.not(completed_at: nil)
       .where("completed_at >= provisioning_started_at")
       .where("external_metadata #>> '{infrastructure_spend,rate_cents_per_hour}' IS NOT NULL")
       .where("id NOT IN (SELECT agent_run_id FROM execution_usages)")
+      .where("container_retained_until IS NULL OR container_retained_until <= ?", Time.current)
+
+    scope = scope.where(live_environment_exclusion_sql) if table_exists?(:execution_resources)
+    scope
+  end
+
+  # Runs whose environment resource is still active or awaiting cleanup keep
+  # accruing through the rowless (pending) spend path until the real teardown
+  # records their termination; backfilling them now would freeze their billable
+  # lifetime at completed_at, and the recorder's first-write-wins semantics
+  # would then preserve that short row over the true termination.
+  def live_environment_exclusion_sql
+    <<~SQL.squish
+      NOT EXISTS (
+        SELECT 1 FROM execution_resources
+        WHERE execution_resources.agent_run_id = agent_runs.id
+          AND execution_resources.resource_type = 'environment'
+          AND execution_resources.state IN ('active', 'cleanup_pending')
+      )
+    SQL
   end
 
   def backfill_batch(batch_ids)

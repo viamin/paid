@@ -24,10 +24,11 @@ RSpec.describe BackfillExecutionUsageFromInfrastructureSpendStamp, :aggregate_fa
 
   # MigrationSpecHelpers#truncate_migration_test_data truncates projects
   # without first clearing rows that reference it (agent_runs, issues) or
-  # each other (execution_usages -> agent_runs), which this spec creates.
+  # each other (execution_usages -> agent_runs, execution_resources ->
+  # agent_runs), which this spec creates.
   def truncate_agent_run_tables
     connection = ActiveRecord::Base.connection
-    %w[execution_usages agent_runs issues].each { |table| connection.execute("DELETE FROM #{table}") }
+    %w[execution_usages execution_resources agent_runs issues].each { |table| connection.execute("DELETE FROM #{table}") }
   end
 
   def stamped_run(status_trait, rate_cents_per_hour: 120, requested_resources: nil)
@@ -89,6 +90,42 @@ RSpec.describe BackfillExecutionUsageFromInfrastructureSpendStamp, :aggregate_fa
     migration.migrate(:up)
 
     expect(run.reload.execution_usage).to be_nil
+  end
+
+  # @spec EXEC-USAGE-007
+  it "does not create a row for a run whose container is currently retained" do
+    run = stamped_run(:completed)
+    run.update!(container_retained_until: 2.hours.from_now)
+
+    migration.migrate(:up)
+
+    expect(run.reload.execution_usage).to be_nil
+  end
+
+  # @spec EXEC-USAGE-007
+  it "does not create a row for a run whose environment resource is still live or cleanup-pending" do
+    active_run = stamped_run(:completed)
+    cleanup_pending_run = stamped_run(:completed)
+    create(:execution_resource, agent_run: active_run, project: project, account: account, state: "active")
+    create(:execution_resource, agent_run: cleanup_pending_run, project: project, account: account,
+      state: "cleanup_pending")
+
+    migration.migrate(:up)
+
+    expect(active_run.reload.execution_usage).to be_nil
+    expect(cleanup_pending_run.reload.execution_usage).to be_nil
+  end
+
+  it "backfills a run whose environment resource was cleaned and whose retention ttl expired" do
+    cleaned_run = stamped_run(:completed)
+    expired_retention_run = stamped_run(:completed)
+    create(:execution_resource, agent_run: cleaned_run, project: project, account: account, state: "cleaned")
+    expired_retention_run.update!(container_retained_until: 1.hour.ago)
+
+    migration.migrate(:up)
+
+    expect(cleaned_run.reload.execution_usage).to be_present
+    expect(expired_retention_run.reload.execution_usage).to be_present
   end
 
   it "does not duplicate a run that already has an ExecutionUsage row" do
