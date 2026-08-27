@@ -338,7 +338,7 @@ module Projects
       return unless inbox_mode?
       return if @issue.blank?
 
-      submitted = Array(params[:answers]).map { |answer| answer.to_s }
+      submitted = Array(params[:answers]).map(&:to_s)
       return if submitted.empty?
 
       trimmed = submitted.map { |answer| answer.byteslice(0, MAX_PENDING_ANSWER_BYTES).scrub("") }
