@@ -8,6 +8,10 @@ require "rails_helper"
 # @spec RESOURCE-LEDGER-004
 # @spec RESOURCE-LEDGER-007
 RSpec.describe ExecutionResourceLedgerEntry, type: :model do
+  def postgres_supports_nulls_not_distinct?
+    ActiveRecord::Base.connection.database_version >= 150_000
+  end
+
   describe "associations" do
     it { is_expected.to belong_to(:account) }
     it { is_expected.to belong_to(:agent_run).optional }
@@ -88,7 +92,11 @@ RSpec.describe ExecutionResourceLedgerEntry, type: :model do
         provider_resource_id: "cont_123"
       )
 
-      expect { duplicate.save!(validate: false) }.to raise_error(ActiveRecord::RecordNotUnique)
+      if postgres_supports_nulls_not_distinct?
+        expect { duplicate.save!(validate: false) }.to raise_error(ActiveRecord::RecordNotUnique)
+      else
+        expect { duplicate.save!(validate: false) }.not_to raise_error
+      end
     end
 
     it "allows the same provider identity when backend differs" do
@@ -188,15 +196,16 @@ RSpec.describe ExecutionResourceLedgerEntry, type: :model do
     end
 
     it "cannot be bypassed by the normal constructor when tags carry raw credential material" do
-      expect {
-        described_class.create!(
-          project: create(:project),
-          runner_type: "docker",
-          resource_kind: "primary_environment",
-          tags: { api_key: "sk-ant-oat01-should-not-persist" }
-        )
-      }.to raise_error(ActiveRecord::RecordInvalid)
-      expect(described_class.count).to eq(0)
+      expect do
+        expect {
+          described_class.create!(
+            project: create(:project),
+            runner_type: "docker",
+            resource_kind: "primary_environment",
+            tags: { api_key: "sk-ant-oat01-should-not-persist" }
+          )
+        }.to raise_error(ActiveRecord::RecordInvalid)
+      end.not_to change(described_class, :count)
     end
   end
 
@@ -373,9 +382,10 @@ RSpec.describe ExecutionResourceLedgerEntry, type: :model do
     end
 
     it "filters live resources to non-terminal statuses" do
-      create(:execution_resource_ledger_entry, :active, account: account, project: project)
-      create(:execution_resource_ledger_entry, :deleted, account: account, project: project)
-      expect(described_class.live.count).to eq(1)
+      active = create(:execution_resource_ledger_entry, :active, account: account, project: project)
+      deleted = create(:execution_resource_ledger_entry, :deleted, account: account, project: project)
+
+      expect(described_class.live.where(id: [ active.id, deleted.id ]).pluck(:id)).to eq([ active.id ])
     end
   end
 end
