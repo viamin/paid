@@ -64,6 +64,21 @@ any other `runner_key`.
   draw on the same OpenRouter free-tier quota. This is a real AR validation,
   not just a UI affordance: it also blocks pairing a legacy `openrouter_free`
   runner with an `opencode` free-policy runner on the same credential.
+- Phase gate (`opencode_free_policy_runner_must_not_be_enabled`,
+  MODEL-POLICY-011): until dispatch recognizes `model_policy == "free"`
+  (issues 5/8 and 6/8, MODEL-POLICY-009), a free-policy `opencode` runner
+  fails validation when enabled for agent runs, fallback, or chat. Every
+  dispatch path (`RunAgentActivity#selected_runner_runtime`,
+  `AgentRuns::RunnerResolver`, `Models::Select`, `Runners::TestAgent`)
+  reads `agent_harness_runner_runtime`, which is `nil` for a free-policy
+  runner because `opencode_direct_outbound?` requires `opencode_model_id`;
+  an enabled free-policy runner would fall through to a bare
+  `ProviderRuntime` without its OpenRouter credential (no
+  `OPENROUTER_API_KEY` env, no base_url), and preflight passes such a
+  runner because it is enabled and holds an api-key record. A fully
+  disabled free-policy runner remains valid to pre-configure; the legacy
+  `openrouter_free` runner is unaffected. Remove this gate when 5/8 wires
+  free-policy dispatch.
 
 ### Defaults and display
 

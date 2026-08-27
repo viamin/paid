@@ -201,6 +201,7 @@ class Runner < ApplicationRecord
   validate :api_key_entry_must_be_unique
   validate :free_model_policy_runner_must_be_unique_per_credential
   validate :opencode_api_key_config_must_be_valid
+  validate :opencode_free_policy_runner_must_not_be_enabled
   validate :kilocode_api_key_config_must_be_valid
   validate :pi_api_key_config_must_be_valid
   validate :omp_api_key_config_must_be_valid
@@ -1285,6 +1286,22 @@ class Runner < ApplicationRecord
         (opencode_preflight_timeout_seconds.nil? || opencode_preflight_timeout_seconds < MIN_PREFLIGHT_TIMEOUT_SECONDS)
       errors.add(:config, "must include an OpenCode preflight timeout of at least #{MIN_PREFLIGHT_TIMEOUT_SECONDS} second")
     end
+  end
+
+  # Phase gate until RDR-065 5/8 (MODEL-POLICY-009) wires dispatch to
+  # free_model_policy?. Every dispatch path reads agent_harness_runner_runtime,
+  # which is nil for a free-policy runner because opencode_direct_outbound?
+  # requires opencode_model_id, so an enabled free-policy runner would execute
+  # opencode without its OpenRouter credential (bare ProviderRuntime, no
+  # env/base_url). Preflight cannot catch it: the runner is enabled and holds
+  # an api-key record. A fully disabled free-policy runner stays valid to
+  # pre-configure; the legacy openrouter_free runner dispatches as before.
+  # @spec MODEL-POLICY-011
+  def opencode_free_policy_runner_must_not_be_enabled
+    return unless opencode_model_policy == "free"
+    return unless enabled_for_agent_runs? || enabled_for_fallback? || enabled_for_chat?
+
+    errors.add(:base, "OpenCode free model policy cannot be enabled until free-policy dispatch lands (RDR-065 5/8)")
   end
 
   # @spec MODEL-POLICY-004

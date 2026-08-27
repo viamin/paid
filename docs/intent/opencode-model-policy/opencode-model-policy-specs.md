@@ -25,6 +25,18 @@
   that require free-pricing `LlmModel` rows, and their runner-compatibility
   counterparts that skip the generic compatibility check, SHALL key off this
   predicate rather than the `openrouter_free` runner key alone.
+- [x] **MODEL-POLICY-011** — Until dispatch recognizes `model_policy ==
+  "free"` (MODEL-POLICY-009, RDR-065 5/8), an `opencode` runner with
+  `model_policy: "free"` SHALL fail validation when
+  `enabled_for_agent_runs`, `enabled_for_fallback`, or `enabled_for_chat` is
+  set: every dispatch path reads `agent_harness_runner_runtime`, which is
+  `nil` for a free-policy runner (`opencode_direct_outbound?` requires
+  `opencode_model_id`), so an enabled free-policy runner would execute
+  opencode without its OpenRouter credential (bare `ProviderRuntime`, no
+  env/base_url) and preflight cannot catch it. A fully disabled free-policy
+  runner SHALL remain valid to configure. The legacy `openrouter_free`
+  runner, whose dispatch is fully wired, SHALL NOT be affected by this gate.
+  The gate is removed when MODEL-POLICY-009 lands.
 
 ## Defaults and Display
 

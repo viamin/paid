@@ -774,7 +774,7 @@ RSpec.describe Runner do
       )
     end
 
-    # @spec MODEL-POLICY-001 MODEL-POLICY-002 MODEL-POLICY-003 MODEL-POLICY-004 MODEL-POLICY-006 MODEL-POLICY-007
+    # @spec MODEL-POLICY-001 MODEL-POLICY-002 MODEL-POLICY-003 MODEL-POLICY-004 MODEL-POLICY-006 MODEL-POLICY-007 MODEL-POLICY-011
     describe "opencode model_policy" do
       it "defaults to specific when unset" do
         runner.runner_key = "opencode"
@@ -805,9 +805,59 @@ RSpec.describe Runner do
         runner.auth_type = "api_key"
         runner.provider_api_key = api_key
         runner.runner_key = "opencode"
+        runner.assign_attributes(enabled_for_agent_runs: false, enabled_for_chat: false, enabled_for_fallback: false)
         runner.config = { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } }
 
         expect(runner).to be_valid
+      end
+
+      # @spec MODEL-POLICY-011
+      it "rejects a free-policy runner enabled for agent runs until free-policy dispatch lands" do
+        api_key = create(:provider_api_key, user: runner.user, api_service_type: "openrouter")
+        runner.auth_type = "api_key"
+        runner.provider_api_key = api_key
+        runner.runner_key = "opencode"
+        runner.config = { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } }
+
+        expect(runner).not_to be_valid
+        expect(runner.errors[:base]).to include("OpenCode free model policy cannot be enabled until free-policy dispatch lands (RDR-065 5/8)")
+      end
+
+      # @spec MODEL-POLICY-011
+      it "rejects a free-policy runner enabled for fallback only" do
+        api_key = create(:provider_api_key, user: runner.user, api_service_type: "openrouter")
+        runner.auth_type = "api_key"
+        runner.provider_api_key = api_key
+        runner.runner_key = "opencode"
+        runner.assign_attributes(enabled_for_agent_runs: false, enabled_for_chat: false)
+        runner.config = { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } }
+
+        expect(runner).not_to be_valid
+        expect(runner.errors[:base]).to include("OpenCode free model policy cannot be enabled until free-policy dispatch lands (RDR-065 5/8)")
+      end
+
+      # @spec MODEL-POLICY-011
+      it "rejects a free-policy runner enabled for chat only" do
+        api_key = create(:provider_api_key, user: runner.user, api_service_type: "openrouter")
+        runner.auth_type = "api_key"
+        runner.provider_api_key = api_key
+        runner.runner_key = "opencode"
+        runner.assign_attributes(enabled_for_agent_runs: false, enabled_for_fallback: false)
+        runner.config = { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } }
+
+        expect(runner).not_to be_valid
+        expect(runner.errors[:base]).to include("OpenCode free model policy cannot be enabled until free-policy dispatch lands (RDR-065 5/8)")
+      end
+
+      # @spec MODEL-POLICY-011
+      it "does not gate the legacy openrouter_free runner" do
+        api_key = create(:provider_api_key, user: runner.user, api_service_type: "openrouter")
+        runner.auth_type = "api_key"
+        runner.provider_api_key = api_key
+        runner.runner_key = "openrouter_free"
+
+        expect(runner).to be_valid
+        expect(runner.errors[:base]).to be_empty
       end
 
       it "rejects the free policy on a non-openrouter API provider (phase-1 gate)" do
@@ -857,6 +907,7 @@ RSpec.describe Runner do
         api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
         paid_model = create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic", tier: "mid", pricing_tier: "paid")
         free_runner = create(:runner, user: user, runner_key: "opencode", auth_type: "api_key", provider_api_key: api_key,
+          enabled_for_agent_runs: false, enabled_for_chat: false, enabled_for_fallback: false,
           config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } })
 
         free_runner.tier_model_ids = LlmModel::TIERS.index_with { paid_model.model_id }
@@ -869,6 +920,7 @@ RSpec.describe Runner do
         api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
         free_model = create(:llm_model, model_id: "free-mid", provider: "deepseek", tier: "mid", pricing_tier: "free")
         free_runner = create(:runner, user: user, runner_key: "opencode", auth_type: "api_key", provider_api_key: api_key,
+          enabled_for_agent_runs: false, enabled_for_chat: false, enabled_for_fallback: false,
           config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } })
 
         free_runner.tier_model_ids = LlmModel::TIERS.index_with { free_model.model_id }
@@ -904,6 +956,7 @@ RSpec.describe Runner do
         create(:runner, user: user, runner_key: "openrouter_free", auth_type: "api_key", provider_api_key: api_key)
 
         duplicate = build(:runner, user: user, runner_key: "opencode", auth_type: "api_key", provider_api_key: api_key,
+          enabled_for_agent_runs: false, enabled_for_chat: false, enabled_for_fallback: false,
           config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } })
 
         expect(duplicate).not_to be_valid
@@ -917,6 +970,7 @@ RSpec.describe Runner do
         create(:runner, user: user, runner_key: "openrouter_free", auth_type: "api_key", provider_api_key: api_key_a)
 
         second = build(:runner, user: user, runner_key: "opencode", auth_type: "api_key", provider_api_key: api_key_b,
+          enabled_for_agent_runs: false, enabled_for_chat: false, enabled_for_fallback: false,
           config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } })
 
         expect(second).to be_valid
@@ -1386,6 +1440,7 @@ RSpec.describe Runner do
         runner_key: "opencode",
         auth_type: "api_key",
         provider_api_key: api_key,
+        enabled_for_agent_runs: false, enabled_for_chat: false, enabled_for_fallback: false,
         config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } }
       )
 
@@ -1406,6 +1461,7 @@ RSpec.describe Runner do
         runner_key: "opencode",
         auth_type: "api_key",
         provider_api_key: api_key,
+        enabled_for_agent_runs: false, enabled_for_chat: false, enabled_for_fallback: false,
         config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } },
         tier_model_ids: { "mid" => free_model.model_id }
       )
