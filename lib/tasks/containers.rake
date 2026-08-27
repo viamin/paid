@@ -6,11 +6,14 @@ namespace :containers do
     builder = Containers::ComboImageBuilder
     backends = Containers.all_backends
     present = backends.flat_map { |backend| builder.combo_images(backend: backend).map { |entry| [ backend, entry[:image] ] } }
-    resolved = Project.find_each.filter_map do |project|
-      image = Containers::ImageResolver.resolve(project)
-      Containers::ImageResolver.combo?(image) ? image : nil
-    end.uniq
+    resolved = TenantContext.with_system_access do
+      Project.find_each.filter_map do |project|
+        image = Containers::ImageResolver.resolve(project)
+        Containers::ImageResolver.combo?(image) ? image : nil
+      end.uniq
+    end
 
+    failures = false
     (present.uniq + backends.product(resolved)).uniq.each do |backend, image|
       builder.force_rebuild(image, backend: backend)
       puts "Rebuilt #{image} on #{backend.identifier}"
