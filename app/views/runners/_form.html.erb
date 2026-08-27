@@ -12,7 +12,7 @@
      if submitted_runner_params.key?("custom_model_id") || submitted_runner_params.key?(:custom_model_id)
        submitted_runner_params["custom_model_id"] || submitted_runner_params[:custom_model_id]
      end %>
-<% initial_api_service_type = runner.provider_api_key&.api_service_type || runner.required_api_service_type %>
+<% initial_api_service_type = runner.provider_api_key&.api_service_type %>
 <% initial_model_options = if feature_flagged_model_form && initial_api_service_type.present?
      Runners::ModelOptions.call(runner_key: runner.runner_key, api_service_type: initial_api_service_type).options
    else
@@ -149,7 +149,8 @@
                 id="runner_provider_api_key_id"
                 class="block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
                 <% unless is_api_key %>disabled<% end %>
-                data-runner-form-target="apiKeySelect">
+                data-runner-form-target="apiKeySelect"
+                data-action="change->runner-form#refreshRunnerSpecificFields">
           <option value="" data-runner-form-target="apiKeyOption">Select an API key</option>
           <% available_api_keys.group_by(&:api_service_type).sort.each do |service_type, api_keys| %>
             <optgroup label="<%= RunnerSupport.api_service_type_label(service_type) %>">
