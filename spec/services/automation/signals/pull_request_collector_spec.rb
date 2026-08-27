@@ -523,6 +523,70 @@ RSpec.describe Automation::Signals::PullRequestCollector do
       ))
     end
 
+    it "fetches each first-parent commit at most once across a multi-step walk" do
+      # Regression: the prior walk re-fetched every commit whose SHA
+      # had just been re-discovered as the next first-parent. With N
+      # steps that meant up to N-1 wasted GitHub API calls per
+      # staleness check (multiplied by the 1-2 blocking approvals per
+      # PR). The walk now forwards the prior iteration's first-parent
+      # commit as the next step's commit, so each commit is resolved
+      # exactly once across the whole chain.
+      stub_two_step_first_parent_walk
+
+      result = collector.only_base_merge_commits_since?(
+        approval_sha: approval_sha, head_sha: head_sha, base_branch: "main", issue: issue
+      )
+
+      expect(result).to be(true)
+      expect(client).to have_received(:commit).with("acme/widgets", head_sha).once
+      expect(client).to have_received(:commit).with("acme/widgets", "middle_merge_sha").once
+      expect(client).to have_received(:commit).with("acme/widgets", approval_sha).once
+    end
+
+    # Stubs a two-step clean FP chain: head_sha → middle_sha →
+    # approval_sha. Each intermediate is a clean two-parent merge of
+    # base (identical tree to its first parent, second parent
+    # reachable from base tip), so the walk should land on the
+    # approval commit without re-classifying any step.
+    def stub_two_step_first_parent_walk
+      middle_sha = "middle_merge_sha"
+      head_commit = OpenStruct.new(
+        sha: head_sha,
+        commit: OpenStruct.new(tree: OpenStruct.new(sha: "merge_tree")),
+        parents: [
+          OpenStruct.new(sha: middle_sha),
+          OpenStruct.new(sha: second_parent_sha)
+        ]
+      )
+      middle_commit = OpenStruct.new(
+        sha: middle_sha,
+        commit: OpenStruct.new(tree: OpenStruct.new(sha: "merge_tree")),
+        parents: [
+          OpenStruct.new(sha: approval_sha),
+          OpenStruct.new(sha: second_parent_sha)
+        ]
+      )
+
+      allow(client).to receive(:compare)
+        .with("acme/widgets", approval_sha, head_sha)
+        .and_return(OpenStruct.new(status: "ahead"))
+      allow(client).to receive(:ref)
+        .with("acme/widgets", "heads/main")
+        .and_return(base_ref)
+      allow(client).to receive(:commit)
+        .with("acme/widgets", head_sha)
+        .and_return(head_commit)
+      allow(client).to receive(:commit)
+        .with("acme/widgets", middle_sha)
+        .and_return(middle_commit)
+      allow(client).to receive(:commit)
+        .with("acme/widgets", approval_sha)
+        .and_return(first_parent_commit)
+      allow(client).to receive(:compare)
+        .with("acme/widgets", second_parent_sha, base_tip_sha)
+        .and_return(OpenStruct.new(status: "ahead"))
+    end
+
     # Cycle: head_sha's first parent points back to itself so the FP
     # walk never reaches approval_sha and the step bound trips.
     def cycle_commit

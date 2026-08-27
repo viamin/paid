@@ -351,12 +351,17 @@ module Automation
       # +reason+ is set only when +outcome: :stale+.
       def walk_first_parent_chain(head_sha:, approval_sha:, base_tip_sha:)
         current_sha = head_sha
+        current_commit = nil
         steps = 0
 
         while current_sha != approval_sha
           return { outcome: :walk_exceeded, steps: steps } if steps >= FIRST_PARENT_WALK_LIMIT
 
-          commit = client.commit(providers.repo, current_sha)
+          # Reuse the prior iteration's first-parent commit when possible:
+          # the SHA reassignment below means the next loop's first fetch
+          # would otherwise re-request the commit we just resolved,
+          # costing an extra GitHub call per step in the chain.
+          commit = current_commit || client.commit(providers.repo, current_sha)
           return { outcome: :stale, steps: steps, reason: :commit_unresolved } unless commit
 
           parents = Array(commit.parents)
@@ -382,6 +387,7 @@ module Automation
             end
 
             current_sha = first_parent_sha
+            current_commit = first_parent_commit
             steps += 1
           else
             # Octopus merge or root commit: neither belongs on the
@@ -445,10 +451,12 @@ module Automation
       # warn makes the resulting stall diagnosable as a deliberate
       # freshness decision rather than a missed bug.
       def log_truncated_range(issue, approval_sha:, head_sha:, first_parent_steps:)
+        return unless issue
+
         logger.warn(
           message: "pr_scanner.review_freshness_range_truncated",
           project_id: providers.project.id,
-          pr_number: issue&.github_number,
+          pr_number: issue.github_number,
           approval_sha: approval_sha,
           head_sha: head_sha,
           first_parent_steps: first_parent_steps,

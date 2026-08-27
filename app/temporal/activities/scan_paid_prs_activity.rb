@@ -3030,7 +3030,7 @@ module Activities
       # Each blocking approval is checked independently against HEAD: a
       # later approval at a different SHA does not expand an earlier
       # approval's freshness range. An approval whose HEAD timestamp is
-      # older than its submission is a candidate for the staleness check;
+      # newer than its submission is a candidate for the staleness check;
       # the post-approval range must consist entirely of content-free
       # base merges for the approval to remain fresh. Any approval that
       # fails the check keeps the PR stale.
