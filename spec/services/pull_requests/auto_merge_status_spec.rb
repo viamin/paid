@@ -66,6 +66,25 @@ RSpec.describe PullRequests::AutoMergeStatus do
     )
   end
 
+  it "reports an unsupported dependency-update bot from the persisted snapshot" do
+    persist_auto_merge_snapshot!(
+      failed: [ unsupported_dependency_update_bot_blocker ],
+      not_evaluated: []
+    )
+
+    expect(status).to eq(
+      last_auto_merge_attempt_at: nil,
+      auto_merge_status: "blocked",
+      reason_code: "unsupported_dependency_update_bot",
+      sanitized_message: "Paid does not support automatic merging for this dependency-update bot.",
+      credential_mode: "personal_access_token",
+      merge_permission_rejected: false,
+      cooldown_until: nil,
+      next_action: "Merge this pull request manually or use a supported dependency-update bot such as Dependabot.",
+      blockers: [ unsupported_dependency_update_bot_blocker ]
+    )
+  end
+
   it "reports merged ahead of a stale merge-permission rejection" do
     issue.update!(
       pr_review_phase: "merged",
@@ -167,6 +186,16 @@ RSpec.describe PullRequests::AutoMergeStatus do
       reason_code: "checks_not_green",
       sanitized_message: "Required checks are not green yet.",
       next_action: "Wait for required checks to pass, then let auto-merge evaluate the pull request again."
+    )
+  end
+
+  def unsupported_dependency_update_bot_blocker
+    blocker(
+      signal: "merge_executor_supported",
+      status: "failed",
+      reason_code: "unsupported_dependency_update_bot",
+      sanitized_message: "Paid does not support automatic merging for this dependency-update bot.",
+      next_action: "Merge this pull request manually or use a supported dependency-update bot such as Dependabot."
     )
   end
 

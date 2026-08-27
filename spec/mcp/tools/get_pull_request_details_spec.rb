@@ -128,6 +128,27 @@ RSpec.describe Tools::GetPullRequestDetails do
       )
     end
 
+    it "reports an unsupported dependency-update bot from the persisted snapshot" do
+      pr.update!(
+        auto_merge_blockers: { "failed" => [ unsupported_dependency_update_bot_blocker ], "not_evaluated" => [] },
+        auto_merge_evaluated_at: Time.current
+      )
+
+      result = tool.call(project_id: project.id, issue_id: pr.id)
+
+      expect(result[:auto_merge]).to eq(
+        last_auto_merge_attempt_at: nil,
+        auto_merge_status: "blocked",
+        reason_code: "unsupported_dependency_update_bot",
+        sanitized_message: "Paid does not support automatic merging for this dependency-update bot.",
+        credential_mode: "personal_access_token",
+        merge_permission_rejected: false,
+        cooldown_until: nil,
+        next_action: "Merge this pull request manually or use a supported dependency-update bot such as Dependabot.",
+        blockers: [ unsupported_dependency_update_bot_blocker ]
+      )
+    end
+
     it "reports the latest persisted attempt timestamp alongside ready status" do
       attempt = create(:auto_merge_attempt, project: project, issue: pr, status: "skipped", reason_code: "checks_not_green")
 
@@ -457,6 +478,16 @@ RSpec.describe Tools::GetPullRequestDetails do
       reason_code: "dependencies_unresolved",
       sanitized_message: "Dependency resolution was not evaluated because an earlier auto-merge gate already failed.",
       next_action: "Resolve the earlier auto-merge blockers first, then let Paid re-evaluate dependency resolution."
+    )
+  end
+
+  def unsupported_dependency_update_bot_blocker
+    blocker(
+      signal: "merge_executor_supported",
+      status: "failed",
+      reason_code: "unsupported_dependency_update_bot",
+      sanitized_message: "Paid does not support automatic merging for this dependency-update bot.",
+      next_action: "Merge this pull request manually or use a supported dependency-update bot such as Dependabot."
     )
   end
 

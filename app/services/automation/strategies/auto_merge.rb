@@ -77,6 +77,7 @@ module Automation
 
       BOT_SIGNAL_DEFINITIONS = [
         [ :dependabot_eligible, "dependabot_auto_merge_disabled" ],
+        [ :merge_executor_supported, "unsupported_dependency_update_bot" ],
         [ :checks_green, "checks_not_green" ],
         [ :mergeable, "not_mergeable" ],
         [ :dependencies_resolved, "dependencies_unresolved" ]
@@ -170,6 +171,8 @@ module Automation
           "One or more declared dependencies are not resolved yet."
         when :dependabot_eligible
           "Dependency auto-merge is not enabled for this project."
+        when :merge_executor_supported
+          "Paid does not support automatic merging for this dependency-update bot."
         when :skip_auto_merge
           "The paid-skip-auto-merge label is preventing automatic merge."
         else
@@ -199,6 +202,8 @@ module Automation
           "Merge or remove the blocking dependencies, then let Paid evaluate this pull request again."
         when :dependabot_eligible
           "Enable dependency auto-merge for this project or merge this pull request manually."
+        when :merge_executor_supported
+          "Merge this pull request manually or use a supported dependency-update bot such as Dependabot."
         when :skip_auto_merge
           "Remove the paid-skip-auto-merge label or merge this pull request manually."
         else

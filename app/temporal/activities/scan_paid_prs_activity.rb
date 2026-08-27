@@ -971,8 +971,10 @@ module Activities
 
     # Bot-authored PRs (Dependabot, Renovate) skip review requirements.
     # Auto-merge is handled by EvaluateDependabotAutoMergeActivity + DependabotAutoMergeJob.
-    # This method only detects follow-up triggers (CI failures, merge conflicts, labels).
+    # This method persists auto-merge diagnostics for the bot path and detects
+    # follow-up triggers (CI failures, merge conflicts, labels).
     def scan_bot_authored_ready_pr(project, client, issue, pr_data:, checks:, mergeable:, progress_state:)
+      auto_merge_eligible_bot?(project, client, issue, checks:, mergeable:)
       triggers = cheap_ready_triggers(project, issue, pr_data: pr_data, checks: checks)
 
       return nil if triggers.empty?
@@ -3450,10 +3452,12 @@ module Activities
     # @spec AUTO-MERGE-005
     def auto_merge_eligible_bot?(project, client, issue, checks:, mergeable:)
       dependabot_eligible = project.auto_merge_dependabot?
+      merge_executor_supported = supported_dependency_update_merge_author?(issue.github_creator_login)
       checks_green = !checks.nil? && checks.any? && all_checks_green?(checks)
       mergeable_signal = mergeable == true
       dependencies_resolved = if bot_dependency_check_required?(
         dependabot_eligible: dependabot_eligible,
+        merge_executor_supported: merge_executor_supported,
         checks_green: checks_green,
         mergeable: mergeable_signal
       )
@@ -3469,6 +3473,7 @@ module Activities
         pr_number: issue.github_number,
         bot_authored: true,
         dependabot_eligible: dependabot_eligible,
+        merge_executor_supported: merge_executor_supported,
         checks_green: checks_green,
         mergeable: mergeable_signal,
         dependencies_resolved: dependencies_resolved,
@@ -3492,10 +3497,17 @@ module Activities
         reviews_fresh
     end
 
-    def bot_dependency_check_required?(dependabot_eligible:, checks_green:, mergeable:)
+    def bot_dependency_check_required?(dependabot_eligible:, merge_executor_supported:, checks_green:, mergeable:)
       dependabot_eligible &&
+        merge_executor_supported &&
         checks_green &&
         mergeable
+    end
+
+    def supported_dependency_update_merge_author?(login)
+      return false if login.blank?
+
+      DependabotAutoMergeJob::DEPENDABOT_AUTHORS.include?(login.downcase)
     end
 
     def dependencies_resolved?(client, project, issue)

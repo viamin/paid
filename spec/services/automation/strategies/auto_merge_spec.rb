@@ -45,6 +45,7 @@ RSpec.describe Automation::Strategies::AutoMerge, :no_db do
       pr_number: 10,
       bot_authored: true,
       dependabot_eligible: true,
+      merge_executor_supported: true,
       checks_green: true,
       mergeable: true,
       dependencies_resolved: true,
@@ -96,6 +97,17 @@ RSpec.describe Automation::Strategies::AutoMerge, :no_db do
       expect(blocker_payloads(analysis, :failed)).to eq(multiple_failed_blockers)
     end
 
+    it "reports unsupported dependency-update bots as blocked before later bot gates" do
+      analysis = strategy.analyze(
+        bot_signals(merge_executor_supported: false, dependencies_resolved: false),
+        owner_reviewer_login: "viamin"
+      )
+
+      expect(analysis).not_to be_eligible
+      expect(blocker_payloads(analysis, :failed)).to eq([ unsupported_dependency_update_bot_blocker ])
+      expect(blocker_payloads(analysis, :not_evaluated)).to eq([ dependency_not_evaluated_blocker ])
+    end
+
     def stale_approval_blocker
       blocker(
         signal: "reviews_fresh",
@@ -140,6 +152,16 @@ RSpec.describe Automation::Strategies::AutoMerge, :no_db do
           next_action: "Resolve merge conflicts or other mergeability blockers, then wait for the next automatic check."
         )
       ]
+    end
+
+    def unsupported_dependency_update_bot_blocker
+      blocker(
+        signal: "merge_executor_supported",
+        status: "failed",
+        reason_code: "unsupported_dependency_update_bot",
+        sanitized_message: "Paid does not support automatic merging for this dependency-update bot.",
+        next_action: "Merge this pull request manually or use a supported dependency-update bot such as Dependabot."
+      )
     end
   end
 
@@ -249,6 +271,13 @@ RSpec.describe Automation::Strategies::AutoMerge, :no_db do
 
       it "returns noop when dependabot auto-merge is not eligible" do
         signals = bot_signals(dependabot_eligible: false)
+        result = strategy.evaluate(build_context(signals: signals))
+
+        expect(result.decisions.map(&:type)).to eq([ "noop" ])
+      end
+
+      it "returns noop when the bot merge executor does not support the PR author" do
+        signals = bot_signals(merge_executor_supported: false)
         result = strategy.evaluate(build_context(signals: signals))
 
         expect(result.decisions.map(&:type)).to eq([ "noop" ])

@@ -16,8 +16,8 @@
 - [x] **AUTO-MERGE-002** — When a dependency-update bot pull request is
   evaluated for auto-merge, the system SHALL allow the bot path to skip owner
   approval and review-feedback gates, but SHALL still require bot eligibility,
-  green checks, mergeability, and resolved dependencies before emitting a
-  merge decision.
+  a supported merge executor author, green checks, mergeability, and resolved
+  dependencies before emitting a merge decision.
   *Code:* `app/services/automation/strategies/auto_merge.rb`.
   *Test:* `spec/services/automation/strategies/auto_merge_spec.rb`.
 

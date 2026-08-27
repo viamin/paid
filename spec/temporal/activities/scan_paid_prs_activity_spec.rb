@@ -133,6 +133,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         pr_number: 42,
         bot_authored: true,
         dependabot_eligible: true,
+        merge_executor_supported: true,
         checks_green: true,
         mergeable: true
       )
@@ -5624,6 +5625,19 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         expect(automation_scan_results(result)).to be_empty
       end
+
+      it "persists a blocked diagnostic snapshot for unsupported dependency-update bots" do
+        project.update!(auto_merge_mode: "all")
+        issue = Issue.find_by!(project: project, github_number: 42)
+        issue.update!(github_creator_login: "renovate[bot]")
+        stub_green_dependency_bot_pull_request!("renovate[bot]")
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to be_empty
+        expect(issue.reload.auto_merge_blockers).to eq(unsupported_dependency_update_bot_snapshot)
+        expect(issue.auto_merge_evaluated_at).to be_present
+      end
     end
 
     context "when consecutive follow-up runs fail with operational errors" do
@@ -10739,6 +10753,15 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       .and_return(commit_data)
   end
 
+  def stub_green_dependency_bot_pull_request!(author_login)
+    stub_github_for_pr(
+      author_login: author_login,
+      checks: [ { name: "ci", conclusion: "success" } ],
+      review_threads: [],
+      reviews: []
+    )
+  end
+
   def default_clean_copilot_review
     [ { id: 100, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
       body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago } ]
@@ -10776,6 +10799,21 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           "reason_code" => "stale_approval",
           "sanitized_message" => "The owner approval is stale for the current HEAD commit.",
           "next_action" => "Ask @viamin to re-approve this pull request for the current HEAD commit, then wait for the next automatic merge evaluation."
+        }
+      ],
+      "not_evaluated" => []
+    }
+  end
+
+  def unsupported_dependency_update_bot_snapshot
+    {
+      "failed" => [
+        {
+          "signal" => "merge_executor_supported",
+          "status" => "failed",
+          "reason_code" => "unsupported_dependency_update_bot",
+          "sanitized_message" => "Paid does not support automatic merging for this dependency-update bot.",
+          "next_action" => "Merge this pull request manually or use a supported dependency-update bot such as Dependabot."
         }
       ],
       "not_evaluated" => []

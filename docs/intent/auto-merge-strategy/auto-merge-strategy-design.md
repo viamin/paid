@@ -44,8 +44,10 @@ decision is emitted.
 
 Bot-authored dependency PRs take the narrower trusted path. Dependabot-like PRs
 may skip owner-approval and review-feedback gates, but they still require the
-project to permit dependency auto-merge, green checks, mergeability, and
-resolved dependencies.
+project to permit dependency auto-merge, a supported executor author, green
+checks, mergeability, and resolved dependencies. Today the merge executor is
+Dependabot-specific, so other trusted dependency-update bots may be scanned and
+diagnosed but are not reported as auto-merge-ready.
 
 Execution is incremental rather than umbrella-driven. The dedicated
 `DependabotAutoMergeJob` evaluates candidate PRs, merges at most one green PR
