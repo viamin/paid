@@ -119,6 +119,26 @@ RSpec.describe LlmModel do
     end
   end
 
+  describe ".dropdown_options_for" do
+    # @spec DIRECT-OUTBOUND-CATALOG-005
+    it "returns active rows for the given provider, ordered by display name" do
+      create(:llm_model, provider: "deepseek", display_name: "Zeta", active: true)
+      alpha = create(:llm_model, provider: "deepseek", display_name: "Alpha", active: true)
+      create(:llm_model, provider: "deepseek", display_name: "Inactive", active: false)
+      create(:llm_model, :openai, display_name: "Other Provider")
+
+      options = described_class.dropdown_options_for("deepseek")
+
+      expect(options.map(&:display_name)).to eq([ "Alpha", "Zeta" ])
+      expect(options).to include(alpha)
+    end
+
+    # @spec DIRECT-OUTBOUND-CATALOG-005
+    it "returns an empty relation when the provider has no catalog rows (degradation contract)" do
+      expect(described_class.dropdown_options_for("no-such-provider")).to be_empty
+    end
+  end
+
   describe "#estimated_cost" do
     it "calculates cost in cents from token counts" do
       model = build(:llm_model, input_cost_per_million: 3.0, output_cost_per_million: 15.0)
