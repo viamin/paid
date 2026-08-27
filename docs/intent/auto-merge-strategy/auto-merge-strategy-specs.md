@@ -16,8 +16,8 @@
 - [x] **AUTO-MERGE-002** — When a dependency-update bot pull request is
   evaluated for auto-merge, the system SHALL allow the bot path to skip owner
   approval and review-feedback gates, but SHALL still require bot eligibility,
-  green checks, mergeability, and resolved dependencies before emitting a
-  merge decision.
+  a supported merge executor author, green checks, mergeability, and resolved
+  dependencies before emitting a merge decision.
   *Code:* `app/services/automation/strategies/auto_merge.rb`.
   *Test:* `spec/services/automation/strategies/auto_merge_spec.rb`.
 
@@ -50,3 +50,16 @@
   `spec/jobs/dependabot_auto_merge_job_spec.rb`,
   `spec/jobs/auto_release_evaluation_job_spec.rb`,
   `spec/temporal/activities/merge_pull_request_activity_spec.rb`.
+
+- [x] **AUTO-MERGE-005** — When an open pull request is ineligible for
+  auto-merge, the system SHALL persist and report the exact authoritative
+  blocker signals that failed in the auto-merge evaluation, SHALL distinguish
+  failed signals from later checks that were not evaluated because an earlier
+  gate already failed, and SHALL format PR diagnostics from that persisted
+  snapshot instead of recomputing eligibility in a second implementation.
+  *Code:* `app/services/automation/strategies/auto_merge.rb`,
+  `app/temporal/activities/scan_paid_prs_activity.rb`,
+  `app/services/pull_requests/auto_merge_status.rb`.
+  *Test:* `spec/services/automation/strategies/auto_merge_spec.rb`,
+  `spec/services/pull_requests/auto_merge_status_spec.rb`,
+  `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.
