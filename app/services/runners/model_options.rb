@@ -10,10 +10,17 @@ module Runners
       new(...).call
     end
 
-    def initialize(runner_key:, api_service_type:, auth_type: "api_key")
+    # catalog_cache/compatibility_cache let callers that build option maps
+    # across many (runner_key, api_service_type) pairs in one request (e.g.
+    # the runner form) reuse catalog queries and compatibility checks instead
+    # of repeating them once per pair. Callers computing a single map (e.g. a
+    # form's initial render) can omit them and get a fresh, per-call cache.
+    def initialize(runner_key:, api_service_type:, auth_type: "api_key", catalog_cache: {}, compatibility_cache: {})
       @runner_key = runner_key.to_s
       @api_service_type = api_service_type.to_s
       @auth_type = auth_type.to_s
+      @catalog_cache = catalog_cache
+      @compatibility_cache = compatibility_cache
     end
 
     # @spec DIRECT-OUTBOUND-CATALOG-005
@@ -23,7 +30,7 @@ module Runners
 
     private
 
-    attr_reader :runner_key, :api_service_type, :auth_type
+    attr_reader :runner_key, :api_service_type, :auth_type, :catalog_cache, :compatibility_cache
 
     def leading_options
       options = []
@@ -43,8 +50,10 @@ module Runners
     end
 
     def compatible_models
-      LlmModel.dropdown_options_for(api_service_type).select do |model|
-        compatibility = Runners::ModelCompatibility.call(
+      catalog = catalog_cache[api_service_type] ||= LlmModel.dropdown_options_for(api_service_type).to_a
+
+      catalog.select do |model|
+        compatibility = compatibility_cache[[ runner_key, model.model_id, auth_type ]] ||= Runners::ModelCompatibility.call(
           runner_key: runner_key,
           model_id: model.model_id,
           auth_type: auth_type

@@ -1503,6 +1503,26 @@ RSpec.describe "Runners" do
       expect(response.body).to include('name="runner[config][omp][model]"')
     end
 
+    it "gives omp the same flagged model options as Pi, since they share upstream API providers" do
+      seed_openrouter_model_dropdown_catalog
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+      enable_runner_model_policy_form_for(user)
+      runner = user.runners.create!(
+        runner_key: "pi",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "pi" => { "api_provider" => "openrouter" } }
+      )
+
+      get edit_runner_path(runner)
+
+      expect(response).to have_http_status(:ok)
+      doc = Nokogiri::HTML(response.body)
+      options = JSON.parse(doc.at_css("form[data-runner-form-model-options-value]")["data-runner-form-model-options-value"])
+      expect(options["omp"]).to eq(options["pi"])
+      expect(options["pi"]["openrouter"]).to be_present
+    end
+
     it "renders complexity_thresholds inputs with balanced bracket names so Rack parses them as a nested hash" do
       runner = user.runners.find_by!(runner_key: "claude")
 

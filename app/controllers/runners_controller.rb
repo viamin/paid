@@ -766,20 +766,39 @@ class RunnersController < ApplicationController
     @runner_model_policy_form_enabled = runner_model_policy_form_enabled?
     return unless @runner_model_policy_form_enabled
 
-    @runner_model_options_map_json = model_options_map.to_json
+    # Memoized: this can be invoked twice in one request (load_runner_options,
+    # then preserve_submitted_runner_key_in_options on a create failure).
+    @runner_model_options_map_json ||= model_options_map.to_json
   end
 
+  # omp shares Pi's upstream API providers (Runner::OMP_API_PROVIDERS is the
+  # same object as PI_API_PROVIDERS) and neither runner has a runner-specific
+  # compatibility contract in agent-harness yet, so their option sets are
+  # always identical — the omp map reuses Pi's instead of recomputing it.
+  # catalog_cache/compatibility_cache dedupe the remaining work across the
+  # service types shared by opencode/kilocode/pi (e.g. anthropic, openrouter).
   def model_options_map
-    FORM_MODEL_RUNNER_KEYS.each_with_object({}) do |runner_key, runner_map|
+    catalog_cache = {}
+    compatibility_cache = {}
+    omp_aliases_pi = Runner::OMP_API_PROVIDERS.equal?(Runner::PI_API_PROVIDERS)
+
+    runner_map = FORM_MODEL_RUNNER_KEYS.each_with_object({}) do |runner_key, map|
+      next if runner_key == "omp" && omp_aliases_pi
+
       service_types = supported_service_types_for(runner_key)
-      runner_map[runner_key] = service_types.index_with do |service_type|
+      map[runner_key] = service_types.index_with do |service_type|
         Runners::ModelOptions.call(
           runner_key: runner_key,
           api_service_type: service_type,
-          auth_type: "api_key"
+          auth_type: "api_key",
+          catalog_cache: catalog_cache,
+          compatibility_cache: compatibility_cache
         ).options
       end
     end
+
+    runner_map["omp"] = runner_map["pi"] if omp_aliases_pi
+    runner_map
   end
 
   def supported_service_types_for(runner_key)

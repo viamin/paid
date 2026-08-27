@@ -1,29 +1,5 @@
 import { Controller } from "@hotwired/stimulus"
 
-const DIRECT_OUTBOUND_RUNNER_KEYS = new Set(["opencode", "kilocode", "pi", "omp"])
-const DIRECT_OUTBOUND_SERVICE_TYPES = new Set([
-  "anthropic",
-  "deepseek",
-  "inception",
-  "minimax",
-  "mistral",
-  "openai",
-  "openrouter",
-  "xai",
-  "zai",
-  "zai_coding",
-])
-const PI_SERVICE_TYPES = new Set([
-  "anthropic",
-  "deepseek",
-  "google",
-  "minimax",
-  "mistral",
-  "openai",
-  "openrouter",
-  "xai",
-  "zai",
-])
 const FREE_POLICY_OPTION = "__free_policy__"
 const CUSTOM_OPTION = "custom"
 
@@ -70,6 +46,21 @@ export default class extends Controller {
 
   connect() {
     this.toggleAuthType()
+  }
+
+  // Parsed once and memoized: this.modelOptionsValue is set once by the
+  // server and never mutated client-side, and the map can be large (it
+  // embeds the full catalog per service type).
+  get modelOptionsMap() {
+    this._modelOptionsMap ||= parseJson(this.modelOptionsValue, {})
+    return this._modelOptionsMap
+  }
+
+  // Runner keys with a model dropdown (Runner-side FORM_MODEL_RUNNER_KEYS),
+  // derived from the map's own keys so the frontend never hardcodes a list
+  // that could drift from the backend constants that built it.
+  get directOutboundRunnerKeys() {
+    return new Set(Object.keys(this.modelOptionsMap))
   }
 
   toggleAuthType() {
@@ -131,7 +122,7 @@ export default class extends Controller {
     if (!this.modelPolicyFormEnabledValue) return
 
     const runnerKey = this.currentRunnerKey()
-    if (!DIRECT_OUTBOUND_RUNNER_KEYS.has(runnerKey)) return
+    if (!this.directOutboundRunnerKeys.has(runnerKey)) return
 
     const serviceType = this.selectedApiServiceType()
     const modelChoice = this.hasModelSelectTarget ? this.modelSelectTarget.value : ""
@@ -154,7 +145,7 @@ export default class extends Controller {
   }
 
   refreshFeatureFlaggedModelForm(runnerKey, isApiKey) {
-    const showModelSettings = isApiKey && DIRECT_OUTBOUND_RUNNER_KEYS.has(runnerKey)
+    const showModelSettings = isApiKey && this.directOutboundRunnerKeys.has(runnerKey)
     const serviceType = this.selectedApiServiceType()
 
     this.modelSettingsTargets.forEach((el) => {
@@ -200,7 +191,7 @@ export default class extends Controller {
 
   refreshTierSettings(runnerKey = this.currentRunnerKey()) {
     const freePolicySelected = this.modelPolicyFormEnabledValue &&
-      DIRECT_OUTBOUND_RUNNER_KEYS.has(runnerKey) &&
+      this.directOutboundRunnerKeys.has(runnerKey) &&
       this.hasModelSelectTarget &&
       this.modelSelectTarget.value === FREE_POLICY_OPTION
 
@@ -241,8 +232,7 @@ export default class extends Controller {
   }
 
   populateModelOptions(runnerKey, serviceType) {
-    const optionMap = parseJson(this.modelOptionsValue, {})
-    const options = optionMap[runnerKey]?.[serviceType] || []
+    const options = this.modelOptionsMap[runnerKey]?.[serviceType] || []
     const currentValue = this.currentModelSelectionValue(options)
 
     this.modelSelectTarget.innerHTML = ""
@@ -341,8 +331,22 @@ export default class extends Controller {
   allowedApiServiceTypesFor(runnerKey) {
     if (!runnerKey) return null
 
-    if (runnerKey === "opencode" || runnerKey === "kilocode") return DIRECT_OUTBOUND_SERVICE_TYPES
-    if (runnerKey === "pi" || runnerKey === "omp") return PI_SERVICE_TYPES
+    // Flagged path: the exact allowed service types are the keys the server
+    // built into modelOptionsValue from the same Ruby constants that define
+    // this runner's API providers (supported_service_types_for).
+    if (this.modelOptionsMap[runnerKey]) {
+      const serviceTypes = Object.keys(this.modelOptionsMap[runnerKey])
+      return serviceTypes.length > 0 ? new Set(serviceTypes) : null
+    }
+
+    // Legacy path: the runner's own api_provider <select> still renders one
+    // data-service-type per option from Runner::DIRECT_OUTBOUND_API_PROVIDERS
+    // / PI_API_PROVIDERS / OMP_API_PROVIDERS, so derive from the DOM instead
+    // of hardcoding the provider list a second time.
+    if (runnerKey === "opencode" || runnerKey === "kilocode" || runnerKey === "pi" || runnerKey === "omp") {
+      return this.directOutboundServiceTypesFromSelect(runnerKey)
+    }
+
     if (runnerKey === "openrouter_free" || runnerKey === "openrouter_pareto") return new Set(["openrouter"])
 
     const staticType = parseJson(
@@ -350,6 +354,18 @@ export default class extends Controller {
       {}
     )[runnerKey]
     return staticType ? new Set([staticType]) : null
+  }
+
+  directOutboundServiceTypesFromSelect(runnerKey) {
+    const select = this.directOutboundApiProviderSelectTargets.find((el) => el.dataset.runnerKey === runnerKey)
+    if (!select) return null
+
+    const serviceTypes = new Set()
+    for (const option of select.options) {
+      const serviceType = option.dataset?.serviceType
+      if (option.value && serviceType) serviceTypes.add(serviceType)
+    }
+    return serviceTypes.size > 0 ? serviceTypes : null
   }
 
   runnerApiKeyMode() {
