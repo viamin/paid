@@ -238,5 +238,137 @@ RSpec.describe PullRequests::BlockedOnlyOnApproval do
 
       expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(true)
     end
+
+    context "with a manual review gate configured" do
+      before do
+        project.update!(
+          allowed_github_usernames: [ "viamin", "alice" ],
+          review_settings: {
+            "enabled" => true,
+            "methods" => { "manual" => { "enabled" => true, "reviewer_login" => "alice" } }
+          }
+        )
+      end
+
+      # @spec PR-ESCALATION-025
+      it "returns true when the reviewer approved after the last push (gate complete, approval fresh)" do
+        sha = "abc123"
+        stub_pr_data(green_pr_data(sha: sha))
+        stub_checks(sha, green_checks)
+        stub_reviews(
+          green_reviews + [
+            { id: 2, user_login: "alice", state: "APPROVED", body: "LGTM", submitted_at: 1.hour.ago }
+          ]
+        )
+        stub_review_threads([])
+        stub_head_commit(sha: sha, date: 2.hours.ago)
+        stub_issue_comments
+
+        expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(true)
+      end
+
+      # @spec PR-ESCALATION-025
+      it "returns false when the configured reviewer has not approved yet (gate incomplete)" do
+        sha = "abc123"
+        stub_pr_data(green_pr_data(sha: sha))
+        stub_checks(sha, green_checks)
+        stub_reviews(green_reviews)
+        stub_review_threads([])
+        stub_head_commit(sha: sha)
+        stub_issue_comments
+
+        expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(false)
+      end
+
+      # @spec PR-ESCALATION-025
+      it "returns false when a blocking approval predates the head commit (stale review)" do
+        sha = "abc123"
+        stub_pr_data(green_pr_data(sha: sha))
+        stub_checks(sha, green_checks)
+        stub_reviews(
+          green_reviews + [
+            { id: 2, user_login: "alice", state: "APPROVED", body: "LGTM", submitted_at: 3.hours.ago }
+          ]
+        )
+        stub_review_threads([])
+        stub_head_commit(sha: sha, date: 1.hour.ago)
+        stub_issue_comments
+
+        expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(false)
+      end
+    end
+
+    context "with a ci_action review gate configured" do
+      before do
+        project.update!(review_settings: {
+          "enabled" => true,
+          "methods" => { "ci_action" => { "enabled" => true, "action_name" => "e2e-signoff" } }
+        })
+      end
+
+      # @spec PR-ESCALATION-025
+      it "returns true when the named check run has succeeded" do
+        sha = "abc123"
+        stub_pr_data(green_pr_data(sha: sha))
+        stub_checks(sha, green_checks + [ { name: "e2e-signoff", conclusion: "success" } ])
+        stub_reviews(green_reviews)
+        stub_review_threads([])
+        stub_head_commit(sha: sha)
+        stub_issue_comments
+
+        expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(true)
+      end
+
+      # @spec PR-ESCALATION-025
+      it "returns false when the named check run has not succeeded" do
+        sha = "abc123"
+        stub_pr_data(green_pr_data(sha: sha))
+        stub_checks(sha, green_checks + [ { name: "e2e-signoff", conclusion: "failure" } ])
+        stub_reviews(green_reviews)
+        stub_review_threads([])
+        stub_head_commit(sha: sha)
+        stub_issue_comments
+
+        expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(false)
+      end
+    end
+
+    context "when the issue declares a same-repo dependency" do
+      before do
+        issue.update!(body: "Depends on #4141")
+      end
+
+      # @spec PR-ESCALATION-025
+      it "returns false while the dependency pull request is unmerged" do
+        sha = "abc123"
+        stub_pr_data(green_pr_data(sha: sha))
+        stub_checks(sha, green_checks)
+        stub_reviews(green_reviews)
+        stub_review_threads([])
+        stub_head_commit(sha: sha)
+        stub_issue_comments
+        allow(client).to receive(:pull_request)
+          .with(project.full_name, 4141)
+          .and_return(OpenStruct.new(merged: false, merged_at: nil, state: "open"))
+
+        expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(false)
+      end
+
+      # @spec PR-ESCALATION-025
+      it "returns true once the dependency pull request has merged" do
+        sha = "abc123"
+        stub_pr_data(green_pr_data(sha: sha))
+        stub_checks(sha, green_checks)
+        stub_reviews(green_reviews)
+        stub_review_threads([])
+        stub_head_commit(sha: sha)
+        stub_issue_comments
+        allow(client).to receive(:pull_request)
+          .with(project.full_name, 4141)
+          .and_return(OpenStruct.new(merged: true, merged_at: 1.hour.ago, state: "closed"))
+
+        expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(true)
+      end
+    end
   end
 end

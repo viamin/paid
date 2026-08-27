@@ -16,6 +16,8 @@ module PullRequests
   # whose state we cannot confirm, because escalating a PR that is actually
   # blocked for a non-approval reason misleads the owner into thinking
   # approval alone will clear it.
+  #
+  # @spec PR-ESCALATION-025
   class BlockedOnlyOnApproval
     SKIP_AUTO_MERGE_LABEL = Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL
 
@@ -163,6 +165,10 @@ module PullRequests
       )
     end
 
+    # Mirrors the scan's blocked_only_on_approval? gate signal-for-signal:
+    # the PR must still be green, mergeable, free of outstanding review
+    # feedback and unresolved dependencies, past every blocking review
+    # method, and held only by the approval gate.
     def blocked_only_on_approval?(signals)
       !signals.owner_approved? &&
         signals.checks_green? &&
@@ -170,13 +176,17 @@ module PullRequests
         signals.review_feedback_clear? &&
         signals.blocking_reviews_complete? &&
         signals.reviews_fresh? &&
+        signals.dependencies_resolved? &&
         !signals.skip_auto_merge?
     end
 
-    # Conservative check: the head commit postdates the latest blocking
-    # approval. Skipped (returns true) when head commit timestamp can't be
-    # resolved — matches the scan's behavior of returning false only on a
-    # confirmed staleness.
+    # Mirrors the scan's review_stale_for_head?: the head commit must not
+    # postdate the latest approval from any enabled blocking reviewer. The
+    # owner's approval is always checked; the manual reviewer's is checked
+    # separately when the manual method is enabled, so a fresh owner
+    # re-approval cannot mask a stale manual review. Skipped (returns true)
+    # when the head commit timestamp can't be resolved — matches the scan's
+    # behavior of returning false only on a confirmed staleness.
     def fresh_reviews?(pr_data, reviews)
       return true if reviews.nil?
 
@@ -202,20 +212,46 @@ module PullRequests
     end
 
     def stale_approval?(head_committed_at, reviews)
-      latest_owner_approval(reviews) do |head_committed_at, _ts| head_committed_at > _ts end
+      blocking_approval_timestamps(reviews).any? { |ts| head_committed_at > ts }
     end
 
-    def latest_owner_approval(reviews)
-      owner_login = @project.owner_reviewer_login
-      return false if owner_login.blank?
+    # Latest approval timestamp for each enabled blocking reviewer: the
+    # owner (always) and the configured manual reviewer (when the manual
+    # method is enabled). Mirrors the scan's
+    # blocking_approval_timestamps so both sides hold the same approvals
+    # to the same freshness rule.
+    def blocking_approval_timestamps(reviews)
+      timestamps = []
 
-      ts = reviews
-        .select { |r| r[:state].to_s.upcase == "APPROVED" && r[:user_login]&.casecmp?(owner_login) }
+      owner_ts = latest_approval_timestamp(reviews, @project.owner_reviewer_login)
+      timestamps << owner_ts if owner_ts
+
+      if @project.review_method_enabled?("manual")
+        reviewer = @project.review_method(:manual).reviewer_login
+        if reviewer.present?
+          manual_ts = latest_approval_timestamp(reviews, reviewer)
+          timestamps << manual_ts if manual_ts
+        end
+      end
+
+      timestamps
+    end
+
+    # Most recent submitted_at among the reviewer's APPROVED reviews from
+    # trusted non-bot users; nil when the reviewer is unconfigured or has
+    # not approved.
+    def latest_approval_timestamp(reviews, reviewer_login)
+      return nil if reviewer_login.blank?
+
+      reviews
+        .select do |r|
+          r[:state].to_s.upcase == "APPROVED" &&
+            r[:user_login]&.casecmp?(reviewer_login.strip) &&
+            @project.trusted_github_user?(r[:user_login]) &&
+            !bot_user?(r[:user_login])
+        end
         .filter_map { |r| r[:submitted_at] }
         .max
-      return false if ts.nil?
-
-      yield(head_committed_at, ts)
     end
 
     # Cheap stand-in for the scan's full no_outstanding_review_feedback? gate.
@@ -256,18 +292,20 @@ module PullRequests
       %w[dependabot renovate github-actions].any? { |prefix| normalized.start_with?(prefix) }
     end
 
-    # Conservative stand-in for the scan's blocking_reviews_complete? gate.
-    # Without the full method we cannot know whether a configured ci_action or
-    # manual reviewer has signaled completion, so we only return true when
-    # the project's review surface is empty (the common case for a green,
-    # ready PR that has just been waiting on owner approval). Projects that
-    # use any review method fall back to "incomplete" and the escalation
-    # is skipped — this errs on the side of NOT escalating rather than
-    # escalating a PR whose review gates we cannot re-verify cheaply.
-    def blocking_reviews_complete?(_reviews, _checks, _pr_data)
-      return true unless @project.review_enabled? && @project.wait_for_reviews?
-
-      false
+    # Same gate the scan applies: every enabled blocking review method
+    # (paid_agent, ci_action, manual) must still show a completion signal
+    # against the freshly fetched reviews and checks. Delegates to the
+    # shared Reviews::BlockingMethodsComplete so a project whose review
+    # gates have all completed re-validates exactly like the scan that
+    # queued the escalation.
+    def blocking_reviews_complete?(reviews, checks, pr_data)
+      Reviews::BlockingMethodsComplete.call(
+        project: @project,
+        issue: @issue,
+        reviews: reviews,
+        checks: checks,
+        pr_data: pr_data
+      )
     end
 
     # Conservative stand-in for the scan's dependencies_resolved? check.
