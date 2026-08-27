@@ -107,6 +107,27 @@ RSpec.describe Tools::GetPullRequestDetails do
       )
     end
 
+    it "does not report ready when the persisted snapshot contains only not-evaluated blockers" do
+      pr.update!(
+        auto_merge_blockers: { "failed" => [], "not_evaluated" => [ dependency_not_evaluated_blocker ] },
+        auto_merge_evaluated_at: Time.current
+      )
+
+      result = tool.call(project_id: project.id, issue_id: pr.id)
+
+      expect(result[:auto_merge]).to eq(
+        last_auto_merge_attempt_at: nil,
+        auto_merge_status: "blocked",
+        reason_code: "dependencies_unresolved",
+        sanitized_message: "Dependency resolution was not evaluated because an earlier auto-merge gate already failed.",
+        credential_mode: "personal_access_token",
+        merge_permission_rejected: false,
+        cooldown_until: nil,
+        next_action: "Resolve the earlier auto-merge blockers first, then let Paid re-evaluate dependency resolution.",
+        blockers: [ dependency_not_evaluated_blocker ]
+      )
+    end
+
     it "reports the latest persisted attempt timestamp alongside ready status" do
       attempt = create(:auto_merge_attempt, project: project, issue: pr, status: "skipped", reason_code: "checks_not_green")
 
@@ -426,6 +447,16 @@ RSpec.describe Tools::GetPullRequestDetails do
       reason_code: "not_mergeable",
       sanitized_message: "GitHub is not reporting this pull request as mergeable yet.",
       next_action: "Resolve merge conflicts or other mergeability blockers, then wait for the next automatic check."
+    )
+  end
+
+  def dependency_not_evaluated_blocker
+    blocker(
+      signal: "dependencies_resolved",
+      status: "not_evaluated",
+      reason_code: "dependencies_unresolved",
+      sanitized_message: "Dependency resolution was not evaluated because an earlier auto-merge gate already failed.",
+      next_action: "Resolve the earlier auto-merge blockers first, then let Paid re-evaluate dependency resolution."
     )
   end
 

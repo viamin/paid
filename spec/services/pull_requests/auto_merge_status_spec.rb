@@ -47,6 +47,25 @@ RSpec.describe PullRequests::AutoMergeStatus do
     expect(status.fetch(:blockers)).to eq(issue.auto_merge_blockers.fetch("failed"))
   end
 
+  it "does not report ready when the persisted snapshot contains only not-evaluated blockers" do
+    persist_auto_merge_snapshot!(
+      failed: [],
+      not_evaluated: [ dependency_not_evaluated_blocker ]
+    )
+
+    expect(status).to eq(
+      last_auto_merge_attempt_at: nil,
+      auto_merge_status: "blocked",
+      reason_code: "dependencies_unresolved",
+      sanitized_message: "Dependency resolution was not evaluated because an earlier auto-merge gate already failed.",
+      credential_mode: "personal_access_token",
+      merge_permission_rejected: false,
+      cooldown_until: nil,
+      next_action: "Resolve the earlier auto-merge blockers first, then let Paid re-evaluate dependency resolution.",
+      blockers: [ dependency_not_evaluated_blocker ]
+    )
+  end
+
   it "reports merged ahead of a stale merge-permission rejection" do
     issue.update!(
       pr_review_phase: "merged",

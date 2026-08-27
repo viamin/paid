@@ -28,8 +28,9 @@ module PullRequests
       return credentials_unavailable_status unless credentials_available?
       return diagnostics_unavailable_status if blockers_snapshot.nil?
 
-      failed = blockers_snapshot.fetch("failed", [])
-      return blocked_status(failed) if failed.any?
+      blockers = failed_blockers
+      blockers = not_evaluated_blockers if blockers.empty?
+      return blocked_status(blockers) if blockers.any?
 
       ready_status
     end
@@ -60,15 +61,15 @@ module PullRequests
       )
     end
 
-    def blocked_status(failed)
-      primary = failed.first
+    def blocked_status(blockers)
+      primary = blockers.first
       status_payload(
         auto_merge_status: "blocked",
         last_auto_merge_attempt_at: latest_attempt&.attempted_at,
         reason_code: primary["reason_code"],
         sanitized_message: primary["sanitized_message"],
         next_action: primary["next_action"],
-        blockers: failed
+        blockers: blockers
       )
     end
 
@@ -153,6 +154,14 @@ module PullRequests
         if issue.auto_merge_evaluated_at.present? && snapshot.is_a?(Hash)
           snapshot.deep_stringify_keys
         end
+    end
+
+    def failed_blockers
+      blockers_snapshot.fetch("failed", [])
+    end
+
+    def not_evaluated_blockers
+      blockers_snapshot.fetch("not_evaluated", [])
     end
 
     def app_backed?
