@@ -122,6 +122,22 @@ arrows:
     taxonomy: catalog
     status: OK
     audited: 2026-08-27
+  opencode-model-policy:
+    title: OpenCode Model Policy Configuration
+    path: docs/intent/opencode-model-policy/opencode-model-policy-design.md
+    specs: docs/intent/opencode-model-policy/opencode-model-policy-specs.md
+    parent: PAID
+    taxonomy: catalog
+    status: OK
+    audited: 2026-08-27
+  runner-model-options:
+    title: Runner Model Options
+    path: docs/intent/runner-model-options/runner-model-options-design.md
+    specs: docs/intent/runner-model-options/runner-model-options-specs.md
+    parent: PAID
+    taxonomy: catalog
+    status: OK
+    audited: 2026-08-27
   rails-control-plane:
     title: Rails Control Plane
     path: docs/intent/rails-control-plane/rails-control-plane-design.md

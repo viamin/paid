@@ -68,6 +68,23 @@ RSpec.describe "Runners" do
     }
   end
 
+  def free_policy_runner_params(api_key_id:, api_provider: "openrouter", enabled: false)
+    {
+      runner_key: "opencode",
+      auth_type: "api_key",
+      provider_api_key_id: api_key_id,
+      enabled_for_agent_runs: enabled,
+      enabled_for_chat: enabled,
+      enabled_for_fallback: enabled,
+      config: {
+        opencode: {
+          api_provider: api_provider,
+          model_policy: "free"
+        }
+      }
+    }
+  end
+
   describe "GET /runners" do
     context "when not authenticated" do
       it "redirects to sign in" do
@@ -918,6 +935,42 @@ RSpec.describe "Runners" do
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(response.body).to include("must include an OpenCode model id")
+    end
+
+    # @spec MODEL-POLICY-008 MODEL-POLICY-011
+    it "creates a disabled free-policy OpenCode runner without a model id when the API provider is openrouter" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+
+      post runners_path, params: { runner: free_policy_runner_params(api_key_id: api_key.id) }
+
+      expect(response).to redirect_to(runners_path)
+      runner = user.runners.find_by!(runner_key: "opencode", auth_type: "api_key")
+      expect(runner.opencode_model_policy).to eq("free")
+      expect(runner.opencode_model_id).to be_nil
+      expect(runner).not_to be_enabled_for_agent_runs
+      expect(runner).not_to be_enabled_for_fallback
+      expect(runner).not_to be_enabled_for_chat
+    end
+
+    # @spec MODEL-POLICY-011
+    it "rejects creating an enabled free-policy OpenCode runner until free-policy dispatch lands" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+
+      post runners_path, params: { runner: free_policy_runner_params(api_key_id: api_key.id, enabled: true) }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.body).to include("OpenCode free model policy cannot be enabled until free-policy dispatch lands")
+      expect(user.runners.where(runner_key: "opencode", auth_type: "api_key")).not_to exist
+    end
+
+    # @spec MODEL-POLICY-002 MODEL-POLICY-008
+    it "rejects an OpenCode free policy on a non-openrouter API provider" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "inception")
+
+      post runners_path, params: { runner: free_policy_runner_params(api_key_id: api_key.id, api_provider: "inception") }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.body).to include("OpenCode free model policy requires the OpenRouter API provider")
     end
 
     # @spec DIRECT-OUTBOUND-CATALOG-008

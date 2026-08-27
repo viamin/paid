@@ -12,6 +12,13 @@ class Runner < ApplicationRecord
   OPENROUTER_FREE_RUNNER_KEY = "openrouter_free"
   OPENROUTER_FREE_MODEL_PROVIDER = "openrouter"
   OPENROUTER_PARETO_RUNNER_KEY = "openrouter_pareto"
+  # model_policy narrows how a direct-outbound runner picks its model:
+  # "specific" pins a single configured model id (the default); "free"
+  # drives selection from tier_model_ids via a tier picker, mirroring the
+  # legacy openrouter_free runner. Phase-1 gates "free" to the opencode
+  # runner key on the openrouter API provider only.
+  # @spec MODEL-POLICY-001 MODEL-POLICY-002 MODEL-POLICY-003
+  MODEL_POLICIES = %w[specific free].freeze
 
   LEGACY_PROVIDER_ATTRIBUTE_BRIDGES = {
     "provider_key" => "runner_key"
@@ -192,7 +199,10 @@ class Runner < ApplicationRecord
   validate :integration_credential_must_be_active
   validate :subscription_must_have_standard_fallback_role
   validate :api_key_entry_must_be_unique
+  validate :free_model_policy_runner_must_be_unique_per_credential
+  validate :opencode_model_policy_must_be_valid
   validate :opencode_api_key_config_must_be_valid
+  validate :opencode_free_policy_runner_must_not_be_enabled
   validate :kilocode_api_key_config_must_be_valid
   validate :pi_api_key_config_must_be_valid
   validate :omp_api_key_config_must_be_valid
@@ -238,8 +248,16 @@ class Runner < ApplicationRecord
     required_api_service_type == provider.to_s
   end
 
+  # @spec MODEL-POLICY-006
   def display_name
     return name if name.present?
+
+    if opencode_model_policy == "free"
+      provider_label = DIRECT_OUTBOUND_API_PROVIDERS.dig(opencode_api_provider, :label) || "OpenRouter"
+      label = "OpenCode Free (#{provider_label})"
+      label += " (API Key)" if api_key?
+      return label
+    end
 
     label = self.class.display_name_for(runner_key)
     model_id = case runner_key
@@ -376,6 +394,23 @@ class Runner < ApplicationRecord
     return nil unless runner_key == "opencode"
 
     opencode_config["model"].to_s.presence
+  end
+
+  # @spec MODEL-POLICY-001
+  def opencode_model_policy
+    return nil unless runner_key == "opencode"
+
+    opencode_config["model_policy"].presence || "specific"
+  end
+
+  # True for any runner enforcing the free-model tier_model_ids contract:
+  # the legacy dedicated openrouter_free runner, or an opencode runner
+  # configured with model_policy "free". Both must resolve tier_model_ids
+  # exclusively to free LlmModel rows and are curated the same way by
+  # sync_direct_outbound_tier_models.
+  # @spec MODEL-POLICY-004
+  def free_model_policy?
+    openrouter_free? || opencode_model_policy == "free"
   end
 
   def opencode_preflight_timeout_seconds
@@ -760,11 +795,18 @@ class Runner < ApplicationRecord
   end
 
   # Returns true for runner keys that a user may only configure a single
-  # instance of. Such keys are hidden from the "Add Runner" UI once the user
-  # already has one, and free-model rotation is scoped to them. Today only
-  # the openrouter_free runner is single-instance; other api_key runners
-  # (opencode, kilocode, pi, omp) legitimately allow duplicates when their
-  # API key or name differs.
+  # instance of regardless of credential. Such keys are hidden from the "Add
+  # Runner" UI once the user already has one. Today only the legacy
+  # openrouter_free runner key is single-instance at this coarse,
+  # credential-agnostic granularity.
+  #
+  # opencode runners configured with model_policy "free" are NOT covered
+  # here: opencode legitimately allows multiple runners (specific-model or
+  # free-policy) with different API keys, so their single-instance rule is
+  # the finer-grained "one free-policy runner per user per OpenRouter
+  # credential" enforced by +free_model_policy_runner_must_be_unique_per_credential+
+  # instead. Re-scoping this UI-list helper onto that same config predicate
+  # is tracked alongside the openrouter_free -> opencode migration issue.
   def self.single_instance_runner_key?(runner_key)
     runner_key.to_s == OPENROUTER_FREE_RUNNER_KEY
   end
@@ -896,8 +938,9 @@ class Runner < ApplicationRecord
     raw_id
   end
 
+  # @spec MODEL-POLICY-005
   def sync_direct_outbound_tier_models
-    if runner_key == "openrouter_free"
+    if free_model_policy?
       return unless tier_model_ids.blank?
 
       # @spec FREE-MODEL-RUNNER-002
@@ -917,9 +960,10 @@ class Runner < ApplicationRecord
     self.tier_model_ids = LlmModel::TIERS.each_with_object({}) { |t, h| h[t] = model.model_id }
   end
 
+  # @spec MODEL-POLICY-005
   def clear_stale_direct_outbound_tier_models
     return unless tier_model_ids.present?
-    return if runner_key == "openrouter_free" || runner_key == OPENROUTER_PARETO_RUNNER_KEY
+    return if free_model_policy? || runner_key == OPENROUTER_PARETO_RUNNER_KEY
     return unless direct_outbound_capable_runner?
     return if requires_direct_outbound? && direct_outbound_model_id.present?
 
@@ -1068,7 +1112,7 @@ class Runner < ApplicationRecord
 
     case runner_key
     when "opencode"
-      config.dig("opencode", "model")
+      [ config.dig("opencode", "model"), config.dig("opencode", "model_policy") ]
     when "kilocode"
       config.dig("kilocode", "model")
     when "pi"
@@ -1170,6 +1214,30 @@ class Runner < ApplicationRecord
     errors.add(:runner_key, "already has an entry with this API key")
   end
 
+  # Enforces "one free-policy runner per user per OpenRouter credential":
+  # a user may hold a free-policy runner (legacy openrouter_free, or opencode
+  # with model_policy "free") per distinct provider_api_key/integration_credential,
+  # but not two pointed at the same credential — they would both draw on the
+  # same free-tier quota. This is deliberately broader than
+  # api_key_entry_must_be_unique's per-runner_key scope: it also blocks
+  # pairing a legacy openrouter_free runner with an opencode free-policy
+  # runner on the same credential.
+  # @spec MODEL-POLICY-007
+  def free_model_policy_runner_must_be_unique_per_credential
+    return unless free_model_policy?
+    return unless api_key?
+    return unless user
+    return if provider_api_key_id.blank? && integration_credential_id.blank?
+
+    duplicate = user.runners.kept_only.api_key.where.not(id: id).where(
+      provider_api_key_id: provider_api_key_id,
+      integration_credential_id: integration_credential_id
+    ).any?(&:free_model_policy?)
+    return unless duplicate
+
+    errors.add(:runner_key, "already has a free-model runner for this OpenRouter credential")
+  end
+
   def integration_credential_must_be_active
     return unless api_key?
     return unless integration_credential.present?
@@ -1192,6 +1260,31 @@ class Runner < ApplicationRecord
     errors.add(:auth_type, "must be API key for OpenRouter Pareto")
   end
 
+  # Runs for every opencode runner regardless of auth type, unlike
+  # opencode_api_key_config_must_be_valid below: model_policy determines
+  # whether the runner is free_model_policy? (which feeds validators and
+  # dispatch logic for subscription and api_key rows alike), so a crafted
+  # value must fail loudly instead of silently passing when auth_type isn't
+  # api_key.
+  # @spec MODEL-POLICY-001 MODEL-POLICY-002 MODEL-POLICY-003
+  def opencode_model_policy_must_be_valid
+    return unless runner_key == "opencode"
+
+    unless MODEL_POLICIES.include?(opencode_model_policy)
+      errors.add(:config, "must include a supported OpenCode model policy")
+      return
+    end
+
+    return unless opencode_model_policy == "free"
+
+    # Phase-1 gate: free-model routing is only wired up for OpenRouter.
+    # Pi/OMP/KiloCode free policies land in a follow-up issue.
+    return if opencode_api_provider == "openrouter"
+
+    errors.add(:config, "OpenCode free model policy requires the OpenRouter API provider")
+  end
+
+  # @spec MODEL-POLICY-002 MODEL-POLICY-003
   def opencode_api_key_config_must_be_valid
     return unless runner_key == "opencode"
     return unless api_key?
@@ -1201,9 +1294,7 @@ class Runner < ApplicationRecord
       errors.add(:config, "must include a supported OpenCode API provider")
     end
 
-    if opencode_model_id.blank?
-      errors.add(:config, "must include an OpenCode model id")
-    end
+    errors.add(:config, "must include an OpenCode model id") if opencode_model_policy != "free" && opencode_model_id.blank?
 
     if opencode_config["preflight_timeout_seconds"].present? &&
         (opencode_preflight_timeout_seconds.nil? || opencode_preflight_timeout_seconds < MIN_PREFLIGHT_TIMEOUT_SECONDS)
@@ -1211,6 +1302,23 @@ class Runner < ApplicationRecord
     end
   end
 
+  # Phase gate until RDR-065 5/8 (MODEL-POLICY-009) wires dispatch to
+  # free_model_policy?. Every dispatch path reads agent_harness_runner_runtime,
+  # which is nil for a free-policy runner because opencode_direct_outbound?
+  # requires opencode_model_id, so an enabled free-policy runner would execute
+  # opencode without its OpenRouter credential (bare ProviderRuntime, no
+  # env/base_url). Preflight cannot catch it: the runner is enabled and holds
+  # an api-key record. A fully disabled free-policy runner stays valid to
+  # pre-configure; the legacy openrouter_free runner dispatches as before.
+  # @spec MODEL-POLICY-011
+  def opencode_free_policy_runner_must_not_be_enabled
+    return unless opencode_model_policy == "free"
+    return unless enabled_for_agent_runs? || enabled_for_fallback? || enabled_for_chat?
+
+    errors.add(:base, "OpenCode free model policy cannot be enabled until free-policy dispatch lands (RDR-065 5/8)")
+  end
+
+  # @spec MODEL-POLICY-004
   def tier_model_ids_must_be_valid
     return if tier_model_ids.blank?
 
@@ -1226,7 +1334,7 @@ class Runner < ApplicationRecord
     end
 
     expected_provider = Runners::DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER[runner_key.to_s]
-    if expected_provider.nil? && !requires_direct_outbound? && runner_key != OPENROUTER_FREE_RUNNER_KEY
+    if expected_provider.nil? && !requires_direct_outbound? && !free_model_policy?
       errors.add(:tier_model_ids, "is not configurable for runner #{runner_key}")
       return
     end
@@ -1248,10 +1356,10 @@ class Runner < ApplicationRecord
       model = LlmModel.find_by(model_id: model_id)
       if model.nil?
         errors.add(:tier_model_ids, "references unknown model #{model_id} for tier #{tier}")
-      elsif openrouter_free?
-        # openrouter_free routes only free-pricing models. Reject crafted
-        # updates that try to repoint it at paid OpenRouter models the runner
-        # must never run.
+      elsif free_model_policy?
+        # free-policy runners route only free-pricing models. Reject crafted
+        # updates that try to repoint them at paid OpenRouter models the
+        # runner must never run.
         unless model.free?
           errors.add(:tier_model_ids, "must reference free models for #{runner_key} (#{model_id} is not free)")
           return
@@ -1284,6 +1392,7 @@ class Runner < ApplicationRecord
     end
   end
 
+  # @spec MODEL-POLICY-004
   def tier_models_must_be_valid
     raw_tier_models = self[:tier_models]
     return if raw_tier_models.blank?
@@ -1313,7 +1422,7 @@ class Runner < ApplicationRecord
       model_id = entry["model_id"]
       if !model_id.is_a?(String) || model_id.blank?
         errors.add(:tier_models, "tier #{tier} must include a non-blank model_id")
-      elsif openrouter_free?
+      elsif free_model_policy?
         # ResolveTierModel prefers persisted tier_models over the free
         # defaults, so the free contract must also hold here.
         model = LlmModel.find_by(model_id: model_id)
@@ -1370,10 +1479,11 @@ class Runner < ApplicationRecord
   # Validate tier_model_ids entries against the runner compatibility contract.
   # Rejects models that are known incompatible (e.g. CLI-version-gated) while
   # treating unknown compatibility results as permissive to avoid false positives.
+  # @spec MODEL-POLICY-004
   def tier_model_ids_must_be_runner_compatible
     return if tier_model_ids.blank?
     return unless tier_model_ids.is_a?(Hash)
-    return if requires_direct_outbound? || openrouter_free?
+    return if requires_direct_outbound? || free_model_policy?
 
     tier_model_ids.each do |tier, model_id|
       next if model_id.blank?
@@ -1393,11 +1503,12 @@ class Runner < ApplicationRecord
   end
 
   # Validate tier_models entries against the runner compatibility contract.
+  # @spec MODEL-POLICY-004
   def tier_models_must_be_runner_compatible
     raw_tier_models = self[:tier_models]
     return if raw_tier_models.blank?
     return unless raw_tier_models.is_a?(Hash)
-    return if requires_direct_outbound? || openrouter_free?
+    return if requires_direct_outbound? || free_model_policy?
 
     tier_models.each do |tier, entry|
       next unless entry.is_a?(Hash)

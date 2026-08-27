@@ -65,9 +65,10 @@ itself, rather than leaving each dropdown-building call site to reinvent it:
 - Callers render `CUSTOM_MODEL_OPTION` alone when that relation is empty,
   instead of an empty `<select>`.
 
-Issue #3663's `Runners::ModelOptions` (not yet built as of this segment) is
-expected to consume this contract rather than re-deriving empty-provider
-handling.
+`Runners::ModelOptions` (built under #3666, `runner-model-options` segment)
+consumes this contract: the trailing custom sentinel uses
+`CUSTOM_MODEL_OPTION`, and an empty provider scope degrades to that sentinel
+alone.
 
 ### Provider-derived runner model selection
 
