@@ -216,19 +216,31 @@ module PullRequests
     # * unresolved review threads with a trusted-human or enabled-bot comment
     # * a CHANGES_REQUESTED review from a trusted non-bot user, not yet
     #   addressed by a later completed run
+    # * a fresh trusted-human conversation comment that still needs follow-up
     # * the paid-skip-auto-merge label on the PR (handled in quick_preconditions)
-    #
-    # Conversation comments are intentionally not checked here: by the time a
-    # PR is in the ready phase they have already been addressed by the
-    # follow-up run that advanced it, so a fresh conversation comment between
-    # scan and escalation means the scan's own next iteration would advance
-    # the PR off the ready phase before the activity ran anyway.
     def no_outstanding_review_feedback?(pr_data, reviews, unresolved_threads)
+      return false if recent_trusted_conversation_comments?
       return false if outstanding_review_threads?(unresolved_threads)
       return false if changes_requested?(reviews)
       return false unless review_bot_status_clear?(reviews)
 
       true
+    end
+
+    def recent_trusted_conversation_comments?
+      cutoff = last_completed_run&.completed_at
+      comments = collector.fetch_recent_issue_comments(issue: @issue, cutoff:)
+
+      comments.any? do |comment|
+        login = comment.user&.login
+        next false if bot_user?(login)
+        next false unless @project.trusted_github_user?(login)
+        next false if cutoff && comment.created_at && comment.created_at <= cutoff
+        next false if system_generated_comment?(comment.body)
+        next false if comment.body.to_s.strip.length < Activities::ScanPaidPrsActivity::MIN_COMMENT_LENGTH
+
+        true
+      end
     end
 
     # Mirrors the scan's latest_allowed_bot_review + REVIEW_BOT_CLEAN_PATTERN:
@@ -329,6 +341,10 @@ module PullRequests
 
     def bot_user?(login)
       Reviews::BotDetection.bot_user?(login)
+    end
+
+    def system_generated_comment?(body)
+      Activities::CompleteExistingPrRunActivity.agent_update_comment?(body)
     end
 
     # Same gate the scan applies: every enabled blocking review method

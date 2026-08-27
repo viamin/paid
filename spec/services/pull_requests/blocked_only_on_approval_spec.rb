@@ -77,6 +77,11 @@ RSpec.describe PullRequests::BlockedOnlyOnApproval do
   end
 
   def stub_issue_comments(comments = [])
+    comments.define_singleton_method(:multi_page?) { false }
+
+    allow(client).to receive(:recent_issue_comments)
+      .with(project.full_name, issue.github_number)
+      .and_return(comments)
     allow(client).to receive(:issue_comments)
       .with(project.full_name, issue.github_number)
       .and_return(comments)
@@ -251,6 +256,31 @@ RSpec.describe PullRequests::BlockedOnlyOnApproval do
       expect(run).to be_persisted
     end
 
+    # @spec PR-ESCALATION-025
+    it "returns false when a fresh trusted conversation comment appears since the last completed run" do
+      sha = "abc123"
+      create(:agent_run,
+        project: project,
+        issue: issue,
+        goal: "create_pr",
+        status: "completed",
+        completed_at: 1.hour.ago)
+      stub_pr_data(green_pr_data(sha: sha))
+      stub_checks(sha, green_checks)
+      stub_reviews(green_reviews)
+      stub_review_threads([])
+      stub_head_commit(sha: sha, date: 3.hours.ago)
+      stub_issue_comments([
+        OpenStruct.new(
+          user: OpenStruct.new(login: "viamin"),
+          body: "Please update the changelog section before merge.",
+          created_at: 30.minutes.ago
+        )
+      ])
+
+      expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(false)
+    end
+
     it "returns false when the GitHub API fails to fetch PR data (safe default)" do
       allow(client).to receive(:pull_request).and_raise(GithubClient::Error, "transient")
 
@@ -352,6 +382,24 @@ RSpec.describe PullRequests::BlockedOnlyOnApproval do
         )
         stub_review_threads([])
         stub_head_commit(sha: sha, date: 1.hour.ago)
+        stub_issue_comments
+
+        expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(false)
+      end
+
+      # @spec PR-ESCALATION-025
+      it "returns false when the reviewer's APPROVED review is followed by a later COMMENTED review" do
+        sha = "abc123"
+        stub_pr_data(green_pr_data(sha: sha))
+        stub_checks(sha, green_checks)
+        stub_reviews(
+          green_reviews + [
+            { id: 2, user_login: "alice", state: "APPROVED", body: "LGTM", submitted_at: 2.hours.ago },
+            { id: 3, user_login: "alice", state: "COMMENTED", body: "One follow-up note", submitted_at: 1.hour.ago }
+          ]
+        )
+        stub_review_threads([])
+        stub_head_commit(sha: sha, date: 3.hours.ago)
         stub_issue_comments
 
         expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(false)

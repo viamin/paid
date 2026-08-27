@@ -121,23 +121,34 @@ module Reviews
     end
     private_class_method :claude_review_action?
 
-    # Manual review is complete when the configured reviewer_login has
-    # submitted an APPROVED review. This aligns with the scan's
-    # manual_reviewer_approved? gate so the same user gates both paths.
+    # Manual review is complete when the configured reviewer_login's latest
+    # trusted non-bot review is APPROVED. This matches GitHub's
+    # latest-review-wins semantics, so a later COMMENTED or
+    # CHANGES_REQUESTED review re-opens the gate instead of leaving a stale
+    # earlier approval in force.
     def self.manual_review_complete?(project:, reviews:)
       return false if reviews.nil?
 
       reviewer = project.review_method(:manual).reviewer_login
       return false if reviewer.blank?
 
-      reviews.any? do |r|
-        r[:state] == "APPROVED" &&
-          r[:user_login]&.downcase == reviewer.strip.downcase &&
-          project.trusted_github_user?(r[:user_login]) &&
-          !bot_user?(r[:user_login])
-      end
+      latest_review = latest_trusted_non_bot_review_for(project:, reviews:, reviewer_login: reviewer)
+      latest_review&.dig(:state) == "APPROVED"
     end
-    private_class_method :manual_review_complete?
+
+    def self.latest_trusted_non_bot_review_for(project:, reviews:, reviewer_login:)
+      normalized_login = reviewer_login.strip.downcase
+
+      reviewer_reviews = reviews.select do |review|
+        review[:user_login]&.downcase == normalized_login &&
+          project.trusted_github_user?(review[:user_login]) &&
+          !bot_user?(review[:user_login])
+      end
+      return nil if reviewer_reviews.empty?
+
+      reviewer_reviews.max_by { |review| review[:submitted_at] || Time.at(0) }
+    end
+    private_class_method :latest_trusted_non_bot_review_for
 
     def self.bot_user?(login)
       Reviews::BotDetection.bot_user?(login)

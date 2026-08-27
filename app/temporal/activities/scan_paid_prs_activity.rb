@@ -2134,7 +2134,7 @@ module Activities
 
       if project.review_method_enabled?("manual")
         reviewer = project.review_method(:manual).reviewer_login
-        if reviewer.present? && !manual_reviewer_approved?(reviews, reviewer)
+        if reviewer.present? && !Reviews::BlockingMethodsComplete.manual_review_complete?(project:, reviews:)
           triggers << { type: "manual_review_pending", reviewer_login: reviewer,
                         details: "Awaiting approval from #{reviewer}" }
         end
@@ -2153,19 +2153,6 @@ module Activities
       end
 
       triggers
-    end
-
-    def manual_reviewer_approved?(reviews, reviewer_login)
-      return false if reviews.nil?
-
-      reviewer_reviews = reviews.select { |r| r[:user_login]&.downcase == reviewer_login.strip.downcase }
-      return false if reviewer_reviews.empty?
-
-      # Time.at(0) fallback: reviews with nil timestamps sort oldest, so any
-      # review with a real timestamp will win. GitHub always populates
-      # submitted_at in practice, so this is purely defensive.
-      latest = reviewer_reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
-      latest[:state] == "APPROVED"
     end
 
     def ci_action_succeeded?(checks, action_name)
