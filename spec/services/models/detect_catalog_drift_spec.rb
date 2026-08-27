@@ -157,6 +157,17 @@ RSpec.describe Models::DetectCatalogDrift do
     expect(result.providers).to be_empty
   end
 
+  it "does not check direct-outbound providers without a first-party registry mapping (RDR-065)" do
+    # deepseek/mistral/xai/zai/inception/zai_coding/minimax are seeded catalog
+    # coverage for Runner::DIRECT_OUTBOUND_API_PROVIDERS, not providers Paid
+    # resolves default-tier models for — asserting they stay out of
+    # DEFAULT_PROVIDERS locks in that adding their seed rows cannot trigger
+    # false-positive deprecation alarms.
+    expect(described_class::DEFAULT_PROVIDERS).not_to include(
+      "deepseek", "mistral", "xai", "zai", "zai_coding", "inception", "minimax"
+    )
+  end
+
   it "produces a stable fingerprint for the same finding set" do
     registry = fake_registry(
       "openai" => [

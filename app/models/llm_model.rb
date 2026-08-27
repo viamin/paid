@@ -8,6 +8,14 @@ class LlmModel < ApplicationRecord
   PRICING_TIERS = %w[paid free freemium].freeze
   DATA_TRAINING_RISKS = %w[none possible unknown].freeze
   CATALOG_SOURCES = %w[seeded openrouter_sync manual].freeze
+  # Sentinel dropdown value when a direct-outbound provider (see
+  # Runner::DIRECT_OUTBOUND_API_PROVIDERS) has no active catalog rows: render
+  # only this entry (e.g. labeled "Custom") so the user can still type a model
+  # id by hand instead of showing an empty select. Defined once here — not in
+  # each dropdown-building call site — so #3663's Runners::ModelOptions
+  # consumes this contract rather than reinventing the empty-provider case.
+  # @spec DIRECT-OUTBOUND-CATALOG-005
+  CUSTOM_MODEL_OPTION = "custom"
 
   belongs_to :free_variant_of, class_name: "LlmModel", optional: true
   has_many :model_selections, dependent: :restrict_with_error
@@ -86,6 +94,15 @@ class LlmModel < ApplicationRecord
 
   def self.find_by_model_id(model_id)
     find_by(model_id: model_id)
+  end
+
+  # Active catalog rows for a direct-outbound provider's model dropdown,
+  # ordered for display. Empty when the provider has no seeded/synced rows —
+  # callers should render CUSTOM_MODEL_OPTION alone in that case rather than
+  # an empty select (see the constant above).
+  # @spec DIRECT-OUTBOUND-CATALOG-005
+  def self.dropdown_options_for(provider)
+    active.by_provider(provider).order(:display_name)
   end
 
   # Idempotently registers a direct-outbound runner's user-entered model id in

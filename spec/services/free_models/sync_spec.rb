@@ -89,6 +89,24 @@ RSpec.describe FreeModels::Sync do
       }.not_to change(LlmModel, :count)
     end
 
+    # @spec DIRECT-OUTBOUND-CATALOG-004
+    it "leaves the seeded openrouter/pareto-code row untouched (RDR-065)" do
+      pareto = create(:llm_model,
+        model_id: "openrouter/pareto-code",
+        provider: "openrouter",
+        pricing_tier: "paid",
+        catalog_source: "seeded",
+        active: true)
+
+      described_class.call
+
+      pareto.reload
+      expect(pareto.active).to be(true)
+      expect(pareto.provider).to eq("openrouter")
+      expect(pareto.catalog_source).to eq("seeded")
+      expect(pareto.pricing_tier).to eq("paid")
+    end
+
     def expect_synced_model(model)
       aggregate_failures do
         expect(model.attributes.slice("pricing_tier", "catalog_source", "provider", "display_name", "data_training_risk"))
