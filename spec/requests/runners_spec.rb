@@ -925,6 +925,56 @@ RSpec.describe "Runners" do
       expect(response.body).to include("must include an OpenCode model id")
     end
 
+    # @spec MODEL-POLICY-008
+    it "creates a free-policy OpenCode runner without a model id when the API provider is openrouter" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+
+      post runners_path, params: {
+        runner: {
+          runner_key: "opencode",
+          auth_type: "api_key",
+          provider_api_key_id: api_key.id,
+          enabled_for_agent_runs: true,
+          enabled_for_fallback: true,
+          config: {
+            opencode: {
+              api_provider: "openrouter",
+              model_policy: "free"
+            }
+          }
+        }
+      }
+
+      expect(response).to redirect_to(runners_path)
+      runner = user.runners.find_by!(runner_key: "opencode", auth_type: "api_key")
+      expect(runner.opencode_model_policy).to eq("free")
+      expect(runner.opencode_model_id).to be_nil
+    end
+
+    # @spec MODEL-POLICY-002 MODEL-POLICY-008
+    it "rejects an OpenCode free policy on a non-openrouter API provider" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "inception")
+
+      post runners_path, params: {
+        runner: {
+          runner_key: "opencode",
+          auth_type: "api_key",
+          provider_api_key_id: api_key.id,
+          enabled_for_agent_runs: true,
+          enabled_for_fallback: true,
+          config: {
+            opencode: {
+              api_provider: "inception",
+              model_policy: "free"
+            }
+          }
+        }
+      }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.body).to include("OpenCode free model policy requires the OpenRouter API provider")
+    end
+
     it "persists nested Oh My Pi config for API-key providers" do
       KnownDirectOutboundModels.seed_model(model_id: "deepseek-chat", provider: "deepseek")
       api_key = create(:provider_api_key, user: user, api_service_type: "deepseek")
