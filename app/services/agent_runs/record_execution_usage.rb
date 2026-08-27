@@ -73,8 +73,8 @@ class AgentRuns::RecordExecutionUsage
   # window while +AgentRun+ still denormalizes the summed infra spend.
   # @spec EXEC-USAGE-011
   def recorded_usage
-    existing = latest_recorded_usage
-    return preserve_recording(existing) if preserve_existing_recording?(existing)
+    existing = existing_recording_for_cycle
+    return preserve_recording(existing) if existing.present?
 
     create_recording
   end
@@ -137,10 +137,6 @@ class AgentRuns::RecordExecutionUsage
     )
   end
 
-  def preserve_existing_recording?(existing)
-    existing.present? && provisioned_at <= existing.terminated_at
-  end
-
   def preserve_recording(existing)
     log_preserved_recording(existing)
     existing
@@ -150,8 +146,11 @@ class AgentRuns::RecordExecutionUsage
     ExecutionUsage.create!(agent_run_id: agent_run.id, **execution_usage_attributes)
   end
 
-  def latest_recorded_usage
-    agent_run.execution_usages.order(terminated_at: :desc, id: :desc).first
+  def existing_recording_for_cycle
+    relation = agent_run.execution_usages.where(provisioned_at: provisioned_at)
+    relation = relation.or(agent_run.execution_usages.where(provider_resource_id: provider_resource_id)) if provider_resource_id.present?
+
+    relation.order(terminated_at: :desc, id: :desc).first
   end
 
   def denormalized_usage_columns(latest_usage)

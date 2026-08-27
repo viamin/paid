@@ -123,6 +123,18 @@ RSpec.describe AgentRuns::RecordExecutionUsage do
     end
 
     # @spec EXEC-USAGE-011
+    it "creates a new row when an older cycle was recorded late after the next cycle started" do
+      first_usage, second_usage = late_then_reprovisioned_usage(agent_run)
+
+      usages = agent_run.reload.execution_usages.order(:provisioned_at, :id)
+      expect(usages.count).to eq(2)
+      expect(usages.map(&:id)).to eq([ first_usage.id, second_usage.id ])
+      expect(usages.map(&:provider_resource_id)).to eq([ "fly-machine-abc", "fly-machine-def" ])
+      expect(agent_run.billed_duration_seconds).to eq(usages.sum(&:billed_duration_seconds))
+      expect(agent_run.infra_cost_cents).to eq(usages.sum(&:infra_cost_cents))
+    end
+
+    # @spec EXEC-USAGE-011
     it "preserves the prior cycle as its own row when a new billing cycle is recorded" do
       first_usage, result = reprovisioned_usage(agent_run)
       usage = agent_run.reload.execution_usage
@@ -260,6 +272,30 @@ RSpec.describe AgentRuns::RecordExecutionUsage do
 
   def reprovisioned_rate_cents_per_hour
     120
+  end
+
+  def late_then_reprovisioned_usage(agent_run)
+    stamp_rate(agent_run, 60)
+    first_usage = record_usage(
+      env: rate_60_per_hour,
+      agent_run: agent_run,
+      provider_resource_id: "fly-machine-abc",
+      terminated_at: terminated_at + 1.hour
+    )[:usage]
+    second_provisioned_at = terminated_at + 5.minutes
+
+    stamp_rate(agent_run, 120)
+    second_usage = record_usage(
+      env: { "INFRA_SPEND_RATE_CENTS_PER_HOUR__LOCAL" => "999" },
+      agent_run: agent_run,
+      provider_resource_id: "fly-machine-def",
+      provisioned_at: second_provisioned_at,
+      completed_at: second_provisioned_at + 20.minutes,
+      terminated_at: second_provisioned_at + 20.minutes,
+      termination_reason: "completed"
+    )[:usage]
+
+    [ first_usage, second_usage ]
   end
 
   def record_usage(env:, agent_run:, provider_resource_id: "fly-machine-abc",

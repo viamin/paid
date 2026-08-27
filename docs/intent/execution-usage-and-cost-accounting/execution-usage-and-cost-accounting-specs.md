@@ -124,18 +124,20 @@ prefix: EXEC-USAGE
   *Code:* `BackfillExecutionUsageFromInfrastructureSpendStamp`.
 
 - [x] **EXEC-USAGE-011** — When an `ExecutionUsage` row already exists for a
-  run and the current `provisioned_at` is on or before that row's
-  `terminated_at`, `AgentRuns::RecordExecutionUsage` SHALL preserve the first
-  recorded termination — `terminated_at` and the `billed_duration_seconds`,
-  `infra_cost_cents`, and `rate_cents_per_hour` derived from it — instead of
-  re-pricing the row against a later timestamp, and SHALL mirror the
+  run for the same execution cycle — identified by the cycle's own
+  `provisioned_at` timestamp and, when present, the provider resource
+  identity — `AgentRuns::RecordExecutionUsage` SHALL preserve the first
+  recorded termination and the `billed_duration_seconds`,
+  `infra_cost_cents`, and `rate_cents_per_hour` derived from it instead of
+  re-pricing that cycle against a later timestamp, and SHALL mirror the
   persisted row (never a freshly computed estimate) onto the run's
-  denormalized columns. When the current `provisioned_at` is after the
-  existing row's `terminated_at` — a true re-provisioning (park/resume,
-  stale requeue, `reprovision_container_for_fallback!`) — the recorder
-  SHALL create a new `ExecutionUsage` row for the new cycle and SHALL
-  update the run's denormalized totals from the full set of persisted
-  usage rows so the run's infra spend across all cycles survives into
+  denormalized columns. When the recorder is asked to persist a different
+  execution cycle for the same run — including an older cycle recorded late
+  after a later cycle has already started, or a true re-provisioning
+  (park/resume, stale requeue, `reprovision_container_for_fallback!`) — it
+  SHALL create a separate `ExecutionUsage` row for that cycle and SHALL
+  update the run's denormalized totals from the full set of persisted usage
+  rows so the run's infra spend across all cycles survives into
   `AgentRun#total_cost_cents` and downstream rollups.
   *Tests:* `spec/services/agent_runs/record_execution_usage_spec.rb`,
   `spec/models/agent_run_spec.rb`.

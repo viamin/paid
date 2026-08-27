@@ -158,24 +158,28 @@ cleaned later without ever writing its final usage/cost summary.
 
 Because those paths overlap rather than take turns — the janitor still runs
 after the primary cleanup path succeeded, and it counts an already-absent
-volume as "cleaned" — the recorder preserves the existing row for any
-re-entry whose `provisioned_at` is on or before the recorded
-`terminated_at`. That keeps an overlapping fallback pass from re-pricing the
-same resource lifetime against its own `Time.current` and inflating
-`billed_duration_seconds` / `infra_cost_cents`.
+volume as "cleaned" — the recorder preserves the existing row only when the
+re-entry refers to the same execution cycle, identified by the cycle's own
+`provisioned_at` timestamp and, when present, the provider resource
+identity. That keeps an overlapping fallback pass from re-pricing the same
+resource lifetime against its own `Time.current` and inflating
+`billed_duration_seconds` / `infra_cost_cents`, while still allowing an
+older cycle recorded late to coexist with a later cycle that already
+started.
 
 The important exception is true re-provisioning: park/resume, stale claimed
 requeue, and `reprovision_container_for_fallback!` can tear one resource
 down, later provision a new one for the same `AgentRun`, and finally clean
-that later resource up. When the current `provisioned_at` is after the
-latest recorded row's `terminated_at`, the recorder writes a new row for the
-new cycle instead of replacing the prior one. `AgentRun#total_cost_cents`
-and downstream rollups then include the first machine's lifetime by summing
-all persisted rows, while the dashboard can still attribute each cycle to
-its own billing window. The run's denormalized columns are recomputed from
-the persisted rows rather than from the estimate just computed, which keeps
-them equal to the recorded spend and lets a run whose column write was lost
-after insertion self-heal on the next cleanup pass.
+that later resource up. The recorder therefore writes a new row whenever the
+incoming usage does not match an existing cycle by those stable keys, even if
+an older cycle's delayed `terminated_at` now falls after the later cycle's
+start. `AgentRun#total_cost_cents` and downstream rollups then include each
+machine lifetime by summing all persisted rows, while the dashboard can
+still attribute each cycle to its own billing window. The run's denormalized
+columns are recomputed from the persisted rows rather than from the estimate
+just computed, which keeps them equal to the recorded spend and lets a run
+whose column write was lost after insertion self-heal on the next cleanup
+pass.
 
 Provider-reported cost replacing the estimate (see Non-Goals) is a
 deliberate, out-of-band correction of `infra_cost_cents` — not a cleanup-path
