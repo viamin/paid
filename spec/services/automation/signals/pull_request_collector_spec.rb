@@ -551,6 +551,18 @@ RSpec.describe Automation::Signals::PullRequestCollector do
       )
     end
 
+    it "re-raises authentication failures from the base branch tip lookup so the scan fails loudly" do
+      allow(client).to receive(:ref)
+        .with("acme/widgets", "heads/main")
+        .and_raise(GithubClient::AuthenticationError, "bad credentials")
+
+      expect {
+        collector.only_base_merge_commits_since?(
+          approval_sha: approval_sha, head_sha: head_sha, base_branch: "main", issue: issue
+        )
+      }.to raise_error(GithubClient::AuthenticationError)
+    end
+
     it "returns true when approval_sha equals head_sha (no new commits since approval)" do
       allow(client).to receive(:compare)
 

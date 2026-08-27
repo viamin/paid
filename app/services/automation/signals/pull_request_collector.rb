@@ -396,6 +396,8 @@ module Automation
       def base_branch_tip_sha(base_branch)
         ref = client.ref(providers.repo, "heads/#{base_branch}")
         ref&.object&.sha.to_s.presence
+      rescue GithubClient::AuthenticationError
+        raise
       rescue GithubClient::Error, StandardError
         nil
       end
