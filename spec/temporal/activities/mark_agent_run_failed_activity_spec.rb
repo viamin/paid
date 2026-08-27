@@ -149,6 +149,27 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
       expect(issue.reload.paid_state).to eq("failed")
     end
 
+    it "enriches a generic analyze_issue activity timeout with the last known phase diagnostics" do
+      issue = create(:issue, :in_progress, project: project)
+      agent_run = create(:agent_run, :running, project: project, issue: issue, goal: "analyze_issue")
+      agent_run.record_issue_analysis_diagnostics!(
+        phase_key: "analyze_issue_provider_attempt",
+        phase_label: "Analyze Issue Provider Attempt",
+        provider: "codex",
+        attempt: 2,
+        budget_seconds: 90,
+        status: "running"
+      )
+
+      activity.execute(agent_run_id: agent_run.id, error: "Activity task timed out")
+
+      agent_run.reload
+      expect(agent_run.status).to eq("failed")
+      expect(agent_run.error_message).to eq(
+        "Activity task timed out (last known analyze_issue phase: Analyze Issue Provider Attempt · provider codex · attempt 2 · budget 90s)"
+      )
+    end
+
     # @spec FOCUSED-RUN-006
     it "increments draft_review_count for tracked failed draft followups" do
       issue = create(:issue, :pull_request, project: project, pr_review_phase: "draft", draft_review_count: 2)

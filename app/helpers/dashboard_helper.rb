@@ -1,6 +1,9 @@
 # frozen_string_literal: true
 
 module DashboardHelper
+  INBOX_PR_BADGE_CLASSES = "bg-purple-100 text-purple-700".freeze
+  INBOX_ISSUE_BADGE_CLASSES = "bg-slate-100 text-slate-700".freeze
+
   PHASE_GROUP_LABELS = {
     "queue" => "Queue",
     "setup" => "Setup",
@@ -183,5 +186,20 @@ module DashboardHelper
       }
     end
     annotations
+  end
+
+  # @spec OPERATOR-INBOX-007
+  def inbox_issue_kind_label(issue)
+    issue_kind_label(issue)
+  end
+
+  # @spec OPERATOR-INBOX-007
+  def inbox_issue_badge_classes(issue)
+    issue.is_pull_request? ? INBOX_PR_BADGE_CLASSES : INBOX_ISSUE_BADGE_CLASSES
+  end
+
+  # @spec OPERATOR-INBOX-007
+  def inbox_issue_link_label(issue)
+    "View #{issue_kind_label(issue)}"
   end
 end

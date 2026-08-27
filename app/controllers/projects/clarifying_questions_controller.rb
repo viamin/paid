@@ -21,7 +21,7 @@ module Projects
       @questions = ClarifyingQuestions::Load.call(project: @project, issue: @issue)
 
       if @questions.empty?
-        redirect_to empty_questions_redirect_path, alert: "No clarifying questions found for issue ##{@issue.github_number}."
+        redirect_to empty_questions_redirect_path, alert: "No clarifying questions found for #{issue_kind_label} ##{@issue.github_number}."
       end
     rescue GithubClient::Error => e
       redirect_to empty_questions_redirect_path, alert: "Failed to load clarifying questions: #{e.message}"
@@ -42,7 +42,7 @@ module Projects
       elsif queue_mode?
         redirect_after_queue(next_issue)
       else
-        redirect_to project_path(@project), notice: "Answers posted to GitHub issue ##{@issue.github_number}. The agent will pick them up on the next run."
+        redirect_to project_path(@project), notice: "Answers posted to GitHub #{issue_kind_label} ##{@issue.github_number}. The agent will pick them up on the next run."
       end
     rescue ArgumentError => e
       remember_pending_inbox_answers if pending_answers_apply_to_current_questions?
@@ -59,7 +59,7 @@ module Projects
     end
 
     def set_issue
-      @issue = @project.issues.issues_only.find(params[:issue_id])
+      @issue = @project.issues.find(params[:issue_id])
     end
 
     def authorize_project_show
@@ -119,9 +119,9 @@ module Projects
           next_issue.project,
           next_issue,
           queue_redirect_params
-        ), notice: "Answers posted to GitHub issue ##{@issue.github_number}. Next questionnaire ready."
+        ), notice: "Answers posted to GitHub #{issue_kind_label} ##{@issue.github_number}. Next questionnaire ready."
       else
-        redirect_to queue_return_to, notice: "Answers posted to GitHub issue ##{@issue.github_number}. You've completed the needs-input queue."
+        redirect_to queue_return_to, notice: "Answers posted to GitHub #{issue_kind_label} ##{@issue.github_number}. You've completed the needs-input queue."
       end
     end
 
@@ -170,11 +170,10 @@ module Projects
       return unless queue_mode?
       return unless valid_queue_scope?
 
-      Dashboard::NeedsInputQueue.next_issue(
-        user: current_user,
-        project: queue_project,
-        after_issue: @issue
-      )
+      current_index = queue_scope_issues(project: queue_project).index { |issue| issue.id == @issue.id }
+      return if current_index.nil?
+
+      queue_scope_issues(project: queue_project)[(current_index + 1)..]&.first
     end
 
     def safe_queue_return_to?(path)
@@ -198,10 +197,28 @@ module Projects
       queue_mode? ? queue_return_to : project_path(@project)
     end
 
+    def issue_kind_label
+      helpers.issue_kind_label(@issue, style: :short_lower)
+    end
+
     def queue_scope_issues(project:)
       @queue_scope_issues ||= {}
-      @queue_scope_issues.fetch(project&.id) do
-        @queue_scope_issues[project&.id] = Dashboard::NeedsInputQueue.call(user: current_user, project: project).map(&:issue)
+      cache_key = [ queue_param, project&.id ]
+      @queue_scope_issues.fetch(cache_key) do
+        @queue_scope_issues[cache_key] = queue_scope_entries(project: project).map(&:issue)
+      end
+    end
+
+    # @spec OPERATOR-INBOX-007
+    def queue_scope_entries(project:)
+      if queue_param == "dashboard_inbox"
+        Inbox::Queue.call(
+          user: current_user,
+          project: project,
+          kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND
+        )
+      else
+        Dashboard::NeedsInputQueue.call(user: current_user, project: project)
       end
     end
 

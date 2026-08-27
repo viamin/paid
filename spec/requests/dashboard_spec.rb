@@ -1207,7 +1207,7 @@ RSpec.describe "Dashboard" do
       expect(form.at_css("input[type='submit']")).to be_present
     end
 
-    it "skips the answer form for PR-backed clarifying-question entries so submit does not 404" do
+    it "renders the answer form for PR-backed clarifying-question entries" do
       pr = create(:issue, :pull_request, :needs_input, project: project, title: "PR question", body: questions_body)
 
       get dashboard_inbox_path(
@@ -1220,11 +1220,11 @@ RSpec.describe "Dashboard" do
       document = Nokogiri::HTML(response.body)
       frame = document.at_css("turbo-frame#inbox-detail")
       detail_section = frame.at_css(".px-4.py-5")
+      form = detail_section.at_css(%(form[action="#{project_issue_clarifying_questions_path(project, pr)}"]))
 
-      expect(detail_section.at_css(%(form[action="#{project_issue_clarifying_questions_path(project, pr)}"]))).to be_nil
-      expect(detail_section.css("textarea[name='answers[]']")).to be_empty
-      expect(detail_section.at_css(%(input[type='submit'][value='Submit Answers']))).to be_nil
-      expect(detail_section.at_css("[data-testid='inbox-pr-answer-notice']")).to be_present
+      expect(form).to be_present
+      expect(form.at_css(%(input[name="inbox"][value="1"]))).to be_present
+      expect(form.css("textarea[name='answers[]']").size).to eq(2)
       expect(detail_section.at_css(%(a[href="#{project.github_url}/pull/#{pr.github_number}"]))).to be_present
     end
 
@@ -1246,6 +1246,25 @@ RSpec.describe "Dashboard" do
 
       expect(master_detail).to be_present
       expect(master_detail["data-inbox-master-detail-detail-open-value"]).to eq("true")
+    end
+
+    # @spec OPERATOR-INBOX-007
+    it "renders PR clarifying entries with a PR badge and PR-specific GitHub link text" do
+      pull_request = create(:issue, :needs_input, :pull_request, project: project, title: "PR question", body: questions_body)
+
+      get dashboard_inbox_path(
+        entry_kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+        entry_id: pull_request.id,
+        view: "detail"
+      )
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("View PR")
+      document = Nokogiri::HTML(response.body)
+      pr_link = document.at_css(%(a[href="#{pull_request.github_url}"]))
+      expect(pr_link).to be_present
+      expect(pr_link.text).to eq("View PR")
+      expect(document.css("span").map { |node| node.text.squish }).to include("PR")
     end
 
     # @spec OPERATOR-INBOX-006

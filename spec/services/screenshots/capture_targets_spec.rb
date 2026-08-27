@@ -79,6 +79,16 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "workflow_status" ])
     end
 
+    it "maps issue helper changes to the rendered inbox and issue surfaces" do
+      targets = described_class.call(changed_files: [ "app/helpers/issues_helper.rb" ])
+
+      expect(targets.map(&:slug)).to contain_exactly(
+        "dashboard",
+        "project_show",
+        "project_issue_clarifying_questions"
+      )
+    end
+
     it "maps ROI helper changes to the ROI dashboard screenshot targets" do
       targets = described_class.call(changed_files: [ "app/helpers/roi_dashboard_helper.rb" ])
 

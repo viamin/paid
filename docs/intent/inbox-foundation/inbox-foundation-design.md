@@ -99,10 +99,17 @@ Ordering differs in the one way the inbox page cares about:
 `Dashboard::NeedsInputQueue` only returns issues (`is_pull_request: false`)
 because today's needs-input flow is issues-only. The inbox is broader: the
 PR owner-approval and paused-run paths (future kinds) will produce PR entries,
-so the queue must include PRs from day one. Today no PRs match (no
-`is_pull_request: true` row has `paid_state: "needs_input"`), but the SQL
-filter drops the explicit `is_pull_request: false` clause so the inbox is
-structurally ready.
+so the queue must include PRs from day one. The SQL therefore drops the
+explicit `is_pull_request: false` clause so the inbox is structurally ready.
+
+Current producer state: the consumer side is PR-safe before the producers are.
+As of August 26, 2026, the inbox can render and answer a PR-backed
+clarifying-question record when that row already contains parseable questions
+(`body` marker or persisted `needs_input_questions`), but the shipped producer
+flows that populate those questions still target issues: `enhance_issue`,
+`create_feature`, and the `FetchIssuesActivity` reconciliation paths are all
+issue-scoped today. The missing PR producer remains a follow-up item rather
+than a queue/query limitation.
 
 ## Delegation from `Dashboard::NeedsInputQueue`
 

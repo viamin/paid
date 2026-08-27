@@ -37,6 +37,7 @@ module ClarifyingQuestions
         return
       end
 
+      # @spec OPERATOR-INBOX-007
       issue.update!(paid_state: "new", labels: Array(issue.labels) - [ label ], needs_input_questions: nil)
     end
 

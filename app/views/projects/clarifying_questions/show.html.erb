@@ -109,7 +109,7 @@
                         disabled: true,
                         data: {
                           clarifying_questions_target: "submitButton",
-                          turbo_confirm: "Submit your answers? They will be posted as a comment on the GitHub issue."
+                          turbo_confirm: "Submit your answers? They will be posted as a comment on the GitHub #{issue_kind_label(@issue, style: :long)}."
                         } %>
                 <% end %>
               </div>
