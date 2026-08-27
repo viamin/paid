@@ -72,13 +72,11 @@ RSpec.describe Projects::CostDashboardStats do
     end
 
     # @spec INFRA-SPEND-001
-    it "accrues pending spend for re-provisioned runs whose prior cycle was already recorded" do
+    it "accrues pending spend when an older cycle is recorded late after the current cycle starts" do
       travel_to(Time.zone.local(2024, 1, 15, 12, 0, 0)) do
-        # A run that was torn down after an evicted / park cycle (first
-        # cycle's billing recorded) and re-provisioned for a new cycle that
-        # is still live — the second machine's spend must appear in pending
-        # totals instead of silently disappearing from the dashboard until
-        # the second cycle's cleanup finally writes its row.
+        # The older cycle's row lands late, after the current cycle has
+        # already started. The existence check must still keep charging the
+        # live cycle until *that* cycle's own row is recorded.
         reprovisioned_run = create(:agent_run, project: project, status: "running",
           provisioning_started_at: 30.minutes.ago,
           started_at: 25.minutes.ago,
@@ -87,17 +85,17 @@ RSpec.describe Projects::CostDashboardStats do
           })
         create_execution_usage(reprovisioned_run,
           provisioned_at: 2.hours.ago,
-          terminated_at: 1.hour.ago,
-          billed_duration_seconds: 3600,
-          infra_cost_cents: 120)
+          terminated_at: 20.minutes.ago,
+          billed_duration_seconds: 6000,
+          infra_cost_cents: 200)
 
         result = described_class.call(project: project)
 
-        # Historical (first cycle) cost + pending (second cycle) cost for
+        # Historical (first cycle) cost + pending (current cycle) cost for
         # the new machine, which is 30 min at 120 cents/hr = 60 cents.
-        expect(result[:summary][:infrastructure_cost_cents]).to eq(180)
-        expect(result[:summary][:infrastructure_cost_today_cents]).to eq(180)
-        expect(result[:summary][:infrastructure_cost_this_month_cents]).to eq(180)
+        expect(result[:summary][:infrastructure_cost_cents]).to eq(260)
+        expect(result[:summary][:infrastructure_cost_today_cents]).to eq(260)
+        expect(result[:summary][:infrastructure_cost_this_month_cents]).to eq(260)
       end
     end
 

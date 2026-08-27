@@ -229,7 +229,31 @@ RSpec.describe AgentRuns::CleanupStale do
       expect(usage.runner_backend).to eq("local")
     end
 
-    it "clears container_id even when Docker cleanup fails" do
+    it "records usage when cleanup confirms the container is already gone" do # @spec EXEC-USAGE-009
+      stale_run = create(:agent_run, :running, project: project,
+        started_at: AgentRun.stale_running_cutoff - 1.minute,
+        provisioning_started_at: 2.hours.ago,
+        container_id: "container-gone",
+        container_host: "local")
+      relation = instance_double(ActiveRecord::Relation)
+      container_service = instance_double(Containers::Provision)
+      provisioner = instance_double(Containers::ServiceProvisioner, cleanup: true)
+
+      allow(container_service).to receive(:cleanup).and_raise(Docker::Error::NotFoundError, "no such container")
+      allow(project.agent_runs).to receive(:stale_for_cleanup).and_return(relation)
+      allow(relation).to receive(:find_each).and_yield(stale_run)
+      allow(Containers::Provision).to receive(:reconnect).and_return(container_service)
+      allow(Containers::ServiceProvisioner).to receive(:new).and_return(provisioner)
+
+      described_class.call(project: project)
+
+      usage = stale_run.reload.execution_usage
+      expect(usage).to be_present
+      expect(usage.provider_resource_id).to eq("container-gone")
+      expect(usage.termination_reason).to eq("timed_out")
+    end
+
+    it "clears container_id without recording usage when Docker cleanup fails" do # @spec EXEC-USAGE-009
       stale_run = create(:agent_run, :running, project: project,
         started_at: AgentRun.stale_running_cutoff - 1.minute,
         provisioning_started_at: 2.hours.ago,
@@ -248,8 +272,7 @@ RSpec.describe AgentRuns::CleanupStale do
       described_class.call(project: project)
 
       expect(stale_run.reload.container_id).to be_nil
-      expect(stale_run.execution_usage).to be_present
-      expect(stale_run.execution_usage.provider_resource_id).to eq("container-broken")
+      expect(stale_run.execution_usage).to be_nil
     end
 
     it "returns the number of cleaned runs" do

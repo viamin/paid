@@ -159,6 +159,7 @@ module AgentRuns
 
     def cleanup_container(agent_run, old_resources) # @spec EXEC-USAGE-009
       old_container_id = old_resources[:container_id]
+      cleanup_confirmed = false
       if old_container_id.present?
         AgentRun.where(id: agent_run.id, container_id: old_container_id).update_all(container_id: nil)
 
@@ -168,6 +169,9 @@ module AgentRuns
           worktree_path: agent_run.worktree_path
         )
         service.cleanup(force: true)
+        cleanup_confirmed = true
+      else
+        cleanup_confirmed = true
       end
       # Record whenever a container_host is present — a stale run that
       # reached provisioning (provisioning_started_at and
@@ -177,6 +181,7 @@ module AgentRuns
       # container_host is blank, so this is safe for runs that never
       # reached provisioning at all.
     rescue Docker::Error::NotFoundError
+      cleanup_confirmed = true
     rescue => e
       Rails.logger.warn(
         message: "agent_runs.cleanup_stale_container_failed",
@@ -186,7 +191,7 @@ module AgentRuns
         error: e.message
       )
     ensure
-      record_execution_usage(agent_run, old_resources)
+      record_execution_usage(agent_run, old_resources) if cleanup_confirmed
     end
 
     def record_execution_usage(agent_run, old_resources)

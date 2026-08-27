@@ -236,7 +236,7 @@ module Projects
           SELECT 1
           FROM execution_usages
           WHERE execution_usages.agent_run_id = agent_runs.id
-            AND execution_usages.terminated_at >= agent_runs.provisioning_started_at
+            AND execution_usages.provisioned_at >= agent_runs.provisioning_started_at
         )
       SQL
     end
