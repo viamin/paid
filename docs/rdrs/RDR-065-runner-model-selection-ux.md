@@ -9,7 +9,7 @@
 - **Type**: Architecture + Runner UX
 - **Priority**: P1
 - **Related RDRs**: [RDR-007](RDR-007-agent-cli-abstraction.md) (Agent CLI Abstraction), [RDR-008](RDR-008-model-selection.md) (Model Selection Strategy), [RDR-034](RDR-034-tier-based-runner-fallback.md) (Tier-Based Runner Fallback), [RDR-038](RDR-038-free-models-catalog-and-runner.md) (Free Models Catalog and Runner), [RDR-040](RDR-040-runner-model-compatibility-contracts.md) (Runner Model Compatibility Contracts), [RDR-064](RDR-064-container-agent-chat-mode.md) (Container Agent Chat Mode)
-- **Related Issues**: #3663 (umbrella), #3665 (provider catalog seed gap), #3666 (`Runners::ModelOptions`), #3667 (key-derived `api_provider`), #3668 (`model_policy`), #3669 (form + flag), #3670 (data migration), #3671 (closeout), #3672 (RDR closeout audit), #3673 (Free-policy post-closeout port — explicit non-blocker)
+- **Related Issues**: #3663 (umbrella), #3665 (provider catalog seed gap), #3666 (`Runners::ModelOptions`), #3667 (key-derived `api_provider`), #3668 (`model_policy`), #3669 (form + flag), #3670 (data migration), #3671 (migration + flag cleanup), #3672 (RDR closeout audit), #3673 (Free-policy post-closeout port — explicit non-blocker)
 - **Related Intent**: TBD
 - **Related Tests**: TBD
 
