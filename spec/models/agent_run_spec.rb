@@ -2205,6 +2205,43 @@ RSpec.describe AgentRun do
           expect(result).to be_success
           expect(agent_run.reload.container_id).to eq("abc123container")
         end
+
+        # @spec EXEC-USAGE-011
+        it "restamps the provisioning cycle even when a reconcile reprovision claims a pooled container" do
+          agent_run = create(:agent_run, worktree_path: worktree_path, container_id: "dead-container",
+                             container_host: "local", provisioning_started_at: 30.minutes.ago)
+          dead = instance_double(
+            Docker::Container,
+            id: "dead-container",
+            refresh!: true,
+            stop: true,
+            delete: true,
+            info: { "State" => { "Running" => false } }
+          )
+          allow(Docker::Container).to receive(:get).with("dead-container").and_return(dead)
+          stale_provisioning_started_at = agent_run.provisioning_started_at
+          pooled_result = Containers::Provision::Result.success(
+            container_id: "warm-container", container_host: "remote",
+            service: instance_double(Containers::Provision), pool_entry_id: 123
+          )
+          allow(Containers::PoolManager).to receive(:new)
+            .with(project: agent_run.project)
+            .and_return(instance_double(Containers::PoolManager, acquire: pooled_result))
+
+          result = agent_run.provision_container(restart_provisioning_cycle: true)
+
+          expect(result).to be_success
+          expect(agent_run.reload.container_id).to eq("warm-container")
+          # The old machine's cycle was already closed out by the reconcile's
+          # cleanup_container call, keyed to the pre-restamp timestamp.
+          old_usage = ExecutionUsage.find_by(agent_run_id: agent_run.id, provider_resource_id: "dead-container")
+          expect(old_usage.provisioned_at).to be_within(1.second).of(stale_provisioning_started_at)
+          # provisioning_started_at must move forward even though a pooled
+          # claim short-circuited the fresh-provision branch, so the pooled
+          # container's later cleanup records its own row instead of
+          # matching (and silently dropping into) the closed-out cycle above.
+          expect(agent_run.provisioning_started_at).to be > stale_provisioning_started_at
+        end
       end
 
       describe "#recover_in_flight_container!" do
@@ -2846,6 +2883,59 @@ RSpec.describe AgentRun do
           expect(reloaded.container_id).to eq("fresh-container")
           handle = ExecutionRunners::RunnerHandle.from_record(reloaded)
           expect(handle.identifier).to eq("fresh-container")
+        end
+
+        # @spec EXEC-USAGE-011
+        it "records the stale handle's usage before tearing it down for a fallback reprovision" do
+          agent_run = create(:agent_run, worktree_path: worktree_path,
+                             container_id: "runner-container-123", container_host: "local",
+                             provisioning_started_at: 30.minutes.ago)
+          agent_run.update!(runner_handle: build_handle(agent_run).to_storage)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          fresh_handle = build_handle(agent_run, identifier: "fresh-container")
+          allow(mock_runner).to receive_messages(running?: false, cleanup: nil, provision: fresh_handle)
+          allow(Containers::PoolManager).to receive(:new)
+            .with(project: agent_run.project)
+            .and_return(instance_double(Containers::PoolManager, acquire: nil))
+          allow(PoolReplenishmentJob).to receive(:perform_later)
+          stale_provisioning_started_at = agent_run.provisioning_started_at
+
+          agent_run.provision_container(restart_provisioning_cycle: true)
+
+          usage = ExecutionUsage.find_by(agent_run_id: agent_run.id, provider_resource_id: "runner-container-123")
+          expect(usage).to be_present
+          expect(usage.provisioned_at).to be_within(1.second).of(stale_provisioning_started_at)
+          expect(agent_run.reload.provisioning_started_at).to be > stale_provisioning_started_at
+        end
+
+        # @spec EXEC-USAGE-011
+        it "restamps the provisioning cycle even when the reprovision claims a pooled container" do
+          agent_run = create(:agent_run, worktree_path: worktree_path,
+                             container_id: "runner-container-123", container_host: "local",
+                             provisioning_started_at: 30.minutes.ago)
+          agent_run.update!(runner_handle: build_handle(agent_run).to_storage)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          allow(mock_runner).to receive_messages(running?: false, cleanup: nil)
+          stale_provisioning_started_at = agent_run.provisioning_started_at
+          pooled_result = Containers::Provision::Result.success(
+            container_id: "warm-container", container_host: "remote",
+            service: instance_double(Containers::Provision), pool_entry_id: 123
+          )
+          allow(Containers::PoolManager).to receive(:new)
+            .with(project: agent_run.project)
+            .and_return(instance_double(Containers::PoolManager, acquire: pooled_result))
+
+          result = agent_run.provision_container(restart_provisioning_cycle: true)
+
+          expect(result).to be_success
+          expect(agent_run.reload.container_id).to eq("warm-container")
+          usage = ExecutionUsage.find_by(agent_run_id: agent_run.id, provider_resource_id: "runner-container-123")
+          expect(usage.provisioned_at).to be_within(1.second).of(stale_provisioning_started_at)
+          # provisioning_started_at must move forward even though a pooled
+          # claim short-circuited the fresh-provision branch, so the pooled
+          # container's later cleanup records its own row instead of
+          # matching (and silently dropping into) the closed-out cycle above.
+          expect(agent_run.provisioning_started_at).to be > stale_provisioning_started_at
         end
 
         it "re-derives authority grants matching the freshly re-derived networking policy on retry" do

@@ -3139,6 +3139,14 @@ class AgentRun < ApplicationRecord
     # 3600s default for pooled runs (CONTAINER-RUNTIME-027).
     options[:timeout_seconds] = ExecutionRunners::RunSpec.resolve_timeout_seconds(self, options)
 
+    # Restamped before the pooled claim (not just the fresh-provision branch
+    # below) so a reprovision that claims a warm container still starts a new
+    # cycle key. Otherwise the pooled container's lifetime would be recorded
+    # under the torn-down machine's provisioning_started_at and silently
+    # dropped when AgentRuns::RecordExecutionUsage matches the already-closed
+    # cycle (EXEC-USAGE-011).
+    restamp_provisioning_cycle! if restart_provisioning_cycle
+
     pooled_result = acquire_pooled_container(pool_host_scope: pool_host_scope, **options)
     return pooled_result if pooled_result
 
@@ -3146,7 +3154,6 @@ class AgentRun < ApplicationRecord
     resolved_policy = networking_policy || Containers::Provision.networking_policy_for(
       agent_run: self, project: project
     )
-    restamp_provisioning_cycle! if restart_provisioning_cycle
     spec = ExecutionRunners::RunSpec.from_agent_run(self, networking_policy: resolved_policy, **options)
     @current_handle = runner.provision(spec: spec)
     update!(container_id: @current_handle.identifier, container_host: @current_handle.host,
@@ -3182,7 +3189,15 @@ class AgentRun < ApplicationRecord
       return Containers::Provision::Result.success(container_id: handle.identifier, container_host: handle.host)
     end
 
-    runner.cleanup(handle: handle, force: true) if handle
+    if handle
+      runner.cleanup(handle: handle, force: true)
+      # The stale machine's lifetime must be closed out here, before
+      # clear_runner_reference!/provision_via_runner's restamp moves
+      # provisioning_started_at forward — cleanup_container never runs for
+      # this handle, so this is the only place its usage gets recorded
+      # (EXEC-USAGE-011).
+      record_execution_usage_after_cleanup!(container_id: handle.identifier, container_host: handle.host)
+    end
     clear_runner_reference!
     provision_via_runner(**options)
   end
@@ -3632,6 +3647,14 @@ class AgentRun < ApplicationRecord
     planned_container_host = options.delete(:container_host)
     pool_host_scope = planned_container_host.presence || container_host.presence
 
+    # Restamped before the pooled claim (not just the fresh-provision branch
+    # below) so a reprovision that claims a warm container still starts a new
+    # cycle key. Otherwise the pooled container's lifetime would be recorded
+    # under the torn-down machine's provisioning_started_at and silently
+    # dropped when AgentRuns::RecordExecutionUsage matches the already-closed
+    # cycle (EXEC-USAGE-011).
+    restamp_provisioning_cycle! if restart_provisioning_cycle
+
     pooled_result = acquire_pooled_container(pool_host_scope: pool_host_scope, **options)
     return pooled_result if pooled_result
 
@@ -3645,7 +3668,6 @@ class AgentRun < ApplicationRecord
       networking_policy: networking_policy,
       **options
     )
-    restamp_provisioning_cycle! if restart_provisioning_cycle
     result = @container_service.provision
     if result.success?
       update!(container_id: result[:container_id], container_host: result[:container_host],
