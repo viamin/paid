@@ -90,6 +90,20 @@ RSpec.describe Projects::CostDashboardStats do
       end
     end
 
+    it "routes pending infrastructure spend through Capacity::InfrastructureSpend with the open-lifetime clamp" do
+      allow(Capacity::InfrastructureSpend).to receive(:spent_cents).and_return(240)
+
+      described_class.call(project: project)
+
+      expect(Capacity::InfrastructureSpend).to have_received(:spent_cents).with(
+        project: project,
+        starts_at: Time.at(0),
+        ends_at: kind_of(Time),
+        scope_modifier: kind_of(Proc),
+        overlap_ends_at_sql: kind_of(String)
+      )
+    end
+
     # @spec EXEC-USAGE-003
     it "does not double-count ContainerMetric samples in infrastructure cost" do
       travel_to(Time.zone.local(2024, 1, 15, 12, 0, 0)) do

@@ -2435,6 +2435,29 @@ RSpec.describe AgentRun do
           expect(agent_run.infra_cost_cents).to eq(usage.infra_cost_cents)
         end
 
+        it "logs and continues when execution usage persistence fails after teardown" do
+          agent_run = create(:agent_run, :completed, worktree_path: worktree_path,
+            container_id: "abc123container", container_host: "local",
+            provisioning_started_at: 2.hours.ago, started_at: 100.minutes.ago, completed_at: 1.hour.ago)
+          allow(Docker::Container).to receive(:get).with("abc123container").and_return(mock_container)
+          allow(mock_container).to receive(:delete)
+          allow(AgentRuns::RecordExecutionUsage).to receive(:call).and_raise(
+            ActiveRecord::RecordInvalid.new(build(:execution_usage))
+          )
+          allow(Rails.logger).to receive(:warn)
+
+          expect { agent_run.cleanup_container(force: true) }.not_to raise_error
+
+          expect(agent_run.reload.container_id).to be_nil
+          expect(Rails.logger).to have_received(:warn).with(
+            hash_including(
+              message: "agent_execution.record_execution_usage_persist_failed",
+              agent_run_id: agent_run.id,
+              error_class: "ActiveRecord::RecordInvalid"
+            )
+          )
+        end
+
         # @spec EXEC-USAGE-009
         it "maps a non-terminal status to an evicted termination reason" do
           agent_run = create(:agent_run, :rate_limited, worktree_path: worktree_path,
@@ -6347,6 +6370,21 @@ RSpec.describe AgentRun do
       expect(agent_run.execution_usage.provider_resource_id).to eq("abc123container")
       expect(agent_run.billed_duration_seconds).to eq(first.billed_duration_seconds)
       expect(agent_run.infra_cost_cents).to eq(first.infra_cost_cents)
+    end
+
+    it "truncates the recorded runner backend to the execution usage limit" do
+      long_host = "host-" * 20
+      agent_run = create(:agent_run, :completed, container_host: nil,
+        provisioning_started_at: 2.hours.ago, started_at: 100.minutes.ago, completed_at: 1.hour.ago,
+        external_metadata: { "planned_container_host" => long_host })
+
+      agent_run.record_execution_usage_after_cleanup!(
+        container_id: "abc123container",
+        container_host: agent_run.workspace_volume_host,
+        terminated_at: Time.current
+      )
+
+      expect(agent_run.reload.execution_usage.runner_backend).to eq(long_host.truncate(64))
     end
 
     # @spec EXEC-USAGE-006

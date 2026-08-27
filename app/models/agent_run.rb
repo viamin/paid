@@ -2876,6 +2876,14 @@ class AgentRun < ApplicationRecord
   # @spec EXEC-USAGE-009
   def record_execution_usage_after_cleanup!(container_id:, container_host:, terminated_at: Time.current)
     record_execution_usage!(container_id: container_id, container_host: container_host, terminated_at: terminated_at)
+  rescue ActiveRecord::ActiveRecordError => e
+    Rails.logger.warn(
+      message: "agent_execution.record_execution_usage_persist_failed",
+      agent_run_id: id,
+      error_class: e.class.name,
+      error: e.message
+    )
+    nil
   end
 
   def record_execution_usage!(container_id:, container_host:, terminated_at:)
@@ -2884,7 +2892,7 @@ class AgentRun < ApplicationRecord
     resources = Capacity::RequestedResources.for_agent_run(self)
     AgentRuns::RecordExecutionUsage.call(
       agent_run: self,
-      runner_backend: container_host,
+      runner_backend: normalized_execution_usage_runner_backend(container_host),
       provider_resource_id: container_id,
       provisioned_at: provisioning_started_at,
       execution_started_at: started_at,
@@ -2897,6 +2905,11 @@ class AgentRun < ApplicationRecord
     )
   end
   private :record_execution_usage!
+
+  def normalized_execution_usage_runner_backend(container_host)
+    container_host.to_s.truncate(64)
+  end
+  private :normalized_execution_usage_runner_backend
 
   # Docker CPU quota is expressed in units where 100_000 = 1 CPU core
   # (Containers::Provision's CpuPeriod) — convert back to cores.

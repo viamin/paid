@@ -4,14 +4,16 @@ module Capacity
   # @spec INFRA-SPEND-001
   class InfrastructureSpend
     class << self
-      def spent_cents(account: nil, starts_at:, ends_at: Time.current, project: nil, runner: nil, scope_modifier: nil)
+      def spent_cents(account: nil, starts_at:, ends_at: Time.current, project: nil, runner: nil,
+        scope_modifier: nil, overlap_ends_at_sql: nil)
         new(
           account: account,
           starts_at: starts_at,
           ends_at: ends_at,
           project: project,
           runner: runner,
-          scope_modifier: scope_modifier
+          scope_modifier: scope_modifier,
+          overlap_ends_at_sql: overlap_ends_at_sql
         ).spent_cents
       end
 
@@ -34,13 +36,14 @@ module Capacity
       end
     end
 
-    def initialize(account:, starts_at:, ends_at:, project: nil, runner: nil, scope_modifier: nil)
+    def initialize(account:, starts_at:, ends_at:, project: nil, runner: nil, scope_modifier: nil, overlap_ends_at_sql: nil)
       @account = account
       @starts_at = starts_at
       @ends_at = ends_at
       @project = project
       @runner = runner
       @scope_modifier = scope_modifier
+      @overlap_ends_at_sql = overlap_ends_at_sql
     end
 
     def spent_cents
@@ -91,7 +94,7 @@ module Capacity
             #{rate_cents_per_hour_sql} *
             GREATEST(
               EXTRACT(EPOCH FROM (
-                LEAST(COALESCE(agent_runs.completed_at, #{quoted_ends_at}), #{quoted_ends_at}) -
+                #{overlap_ends_at_sql} -
                 GREATEST(agent_runs.provisioning_started_at, #{quoted_starts_at})
               )),
               0
@@ -107,6 +110,12 @@ module Capacity
           NULLIF(agent_runs.external_metadata #>> '{infrastructure_spend,rate_cents_per_hour}', ''),
           '0'
         )::numeric
+      SQL
+    end
+
+    def overlap_ends_at_sql
+      @overlap_ends_at_sql ||= <<~SQL.squish
+        LEAST(COALESCE(agent_runs.completed_at, #{quoted_ends_at}), #{quoted_ends_at})
       SQL
     end
 

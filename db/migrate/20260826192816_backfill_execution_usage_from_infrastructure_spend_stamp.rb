@@ -60,7 +60,7 @@ class BackfillExecutionUsageFromInfrastructureSpendStamp < ActiveRecord::Migrati
 
   def backfill_batch(batch_ids)
     with_tenant_bypass do
-      rows = MigrationAgentRun.find(batch_ids).filter_map { |agent_run| execution_usage_attributes_for(agent_run) }
+      rows = migration_agent_runs_for(batch_ids).filter_map { |agent_run| execution_usage_attributes_for(agent_run) }
       next if rows.empty?
 
       MigrationExecutionUsage.insert_all(rows, unique_by: :agent_run_id)
@@ -129,6 +129,13 @@ class BackfillExecutionUsageFromInfrastructureSpendStamp < ActiveRecord::Migrati
         billed_duration_seconds: row[:billed_duration_seconds]
       )
     end
+  end
+
+  def migration_agent_runs_for(batch_ids)
+    MigrationAgentRun
+      .select(:id, :status, :container_host, :provisioning_started_at,
+        :started_at, :completed_at, :external_metadata)
+      .find(batch_ids)
   end
 
   def with_tenant_bypass(&)
