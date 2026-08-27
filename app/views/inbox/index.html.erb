@@ -24,7 +24,7 @@
       ].each do |label, kind| %>
         <% active = @selected_kind == kind || (@selected_kind.nil? && kind.nil?) %>
         <%= link_to label,
-              inbox_path(project: @scoped_project, kind: kind),
+              inbox_path(**inbox_query_params(project: @scoped_project, kind: kind)),
               class: [
                 "rounded-full px-3 py-1.5 text-sm font-medium",
                 active ? "bg-indigo-600 text-white" : "bg-white text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50"

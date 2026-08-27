@@ -24,10 +24,10 @@ entries into one responsive page.
 1. `Inbox::Queue` collects inbox entries the signed-in user can act on.
 2. Each entry declares a `kind`, the project/issue context, waiting timestamp,
    and the payload needed to render its detail pane.
-3. The dashboard inbox renders:
+3. The inbox renders at `/inbox` and `/inbox/:entry_id`:
    - a desktop split-pane layout with the queue on the left and detail on the
      right
-   - a mobile master-detail flow where selecting an item opens the detail pane
+   - a mobile master-detail flow where the member route opens the detail pane
    - a neutral `Waiting —` label when a legacy entry has no waiting timestamp
 4. Existing action endpoints stay as the mutation surface:
    - clarifying-question answers still post through
@@ -55,7 +55,7 @@ question-producing flows remain issue-centric: `enhance_issue` and
 questionless-repair paths. That producer gap is intentional follow-up work, not
 an inbox rendering constraint.
 
-When the operator opens a clarifying-question entry from `dashboard_inbox`,
+When the operator opens a clarifying-question entry from the inbox,
 the answer flow resolves queue membership and next-entry traversal from
 `Inbox::Queue` filtered to `clarifying_questions`, so PR-backed records keep
 the same continuation behavior as issue-backed records.
@@ -73,8 +73,10 @@ actions without leaving the inbox.
   queue consumers should share one typed discovery path.
 - **Legacy routes remain as aliases**: `/dashboard/needs_input` and
   `/plan_reviews` redirect to the inbox instead of rendering parallel surfaces.
-- **Selection is query-param based**: `entry_kind`, `entry_id`, and `view`
-  drive server-rendered selection with no client-side state requirement.
+- **Selection is route-based**: `/inbox` renders the first actionable entry
+  and `/inbox/:entry_id` renders that member route as the explicit detail
+  state, with stale member paths redirecting to `/inbox` instead of silently
+  selecting a different record.
 - **Missing waiting timestamps remain visible**: legacy entries with a nullable
   waiting timestamp stay actionable and render `Waiting —` instead of deriving
   an inaccurate age or failing the inbox page.
@@ -86,8 +88,10 @@ actions without leaving the inbox.
 
 - `spec/services/inbox/queue_spec.rb` covers typed discovery of
   clarifying-question and plan-review entries.
-- `spec/requests/dashboard_spec.rb` covers the inbox layouts and legacy-route
-  redirects.
+- `spec/requests/dashboard_spec.rb` covers legacy dashboard redirects into the
+  inbox.
+- `spec/requests/inbox_spec.rb` covers the inbox layouts, member selection,
+  and stale-entry redirects.
 - `spec/requests/plan_reviews_spec.rb` covers signal dispatch and inbox
   redirects after review actions.
 - `spec/requests/projects/clarifying_questions_spec.rb` covers inbox queue

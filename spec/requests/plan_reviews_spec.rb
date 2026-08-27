@@ -32,7 +32,7 @@ RSpec.describe "Plan reviews" do
     it "redirects the legacy page to the inbox plan-review filter" do
       get plan_reviews_path
 
-      expect(response).to redirect_to(dashboard_inbox_path(kind: Inbox::Queue::PLAN_REVIEW_KIND))
+      expect(response).to redirect_to(inbox_path(kind: Inbox::Queue::PLAN_REVIEW_KIND))
     end
   end
 
@@ -83,7 +83,7 @@ RSpec.describe "Plan reviews" do
 
       post approve_plan_review_path(review)
 
-      expect(response).to redirect_to(dashboard_inbox_path(kind: Inbox::Queue::PLAN_REVIEW_KIND))
+      expect(response).to redirect_to(inbox_path(kind: Inbox::Queue::PLAN_REVIEW_KIND))
       expect(flash[:alert]).to eq("The plan review workflow is no longer active.")
       expect(flash[:notice]).to be_nil
     end
@@ -95,7 +95,7 @@ RSpec.describe "Plan reviews" do
         return_to: "https://evil.example/phish"
       }
 
-      expect(response).to redirect_to(dashboard_inbox_path(kind: Inbox::Queue::PLAN_REVIEW_KIND))
+      expect(response).to redirect_to(inbox_path(kind: Inbox::Queue::PLAN_REVIEW_KIND))
       expect(workflow_handle).to have_received(:signal).with("approve_plan")
     end
 
@@ -106,7 +106,7 @@ RSpec.describe "Plan reviews" do
         return_to: "//evil.example/phish"
       }
 
-      expect(response).to redirect_to(dashboard_inbox_path(kind: Inbox::Queue::PLAN_REVIEW_KIND))
+      expect(response).to redirect_to(inbox_path(kind: Inbox::Queue::PLAN_REVIEW_KIND))
       expect(workflow_handle).to have_received(:signal).with("approve_plan")
     end
   end
@@ -116,14 +116,14 @@ RSpec.describe "Plan reviews" do
       review = create_plan_review(project:, issue:, workflow_id: "workflow-open")
 
       post revise_plan_review_path(review), params: {
-        return_to: dashboard_inbox_path(kind: Inbox::Queue::PLAN_REVIEW_KIND),
+        return_to: inbox_path(kind: Inbox::Queue::PLAN_REVIEW_KIND),
         tasks: [
           { title: "Revised task 1", description: "Better approach" },
           { title: "Revised task 2", description: "Follow-up implementation" }
         ]
       }
 
-      expect(response).to redirect_to(dashboard_inbox_path(kind: Inbox::Queue::PLAN_REVIEW_KIND))
+      expect(response).to redirect_to(inbox_path(kind: Inbox::Queue::PLAN_REVIEW_KIND))
       expect(flash[:notice]).to eq("Plan revised. Sub-issues will be created with the updated plan.")
       expect(workflow_handle).to have_received(:signal).with(
         "revise_plan",

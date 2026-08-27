@@ -263,6 +263,8 @@ module Screenshots
     # Maps a controller file path to the target keys whose pages that controller serves.
     CONTROLLER_TARGETS = {
       "dashboard_controller.rb" => [ :dashboard ],
+      "inbox_controller.rb" => [ :dashboard ],
+      "legacy_inbox_redirects_controller.rb" => [ :dashboard ],
       "home_controller.rb" => [ :dashboard ],
       "projects_controller.rb" => %i[projects project_new project_show project_edit],
       "previews_controller.rb" => [ :preview_session_show ],
@@ -548,6 +550,7 @@ module Screenshots
       when /\Adevise\/shared\// then %i[sign_in sign_up forgot_password confirmation unlock]
       when /\Adevise\// then [ :sign_in ]
       when /\Adashboard\//, "dashboard/show.html.erb" then [ :dashboard ]
+      when /\Ainbox\// then [ :dashboard ]
       when /\Ahome\// then [ :dashboard ]
       when /\Anotifications\// then [ :notifications ]
       when /\Aonboarding\// then [ :onboarding ]

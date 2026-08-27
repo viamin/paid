@@ -16,14 +16,14 @@
   <div class="flex flex-wrap items-center gap-3">
     <%= button_to approve_plan_review_path(entry.record),
           method: :post,
-          params: { return_to: dashboard_inbox_path(project_id: scoped_project&.id, kind: selected_kind) },
+          params: { return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },
           class: "inline-flex items-center rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500" do %>
       Approve
     <% end %>
 
     <%= button_to reject_plan_review_path(entry.record),
           method: :post,
-          params: { return_to: dashboard_inbox_path(project_id: scoped_project&.id, kind: selected_kind) },
+          params: { return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },
           class: "inline-flex items-center rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500",
           form: { data: { turbo_confirm: "Reject this plan? No sub-issues will be created." } } do %>
       Reject
@@ -37,7 +37,7 @@
     </p>
 
     <%= form_with url: revise_plan_review_path(entry.record), method: :post, class: "mt-4 space-y-4" do %>
-      <%= hidden_field_tag :return_to, dashboard_inbox_path(project_id: scoped_project&.id, kind: selected_kind) %>
+      <%= hidden_field_tag :return_to, inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
 
       <% entry.tasks.each_with_index do |task, index| %>
         <% title_id = "entry_#{entry.record.id}_task_#{index}_title" %>

@@ -20,6 +20,10 @@ module Inbox
       :tasks,
       keyword_init: true
     ) do
+      def to_param
+        id
+      end
+
       def plan_review?
         kind == PLAN_REVIEW_KIND
       end

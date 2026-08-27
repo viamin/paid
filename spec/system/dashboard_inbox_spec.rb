@@ -6,7 +6,7 @@ require "rails_helper"
 # desktop split is rendered with both panes, that the inline one-page form
 # is present, and that the master/detail collapse is wired for mobile via
 # the inbox-master-detail Stimulus controller.
-RSpec.describe "Dashboard inbox split pane", system_driver: :rack_test, type: :system do
+RSpec.describe "Inbox split pane", system_driver: :rack_test, type: :system do
   let!(:account) { create(:account) }
   let!(:user) { create(:user, :owner, account: account, email: "owner@example.com", password: "password123") }
   let!(:project) do
@@ -35,7 +35,7 @@ RSpec.describe "Dashboard inbox split pane", system_driver: :rack_test, type: :s
     create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
 
     sign_in_as(user)
-    visit dashboard_inbox_path(
+    visit inbox_path(
       project_id: project.id,
       kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND
     )
@@ -55,7 +55,7 @@ RSpec.describe "Dashboard inbox split pane", system_driver: :rack_test, type: :s
     create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
 
     sign_in_as(user)
-    visit dashboard_inbox_path(project_id: project.id)
+    visit inbox_path(project_id: project.id)
 
     form = page.find(%(form[action="#{project_issue_clarifying_questions_path(project, project.issues.first)}"]))
 
@@ -66,12 +66,10 @@ RSpec.describe "Dashboard inbox split pane", system_driver: :rack_test, type: :s
     create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
 
     sign_in_as(user)
-    visit dashboard_inbox_path(
+    visit inbox_entry_path(
+      "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{project.issues.first.id}",
       project_id: project.id,
-      kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
-      view: "detail",
-      entry_kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
-      entry_id: project.issues.first.id
+      kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND
     )
 
     master_detail = page.find("[data-controller~='inbox-master-detail']", visible: false)
@@ -82,7 +80,7 @@ RSpec.describe "Dashboard inbox split pane", system_driver: :rack_test, type: :s
 
   it "renders the empty inbox state without a list or detail frame" do
     sign_in_as(user)
-    visit dashboard_inbox_path
+    visit inbox_path
 
     expect(page).to have_content("Inbox clear")
     expect(page).to have_no_css("turbo-frame#inbox-detail")
@@ -93,12 +91,10 @@ RSpec.describe "Dashboard inbox split pane", system_driver: :rack_test, type: :s
     pr = project.issues.first
 
     sign_in_as(user)
-    visit dashboard_inbox_path(
+    visit inbox_entry_path(
+      "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{pr.id}",
       project_id: project.id,
-      kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
-      view: "detail",
-      entry_kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
-      entry_id: pr.id
+      kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND
     )
 
     form = page.find(%(form[action="#{project_issue_clarifying_questions_path(project, pr)}"]))

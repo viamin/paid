@@ -7,7 +7,7 @@ class PlanReviewsController < ApplicationController
   skip_after_action :verify_policy_scoped, only: :index
 
   def index
-    redirect_to dashboard_inbox_path(kind: Inbox::Queue::PLAN_REVIEW_KIND), status: :see_other
+    redirect_to inbox_path(kind: Inbox::Queue::PLAN_REVIEW_KIND), status: :see_other
   end
 
   def approve
@@ -60,8 +60,8 @@ class PlanReviewsController < ApplicationController
 
   def redirect_target
     requested = normalized_return_to(params[:return_to])
-    return requested if requested.present? && requested.start_with?(dashboard_inbox_path)
+    return requested if requested.present? && requested.start_with?(inbox_path)
 
-    dashboard_inbox_path(kind: Inbox::Queue::PLAN_REVIEW_KIND)
+    inbox_path(kind: Inbox::Queue::PLAN_REVIEW_KIND)
   end
 end
