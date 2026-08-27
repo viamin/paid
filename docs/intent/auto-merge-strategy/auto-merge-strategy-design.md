@@ -27,7 +27,15 @@ PR strategy discussed in RDR-022.
 The core strategy is policy-only. Upstream scan layers gather signals about
 approvals, CI, mergeability, stale reviews, review feedback, and dependency
 resolution, then `Automation::Strategies::AutoMerge` converts those signals
-into either a merge decision or a noop.
+into either a merge decision or a blocker snapshot that records exactly which
+signals failed and which later checks were not evaluated because an earlier
+gate already failed.
+
+Auto-merge diagnostics read from that persisted snapshot instead of
+re-evaluating eligibility a second time. The PR scan writes the snapshot onto
+the synced issue row alongside `last_pr_scan_at`, so UI and chat surfaces can
+report the same blockers the merge path used without making fresh GitHub API
+calls or re-implementing the policy.
 
 Human-authored PRs take the stricter path. They require owner approval,
 successful checks, mergeability, fresh reviews for the current head, no
@@ -53,8 +61,10 @@ the classification decision is logged so a stall is diagnosable.
 
 Bot-authored dependency PRs take the narrower trusted path. Dependabot-like PRs
 may skip owner-approval and review-feedback gates, but they still require the
-project to permit dependency auto-merge, green checks, mergeability, and
-resolved dependencies.
+project to permit dependency auto-merge, a supported executor author, green
+checks, mergeability, and resolved dependencies. Today the merge executor is
+Dependabot-specific, so other trusted dependency-update bots may be scanned and
+diagnosed but are not reported as auto-merge-ready.
 
 Execution is incremental rather than umbrella-driven. The dedicated
 `DependabotAutoMergeJob` evaluates candidate PRs, merges at most one green PR

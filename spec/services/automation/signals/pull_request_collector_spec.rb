@@ -250,7 +250,7 @@ RSpec.describe Automation::Signals::PullRequestCollector do
     end
   end
 
-  # @spec AUTO-MERGE-005
+  # @spec AUTO-MERGE-006
   describe "#only_base_merge_commits_since?" do
     def approval_sha
       "approved_sha"

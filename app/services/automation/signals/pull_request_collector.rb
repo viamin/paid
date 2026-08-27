@@ -202,7 +202,7 @@ module Automation
       # +approval_sha+ and +head_sha+ (inclusive of head, exclusive of
       # approval) is a clean merge of +base_branch+ into the feature
       # branch — i.e. no author-side content changed since the approval.
-      # See AUTO-MERGE-005: a clean merge carries an identical tree to
+      # See AUTO-MERGE-006: a clean merge carries an identical tree to
       # its first parent and merges a side that is reachable from the
       # base branch tip, so no new code reached the PR head.
       #
