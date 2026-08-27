@@ -78,6 +78,16 @@ RSpec.describe "Projects::CostDashboards" do
 
         expect(response.body).to include('<dt class="truncate text-sm font-medium text-gray-500">Total Cost</dt>')
         expect(response.body).to include("$1.20")
+
+        # The LLM-only breakdown sections must not silently disappear just
+        # because the combined total (shown above) is driven by infra spend
+        # rather than token spend — they render, explicitly labeled as
+        # LLM-only, instead of vanishing next to a non-zero "Total Cost" card.
+        expect(response.body).to include("Cost by Outcome (LLM Only)")
+        expect(response.body).to include("Cost by Goal Type (LLM Only)")
+        expect(response.body).to include("Cost by Tier (LLM Only)")
+        expect(response.body).to include("Cost Trend (Last 30 Days) (LLM Only)")
+        expect(response.body).to include("No LLM cost data available yet.")
       end
 
       it "renders summary cards from combined cost when only pending infra spend exists" do

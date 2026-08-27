@@ -60,11 +60,14 @@
     </div>
   <% end %>
 
-  <%# Cost by Outcome — hidden when no cost data %>
-  <% if summary[:total_cost_cents].to_i > 0 %>
+  <%# Cost by Outcome — LLM run costs only (infra spend isn't attributed to
+      an outcome); gated on the same combined total as the summary cards so
+      an infra-only project still sees this section instead of it vanishing
+      while the top "Total Cost" card shows non-zero spend. %>
+  <% if summary[:total_variable_cost_cents].to_i > 0 %>
     <div class="mt-8">
-      <h2 class="text-lg font-semibold text-gray-900">Cost by Outcome</h2>
-      <p class="mt-1 text-sm text-gray-500">Separate successful run costs from failed/timed-out runs.</p>
+      <h2 class="text-lg font-semibold text-gray-900">Cost by Outcome (LLM Only)</h2>
+      <p class="mt-1 text-sm text-gray-500">Separate successful run costs from failed/timed-out runs. Infrastructure spend isn't included.</p>
       <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <% @stats[:cost_by_outcome].each do |outcome, perf| %>
           <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
@@ -92,11 +95,11 @@
     </div>
   <% end %>
 
-  <%# Cost by Goal Type — hidden when no cost data %>
-  <% if summary[:total_cost_cents].to_i > 0 %>
+  <%# Cost by Goal Type — LLM run costs only (see Cost by Outcome above) %>
+  <% if summary[:total_variable_cost_cents].to_i > 0 %>
     <div class="mt-8">
-      <h2 class="text-lg font-semibold text-gray-900">Cost by Goal Type</h2>
-      <p class="mt-1 text-sm text-gray-500">Compare costs across different types of agent work.</p>
+      <h2 class="text-lg font-semibold text-gray-900">Cost by Goal Type (LLM Only)</h2>
+      <p class="mt-1 text-sm text-gray-500">Compare costs across different types of agent work. Infrastructure spend isn't included.</p>
       <% goals_with_runs = @stats[:cost_by_goal].select { |_, v| v[:run_count] > 0 } %>
       <% if goals_with_runs.any? %>
         <div class="mt-4 overflow-hidden overflow-x-auto rounded-lg bg-white shadow">
@@ -131,11 +134,11 @@
     </div>
   <% end %>
 
-  <%# Cost by Tier %>
-  <% if summary[:total_cost_cents].to_i > 0 %>
+  <%# Cost by Tier — LLM run costs only (see Cost by Outcome above) %>
+  <% if summary[:total_variable_cost_cents].to_i > 0 %>
     <div class="mt-8">
-      <h2 class="text-lg font-semibold text-gray-900">Cost by Tier</h2>
-      <p class="mt-1 text-sm text-gray-500">Spend breakdown by model selection tier.</p>
+      <h2 class="text-lg font-semibold text-gray-900">Cost by Tier (LLM Only)</h2>
+      <p class="mt-1 text-sm text-gray-500">Spend breakdown by model selection tier. Infrastructure spend isn't included.</p>
       <% tiers_with_runs = @stats[:cost_by_tier].select { |_, v| v[:run_count] > 0 } %>
       <% if tiers_with_runs.any? %>
         <div class="mt-4 overflow-hidden overflow-x-auto rounded-lg bg-white shadow">
@@ -174,9 +177,11 @@
     </div>
   <% end %>
 
-  <%# Cost Trend Chart (30 days) %>
+  <%# Cost Trend Chart (30 days) — LLM spend only; infra spend isn't tracked
+      per day, so an infra-only project will show "No LLM cost data" here
+      even though the summary cards above include its infra spend. %>
   <div class="mt-8">
-    <h2 class="text-lg font-semibold text-gray-900">Cost Trend (Last 30 Days)</h2>
+    <h2 class="text-lg font-semibold text-gray-900">Cost Trend (Last 30 Days) (LLM Only)</h2>
     <% daily_costs = @stats[:daily_costs] %>
     <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
       <% if daily_costs.any? { |_, cost_cents| cost_cents.to_i > 0 } %>
@@ -202,17 +207,18 @@
 
       <% else %>
 
-        <div class="px-4 py-5 text-sm text-gray-500">No cost data available yet.</div>
+        <div class="px-4 py-5 text-sm text-gray-500">No LLM cost data available yet.</div>
 
       <% end %>
     </div>
   </div>
 
-  <%# Cost Breakdown %>
+  <%# Cost Breakdown — LLM run costs only; infra spend has no per-model or
+      per-request-type attribution. %>
   <div class="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-2">
     <%# By Model %>
     <div>
-      <h2 class="text-lg font-semibold text-gray-900">Cost by Model</h2>
+      <h2 class="text-lg font-semibold text-gray-900">Cost by Model (LLM Only)</h2>
       <% cost_by_model = @stats[:cost_by_model] %>
       <% if cost_by_model.any? %>
         <div class="mt-4 overflow-hidden overflow-x-auto rounded-lg bg-white shadow">
@@ -242,7 +248,7 @@
 
     <%# By Request Type %>
     <div>
-      <h2 class="text-lg font-semibold text-gray-900">Cost by Request Type</h2>
+      <h2 class="text-lg font-semibold text-gray-900">Cost by Request Type (LLM Only)</h2>
       <% cost_by_type = @stats[:cost_by_request_type] %>
       <% if cost_by_type.any? %>
         <div class="mt-4 overflow-hidden overflow-x-auto rounded-lg bg-white shadow">
