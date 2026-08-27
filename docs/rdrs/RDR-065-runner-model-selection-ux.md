@@ -225,8 +225,8 @@ The model selection UX resolves to four cases:
 - `specific` — Case 1, Case 3, and Case 4. Default for new direct-outbound runners.
 - `free` — Case 2. Valid only for the `openrouter_free` runner today (post-closeout: the policy will port to other OpenRouter-keyed runners in #3673, but only when the `runner_model_policy_form` flag is on).
 
-Ship behind `runner_model_policy_form`. The RDR closes out through #3672 after
-#3671 flips and removes the rollout flag.
+Ship behind `runner_model_policy_form`. The RDR closes out through #3672
+after #3671 flips and removes the rollout flag.
 
 ## Goals
 
