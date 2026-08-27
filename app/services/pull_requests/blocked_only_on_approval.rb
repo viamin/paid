@@ -136,13 +136,16 @@ module PullRequests
       agent_login.present? && login.casecmp?(agent_login)
     end
 
+    # Latest-wins, matching the scan's owner_approved_from_reviews?: an
+    # owner APPROVED review followed by a later non-approving review (e.g.
+    # COMMENTED) must not count as an outstanding approval.
     def owner_approved_from_reviews?(reviews)
       owner_login = @project.owner_reviewer_login
       return false if owner_login.blank?
 
-      reviews.any? do |review|
-        review[:user_login]&.casecmp?(owner_login) && review[:state].to_s.upcase == "APPROVED"
-      end
+      owner_reviews = reviews.select { |r| r[:user_login]&.casecmp?(owner_login) }
+      latest = owner_reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
+      latest && latest[:state].to_s.upcase == "APPROVED"
     end
 
     def build_signals(pr_data:, checks:, reviews:, unresolved_threads:)
@@ -259,8 +262,9 @@ module PullRequests
     # authoritative signal — no risk of a stale local copy. Each signal
     # below corresponds to one of the blockers the scan watches:
     #
-    # * unresolved review threads (any comment on an open thread is feedback)
-    # * a CHANGES_REQUESTED review from a trusted non-bot user
+    # * unresolved review threads with a trusted-human or enabled-bot comment
+    # * a CHANGES_REQUESTED review from a trusted non-bot user, not yet
+    #   addressed by a later completed run
     # * the paid-skip-auto-merge label on the PR (handled in quick_preconditions)
     #
     # Conversation comments are intentionally not checked here: by the time a
@@ -269,18 +273,75 @@ module PullRequests
     # scan and escalation means the scan's own next iteration would advance
     # the PR off the ready phase before the activity ran anyway.
     def no_outstanding_review_feedback?(pr_data, reviews, unresolved_threads)
-      return false if unresolved_threads.any?
+      return false if outstanding_review_threads?(unresolved_threads)
       return false if changes_requested?(reviews)
 
       true
     end
 
-    def changes_requested?(reviews)
-      reviews.any? do |review|
-        review[:state].to_s.upcase == "CHANGES_REQUESTED" &&
-          @project.trusted_github_user?(review[:user_login]) &&
-          !bot_user?(review[:user_login])
+    # Mirrors the scan's human_review_thread_triggers + review_bot_thread_triggers:
+    # only a thread with a comment from a trusted non-bot user, or from a
+    # review bot in the project's enabled set, counts as outstanding
+    # feedback. A thread left by an untrusted drive-by commenter, or by a
+    # bot the project has not enabled, does not block the scan and must not
+    # veto this re-validation either.
+    def outstanding_review_threads?(unresolved_threads)
+      allowed_bot_logins = allowed_review_bot_logins
+
+      unresolved_threads.any? do |thread|
+        thread[:comments].any? do |comment|
+          trusted_human_comment?(comment[:author]) || enabled_bot_comment?(comment[:author], allowed_bot_logins)
+        end
       end
+    end
+
+    def trusted_human_comment?(author)
+      @project.trusted_github_user?(author) && !bot_user?(author)
+    end
+
+    def enabled_bot_comment?(author, allowed_bot_logins)
+      return false unless RunnerSupport.runner_bot_username?(author)
+      return true if allowed_bot_logins.nil?
+
+      allowed_bot_logins.include?(author&.downcase)
+    end
+
+    # nil means "no filtering" (review disabled); an empty Set means
+    # "review enabled but no bots configured" — mirrors the scan's
+    # allowed_review_bot_logins so both sides treat an unconfigured bot
+    # method the same way.
+    def allowed_review_bot_logins
+      return nil unless @project.review_enabled?
+
+      @project.enabled_review_bot_logins.presence || Set.new
+    end
+
+    # Latest-wins per trusted reviewer, and suppressed when the review
+    # predates the last completed run in this PR's history — mirrors the
+    # scan's changes_requested_from_reviews so feedback a follow-up run
+    # already addressed does not veto the escalation forever.
+    def changes_requested?(reviews)
+      cutoff = last_completed_run&.completed_at
+
+      latest_by_trusted_user(reviews).any? do |review|
+        review[:state].to_s.upcase == "CHANGES_REQUESTED" &&
+          (cutoff.nil? || review[:submitted_at].nil? || review[:submitted_at] > cutoff)
+      end
+    end
+
+    def latest_by_trusted_user(reviews)
+      reviews
+        .select { |r| @project.trusted_github_user?(r[:user_login]) && !bot_user?(r[:user_login]) }
+        .group_by { |r| r[:user_login]&.downcase }
+        .transform_values { |user_reviews| user_reviews.max_by { |r| r[:submitted_at] || Time.at(0) } }
+        .values
+    end
+
+    def last_completed_run
+      AgentRun.pr_history_scope(project: @project, issue: @issue, pr_number: @issue.github_number)
+        .completed
+        .order(completed_at: :desc)
+        .first
     end
 
     def bot_user?(login)

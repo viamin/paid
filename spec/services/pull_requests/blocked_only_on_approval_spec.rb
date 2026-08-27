@@ -191,6 +191,66 @@ RSpec.describe PullRequests::BlockedOnlyOnApproval do
       expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(false)
     end
 
+    it "returns true when the owner's APPROVED review is followed by a later COMMENTED review (latest-wins)" do
+      sha = "abc123"
+      stub_pr_data(green_pr_data(sha: sha))
+      stub_checks(sha, green_checks)
+      stub_reviews(
+        green_reviews + [
+          { id: 1, user_login: "viamin", state: "APPROVED", body: "LGTM", submitted_at: 2.hours.ago },
+          { id: 2, user_login: "viamin", state: "COMMENTED", body: "actually, one nit", submitted_at: 1.hour.ago }
+        ]
+      )
+      stub_review_threads([])
+      stub_head_commit(sha: sha, date: 3.hours.ago)
+      stub_issue_comments
+
+      expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(true)
+    end
+
+    it "returns true when an unresolved thread's only comment is from an untrusted drive-by user" do
+      sha = "abc123"
+      thread = OpenStruct.new(
+        id: "thread-1",
+        is_resolved: false,
+        comments: [
+          OpenStruct.new(author: "random-passerby", body: "?", path: "x", line: 1,
+            created_at: Time.current, commit_id: sha)
+        ]
+      )
+      stub_pr_data(green_pr_data(sha: sha))
+      stub_checks(sha, green_checks)
+      stub_reviews(green_reviews)
+      stub_review_threads([ thread ])
+      stub_head_commit(sha: sha)
+      stub_issue_comments
+
+      expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(true)
+    end
+
+    it "returns true when CHANGES_REQUESTED predates the last completed run (already addressed)" do
+      sha = "abc123"
+      run = create(:agent_run,
+        project: project,
+        issue: issue,
+        goal: "create_pr",
+        status: "completed",
+        completed_at: 1.hour.ago)
+      stub_pr_data(green_pr_data(sha: sha))
+      stub_checks(sha, green_checks)
+      stub_reviews(
+        green_reviews + [
+          { id: 1, user_login: "viamin", state: "CHANGES_REQUESTED", body: "Please fix", submitted_at: 2.hours.ago }
+        ]
+      )
+      stub_review_threads([])
+      stub_head_commit(sha: sha, date: 3.hours.ago)
+      stub_issue_comments
+
+      expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(true)
+      expect(run).to be_persisted
+    end
+
     it "returns false when the GitHub API fails to fetch PR data (safe default)" do
       allow(client).to receive(:pull_request).and_raise(GithubClient::Error, "transient")
 
