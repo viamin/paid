@@ -75,7 +75,7 @@ module Runners
       # are OpenRouter-reachable model ids, so they belong in the OpenRouter
       # dropdown alongside provider-scoped rows (e.g. the Pareto row).
       relation = relation.or(LlmModel.active.openrouter_synced) if api_provider == FREE_POLICY_API_PROVIDER
-      relation.order(:family).by_capability
+      relation.order(Arel.sql("family ASC NULLS LAST")).by_capability
     end
 
     def runner_model_compatible?(model) # @spec RUNNER-MODEL-OPTIONS-002 @spec MODEL-SELECTION-005
