@@ -226,7 +226,12 @@ export default class extends Controller {
       const modelSelect = this.dynamicModelSelectTargets.find(
         (target) => target.dataset.runnerKey === runnerKey
       )
-      return modelSelect?.dataset.currentServiceType || null
+      const cachedServiceType = modelSelect?.dataset.currentServiceType
+      if (this.dynamicServiceTypesFor(runnerKey).has(cachedServiceType)) {
+        return cachedServiceType
+      }
+
+      return null
     }
 
     // Returns null for unknown/unmapped runners (e.g. copilot), which causes

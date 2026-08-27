@@ -63,10 +63,17 @@ class RunnerFormControllerNodeHarness
       };
       apiKeyOptions[1].selected = true;
 
-      const modelSelect = buildSelect({
+      const opencodeModelSelect = buildSelect({
         runnerKey: "opencode",
         optionsByServiceType: {
           openrouter: [["Kimi K2", "moonshotai/kimi-k2-0905"]],
+          anthropic: [["Claude Sonnet 4", "claude-sonnet-4-20250514"]]
+        }
+      });
+      const piModelSelect = buildSelect({
+        runnerKey: "pi",
+        currentServiceType: "openrouter",
+        optionsByServiceType: {
           anthropic: [["Claude Sonnet 4", "claude-sonnet-4-20250514"]]
         }
       });
@@ -75,7 +82,7 @@ class RunnerFormControllerNodeHarness
       controller.hasApiKeySelectTarget = true;
       controller.apiKeySelectTarget = apiKeySelect;
       controller.apiKeyOptionTargets = apiKeyOptions;
-      controller.dynamicModelSelectTargets = [modelSelect];
+      controller.dynamicModelSelectTargets = [opencodeModelSelect, piModelSelect];
       controller.runnerSelectTargets = [{ disabled: false, value: "opencode" }];
       controller.subscriptionFieldsTargets = [];
       controller.apiKeyFieldsTargets = [];
@@ -93,7 +100,7 @@ class RunnerFormControllerNodeHarness
         }
       };
 
-      return { controller, apiKeyOptions, apiKeySelect, modelSelect };
+      return { controller, apiKeyOptions, apiKeySelect, opencodeModelSelect, piModelSelect };
     }
 
     function selectedOption(apiKeyOptions, value) {
@@ -111,11 +118,11 @@ class RunnerFormControllerNodeHarness
 
       harness.controller.refreshDynamicModelOptions("opencode");
 
-      if (harness.modelSelect.options[1]?.value !== "moonshotai/kimi-k2-0905") {
-        throw new Error(`Expected openrouter key to render openrouter models, saw ${harness.modelSelect.options.map((option) => option.value).join(",")}`);
+      if (harness.opencodeModelSelect.options[1]?.value !== "moonshotai/kimi-k2-0905") {
+        throw new Error(`Expected openrouter key to render openrouter models, saw ${harness.opencodeModelSelect.options.map((option) => option.value).join(",")}`);
       }
 
-      if (harness.modelSelect.options.some((option) => option.value === "claude-sonnet-4-20250514")) {
+      if (harness.opencodeModelSelect.options.some((option) => option.value === "claude-sonnet-4-20250514")) {
         throw new Error("Expected openrouter key to exclude anthropic models");
       }
 
@@ -132,12 +139,47 @@ class RunnerFormControllerNodeHarness
         throw new Error(`Expected requiredApiServiceTypeFor() to read the selected key's service type, saw ${harness.controller.requiredApiServiceTypeFor("opencode")}`);
       }
 
-      if (harness.modelSelect.options[1]?.value !== "claude-sonnet-4-20250514") {
-        throw new Error(`Expected anthropic key to render anthropic models, saw ${harness.modelSelect.options.map((option) => option.value).join(",")}`);
+      if (harness.opencodeModelSelect.options[1]?.value !== "claude-sonnet-4-20250514") {
+        throw new Error(`Expected anthropic key to render anthropic models, saw ${harness.opencodeModelSelect.options.map((option) => option.value).join(",")}`);
       }
 
-      if (harness.modelSelect.options.some((option) => option.value === "moonshotai/kimi-k2-0905")) {
+      if (harness.opencodeModelSelect.options.some((option) => option.value === "moonshotai/kimi-k2-0905")) {
         throw new Error("Expected anthropic key change to clear openrouter-only models");
+      }
+
+      harness.apiKeyOptions.forEach((option) => {
+        option.selected = false;
+      });
+      harness.apiKeyOptions[1].selected = true;
+      harness.apiKeySelect.value = "1";
+      harness.apiKeySelect.selectedOptions = [selectedOption(harness.apiKeyOptions, "1")];
+
+      harness.controller.refreshDynamicModelOptions("opencode");
+
+      if (harness.controller.requiredApiServiceTypeFor("opencode") !== "openrouter") {
+        throw new Error(`Expected opencode to switch back to the openrouter key before changing runners, saw ${harness.controller.requiredApiServiceTypeFor("opencode")}`);
+      }
+
+      harness.apiKeyOptions.forEach((option) => {
+        option.selected = false;
+      });
+      harness.apiKeySelect.value = "";
+      harness.apiKeySelect.selectedOptions = [selectedOption(harness.apiKeyOptions, "")];
+      harness.controller.runnerSelectTargets[0].value = "pi";
+
+      harness.controller.refreshApiKeyOptions("pi");
+      harness.controller.refreshDynamicModelOptions("pi");
+
+      if (harness.controller.requiredApiServiceTypeFor("pi") !== null) {
+        throw new Error(`Expected pi to clear stale cached service types after switching runners, saw ${harness.controller.requiredApiServiceTypeFor("pi")}`);
+      }
+
+      if (harness.piModelSelect.options[0]?.text !== "Select an API key first") {
+        throw new Error(`Expected pi placeholder to prompt for an API key first, saw ${harness.piModelSelect.options[0]?.text}`);
+      }
+
+      if (!harness.piModelSelect.disabled) {
+        throw new Error("Expected pi model select to stay disabled until a compatible API key is selected");
       }
     }
 
