@@ -450,6 +450,7 @@ RSpec.describe "Projects::ClarifyingQuestions" do
       end
     end
 
+    # @spec OPERATOR-INBOX-008
     context "when submitted from the inbox detail pane" do
       let(:questions) { [ "What is the expected behavior?", "Should this be behind a flag?" ] }
       let(:answers) { [ "X is a feature", "Yes, by default" ] }
@@ -673,6 +674,55 @@ RSpec.describe "Projects::ClarifyingQuestions" do
           .css("textarea[name='answers[]']")
 
         expect(textareas.map(&:text).map(&:strip)).to eq([ "", "" ])
+      end
+
+      it "scrubs an answer truncated mid multi-byte character instead of corrupting the session" do
+        project.update!(auto_pick_enabled: true, active: true)
+        allow(github_client).to receive(:add_comment).and_raise(GithubClient::Error, "boom")
+        max_bytes = Projects::ClarifyingQuestionsController::MAX_PENDING_ANSWER_BYTES
+        # Byte 2,000 falls inside the multi-byte "日" character, so a bare
+        # `byteslice` here would leave an invalid UTF-8 tail. This answer's
+        # trimmed size also exceeds the total pending-answers budget, so the
+        # safe outcome is the documented drop-to-empty fallback -- the
+        # regression this guards against is a raised JSON::GeneratorError
+        # (or an ArgumentError from invalid encoding) when the flash is
+        # committed to the session cookie, not the exact prefilled content.
+        boundary_split_answer = ("x" * (max_bytes - 2)) + "日" + ("z" * 50)
+
+        expect {
+          submit_inbox_answers(
+            issue:,
+            questions:,
+            answers: [ boundary_split_answer, "Second answer" ],
+            inbox_project_id: project.id
+          )
+          follow_redirect!
+        }.not_to raise_error
+
+        textareas = Nokogiri::HTML(response.body)
+          .at_css("turbo-frame#inbox-detail")
+          .css("textarea[name='answers[]']")
+
+        expect(textareas.map(&:text).map(&:strip)).to eq([ "", "" ])
+      end
+
+      it "does not overflow the session cookie when ASCII answers approach the documented per-answer caps" do
+        project.update!(auto_pick_enabled: true, active: true)
+        allow(github_client).to receive(:add_comment).and_raise(GithubClient::Error, "boom")
+        first_answer = "a" * 1_990
+        second_answer = "b" * 1_000
+
+        expect {
+          submit_inbox_answers(
+            issue:,
+            questions:,
+            answers: [ first_answer, second_answer ],
+            inbox_project_id: project.id
+          )
+          follow_redirect!
+        }.not_to raise_error
+
+        expect(response).to have_http_status(:ok)
       end
 
       it "drops the prefill when the submitted questions no longer match the issue" do

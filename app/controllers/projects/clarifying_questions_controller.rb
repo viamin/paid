@@ -6,10 +6,13 @@ module Projects
     # Each answer is trimmed to this length before storage.
     MAX_PENDING_ANSWER_BYTES = 2_000
     # Total byte cap for the entire pending-answers payload (all answers for
-    # one issue). CookieStore sessions have a ~4KB ceiling; we leave headroom
-    # for the rest of the session so we never overflow and silently drop the
-    # prefill rather than corrupt the cookie.
-    MAX_PENDING_ANSWERS_BYTES = 3_000
+    # one issue), measured on the JSON-serialized form (matching how the
+    # session cookie actually encodes flash data: \uXXXX-escaped non-ASCII,
+    # then encrypted/MAC'd and base64'd on top, which roughly doubles the
+    # payload before session_id/warden key/alert are even added). CookieStore
+    # sessions have a ~4KB ceiling; we leave generous headroom so we never
+    # overflow and silently drop the prefill rather than corrupt the cookie.
+    MAX_PENDING_ANSWERS_BYTES = 1_500
 
     before_action :authenticate_user!
     before_action :set_project
@@ -102,6 +105,7 @@ module Projects
       %w[dashboard_needs_input dashboard_inbox].include?(queue_param)
     end
 
+    # @spec OPERATOR-INBOX-008
     # The inbox detail pane is a one-page form that submits with `inbox=1`.
     # On success the controller redirects to the next inbox entry so the
     # frame auto-loads; on error it bounces back into the same frame so the
@@ -228,6 +232,7 @@ module Projects
       queue_scope_issues(project: queue_project).any? { |issue| issue.id == @issue.id }
     end
 
+    # @spec OPERATOR-INBOX-008
     # Builds the success-redirect path the inbox form lands on. When a next
     # entry is available, auto-advance points the detail frame at it; when
     # the queue is drained, falls back to the bare inbox index so the
@@ -316,6 +321,7 @@ module Projects
       )
     end
 
+    # @spec OPERATOR-INBOX-008
     # When the inbox form fails we redirect back into the same frame, which
     # otherwise renders every textarea empty. Stash the submitted answers in
     # a one-shot flash keyed by issue id so the inbox detail partial can
@@ -330,8 +336,8 @@ module Projects
       submitted = Array(params[:answers]).map { |answer| answer.to_s }
       return if submitted.empty?
 
-      trimmed = submitted.map { |answer| answer.byteslice(0, MAX_PENDING_ANSWER_BYTES) }
-      return if trimmed.sum(&:bytesize) > MAX_PENDING_ANSWERS_BYTES
+      trimmed = submitted.map { |answer| answer.byteslice(0, MAX_PENDING_ANSWER_BYTES).scrub("") }
+      return if trimmed.sum { |answer| ActiveSupport::JSON.encode(answer).bytesize } > MAX_PENDING_ANSWERS_BYTES
 
       pending = flash[:inbox_pending_answers] || {}
       pending[@issue.id.to_s] = trimmed
