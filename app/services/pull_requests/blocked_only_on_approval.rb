@@ -37,6 +37,7 @@ module PullRequests
 
       pr_data = fetch_pull_request
       return false if pr_data.nil?
+      return false if draft?(pr_data) || closed?(pr_data)
       return false unless mergeable?(pr_data)
 
       checks = fetch_check_runs(pr_data)
@@ -100,6 +101,15 @@ module PullRequests
 
     def mergeable?(pr_data)
       pr_data.respond_to?(:mergeable) ? pr_data.mergeable == true : pr_data[:mergeable] == true
+    end
+
+    def draft?(pr_data)
+      pr_data.respond_to?(:draft) ? pr_data.draft == true : pr_data[:draft] == true
+    end
+
+    def closed?(pr_data)
+      state = pr_data.respond_to?(:state) ? pr_data.state : pr_data[:state]
+      state.to_s.casecmp?("closed")
     end
 
     def all_checks_green?(checks)

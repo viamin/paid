@@ -24,12 +24,13 @@ RSpec.describe PullRequests::BlockedOnlyOnApproval do
     allow(GithubClient).to receive(:new).and_return(client)
   end
 
-  def green_pr_data(sha: "abc123", mergeable: true, login: "someone-else")
+  def green_pr_data(sha: "abc123", mergeable: true, draft: false, state: "open", login: "someone-else")
     OpenStruct.new(
       head: OpenStruct.new(sha: sha, repo: OpenStruct.new(fork: false)),
       mergeable: mergeable,
-      draft: false,
+      draft: draft,
       number: issue.github_number,
+      state: state,
       user: OpenStruct.new(login: login)
     )
   end
@@ -127,6 +128,20 @@ RSpec.describe PullRequests::BlockedOnlyOnApproval do
       stub_review_threads([])
       stub_head_commit(sha: sha)
       stub_issue_comments
+
+      expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(false)
+    end
+
+    # @spec PR-ESCALATION-025
+    it "returns false when the PR was converted to draft since the scan" do
+      stub_pr_data(green_pr_data(draft: true))
+
+      expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(false)
+    end
+
+    # @spec PR-ESCALATION-025
+    it "returns false when the PR was closed on GitHub since the scan" do
+      stub_pr_data(green_pr_data(state: "closed"))
 
       expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(false)
     end
