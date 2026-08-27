@@ -29,9 +29,19 @@ class AgentRunResourceJanitorJob < ApplicationJob
     container_cleaned = cleanup_container(agent_run)
     volume_cleaned = cleanup_volume(agent_run)
     cleanup_succeeded = resource_was_active || container_cleaned || volume_cleaned
+    # @spec EXEC-USAGE-009
+    # Always attempt to record usage regardless of cleanup_succeeded: a
+    # transient record_execution_usage failure on a previous pass, or a
+    # teardown that already happened, leaves the resource absent on this
+    # run (container_id nil, volume removed, resource already cleaned),
+    # but the run still needs its terminal usage row backfilled — gating
+    # on cleanup_succeeded here would skip recording forever. The
+    # recorder itself early-returns when provisioning_started_at or
+    # container_host is blank, so this is safe for runs that never
+    # reached provisioning.
+    record_execution_usage(agent_run, resource_snapshot)
     if cleanup_succeeded
       ExecutionResource.mark_cleaned_for!(agent_run: agent_run)
-      record_execution_usage(agent_run, resource_snapshot)
     end
 
     Rails.logger.info(

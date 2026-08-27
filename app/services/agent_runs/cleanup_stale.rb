@@ -157,18 +157,25 @@ module AgentRuns
       cleanup_service_containers(agent_run, old_resources)
     end
 
-    def cleanup_container(agent_run, old_resources)
+    def cleanup_container(agent_run, old_resources) # @spec EXEC-USAGE-009
       old_container_id = old_resources[:container_id]
-      return if old_container_id.blank?
+      if old_container_id.present?
+        AgentRun.where(id: agent_run.id, container_id: old_container_id).update_all(container_id: nil)
 
-      AgentRun.where(id: agent_run.id, container_id: old_container_id).update_all(container_id: nil)
-
-      service = Containers::Provision.reconnect(
-        agent_run: agent_run,
-        container_id: old_container_id,
-        worktree_path: agent_run.worktree_path
-      )
-      service.cleanup(force: true)
+        service = Containers::Provision.reconnect(
+          agent_run: agent_run,
+          container_id: old_container_id,
+          worktree_path: agent_run.worktree_path
+        )
+        service.cleanup(force: true)
+      end
+      # Record whenever a container_host is present — a stale run that
+      # reached provisioning (provisioning_started_at and
+      # planned_container_host set) but never persisted a container_id
+      # has no cleanup branch to enter above yet still needs its terminal
+      # usage row created. record_execution_usage! early-returns when
+      # container_host is blank, so this is safe for runs that never
+      # reached provisioning at all.
       record_execution_usage(agent_run, old_resources)
     rescue Docker::Error::NotFoundError
       record_execution_usage(agent_run, old_resources)

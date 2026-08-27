@@ -114,6 +114,33 @@ RSpec.describe AgentRunResourceJanitorJob do # @spec CONTAINER-RUNTIME-032
         expect(backend).not_to have_received(:get_volume)
         expect(resource.reload).to be_cleaned
       end
+
+      it "backfills execution usage on a re-run after teardown already happened" do # @spec EXEC-USAGE-009
+        # Simulates the self-healing path: a previous janitor pass cleaned
+        # the resource but record_execution_usage failed transiently, so
+        # the run still has no ExecutionUsage row. On this re-run
+        # container_id is nil, the volume is already gone, and the
+        # tracked resource is already cleaned — every prior cleanup gate
+        # returns false, so the only path that can still record the
+        # missing usage row is an unconditional attempt to record.
+        agent_run.update_columns(
+          container_id: nil,
+          container_host: "local",
+          provisioning_started_at: 2.hours.ago,
+          started_at: 90.minutes.ago,
+          completed_at: 1.hour.ago
+        )
+        resource.mark_cleaned!
+        allow(backend).to receive(:get_volume).and_raise(Docker::Error::NotFoundError)
+
+        described_class.new.perform(agent_run.id)
+
+        usage = agent_run.reload.execution_usage
+        expect(usage).to be_present
+        expect(usage.termination_reason).to eq("completed")
+        expect(usage.provider_resource_id).to be_nil
+        expect(usage.runner_backend).to eq("local")
+      end
     end
 
     context "when agent run has an unexpired container retention TTL" do

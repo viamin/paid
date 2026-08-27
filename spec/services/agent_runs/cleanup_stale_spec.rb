@@ -200,6 +200,35 @@ RSpec.describe AgentRuns::CleanupStale do
       expect(stale_run.reload.container_id).to be_nil
     end
 
+    it "records usage for stale runs that reached provisioning but never persisted a container_id" do # @spec EXEC-USAGE-009
+      # A worker can die after record_provisioning_start! stamps
+      # provisioning_started_at and planned_container_host but before
+      # any container_id is persisted. The cleanup branch above early-
+      # returns on a blank container_id, but the run still needs its
+      # terminal usage row created so the overlap-based pending spend
+      # path stops charging it.
+      stale_run = create(:agent_run, :running, project: project,
+        started_at: AgentRun.stale_running_cutoff - 1.minute,
+        provisioning_started_at: 2.hours.ago,
+        container_id: nil,
+        container_host: nil,
+        external_metadata: { "planned_container_host" => "local" })
+      relation = instance_double(ActiveRecord::Relation)
+      provisioner = instance_double(Containers::ServiceProvisioner, cleanup: true)
+
+      allow(project.agent_runs).to receive(:stale_for_cleanup).and_return(relation)
+      allow(relation).to receive(:find_each).and_yield(stale_run)
+      allow(Containers::ServiceProvisioner).to receive(:new).and_return(provisioner)
+
+      described_class.call(project: project)
+
+      usage = stale_run.reload.execution_usage
+      expect(usage).to be_present
+      expect(usage.termination_reason).to eq("timed_out")
+      expect(usage.provider_resource_id).to be_nil
+      expect(usage.runner_backend).to eq("local")
+    end
+
     it "clears container_id even when Docker cleanup fails" do
       stale_run = create(:agent_run, :running, project: project,
         started_at: AgentRun.stale_running_cutoff - 1.minute,
