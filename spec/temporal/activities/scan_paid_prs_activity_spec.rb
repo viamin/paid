@@ -6361,6 +6361,29 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when auto-merge requires owner approval but no owner reviewer is configured" do
+      let(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+      end
+
+      before do
+        project.update!(owner_reviewer_login: nil, auto_merge_mode: "all")
+        stub_github_for_pr(author_login: "someone-else", reviews: default_clean_copilot_review)
+      end
+
+      # @spec PR-ESCALATION-025
+      it "does not start the awaiting_approval timer" do
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to eq([])
+        expect(pr_issue.reload.awaiting_approval_since).to be_nil
+      end
+    end
+
     # --- Approval-wait ceiling escalation (awaiting_approval) ---
 
     # @spec PR-ESCALATION-024

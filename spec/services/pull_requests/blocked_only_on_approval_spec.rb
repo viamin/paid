@@ -386,17 +386,10 @@ RSpec.describe PullRequests::BlockedOnlyOnApproval do
       expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(true)
     end
 
-    it "returns true when the project has no owner_reviewer_login (the scan does too)" do
+    it "returns false when the project has no owner_reviewer_login" do
       project.update!(owner_reviewer_login: nil)
-      sha = "abc123"
-      stub_pr_data(green_pr_data(sha: sha))
-      stub_checks(sha, green_checks)
-      stub_reviews([])
-      stub_review_threads([])
-      stub_head_commit(sha: sha)
-      stub_issue_comments
 
-      expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(true)
+      expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(false)
     end
 
     context "with a manual review gate configured" do

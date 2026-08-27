@@ -72,6 +72,7 @@ module PullRequests
 
     def quick_preconditions_hold?
       @project.auto_merge_enabled? &&
+        @project.owner_reviewer_login.present? &&
         @issue.github_state == "open" &&
         @issue.ready_phase? &&
         !@issue.has_label?(SKIP_AUTO_MERGE_LABEL)

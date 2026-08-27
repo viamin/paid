@@ -1059,6 +1059,7 @@ module Activities
     # warrants agent work, which is exactly why it can wait forever.
     # @spec PR-ESCALATION-025
     def blocked_only_on_approval?(project, client, issue, signals)
+      return false if project.owner_reviewer_login.blank?
       return false if signals.nil?
       return false if signals.owner_approved?
       return false unless signals.checks_green?
