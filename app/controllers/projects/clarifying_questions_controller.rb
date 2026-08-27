@@ -240,7 +240,7 @@ module Projects
     def inbox_redirect_target(next_entry:)
       notice_suffix = next_entry ? "Loading next entry." : inbox_drained_notice
       redirect_to dashboard_inbox_path(**inbox_redirect_params(selected_entry: next_entry, detail_view: next_entry.present?)),
-        notice: "Answers posted to GitHub issue ##{@issue.github_number}. #{notice_suffix}"
+        notice: "Answers posted to GitHub #{issue_kind_label} ##{@issue.github_number}. #{notice_suffix}"
     end
 
     # Resolves the next inbox entry from the same scope the user was browsing

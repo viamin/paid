@@ -432,6 +432,8 @@ RSpec.describe "Projects::ClarifyingQuestions" do
         )
         expect_pr_answers_cleared(pull_request)
         expect(response).to redirect_to(dashboard_inbox_path(kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND))
+        follow_redirect!
+        expect(response.body).to include("Answers posted to GitHub PR ##{pull_request.github_number}")
       end
     end
 

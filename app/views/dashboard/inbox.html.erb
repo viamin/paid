@@ -34,8 +34,7 @@
   </div>
 
   <% if @inbox_entries.empty? %>
-    <div class="rounded-xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center shadow-sm"
-         data-inbox-master-detail-target="empty">
+    <div class="rounded-xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center shadow-sm">
       <h2 class="text-sm font-semibold text-gray-900">Inbox clear</h2>
       <p class="mt-1 text-sm text-gray-500">
         Paid does not currently have any clarifying-question or plan-review items waiting here.
@@ -48,8 +47,7 @@
       sub-300px column. Below `lg` the master-detail Stimulus controller takes
       over and stacks the panes. %>
   <% else %>
-    <div class="grid gap-6 lg:grid-cols-[22rem,1fr]"
-         data-inbox-master-detail-target="panes">
+    <div class="grid gap-6 lg:grid-cols-[22rem,1fr]">
       <aside class="<%= @detail_view ? 'hidden lg:block' : 'block' %>"
              data-inbox-master-detail-target="list">
         <%= render "dashboard/inbox_list",

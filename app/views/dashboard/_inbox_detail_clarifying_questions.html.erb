@@ -9,7 +9,6 @@
                   data: { turbo_frame: "_top" },
                   class: "space-y-6" do |f| %>
       <%= hidden_field_tag :inbox, "1" %>
-      <%= hidden_field_tag :selected, inbox_selected_param(entry) %>
       <%# Carry the active inbox kind filter (nil for the "All" tab) so the
           controller's success/failure redirect can stay in the same tab the
           operator was working in instead of forcing the clarifying-questions

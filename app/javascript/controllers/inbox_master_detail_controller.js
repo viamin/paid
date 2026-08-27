@@ -35,7 +35,11 @@ export default class extends Controller {
   }
 
   resetOnDesktop(event) {
-    if (event.matches) this.detailOpenValue = false
+    if (event.matches) {
+      this.detailOpenValue = false
+    } else {
+      this.syncPaneVisibility()
+    }
   }
 
   syncPaneVisibility() {
