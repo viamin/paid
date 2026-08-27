@@ -200,11 +200,17 @@ The model selection UX resolves to four cases:
 │            same data shape as today (model_policy="free" is recorded    │
 │            on the runner for D6 follow-up work)                         │
 │                                                                        │
-│ Case 3: Pareto (openrouter_pareto only)                                 │
+│ Case 3: Pareto (any OpenRouter-keyed runner)                            │
 │   Source: LlmModel row "openrouter/pareto-code" (provider "openrouter", │
-│           catalog_source "seeded") — single option                       │
-│   Persist: tier_model_ids unchanged (ParetoExecutionPlan hardcodes the   │
-│            model id today); model_policy = "specific"                    │
+│           catalog_source "seeded") — single option surfaced whenever    │
+│           the runner's api_service_type is "openrouter"                  │
+│   Persist:                                                              │
+│     - openrouter_pareto runner: tier_model_ids unchanged                 │
+│       (ParetoExecutionPlan hardcodes the model id); model_policy =       │
+│       "specific"                                                         │
+│     - other OpenRouter-keyed runners (opencode, kilocode, pi, omp with  │
+│       an OpenRouter key): tier_model_ids[<tier>] = "openrouter/pareto-  │
+│       code"; model_policy = "specific"                                   │
 │                                                                        │
 │ Case 4: Custom model id                                                 │
 │   Sentinel at the bottom of the dropdown reveals the current free-text  │
@@ -240,13 +246,36 @@ The model selection UX resolves to four cases:
 
 ### Target Form UX
 
+The dropdown contents below are split per runner key because the Free sentinel is only available on `openrouter_free` today (D6). An ordinary `opencode` runner with an OpenRouter key does **not** show the Free sentinel — that is reserved for the dedicated `openrouter_free` runner until #3673 ports the policy to other OpenRouter-keyed runners.
+
+**`openrouter_free` runner** (Free policy is valid here today):
+
 ```
-Runner:    [OpenCode CLI ▾]                ← pure CLIs; no Free/Pareto entries
-API Key:   [grouped by provider ▾]          ← key choice derives api_provider
+Runner:    [OpenRouter Free ▾]              ← dedicated runner row (RDR-038)
+API Key:   [OpenRouter keys only ▾]         ← filtered to OpenRouter keys
 Model:     [OpenRouter Free (curated, tiered)]  ← model_policy=free → tier picker
            [openrouter/pareto-code]              ← ordinary catalog row
-           [ …synced free models / Anthropic Opus/Sonnet/Haiku / glm-5.x… ]
+           [ …synced free models …]              ← LlmModel.openrouter_synced_free, filtered
            [Custom model ID…]                   ← reveals text input
+```
+
+**`opencode` / `kilocode` / `pi` / `omp` with an OpenRouter key** (Free sentinel not shown today):
+
+```
+Runner:    [OpenCode CLI ▾]                ← pure CLIs; no Free/Pareto entries
+API Key:   [OpenRouter keys grouped under "openrouter" ▾]
+Model:     [openrouter/pareto-code]              ← ordinary catalog row (D3)
+           [ …paid OpenRouter catalog rows… ]     ← provider == "openrouter"
+           [Custom model ID…]                    ← reveals text input
+```
+
+**`opencode` / `kilocode` / `pi` / `omp` with a non-OpenRouter key** (no Pareto, no Free):
+
+```
+Runner:    [OpenCode CLI ▾]                ← pure CLIs; no Free/Pareto entries
+API Key:   [Anthropic / OpenAI / … grouped ▾]
+Model:     [ …catalog rows for provider == api_service_type … ]
+           [Custom model ID…]                    ← reveals text input
 ```
 
 For the `openrouter_free` runner, the model selector surfaces:
@@ -281,7 +310,7 @@ add_check_constraint :runners,
   name: "runners_model_policy_enum"
 ```
 
-Existing rows backfill to `"specific"`. The free-policy port to Pi/OMP/KiloCode is a post-closeout follow-up (#3673, D6).
+Existing rows backfill to `"specific"`, except `openrouter_free` rows which backfill to `"free"` per the data migration step (see "Data Migration" below and the uniqueness/dispatch consistency requirement above). The free-policy port to Pi/OMP/KiloCode is a post-closeout follow-up (#3673, D6).
 
 #### Free-policy uniqueness moves from runner-key to (user, OpenRouter key)
 
@@ -321,10 +350,13 @@ module Runners
 
     def call
       # Returns array of { value:, label:, group:, free_policy:, pareto?: } hashes.
-      # - For openrouter_free: prepends { free_policy: true, label: "OpenRouter Free (curated, tiered)" }
-      #                      and { pareto?: true, label: "openrouter/pareto-code" }
+      # - For openrouter_free: prepends { free_policy: true, label: "OpenRouter Free (curated, tiered)" }.
+      #                      pareto_supported? is true.
+      # - For all OpenRouter-keyed runners (api_service_type == "openrouter"): prepends
+      #                      { pareto?: true, label: "openrouter/pareto-code" } before the catalog rows.
+      #                      pareto_supported? is true; free_policy_supported? is true only for openrouter_free.
       # - For all others: catalog rows for provider == api_service_type filtered through
-      #                   Runners::ModelCompatibility
+      #                   Runners::ModelCompatibility. free_policy_supported? and pareto_supported? are false.
       # - Always appends { sentinel: "custom", label: "Custom model ID…" }
     end
   end
@@ -384,8 +416,8 @@ Subscription runners are unchanged (D5).
 
 The migration runs before the rollout guard is enabled in production:
 
-1. Backfill `model_policy` to `"specific"` for all existing rows.
-2. For each `openrouter_free` row: if any tier in `tier_model_ids` is mapped to a `LlmModel` with `pricing_tier: "free"`, leave `model_policy = "specific"` for now and continue using today's `FreeModels::DefaultTierModels` defaults from `sync_direct_outbound_tier_models`. The Free sentinel in the new form reuses the same defaults; no data shape change is required at migration time.
+1. Backfill `model_policy` to `"specific"` for all existing rows except `openrouter_free` (see step 2).
+2. For each `openrouter_free` row: set `model_policy = "free"` so the new uniqueness scope `(user, provider_api_key_id)` and the new dispatch read the migrated rows consistently with the rest of this RDR. Leaving these rows at `model_policy = "specific"` would exclude them from the new free-policy invariants and let duplicate free-policy runners slip past the uniqueness check. Today's `FreeModels::DefaultTierModels` defaults continue to populate `tier_model_ids` via `sync_direct_outbound_tier_models`; the Free sentinel in the new form reuses the same defaults and does not change the persisted tier mapping.
 3. Create the `LlmModel` row for `openrouter/pareto-code` with `provider: "openrouter"`, `catalog_source: "seeded"` (D3 evidence above — must be `seeded` to survive daily syncs).
 4. Validate that every existing `Runner` row continues to execute under the new form. The dispatch path is backwards-compatible: legacy `tier_model_ids` continue to drive selection.
 
@@ -455,7 +487,7 @@ Keep the `api_provider` select as a confirmation step.
 | Catalog is missing a model the user needs | Medium — user is blocked from saving | "Custom model ID…" sentinel + `upsert_manual_catalog_entry` are the documented escape hatch; the broken-runner-model detector still self-heals bad ids over time |
 | `Runners::ModelCompatibility` returns `unknown` for a model we display | Low — confusing UX | The dropdown shows "may not be supported by installed CLI" copy next to `unknown` results; telemetry catches sustained misses |
 | Migration leaves a runner with no compatible model | High — runner stops executing | Migration runs validation against the same `Runners::ModelCompatibility` gate the form uses; runners without a compatible row keep their existing `tier_model_ids` and execute via legacy path |
-| `runner_model_policy_form` flag is on for one tenant but `model_policy: "free"` rows exist elsewhere | Low — feature-flag isolation | The flag is keyed per tenant; only tenants with the flag on see the new form |
+| `runner_model_policy_form` flag is on for one tenant but `model_policy: "free"` rows exist elsewhere | Low — feature-flag isolation | The flag is keyed per tenant; only tenants with the flag on see the new form. Migrated `openrouter_free` rows carry `model_policy: "free"` everywhere, but flag-off tenants continue to render the legacy form, which only displays the Free policy via the legacy `tier_model_ids` defaults — so the flag is the sole visibility gate. |
 | Existing single-instance gate on `openrouter_free` breaks after migration | Medium — duplicate free runners allowed | Migration preserves the "one free-policy runner per user per OpenRouter key" invariant via the new check constraint / scope (D7) |
 
 ## Implementation Plan
@@ -474,7 +506,7 @@ The implementation mirrors the issue tree under #3663. Each phase is a separate 
 
 6. **#3669** — Form change + feature flag. Add `:runner_model_policy_form` to `FeatureFlags::DEFINITIONS`. Wire the runtime decision through `FeatureFlags.enabled?(:runner_model_policy_form, project:)`. Form uses `Runners::ModelOptions` for the Model dropdown. The trailing "Custom model ID…" sentinel reveals the free-text input. Tests cover the flag-off (legacy form), flag-on (new form), and key-grouping flows.
 
-7. **#3670** — Data migration. Create the `LlmModel` row for `openrouter/pareto-code` with `catalog_source: "seeded"`. Backfill `model_policy`. Preserve row IDs and `runner:<id>` identifiers. Move single-instance uniqueness from runner-key to (user, provider_api_key_id).
+7. **#3670** — Data migration. Create the `LlmModel` row for `openrouter/pareto-code` with `catalog_source: "seeded"`. Backfill `model_policy`: default to `"specific"` for all rows, then set `openrouter_free` rows to `"free"` so the new uniqueness scope `(user, provider_api_key_id)` and the new dispatch read them consistently. Preserve row IDs and `runner:<id>` identifiers. Move single-instance uniqueness from runner-key to (user, provider_api_key_id).
 
 8. **#3671** — Flip the flag, validate telemetry, and clean up the flag.
 
@@ -486,12 +518,19 @@ The implementation mirrors the issue tree under #3663. Each phase is a separate 
 
 ### Walkthroughs
 
-- **OpenCode + OpenRouter key → Free / Pareto / specific / custom.**
+- **`opencode` + OpenRouter key → Pareto / paid / custom (no Free sentinel).**
   - Save a new `opencode` runner with an OpenRouter API key.
-  - Model dropdown shows Free sentinel, `openrouter/pareto-code`, synced free models, paid OpenRouter catalog rows, and the "Custom model ID…" sentinel.
-  - Picking the Free sentinel sets `model_policy = "free"`, persists today's `FreeModels::DefaultTierModels` defaults, and renders the existing tier-mapping sub-form.
-  - Picking `openrouter/pareto-code` behaves like any specific catalog row.
+  - Model dropdown shows `openrouter/pareto-code`, paid OpenRouter catalog rows, and the "Custom model ID…" sentinel. The Free sentinel is **not** present — `model_policy: "free"` is only valid on `openrouter_free` today (D6).
+  - Picking `openrouter/pareto-code` behaves like any specific catalog row: `model_policy = "specific"` is set and the model id is persisted to `tier_model_ids[<tier>]`.
   - Picking a paid OpenRouter catalog row sets `model_policy = "specific"` and persists the model id.
+  - Picking "Custom model ID…" reveals the free-text input; saving with `moonshotai/kimi-k2.6` upserts an `LlmModel` row with `catalog_source: "manual"`.
+
+- **`openrouter_free` runner → Free sentinel / Pareto / synced free models / custom.**
+  - Save a new `openrouter_free` runner with an OpenRouter API key.
+  - Model dropdown shows the Free sentinel at the top, `openrouter/pareto-code`, other synced free models filtered through `Runners::ModelCompatibility`, and the "Custom model ID…" sentinel.
+  - Picking the Free sentinel sets `model_policy = "free"`, persists today's `FreeModels::DefaultTierModels` defaults to `tier_model_ids`, and renders the existing tier-mapping sub-form (RDR-038).
+  - Picking `openrouter/pareto-code` sets `model_policy = "specific"` (ParetoExecutionPlan hardcodes the model id; `tier_model_ids` is unchanged).
+  - Picking a synced free model sets `model_policy = "free"` and persists the model id like today.
   - Picking "Custom model ID…" reveals the free-text input; saving with `moonshotai/kimi-k2.6` upserts an `LlmModel` row with `catalog_source: "manual"`.
 
 - **Anthropic key → Opus/Sonnet/Haiku only.**
@@ -512,15 +551,15 @@ The implementation mirrors the issue tree under #3663. Each phase is a separate 
 ### Tests
 
 - `Runners::ModelOptions` returns catalog rows filtered by `api_service_type` and gated by `Runners::ModelCompatibility`.
-- `Runners::ModelOptions` prepends the Free sentinel for `openrouter_free`.
-- `Runners::ModelOptions` includes `openrouter/pareto-code` for any runner whose key implies OpenRouter routing.
+- `Runners::ModelOptions` prepends the Free sentinel for `openrouter_free` and **omits it** for `opencode`/`kilocode`/`pi`/`omp` even when the selected key is an OpenRouter key (D6).
+- `Runners::ModelOptions` includes `openrouter/pareto-code` for any runner whose `api_service_type` is `openrouter`.
 - Key dropdown groups by `api_service_type` (provider slug).
 - `Runners::ResolveTierModel` honors `model_policy: "free"` by delegating to `FreeModels::DefaultTierModels`.
 - `Models::Select` consults `model_policy` before falling back to the global pool.
 - Feature-flag-off: legacy form renders, legacy dispatch path executes unchanged.
 - Feature-flag-on: new form renders, dispatch path executes the new dropdown values.
 - `LlmModel.upsert_manual_catalog_entry` continues to be the persistence path for "Custom model ID…" inputs (regression test).
-- Data migration is idempotent and preserves row IDs.
+- Data migration backfills `openrouter_free` rows to `model_policy: "free"` and is idempotent; preserved row IDs are verified.
 
 ### Operational Checks
 
@@ -531,7 +570,7 @@ The implementation mirrors the issue tree under #3663. Each phase is a separate 
 ## Open Questions
 
 1. **Sentinel copy localization.** The "Custom model ID…" label is currently English-only. Acceptable for v1 because the runner form is admin-facing; revisit if user-facing.
-2. **Should the Pareto row appear in every OpenRouter-keyed runner dropdown?** Today's RDR scope puts it under `openrouter_free`. Decision: yes (per D3) — `Runners::ModelOptions` includes it whenever the runner's `api_service_type` is `openrouter`. This makes Pareto reachable from any OpenRouter runner without a separate runner row, but the dedicated `openrouter_pareto` runner row stays for discoverability (RDR-038).
+2. **Resolved — Pareto scope.** Case 3 above decides the scope: `Runners::ModelOptions` surfaces the `openrouter/pareto-code` seeded row whenever the runner's `api_service_type` is `openrouter` (openrouter_free, openrouter_pareto, or opencode/kilocode/pi/omp with an OpenRouter key). The dedicated `openrouter_pareto` runner row remains in the "Add Runner" index for discoverability (RDR-038). The dispatch side stays unchanged: the `openrouter_pareto` runner still routes through `Runners::ParetoExecutionPlan`; on other runners, selecting Pareto persists the model id like any other specific catalog row.
 3. **Does `model_policy: "free"` need its own rotation keying?** Today rotation is keyed on `runner:<id>`; the #3673 port will need to revisit this if a single (user, key) pair can back multiple free-policy runners in the future.
 
 ## Decision
