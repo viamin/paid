@@ -571,7 +571,7 @@ class RunnersController < ApplicationController
     # CTA once added; other api_key runners allow legitimate duplicates.
     existing_single_instance_keys = @runners.map(&:runner_key)
       .select { |key| Runner.single_instance_runner_key?(key) }
-    addable_keys = resource_addable_keys
+    addable_keys = feature_flagged_runner_addable_keys
     subscription_addable_keys = addable_keys.reject { |key| api_key_only_runner?(key) }
     api_key_compatible_addable_keys =
       addable_keys.select do |key|

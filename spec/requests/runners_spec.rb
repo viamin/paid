@@ -1284,6 +1284,18 @@ RSpec.describe "Runners" do
       expect(response.body).not_to include('option value="openrouter_pareto"')
     end
 
+    it "hides the index Add Runner CTA when the model policy flag leaves only free and pareto pseudo-runners" do
+      create(:provider_api_key, user: user, api_service_type: "openrouter", name: "OpenRouter")
+      enable_runner_model_policy_form_for(user)
+      allow(RunnerSupport).to receive(:addable_runner_keys).and_return(%w[openrouter_free openrouter_pareto])
+
+      get runners_path
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).not_to include("Add Runner")
+      expect(response.body).to include("No More Runners Yet")
+    end
+
     # @spec FREE-MODEL-RUNNER-004
     # @spec FREE-MODEL-RUNNER-005
     # @spec FREE-MODEL-RUNNER-006
