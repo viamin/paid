@@ -176,7 +176,7 @@ Scaling & Distribution above).
 | [RDR-038](RDR-038-free-models-catalog-and-runner.md) | Free Models Catalog and Runner | Implemented | P1 |
 | [RDR-040](RDR-040-runner-model-compatibility-contracts.md) | Runner Model Compatibility Contracts | Implemented | P1 |
 | [RDR-062](RDR-062-execution-network-policy-intent.md) | Provider-Neutral Execution Network Policy Intent | Implemented | P1 |
-| [RDR-065](RDR-065-runner-model-selection-ux.md) | Runner Model Selection UX | Draft | P1 |
+| [RDR-065](RDR-065-runner-model-selection-ux.md) | Runner Model Selection UX | Partially Implemented | P1 |
 
 ### Semantic Understanding
 
