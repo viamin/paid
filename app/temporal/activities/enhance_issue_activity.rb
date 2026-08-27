@@ -24,6 +24,7 @@ module Activities
     # runner interleaves its own log output. Kept in sync with the
     # FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT and the goal.enhance_issue seed.
     OUTPUT_DELIMITER = "paid-enhance-issue-output"
+    DELIMITED_OUTPUT_PATTERN = /^#{Regexp.escape(OUTPUT_DELIMITER)}[ \t]*\r?$\R(.*?)^#{Regexp.escape(OUTPUT_DELIMITER)}[ \t]*\r?$/m
     STDOUT_TAIL_CHUNKS = 50
     MAX_COMMENT_BODY = 50_000
 
@@ -120,19 +121,28 @@ module Activities
       recover_or_raise_parse_error!(agent_run, project, issue, client, comments, e.message)
     end
 
-    # Concatenates the recent stdout chunks in chronological order. The runner
-    # logs stdout per chunk (Containers::Provision#log_output), so the agent's
-    # delimited JSON can span several chunks.
+    # Reads recent stdout through AgentRun's provider-aware output normalizer.
+    # Structured runners may wrap the final agent message in JSONL events, while
+    # text runners return the delimited payload directly.
+    # @spec ISSUE-ENHANCEMENT-006
     def collect_agent_stdout(agent_run)
-      agent_run.agent_run_logs.stdout.recent.limit(STDOUT_TAIL_CHUNKS).pluck(:content).reverse.join
+      raw = agent_run.agent_run_logs.stdout.recent.limit(STDOUT_TAIL_CHUNKS).pluck(:content).reverse.join
+      return raw if delimited_payload(raw)
+
+      agent_run.normalized_agent_output(raw, succeeded: true)
     end
 
     # Extracts the JSON payload from concatenated stdout. The agent prompt
     # wraps its JSON between OUTPUT_DELIMITER lines; if no delimiter is
     # present the whole tail is treated as the payload.
     def extract_json_payload(raw)
-      match = raw.match(/#{Regexp.escape(OUTPUT_DELIMITER)}\s*(.*?)\s*#{Regexp.escape(OUTPUT_DELIMITER)}/m)
-      match ? match[1].strip : raw.strip
+      delimited_payload(raw) || raw.strip
+    end
+
+    def delimited_payload(raw)
+      payload = nil
+      raw.scan(DELIMITED_OUTPUT_PATTERN) { payload = Regexp.last_match(1) }
+      payload&.strip
     end
 
     # Fail loudly rather than posting garbled agent output as an enhancement

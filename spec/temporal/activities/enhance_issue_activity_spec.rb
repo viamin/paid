@@ -613,6 +613,70 @@ RSpec.describe Activities::EnhanceIssueActivity do
         expect_comment_including("## Implementation context")
       end
 
+      # @spec ISSUE-ENHANCEMENT-006
+      it "parses delimited JSON from a structured runner agent-message event" do
+        event = {
+          type: "item.completed",
+          item: {
+            id: "item_9",
+            type: "agent_message",
+            text: delimiter_wrapped(structured_output)
+          }
+        }
+        log_agent_stdout("#{event.to_json}\n", wrap: false)
+        agent_run.log!("stdout", { type: "turn.completed", usage: {} }.to_json << "\n")
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:sufficient_context]).to be true
+        expect_comment_including(described_class::COMMENT_MARKER, "## Implementation context")
+        expect(issue.reload.paid_state).to eq("completed")
+      end
+
+      # @spec ISSUE-ENHANCEMENT-006
+      it "does not let a superseded structured error mask the final agent message" do
+        log_agent_stdout({ type: "error", message: "Superseded provider failed" }.to_json << "\n", wrap: false)
+        final_event = {
+          type: "item.completed",
+          item: { id: "final", type: "agent_message", text: delimiter_wrapped(structured_output) }
+        }
+        log_agent_stdout(final_event.to_json << "\n", wrap: false)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:sufficient_context]).to be true
+        expect(issue.reload.paid_state).to eq("completed")
+      end
+
+      # @spec ISSUE-ENHANCEMENT-006
+      it "parses the final agent message after more than the stdout tail limit of structured events" do
+        (described_class::STDOUT_TAIL_CHUNKS + 5).times do |index|
+          log_agent_stdout({ type: "item.completed", item: { id: "item_#{index}", type: "tool_call" } }.to_json << "\n", wrap: false)
+        end
+        final_event = {
+          type: "item.completed",
+          item: { id: "final", type: "agent_message", text: delimiter_wrapped(structured_output) }
+        }
+        log_agent_stdout(final_event.to_json << "\n", wrap: false)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:sufficient_context]).to be true
+        expect(issue.reload.paid_state).to eq("completed")
+      end
+
+      # @spec ISSUE-ENHANCEMENT-006
+      it "uses the last complete delimiter pair when earlier output contains a decoy payload" do
+        decoy = { sufficient_context: false, comment_body: "## Clarifying questions\n1. Ignore the final result?" }.to_json
+        log_agent_stdout([ "#{delimiter_wrapped(decoy)}\n", delimiter_wrapped(structured_output) ])
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:sufficient_context]).to be true
+        expect_comment_including("## Implementation context")
+        expect(issue.reload.paid_state).to eq("completed")
+      end
+
       it "parses undelimited JSON as a backward-compatible fallback" do
         log_agent_stdout(structured_output, wrap: false)
 
