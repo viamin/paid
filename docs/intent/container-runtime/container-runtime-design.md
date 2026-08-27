@@ -140,8 +140,12 @@ This boundary was originally planned under a provisional execution-runner
 `RDR-054` label in issues `#3336`–`#3348`. That number now belongs to the
 Prompt Assembly Service RDR, so the runner-boundary workstream is tracked here
 in the container-runtime LLD plus the later execution-runner RDRs such as
-RDR-057 and RDR-062. Final scope reconciliation and closeout for the historical
-issue tree is tracked by `#3661`.
+RDR-057 and RDR-062. The 2026-08-27 closeout audit
+([`audit-report-2026-08-27-execution-runners-closeout.md`](../../rdrs/audit-report-2026-08-27-execution-runners-closeout.md),
+tracked by `#3661`) reconciled the full issue tree: ten of twelve child issues
+are shipped, and `#3336` stays open pending only `#3345` (remove Docker
+concepts from `AgentRun`/Temporal) and `#3348` (document a second runner
+implementation) — no other residual gaps were found.
 
 - `ExecutionRunners::Base` is the abstract interface: `provision`, `start`,
   `running?`, `reconnect`, `status`, `cancel`, `cleanup`, `.compatible?`, `.ping`. Method
