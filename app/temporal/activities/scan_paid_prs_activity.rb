@@ -939,7 +939,8 @@ module Activities
       unresolved_threads = fetch_unresolved_threads(client, project, issue)
 
       signals = build_auto_merge_signals(project, client, issue,
-        pr_data: pr_data, checks: checks, reviews: reviews, unresolved_threads: unresolved_threads)
+        pr_data: pr_data, checks: checks, reviews: reviews, unresolved_threads: unresolved_threads,
+        progress_state: progress_state)
       if signals && evaluate_auto_merge(project, signals)
         track_approval_wait!(project, issue, blocked_only_on_approval: false)
         return owner_approved_trigger(issue)
@@ -1146,7 +1147,8 @@ module Activities
         pr_data: pr_data,
         checks: checks,
         reviews: fetch_reviews(client, project, issue),
-        unresolved_threads: fetch_unresolved_threads(client, project, issue))
+        unresolved_threads: fetch_unresolved_threads(client, project, issue),
+        progress_state: pr_progress_state(project, issue))
     end
 
     # --- Special trigger builders ---
@@ -3339,9 +3341,11 @@ module Activities
     # Evaluates human-authored PR merge eligibility via the AutoMerge
     # strategy. Collects signals from provider data and delegates the
     # decision to {Automation::Strategies::AutoMerge}.
-    def auto_merge_eligible?(project, client, issue, pr_data:, checks:, reviews:, unresolved_threads: nil)
+    def auto_merge_eligible?(project, client, issue, pr_data:, checks:, reviews:, unresolved_threads: nil,
+      progress_state: nil)
       signals = build_auto_merge_signals(project, client, issue,
-        pr_data: pr_data, checks: checks, reviews: reviews, unresolved_threads: unresolved_threads)
+        pr_data: pr_data, checks: checks, reviews: reviews, unresolved_threads: unresolved_threads,
+        progress_state: progress_state)
       return false if signals.nil?
 
       evaluate_auto_merge(project, signals)
@@ -3352,7 +3356,8 @@ module Activities
     # Returns nil when auto-merge is disabled or the PR data is missing, so
     # callers can distinguish "not gated by auto-merge" from "gated and
     # failing" — the distinction the awaiting_approval escalation keys on.
-    def build_auto_merge_signals(project, client, issue, pr_data:, checks:, reviews:, unresolved_threads: nil)
+    def build_auto_merge_signals(project, client, issue, pr_data:, checks:, reviews:, unresolved_threads: nil,
+      progress_state: nil)
       return nil unless project.auto_merge_enabled? && pr_data.present?
 
       owner_approved = owner_approved_or_self_authored?(project, reviews, pr_data)
@@ -3363,7 +3368,8 @@ module Activities
         unresolved_threads: unresolved_threads
       )
       blocking_reviews_complete = Reviews::BlockingMethodsComplete.call(
-        project: project, issue: issue, reviews: reviews, checks: checks, pr_data: pr_data
+        project: project, issue: issue, reviews: reviews, checks: checks, pr_data: pr_data,
+        progress_state: progress_state
       )
       reviews_fresh = !review_stale_for_head?(client, project, issue, pr_data, reviews)
       dependencies_resolved = if human_dependency_check_required?(

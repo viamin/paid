@@ -200,18 +200,7 @@ module PullRequests
     end
 
     def fetch_head_commit_date(pr_data)
-      sha = pr_data.respond_to?(:head) ? pr_data.head&.sha : pr_data.dig(:head, :sha)
-      return nil if sha.blank?
-
-      @client.commit(@project.full_name, sha)&.commit&.committer&.date
-    rescue GithubClient::Error => e
-      @logger.warn(
-        message: "pr_review.fetch_head_commit_failed",
-        project_id: @project.id,
-        pr_number: @issue.github_number,
-        error: e.message
-      )
-      nil
+      collector.fetch_head_commit_date(issue: @issue, pr_data: pr_data)
     end
 
     def stale_approval?(head_committed_at, reviews)
@@ -275,8 +264,40 @@ module PullRequests
     def no_outstanding_review_feedback?(pr_data, reviews, unresolved_threads)
       return false if outstanding_review_threads?(unresolved_threads)
       return false if changes_requested?(reviews)
+      return false unless review_bot_status_clear?(reviews)
 
       true
+    end
+
+    # Mirrors the scan's latest_allowed_bot_review + REVIEW_BOT_CLEAN_PATTERN:
+    # a body-only bot review (Copilot, Codex, paid_agent) posts its findings
+    # as a review body with no threads, so outstanding_review_threads? alone
+    # cannot see it. Without this, a re-requested bot review that lands
+    # comments in the scan-to-activity window would pass this re-validation
+    # even though owner_approval_clears_merge? still blocks on it.
+    def review_bot_status_clear?(reviews)
+      allowed_bot_logins = allowed_review_bot_logins
+      return true if allowed_bot_logins.nil?
+
+      latest = latest_allowed_bot_review(reviews, allowed_bot_logins)
+      return true if latest.nil?
+
+      paid_agent_clean_review?(latest) ||
+        Activities::ScanPaidPrsActivity::REVIEW_BOT_CLEAN_PATTERN.match?(latest[:body])
+    end
+
+    def latest_allowed_bot_review(reviews, allowed_bot_logins)
+      bot_reviews = reviews.select do |r|
+        RunnerSupport.runner_bot_username?(r[:user_login]) &&
+          allowed_bot_logins.include?(r[:user_login]&.downcase)
+      end
+      bot_reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
+    end
+
+    def paid_agent_clean_review?(review)
+      return false unless RunnerSupport.runner_bot_username_for?("paid_agent", review[:user_login])
+
+      review[:body]&.include?(Activities::ScanPaidPrsActivity::PAID_REVIEW_CLEAN_MARKER) || false
     end
 
     # Mirrors the scan's human_review_thread_triggers + review_bot_thread_triggers:

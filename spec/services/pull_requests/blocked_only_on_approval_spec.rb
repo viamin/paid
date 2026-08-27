@@ -393,6 +393,45 @@ RSpec.describe PullRequests::BlockedOnlyOnApproval do
       end
     end
 
+    context "with a copilot review-bot method configured" do
+      before do
+        project.update!(review_settings: {
+          "enabled" => true,
+          "methods" => { "copilot" => { "enabled" => true } }
+        })
+      end
+
+      # @spec PR-ESCALATION-025
+      it "returns true when the latest copilot review is clean" do
+        sha = "abc123"
+        stub_pr_data(green_pr_data(sha: sha))
+        stub_checks(sha, green_checks)
+        stub_reviews(green_reviews)
+        stub_review_threads([])
+        stub_head_commit(sha: sha)
+        stub_issue_comments
+
+        expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(true)
+      end
+
+      # @spec PR-ESCALATION-025
+      it "returns false when a fresh non-clean copilot review body appears since the scan " \
+         "(no threads, body-only feedback)" do
+        sha = "abc123"
+        stub_pr_data(green_pr_data(sha: sha))
+        stub_checks(sha, green_checks)
+        stub_reviews(
+          [ { id: 200, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
+              body: "Found 2 issues that should be addressed.", submitted_at: 1.hour.ago } ]
+        )
+        stub_review_threads([])
+        stub_head_commit(sha: sha)
+        stub_issue_comments
+
+        expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(false)
+      end
+    end
+
     context "when the issue declares a same-repo dependency" do
       before do
         issue.update!(body: "Depends on #4141")
