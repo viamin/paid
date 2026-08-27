@@ -220,7 +220,7 @@ module Projects
         starts_at: starts_at,
         ends_at: ends_at,
         scope_modifier: ->(scope) { pending_execution_usage_scope(scope) },
-        overlap_ends_at_sql: quote_time(ends_at)
+        overlap_ends_at: ends_at
       )
     end
 

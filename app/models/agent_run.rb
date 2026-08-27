@@ -2747,7 +2747,7 @@ class AgentRun < ApplicationRecord
   # @param options [Hash] Override default container options
   # @return [Containers::Provision::Result] Result with container_id on success
   # @raise [Containers::Provision::ProvisionError] When container creation fails
-  def provision_container(**options)
+  def provision_container(restart_provisioning_cycle: false, **options)
     networking_policy = nil
     if authority_grants.blank? || authority_grants["grants"].blank?
       networking_policy = Containers::Provision.networking_policy_for(
@@ -2757,10 +2757,14 @@ class AgentRun < ApplicationRecord
     end
 
     if execution_runner_enabled?
-      return provision_via_runner(networking_policy: networking_policy, **options)
+      return provision_via_runner(
+        networking_policy: networking_policy,
+        restart_provisioning_cycle: restart_provisioning_cycle,
+        **options
+      )
     end
 
-    return reuse_or_reconcile_container(**options) if container_id.present?
+    return reuse_or_reconcile_container(restart_provisioning_cycle: restart_provisioning_cycle, **options) if container_id.present?
 
     # Deliberately not threading networking_policy through here: on the
     # direct-provision path (execution_runner disabled) there is no runner to
@@ -2769,7 +2773,7 @@ class AgentRun < ApplicationRecord
     # side effects. Passing a policy would make it skip those (see
     # Containers::Provision#ensure_network!/#apply_network_restrictions!),
     # silently dropping egress isolation for first provisions.
-    provision_new_container(**options)
+    provision_new_container(restart_provisioning_cycle: restart_provisioning_cycle, **options)
   end
 
   # Executes a command in the provisioned container.
@@ -2906,6 +2910,14 @@ class AgentRun < ApplicationRecord
     )
   end
   private :record_execution_usage!
+
+  def restamp_provisioning_cycle!
+    self.provisioning_started_at = Time.current
+    return unless external_metadata.is_a?(Hash)
+
+    self.external_metadata = external_metadata.merge("provisioning_started_at" => provisioning_started_at.iso8601)
+  end
+  private :restamp_provisioning_cycle!
 
   def normalized_execution_usage_runner_backend(container_host)
     container_host.to_s.truncate(64)
@@ -3112,10 +3124,10 @@ class AgentRun < ApplicationRecord
   # Deriving it here keeps the manifest accurate for subscription-auth /
   # direct-outbound recovery rather than defaulting to proxy_mode when a
   # +nil+ policy falls through (RDR-058, RDR-054).
-  def provision_via_runner(networking_policy: nil, **options)
-    return reuse_or_reconcile_via_runner(**options) if runner_handle.present?
+  def provision_via_runner(networking_policy: nil, restart_provisioning_cycle: false, **options)
+    return reuse_or_reconcile_via_runner(restart_provisioning_cycle: restart_provisioning_cycle, **options) if runner_handle.present?
 
-    return reuse_or_reconcile_container(**options) if container_id.present?
+    return reuse_or_reconcile_container(restart_provisioning_cycle: restart_provisioning_cycle, **options) if container_id.present?
 
     planned_container_host = options.delete(:container_host)
     pool_host_scope = planned_container_host.presence || container_host.presence
@@ -3134,10 +3146,12 @@ class AgentRun < ApplicationRecord
     resolved_policy = networking_policy || Containers::Provision.networking_policy_for(
       agent_run: self, project: project
     )
+    restamp_provisioning_cycle! if restart_provisioning_cycle
     spec = ExecutionRunners::RunSpec.from_agent_run(self, networking_policy: resolved_policy, **options)
     @current_handle = runner.provision(spec: spec)
     update!(container_id: @current_handle.identifier, container_host: @current_handle.host,
-            runner_handle: @current_handle.to_storage)
+            runner_handle: @current_handle.to_storage,
+            provisioning_started_at: provisioning_started_at, external_metadata: external_metadata)
     ExecutionResource.track_environment!(agent_run: self, handle: @current_handle)
     PoolReplenishmentJob.perform_later(project_id)
 
@@ -3568,7 +3582,7 @@ class AgentRun < ApplicationRecord
   # provision_container safe to invoke again on a Temporal retry. A recorded
   # container that has died or been removed is reconciled away before a fresh
   # one is provisioned, so a retry never leaks a duplicate container.
-  def reuse_or_reconcile_container(**options)
+  def reuse_or_reconcile_container(restart_provisioning_cycle: false, **options)
     service = reconnect_recorded_container_for_reuse
 
     if service&.container_running?
@@ -3583,7 +3597,7 @@ class AgentRun < ApplicationRecord
     end
 
     reconcile_stale_container!(service)
-    provision_new_container(**options)
+    provision_new_container(restart_provisioning_cycle: restart_provisioning_cycle, **options)
   end
 
   def reconnect_recorded_container_for_reuse
@@ -3605,7 +3619,7 @@ class AgentRun < ApplicationRecord
 
   # Provisions a brand-new container when there is no existing container to
   # reuse. Tries the warm pool first, then falls back to a fresh provision.
-  def provision_new_container(networking_policy: nil, **options)
+  def provision_new_container(networking_policy: nil, restart_provisioning_cycle: false, **options)
     # RDR-048 (#2947): a caller (e.g. the queue processor) may know which
     # Docker host this run was admitted against before any container
     # resource exists. The container_host column on the run is intentionally
@@ -3631,9 +3645,11 @@ class AgentRun < ApplicationRecord
       networking_policy: networking_policy,
       **options
     )
+    restamp_provisioning_cycle! if restart_provisioning_cycle
     result = @container_service.provision
     if result.success?
-      update!(container_id: result[:container_id], container_host: result[:container_host])
+      update!(container_id: result[:container_id], container_host: result[:container_host],
+        provisioning_started_at: provisioning_started_at, external_metadata: external_metadata)
       ExecutionResource.track_environment!(
         agent_run: self,
         identifier: result[:container_id],

@@ -176,9 +176,7 @@ module AgentRuns
       # usage row created. record_execution_usage! early-returns when
       # container_host is blank, so this is safe for runs that never
       # reached provisioning at all.
-      record_execution_usage(agent_run, old_resources)
     rescue Docker::Error::NotFoundError
-      record_execution_usage(agent_run, old_resources)
     rescue => e
       Rails.logger.warn(
         message: "agent_runs.cleanup_stale_container_failed",
@@ -187,6 +185,8 @@ module AgentRuns
         error_class: e.class.name,
         error: e.message
       )
+    ensure
+      record_execution_usage(agent_run, old_resources)
     end
 
     def record_execution_usage(agent_run, old_resources)

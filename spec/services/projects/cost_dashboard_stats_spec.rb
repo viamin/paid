@@ -224,7 +224,7 @@ RSpec.describe Projects::CostDashboardStats do
         starts_at: Time.at(0),
         ends_at: kind_of(Time),
         scope_modifier: kind_of(Proc),
-        overlap_ends_at_sql: kind_of(String)
+        overlap_ends_at: kind_of(Time)
       )
     end
 

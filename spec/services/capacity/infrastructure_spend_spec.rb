@@ -138,7 +138,7 @@ RSpec.describe Capacity::InfrastructureSpend do
     expect(result).to eq(120)
   end
 
-  it "accepts a custom overlap end expression for rowless completed runs" do
+  it "accepts a custom overlap end time for rowless completed runs" do
     create_overlap_run(
       status: :completed,
       provisioning_started_at: Time.utc(2026, 8, 23, 12, 0, 0),
@@ -150,7 +150,7 @@ RSpec.describe Capacity::InfrastructureSpend do
       project: project,
       starts_at: Time.utc(2026, 8, 23, 12, 0, 0),
       ends_at: Time.utc(2026, 8, 23, 14, 0, 0),
-      overlap_ends_at_sql: ActiveRecord::Base.connection.quote(Time.utc(2026, 8, 23, 14, 0, 0))
+      overlap_ends_at: Time.utc(2026, 8, 23, 14, 0, 0)
     )
 
     expect(result).to eq(240)
@@ -169,7 +169,7 @@ RSpec.describe Capacity::InfrastructureSpend do
       project: project,
       starts_at: Time.utc(2026, 8, 24, 0, 0, 0),
       ends_at: Time.utc(2026, 8, 24, 1, 0, 0),
-      overlap_ends_at_sql: ActiveRecord::Base.connection.quote(Time.utc(2026, 8, 24, 0, 10, 0))
+      overlap_ends_at: Time.utc(2026, 8, 24, 0, 10, 0)
     )
 
     expect(result).to eq(20)

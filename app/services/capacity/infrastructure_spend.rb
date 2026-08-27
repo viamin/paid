@@ -5,7 +5,7 @@ module Capacity
   class InfrastructureSpend
     class << self
       def spent_cents(account: nil, starts_at:, ends_at: Time.current, project: nil, runner: nil,
-        scope_modifier: nil, overlap_ends_at_sql: nil)
+        scope_modifier: nil, overlap_ends_at: nil)
         new(
           account: account,
           starts_at: starts_at,
@@ -13,7 +13,7 @@ module Capacity
           project: project,
           runner: runner,
           scope_modifier: scope_modifier,
-          overlap_ends_at_sql: overlap_ends_at_sql
+          overlap_ends_at: overlap_ends_at
         ).spent_cents
       end
 
@@ -36,14 +36,14 @@ module Capacity
       end
     end
 
-    def initialize(account:, starts_at:, ends_at:, project: nil, runner: nil, scope_modifier: nil, overlap_ends_at_sql: nil)
+    def initialize(account:, starts_at:, ends_at:, project: nil, runner: nil, scope_modifier: nil, overlap_ends_at: nil)
       @account = account
       @starts_at = starts_at
       @ends_at = ends_at
       @project = project
       @runner = runner
       @scope_modifier = scope_modifier
-      @overlap_ends_at_sql = overlap_ends_at_sql
+      @overlap_ends_at = overlap_ends_at
     end
 
     def spent_cents
@@ -53,7 +53,7 @@ module Capacity
 
     private
 
-    attr_reader :account, :ends_at, :project, :runner, :scope_modifier, :starts_at
+    attr_reader :account, :ends_at, :overlap_ends_at, :project, :runner, :scope_modifier, :starts_at
 
     def overlapping_runs
       @overlapping_runs ||= TenantContext.with_system_access do
@@ -113,10 +113,8 @@ module Capacity
       SQL
     end
 
-    def overlap_ends_at_sql
-      @overlap_ends_at_sql ||= <<~SQL.squish
-        LEAST(COALESCE(agent_runs.completed_at, #{quoted_ends_at}), #{quoted_ends_at})
-      SQL
+    def quoted_overlap_ends_at
+      @quoted_overlap_ends_at ||= connection.quote(overlap_ends_at)
     end
 
     def rate_cents_per_hour_expression
@@ -129,6 +127,14 @@ module Capacity
 
     def quoted_starts_at
       @quoted_starts_at ||= connection.quote(starts_at)
+    end
+
+    def overlap_ends_at_sql
+      return quoted_overlap_ends_at if overlap_ends_at.present?
+
+      @default_overlap_ends_at_sql ||= <<~SQL.squish
+        LEAST(COALESCE(agent_runs.completed_at, #{quoted_ends_at}), #{quoted_ends_at})
+      SQL
     end
 
     def connection

@@ -3942,7 +3942,6 @@ expect(container_service).to receive(:execute).with(
             exec_success
           end
         end
-        allow(agent_run).to receive(:provision_container) { agent_run.update!(container_id: "reprovisioned-123") }
         allow(Containers::Provision).to receive(:reconnect) do |agent_run:, container_id:|
           raise "unexpected container id #{container_id}" unless [ "abc123", "reprovisioned-123" ].include?(container_id)
 
@@ -3951,6 +3950,10 @@ expect(container_service).to receive(:execute).with(
       end
 
       it "reprovisions the container and continues with the fallback runner" do
+        expect(agent_run).to receive(:provision_container).with(restart_provisioning_cycle: true) do
+          agent_run.update!(container_id: "reprovisioned-123")
+        end
+
         result = activity.execute(agent_run_id: agent_run.id)
 
         agent_run.reload
