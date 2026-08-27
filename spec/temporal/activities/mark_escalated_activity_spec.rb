@@ -39,6 +39,7 @@ RSpec.describe Activities::MarkEscalatedActivity do
       mergeable: true,
       draft: false,
       number: issue.github_number,
+      state: "open",
       user: OpenStruct.new(login: "someone-else")
     )
     checks ||= [ { name: "ci", conclusion: "success" } ]
@@ -83,6 +84,15 @@ RSpec.describe Activities::MarkEscalatedActivity do
         )
       ]
     )
+  end
+
+  def configure_awaiting_approval_project!(issue)
+    issue.project.update!(
+      auto_merge_mode: "all",
+      owner_reviewer_login: "viamin",
+      allowed_github_usernames: [ "viamin" ]
+    )
+    issue.project.reload_automation_configuration
   end
 
   let(:activity) { described_class.new }
@@ -195,6 +205,7 @@ RSpec.describe Activities::MarkEscalatedActivity do
       # @spec PR-ESCALATION-026
       it "stores awaiting_approval escalations separately" do
         issue.update!(pr_review_phase: "ready")
+        configure_awaiting_approval_project!(issue)
         stub_blocked_only_on_approval_check!(issue: issue)
 
         activity.execute(
@@ -209,6 +220,7 @@ RSpec.describe Activities::MarkEscalatedActivity do
       # @spec PR-ESCALATION-026
       it "names re-approval as the remedy for awaiting_approval escalations" do
         issue.update!(pr_review_phase: "ready", awaiting_approval_since: 2.days.ago)
+        configure_awaiting_approval_project!(issue)
         stub_blocked_only_on_approval_check!(issue: issue)
 
         activity.execute(
@@ -230,6 +242,7 @@ RSpec.describe Activities::MarkEscalatedActivity do
       # @spec PR-ESCALATION-025
       it "consumes the approval-wait stamp when escalating" do
         issue.update!(pr_review_phase: "ready", awaiting_approval_since: 2.days.ago)
+        configure_awaiting_approval_project!(issue)
         stub_blocked_only_on_approval_check!(issue: issue)
 
         activity.execute(
@@ -261,6 +274,7 @@ RSpec.describe Activities::MarkEscalatedActivity do
       # @spec PR-ESCALATION-027
       it "skips an awaiting_approval escalation when CI started failing in the race window" do
         issue.update!(pr_review_phase: "ready", awaiting_approval_since: 2.days.ago)
+        configure_awaiting_approval_project!(issue)
         stub_blocked_only_on_approval_check!(
           issue: issue,
           checks: [ { name: "ci", conclusion: "failure" } ]
@@ -282,6 +296,7 @@ RSpec.describe Activities::MarkEscalatedActivity do
       # @spec PR-ESCALATION-027
       it "skips an awaiting_approval escalation when the PR picked up new review feedback" do
         issue.update!(pr_review_phase: "ready", awaiting_approval_since: 2.days.ago)
+        configure_awaiting_approval_project!(issue)
         stub_blocked_only_on_approval_check!(
           issue: issue,
           reviews: [
@@ -306,6 +321,7 @@ RSpec.describe Activities::MarkEscalatedActivity do
       # @spec PR-ESCALATION-027
       it "skips an awaiting_approval escalation when an unresolved review thread appears" do
         issue.update!(pr_review_phase: "ready", awaiting_approval_since: 2.days.ago)
+        configure_awaiting_approval_project!(issue)
         thread = unresolved_review_thread
         stub_blocked_only_on_approval_check!(issue: issue, threads: [ thread ])
 
@@ -326,6 +342,25 @@ RSpec.describe Activities::MarkEscalatedActivity do
       it "skips an awaiting_approval escalation when the paid-skip-auto-merge label appears" do
         issue.update!(pr_review_phase: "ready", awaiting_approval_since: 2.days.ago,
           labels: [ "paid-automation", Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL ])
+        configure_awaiting_approval_project!(issue)
+
+        result = activity.execute(
+          issue_id: issue.id,
+          reason_key: "awaiting_approval",
+          reason: "This PR has been green and waiting only for owner approval for more than 24 hours"
+        )
+
+        expect(result).to eq(updated: false)
+        expect(issue.reload.pr_review_phase).to eq("ready")
+        expect(issue.reload.pr_escalation_reason).to be_nil
+        expect(github_client).not_to have_received(:add_labels_to_issue)
+        expect(github_client).not_to have_received(:add_comment)
+      end
+
+      # @spec PR-ESCALATION-027
+      it "skips an awaiting_approval escalation when auto-merge was disabled in the race window" do
+        issue.update!(pr_review_phase: "ready", awaiting_approval_since: 2.days.ago)
+        issue.project.update!(auto_merge_mode: "off")
 
         result = activity.execute(
           issue_id: issue.id,
@@ -343,6 +378,7 @@ RSpec.describe Activities::MarkEscalatedActivity do
       # @spec PR-ESCALATION-027
       it "skips an awaiting_approval escalation when GitHub API verification fails" do
         issue.update!(pr_review_phase: "ready", awaiting_approval_since: 2.days.ago)
+        configure_awaiting_approval_project!(issue)
         allow(github_client).to receive(:pull_request)
           .and_raise(GithubClient::Error, "transient")
 

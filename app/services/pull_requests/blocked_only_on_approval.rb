@@ -70,7 +70,8 @@ module PullRequests
     private
 
     def quick_preconditions_hold?
-      @issue.github_state == "open" &&
+      @project.auto_merge_enabled? &&
+        @issue.github_state == "open" &&
         @issue.ready_phase? &&
         !@issue.has_label?(SKIP_AUTO_MERGE_LABEL)
     end

@@ -132,6 +132,12 @@ RSpec.describe PullRequests::BlockedOnlyOnApproval do
       expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(false)
     end
 
+    it "returns false when auto-merge was disabled since the scan" do
+      project.update!(auto_merge_mode: "off")
+
+      expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(false)
+    end
+
     # @spec PR-ESCALATION-025
     it "returns false when the PR was converted to draft since the scan" do
       stub_pr_data(green_pr_data(draft: true))
