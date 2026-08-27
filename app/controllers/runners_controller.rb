@@ -551,7 +551,6 @@ class RunnersController < ApplicationController
       time_range: @outcome_time_range
     )
     @available_api_keys = current_user.provider_api_keys.ordered
-    @available_api_keys_by_service_type = group_api_keys_by_service_type(@available_api_keys)
     existing_subscription_keys = @runners.select(&:subscription?).map(&:runner_key)
     # Only single-instance runner keys are hidden from the index "Add Runner"
     # CTA once added; other api_key runners allow legitimate duplicates.

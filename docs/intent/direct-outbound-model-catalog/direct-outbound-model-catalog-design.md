@@ -79,10 +79,11 @@ matches the allowed provider slug set.
 
 The runner form therefore groups API key choices by `api_service_type`,
 derives the effective provider from the selected key, and renders the model
-dropdown from `LlmModel.dropdown_options_for(service_type)` for that derived
-service type. When the selected key changes, the model options refresh to the
-new service type; the form no longer persists `config[runner_key]["api_provider"]`
-for new saves.
+dropdown from the active catalog rows for that derived service type via one
+batched provider query, preserving the same provider-scoped option contract as
+`LlmModel.dropdown_options_for(service_type)`. When the selected key changes,
+the model options refresh to the new service type; the form no longer persists
+`config[runner_key]["api_provider"]` for new saves.
 
 Legacy `config[runner_key]["api_provider"]` values remain a fallback for
 existing rows until the follow-up migration rewrites them, and the per-runner

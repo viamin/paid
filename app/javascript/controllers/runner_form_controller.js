@@ -267,7 +267,8 @@ export default class extends Controller {
   }
 
   replaceDynamicModelOptions(select, options, serviceType) {
-    const placeholder = serviceType ? "Select a model" : "Select an API key first"
+    const placeholder = !serviceType ? "Select an API key first" :
+      select.dataset.optionalModel === "true" ? "Use provider default" : "Select a model"
     select.options.length = 0
     select.add(new Option(placeholder, ""))
 

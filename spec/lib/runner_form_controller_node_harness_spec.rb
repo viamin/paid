@@ -23,12 +23,13 @@ class RunnerFormControllerNodeHarness
       this.value = value;
     });
 
-    function buildSelect({ runnerKey, optionsByServiceType, currentServiceType = "", value = "" }) {
+    function buildSelect({ runnerKey, optionsByServiceType, currentServiceType = "", value = "", optionalModel = false }) {
       const options = [];
 
       return {
         dataset: {
           runnerKey,
+          optionalModel: optionalModel ? "true" : "false",
           currentServiceType,
           modelOptionsByServiceType: JSON.stringify(optionsByServiceType)
         },
@@ -73,6 +74,7 @@ class RunnerFormControllerNodeHarness
       const piModelSelect = buildSelect({
         runnerKey: "pi",
         currentServiceType: "openrouter",
+        optionalModel: true,
         optionsByServiceType: {
           openrouter: [["Kimi K2", "moonshotai/kimi-k2-0905"]],
           anthropic: [["Claude Sonnet 4", "claude-sonnet-4-20250514"]]
@@ -161,11 +163,19 @@ class RunnerFormControllerNodeHarness
         throw new Error(`Expected opencode to switch back to the openrouter key before changing runners, saw ${harness.controller.requiredApiServiceTypeFor("opencode")}`);
       }
 
+      harness.controller.runnerSelectTargets[0].value = "pi";
+      harness.controller.refreshDynamicModelOptions("pi");
+
+      if (harness.piModelSelect.options[0]?.text !== "Use provider default") {
+        throw new Error(`Expected pi placeholder to preserve optional-model copy, saw ${harness.piModelSelect.options[0]?.text}`);
+      }
+
       harness.apiKeyOptions.forEach((option) => {
         option.selected = false;
       });
       harness.apiKeySelect.value = "";
       harness.apiKeySelect.selectedOptions = [selectedOption(harness.apiKeyOptions, "")];
+      harness.piModelSelect.dataset.currentServiceType = "";
       harness.controller.runnerSelectTargets[0].value = "pi";
 
       harness.controller.refreshApiKeyOptions("pi");
