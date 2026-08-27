@@ -16,6 +16,7 @@ RSpec.describe Automation::Strategies::AutoMerge::Signals, :no_db do
       expect(signals.dependencies_resolved?).to be false
       expect(signals.bot_authored?).to be false
       expect(signals.dependabot_eligible?).to be false
+      expect(signals.merge_executor_supported?).to be false
     end
 
     it "preserves issue_id and pr_number" do
@@ -52,11 +53,13 @@ RSpec.describe Automation::Strategies::AutoMerge::Signals, :no_db do
         issue_id: 1,
         pr_number: 42,
         bot_authored: true,
-        dependabot_eligible: true
+        dependabot_eligible: true,
+        merge_executor_supported: true
       )
 
       expect(signals.bot_authored?).to be true
       expect(signals.dependabot_eligible?).to be true
+      expect(signals.merge_executor_supported?).to be true
     end
   end
 end

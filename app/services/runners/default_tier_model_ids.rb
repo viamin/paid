@@ -43,31 +43,17 @@ module Runners
 
     attr_reader :runner_key, :auth_type
 
-    def tier_defaults_for_standard_provider(model_provider)
+    def tier_defaults_for_standard_provider(model_provider) # @spec RUNNER-MODEL-OPTIONS-006
+      model_entries = ModelOptions.call(
+        runner_key: runner_key,
+        api_provider: model_provider,
+        auth_type: auth_type
+      ).select(&:model?).filter_map(&:model)
+
       LlmModel::TIERS.each_with_object({}) do |tier, mapping|
-        model = LlmModel.active.by_provider(model_provider).by_tier(tier).by_capability
-          .find { |m| runner_model_compatible?(m.model_id) }
+        model = model_entries.select { |m| m.tier == tier }.max_by { |m| m.capability_score.to_f }
         mapping[tier] = model.model_id if model
       end
-    end
-
-    def runner_model_compatible?(model_id) # @spec MODEL-SELECTION-005
-      result = ModelCompatibility.call(
-        runner_key: runner_key,
-        model_id: model_id,
-        auth_type: auth_type
-      )
-      if result.unsupported?
-        Rails.logger.info(
-          message: "model_selection.default_model_filtered_incompatible",
-          runner_key: runner_key,
-          model_id: model_id,
-          auth_type: auth_type,
-          incompatibility_type: result.incompatibility_type,
-          reason: result.reason
-        )
-      end
-      !result.unsupported?
     end
   end
 end

@@ -16,8 +16,8 @@
 - [x] **AUTO-MERGE-002** — When a dependency-update bot pull request is
   evaluated for auto-merge, the system SHALL allow the bot path to skip owner
   approval and review-feedback gates, but SHALL still require bot eligibility,
-  green checks, mergeability, and resolved dependencies before emitting a
-  merge decision.
+  a supported merge executor author, green checks, mergeability, and resolved
+  dependencies before emitting a merge decision.
   *Code:* `app/services/automation/strategies/auto_merge.rb`.
   *Test:* `spec/services/automation/strategies/auto_merge_spec.rb`.
 
@@ -50,3 +50,47 @@
   `spec/jobs/dependabot_auto_merge_job_spec.rb`,
   `spec/jobs/auto_release_evaluation_job_spec.rb`,
   `spec/temporal/activities/merge_pull_request_activity_spec.rb`.
+
+- [x] **AUTO-MERGE-005** — When an open pull request is ineligible for
+  auto-merge, the system SHALL persist and report the exact authoritative
+  blocker signals that failed in the auto-merge evaluation, SHALL distinguish
+  failed signals from later checks that were not evaluated because an earlier
+  gate already failed, and SHALL format PR diagnostics from that persisted
+  snapshot instead of recomputing eligibility in a second implementation.
+  *Code:* `app/services/automation/strategies/auto_merge.rb`,
+  `app/temporal/activities/scan_paid_prs_activity.rb`,
+  `app/services/pull_requests/auto_merge_status.rb`.
+  *Test:* `spec/services/automation/strategies/auto_merge_spec.rb`,
+  `spec/services/pull_requests/auto_merge_status_spec.rb`,
+  `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.
+
+- [x] **AUTO-MERGE-006** — When a blocking approval exists for a human-authored
+  pull request and the PR HEAD commit timestamp is newer than the latest
+  blocking approval timestamp, the system SHALL mark the approval as stale
+  (treating the PR as not freshly approved) only when at least one commit on
+  the first-parent path from HEAD back to the approval commit introduces
+  content attributable to the PR author. The first-parent path (the feature
+  branch's natural history, equivalent to `git log --first-parent HEAD`) SHALL
+  be classified as content-free, and the approval retained as fresh, when
+  every commit on that path is a merge commit whose second-parent side is
+  reachable from the PR's base branch tip AND whose tree is identical to its
+  first-parent tree (no conflict resolution, no author-side change). Commits
+  reachable from HEAD but NOT on the first-parent path are content-free by
+  transitivity: once a merge's second parent is reachable from the base
+  branch tip, every descendant of that second parent in the range is also
+  reachable. Any commit that cannot be positively classified as content-free
+  SHALL continue to mark the approval stale (fail closed). When the first-
+  parent walk exceeds the response cap (matches GitHub's compare response
+  cap of 250 commits) the range SHALL be treated as unclassifiable, the
+  approval SHALL be marked stale (fail closed), and the truncation SHALL be
+  logged. The classification decision SHALL be logged with the commit SHAs
+  inspected so a stall is diagnosable.
+  *Code:*
+  `app/services/automation/signals/pull_request_collector.rb`
+  (`#only_base_merge_commits_since?`, `#walk_first_parent_chain`),
+  `app/temporal/activities/scan_paid_prs_activity.rb`
+  (`#review_stale_for_head?`, `#blocking_approvals_for`,
+  `#latest_approval_for`).
+  *Test:*
+  `spec/services/automation/signals/pull_request_collector_spec.rb`,
+  `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.

@@ -76,6 +76,27 @@ class DashboardController < ApplicationController
     @detail_view = params[:view] == "detail"
   end
 
+  # Renders only the inbox detail frame so list links can navigate without a
+  # full page reload (Hotwire/Turbo Frame). The route exists at the
+  # dedicated #3676 InboxController; here it lives on DashboardController so
+  # selection + auto-advance can land before the URL scheme migrates.
+  def inbox_detail
+    @scoped_project = scoped_needs_input_project
+    @selected_kind = valid_inbox_kind
+    @inbox_entries = Inbox::Queue.call(user: current_user, project: @scoped_project, kind: @selected_kind)
+    @selected_entry = resolve_selected_entry(@inbox_entries, fallback_to_first: false)
+
+    # Stale entry URLs (bookmarks, refreshed tabs) can hit this frame after the
+    # underlying record is gone. Render the frame's empty state instead of
+    # crashing the partial on `entry.plan_review?`/etc. dereferences.
+    render "dashboard/inbox_detail_frame",
+      locals: {
+        entry: @selected_entry,
+        scoped_project: @scoped_project,
+        selected_kind: @selected_kind
+      }
+  end
+
   def metrics
     @time_range = valid_time_range
     @stats = Dashboard::Stats.call(
@@ -243,10 +264,33 @@ class DashboardController < ApplicationController
     Inbox::Queue::KINDS.include?(kind) ? kind : nil
   end
 
-  def resolve_selected_entry(entries)
-    selected = entries.find do |entry|
-      entry.kind == params[:entry_kind].to_s && entry.record.id.to_s == params[:entry_id].to_s
-    end
-    selected || entries.first
+  # Resolves the inbox entry the request is asking about.
+  #
+  # When an explicit selection (`entry_kind`+`entry_id` path params or the
+  # combined `selected` query param used by the auto-advance redirect) names a
+  # record in the queue, the matching entry is returned. If the named record
+  # is gone (stale URL), the `fallback_to_first` flag controls what happens:
+  #
+  # * `true` (default) — used by the full inbox page. Falls back to the first
+  #   entry so the page still renders something instead of crashing on
+  #   `entry.kind`. Existing behavior; the stale selection is silently dropped.
+  # * `false` — used by the standalone detail frame. Returns `nil` so the
+  #   empty-state template surfaces instead of showing the operator an
+  #   unrelated questionnaire when they hit a bookmarked/refreshed URL for a
+  #   record that has already been resolved.
+  def resolve_selected_entry(entries, fallback_to_first: true)
+    kind, record_id = inbox_selected_components
+    selected = entries.find { |entry| entry.kind == kind && entry.record.id.to_s == record_id }
+    return selected if selected
+
+    fallback_to_first ? entries.first : nil
+  end
+
+  def inbox_selected_components
+    combined = params[:selected].to_s
+    return params[:entry_kind].to_s, params[:entry_id].to_s if combined.blank?
+
+    kind, record_id = combined.split(":", 2)
+    [ kind.to_s, record_id.to_s ]
   end
 end

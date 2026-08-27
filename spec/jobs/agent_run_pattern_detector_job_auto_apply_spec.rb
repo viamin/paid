@@ -46,6 +46,7 @@ RSpec.describe AgentRunPatternDetectorJob do
       }
     )
 
+    allow(AgentRunPatterns::Detect).to receive(:call).and_return([])
     allow(AgentRunPatterns::Detect).to receive(:call).with(account: account).and_return([ pattern ])
     allow(AgentRunPatterns::Diagnose).to receive(:call).and_return(diagnosis)
   end

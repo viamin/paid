@@ -17,7 +17,7 @@ RSpec.describe Automation::Signals::PullRequestCollector do
     )
   end
   let(:client) { instance_double(GithubClient) }
-  let(:logger) { instance_double(ActiveSupport::Logger, warn: nil) }
+  let(:logger) { instance_double(ActiveSupport::Logger, warn: nil, info: nil) }
   let(:collector) { described_class.new(providers: providers, client: client, logger: logger) }
   let(:issue) { instance_double(Issue, github_number: 42) }
 
@@ -266,6 +266,464 @@ RSpec.describe Automation::Signals::PullRequestCollector do
       expect(logger).to have_received(:warn).with(
         hash_including(message: "pr_scanner.signal_check_failed", signal: "review_comments")
       )
+    end
+  end
+
+  # @spec AUTO-MERGE-006
+  describe "#only_base_merge_commits_since?" do
+    def approval_sha
+      "approved_sha"
+    end
+
+    def head_sha
+      "head_sha"
+    end
+
+    def second_parent_sha
+      "second_parent_sha"
+    end
+
+    def base_tip_sha
+      "base_tip_sha"
+    end
+
+    def base_ref
+      OpenStruct.new(object: OpenStruct.new(sha: base_tip_sha))
+    end
+
+    # HEAD as a clean two-parent merge of base: tree matches its first
+    # parent (no conflict resolution) and the first parent is the
+    # approval commit, so a single FP-chain step lands on the approval.
+    def merge_commit
+      OpenStruct.new(
+        sha: head_sha,
+        commit: OpenStruct.new(tree: OpenStruct.new(sha: "merge_tree")),
+        parents: [
+          OpenStruct.new(sha: approval_sha),
+          OpenStruct.new(sha: second_parent_sha)
+        ]
+      )
+    end
+
+    def first_parent_commit
+      OpenStruct.new(
+        commit: OpenStruct.new(tree: OpenStruct.new(sha: "merge_tree"))
+      )
+    end
+
+    # Stubs the FP walk for the cleanest single-merge scenario: the
+    # ancestry compare, the base tip ref, the merge + first-parent
+    # commit lookups, and the second-parent reachability check.
+    # Examples override whichever piece they make dirty.
+    def stub_clean_first_parent_walk
+      allow(client).to receive(:compare)
+        .with("acme/widgets", approval_sha, head_sha)
+        .and_return(OpenStruct.new(status: "ahead"))
+      allow(client).to receive(:ref)
+        .with("acme/widgets", "heads/main")
+        .and_return(base_ref)
+      allow(client).to receive(:commit)
+        .with("acme/widgets", head_sha)
+        .and_return(merge_commit)
+      allow(client).to receive(:commit)
+        .with("acme/widgets", approval_sha)
+        .and_return(first_parent_commit)
+      allow(client).to receive(:compare)
+        .with("acme/widgets", second_parent_sha, base_tip_sha)
+        .and_return(OpenStruct.new(status: "ahead"))
+    end
+
+    # Stubs an FP chain where HEAD is a single-parent author commit on
+    # top of a clean base merge: head_sha → author_sha → merge_sha →
+    # approval_sha. The author commit must invalidate the approval.
+    def stub_mixed_first_parent_walk
+      author_sha = "author_commit_sha"
+      merge_sha = "merge_sha"
+      author_commit = OpenStruct.new(
+        sha: author_sha,
+        commit: OpenStruct.new(tree: OpenStruct.new(sha: "author_tree")),
+        parents: [ OpenStruct.new(sha: merge_sha) ]
+      )
+      merge_commit = OpenStruct.new(
+        sha: merge_sha,
+        commit: OpenStruct.new(tree: OpenStruct.new(sha: "merge_tree")),
+        parents: [
+          OpenStruct.new(sha: approval_sha),
+          OpenStruct.new(sha: second_parent_sha)
+        ]
+      )
+      head_commit = OpenStruct.new(
+        sha: head_sha,
+        commit: OpenStruct.new(tree: OpenStruct.new(sha: "author_tree")),
+        parents: [ OpenStruct.new(sha: author_sha) ]
+      )
+
+      allow(client).to receive(:compare)
+        .with("acme/widgets", approval_sha, head_sha)
+        .and_return(OpenStruct.new(status: "ahead"))
+      allow(client).to receive(:commit)
+        .with("acme/widgets", head_sha)
+        .and_return(head_commit)
+      allow(client).to receive(:commit)
+        .with("acme/widgets", author_sha)
+        .and_return(author_commit)
+      allow(client).to receive(:commit)
+        .with("acme/widgets", merge_sha)
+        .and_return(merge_commit)
+      allow(client).to receive(:commit)
+        .with("acme/widgets", approval_sha)
+        .and_return(first_parent_commit)
+      allow(client).to receive(:compare)
+        .with("acme/widgets", second_parent_sha, base_tip_sha)
+        .and_return(OpenStruct.new(status: "ahead"))
+    end
+
+    before do
+      allow(client).to receive(:ref)
+        .with("acme/widgets", "heads/main")
+        .and_return(base_ref)
+    end
+
+    it "returns true when the post-approval range is a clean base merge" do
+      stub_clean_first_parent_walk
+
+      result = collector.only_base_merge_commits_since?(
+        approval_sha: approval_sha, head_sha: head_sha, base_branch: "main", issue: issue
+      )
+
+      expect(result).to be(true)
+    end
+
+    it "returns true when compare response also lists base-branch commits brought in by the merge" do
+      # Regression for the review-thread scenario where the merge brought
+      # in base-branch commits: GitHub's compare endpoint is equivalent
+      # to `git log BASE..HEAD` and therefore also returns the base-
+      # branch commits that arrived only through the merge's second
+      # parent. The FP walk ignores those (they are content-free by
+      # transitivity) and the approval stays fresh.
+      stub_clean_first_parent_walk
+      allow(client).to receive(:compare)
+        .with("acme/widgets", approval_sha, head_sha)
+        .and_return(OpenStruct.new(
+          status: "ahead",
+          ahead_by: 5,
+          commits: [
+            OpenStruct.new(sha: head_sha),
+            OpenStruct.new(sha: "base_commit_4_sha"),
+            OpenStruct.new(sha: "base_commit_3_sha"),
+            OpenStruct.new(sha: "base_commit_2_sha"),
+            OpenStruct.new(sha: "base_commit_1_sha")
+          ]
+        ))
+
+      result = collector.only_base_merge_commits_since?(
+        approval_sha: approval_sha, head_sha: head_sha, base_branch: "main", issue: issue
+      )
+
+      expect(result).to be(true)
+    end
+
+    it "returns false when HEAD itself is a single-parent commit on the FP chain" do
+      # HEAD is a single-parent commit (one parent, not two): that is
+      # author-side feature-branch content and must invalidate the
+      # approval. The merge's first-parent check is what matters —
+      # whether HEAD happens to also be reachable from base tip does
+      # not change that the FP chain is not content-free.
+      allow(client).to receive(:compare)
+        .with("acme/widgets", approval_sha, head_sha)
+        .and_return(OpenStruct.new(status: "ahead"))
+      allow(client).to receive(:commit)
+        .with("acme/widgets", head_sha)
+        .and_return(OpenStruct.new(
+          sha: head_sha,
+          commit: OpenStruct.new(tree: OpenStruct.new(sha: "head_tree")),
+          parents: [ OpenStruct.new(sha: approval_sha) ]
+        ))
+
+      result = collector.only_base_merge_commits_since?(
+        approval_sha: approval_sha, head_sha: head_sha, base_branch: "main", issue: issue
+      )
+
+      expect(result).to be(false)
+    end
+
+    it "returns false when a merge commit resolved conflicts (tree differs from first parent)" do
+      stub_clean_first_parent_walk
+      allow(client).to receive(:commit)
+        .with("acme/widgets", approval_sha)
+        .and_return(OpenStruct.new(
+          commit: OpenStruct.new(tree: OpenStruct.new(sha: "different_tree"))
+        ))
+
+      result = collector.only_base_merge_commits_since?(
+        approval_sha: approval_sha, head_sha: head_sha, base_branch: "main", issue: issue
+      )
+
+      expect(result).to be(false)
+    end
+
+    it "returns false when a merge commit merges in a branch that is not the PR base" do
+      stub_clean_first_parent_walk
+      allow(client).to receive(:compare)
+        .with("acme/widgets", second_parent_sha, base_tip_sha)
+        .and_return(OpenStruct.new(status: "diverged"))
+
+      result = collector.only_base_merge_commits_since?(
+        approval_sha: approval_sha, head_sha: head_sha, base_branch: "main", issue: issue
+      )
+
+      expect(result).to be(false)
+    end
+
+    it "returns false when the FP chain has a clean merge followed by a single-parent author commit" do
+      # HEAD is a single-parent author commit on top of a clean merge
+      # that brought in base. The merge itself is content-free, but
+      # the FP chain still contains author-side content (the HEAD
+      # commit) and the approval must be invalidated.
+      stub_mixed_first_parent_walk
+
+      result = collector.only_base_merge_commits_since?(
+        approval_sha: approval_sha, head_sha: head_sha, base_branch: "main", issue: issue
+      )
+
+      expect(result).to be(false)
+    end
+
+    it "returns false when compare reports the history diverged (force-push dropped the approval)" do
+      allow(client).to receive(:compare)
+        .with("acme/widgets", approval_sha, head_sha)
+        .and_return(OpenStruct.new(status: "diverged"))
+
+      result = collector.only_base_merge_commits_since?(
+        approval_sha: approval_sha, head_sha: head_sha, base_branch: "main", issue: issue
+      )
+
+      expect(result).to be(false)
+    end
+
+    it "returns false when a commit lookup fails mid-walk (fail closed)" do
+      allow(client).to receive(:compare)
+        .with("acme/widgets", approval_sha, head_sha)
+        .and_return(OpenStruct.new(status: "ahead"))
+      allow(client).to receive(:commit)
+        .with("acme/widgets", head_sha)
+        .and_raise(GithubClient::Error, "boom")
+
+      result = collector.only_base_merge_commits_since?(
+        approval_sha: approval_sha, head_sha: head_sha, base_branch: "main", issue: issue
+      )
+
+      expect(result).to be(false)
+      expect(logger).to have_received(:warn).with(
+        hash_including(message: "pr_scanner.signal_check_failed", signal: "clean_base_merge_range")
+      )
+    end
+
+    it "returns false (fail closed) when the first-parent walk exceeds the response cap" do
+      # Stub the walk limit down so the cycle exhausts it quickly. The
+      # production limit (250) is documented in the spec; this test
+      # only needs to exercise the truncation branch. head_sha's first
+      # parent loops back to itself so the walk never finds approval_sha.
+      stub_const("Automation::Signals::PullRequestCollector::FIRST_PARENT_WALK_LIMIT", 3)
+      stub_clean_first_parent_walk
+      allow(client).to receive(:commit)
+        .with("acme/widgets", head_sha)
+        .and_return(cycle_commit)
+
+      result = collector.only_base_merge_commits_since?(
+        approval_sha: approval_sha, head_sha: head_sha, base_branch: "main", issue: issue
+      )
+
+      expect(result).to be(false)
+      expect(logger).to have_received(:warn).with(hash_including(
+        message: "pr_scanner.review_freshness_range_truncated",
+        first_parent_steps: 3,
+        walk_limit: 3
+      ))
+    end
+
+    it "fetches each first-parent commit at most once across a multi-step walk" do
+      # Regression: the prior walk re-fetched every commit whose SHA
+      # had just been re-discovered as the next first-parent. With N
+      # steps that meant up to N-1 wasted GitHub API calls per
+      # staleness check (multiplied by the 1-2 blocking approvals per
+      # PR). The walk now forwards the prior iteration's first-parent
+      # commit as the next step's commit, so each commit is resolved
+      # exactly once across the whole chain.
+      stub_two_step_first_parent_walk
+
+      result = collector.only_base_merge_commits_since?(
+        approval_sha: approval_sha, head_sha: head_sha, base_branch: "main", issue: issue
+      )
+
+      expect(result).to be(true)
+      expect(client).to have_received(:commit).with("acme/widgets", head_sha).once
+      expect(client).to have_received(:commit).with("acme/widgets", "middle_merge_sha").once
+      expect(client).to have_received(:commit).with("acme/widgets", approval_sha).once
+    end
+
+    # Stubs a two-step clean FP chain: head_sha → middle_sha →
+    # approval_sha. Each intermediate is a clean two-parent merge of
+    # base (identical tree to its first parent, second parent
+    # reachable from base tip), so the walk should land on the
+    # approval commit without re-classifying any step.
+    def stub_two_step_first_parent_walk
+      middle_sha = "middle_merge_sha"
+      head_commit = OpenStruct.new(
+        sha: head_sha,
+        commit: OpenStruct.new(tree: OpenStruct.new(sha: "merge_tree")),
+        parents: [
+          OpenStruct.new(sha: middle_sha),
+          OpenStruct.new(sha: second_parent_sha)
+        ]
+      )
+      middle_commit = OpenStruct.new(
+        sha: middle_sha,
+        commit: OpenStruct.new(tree: OpenStruct.new(sha: "merge_tree")),
+        parents: [
+          OpenStruct.new(sha: approval_sha),
+          OpenStruct.new(sha: second_parent_sha)
+        ]
+      )
+
+      allow(client).to receive(:compare)
+        .with("acme/widgets", approval_sha, head_sha)
+        .and_return(OpenStruct.new(status: "ahead"))
+      allow(client).to receive(:ref)
+        .with("acme/widgets", "heads/main")
+        .and_return(base_ref)
+      allow(client).to receive(:commit)
+        .with("acme/widgets", head_sha)
+        .and_return(head_commit)
+      allow(client).to receive(:commit)
+        .with("acme/widgets", middle_sha)
+        .and_return(middle_commit)
+      allow(client).to receive(:commit)
+        .with("acme/widgets", approval_sha)
+        .and_return(first_parent_commit)
+      allow(client).to receive(:compare)
+        .with("acme/widgets", second_parent_sha, base_tip_sha)
+        .and_return(OpenStruct.new(status: "ahead"))
+    end
+
+    # Cycle: head_sha's first parent points back to itself so the FP
+    # walk never reaches approval_sha and the step bound trips.
+    def cycle_commit
+      OpenStruct.new(
+        sha: head_sha,
+        commit: OpenStruct.new(tree: OpenStruct.new(sha: "merge_tree")),
+        parents: [
+          OpenStruct.new(sha: head_sha),
+          OpenStruct.new(sha: second_parent_sha)
+        ]
+      )
+    end
+
+    it "returns false when the base branch tip cannot be resolved" do
+      allow(client).to receive(:ref)
+        .with("acme/widgets", "heads/main")
+        .and_return(nil)
+
+      result = collector.only_base_merge_commits_since?(
+        approval_sha: approval_sha, head_sha: head_sha, base_branch: "main", issue: issue
+      )
+
+      expect(result).to be(false)
+      expect(logger).to have_received(:warn).with(
+        hash_including(message: "pr_scanner.signal_check_failed", signal: "clean_base_merge_range")
+      )
+    end
+
+    it "re-raises authentication failures from the base branch tip lookup so the scan fails loudly" do
+      allow(client).to receive(:ref)
+        .with("acme/widgets", "heads/main")
+        .and_raise(GithubClient::AuthenticationError, "bad credentials")
+
+      expect {
+        collector.only_base_merge_commits_since?(
+          approval_sha: approval_sha, head_sha: head_sha, base_branch: "main", issue: issue
+        )
+      }.to raise_error(GithubClient::AuthenticationError)
+    end
+
+    it "returns true when approval_sha equals head_sha (no new commits since approval)" do
+      allow(client).to receive(:compare)
+
+      result = collector.only_base_merge_commits_since?(
+        approval_sha: head_sha, head_sha: head_sha, base_branch: "main", issue: issue
+      )
+
+      expect(result).to be(true)
+      expect(client).not_to have_received(:compare)
+    end
+
+    it "returns false when any required input is blank" do
+      cases = [
+        { approval_sha: nil, head_sha: head_sha, base_branch: "main" },
+        { approval_sha: approval_sha, head_sha: nil, base_branch: "main" },
+        { approval_sha: approval_sha, head_sha: head_sha, base_branch: nil },
+        { approval_sha: "", head_sha: "", base_branch: "main" },
+        { approval_sha: approval_sha, head_sha: head_sha, base_branch: "" },
+        { approval_sha: "", head_sha: "", base_branch: "" }
+      ]
+
+      cases.each do |kwargs|
+        result = collector.only_base_merge_commits_since?(**kwargs, issue: issue)
+        expect(result).to be(false), "expected false for #{kwargs.inspect}"
+      end
+    end
+
+    it "logs the classification decision so a stall is diagnosable" do
+      stub_clean_first_parent_walk
+
+      collector.only_base_merge_commits_since?(
+        approval_sha: approval_sha, head_sha: head_sha, base_branch: "main", issue: issue
+      )
+
+      expect(logger).to have_received(:info).with(
+        hash_including(
+          message: "pr_scanner.review_freshness_range_classified",
+          approval_sha: approval_sha,
+          head_sha: head_sha,
+          first_parent_steps: 1
+        )
+      )
+    end
+
+    it "logs the stale classification so the failure mode is diagnosable" do
+      allow(client).to receive(:compare)
+        .with("acme/widgets", approval_sha, head_sha)
+        .and_return(OpenStruct.new(status: "ahead"))
+      allow(client).to receive(:commit)
+        .with("acme/widgets", head_sha)
+        .and_return(OpenStruct.new(
+          sha: head_sha,
+          commit: OpenStruct.new(tree: OpenStruct.new(sha: "head_tree")),
+          parents: [ OpenStruct.new(sha: approval_sha) ]
+        ))
+
+      collector.only_base_merge_commits_since?(
+        approval_sha: approval_sha, head_sha: head_sha, base_branch: "main", issue: issue
+      )
+
+      expect(logger).to have_received(:warn).with(
+        hash_including(
+          message: "pr_scanner.review_freshness_range_stale",
+          reason: "single_parent_commit"
+        )
+      )
+    end
+
+    it "re-raises authentication failures so the scan can fail loudly" do
+      allow(client).to receive(:compare)
+        .with("acme/widgets", approval_sha, head_sha)
+        .and_raise(GithubClient::AuthenticationError, "bad credentials")
+
+      expect {
+        collector.only_base_merge_commits_since?(
+          approval_sha: approval_sha, head_sha: head_sha, base_branch: "main", issue: issue
+        )
+      }.to raise_error(GithubClient::AuthenticationError)
     end
   end
 

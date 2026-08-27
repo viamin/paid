@@ -133,28 +133,28 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         pr_number: 42,
         bot_authored: true,
         dependabot_eligible: true,
+        merge_executor_supported: true,
         checks_green: true,
         mergeable: true
       )
     end
-    let(:merge_result) do
-      Automation::Result.new(decisions: [ Automation::Decision.merge(issue_id: 123, pr_number: 42) ])
+    let(:analysis) do
+      Automation::Strategies::AutoMerge::Evaluation.new(eligible: true, blockers: [])
     end
 
     it "selects the auto-merge strategy through Automation::Strategies::Select" do
       allow(Automation::Strategies::Select).to receive(:call)
         .with(strategy_type: :auto_merge, project: project)
         .and_return(selected_strategy)
-      allow(selected_strategy).to receive(:evaluate).and_return(merge_result)
+      allow(selected_strategy).to receive(:analyze).and_return(analysis)
 
       result = activity.send(:evaluate_auto_merge, project, signals)
 
-      expect(result).to be(true)
+      expect(result).to eq(analysis)
       expect(Automation::Strategies::Select).to have_received(:call)
         .with(strategy_type: :auto_merge, project: project)
-      expect(selected_strategy).to have_received(:evaluate).with(
-        have_attributes(project: project)
-      )
+      expect(selected_strategy).to have_received(:analyze)
+        .with(signals, owner_reviewer_login: project.owner_reviewer_login)
     end
   end
 
@@ -435,6 +435,70 @@ RSpec.describe Activities::ScanPaidPrsActivity do
             ]
           )
         )
+      end
+
+      it "persists failed and not-evaluated auto-merge blockers with last_pr_scan_at" do
+        project.update!(auto_merge_mode: "all", owner_reviewer_login: "viamin")
+        pr_issue.update!(pr_review_phase: "ready")
+        stub_github_for_pr(
+          checks: [ { name: "rspec", conclusion: "success" } ],
+          reviews: [ { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current } ]
+        )
+        allow(activity).to receive_messages(
+          owner_approved_or_self_authored?: true,
+          no_outstanding_review_feedback?: true,
+          all_blocking_review_methods_complete?: true,
+          review_stale_for_head?: true
+        )
+        expect(activity).not_to receive(:dependencies_resolved?)
+
+        freeze_time do
+          activity.execute(project_id: project.id)
+
+          pr_issue.reload
+          expect(pr_issue.last_pr_scan_at).to eq(Time.current)
+          expect(pr_issue.auto_merge_evaluated_at).to eq(Time.current)
+          expect(pr_issue.auto_merge_blockers).to eq(expected_auto_merge_blockers)
+        end
+      end
+
+      it "preserves a prior auto-merge snapshot when only the merge-conflict rescan path runs" do
+        project.update!(auto_fix_merge_conflicts: true)
+        prior_evaluated_at = 30.minutes.ago
+        pr_issue.update!(
+          last_pr_scan_at: 1.hour.ago,
+          github_updated_at: 2.hours.ago,
+          auto_merge_blockers: stale_approval_snapshot,
+          auto_merge_evaluated_at: prior_evaluated_at
+        )
+        stub_github_for_pr(mergeable: false)
+
+        freeze_time do
+          activity.execute(project_id: project.id)
+
+          pr_issue.reload
+          expect(pr_issue.last_pr_scan_at).to eq(Time.current)
+          expect(pr_issue.auto_merge_blockers).to eq(stale_approval_snapshot)
+          expect(pr_issue.auto_merge_evaluated_at).to be_within(1.second).of(prior_evaluated_at)
+        end
+      end
+
+      it "resets the per-execute auto-merge snapshot cache so prior-pass staging cannot leak" do
+        project.update!(auto_fix_merge_conflicts: true)
+        pr_issue.update!(
+          last_pr_scan_at: 1.hour.ago,
+          github_updated_at: 2.hours.ago
+        )
+        leaked_snapshot = { "failed" => [ { "leaked" => true } ], "not_evaluated" => [] }
+        activity.instance_variable_set(:@auto_merge_snapshots, { pr_issue.id => leaked_snapshot })
+        stub_github_for_pr(mergeable: false)
+
+        activity.execute(project_id: project.id)
+
+        pr_issue.reload
+        expect(pr_issue.auto_merge_blockers).to be_nil
+        expect(pr_issue.auto_merge_evaluated_at).to be_nil
+        expect(activity.instance_variable_get(:@auto_merge_snapshots)).to eq({})
       end
 
       it "checks lifecycle gate queries at most once per PR scan" do
@@ -5572,6 +5636,19 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         expect(automation_scan_results(result)).to be_empty
       end
+
+      it "persists a blocked diagnostic snapshot for unsupported dependency-update bots" do
+        project.update!(auto_merge_mode: "all")
+        issue = Issue.find_by!(project: project, github_number: 42)
+        issue.update!(github_creator_login: "renovate[bot]")
+        stub_green_dependency_bot_pull_request!("renovate[bot]")
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to be_empty
+        expect(issue.reload.auto_merge_blockers).to eq(unsupported_dependency_update_bot_snapshot)
+        expect(issue.auto_merge_evaluated_at).to be_present
+      end
     end
 
     context "when consecutive follow-up runs fail with operational errors" do
@@ -6663,6 +6740,292 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       it "blocks auto-merge because the manual reviewer's approval is stale" do
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to eq([])
+      end
+    end
+
+    # --- Clean base-merge freshness (AUTO-MERGE-006) ---
+
+    context "when the only post-approval commit is a clean merge of the base branch" do
+      let(:approval_sha) { "approved_sha" }
+      let(:head_sha) { "merge_sha" }
+      let(:first_parent_sha) { approval_sha }
+      let(:second_parent_sha) { "main_tip_sha" }
+      let(:base_tip_sha) { "main_tip_sha" }
+
+      before do
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "",
+              submitted_at: 2.hours.ago, commit_id: approval_sha }
+          ],
+          head_committed_at: 1.hour.ago,
+          head_sha: head_sha
+        )
+        stub_clean_base_merge(
+          head_sha: head_sha,
+          first_parent_sha: first_parent_sha,
+          second_parent_sha: second_parent_sha,
+          approval_sha: approval_sha
+        )
+      end
+
+      it "treats the approval as fresh and emits an owner_approved trigger" do
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result).size).to eq(1)
+        expect(automation_scan_results(result).first[:triggers].first[:type]).to eq("owner_approved")
+      end
+
+      it "treats the approval as fresh even when the compare response also lists base-branch commits" do
+        # Regression for the review-thread scenario: GitHub's compare
+        # endpoint is equivalent to `git log BASE..HEAD` and therefore
+        # returns the base-branch commits that arrived only through the
+        # merge's second parent. The FP walk ignores them (they are
+        # content-free by transitivity) and the approval stays fresh.
+        allow(github_client).to receive(:compare)
+          .with(project.full_name, approval_sha, head_sha)
+          .and_return(OpenStruct.new(
+            status: "ahead",
+            ahead_by: 5,
+            commits: [
+              OpenStruct.new(sha: head_sha),
+              OpenStruct.new(sha: "base_commit_4_sha"),
+              OpenStruct.new(sha: "base_commit_3_sha"),
+              OpenStruct.new(sha: "base_commit_2_sha"),
+              OpenStruct.new(sha: "base_commit_1_sha")
+            ]
+          ))
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result).size).to eq(1)
+        expect(automation_scan_results(result).first[:triggers].first[:type]).to eq("owner_approved")
+      end
+
+      it "uses the pull request base ref instead of the project default branch" do
+        collector = instance_double(
+          Automation::Signals::PullRequestCollector,
+          fetch_head_commit_date: 1.hour.ago,
+          only_base_merge_commits_since?: true
+        )
+        issue = Issue.find_by!(project: project, github_number: 42)
+        pr_data = build_review_stale_pr_data(head_sha:, base_ref: "release/2026.08")
+        reviews = build_review_stale_reviews(approval_sha:)
+
+        allow(activity).to receive(:pull_request_collector).with(project, client: github_client).and_return(collector)
+
+        stale = activity.send(:review_stale_for_head?, github_client, project, issue, pr_data, reviews)
+
+        expect(stale).to be(false)
+        expect(collector).to have_received(:only_base_merge_commits_since?).with(
+          approval_sha: approval_sha,
+          head_sha: head_sha,
+          base_branch: "release/2026.08",
+          issue: issue
+        )
+      end
+    end
+
+    context "when a post-approval merge commit resolved conflicts" do
+      let(:approval_sha) { "approved_sha" }
+      let(:head_sha) { "merge_sha" }
+      let(:first_parent_sha) { approval_sha }
+      let(:second_parent_sha) { "main_tip_sha" }
+
+      before do
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "",
+              submitted_at: 2.hours.ago, commit_id: approval_sha }
+          ],
+          head_committed_at: 1.hour.ago,
+          head_sha: head_sha
+        )
+        # Merge commit's tree differs from its first parent — the merge
+        # resolved a conflict and that resolution is author-side content.
+        stub_conflict_resolving_merge(
+          head_sha: head_sha,
+          first_parent_sha: first_parent_sha,
+          second_parent_sha: second_parent_sha,
+          approval_sha: approval_sha
+        )
+      end
+
+      it "blocks auto-merge because the merge introduced author-side content" do
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to eq([])
+      end
+    end
+
+    context "when the post-approval range mixes a clean base merge with a real author commit" do
+      let(:approval_sha) { "approved_sha" }
+      let(:head_sha) { "real_commit_sha" }
+      let(:first_parent_sha) { approval_sha }
+      let(:second_parent_sha) { "main_tip_sha" }
+
+      before do
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "",
+              submitted_at: 2.hours.ago, commit_id: approval_sha }
+          ],
+          head_committed_at: 1.hour.ago,
+          head_sha: head_sha
+        )
+        stub_mixed_post_approval_history(
+          head_sha: head_sha,
+          approval_sha: approval_sha,
+          first_parent_sha: first_parent_sha,
+          second_parent_sha: second_parent_sha
+        )
+      end
+
+      it "blocks auto-merge because the real commit invalidates the approval" do
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to eq([])
+      end
+    end
+
+    context "when the post-approval merge pulls in a branch other than the PR base" do
+      let(:approval_sha) { "approved_sha" }
+      let(:head_sha) { "merge_sha" }
+      let(:first_parent_sha) { approval_sha }
+      let(:second_parent_sha) { "feature_branch_tip_sha" }
+
+      before do
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "",
+              submitted_at: 2.hours.ago, commit_id: approval_sha }
+          ],
+          head_committed_at: 1.hour.ago,
+          head_sha: head_sha
+        )
+        stub_merge_from_non_base_branch(
+          head_sha: head_sha,
+          first_parent_sha: first_parent_sha,
+          second_parent_sha: second_parent_sha,
+          approval_sha: approval_sha
+        )
+      end
+
+      it "blocks auto-merge because the merge brought in non-base content" do
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to eq([])
+      end
+    end
+
+    context "when the post-approval range cannot be classified (compare API failure)" do
+      let(:approval_sha) { "approved_sha" }
+      let(:head_sha) { "merge_sha" }
+
+      before do
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "",
+              submitted_at: 2.hours.ago, commit_id: approval_sha }
+          ],
+          head_committed_at: 1.hour.ago,
+          head_sha: head_sha
+        )
+        allow(github_client).to receive(:ref)
+          .with(project.full_name, "heads/#{project.default_branch}")
+          .and_return(OpenStruct.new(object: OpenStruct.new(sha: "main_tip_sha")))
+        allow(github_client).to receive(:compare)
+          .with(project.full_name, approval_sha, head_sha)
+          .and_raise(GithubClient::Error, "boom")
+      end
+
+      it "blocks auto-merge by failing closed" do
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to eq([])
+      end
+    end
+
+    context "when the first-parent walk exceeds the response cap (truncated walk)" do
+      let(:approval_sha) { "approved_sha" }
+      let(:head_sha) { "merge_sha" }
+      let(:first_parent_sha) { approval_sha }
+      let(:second_parent_sha) { "main_tip_sha" }
+
+      before do
+        # Stub the walk limit down so the cycle exhausts it quickly.
+        stub_const("Automation::Signals::PullRequestCollector::FIRST_PARENT_WALK_LIMIT", 3)
+
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "",
+              submitted_at: 2.hours.ago, commit_id: approval_sha }
+          ],
+          head_committed_at: 1.hour.ago,
+          head_sha: head_sha
+        )
+
+        # Cycle: head_sha's first parent points back to itself, so the
+        # walk never finds approval_sha and the step bound trips.
+        allow(github_client).to receive(:compare)
+          .with(project.full_name, approval_sha, head_sha)
+          .and_return(OpenStruct.new(status: "ahead"))
+        allow(github_client).to receive(:commit)
+          .with(project.full_name, head_sha)
+          .and_return(build_merge_commit(
+            sha: head_sha,
+            tree_sha: "merge_tree_sha",
+            first_parent_sha: head_sha,
+            second_parent_sha: second_parent_sha
+          ))
+        allow(github_client).to receive(:ref)
+          .with(project.full_name, "heads/#{project.default_branch}")
+          .and_return(OpenStruct.new(object: OpenStruct.new(sha: "main_tip_sha")))
+        allow(github_client).to receive(:compare)
+          .with(project.full_name, second_parent_sha, "main_tip_sha")
+          .and_return(OpenStruct.new(status: "ahead"))
+      end
+
+      it "blocks auto-merge by failing closed" do
         result = activity.execute(project_id: project.id)
 
         expect(automation_scan_results(result)).to eq([])
@@ -10853,6 +11216,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     mergeable: true,
     draft: false,
     author_login: "someone-else",
+    base_branch: "main",
     head_repo_fork: false,
     checks: [ { name: "ci", conclusion: "success" } ],
     review_threads: [],
@@ -10861,10 +11225,12 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     reviews: default_clean_copilot_review,
     recent_multi_page: false,
     head_committed_at: 2.hours.ago,
-    pr_updated_at: nil
+    pr_updated_at: nil,
+    head_sha: "abc123"
   )
     pr_data = OpenStruct.new(
-      head: OpenStruct.new(sha: "abc123", repo: OpenStruct.new(fork: head_repo_fork)),
+      base: OpenStruct.new(ref: base_branch),
+      head: OpenStruct.new(sha: head_sha, repo: OpenStruct.new(fork: head_repo_fork)),
       mergeable: mergeable,
       draft: draft,
       number: 42,
@@ -10885,7 +11251,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       .with(project.full_name, 42)
       .and_return(pr_data)
     allow(github_client).to receive(:check_runs_for_ref)
-      .with(project.full_name, "abc123")
+      .with(project.full_name, head_sha)
       .and_return(checks)
     allow(github_client).to receive(:review_threads)
       .with(project.full_name, 42)
@@ -10900,12 +11266,263 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       .with(project.full_name, 42)
       .and_return(reviews)
     allow(github_client).to receive(:commit)
-      .with(project.full_name, "abc123")
+      .with(project.full_name, head_sha)
       .and_return(commit_data)
+  end
+
+  def stub_green_dependency_bot_pull_request!(author_login)
+    stub_github_for_pr(
+      author_login: author_login,
+      checks: [ { name: "ci", conclusion: "success" } ],
+      review_threads: [],
+      reviews: []
+    )
   end
 
   def default_clean_copilot_review
     [ { id: 100, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
       body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago } ]
+  end
+
+  def build_review_stale_pr_data(head_sha:, base_ref:)
+    OpenStruct.new(head: OpenStruct.new(sha: head_sha), base_ref: base_ref)
+  end
+
+  def build_review_stale_reviews(approval_sha:)
+    [ {
+      id: 1,
+      user_login: "viamin",
+      state: "APPROVED",
+      body: "",
+      submitted_at: 2.hours.ago,
+      commit_id: approval_sha
+    } ]
+  end
+
+  # Stubs a clean two-parent merge of the base branch at HEAD — the merge's
+  # tree equals its first parent's tree (no conflict resolution) and its
+  # second parent is reachable from the base branch tip. The merge's
+  # first parent is the approved commit so the FP walk terminates in a
+  # single step.
+  def stub_clean_base_merge(head_sha:, first_parent_sha:, second_parent_sha:, approval_sha:, base_branch: nil)
+    base_tip_sha = "main_tip_sha"
+    merge_tree_sha = "merge_tree_sha"
+    base_branch ||= project.default_branch
+    merge_commit = build_merge_commit(
+      sha: head_sha,
+      tree_sha: merge_tree_sha,
+      first_parent_sha: first_parent_sha,
+      second_parent_sha: second_parent_sha
+    )
+    first_parent_commit = OpenStruct.new(
+      commit: OpenStruct.new(tree: OpenStruct.new(sha: merge_tree_sha))
+    )
+
+    allow(github_client).to receive(:compare)
+      .with(project.full_name, approval_sha, head_sha)
+      .and_return(OpenStruct.new(status: "ahead"))
+    allow(github_client).to receive(:commit)
+      .with(project.full_name, head_sha)
+      .and_return(merge_commit)
+    allow(github_client).to receive(:commit)
+      .with(project.full_name, first_parent_sha)
+      .and_return(first_parent_commit)
+    allow(github_client).to receive(:ref)
+      .with(project.full_name, "heads/#{base_branch}")
+      .and_return(OpenStruct.new(object: OpenStruct.new(sha: base_tip_sha)))
+    allow(github_client).to receive(:compare)
+      .with(project.full_name, second_parent_sha, base_tip_sha)
+      .and_return(OpenStruct.new(status: "ahead"))
+  end
+
+  # Stubs a merge commit whose tree differs from its first parent — i.e.
+  # the merge resolved a conflict (author-side content).
+  def stub_conflict_resolving_merge(head_sha:, first_parent_sha:, second_parent_sha:, approval_sha:)
+    merge_commit = build_merge_commit(
+      sha: head_sha,
+      tree_sha: "merged_tree_sha",
+      first_parent_sha: first_parent_sha,
+      second_parent_sha: second_parent_sha
+    )
+    first_parent_commit = OpenStruct.new(
+      commit: OpenStruct.new(tree: OpenStruct.new(sha: "first_parent_tree_sha"))
+    )
+
+    allow(github_client).to receive(:compare)
+      .with(project.full_name, approval_sha, head_sha)
+      .and_return(OpenStruct.new(status: "ahead"))
+    allow(github_client).to receive(:commit)
+      .with(project.full_name, head_sha)
+      .and_return(merge_commit)
+    allow(github_client).to receive(:commit)
+      .with(project.full_name, first_parent_sha)
+      .and_return(first_parent_commit)
+    allow(github_client).to receive(:ref)
+      .with(project.full_name, "heads/#{project.default_branch}")
+      .and_return(OpenStruct.new(object: OpenStruct.new(sha: "main_tip_sha")))
+  end
+
+  # Stubs a post-approval range that is a clean base merge followed by a
+  # real (single-parent) author commit — the real commit must invalidate
+  # the approval even though the merge was content-free. The FP chain is
+  # head_sha → real_commit → first_parent_sha (which equals approval_sha).
+  def stub_mixed_post_approval_history(head_sha:, approval_sha:, first_parent_sha:, second_parent_sha:)
+    base_tip_sha = "main_tip_sha"
+    merge_tree_sha = "merge_tree_sha"
+    merge_sha = "merge_sha"
+    real_commit_sha = "real_commit_sha"
+
+    merge_commit = build_merge_commit(
+      sha: merge_sha,
+      tree_sha: merge_tree_sha,
+      first_parent_sha: first_parent_sha,
+      second_parent_sha: second_parent_sha
+    )
+    first_parent_commit = OpenStruct.new(
+      commit: OpenStruct.new(tree: OpenStruct.new(sha: merge_tree_sha))
+    )
+    real_commit = build_commit_with_committer(
+      sha: real_commit_sha,
+      tree_sha: "real_tree_sha",
+      parents: [ merge_sha ]
+    )
+
+    allow(github_client).to receive(:compare)
+      .with(project.full_name, approval_sha, head_sha)
+      .and_return(OpenStruct.new(status: "ahead"))
+    allow(github_client).to receive(:commit)
+      .with(project.full_name, head_sha)
+      .and_return(real_commit)
+    allow(github_client).to receive(:commit)
+      .with(project.full_name, real_commit_sha)
+      .and_return(real_commit)
+    allow(github_client).to receive(:commit)
+      .with(project.full_name, merge_sha)
+      .and_return(merge_commit)
+    allow(github_client).to receive(:commit)
+      .with(project.full_name, first_parent_sha)
+      .and_return(first_parent_commit)
+    allow(github_client).to receive(:ref)
+      .with(project.full_name, "heads/#{project.default_branch}")
+      .and_return(OpenStruct.new(object: OpenStruct.new(sha: base_tip_sha)))
+    allow(github_client).to receive(:compare)
+      .with(project.full_name, second_parent_sha, base_tip_sha)
+      .and_return(OpenStruct.new(status: "ahead"))
+  end
+
+  # Stubs a merge commit that brought in a non-base branch (the second
+  # parent is not reachable from the base branch tip).
+  def stub_merge_from_non_base_branch(head_sha:, first_parent_sha:, second_parent_sha:, approval_sha:)
+    base_tip_sha = "main_tip_sha"
+    merge_tree_sha = "merge_tree_sha"
+    merge_commit = build_merge_commit(
+      sha: head_sha,
+      tree_sha: merge_tree_sha,
+      first_parent_sha: first_parent_sha,
+      second_parent_sha: second_parent_sha
+    )
+    first_parent_commit = OpenStruct.new(
+      commit: OpenStruct.new(tree: OpenStruct.new(sha: merge_tree_sha))
+    )
+
+    allow(github_client).to receive(:compare)
+      .with(project.full_name, approval_sha, head_sha)
+      .and_return(OpenStruct.new(status: "ahead"))
+    allow(github_client).to receive(:commit)
+      .with(project.full_name, head_sha)
+      .and_return(merge_commit)
+    allow(github_client).to receive(:commit)
+      .with(project.full_name, first_parent_sha)
+      .and_return(first_parent_commit)
+    allow(github_client).to receive(:ref)
+      .with(project.full_name, "heads/#{project.default_branch}")
+      .and_return(OpenStruct.new(object: OpenStruct.new(sha: base_tip_sha)))
+    allow(github_client).to receive(:compare)
+      .with(project.full_name, second_parent_sha, base_tip_sha)
+      .and_return(OpenStruct.new(status: "diverged"))
+  end
+
+  # Build a merge commit OpenStruct that carries enough metadata for both
+  # the staleness check (parents, tree) and the HEAD commit timestamp
+  # lookup (committer date). Tests use this so the merge commit can be
+  # the same response for client.commit(head_sha) regardless of caller.
+  def build_merge_commit(sha:, tree_sha:, first_parent_sha:, second_parent_sha:)
+    build_commit_with_committer(
+      sha: sha,
+      tree_sha: tree_sha,
+      parents: [ first_parent_sha, second_parent_sha ]
+    )
+  end
+
+  def build_commit_with_committer(sha:, tree_sha:, parents:)
+    OpenStruct.new(
+      sha: sha,
+      commit: OpenStruct.new(
+        tree: OpenStruct.new(sha: tree_sha),
+        committer: OpenStruct.new(date: 1.hour.ago)
+      ),
+      parents: parents.map { |parent_sha| OpenStruct.new(sha: parent_sha) }
+    )
+  end
+
+  def expected_auto_merge_blockers
+    {
+      "failed" => [
+        {
+          "signal" => "reviews_fresh",
+          "status" => "failed",
+          "reason_code" => "stale_approval",
+          "sanitized_message" => "The owner approval is stale for the current HEAD commit.",
+          "next_action" => "Ask @viamin to re-approve this pull request for the current HEAD commit, then wait for the next automatic merge evaluation."
+        }
+      ],
+      "not_evaluated" => [
+        {
+          "signal" => "dependencies_resolved",
+          "status" => "not_evaluated",
+          "reason_code" => "dependencies_unresolved",
+          "sanitized_message" => "Dependency resolution was not evaluated because an earlier auto-merge gate already failed.",
+          "next_action" => "Resolve the earlier auto-merge blockers first, then let Paid re-evaluate dependency resolution."
+        }
+      ]
+    }
+  end
+
+  def stale_approval_snapshot
+    {
+      "failed" => [
+        {
+          "signal" => "reviews_fresh",
+          "status" => "failed",
+          "reason_code" => "stale_approval",
+          "sanitized_message" => "The owner approval is stale for the current HEAD commit.",
+          "next_action" => "Ask @viamin to re-approve this pull request for the current HEAD commit, then wait for the next automatic merge evaluation."
+        }
+      ],
+      "not_evaluated" => []
+    }
+  end
+
+  def unsupported_dependency_update_bot_snapshot
+    {
+      "failed" => [
+        {
+          "signal" => "merge_executor_supported",
+          "status" => "failed",
+          "reason_code" => "unsupported_dependency_update_bot",
+          "sanitized_message" => "Paid does not support automatic merging for this dependency-update bot.",
+          "next_action" => "Merge this pull request manually or use a supported dependency-update bot such as Dependabot."
+        }
+      ],
+      "not_evaluated" => [
+        {
+          "signal" => "dependencies_resolved",
+          "status" => "not_evaluated",
+          "reason_code" => "dependencies_unresolved",
+          "sanitized_message" => "Dependency resolution was not evaluated because an earlier auto-merge gate already failed.",
+          "next_action" => "Resolve the earlier auto-merge blockers first, then let Paid re-evaluate dependency resolution."
+        }
+      ]
+    }
   end
 end

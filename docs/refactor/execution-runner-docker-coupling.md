@@ -13,7 +13,9 @@ current `docs/rdrs/RDR-054-prompt-assembly-service.md` is a different,
 implemented RDR for prompt assembly. Treat this inventory as part of the
 execution-runner/container-runtime workstream recorded in
 `docs/intent/container-runtime/container-runtime-design.md`, not as part of the
-current prompt-assembly RDR.
+current prompt-assembly RDR. The 2026-08-27 closeout audit
+(`docs/rdrs/audit-report-2026-08-27-execution-runners-closeout.md`, tracked by
+`#3661`) reconciles the full issue tree against that design and RDR-057/RDR-062.
 
 ## Purpose and how to read this document
 
