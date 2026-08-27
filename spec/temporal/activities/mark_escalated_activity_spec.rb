@@ -134,6 +134,69 @@ RSpec.describe Activities::MarkEscalatedActivity do
         expect(issue.reload.pr_escalation_reason).to eq("pr_auto_continue_token_limit")
       end
 
+      # @spec PR-ESCALATION-026
+      it "stores awaiting_approval escalations separately" do
+        issue.update!(pr_review_phase: "ready")
+
+        activity.execute(
+          issue_id: issue.id,
+          reason_key: "awaiting_approval",
+          reason: "This PR has been green and waiting only for owner approval for more than 24 hours"
+        )
+
+        expect(issue.reload.pr_escalation_reason).to eq("awaiting_approval")
+      end
+
+      # @spec PR-ESCALATION-026
+      it "names re-approval as the remedy for awaiting_approval escalations" do
+        issue.update!(pr_review_phase: "ready", awaiting_approval_since: 2.days.ago)
+
+        activity.execute(
+          issue_id: issue.id,
+          reason_key: "awaiting_approval",
+          reason: "This PR has been green and waiting only for owner approval for more than 24 hours"
+        )
+
+        expect(github_client).to have_received(:add_comment)
+          .with(anything, anything, a_string_including("waiting only for owner approval"))
+        expect(github_client).to have_received(:add_comment)
+          .with(anything, anything, a_string_including("Approve (or re-approve)"))
+        expect(github_client).not_to have_received(:add_comment)
+          .with(anything, anything, a_string_including("Convert to draft"))
+        expect(github_client).not_to have_received(:add_comment)
+          .with(anything, anything, a_string_including("Remove the `paid-escalated` label"))
+      end
+
+      # @spec PR-ESCALATION-025
+      it "consumes the approval-wait stamp when escalating" do
+        issue.update!(pr_review_phase: "ready", awaiting_approval_since: 2.days.ago)
+
+        activity.execute(
+          issue_id: issue.id,
+          reason_key: "awaiting_approval",
+          reason: "This PR has been green and waiting only for owner approval for more than 24 hours"
+        )
+
+        expect(issue.reload.awaiting_approval_since).to be_nil
+      end
+
+      # @spec PR-ESCALATION-027
+      it "skips a stale awaiting_approval escalation when the PR has left the ready phase" do
+        issue.update!(pr_review_phase: "merged", github_state: "closed", awaiting_approval_since: 2.days.ago)
+
+        result = activity.execute(
+          issue_id: issue.id,
+          reason_key: "awaiting_approval",
+          reason: "This PR has been green and waiting only for owner approval for more than 24 hours"
+        )
+
+        expect(result).to eq(updated: false)
+        expect(issue.reload.pr_review_phase).to eq("merged")
+        expect(issue.reload.pr_escalation_reason).to be_nil
+        expect(github_client).not_to have_received(:add_labels_to_issue)
+        expect(github_client).not_to have_received(:add_comment)
+      end
+
       it "persists the explicit reason key when provided" do
         create_operational_failures!(issue)
 

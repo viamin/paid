@@ -938,15 +938,32 @@ module Activities
       reviews = fetch_reviews(client, project, issue)
       unresolved_threads = fetch_unresolved_threads(client, project, issue)
 
-      if auto_merge_eligible?(project, client, issue,
-           pr_data: pr_data, checks: checks, reviews: reviews, unresolved_threads: unresolved_threads)
+      signals = build_auto_merge_signals(project, client, issue,
+        pr_data: pr_data, checks: checks, reviews: reviews, unresolved_threads: unresolved_threads)
+      if signals && evaluate_auto_merge(project, signals)
+        track_approval_wait!(project, issue, blocked_only_on_approval: false)
         return owner_approved_trigger(issue)
       end
 
       triggers = detect_ready_triggers(project, client, issue,
         pr_data: pr_data, checks: checks, reviews: reviews, unresolved_threads: unresolved_threads)
       return :skipped if triggers.nil?
-      return nil if triggers.empty?
+
+      if triggers.empty?
+        # No actionable signal and not auto-merge eligible. When the *only*
+        # thing between this PR and a merge is the owner's approval, that
+        # wait is tracked and — past the project ceiling — escalated.
+        blocked_only_on_approval = blocked_only_on_approval?(project, client, issue, signals)
+        track_approval_wait!(project, issue, blocked_only_on_approval: blocked_only_on_approval)
+
+        if blocked_only_on_approval && approval_wait_exceeds_ceiling?(project, issue) # @spec PR-ESCALATION-024
+          return approval_wait_escalate_trigger(project, issue)
+        end
+
+        return nil
+      end
+
+      track_approval_wait!(project, issue, blocked_only_on_approval: false)
 
       # Hard gate: stop queuing create_pr follow-ups once the total run limit
       # is hit and escalate instead (#3271).
@@ -1019,6 +1036,82 @@ module Activities
       "Follow-up run limit reached " \
         "(#{issue.pr_followup_count}/#{project.max_pr_followup_runs}); " \
         "triggering condition remains unresolved"
+    end
+
+    # --- Approval-wait escalation (awaiting_approval) ---
+
+    # True when every automatic-merge precondition except owner approval is
+    # satisfied: the PR is green, mergeable, free of outstanding review
+    # feedback, and held only by the human approval gate. This is the "green
+    # and parked" state that has no trigger of its own — nothing about it
+    # warrants agent work, which is exactly why it can wait forever.
+    # @spec PR-ESCALATION-025
+    def blocked_only_on_approval?(project, client, issue, signals)
+      return false if signals.nil?
+      return false if signals.owner_approved?
+      return false unless signals.checks_green?
+      return false unless signals.mergeable?
+      return false unless signals.review_feedback_clear?
+      return false unless signals.blocking_reviews_complete?
+      return false unless signals.reviews_fresh?
+      return false if signals.skip_auto_merge?
+
+      # Signals resolve dependencies only when every other precondition
+      # passed (they gate an extra API round-trip), so compute them here for
+      # the blocked-only case: an unmerged dependency PR is a non-approval
+      # blocker.
+      dependencies_resolved?(client, project, issue)
+    end
+
+    # Stamps the approval wait on the first scan that observes the PR blocked
+    # only on approval, and clears it whenever that stops being true. The
+    # wait is measured from this observation — not PR creation — so a PR that
+    # was legitimately in review for a week has not been waiting on approval
+    # for a week, and any non-approval blocker resets the clock because the
+    # wait is a property of the approval gate, not of the PR.
+    # @spec PR-ESCALATION-025
+    def track_approval_wait!(project, issue, blocked_only_on_approval:)
+      if blocked_only_on_approval
+        return if issue.awaiting_approval_since.present?
+
+        issue.update_column(:awaiting_approval_since, Time.current)
+        logger.info(
+          message: "pr_scanner.approval_wait_started",
+          project_id: project.id,
+          pr_number: issue.github_number
+        )
+      elsif issue.awaiting_approval_since.present?
+        issue.update_column(:awaiting_approval_since, nil)
+        logger.info(
+          message: "pr_scanner.approval_wait_cleared",
+          project_id: project.id,
+          pr_number: issue.github_number
+        )
+      end
+    end
+
+    # True once the PR has been blocked only on approval longer than the
+    # project's ceiling. A ceiling of 0 (or less) disables the escalation:
+    # the inbox entry and the review re-request stay the only nudges.
+    # @spec PR-ESCALATION-024
+    def approval_wait_exceeds_ceiling?(project, issue)
+      ceiling_hours = project.pr_approval_escalation_hours.to_i
+      return false if ceiling_hours <= 0
+      return false if issue.awaiting_approval_since.blank?
+
+      issue.awaiting_approval_since <= ceiling_hours.hours.ago
+    end
+
+    # The backstop escalation: past the ceiling, "nobody is coming" is a
+    # genuine failure. Escalation fires exactly once per wait — once the
+    # phase is escalated, recovery-only scanning takes over until the owner
+    # approves (which merges the PR) or otherwise clears the hold.
+    # @spec PR-ESCALATION-024
+    def approval_wait_escalate_trigger(project, issue)
+      escalate_trigger(issue,
+        reason: "This PR has been green and waiting only for owner approval " \
+                "for more than #{project.pr_approval_escalation_hours} hours",
+        reason_key: Issue::PR_ESCALATION_REASON_AWAITING_APPROVAL)
     end
 
     # --- Escalated phase scanning ---
@@ -1257,6 +1350,7 @@ module Activities
         issue.update!(
           pr_review_phase: "restarted",
           pr_escalation_reason: nil,
+          awaiting_approval_since: nil,
           draft_review_count: 0,
           pr_followup_count: 0,
           review_goal_retry_count: 0,
@@ -3392,7 +3486,20 @@ module Activities
     # strategy. Collects signals from provider data and delegates the
     # decision to {Automation::Strategies::AutoMerge}.
     def auto_merge_eligible?(project, client, issue, pr_data:, checks:, reviews:, unresolved_threads: nil)
-      return false unless project.auto_merge_enabled? && pr_data.present?
+      signals = build_auto_merge_signals(project, client, issue,
+        pr_data: pr_data, checks: checks, reviews: reviews, unresolved_threads: unresolved_threads)
+      return false if signals.nil?
+
+      evaluate_auto_merge(project, signals)
+    end
+
+    # Collects the provider-neutral auto-merge preconditions for a
+    # human-authored PR into an {Automation::Strategies::AutoMerge::Signals}.
+    # Returns nil when auto-merge is disabled or the PR data is missing, so
+    # callers can distinguish "not gated by auto-merge" from "gated and
+    # failing" — the distinction the awaiting_approval escalation keys on.
+    def build_auto_merge_signals(project, client, issue, pr_data:, checks:, reviews:, unresolved_threads: nil)
+      return nil unless project.auto_merge_enabled? && pr_data.present?
 
       owner_approved = owner_approved_or_self_authored?(project, reviews, pr_data)
       checks_green = !checks.nil? && all_checks_green?(checks)
@@ -3420,7 +3527,16 @@ module Activities
 
       skip_label = issue.has_label?(Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL)
 
-      signals = Automation::Strategies::AutoMerge::Signals.build(
+      if skip_label
+        logger.info(
+          message: "pr_scanner.auto_merge_skipped_by_label",
+          project_id: project.id,
+          pr_number: issue.github_number,
+          label: Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL
+        )
+      end
+
+      Automation::Strategies::AutoMerge::Signals.build(
         issue_id: issue.id,
         pr_number: issue.github_number,
         owner_approved: owner_approved,
@@ -3432,17 +3548,6 @@ module Activities
         dependencies_resolved: dependencies_resolved,
         skip_auto_merge: skip_label
       )
-
-      if skip_label
-        logger.info(
-          message: "pr_scanner.auto_merge_skipped_by_label",
-          project_id: project.id,
-          pr_number: issue.github_number,
-          label: Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL
-        )
-      end
-
-      evaluate_auto_merge(project, signals)
     end
 
     # Evaluates bot-authored PR merge eligibility via the AutoMerge

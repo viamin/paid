@@ -41,10 +41,12 @@ module Activities
       # failed. Stamped even on same-phase re-escalations so the marker always
       # names the current cycle.
       # @spec PR-ESCALATION-002 @spec PR-ESCALATION-004 @spec PR-ESCALATION-019
+      # @spec PR-ESCALATION-025
       issue.update!(
         pr_review_phase: "escalated",
         pr_escalation_reason: reason_key,
         pr_escalation_started_at: Time.current,
+        awaiting_approval_since: nil,
         labels: escalated_labels(issue)
       )
       post_escalation_comment(client, project, issue, input[:reason], reason_key:, phase_before:)
@@ -77,10 +79,26 @@ module Activities
     private
 
     def escalation_still_applies?(project, issue, input:)
-      return true unless resolve_escalation_reason(input) == Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES
+      case resolve_escalation_reason(input)
+      when Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES
+        progress_state = PullRequests::ProgressState.call(project:, issue:)
+        operational_failure_breaker_holds?(issue, progress_state)
+      when Issue::PR_ESCALATION_REASON_AWAITING_APPROVAL
+        approval_wait_still_holds?(issue)
+      else
+        true
+      end
+    end
 
-      progress_state = PullRequests::ProgressState.call(project:, issue:)
-      operational_failure_breaker_holds?(issue, progress_state)
+    # The approval-wait escalation was decided from a ready-phase scan. If the
+    # PR left the ready phase before this activity ran — approved and merged,
+    # closed, converted to draft — the wait is over and escalating now would
+    # be stale. Cheap DB-only re-validation; the deep "still green and
+    # unapproved" check is the scan's judgment, and a race-window escalation
+    # self-clears on the next scan once the approval lands.
+    # @spec PR-ESCALATION-027
+    def approval_wait_still_holds?(issue)
+      issue.github_state == "open" && issue.ready_phase?
     end
 
     def operational_failure_breaker_holds?(issue, progress_state)
@@ -207,6 +225,18 @@ module Activities
         return [
           "- **Raise `Max PR Auto-Continue Tokens`** in project settings to resume automatic follow-ups",
           "- **Remove the `paid-escalated` label** after raising the limit to let automation try again"
+        ]
+      end
+
+      # An awaiting_approval escalation is an unanswered human gate, not an
+      # agent failure: the generic steps below ("remove the label", "convert
+      # to draft") describe how to restart a failing agent and would be
+      # actively misleading here. Re-approval both clears the escalation and
+      # lets auto-merge complete — no label surgery.
+      # @spec PR-ESCALATION-026
+      if reason_key == Issue::PR_ESCALATION_REASON_AWAITING_APPROVAL
+        return [
+          "- **Approve (or re-approve) this PR** — approval clears this escalation and lets auto-merge finish on the next scan"
         ]
       end
 

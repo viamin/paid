@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_26_082056) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_27_025902) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1544,6 +1544,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_26_082056) do
 
   create_table "issues", force: :cascade do |t|
     t.boolean "auto_continue_paused", default: false, null: false
+    t.datetime "awaiting_approval_since", comment: "When the scan first observed this PR green and blocked only on owner approval; cleared whenever a non-approval blocker appears. Drives the awaiting_approval escalation ceiling."
     t.text "body"
     t.datetime "ci_action_dispatched_at"
     t.datetime "ci_retry_requested_at"
@@ -2062,7 +2063,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_26_082056) do
     t.index ["project_id", "pull_request_number", "status"], name: "idx_page_load_findings_pr_status"
     t.index ["project_id"], name: "index_page_load_regression_findings_on_project_id"
     t.check_constraint "followup_attempts >= 0", name: "chk_page_load_findings_attempts_non_negative"
-    t.check_constraint "status::text = ANY (ARRAY['open'::character varying, 'resolved'::character varying, 'superseded'::character varying]::text[])", name: "chk_page_load_findings_status_valid"
+    t.check_constraint "status::text = ANY (ARRAY['open'::character varying::text, 'resolved'::character varying::text, 'superseded'::character varying::text])", name: "chk_page_load_findings_status_valid"
   end
 
   create_table "pending_install_claims", comment: "Server-side claims tying a freshly-returned GitHub App installation to a Paid account, so the signed `installation` webhook can finalize the GithubInstallation row for a first-time install into a brand-new org where the existing signals (project owner match, prior installation row) cannot resolve the account.", force: :cascade do |t|
@@ -2367,6 +2368,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_26_082056) do
     t.integer "poll_interval_seconds", default: 60, null: false
     t.jsonb "pr_action_labels", default: [], null: false
     t.boolean "pr_aggregation_enabled", default: false, null: false
+    t.integer "pr_approval_escalation_hours", default: 24, null: false, comment: "Hours a ready PR may sit green and blocked only on owner approval before escalating; 0 disables the awaiting_approval escalation."
     t.string "preferred_docker_host_identifier", comment: "Optional project-level Docker host preference overriding the account default for manual placement."
     t.string "primary_language", comment: "Primary language of the repository as reported by GitHub (e.g. Ruby, Elixir, Swift). Used to detect and badge the project type."
     t.jsonb "priority_labels", default: {"P1" => "P1", "P2" => "P2", "P3" => "P3"}, null: false
