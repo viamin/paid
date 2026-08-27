@@ -77,9 +77,9 @@ module KnownDirectOutboundModels
   # spec/factories/providers.rb so the factories stay in lock-step with the
   # catalog validation added in Runner#direct_outbound_config_models_must_exist_in_catalog.
   def seed_from_direct_outbound_config(record)
-    config_key, api_provider_key, model_key = case record.runner_key
-    when "opencode", "kilocode", "pi"
-      [ record.runner_key, "api_provider", "model" ]
+    config_key, model_key = case record.runner_key
+    when "opencode", "kilocode", "pi", "omp"
+      [ record.runner_key, "model" ]
     else
       return
     end
@@ -87,7 +87,7 @@ module KnownDirectOutboundModels
     config = record.config.is_a?(Hash) ? record.config[config_key] : nil
     return unless config.is_a?(Hash)
 
-    api_provider = config[api_provider_key].to_s
+    api_provider = record.provider_api_key&.api_service_type.to_s.presence || config["api_provider"].to_s
     model_id = config[model_key].to_s
     return if api_provider.blank? || model_id.blank?
 

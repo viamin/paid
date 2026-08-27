@@ -70,6 +70,27 @@ consumes this contract: the trailing custom sentinel uses
 `CUSTOM_MODEL_OPTION`, and an empty provider scope degrades to that sentinel
 alone.
 
+### Provider-derived runner model selection
+
+Direct-outbound runner setup (`opencode`, `kilocode`, `pi`, `omp`) must not ask
+the operator for both an API key and a second "API Provider" value that means
+the same thing. For these runners, the selected `ProviderApiKey` is the source
+of truth for the upstream provider because its `api_service_type` already
+matches the allowed provider slug set.
+
+The runner form therefore groups API key choices by `api_service_type`,
+derives the effective provider from the selected key, and renders the model
+dropdown from the active catalog rows for that derived service type via one
+batched provider query, preserving the same provider-scoped option contract as
+`LlmModel.dropdown_options_for(service_type)`. When the selected key changes,
+the model options refresh to the new service type; the form no longer persists
+`config[runner_key]["api_provider"]` for new saves.
+
+Legacy `config[runner_key]["api_provider"]` values remain a fallback for
+existing rows until the follow-up migration rewrites them, and the per-runner
+default constants remain the final edge-case fallback when neither a selected
+key nor a legacy config value exists.
+
 ### Drift detector interaction
 
 `Models::DetectCatalogDrift::DEFAULT_PROVIDERS` (`anthropic`, `openai`,
@@ -81,9 +102,8 @@ generating deprecation drift findings against them.
 
 ## What this is not
 
-- **Not the model dropdown itself.** `Runners::ModelOptions` and any UI work
-  for #3663 are out of scope here; this segment only guarantees every
-  direct-outbound provider has catalog rows to filter to, plus the shared
-  empty-provider contract those call sites should use.
+- **Not a second source of truth for providers.** The provider dropdown is not
+  authoritative for API-key direct-outbound runners anymore; the selected API
+  key owns that fact.
 - **Not a registry integration.** `zai` and `inception` seed values stay
   hand-maintained estimates until (if ever) RubyLLM's registry adds them.
