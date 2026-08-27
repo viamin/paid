@@ -313,6 +313,16 @@ if [ -n "${COMBO_LANGUAGES}" ]; then
     else
         echo ""
         echo "Building combo image ${COMBO_TAG} (layers: ${COMBO_LANGUAGES})..."
+        # Stamp the same dev.paid.agent-image.* labels that
+        # Containers::ComboImageBuilder#build_layer applies (base-digest,
+        # built-at, languages). ComboImageBuilder#current_status keys off the
+        # base-digest label to decide whether an existing tag is current, and
+        # AgentComboImageCleanupJob keys off built-at for retention; without
+        # these labels an image built here looks unlabeled/missing to both,
+        # so it gets rebuilt on first use and never reaped.
+        COMBO_LABEL_NAMESPACE="dev.paid.agent-image"
+        COMBO_BASE_DIGEST=$(docker image inspect --format '{{.Id}}' "${FULL_IMAGE}")
+        COMBO_BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
         COMBO_FROM="${FULL_IMAGE}"
         # shellcheck disable=SC2086 # intentional word-splitting of the space-separated list
         SORTED_LANGUAGES=$(printf '%s\n' ${COMBO_LANGUAGES} | sort)
@@ -331,6 +341,9 @@ if [ -n "${COMBO_LANGUAGES}" ]; then
             echo "  layer ${LAYER_INDEX}/${LAYER_COUNT}: ${lang} (FROM ${COMBO_FROM})"
             COMBO_FROM=$("${DOCKER_BUILD_ENV[@]}" docker build \
                 "${LAYER_ARGS[@]}" \
+                --label "${COMBO_LABEL_NAMESPACE}.base-digest=${COMBO_BASE_DIGEST}" \
+                --label "${COMBO_LABEL_NAMESPACE}.built-at=${COMBO_BUILT_AT}" \
+                --label "${COMBO_LABEL_NAMESPACE}.languages=${lang}" \
                 -f "${LANGUAGES_DIR}/${lang}.dockerfile" \
                 --build-arg "BASE_IMAGE=${COMBO_FROM}" \
                 "${PROJECT_ROOT}") || exit 1
