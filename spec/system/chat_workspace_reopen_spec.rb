@@ -85,13 +85,13 @@ RSpec.describe "Chat workspace continuity", :js, type: :system do
   # (CHAT-SESSION-REOPEN-005). System specs fall back to rack_test (no JS) where
   # chromium is absent, so the in-place indicator flip cannot be asserted here.
   it "renders the persisted workspace capability on page load" do
-    session = create(:chat_session, account:, created_by: user, container_capability: "pending")
+    pending_session = create(:chat_session, :workspace, account:, created_by: user, container_capability: "pending")
+    ready_session = create(:chat_session, :workspace, account:, created_by: user)
 
-    visit chat_session_path(session, format: :html)
+    visit chat_session_path(pending_session, format: :html)
     expect(page).to have_text("Workspace pending")
 
-    session.update!(container_capability: "ready", container_ready_at: Time.current)
-    visit chat_session_path(session, format: :html)
+    visit chat_session_path(ready_session, format: :html)
 
     expect(page).to have_text("Workspace ready")
   end
