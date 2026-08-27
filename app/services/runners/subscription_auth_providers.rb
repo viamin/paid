@@ -161,6 +161,69 @@ module Runners
           error: "unsupported"
         )
       end
+
+      def blank_status
+        Status.new(
+          state: :blank,
+          expires_at: nil,
+          refreshable: false,
+          materialization_mode: materialization_mode,
+          rotation_risk: rotation_risk,
+          remote_safe: remote_safe?,
+          redacted_metadata: { "materialized" => false },
+          error: "blank"
+        )
+      end
+
+      def malformed_status
+        Status.new(
+          state: :malformed,
+          expires_at: nil,
+          refreshable: false,
+          materialization_mode: SubscriptionAuthMaterializers::MATERIALIZE_UNSUPPORTED,
+          rotation_risk: SubscriptionAuthMaterializers::ROTATION_UNSUPPORTED,
+          remote_safe: false,
+          redacted_metadata: { "materialized" => false },
+          error: "malformed"
+        )
+      end
+
+      def malformed_materialization(status)
+        Materialization.new(
+          supported: false,
+          mode: status.materialization_mode,
+          env: {},
+          files: {},
+          redacted_metadata: status.redacted_metadata,
+          error: status.error
+        )
+      end
+
+      def classify_codex_auth_secret(secret)
+        value = secret.to_s
+        return [ blank_status, nil ] if value.blank?
+
+        parsed = CodexCredentials::Secret.parse(value)
+        return [ malformed_status, nil ] unless parsed.codex_auth?
+        return [ malformed_status, nil ] if parsed.access_token.blank? && parsed.refresh_token.blank?
+
+        [ codex_auth_status(parsed), parsed ]
+      end
+
+      def codex_auth_status(parsed)
+        expires_at = parsed.expires_at
+        expired = expires_at.present? && expires_at <= Time.current
+        Status.new(
+          state: expired ? :expired : :valid,
+          expires_at: expires_at,
+          refreshable: parsed.refresh_token.present?,
+          materialization_mode: SubscriptionAuthMaterializers::MATERIALIZE_NATIVE_FILE,
+          rotation_risk: SubscriptionAuthMaterializers::ROTATION_CONTAINER_MAY_ROTATE,
+          remote_safe: remote_safe?,
+          redacted_metadata: parsed.redacted_metadata,
+          error: expired ? "expired" : nil
+        )
+      end
     end
 
     class Claude < Base
@@ -222,43 +285,6 @@ module Runners
       end
 
       private
-
-      def blank_status
-        Status.new(
-          state: :blank,
-          expires_at: nil,
-          refreshable: false,
-          materialization_mode: materialization_mode,
-          rotation_risk: rotation_risk,
-          remote_safe: remote_safe?,
-          redacted_metadata: { "materialized" => false },
-          error: "blank"
-        )
-      end
-
-      def malformed_status
-        Status.new(
-          state: :malformed,
-          expires_at: nil,
-          refreshable: false,
-          materialization_mode: SubscriptionAuthMaterializers::MATERIALIZE_UNSUPPORTED,
-          rotation_risk: SubscriptionAuthMaterializers::ROTATION_UNSUPPORTED,
-          remote_safe: false,
-          redacted_metadata: { "materialized" => false },
-          error: "malformed"
-        )
-      end
-
-      def malformed_materialization(status)
-        Materialization.new(
-          supported: false,
-          mode: status.materialization_mode,
-          env: {},
-          files: {},
-          redacted_metadata: status.redacted_metadata,
-          error: status.error
-        )
-      end
 
       # Parses `secret` exactly once and returns `[Status, Parsed]`. Both
       # `status` and `materialize` delegate here so the credential is never
@@ -362,50 +388,121 @@ module Runners
 
       private
 
-      def blank_status
-        Status.new(
-          state: :blank,
-          expires_at: nil,
-          refreshable: false,
-          materialization_mode: materialization_mode,
-          rotation_risk: rotation_risk,
-          remote_safe: remote_safe?,
-          redacted_metadata: { "materialized" => false },
-          error: "blank"
-        )
+      def classify(secret)
+        classify_codex_auth_secret(secret)
+      end
+    end
+
+    class OpenCode < Base
+      AUTH_PATH = "/home/agent/.local/share/opencode/auth.json"
+
+      def initialize
+        super(runner_key: "opencode")
       end
 
-      def malformed_status
-        Status.new(
-          state: :malformed,
-          expires_at: nil,
-          refreshable: false,
-          materialization_mode: SubscriptionAuthMaterializers::MATERIALIZE_UNSUPPORTED,
-          rotation_risk: SubscriptionAuthMaterializers::ROTATION_UNSUPPORTED,
-          remote_safe: false,
-          redacted_metadata: { "materialized" => false },
-          error: "malformed"
-        )
+      def status(secret:)
+        classify(secret).first
       end
 
-      def malformed_materialization(status)
+      def materialize(secret:)
+        status, parsed = classify(secret)
+        return unsupported_materialization if status.unsupported?
+        return malformed_materialization(status) unless status.materializable?
+
         Materialization.new(
-          supported: false,
-          mode: status.materialization_mode,
+          supported: true,
+          mode: SubscriptionAuthMaterializers::MATERIALIZE_NATIVE_FILE,
           env: {},
-          files: {},
+          files: { AUTH_PATH => build_auth_json(parsed) },
           redacted_metadata: status.redacted_metadata,
-          error: status.error
+          error: nil
         )
       end
+
+      def refresh(provisioner:)
+        performed = !!provisioner.refresh_opencode_managed_credential!
+        Result.new(
+          supported: true,
+          performed: performed,
+          reason: performed ? "refreshed" : "refresh_skipped"
+        )
+      end
+
+      def harvest(provisioner:)
+        provisioner.harvest_opencode_managed_credential!
+      end
+
+      private
+
+      def classify(secret)
+        classify_codex_auth_secret(secret)
+      end
+
+      def build_auth_json(parsed)
+        JSON.generate(
+          "openai" => {
+            "type" => "oauth",
+            "access" => parsed.access_token,
+            "refresh" => parsed.refresh_token,
+            "expires" => expires_ms(parsed),
+            "accountId" => parsed.account_id
+          }.compact
+        )
+      end
+
+      def expires_ms(parsed)
+        parsed.expires_at&.then { |expires_at| (expires_at.to_f * 1000).to_i }
+      end
+    end
+
+    class Omp < Base
+      IMPORT_PATH = "/home/agent/.local/share/omp/paid-auth-import.json"
+
+      def initialize
+        super(runner_key: "omp")
+      end
+
+      def status(secret:)
+        classify(secret).first
+      end
+
+      def materialize(secret:)
+        status, parsed = classify(secret)
+        return unsupported_materialization if status.unsupported?
+        return malformed_materialization(status) unless status.materializable?
+
+        Materialization.new(
+          supported: true,
+          mode: SubscriptionAuthMaterializers::MATERIALIZE_NATIVE_FILE,
+          env: {},
+          files: { IMPORT_PATH => build_import_json(parsed) },
+          redacted_metadata: status.redacted_metadata,
+          error: nil
+        )
+      end
+
+      def refresh(provisioner:)
+        performed = !!provisioner.refresh_omp_managed_credential!
+        Result.new(
+          supported: true,
+          performed: performed,
+          reason: performed ? "refreshed" : "refresh_skipped"
+        )
+      end
+
+      def harvest(provisioner:)
+        provisioner.harvest_omp_managed_credential!
+      end
+
+      private
 
       def classify(secret)
         value = secret.to_s
         return [ blank_status, nil ] if value.blank?
 
-        parsed = CodexCredentials::Secret.parse(value)
-        return [ malformed_status, nil ] unless parsed.codex_auth?
-        return [ malformed_status, nil ] if parsed.access_token.blank? && parsed.refresh_token.blank?
+        parsed = ClaudeCredentials::Secret.parse(value)
+        return [ malformed_status, nil ] unless parsed.native_credentials_json?
+        return [ malformed_status, nil ] if parsed.oauth_token.blank?
 
         expires_at = parsed.expires_at
         expired = expires_at.present? && expires_at <= Time.current
@@ -419,6 +516,15 @@ module Runners
           redacted_metadata: parsed.redacted_metadata,
           error: expired ? "expired" : nil
         ), parsed ]
+      end
+
+      def build_import_json(parsed)
+        JSON.generate(
+          "type" => "claude",
+          "access_token" => parsed.oauth_token,
+          "refresh_token" => parsed.refresh_token,
+          "expired" => parsed.expires_at&.utc&.iso8601
+        )
       end
     end
 
@@ -598,6 +704,8 @@ module Runners
     REGISTRY = {
       "claude" => Claude.new,
       "codex" => Codex.new,
+      "opencode" => OpenCode.new,
+      "omp" => Omp.new,
       "gemini" => Gemini.new,
       "copilot" => Copilot.new
     }.freeze

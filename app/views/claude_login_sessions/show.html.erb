@@ -1,9 +1,9 @@
-<% content_for(:title) { "Claude Browser Login - Paid" } %>
+<% content_for(:title) { "#{@flow_definition.title} - Paid" } %>
 
 <div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
   <div class="overflow-hidden rounded-lg bg-white shadow">
     <div class="px-6 py-5">
-      <h1 class="text-xl font-semibold text-gray-900">Claude Browser Login</h1>
+      <h1 class="text-xl font-semibold text-gray-900"><%= @flow_definition.title %></h1>
       <p class="mt-1 text-sm text-gray-500">Session status: <span class="font-medium text-gray-900"><%= @claude_login_session.status.humanize %></span></p>
 
       <% if flash[:alert].present? %>
@@ -41,7 +41,7 @@
         </div>
       <% elsif @claude_login_session.completed? %>
         <div class="mt-6 rounded-md border border-green-200 bg-green-50 p-4 text-sm text-green-800">
-          Captured and stored the Claude credential as <strong><%= @claude_login_session.credential_name %></strong>.
+          Captured and stored the <%= Runner.display_name_for(@claude_login_session.target_runner_key) %> credential as <strong><%= @claude_login_session.credential_name %></strong>.
         </div>
       <% else %>
         <div class="mt-6 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-800">
@@ -50,9 +50,9 @@
       <% end %>
 
       <div class="mt-6 flex items-center gap-3">
-        <%= link_to "Back to Credentials", integration_credentials_path(category: "llm_provider", service_key: "claude"), class: "text-sm font-semibold text-gray-900 hover:text-gray-700" %>
+        <%= link_to "Back to Credentials", integration_credentials_path(category: "llm_provider", service_key: @flow_definition.manage_service_key), class: "text-sm font-semibold text-gray-900 hover:text-gray-700" %>
         <% if @return_to_path.present? %>
-          <%= link_to "Return to Previous Page", safe_return_path_or(@return_to_path, integration_credentials_path(category: "llm_provider", service_key: "claude")), class: "text-sm font-semibold text-gray-900 hover:text-gray-700" %>
+          <%= link_to "Return to Previous Page", safe_return_path_or(@return_to_path, integration_credentials_path(category: "llm_provider", service_key: @flow_definition.manage_service_key)), class: "text-sm font-semibold text-gray-900 hover:text-gray-700" %>
         <% end %>
       </div>
     </div>

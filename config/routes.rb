@@ -64,6 +64,7 @@ Rails.application.routes.draw do
   # Integrations hub
   resources :integrations, only: [ :index, :new ]
   resources :integration_credentials, only: [ :index, :new, :create, :show, :destroy ]
+  resource :runner_login_flow, only: [ :new ]
   resources :claude_login_sessions, only: [ :new, :create, :show, :update ]
   resources :codex_login_sessions, only: [ :new, :create, :show, :update ]
 

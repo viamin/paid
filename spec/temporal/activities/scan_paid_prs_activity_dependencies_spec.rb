@@ -179,6 +179,7 @@ RSpec.describe Activities::ScanPaidPrsActivity, :no_db do
       expect(activity.send(
         :bot_dependency_check_required?,
         dependabot_eligible: false,
+        merge_executor_supported: true,
         checks_green: true,
         mergeable: true
       )).to be(false)
@@ -188,6 +189,7 @@ RSpec.describe Activities::ScanPaidPrsActivity, :no_db do
       expect(activity.send(
         :bot_dependency_check_required?,
         dependabot_eligible: true,
+        merge_executor_supported: true,
         checks_green: true,
         mergeable: true
       )).to be(true)

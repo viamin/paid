@@ -16,6 +16,14 @@ RSpec.describe "CodexLoginSessions" do
       expect(response.body).to include("Connect Codex")
     end
 
+    it "renders the opencode-targeted device flow when requested" do
+      get new_codex_login_session_path(target_runner_key: "opencode")
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Connect OpenCode to Codex")
+      expect(response.body).to include("OpenCode")
+    end
+
     # @spec SUBSCRIPTION-RUNNER-AUTH-004
     context "with an active codex runner credential" do
       let!(:runner) { create(:runner, user: owner_user, runner_key: "codex") }
@@ -34,7 +42,7 @@ RSpec.describe "CodexLoginSessions" do
         get new_codex_login_session_path
 
         expect(response).to have_http_status(:ok)
-        expect(response.body).to include("Active Codex credential")
+        expect(response.body).to include("Active #{Runner.display_name_for('codex')} credential")
         expect(response.body).to include("Existing Codex Credential")
         expect(response.body).to include("second concurrent active credential")
 
@@ -65,7 +73,7 @@ RSpec.describe "CodexLoginSessions" do
         get new_codex_login_session_path
 
         expect(response).to have_http_status(:ok)
-        expect(response.body).not_to include("Active Codex credential")
+        expect(response.body).not_to include("Active #{Runner.display_name_for('codex')} credential")
       end
     end
 
@@ -135,6 +143,19 @@ RSpec.describe "CodexLoginSessions" do
       session = CodexLoginSession.order(:id).last
       expect(CodexLoginSessions::DeviceFlow).to have_received(:call).with(session: session)
       expect(response).to redirect_to(codex_login_session_path(session.external_id))
+    end
+
+    it "persists the requested target runner key in session metadata" do
+      post codex_login_sessions_path, params: {
+        codex_login_session: {
+          credential_name: "OpenCode Connect Login",
+          metadata: {
+            target_runner_key: "opencode"
+          }
+        }
+      }
+
+      expect(CodexLoginSession.order(:id).last.metadata["target_runner_key"]).to eq("opencode")
     end
 
     it "sanitizes a tampered return_to before persisting metadata" do
