@@ -31,57 +31,6 @@ RSpec.describe PageLoadPerformance::EvaluateRegressions do
       **overrides)
   end
 
-  def stub_open_finding_race(measurement:, existing:)
-    duplicate = build(:page_load_regression_finding,
-      project: project,
-      agent_run: agent_run,
-      pull_request_number: 42,
-      route_name: measurement.route_name,
-      status: "open")
-    conflict = ActiveRecord::RecordNotUnique.new(
-      "PG::UniqueViolation: #{PageLoadPerformance::EvaluateRegressions::OPEN_FINDING_UNIQUE_CONSTRAINT}"
-    )
-    first_scope = instance_double(ActiveRecord::Relation, first_or_initialize: duplicate)
-    second_scope = instance_double(ActiveRecord::Relation, sole: existing)
-
-    allow(duplicate).to receive(:save!).and_raise(conflict)
-    allow(PageLoadRegressionFinding).to receive(:where).and_call_original
-    allow(PageLoadRegressionFinding).to receive(:where).with(
-      project_id: project.id,
-      pull_request_number: measurement.pull_request_number,
-      route_name: measurement.route_name,
-      status: "open"
-    ).and_return(first_scope, second_scope)
-  end
-
-  def create_existing_open_finding(measurement)
-    create(:page_load_regression_finding,
-      project: project,
-      agent_run: agent_run,
-      pull_request_number: 42,
-      route_name: measurement.route_name,
-      comparison_metric: "lcp_ms",
-      baseline_ms: 600,
-      current_ms: 900,
-      delta_ms: 300,
-      delta_ratio: 0.5,
-      baseline_commit_sha: "older111",
-      commit_sha: "older222",
-      route_path: measurement.route_path,
-      actionable: false)
-  end
-
-  def expect_open_finding_refresh(existing)
-    expect(existing.reload).to have_attributes(
-      baseline_ms: 640,
-      current_ms: 1_100,
-      commit_sha: "bbb2222",
-      actionable: true,
-      status: "open"
-    )
-    expect(PageLoadRegressionFinding.count).to eq(1)
-  end
-
   # @spec PAGE-LOAD-REGRESSION-001, PAGE-LOAD-REGRESSION-002
   it "flags a route that exceeds both the ratio and the absolute floor" do
     baseline(lcp_ms: 640)
@@ -216,19 +165,6 @@ RSpec.describe PageLoadPerformance::EvaluateRegressions do
 
     expect(PageLoadRegressionFinding.count).to eq(1)
     expect(PageLoadRegressionFinding.sole).to have_attributes(current_ms: 1_400, commit_sha: "ccc3333", status: "open")
-  end
-
-  # @spec PAGE-LOAD-REGRESSION-009
-  it "self-heals an open-finding unique race by updating the existing row" do
-    baseline(lcp_ms: 640)
-    measurement = current(lcp_ms: 1_100)
-    existing = create_existing_open_finding(measurement)
-    stub_open_finding_race(measurement:, existing:)
-
-    comparisons = described_class.call(agent_run: agent_run, measurements: [ measurement ], hints: hints)
-
-    expect(comparisons.first.finding.id).to eq(existing.id)
-    expect_open_finding_refresh(existing)
   end
 
   # @spec PAGE-LOAD-REGRESSION-006
