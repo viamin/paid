@@ -46,20 +46,22 @@ module Runners
     CODEX_SUBSCRIPTION_UNSUPPORTED_PREFIXES = %w[gpt-5.6].freeze
     CODEX_SUBSCRIPTION_REPLACEMENT_MODEL_ID = "gpt-5.2-codex"
 
-    def self.call(runner_key:, model_id:, auth_type:, provider_runtime: nil)
+    def self.call(runner_key:, model_id:, auth_type:, provider_runtime: nil, llm_model: nil)
       new(
         runner_key: runner_key,
         model_id: model_id,
         auth_type: auth_type,
-        provider_runtime: provider_runtime
+        provider_runtime: provider_runtime,
+        llm_model: llm_model
       ).call
     end
 
-    def initialize(runner_key:, model_id:, auth_type:, provider_runtime: nil)
+    def initialize(runner_key:, model_id:, auth_type:, provider_runtime: nil, llm_model: nil)
       @runner_key = runner_key.to_s
       @model_id = model_id.to_s
       @auth_type = auth_type.to_s
       @provider_runtime = provider_runtime
+      @llm_model = llm_model
     end
 
     def call
@@ -68,7 +70,7 @@ module Runners
 
     private
 
-    attr_reader :runner_key, :model_id, :auth_type, :provider_runtime
+    attr_reader :runner_key, :model_id, :auth_type, :provider_runtime, :llm_model
 
     # ---------------------------------------------------------------------------
     # agent-harness delegation
@@ -187,7 +189,7 @@ module Runners
       expected_provider = Runners::DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER[runner_key]
       return if expected_provider.blank?
 
-      model = LlmModel.find_by(model_id: model_id)
+      model = llm_model_record
       return if model.blank?
 
       return if model.provider == expected_provider
@@ -224,10 +226,14 @@ module Runners
       expected_provider = Runners::DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER[runner_key]
       return unknown_result("paid_static_contract") if expected_provider.blank?
 
-      model = LlmModel.find_by(model_id: model_id)
+      model = llm_model_record
       return unknown_result("paid_catalog") if model.blank?
 
       unknown_result("paid_catalog")
+    end
+
+    def llm_model_record
+      @llm_model_record ||= llm_model || LlmModel.find_by(model_id: model_id)
     end
 
     def codex_subscription_check # @spec MODEL-SELECTION-005

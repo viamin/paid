@@ -100,5 +100,16 @@ RSpec.describe Runners::DefaultTierModelIds do
         expect(result["mid"]).to eq("gpt-5.2-codex")
       end
     end
+
+    it "derives defaults from Runners::ModelOptions so defaults and dropdowns cannot diverge" do # @spec RUNNER-MODEL-OPTIONS-006
+      allow(Runners::ModelOptions).to receive(:call).and_call_original
+      result = described_class.call(runner_key: "claude")
+
+      expect(result).to eq("low" => "haiku-1", "mid" => "sonnet-1", "high" => "opus-1")
+      expect(Runners::ModelOptions).to have_received(:call)
+        .with(runner_key: "claude", api_provider: "anthropic", auth_type: "api_key")
+      dropdown_ids = Runners::ModelOptions.call(runner_key: "claude", api_provider: "anthropic").select(&:model?).map(&:value)
+      expect(dropdown_ids).to include(*result.values)
+    end
   end
 end
