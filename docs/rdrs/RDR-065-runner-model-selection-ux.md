@@ -167,7 +167,7 @@ Evidence for "Dropdown without seed expansion" (Alternative 3 below).
 
 ### `catalog_source` semantics for the pareto row
 
-If we promote Pareto to a plain catalog row, that row must be `catalog_source: "seeded"`, not `openrouter_sync`. `FreeModels::Sync#deactivate_missing_models!` (`app/services/free_models/sync.rb:117`) scopes to `LlmModel.openrouter_synced_free`, which is `free.openrouter_synced` (`app/models/llm_model.rb:37`). A `seeded` row is exempt from daily sync retirement. Evidence that the D3 catalog row must be `seeded` to survive daily syncs.
+If we promote Pareto to a plain catalog row, that row must be `catalog_source: "seeded"`, not `openrouter_sync`. `FreeModels::Sync#deactivate_missing_models!` (`app/services/free_models/sync.rb:116`) scopes to `LlmModel.openrouter_synced_free`, which is `free.openrouter_synced` (`app/models/llm_model.rb:37`). A `seeded` row is exempt from daily sync retirement. Evidence that the D3 catalog row must be `seeded` to survive daily syncs.
 
 ### RDR-040 `Runners::ModelCompatibility` is the established filtering layer
 
