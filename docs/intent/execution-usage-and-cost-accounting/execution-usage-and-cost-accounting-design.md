@@ -157,16 +157,22 @@ re-entry whose `provisioned_at` is on or before the recorded
 same resource lifetime against its own `Time.current` and inflating
 `billed_duration_seconds` / `infra_cost_cents`.
 
-The important exception is true re-provisioning: park/resume and stale
-claimed requeue can tear one resource down, later provision a new one for the
-same `AgentRun`, and finally clean that later resource up. When the current
-`provisioned_at` is after the existing row's `terminated_at`, the recorder
-replaces the row so the run's accounting reflects the later billing cycle
-instead of freezing the old `evicted` termination forever. The run's
-denormalized columns are mirrored from the persisted row rather than from the
-estimate just computed, which keeps them equal to the recorded spend and lets
-a run whose column write was lost after the row was inserted self-heal on the
-next cleanup pass.
+The important exception is true re-provisioning: park/resume, stale claimed
+requeue, and `reprovision_container_for_fallback!` can tear one resource
+down, later provision a new one for the same `AgentRun`, and finally clean
+that later resource up. When the current `provisioned_at` is after the
+existing row's `terminated_at`, the recorder replaces the row but folds the
+prior cycle's `billed_duration_seconds` and `infra_cost_cents` into the new
+row so the run's accounting reflects *both* billing cycles — the new row
+adds the prior cycle's cost to its own instead of dropping it, so
+`AgentRun#total_cost_cents` and downstream rollups include the first
+machine's lifetime even after the second machine's cleanup replaces it. The
+new row's `provisioned_at`, `terminated_at`, `provider_resource_id`, and
+`rate_cents_per_hour` always reflect the latest cycle; only the duration
+and cost are accumulated. The run's denormalized columns are mirrored from
+the persisted row rather than from the estimate just computed, which keeps
+them equal to the recorded spend and lets a run whose column write was
+lost after the row was inserted self-heal on the next cleanup pass.
 
 Provider-reported cost replacing the estimate (see Non-Goals) is a
 deliberate, out-of-band correction of `infra_cost_cents` — not a cleanup-path

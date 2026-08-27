@@ -71,6 +71,64 @@ RSpec.describe Projects::CostDashboardStats do
       end
     end
 
+    # @spec INFRA-SPEND-001
+    it "accrues pending spend for re-provisioned runs whose prior cycle was already recorded" do
+      travel_to(Time.zone.local(2024, 1, 15, 12, 0, 0)) do
+        # A run that was torn down after an evicted / park cycle (first
+        # cycle's billing recorded) and re-provisioned for a new cycle that
+        # is still live — the second machine's spend must appear in pending
+        # totals instead of silently disappearing from the dashboard until
+        # the second cycle's cleanup finally writes its row.
+        reprovisioned_run = create(:agent_run, project: project, status: "running",
+          provisioning_started_at: 30.minutes.ago,
+          started_at: 25.minutes.ago,
+          external_metadata: {
+            "infrastructure_spend" => { "rate_cents_per_hour" => 120 }
+          })
+        create_execution_usage(reprovisioned_run,
+          provisioned_at: 2.hours.ago,
+          terminated_at: 1.hour.ago,
+          billed_duration_seconds: 3600,
+          infra_cost_cents: 120)
+
+        result = described_class.call(project: project)
+
+        # Historical (first cycle) cost + pending (second cycle) cost for
+        # the new machine, which is 30 min at 120 cents/hr = 60 cents.
+        expect(result[:summary][:infrastructure_cost_cents]).to eq(180)
+        expect(result[:summary][:infrastructure_cost_today_cents]).to eq(180)
+        expect(result[:summary][:infrastructure_cost_this_month_cents]).to eq(180)
+      end
+    end
+
+    # @spec INFRA-SPEND-001
+    it "does not double-count re-provisioned runs whose current cycle has been recorded" do
+      travel_to(Time.zone.local(2024, 1, 15, 12, 0, 0)) do
+        # A run whose first cycle was recorded (evicted) and whose second
+        # cycle's recording has already landed — the recorder's folding
+        # captures the total cost in the single row, so pending spend
+        # contributes nothing.
+        run = create(:agent_run, project: project, status: "completed",
+          provisioning_started_at: 30.minutes.ago,
+          completed_at: 5.minutes.ago,
+          external_metadata: {
+            "infrastructure_spend" => { "rate_cents_per_hour" => 120 }
+          })
+        create_execution_usage(run,
+          provisioned_at: 30.minutes.ago,
+          terminated_at: 5.minutes.ago,
+          billed_duration_seconds: 1500,
+          infra_cost_cents: 50)
+
+        result = described_class.call(project: project)
+
+        # Only the recorded row contributes (historical path); pending path
+        # sees run.provisioning_started_at <= row.terminated_at and excludes
+        # it from the overlap-based pending scope.
+        expect(result[:summary][:infrastructure_cost_cents]).to eq(50)
+      end
+    end
+
     # @spec EXEC-USAGE-007
     # @spec INFRA-SPEND-001
     it "keeps charging rowless completed runs until cleanup records termination" do

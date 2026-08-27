@@ -6372,6 +6372,43 @@ RSpec.describe AgentRun do
       expect(agent_run.infra_cost_cents).to eq(first.infra_cost_cents)
     end
 
+    # @spec EXEC-USAGE-011
+    it "folds the prior cycle's billed duration and infra cost when re-provisioning starts a new cycle" do
+      # Park/resume, stale requeue, and `reprovision_container_for_fallback!`
+      # all tear one resource down, later provision another, and finally
+      # clean up. When the second cycle's recording lands with a
+      # `provisioning_started_at` past the first cycle's `terminated_at`,
+      # the recorder folds the prior cycle's billed duration and infra
+      # cost into the new row so the run's total infra spend survives
+      # into `AgentRun#total_cost_cents`.
+      agent_run = create(:agent_run, :completed, container_host: "local",
+        provisioning_started_at: 2.hours.ago, started_at: 100.minutes.ago,
+        completed_at: 1.hour.ago,
+        external_metadata: { "infrastructure_spend" => { "rate_cents_per_hour" => 120 } })
+      agent_run.record_execution_usage_after_cleanup!(
+        container_id: "first-container", container_host: "local", terminated_at: 1.hour.ago)
+      first = agent_run.reload.execution_usage
+
+      # New cycle: re-provisioned 30 minutes ago, billed for another 20
+      # minutes (10.minutes.ago). The provisioning_started_at update
+      # mimics ProcessRunQueueJob#record_provisioning_start! which a
+      # park/resume or stale requeue path writes when the new workflow
+      # admission starts. `completed_at` is updated to the second cycle's
+      # wall-clock end — otherwise the (completed_at >= provisioned_at)
+      # check constraint on execution_usages rejects the new row.
+      agent_run.update_columns(provisioning_started_at: 30.minutes.ago,
+        started_at: 25.minutes.ago, completed_at: 10.minutes.ago)
+      agent_run.record_execution_usage_after_cleanup!(
+        container_id: "second-container", container_host: "local", terminated_at: 10.minutes.ago)
+
+      usage = agent_run.reload.execution_usage
+      expect(ExecutionUsage.where(agent_run_id: agent_run.id).count).to eq(1)
+      expect(usage.provider_resource_id).to eq("second-container")
+      expect(usage.billed_duration_seconds).to eq(first.billed_duration_seconds + 20 * 60)
+      expect(usage.infra_cost_cents).to eq(first.infra_cost_cents + ((120 * 20 * 60) / 3600.0).round)
+      expect(agent_run.reload.infra_cost_cents).to eq(usage.infra_cost_cents)
+    end
+
     it "truncates the recorded runner backend to the execution usage limit" do
       long_host = "host-" * 20
       agent_run = create(:agent_run, :completed, container_host: nil,

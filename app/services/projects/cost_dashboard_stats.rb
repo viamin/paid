@@ -219,8 +219,23 @@ module Projects
         project: project,
         starts_at: starts_at,
         ends_at: ends_at,
-        scope_modifier: ->(scope) { scope.where.missing(:execution_usage) },
+        scope_modifier: ->(scope) { pending_execution_usage_scope(scope) },
         overlap_ends_at_sql: quote_time(ends_at)
+      )
+    end
+
+    # A run is "pending" when its CURRENT cycle's billing has not yet been
+    # recorded. The historical `where.missing(:execution_usage)` check would
+    # miss runs that already have an `ExecutionUsage` row from a prior
+    # billing cycle (park/resume, stale requeue,
+    # `reprovision_container_for_fallback!`); those runs must keep accruing
+    # pending spend from their new `provisioning_started_at` until the new
+    # cycle's cleanup writes the next row, instead of silently disappearing
+    # from the dashboard for the entire second machine's lifetime.
+    def pending_execution_usage_scope(scope)
+      scope.left_joins(:execution_usage).where(
+        "execution_usages.id IS NULL " \
+        "OR agent_runs.provisioning_started_at > execution_usages.terminated_at"
       )
     end
 

@@ -62,7 +62,12 @@ class AgentRuns::RecordExecutionUsage
   # cleanup pass tears nothing down — the janitor counts an already-absent
   # volume as cleaned — so re-pricing the row against its +Time.current+
   # would overstate spend for a resource that was only released once. A true
-  # re-provisioned retry is a new billing cycle and replaces the old row.
+  # re-provisioned retry (park/resume, stale requeue,
+  # +reprovision_container_for_fallback!+) is a new billing cycle; the row
+  # is replaced, but the prior cycle's +billed_duration_seconds+ and
+  # +infra_cost_cents+ are folded into the new row so the run's full infra
+  # spend — including the first machine's lifetime — survives into
+  # +AgentRun#total_cost_cents+ and downstream rollups.
   # @spec EXEC-USAGE-011
   def recorded_usage
     existing = ExecutionUsage.find_by(agent_run_id: agent_run.id)
@@ -142,8 +147,13 @@ class AgentRuns::RecordExecutionUsage
 
   def replace_recording(existing)
     ExecutionUsage.transaction(requires_new: true) do
+      attributes = execution_usage_attributes
+      if existing
+        attributes[:billed_duration_seconds] = existing.billed_duration_seconds.to_i + attributes[:billed_duration_seconds].to_i
+        attributes[:infra_cost_cents] = existing.infra_cost_cents.to_i + attributes[:infra_cost_cents].to_i
+      end
       existing&.destroy!
-      ExecutionUsage.create!(agent_run_id: agent_run.id, **execution_usage_attributes)
+      ExecutionUsage.create!(agent_run_id: agent_run.id, **attributes)
     end
   end
 

@@ -121,6 +121,57 @@ RSpec.describe AgentRuns::RecordExecutionUsage do
       expect(agent_run.attributes.slice(*reprovisioned_run_snapshot.keys)).to eq(reprovisioned_run_snapshot)
     end
 
+    # @spec EXEC-USAGE-011
+    it "folds the prior cycle's billed duration and cost into the replacement row" do
+      first_usage, result = reprovisioned_usage(agent_run)
+      usage = agent_run.reload.execution_usage
+
+      expect(usage.billed_duration_seconds).to eq(
+        first_usage.billed_duration_seconds + reprovisioned_billed_duration_seconds
+      )
+      expect(usage.infra_cost_cents).to eq(
+        first_usage.infra_cost_cents + reprovisioned_infra_cost_cents
+      )
+      # The new cycle's identifiers, rate, and lifecycle timestamps still
+      # reflect only the new machine — only the duration and cost accumulate.
+      expect(usage.rate_cents_per_hour).to eq(reprovisioned_rate_cents_per_hour)
+      expect(usage.provider_resource_id).to eq("fly-machine-def")
+      expect(usage.termination_reason).to eq("completed")
+      expect(result[:infra_cost_cents]).to eq(usage.infra_cost_cents)
+    end
+
+    # @spec EXEC-USAGE-011
+    it "survives the prior cycle's infra spend into AgentRun#total_cost_cents" do
+      agent_run.update!(cost_cents: 100)
+      reprovisioned_usage(agent_run)
+
+      agent_run.reload
+      first_usage_billed = 1800
+      reprovisioned_billed = 1200
+      first_usage_cost = 30
+      reprovisioned_cost = 40
+      expect(agent_run.billed_duration_seconds).to eq(first_usage_billed + reprovisioned_billed)
+      expect(agent_run.infra_cost_cents).to eq(first_usage_cost + reprovisioned_cost)
+      expect(agent_run.total_cost_cents).to eq(100 + first_usage_cost + reprovisioned_cost)
+    end
+
+    # @spec EXEC-USAGE-011
+    it "does not accumulate when no prior cycle exists (no existing row to fold in)" do
+      # Exercises the existing.nil? branch of replace_recording: the row was
+      # recorded, then another re-record arrives after the row was deleted
+      # out-of-band. Without a prior row, billed_duration_seconds and
+      # infra_cost_cents reflect only the new cycle — no phantom
+      # accumulation from a non-existent previous cycle.
+      record_usage(env: rate_60_per_hour, agent_run: agent_run)
+      agent_run.reload.execution_usage.destroy!
+      result = record_usage(env: rate_60_per_hour, agent_run: agent_run)
+
+      usage = agent_run.reload.execution_usage
+      expect(usage.billed_duration_seconds).to eq(1800)
+      expect(usage.infra_cost_cents).to eq(60)
+      expect(result[:infra_cost_cents]).to eq(60)
+    end
+
     it "returns nil and logs a warning when required inputs are missing" do
       result = described_class.call(
         agent_run: agent_run,
@@ -181,25 +232,37 @@ RSpec.describe AgentRuns::RecordExecutionUsage do
   def reprovisioned_usage_snapshot
     {
       "provider_resource_id" => "fly-machine-def",
-      "billed_duration_seconds" => 1200,
+      "billed_duration_seconds" => 3000,
       "termination_reason" => "completed",
       "rate_cents_per_hour" => 120,
-      "infra_cost_cents" => 40
+      "infra_cost_cents" => 70
     }
   end
 
   def reprovisioned_result_snapshot
     {
-      infra_cost_cents: 40,
+      infra_cost_cents: 70,
       rate_cents_per_hour: 120
     }
   end
 
   def reprovisioned_run_snapshot
     {
-      "billed_duration_seconds" => 1200,
-      "infra_cost_cents" => 40
+      "billed_duration_seconds" => 3000,
+      "infra_cost_cents" => 70
     }
+  end
+
+  def reprovisioned_billed_duration_seconds
+    1200
+  end
+
+  def reprovisioned_infra_cost_cents
+    40
+  end
+
+  def reprovisioned_rate_cents_per_hour
+    120
   end
 
   def record_usage(env:, agent_run:, provider_resource_id: "fly-machine-abc",

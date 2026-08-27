@@ -126,9 +126,14 @@ prefix: EXEC-USAGE
   re-pricing the row against a later timestamp, and SHALL mirror the
   persisted row (never a freshly computed estimate) onto the run's
   denormalized columns. When the current `provisioned_at` is after the
-  existing row's `terminated_at`, the recorder SHALL replace that row as a
-  new billing cycle so park/resume and stale requeue re-provisioning record
-  the later execution rather than freezing the old `evicted` termination.
+  existing row's `terminated_at` — a true re-provisioning (park/resume,
+  stale requeue, `reprovision_container_for_fallback!`) — the recorder
+  SHALL replace that row, but SHALL fold the prior cycle's
+  `billed_duration_seconds` and `infra_cost_cents` into the new row's
+  values so the run's full infra spend across both cycles survives into
+  `AgentRun#total_cost_cents` and downstream rollups; the new row's
+  `provisioned_at`, `terminated_at`, `provider_resource_id`, and
+  `rate_cents_per_hour` reflect the new cycle only.
   *Tests:* `spec/services/agent_runs/record_execution_usage_spec.rb`,
   `spec/models/agent_run_spec.rb`.
   *Code:* `AgentRuns::RecordExecutionUsage`.
