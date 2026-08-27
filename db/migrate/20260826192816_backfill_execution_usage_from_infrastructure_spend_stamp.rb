@@ -21,6 +21,8 @@
 # would undercount them, and RecordExecutionUsage's first-write-wins semantics
 # would preserve the short backfilled row over the later true termination.
 class BackfillExecutionUsageFromInfrastructureSpendStamp < ActiveRecord::Migration[8.1]
+  BATCH_SIZE = 500
+
   class MigrationAgentRun < ApplicationRecord
     self.table_name = "agent_runs"
   end
@@ -42,7 +44,12 @@ class BackfillExecutionUsageFromInfrastructureSpendStamp < ActiveRecord::Migrati
   def up
     return unless table_exists?(:execution_usages) && column_exists?(:agent_runs, :provisioning_started_at)
 
-    candidate_ids.each_slice(500) { |batch_ids| backfill_batch(batch_ids) }
+    last_id = nil
+
+    loop do
+      last_id = backfill_next_batch(after_id: last_id)
+      break if last_id.nil?
+    end
   end
 
   def down
@@ -52,10 +59,6 @@ class BackfillExecutionUsageFromInfrastructureSpendStamp < ActiveRecord::Migrati
   end
 
   private
-
-  def candidate_ids
-    with_tenant_bypass { candidates.pluck(:id) }
-  end
 
   def candidates
     scope = MigrationAgentRun
@@ -86,19 +89,26 @@ class BackfillExecutionUsageFromInfrastructureSpendStamp < ActiveRecord::Migrati
     SQL
   end
 
-  def backfill_batch(batch_ids)
+  def backfill_next_batch(after_id:)
     with_tenant_bypass do
-      rows = migration_agent_runs_for(batch_ids).filter_map { |agent_run| execution_usage_attributes_for(agent_run) }
-      next if rows.empty?
+      agent_runs = next_candidate_batch(after_id: after_id)
+      return if agent_runs.empty?
 
-      MigrationExecutionUsage.insert_all(rows, unique_by: :agent_run_id)
-      backfill_agent_run_columns!(rows)
+      rows = agent_runs.filter_map { |agent_run| execution_usage_attributes_for(agent_run) }
+      unless rows.empty?
+        MigrationExecutionUsage.insert_all(rows, unique_by: :agent_run_id)
+        backfill_agent_run_columns!(rows)
+      end
+
+      agent_runs.last.id
     end
   end
 
   def execution_usage_attributes_for(agent_run)
-    rate = agent_run.external_metadata.dig("infrastructure_spend", "rate_cents_per_hour").to_i
-    return if rate <= 0
+    rate_value = agent_run.external_metadata.dig("infrastructure_spend", "rate_cents_per_hour")
+    return if rate_value.blank?
+
+    rate = rate_value.to_i
 
     billed_duration = (agent_run.completed_at - agent_run.provisioning_started_at).to_i
     return if billed_duration.negative?
@@ -163,7 +173,15 @@ class BackfillExecutionUsageFromInfrastructureSpendStamp < ActiveRecord::Migrati
     MigrationAgentRun
       .select(:id, :status, :container_host, :provisioning_started_at,
         :started_at, :completed_at, :external_metadata)
-      .find(batch_ids)
+      .where(id: batch_ids)
+      .order(:id)
+  end
+
+  def next_candidate_batch(after_id:)
+    scope = candidates.order(:id)
+    scope = scope.where("agent_runs.id > ?", after_id) if after_id.present?
+
+    migration_agent_runs_for(scope.limit(BATCH_SIZE))
   end
 
   def with_tenant_bypass(&)

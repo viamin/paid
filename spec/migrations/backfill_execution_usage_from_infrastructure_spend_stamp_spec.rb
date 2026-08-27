@@ -92,6 +92,19 @@ RSpec.describe BackfillExecutionUsageFromInfrastructureSpendStamp, :aggregate_fa
     expect(run.reload.execution_usage).to be_nil
   end
 
+  it "backfills a run whose stamped rate is explicitly zero" do
+    run = stamped_run(:completed, rate_cents_per_hour: 0)
+
+    migration.migrate(:up)
+
+    usage = run.reload.execution_usage
+    expect(usage).to be_present
+    expect(usage.rate_cents_per_hour).to eq(0)
+    expect(usage.infra_cost_cents).to eq(0)
+    expect(run.infra_cost_cents).to eq(0)
+    expect(run.billed_duration_seconds).to eq(usage.billed_duration_seconds)
+  end
+
   # @spec EXEC-USAGE-007
   it "does not create a row for a run whose container is currently retained" do
     run = stamped_run(:completed)
@@ -140,7 +153,7 @@ RSpec.describe BackfillExecutionUsageFromInfrastructureSpendStamp, :aggregate_fa
     expect(run.reload.execution_usage.runner_backend).to eq("existing")
   end
 
-  it "re-applies tenant bypass once for the id scan and once per backfill batch" do
+  it "re-applies tenant bypass for each batch cycle, including the final empty scan" do
     501.times { stamped_run(:completed) }
     allow(migration).to receive(:execute).and_call_original
 
