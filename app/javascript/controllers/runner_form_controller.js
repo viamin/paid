@@ -292,6 +292,10 @@ export default class extends Controller {
       el.hidden = !visible
       this.toggleControls(el, visible)
     })
+
+    if (!visible && this.hasCustomModelInputTarget) {
+      this.customModelInputTarget.value = ""
+    }
   }
 
   disableModelControls(disabled) {
