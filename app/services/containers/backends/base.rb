@@ -109,8 +109,13 @@ module Containers
       # Dockerfile alone). Streams build output to the optional block.
       # @param dockerfile [String] full Dockerfile content
       # @param opts [Hash] Docker /build query options (:t, :buildargs,
-      #   :labels, :nocache, ...)
-      # @return [Docker::Image] the built image
+      #   :labels, :nocache, ...) — callers that build a layered chain of
+      #   images MUST pass :t and chain subsequent layers FROM that tag, not
+      #   from the return value's id: multi-host backends build
+      #   independently per host and only the shared tag is guaranteed to
+      #   resolve consistently everywhere.
+      # @return [Docker::Image, Array<Docker::Image>] the built image, or one
+      #   built image per host for backends that build on multiple hosts
       def build_image(_dockerfile, _opts = {})
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end

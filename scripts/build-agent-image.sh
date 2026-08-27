@@ -274,9 +274,12 @@ fi
 # Optionally build combo language-layer images on top of the base
 # (RDR-046 Phase 3 / #3613). COMBO_LANGUAGES holds a space-separated list of
 # extended runtimes (elixir go rust swift); the layers build as a chain and the
-# final image is tagged with COMBO_TAG (defaults to the full base-inclusive
-# token set Containers::ImageResolver emits for a polyglot project — override
-# it for a lean tag like paid-agent:go).
+# final image is tagged with COMBO_TAG. The default mirrors what
+# Containers::ImageResolver actually resolves a project to: a single extended
+# runtime with no base languages detected resolves to just that runtime (e.g.
+# paid-agent:go), so a single COMBO_LANGUAGES token defaults to that lean tag;
+# two or more tokens default to the full base-inclusive polyglot tag instead.
+# Override COMBO_TAG to build a different tag than the default.
 BASE_LANGUAGES="node python ruby"
 COMBO_LANGUAGES="${COMBO_LANGUAGES:-}"
 
@@ -294,9 +297,18 @@ if [ -n "${COMBO_LANGUAGES}" ]; then
         fi
     done
 
-    # Sorted, unique tokens including the base runtimes — mirrors the tag
-    # grammar of Containers::ImageResolver#tag_for for polyglot projects.
-    TAG_TOKENS=$(printf '%s\n' ${BASE_LANGUAGES} ${COMBO_LANGUAGES} | sort -u | tr '\n' '-' | sed 's/-$//')
+    # A single extended runtime matches a project detecting only that
+    # runtime — no base tokens. Two or more extended runtimes mirror a full
+    # polyglot project and include the base runtimes too. Both mirror the
+    # sorted, unique tag grammar of Containers::ImageResolver#tag_for.
+    # shellcheck disable=SC2086 # intentional word-splitting of the space-separated list
+    UNIQUE_COMBO_LANGUAGES=$(printf '%s\n' ${COMBO_LANGUAGES} | sort -u)
+    if [ "$(echo "${UNIQUE_COMBO_LANGUAGES}" | wc -l)" -eq 1 ]; then
+        TAG_TOKENS="${UNIQUE_COMBO_LANGUAGES}"
+    else
+        # shellcheck disable=SC2086 # intentional word-splitting of the space-separated lists
+        TAG_TOKENS=$(printf '%s\n' ${BASE_LANGUAGES} ${UNIQUE_COMBO_LANGUAGES} | sort -u | tr '\n' '-' | sed 's/-$//')
+    fi
     COMBO_TAG="${COMBO_TAG:-${IMAGE_NAME}:${TAG_TOKENS}}"
 
     if [ "${REBUILD_COMBO}" != "true" ] && docker image inspect "${COMBO_TAG}" >/dev/null 2>&1; then
@@ -306,7 +318,9 @@ if [ -n "${COMBO_LANGUAGES}" ]; then
         echo ""
         echo "Building combo image ${COMBO_TAG} (layers: ${COMBO_LANGUAGES})..."
         COMBO_FROM="${FULL_IMAGE}"
+        # shellcheck disable=SC2086 # intentional word-splitting of the space-separated list
         SORTED_LANGUAGES=$(printf '%s\n' ${COMBO_LANGUAGES} | sort)
+        # shellcheck disable=SC2086 # intentional word-splitting of the space-separated list
         LAYER_COUNT=$(printf '%s\n' ${SORTED_LANGUAGES} | wc -l)
         LAYER_INDEX=0
         for lang in ${SORTED_LANGUAGES}; do

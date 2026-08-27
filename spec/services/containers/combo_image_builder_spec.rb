@@ -68,20 +68,26 @@ RSpec.describe Containers::ComboImageBuilder do
       expect(backend).not_to have_received(:build_image)
     end
 
-    it "applies the combo tag to the final layer of a multi-runtime chain" do
+    it "chains multi-runtime layers by tag, not build id, so multi-node backends build correctly" do
       stub_combo_absent("paid-agent:go-rust")
-      chain = [ instance_double(Docker::Image, id: "sha256:#{'1' * 64}"), instance_double(Docker::Image, id: "sha256:#{'2' * 64}") ]
-      allow(backend).to receive(:build_image).and_return(*chain)
+      # Mimics a multi-node backend (e.g. swarm), which returns one image per
+      # node from build_image rather than a single image.
+      per_node_images = [ instance_double(Docker::Image, id: "sha256:#{'1' * 64}"), instance_double(Docker::Image, id: "sha256:#{'2' * 64}") ]
+      allow(backend).to receive(:build_image).and_return(per_node_images)
 
       described_class.ensure_available("paid-agent:go-rust", backend: backend)
 
+      intermediate_tag = "paid-agent-build:go-rust--layer0"
       expect(backend).to have_received(:build_image).with(
-        /# Go language layer/, hash_including(buildargs: { "BASE_IMAGE" => "paid-agent:latest" }.to_json)
+        /# Go language layer/, hash_including(
+          t: intermediate_tag,
+          buildargs: { "BASE_IMAGE" => "paid-agent:latest" }.to_json
+        )
       ).once
       expect(backend).to have_received(:build_image).with(
         /# Rust language layer/, hash_including(
           t: "paid-agent:go-rust",
-          buildargs: { "BASE_IMAGE" => chain.first.id }.to_json
+          buildargs: { "BASE_IMAGE" => intermediate_tag }.to_json
         )
       ).once
     end

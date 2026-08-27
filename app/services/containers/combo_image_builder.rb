@@ -8,9 +8,13 @@ module Containers
   # layer is written as +ARG BASE_IMAGE+ + +FROM ${BASE_IMAGE}+ plus a pinned,
   # checksum-verified toolchain install, so the builder can compose any combo:
   # single-extended-runtime combos build one layer tagged with the resolved
-  # combo tag; multi-extended combos build a chain where each layer builds
-  # FROM the previous (untagged) image and only the final layer receives the
-  # combo tag.
+  # combo tag; multi-extended combos build a chain where every layer is
+  # tagged — the final layer with the resolved combo tag, intermediate layers
+  # with a private +paid-agent-build:*+ tag — and each layer builds FROM the
+  # previous layer's *tag*, never its build id. Backends that build on
+  # multiple hosts (e.g. swarm) run each layer's build independently per
+  # node and only the tag, not the id, is guaranteed to resolve consistently
+  # wherever the next layer happens to build.
   #
   # Built images carry labels recording the base image digest they were built
   # against, when they were built, and which extended runtime each layer added.
@@ -50,6 +54,11 @@ module Containers
     BASE_DIGEST_LABEL = "#{LABEL_NAMESPACE}.base-digest"
     BUILT_AT_LABEL = "#{LABEL_NAMESPACE}.built-at"
     LANGUAGES_LABEL = "#{LABEL_NAMESPACE}.languages"
+
+    # Tag namespace for intermediate chain layers. Deliberately outside the
+    # +paid-agent:+ namespace so {ImageResolver.combo?} never mistakes an
+    # in-progress layer for a resolvable combo tag.
+    INTERMEDIATE_TAG_PREFIX = "paid-agent-build"
 
     BUILD_OUTPUT_TAIL_LINES = 40
 
@@ -144,13 +153,9 @@ module Containers
       digest = base_image_digest
       from = ImageResolver::BASE_IMAGE
       layers.each_with_index do |token, index|
-        from = build_layer(
-          token,
-          from: from,
-          tag: index == layers.size - 1 ? image : nil,
-          base_digest: digest,
-          nocache: nocache
-        )
+        tag = index == layers.size - 1 ? image : intermediate_tag(image, index)
+        build_layer(token, from: from, tag: tag, base_digest: digest, nocache: nocache)
+        from = tag
       end
       duration_ms = elapsed_ms(started)
       log(:info, "agent_image.build.success", image: image, layers: layers, duration_ms: duration_ms)
@@ -184,7 +189,11 @@ module Containers
             "so combo images cannot be built. Build it first with scripts/build-agent-image.sh"
     end
 
-    # @return [String] the image id to use as the next layer's base
+    # Builds a single language layer, tagging it so the next layer (or the
+    # caller, for the final layer) can chain FROM it by tag. The build's
+    # return value is intentionally ignored: on multi-node backends it is one
+    # image per node, and no single id among them resolves everywhere the
+    # next layer might build — only the tag every node applied locally does.
     def build_layer(token, from:, tag:, base_digest:, nocache:)
       dockerfile = File.read(File.join(self.class.languages_dir, "#{token}.dockerfile"))
       labels = {
@@ -192,16 +201,18 @@ module Containers
         BUILT_AT_LABEL => Time.current.utc.iso8601,
         LANGUAGES_LABEL => token
       }
-      opts = { buildargs: { "BASE_IMAGE" => from }.to_json, labels: labels.to_json }
-      opts[:t] = tag if tag
+      opts = { t: tag, buildargs: { "BASE_IMAGE" => from }.to_json, labels: labels.to_json }
       opts[:nocache] = "1" if nocache
 
-      built = backend.build_image(dockerfile, opts) { |chunk| capture_build_output(chunk) }
-      Array(built).first.id
+      backend.build_image(dockerfile, opts) { |chunk| capture_build_output(chunk) }
     rescue Docker::Error::NotFoundError, Errno::ENOENT => e
       raise UnbuildableImageError, "No language layer Dockerfile for #{token.inspect} (#{e.class}: #{e.message})"
     rescue Docker::Error::DockerError => e
       raise BuildError, build_failure_message(token, tag, e)
+    end
+
+    def intermediate_tag(image, index)
+      "#{INTERMEDIATE_TAG_PREFIX}:#{image.split(":", 2).last}--layer#{index}"
     end
 
     # Bounded capture of the streamed build output for failure messages —
