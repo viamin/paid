@@ -24,14 +24,15 @@ RSpec.describe PullRequests::BlockedOnlyOnApproval do
     allow(GithubClient).to receive(:new).and_return(client)
   end
 
-  def green_pr_data(sha: "abc123", mergeable: true, draft: false, state: "open", login: "someone-else")
+  def green_pr_data(sha: "abc123", mergeable: true, draft: false, state: "open", login: "someone-else", labels: [])
     OpenStruct.new(
       head: OpenStruct.new(sha: sha, repo: OpenStruct.new(fork: false)),
       mergeable: mergeable,
       draft: draft,
       number: issue.github_number,
       state: state,
-      user: OpenStruct.new(login: login)
+      user: OpenStruct.new(login: login),
+      labels: labels.map { |name| OpenStruct.new(name: name) }
     )
   end
 
@@ -116,6 +117,14 @@ RSpec.describe PullRequests::BlockedOnlyOnApproval do
 
     it "returns false when the paid-skip-auto-merge label appeared since the scan" do
       issue.update!(labels: [ "paid-automation", Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL ])
+
+      expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(false)
+    end
+
+    # @spec PR-ESCALATION-025
+    it "returns false when the paid-skip-auto-merge label was added on GitHub but not yet synced locally" do
+      sha = "abc123"
+      stub_pr_data(green_pr_data(sha: sha, labels: [ Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL ]))
 
       expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(false)
     end

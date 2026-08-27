@@ -38,6 +38,7 @@ module PullRequests
       pr_data = fetch_pull_request
       return false if pr_data.nil?
       return false if draft?(pr_data) || closed?(pr_data)
+      return false if skip_auto_merge_label?(pr_data)
       return false unless mergeable?(pr_data)
 
       checks = fetch_check_runs(pr_data)
@@ -137,8 +138,17 @@ module PullRequests
         blocking_reviews_complete: blocking_reviews_complete,
         reviews_fresh: reviews_fresh,
         dependencies_resolved: dependencies_resolved,
-        skip_auto_merge: @issue.has_label?(SKIP_AUTO_MERGE_LABEL)
+        skip_auto_merge: skip_auto_merge_label?(pr_data)
       )
+    end
+
+    # Reads the skip-auto-merge label from the freshly fetched PR data
+    # (PullRequestSnapshot#labels, already normalized to plain strings by
+    # the provider layer) rather than the persisted Issue#labels copy, so a
+    # label added on GitHub after the scan (but before the local sync
+    # catches up) still blocks this escalation.
+    def skip_auto_merge_label?(pr_data)
+      Array(pr_data.labels).include?(SKIP_AUTO_MERGE_LABEL)
     end
 
     # Mirrors the scan's blocked_only_on_approval? gate signal-for-signal:
