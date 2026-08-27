@@ -263,7 +263,7 @@ RSpec.describe GithubTokenHealthCheckJob do
           message: "github_token.health_check.completed",
           tokens_checked: 0,
           tokens_failed: 0,
-          tokens_skipped: 2,
+          tokens_skipped: 0,
           tokens_errored: 0
         )
       )
