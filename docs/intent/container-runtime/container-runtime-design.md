@@ -136,6 +136,14 @@ by what `Containers::Provision` actually does today, not speculative
 generalization, and is reviewed against the coupling inventory (#3337) to
 confirm coverage.
 
+Author-facing implementation guidance for a future second runner lives in
+[`runner-authoring-guide.md`](./runner-authoring-guide.md). That guide is the
+closeout document for issue `#3348`: it explains the contract objects, the
+registration points (`resolve`, `for_type`, reconciliation), the shared
+conformance coverage, the control-plane-to-runner ownership split, the
+existing in-memory fake runner (`ContractRunner`), and the current
+Docker-specific leaks a reviewer should still expect.
+
 This boundary was originally planned under a provisional execution-runner
 `RDR-054` label in issues `#3336`–`#3348`. That number now belongs to the
 Prompt Assembly Service RDR, so the runner-boundary workstream is tracked here
@@ -553,6 +561,38 @@ development: its platform is stubbed with the constraint that
 clone path), while legacy bind-mount runs remain a compatibility path
 outside the conformance scenario.
 
+For a future second runner, the expected author/reviewer workflow is:
+
+1. Implement a concrete `ExecutionRunners::Base` subclass under
+   `app/services/execution_runners/`.
+2. Register it in `ExecutionRunners.resolve(backend:)` and
+   `ExecutionRunners.for_type(runner_type)`; add it to
+   `ExecutionRunners.reconciliation_runners` only if it supports periodic
+   resource listing/cleanup.
+3. Prove it against the shared runner contract and the no-shared-filesystem
+   conformance suite before relying on provider-specific integration tests.
+4. Call out any unsupported current Paid feature explicitly, and reject it at
+   `.compatible?` / `#provision` instead of silently degrading behavior.
+
+The current leak inventory a second-runner review must evaluate is also
+stable enough to name explicitly:
+
+- `WorkspaceStrategy#writable_dirs` is still only intent; Docker tmpfs wiring
+  remains in `Containers::Provision#host_config` (`CONTAINER-RUNTIME-012`).
+- `WorkspaceStrategy#heartbeat` is still only intent; callers still pass
+  `heartbeat_path:` to `#start` and Docker code owns setup/cleanup
+  (`CONTAINER-RUNTIME-013`).
+- Pool workspace allocation still constructs Docker volume identifiers in
+  `Containers::PoolManager` (`CONTAINER-RUNTIME-014`).
+- Supporting services, MCP sidecars, and the browser container already flow
+  through runner lifecycle methods, but the Temporal activity topology still
+  mirrors the Docker-centric provisioners and Phase 1 intentionally preserves
+  their existing error classes.
+- Database compatibility columns (`container_id`, `container_host`,
+  `service_container_ids`, `docker_container_id`) still exist beside the
+  provider-neutral `runner_handle`; new runners should extend the handle-based
+  contract, not propagate those compatibility fields upward.
+
 ### Execution resource ledger reconciliation (#3411)
 
 Provision-time `runner_handle` persistence solves retry-time recovery for a
@@ -663,6 +703,7 @@ requirement defaults to warn mode.
 - `spec/services/execution_runners_spec.rb`
 - `spec/services/execution_runners/base_spec.rb`
 - `spec/services/execution_runners/local_docker_runner_spec.rb`
+- `docs/intent/container-runtime/runner-authoring-guide.md`
 - `spec/models/provisioning_intent_spec.rb`
 - `spec/services/execution_runners/no_shared_filesystem_conformance_spec.rb`
 - `spec/support/no_shared_filesystem_conformance.rb`
