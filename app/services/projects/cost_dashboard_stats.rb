@@ -215,12 +215,9 @@ module Projects
     end
 
     def pending_infrastructure_cost_cents(starts_at:, ends_at:)
-      Capacity::InfrastructureSpend.spent_cents(
-        project: project,
-        starts_at: starts_at,
-        ends_at: ends_at,
-        scope_modifier: ->(scope) { scope.where.missing(:execution_usage) }
-      )
+      pending_infrastructure_runs(ends_at:)
+        .sum(Arel.sql(pending_infrastructure_overlap_cost_sql(starts_at:, ends_at:)))
+        .to_i
     end
 
     def execution_usage_overlap_cost_sql(starts_at:, ends_at:)
@@ -237,6 +234,48 @@ module Projects
             )
           ) / 3600.0
         )
+      SQL
+    end
+
+    # Pending runs have not recorded their terminal ExecutionUsage row yet, so
+    # their billed lifetime is still open even if the agent already completed.
+    # Charge the overlap through the reporting window until cleanup persists the
+    # real terminated_at snapshot.
+    def pending_infrastructure_overlap_cost_sql(starts_at:, ends_at:)
+      <<~SQL.squish
+        ROUND(
+          (
+            #{pending_infrastructure_rate_cents_per_hour_sql} *
+            GREATEST(
+              EXTRACT(EPOCH FROM (
+                #{quote_time(ends_at)} -
+                GREATEST(agent_runs.provisioning_started_at, #{quote_time(starts_at)})
+              )),
+              0
+            )
+          ) / 3600.0
+        )
+      SQL
+    end
+
+    def pending_infrastructure_runs(ends_at:)
+      TenantContext.with_system_access do
+        AgentRun
+          .joins(:project)
+          .where(projects: { id: project.id })
+          .where.missing(:execution_usage)
+          .where.not(provisioning_started_at: nil)
+          .where("agent_runs.provisioning_started_at < ?", ends_at)
+          .where("agent_runs.completed_at IS NOT NULL OR agent_runs.status IN (?)", AgentRun::ACTIVE_STATUSES)
+      end
+    end
+
+    def pending_infrastructure_rate_cents_per_hour_sql
+      <<~SQL.squish
+        COALESCE(
+          NULLIF(agent_runs.external_metadata #>> '{infrastructure_spend,rate_cents_per_hour}', ''),
+          '0'
+        )::numeric
       SQL
     end
 

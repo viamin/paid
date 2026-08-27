@@ -112,5 +112,21 @@ RSpec.describe ExecutionUsageCostEstimator do
       expect(result.infra_cost_cents).to eq(60)
       expect(result.rate_cents_per_hour).to eq(120)
     end
+
+    # @spec EXEC-USAGE-004
+    # @spec EXEC-USAGE-005
+    it "preserves an explicit zero stamped rate instead of falling back to the current env rate" do
+      env = { "INFRA_SPEND_RATE_CENTS_PER_HOUR__LOCAL" => "999" }
+
+      result = described_class.call(
+        billed_duration_seconds: 1800,
+        runner_backend: "local",
+        rate_cents_per_hour: 0,
+        env: env
+      )
+
+      expect(result.infra_cost_cents).to eq(0)
+      expect(result.rate_cents_per_hour).to eq(0)
+    end
   end
 end

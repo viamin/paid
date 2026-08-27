@@ -71,6 +71,25 @@ RSpec.describe Projects::CostDashboardStats do
       end
     end
 
+    # @spec EXEC-USAGE-007
+    # @spec INFRA-SPEND-001
+    it "keeps charging rowless completed runs until cleanup records termination" do
+      travel_to(Time.zone.local(2024, 1, 15, 12, 0, 0)) do
+        create(:agent_run, project: project, status: "completed",
+          provisioning_started_at: 2.hours.ago,
+          completed_at: 1.hour.ago,
+          external_metadata: {
+            "infrastructure_spend" => { "rate_cents_per_hour" => 120 }
+          })
+
+        result = described_class.call(project: project)
+
+        expect(result[:summary][:infrastructure_cost_cents]).to eq(240)
+        expect(result[:summary][:infrastructure_cost_today_cents]).to eq(240)
+        expect(result[:summary][:infrastructure_cost_this_month_cents]).to eq(240)
+      end
+    end
+
     # @spec EXEC-USAGE-003
     it "does not double-count ContainerMetric samples in infrastructure cost" do
       travel_to(Time.zone.local(2024, 1, 15, 12, 0, 0)) do
