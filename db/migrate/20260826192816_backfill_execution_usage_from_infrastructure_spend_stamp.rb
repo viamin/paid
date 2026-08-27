@@ -34,20 +34,7 @@ class BackfillExecutionUsageFromInfrastructureSpendStamp < ActiveRecord::Migrati
   def up
     return unless table_exists?(:execution_usages) && column_exists?(:agent_runs, :provisioning_started_at)
 
-    # Wrapped explicitly (rather than relying on the Migrator's own
-    # transaction) so `SET LOCAL` has a transaction to scope to whether this
-    # runs via `db:migrate` or a spec calling `migrate(:up)` directly.
-    ActiveRecord::Base.transaction do
-      safety_assured { execute("SET LOCAL paid.bypass_tenant_rls = 'true'") }
-
-      candidates.find_in_batches(batch_size: 500) do |batch|
-        rows = batch.filter_map { |agent_run| execution_usage_attributes_for(agent_run) }
-        next if rows.empty?
-
-        MigrationExecutionUsage.insert_all(rows, unique_by: :agent_run_id)
-        backfill_agent_run_columns!(rows)
-      end
-    end
+    candidate_ids.each_slice(500) { |batch_ids| backfill_batch(batch_ids) }
   end
 
   def down
@@ -58,6 +45,10 @@ class BackfillExecutionUsageFromInfrastructureSpendStamp < ActiveRecord::Migrati
 
   private
 
+  def candidate_ids
+    with_tenant_bypass { candidates.pluck(:id) }
+  end
+
   def candidates
     MigrationAgentRun
       .where.not(provisioning_started_at: nil)
@@ -65,6 +56,16 @@ class BackfillExecutionUsageFromInfrastructureSpendStamp < ActiveRecord::Migrati
       .where("completed_at >= provisioning_started_at")
       .where("external_metadata #>> '{infrastructure_spend,rate_cents_per_hour}' IS NOT NULL")
       .where("id NOT IN (SELECT agent_run_id FROM execution_usages)")
+  end
+
+  def backfill_batch(batch_ids)
+    with_tenant_bypass do
+      rows = MigrationAgentRun.find(batch_ids).filter_map { |agent_run| execution_usage_attributes_for(agent_run) }
+      next if rows.empty?
+
+      MigrationExecutionUsage.insert_all(rows, unique_by: :agent_run_id)
+      backfill_agent_run_columns!(rows)
+    end
   end
 
   def execution_usage_attributes_for(agent_run)
@@ -127,6 +128,16 @@ class BackfillExecutionUsageFromInfrastructureSpendStamp < ActiveRecord::Migrati
         infra_cost_cents: row[:infra_cost_cents],
         billed_duration_seconds: row[:billed_duration_seconds]
       )
+    end
+  end
+
+  def with_tenant_bypass(&)
+    # Wrapped explicitly (rather than relying on the Migrator's own
+    # transaction) so `SET LOCAL` has a transaction to scope to whether this
+    # runs via `db:migrate` or a spec calling `migrate(:up)` directly.
+    ActiveRecord::Base.transaction do
+      safety_assured { execute("SET LOCAL paid.bypass_tenant_rls = 'true'") }
+      yield
     end
   end
 end

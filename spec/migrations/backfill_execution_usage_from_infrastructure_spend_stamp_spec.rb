@@ -102,4 +102,15 @@ RSpec.describe BackfillExecutionUsageFromInfrastructureSpendStamp, :aggregate_fa
     expect(ExecutionUsage.where(agent_run_id: run.id).count).to eq(1)
     expect(run.reload.execution_usage.runner_backend).to eq("existing")
   end
+
+  it "re-applies tenant bypass once for the id scan and once per backfill batch" do
+    501.times { stamped_run(:completed) }
+    allow(migration).to receive(:execute).and_call_original
+
+    migration.migrate(:up)
+
+    expect(migration).to have_received(:execute)
+      .with("SET LOCAL paid.bypass_tenant_rls = 'true'")
+      .exactly(3).times
+  end
 end
