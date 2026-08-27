@@ -33,17 +33,23 @@ Human-authored PRs take the stricter path. They require owner approval,
 successful checks, mergeability, fresh reviews for the current head, no
 outstanding blocking review feedback, and resolved dependencies before a merge
 decision is emitted. A blocking approval is treated as fresh when every commit
-in the post-approval range is a clean merge of the PR's base branch into the
-feature branch — i.e. a merge commit whose second-parent side is reachable
-from the base branch tip and whose tree is identical to its first-parent tree.
-This prevents `chore: merge origin/main` refreshes (including those produced by
-Paid's own `auto_fix_merge_conflicts` path) from dropping a PR out of
-auto-merge eligibility when they introduce no author-side content. Any commit
-that cannot be positively classified as content-free continues to invalidate
-the approval (fail closed), as does a post-approval range the comparison cannot
-fully return (GitHub's compare API caps the returned commit list while
-`ahead_by` reports the true range size; a truncated range is unclassifiable),
-and the classification decision is logged so a stall is diagnosable.
+on the first-parent path from HEAD back to the approved commit is a clean
+merge of the PR's base branch into the feature branch — i.e. a merge commit
+whose second-parent side is reachable from the base branch tip and whose tree
+is identical to its first-parent tree. This prevents `chore: merge origin/main`
+refreshes (including those produced by Paid's own `auto_fix_merge_conflicts`
+path) from dropping a PR out of auto-merge eligibility when they introduce
+no author-side content. The first-parent path (rather than the full compare
+response) is used because GitHub's compare endpoint is equivalent to
+`git log BASE..HEAD` and also returns the base-branch commits that arrived
+only through the merge's second parent; those single-parent commits are
+content-free by transitivity once the merge's second parent is reachable
+from the base branch tip, so the walk ignores them. Any commit that cannot
+be positively classified as content-free continues to invalidate the
+approval (fail closed), as does a post-approval range the first-parent walk
+cannot fully return (the walk is bounded at the same 250-commit cap GitHub
+imposes on its compare response; an over-cap walk is unclassifiable), and
+the classification decision is logged so a stall is diagnosable.
 
 Bot-authored dependency PRs take the narrower trusted path. Dependabot-like PRs
 may skip owner-approval and review-feedback gates, but they still require the

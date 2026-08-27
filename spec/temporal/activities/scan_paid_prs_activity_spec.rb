@@ -6445,8 +6445,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when the only post-approval commit is a clean merge of the base branch" do
       let(:approval_sha) { "approved_sha" }
-      let(:head_sha) { "abc123" }
-      let(:first_parent_sha) { "feature_tip_sha" }
+      let(:head_sha) { "merge_sha" }
+      let(:first_parent_sha) { approval_sha }
       let(:second_parent_sha) { "main_tip_sha" }
       let(:base_tip_sha) { "main_tip_sha" }
 
@@ -6479,12 +6479,38 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(automation_scan_results(result).size).to eq(1)
         expect(automation_scan_results(result).first[:triggers].first[:type]).to eq("owner_approved")
       end
+
+      it "treats the approval as fresh even when the compare response also lists base-branch commits" do
+        # Regression for the review-thread scenario: GitHub's compare
+        # endpoint is equivalent to `git log BASE..HEAD` and therefore
+        # returns the base-branch commits that arrived only through the
+        # merge's second parent. The FP walk ignores them (they are
+        # content-free by transitivity) and the approval stays fresh.
+        allow(github_client).to receive(:compare)
+          .with(project.full_name, approval_sha, head_sha)
+          .and_return(OpenStruct.new(
+            status: "ahead",
+            ahead_by: 5,
+            commits: [
+              OpenStruct.new(sha: head_sha),
+              OpenStruct.new(sha: "base_commit_4_sha"),
+              OpenStruct.new(sha: "base_commit_3_sha"),
+              OpenStruct.new(sha: "base_commit_2_sha"),
+              OpenStruct.new(sha: "base_commit_1_sha")
+            ]
+          ))
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result).size).to eq(1)
+        expect(automation_scan_results(result).first[:triggers].first[:type]).to eq("owner_approved")
+      end
     end
 
     context "when a post-approval merge commit resolved conflicts" do
       let(:approval_sha) { "approved_sha" }
-      let(:head_sha) { "abc123" }
-      let(:first_parent_sha) { "feature_tip_sha" }
+      let(:head_sha) { "merge_sha" }
+      let(:first_parent_sha) { approval_sha }
       let(:second_parent_sha) { "main_tip_sha" }
 
       before do
@@ -6521,8 +6547,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when the post-approval range mixes a clean base merge with a real author commit" do
       let(:approval_sha) { "approved_sha" }
-      let(:head_sha) { "abc123" }
-      let(:first_parent_sha) { "feature_tip_sha" }
+      let(:head_sha) { "real_commit_sha" }
+      let(:first_parent_sha) { approval_sha }
       let(:second_parent_sha) { "main_tip_sha" }
 
       before do
@@ -6557,8 +6583,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when the post-approval merge pulls in a branch other than the PR base" do
       let(:approval_sha) { "approved_sha" }
-      let(:head_sha) { "abc123" }
-      let(:first_parent_sha) { "feature_tip_sha" }
+      let(:head_sha) { "merge_sha" }
+      let(:first_parent_sha) { approval_sha }
       let(:second_parent_sha) { "feature_branch_tip_sha" }
 
       before do
@@ -6593,7 +6619,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when the post-approval range cannot be classified (compare API failure)" do
       let(:approval_sha) { "approved_sha" }
-      let(:head_sha) { "abc123" }
+      let(:head_sha) { "merge_sha" }
 
       before do
         project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
@@ -6610,6 +6636,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           head_committed_at: 1.hour.ago,
           head_sha: head_sha
         )
+        allow(github_client).to receive(:ref)
+          .with(project.full_name, "heads/#{project.default_branch}")
+          .and_return(OpenStruct.new(object: OpenStruct.new(sha: "main_tip_sha")))
         allow(github_client).to receive(:compare)
           .with(project.full_name, approval_sha, head_sha)
           .and_raise(GithubClient::Error, "boom")
@@ -6622,11 +6651,16 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
-    context "when the post-approval range exceeds the compare API commit page (truncated range)" do
+    context "when the first-parent walk exceeds the response cap (truncated walk)" do
       let(:approval_sha) { "approved_sha" }
-      let(:head_sha) { "abc123" }
+      let(:head_sha) { "merge_sha" }
+      let(:first_parent_sha) { approval_sha }
+      let(:second_parent_sha) { "main_tip_sha" }
 
       before do
+        # Stub the walk limit down so the cycle exhausts it quickly.
+        stub_const("Automation::Signals::PullRequestCollector::FIRST_PARENT_WALK_LIMIT", 3)
+
         project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
         create(:issue, :pull_request,
           project: project, github_number: 42,
@@ -6641,16 +6675,26 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           head_committed_at: 1.hour.ago,
           head_sha: head_sha
         )
-        # GitHub caps the compare response's commit list (250) while
-        # ahead_by reports the true range size; the un-pageable tail is
-        # invisible to the freshness check.
+
+        # Cycle: head_sha's first parent points back to itself, so the
+        # walk never finds approval_sha and the step bound trips.
         allow(github_client).to receive(:compare)
           .with(project.full_name, approval_sha, head_sha)
-          .and_return(OpenStruct.new(
-            status: "ahead",
-            ahead_by: 300,
-            commits: Array.new(250) { |i| OpenStruct.new(sha: "merge_#{i}") }
+          .and_return(OpenStruct.new(status: "ahead"))
+        allow(github_client).to receive(:commit)
+          .with(project.full_name, head_sha)
+          .and_return(build_merge_commit(
+            sha: head_sha,
+            tree_sha: "merge_tree_sha",
+            first_parent_sha: head_sha,
+            second_parent_sha: second_parent_sha
           ))
+        allow(github_client).to receive(:ref)
+          .with(project.full_name, "heads/#{project.default_branch}")
+          .and_return(OpenStruct.new(object: OpenStruct.new(sha: "main_tip_sha")))
+        allow(github_client).to receive(:compare)
+          .with(project.full_name, second_parent_sha, "main_tip_sha")
+          .and_return(OpenStruct.new(status: "ahead"))
       end
 
       it "blocks auto-merge by failing closed" do
@@ -10903,7 +10947,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
   # Stubs a clean two-parent merge of the base branch at HEAD — the merge's
   # tree equals its first parent's tree (no conflict resolution) and its
-  # second parent is reachable from the base branch tip.
+  # second parent is reachable from the base branch tip. The merge's
+  # first parent is the approved commit so the FP walk terminates in a
+  # single step.
   def stub_clean_base_merge(head_sha:, first_parent_sha:, second_parent_sha:, approval_sha:)
     base_tip_sha = "main_tip_sha"
     merge_tree_sha = "merge_tree_sha"
@@ -10919,7 +10965,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     allow(github_client).to receive(:compare)
       .with(project.full_name, approval_sha, head_sha)
-      .and_return(OpenStruct.new(status: "ahead", ahead_by: 1, commits: [ OpenStruct.new(sha: head_sha) ]))
+      .and_return(OpenStruct.new(status: "ahead"))
     allow(github_client).to receive(:commit)
       .with(project.full_name, head_sha)
       .and_return(merge_commit)
@@ -10949,18 +10995,22 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     allow(github_client).to receive(:compare)
       .with(project.full_name, approval_sha, head_sha)
-      .and_return(OpenStruct.new(status: "ahead", ahead_by: 1, commits: [ OpenStruct.new(sha: head_sha) ]))
+      .and_return(OpenStruct.new(status: "ahead"))
     allow(github_client).to receive(:commit)
       .with(project.full_name, head_sha)
       .and_return(merge_commit)
     allow(github_client).to receive(:commit)
       .with(project.full_name, first_parent_sha)
       .and_return(first_parent_commit)
+    allow(github_client).to receive(:ref)
+      .with(project.full_name, "heads/#{project.default_branch}")
+      .and_return(OpenStruct.new(object: OpenStruct.new(sha: "main_tip_sha")))
   end
 
   # Stubs a post-approval range that is a clean base merge followed by a
   # real (single-parent) author commit — the real commit must invalidate
-  # the approval even though the merge was content-free.
+  # the approval even though the merge was content-free. The FP chain is
+  # head_sha → real_commit → first_parent_sha (which equals approval_sha).
   def stub_mixed_post_approval_history(head_sha:, approval_sha:, first_parent_sha:, second_parent_sha:)
     base_tip_sha = "main_tip_sha"
     merge_tree_sha = "merge_tree_sha"
@@ -10979,16 +11029,18 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     real_commit = build_commit_with_committer(
       sha: real_commit_sha,
       tree_sha: "real_tree_sha",
-      parents: [ first_parent_sha ]
+      parents: [ merge_sha ]
     )
 
     allow(github_client).to receive(:compare)
       .with(project.full_name, approval_sha, head_sha)
-      .and_return(OpenStruct.new(
-        status: "ahead",
-        ahead_by: 2,
-        commits: [ OpenStruct.new(sha: merge_sha), OpenStruct.new(sha: real_commit_sha) ]
-      ))
+      .and_return(OpenStruct.new(status: "ahead"))
+    allow(github_client).to receive(:commit)
+      .with(project.full_name, head_sha)
+      .and_return(real_commit)
+    allow(github_client).to receive(:commit)
+      .with(project.full_name, real_commit_sha)
+      .and_return(real_commit)
     allow(github_client).to receive(:commit)
       .with(project.full_name, merge_sha)
       .and_return(merge_commit)
@@ -11001,9 +11053,6 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     allow(github_client).to receive(:compare)
       .with(project.full_name, second_parent_sha, base_tip_sha)
       .and_return(OpenStruct.new(status: "ahead"))
-    allow(github_client).to receive(:commit)
-      .with(project.full_name, real_commit_sha)
-      .and_return(real_commit)
   end
 
   # Stubs a merge commit that brought in a non-base branch (the second
@@ -11023,7 +11072,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     allow(github_client).to receive(:compare)
       .with(project.full_name, approval_sha, head_sha)
-      .and_return(OpenStruct.new(status: "ahead", ahead_by: 1, commits: [ OpenStruct.new(sha: head_sha) ]))
+      .and_return(OpenStruct.new(status: "ahead"))
     allow(github_client).to receive(:commit)
       .with(project.full_name, head_sha)
       .and_return(merge_commit)

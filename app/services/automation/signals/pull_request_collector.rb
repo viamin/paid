@@ -193,51 +193,91 @@ module Automation
         nil
       end
 
-      # Returns true when every commit in the range between +approval_sha+
-      # (inclusive) and +head_sha+ (exclusive) is a clean merge of the
-      # PR's base branch into the feature branch — i.e. no author-side
-      # content changed since the approval. See AUTO-MERGE-005: a clean
-      # merge carries an identical tree to its first parent and merges a
-      # side that is reachable from the base branch tip, so no new code
-      # reached the PR head.
+      # Walks this many commits along the first-parent chain before failing
+      # closed. Matches GitHub's compare response cap so the walk cannot
+      # enumerate more commits than the upstream endpoint can return.
+      FIRST_PARENT_WALK_LIMIT = 250
+
+      # Returns true when every commit on the first-parent path between
+      # +approval_sha+ and +head_sha+ (inclusive of head, exclusive of
+      # approval) is a clean merge of +base_branch+ into the feature
+      # branch — i.e. no author-side content changed since the approval.
+      # See AUTO-MERGE-005: a clean merge carries an identical tree to
+      # its first parent and merges a side that is reachable from the
+      # base branch tip, so no new code reached the PR head.
       #
-      # Fails closed (returns false) on any non-merge commit, on a merge
-      # whose tree differs from its first parent (conflict resolution or
-      # author-side change), on a merge whose second parent is not
-      # reachable from the base branch tip, on a force-push that removed
-      # the approved commit from HEAD's history, on a comparison whose
-      # returned commit page is truncated (GitHub caps the compare
-      # response, so the range cannot be fully enumerated), or when the
-      # range cannot be classified. The classification decision is logged
-      # so a stall is diagnosable.
+      # The first-parent walk is used (rather than iterating
+      # +compare.commits+) because the compare endpoint is equivalent to
+      # +git log BASE..HEAD+ and therefore also returns the base-branch
+      # commits that arrived only through the merge's second parent
+      # (the typical `chore: merge origin/main` case). Those single-
+      # parent commits are content-free by transitivity — once a merge's
+      # second parent is reachable from the base branch tip, every
+      # descendant of that second parent is also reachable — so the walk
+      # only validates the commits on the feature branch's natural
+      # history and ignores the rest.
+      #
+      # Fails closed (returns false) on a single-parent commit on the
+      # first-parent chain (author-side feature-branch content), on a
+      # merge whose tree differs from its first parent (conflict
+      # resolution or author-side change), on a merge whose second
+      # parent is not reachable from the base branch tip, on a force-
+      # push or history rewrite that dropped the approved commit from
+      # HEAD's lineage (compare status is not +ahead+/+identical+), on
+      # an octopus merge or root commit, on an unresolvable parent
+      # lookup, or when the first-parent walk exceeds the response cap
+      # (the range cannot be positively classified). Every classification
+      # outcome is logged so a stall is diagnosable.
       def only_base_merge_commits_since?(approval_sha:, head_sha:, base_branch:, issue: nil)
         return false if approval_sha.blank? || head_sha.blank? || base_branch.blank?
         return true if approval_sha == head_sha
 
-        comparison = client.compare(providers.repo, approval_sha, head_sha)
-        status = comparison&.status.to_s
-
-        # Force-push or other history rewrites that drop the approval
-        # commit from HEAD's lineage cannot be classified as content-free.
-        return false unless %w[ahead identical].include?(status)
-
-        commits = Array(comparison.commits)
-        ahead_by = comparison.ahead_by
-
-        # GitHub's compare API caps the returned commit list (250 per
-        # response) while +ahead_by+ reports the true range size. When the
-        # page is truncated — or the payload omits +ahead_by+ — the
-        # un-returned commits are invisible to this check, so the range
-        # cannot be fully classified: fail closed (approval stale) rather
-        # than approve an unseen range.
-        if ahead_by.blank? || ahead_by.to_i > commits.size
-          log_truncated_range(issue, approval_sha:, head_sha:, ahead_by:, returned: commits.size)
+        base_tip_sha = base_branch_tip_sha(base_branch)
+        if base_tip_sha.blank?
+          log_signal_error(
+            "clean_base_merge_range",
+            issue,
+            GithubClient::Error.new("base branch tip unresolved: #{base_branch}")
+          ) if issue
           return false
         end
 
-        log_classification(issue, approval_sha:, head_sha:, commit_count: commits.size)
+        # A quick ancestry check rejects force-pushes and history
+        # rewrites that dropped the approved commit from HEAD's
+        # lineage. Without it the walk would exhaust the
+        # +FIRST_PARENT_WALK_LIMIT+ before discovering the approval is
+        # unreachable.
+        ancestry = client.compare(providers.repo, approval_sha, head_sha)
+        return false unless %w[ahead identical].include?(ancestry&.status.to_s)
 
-        commits.all? { |c| clean_base_merge?(c.sha.to_s, base_branch:) }
+        walk = walk_first_parent_chain(
+          head_sha: head_sha,
+          approval_sha: approval_sha,
+          base_tip_sha: base_tip_sha
+        )
+
+        case walk[:outcome]
+        when :clean
+          log_classification(issue, approval_sha:, head_sha:, first_parent_steps: walk[:steps])
+          true
+        when :stale
+          log_stale_classification(
+            issue,
+            approval_sha:,
+            head_sha:,
+            first_parent_steps: walk[:steps],
+            reason: walk[:reason]
+          )
+          false
+        when :walk_exceeded
+          log_truncated_range(
+            issue,
+            approval_sha:,
+            head_sha:,
+            first_parent_steps: walk[:steps]
+          )
+          false
+        end
       rescue GithubClient::AuthenticationError
         raise
       rescue GithubClient::Error, StandardError => e
@@ -297,42 +337,60 @@ module Automation
         dependency_value(pr_data, :merged) == true || dependency_value(pr_data, :merged_at).present?
       end
 
-      # Returns true when +commit_sha+ is a clean merge of +base_branch+ into
-      # the feature branch: a two-parent merge whose tree is identical to its
-      # first parent (no conflict resolution or author-side edit) and whose
-      # second parent is reachable from the current base branch tip. Any
-      # deviation — single-parent commit, octopus merge, conflict-resolving
-      # merge, merge from a non-base branch, or an unresolvable parent
-      # lookup — returns false so the staleness check can fail closed.
-      def clean_base_merge?(commit_sha, base_branch:)
-        commit = client.commit(providers.repo, commit_sha)
-        return false unless commit
+      # Walks the first-parent chain from +head_sha+ back to
+      # +approval_sha+. Each commit on the chain must be a clean merge
+      # of base (two-parent merge whose tree matches its first parent's
+      # tree and whose second parent is reachable from +base_tip_sha+).
+      # A single-parent commit on the chain is author-side feature
+      # branch content and stops the walk with +:stale+. The walk is
+      # bounded at +FIRST_PARENT_WALK_LIMIT+ commits; exceeding the
+      # bound returns +:walk_exceeded+ so the caller can fail closed.
+      #
+      # Returns a hash describing the outcome so the caller can log it:
+      # +{outcome: :clean|:stale|:walk_exceeded, steps:, reason:}+.
+      # +reason+ is set only when +outcome: :stale+.
+      def walk_first_parent_chain(head_sha:, approval_sha:, base_tip_sha:)
+        current_sha = head_sha
+        steps = 0
 
-        parents = Array(commit.parents)
-        return false unless parents.size == 2
+        while current_sha != approval_sha
+          return { outcome: :walk_exceeded, steps: steps } if steps >= FIRST_PARENT_WALK_LIMIT
 
-        first_parent = client.commit(providers.repo, parents[0].sha.to_s)
-        return false unless first_parent
+          commit = client.commit(providers.repo, current_sha)
+          return { outcome: :stale, steps: steps, reason: :commit_unresolved } unless commit
 
-        merge_tree = commit.commit&.tree&.sha.to_s
-        first_parent_tree = first_parent.commit&.tree&.sha.to_s
-        return false if merge_tree.empty? || merge_tree != first_parent_tree
+          parents = Array(commit.parents)
+          parent_shas = parents.map { |p| p.sha.to_s }
 
-        base_tip_sha = base_branch_tip_sha(base_branch)
-        return false if base_tip_sha.blank?
+          case parent_shas.size
+          when 1
+            return { outcome: :stale, steps: steps, reason: :single_parent_commit }
+          when 2
+            first_parent_sha, second_parent_sha = parent_shas
 
-        ancestor_of_base?(parents[1].sha.to_s, base_tip_sha)
-      rescue GithubClient::AuthenticationError
-        raise
-      rescue GithubClient::Error, StandardError => e
-        logger.warn(
-          message: "pr_scanner.signal_check_failed",
-          signal: "clean_base_merge_check",
-          project_id: providers.project.id,
-          commit_sha: commit_sha,
-          error: e.message
-        )
-        false
+            first_parent_commit = client.commit(providers.repo, first_parent_sha)
+            return { outcome: :stale, steps: steps, reason: :first_parent_unresolved } unless first_parent_commit
+
+            merge_tree = commit.commit&.tree&.sha.to_s
+            first_parent_tree = first_parent_commit.commit&.tree&.sha.to_s
+            if merge_tree.empty? || merge_tree != first_parent_tree
+              return { outcome: :stale, steps: steps, reason: :tree_differs_from_first_parent }
+            end
+
+            unless ancestor_of_base?(second_parent_sha, base_tip_sha)
+              return { outcome: :stale, steps: steps, reason: :second_parent_not_from_base }
+            end
+
+            current_sha = first_parent_sha
+            steps += 1
+          else
+            # Octopus merge or root commit: neither belongs on the
+            # first-parent chain of a normal PR feature branch.
+            return { outcome: :stale, steps: steps, reason: :octopus_or_root }
+          end
+        end
+
+        { outcome: :clean, steps: steps }
       end
 
       def base_branch_tip_sha(base_branch)
@@ -354,7 +412,7 @@ module Automation
         %w[ahead identical].include?(comparison&.status.to_s)
       end
 
-      def log_classification(issue, approval_sha:, head_sha:, commit_count:)
+      def log_classification(issue, approval_sha:, head_sha:, first_parent_steps:)
         return unless issue
 
         logger.info(
@@ -363,21 +421,36 @@ module Automation
           pr_number: issue.github_number,
           approval_sha: approval_sha,
           head_sha: head_sha,
-          commit_count: commit_count
+          first_parent_steps: first_parent_steps
         )
       end
 
-      # Truncated compare pages fail closed; the warn makes the resulting
-      # stall diagnosable as a deliberate freshness decision.
-      def log_truncated_range(issue, approval_sha:, head_sha:, ahead_by:, returned:)
+      def log_stale_classification(issue, approval_sha:, head_sha:, first_parent_steps:, reason:)
+        return unless issue
+
+        logger.warn(
+          message: "pr_scanner.review_freshness_range_stale",
+          project_id: providers.project.id,
+          pr_number: issue.github_number,
+          approval_sha: approval_sha,
+          head_sha: head_sha,
+          first_parent_steps: first_parent_steps,
+          reason: reason.to_s
+        )
+      end
+
+      # Walks that exceed +FIRST_PARENT_WALK_LIMIT+ fail closed; the
+      # warn makes the resulting stall diagnosable as a deliberate
+      # freshness decision rather than a missed bug.
+      def log_truncated_range(issue, approval_sha:, head_sha:, first_parent_steps:)
         logger.warn(
           message: "pr_scanner.review_freshness_range_truncated",
           project_id: providers.project.id,
           pr_number: issue&.github_number,
           approval_sha: approval_sha,
           head_sha: head_sha,
-          ahead_by: ahead_by,
-          returned_commits: returned
+          first_parent_steps: first_parent_steps,
+          walk_limit: FIRST_PARENT_WALK_LIMIT
         )
       end
 
