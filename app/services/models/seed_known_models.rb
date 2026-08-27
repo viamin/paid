@@ -552,6 +552,182 @@ module Models
         supports_json_output: true,
         capability_score: 9.0,
         tier: "mid"
+      },
+      # Catalog coverage for Runner::DIRECT_OUTBOUND_API_PROVIDERS (RDR-065):
+      # deepseek, mistral, and xai are in the RubyLLM registry (unlike
+      # MiniMax/zai/inception below), so the registry merge backfills
+      # up-to-date pricing/context/capability fields over these snapshot
+      # values whenever the fetch succeeds.
+      {
+        model_id: "deepseek-chat",
+        display_name: "DeepSeek Chat",
+        provider: "deepseek",
+        family: "deepseek",
+        category: "coding",
+        context_window: 1_000_000,
+        max_output_tokens: 384_000,
+        input_cost_per_million: 0.14,
+        output_cost_per_million: 0.28,
+        supports_vision: false,
+        supports_tools: true,
+        supports_json_output: false,
+        capability_score: 7.8,
+        tier: "mid"
+      },
+      {
+        model_id: "deepseek-v4-pro",
+        display_name: "DeepSeek V4 Pro",
+        provider: "deepseek",
+        family: "deepseek-thinking",
+        category: "coding",
+        context_window: 1_000_000,
+        max_output_tokens: 384_000,
+        input_cost_per_million: 0.435,
+        output_cost_per_million: 0.87,
+        supports_vision: false,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 9.3,
+        tier: "high"
+      },
+      {
+        model_id: "devstral-2512",
+        display_name: "Devstral 2",
+        provider: "mistral",
+        family: "devstral",
+        category: "coding",
+        context_window: 262_144,
+        max_output_tokens: 262_144,
+        input_cost_per_million: 0.4,
+        output_cost_per_million: 2.0,
+        supports_vision: false,
+        supports_tools: true,
+        supports_json_output: false,
+        capability_score: 8.1,
+        tier: "mid"
+      },
+      {
+        model_id: "mistral-large-2512",
+        display_name: "Mistral Large 3",
+        provider: "mistral",
+        family: "mistral-large",
+        category: "coding",
+        context_window: 262_144,
+        max_output_tokens: 262_144,
+        input_cost_per_million: 0.5,
+        output_cost_per_million: 1.5,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: false,
+        capability_score: 8.4,
+        tier: "mid"
+      },
+      {
+        model_id: "grok-4.3",
+        display_name: "Grok 4.3",
+        provider: "xai",
+        family: "grok",
+        category: "coding",
+        context_window: 1_000_000,
+        max_output_tokens: 30_000,
+        input_cost_per_million: 1.25,
+        output_cost_per_million: 2.5,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: false,
+        capability_score: 9.4,
+        tier: "high"
+      },
+      {
+        model_id: "grok-build-0.1",
+        display_name: "Grok Build 0.1",
+        provider: "xai",
+        family: "grok-build",
+        category: "coding",
+        context_window: 256_000,
+        max_output_tokens: 256_000,
+        input_cost_per_million: 1.0,
+        output_cost_per_million: 2.0,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 8.6,
+        tier: "mid"
+      },
+      # zai is the direct, pay-per-token z.ai API (base_url
+      # api.z.ai/api/paas/v4) — distinct from the zai_coding flat-rate coding
+      # plan seeded above, which uses a different base URL and env var. GLM-5.2V
+      # is the vision-capable model z.ai exposes on the general API but not
+      # through the coding-plan endpoint. Like MiniMax, zai is not in the
+      # RubyLLM registry (intentionally excluded from
+      # `Models::DetectCatalogDrift::DEFAULT_PROVIDERS`), so pricing/context
+      # here are conservative estimates pending published figures.
+      {
+        model_id: "glm-5.2v",
+        display_name: "GLM-5.2V",
+        provider: "zai",
+        family: "glm-5",
+        category: "coding",
+        context_window: 1_000_000,
+        max_output_tokens: 64_000,
+        input_cost_per_million: 2.5,
+        output_cost_per_million: 6.0,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 8.7,
+        tier: "mid"
+      },
+      # Inception Labs (diffusion-based code model) is not in the RubyLLM
+      # registry either, so pricing/context are conservative estimates
+      # pending published figures — same rationale as zai/MiniMax above.
+      # model_id matches the id already used by
+      # spec/support/known_direct_outbound_models.rb and the
+      # kilocode-inception smoke scenario.
+      {
+        model_id: "mercury-2",
+        display_name: "Mercury Coder 2",
+        provider: "inception",
+        family: "mercury",
+        category: "coding",
+        context_window: 128_000,
+        max_output_tokens: 16_000,
+        input_cost_per_million: 0.25,
+        output_cost_per_million: 1.0,
+        supports_vision: false,
+        supports_tools: true,
+        supports_json_output: false,
+        capability_score: 7.9,
+        tier: "mid"
+      },
+      # Pareto row (RDR-065 D3): openrouter/pareto-code is OpenRouter's Pareto
+      # Router, not a fixed model — Runners::ParetoExecutionPlan lets
+      # OpenRouter choose the actual backing coding model per request
+      # server-side. This row exists so the model dropdown (#3663) and
+      # tier/selection code have a catalog entry to list and resolve.
+      # catalog_source is explicitly "seeded" (not "openrouter_sync") so
+      # FreeModels::Sync#deactivate_missing_models!, which only targets
+      # LlmModel.openrouter_synced_free (catalog_source: "openrouter_sync"
+      # AND pricing_tier: "free"), never deactivates it. context_window,
+      # max_output_tokens, capability_score, and tier are conservative
+      # placeholders rather than a real ceiling — the actual backing model
+      # (and its real limits) varies per request and is chosen upstream,
+      # outside Paid's control.
+      {
+        model_id: "openrouter/pareto-code",
+        display_name: "OpenRouter Pareto (Code)",
+        provider: "openrouter",
+        family: "openrouter",
+        category: "coding",
+        context_window: 128_000,
+        max_output_tokens: 8_000,
+        supports_vision: false,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 8.5,
+        tier: "mid",
+        catalog_source: "seeded",
+        pricing_tier: "paid"
       }
     ].freeze
 
@@ -559,6 +735,9 @@ module Models
       new.call
     end
 
+    # @spec DIRECT-OUTBOUND-CATALOG-001
+    # @spec DIRECT-OUTBOUND-CATALOG-002
+    # @spec DIRECT-OUTBOUND-CATALOG-003
     def call
       synced = 0
       registry_models = registry_models_by_id
