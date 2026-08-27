@@ -194,7 +194,7 @@ export default class extends Controller {
 
       select.hidden = manualEntry
       select.disabled = !matches || !serviceType || options.length === 0
-      select.dataset.currentServiceType = serviceType || ""
+      select.dataset.currentServiceType = matches ? serviceType || "" : ""
 
       if (manualInput) {
         manualInput.hidden = !manualEntry

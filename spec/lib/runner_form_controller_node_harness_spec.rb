@@ -74,6 +74,7 @@ class RunnerFormControllerNodeHarness
         runnerKey: "pi",
         currentServiceType: "openrouter",
         optionsByServiceType: {
+          openrouter: [["Kimi K2", "moonshotai/kimi-k2-0905"]],
           anthropic: [["Claude Sonnet 4", "claude-sonnet-4-20250514"]]
         }
       });
