@@ -112,7 +112,7 @@ RSpec.describe Containers::ComboImageBuilder do
         :info, hash_including(message: "agent_image.build.start", image: "paid-agent:swift")
       )
       expect(Rails.logger).to receive(:public_send).with(
-        :info, hash_including(message: "agent_image.build.success", image: "paid-agent:swift", duration: kind_of(Integer))
+        :info, hash_including(message: "agent_image.build.success", image: "paid-agent:swift", duration_ms: kind_of(Integer))
       )
 
       described_class.ensure_available("paid-agent:swift", backend: backend)
