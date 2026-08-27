@@ -19,25 +19,31 @@
 
   <% summary = @stats[:summary] %>
 
-  <%# Cost Summary Cards — hidden when total cost is zero %>
-  <% if summary[:total_cost_cents].to_i > 0 %>
+  <%# Cost Summary Cards — hidden when total variable cost is zero.
+      Cards render the combined LLM + infrastructure totals so an
+      infra-only project (zero token spend, non-zero ExecutionUsage
+      spend) surfaces the new accounting instead of collapsing to the
+      "No cost data available yet" empty state. The "Avg Cost / Run"
+      card stays LLM-only (per completed run); combining it with infra
+      spend would mix per-run LLM averages with full-lifetime infra. %>
+  <% if summary[:total_variable_cost_cents].to_i > 0 %>
     <div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
         <dt class="truncate text-sm font-medium text-gray-500">Total Cost</dt>
         <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
-          <%= format_cost_cents(summary[:total_cost_cents]) %>
+          <%= format_cost_cents(summary[:total_variable_cost_cents]) %>
         </dd>
       </div>
       <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
         <dt class="truncate text-sm font-medium text-gray-500">Cost This Month</dt>
         <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
-          <%= format_cost_cents(summary[:cost_this_month_cents]) %>
+          <%= format_cost_cents(summary[:total_variable_cost_this_month_cents]) %>
         </dd>
       </div>
       <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
         <dt class="truncate text-sm font-medium text-gray-500">Cost Today</dt>
         <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
-          <%= format_cost_cents(summary[:cost_today_cents]) %>
+          <%= format_cost_cents(summary[:total_variable_cost_today_cents]) %>
         </dd>
       </div>
       <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
