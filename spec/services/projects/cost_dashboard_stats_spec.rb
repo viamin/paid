@@ -248,6 +248,30 @@ RSpec.describe Projects::CostDashboardStats do
       end
     end
 
+    # @spec EXEC-USAGE-007
+    it "includes infrastructure spend in average cost per run" do
+      travel_to(Time.zone.local(2024, 1, 15, 12, 0, 0)) do
+        first_run = create(:agent_run, project: project, status: "completed", cost_cents: 0,
+          provisioning_started_at: 2.hours.ago, completed_at: 1.hour.ago)
+        second_run = create(:agent_run, project: project, status: "completed", cost_cents: 0,
+          provisioning_started_at: 45.minutes.ago, completed_at: 15.minutes.ago)
+        create_execution_usage(first_run,
+          provisioned_at: 2.hours.ago,
+          terminated_at: 1.hour.ago,
+          billed_duration_seconds: 3600,
+          infra_cost_cents: 120)
+        create_execution_usage(second_run,
+          provisioned_at: 45.minutes.ago,
+          terminated_at: 15.minutes.ago,
+          billed_duration_seconds: 1800,
+          infra_cost_cents: 60)
+
+        result = described_class.call(project: project)
+
+        expect(result[:summary][:avg_cost_per_run_cents]).to eq(90)
+      end
+    end
+
     it "calculates average cost per run" do
       create(:agent_run, project: project, status: "completed", cost_cents: 400)
       create(:agent_run, project: project, status: "completed", cost_cents: 600)

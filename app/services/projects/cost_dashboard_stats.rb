@@ -39,9 +39,8 @@ module Projects
       infra_month = infrastructure_cost_cents(starts_at: month_start, ends_at: now)
       infra_total = infrastructure_total_cost_cents
 
-      completed = project.agent_runs.where(status: "completed")
-      run_count = completed.count
-      avg_cost = run_count.zero? ? 0 : (completed.sum(:cost_cents).to_f / run_count).round
+      run_count = completed_runs.count
+      avg_cost = avg_cost_per_run_cents(run_count, ends_at: now)
 
       {
         total_cost_cents: project.total_cost_cents,
@@ -154,6 +153,19 @@ module Projects
       billable_scope.cost_by_request_type.sort_by { |_, v| -v }
     end
 
+    def completed_runs
+      @completed_runs ||= project.agent_runs.where(status: "completed")
+    end
+
+    def avg_cost_per_run_cents(run_count, ends_at:)
+      return 0 if run_count.zero?
+
+      total_cost = completed_runs.sum(:cost_cents) +
+        recorded_completed_infrastructure_cost_cents(ends_at:) +
+        pending_completed_infrastructure_cost_cents(ends_at:)
+      (total_cost.to_f / run_count).round
+    end
+
     def daily_costs
       raw_costs = billable_scope.daily_costs(days: 30)
       today = Time.current.to_date
@@ -222,6 +234,27 @@ module Projects
         scope_modifier: ->(scope) { pending_execution_usage_scope(scope) },
         overlap_ends_at: ends_at
       )
+    end
+
+    def pending_completed_infrastructure_cost_cents(ends_at:)
+      Capacity::InfrastructureSpend.spent_cents(
+        project: project,
+        starts_at: Time.at(0),
+        ends_at: ends_at,
+        scope_modifier: ->(scope) { pending_execution_usage_scope(scope.where(status: "completed")) },
+        overlap_ends_at: ends_at
+      )
+    end
+
+    def recorded_completed_infrastructure_cost_cents(ends_at:)
+      TenantContext.with_system_access do
+        ExecutionUsage
+          .joins(agent_run: :project)
+          .where(projects: { id: project.id }, agent_runs: { status: "completed" })
+          .where("execution_usages.provisioned_at < ?", ends_at)
+          .sum(:infra_cost_cents)
+          .to_i
+      end
     end
 
     # A run is "pending" when its CURRENT cycle's billing has not yet been
