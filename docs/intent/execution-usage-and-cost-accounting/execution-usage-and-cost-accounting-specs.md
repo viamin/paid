@@ -71,7 +71,12 @@ prefix: EXEC-USAGE
   (`project.total_cost_cents`) and infra cost, using `ExecutionUsage`
   rows for terminated resources and overlap-based stamped-rate accounting
   for still-live or not-yet-cleaned runs, with no double-counting across
-  the two sources.
+  the two sources. For recorded rows the service SHALL aggregate the
+  persisted `infra_cost_cents` — prorated across the requested window by
+  the row's recorded lifetime, and counted in full when that lifetime is
+  zero-length — rather than re-pricing the row from `rate_cents_per_hour`
+  and its timestamps, so a folded multi-cycle row (EXEC-USAGE-011)
+  contributes its full recorded spend to the unbounded total.
   *Tests:* `spec/services/projects/cost_dashboard_stats_spec.rb`.
   *Code:* `Projects::CostDashboardStats`.
 

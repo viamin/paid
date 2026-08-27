@@ -130,6 +130,56 @@ RSpec.describe Projects::CostDashboardStats do
     end
 
     # @spec EXEC-USAGE-007
+    # @spec EXEC-USAGE-011
+    it "counts the full persisted spend of a folded multi-cycle row" do
+      travel_to(Time.zone.local(2024, 1, 15, 12, 0, 0)) do
+        # AgentRuns::RecordExecutionUsage folds a prior cycle's spend into the
+        # replacement row while scoping provisioned_at/terminated_at to the
+        # latest cycle only, so re-pricing the row from its timestamps would
+        # silently drop the first machine's 20 cents.
+        run = create(:agent_run, project: project, status: "completed",
+          provisioning_started_at: 30.minutes.ago,
+          completed_at: 5.minutes.ago,
+          external_metadata: {
+            "infrastructure_spend" => { "rate_cents_per_hour" => 120 }
+          })
+        create_execution_usage(run,
+          provisioned_at: 30.minutes.ago,
+          terminated_at: 5.minutes.ago,
+          billed_duration_seconds: 2100,
+          infra_cost_cents: 70)
+
+        result = described_class.call(project: project)
+
+        expect(result[:summary][:infrastructure_cost_cents]).to eq(70)
+        expect(result[:summary][:infrastructure_cost_today_cents]).to eq(70)
+        expect(result[:summary][:infrastructure_cost_this_month_cents]).to eq(70)
+      end
+    end
+
+    # @spec EXEC-USAGE-007
+    it "counts the persisted spend of a zero-duration recorded row" do
+      travel_to(Time.zone.local(2024, 1, 15, 12, 0, 0)) do
+        # A folded row whose latest cycle was torn down in the same instant it
+        # was provisioned still carries the prior cycles' spend; proration must
+        # not divide by a zero-length lifetime.
+        run = create(:agent_run, project: project, status: "completed",
+          provisioning_started_at: 10.minutes.ago,
+          completed_at: 10.minutes.ago)
+        create_execution_usage(run,
+          provisioned_at: 10.minutes.ago,
+          terminated_at: 10.minutes.ago,
+          billed_duration_seconds: 900,
+          infra_cost_cents: 30)
+
+        result = described_class.call(project: project)
+
+        expect(result[:summary][:infrastructure_cost_cents]).to eq(30)
+        expect(result[:summary][:infrastructure_cost_today_cents]).to eq(30)
+      end
+    end
+
+    # @spec EXEC-USAGE-007
     # @spec INFRA-SPEND-001
     it "keeps charging rowless completed runs until cleanup records termination" do
       travel_to(Time.zone.local(2024, 1, 15, 12, 0, 0)) do
@@ -324,6 +374,8 @@ RSpec.describe Projects::CostDashboardStats do
         agent_run: agent_run,
         runner_backend: "local",
         provisioned_at: provisioned_at,
+        execution_started_at: provisioned_at,
+        completed_at: terminated_at,
         terminated_at: terminated_at,
         billed_duration_seconds: billed_duration_seconds,
         termination_reason: "completed",

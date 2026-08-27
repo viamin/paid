@@ -105,6 +105,16 @@ instead of waiting for cleanup to persist the terminal summary row. The
 shape of the API is unchanged; only the source of truth for terminated
 runs moves from the admission-time stamp to the per-run summary.
 
+Recorded rows contribute their *persisted* `infra_cost_cents`, prorated
+across the requested window by the row's recorded lifetime (and counted in
+full when that lifetime is zero-length), rather than being re-priced from
+`rate_cents_per_hour` times the window overlap. A folded multi-cycle row
+(see Cleanup Fallbacks below) keeps `provisioned_at`/`terminated_at` scoped to
+the latest cycle, so rate-times-overlap arithmetic would silently drop the
+earlier cycles' spend. Proration keeps the unbounded total exactly equal to
+the recorded spend and attributes a folded row's carried spend to the latest
+cycle's window — the only lifetime the row still knows about.
+
 ## Why Not Fold This Into `ContainerMetric`?
 
 `ContainerMetric` is append-only time-series data — one row per sample.

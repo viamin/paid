@@ -239,19 +239,35 @@ module Projects
       )
     end
 
+    # Prorates the row's *persisted* `infra_cost_cents` across the requested
+    # window rather than re-pricing it from `rate_cents_per_hour` and the row
+    # timestamps. `AgentRuns::RecordExecutionUsage#replace_recording` folds a
+    # re-provisioned run's prior-cycle spend into the replacement row while
+    # scoping `provisioned_at`/`terminated_at` to the latest cycle, so
+    # rate-times-overlap arithmetic would drop the earlier cycles' spend
+    # (EXEC-USAGE-011). Proration keeps the unbounded total exactly equal to
+    # the recorded spend, and attributes a folded row's carried spend to the
+    # latest cycle's window — the only lifetime the row still knows about.
+    # A zero-length lifetime (provisioned and terminated in the same instant,
+    # possible for a folded row) contributes its full persisted spend when the
+    # window contains that instant instead of dividing by zero.
+    # @spec EXEC-USAGE-007
     def execution_usage_overlap_cost_sql(starts_at:, ends_at:)
       <<~SQL.squish
         ROUND(
-          (
-            execution_usages.rate_cents_per_hour *
-            GREATEST(
+          execution_usages.infra_cost_cents *
+          CASE
+            WHEN execution_usages.terminated_at <= execution_usages.provisioned_at THEN 1
+            ELSE GREATEST(
               EXTRACT(EPOCH FROM (
                 LEAST(execution_usages.terminated_at, #{quote_time(ends_at)}) -
                 GREATEST(execution_usages.provisioned_at, #{quote_time(starts_at)})
               )),
               0
-            )
-          ) / 3600.0
+            ) / EXTRACT(EPOCH FROM (
+              execution_usages.terminated_at - execution_usages.provisioned_at
+            ))
+          END
         )
       SQL
     end
