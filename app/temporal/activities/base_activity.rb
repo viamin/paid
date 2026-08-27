@@ -280,8 +280,9 @@ module Activities
       )
     end
 
-    def track_phase(agent_run_id:, phase_key:, phase_group:, agent_run: nil, metadata: {}, started_at: Time.current)
+    def track_phase(agent_run_id:, phase_key:, phase_group:, agent_run: nil, metadata: {}, started_at: Time.current, budget_seconds: nil)
       status = "completed"
+      started_monotonic = monotonic_now
       result = yield
       result
     rescue => e
@@ -292,6 +293,11 @@ module Activities
       )
       raise
     ensure
+      metadata = phase_timing_metadata(
+        metadata,
+        started_monotonic: started_monotonic,
+        budget_seconds: budget_seconds
+      )
       if agent_run_id.present?
         tracked_agent_run = agent_run || AgentRun.find_by(id: agent_run_id)
         record_phase(
@@ -304,6 +310,21 @@ module Activities
           metadata: metadata
         )
       end
+    end
+
+    def phase_timing_metadata(metadata, started_monotonic:, budget_seconds:)
+      return metadata unless budget_seconds
+
+      elapsed_ms = [ ((monotonic_now - started_monotonic) * 1000).round, 0 ].max
+      metadata.merge(
+        budget_seconds: budget_seconds,
+        elapsed_ms: elapsed_ms,
+        budget_exceeded: elapsed_ms > budget_seconds * 1000
+      )
+    end
+
+    def monotonic_now
+      Process.clock_gettime(Process::CLOCK_MONOTONIC)
     end
 
     def record_cross_repo_issue(agent_run, repo, gh_issue, role:)

@@ -6417,4 +6417,156 @@ RSpec.describe AgentRun do
       end
     end
   end
+
+  describe "#record_issue_analysis_diagnostics!" do
+    let(:agent_run) { create(:agent_run, external_metadata: {}) }
+
+    def record_failed_attempt_diagnostics(agent_run, provider:, attempt:)
+      agent_run.record_issue_analysis_diagnostics!(
+        phase_key: "analyze_issue_provider_attempt",
+        phase_label: "Analyze Issue Provider Attempt",
+        provider: provider,
+        attempt: attempt,
+        status: "failed",
+        error_class: "AgentHarness::Error",
+        error_message: "rate limited"
+      )
+    end
+
+    def record_running_attempt_diagnostics(agent_run, provider:, attempt:)
+      agent_run.record_issue_analysis_diagnostics!(
+        phase_key: "analyze_issue_provider_attempt",
+        phase_label: "Analyze Issue Provider Attempt",
+        provider: provider,
+        attempt: attempt,
+        status: "running",
+        budget_seconds: 90
+      )
+    end
+
+    it "persists the phase payload in external_metadata" do
+      agent_run.record_issue_analysis_diagnostics!(
+        phase_key: "analyze_issue_provider_attempt",
+        phase_label: "Analyze Issue Provider Attempt",
+        provider: "claude",
+        attempt: 1,
+        status: "running",
+        budget_seconds: 90
+      )
+
+      expect(agent_run.reload.issue_analysis_diagnostics).to include(
+        "phase_key" => "analyze_issue_provider_attempt",
+        "phase_label" => "Analyze Issue Provider Attempt",
+        "provider" => "claude",
+        "attempt" => 1,
+        "status" => "running",
+        "budget_seconds" => 90
+      )
+    end
+
+    it "replaces the per-phase payload instead of merging it" do
+      record_failed_attempt_diagnostics(agent_run, provider: "claude", attempt: 1)
+      record_running_attempt_diagnostics(agent_run, provider: "codex", attempt: 2)
+
+      diagnostics = agent_run.reload.issue_analysis_diagnostics
+
+      expect(diagnostics).to include(
+        "phase_key" => "analyze_issue_provider_attempt",
+        "provider" => "codex",
+        "attempt" => 2,
+        "status" => "running"
+      )
+      expect(diagnostics).not_to have_key("error_class")
+      expect(diagnostics).not_to have_key("error_message")
+    end
+
+    it "clears prior-phase started_at when a new phase begins" do
+      agent_run.record_issue_analysis_diagnostics!(
+        phase_key: "analyze_issue_knowledge_search",
+        status: "completed",
+        started_at: "2026-08-26T12:00:00Z",
+        finished_at: "2026-08-26T12:00:30Z",
+        budget_seconds: 60
+      )
+
+      agent_run.record_issue_analysis_diagnostics!(
+        phase_key: "analyze_issue_context_bundle",
+        status: "running",
+        started_at: "2026-08-26T12:01:00Z",
+        finished_at: nil,
+        budget_seconds: 60
+      )
+
+      diagnostics = agent_run.reload.issue_analysis_diagnostics
+      expect(diagnostics["phase_key"]).to eq("analyze_issue_context_bundle")
+      expect(diagnostics["started_at"]).to eq("2026-08-26T12:01:00Z")
+      # The new phase's `finished_at` is nil because it is still running; the
+      # prior phase's completed `finished_at` must not bleed into the new
+      # running write.
+      expect(diagnostics["finished_at"]).to be_nil
+    end
+  end
+
+  describe "#issue_analysis_timeout_message" do
+    let(:agent_run) { create(:agent_run, external_metadata: {}) }
+
+    it "falls back to phase_key when phase_label is blank" do
+      # @spec ISSUE-ANALYSIS-012
+      agent_run.record_issue_analysis_diagnostics!(
+        phase_key: "analyze_issue_context_bundle",
+        phase_label: "",
+        status: "running",
+        budget_seconds: 60
+      )
+
+      expect(agent_run.issue_analysis_timeout_message).to eq(
+        "Activity task timed out (last known analyze_issue phase: analyze issue context bundle · budget 60s)"
+      )
+    end
+
+    it "enriches the base message with the last known phase diagnostics" do
+      agent_run.record_issue_analysis_diagnostics!(
+        phase_key: "analyze_issue_provider_attempt",
+        phase_label: "Analyze Issue Provider Attempt",
+        provider: "codex",
+        attempt: 2,
+        budget_seconds: 90,
+        status: "running"
+      )
+
+      message = agent_run.issue_analysis_timeout_message
+
+      expect(message).to eq(
+        "Activity task timed out (last known analyze_issue phase: Analyze Issue Provider Attempt · provider codex · attempt 2 · budget 90s)"
+      )
+    end
+
+    it "returns the base message when no diagnostics have been recorded" do
+      expect(agent_run.issue_analysis_timeout_message).to eq("Activity task timed out")
+    end
+
+    it "ignores prior-phase error keys that leaked through merging" do
+      agent_run.record_issue_analysis_diagnostics!(
+        phase_key: "analyze_issue_provider_attempt",
+        status: "failed",
+        error_class: "AgentHarness::Error",
+        error_message: "rate limited"
+      )
+      agent_run.record_issue_analysis_diagnostics!(
+        phase_key: "analyze_issue_provider_attempt",
+        phase_label: "Analyze Issue Provider Attempt",
+        provider: "codex",
+        attempt: 2,
+        status: "running",
+        budget_seconds: 90
+      )
+
+      message = agent_run.issue_analysis_timeout_message
+
+      expect(message).not_to include("rate limited")
+      expect(message).to eq(
+        "Activity task timed out (last known analyze_issue phase: Analyze Issue Provider Attempt · provider codex · attempt 2 · budget 90s)"
+      )
+    end
+  end
 end

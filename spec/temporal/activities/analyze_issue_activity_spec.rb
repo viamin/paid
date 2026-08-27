@@ -216,6 +216,31 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       )
     end
 
+    it "persists phase timing and last-known diagnostics for context assembly and provider attempts" do
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect_issue_analysis_phase_records!(agent_run.reload)
+      expect_issue_analysis_diagnostics!(agent_run)
+    end
+
+    it "flags a provider attempt when it exceeds its phase budget" do
+      allow(activity).to receive(:monotonic_now).and_return(
+        0.0,
+        0.1, 30.2,
+        30.3, 40.0,
+        40.1, 131.0
+      )
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      provider_phase = agent_run.reload.agent_run_phases.find_by!(phase_key: "analyze_issue_provider_attempt")
+      expect(provider_phase.metadata).to include(
+        "budget_seconds" => described_class::LLM_TIMEOUT,
+        "budget_exceeded" => true
+      )
+      expect(provider_phase.metadata.fetch("elapsed_ms")).to be > described_class::LLM_TIMEOUT * 1000
+    end
+
     it "continues with fallback context when the knowledge base is unavailable" do
       allow(Knowledge::Search).to receive(:call).and_raise(StandardError, "index unavailable")
       allow(Knowledge::ContextBundle::Build).to receive(:call).and_raise(StandardError, "bundle unavailable")
@@ -378,6 +403,63 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       expect_circuit_open_after_auth!(owner, runner_name: "claude")
       expect_breaker_untouched!(owner, runner_name: "codex")
     end
+
+    # @spec ISSUE-ANALYSIS-012
+    # Regression: when the first provider attempt records error_class /
+    # error_message on failure and the second attempt then runs to
+    # completion, `record_issue_analysis_diagnostics!` must replace the
+    # prior payload — otherwise the diagnostics describe provider 2 but
+    # still carry provider 1's failure details, and a later outer-timeout
+    # message would pin the failing provider instead of the one the
+    # worker was last executing.
+    it "replaces failed-attempt diagnostics when the failover provider succeeds" do
+      owner.runner_states.where(runner_name: "claude").destroy_all
+      owner.settings.update!(issue_analysis_runner: "claude", issue_analysis_fallback_runners: [ "codex" ])
+
+      stub_not_logged_in_failover!
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      diagnostics = agent_run.reload.issue_analysis_diagnostics
+      expect(diagnostics).to include(
+        "phase_key" => "analyze_issue_provider_attempt",
+        "provider" => "codex",
+        "attempt" => 2,
+        "status" => "completed",
+        "cancellation_strategy" => "cooperative_activity_heartbeat"
+      )
+      expect(diagnostics).not_to have_key("error_class")
+      expect(diagnostics).not_to have_key("error_message")
+
+      expect(agent_run.issue_analysis_timeout_message).to eq(
+        "Activity task timed out (last known analyze_issue phase: Analyze Issue Provider Attempt · provider codex · attempt 2 · budget 90s)"
+      )
+    end
+
+    # @spec ISSUE-ANALYSIS-012
+    # Regression: CLI-backed providers report a nonzero exit as a Response
+    # with `success? == false`, not as a raised exception. The tracked
+    # `analyze_issue_provider_attempt` phase block must therefore promote
+    # that response-shaped failure into an internal exception so the phase
+    # recorder marks the attempt as `failed` in `agent_run_phases` while
+    # still funnelling through the same circuit-breaker classification as
+    # a raised error. The diagnostics must then describe the failover
+    # provider (the one the worker was last executing), not the failed
+    # primary — otherwise a later outer-timeout message pins the wrong
+    # provider.
+    it "marks a response-shaped failure as failed in agent_run_phases and replaces diagnostics on failover" do
+      owner.runner_states.where(runner_name: "claude").destroy_all
+      owner.settings.update!(issue_analysis_runner: "claude", issue_analysis_fallback_runners: [ "codex" ])
+
+      attempted = stub_failed_response_then_success_failover!
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(attempted).to eq([ :claude, :codex ])
+      expect_failed_then_completed_provider_phases!(agent_run.reload)
+      expect_diagnostics_for_failover_provider!(agent_run)
+      expect_claude_circuit_breaker_incremented!(owner)
+    end
   end
 
   describe "provider rate limiting" do
@@ -473,15 +555,6 @@ RSpec.describe Activities::AnalyzeIssueActivity do
   end
 
   describe "unsuccessful provider responses" do
-    # Reproduces #3639: CLI-backed providers (Codex, OpenCode, and claude
-    # outside text mode) normally report a failure as a Response with
-    # success? == false and a nonzero exit code, not as a raised exception.
-    # Before the fix, response_failed? logged this and moved to the next
-    # provider without ever touching the circuit breaker.
-    def failed_response(error:, exit_code: 1)
-      instance_double(AgentHarness::Response, success?: false, error: error, exit_code: exit_code)
-    end
-
     # @spec ISSUE-ANALYSIS-007
     it "records a circuit-breaker failure for a nonzero-exit unsuccessful response" do
       allow(AgentHarness).to receive(:send_message).and_return(failed_response(error: "unexpected internal error"))
@@ -742,6 +815,91 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     attempted
   end
 
+  # CLI-backed providers (Codex, OpenCode, claude outside text mode) normally
+  # report a nonzero exit as a Response with `success?` false and an `error`
+  # string, not as a raised exception (#3639). Shared across the
+  # response-shaped failure specs so each test only describes what it asserts.
+  def failed_response(error:, exit_code: 1)
+    instance_double(AgentHarness::Response, success?: false, error: error, exit_code: exit_code)
+  end
+
+  # Asserts that the failed-first / succeeded-second provider failover left
+  # the right `agent_run_phases` history: provider 1 is `failed` (not
+  # `completed`) with the `UnsuccessfulResponseError` bridge recorded in
+  # metadata; provider 2 is `completed`. Keeps the corresponding regression
+  # spec short so it stays under the ExampleLength / MultipleExpectations caps.
+  def expect_failed_then_completed_provider_phases!(agent_run)
+    provider_phases = agent_run
+      .agent_run_phases
+      .where(phase_key: "analyze_issue_provider_attempt")
+      .order(:started_at, :id)
+
+    expect(provider_phases.size).to eq(2)
+    expect(provider_phases.first).to have_attributes(
+      status: "failed",
+      metadata: include("provider" => "claude", "attempt" => 1, "heartbeat_active" => true)
+    )
+    expect(provider_phases.first.metadata["error_class"]).to eq(
+      "Activities::AnalyzeIssueActivity::UnsuccessfulResponseError"
+    )
+    expect(provider_phases.first.metadata["error_message"]).to include("boom")
+    expect(provider_phases.last).to have_attributes(
+      status: "completed",
+      metadata: include("provider" => "codex", "attempt" => 2)
+    )
+  end
+
+  # Asserts the last-known diagnostics and timeout message refer to the
+  # failover provider (the worker was last executing it), not the failing
+  # one. The merge-vs-replace writer must have wiped provider 1's
+  # failure-only keys when provider 2's `running` write landed.
+  def expect_diagnostics_for_failover_provider!(agent_run)
+    diagnostics = agent_run.issue_analysis_diagnostics
+
+    expect(diagnostics).to include(
+      "phase_key" => "analyze_issue_provider_attempt",
+      "provider" => "codex",
+      "attempt" => 2,
+      "status" => "completed",
+      "cancellation_strategy" => "cooperative_activity_heartbeat"
+    )
+    expect(diagnostics).not_to have_key("error_class")
+    expect(diagnostics).not_to have_key("error_message")
+
+    expect(agent_run.issue_analysis_timeout_message).to eq(
+      "Activity task timed out (last known analyze_issue phase: Analyze Issue Provider Attempt · provider codex · attempt 2 · budget 90s)"
+    )
+  end
+
+  # Asserts the response-shaped failure still routed through the same
+  # circuit-breaker classifier as a raised error — claude's failure count
+  # incremented to 1 and its circuit stayed closed (the error message isn't
+  # rate-limit- or auth-shaped, so the generic threshold applies).
+  def expect_claude_circuit_breaker_incremented!(owner)
+    claude_state = owner.runner_states.find_by(runner_name: "claude")
+
+    expect(claude_state.failure_count).to eq(1)
+    expect(claude_state.circuit_state).to eq("closed")
+  end
+
+  # Stub the response-shaped failure regression path: claude returns a
+  # Response with `success? == false` (no exception raised), codex returns
+  # the LLM response. Returns the order in which providers were attempted so
+  # the caller can assert the failover loop iterated.
+  def stub_failed_response_then_success_failover!
+    attempted = []
+    allow(AgentHarness).to receive(:send_message) do |_, **opts|
+      attempted << opts[:provider]
+      case opts[:provider]
+      when :claude
+        failed_response(error: "boom")
+      when :codex
+        llm_response
+      end
+    end
+    attempted
+  end
+
   def expect_circuit_open_after_auth!(user, runner_name:)
     state = user.runner_states.find_by(runner_name: runner_name)
     expect(state).to be_present
@@ -754,5 +912,36 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     expect(state).to be_present
     expect(state.circuit_state).to eq("closed")
     expect(state.failure_count).to eq(0)
+  end
+
+  def expect_issue_analysis_phase_records!(agent_run)
+    phases = agent_run.agent_run_phases.index_by(&:phase_key)
+
+    expect(phases.keys).to include(
+      "analyze_issue_knowledge_search",
+      "analyze_issue_context_bundle",
+      "analyze_issue_provider_attempt"
+    )
+    expect(phases.fetch("analyze_issue_knowledge_search").metadata).to include(
+      "budget_seconds" => described_class::KNOWLEDGE_SEARCH_BUDGET,
+      "budget_exceeded" => false
+    )
+    expect(phases.fetch("analyze_issue_provider_attempt").metadata).to include(
+      "provider" => "claude",
+      "attempt" => 1,
+      "heartbeat_active" => true,
+      "budget_seconds" => described_class::LLM_TIMEOUT
+    )
+  end
+
+  def expect_issue_analysis_diagnostics!(agent_run)
+    expect(agent_run.issue_analysis_diagnostics).to include(
+      "phase_key" => "analyze_issue_provider_attempt",
+      "provider" => "claude",
+      "attempt" => 1,
+      "status" => "completed",
+      "heartbeat_strategy" => "provider_attempt_periodic",
+      "cancellation_strategy" => "cooperative_activity_heartbeat"
+    )
   end
 end

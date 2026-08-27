@@ -69,10 +69,18 @@ circuit breaker (`ISSUE-ANALYSIS-007`):
 - **Unsuccessful response, no exception.** CLI-backed providers (Codex,
   OpenCode, and `claude` outside text mode) normally report a nonzero exit as
   a `Response` with `success?` false and an `error` string, not as a raised
-  exception. `response_failed?` detects this case; before #3639 it logged the
-  failure and moved to the next provider without touching the circuit
-  breaker, so deterministically broken runners never opened and stayed
-  eligible across every subsequent `analyze_issue` run.
+  exception. `call_llm` detects this case inside the tracked provider-attempt
+  phase and promotes it to an internal `UnsuccessfulResponseError`, which then
+  flows through the same rescue clauses as a raised error. Before the
+  `UnsuccessfulResponseError` bridge, the equivalent check ran *after* the
+  phase block returned normally, so `agent_run_phases` and
+  `issue_analysis_diagnostics` recorded the attempt as `completed` even when
+  it had failed — and a later timeout during the failover provider would
+  leave behind a misleading history that pinned the failing provider with a
+  `completed` status. Before #3639, the failure was logged and the loop moved
+  on without ever touching the circuit breaker, so deterministically broken
+  runners never opened and stayed eligible across every subsequent
+  `analyze_issue` run.
 
 Both paths funnel through the same classification so a provider's circuit
 state doesn't depend on which mechanism a given provider happens to use for a
@@ -127,6 +135,37 @@ The cooldown is only for automatic selection. Manual retries remain allowed
 (`ISSUE-ANALYSIS-011`) because they do not flow through auto-pick eligibility.
 However, a manual retry failure does not extend or clear the automatic cooldown
 by itself; only a successful provider call clears it.
+
+## Timeout diagnostics and timeout policy
+
+The `analyze_issue` activity has a 10-minute workflow-level
+`start_to_close_timeout`, but it now records finer-grained sub-phases beneath
+that envelope so a timeout can be classified without log spelunking:
+
+- knowledge search
+- context-bundle construction
+- each provider attempt
+
+Each sub-phase is persisted to `agent_run_phases` with its own timing metadata
+and budget marker. In parallel, the run stores the latest known analyze-issue
+phase/provider summary in `external_metadata["issue_analysis_diagnostics"]`
+before the sub-phase starts, so a hard activity timeout still leaves behind the
+last phase/provider the worker had entered even if the process never reaches the
+phase-recording `ensure`.
+
+Direct provider attempts run under `with_periodic_heartbeat`, which means
+Temporal cancellation is cooperative during the LLM call rather than waiting
+for the outer activity timeout. This heartbeat does **not** replace the
+`start_to_close_timeout`; it only keeps cancellation responsive while the
+provider call is in flight.
+
+Timed-out **automatic** `analyze_issue` runs remain a plain failure, not an
+automatic retry or parked state (`ISSUE-ANALYSIS-012`). The only automatic park
+path is the already-classified all-rate-limited case (`ISSUE-ANALYSIS-006`),
+where the system has a concrete recovery time. A generic activity timeout is
+still ambiguous after the first incident; with only one observed run, the safe
+policy is to fail it loudly with retained phase/provider diagnostics rather than
+assume it should churn in place or self-retry.
 
 Clearing conditions:
 
