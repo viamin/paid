@@ -204,7 +204,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
       svc = build_service(credential: credential)
       allow(svc).to receive_messages(
         codex_managed_runner_credential: credential,
-        codex_auth_lock_timeout: 5
+        subscription_auth_lock_timeout: 5
       )
       allow(svc).to receive(:record_codex_lease_attempt!) if stub_lease_recorder
       allow(svc).to receive(:harvest_codex_managed_credential!)

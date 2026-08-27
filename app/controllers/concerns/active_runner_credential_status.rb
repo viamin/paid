@@ -9,6 +9,7 @@ module ActiveRunnerCredentialStatus
   private
 
   def load_active_credential_status(runner_key)
+    @active_runner_key = runner_key.to_s
     @active_runner_credential = active_runner_credential(runner_key)
     @credential_runner = account_runner_for(runner_key) if @active_runner_credential
   end

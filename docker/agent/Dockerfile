@@ -515,6 +515,15 @@ RUN if [ -z "${OMP_PACKAGE}" ]; then \
         exit 1; \
     fi
 
+# Pre-create the OMP data directory so the tmpfs mount at
+# /home/agent/.local/share/omp (see Containers::Provision#host_config) lines up
+# with a real path on the image layer. Provision#fix_omp_data_tmpfs_ownership!
+# re-chowns the freshly mounted tmpfs to agent:agent after container start, and
+# seed_omp_credentials! then writes the broker import file into it.
+USER agent
+RUN mkdir -p /home/agent/.local/share/omp
+USER root
+
 # Install GitHub Copilot CLI via agent-harness install contract.
 # The modern `copilot` binary supports --autopilot mode for fully autonomous,
 # non-interactive agent execution. Install recipe is owned by agent-harness.

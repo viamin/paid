@@ -21,6 +21,10 @@ class ClaudeLoginSession < ApplicationRecord
 
   scope :recent, -> { order(created_at: :desc) }
 
+  def target_runner_key
+    metadata.to_h["target_runner_key"].presence || "claude"
+  end
+
   def expired?
     !terminal? && expires_at.present? && expires_at <= Time.current
   end

@@ -152,6 +152,14 @@ RSpec.describe ClaudeLoginSessions::InteractiveLogin do
         expect(credential.expires_at).to be_within(1.second).of(30.days.from_now)
       end
     end
+
+    it "stores the captured credential under the requested target runner key" do
+      session_record.update!(metadata: { "target_runner_key" => "omp" })
+
+      service.send(:persist_captured_credentials!, credentials_json)
+
+      expect(session_record.reload.runner_credential.runner_key).to eq("omp")
+    end
   end
 
   describe "#enforce_deadline!" do

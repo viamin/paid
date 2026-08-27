@@ -65,6 +65,20 @@ class ApplicationController < ActionController::Base
   end
   helper_method :feature_enabled?
 
+  def normalized_return_to(candidate)
+    return if candidate.blank?
+
+    candidate = candidate.to_s
+    return unless candidate.start_with?("/") && !candidate.start_with?("//")
+
+    parsed = URI.parse(candidate)
+    return unless parsed.scheme.nil? && parsed.host.nil?
+
+    url_from(candidate)
+  rescue URI::InvalidURIError
+    nil
+  end
+
   def user_not_authorized
     flash[:alert] = "You are not authorized to perform this action."
     redirect_back(fallback_location: root_path)

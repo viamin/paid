@@ -64,15 +64,4 @@ class PlanReviewsController < ApplicationController
 
     dashboard_inbox_path(kind: Inbox::Queue::PLAN_REVIEW_KIND)
   end
-
-  def normalized_return_to(candidate)
-    return if candidate.blank?
-
-    candidate = candidate.to_s
-    return unless candidate.start_with?("/") && !candidate.start_with?("//")
-
-    url_from(candidate)
-  rescue URI::InvalidURIError
-    nil
-  end
 end

@@ -15,12 +15,14 @@ RSpec.describe Runners::SubscriptionAuthMaterializers, :no_db do
     end
 
     it "marks Codex as a native-file materializer that is not yet remote-safe (#2962)" do
-      materializer = described_class.for_runner("codex")
+      %w[codex opencode omp].each do |runner_key|
+        materializer = described_class.for_runner(runner_key)
 
-      expect(materializer.remote_safe?).to be(false)
-      expect(materializer.materialization_mode).to eq("native_file")
-      expect(materializer.rotation_risk).to eq("container_may_rotate")
-      expect(materializer.requires_host_paths?).to be(false)
+        expect(materializer.remote_safe?).to be(false)
+        expect(materializer.materialization_mode).to eq("native_file")
+        expect(materializer.rotation_risk).to eq("container_may_rotate")
+        expect(materializer.requires_host_paths?).to be(false)
+      end
     end
 
     it "marks Gemini and Copilot as remote-safe native-file materializers (#2964)" do
@@ -44,6 +46,8 @@ RSpec.describe Runners::SubscriptionAuthMaterializers, :no_db do
     it "is true for Claude, Gemini, and Copilot today" do
       expect(described_class.remote_safe?("claude")).to be(true)
       expect(described_class.remote_safe?("codex")).to be(false)
+      expect(described_class.remote_safe?("opencode")).to be(false)
+      expect(described_class.remote_safe?("omp")).to be(false)
       expect(described_class.remote_safe?("gemini")).to be(true)
       expect(described_class.remote_safe?("copilot")).to be(true)
     end
@@ -55,7 +59,7 @@ RSpec.describe Runners::SubscriptionAuthMaterializers, :no_db do
 
   describe ".registered_runner_keys" do
     it "includes all subscription providers" do
-      expect(described_class.registered_runner_keys).to contain_exactly("claude", "codex", "gemini", "copilot")
+      expect(described_class.registered_runner_keys).to contain_exactly("claude", "codex", "opencode", "omp", "gemini", "copilot")
     end
   end
 end

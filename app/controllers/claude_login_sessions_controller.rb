@@ -6,13 +6,15 @@ class ClaudeLoginSessionsController < ApplicationController
   before_action :set_claude_login_session, only: [ :show, :update ]
 
   def new
+    @flow_definition = flow_definition_for_new
     @claude_login_session = current_account.claude_login_sessions.build(
       created_by: current_user,
-      credential_name: "Claude Browser Login"
+      credential_name: @flow_definition.credential_name
     )
     apply_return_to(@claude_login_session, params[:return_to])
+    apply_target_runner_key(@claude_login_session, resolved_target_runner_key)
     @return_to_path = normalized_return_to(@claude_login_session.metadata["return_to"])
-    load_active_credential_status("claude")
+    load_active_credential_status(@claude_login_session.target_runner_key)
     authorize @claude_login_session
   end
 
@@ -25,17 +27,20 @@ class ClaudeLoginSessionsController < ApplicationController
       ClaudeLoginSessions::Start.call(session: @claude_login_session)
       redirect_to claude_login_session_path(@claude_login_session.external_id)
     else
-      load_active_credential_status("claude")
+      @flow_definition = flow_definition_for_session(@claude_login_session)
+      load_active_credential_status(@claude_login_session.target_runner_key)
       render :new, status: :unprocessable_content
     end
   end
 
   def show
+    @flow_definition = flow_definition_for_session(@claude_login_session)
     @return_to_path = normalized_return_to(@claude_login_session.metadata["return_to"])
     authorize @claude_login_session
   end
 
   def update
+    @flow_definition = flow_definition_for_session(@claude_login_session)
     authorize @claude_login_session
     result = ClaudeLoginSessions::SubmitCode.call(
       session: @claude_login_session,
@@ -58,7 +63,7 @@ class ClaudeLoginSessionsController < ApplicationController
   end
 
   def claude_login_session_params
-    params.require(:claude_login_session).permit(:credential_name, metadata: [ :return_to ]).tap do |permitted|
+    params.require(:claude_login_session).permit(:credential_name, metadata: [ :return_to, :target_runner_key ]).tap do |permitted|
       permitted[:metadata] = sanitized_metadata(permitted[:metadata])
     end
   end
@@ -78,17 +83,36 @@ class ClaudeLoginSessionsController < ApplicationController
     return {} if metadata.blank?
 
     return_to = normalized_return_to(metadata[:return_to] || metadata["return_to"])
-    return_to.present? ? { "return_to" => return_to } : {}
+    target_runner_key = resolved_target_runner_key(metadata[:target_runner_key] || metadata["target_runner_key"])
+    {}.tap do |result|
+      result["return_to"] = return_to if return_to.present?
+      result["target_runner_key"] = target_runner_key
+    end
   end
 
-  def normalized_return_to(candidate)
-    return if candidate.blank?
+  def apply_target_runner_key(session, runner_key)
+    session.metadata = session.metadata.to_h.merge("target_runner_key" => runner_key)
+  end
 
-    candidate = candidate.to_s
-    return unless candidate.start_with?("/") && !candidate.start_with?("//")
+  def resolved_target_runner_key(candidate = params[:target_runner_key])
+    RunnerLoginFlows::Registry.supported_target_runner_key(
+      session_kind: "claude",
+      candidate: candidate,
+      fallback: "claude"
+    )
+  end
 
-    url_from(candidate)
-  rescue URI::InvalidURIError
-    nil
+  def flow_definition_for_new
+    RunnerLoginFlows::Registry.flow_for_session(
+      session_kind: "claude",
+      runner_key: resolved_target_runner_key
+    )
+  end
+
+  def flow_definition_for_session(session)
+    RunnerLoginFlows::Registry.flow_for_session(
+      session_kind: "claude",
+      runner_key: session.target_runner_key
+    )
   end
 end

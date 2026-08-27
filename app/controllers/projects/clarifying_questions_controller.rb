@@ -142,17 +142,6 @@ module Projects
       path.start_with?(dashboard_needs_input_path) || path.start_with?(dashboard_inbox_path)
     end
 
-    def normalized_return_to(candidate)
-      return if candidate.blank?
-
-      candidate = candidate.to_s
-      return unless candidate.start_with?("/") && !candidate.start_with?("//")
-
-      url_from(candidate)
-    rescue URI::InvalidURIError
-      nil
-    end
-
     def empty_questions_redirect_path
       queue_mode? ? queue_return_to : project_path(@project)
     end

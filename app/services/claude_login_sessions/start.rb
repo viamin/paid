@@ -19,6 +19,7 @@ module ClaudeLoginSessions
         account: session.account,
         metadata: {
           credential_name: session.credential_name,
+          runner_key: session.target_runner_key,
           details: [ "Started constrained Claude browser login session." ]
         }
       )
@@ -36,6 +37,7 @@ module ClaudeLoginSessions
         account: session.account,
         metadata: {
           credential_name: session.credential_name,
+          runner_key: session.target_runner_key,
           details: [ e.message ]
         }
       )

@@ -1,10 +1,10 @@
-<% content_for(:title) { "Connect Codex - Paid" } %>
+<% content_for(:title) { "#{@flow_definition.title} - Paid" } %>
 
 <div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
   <div class="overflow-hidden rounded-lg bg-white shadow">
     <div class="px-6 py-5">
-      <h1 class="text-xl font-semibold text-gray-900">Connect Codex</h1>
-      <p class="mt-1 text-sm text-gray-500">Paid starts an OpenAI device-code login, shows you a verification link and code, and captures the resulting Codex subscription credential into a managed <code>RunnerCredential</code>.</p>
+      <h1 class="text-xl font-semibold text-gray-900"><%= @flow_definition.title %></h1>
+      <p class="mt-1 text-sm text-gray-500"><%= @flow_definition.summary %> Paid starts an OpenAI device-code login, shows you a verification link and code, and captures the resulting credential into a managed <code>RunnerCredential</code>.</p>
 
       <div class="mt-4 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
         This flow only performs the OAuth device-code exchange. It does not provide a general shell or terminal.
@@ -13,7 +13,7 @@
       <% if @active_runner_credential %>
         <div class="mt-4 rounded-md border border-green-200 bg-green-50 p-4 text-sm text-green-800">
           <p>
-            Active Codex credential: <strong><%= @active_runner_credential.name %></strong>
+            Active <%= Runner.display_name_for(@active_runner_key) %> credential: <strong><%= @active_runner_credential.name %></strong>
             (<%= @active_runner_credential.expiry_label %>).
           </p>
           <p class="mt-1">
@@ -23,7 +23,7 @@
             <% if @credential_runner %>
               <%= link_to "View credential", runner_runner_credential_path(@credential_runner, @active_runner_credential), class: "font-semibold text-green-900 underline hover:no-underline" %>
             <% end %>
-            <%= link_to "Manage credentials", integration_credentials_path(category: "llm_provider", service_key: "codex"), class: "font-semibold text-green-900 underline hover:no-underline" %>
+            <%= link_to "Manage credentials", integration_credentials_path(category: "llm_provider", service_key: @flow_definition.manage_service_key), class: "font-semibold text-green-900 underline hover:no-underline" %>
           </div>
         </div>
       <% end %>
@@ -47,10 +47,11 @@
         </div>
 
         <%= hidden_field_tag "codex_login_session[metadata][return_to]", @return_to_path %>
+        <%= hidden_field_tag "codex_login_session[metadata][target_runner_key]", @flow_definition.runner_key %>
 
         <div class="flex items-center gap-3">
-          <%= form.submit "Start Codex Login", class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
-          <%= link_to "Cancel", safe_return_path_or(@return_to_path, integration_credentials_path(category: "llm_provider", service_key: "codex")), class: "text-sm font-semibold text-gray-900 hover:text-gray-700" %>
+          <%= form.submit "Start Login", class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+          <%= link_to "Cancel", safe_return_path_or(@return_to_path, integration_credentials_path(category: "llm_provider", service_key: @flow_definition.manage_service_key)), class: "text-sm font-semibold text-gray-900 hover:text-gray-700" %>
         </div>
       <% end %>
     </div>

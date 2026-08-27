@@ -1118,17 +1118,6 @@ module Projects
       normalized_return_to(params[:return_to])
     end
 
-    def normalized_return_to(candidate)
-      return if candidate.blank?
-
-      candidate = candidate.to_s
-      return unless candidate.start_with?("/") && !candidate.start_with?("//")
-
-      url_from(candidate)
-    rescue URI::InvalidURIError
-      nil
-    end
-
     def create_review_runs_and_redirect(pr_ids:, on_error_path:, custom_prompt:, goal:)
       # Soft gate: budget is re-checked at execution time in ProcessRunQueueJob#start_claimed_run,
       # so over-queuing is caught before any spend occurs.

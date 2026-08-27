@@ -179,13 +179,16 @@ module CodexCredentials
         "refresh_token" => tokens["refresh_token"],
         "account_id" => tokens["account_id"]
       }
+      expires_at = tokens["expires_at"] || tokens["expiresAt"]
       return nil if normalized["access_token"].blank? && normalized["refresh_token"].blank?
 
-      JSON.generate(
+      payload = {
         "OPENAI_API_KEY" => nil,
         "tokens" => normalized.compact,
         "last_refresh" => Time.now.utc.iso8601
-      )
+      }
+      payload["expires_at"] = expires_at if expires_at.present?
+      JSON.generate(payload)
     end
 
     def self.parse(secret)
