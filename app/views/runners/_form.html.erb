@@ -2,7 +2,16 @@
 <% is_new = !runner.persisted? %>
 <% selectable_runner = runner.persisted? || subscription_runner_options.any? || api_key_runner_options.any? %>
 <% feature_flagged_model_form_runner_keys = %w[opencode kilocode pi omp] %>
-<% feature_flagged_model_form = @runner_model_policy_form_enabled && feature_flagged_model_form_runner_keys.include?(runner.runner_key.to_s) %>
+<% feature_flagged_model_form = runner_model_policy_form_enabled && feature_flagged_model_form_runner_keys.include?(runner.runner_key.to_s) %>
+<% submitted_runner_params = params[:runner].respond_to?(:to_unsafe_h) ? params[:runner].to_unsafe_h : {} %>
+<% submitted_model_selection_choice =
+     if submitted_runner_params.key?("model_selection_choice") || submitted_runner_params.key?(:model_selection_choice)
+       submitted_runner_params["model_selection_choice"] || submitted_runner_params[:model_selection_choice]
+     end %>
+<% submitted_custom_model_id =
+     if submitted_runner_params.key?("custom_model_id") || submitted_runner_params.key?(:custom_model_id)
+       submitted_runner_params["custom_model_id"] || submitted_runner_params[:custom_model_id]
+     end %>
 <% initial_api_service_type = runner.provider_api_key&.api_service_type || runner.required_api_service_type %>
 <% initial_model_options = if feature_flagged_model_form && initial_api_service_type.present?
      Runners::ModelOptions.call(runner_key: runner.runner_key, api_service_type: initial_api_service_type).options
@@ -11,7 +20,9 @@
    end %>
 <% initial_model_values = initial_model_options.map { |option| option[:value] } %>
 <% direct_outbound_model_id = runner.direct_outbound_model_id.to_s.presence %>
-<% selected_model_choice = if runner.opencode_model_policy == "free"
+<% selected_model_choice = if submitted_model_selection_choice.present?
+     submitted_model_selection_choice
+   elsif runner.opencode_model_policy == "free"
      Runners::ModelOptions::FREE_POLICY_OPTION
    elsif direct_outbound_model_id.present? && initial_model_values.include?(direct_outbound_model_id)
      direct_outbound_model_id
@@ -20,15 +31,19 @@
    else
      ""
    end %>
-<% custom_model_id = selected_model_choice == LlmModel::CUSTOM_MODEL_OPTION ? direct_outbound_model_id : "" %>
+<% custom_model_id = if selected_model_choice == LlmModel::CUSTOM_MODEL_OPTION
+     submitted_custom_model_id.nil? ? direct_outbound_model_id.to_s : submitted_custom_model_id.to_s
+   else
+     ""
+   end %>
 
 <%= form_with model: runner,
     class: "space-y-6",
     data: {
       controller: "runner-form",
       runner_form_auth_type_value: runner.auth_type,
-      runner_form_model_policy_form_enabled_value: @runner_model_policy_form_enabled,
-      runner_form_model_options_value: @runner_model_options_map_json,
+      runner_form_model_policy_form_enabled_value: runner_model_policy_form_enabled,
+      runner_form_model_options_value: runner_model_options_map_json,
       runner_form_initial_api_service_type_value: initial_api_service_type
     } do |form| %>
 
@@ -184,7 +199,7 @@
     <p class="mt-1 text-xs text-gray-500">Set a monthly token budget for automatic weight balancing. Leave empty for unlimited (quota balancing will be disabled for this runner).</p>
   </div>
 
-  <% if @runner_model_policy_form_enabled %>
+  <% if runner_model_policy_form_enabled %>
     <div data-runner-form-target="modelSettings" <% unless feature_flagged_model_form && is_api_key %>hidden<% end %>>
       <% feature_flagged_model_form_runner_keys.each do |runner_key| %>
         <% runner_config = runner.config.is_a?(Hash) ? runner.config.fetch(runner_key, {}) : {} %>

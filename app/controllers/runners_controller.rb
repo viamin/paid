@@ -800,7 +800,10 @@ class RunnersController < ApplicationController
     return config unless FORM_MODEL_RUNNER_KEYS.include?(runner_key)
 
     api_key_id = attrs["provider_api_key_id"].presence || @runner&.provider_api_key_id
+    auth_type = attrs["auth_type"].presence || @runner&.auth_type
     service_type = resolve_provider_api_service_type(api_key_id)
+    return config.except(runner_key) unless auth_type == "api_key" && service_type.present?
+
     provider_key = Runner.api_service_type_to_provider_key(service_type)
     runner_config = (config[runner_key] || {}).dup
 

@@ -1004,6 +1004,46 @@ RSpec.describe "Runners" do
       expect(doc.at_css('input[name="runner[custom_model_id]"]')["value"]).to eq("openrouter/new-hotness")
     end
 
+    it "preserves the custom model choice on validation re-render when the submitted custom model id is blank" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+      enable_runner_model_policy_form_for(user)
+
+      post runners_path, params: { runner: flagged_model_form_runner_params(
+        api_key_id: api_key.id,
+        model_selection_choice: LlmModel::CUSTOM_MODEL_OPTION,
+        custom_model_id: ""
+      ) }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      doc = Nokogiri::HTML(response.body)
+      expect(doc.at_css('select[name="runner[model_selection_choice]"] option[selected]')["value"]).to eq("custom")
+      expect(doc.at_css('input[name="runner[custom_model_id]"]')["value"]).to eq("")
+    end
+
+    it "ignores stale flagged model config when the form submits a subscription OpenCode runner" do
+      enable_runner_model_policy_form_for(user)
+
+      post runners_path, params: {
+        runner: {
+          runner_key: "opencode",
+          auth_type: "subscription",
+          enabled_for_agent_runs: true,
+          config: {
+            opencode: {
+              api_provider: "openrouter",
+              model: "openrouter/new-hotness",
+              model_policy: "specific"
+            }
+          }
+        }
+      }
+
+      expect(response).to redirect_to(runners_path)
+      runner = user.runners.find_by!(runner_key: "opencode", auth_type: "subscription")
+      expect(runner.config).to be_blank
+      expect(LlmModel.find_by(model_id: "new-hotness", catalog_source: "manual")).to be_nil
+    end
+
     it "rejects opencode API-key providers without a model id" do
       api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
 

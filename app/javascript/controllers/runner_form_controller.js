@@ -165,6 +165,8 @@ export default class extends Controller {
       el.hidden = !(showModelSettings && runnerKey === "kilocode")
     })
 
+    this.toggleConfigFields(runnerKey, showModelSettings && Boolean(serviceType))
+
     if (!showModelSettings || !this.hasModelSelectTarget) {
       this.disableModelControls(true)
       return
@@ -311,6 +313,12 @@ export default class extends Controller {
       return input.dataset.runnerKey === runnerKey && input.dataset.configField === fieldName
     })
     if (field) field.value = value || ""
+  }
+
+  toggleConfigFields(activeRunnerKey, enabled) {
+    this.configFieldTargets.forEach((field) => {
+      field.disabled = !(enabled && field.dataset.runnerKey === activeRunnerKey)
+    })
   }
 
   providerKeyFor(serviceType) {
