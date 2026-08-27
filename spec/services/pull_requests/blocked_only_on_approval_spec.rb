@@ -423,6 +423,24 @@ RSpec.describe PullRequests::BlockedOnlyOnApproval do
       end
 
       # @spec PR-ESCALATION-025
+      it "treats the configured manual reviewer's stale approval as blocking even when they are not allowlisted" do
+        project.update!(allowed_github_usernames: [ "viamin" ])
+        sha = "abc123"
+        stub_pr_data(green_pr_data(sha: sha))
+        stub_checks(sha, green_checks)
+        stub_reviews(
+          green_reviews + [
+            { id: 2, user_login: "alice", state: "APPROVED", body: "LGTM", submitted_at: 3.hours.ago }
+          ]
+        )
+        stub_review_threads([])
+        stub_head_commit(sha: sha, date: 1.hour.ago)
+        stub_issue_comments
+
+        expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(false)
+      end
+
+      # @spec PR-ESCALATION-025
       it "returns false when the reviewer's APPROVED review is followed by a later COMMENTED review" do
         sha = "abc123"
         stub_pr_data(green_pr_data(sha: sha))

@@ -194,7 +194,7 @@ module PullRequests
       if @project.review_method_enabled?("manual")
         reviewer = @project.review_method(:manual).reviewer_login
         if reviewer.present?
-          manual_ts = latest_approval_timestamp(reviews, reviewer)
+          manual_ts = latest_approval_timestamp(reviews, reviewer, trust_required: false)
           timestamps << manual_ts if manual_ts
         end
       end
@@ -205,18 +205,22 @@ module PullRequests
     # Most recent submitted_at among the reviewer's APPROVED reviews from
     # trusted non-bot users; nil when the reviewer is unconfigured or has
     # not approved.
-    def latest_approval_timestamp(reviews, reviewer_login)
+    def latest_approval_timestamp(reviews, reviewer_login, trust_required: true)
       return nil if reviewer_login.blank?
 
       reviews
         .select do |r|
           r[:state].to_s.upcase == "APPROVED" &&
             r[:user_login]&.casecmp?(reviewer_login.strip) &&
-            @project.trusted_github_user?(r[:user_login]) &&
+            approval_login_allowed?(r[:user_login], trust_required:) &&
             !bot_user?(r[:user_login])
         end
         .filter_map { |r| r[:submitted_at] }
         .max
+    end
+
+    def approval_login_allowed?(login, trust_required:)
+      !trust_required || @project.trusted_github_user?(login)
     end
 
     # Cheap stand-in for the scan's full no_outstanding_review_feedback? gate.

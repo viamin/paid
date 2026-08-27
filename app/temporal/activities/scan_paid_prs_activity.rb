@@ -2987,7 +2987,7 @@ module Activities
       if project.review_method_enabled?("manual")
         reviewer = project.review_method(:manual).reviewer_login
         if reviewer.present?
-          manual = latest_approval_for(project, reviews) do |r|
+          manual = latest_approval_for(project, reviews, trust_required: false) do |r|
             r[:user_login]&.downcase == reviewer.strip.downcase
           end
           approvals << manual if manual
@@ -3001,10 +3001,10 @@ module Activities
     # among APPROVED reviews from trusted non-bot users matching the given
     # block filter. +nil+ when no approval matches — callers fall back to
     # their default (e.g. no owner approval recorded yet).
-    def latest_approval_for(project, reviews)
+    def latest_approval_for(project, reviews, trust_required: true)
       approvals = reviews.select do |r|
         r[:state] == "APPROVED" &&
-          project.trusted_github_user?(r[:user_login]) &&
+          approval_login_allowed?(project, r[:user_login], trust_required:) &&
           !bot_user?(r[:user_login]) &&
           yield(r)
       end
@@ -3014,6 +3014,10 @@ module Activities
 
       matching = approvals.find { |r| r[:submitted_at] == latest }
       { submitted_at: latest, commit_id: matching&.dig(:commit_id) }
+    end
+
+    def approval_login_allowed?(project, login, trust_required:)
+      !trust_required || project.trusted_github_user?(login)
     end
 
     # --- Helpers ---

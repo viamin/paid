@@ -6746,6 +6746,40 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when the configured manual reviewer is not allowlisted and their approval is stale" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          auto_merge_mode: "all",
+          allowed_github_usernames: [ "viamin" ],
+          review_settings: {
+            "enabled" => true,
+            "methods" => {
+              "manual" => { "enabled" => true, "reviewer_login" => "reviewer" }
+            }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "reviewer", state: "APPROVED", body: "", submitted_at: 3.hours.ago },
+            { id: 2, user_login: "viamin", state: "APPROVED", body: "", submitted_at: 30.minutes.ago }
+          ],
+          head_committed_at: 1.hour.ago
+        )
+      end
+
+      it "blocks auto-merge because the manual reviewer still gates freshness" do
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to eq([])
+      end
+    end
+
     # --- Clean base-merge freshness (AUTO-MERGE-006) ---
 
     context "when the only post-approval commit is a clean merge of the base branch" do
