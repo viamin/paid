@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_26_082056) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_26_183945) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1544,6 +1544,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_26_082056) do
 
   create_table "issues", force: :cascade do |t|
     t.boolean "auto_continue_paused", default: false, null: false
+    t.jsonb "auto_merge_blockers", comment: "Latest authoritative auto-merge blocker snapshot from the PR scanner. Stores failed blockers separately from checks that were not evaluated because an earlier gate already failed."
+    t.datetime "auto_merge_evaluated_at", comment: "When the latest authoritative auto-merge blocker snapshot was recorded by the PR scanner."
     t.text "body"
     t.datetime "ci_action_dispatched_at"
     t.datetime "ci_retry_requested_at"

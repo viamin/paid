@@ -310,10 +310,10 @@ RSpec.describe Automation::Strategy do
       end
     end
 
-    it "bot PR requires only dependabot_eligible, checks_green, mergeable, and resolved dependencies" do
+    it "bot PR requires only dependabot_eligible, merge_executor_supported, checks_green, mergeable, and resolved dependencies" do
       signals = Automation::Strategies::AutoMerge::Signals.build(
         issue_id: 42, pr_number: 10,
-        bot_authored: true, dependabot_eligible: true,
+        bot_authored: true, dependabot_eligible: true, merge_executor_supported: true,
         checks_green: true, mergeable: true, dependencies_resolved: true,
         owner_approved: false, review_feedback_clear: false
       )

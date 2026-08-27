@@ -802,7 +802,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       allow(activity).to receive(:find_paid_prs).with(project).and_return([ issue ])
       allow(activity).to receive(:skip_unchanged_pr?).with(project, issue).and_return(false)
       allow(activity).to receive(:scan_pr).with(project, github_client, issue).and_return(nil)
-      allow(issue).to receive(:update_column).with(:last_pr_scan_at, kind_of(Time))
+      allow(issue).to receive(:update_columns).with(hash_including(last_pr_scan_at: kind_of(Time)))
       allow(activity).to receive(:pending_review_state).with(issue, nil).and_return(nil)
       allow(activity).to receive(:active_run_exists?).with(project, issue).and_return(false)
       allow(activity).to receive(:logger).and_return(instance_double(Logger, info: true, warn: true))
