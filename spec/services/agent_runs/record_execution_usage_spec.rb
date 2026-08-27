@@ -109,11 +109,12 @@ RSpec.describe AgentRuns::RecordExecutionUsage do
     end
 
     # @spec EXEC-USAGE-011
-    it "replaces the row when the run was re-provisioned after the recorded termination" do
+    it "creates a new row when the run was re-provisioned after the recorded termination" do
       first_usage, result = reprovisioned_usage(agent_run)
-      usage = agent_run.reload.execution_usage
+      agent_run.reload
+      usage = agent_run.execution_usage
 
-      expect(ExecutionUsage.where(agent_run_id: agent_run.id).ids).to eq([ usage.id ])
+      expect(agent_run.execution_usages.order(:terminated_at, :id).ids).to eq([ first_usage.id, usage.id ])
       expect(usage.id).not_to eq(first_usage.id)
       expect(usage.attributes.slice(*reprovisioned_usage_snapshot.keys)).to eq(reprovisioned_usage_snapshot)
       expect(result[:usage]).to eq(usage)
@@ -122,18 +123,14 @@ RSpec.describe AgentRuns::RecordExecutionUsage do
     end
 
     # @spec EXEC-USAGE-011
-    it "folds the prior cycle's billed duration and cost into the replacement row" do
+    it "preserves the prior cycle as its own row when a new billing cycle is recorded" do
       first_usage, result = reprovisioned_usage(agent_run)
       usage = agent_run.reload.execution_usage
 
-      expect(usage.billed_duration_seconds).to eq(
-        first_usage.billed_duration_seconds + reprovisioned_billed_duration_seconds
-      )
-      expect(usage.infra_cost_cents).to eq(
-        first_usage.infra_cost_cents + reprovisioned_infra_cost_cents
-      )
-      # The new cycle's identifiers, rate, and lifecycle timestamps still
-      # reflect only the new machine — only the duration and cost accumulate.
+      expect(first_usage.reload.billed_duration_seconds).to eq(1800)
+      expect(first_usage.infra_cost_cents).to eq(30)
+      expect(usage.billed_duration_seconds).to eq(reprovisioned_billed_duration_seconds)
+      expect(usage.infra_cost_cents).to eq(reprovisioned_infra_cost_cents)
       expect(usage.rate_cents_per_hour).to eq(reprovisioned_rate_cents_per_hour)
       expect(usage.provider_resource_id).to eq("fly-machine-def")
       expect(usage.termination_reason).to eq("completed")
@@ -141,7 +138,7 @@ RSpec.describe AgentRuns::RecordExecutionUsage do
     end
 
     # @spec EXEC-USAGE-011
-    it "survives the prior cycle's infra spend into AgentRun#total_cost_cents" do
+    it "survives prior-cycle infra spend into AgentRun#total_cost_cents" do
       agent_run.update!(cost_cents: 100)
       reprovisioned_usage(agent_run)
 
@@ -232,16 +229,16 @@ RSpec.describe AgentRuns::RecordExecutionUsage do
   def reprovisioned_usage_snapshot
     {
       "provider_resource_id" => "fly-machine-def",
-      "billed_duration_seconds" => 3000,
+      "billed_duration_seconds" => 1200,
       "termination_reason" => "completed",
       "rate_cents_per_hour" => 120,
-      "infra_cost_cents" => 70
+      "infra_cost_cents" => 40
     }
   end
 
   def reprovisioned_result_snapshot
     {
-      infra_cost_cents: 70,
+      infra_cost_cents: 40,
       rate_cents_per_hour: 120
     }
   end

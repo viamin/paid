@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_26_192816) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_27_113917) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1302,7 +1302,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_26_192816) do
     t.datetime "terminated_at", null: false, comment: "When the cloud resource was torn down; provider-billed runtime ends here."
     t.string "termination_reason", limit: 20, null: false, comment: "Reason the cloud resource terminated: completed, cancelled, timed_out, failed, evicted."
     t.datetime "updated_at", null: false
-    t.index ["agent_run_id"], name: "index_execution_usages_on_agent_run_id_unique", unique: true
+    t.index ["agent_run_id"], name: "index_execution_usages_on_agent_run_id"
     t.index ["runner_backend"], name: "index_execution_usages_on_runner_backend"
     t.index ["terminated_at"], name: "index_execution_usages_on_terminated_at"
     t.check_constraint "(completed_at IS NULL OR completed_at >= provisioned_at) AND terminated_at >= provisioned_at", name: "chk_execution_usages_timestamps_ordered"

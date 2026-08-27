@@ -105,15 +105,19 @@ RSpec.describe Projects::CostDashboardStats do
     it "does not double-count re-provisioned runs whose current cycle has been recorded" do
       travel_to(Time.zone.local(2024, 1, 15, 12, 0, 0)) do
         # A run whose first cycle was recorded (evicted) and whose second
-        # cycle's recording has already landed — the recorder's folding
-        # captures the total cost in the single row, so pending spend
-        # contributes nothing.
+        # cycle's recording has already landed. Historical rows contribute
+        # both cycles, and pending spend contributes nothing.
         run = create(:agent_run, project: project, status: "completed",
           provisioning_started_at: 30.minutes.ago,
           completed_at: 5.minutes.ago,
           external_metadata: {
             "infrastructure_spend" => { "rate_cents_per_hour" => 120 }
           })
+        create_execution_usage(run,
+          provisioned_at: 2.hours.ago,
+          terminated_at: 1.hour.ago,
+          billed_duration_seconds: 3600,
+          infra_cost_cents: 120)
         create_execution_usage(run,
           provisioned_at: 30.minutes.ago,
           terminated_at: 5.minutes.ago,
@@ -122,32 +126,45 @@ RSpec.describe Projects::CostDashboardStats do
 
         result = described_class.call(project: project)
 
-        # Only the recorded row contributes (historical path); pending path
-        # sees run.provisioning_started_at <= row.terminated_at and excludes
-        # it from the overlap-based pending scope.
-        expect(result[:summary][:infrastructure_cost_cents]).to eq(50)
+        expect(result[:summary][:infrastructure_cost_cents]).to eq(170)
       end
     end
 
     # @spec EXEC-USAGE-007
     # @spec EXEC-USAGE-011
-    it "counts the full persisted spend of a folded multi-cycle row" do
+    it "attributes recorded spend to each cycle's own reporting window" do
+      travel_to(Time.zone.local(2024, 9, 1, 1, 0, 0)) do
+        create_multi_cycle_recorded_run(
+          second_cycle_start: Time.zone.local(2024, 9, 1, 0, 10, 0),
+          second_cycle_end: Time.zone.local(2024, 9, 1, 0, 20, 0),
+          first_cycle: [ Time.zone.local(2024, 8, 31, 23, 30, 0), Time.zone.local(2024, 8, 31, 23, 50, 0), 1200, 40 ],
+          second_cycle: [ Time.zone.local(2024, 9, 1, 0, 10, 0), Time.zone.local(2024, 9, 1, 0, 20, 0), 600, 20 ]
+        )
+
+        august = historical_infrastructure_cost_cents(
+          starts_at: Time.zone.local(2024, 8, 1, 0, 0, 0),
+          ends_at: Time.zone.local(2024, 9, 1, 0, 0, 0)
+        )
+        september = historical_infrastructure_cost_cents(
+          starts_at: Time.zone.local(2024, 9, 1, 0, 0, 0),
+          ends_at: Time.current
+        )
+
+        expect(august).to eq(40)
+        expect(september).to eq(20)
+      end
+    end
+
+    # @spec EXEC-USAGE-007
+    # @spec EXEC-USAGE-011
+    it "counts the full persisted spend of multiple recorded cycles" do
       travel_to(Time.zone.local(2024, 1, 15, 12, 0, 0)) do
-        # AgentRuns::RecordExecutionUsage folds a prior cycle's spend into the
-        # replacement row while scoping provisioned_at/terminated_at to the
-        # latest cycle only, so re-pricing the row from its timestamps would
-        # silently drop the first machine's 20 cents.
-        run = create(:agent_run, project: project, status: "completed",
-          provisioning_started_at: 30.minutes.ago,
-          completed_at: 5.minutes.ago,
-          external_metadata: {
-            "infrastructure_spend" => { "rate_cents_per_hour" => 120 }
-          })
-        create_execution_usage(run,
-          provisioned_at: 30.minutes.ago,
-          terminated_at: 5.minutes.ago,
-          billed_duration_seconds: 2100,
-          infra_cost_cents: 70)
+        create_multi_cycle_recorded_run(
+          second_cycle_start: 30.minutes.ago,
+          second_cycle_end: 5.minutes.ago,
+          first_cycle: [ 2.hours.ago, 1.hour.ago, 600, 20 ],
+          second_cycle: [ 30.minutes.ago, 5.minutes.ago, 1500, 50 ]
+        )
 
         result = described_class.call(project: project)
 
@@ -160,9 +177,8 @@ RSpec.describe Projects::CostDashboardStats do
     # @spec EXEC-USAGE-007
     it "counts the persisted spend of a zero-duration recorded row" do
       travel_to(Time.zone.local(2024, 1, 15, 12, 0, 0)) do
-        # A folded row whose latest cycle was torn down in the same instant it
-        # was provisioned still carries the prior cycles' spend; proration must
-        # not divide by a zero-length lifetime.
+        # A zero-duration row is counted in full when the window contains that
+        # instant; proration must not divide by zero.
         run = create(:agent_run, project: project, status: "completed",
           provisioning_started_at: 10.minutes.ago,
           completed_at: 10.minutes.ago)
@@ -381,6 +397,34 @@ RSpec.describe Projects::CostDashboardStats do
         termination_reason: "completed",
         infra_cost_cents: infra_cost_cents,
         rate_cents_per_hour: 120)
+    end
+
+    def create_multi_cycle_recorded_run(second_cycle_start:, second_cycle_end:, first_cycle:, second_cycle:)
+      run = create(:agent_run, project: project, status: "completed",
+        provisioning_started_at: second_cycle_start,
+        completed_at: second_cycle_end,
+        external_metadata: {
+          "infrastructure_spend" => { "rate_cents_per_hour" => 120 }
+        })
+
+      create_execution_usage(run,
+        provisioned_at: first_cycle.fetch(0),
+        terminated_at: first_cycle.fetch(1),
+        billed_duration_seconds: first_cycle.fetch(2),
+        infra_cost_cents: first_cycle.fetch(3))
+      create_execution_usage(run,
+        provisioned_at: second_cycle.fetch(0),
+        terminated_at: second_cycle.fetch(1),
+        billed_duration_seconds: second_cycle.fetch(2),
+        infra_cost_cents: second_cycle.fetch(3))
+    end
+
+    def historical_infrastructure_cost_cents(starts_at:, ends_at:)
+      described_class.new(project: project).send(
+        :historical_infrastructure_cost_cents,
+        starts_at: starts_at,
+        ends_at: ends_at
+      )
     end
 
     def create_pending_run

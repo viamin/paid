@@ -1,7 +1,8 @@
 # frozen_string_literal: true
 
 # Records the per-run infrastructure usage summary onto the
-# +AgentRun+ and creates its +ExecutionUsage+ row at
+# +AgentRun+ and creates an +ExecutionUsage+ row for each
+# recorded execution cycle at
 # termination. The cost is estimated via +ExecutionUsageCostEstimator+
 # from the run's host-keyed rate and the provider-billed lifetime, so
 # runs that never reached provisioning never produce an
@@ -11,7 +12,8 @@
 # (+AgentRunResourceJanitorJob+, +AgentRuns::CleanupStale+) re-enter this
 # service after +AgentRun#cleanup_container+ may already have closed the run
 # out, so the earliest recorded termination is the one the resource actually
-# had. See +recorded_usage+.
+# had for a given cycle. True re-provisioning writes a new row for the new
+# cycle. See +recorded_usage+.
 class AgentRuns::RecordExecutionUsage
   DENORMALIZED_AGENT_RUN_COLUMNS = %i[runner_backend billed_duration_seconds infra_cost_cents].freeze
 
@@ -50,8 +52,11 @@ class AgentRuns::RecordExecutionUsage
     return failure("termination_reason is required") if termination_reason.blank?
     return failure("terminated_at must be on or after provisioned_at") if terminated_at < provisioned_at
 
-    usage = recorded_usage
-    denormalize_onto_agent_run(usage)
+    usage = nil
+    agent_run.with_lock do
+      usage = recorded_usage
+      denormalize_onto_agent_run(usage)
+    end
 
     { usage: usage, infra_cost_cents: usage.infra_cost_cents, rate_cents_per_hour: usage.rate_cents_per_hour }
   end
@@ -63,19 +68,15 @@ class AgentRuns::RecordExecutionUsage
   # volume as cleaned — so re-pricing the row against its +Time.current+
   # would overstate spend for a resource that was only released once. A true
   # re-provisioned retry (park/resume, stale requeue,
-  # +reprovision_container_for_fallback!+) is a new billing cycle; the row
-  # is replaced, but the prior cycle's +billed_duration_seconds+ and
-  # +infra_cost_cents+ are folded into the new row so the run's full infra
-  # spend — including the first machine's lifetime — survives into
-  # +AgentRun#total_cost_cents+ and downstream rollups.
+  # +reprovision_container_for_fallback!+) is a new billing cycle; it gets a
+  # new row so downstream rollups can attribute each cycle to its own billing
+  # window while +AgentRun+ still denormalizes the summed infra spend.
   # @spec EXEC-USAGE-011
   def recorded_usage
-    existing = ExecutionUsage.find_by(agent_run_id: agent_run.id)
+    existing = latest_recorded_usage
     return preserve_recording(existing) if preserve_existing_recording?(existing)
 
-    replace_recording(existing)
-  rescue ActiveRecord::RecordNotUnique
-    retry
+    create_recording
   end
 
   def execution_usage_attributes
@@ -114,13 +115,13 @@ class AgentRuns::RecordExecutionUsage
     agent_run.external_metadata&.dig("infrastructure_spend", "rate_cents_per_hour")
   end
 
-  # Mirrors the persisted row — never the estimate just computed — so the run's
-  # denormalized columns always equal the recorded spend, and a run whose column
-  # write was lost after the row was inserted self-heals on the next pass.
+  # Mirrors the persisted rows — never the estimate just computed — so the
+  # run's denormalized columns always equal the recorded spend, and a run whose
+  # column write was lost after one row was inserted self-heals on the next pass.
   # @spec EXEC-USAGE-002
   # @spec EXEC-USAGE-011
   def denormalize_onto_agent_run(usage)
-    columns = DENORMALIZED_AGENT_RUN_COLUMNS.index_with { |column| usage.public_send(column) }
+    columns = denormalized_usage_columns(usage)
     return if columns.all? { |column, value| agent_run.public_send(column) == value }
 
     agent_run.update_columns(**columns, updated_at: Time.current)
@@ -145,16 +146,25 @@ class AgentRuns::RecordExecutionUsage
     existing
   end
 
-  def replace_recording(existing)
-    ExecutionUsage.transaction(requires_new: true) do
-      attributes = execution_usage_attributes
-      if existing
-        attributes[:billed_duration_seconds] = existing.billed_duration_seconds.to_i + attributes[:billed_duration_seconds].to_i
-        attributes[:infra_cost_cents] = existing.infra_cost_cents.to_i + attributes[:infra_cost_cents].to_i
-      end
-      existing&.destroy!
-      ExecutionUsage.create!(agent_run_id: agent_run.id, **attributes)
-    end
+  def create_recording
+    ExecutionUsage.create!(agent_run_id: agent_run.id, **execution_usage_attributes)
+  end
+
+  def latest_recorded_usage
+    agent_run.execution_usages.order(terminated_at: :desc, id: :desc).first
+  end
+
+  def denormalized_usage_columns(latest_usage)
+    sums = agent_run.execution_usages.pick(
+      Arel.sql("COALESCE(SUM(billed_duration_seconds), 0)"),
+      Arel.sql("COALESCE(SUM(infra_cost_cents), 0)")
+    )
+
+    {
+      runner_backend: latest_usage.runner_backend,
+      billed_duration_seconds: sums.fetch(0).to_i,
+      infra_cost_cents: sums.fetch(1).to_i
+    }
   end
 
   def failure(message)

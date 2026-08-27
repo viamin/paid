@@ -12,8 +12,8 @@ prefix: EXEC-USAGE
 
 ## Per-Run Usage Record
 
-- [x] **EXEC-USAGE-001** — The system SHALL store a single `ExecutionUsage`
-  row per `AgentRun` capturing `runner_backend`, `provider_resource_id`,
+- [x] **EXEC-USAGE-001** — The system SHALL store one `ExecutionUsage`
+  row per recorded execution cycle of an `AgentRun`, each capturing `runner_backend`, `provider_resource_id`,
   `provisioned_at`, `execution_started_at`, `completed_at`, `terminated_at`,
   `billed_duration_seconds`, `requested_cpu_cores`, `requested_memory_mib`,
   `requested_disk_gb`, `termination_reason`, `infra_cost_cents`, and the
@@ -23,9 +23,10 @@ prefix: EXEC-USAGE
   *Code:* `ExecutionUsage`,
   `ExecutionUsageCostEstimator`.
 
-- [x] **EXEC-USAGE-002** — `AgentRun` SHALL denormalize `runner_backend` and
-  `infra_cost_cents` from `ExecutionUsage` so a single-row aggregate query
-  does not require a join against the usage record.
+- [x] **EXEC-USAGE-002** — `AgentRun` SHALL denormalize the latest recorded
+  `runner_backend` plus the summed `billed_duration_seconds` and
+  `infra_cost_cents` across its `ExecutionUsage` rows so a single-row
+  aggregate query does not require a join against the usage records.
   *Tests:* `spec/models/agent_run_spec.rb`.
   *Code:* `AgentRun`,
   `AgentRun#total_cost_cents`,
@@ -73,10 +74,9 @@ prefix: EXEC-USAGE
   for still-live or not-yet-cleaned runs, with no double-counting across
   the two sources. For recorded rows the service SHALL aggregate the
   persisted `infra_cost_cents` — prorated across the requested window by
-  the row's recorded lifetime, and counted in full when that lifetime is
+  row's recorded lifetime, and counted in full when that lifetime is
   zero-length — rather than re-pricing the row from `rate_cents_per_hour`
-  and its timestamps, so a folded multi-cycle row (EXEC-USAGE-011)
-  contributes its full recorded spend to the unbounded total.
+  and its timestamps.
   *Tests:* `spec/services/projects/cost_dashboard_stats_spec.rb`.
   *Code:* `Projects::CostDashboardStats`.
 
@@ -133,12 +133,10 @@ prefix: EXEC-USAGE
   denormalized columns. When the current `provisioned_at` is after the
   existing row's `terminated_at` — a true re-provisioning (park/resume,
   stale requeue, `reprovision_container_for_fallback!`) — the recorder
-  SHALL replace that row, but SHALL fold the prior cycle's
-  `billed_duration_seconds` and `infra_cost_cents` into the new row's
-  values so the run's full infra spend across both cycles survives into
-  `AgentRun#total_cost_cents` and downstream rollups; the new row's
-  `provisioned_at`, `terminated_at`, `provider_resource_id`, and
-  `rate_cents_per_hour` reflect the new cycle only.
+  SHALL create a new `ExecutionUsage` row for the new cycle and SHALL
+  update the run's denormalized totals from the full set of persisted
+  usage rows so the run's infra spend across all cycles survives into
+  `AgentRun#total_cost_cents` and downstream rollups.
   *Tests:* `spec/services/agent_runs/record_execution_usage_spec.rb`,
   `spec/models/agent_run_spec.rb`.
   *Code:* `AgentRuns::RecordExecutionUsage`.

@@ -18,8 +18,8 @@
 # active/cleanup_pending — are skipped: their billable lifetime is still open,
 # so they keep accruing via the rowless (pending) spend path until the real
 # teardown records the actual terminated_at. Freezing them at completed_at now
-# would undercount them, and RecordExecutionUsage's first-write-wins semantics
-# would preserve the short backfilled row over the later true termination.
+# would undercount them, and RecordExecutionUsage's preserve-existing-cycle
+# semantics would leave the short backfilled row in place for that cycle.
 class BackfillExecutionUsageFromInfrastructureSpendStamp < ActiveRecord::Migration[8.1]
   BATCH_SIZE = 500
 
@@ -76,8 +76,8 @@ class BackfillExecutionUsageFromInfrastructureSpendStamp < ActiveRecord::Migrati
   # Runs whose environment resource is still active or awaiting cleanup keep
   # accruing through the rowless (pending) spend path until the real teardown
   # records their termination; backfilling them now would freeze their billable
-  # lifetime at completed_at, and the recorder's first-write-wins semantics
-  # would then preserve that short row over the true termination.
+  # lifetime at completed_at, and the recorder would then preserve that short
+  # row for the same cycle on later re-entry.
   def live_environment_exclusion_sql
     <<~SQL.squish
       NOT EXISTS (
@@ -96,7 +96,7 @@ class BackfillExecutionUsageFromInfrastructureSpendStamp < ActiveRecord::Migrati
 
       rows = agent_runs.filter_map { |agent_run| execution_usage_attributes_for(agent_run) }
       unless rows.empty?
-        MigrationExecutionUsage.insert_all(rows, unique_by: :agent_run_id)
+        MigrationExecutionUsage.insert_all(rows)
         backfill_agent_run_columns!(rows)
       end
 

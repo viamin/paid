@@ -6343,11 +6343,11 @@ RSpec.describe AgentRun do
 
   describe "execution usage denormalization" do
     # @spec EXEC-USAGE-002
-    it "has_one :execution_usage that is destroyed with the run" do
+    it "destroys execution_usages with the run" do
       agent_run = create(:agent_run, :completed)
-      create(:execution_usage, agent_run: agent_run)
+      create_list(:execution_usage, 2, agent_run: agent_run)
 
-      expect { agent_run.destroy }.to change(ExecutionUsage, :count).by(-1)
+      expect { agent_run.destroy }.to change(ExecutionUsage, :count).by(-2)
     end
 
     # @spec EXEC-USAGE-011
@@ -6373,7 +6373,7 @@ RSpec.describe AgentRun do
     end
 
     # @spec EXEC-USAGE-011
-    it "folds the prior cycle's billed duration and infra cost when re-provisioning starts a new cycle" do
+    it "keeps prior-cycle rows and sums billed duration and infra cost when re-provisioning starts a new cycle" do
       # Park/resume, stale requeue, and `reprovision_container_for_fallback!`
       # all tear one resource down, later provision another, and finally
       # clean up. When the second cycle's recording lands with a
@@ -6402,11 +6402,14 @@ RSpec.describe AgentRun do
         container_id: "second-container", container_host: "local", terminated_at: 10.minutes.ago)
 
       usage = agent_run.reload.execution_usage
-      expect(ExecutionUsage.where(agent_run_id: agent_run.id).count).to eq(1)
+      expect(ExecutionUsage.where(agent_run_id: agent_run.id).count).to eq(2)
       expect(usage.provider_resource_id).to eq("second-container")
-      expect(usage.billed_duration_seconds).to eq(first.billed_duration_seconds + 20 * 60)
-      expect(usage.infra_cost_cents).to eq(first.infra_cost_cents + ((120 * 20 * 60) / 3600.0).round)
-      expect(agent_run.reload.infra_cost_cents).to eq(usage.infra_cost_cents)
+      expect(usage.billed_duration_seconds).to eq(20 * 60)
+      expect(usage.infra_cost_cents).to eq(((120 * 20 * 60) / 3600.0).round)
+      expect(first.reload.provider_resource_id).to eq("first-container")
+      agent_run.reload
+      expect(agent_run.infra_cost_cents).to eq(first.infra_cost_cents + usage.infra_cost_cents)
+      expect(agent_run.billed_duration_seconds).to eq(first.billed_duration_seconds + usage.billed_duration_seconds)
     end
 
     it "truncates the recorded runner backend to the execution usage limit" do

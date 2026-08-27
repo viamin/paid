@@ -225,32 +225,26 @@ module Projects
     end
 
     # A run is "pending" when its CURRENT cycle's billing has not yet been
-    # recorded. The historical `where.missing(:execution_usage)` check would
-    # miss runs that already have an `ExecutionUsage` row from a prior
-    # billing cycle (park/resume, stale requeue,
-    # `reprovision_container_for_fallback!`); those runs must keep accruing
-    # pending spend from their new `provisioning_started_at` until the new
-    # cycle's cleanup writes the next row, instead of silently disappearing
-    # from the dashboard for the entire second machine's lifetime.
+    # recorded. A run can already have older `ExecutionUsage` rows from prior
+    # billing cycles (park/resume, stale requeue,
+    # `reprovision_container_for_fallback!`) while its current cycle is still
+    # live; those runs must keep accruing pending spend from their current
+    # `provisioning_started_at` until cleanup records that cycle.
     def pending_execution_usage_scope(scope)
-      scope.left_joins(:execution_usage).where(
-        "execution_usages.id IS NULL " \
-        "OR agent_runs.provisioning_started_at > execution_usages.terminated_at"
-      )
+      scope.where(<<~SQL.squish)
+        NOT EXISTS (
+          SELECT 1
+          FROM execution_usages
+          WHERE execution_usages.agent_run_id = agent_runs.id
+            AND execution_usages.terminated_at >= agent_runs.provisioning_started_at
+        )
+      SQL
     end
 
     # Prorates the row's *persisted* `infra_cost_cents` across the requested
     # window rather than re-pricing it from `rate_cents_per_hour` and the row
-    # timestamps. `AgentRuns::RecordExecutionUsage#replace_recording` folds a
-    # re-provisioned run's prior-cycle spend into the replacement row while
-    # scoping `provisioned_at`/`terminated_at` to the latest cycle, so
-    # rate-times-overlap arithmetic would drop the earlier cycles' spend
-    # (EXEC-USAGE-011). Proration keeps the unbounded total exactly equal to
-    # the recorded spend, and attributes a folded row's carried spend to the
-    # latest cycle's window — the only lifetime the row still knows about.
-    # A zero-length lifetime (provisioned and terminated in the same instant,
-    # possible for a folded row) contributes its full persisted spend when the
-    # window contains that instant instead of dividing by zero.
+    # timestamps. A zero-length lifetime contributes its full persisted spend
+    # when the window contains that instant instead of dividing by zero.
     # @spec EXEC-USAGE-007
     def execution_usage_overlap_cost_sql(starts_at:, ends_at:)
       <<~SQL.squish

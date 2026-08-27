@@ -203,7 +203,8 @@ class AgentRun < ApplicationRecord
   has_many :bundle_outcomes, dependent: :destroy
   has_many :strategy_experiment_assignments, dependent: :destroy
   has_many :container_metrics, dependent: :delete_all
-  has_one :execution_usage, dependent: :destroy
+  has_many :execution_usages, dependent: :destroy
+  has_one :execution_usage, -> { order(terminated_at: :desc, id: :desc) }, class_name: "ExecutionUsage"
   has_many :quality_metrics, dependent: :destroy
   has_many :style_guide_run_exposures, dependent: :destroy
   has_many :orchestration_decisions, dependent: :nullify
@@ -388,7 +389,7 @@ class AgentRun < ApplicationRecord
   # because `internal_agent` is shared with legitimate externally-ingested runs
   # (AgentRuns::IngestExternal). See `synthetic_operational_run?`.
   scope :excluding_synthetic, -> { where(synthetic: false) }
-  scope :with_execution_usage, -> { joins(:execution_usage) }
+  scope :with_execution_usage, -> { joins(:execution_usages).distinct }
   scope :by_runner_backend, ->(backend) { where(runner_backend: backend.to_s) }
 
   # Transcript/diagnostic payload columns are never rendered by list views
@@ -1909,7 +1910,7 @@ class AgentRun < ApplicationRecord
   # @spec EXEC-USAGE-006
   # Whether this run has any infra usage recorded.
   def has_execution_usage?
-    execution_usage.present?
+    execution_usages.exists?
   end
 
   # Returns total tokens consumed across all streaming turns.

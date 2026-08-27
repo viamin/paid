@@ -34,11 +34,11 @@ budget enforcement is unaffected.
 
 ## New Model: `ExecutionUsage`
 
-One row per run, captured at termination. Each row carries:
+One row per recorded execution cycle, captured at termination. Each row carries:
 
 | Field | Purpose |
 |---|---|
-| `agent_run_id` | The run this summary describes (unique, cascade-delete). |
+| `agent_run_id` | The run this summary describes (indexed, cascade-delete). |
 | `runner_backend` | Which runner executed it (e.g. `local`, `fly_machine`, `cloud_run`). Mirrors the per-runner rate key. |
 | `provider_resource_id` | Cloud-side identifier for cost reconciliation (Fly Machine ID, Cloud Run execution ID, etc). |
 | `provisioned_at` / `execution_started_at` / `completed_at` / `terminated_at` | Lifecycle timestamps so billed duration can be derived precisely. |
@@ -106,14 +106,11 @@ shape of the API is unchanged; only the source of truth for terminated
 runs moves from the admission-time stamp to the per-run summary.
 
 Recorded rows contribute their *persisted* `infra_cost_cents`, prorated
-across the requested window by the row's recorded lifetime (and counted in
+across the requested window by each row's recorded lifetime (and counted in
 full when that lifetime is zero-length), rather than being re-priced from
-`rate_cents_per_hour` times the window overlap. A folded multi-cycle row
-(see Cleanup Fallbacks below) keeps `provisioned_at`/`terminated_at` scoped to
-the latest cycle, so rate-times-overlap arithmetic would silently drop the
-earlier cycles' spend. Proration keeps the unbounded total exactly equal to
-the recorded spend and attributes a folded row's carried spend to the latest
-cycle's window — the only lifetime the row still knows about.
+`rate_cents_per_hour` times the window overlap. Because each execution cycle
+keeps its own row, the dashboard can attribute historical spend to the
+correct period even when a run is re-provisioned across a reporting boundary.
 
 ## Why Not Fold This Into `ContainerMetric`?
 
@@ -125,8 +122,8 @@ Adding `infra_cost_cents` to it would:
   the billing columns;
 - prevent the one-row-per-run aggregation from being indexed cheaply.
 
-A separate table makes the "one summary per run" invariant enforceable by
-a unique index on `agent_run_id` and keeps `ContainerMetric`'s query
+A separate table keeps billing summaries distinct from time-series samples
+and keeps `ContainerMetric`'s query
 planner from changing.
 
 ## Non-Goals
@@ -171,18 +168,14 @@ The important exception is true re-provisioning: park/resume, stale claimed
 requeue, and `reprovision_container_for_fallback!` can tear one resource
 down, later provision a new one for the same `AgentRun`, and finally clean
 that later resource up. When the current `provisioned_at` is after the
-existing row's `terminated_at`, the recorder replaces the row but folds the
-prior cycle's `billed_duration_seconds` and `infra_cost_cents` into the new
-row so the run's accounting reflects *both* billing cycles — the new row
-adds the prior cycle's cost to its own instead of dropping it, so
-`AgentRun#total_cost_cents` and downstream rollups include the first
-machine's lifetime even after the second machine's cleanup replaces it. The
-new row's `provisioned_at`, `terminated_at`, `provider_resource_id`, and
-`rate_cents_per_hour` always reflect the latest cycle; only the duration
-and cost are accumulated. The run's denormalized columns are mirrored from
-the persisted row rather than from the estimate just computed, which keeps
-them equal to the recorded spend and lets a run whose column write was
-lost after the row was inserted self-heal on the next cleanup pass.
+latest recorded row's `terminated_at`, the recorder writes a new row for the
+new cycle instead of replacing the prior one. `AgentRun#total_cost_cents`
+and downstream rollups then include the first machine's lifetime by summing
+all persisted rows, while the dashboard can still attribute each cycle to
+its own billing window. The run's denormalized columns are recomputed from
+the persisted rows rather than from the estimate just computed, which keeps
+them equal to the recorded spend and lets a run whose column write was lost
+after insertion self-heal on the next cleanup pass.
 
 Provider-reported cost replacing the estimate (see Non-Goals) is a
 deliberate, out-of-band correction of `infra_cost_cents` — not a cleanup-path

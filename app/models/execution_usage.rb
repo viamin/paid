@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
-# Per-run infrastructure usage and cost summary, distinct from
-# ContainerMetric's high-frequency samples. One row per AgentRun,
-# captured at termination, so cloud-provider spend can be measured
+# Per-cycle infrastructure usage and cost summary, distinct from
+# ContainerMetric's high-frequency samples. One row per recorded
+# execution cycle, captured at termination, so cloud-provider spend can be measured
 # separately from LLM token cost. See
 # docs/intent/execution-usage-and-cost-accounting/ for the spec.
 class ExecutionUsage < ApplicationRecord # @spec EXEC-USAGE-001

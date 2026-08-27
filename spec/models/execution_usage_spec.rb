@@ -108,12 +108,18 @@ RSpec.describe ExecutionUsage do
     end
   end
 
-  describe "uniqueness of agent_run" do
-    it "enforces one ExecutionUsage row per AgentRun via the unique index" do
-      create(:execution_usage, agent_run: agent_run)
-      duplicate = build(:execution_usage, agent_run: agent_run)
+  describe "multiple cycles per agent run" do
+    it "allows multiple ExecutionUsage rows for the same AgentRun" do
+      first = create(:execution_usage, agent_run: agent_run)
+      second = build(:execution_usage,
+        agent_run: agent_run,
+        provisioned_at: 20.minutes.ago,
+        execution_started_at: 20.minutes.ago,
+        completed_at: 10.minutes.ago,
+        terminated_at: 10.minutes.ago)
 
-      expect { duplicate.save(validate: false) }.to raise_error(ActiveRecord::RecordNotUnique)
+      expect { second.save! }.to change(described_class, :count).by(1)
+      expect(agent_run.reload.execution_usages.order(:id)).to contain_exactly(first, second)
     end
   end
 end
