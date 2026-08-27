@@ -1113,9 +1113,9 @@ RSpec.describe "Runners" do
       expect(response).to have_http_status(:unprocessable_content)
       expect(response.body).to include("Free Model Configuration")
       doc = Nokogiri::HTML(response.body)
-      expect(doc.at_css('select[name="runner[model_selection_choice]"] option[selected]')["value"]).to eq(
-        Runners::ModelOptions::FREE_POLICY_OPTION
-      )
+      selected_choice = doc.at_css('select[name="runner[model_selection_choice]"] option[selected]')
+      expect(selected_choice["value"]).to eq(Runners::ModelOptions::FREE_POLICY_OPTION)
+      expect_selected_free_tier_defaults(doc)
     end
 
     # @spec MODEL-POLICY-002 MODEL-POLICY-008
@@ -1696,6 +1696,16 @@ RSpec.describe "Runners" do
       catalog_source: "openrouter_sync")
     create(:llm_model, model_id: "low-free", provider: "qwen", tier: "low", pricing_tier: "free", capability_score: 4.0,
       catalog_source: "openrouter_sync")
+  end
+
+  # @spec FREE-MODEL-RUNNER-005
+  def expect_selected_free_tier_defaults(doc)
+    aggregate_failures do
+      %w[low mid high].each do |tier|
+        selected_option = doc.at_css(%(select[name="runner[tier_model_ids][#{tier}]"] option[selected]))
+        expect(selected_option["value"]).to eq("free-#{tier}")
+      end
+    end
   end
 
   def expect_free_runner_form_guidance(body)

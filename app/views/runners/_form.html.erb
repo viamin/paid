@@ -455,7 +455,8 @@
      end %>
   <% if tier_models.any? %>
     <% tier_runner_key = free_runner && feature_flagged_model_form ? "opencode" : runner.runner_key %>
-    <% current_tier_ids = runner.tier_model_ids.presence || Runners::DefaultTierModelIds.call(runner_key: tier_runner_key) %>
+    <% current_tier_ids = runner.tier_model_ids.presence ||
+         (free_runner ? FreeModels::DefaultTierModels.call : Runners::DefaultTierModelIds.call(runner_key: tier_runner_key)) %>
     <div class="rounded-lg border border-gray-200 p-4"
          data-runner-form-target="tierSettings"
          data-tier-runner-key="<%= tier_runner_key %>"
