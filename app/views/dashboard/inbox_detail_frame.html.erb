@@ -1,0 +1,19 @@
+<%= turbo_frame_tag "inbox-detail" do %>
+  <% if entry %>
+    <%= render "dashboard/inbox_detail",
+          entry: entry,
+          scoped_project: scoped_project,
+          selected_kind: selected_kind %>
+  <% else %>
+    <div class="rounded-xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center shadow-sm">
+      <h2 class="text-sm font-semibold text-gray-900">Entry not available</h2>
+      <p class="mt-1 text-sm text-gray-500">
+        The selected inbox entry is no longer available. It may have been resolved or removed while the page was open.
+      </p>
+      <%= link_to "Back to inbox",
+            inbox_path(project: scoped_project, kind: selected_kind),
+            data: { turbo_frame: "_top" },
+            class: "mt-4 inline-flex rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+    </div>
+  <% end %>
+<% end %>

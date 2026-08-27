@@ -58,6 +58,10 @@ Rails.application.routes.draw do
   get "dashboard/knowledge_stats", to: "dashboard#knowledge_stats", as: :dashboard_knowledge_stats
   get "dashboard/pr_cycle_time", to: "dashboard#pr_cycle_time", as: :dashboard_pr_cycle_time
   get "dashboard/inbox", to: "dashboard#inbox", as: :dashboard_inbox
+  get "dashboard/inbox/entries/:entry_kind/:entry_id",
+    to: "dashboard#inbox_detail",
+    as: :dashboard_inbox_entry,
+    constraints: { entry_kind: Regexp.union(Inbox::Queue::KINDS) }
   get "dashboard/needs_input", to: "dashboard#needs_input", as: :dashboard_needs_input
   post "dashboard/cancel_run/:id", to: "dashboard#cancel_run", as: :dashboard_cancel_run
 
