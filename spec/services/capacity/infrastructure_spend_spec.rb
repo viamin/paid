@@ -155,4 +155,23 @@ RSpec.describe Capacity::InfrastructureSpend do
 
     expect(result).to eq(240)
   end
+
+  # @spec EXEC-USAGE-007
+  it "counts a completed but not-yet-cleaned run in the next window when a caller extends overlap end" do
+    create_overlap_run(
+      status: :completed,
+      provisioning_started_at: Time.utc(2026, 8, 23, 23, 30, 0),
+      completed_at: Time.utc(2026, 8, 23, 23, 55, 0),
+      rate_cents_per_hour: 120
+    )
+
+    result = described_class.spent_cents(
+      project: project,
+      starts_at: Time.utc(2026, 8, 24, 0, 0, 0),
+      ends_at: Time.utc(2026, 8, 24, 1, 0, 0),
+      overlap_ends_at_sql: ActiveRecord::Base.connection.quote(Time.utc(2026, 8, 24, 0, 10, 0))
+    )
+
+    expect(result).to eq(20)
+  end
 end
