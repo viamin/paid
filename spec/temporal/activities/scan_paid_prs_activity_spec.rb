@@ -6388,6 +6388,23 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(pr_issue.reload.awaiting_approval_since).to be_present
       end
 
+      it "does not rebuild the auto-merge signals when approval is the only blocker" do
+        pr_issue
+
+        # Exactly two passes are legitimate: one inside the auto-merge
+        # signal build (no_outstanding_review_feedback?) and one inside
+        # ready-trigger detection. A third call would mean the signal set
+        # was rebuilt after analyze_auto_merge already evaluated it.
+        expect(github_client).to receive(:recent_issue_comments).twice
+          .with(project.full_name, pr_issue.github_number)
+          .and_return([])
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to eq([])
+        expect(pr_issue.reload.awaiting_approval_since).to be_present
+      end
+
       it "does not escalate while the wait is under the ceiling" do
         pr_issue.update_columns(awaiting_approval_since: 23.hours.ago)
 

@@ -941,19 +941,19 @@ module Activities
       reviews = fetch_reviews(client, project, issue)
       unresolved_threads = fetch_unresolved_threads(client, project, issue)
 
-      if auto_merge_eligible?(project, client, issue,
+      auto_merge_evaluation = analyze_auto_merge(project, client, issue,
         pr_data: pr_data,
         checks: checks,
         reviews: reviews,
         unresolved_threads: unresolved_threads,
         progress_state: progress_state)
+
+      if auto_merge_evaluation&.analysis&.eligible?
         track_approval_wait!(project, issue, blocked_only_on_approval: false)
         return owner_approved_trigger(issue)
       end
 
-      signals = build_auto_merge_signals(project, client, issue,
-        pr_data: pr_data, checks: checks, reviews: reviews, unresolved_threads: unresolved_threads,
-        progress_state: progress_state)
+      signals = auto_merge_evaluation&.signals
 
       triggers = detect_ready_triggers(project, client, issue,
         pr_data: pr_data, checks: checks, reviews: reviews, unresolved_threads: unresolved_threads)
@@ -3326,22 +3326,40 @@ module Activities
 
     # --- Auto-merge strategy delegation ---
 
+    # Paired result of a single auto-merge analysis: the collected signals
+    # and the strategy's evaluation of them, so callers can reuse both
+    # without re-running the signal gates.
+    AutoMergeEvaluation = Data.define(:signals, :analysis)
+
     # Evaluates human-authored PR merge eligibility via the AutoMerge
     # strategy. Collects signals from provider data, persists the blocker
     # snapshot, and delegates the decision to {Automation::Strategies::AutoMerge}.
     # @spec AUTO-MERGE-005
     def auto_merge_eligible?(project, client, issue, pr_data:, checks:, reviews:, unresolved_threads: nil,
       progress_state: nil)
+      analyze_auto_merge(project, client, issue,
+        pr_data: pr_data, checks: checks, reviews: reviews, unresolved_threads: unresolved_threads,
+        progress_state: progress_state)&.analysis&.eligible? || false
+    end
+
+    # Runs the full auto-merge analysis once and returns the
+    # {AutoMergeEvaluation} (signals + analysis), or nil when auto-merge is
+    # disabled or the PR data is missing. Callers that need both the
+    # eligibility decision and the underlying signals must use this instead
+    # of calling auto_merge_eligible? followed by build_auto_merge_signals,
+    # which would evaluate the expensive GitHub gates twice.
+    def analyze_auto_merge(project, client, issue, pr_data:, checks:, reviews:, unresolved_threads: nil,
+      progress_state: nil)
       signals = build_auto_merge_signals(project, client, issue,
         pr_data: pr_data, checks: checks, reviews: reviews, unresolved_threads: unresolved_threads,
         progress_state: progress_state)
-      return false if signals.nil?
+      return if signals.nil?
 
       log_skip_auto_merge(project, issue) if signals.skip_auto_merge?
 
       analysis = evaluate_auto_merge(project, signals)
       stage_auto_merge_snapshot(issue, analysis)
-      analysis.eligible?
+      AutoMergeEvaluation.new(signals:, analysis:)
     end
 
     # Collects the provider-neutral auto-merge preconditions for a
@@ -3466,15 +3484,16 @@ module Activities
       )
     end
 
-    # Delegates to the shared PullRequests::DependenciesResolved so the
-    # scan and the awaiting_approval escalation re-validation
-    # (PullRequests::BlockedOnlyOnApproval) apply the same dependency
-    # gate.
     def supported_dependency_update_merge_author?(login)
       return false if login.blank?
 
       DependabotAutoMergeJob::DEPENDABOT_AUTHORS.include?(login.downcase)
     end
+
+    # Delegates to the shared PullRequests::DependenciesResolved so the
+    # scan and the awaiting_approval escalation re-validation
+    # (PullRequests::BlockedOnlyOnApproval) apply the same dependency
+    # gate.
     def dependencies_resolved?(client, project, issue)
       PullRequests::DependenciesResolved.call(
         collector: pull_request_collector(project, client:),
