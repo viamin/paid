@@ -185,7 +185,6 @@ RSpec.describe Tools::GetPullRequestDetails do
         git_push_pat_fallback_enabled: true,
         git_push_fallback_token: fallback_token
       )
-      allow(Github::AppInstallation).to receive(:token_for).and_return("ghs_installation_token")
       pr.update!(
         merge_permission_rejected_at: Time.current,
         merge_permission_rejection_reason: "refusing to allow a GitHub App to create or update without `workflows` permission"

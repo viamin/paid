@@ -4,13 +4,14 @@ module Capacity
   # @spec INFRA-SPEND-001
   class InfrastructureSpend
     class << self
-      def spent_cents(account: nil, starts_at:, ends_at: Time.current, project: nil, runner: nil)
+      def spent_cents(account: nil, starts_at:, ends_at: Time.current, project: nil, runner: nil, scope_modifier: nil)
         new(
           account: account,
           starts_at: starts_at,
           ends_at: ends_at,
           project: project,
-          runner: runner
+          runner: runner,
+          scope_modifier: scope_modifier
         ).spent_cents
       end
 
@@ -33,12 +34,13 @@ module Capacity
       end
     end
 
-    def initialize(account:, starts_at:, ends_at:, project: nil, runner: nil)
+    def initialize(account:, starts_at:, ends_at:, project: nil, runner: nil, scope_modifier: nil)
       @account = account
       @starts_at = starts_at
       @ends_at = ends_at
       @project = project
       @runner = runner
+      @scope_modifier = scope_modifier
     end
 
     def spent_cents
@@ -48,7 +50,7 @@ module Capacity
 
     private
 
-    attr_reader :account, :ends_at, :project, :runner, :starts_at
+    attr_reader :account, :ends_at, :project, :runner, :scope_modifier, :starts_at
 
     def overlapping_runs
       @overlapping_runs ||= TenantContext.with_system_access do
@@ -62,7 +64,7 @@ module Capacity
         scope = scope.where(projects: { account_id: account.id }) if account
         scope = scope.where(project_id: project.id) if project
         scope = scope.where(runner_id: runner.id) if runner
-        scope
+        scope_modifier ? scope_modifier.call(scope) : scope
       end
     end
 
