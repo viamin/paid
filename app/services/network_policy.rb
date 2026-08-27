@@ -133,7 +133,12 @@ class NetworkPolicy
     #
     # @return [Boolean]
     def subscription_auth?
-      claude_subscription_auth? || codex_subscription_auth? || gemini_subscription_auth? || copilot_subscription_auth?
+      claude_subscription_auth? ||
+        codex_subscription_auth? ||
+        gemini_subscription_auth? ||
+        copilot_subscription_auth? ||
+        opencode_subscription_auth? ||
+        omp_subscription_auth?
     end
 
     # Ensures the agent Docker network exists. Creates it if missing.
@@ -282,6 +287,20 @@ class NetworkPolicy
       dir.present? && File.file?(File.join(dir, "config.json"))
     end
 
+    def opencode_subscription_auth?
+      dir = opencode_config_dir
+      dir.present? && File.file?(File.join(dir, "auth.json"))
+    end
+
+    def omp_subscription_auth?
+      # OMP brokers its Claude-style credentials; a file-backed
+      # `.config/omp/agent/agent.db` or `~/.local/share/omp/agent/agent.db` is
+      # the runtime signal that omp is running in subscription mode rather than
+      # host-forwarded mode.
+      paths = [ omp_config_dir, omp_data_dir ].compact
+      paths.any? { |base| credential_present?(base, omp_agent_db_path) }
+    end
+
     # Returns the Claude config directory path, checking the explicit
     # environment variable first, then auto-detecting standard locations.
     def claude_config_dir
@@ -346,9 +365,54 @@ class NetworkPolicy
       "/.copilot" if credential_present?("/.copilot", "config.json")
     end
 
+    # Returns the OpenCode auth config directory path.
+    def opencode_config_dir
+      if ENV["OPENCODE_CONFIG_DIR"].present?
+        return ENV["OPENCODE_CONFIG_DIR"] if credential_present?(ENV["OPENCODE_CONFIG_DIR"], "auth.json")
+      end
+
+      home = home_dir
+      if home.present?
+        xdg = File.join(home, ".local", "share", "opencode")
+        return xdg if credential_present?(xdg, "auth.json")
+      end
+
+      nil
+    end
+
+    # Returns the OMP config directory (XDG_CONFIG_HOME path).
+    def omp_config_dir
+      if ENV["OMP_CONFIG_DIR"].present?
+        return ENV["OMP_CONFIG_DIR"] if credential_present?(ENV["OMP_CONFIG_DIR"], omp_agent_db_path)
+      end
+
+      home = home_dir
+      return nil unless home.present?
+
+      xdg = File.join(home, ".config", "omp")
+      xdg if credential_present?(xdg, omp_agent_db_path)
+    end
+
+    # Returns the OMP data directory (XDG_DATA_HOME path).
+    def omp_data_dir
+      if ENV["OMP_DATA_DIR"].present?
+        return ENV["OMP_DATA_DIR"] if credential_present?(ENV["OMP_DATA_DIR"], omp_agent_db_path)
+      end
+
+      home = home_dir
+      return nil unless home.present?
+
+      xdg = File.join(home, ".local", "share", "omp")
+      xdg if credential_present?(xdg, omp_agent_db_path)
+    end
+
     # Returns true when the directory exists and contains the given credential file.
     def credential_present?(dir, filename)
       Dir.exist?(dir) && File.file?(File.join(dir, filename))
+    end
+
+    def omp_agent_db_path
+      File.join("agent", "agent.db")
     end
 
     def home_dir

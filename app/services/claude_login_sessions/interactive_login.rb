@@ -225,7 +225,7 @@ module ClaudeLoginSessions
       parsed = ClaudeCredentials::Secret.parse(credentials_json)
       raise "Claude login did not produce a native .credentials.json payload" unless parsed.native_credentials_json?
 
-      credential = existing_or_new_claude_runner_credential
+      credential = existing_or_new_runner_credential
 
       credential.assign_attributes(
         created_by: session.created_by,
@@ -259,14 +259,15 @@ module ClaudeLoginSessions
         account: session.account,
         metadata: {
           credential_name: session.credential_name,
+          runner_key: session.target_runner_key,
           details: [ "Captured native Claude OAuth credential via server-side login session." ]
         }
       )
     end
 
-    def existing_or_new_claude_runner_credential
+    def existing_or_new_runner_credential
       session.account.runner_credentials.find_or_initialize_by(
-        runner_key: "claude",
+        runner_key: session.target_runner_key,
         name: session.credential_name
       )
     end
@@ -279,6 +280,7 @@ module ClaudeLoginSessions
         account: session.account,
         metadata: {
           credential_name: session.credential_name,
+          runner_key: session.target_runner_key,
           details: Array(message).compact
         }
       )

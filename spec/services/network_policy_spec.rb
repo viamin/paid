@@ -534,6 +534,46 @@ RSpec.describe NetworkPolicy, :no_db do
         expect(described_class.agent_network).to eq(described_class::INFRA_NETWORK_NAME)
       end
     end
+
+    context "when only OpenCode credentials exist" do
+      before do
+        allow(Dir).to receive(:exist?).and_return(false)
+        allow(File).to receive(:file?).and_return(false)
+        allow(File).to receive(:file?)
+          .with("/tmp/opencode-test/auth.json").and_return(true)
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("OPENCODE_CONFIG_DIR").and_return("/tmp/opencode-test")
+        allow(Dir).to receive(:exist?).with("/tmp/opencode-test").and_return(true)
+      end
+
+      it "returns true" do
+        expect(described_class.subscription_auth?).to be true
+      end
+
+      it "selects the infrastructure network" do
+        expect(described_class.agent_network).to eq(described_class::INFRA_NETWORK_NAME)
+      end
+    end
+
+    context "when only OMP credentials exist" do
+      before do
+        allow(Dir).to receive(:exist?).and_return(false)
+        allow(File).to receive(:file?).and_return(false)
+        allow(File).to receive(:file?)
+          .with("/tmp/omp-test/agent/agent.db").and_return(true)
+        allow(Dir).to receive(:exist?).with("/tmp/omp-test").and_return(true)
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("OMP_DATA_DIR").and_return("/tmp/omp-test")
+      end
+
+      it "returns true" do
+        expect(described_class.subscription_auth?).to be true
+      end
+
+      it "selects the infrastructure network" do
+        expect(described_class.agent_network).to eq(described_class::INFRA_NETWORK_NAME)
+      end
+    end
   end
 
   describe ".contract" do

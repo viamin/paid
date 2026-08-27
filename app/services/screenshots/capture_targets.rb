@@ -86,6 +86,7 @@ module Screenshots
         path_builder: ->(seed_data) { "/runners/#{seed_data.fetch(:runner).id}/runner_credentials/new" },
         requires_auth: true
       ),
+      runner_login_flow_new: Target.new(slug: "runner_login_flow_new", path_builder: "/runner_login_flows/new", requires_auth: true),
       runner_credential_show: Target.new(
         slug: "runner_credential_show",
         path_builder: ->(seed_data) { "/runners/#{seed_data.fetch(:runner).id}/runner_credentials/#{seed_data.fetch(:runner_credential).id}" },
@@ -273,6 +274,7 @@ module Screenshots
       "providers_controller.rb" => %i[providers providers_new providers_edit],
       "runners_controller.rb" => %i[providers providers_new providers_edit],
       "runner_credentials_controller.rb" => %i[runner_credentials runner_credential_new runner_credential_show],
+      "runner_login_flows_controller.rb" => [ :runner_login_flow_new ],
       "provider_api_keys_controller.rb" => %i[provider_api_keys provider_api_key_new provider_api_key_show provider_api_key_edit],
       "marketplace_entries_controller.rb" => %i[marketplace_entries marketplace_entry_new marketplace_entry_show marketplace_entry_edit],
       "integrations_controller.rb" => %i[integrations integrations_new],
@@ -550,6 +552,7 @@ module Screenshots
       when /\Aadmin\/github_app\/setup\// then [ :admin_github_app_setup ]
       when /\Aintegration_credentials\// then rest_resource_targets(relative_path, "integration_credentials", index: :integration_credentials, new: :integration_credential_new, show: :integration_credential_show, edit: :integration_credential_show)
       when /\Arunner_credentials\// then rest_resource_targets(relative_path, "runner_credentials", index: :runner_credentials, new: :runner_credential_new, show: :runner_credential_show, edit: :runner_credential_show)
+      when /\Arunner_login_flows\// then [ :runner_login_flow_new ]
       when /\Aclaude_login_sessions\// then rest_resource_targets(relative_path, "claude_login_sessions", index: :claude_login_session_new, new: :claude_login_session_new, show: :claude_login_session_show, edit: :claude_login_session_show)
       when /\Acodex_login_sessions\// then rest_resource_targets(relative_path, "codex_login_sessions", index: :codex_login_session_new, new: :codex_login_session_new, show: :codex_login_session_show, edit: :codex_login_session_show)
       when /\Agithub_installations\// then github_installation_targets(relative_path.delete_prefix("github_installations/"))

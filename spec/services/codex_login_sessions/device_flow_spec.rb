@@ -78,6 +78,18 @@ RSpec.describe CodexLoginSessions::DeviceFlow do
       expect(parsed["tokens"]["refresh_token"]).to eq("refresh-1")
     end
 
+    it "stores the credential under the requested target runner key" do
+      session.update!(metadata: { "target_runner_key" => "opencode" })
+      tokens = { "id_token" => "id-1", "access_token" => "access-1", "refresh_token" => "refresh-1" }
+      client = fake_client(token_responses: [
+        CodexLoginSessions::OAuthClient::TokenResponse.new(status: :success, tokens: tokens, error: nil)
+      ])
+
+      described_class.new(session: session, client: client).poll!(session_token: session.session_token)
+
+      expect(session.reload.runner_credential.runner_key).to eq("opencode")
+    end
+
     it "keeps the session pending while authorization is not complete" do
       client = fake_client(token_responses: [
         CodexLoginSessions::OAuthClient::TokenResponse.new(status: :pending, tokens: nil, error: nil)
@@ -99,13 +111,26 @@ RSpec.describe CodexLoginSessions::DeviceFlow do
     end
 
     it "fails the session on access denied" do
+      session.update!(metadata: { "target_runner_key" => "opencode" })
       client = fake_client(token_responses: [
         CodexLoginSessions::OAuthClient::TokenResponse.new(status: :denied, tokens: nil, error: "access_denied")
       ])
+      allow(Audit::RecordEvent).to receive(:call).and_call_original
+
       result = described_class.new(session: session, client: client).poll!(session_token: session.session_token)
 
       expect(result[:status]).to eq(:failed)
       expect(session.reload).to be_failed
+      expect(Audit::RecordEvent).to have_received(:call).with(
+        hash_including(
+          action: "runner.codex_login_failed",
+          metadata: hash_including(
+            credential_name: session.credential_name,
+            runner_key: "opencode",
+            details: [ "authorization_denied" ]
+          )
+        )
+      )
     end
 
     it "fails the session when the OAuth response carries no usable tokens" do

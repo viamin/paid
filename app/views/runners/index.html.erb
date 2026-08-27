@@ -7,6 +7,7 @@
       <p class="mt-1 text-sm text-gray-500">Configure runners available for agent runs, chat sessions, and fallback routing.</p>
     </div>
     <div class="flex items-center gap-3">
+      <%= link_to "Connect Runner", new_runner_login_flow_path(return_to: request.fullpath), class: "rounded-md bg-sky-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-sky-500" %>
       <% if @runners.any? %>
         <button
           data-action="test-all#testAll"

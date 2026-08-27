@@ -811,7 +811,7 @@ RSpec.describe Containers::Provision do
         expect(agent_run).to receive(:log!).with("system", "container.network.ready",
           metadata: hash_including(network: NetworkPolicy::NETWORK_NAME)).ordered
         expect(agent_run).to receive(:log!).with("system", "container.ownership_batch_fixed",
-          metadata: hash_including(dirs_count: 11)).ordered
+          metadata: hash_including(dirs_count: 13)).ordered
         expect(agent_run).to receive(:log!).with("system", "container.codex_config_seeded",
           metadata: hash_including(auth_source: "api_key_proxy")).ordered
         expect(agent_run).to receive(:log!).with("system", "container.firewall.applied",
@@ -857,6 +857,7 @@ RSpec.describe Containers::Provision do
               script.include?("/home/agent/.cache") &&
               script.include?("/home/agent/.gemini") &&
               script.include?("/home/agent/.cursor-agent") &&
+              script.include?("/home/agent/.config/omp") &&
               script.include?("chown agent:agent /home/agent/.codex")
           } ],
           user: "root"
@@ -1081,6 +1082,34 @@ RSpec.describe Containers::Provision do
           expect(tmpfs["/home/agent/.local/share/opencode"]).to include("mode=0700")
           # @spec CONTAINER-RUNTIME-029
           expect(tmpfs["/home/agent/.local/share/opencode"]).to include("size=#{256 * 1024 * 1024}")
+          mock_container
+        end
+
+        service.provision
+      end
+
+      # @spec SUBSCRIPTION-RUNNER-AUTH-005
+      it "configures a writable tmpfs for OMP CLI config" do
+        expect(Docker::Container).to receive(:create) do |config|
+          tmpfs = config["HostConfig"]["Tmpfs"]
+          expect(tmpfs).to have_key("/home/agent/.config/omp")
+          expect(tmpfs["/home/agent/.config/omp"]).to include("mode=0700")
+          expect(tmpfs["/home/agent/.config/omp"]).to include("size=#{64 * 1024 * 1024}")
+          mock_container
+        end
+
+        service.provision
+      end
+
+      # @spec SUBSCRIPTION-RUNNER-AUTH-005
+      it "configures a writable tmpfs for OMP CLI data" do
+        expect(Docker::Container).to receive(:create) do |config|
+          tmpfs = config["HostConfig"]["Tmpfs"]
+          expect(tmpfs).to have_key("/home/agent/.local/share/omp")
+          expect(tmpfs["/home/agent/.local/share/omp"]).to include("mode=0700")
+          # OMP shares the OpenCode SQLite/state layout so it gets the same
+          # 256MB cap as OpenCode (CONTAINER-RUNTIME-029 rationale).
+          expect(tmpfs["/home/agent/.local/share/omp"]).to include("size=#{256 * 1024 * 1024}")
           mock_container
         end
 
@@ -3683,6 +3712,10 @@ RSpec.describe Containers::Provision do
       expect(service.send(:codex_exec_command?, [ "env", "-u", "OPENAI_API_KEY", "codex", "exec", "--json", "prompt" ])).to be true
     end
 
+    it "detects an env assignment wrapped codex exec command" do
+      expect(service.send(:codex_exec_command?, [ "env", 'OPENAI_API_KEY="$KEY"', "codex", "exec", "--json", "prompt" ])).to be true
+    end
+
     it "detects codex exec inside an sh -c api-key auth wrapper" do
       script = 'env OPENAI_API_KEY="$KEY" codex exec --json "$1"'
       expect(service.send(:codex_exec_command?, [ "sh", "-c", script, "--", "prompt" ])).to be true
@@ -3693,8 +3726,17 @@ RSpec.describe Containers::Provision do
       expect(service.send(:codex_exec_command?, [ "sh", "-c", script, "--", "prompt" ])).to be true
     end
 
+    it "detects codex exec after an && shell operator" do
+      script = 'test -n "$OPENAI_API_KEY" && env OPENAI_API_KEY="$OPENAI_API_KEY" codex exec --json "$1"'
+      expect(service.send(:codex_exec_command?, [ "sh", "-c", script, "--", "prompt" ])).to be true
+    end
+
     it "detects codex exec inside an sh -c wrapper passed as a string" do
       expect(service.send(:codex_exec_command?, %(sh -c 'codex exec --json "$1"' -- prompt))).to be true
+    end
+
+    it "returns false for an echoed codex exec string" do
+      expect(service.send(:codex_exec_command?, [ "sh", "-c", 'echo "codex exec --json $1"' ])).to be false
     end
 
     it "returns false for a non-codex agent command" do
@@ -3729,6 +3771,13 @@ RSpec.describe Containers::Provision do
 
     it "rewrites an env -u wrapped codex exec command to redirect stdin from /dev/null" do
       rewritten = service.send(:close_stdin_for_codex_exec, [ "env", "-u", "OPENAI_API_KEY", "codex", "exec", "--json", "prompt" ])
+
+      expect(rewritten.first(2)).to eq([ "sh", "-lc" ])
+      expect(rewritten.last).to end_with(" < /dev/null")
+    end
+
+    it "rewrites an env assignment wrapped codex exec command to redirect stdin from /dev/null" do
+      rewritten = service.send(:close_stdin_for_codex_exec, [ "env", 'OPENAI_API_KEY="$KEY"', "codex", "exec", "--json", "prompt" ])
 
       expect(rewritten.first(2)).to eq([ "sh", "-lc" ])
       expect(rewritten.last).to end_with(" < /dev/null")

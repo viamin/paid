@@ -18,6 +18,14 @@ RSpec.describe "ClaudeLoginSessions" do
       expect(response.body).to include("Claude Browser Login")
     end
 
+    it "renders the omp-targeted browser flow when requested" do
+      get new_claude_login_session_path(target_runner_key: "omp")
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Connect Oh My Pi to Claude")
+      expect(response.body).to include("Oh My Pi")
+    end
+
     # @spec SUBSCRIPTION-RUNNER-AUTH-004
     context "with an active claude runner credential" do
       let!(:runner) { owner_user.runners.find_or_create_by!(runner_key: "claude") }
@@ -36,7 +44,7 @@ RSpec.describe "ClaudeLoginSessions" do
         get new_claude_login_session_path
 
         expect(response).to have_http_status(:ok)
-        expect(response.body).to include("Active Claude credential")
+        expect(response.body).to include("Active #{Runner.display_name_for('claude')} credential")
         expect(response.body).to include("Existing Claude Credential")
         expect(response.body).to include("second concurrent active credential")
 
@@ -67,7 +75,7 @@ RSpec.describe "ClaudeLoginSessions" do
         get new_claude_login_session_path
 
         expect(response).to have_http_status(:ok)
-        expect(response.body).not_to include("Active Claude credential")
+        expect(response.body).not_to include("Active #{Runner.display_name_for('claude')} credential")
       end
     end
 
@@ -124,6 +132,19 @@ RSpec.describe "ClaudeLoginSessions" do
       session = ClaudeLoginSession.order(:id).last
       expect(ClaudeLoginSessions::Start).to have_received(:call).with(session: session)
       expect(response).to redirect_to(claude_login_session_path(session.external_id))
+    end
+
+    it "persists the requested target runner key in session metadata" do
+      post claude_login_sessions_path, params: {
+        claude_login_session: {
+          credential_name: "Oh My Pi Claude Login",
+          metadata: {
+            target_runner_key: "omp"
+          }
+        }
+      }
+
+      expect(ClaudeLoginSession.order(:id).last.metadata["target_runner_key"]).to eq("omp")
     end
 
     it "allows admins" do
