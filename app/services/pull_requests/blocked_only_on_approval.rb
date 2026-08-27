@@ -167,66 +167,93 @@ module PullRequests
     end
 
     # Mirrors the scan's review_stale_for_head?: the head commit must not
-    # postdate the latest approval from any enabled blocking reviewer. The
-    # owner's approval is always checked; the manual reviewer's is checked
-    # separately when the manual method is enabled, so a fresh owner
-    # re-approval cannot mask a stale manual review. Skipped (returns true)
-    # when the head commit timestamp can't be resolved — matches the scan's
-    # behavior of returning false only on a confirmed staleness.
+    # postdate the latest approval from any enabled blocking reviewer,
+    # unless every commit since that approval is a clean merge of the base
+    # branch (see AUTO-MERGE-006). The owner's approval is always checked;
+    # the manual reviewer's is checked separately when the manual method is
+    # enabled, so a fresh owner re-approval cannot mask a stale manual
+    # review. Skipped (returns true) when the head commit timestamp can't
+    # be resolved — matches the scan's behavior of returning false only on
+    # a confirmed staleness.
     def fresh_reviews?(pr_data, reviews)
       return true if reviews.nil?
 
       head_committed_at = fetch_head_commit_date(pr_data)
       return true if head_committed_at.nil?
 
-      !stale_approval?(head_committed_at, reviews)
+      !stale_approval?(head_committed_at, reviews, pr_data)
     end
 
     def fetch_head_commit_date(pr_data)
       collector.fetch_head_commit_date(issue: @issue, pr_data: pr_data)
     end
 
-    def stale_approval?(head_committed_at, reviews)
-      blocking_approval_timestamps(reviews).any? { |ts| head_committed_at > ts }
+    # Mirrors the scan's review_stale_for_head? commit-graph replay: a
+    # timestamp-stale approval is only treated as blocking when the range
+    # between the approved commit and HEAD carries author-side content.
+    # An approval with no recorded commit_id, or a range that can't be
+    # resolved (missing head/base data), fails closed to stale.
+    def stale_approval?(head_committed_at, reviews, pr_data)
+      approvals = blocking_approvals_for(reviews)
+      return false if approvals.empty?
+
+      head_sha = pr_data.head_sha
+      base_branch = pr_data.base_ref
+      return true if head_sha.blank? || base_branch.blank?
+
+      approvals.any? do |approval|
+        next false unless head_committed_at > approval[:submitted_at]
+
+        commit_id = approval[:commit_id]
+        next true if commit_id.blank?
+
+        !collector.only_base_merge_commits_since?(
+          approval_sha: commit_id,
+          head_sha: head_sha,
+          base_branch: base_branch,
+          issue: @issue
+        )
+      end
     end
 
-    # Latest approval timestamp for each enabled blocking reviewer: the
-    # owner (always) and the configured manual reviewer (when the manual
-    # method is enabled). Mirrors the scan's
-    # blocking_approval_timestamps so both sides hold the same approvals
-    # to the same freshness rule.
-    def blocking_approval_timestamps(reviews)
-      timestamps = []
+    # Latest {submitted_at:, commit_id:} pair for each enabled blocking
+    # reviewer: the owner (always) and the configured manual reviewer
+    # (when the manual method is enabled). Mirrors the scan's
+    # blocking_approvals_for so both sides hold the same approvals to the
+    # same freshness rule, including the commit_id needed to replay the
+    # clean-base-merge check.
+    def blocking_approvals_for(reviews)
+      approvals = []
 
-      owner_ts = latest_approval_timestamp(reviews, @project.owner_reviewer_login)
-      timestamps << owner_ts if owner_ts
+      owner_approval = latest_approval_for(reviews, @project.owner_reviewer_login)
+      approvals << owner_approval if owner_approval
 
       if @project.review_method_enabled?("manual")
         reviewer = @project.review_method(:manual).reviewer_login
-        if reviewer.present?
-          manual_ts = latest_approval_timestamp(reviews, reviewer, trust_required: false)
-          timestamps << manual_ts if manual_ts
-        end
+        manual_approval = latest_approval_for(reviews, reviewer, trust_required: false)
+        approvals << manual_approval if manual_approval
       end
 
-      timestamps
+      approvals
     end
 
-    # Most recent submitted_at among the reviewer's APPROVED reviews from
-    # trusted non-bot users; nil when the reviewer is unconfigured or has
-    # not approved.
-    def latest_approval_timestamp(reviews, reviewer_login, trust_required: true)
+    # Most recent {submitted_at:, commit_id:} among the reviewer's
+    # APPROVED reviews from trusted non-bot users; nil when the reviewer
+    # is unconfigured or has not approved.
+    def latest_approval_for(reviews, reviewer_login, trust_required: true)
       return nil if reviewer_login.blank?
 
-      reviews
-        .select do |r|
-          r[:state].to_s.upcase == "APPROVED" &&
-            r[:user_login]&.casecmp?(reviewer_login.strip) &&
-            approval_login_allowed?(r[:user_login], trust_required:) &&
-            !bot_user?(r[:user_login])
-        end
-        .filter_map { |r| r[:submitted_at] }
-        .max
+      approvals = reviews.select do |r|
+        r[:state].to_s.upcase == "APPROVED" &&
+          r[:user_login]&.casecmp?(reviewer_login.strip) &&
+          approval_login_allowed?(r[:user_login], trust_required:) &&
+          !bot_user?(r[:user_login])
+      end
+
+      latest = approvals.filter_map { |r| r[:submitted_at] }.max
+      return nil if latest.nil?
+
+      { submitted_at: latest, commit_id: approvals.find { |r| r[:submitted_at] == latest }&.dig(:commit_id) }
     end
 
     def approval_login_allowed?(login, trust_required:)

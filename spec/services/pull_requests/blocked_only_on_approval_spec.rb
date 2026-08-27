@@ -24,9 +24,11 @@ RSpec.describe PullRequests::BlockedOnlyOnApproval do
     allow(GithubClient).to receive(:new).and_return(client)
   end
 
-  def green_pr_data(sha: "abc123", mergeable: true, draft: false, state: "open", login: "someone-else", labels: [])
+  def green_pr_data(sha: "abc123", mergeable: true, draft: false, state: "open", login: "someone-else", labels: [],
+    base_branch: "main")
     OpenStruct.new(
       head: OpenStruct.new(sha: sha, repo: OpenStruct.new(fork: false)),
+      base: OpenStruct.new(ref: base_branch),
       mergeable: mergeable,
       draft: draft,
       number: issue.github_number,
@@ -76,6 +78,30 @@ RSpec.describe PullRequests::BlockedOnlyOnApproval do
     allow(client).to receive(:review_threads)
       .with(project.full_name, issue.github_number)
       .and_return(threads)
+  end
+
+  # Mirrors ScanPaidPrsActivity's stub_clean_base_merge: stubs the commit
+  # graph so only_base_merge_commits_since? classifies the range between
+  # approval_sha and head_sha as a single clean merge of base_branch.
+  def stub_clean_base_merge(approval_sha:, head_sha:, base_tip_sha:, base_branch: "main")
+    merge_tree_sha = "merge_tree_sha"
+    merge_commit = OpenStruct.new(
+      commit: OpenStruct.new(
+        tree: OpenStruct.new(sha: merge_tree_sha),
+        committer: OpenStruct.new(date: 1.hour.ago)
+      ),
+      parents: [ OpenStruct.new(sha: approval_sha), OpenStruct.new(sha: base_tip_sha) ]
+    )
+    first_parent_commit = OpenStruct.new(commit: OpenStruct.new(tree: OpenStruct.new(sha: merge_tree_sha)))
+
+    allow(client).to receive(:compare)
+      .with(project.full_name, approval_sha, head_sha)
+      .and_return(OpenStruct.new(status: "ahead"))
+    allow(client).to receive(:commit).with(project.full_name, head_sha).and_return(merge_commit)
+    allow(client).to receive(:commit).with(project.full_name, approval_sha).and_return(first_parent_commit)
+    allow(client).to receive(:ref)
+      .with(project.full_name, "heads/#{base_branch}")
+      .and_return(OpenStruct.new(object: OpenStruct.new(sha: base_tip_sha)))
   end
 
   def stub_issue_comments(comments = [])
@@ -429,6 +455,27 @@ RSpec.describe PullRequests::BlockedOnlyOnApproval do
         stub_issue_comments
 
         expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(false)
+      end
+
+      # @spec PR-ESCALATION-025
+      # @spec AUTO-MERGE-006
+      it "treats a timestamp-stale approval as fresh when only a clean base-branch merge landed since" do
+        approval_sha = "approved_sha"
+        head_sha = "merge_sha"
+
+        stub_pr_data(green_pr_data(sha: head_sha, base_branch: "main"))
+        stub_checks(head_sha, green_checks)
+        stub_reviews(
+          green_reviews + [
+            { id: 2, user_login: "alice", state: "APPROVED", body: "LGTM",
+              submitted_at: 3.hours.ago, commit_id: approval_sha }
+          ]
+        )
+        stub_review_threads([])
+        stub_issue_comments
+        stub_clean_base_merge(approval_sha: approval_sha, head_sha: head_sha, base_tip_sha: "base_tip_sha")
+
+        expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(true)
       end
 
       # @spec PR-ESCALATION-025
