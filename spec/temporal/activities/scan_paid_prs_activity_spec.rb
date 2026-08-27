@@ -4495,7 +4495,6 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         project.update!(
           owner_reviewer_login: "viamin",
-          allowed_github_usernames: [ "alice" ],
           review_settings: {
             "enabled" => true,
             "methods" => { "manual" => { "enabled" => true, "reviewer_login" => "alice" } }

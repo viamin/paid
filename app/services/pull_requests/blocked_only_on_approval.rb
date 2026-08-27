@@ -217,12 +217,15 @@ module PullRequests
     # * a CHANGES_REQUESTED review from a trusted non-bot user, not yet
     #   addressed by a later completed run
     # * a fresh trusted-human conversation comment that still needs follow-up
+    # * a non-clean review or unresolved thread from a bot the project has
+    #   not enabled, when address_all_bot_reviews? is on
     # * the paid-skip-auto-merge label on the PR (handled in quick_preconditions)
     def no_outstanding_review_feedback?(pr_data, reviews, unresolved_threads)
       return false if recent_trusted_conversation_comments?
       return false if outstanding_review_threads?(unresolved_threads)
       return false if changes_requested?(reviews)
       return false unless review_bot_status_clear?(reviews)
+      return false unless non_enabled_bot_reviews_clear?(reviews, unresolved_threads)
 
       true
     end
@@ -230,6 +233,7 @@ module PullRequests
     def recent_trusted_conversation_comments?
       cutoff = last_completed_run&.completed_at
       comments = collector.fetch_recent_issue_comments(issue: @issue, cutoff:)
+      return true if comments.nil?
 
       comments.any? do |comment|
         login = comment.user&.login
@@ -272,6 +276,30 @@ module PullRequests
       return false unless RunnerSupport.runner_bot_username_for?("paid_agent", review[:user_login])
 
       review[:body]&.include?(Activities::ScanPaidPrsActivity::PAID_REVIEW_CLEAN_MARKER) || false
+    end
+
+    # Cheap mirror of the scan's check_non_enabled_bot_reviews: when the
+    # project has address_all_bot_reviews? on, a review or unresolved
+    # thread from a bot outside the enabled set also blocks, not just
+    # bots the project explicitly configured. Simplified relative to the
+    # scan's version — it does not replay the body-only-bot "needs
+    # followup"/diff-touches-reviewed-files nuance, so it treats any
+    # non-clean review from a non-enabled bot as blocking. That is
+    # conservative in the same direction as the rest of this class: it
+    # can hold a PR the scan would release, never the reverse.
+    def non_enabled_bot_reviews_clear?(reviews, unresolved_threads)
+      return true unless @project.address_all_bot_reviews?
+
+      non_enabled_logins = RunnerSupport.all_bot_usernames - @project.enabled_review_bot_logins
+      return true if non_enabled_logins.empty?
+
+      return false if unresolved_threads.any? do |thread|
+        thread[:comments].any? { |c| non_enabled_logins.include?(c[:author]&.downcase) }
+      end
+
+      Array(reviews)
+        .select { |r| non_enabled_logins.include?(r[:user_login]&.downcase) }
+        .all? { |r| paid_agent_clean_review?(r) || Activities::ScanPaidPrsActivity::REVIEW_BOT_CLEAN_PATTERN.match?(r[:body]) }
     end
 
     # Mirrors the scan's human_review_thread_triggers + review_bot_thread_triggers:
@@ -363,35 +391,15 @@ module PullRequests
       )
     end
 
-    # Conservative stand-in for the scan's dependencies_resolved? check.
-    # Only re-resolves when the issue body actually declares dependencies —
-    # the common case for an approval-only wait is no dependencies, so we
-    # short-circuit to true. When dependencies are declared we delegate to
-    # the same PullRequestCollector the scan uses, so the answer matches.
+    # Shared with the scan via PullRequests::DependenciesResolved so both
+    # sides apply the same dependency gate.
     def dependencies_resolved?
-      local_deps, cross_deps = Issues::ParseDependencies.extract(
-        body: @issue.body,
-        comments: collector.dependency_comment_bodies(issue: @issue)
+      PullRequests::DependenciesResolved.call(
+        collector: collector,
+        project: @project,
+        issue: @issue,
+        logger: @logger
       )
-
-      return true if local_deps.empty? && cross_deps.empty?
-
-      same_repo = [ @project.owner.downcase, @project.repo.downcase ]
-      numbers = cross_deps.each_with_object(Set.new) do |((owner, repo, number), _), set|
-        return false unless [ owner, repo ] == same_repo
-
-        set << number
-      end
-
-      (local_deps.keys.to_set | numbers).all? { |number| collector.dependency_resolved?(number: number) }
-    rescue GithubClient::Error => e
-      @logger.warn(
-        message: "pr_review.dependency_check_failed",
-        project_id: @project.id,
-        pr_number: @issue.github_number,
-        error: e.message
-      )
-      false
     end
   end
 end

@@ -21,9 +21,9 @@ module Reviews
   #     (review bot status + thread resolution). Not re-checked here.
   #   ci_action — the check run named by action_name must be present
   #     and have a successful conclusion.
-  #   manual — at least one trusted non-bot user must have submitted
-  #     an APPROVED review (distinct from owner approval, which gates
-  #     the merge trigger itself).
+  #   manual — the configured reviewer_login's latest review must be
+  #     APPROVED (distinct from owner approval, which gates the merge
+  #     trigger itself).
   class BlockingMethodsComplete
     def self.call(project:, issue:, reviews:, checks:, pr_data:, progress_state: nil)
       return true unless project.review_enabled? && project.wait_for_reviews?
@@ -122,37 +122,34 @@ module Reviews
     private_class_method :claude_review_action?
 
     # Manual review is complete when the configured reviewer_login's latest
-    # trusted non-bot review is APPROVED. This matches GitHub's
-    # latest-review-wins semantics, so a later COMMENTED or
-    # CHANGES_REQUESTED review re-opens the gate instead of leaving a stale
-    # earlier approval in force.
+    # review is APPROVED. This matches GitHub's latest-review-wins
+    # semantics, so a later COMMENTED or CHANGES_REQUESTED review re-opens
+    # the gate instead of leaving a stale earlier approval in force.
+    #
+    # Deliberately trust-free: the configured reviewer_login is itself the
+    # trust declaration (a project owner names them explicitly as the
+    # manual gate), independent of the separate allowed_github_usernames
+    # list used to filter comments and threads. Requiring
+    # trusted_github_user? here would deadlock any project whose manual
+    # reviewer is not also on that list.
     def self.manual_review_complete?(project:, reviews:)
       return false if reviews.nil?
 
       reviewer = project.review_method(:manual).reviewer_login
       return false if reviewer.blank?
 
-      latest_review = latest_trusted_non_bot_review_for(project:, reviews:, reviewer_login: reviewer)
+      latest_review = latest_review_for(reviews:, reviewer_login: reviewer)
       latest_review&.dig(:state) == "APPROVED"
     end
 
-    def self.latest_trusted_non_bot_review_for(project:, reviews:, reviewer_login:)
+    def self.latest_review_for(reviews:, reviewer_login:)
       normalized_login = reviewer_login.strip.downcase
 
-      reviewer_reviews = reviews.select do |review|
-        review[:user_login]&.downcase == normalized_login &&
-          project.trusted_github_user?(review[:user_login]) &&
-          !bot_user?(review[:user_login])
-      end
+      reviewer_reviews = reviews.select { |review| review[:user_login]&.downcase == normalized_login }
       return nil if reviewer_reviews.empty?
 
       reviewer_reviews.max_by { |review| review[:submitted_at] || Time.at(0) }
     end
-    private_class_method :latest_trusted_non_bot_review_for
-
-    def self.bot_user?(login)
-      Reviews::BotDetection.bot_user?(login)
-    end
-    private_class_method :bot_user?
+    private_class_method :latest_review_for
   end
 end

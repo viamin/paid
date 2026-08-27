@@ -304,6 +304,20 @@ RSpec.describe PullRequests::BlockedOnlyOnApproval do
       expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(false)
     end
 
+    # @spec PR-ESCALATION-025
+    it "returns false when the GitHub API fails to fetch recent issue comments (safe default)" do
+      sha = "abc123"
+      stub_pr_data(green_pr_data(sha: sha))
+      stub_checks(sha, green_checks)
+      stub_reviews(green_reviews)
+      stub_review_threads([])
+      stub_head_commit(sha: sha)
+      stub_issue_comments
+      allow(client).to receive(:recent_issue_comments).and_raise(GithubClient::Error, "transient")
+
+      expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(false)
+    end
+
     it "returns true when the PR author is the project's own agent bot (self-authored bypass)" do
       sha = "abc123"
       stub_pr_data(green_pr_data(sha: sha, login: "paid-agents[bot]"))
@@ -477,6 +491,68 @@ RSpec.describe PullRequests::BlockedOnlyOnApproval do
         stub_issue_comments
 
         expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(false)
+      end
+    end
+
+    context "with address_all_bot_reviews enabled and a non-configured bot review" do
+      before do
+        project.update!(review_settings: {
+          "enabled" => true,
+          "address_all_bot_reviews" => true,
+          "methods" => { "copilot" => { "enabled" => true } }
+        })
+      end
+
+      # @spec PR-ESCALATION-025
+      it "returns false when a non-configured bot has a non-clean review" do
+        sha = "abc123"
+        stub_pr_data(green_pr_data(sha: sha))
+        stub_checks(sha, green_checks)
+        stub_reviews(
+          green_reviews + [
+            { id: 200, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+              body: "Here are some suggestions.", submitted_at: 30.minutes.ago }
+          ]
+        )
+        stub_review_threads([])
+        stub_head_commit(sha: sha)
+        stub_issue_comments
+
+        expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(false)
+      end
+
+      # @spec PR-ESCALATION-025
+      it "returns false when a non-configured bot left an unresolved thread" do
+        sha = "abc123"
+        stub_pr_data(green_pr_data(sha: sha))
+        stub_checks(sha, green_checks)
+        stub_reviews(green_reviews)
+        stub_review_threads([
+          { id: 1, is_resolved: false,
+            comments: [ { author: "chatgpt-codex-connector", body: "Fix this", path: "a.rb", line: 1 } ] }
+        ])
+        stub_head_commit(sha: sha)
+        stub_issue_comments
+
+        expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(false)
+      end
+
+      # @spec PR-ESCALATION-025
+      it "returns true when the non-configured bot's review is clean" do
+        sha = "abc123"
+        stub_pr_data(green_pr_data(sha: sha))
+        stub_checks(sha, green_checks)
+        stub_reviews(
+          green_reviews + [
+            { id: 200, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+              body: "Codex reviewed 3 files and generated no comments.", submitted_at: 30.minutes.ago }
+          ]
+        )
+        stub_review_threads([])
+        stub_head_commit(sha: sha)
+        stub_issue_comments
+
+        expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(true)
       end
     end
 

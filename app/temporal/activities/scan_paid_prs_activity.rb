@@ -2797,7 +2797,7 @@ module Activities
     def check_conversation_comments(client, project, issue, last_run)
       cutoff = last_run&.completed_at
       comments = pull_request_collector(project, client:)
-        .fetch_recent_issue_comments(issue:, cutoff:)
+        .fetch_recent_issue_comments(issue:, cutoff:) || []
 
       relevant = comments.select do |c|
         login = c.user&.login
@@ -3404,35 +3404,17 @@ module Activities
         mergeable
     end
 
+    # Delegates to the shared PullRequests::DependenciesResolved so the
+    # scan and the awaiting_approval escalation re-validation
+    # (PullRequests::BlockedOnlyOnApproval) apply the same dependency
+    # gate.
     def dependencies_resolved?(client, project, issue)
-      local_deps, cross_deps = Issues::ParseDependencies.extract(
-        body: issue.body,
-        comments: dependency_comment_bodies(client, project, issue)
+      PullRequests::DependenciesResolved.call(
+        collector: pull_request_collector(project, client:),
+        project: project,
+        issue: issue,
+        logger: logger
       )
-
-      return true if local_deps.empty? && cross_deps.empty?
-
-      same_repo = [ project.owner.downcase, project.repo.downcase ]
-      same_repo_numbers = cross_deps.each_with_object(Set.new) do |((owner, repo, number), _), numbers|
-        return false if [ owner, repo ] != same_repo
-
-        numbers << number
-      end
-
-      (local_deps.keys.to_set | same_repo_numbers).all? do |number|
-        dependency_resolved?(client, project, number)
-      end
-    rescue GithubClient::Error => e
-      log_signal_error("dependencies_resolved", project, issue, e)
-      false
-    end
-
-    def dependency_comment_bodies(client, project, issue)
-      pull_request_collector(project, client:).dependency_comment_bodies(issue:)
-    end
-
-    def dependency_resolved?(client, project, number)
-      pull_request_collector(project, client:).dependency_resolved?(number:)
     end
 
     def evaluate_auto_merge(project, signals)
