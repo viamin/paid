@@ -10,6 +10,7 @@ module PageLoadPerformance
   #
   # @spec PAGE-LOAD-REGRESSION-001, PAGE-LOAD-REGRESSION-002
   class EvaluateRegressions
+    OPEN_FINDING_UNIQUE_CONSTRAINT = "idx_page_load_findings_one_open_per_route"
     TRAILING_WINDOW = 20
 
     def self.call(...) = new(...).call
@@ -77,28 +78,22 @@ module PageLoadPerformance
 
     # @spec PAGE-LOAD-REGRESSION-005, PAGE-LOAD-REGRESSION-009
     def raise_finding(measurement, baseline, metric, before, current)
-      finding = PageLoadRegressionFinding.find_or_initialize_by(
-        project_id: project.id,
-        pull_request_number: measurement.pull_request_number,
-        route_name: measurement.route_name,
-        status: "open"
+      attributes = finding_attributes(
+        measurement: measurement,
+        baseline: baseline,
+        metric: metric,
+        before: before,
+        current: current
       )
-      finding.assign_attributes(
-        account_id: project.account_id,
-        agent_run_id: agent_run.id,
-        comparison_metric: metric,
-        baseline_ms: before,
-        current_ms: current,
-        delta_ms: current - before,
-        delta_ratio: ((current - before).to_f / before).round(4),
-        baseline_commit_sha: baseline.commit_sha,
-        commit_sha: measurement.commit_sha,
-        route_path: measurement.route_path,
-        sample_spread: { "baseline" => baseline.samples[metric], "current" => measurement.samples[metric] }.compact,
-        changed_files: changed_files,
-        actionable: hints.key?(measurement.route_name.to_s)
-      )
+      finding = open_finding_scope(measurement).first_or_initialize
+      finding.assign_attributes(attributes)
       finding.save!
+      finding
+    rescue ActiveRecord::RecordNotUnique => error
+      raise unless open_finding_conflict?(error)
+
+      finding = open_finding_scope(measurement).sole
+      finding.update!(attributes)
       finding
     end
 
@@ -118,6 +113,38 @@ module PageLoadPerformance
         .where(project_id: project.id, pull_request_number: agent_run.pull_request_number)
         .open_findings
         .to_a
+    end
+
+    def open_finding_scope(measurement)
+      PageLoadRegressionFinding.where(
+        project_id: project.id,
+        pull_request_number: measurement.pull_request_number,
+        route_name: measurement.route_name,
+        status: "open"
+      )
+    end
+
+    def finding_attributes(measurement:, baseline:, metric:, before:, current:)
+      {
+        account_id: project.account_id,
+        agent_run_id: agent_run.id,
+        comparison_metric: metric,
+        baseline_ms: before,
+        current_ms: current,
+        delta_ms: current - before,
+        delta_ratio: ((current - before).to_f / before).round(4),
+        baseline_commit_sha: baseline.commit_sha,
+        commit_sha: measurement.commit_sha,
+        route_path: measurement.route_path,
+        sample_spread: { "baseline" => baseline.samples[metric], "current" => measurement.samples[metric] }.compact,
+        changed_files: changed_files,
+        actionable: hints.key?(measurement.route_name.to_s)
+      }
+    end
+
+    def open_finding_conflict?(error)
+      message = error.cause&.message || error.message
+      message&.include?(OPEN_FINDING_UNIQUE_CONSTRAINT)
     end
 
     def comparison(measurement, status, metric, baseline_ms, current_ms, finding: nil)
