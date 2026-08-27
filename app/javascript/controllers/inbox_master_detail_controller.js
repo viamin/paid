@@ -22,10 +22,9 @@ export default class extends Controller {
   }
 
   open(event) {
-    // List row links navigate inside a Turbo Frame, so the list partial does
-    // not re-render with the new selection. Move the active-row highlight
-    // here so the visual selection follows the click without waiting for a
-    // full-page reload.
+    // The route changes on selection now, but we still update the mobile
+    // pane state and row highlight immediately so the click feels responsive
+    // before the navigation completes.
     this.highlightRow(event.currentTarget)
     this.detailOpenValue = true
   }

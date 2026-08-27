@@ -155,7 +155,7 @@ module Projects
         if requested.present? && safe_queue_return_to?(requested)
           requested
         elsif queue_param == "dashboard_inbox"
-          dashboard_inbox_path(
+          inbox_path(
             project_id: queue_project&.id,
             kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND
           )
@@ -188,7 +188,7 @@ module Projects
     def safe_queue_return_to?(path)
       return false if path.blank?
 
-      path.start_with?(dashboard_needs_input_path) || path.start_with?(dashboard_inbox_path)
+      path.start_with?(dashboard_needs_input_path) || path.start_with?(inbox_path) || path.start_with?(dashboard_inbox_path)
     end
 
     def empty_questions_redirect_path
@@ -233,7 +233,7 @@ module Projects
     # Turbo Frame reloads the empty state.
     def inbox_redirect_target(next_entry:)
       notice_suffix = next_entry ? "Loading next entry." : inbox_drained_notice
-      redirect_to dashboard_inbox_path(**inbox_redirect_params(selected_entry: next_entry, detail_view: next_entry.present?)),
+      redirect_to inbox_redirect_path(next_entry),
         notice: "Answers posted to GitHub #{issue_kind_label} ##{@issue.github_number}. #{notice_suffix}"
     end
 
@@ -274,13 +274,14 @@ module Projects
       end
     end
 
-    def inbox_redirect_params(selected_entry:, detail_view:)
-      {
+    def inbox_redirect_path(selected_entry)
+      base_params = {
         project_id: inbox_scoped_project&.id,
-        kind: inbox_kind,
-        selected: selected_entry && helpers.inbox_selected_param(selected_entry),
-        view: detail_view ? "detail" : nil
+        kind: inbox_kind
       }.compact
+      return inbox_path(**base_params) unless selected_entry
+
+      inbox_entry_path(selected_entry, **base_params)
     end
 
     # Notice copy when the operator has finished their clarifying answer and
@@ -300,7 +301,7 @@ module Projects
     # pane scrolls back into view.
     def failure_redirect_path
       if inbox_mode?
-        dashboard_inbox_path(**inbox_redirect_params(selected_entry: inbox_current_entry, detail_view: true))
+        inbox_redirect_path(inbox_current_entry)
       elsif queue_mode?
         project_issue_clarifying_questions_path(@project, @issue, queue_redirect_params)
       else
@@ -310,6 +311,7 @@ module Projects
 
     def inbox_current_entry
       Inbox::Queue::Entry.new(
+        id: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{@issue.id}",
         kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
         record: @issue
       )

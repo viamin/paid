@@ -30,7 +30,7 @@ RSpec.describe "Projects::ClarifyingQuestions" do
   end
 
   def dashboard_queue_path_for(project)
-    dashboard_inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
+    inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
   end
 
   def dashboard_queue_params(project)
@@ -174,7 +174,7 @@ RSpec.describe "Projects::ClarifyingQuestions" do
           return_to: "//evil.example/path"
         }
 
-        expect(response).to redirect_to(dashboard_inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND))
+        expect(response).to redirect_to(inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND))
       end
     end
 
@@ -305,12 +305,12 @@ RSpec.describe "Projects::ClarifyingQuestions" do
           return_to: "https://evil.example/path"
         }
 
-        expect(response).to redirect_to(dashboard_inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND))
+        expect(response).to redirect_to(inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND))
       end
 
       it "preserves the validated queue return target when posting fails" do
         project.update!(auto_pick_enabled: true, active: true)
-        return_to = dashboard_inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
+        return_to = inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
         allow(github_client).to receive(:add_comment).and_raise(GithubClient::Error, "boom")
 
         post project_issue_clarifying_questions_path(project, issue), params: {
@@ -350,10 +350,10 @@ RSpec.describe "Projects::ClarifyingQuestions" do
           answers: answers,
           queue: "dashboard_inbox",
           queue_project_id: other_project.id,
-          return_to: dashboard_inbox_path(project_id: other_project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
+          return_to: inbox_path(project_id: other_project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
         }
 
-        expect(response).to redirect_to(dashboard_inbox_path(project_id: other_project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND))
+        expect(response).to redirect_to(inbox_path(project_id: other_project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND))
       end
     end
 
@@ -431,7 +431,7 @@ RSpec.describe "Projects::ClarifyingQuestions" do
           a_string_matching(/Clarifying question answers/)
         )
         expect_pr_answers_cleared(pull_request)
-        expect(response).to redirect_to(dashboard_inbox_path(kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND))
+        expect(response).to redirect_to(inbox_path(kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND))
         follow_redirect!
         expect(response.body).to include("Answers posted to GitHub PR ##{pull_request.github_number}")
       end
@@ -478,15 +478,23 @@ RSpec.describe "Projects::ClarifyingQuestions" do
         post project_issue_clarifying_questions_path(project, issue), params: params
       end
 
-      def expect_inbox_redirect(project_id: nil, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND, selected:, view: "detail")
-        expect(response).to redirect_to(
-          dashboard_inbox_path(
-            project_id: project_id,
-            kind: kind,
-            selected: selected,
-            view: view
+      def expect_inbox_redirect(project_id: nil, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND, selected: nil)
+        if selected
+          expect(response).to redirect_to(
+            inbox_entry_path(
+              selected,
+              project_id: project_id,
+              kind: kind
+            )
           )
-        )
+        else
+          expect(response).to redirect_to(
+            inbox_path(
+              project_id: project_id,
+              kind: kind
+            )
+          )
+        end
       end
 
       it "redirects to the next inbox entry when more are waiting in the same scope" do
@@ -508,13 +516,7 @@ RSpec.describe "Projects::ClarifyingQuestions" do
 
         submit_inbox_answers(issue:, questions:, answers:, inbox_project_id: project.id)
 
-        expect(response).to redirect_to(
-          dashboard_inbox_path(
-            project_id: project.id,
-            kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND
-          )
-        )
-        expect(response).not_to have_attributes(location: /selected=/)
+        expect_inbox_redirect(project_id: project.id, selected: nil)
       end
 
       it "preserves the all-projects inbox scope when auto-advancing" do
@@ -586,13 +588,9 @@ RSpec.describe "Projects::ClarifyingQuestions" do
           inbox_project_id: project.id
         }
 
-        expect(response).to redirect_to(
-          dashboard_inbox_path(
-            project_id: project.id,
-            kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
-            selected: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{issue.id}",
-            view: "detail"
-          )
+        expect_inbox_redirect(
+          project_id: project.id,
+          selected: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{issue.id}"
         )
       end
 
@@ -638,11 +636,10 @@ RSpec.describe "Projects::ClarifyingQuestions" do
 
       it "consumes the pending-answers flash after a single redirect so a refresh clears them" do
         project.update!(auto_pick_enabled: true, active: true)
-        detail_path = dashboard_inbox_path(
+        detail_path = inbox_entry_path(
+          "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{issue.id}",
           project_id: project.id,
-          kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
-          selected: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{issue.id}",
-          view: "detail"
+          kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND
         )
         submit_inbox_answers(issue:, questions:, answers: [ "First answer", "" ], inbox_project_id: project.id)
         follow_redirect!
@@ -828,7 +825,7 @@ RSpec.describe "Projects::ClarifyingQuestions" do
           submit_inbox_answers(issue:, questions:, answers:,
             inbox_project_id: project.id, inbox_kind: nil)
 
-          expect(response).to redirect_to(dashboard_inbox_path(project_id: project.id))
+          expect(response).to redirect_to(inbox_path(project_id: project.id))
           expect(response.location).not_to include("kind=")
           expect(response.location).not_to include("selected=")
         end
