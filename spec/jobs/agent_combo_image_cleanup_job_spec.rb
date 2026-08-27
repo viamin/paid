@@ -1,0 +1,106 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe AgentComboImageCleanupJob do
+  let(:job) { described_class.new }
+  let(:backend) { instance_double(Containers::Backends::Base, identifier: "local") }
+  let(:tag) { "paid-agent:go-node-python-ruby" }
+  let(:stale_labels) { { Containers::ComboImageBuilder::BUILT_AT_LABEL => 31.days.ago.iso8601 } }
+  let(:fresh_labels) { { Containers::ComboImageBuilder::BUILT_AT_LABEL => 1.day.ago.iso8601 } }
+
+  before do
+    allow(Containers).to receive(:all_backends).and_return([ backend ])
+    allow(Project).to receive(:find_each)
+  end
+
+  def stub_combo_images(*entries)
+    allow(Containers::ComboImageBuilder).to receive(:combo_images).with(backend: backend).and_return(entries)
+  end
+
+  describe "#perform" do
+    it "queries container usage by ancestor image, not the unsupported image filter" do
+      stub_combo_images(image: tag, id: "sha256:abc", labels: stale_labels)
+      allow(backend).to receive(:list_containers)
+        .with(filters: { ancestor: [ tag ] }.to_json)
+        .and_return([])
+      allow(backend).to receive(:delete_image)
+
+      job.perform
+
+      expect(backend).to have_received(:list_containers).with(filters: { ancestor: [ tag ] }.to_json)
+    end
+
+    it "prunes a stale, unreferenced, unused combo tag" do
+      stub_combo_images(image: tag, id: "sha256:abc", labels: stale_labels)
+      allow(backend).to receive(:list_containers).and_return([])
+      allow(backend).to receive(:delete_image)
+
+      job.perform
+
+      expect(backend).to have_received(:delete_image).with(tag, force: true)
+    end
+
+    it "keeps a combo tag still referenced by a project" do
+      project = instance_double(Project)
+      allow(Project).to receive(:find_each).and_yield(project)
+      allow(Containers::ImageResolver).to receive(:resolve).with(project).and_return(tag)
+      stub_combo_images(image: tag, id: "sha256:abc", labels: stale_labels)
+      allow(backend).to receive(:delete_image)
+
+      job.perform
+
+      expect(backend).not_to have_received(:delete_image)
+    end
+
+    it "keeps a combo tag whose build timestamp is within the retention window" do
+      stub_combo_images(image: tag, id: "sha256:abc", labels: fresh_labels)
+      allow(backend).to receive(:list_containers).and_return([])
+      allow(backend).to receive(:delete_image)
+
+      job.perform
+
+      expect(backend).not_to have_received(:delete_image)
+    end
+
+    it "keeps a combo tag currently in use by a container" do
+      stub_combo_images(image: tag, id: "sha256:abc", labels: stale_labels)
+      allow(backend).to receive(:list_containers)
+        .with(filters: { ancestor: [ tag ] }.to_json)
+        .and_return([ instance_double(Docker::Container) ])
+      allow(backend).to receive(:delete_image)
+
+      job.perform
+
+      expect(backend).not_to have_received(:delete_image)
+    end
+
+    it "conservatively keeps a combo tag when the usage check itself fails" do
+      stub_combo_images(image: tag, id: "sha256:abc", labels: stale_labels)
+      allow(backend).to receive(:list_containers).and_raise(Docker::Error::DockerError, "daemon error")
+      allow(backend).to receive(:delete_image)
+
+      job.perform
+
+      expect(backend).not_to have_received(:delete_image)
+    end
+
+    it "continues sweeping other backends when one backend fails" do
+      other_backend = instance_double(Containers::Backends::Base, identifier: "worker-1")
+      allow(Containers).to receive(:all_backends).and_return([ backend, other_backend ])
+      allow(Containers::ComboImageBuilder).to receive(:combo_images).with(backend: backend)
+        .and_raise(Docker::Error::DockerError, "daemon unreachable")
+      stub_combo_images_for(other_backend, image: tag, id: "sha256:abc", labels: stale_labels)
+      allow(other_backend).to receive(:list_containers).and_return([])
+      allow(other_backend).to receive(:delete_image)
+
+      expect { job.perform }.not_to raise_error
+
+      expect(other_backend).to have_received(:delete_image).with(tag, force: true)
+    end
+  end
+
+  def stub_combo_images_for(target_backend, **entry)
+    allow(Containers::ComboImageBuilder).to receive(:combo_images).with(backend: target_backend).and_return([ entry ])
+  end
+end

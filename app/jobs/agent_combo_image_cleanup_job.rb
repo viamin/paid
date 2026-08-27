@@ -62,7 +62,7 @@ class AgentComboImageCleanupJob < ApplicationJob
   end
 
   def tag_in_use?(tag, backend)
-    backend.list_containers(filters: { image: [ tag ] }.to_json).any?
+    backend.list_containers(filters: { ancestor: [ tag ] }.to_json).any?
   rescue Docker::Error::DockerError => e
     Rails.logger.warn(
       message: "agent_combo_image_cleanup.usage_check_failed",

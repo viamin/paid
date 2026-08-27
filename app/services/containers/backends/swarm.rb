@@ -223,14 +223,22 @@ module Containers
         end
       end
 
+      # Combo images build independently per node (see {ComboImageBuilder}),
+      # so the same tag legitimately carries a different image ID on every
+      # node. Callers (e.g. {ComboImageBuilder.combo_images}) key off
+      # RepoTags, not IDs, so dedupe on tag to avoid surfacing the same tag
+      # once per node.
       def list_images(opts = {})
-        images = {}
-        healthy_nodes.each do |node|
+        seen_tags = Set.new
+        healthy_nodes.each_with_object([]) do |node, images|
           Docker::Image.all(opts, node_connection(node)).each do |image|
-            images[image.id] = image
+            tags = image.info["RepoTags"] || []
+            next if tags.present? && tags.all? { |tag| seen_tags.include?(tag) }
+
+            seen_tags.merge(tags)
+            images << image
           end
         end
-        images.values
       end
 
       def delete_image(name, **opts)

@@ -132,6 +132,19 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
     expect(Docker::Image).to have_received(:get).twice
   end
 
+  it "dedupes images across nodes by repo tag, not per-node image id" do
+    second_node = build_node_payload(id: "node-2", host: "worker-2", addr: "10.0.0.26")
+    node1_image = instance_double(Docker::Image, id: "sha256:node1", info: { "RepoTags" => [ "paid-agent:python-node" ] })
+    node2_image = instance_double(Docker::Image, id: "sha256:node2", info: { "RepoTags" => [ "paid-agent:python-node" ] })
+
+    stub_manager_get("/nodes", [ node_payload, second_node ])
+    allow(Docker::Image).to receive(:all).with({}, kind_of(Docker::Connection)).and_return([ node1_image ], [ node2_image ])
+
+    images = backend.list_images
+
+    expect(images).to contain_exactly(node1_image)
+  end
+
   it "raises when a healthy swarm node is missing the image" do
     second_node = build_node_payload(id: "node-2", host: "worker-2", addr: "10.0.0.26")
     image = instance_double(Docker::Image)
