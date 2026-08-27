@@ -140,12 +140,7 @@ module Reviews
     private_class_method :manual_review_complete?
 
     def self.bot_user?(login)
-      return false if login.blank?
-
-      normalized = login.downcase
-      return true if normalized.end_with?("[bot]", "-bot")
-
-      %w[dependabot renovate github-actions].any? { |prefix| normalized.start_with?(prefix) }
+      Reviews::BotDetection.bot_user?(login)
     end
     private_class_method :bot_user?
   end

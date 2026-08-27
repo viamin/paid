@@ -108,6 +108,15 @@ RSpec.describe Project do
       expect(project.errors[:pr_approval_escalation_hours]).to be_present
     end
 
+    # @spec PR-ESCALATION-024
+    it "rejects an approval-wait escalation ceiling beyond 30 days" do
+      project = build(:project)
+      project.pr_approval_escalation_hours = 721
+
+      expect(project).not_to be_valid
+      expect(project.errors[:pr_approval_escalation_hours]).to be_present
+    end
+
     describe "github_token account validation" do
       it "allows github_token from the same account" do
         account = create(:account)

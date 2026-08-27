@@ -306,7 +306,7 @@ class Project < ApplicationRecord
   # ScanPaidPrsActivity#approval_wait_exceeds_ceiling?.
   # @spec PR-ESCALATION-024
   validates :pr_approval_escalation_hours,
-    numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 86_400 }
+    numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 720 }
   validates :token_budget_max_input_tokens,
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 2_147_483_647 },
     allow_nil: true

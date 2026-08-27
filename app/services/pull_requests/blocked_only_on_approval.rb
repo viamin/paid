@@ -103,49 +103,11 @@ module PullRequests
     end
 
     def all_checks_green?(checks)
-      return true if checks.empty?
-
-      checks.all? { |c| %w[success skipped neutral].include?(c[:conclusion]) }
+      Reviews::ChecksStatus.all_green?(checks)
     end
 
     def owner_approved_or_self_authored?(reviews, pr_data)
-      return true if owner_is_pr_author?(pr_data)
-      return true if bot_author_auto_merge_allowed?(pr_data)
-
-      owner_approved_from_reviews?(reviews)
-    end
-
-    def owner_is_pr_author?(pr_data)
-      author_login = pr_data.respond_to?(:user) ? pr_data.user&.login : pr_data.dig(:user, :login)
-      return false if author_login.blank?
-
-      @project.owner_reviewer_login.present? && author_login.casecmp?(@project.owner_reviewer_login)
-    end
-
-    def bot_author_auto_merge_allowed?(pr_data)
-      return false unless @project.auto_merge_bot_authored?
-
-      author_login = pr_data.respond_to?(:user) ? pr_data.user&.login : pr_data.dig(:user, :login)
-      paid_agent_pr_author?(author_login)
-    end
-
-    def paid_agent_pr_author?(login)
-      return false if login.blank?
-
-      agent_login = @project.github_author_login
-      agent_login.present? && login.casecmp?(agent_login)
-    end
-
-    # Latest-wins, matching the scan's owner_approved_from_reviews?: an
-    # owner APPROVED review followed by a later non-approving review (e.g.
-    # COMMENTED) must not count as an outstanding approval.
-    def owner_approved_from_reviews?(reviews)
-      owner_login = @project.owner_reviewer_login
-      return false if owner_login.blank?
-
-      owner_reviews = reviews.select { |r| r[:user_login]&.casecmp?(owner_login) }
-      latest = owner_reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
-      latest && latest[:state].to_s.upcase == "APPROVED"
+      Reviews::OwnerApproval.approved_or_self_authored?(project: @project, reviews:, pr_data:)
     end
 
     def build_signals(pr_data:, checks:, reviews:, unresolved_threads:)
@@ -366,12 +328,7 @@ module PullRequests
     end
 
     def bot_user?(login)
-      return false if login.blank?
-
-      normalized = login.downcase
-      return true if normalized.end_with?("[bot]", "-bot")
-
-      %w[dependabot renovate github-actions].any? { |prefix| normalized.start_with?(prefix) }
+      Reviews::BotDetection.bot_user?(login)
     end
 
     # Same gate the scan applies: every enabled blocking review method

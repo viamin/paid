@@ -35,7 +35,6 @@ module Activities
     # unanswered bot review requests, or review-goal retry timers — without
     # a time ceiling, PRs waiting on those signals are skipped indefinitely.
     SCAN_STALENESS_MULTIPLIER = 3
-    KNOWN_BOT_PREFIXES = %w[dependabot renovate github-actions].freeze
     DEPENDENCY_UPDATE_BOT_AUTHORS = Project::DEPENDENCY_UPDATE_BOT_AUTHORS
     DEPENDABOT_AUTO_MERGE_AUTHORS = DependabotAutoMergeJob::DEPENDABOT_AUTHORS
     REVIEW_BOT_CLEAN_PATTERN = /generated no (?:new )?comments/i
@@ -2114,9 +2113,7 @@ module Activities
     end
 
     def all_checks_green?(checks)
-      return true if checks.empty?
-
-      checks.all? { |c| %w[success skipped neutral].include?(c[:conclusion]) }
+      Reviews::ChecksStatus.all_green?(checks)
     end
 
     def checks_pending?(checks)
@@ -2879,38 +2876,7 @@ module Activities
     # --- Owner approval check ---
 
     def owner_approved_or_self_authored?(project, reviews, pr_data)
-      return true if owner_is_pr_author?(project, pr_data)
-      return true if bot_author_auto_merge_allowed?(project, pr_data)
-
-      owner_approved_from_reviews?(project, reviews)
-    end
-
-    def bot_author_auto_merge_allowed?(project, pr_data)
-      return false unless project.auto_merge_bot_authored?
-
-      paid_agent_pr_author?(project, pr_data&.user&.login)
-    end
-
-    def owner_approved_from_reviews?(project, reviews)
-      return false if reviews.nil?
-
-      owner_login = project.owner_reviewer_login
-      return false if owner_login.blank?
-
-      owner_reviews = reviews.select { |r| r[:user_login]&.downcase == owner_login.downcase }
-      return false if owner_reviews.empty?
-
-      latest = owner_reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
-      latest[:state] == "APPROVED"
-    end
-
-    def owner_is_pr_author?(project, pr_data)
-      owner_login = project.owner_reviewer_login
-      author_login = pr_data&.user&.login
-
-      return false if owner_login.blank? || author_login.blank?
-
-      owner_login.casecmp?(author_login)
+      Reviews::OwnerApproval.approved_or_self_authored?(project:, reviews:, pr_data:)
     end
 
     # --- Review feedback gate for auto-merge ---
@@ -3271,27 +3237,11 @@ module Activities
     end
 
     def bot_user?(login)
-      return false if login.blank?
-
-      normalized = login.downcase
-      return true if normalized.end_with?("[bot]", "-bot")
-
-      KNOWN_BOT_PREFIXES.any? { |prefix| normalized.start_with?(prefix) }
+      Reviews::BotDetection.bot_user?(login)
     end
 
-    # A PR authored by the project's own GitHub App agent bot (e.g.
-    # "paid-agents[bot]"). These are Paid-generated PRs, not third-party
-    # automation, so they must follow the full review + auto-merge path.
-    #
-    # Matches only the "[bot]" author login (github_author_login), never the
-    # bare app slug ("paid-agents") — the slug is a registerable human GitHub
-    # username and must not be treated as the project's agent. Mirrors the
-    # author-trust model in Project#trusted_github_author_logins.
     def paid_agent_pr_author?(project, login)
-      return false if login.blank?
-
-      agent_login = project.github_author_login
-      agent_login.present? && login.casecmp?(agent_login)
+      Reviews::OwnerApproval.paid_agent_pr_author?(project:, login:)
     end
 
     # A PR authored by a third-party automation bot (Dependabot, Renovate,
