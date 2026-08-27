@@ -2037,6 +2037,17 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |x| x[:type] } }
         expect(trigger_types).not_to include("review_bot_review_pending", "review_bot_comments")
       end
+
+      it "degrades to no clean-comment bypass when fetching recent issue comments fails" do
+        allow(github_client).to receive(:recent_issue_comments)
+          .with(project.full_name, 42)
+          .and_raise(GithubClient::Error, "transient")
+
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).to include("review_bot_review_pending")
+      end
     end
 
     context "when a codex clean comment supersedes an older non-clean codex review" do

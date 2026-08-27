@@ -2707,7 +2707,7 @@ module Activities
       return false if allowed_bot_logins.nil? || allowed_bot_logins.empty?
       return false unless allowed_bot_logins.subset?(BODY_ONLY_REVIEW_BOT_LOGINS)
 
-      comments = pull_request_collector(project, client:).fetch_recent_issue_comments(issue:)
+      comments = pull_request_collector(project, client:).fetch_recent_issue_comments(issue:) || []
       bot_comments = comments.select do |c|
         login = c.user&.login&.downcase
         login && allowed_bot_logins.include?(login)
