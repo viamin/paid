@@ -225,6 +225,9 @@ The model selection UX resolves to four cases:
 - `specific` — Case 1, Case 3, and Case 4. Default for new direct-outbound runners.
 - `free` — Case 2. Valid only for the `openrouter_free` runner today (post-closeout: the policy will port to other OpenRouter-keyed runners in #3673, but only when the `runner_model_policy_form` flag is on).
 
+Ship behind `runner_model_policy_form`. The RDR closes out through #3672 after
+#3671 flips and removes the rollout flag.
+
 ## Goals
 
 - Eliminate the free-text model UX on `opencode`, `kilocode`, `pi`, `omp` for the common case by surfacing catalog entries as a dropdown.
@@ -326,7 +329,7 @@ def self.single_free_policy_per_openrouter_key?(user_id:, provider_api_key_id:)
 end
 ```
 
-`Runner.single_instance_runner_key?` becomes deprecated for new code paths; the migration preserves existing `runner:<id>` identifiers (D7).
+`Runner.single_instance_runner_key?` becomes deprecated for new code paths; the migration preserves existing `runner:<id>` identifiers while moving the free-runner uniqueness gate to the `(user, provider_api_key_id)` pair.
 
 ### `Runners::ModelOptions` (#3666)
 
@@ -488,7 +491,7 @@ Keep the `api_provider` select as a confirmation step.
 | `Runners::ModelCompatibility` returns `unknown` for a model we display | Low — confusing UX | The dropdown shows "may not be supported by installed CLI" copy next to `unknown` results; telemetry catches sustained misses |
 | Migration leaves a runner with no compatible model | High — runner stops executing | Migration runs validation against the same `Runners::ModelCompatibility` gate the form uses; runners without a compatible row keep their existing `tier_model_ids` and execute via legacy path |
 | `runner_model_policy_form` flag is on for one tenant but `model_policy: "free"` rows exist elsewhere | Low — feature-flag isolation | The flag is keyed per tenant; only tenants with the flag on see the new form. Migrated `openrouter_free` rows carry `model_policy: "free"` everywhere, but flag-off tenants continue to render the legacy form, which only displays the Free policy via the legacy `tier_model_ids` defaults — so the flag is the sole visibility gate. |
-| Existing single-instance gate on `openrouter_free` breaks after migration | Medium — duplicate free runners allowed | Migration preserves the "one free-policy runner per user per OpenRouter key" invariant via the new check constraint / scope (D7) |
+| Existing single-instance gate on `openrouter_free` breaks after migration | Medium — duplicate free runners allowed | Migration preserves the "one free-policy runner per user per OpenRouter key" invariant via the new check constraint / scope while keeping existing `runner:<id>` identifiers stable |
 
 ## Implementation Plan
 
@@ -572,7 +575,3 @@ The implementation mirrors the issue tree under #3663. Each phase is a separate 
 1. **Sentinel copy localization.** The "Custom model ID…" label is currently English-only. Acceptable for v1 because the runner form is admin-facing; revisit if user-facing.
 2. **Resolved — Pareto scope.** Case 3 above decides the scope: `Runners::ModelOptions` surfaces the `openrouter/pareto-code` seeded row whenever the runner's `api_service_type` is `openrouter` (openrouter_free, openrouter_pareto, or opencode/kilocode/pi/omp with an OpenRouter key). The dedicated `openrouter_pareto` runner row remains in the "Add Runner" index for discoverability (RDR-038). The dispatch side stays unchanged: the `openrouter_pareto` runner still routes through `Runners::ParetoExecutionPlan`; on other runners, selecting Pareto persists the model id like any other specific catalog row.
 3. **Does `model_policy: "free"` need its own rotation keying?** Today rotation is keyed on `runner:<id>`; the #3673 port will need to revisit this if a single (user, key) pair can back multiple free-policy runners in the future.
-
-## Decision
-
-Proceed with the catalog-driven dropdown, the derived `api_provider`, the `model_policy` enum, the Pareto-as-catalog-row simplification, and the subscription-runner non-change. Ship behind `runner_model_policy_form`. Defer the free-policy port to Pi/OMP/KiloCode (#3673) as an explicit post-closeout follow-up. The RDR is closed out by #3672 after #3671 flips and cleans up the flag.
