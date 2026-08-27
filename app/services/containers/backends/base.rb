@@ -104,6 +104,26 @@ module Containers
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
+      # Builds an image from a Dockerfile string (no build context files —
+      # language layers install from the network, so the context is the
+      # Dockerfile alone). Streams build output to the optional block.
+      # @param dockerfile [String] full Dockerfile content
+      # @param opts [Hash] Docker /build query options (:t, :buildargs,
+      #   :labels, :nocache, ...)
+      # @return [Docker::Image] the built image
+      def build_image(_dockerfile, _opts = {})
+        raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+      end
+
+      def list_images(_opts = {})
+        raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+      end
+
+      # Removes an image (or a single tag of it) by reference.
+      def delete_image(_name, **_opts)
+        raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+      end
+
       def list_volumes
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end

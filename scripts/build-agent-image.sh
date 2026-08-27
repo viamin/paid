@@ -5,6 +5,15 @@
 #   ./scripts/build-agent-image.sh              # Build image locally
 #   IMAGE_TAG=v1.0.0 ./scripts/build-agent-image.sh  # Build with custom tag
 #   PUSH=true ./scripts/build-agent-image.sh    # Build and push to registry
+#
+# Combo language layers (RDR-046 / #3613): pass extended runtimes to also
+# build the matching combo images on top of the freshly built base:
+#   COMBO_LANGUAGES="elixir" ./scripts/build-agent-image.sh
+#   COMBO_LANGUAGES="elixir go rust swift" ./scripts/build-agent-image.sh
+# Tags follow Containers::ImageResolver: paid-agent:<sorted-language-tokens>,
+# with base runtimes (node/python/ruby) included for multi-runtime sets.
+# REBUILD_COMBO=true re-pulls/rebuilds existing combos (cascade after a base
+# bump); by default an existing combo tag is left untouched.
 
 set -e
 
@@ -260,4 +269,62 @@ if [ "${PUSH}" = "true" ]; then
     echo "Pushing image to registry..."
     docker push "${FULL_IMAGE}"
     echo "Image pushed: ${FULL_IMAGE}"
+fi
+
+# Optionally build combo language-layer images on top of the base
+# (RDR-046 Phase 3 / #3613). COMBO_LANGUAGES holds a space-separated list of
+# extended runtimes (elixir go rust swift); the layers build as a chain and the
+# final image is tagged with COMBO_TAG (defaults to the full base-inclusive
+# token set Containers::ImageResolver emits for a polyglot project — override
+# it for a lean tag like paid-agent:go).
+BASE_LANGUAGES="node python ruby"
+COMBO_LANGUAGES="${COMBO_LANGUAGES:-}"
+
+if [ -n "${COMBO_LANGUAGES}" ]; then
+    LANGUAGES_DIR="${PROJECT_ROOT}/docker/agent/languages"
+
+    for combo in ${COMBO_LANGUAGES}; do
+        case "${combo}" in
+            elixir|go|rust|swift) ;;
+            *) echo "ERROR: Unknown extended runtime '${combo}' (expected elixir, go, rust, or swift)" >&2; exit 1 ;;
+        esac
+        if [ ! -f "${LANGUAGES_DIR}/${combo}.dockerfile" ]; then
+            echo "ERROR: Missing language layer ${LANGUAGES_DIR}/${combo}.dockerfile" >&2
+            exit 1
+        fi
+    done
+
+    # Sorted, unique tokens including the base runtimes — mirrors the tag
+    # grammar of Containers::ImageResolver#tag_for for polyglot projects.
+    TAG_TOKENS=$(printf '%s\n' ${BASE_LANGUAGES} ${COMBO_LANGUAGES} | sort -u | tr '\n' '-' | sed 's/-$//')
+    COMBO_TAG="${COMBO_TAG:-${IMAGE_NAME}:${TAG_TOKENS}}"
+
+    if [ "${REBUILD_COMBO}" != "true" ] && docker image inspect "${COMBO_TAG}" >/dev/null 2>&1; then
+        echo ""
+        echo "Combo image already exists: ${COMBO_TAG} (set REBUILD_COMBO=true to rebuild)"
+    else
+        echo ""
+        echo "Building combo image ${COMBO_TAG} (layers: ${COMBO_LANGUAGES})..."
+        COMBO_FROM="${FULL_IMAGE}"
+        SORTED_LANGUAGES=$(printf '%s\n' ${COMBO_LANGUAGES} | sort)
+        LAYER_COUNT=$(printf '%s\n' ${SORTED_LANGUAGES} | wc -l)
+        LAYER_INDEX=0
+        for lang in ${SORTED_LANGUAGES}; do
+            LAYER_INDEX=$((LAYER_INDEX + 1))
+            if [ "${LAYER_INDEX}" -eq "${LAYER_COUNT}" ]; then
+                # Final layer receives the combo tag.
+                LAYER_ARGS=(-t "${COMBO_TAG}")
+            else
+                # Intermediate layers stay untagged; chain via the image id.
+                LAYER_ARGS=(-q)
+            fi
+            echo "  layer ${LAYER_INDEX}/${LAYER_COUNT}: ${lang} (FROM ${COMBO_FROM})"
+            COMBO_FROM=$("${DOCKER_BUILD_ENV[@]}" docker build \
+                "${LAYER_ARGS[@]}" \
+                -f "${LANGUAGES_DIR}/${lang}.dockerfile" \
+                --build-arg "BASE_IMAGE=${COMBO_FROM}" \
+                "${PROJECT_ROOT}") || exit 1
+        done
+        echo "Combo image built successfully: ${COMBO_TAG}"
+    fi
 fi

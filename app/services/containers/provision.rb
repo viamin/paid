@@ -364,6 +364,7 @@ module Containers
       )
 
       validate_backend_mount_support!
+      ensure_runtime_image_available!
       prepare_heartbeat_dir! if backend.supports_host_paths?
       prepare_workspace!
       ensure_network!
@@ -3279,6 +3280,20 @@ module Containers
       return if rejections.empty?
 
       raise ProvisionError, format_backend_mount_rejections(rejections)
+    end
+
+    # Build-on-first-use for resolved combo images (RDR-046 / #3613): before a
+    # container is created, guarantee the selected image tag actually exists on
+    # the backend. Base, foreign, and immutable catalog references are not the
+    # builder's to produce and pass through untouched; unbuildable tags and
+    # failed builds fail the provision loudly instead of silently running in
+    # the base image.
+    # @spec POLYGLOT-TEST-007
+    # @spec POLYGLOT-TEST-008
+    def ensure_runtime_image_available!
+      Containers::ComboImageBuilder.ensure_available(options[:image], backend: backend)
+    rescue Containers::ComboImageBuilder::Error => e
+      raise ProvisionError, e.message
     end
 
     def worktree_mount_rejection

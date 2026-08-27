@@ -75,6 +75,18 @@ module Containers
         Docker::Image.get(name)
       end
 
+      def build_image(dockerfile, opts = {}, &block)
+        Docker::Image.build_from_tar(Docker::Util.create_tar("Dockerfile" => dockerfile), opts, &block)
+      end
+
+      def list_images(opts = {})
+        Docker::Image.all(opts)
+      end
+
+      def delete_image(name, **opts)
+        Docker::Image.remove(name, opts)
+      end
+
       def list_volumes
         Docker::Volume.all
       end

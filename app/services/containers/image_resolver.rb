@@ -83,6 +83,31 @@ module Containers
       BASE_IMAGE
     end
 
+    # True when the reference names a Paid combo tag (a +paid-agent:<tokens>+
+    # image other than the base). Non-Paid references (explicit overrides,
+    # immutable catalog digests) are never combo tags.
+    def self.combo?(image)
+      image != BASE_IMAGE && image.to_s.start_with?("#{IMAGE_PREFIX}:")
+    end
+
+    # Parses a paid-agent combo tag back into its language tokens.
+    #
+    # @return [Array<String>, nil] the sorted token set for a well-formed
+    #   combo tag; +nil+ for the base image and for references outside the
+    #   +paid-agent+ namespace (those are not ours to build or validate).
+    # @raise [UnsupportedRuntimeError] when the tag names tokens outside the
+    #   supported runtime matrix — such an image can never be built.
+    # @spec POLYGLOT-TEST-008
+    def self.combo_tokens(image)
+      return unless combo?(image)
+
+      tokens = image.split(":", 2).second.to_s.split("-").reject(&:blank?)
+      unknown = tokens - BASE_LANGUAGES - EXTENDED_LANGUAGES
+      raise UnsupportedRuntimeError, unknown if unknown.any?
+
+      tokens
+    end
+
     # @return [String] the resolved Docker image reference
     # @spec POLYGLOT-TEST-004
     # @spec POLYGLOT-TEST-006
