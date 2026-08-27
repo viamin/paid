@@ -64,7 +64,8 @@ same lifecycle surface:
   `provision_browser_container`
 - Compatibility and health: `.compatible?`, `.ping`
 - Reconciliation and ledger capabilities: `#resource_kind`,
-  `#supports_tagging?`, `#supports_listing?`, `#list_resources_by_tags`,
+  `#supports_tagging?`, `#supports_listing?`,
+  `#supports_tag_reconciliation?`, `#list_resources_by_tags`,
   `#cleanup_resource`
 
 The method names and parameter names are part of the contract. They must stay
