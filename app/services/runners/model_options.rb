@@ -52,7 +52,7 @@ module Runners
     end
 
     def model_entries # @spec RUNNER-MODEL-OPTIONS-001
-      catalog_rows.select { |model| runner_model_compatible?(model.model_id) }.map { |model| model_entry_for(model) }
+      catalog_rows.select { |model| runner_model_compatible?(model) }.map { |model| model_entry_for(model) }
     end
 
     def model_entry_for(model)
@@ -78,17 +78,18 @@ module Runners
       relation.order(:family).by_capability
     end
 
-    def runner_model_compatible?(model_id) # @spec RUNNER-MODEL-OPTIONS-002 @spec MODEL-SELECTION-005
+    def runner_model_compatible?(model) # @spec RUNNER-MODEL-OPTIONS-002 @spec MODEL-SELECTION-005
       result = ModelCompatibility.call(
         runner_key: runner_key,
-        model_id: model_id,
-        auth_type: auth_type
+        model_id: model.model_id,
+        auth_type: auth_type,
+        llm_model: model
       )
       if result.unsupported?
         Rails.logger.info(
           message: "model_selection.model_option_filtered_incompatible",
           runner_key: runner_key,
-          model_id: model_id,
+          model_id: model.model_id,
           auth_type: auth_type,
           incompatibility_type: result.incompatibility_type,
           reason: result.reason

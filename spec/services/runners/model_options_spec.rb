@@ -44,6 +44,27 @@ RSpec.describe Runners::ModelOptions do
         expect(entry.model.model_id).to eq("claude-opus-4-5")
       end
 
+      it "reuses the loaded catalog row for compatibility checks" do
+        expect(Runners::ModelCompatibility).to receive(:call).with(hash_including(
+          model_id: "claude-3-7-sonnet",
+          llm_model: have_attributes(model_id: "claude-3-7-sonnet")
+        )).and_call_original
+        expect(Runners::ModelCompatibility).to receive(:call).with(hash_including(
+          model_id: "claude-3-5-haiku",
+          llm_model: have_attributes(model_id: "claude-3-5-haiku")
+        )).and_call_original
+        expect(Runners::ModelCompatibility).to receive(:call).with(hash_including(
+          model_id: "claude-opus-4-5",
+          llm_model: have_attributes(model_id: "claude-opus-4-5")
+        )).and_call_original
+        expect(Runners::ModelCompatibility).to receive(:call).with(hash_including(
+          model_id: "claude-haiku-4-5",
+          llm_model: have_attributes(model_id: "claude-haiku-4-5")
+        )).and_call_original
+
+        options
+      end
+
       it "falls back to the provider for the optgroup family when family is blank" do
         create(:llm_model, model_id: "claude-manual", display_name: "Claude Manual", provider: "anthropic",
           family: nil, tier: "mid", capability_score: 1.0)
