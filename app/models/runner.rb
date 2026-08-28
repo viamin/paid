@@ -2137,12 +2137,12 @@ class Runner < ApplicationRecord
   # as chat planning and compatibility checks. Live agent-run execution passes
   # an explicit model_id from model selection / tier resolution instead.
   def free_policy_default_model_id
-    LlmModel::TIERS.each do |tier|
-      result = Runners::ResolveTierModel.call(runner: self, tier: tier, user: user)
-      return result.model_id if result.success? && result.model_id.present?
-    end
+    return @free_policy_default_model_id if defined?(@free_policy_default_model_id)
 
-    nil
+    @free_policy_default_model_id = LlmModel::TIERS.filter_map do |tier|
+      result = Runners::ResolveTierModel.call(runner: self, tier: tier, user: user)
+      result.model_id if result.success? && result.model_id.present?
+    end.first
   end
 
   def omp_api_key_env_var

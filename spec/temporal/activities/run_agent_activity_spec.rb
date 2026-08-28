@@ -1040,6 +1040,7 @@ RSpec.describe Activities::RunAgentActivity do
         tier_model_ids: { "mid" => free_model.model_id }
       )
       run = create_runner_backed_agent_run(project: project, runner: runner)
+      create(:model_selection, agent_run: run, llm_model: free_model, tier: "mid")
 
       runtime = activity.send(:selected_runner_runtime, runner, user, run)
 
@@ -1063,6 +1064,7 @@ RSpec.describe Activities::RunAgentActivity do
         tier_model_ids: { "mid" => free_model.model_id }
       )
       run = create_runner_backed_agent_run(project: project, runner: runner)
+      create(:model_selection, agent_run: run, llm_model: free_model, tier: "mid")
 
       runtime = activity.send(:selected_runner_runtime, runner, user, run)
 
@@ -1086,6 +1088,7 @@ RSpec.describe Activities::RunAgentActivity do
         tier_model_ids: { "mid" => free_model.model_id }
       )
       run = create_runner_backed_agent_run(project: project, runner: runner)
+      create(:model_selection, agent_run: run, llm_model: free_model, tier: "mid")
 
       runtime = activity.send(:selected_runner_runtime, runner, user, run)
 

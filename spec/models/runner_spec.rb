@@ -2001,6 +2001,8 @@ RSpec.describe Runner do
     end
 
     it "raises a clear error when a free-policy KiloCode runner has no resolvable model" do # @spec MODEL-POLICY-011
+      create(:llm_model, model_id: "placeholder", provider: "deepseek", tier: "mid", pricing_tier: "free",
+        catalog_source: "openrouter_sync")
       free_runner = create_free_policy_direct_outbound_runner(runner_key: "kilocode", model_id: "placeholder")
       free_runner.update_columns(tier_model_ids: {})
 
