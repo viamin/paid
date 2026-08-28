@@ -14,10 +14,12 @@ RSpec.describe AgentComboImageCleanupJob do
     allow(Containers).to receive(:all_backends).and_return([ backend ])
     allow(Project).to receive(:active).and_return(active_projects)
     allow(active_projects).to receive(:find_each).and_return([])
+    allow(backend).to receive(:image_label_sets).with(tag).and_return([ stale_labels ])
   end
 
   def stub_combo_images(*entries)
     allow(Containers::ComboImageBuilder).to receive(:combo_images).with(backend: backend).and_return(entries)
+    stub_label_sets_for(backend, entries)
   end
 
   describe "#perform" do
@@ -107,6 +109,29 @@ RSpec.describe AgentComboImageCleanupJob do
     it "keeps a combo tag whose build timestamp is within the retention window" do
       stub_combo_images(image: tag, id: "sha256:abc", labels: fresh_labels)
       allow(backend).to receive(:image_in_use?).and_return(false)
+      allow(backend).to receive(:image_label_sets).with(tag).and_return([ fresh_labels ])
+      allow(backend).to receive(:delete_image)
+
+      job.perform
+
+      expect(backend).not_to have_received(:delete_image)
+    end
+
+    it "keeps a combo tag when any healthy node copy is still within the retention window" do
+      stub_combo_images(image: tag, id: "sha256:abc", labels: stale_labels)
+      allow(backend).to receive(:image_in_use?).and_return(false)
+      allow(backend).to receive(:image_label_sets).with(tag).and_return([ stale_labels, fresh_labels ])
+      allow(backend).to receive(:delete_image)
+
+      job.perform
+
+      expect(backend).not_to have_received(:delete_image)
+    end
+
+    it "keeps a combo tag when any healthy node copy is missing the built-at label" do
+      stub_combo_images(image: tag, id: "sha256:abc", labels: stale_labels)
+      allow(backend).to receive(:image_in_use?).and_return(false)
+      allow(backend).to receive(:image_label_sets).with(tag).and_return([ stale_labels, {} ])
       allow(backend).to receive(:delete_image)
 
       job.perform
@@ -173,10 +198,17 @@ RSpec.describe AgentComboImageCleanupJob do
 
   def stub_combo_images_for(target_backend, **entry)
     allow(Containers::ComboImageBuilder).to receive(:combo_images).with(backend: target_backend).and_return([ entry ])
+    stub_label_sets_for(target_backend, [ entry ])
   end
 
   def stub_resolver(project, image:, unsupported_languages:)
     resolver = instance_double(Containers::ImageResolver, resolve: image, unsupported_languages: unsupported_languages)
     allow(Containers::ImageResolver).to receive(:new).with(project).and_return(resolver)
+  end
+
+  def stub_label_sets_for(target_backend, entries)
+    entries.each do |entry|
+      allow(target_backend).to receive(:image_label_sets).with(entry.fetch(:image)).and_return([ entry.fetch(:labels, {}) ])
+    end
   end
 end

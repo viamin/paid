@@ -38,16 +38,7 @@ class AgentComboImageCleanupJob < ApplicationJob
       next if referenced.include?(entry[:image])
       next if tag_in_use?(entry[:image], backend)
 
-      built_at = parse_built_at(entry[:labels])
-      if built_at && built_at < RETENTION.ago
-        backend.delete_image(entry[:image], force: true)
-        Rails.logger.info(
-          message: "agent_combo_image_cleanup.tag_pruned",
-          image: entry[:image],
-          backend: backend.identifier,
-          built_at: built_at.iso8601
-        )
-      end
+      prune_tag(entry[:image], backend)
     end
   end
 
@@ -85,6 +76,28 @@ class AgentComboImageCleanupJob < ApplicationJob
       error: e.message
     )
     true
+  end
+
+  def prune_tag(tag, backend)
+    built_at = pruneable_built_at(tag, backend)
+    return unless built_at
+
+    backend.delete_image(tag, force: true)
+    Rails.logger.info(
+      message: "agent_combo_image_cleanup.tag_pruned",
+      image: tag,
+      backend: backend.identifier,
+      built_at: built_at.iso8601
+    )
+  end
+
+  def pruneable_built_at(tag, backend)
+    label_sets = backend.image_label_sets(tag)
+    built_ats = label_sets.filter_map { |labels| parse_built_at(labels) }
+    return if built_ats.size != label_sets.size
+
+    newest_copy = built_ats.max
+    newest_copy if newest_copy < RETENTION.ago
   end
 
   def parse_built_at(labels)
