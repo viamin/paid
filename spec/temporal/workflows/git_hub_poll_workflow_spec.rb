@@ -120,7 +120,31 @@ RSpec.describe Workflows::GitHubPollWorkflow do
           { project_id:, pr_number: 42, reviewers: [ "viamin" ] },
           timeout: 60
         )
-        .and_return({ requested_reviewers: [ "viamin" ] })
+        .and_return({ requested: [ "viamin" ] })
+
+      workflow.execute_automation_decision(
+        project_id:,
+        decision: {
+          type: "request_review", pr_number: 42, reviewers: [ "viamin" ],
+          issue_id: 7, head_sha: "abc123"
+        }
+      )
+
+      expect(workflow).to have_received(:run_activity).with(
+        Activities::RecordOwnerReviewRequestActivity,
+        { issue_id: 7, head_sha: "abc123" },
+        timeout: 30
+      )
+    end
+
+    it "stamps owner_review_requested_sha when the owner review request is already pending" do
+      allow(workflow).to receive(:run_activity)
+        .with(
+          Activities::RequestReviewActivity,
+          { project_id:, pr_number: 42, reviewers: [ "viamin" ] },
+          timeout: 60
+        )
+        .and_return({ requested: [], already_pending: [ "viamin" ] })
 
       workflow.execute_automation_decision(
         project_id:,
@@ -147,6 +171,28 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         )
         .and_raise(error)
       allow(workflow).to receive(:record_swallowed_non_critical_activity_failure)
+
+      workflow.execute_automation_decision(
+        project_id:,
+        decision: {
+          type: "request_review", pr_number: 42, reviewers: [ "viamin" ],
+          issue_id: 7, head_sha: "abc123"
+        }
+      )
+
+      expect(workflow).not_to have_received(:run_activity).with(
+        Activities::RecordOwnerReviewRequestActivity, anything, anything
+      )
+    end
+
+    it "does not stamp owner_review_requested_sha when request_review returns a handled 422 no-op" do
+      allow(workflow).to receive(:run_activity)
+        .with(
+          Activities::RequestReviewActivity,
+          { project_id:, pr_number: 42, reviewers: [ "viamin" ] },
+          timeout: 60
+        )
+        .and_return({ requested: [], error: "Review cannot be requested" })
 
       workflow.execute_automation_decision(
         project_id:,

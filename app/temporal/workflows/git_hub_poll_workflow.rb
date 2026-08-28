@@ -88,7 +88,7 @@ module Workflows
       when "request_review"
         result = request_review(project_id, decision[:pr_number], decision[:reviewers],
           log_key: "pr_review.request_review_failed")
-        record_owner_review_request(decision) if result
+        record_owner_review_request(decision) if owner_review_request_recordable?(result)
       when "dispatch_claude_review"
         run_activity(Activities::DispatchClaudeReviewActivity, {
           project_id: project_id,
@@ -536,14 +536,19 @@ module Workflows
     # commit. Only decisions built for that trigger carry :issue_id and
     # :head_sha (see Automation::Strategies::AutoReview#owner_approval_stale_decision);
     # other request_review callers (manual reviewer, bot chains) omit them.
-    # Stamp only after RequestReviewActivity completed, so transient GitHub or
-    # workflow failures retry on the next poll instead of suppressing the
-    # re-request for that HEAD forever.
+    # Stamp only after RequestReviewActivity completed with either a fresh
+    # request or an idempotent already-pending outcome, so handled GitHub
+    # no-ops and transient workflow failures retry on the next poll instead
+    # of suppressing the re-request for that HEAD forever.
     def record_owner_review_request(decision)
       return if decision[:issue_id].blank? || decision[:head_sha].blank?
 
       run_activity(Activities::RecordOwnerReviewRequestActivity,
         { issue_id: decision[:issue_id], head_sha: decision[:head_sha] }, timeout: 30)
+    end
+
+    def owner_review_request_recordable?(result)
+      result.present? && (result[:requested].present? || result[:already_pending].present?)
     end
 
     def handle_owner_approved(project_id, pr_data)

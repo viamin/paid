@@ -92,12 +92,12 @@ auto-merge blocker snapshot reduces to exactly that stale-approval signal
 the project's `owner_reviewer_login`, which puts the PR back in the owner's
 native "Awaiting your review" queue. The request is guarded to at most one
 per PR HEAD commit SHA: the workflow stamps `issues.owner_review_requested_sha`
-after issuing the request (regardless of whether the GitHub call itself
-succeeded, since the guard bounds how often we ask, not whether the ask
-landed), and the scan skips re-requesting until a new commit changes that
-sha. A PR blocked by anything else (red CI, unresolved threads, incomplete
-blocking reviews) is waiting on the agent, not the owner, and never
-generates a request.
+only after GitHub accepted the request or confirmed it was already pending,
+and the scan skips re-requesting until a new commit changes that sha.
+A handled no-op or transient GitHub failure does not stamp the guard, so the
+next poll can retry. A PR blocked by anything else (red CI, unresolved
+threads, incomplete blocking reviews) is waiting on the agent, not the owner,
+and never generates a request.
 
 ## What this is not
 

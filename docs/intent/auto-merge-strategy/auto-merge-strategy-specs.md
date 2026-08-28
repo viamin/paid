@@ -99,11 +99,13 @@
   a human-authored pull request reduces to exactly the stale-approval signal
   (every other auto-merge precondition satisfied), the system SHALL
   re-request GitHub review from the project's configured owner reviewer, at
-  most once per PR HEAD commit SHA. The system SHALL NOT emit a request when
-  any other signal (CI, mergeability, review feedback, blocking reviews, or
-  threads) is also blocking, and a GitHub API failure while issuing the
-  request SHALL be logged without failing the poll cycle or blocking other
-  PRs in the same scan.
+  most once per PR HEAD commit SHA, and SHALL persist that HEAD SHA only
+  after GitHub accepted the request or the request was already pending for
+  that reviewer. The system SHALL NOT emit a request when any other signal
+  (CI, mergeability, review feedback, blocking reviews, or threads) is also
+  blocking, and a GitHub API failure while issuing the request SHALL be
+  logged without failing the poll cycle or blocking other PRs in the same
+  scan.
   *Code:* `app/temporal/activities/scan_paid_prs_activity.rb`
   (`#owner_approval_stale_trigger`, `#stale_approval_only_blocker?`),
   `app/services/automation/strategies/auto_review.rb`
