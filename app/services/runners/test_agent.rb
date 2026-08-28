@@ -372,6 +372,7 @@ module Runners
     # env vars so the CLI uses its mounted local auth state, matching the
     # behavior of RunAgentActivity.subscription_auth_command.
     def container_provider_runtime
+      return free_model_policy_provider_runtime if runner.free_model_policy?
       return kilocode_provider_runtime if kilocode_direct_outbound?
       return openrouter_free_provider_runtime if openrouter_free_direct_outbound?
       return openrouter_pareto_provider_runtime if openrouter_pareto_direct_outbound?
@@ -395,6 +396,13 @@ module Runners
       raise MissingProjectContextError, "openrouter_free runner has no resolvable model" if model_id.blank?
 
       runner.openrouter_free_runner_runtime(project: test_project, model_id: model_id)
+    end
+
+    def free_model_policy_provider_runtime
+      model_id = resolve_openrouter_free_model_id
+      raise MissingProjectContextError, "#{runner.runner_key} runner has no resolvable free model" if model_id.blank?
+
+      runner.free_model_policy_runner_runtime(project: test_project, model_id: model_id)
     end
 
     def resolve_openrouter_free_model_id

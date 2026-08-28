@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 module FreeModels
-  # Selects the next free-model to retry within the openrouter_free runner
-  # after a rate-limit error. Walks tiers starting at the supplied
+  # Selects the next free-model to retry within an OpenRouter-backed
+  # free-policy runner after a rate-limit error. Walks tiers starting at the supplied
   # `current_tier` and downward (high -> mid -> low), replacing the
   # rate-limited model with the highest-capability candidate that is
   # available (active, not user-excluded, not below the quality bar, and
@@ -22,7 +22,7 @@ module FreeModels
       new(...).call
     end
 
-    # @param runner [Runner] The openrouter_free runner whose current model
+    # @param runner [Runner] The free-policy runner whose current model
     #   was rate-limited.
     # @param current_model_id [String, nil] The model id that just failed.
     # @param current_tier [String, nil] The tier the failed call was running
@@ -44,7 +44,7 @@ module FreeModels
     end
 
     def call
-      return exhausted_result unless openrouter_free?
+      return exhausted_result unless free_policy_runner?
 
       previous_model_id = effective_current_model_id
       runner_state = find_runner_state
@@ -81,20 +81,17 @@ module FreeModels
 
     attr_reader :runner, :user, :project
 
-    def openrouter_free?
-      runner&.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
+    def free_policy_runner?
+      runner&.free_model_policy? && runner&.required_api_service_type == Runner::OPENROUTER_FREE_MODEL_PROVIDER
     end
 
-    # RunnerState rows for the openrouter_free runner are keyed by the bare
-    # runner_key string ("openrouter_free"), NOT the Runner#state_key
-    # routing key ("runner:<id>"). The Knowledge subsystem (RunnerSelector +
-    # RunnerExecutor) selects and records state against this bare identifier
-    # because UserSetting stores kb_chat_runner/kb_embedding_runner as the
-    # bare runner_key. Keying here by runner_key keeps rotation state on the
-    # same row the executor writes per-model rate limits to, and preserves
-    # any pre-existing circuit-breaker/rate-limit state across the upgrade.
+    # RunnerState rows for knowledge-selected free-policy runners are keyed by
+    # the bare runner_key string, not the API-key routing key. Keying by
+    # runner_key keeps rotation state on the same row the knowledge executor
+    # writes per-model rate limits to, and preserves the legacy
+    # openrouter_free state row across the widened policy path.
     def runner_state_name
-      Runner::OPENROUTER_FREE_RUNNER_KEY
+      runner.runner_key
     end
 
     def exhausted_result(previous_model_id: nil)
@@ -225,10 +222,11 @@ module FreeModels
     # swallowed so recovery never breaks a healthy runner; the snapshot is
     # still cleared so a stale mapping is not retried.
     def self.restore_preferred!(runner:, user:)
-      return false unless runner.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
+      return false unless runner.free_model_policy?
+      return false unless runner.required_api_service_type == Runner::OPENROUTER_FREE_MODEL_PROVIDER
       return false unless user
 
-      state = user.runner_states.find_by(runner_name: Runner::OPENROUTER_FREE_RUNNER_KEY)
+      state = user.runner_states.find_by(runner_name: runner.runner_key)
       return false unless state
 
       snapshot = state.preferred_tier_model_ids

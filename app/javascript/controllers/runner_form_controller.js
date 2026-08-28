@@ -128,21 +128,22 @@ export default class extends Controller {
       })
     })
 
-    this.refreshTierSettings(runnerKey)
     this.refreshApiKeyOptions(runnerKey)
     this.refreshDynamicModelOptions(runnerKey)
+    this.refreshTierSettings(runnerKey)
   }
 
   refreshTierSettings(runnerKey = this.currentRunnerKey()) {
     this.tierSettingsTargets.forEach((el) => {
       const renderedFor = el.dataset.tierRunnerKey
       const matches = renderedFor === runnerKey
-      el.hidden = !matches
+      const requiresFreePolicy = el.dataset.tierVisibility === "free_policy"
+      el.hidden = !matches || (requiresFreePolicy && !this.freePolicySelectedFor(runnerKey))
     })
 
     this.tierSelectTargets.forEach((select) => {
       const container = select.closest("[data-runner-form-target='tierSettings']")
-      const matches = container && container.dataset.tierRunnerKey === runnerKey
+      const matches = container && !container.hidden
       select.disabled = !matches
       if (!matches) select.value = ""
     })
@@ -179,11 +180,8 @@ export default class extends Controller {
       const optionsByServiceType = this.modelOptionsByServiceType(select)
       const options = serviceType ? optionsByServiceType[serviceType] || [] : []
       const selectedValue = select.value
-      // No catalog rows (and no preserved current-model entry) for this
-      // provider: fall back to a manual text entry instead of a dead,
-      // permanently-disabled select (see LlmModel::CUSTOM_MODEL_OPTION).
-      const manualEntry = matches && Boolean(serviceType) && options.length === 0
       const manualInput = this.manualModelInputFor(currentRunnerKey)
+      const customValue = select.dataset.customModelValue || ""
 
       this.replaceDynamicModelOptions(select, options, serviceType)
 
@@ -191,9 +189,14 @@ export default class extends Controller {
       if (values.includes(selectedValue)) {
         select.value = selectedValue
       }
+      if (!select.value && values.length === 1 && values[0] === customValue) {
+        select.value = customValue
+      }
+
+      const manualEntry = matches && Boolean(serviceType) && select.value === customValue
 
       select.hidden = manualEntry
-      select.disabled = !matches || !serviceType || options.length === 0
+      select.disabled = !matches || !serviceType || options.length === 0 || manualEntry
       select.dataset.currentServiceType = matches ? serviceType || "" : ""
 
       if (manualInput) {
@@ -275,6 +278,15 @@ export default class extends Controller {
     options.forEach(([label, value]) => {
       select.add(new Option(label, value))
     })
+  }
+
+  freePolicySelectedFor(runnerKey) {
+    if (runnerKey === "openrouter_free") return true
+
+    const select = this.dynamicModelSelectTargets.find((target) => target.dataset.runnerKey === runnerKey)
+    if (!select) return false
+
+    return select.value === (select.dataset.freePolicyValue || "")
   }
 
   selectedApiKeyOption() {

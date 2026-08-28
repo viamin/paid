@@ -37,7 +37,7 @@ RSpec.describe FreeModels::Rotation do
   end
 
   describe ".call" do
-    context "when the runner is not openrouter_free" do
+    context "when the runner is not free_model_policy?" do
       let(:runner) do
         existing = user.runners.kept_only.find_by(runner_key: "claude")
         existing || user.runners.create!(
@@ -53,6 +53,39 @@ RSpec.describe FreeModels::Rotation do
 
         expect(result.exhausted?).to be true
         expect(result.rotated?).to be false
+      end
+    end
+
+    context "when the runner is a free-policy pi runner" do
+      let(:tier_model_ids) { { "high" => "high-current", "mid" => "mid-current", "low" => "low-current" } }
+      let(:runner) do
+        tier_model_ids.each do |tier, model_id|
+          next if LlmModel.exists?(model_id: model_id)
+
+          create(:llm_model, :free, model_id: model_id, tier: tier, capability_score: 5.0)
+        end
+
+        user.runners.create!(
+          runner_key: "pi",
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          enabled_for_agent_runs: false,
+          enabled_for_chat: false,
+          enabled_for_fallback: false,
+          config: { "pi" => { "api_provider" => "openrouter", "model_policy" => "free" } },
+          tier_model_ids: tier_model_ids
+        )
+      end
+
+      before { free_model(tier: "high", capability_score: 8.0, model_id: "high-other") }
+
+      it "rotates using the same tier_model_ids machinery as the legacy free runner" do # @spec MODEL-POLICY-009
+        result = described_class.call(runner: runner, current_model_id: "high-current",
+          user: user, current_tier: "high")
+
+        expect(result.rotated?).to be true
+        expect(result.model_id).to eq("high-other")
+        expect(runner.reload.tier_model_ids["high"]).to eq("high-other")
       end
     end
 

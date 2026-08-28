@@ -44,13 +44,14 @@ module Models
         Runners::DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER[runner.runner_key.to_s]
     end
 
-    # openrouter_free is constrained to free-pricing models rather than a single
-    # provider: it routes any active free model through OpenRouter, so selection
-    # must stay within the free tier to match what execution actually pins.
-    # Without this, selection treats the runner as unconstrained and can record
-    # a paid candidate that execution later swaps for the runner's free model.
+    # Free-policy runners are constrained to free-pricing models rather than a
+    # single provider: they route any active free model through OpenRouter, so
+    # selection must stay within the free tier to match what execution actually
+    # pins. Without this, selection treats the runner as unconstrained and can
+    # record a paid candidate that execution later swaps for the runner's free
+    # model.
     def free_tier_constrained_runner?
-      agent_run.runner&.runner_key == "openrouter_free"
+      agent_run.runner&.free_model_policy?
     end
 
     def excluded_model?(model, excluded)
