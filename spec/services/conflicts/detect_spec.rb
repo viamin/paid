@@ -3,6 +3,34 @@
 require "rails_helper"
 
 RSpec.describe Conflicts::Detect do
+  def runner_handle(identifier:)
+    ExecutionRunners::RunnerHandle.new(
+      runner_type: :local_docker,
+      identifier: identifier,
+      host: "local",
+      workspace_ref: "workspace-#{identifier}",
+      metadata: {}
+    )
+  end
+
+  def successful_execution_result(stdout:)
+    ExecutionRunners::ExecutionResult.new(
+      success: true,
+      stdout: stdout,
+      stderr: "",
+      exit_code: 0,
+      oom_killed: false,
+      memory_limit_bytes: nil,
+      environment_running: true
+    )
+  end
+
+  def stub_runner_diff(stdout:)
+    runner = instance_double(ExecutionRunners::LocalDockerRunner)
+    allow(ExecutionRunners).to receive(:resolve_for).and_return(runner)
+    allow(runner).to receive(:start).and_return(successful_execution_result(stdout:))
+  end
+
   describe ".call" do
     it "returns no conflicts when fewer than 2 runs" do
       run = create(:agent_run, :completed)
@@ -104,6 +132,31 @@ RSpec.describe Conflicts::Detect do
 
         expect(result[:has_conflicts]).to be true
         expect(result[:conflicting_pairs].first[:files]).to eq([ "src/app.rb" ])
+      end
+
+      it "diffs through a persisted runner_handle when container_id is absent" do
+        FeatureFlags.enable!(:execution_runner_enabled, project: project)
+        stub_runner_diff(stdout: "src/app.rb\nsrc/config.rb\n")
+
+        run_a = create(:agent_run, :completed, project: project,
+          branch_name: "paid/runner-a",
+          base_commit_sha: base_sha,
+          result_commit_sha: "b" * 40,
+          container_id: nil,
+          runner_handle: runner_handle(identifier: "runner-a").to_storage)
+        run_b = create_run(result_sha: "c" * 40, changed_files: [ "src/app.rb" ])
+
+        allow(WorktreeService).to receive(:new).and_raise(StandardError, "no repo")
+
+        result = described_class.call(
+          agent_run_ids: [ run_a.id, run_b.id ],
+          project_id: project.id
+        )
+
+        expect(result[:has_conflicts]).to be true
+        expect(result[:conflicting_pairs]).to contain_exactly(
+          { runs: [ run_a.id, run_b.id ], files: [ "src/app.rb" ] }
+        )
       end
 
       it "falls through to metadata when bare repo diff fails" do

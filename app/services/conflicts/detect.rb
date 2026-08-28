@@ -118,7 +118,8 @@ module Conflicts
 
     # Attempts to get changed files from the agent's container if still available.
     def diff_files_from_container(run)
-      return Set.new if run.container_id.blank?
+      rehydrate_runner_handle_for_diff(run)
+      return Set.new unless execution_environment_available_for_diff?(run)
 
       result = run.execute_in_execution_environment(
         [ "git", "diff", "--name-only", run.base_commit_sha, run.result_commit_sha ],
@@ -136,6 +137,16 @@ module Conflicts
         error: e.message
       )
       Set.new
+    end
+
+    def execution_environment_available_for_diff?(run)
+      run.container_id.present? || run.runner_handle.present?
+    end
+
+    def rehydrate_runner_handle_for_diff(run)
+      return if run.runner_handle.blank? || run.instance_variable_defined?(:@current_handle)
+
+      run.instance_variable_set(:@current_handle, ExecutionRunners::RunnerHandle.from_record(run))
     end
 
     # Computes changed files via the host bare repo using stored commit SHAs.
