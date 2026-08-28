@@ -35,7 +35,6 @@ module Activities
     # unanswered bot review requests, or review-goal retry timers — without
     # a time ceiling, PRs waiting on those signals are skipped indefinitely.
     SCAN_STALENESS_MULTIPLIER = 3
-    KNOWN_BOT_PREFIXES = %w[dependabot renovate github-actions].freeze
     DEPENDENCY_UPDATE_BOT_AUTHORS = Project::DEPENDENCY_UPDATE_BOT_AUTHORS
     DEPENDABOT_AUTO_MERGE_AUTHORS = DependabotAutoMergeJob::DEPENDABOT_AUTHORS
     REVIEW_BOT_CLEAN_PATTERN = /generated no (?:new )?comments/i
@@ -547,7 +546,7 @@ module Activities
       # review method there is no other bot that can gate draft exit, so
       # paid_agent_review_pending must block advancement just like
       # review_bot_review_pending does for copilot/codex.
-      paid_agent_sole_reviewer = paid_agent_sole_review_method?(project)
+      paid_agent_sole_reviewer = Reviews::BlockingMethodsComplete.paid_agent_sole_review_method?(project)
       pending_triggers = (review_bot_triggers || []).select { |t| t[:type] == "review_bot_review_pending" }
       sidecar_triggers = (review_bot_triggers || []).select { |t| t[:type] == "paid_agent_review_pending" }
 
@@ -942,15 +941,45 @@ module Activities
       reviews = fetch_reviews(client, project, issue)
       unresolved_threads = fetch_unresolved_threads(client, project, issue)
 
-      if auto_merge_eligible?(project, client, issue,
-           pr_data: pr_data, checks: checks, reviews: reviews, unresolved_threads: unresolved_threads)
+      auto_merge_evaluation = analyze_auto_merge(project, client, issue,
+        pr_data: pr_data,
+        checks: checks,
+        reviews: reviews,
+        unresolved_threads: unresolved_threads,
+        progress_state: progress_state)
+
+      if auto_merge_evaluation&.analysis&.eligible?
+        track_approval_wait!(project, issue, blocked_only_on_approval: false)
         return owner_approved_trigger(issue)
       end
+
+      signals = auto_merge_evaluation&.signals
 
       triggers = detect_ready_triggers(project, client, issue,
         pr_data: pr_data, checks: checks, reviews: reviews, unresolved_threads: unresolved_threads)
       return :skipped if triggers.nil?
-      return owner_approval_stale_trigger(project, issue, pr_data, client:, reviews:) if triggers.empty?
+
+      if triggers.empty?
+        stale_owner_review_trigger = owner_approval_stale_trigger(project, issue, pr_data, client:, reviews:)
+        unless stale_owner_review_trigger.nil?
+          track_approval_wait!(project, issue, blocked_only_on_approval: false)
+          return stale_owner_review_trigger
+        end
+
+        # No actionable signal and not auto-merge eligible. When the *only*
+        # thing between this PR and a merge is the owner's approval, that
+        # wait is tracked and — past the project ceiling — escalated.
+        blocked_only_on_approval = blocked_only_on_approval?(project, client, issue, signals)
+        track_approval_wait!(project, issue, blocked_only_on_approval: blocked_only_on_approval)
+
+        if blocked_only_on_approval && approval_wait_exceeds_ceiling?(project, issue) # @spec PR-ESCALATION-024
+          return approval_wait_escalate_trigger(project, issue)
+        end
+
+        return nil
+      end
+
+      track_approval_wait!(project, issue, blocked_only_on_approval: false)
 
       # Hard gate: stop queuing create_pr follow-ups once the total run limit
       # is hit and escalate instead (#3271).
@@ -1027,6 +1056,83 @@ module Activities
         "triggering condition remains unresolved"
     end
 
+    # --- Approval-wait escalation (awaiting_approval) ---
+
+    # True when every automatic-merge precondition except owner approval is
+    # satisfied: the PR is green, mergeable, free of outstanding review
+    # feedback, and held only by the human approval gate. This is the "green
+    # and parked" state that has no trigger of its own — nothing about it
+    # warrants agent work, which is exactly why it can wait forever.
+    # @spec PR-ESCALATION-025
+    def blocked_only_on_approval?(project, client, issue, signals)
+      return false if project.owner_reviewer_login.blank?
+      return false if signals.nil?
+      return false if signals.owner_approved?
+      return false unless signals.checks_green?
+      return false unless signals.mergeable?
+      return false unless signals.review_feedback_clear?
+      return false unless signals.blocking_reviews_complete?
+      return false unless signals.reviews_fresh?
+      return false if signals.skip_auto_merge?
+
+      # Signals resolve dependencies only when every other precondition
+      # passed (they gate an extra API round-trip), so compute them here for
+      # the blocked-only case: an unmerged dependency PR is a non-approval
+      # blocker.
+      dependencies_resolved?(client, project, issue)
+    end
+
+    # Stamps the approval wait on the first scan that observes the PR blocked
+    # only on approval, and clears it whenever that stops being true. The
+    # wait is measured from this observation — not PR creation — so a PR that
+    # was legitimately in review for a week has not been waiting on approval
+    # for a week, and any non-approval blocker resets the clock because the
+    # wait is a property of the approval gate, not of the PR.
+    # @spec PR-ESCALATION-025
+    def track_approval_wait!(project, issue, blocked_only_on_approval:)
+      if blocked_only_on_approval
+        return if issue.awaiting_approval_since.present?
+
+        issue.update_column(:awaiting_approval_since, Time.current)
+        logger.info(
+          message: "pr_scanner.approval_wait_started",
+          project_id: project.id,
+          pr_number: issue.github_number
+        )
+      elsif issue.awaiting_approval_since.present?
+        issue.update_column(:awaiting_approval_since, nil)
+        logger.info(
+          message: "pr_scanner.approval_wait_cleared",
+          project_id: project.id,
+          pr_number: issue.github_number
+        )
+      end
+    end
+
+    # True once the PR has been blocked only on approval longer than the
+    # project's ceiling. A ceiling of 0 (or less) disables the escalation:
+    # the inbox entry and the review re-request stay the only nudges.
+    # @spec PR-ESCALATION-024
+    def approval_wait_exceeds_ceiling?(project, issue)
+      ceiling_hours = project.pr_approval_escalation_hours.to_i
+      return false if ceiling_hours <= 0
+      return false if issue.awaiting_approval_since.blank?
+
+      issue.awaiting_approval_since <= ceiling_hours.hours.ago
+    end
+
+    # The backstop escalation: past the ceiling, "nobody is coming" is a
+    # genuine failure. Escalation fires exactly once per wait — once the
+    # phase is escalated, recovery-only scanning takes over until the owner
+    # approves (which merges the PR) or otherwise clears the hold.
+    # @spec PR-ESCALATION-024
+    def approval_wait_escalate_trigger(project, issue)
+      escalate_trigger(issue,
+        reason: "This PR has been green and waiting only for owner approval " \
+                "for more than #{project.pr_approval_escalation_hours} hours",
+        reason_key: Issue::PR_ESCALATION_REASON_AWAITING_APPROVAL)
+    end
+
     # --- Escalated phase scanning ---
 
     # Recovery detection only. An escalated PR is the owner's problem until
@@ -1059,7 +1165,8 @@ module Activities
         pr_data: pr_data,
         checks: checks,
         reviews: fetch_reviews(client, project, issue),
-        unresolved_threads: fetch_unresolved_threads(client, project, issue))
+        unresolved_threads: fetch_unresolved_threads(client, project, issue),
+        progress_state: pr_progress_state(project, issue))
     end
 
     # --- Special trigger builders ---
@@ -1321,6 +1428,7 @@ module Activities
         issue.update!(
           pr_review_phase: "restarted",
           pr_escalation_reason: nil,
+          awaiting_approval_since: nil,
           draft_review_count: 0,
           pr_followup_count: 0,
           review_goal_retry_count: 0,
@@ -2082,9 +2190,7 @@ module Activities
     end
 
     def all_checks_green?(checks)
-      return true if checks.empty?
-
-      checks.all? { |c| %w[success skipped neutral].include?(c[:conclusion]) }
+      Reviews::ChecksStatus.all_green?(checks)
     end
 
     def checks_pending?(checks)
@@ -2105,7 +2211,7 @@ module Activities
 
       if project.review_method_enabled?("manual")
         reviewer = project.review_method(:manual).reviewer_login
-        if reviewer.present? && !manual_reviewer_approved?(reviews, reviewer)
+        if reviewer.present? && !Reviews::BlockingMethodsComplete.manual_review_complete?(project:, reviews:)
           triggers << { type: "manual_review_pending", reviewer_login: reviewer,
                         details: "Awaiting approval from #{reviewer}" }
         end
@@ -2113,7 +2219,9 @@ module Activities
 
       if project.review_method_enabled?("ci_action") && !checks.nil?
         action_name = project.review_method(:ci_action).action_name
-        if action_name.present? && !ci_action_review_complete?(project, checks, pr_data)
+        if action_name.present? && !Reviews::BlockingMethodsComplete.ci_action_review_complete?(
+          project: project, checks: checks, pr_data: pr_data
+        )
           dispatch_needed = ci_action_dispatch_required?(issue, checks, action_name)
           triggers << { type: "ci_action_pending", action_name: action_name,
                         dispatch_required: dispatch_needed,
@@ -2122,19 +2230,6 @@ module Activities
       end
 
       triggers
-    end
-
-    def manual_reviewer_approved?(reviews, reviewer_login)
-      return false if reviews.nil?
-
-      reviewer_reviews = reviews.select { |r| r[:user_login]&.downcase == reviewer_login.strip.downcase }
-      return false if reviewer_reviews.empty?
-
-      # Time.at(0) fallback: reviews with nil timestamps sort oldest, so any
-      # review with a real timestamp will win. GitHub always populates
-      # submitted_at in practice, so this is purely defensive.
-      latest = reviewer_reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
-      latest[:state] == "APPROVED"
     end
 
     def ci_action_succeeded?(checks, action_name)
@@ -2158,10 +2253,6 @@ module Activities
 
     def ci_action_dispatch_suppressed?(issue)
       issue.ci_action_dispatched_at.present? && issue.ci_action_dispatched_at >= CI_ACTION_DISPATCH_GRACE_PERIOD.ago
-    end
-
-    def ci_action_check_skipped_for_fork?(action_name, pr_data)
-      claude_review_action?(action_name) && pr_data&.head&.repo&.fork == true
     end
 
     # --- Review checks ---
@@ -2384,18 +2475,7 @@ module Activities
     end
 
     MAX_REVIEW_GOAL_RETRIES = 3
-    REVIEW_GOAL_RETRYABLE_FAILURE_STATUSES = (AgentRun::FAILURE_STATUSES + %w[no_output]).freeze
-
-    # Returns true when paid_agent is the only enabled bot review method,
-    # meaning its pending trigger must block draft exit since no other bot
-    # can gate the PR.
-    def paid_agent_sole_review_method?(project)
-      return false unless project&.review_enabled?
-      return false unless project.review_method_enabled?("paid_agent")
-
-      bot_methods = project.enabled_review_methods & %w[copilot codex paid_agent]
-      bot_methods == %w[paid_agent]
-    end
+    REVIEW_GOAL_RETRYABLE_FAILURE_STATUSES = Reviews::AutomaticRunHistory::RETRYABLE_FAILURE_STATUSES
 
     # Returns a paid_agent_review_pending trigger when no up-to-date completed
     # automatic paid_agent review-goal run exists and the max_review_rounds
@@ -2430,7 +2510,8 @@ module Activities
       # for mixed-bot projects so the remaining bot can keep gating the PR.
       # Paid-agent-only projects still need paid_agent_review_pending to block
       # draft exit until the retried review is posted.
-      return [] if review_goal_retry_needed?(project, issue, progress_state:) && !paid_agent_sole_review_method?(project)
+      return [] if review_goal_retry_needed?(project, issue, progress_state:) &&
+        !Reviews::BlockingMethodsComplete.paid_agent_sole_review_method?(project)
 
       # Count all finished review attempts (including failed/timed-out) toward
       # the max_review_rounds limit, but exclude retried runs because retry
@@ -2552,29 +2633,16 @@ module Activities
       )
     end
 
-    def automatic_review_runs(project, issue)
-      all_review_runs(project, issue)
-        .where(trigger_type: "automatic")
-    end
-
     def attempted_automatic_review_runs(project, issue)
-      automatic_review_runs(project, issue)
-        .where.not(status: "retried")
+      Reviews::AutomaticRunHistory.attempted(project:, issue:)
     end
 
     def attempted_automatic_review_runs_since_retry_reset(project, issue, progress_state: nil)
-      scope = attempted_automatic_review_runs(project, issue)
-      reset_at = review_goal_failure_reset_at(project, issue, progress_state:)
-      return scope unless reset_at
-
-      scope.where(review_run_cycle_boundary.gt(reset_at))
+      Reviews::AutomaticRunHistory.attempted_since_retry_reset(project:, issue:, progress_state:)
     end
 
     def latest_finished_automatic_review_run(project, issue, progress_state: nil)
-      attempted_automatic_review_runs_since_retry_reset(project, issue, progress_state:)
-        .finished
-        .order(Arel.sql("#{PullRequests::ProgressState::RUN_TIMESTAMP_SQL} DESC, created_at DESC, id DESC"))
-        .first
+      Reviews::AutomaticRunHistory.latest_finished(project:, issue:, progress_state:)
     end
 
     def review_goal_consecutive_failure_count(project, issue, progress_state: nil)
@@ -2582,15 +2650,6 @@ module Activities
         attempted_automatic_review_runs_since_retry_reset(project, issue, progress_state:),
         progress_state: progress_state || pr_progress_state(project, issue)
       )
-    end
-
-    def review_goal_failure_reset_at(project, issue, progress_state: nil)
-      retry_reset_at = issue.review_goal_retry_reset_at
-
-      [
-        retry_reset_at,
-        progress_state&.last_meaningful_progress_at
-      ].compact.max
     end
 
     def consecutive_retryable_review_failures(scope, progress_state:, batch_size: PullRequests::ProgressState::RUN_BATCH_SIZE)
@@ -2690,14 +2749,7 @@ module Activities
     end
 
     def review_run_cycle_boundary
-      agent_runs = AgentRun.arel_table
-      Arel::Nodes::Case.new
-        .when(agent_runs[:started_at].eq(nil))
-        .then(agent_runs[:created_at])
-        .else(Arel::Nodes::NamedFunction.new("LEAST", [
-          agent_runs[:started_at],
-          agent_runs[:created_at]
-        ]))
+      Reviews::AutomaticRunHistory.cycle_boundary
     end
 
     def body_only_review_bot?(login)
@@ -2732,7 +2784,7 @@ module Activities
       return false if allowed_bot_logins.nil? || allowed_bot_logins.empty?
       return false unless allowed_bot_logins.subset?(BODY_ONLY_REVIEW_BOT_LOGINS)
 
-      comments = pull_request_collector(project, client:).fetch_recent_issue_comments(issue:)
+      comments = pull_request_collector(project, client:).fetch_recent_issue_comments(issue:) || []
       bot_comments = comments.select do |c|
         login = c.user&.login&.downcase
         login && allowed_bot_logins.include?(login)
@@ -2822,7 +2874,7 @@ module Activities
     def check_conversation_comments(client, project, issue, last_run)
       cutoff = last_run&.completed_at
       comments = pull_request_collector(project, client:)
-        .fetch_recent_issue_comments(issue:, cutoff:)
+        .fetch_recent_issue_comments(issue:, cutoff:) || []
 
       relevant = comments.select do |c|
         login = c.user&.login
@@ -2888,38 +2940,7 @@ module Activities
     # --- Owner approval check ---
 
     def owner_approved_or_self_authored?(project, reviews, pr_data)
-      return true if owner_is_pr_author?(project, pr_data)
-      return true if bot_author_auto_merge_allowed?(project, pr_data)
-
-      owner_approved_from_reviews?(project, reviews)
-    end
-
-    def bot_author_auto_merge_allowed?(project, pr_data)
-      return false unless project.auto_merge_bot_authored?
-
-      paid_agent_pr_author?(project, pr_data&.user&.login)
-    end
-
-    def owner_approved_from_reviews?(project, reviews)
-      return false if reviews.nil?
-
-      owner_login = project.owner_reviewer_login
-      return false if owner_login.blank?
-
-      owner_reviews = reviews.select { |r| r[:user_login]&.downcase == owner_login.downcase }
-      return false if owner_reviews.empty?
-
-      latest = owner_reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
-      latest[:state] == "APPROVED"
-    end
-
-    def owner_is_pr_author?(project, pr_data)
-      owner_login = project.owner_reviewer_login
-      author_login = pr_data&.user&.login
-
-      return false if owner_login.blank? || author_login.blank?
-
-      owner_login.casecmp?(author_login)
+      Reviews::OwnerApproval.approved_or_self_authored?(project:, reviews:, pr_data:)
     end
 
     # --- Review feedback gate for auto-merge ---
@@ -2958,113 +2979,8 @@ module Activities
     end
 
     # --- Blocking review method completeness gate ---
-
-    # Returns true when every enabled blocking review method has a
-    # completion signal. Review methods and their completion criteria:
-    #
-    #   paid_agent (sole bot method, non-escalated PRs only) — the most
-    #     recent finished review-goal run must not be a failure that posted
-    #     no review. A failed, unposted run means the required review never
-    #     landed, so the gate holds until a run succeeds (or the retry-limit
-    #     escalation path releases it by escalating). Outstanding feedback
-    #     from a review that *was* posted is still checked by
-    #     no_outstanding_review_feedback?.
-    #   copilot / codex — checked by no_outstanding_review_feedback?
-    #     (review bot status + thread resolution). Not re-checked here.
-    #   ci_action — the check run named by action_name must be present
-    #     and have a successful conclusion.
-    #   manual — at least one trusted non-bot user must have submitted
-    #     an APPROVED review (distinct from owner approval, which gates
-    #     the merge trigger itself).
-    def all_blocking_review_methods_complete?(project, reviews, checks, pr_data: nil, issue: nil)
-      return true unless project.review_enabled? && project.wait_for_reviews?
-
-      if issue && paid_agent_review_unposted_failure?(project, issue, reviews)
-        return false
-      end
-
-      if project.review_method_enabled?("ci_action")
-        return false unless ci_action_review_complete?(project, checks, pr_data)
-      end
-
-      if project.review_method_enabled?("manual")
-        return false unless manual_review_complete?(project, reviews)
-      end
-
-      true
-    end
-
-    # Returns true when paid_agent is enabled as the SOLE bot review method,
-    # the PR is still in a review-gated phase (not escalated), no paid_agent
-    # review has been posted, and the most recent finished review-goal run in
-    # the current cycle ended in a retryable failure status without posting a
-    # review. The PR then never received the required review, so auto-merge
-    # must hold until a run succeeds, or until exhausting retries drives the
-    # escalation path (which moves the PR to the escalated phase, exempt
-    # below). A posted review — clean or not — is left to the existing
-    # no_outstanding_review_feedback? path, so this only closes the "review
-    # never landed" hole (#3086).
-    #
-    # Scope is deliberately narrow:
-    # - Sole-method only: mixed-bot projects (e.g. copilot + paid_agent) do
-    #   NOT escalate on paid_agent exhaustion — the other bot is meant to keep
-    #   gating (see review_goal_retry_limit_requires_escalation?). Blocking
-    #   here for a mixed project would deadlock with no recovery.
-    # - Escalated PRs are exempt: owner approval intentionally unblocks
-    #   auto-merge for an escalated PR (see scan_escalated_pr), and the race
-    #   this guard prevents (merge firing before escalation confirms) is
-    #   already resolved once the PR has escalated.
-    def paid_agent_review_unposted_failure?(project, issue, reviews)
-      return false if issue.escalated_phase?
-      return false unless paid_agent_sole_review_method?(project)
-      return false if paid_agent_review_present?(reviews)
-
-      latest_run = latest_finished_automatic_review_run(
-        project, issue, progress_state: pr_progress_state(project, issue)
-      )
-      return false unless latest_run&.status&.in?(REVIEW_GOAL_RETRYABLE_FAILURE_STATUSES)
-      return false if latest_run.review_posted_at.present?
-
-      true
-    end
-
-    # Returns true when any posted review came from the paid_agent review bot.
-    def paid_agent_review_present?(reviews)
-      return false if reviews.blank?
-
-      reviews.any? { |review| RunnerSupport.runner_bot_username_for?("paid_agent", review[:user_login]) }
-    end
-
-    # ci_action is complete when the configured action_name appears in
-    # the check-run list with a "success" conclusion.
-    def ci_action_review_complete?(project, checks, pr_data)
-      action_name = project.review_method(:ci_action).action_name
-      if action_name.blank?
-        Rails.logger.warn(message: "reviews.ci_action_missing_action_name", project_id: project.id)
-        return false
-      end
-
-      return true if ci_action_check_skipped_for_fork?(action_name, pr_data)
-
-      checks.any? { |c| c[:name] == action_name.strip && c[:conclusion] == "success" }
-    end
-
-    # Manual review is complete when the configured reviewer_login has
-    # submitted an APPROVED review. This aligns with manual_reviewer_approved?
-    # (used in detect_ready_triggers) so the same user gates both paths.
-    def manual_review_complete?(project, reviews)
-      return false if reviews.nil?
-
-      reviewer = project.review_method(:manual).reviewer_login
-      return false if reviewer.blank?
-
-      reviews.any? do |r|
-        r[:state] == "APPROVED" &&
-          r[:user_login]&.downcase == reviewer.strip.downcase &&
-          project.trusted_github_user?(r[:user_login]) &&
-          !bot_user?(r[:user_login])
-      end
-    end
+    # Lives in Reviews::BlockingMethodsComplete, shared with the
+    # awaiting_approval escalation re-validation.
 
     # --- Stale review detection ---
 
@@ -3136,7 +3052,7 @@ module Activities
       if project.review_method_enabled?("manual")
         reviewer = project.review_method(:manual).reviewer_login
         if reviewer.present?
-          manual = latest_approval_for(project, reviews) do |r|
+          manual = latest_approval_for(project, reviews, trust_required: false) do |r|
             r[:user_login]&.downcase == reviewer.strip.downcase
           end
           approvals << manual if manual
@@ -3149,6 +3065,7 @@ module Activities
     def owner_approval_stale_for_head?(project, issue, pr_data, client, reviews)
       owner_approval = owner_approval_for(project, reviews)
       return false if owner_approval.nil?
+      return true unless project.review_method_enabled?("manual")
 
       head_committed_at = fetch_head_commit_date(client, project, issue, pr_data)
       return false if head_committed_at.nil?
@@ -3196,10 +3113,10 @@ module Activities
     # among APPROVED reviews from trusted non-bot users matching the given
     # block filter. +nil+ when no approval matches — callers fall back to
     # their default (e.g. no owner approval recorded yet).
-    def latest_approval_for(project, reviews)
+    def latest_approval_for(project, reviews, trust_required: true)
       approvals = reviews.select do |r|
         r[:state] == "APPROVED" &&
-          project.trusted_github_user?(r[:user_login]) &&
+          approval_login_allowed?(project, r[:user_login], trust_required:) &&
           !bot_user?(r[:user_login]) &&
           yield(r)
       end
@@ -3209,6 +3126,10 @@ module Activities
 
       matching = approvals.find { |r| r[:submitted_at] == latest }
       { submitted_at: latest, commit_id: matching&.dig(:commit_id) }
+    end
+
+    def approval_login_allowed?(project, login, trust_required:)
+      !trust_required || project.trusted_github_user?(login)
     end
 
     # --- Helpers ---
@@ -3466,27 +3387,15 @@ module Activities
     end
 
     def bot_user?(login)
-      return false if login.blank?
-
-      normalized = login.downcase
-      return true if normalized.end_with?("[bot]", "-bot")
-
-      KNOWN_BOT_PREFIXES.any? { |prefix| normalized.start_with?(prefix) }
+      Reviews::BotDetection.bot_user?(login)
     end
 
-    # A PR authored by the project's own GitHub App agent bot (e.g.
-    # "paid-agents[bot]"). These are Paid-generated PRs, not third-party
-    # automation, so they must follow the full review + auto-merge path.
-    #
-    # Matches only the "[bot]" author login (github_author_login), never the
-    # bare app slug ("paid-agents") — the slug is a registerable human GitHub
-    # username and must not be treated as the project's agent. Mirrors the
-    # author-trust model in Project#trusted_github_author_logins.
     def paid_agent_pr_author?(project, login)
-      return false if login.blank?
+      Reviews::OwnerApproval.paid_agent_pr_author?(project:, login:)
+    end
 
-      agent_login = project.github_author_login
-      agent_login.present? && login.casecmp?(agent_login)
+    def owner_is_pr_author?(project, pr_data)
+      Reviews::OwnerApproval.author_is_owner?(project:, pr_data:)
     end
 
     # A PR authored by a third-party automation bot (Dependabot, Renovate,
@@ -3533,12 +3442,53 @@ module Activities
 
     # --- Auto-merge strategy delegation ---
 
+    # Paired result of a single auto-merge analysis: the collected signals
+    # and the strategy's evaluation of them, so callers can reuse both
+    # without re-running the signal gates.
+    AutoMergeEvaluation = Data.define(:signals, :analysis)
+    AutoMergeSignalBuild = Data.define(:signals, :review_freshness)
+
     # Evaluates human-authored PR merge eligibility via the AutoMerge
-    # strategy. Collects signals from provider data and delegates the
-    # decision to {Automation::Strategies::AutoMerge}.
+    # strategy. Collects signals from provider data, persists the blocker
+    # snapshot, and delegates the decision to {Automation::Strategies::AutoMerge}.
     # @spec AUTO-MERGE-005
-    def auto_merge_eligible?(project, client, issue, pr_data:, checks:, reviews:, unresolved_threads: nil)
-      return false unless project.auto_merge_enabled? && pr_data.present?
+    def auto_merge_eligible?(project, client, issue, pr_data:, checks:, reviews:, unresolved_threads: nil,
+      progress_state: nil)
+      analyze_auto_merge(project, client, issue,
+        pr_data: pr_data, checks: checks, reviews: reviews, unresolved_threads: unresolved_threads,
+        progress_state: progress_state)&.analysis&.eligible? || false
+    end
+
+    # Runs the full auto-merge analysis once and returns the
+    # {AutoMergeEvaluation} (signals + analysis), or nil when auto-merge is
+    # disabled or the PR data is missing. Callers that need both the
+    # eligibility decision and the underlying signals must use this instead
+    # of calling auto_merge_eligible? followed by build_auto_merge_signals,
+    # which would evaluate the expensive GitHub gates twice.
+    def analyze_auto_merge(project, client, issue, pr_data:, checks:, reviews:, unresolved_threads: nil,
+      progress_state: nil)
+      signal_build = build_auto_merge_signals(project, client, issue,
+        pr_data: pr_data, checks: checks, reviews: reviews, unresolved_threads: unresolved_threads,
+        progress_state: progress_state)
+      return if signal_build.nil?
+
+      signals = signal_build.signals
+
+      log_skip_auto_merge(project, issue) if signals.skip_auto_merge?
+
+      analysis = evaluate_auto_merge(project, signals)
+      stage_auto_merge_snapshot(issue, analysis, review_freshness: signal_build.review_freshness)
+      AutoMergeEvaluation.new(signals:, analysis:)
+    end
+
+    # Collects the provider-neutral auto-merge preconditions for a
+    # human-authored PR into an {Automation::Strategies::AutoMerge::Signals}.
+    # Returns nil when auto-merge is disabled or the PR data is missing, so
+    # callers can distinguish "not gated by auto-merge" from "gated and
+    # failing" — the distinction the awaiting_approval escalation keys on.
+    def build_auto_merge_signals(project, client, issue, pr_data:, checks:, reviews:, unresolved_threads: nil,
+      progress_state: nil)
+      return nil unless project.auto_merge_enabled? && pr_data.present?
 
       owner_approved = owner_approved_or_self_authored?(project, reviews, pr_data)
       checks_green = !checks.nil? && all_checks_green?(checks)
@@ -3548,7 +3498,7 @@ module Activities
         unresolved_threads: unresolved_threads
       )
       blocking_reviews_complete = all_blocking_review_methods_complete?(
-        project, reviews, checks, pr_data: pr_data, issue: issue
+        project, issue, reviews, checks: checks, pr_data: pr_data, progress_state: progress_state
       )
       review_freshness = review_freshness_for_head(client, project, issue, pr_data, reviews)
       reviews_fresh = review_freshness == :fresh
@@ -3579,11 +3529,7 @@ module Activities
         skip_auto_merge: skip_label
       )
 
-      log_skip_auto_merge(project, issue) if skip_label
-
-      analysis = evaluate_auto_merge(project, signals)
-      stage_auto_merge_snapshot(issue, analysis, review_freshness:)
-      analysis.eligible?
+      AutoMergeSignalBuild.new(signals:, review_freshness:)
     end
 
     # Evaluates bot-authored PR merge eligibility via the AutoMerge
@@ -3647,41 +3593,30 @@ module Activities
         mergeable
     end
 
+    def all_blocking_review_methods_complete?(project, issue, reviews, checks:, pr_data:, progress_state:)
+      Reviews::BlockingMethodsComplete.call(
+        project: project, issue: issue, reviews: reviews, checks: checks, pr_data: pr_data,
+        progress_state: progress_state
+      )
+    end
+
     def supported_dependency_update_merge_author?(login)
       return false if login.blank?
 
       DependabotAutoMergeJob::DEPENDABOT_AUTHORS.include?(login.downcase)
     end
 
+    # Delegates to the shared PullRequests::DependenciesResolved so the
+    # scan and the awaiting_approval escalation re-validation
+    # (PullRequests::BlockedOnlyOnApproval) apply the same dependency
+    # gate.
     def dependencies_resolved?(client, project, issue)
-      local_deps, cross_deps = Issues::ParseDependencies.extract(
-        body: issue.body,
-        comments: dependency_comment_bodies(client, project, issue)
+      PullRequests::DependenciesResolved.call(
+        collector: pull_request_collector(project, client:),
+        project: project,
+        issue: issue,
+        logger: logger
       )
-
-      return true if local_deps.empty? && cross_deps.empty?
-
-      same_repo = [ project.owner.downcase, project.repo.downcase ]
-      same_repo_numbers = cross_deps.each_with_object(Set.new) do |((owner, repo, number), _), numbers|
-        return false if [ owner, repo ] != same_repo
-
-        numbers << number
-      end
-
-      (local_deps.keys.to_set | same_repo_numbers).all? do |number|
-        dependency_resolved?(client, project, number)
-      end
-    rescue GithubClient::Error => e
-      log_signal_error("dependencies_resolved", project, issue, e)
-      false
-    end
-
-    def dependency_comment_bodies(client, project, issue)
-      pull_request_collector(project, client:).dependency_comment_bodies(issue:)
-    end
-
-    def dependency_resolved?(client, project, number)
-      pull_request_collector(project, client:).dependency_resolved?(number:)
     end
 
     def evaluate_auto_merge(project, signals)

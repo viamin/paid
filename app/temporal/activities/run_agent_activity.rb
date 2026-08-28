@@ -3415,7 +3415,7 @@ module Activities
 
     def reprovision_container_for_fallback!(agent_run)
       agent_run.ensure_proxy_token!
-      agent_run.provision_container
+      agent_run.provision_container(restart_provisioning_cycle: true)
       return unless agent_run.repo_cloned?
 
       container_service = reconnect_container(agent_run)

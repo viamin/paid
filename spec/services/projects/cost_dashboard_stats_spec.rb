@@ -28,11 +28,13 @@ RSpec.describe Projects::CostDashboardStats do
     it "separates infrastructure cost from llm cost while exposing total variable cost" do
       travel_to(Time.zone.local(2024, 1, 15, 12, 0, 0)) do
         run = create(:agent_run, project: project, status: "completed", cost_cents: 300,
-          provisioning_started_at: 2.hours.ago, completed_at: 1.hour.ago,
-          external_metadata: {
-            "infrastructure_spend" => { "rate_cents_per_hour" => 120 }
-          })
+          provisioning_started_at: 2.hours.ago, completed_at: 1.hour.ago)
         create(:token_usage, agent_run: run, cost_cents: 300, request_type: "agent")
+        create_execution_usage(run,
+          provisioned_at: 2.hours.ago,
+          terminated_at: 1.hour.ago,
+          billed_duration_seconds: 3600,
+          infra_cost_cents: 120)
 
         result = described_class.call(project: project)
 
@@ -44,6 +46,229 @@ RSpec.describe Projects::CostDashboardStats do
         expect(result[:summary][:total_variable_cost_today_cents]).to eq(420)
         expect(result[:summary][:infrastructure_cost_this_month_cents]).to eq(120)
         expect(result[:summary][:total_variable_cost_this_month_cents]).to eq(420)
+      end
+    end
+
+    it "preserves overlap-based infrastructure accounting for terminated and pending runs" do
+      travel_to(Time.zone.local(2024, 1, 15, 12, 0, 0)) do
+        finished_run = create(:agent_run, project: project, status: "completed", cost_cents: 300,
+          provisioning_started_at: Time.zone.local(2024, 1, 14, 23, 0, 0),
+          completed_at: Time.zone.local(2024, 1, 15, 1, 0, 0))
+        create_execution_usage(finished_run,
+          provisioned_at: Time.zone.local(2024, 1, 14, 23, 0, 0),
+          terminated_at: Time.zone.local(2024, 1, 15, 1, 0, 0),
+          billed_duration_seconds: 7200,
+          infra_cost_cents: 240)
+
+        pending_run = create_pending_run
+
+        result = described_class.call(project: project)
+
+        expect(pending_run.execution_usage).to be_nil
+        expect(result[:summary][:infrastructure_cost_cents]).to eq(300)
+        expect(result[:summary][:infrastructure_cost_today_cents]).to eq(180)
+        expect(result[:summary][:infrastructure_cost_this_month_cents]).to eq(300)
+      end
+    end
+
+    # @spec INFRA-SPEND-001
+    it "accrues pending spend when an older cycle is recorded late after the current cycle starts" do
+      travel_to(Time.zone.local(2024, 1, 15, 12, 0, 0)) do
+        # The older cycle's row lands late, after the current cycle has
+        # already started. The existence check must still keep charging the
+        # live cycle until *that* cycle's own row is recorded.
+        reprovisioned_run = create(:agent_run, project: project, status: "running",
+          provisioning_started_at: 30.minutes.ago,
+          started_at: 25.minutes.ago,
+          external_metadata: {
+            "infrastructure_spend" => { "rate_cents_per_hour" => 120 }
+          })
+        create_execution_usage(reprovisioned_run,
+          provisioned_at: 2.hours.ago,
+          terminated_at: 20.minutes.ago,
+          billed_duration_seconds: 6000,
+          infra_cost_cents: 200)
+
+        result = described_class.call(project: project)
+
+        # Historical (first cycle) cost + pending (current cycle) cost for
+        # the new machine, which is 30 min at 120 cents/hr = 60 cents.
+        expect(result[:summary][:infrastructure_cost_cents]).to eq(260)
+        expect(result[:summary][:infrastructure_cost_today_cents]).to eq(260)
+        expect(result[:summary][:infrastructure_cost_this_month_cents]).to eq(260)
+      end
+    end
+
+    # @spec INFRA-SPEND-001
+    it "does not double-count re-provisioned runs whose current cycle has been recorded" do
+      travel_to(Time.zone.local(2024, 1, 15, 12, 0, 0)) do
+        # A run whose first cycle was recorded (evicted) and whose second
+        # cycle's recording has already landed. Historical rows contribute
+        # both cycles, and pending spend contributes nothing.
+        run = create(:agent_run, project: project, status: "completed",
+          provisioning_started_at: 30.minutes.ago,
+          completed_at: 5.minutes.ago,
+          external_metadata: {
+            "infrastructure_spend" => { "rate_cents_per_hour" => 120 }
+          })
+        create_execution_usage(run,
+          provisioned_at: 2.hours.ago,
+          terminated_at: 1.hour.ago,
+          billed_duration_seconds: 3600,
+          infra_cost_cents: 120)
+        create_execution_usage(run,
+          provisioned_at: 30.minutes.ago,
+          terminated_at: 5.minutes.ago,
+          billed_duration_seconds: 1500,
+          infra_cost_cents: 50)
+
+        result = described_class.call(project: project)
+
+        expect(result[:summary][:infrastructure_cost_cents]).to eq(170)
+      end
+    end
+
+    # @spec EXEC-USAGE-007
+    # @spec EXEC-USAGE-011
+    it "attributes recorded spend to each cycle's own reporting window" do
+      travel_to(Time.zone.local(2024, 9, 1, 1, 0, 0)) do
+        create_multi_cycle_recorded_run(
+          second_cycle_start: Time.zone.local(2024, 9, 1, 0, 10, 0),
+          second_cycle_end: Time.zone.local(2024, 9, 1, 0, 20, 0),
+          first_cycle: [ Time.zone.local(2024, 8, 31, 23, 30, 0), Time.zone.local(2024, 8, 31, 23, 50, 0), 1200, 40 ],
+          second_cycle: [ Time.zone.local(2024, 9, 1, 0, 10, 0), Time.zone.local(2024, 9, 1, 0, 20, 0), 600, 20 ]
+        )
+
+        august = historical_infrastructure_cost_cents(
+          starts_at: Time.zone.local(2024, 8, 1, 0, 0, 0),
+          ends_at: Time.zone.local(2024, 9, 1, 0, 0, 0)
+        )
+        september = historical_infrastructure_cost_cents(
+          starts_at: Time.zone.local(2024, 9, 1, 0, 0, 0),
+          ends_at: Time.current
+        )
+
+        expect(august).to eq(40)
+        expect(september).to eq(20)
+      end
+    end
+
+    # @spec EXEC-USAGE-007
+    # @spec EXEC-USAGE-011
+    it "counts the full persisted spend of multiple recorded cycles" do
+      travel_to(Time.zone.local(2024, 1, 15, 12, 0, 0)) do
+        create_multi_cycle_recorded_run(
+          second_cycle_start: 30.minutes.ago,
+          second_cycle_end: 5.minutes.ago,
+          first_cycle: [ 2.hours.ago, 1.hour.ago, 600, 20 ],
+          second_cycle: [ 30.minutes.ago, 5.minutes.ago, 1500, 50 ]
+        )
+
+        result = described_class.call(project: project)
+
+        expect(result[:summary][:infrastructure_cost_cents]).to eq(70)
+        expect(result[:summary][:infrastructure_cost_today_cents]).to eq(70)
+        expect(result[:summary][:infrastructure_cost_this_month_cents]).to eq(70)
+      end
+    end
+
+    # @spec EXEC-USAGE-007
+    it "counts the persisted spend of a zero-duration recorded row" do
+      travel_to(Time.zone.local(2024, 1, 15, 12, 0, 0)) do
+        # A zero-duration row is counted in full when the window contains that
+        # instant; proration must not divide by zero.
+        run = create(:agent_run, project: project, status: "completed",
+          provisioning_started_at: 10.minutes.ago,
+          completed_at: 10.minutes.ago)
+        create_execution_usage(run,
+          provisioned_at: 10.minutes.ago,
+          terminated_at: 10.minutes.ago,
+          billed_duration_seconds: 900,
+          infra_cost_cents: 30)
+
+        result = described_class.call(project: project)
+
+        expect(result[:summary][:infrastructure_cost_cents]).to eq(30)
+        expect(result[:summary][:infrastructure_cost_today_cents]).to eq(30)
+      end
+    end
+
+    # @spec EXEC-USAGE-007
+    # @spec INFRA-SPEND-001
+    it "keeps charging rowless completed runs until cleanup records termination" do
+      travel_to(Time.zone.local(2024, 1, 15, 12, 0, 0)) do
+        create(:agent_run, project: project, status: "completed",
+          provisioning_started_at: 2.hours.ago,
+          completed_at: 1.hour.ago,
+          external_metadata: {
+            "infrastructure_spend" => { "rate_cents_per_hour" => 120 }
+          })
+
+        result = described_class.call(project: project)
+
+        expect(result[:summary][:infrastructure_cost_cents]).to eq(240)
+        expect(result[:summary][:infrastructure_cost_today_cents]).to eq(240)
+        expect(result[:summary][:infrastructure_cost_this_month_cents]).to eq(240)
+      end
+    end
+
+    it "routes pending infrastructure spend through Capacity::InfrastructureSpend with the open-lifetime clamp" do
+      allow(Capacity::InfrastructureSpend).to receive(:spent_cents).and_return(240)
+
+      described_class.call(project: project)
+
+      expect(Capacity::InfrastructureSpend).to have_received(:spent_cents).with(
+        project: project,
+        starts_at: Time.at(0),
+        ends_at: kind_of(Time),
+        scope_modifier: kind_of(Proc),
+        overlap_ends_at: kind_of(Time)
+      )
+    end
+
+    # @spec EXEC-USAGE-003
+    it "does not double-count ContainerMetric samples in infrastructure cost" do
+      travel_to(Time.zone.local(2024, 1, 15, 12, 0, 0)) do
+        run = create(:agent_run, project: project, status: "completed", cost_cents: 100)
+        create(:token_usage, agent_run: run, cost_cents: 100, request_type: "agent")
+        create(:container_metric,
+          agent_run: run,
+          container_id: "abc",
+          cpu_percent: 50.0,
+          memory_bytes: 1024,
+          memory_limit_bytes: 4096,
+          memory_percent: 25.0,
+          recorded_at: 1.hour.ago)
+
+        result = described_class.call(project: project)
+
+        expect(result[:summary][:infrastructure_cost_cents]).to eq(0)
+        expect(result[:summary][:infrastructure_cost_today_cents]).to eq(0)
+        expect(result[:summary][:infrastructure_cost_this_month_cents]).to eq(0)
+      end
+    end
+
+    # @spec EXEC-USAGE-007
+    it "includes infrastructure spend in average cost per run" do
+      travel_to(Time.zone.local(2024, 1, 15, 12, 0, 0)) do
+        first_run = create(:agent_run, project: project, status: "completed", cost_cents: 0,
+          provisioning_started_at: 2.hours.ago, completed_at: 1.hour.ago)
+        second_run = create(:agent_run, project: project, status: "completed", cost_cents: 0,
+          provisioning_started_at: 45.minutes.ago, completed_at: 15.minutes.ago)
+        create_execution_usage(first_run,
+          provisioned_at: 2.hours.ago,
+          terminated_at: 1.hour.ago,
+          billed_duration_seconds: 3600,
+          infra_cost_cents: 120)
+        create_execution_usage(second_run,
+          provisioned_at: 45.minutes.ago,
+          terminated_at: 15.minutes.ago,
+          billed_duration_seconds: 1800,
+          infra_cost_cents: 60)
+
+        result = described_class.call(project: project)
+
+        expect(result[:summary][:avg_cost_per_run_cents]).to eq(90)
       end
     end
 
@@ -180,6 +405,57 @@ RSpec.describe Projects::CostDashboardStats do
       expect(budget).not_to have_key(:usage_percent)
       expect(budget).not_to have_key(:current_usage_cents)
       expect(budget).not_to have_key(:remaining_cents)
+    end
+
+    def create_execution_usage(agent_run, provisioned_at:, terminated_at:, billed_duration_seconds:, infra_cost_cents:)
+      create(:execution_usage,
+        agent_run: agent_run,
+        runner_backend: "local",
+        provisioned_at: provisioned_at,
+        execution_started_at: provisioned_at,
+        completed_at: terminated_at,
+        terminated_at: terminated_at,
+        billed_duration_seconds: billed_duration_seconds,
+        termination_reason: "completed",
+        infra_cost_cents: infra_cost_cents,
+        rate_cents_per_hour: 120)
+    end
+
+    def create_multi_cycle_recorded_run(second_cycle_start:, second_cycle_end:, first_cycle:, second_cycle:)
+      run = create(:agent_run, project: project, status: "completed",
+        provisioning_started_at: second_cycle_start,
+        completed_at: second_cycle_end,
+        external_metadata: {
+          "infrastructure_spend" => { "rate_cents_per_hour" => 120 }
+        })
+
+      create_execution_usage(run,
+        provisioned_at: first_cycle.fetch(0),
+        terminated_at: first_cycle.fetch(1),
+        billed_duration_seconds: first_cycle.fetch(2),
+        infra_cost_cents: first_cycle.fetch(3))
+      create_execution_usage(run,
+        provisioned_at: second_cycle.fetch(0),
+        terminated_at: second_cycle.fetch(1),
+        billed_duration_seconds: second_cycle.fetch(2),
+        infra_cost_cents: second_cycle.fetch(3))
+    end
+
+    def historical_infrastructure_cost_cents(starts_at:, ends_at:)
+      described_class.new(project: project).send(
+        :historical_infrastructure_cost_cents,
+        starts_at: starts_at,
+        ends_at: ends_at
+      )
+    end
+
+    def create_pending_run
+      create(:agent_run, project: project, status: "running",
+        provisioning_started_at: 30.minutes.ago,
+        started_at: 25.minutes.ago,
+        external_metadata: {
+          "infrastructure_spend" => { "rate_cents_per_hour" => 120 }
+        })
     end
   end
 end

@@ -27,6 +27,7 @@ class DependabotAutoMergeJob < ApplicationJob
   EXPECTED_MERGE_STATUSES = [ 405, 409, 422 ].freeze
   PAID_AUTO_MERGED_LABEL = "paid-auto-merged-dependabot"
   SKIP_AUTO_MERGE_LABEL = Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL
+  MERGE_PERMISSION_COMMENT_MARKER = "<!-- paid: dependabot-merge-permission-rejection -->"
 
   def perform(project_id, pr_number: nil)
     project = Project.find_by(id: project_id)
@@ -251,7 +252,14 @@ class DependabotAutoMergeJob < ApplicationJob
   def handle_expected_merge_failure(project, pr_number, error, message:, credential_mode:)
     raise unless expected_merge_failure?(error)
 
-    record_merge_permission_rejection(project, pr_number, error.message) if workflow_permission_rejection?(error)
+    if workflow_permission_rejection?(error)
+      record_merge_permission_rejection(project, pr_number, error.message)
+      post_merge_permission_comment(
+        project,
+        pr_number,
+        fallback_attempted: credential_mode == AutoMergeAttempt::CREDENTIAL_MODE_PAT_FALLBACK
+      )
+    end
     record_attempt(
       project,
       pr_number,
@@ -346,6 +354,23 @@ class DependabotAutoMergeJob < ApplicationJob
       project_id: project.id,
       pr_number: pr_number,
       error: e.message
+    )
+  end
+
+  def post_merge_permission_comment(project, pr_number, fallback_attempted:)
+    AutoMergeAttempts::PostPermissionComment.call(
+      project: project,
+      pr_number: pr_number,
+      marker: MERGE_PERMISSION_COMMENT_MARKER,
+      title: "**Dependabot auto-merge blocked: missing GitHub App permission**",
+      intro: "Paid could not auto-merge this Dependabot PR because the GitHub App installation token " \
+        "lacks a permission needed for a change under `.github/workflows/` " \
+        "(most commonly the `workflows` permission). This is permanent until " \
+        "the App's permissions change, so Paid will keep checking periodically " \
+        "rather than retrying every cycle.",
+      fallback_attempted: fallback_attempted,
+      logger: Rails.logger,
+      log_component: "dependabot_auto_merge"
     )
   end
 end

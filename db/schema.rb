@@ -259,6 +259,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_031257) do
     t.float "avg_cpu_percent"
     t.decimal "avg_memory_bytes", precision: 20, scale: 4
     t.string "base_commit_sha", limit: 40
+    t.integer "billed_duration_seconds", default: 0, null: false, comment: "Cloud-billed lifetime of the run's resource (provisioned_at → terminated_at). Mirrors ExecutionUsage#billed_duration_seconds."
     t.bigint "blocked_by_issue_ids", default: [], comment: "IDs of issues/PRs that block the created issue from being picked up for work.", array: true
     t.string "branch_name", limit: 255
     t.datetime "completed_at"
@@ -291,6 +292,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_031257) do
     t.string "goal", limit: 50, default: "create_pr", null: false
     t.jsonb "guardrail_context"
     t.string "guardrail_violation_type", limit: 50
+    t.integer "infra_cost_cents", default: 0, null: false, comment: "Estimated (or provider-reported) infrastructure cost for the run. Mirrors ExecutionUsage#infra_cost_cents so per-run queries avoid joining the usage table."
     t.bigint "initiating_user_id", comment: "User who explicitly initiated the run; null for system-triggered runs."
     t.bigint "issue_id"
     t.integer "iterations", default: 0
@@ -315,6 +317,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_031257) do
     t.datetime "review_posted_at"
     t.jsonb "review_proxy_diagnostics", default: {}, null: false, comment: "Latest known outcome of the review-creation proxy POST for this run (outcome: attempted/timeout/connection_failed/upstream_error/succeeded, plus http_status/error_class/error_message/recorded_at when available). Lets CompleteReviewGoalActivity explain review-goal failures without raw log inspection (#2779). Not part of run history/state."
     t.string "review_url", limit: 500
+    t.string "runner_backend", limit: 64, comment: "Execution runner/backend key copied from the run's ExecutionUsage for cheap aggregation. Mirrors the per-host rate key (e.g. local, fly_machine)."
     t.jsonb "runner_handle", comment: "Persisted ExecutionRunners::RunnerHandle for recovery after worker restart/failover (RDR-054). Populated from container_id during migration; stored alongside (not replacing) container_id."
     t.bigint "runner_id"
     t.integer "runner_switches", default: 0, null: false
@@ -1282,6 +1285,33 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_031257) do
     t.index ["state", "next_cleanup_at"], name: "idx_execution_resources_cleanup_schedule"
   end
 
+  create_table "execution_usages", comment: "Per-run infrastructure usage summary used to estimate cloud-provider cost separately from LLM token cost.", force: :cascade do |t|
+    t.bigint "agent_run_id", null: false
+    t.integer "billed_duration_seconds", default: 0, null: false, comment: "Cloud-billed lifetime of the resource in seconds (terminated_at - provisioned_at)."
+    t.datetime "completed_at", comment: "When the agent finished executing."
+    t.datetime "created_at", null: false
+    t.datetime "execution_started_at", comment: "When the agent began executing inside the resource (often equal to or shortly after provisioned_at)."
+    t.integer "infra_cost_cents", default: 0, null: false, comment: "Estimated (today) or provider-reported (later) infrastructure cost for this run."
+    t.string "provider_resource_id", limit: 255, comment: "Cloud-provider resource identifier for cost reconciliation (Fly Machine ID, Cloud Run execution ID, etc.)."
+    t.datetime "provisioned_at", null: false, comment: "When the run's cloud resource was first provisioned."
+    t.integer "rate_cents_per_hour", default: 0, null: false, comment: "Snapshotted rate used for the estimate so later env changes do not re-price this row."
+    t.decimal "requested_cpu_cores", precision: 6, scale: 3, comment: "CPU cores requested from the cloud provider at admission."
+    t.integer "requested_disk_gb", comment: "Disk requested from the cloud provider at admission, in GiB."
+    t.integer "requested_memory_mib", comment: "Memory requested from the cloud provider at admission, in MiB."
+    t.string "runner_backend", limit: 64, null: false, comment: "Execution runner/backend key used for per-host rate resolution (e.g. local, fly_machine)."
+    t.datetime "terminated_at", null: false, comment: "When the cloud resource was torn down; provider-billed runtime ends here."
+    t.string "termination_reason", limit: 20, null: false, comment: "Reason the cloud resource terminated: completed, cancelled, timed_out, failed, evicted."
+    t.datetime "updated_at", null: false
+    t.index ["agent_run_id"], name: "index_execution_usages_on_agent_run_id"
+    t.index ["runner_backend"], name: "index_execution_usages_on_runner_backend"
+    t.index ["terminated_at"], name: "index_execution_usages_on_terminated_at"
+    t.check_constraint "(completed_at IS NULL OR completed_at >= provisioned_at) AND terminated_at >= provisioned_at", name: "chk_execution_usages_timestamps_ordered"
+    t.check_constraint "billed_duration_seconds >= 0", name: "chk_execution_usages_billed_duration_nonneg"
+    t.check_constraint "infra_cost_cents >= 0", name: "chk_execution_usages_infra_cost_nonneg"
+    t.check_constraint "rate_cents_per_hour >= 0", name: "chk_execution_usages_rate_nonneg"
+    t.check_constraint "termination_reason::text = ANY (ARRAY['completed'::character varying, 'cancelled'::character varying, 'timed_out'::character varying, 'failed'::character varying, 'evicted'::character varying]::text[])", name: "chk_execution_usages_termination_reason_valid"
+  end
+
   create_table "external_connector_events", comment: "Events ingested from external connectors (Jira, Linear, Slack, etc.) for coexistence workflows.", force: :cascade do |t|
     t.bigint "account_id", null: false, comment: "Account this connector event belongs to."
     t.string "connector_key", null: false, comment: "Connector source key from Interop::Catalog (e.g. jira, linear, slack)."
@@ -1546,6 +1576,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_031257) do
     t.boolean "auto_continue_paused", default: false, null: false
     t.jsonb "auto_merge_blockers", comment: "Latest authoritative auto-merge blocker snapshot from the PR scanner. Stores failed blockers separately from checks that were not evaluated because an earlier gate already failed."
     t.datetime "auto_merge_evaluated_at", comment: "When the latest authoritative auto-merge blocker snapshot was recorded by the PR scanner."
+    t.datetime "awaiting_approval_since", comment: "When the scan first observed this PR green and blocked only on owner approval; cleared whenever a non-approval blocker appears. Drives the awaiting_approval escalation ceiling."
     t.text "body"
     t.datetime "ci_action_dispatched_at"
     t.datetime "ci_retry_requested_at"
@@ -2370,6 +2401,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_031257) do
     t.integer "poll_interval_seconds", default: 60, null: false
     t.jsonb "pr_action_labels", default: [], null: false
     t.boolean "pr_aggregation_enabled", default: false, null: false
+    t.integer "pr_approval_escalation_hours", default: 24, null: false, comment: "Hours a ready PR may sit green and blocked only on owner approval before escalating; 0 disables the awaiting_approval escalation."
     t.string "preferred_docker_host_identifier", comment: "Optional project-level Docker host preference overriding the account default for manual placement."
     t.string "primary_language", comment: "Primary language of the repository as reported by GitHub (e.g. Ruby, Elixir, Swift). Used to detect and badge the project type."
     t.jsonb "priority_labels", default: {"P1" => "P1", "P2" => "P2", "P3" => "P3"}, null: false
@@ -3438,6 +3470,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_031257) do
   add_foreign_key "execution_resources", "accounts", on_delete: :nullify
   add_foreign_key "execution_resources", "agent_runs", on_delete: :nullify
   add_foreign_key "execution_resources", "projects", on_delete: :nullify
+  add_foreign_key "execution_usages", "agent_runs", on_delete: :cascade
   add_foreign_key "external_connector_events", "accounts"
   add_foreign_key "external_connector_events", "projects"
   add_foreign_key "failure_classifications", "agent_runs", on_delete: :cascade

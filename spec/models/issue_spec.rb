@@ -838,6 +838,29 @@ RSpec.describe Issue do
         expect(escalated_pr.reload.pr_auto_continue_token_limit_overridden_at).to be_nil
       end
 
+      # @spec PR-ESCALATION-026
+      it "does not record a token-cap override for an awaiting_approval escalation" do
+        escalated_pr.update!(
+          pr_escalation_reason: Issue::PR_ESCALATION_REASON_AWAITING_APPROVAL,
+          awaiting_approval_since: 2.days.ago
+        )
+
+        escalated_pr.clear_escalation!(draft: false)
+
+        escalated_pr.reload
+        expect(escalated_pr.pr_auto_continue_token_limit_overridden_at).to be_nil
+        expect(escalated_pr.awaiting_approval_since).to be_nil
+      end
+
+      # @spec PR-ESCALATION-025
+      it "clears the approval-wait stamp when an escalation is cleared" do
+        escalated_pr.update!(awaiting_approval_since: 2.days.ago)
+
+        escalated_pr.clear_escalation!(draft: false)
+
+        expect(escalated_pr.reload.awaiting_approval_since).to be_nil
+      end
+
       # @spec PR-ESCALATION-008
       it "releases the hold without zeroing counters when the clearing is not owner-initiated" do
         escalated_pr.update!(pr_escalation_reason: Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES)
@@ -1500,6 +1523,53 @@ RSpec.describe Issue do
       issue.update!(paid_state: "completed")
 
       expect(issue.reload.needs_input_since).to be_nil
+    end
+  end
+
+  # @spec OPERATOR-INBOX-010
+  describe "inbox count cache invalidation" do
+    let(:account) { create(:account) }
+    let(:project) { create(:project, account: account) }
+
+    before do
+      allow(Dashboard::CacheVersion).to receive(:bump)
+    end
+
+    it "bumps the inbox cache when an issue transitions into needs_input" do
+      issue = create(:issue, project: project, paid_state: "new")
+
+      issue.update!(paid_state: "needs_input")
+
+      expect(Dashboard::CacheVersion).to have_received(:bump)
+        .with(account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+    end
+
+    it "bumps the inbox cache when a needs_input issue closes on GitHub" do
+      issue = create(:issue, :needs_input, project: project, github_state: "open")
+
+      issue.update!(github_state: "closed")
+
+      expect(Dashboard::CacheVersion).to have_received(:bump)
+        .with(account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+        .twice
+    end
+
+    it "bumps the inbox cache when a closed needs_input issue reopens on GitHub" do
+      issue = create(:issue, :needs_input, project: project, github_state: "closed")
+
+      issue.update!(github_state: "open")
+
+      expect(Dashboard::CacheVersion).to have_received(:bump)
+        .with(account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+        .twice
+    end
+
+    it "does not bump the inbox cache for github_state changes outside needs_input" do
+      issue = create(:issue, project: project, github_state: "open", paid_state: "planning")
+
+      issue.update!(github_state: "closed")
+
+      expect(Dashboard::CacheVersion).not_to have_received(:bump)
     end
   end
 

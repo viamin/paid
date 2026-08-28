@@ -16,14 +16,12 @@ RSpec.describe CreateAutoMergeAttempts, :aggregate_failures do
     table_existed = connection.table_exists?(:auto_merge_attempts)
     rls_existed = tenant_policy_present?
 
-    rls_migration.down if rls_existed
-    create_migration.down if table_existed
+    teardown_auto_merge_attempts!
     clear_schema_metadata!(connection)
 
     example.run
   ensure
-    rls_migration.down if tenant_policy_present?
-    create_migration.down if connection.table_exists?(:auto_merge_attempts)
+    teardown_auto_merge_attempts!
 
     if table_existed
       create_migration.up
@@ -57,6 +55,11 @@ RSpec.describe CreateAutoMergeAttempts, :aggregate_failures do
     connection.schema_cache.clear!
     connection.schema_cache.clear_data_source_cache!("auto_merge_attempts")
     AutoMergeAttempt.reset_column_information
+  end
+
+  def teardown_auto_merge_attempts!
+    rls_migration.down if tenant_policy_present?
+    connection.drop_table(:auto_merge_attempts, if_exists: true)
   end
 
   def expect_schema

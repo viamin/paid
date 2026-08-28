@@ -3,16 +3,23 @@
 class Issue < ApplicationRecord
   PAID_STATES = %w[new planning in_progress completed failed needs_input manual_review recommend_close analyzed].freeze
   PR_REVIEW_PHASES = %w[draft restarted ready merged escalated].freeze
+  # The first four reasons denote agent failure. `awaiting_approval` denotes
+  # an unanswered human gate: the PR is green, blocked only on owner
+  # approval, and has waited past the project ceiling. It must stay
+  # distinguishable because `pr_escalation_reason` drives behavior elsewhere
+  # (e.g. the token-limit override in #clear_escalation!).
   PR_ESCALATION_REASONS = %w[
     operational_failures
     failure_streak
     review_goal_retry_limit
     pr_auto_continue_token_limit
+    awaiting_approval
   ].freeze
   PR_ESCALATION_REASON_OPERATIONAL_FAILURES = "operational_failures"
   PR_ESCALATION_REASON_FAILURE_STREAK = "failure_streak"
   PR_ESCALATION_REASON_REVIEW_GOAL_RETRY_LIMIT = "review_goal_retry_limit"
   PR_ESCALATION_REASON_PR_AUTO_CONTINUE_TOKEN_LIMIT = "pr_auto_continue_token_limit"
+  PR_ESCALATION_REASON_AWAITING_APPROVAL = "awaiting_approval"
 
   # Default per-issue per-provider retry cap: after a single provider fails this
   # many times for one issue, it is excluded from scheduling for that issue. Used
@@ -114,6 +121,13 @@ class Issue < ApplicationRecord
   # clears when it leaves. Idempotent: re-applying the same state is a no-op.
   # @spec INBOX-FOUNDATION-001
   before_save :sync_needs_input_since, if: :will_save_change_to_paid_state?
+
+  # Invalidates the cached inbox nav badge count whenever an issue enters or
+  # leaves the needs_input queue, or when a waiting issue is closed/reopened
+  # on GitHub, so the async badge endpoint recomputes instead of serving a
+  # stale number for the rest of its TTL.
+  # @spec OPERATOR-INBOX-010
+  after_commit :bump_inbox_cache_version, if: :inbox_count_cache_invalidation_needed?
 
   scope :by_paid_state, ->(state) { where(paid_state: state) }
   scope :root_issues, -> { where(parent_issue_id: nil) }
@@ -346,13 +360,14 @@ class Issue < ApplicationRecord
   # not earn a fresh failure budget.
   #
   # @spec PR-ESCALATION-005 @spec PR-ESCALATION-006 @spec PR-ESCALATION-007
-  # @spec PR-ESCALATION-008
+  # @spec PR-ESCALATION-008 @spec PR-ESCALATION-025 @spec PR-ESCALATION-026
   def clear_escalation!(draft:, reset_counters: true)
     token_limit_override = pr_escalation_reason == PR_ESCALATION_REASON_PR_AUTO_CONTINUE_TOKEN_LIMIT
     attrs = {
       labels: labels - %w[paid-escalated paid-dismiss-escalation],
       pr_review_phase: draft ? "restarted" : "ready",
       pr_escalation_reason: nil,
+      awaiting_approval_since: nil,
       ci_retry_requested_at: nil
     }
     attrs.merge!(escalation_counter_reset_attributes) if reset_counters
@@ -556,6 +571,18 @@ class Issue < ApplicationRecord
   end
 
   private
+
+  def inbox_count_cache_invalidation_needed?
+    saved_change_to_needs_input_since? || waiting_issue_github_state_changed?
+  end
+
+  def bump_inbox_cache_version
+    Dashboard::CacheVersion.bump(project.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+  end
+
+  def waiting_issue_github_state_changed?
+    saved_change_to_github_state? && paid_state == "needs_input"
+  end
 
   # Every counter an escalation accumulated, plus the markers that tell
   # PullRequests::ProgressState to stop counting failures from before the
