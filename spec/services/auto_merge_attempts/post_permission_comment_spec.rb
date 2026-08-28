@@ -101,6 +101,7 @@ RSpec.describe AutoMergeAttempts::PostPermissionComment do
   context "when the authenticated login is unknown" do
     before do
       allow(client).to receive(:authenticated_login).and_return(nil)
+      allow(client).to receive(:recent_issue_comments)
     end
 
     it "does not post a comment, treating unknown identity as a safe skip" do
