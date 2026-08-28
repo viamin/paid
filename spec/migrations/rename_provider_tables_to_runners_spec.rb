@@ -17,7 +17,7 @@ RSpec.describe RenameProviderTablesToRunners, :aggregate_failures do
     example.run
   ensure
     # Restore post-up state so subsequent specs see the schema they expect.
-    migration.up unless connection.table_exists?(:runners)
+    restore_post_up_schema!
     Runner.reset_column_information
     RunnerState.reset_column_information
   end
@@ -55,5 +55,32 @@ RSpec.describe RenameProviderTablesToRunners, :aggregate_failures do
     expect(RunnerState.table_name).to eq("runner_states")
     expect { Runner.first }.not_to raise_error
     expect { RunnerState.first }.not_to raise_error
+  end
+
+  private
+
+  def restore_post_up_schema!
+    return if post_up_schema?
+
+    if pre_rename_schema?
+      migration.up
+      return
+    end
+
+    raise "Unexpected provider/runner table state during rename migration cleanup"
+  end
+
+  def post_up_schema?
+    connection.table_exists?(:runners) &&
+      connection.table_exists?(:runner_states) &&
+      !connection.table_exists?(:providers) &&
+      !connection.table_exists?(:provider_states)
+  end
+
+  def pre_rename_schema?
+    connection.table_exists?(:providers) &&
+      connection.table_exists?(:provider_states) &&
+      !connection.table_exists?(:runners) &&
+      !connection.table_exists?(:runner_states)
   end
 end

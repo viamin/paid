@@ -734,6 +734,32 @@ RSpec.describe "Runners" do
       expect(user.runners.find_by(runner_key: "cursor")).to have_attributes(enabled_for_chat: false)
     end
 
+    it "keeps a literal legacy OpenCode model id of custom when the catalog form flag is off" do # @spec MODEL-POLICY-FORM-001
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+
+      post runners_path, params: {
+        runner: direct_outbound_runner_params(runner_key: "opencode", api_key_id: api_key.id, model: "custom")
+      }
+
+      expect(response).to redirect_to(runners_path)
+      runner = user.runners.order(:created_at).last
+      expect(runner.config.dig("opencode", "model")).to eq("custom")
+      expect(runner.config.dig("opencode", "model_policy")).to be_nil
+    end
+
+    it "keeps a literal legacy OpenCode model id of free when the catalog form flag is off" do # @spec MODEL-POLICY-FORM-001
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+
+      post runners_path, params: {
+        runner: direct_outbound_runner_params(runner_key: "opencode", api_key_id: api_key.id, model: "free")
+      }
+
+      expect(response).to redirect_to(runners_path)
+      runner = user.runners.order(:created_at).last
+      expect(runner.config.dig("opencode", "model")).to eq("free")
+      expect(runner.config.dig("opencode", "model_policy")).to be_nil
+    end
+
     it "handles an empty run-runner list during settings reconciliation" do
       allow(UserSetting).to receive(:enabled_agent_runners).with(user).and_return([], [ "claude" ])
       allow(RunnerSupport).to receive(:addable_runner_key?).and_return(true)

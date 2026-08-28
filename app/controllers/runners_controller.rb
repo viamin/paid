@@ -272,6 +272,7 @@ class RunnersController < ApplicationController
   def normalize_policy_model_submission!(config:, runner_key:)
     runner_config = config[runner_key]
     return unless runner_config.is_a?(Hash)
+    return unless policy_model_submission?(runner_config, runner_key:)
 
     model = runner_config["model"].to_s
     manual_model = runner_config["manual_model"].to_s
@@ -295,6 +296,16 @@ class RunnersController < ApplicationController
     end
 
     runner_config.delete("manual_model")
+  end
+
+  # Only the new catalog-policy form submits manual_model and the opencode
+  # hidden model_policy field. Without this guard, the legacy free-text form
+  # would reinterpret a literal model id like "custom" or "free" as a
+  # sentinel value, changing flag-off behavior.
+  # @spec MODEL-POLICY-FORM-001 MODEL-POLICY-FORM-003 MODEL-POLICY-FORM-004
+  def policy_model_submission?(runner_config, runner_key:)
+    runner_config.key?("manual_model") ||
+      (runner_key == "opencode" && runner_config.key?("model_policy"))
   end
 
   # Coerces blank-string form inputs to nil and integer-like strings to Ints,
