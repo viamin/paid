@@ -78,6 +78,16 @@ module Containers
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
+      # Whether any container currently references the given image tag. The
+      # default implementation uses the Docker Engine container-list
+      # "ancestor" filter, which single-daemon backends (local/remote)
+      # support natively. Backends without an ancestor-filterable
+      # container-list endpoint (e.g. Swarm, whose /services API has no
+      # such filter) must override this with a backend-appropriate check.
+      def image_in_use?(tag)
+        list_containers(filters: { ancestor: [ tag ] }.to_json).any?
+      end
+
       # Lists containers that serve live-preview traffic for the tunnel
       # server. The default filters by the preview tunnel label, which works
       # for any Docker-backed backend. A non-Docker backend (e.g. a future

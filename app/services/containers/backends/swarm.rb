@@ -184,6 +184,20 @@ module Containers
         containers + list_node_local_containers(options:, exclude_ids: service_task_container_ids)
       end
 
+      # Swarm's /services endpoint has no "ancestor" filter (only
+      # id/label/mode/name), so the container-list based default in {Base}
+      # can't detect usage here — it either raises or silently ignores the
+      # filter and returns unrelated services. Compare each service's task
+      # template image reference instead. Swarm resolves a pushed image's
+      # tag to a `tag@digest` reference on the running service, so match on
+      # the tag portion only; combo images build and run locally per node
+      # with no registry to resolve against, so they keep the plain tag.
+      def image_in_use?(tag)
+        parse_json(manager_connection.get("/services")).any? do |service|
+          service.dig("Spec", "TaskTemplate", "ContainerSpec", "Image").to_s.split("@").first == tag
+        end
+      end
+
       def get_network(name)
         Docker::Network.get(name, {}, manager_connection)
       end

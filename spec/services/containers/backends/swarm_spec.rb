@@ -284,6 +284,27 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
     expect(tasks_request).to have_been_requested.once
   end
 
+  it "detects image usage from service task template images, not a container-list filter" do
+    in_use_service = service_payload.deep_dup
+    in_use_service["Spec"]["TaskTemplate"]["ContainerSpec"]["Image"] = "paid-agent:go-node"
+    other_service = service_payload.deep_dup
+    other_service["ID"] = "svc-456"
+    other_service["Spec"]["TaskTemplate"]["ContainerSpec"]["Image"] = "paid-agent:ruby-python"
+    stub_manager_get("/services", [ in_use_service, other_service ])
+
+    expect(backend.image_in_use?("paid-agent:go-node")).to be(true)
+    expect(backend.image_in_use?("paid-agent:unused")).to be(false)
+  end
+
+  it "matches a service image resolved to a registry digest by its tag" do
+    digested_service = service_payload.deep_dup
+    digested_service["Spec"]["TaskTemplate"]["ContainerSpec"]["Image"] =
+      "paid-agent:go-node@sha256:#{"a" * 64}"
+    stub_manager_get("/services", [ digested_service ])
+
+    expect(backend.image_in_use?("paid-agent:go-node")).to be(true)
+  end
+
   it "includes standalone node-local containers for capacity snapshots without duplicating swarm tasks" do
     stub_manager_get("/services", [ service_payload ])
     standalone = build_listed_container(id: "standalone-1", labels: { "com.example.role" => "db" })

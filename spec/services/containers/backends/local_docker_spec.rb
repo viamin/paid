@@ -52,4 +52,12 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
 
     expect(backend.create_volume("paid-workspace-1", "Labels" => { "paid.managed" => "true" })).to eq(volume)
   end
+
+  it "checks image usage via the ancestor container-list filter" do
+    allow(Docker::Container).to receive(:all)
+      .with(filters: { ancestor: [ "paid-agent:go-node" ] }.to_json)
+      .and_return([ container ])
+
+    expect(backend.image_in_use?("paid-agent:go-node")).to be(true)
+  end
 end

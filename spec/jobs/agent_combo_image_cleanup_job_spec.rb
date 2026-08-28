@@ -33,7 +33,7 @@ RSpec.describe AgentComboImageCleanupJob do
         []
       end
       stub_combo_images(image: tag, id: "sha256:abc", labels: stale_labels)
-      allow(backend).to receive(:list_containers).and_return([])
+      allow(backend).to receive(:image_in_use?).and_return(false)
       allow(backend).to receive(:delete_image)
 
       job.perform
@@ -42,21 +42,19 @@ RSpec.describe AgentComboImageCleanupJob do
       expect(found_in_system_access).to be(true)
     end
 
-    it "queries container usage by ancestor image, not the unsupported image filter" do
+    it "checks image usage through the backend's image_in_use? contract, not a container-list filter" do
       stub_combo_images(image: tag, id: "sha256:abc", labels: stale_labels)
-      allow(backend).to receive(:list_containers)
-        .with(filters: { ancestor: [ tag ] }.to_json)
-        .and_return([])
+      allow(backend).to receive(:image_in_use?).with(tag).and_return(false)
       allow(backend).to receive(:delete_image)
 
       job.perform
 
-      expect(backend).to have_received(:list_containers).with(filters: { ancestor: [ tag ] }.to_json)
+      expect(backend).to have_received(:image_in_use?).with(tag)
     end
 
     it "prunes a stale, unreferenced, unused combo tag" do
       stub_combo_images(image: tag, id: "sha256:abc", labels: stale_labels)
-      allow(backend).to receive(:list_containers).and_return([])
+      allow(backend).to receive(:image_in_use?).and_return(false)
       allow(backend).to receive(:delete_image)
 
       job.perform
@@ -78,7 +76,7 @@ RSpec.describe AgentComboImageCleanupJob do
 
     it "keeps a combo tag whose build timestamp is within the retention window" do
       stub_combo_images(image: tag, id: "sha256:abc", labels: fresh_labels)
-      allow(backend).to receive(:list_containers).and_return([])
+      allow(backend).to receive(:image_in_use?).and_return(false)
       allow(backend).to receive(:delete_image)
 
       job.perform
@@ -88,9 +86,7 @@ RSpec.describe AgentComboImageCleanupJob do
 
     it "keeps a combo tag currently in use by a container" do
       stub_combo_images(image: tag, id: "sha256:abc", labels: stale_labels)
-      allow(backend).to receive(:list_containers)
-        .with(filters: { ancestor: [ tag ] }.to_json)
-        .and_return([ instance_double(Docker::Container) ])
+      allow(backend).to receive(:image_in_use?).with(tag).and_return(true)
       allow(backend).to receive(:delete_image)
 
       job.perform
@@ -100,7 +96,7 @@ RSpec.describe AgentComboImageCleanupJob do
 
     it "conservatively keeps a combo tag when the usage check itself fails" do
       stub_combo_images(image: tag, id: "sha256:abc", labels: stale_labels)
-      allow(backend).to receive(:list_containers).and_raise(Docker::Error::DockerError, "daemon error")
+      allow(backend).to receive(:image_in_use?).and_raise(Docker::Error::DockerError, "daemon error")
       allow(backend).to receive(:delete_image)
 
       job.perform
@@ -114,7 +110,7 @@ RSpec.describe AgentComboImageCleanupJob do
       allow(Containers::ComboImageBuilder).to receive(:combo_images).with(backend: backend)
         .and_raise(Docker::Error::DockerError, "daemon unreachable")
       stub_combo_images_for(other_backend, image: tag, id: "sha256:abc", labels: stale_labels)
-      allow(other_backend).to receive(:list_containers).and_return([])
+      allow(other_backend).to receive(:image_in_use?).and_return(false)
       allow(other_backend).to receive(:delete_image)
 
       expect { job.perform }.not_to raise_error
