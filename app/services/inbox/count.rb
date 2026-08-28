@@ -48,10 +48,27 @@ module Inbox
       project_ids = gated_project_ids
       return 0 if project_ids.empty?
 
+      merge_approval_candidates(project_ids).count { |issue| Inbox::MergeApproval.call(issue).present? }
+    end
+
+    # Narrows to rows that could plausibly be approval-only blockers before
+    # falling back to Ruby for the full Inbox::MergeApproval signal check,
+    # so this stays a bounded scan instead of one Issue instantiation per
+    # open, ready PR on the account.
+    def merge_approval_candidates(project_ids)
       Issue
         .includes(:project)
-        .where(project_id: project_ids, is_pull_request: true, github_state: "open", pr_review_phase: "ready")
-        .count { |issue| Inbox::MergeApproval.call(issue).present? }
+        .where(
+          project_id: project_ids,
+          is_pull_request: true,
+          github_state: "open",
+          pr_review_phase: "ready",
+          merge_permission_rejected_at: nil
+        )
+        .where.not(auto_merge_evaluated_at: nil)
+        .where.not(auto_merge_blockers: nil)
+        .where.not(projects: { auto_merge_mode: "off" })
+        .where.not(projects: { owner_reviewer_login: nil })
     end
 
     def gated_project_ids

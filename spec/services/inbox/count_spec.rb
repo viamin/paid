@@ -114,6 +114,35 @@ RSpec.describe Inbox::Count do
       expect(refreshed).to eq(1)
     end
 
+    it "excludes ready PRs that have not yet been evaluated for auto-merge" do
+      create(:issue, :pull_request, project: project)
+
+      expect(described_class.call(user: user)).to eq(0)
+    end
+
+    it "excludes ready PRs on projects with auto-merge disabled" do
+      disabled_project = create(
+        :project,
+        account: account,
+        created_by: user,
+        auto_pick_enabled: true,
+        active: true,
+        auto_merge_mode: "off",
+        owner_reviewer_login: "viamin",
+        owner: "acme",
+        repo: "gamma"
+      )
+      create(
+        :issue,
+        :pull_request,
+        project: disabled_project,
+        auto_merge_evaluated_at: Time.current,
+        auto_merge_blockers: approval_only_snapshot
+      )
+
+      expect(described_class.call(user: user)).to eq(0)
+    end
+
     it "bumps the cache automatically when a PR enters or leaves the merge-approval queue" do
       pr = create(
         :issue,
