@@ -495,6 +495,7 @@ RSpec.describe Automation::Signals::PullRequestCollector do
       )
 
       expect(result).to be(false)
+      expect(collector.last_base_merge_range_status).to eq(:not_evaluated)
       expect(logger).to have_received(:warn).with(
         hash_including(message: "pr_scanner.signal_check_failed", signal: "clean_base_merge_range")
       )
@@ -516,6 +517,7 @@ RSpec.describe Automation::Signals::PullRequestCollector do
       )
 
       expect(result).to be(false)
+      expect(collector.last_base_merge_range_status).to eq(:not_evaluated)
       expect(logger).to have_received(:warn).with(hash_including(
         message: "pr_scanner.review_freshness_range_truncated",
         first_parent_steps: 3,

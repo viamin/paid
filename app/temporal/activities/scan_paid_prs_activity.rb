@@ -3073,18 +3073,18 @@ module Activities
     # that an owner re-approval cannot mask a stale manual review from
     # the configured reviewer.
     # @spec AUTO-MERGE-006
-    def review_stale_for_head?(client, project, issue, pr_data, reviews)
-      return false if reviews.nil?
+    def review_freshness_for_head(client, project, issue, pr_data, reviews)
+      return :fresh if reviews.nil?
 
       head_committed_at = fetch_head_commit_date(client, project, issue, pr_data)
-      return false if head_committed_at.nil?
+      return :fresh if head_committed_at.nil?
 
       blocking_approvals = blocking_approvals_for(project, reviews)
-      return false if blocking_approvals.empty?
+      return :fresh if blocking_approvals.empty?
 
       head_sha = pr_data&.head&.sha
       base_branch = pr_data&.base_ref
-      return true if head_sha.blank? || base_branch.blank?
+      return :stale if head_sha.blank? || base_branch.blank?
 
       collector = pull_request_collector(project, client:)
 
@@ -3095,20 +3095,33 @@ module Activities
       # the post-approval range must consist entirely of content-free
       # base merges for the approval to remain fresh. Any approval that
       # fails the check keeps the PR stale.
-      blocking_approvals.any? do |approval|
+      freshness_states = blocking_approvals.map do |approval|
         stale_by_timestamp = head_committed_at > approval[:submitted_at]
-        next false unless stale_by_timestamp
+        next :fresh unless stale_by_timestamp
 
         commit_id = approval[:commit_id]
-        next true if commit_id.blank?
+        next :stale if commit_id.blank?
 
-        !collector.only_base_merge_commits_since?(
+        range_is_clean = collector.only_base_merge_commits_since?(
           approval_sha: commit_id,
           head_sha: head_sha,
           base_branch: base_branch,
           issue: issue
         )
+        next :fresh if range_is_clean
+        next :not_evaluated if collector.last_base_merge_range_status == :not_evaluated
+
+        :stale
       end
+
+      return :stale if freshness_states.include?(:stale)
+      return :not_evaluated if freshness_states.include?(:not_evaluated)
+
+      :fresh
+    end
+
+    def review_stale_for_head?(client, project, issue, pr_data, reviews)
+      review_freshness_for_head(client, project, issue, pr_data, reviews) == :stale
     end
 
     def fetch_head_commit_date(client, project, issue, pr_data)
@@ -3500,7 +3513,8 @@ module Activities
       blocking_reviews_complete = all_blocking_review_methods_complete?(
         project, reviews, checks, pr_data: pr_data, issue: issue
       )
-      reviews_fresh = !review_stale_for_head?(client, project, issue, pr_data, reviews)
+      review_freshness = review_freshness_for_head(client, project, issue, pr_data, reviews)
+      reviews_fresh = review_freshness == :fresh
       dependencies_resolved = if human_dependency_check_required?(
         owner_approved: owner_approved,
         checks_green: checks_green,
@@ -3531,7 +3545,7 @@ module Activities
       log_skip_auto_merge(project, issue) if skip_label
 
       analysis = evaluate_auto_merge(project, signals)
-      stage_auto_merge_snapshot(issue, analysis)
+      stage_auto_merge_snapshot(issue, analysis, review_freshness:)
       analysis.eligible?
     end
 
@@ -3678,11 +3692,31 @@ module Activities
       @auto_merge_snapshots ||= {}
     end
 
-    def stage_auto_merge_snapshot(issue, analysis)
-      auto_merge_snapshots[issue.id] = {
+    def stage_auto_merge_snapshot(issue, analysis, review_freshness: :fresh)
+      snapshot = {
         "failed" => analysis.failed_blockers.map(&:to_h).map(&:stringify_keys),
         "not_evaluated" => analysis.not_evaluated_blockers.map(&:to_h).map(&:stringify_keys)
       }
+
+      remap_review_freshness_failure!(snapshot) if review_freshness == :not_evaluated
+
+      auto_merge_snapshots[issue.id] = snapshot
+    end
+
+    def remap_review_freshness_failure!(snapshot)
+      failed = Array(snapshot["failed"])
+      review_freshness_blocker = failed.find { |blocker| blocker["signal"] == "reviews_fresh" }
+      return unless review_freshness_blocker
+
+      snapshot["failed"] = failed.reject { |blocker| blocker["signal"] == "reviews_fresh" }
+      snapshot["not_evaluated"] = Array(snapshot["not_evaluated"]) + [
+        review_freshness_blocker.merge(
+          "status" => "not_evaluated",
+          "reason_code" => "review_freshness_not_evaluated",
+          "sanitized_message" => "Review freshness could not be evaluated for the current HEAD commit.",
+          "next_action" => "Resolve the freshness-classification error, then let Paid re-evaluate auto-merge eligibility."
+        )
+      ]
     end
 
     def log_skip_auto_merge(project, issue)

@@ -6820,11 +6820,45 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           .and_raise(GithubClient::Error, "boom")
       end
 
-      it "blocks auto-merge by failing closed and re-requests owner review" do
+      it "blocks auto-merge by failing closed without re-requesting owner review" do
         result = activity.execute(project_id: project.id)
 
-        expect(automation_scan_results(result).size).to eq(1)
-        expect(automation_scan_results(result).first[:triggers].first[:type]).to eq("owner_approval_stale")
+        expect(automation_scan_results(result)).to eq([])
+        issue = Issue.find_by!(project: project, github_number: 42)
+        expect(issue.auto_merge_blockers).to eq(review_freshness_not_evaluated_snapshot)
+      end
+    end
+
+    context "when the post-approval range cannot be classified (base ref unresolved)" do
+      let(:approval_sha) { "approved_sha" }
+      let(:head_sha) { "merge_sha" }
+
+      before do
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "",
+              submitted_at: 2.hours.ago, commit_id: approval_sha }
+          ],
+          head_committed_at: 1.hour.ago,
+          head_sha: head_sha
+        )
+        allow(github_client).to receive(:ref)
+          .with(project.full_name, "heads/#{project.default_branch}")
+          .and_raise(GithubClient::Error, "boom")
+      end
+
+      it "blocks auto-merge by failing closed without re-requesting owner review" do
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to eq([])
+        issue = Issue.find_by!(project: project, github_number: 42)
+        expect(issue.auto_merge_blockers).to eq(review_freshness_not_evaluated_snapshot)
       end
     end
 
@@ -6874,11 +6908,12 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           .and_return(OpenStruct.new(status: "ahead"))
       end
 
-      it "blocks auto-merge by failing closed and re-requests owner review" do
+      it "blocks auto-merge by failing closed without re-requesting owner review" do
         result = activity.execute(project_id: project.id)
 
-        expect(automation_scan_results(result).size).to eq(1)
-        expect(automation_scan_results(result).first[:triggers].first[:type]).to eq("owner_approval_stale")
+        expect(automation_scan_results(result)).to eq([])
+        issue = Issue.find_by!(project: project, github_number: 42)
+        expect(issue.auto_merge_blockers).to eq(review_freshness_not_evaluated_snapshot)
       end
     end
 
@@ -11139,6 +11174,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       owner_approved_or_self_authored?: true,
       no_outstanding_review_feedback?: true,
       all_blocking_review_methods_complete?: true,
+      review_freshness_for_head: :stale,
       review_stale_for_head?: true
     )
   end
@@ -11364,6 +11400,21 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         }
       ],
       "not_evaluated" => []
+    }
+  end
+
+  def review_freshness_not_evaluated_snapshot
+    {
+      "failed" => [],
+      "not_evaluated" => [
+        {
+          "signal" => "reviews_fresh",
+          "status" => "not_evaluated",
+          "reason_code" => "review_freshness_not_evaluated",
+          "sanitized_message" => "Review freshness could not be evaluated for the current HEAD commit.",
+          "next_action" => "Resolve the freshness-classification error, then let Paid re-evaluate auto-merge eligibility."
+        }
+      ]
     }
   end
 

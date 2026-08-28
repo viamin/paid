@@ -29,7 +29,7 @@ module Automation
     # Both remain GitHub-specific until a second provider lands, matching
     # the RDR's "generalize only when a second provider is added" guidance.
     class PullRequestCollector
-      attr_reader :providers, :client, :logger
+      attr_reader :providers, :client, :logger, :last_base_merge_range_status
 
       def initialize(providers:, client:, logger:)
         @providers = providers
@@ -229,8 +229,9 @@ module Automation
       # (the range cannot be positively classified). Every classification
       # outcome is logged so a stall is diagnosable.
       def only_base_merge_commits_since?(approval_sha:, head_sha:, base_branch:, issue: nil)
+        @last_base_merge_range_status = nil
         return false if approval_sha.blank? || head_sha.blank? || base_branch.blank?
-        return true if approval_sha == head_sha
+        return mark_base_merge_range_status(:clean, true) if approval_sha == head_sha
 
         base_tip_sha = base_branch_tip_sha(base_branch)
         if base_tip_sha.blank?
@@ -239,7 +240,7 @@ module Automation
             issue,
             GithubClient::Error.new("base branch tip unresolved: #{base_branch}")
           ) if issue
-          return false
+          return mark_base_merge_range_status(:not_evaluated, false)
         end
 
         # A quick ancestry check rejects force-pushes and history
@@ -248,7 +249,7 @@ module Automation
         # +FIRST_PARENT_WALK_LIMIT+ before discovering the approval is
         # unreachable.
         ancestry = client.compare(providers.repo, approval_sha, head_sha)
-        return false unless %w[ahead identical].include?(ancestry&.status.to_s)
+        return mark_base_merge_range_status(:stale, false) unless %w[ahead identical].include?(ancestry&.status.to_s)
 
         walk = walk_first_parent_chain(
           head_sha: head_sha,
@@ -259,7 +260,7 @@ module Automation
         case walk[:outcome]
         when :clean
           log_classification(issue, approval_sha:, head_sha:, first_parent_steps: walk[:steps])
-          true
+          mark_base_merge_range_status(:clean, true)
         when :stale
           log_stale_classification(
             issue,
@@ -268,7 +269,7 @@ module Automation
             first_parent_steps: walk[:steps],
             reason: walk[:reason]
           )
-          false
+          mark_base_merge_range_status(:stale, false)
         when :walk_exceeded
           log_truncated_range(
             issue,
@@ -276,13 +277,13 @@ module Automation
             head_sha:,
             first_parent_steps: walk[:steps]
           )
-          false
+          mark_base_merge_range_status(:not_evaluated, false)
         end
       rescue GithubClient::AuthenticationError
         raise
       rescue GithubClient::Error, StandardError => e
         log_signal_error("clean_base_merge_range", issue, e) if issue
-        false
+        mark_base_merge_range_status(:not_evaluated, false)
       end
 
       # Returns true when the diff between the review's commit and the PR
@@ -418,6 +419,11 @@ module Automation
 
         comparison = client.compare(providers.repo, ancestor_sha, descendant_sha)
         %w[ahead identical].include?(comparison&.status.to_s)
+      end
+
+      def mark_base_merge_range_status(status, result)
+        @last_base_merge_range_status = status
+        result
       end
 
       def log_classification(issue, approval_sha:, head_sha:, first_parent_steps:)
