@@ -2139,7 +2139,7 @@ class Runner < ApplicationRecord
   def free_policy_default_model_id
     return @free_policy_default_model_id if defined?(@free_policy_default_model_id)
 
-    @free_policy_default_model_id = LlmModel::TIERS.filter_map do |tier|
+    @free_policy_default_model_id = LlmModel::TIERS.reverse.filter_map do |tier|
       result = Runners::ResolveTierModel.call(runner: self, tier: tier, user: user)
       result.model_id if result.success? && result.model_id.present?
     end.first

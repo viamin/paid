@@ -2044,6 +2044,22 @@ RSpec.describe Runner do
         "OPENAI_BASE_URL" => "https://openrouter.ai/api/v1"
       )
     end
+
+    it "resolves the highest configured free tier for config-blind dispatch paths" do # @spec MODEL-POLICY-011
+      low_model = create(:llm_model, model_id: "openai/gpt-oss-20b:free", provider: "openai", tier: "low", pricing_tier: "free",
+        catalog_source: "openrouter_sync")
+      high_model = create(:llm_model, model_id: "anthropic/claude-sonnet-4.5:free", provider: "anthropic", tier: "high", pricing_tier: "free",
+        catalog_source: "openrouter_sync")
+      free_runner = create_free_policy_direct_outbound_runner(runner_key: "kilocode", model_id: low_model.model_id)
+      free_runner.update!(tier_model_ids: {
+        "low" => low_model.model_id,
+        "high" => high_model.model_id
+      })
+
+      runtime = free_runner.agent_harness_runner_runtime
+
+      expect(runtime.model).to eq("openai-compatible/anthropic/claude-sonnet-4.5:free")
+    end
   end
 
   describe "#agent_harness_runtime?" do
