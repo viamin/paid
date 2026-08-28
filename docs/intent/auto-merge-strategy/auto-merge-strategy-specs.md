@@ -89,7 +89,7 @@
   `app/services/automation/signals/pull_request_collector.rb`
   (`#only_base_merge_commits_since?`, `#walk_first_parent_chain`),
   `app/temporal/activities/scan_paid_prs_activity.rb`
-  (`#review_stale_for_head?`, `#blocking_approvals_for`,
+  (`#review_freshness_for_head`, `#blocking_approvals_for`,
   `#latest_approval_for`).
   *Test:*
   `spec/services/automation/signals/pull_request_collector_spec.rb`,

@@ -1138,6 +1138,9 @@ module Activities
 
       owner_reviewer_login = project.owner_reviewer_login
       return nil if owner_reviewer_login.blank?
+      # GitHub rejects review requests for the PR author with a handled 422;
+      # skip here so an owner-authored PR does not retry the same no-op forever.
+      return nil if owner_is_pr_author?(project, pr_data)
 
       trigger = {
         type: "owner_approval_stale",
@@ -3118,10 +3121,6 @@ module Activities
       return :not_evaluated if freshness_states.include?(:not_evaluated)
 
       :fresh
-    end
-
-    def review_stale_for_head?(client, project, issue, pr_data, reviews)
-      review_freshness_for_head(client, project, issue, pr_data, reviews) == :stale
     end
 
     def fetch_head_commit_date(client, project, issue, pr_data)

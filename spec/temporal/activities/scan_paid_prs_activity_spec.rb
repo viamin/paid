@@ -449,7 +449,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           reviews: [ { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current } ]
         )
         allow(activity).to receive_messages(owner_approved_or_self_authored?: true, no_outstanding_review_feedback?: false,
-          all_blocking_review_methods_complete?: true, review_stale_for_head?: false)
+          all_blocking_review_methods_complete?: true, review_freshness_for_head: :fresh)
         expect(activity).not_to receive(:dependencies_resolved?)
 
         freeze_time do
@@ -511,6 +511,24 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         project.update!(auto_merge_mode: "all", owner_reviewer_login: "viamin")
         pr_issue.update!(pr_review_phase: "ready")
         stub_owner_approval_ready_signals(checks_conclusion: "failure")
+
+        result = activity.execute(project_id: project.id)
+
+        expect(decision_types(result)).not_to include("request_review")
+      end
+
+      it "does not re-request review when the owner authored the pull request" do
+        project.update!(auto_merge_mode: "all", owner_reviewer_login: "viamin")
+        pr_issue.update!(pr_review_phase: "ready")
+        stub_owner_approval_ready_signals
+        stub_github_for_pr(
+          author_login: "viamin",
+          checks: [ { name: "rspec", conclusion: "success" } ],
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "reviewer", state: "APPROVED", body: "", submitted_at: Time.current }
+          ],
+          head_sha: "abc123"
+        )
 
         result = activity.execute(project_id: project.id)
 
@@ -6668,9 +6686,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         allow(activity).to receive(:pull_request_collector).with(project, client: github_client).and_return(collector)
 
-        stale = activity.send(:review_stale_for_head?, github_client, project, issue, pr_data, reviews)
+        review_freshness = activity.send(:review_freshness_for_head, github_client, project, issue, pr_data, reviews)
 
-        expect(stale).to be(false)
+        expect(review_freshness).to eq(:fresh)
         expect(collector).to have_received(:only_base_merge_commits_since?).with(
           approval_sha: approval_sha,
           head_sha: head_sha,
@@ -11174,8 +11192,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       owner_approved_or_self_authored?: true,
       no_outstanding_review_feedback?: true,
       all_blocking_review_methods_complete?: true,
-      review_freshness_for_head: :stale,
-      review_stale_for_head?: true
+      review_freshness_for_head: :stale
     )
   end
 
