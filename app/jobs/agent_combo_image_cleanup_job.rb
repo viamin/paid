@@ -54,10 +54,19 @@ class AgentComboImageCleanupJob < ApplicationJob
   # Every combo tag any project still resolves to. Resolving is cheap (pure
   # token math over persisted profiles), so the sweep stays read-only until a
   # prune decision is made.
+  #
+  # Projects with any unsupported runtime (e.g. kotlin + go) are excluded even
+  # though non-strict resolution would still compute a combo tag for the
+  # supported subset (paid-agent:go) — Containers::Provision resolves in
+  # strict mode and rejects those projects outright, so that tag is never
+  # actually reachable and must not be kept alive on its account.
   def referenced_combo_tags
     TenantContext.with_system_access do
       Project.find_each.filter_map do |project|
-        image = Containers::ImageResolver.resolve(project)
+        resolver = Containers::ImageResolver.new(project)
+        image = resolver.resolve
+        next if resolver.unsupported_languages.any?
+
         Containers::ImageResolver.combo?(image) ? image : nil
       end
     end.to_set

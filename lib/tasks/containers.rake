@@ -6,9 +6,17 @@ namespace :containers do
     builder = Containers::ComboImageBuilder
     backends = Containers.all_backends
     present = backends.flat_map { |backend| builder.combo_images(backend: backend).map { |entry| [ backend, entry[:image] ] } }
+    # Projects with any unsupported runtime are excluded even though
+    # non-strict resolution would still compute a combo tag for the
+    # supported subset — Containers::Provision resolves in strict mode and
+    # rejects those projects outright, so rebuilding that tag would waste a
+    # build on an image no run can ever use.
     resolved = TenantContext.with_system_access do
       Project.find_each.filter_map do |project|
-        image = Containers::ImageResolver.resolve(project)
+        resolver = Containers::ImageResolver.new(project)
+        image = resolver.resolve
+        next if resolver.unsupported_languages.any?
+
         Containers::ImageResolver.combo?(image) ? image : nil
       end.uniq
     end

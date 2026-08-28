@@ -49,6 +49,14 @@ RSpec.describe "containers:rebuild_combo_images" do
     expect(Containers::ComboImageBuilder).not_to have_received(:force_rebuild)
   end
 
+  it "does not rebuild a combo tag resolved from a project with an unsupported runtime" do
+    create(:project, repo_profile: { "test_languages" => %w[kotlin go] })
+
+    task.invoke
+
+    expect(Containers::ComboImageBuilder).not_to have_received(:force_rebuild)
+  end
+
   it "aborts after logging failures without stopping the rest of the sweep" do
     allow(Containers::ComboImageBuilder).to receive(:combo_images).with(backend: backend)
       .and_return([ { image: "paid-agent:go" }, { image: "paid-agent:rust" } ])

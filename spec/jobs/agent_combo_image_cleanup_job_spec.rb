@@ -65,13 +65,26 @@ RSpec.describe AgentComboImageCleanupJob do
     it "keeps a combo tag still referenced by a project" do
       project = instance_double(Project)
       allow(Project).to receive(:find_each).and_return([ project ])
-      allow(Containers::ImageResolver).to receive(:resolve).with(project).and_return(tag)
+      stub_resolver(project, image: tag, unsupported_languages: [])
       stub_combo_images(image: tag, id: "sha256:abc", labels: stale_labels)
       allow(backend).to receive(:delete_image)
 
       job.perform
 
       expect(backend).not_to have_received(:delete_image)
+    end
+
+    it "prunes a combo tag whose only referencing project has an unsupported runtime" do
+      project = instance_double(Project)
+      allow(Project).to receive(:find_each).and_return([ project ])
+      stub_resolver(project, image: tag, unsupported_languages: [ "kotlin" ])
+      stub_combo_images(image: tag, id: "sha256:abc", labels: stale_labels)
+      allow(backend).to receive(:image_in_use?).and_return(false)
+      allow(backend).to receive(:delete_image)
+
+      job.perform
+
+      expect(backend).to have_received(:delete_image).with(tag, force: true)
     end
 
     it "keeps a combo tag whose build timestamp is within the retention window" do
@@ -121,5 +134,10 @@ RSpec.describe AgentComboImageCleanupJob do
 
   def stub_combo_images_for(target_backend, **entry)
     allow(Containers::ComboImageBuilder).to receive(:combo_images).with(backend: target_backend).and_return([ entry ])
+  end
+
+  def stub_resolver(project, image:, unsupported_languages:)
+    resolver = instance_double(Containers::ImageResolver, resolve: image, unsupported_languages: unsupported_languages)
+    allow(Containers::ImageResolver).to receive(:new).with(project).and_return(resolver)
   end
 end
