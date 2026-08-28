@@ -53,6 +53,17 @@ RSpec.describe Notifications::Resolve do
       expect(Turbo::StreamsChannel).to have_received(:broadcast_replace_to).at_least(:once)
     end
 
+    # @spec NOTIFICATION-SEVERITY-004
+    it "broadcasts a badge count that excludes remaining info notifications" do
+      create(:notification, :info, account: account, source: "info_rule", subject: project)
+      create(:notification, :warning, account: account, source: "test_rule", subject: project)
+
+      described_class.call(account: account, source: "test_rule", subject: project)
+
+      expect(Turbo::StreamsChannel).to have_received(:broadcast_replace_to)
+        .with(account, :notification_updates, hash_including(locals: hash_including(unread_count: 0)))
+    end
+
     it "does not broadcast when no matching notification exists" do
       described_class.call(account: account, source: "nonexistent", subject: project)
 

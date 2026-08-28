@@ -108,6 +108,26 @@ RSpec.describe Notification do
       end
     end
 
+    describe ".badging" do
+      # @spec NOTIFICATION-SEVERITY-004
+      it "returns active, unread warning and error notifications" do
+        warning = create(:notification, :warning, account: account)
+        error = create(:notification, :error, account: account)
+
+        expect(described_class.badging).to contain_exactly(warning, error)
+      end
+
+      # @spec NOTIFICATION-SEVERITY-004
+      it "excludes info, read, dismissed, and resolved notifications" do
+        create(:notification, :info, account: account)
+        create(:notification, :warning, :read, account: account)
+        create(:notification, :warning, :dismissed, account: account)
+        create(:notification, :warning, :resolved, account: account)
+
+        expect(described_class.badging).to be_empty
+      end
+    end
+
     describe ".for_nav_section" do
       it "returns notifications for the given nav section" do
         projects = create(:notification, account: account, nav_section: "projects")

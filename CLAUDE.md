@@ -391,3 +391,4 @@ Use `WORKLOG.md` as persistent working memory across context compactions:
 - `docs/STYLE_GUIDE.md` - Detailed coding standards, rationale, and examples
 - `db/schema.rb` - Canonical database schema with table and column comments
 - `docs/rdrs/` - All architectural decision records
+- `docs/intent/notification-severity/` - Notification severity classification taxonomy (info/warning/error)

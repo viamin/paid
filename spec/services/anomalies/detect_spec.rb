@@ -95,6 +95,15 @@ RSpec.describe Anomalies::Detect do
             )
           )
         end
+
+        # @spec NOTIFICATION-SEVERITY-001
+        it "always classifies the notification as info" do
+          described_class.call(anomalous_run)
+
+          expect(Notifications::Publish).to have_received(:call).with(
+            hash_including(severity: :info)
+          )
+        end
       end
 
       context "when run has abnormally high cost" do
@@ -493,7 +502,8 @@ RSpec.describe Anomalies::Detect do
         expect(Notifications::Publish).to have_received(:call).with(
           hash_including(
             source: "agent_run_anomaly",
-            subject: running_run
+            subject: running_run,
+            severity: :info
           )
         )
         expect(Guardrails::ViolationHandler).not_to have_received(:call)

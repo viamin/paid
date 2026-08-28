@@ -4,10 +4,10 @@
     <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
       <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
     </svg>
-    <% count = local_assigns.key?(:unread_count) ? unread_count : unread_notification_count %>
-    <% if count > 0 %>
+    <% badge_count = local_assigns.key?(:unread_count) ? unread_count : unread_notification_count %>
+    <% if badge_count > 0 %>
       <span class="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
-        <%= count > 99 ? "99+" : count %>
+        <%= badge_count > 99 ? "99+" : badge_count %>
       </span>
     <% end %>
   </button>
@@ -16,7 +16,8 @@
     <div class="p-3 border-b border-gray-100">
       <div class="flex items-center justify-between">
         <h3 class="text-sm font-semibold text-gray-900">Notifications</h3>
-        <% if count > 0 %>
+        <% any_unread = local_assigns.key?(:any_unread) ? any_unread : unread_notifications? %>
+        <% if any_unread %>
           <%= button_to "Mark all read", mark_all_read_notifications_path, method: :post, class: "text-xs text-indigo-600 hover:text-indigo-800", form: { data: { turbo_stream: true } } %>
         <% end %>
       </div>

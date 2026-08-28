@@ -21,9 +21,10 @@ module Notifications
         end
       end
 
+      # @spec NOTIFICATION-SEVERITY-003
       def build(agent_run)
         {
-          severity: :error,
+          severity: :warning,
           title: "Agent run ##{agent_run.id} hit #{agent_run.duration_seconds || agent_run.duration}s wall clock with no LLM traffic",
           description: description_for(agent_run),
           nav_section: "agent_runs",

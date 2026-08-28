@@ -19,6 +19,8 @@ class Notification < ApplicationRecord
   scope :unresolved, -> { where(resolved_at: nil) }
   scope :active, -> { undismissed.unresolved }
   scope :visible, -> { undismissed }
+  # @spec NOTIFICATION-SEVERITY-004
+  scope :badging, -> { active.unread.where(severity: %i[warning error]) }
   scope :for_nav_section, ->(section) { where(nav_section: section) }
   scope :recent, -> { order(created_at: :desc) }
 

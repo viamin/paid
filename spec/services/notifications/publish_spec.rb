@@ -134,5 +134,55 @@ RSpec.describe Notifications::Publish do
 
       expect(Turbo::StreamsChannel).to have_received(:broadcast_replace_to).at_least(:once)
     end
+
+    context "when broadcasting the bell badge count" do
+      # @spec NOTIFICATION-SEVERITY-004
+      it "excludes info notifications from the account stream count" do
+        create(:notification, :info, account: account, source: "existing_info")
+
+        described_class.call(
+          account: account,
+          source: "test_rule",
+          subject: project,
+          severity: :info,
+          title: "Test"
+        )
+
+        expect(Turbo::StreamsChannel).to have_received(:broadcast_replace_to)
+          .with(account, :notification_updates, hash_including(locals: hash_including(unread_count: 0)))
+      end
+
+      # @spec NOTIFICATION-SEVERITY-004
+      it "includes warning notifications in the account stream count" do
+        described_class.call(
+          account: account,
+          source: "test_rule",
+          subject: project,
+          severity: :warning,
+          title: "Test"
+        )
+
+        expect(Turbo::StreamsChannel).to have_received(:broadcast_replace_to)
+          .with(account, :notification_updates, hash_including(locals: hash_including(unread_count: 1)))
+      end
+
+      # @spec NOTIFICATION-SEVERITY-004
+      it "excludes info notifications from the user stream count" do
+        user = create(:user, account: account)
+        create(:notification, :info, account: account, user: user, source: "existing_user_info")
+
+        described_class.call(
+          account: account,
+          source: "user_test_rule",
+          subject: project,
+          severity: :info,
+          title: "Test",
+          user: user
+        )
+
+        expect(Turbo::StreamsChannel).to have_received(:broadcast_replace_to)
+          .with(user, :notification_updates, hash_including(locals: hash_including(unread_count: 0)))
+      end
+    end
   end
 end
