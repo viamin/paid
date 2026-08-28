@@ -1432,7 +1432,12 @@ RSpec.describe "Runners" do
 
     # @spec MODEL-POLICY-FORM-001 MODEL-POLICY-FORM-002 MODEL-POLICY-FORM-006
     context "when runner_model_policy_form is enabled" do
-      before { FeatureFlags.enable!(:runner_model_policy_form) }
+      around do |example|
+        FeatureFlags.enable!(:runner_model_policy_form)
+        example.run
+      ensure
+        FeatureFlags.disable!(:runner_model_policy_form)
+      end
 
       # The runner-key-specific Model <select> node, parsed with Nokogiri so
       # assertions read the rendered <option>s rather than the raw HTML —
