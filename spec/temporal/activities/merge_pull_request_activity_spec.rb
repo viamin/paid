@@ -426,7 +426,10 @@ RSpec.describe Activities::MergePullRequestActivity do
         allow(provider).to receive(:merge_pull_request)
           .and_raise(Automation::Providers::RepositoryProvider::ProviderError, rejection_message)
         allow(GithubClient).to receive(:new).and_return(client)
-        allow(client).to receive(:recent_issue_comments).and_return([])
+        allow(client).to receive_messages(
+          authenticated_login: "paid-bot",
+          recent_issue_comments: []
+        )
         allow(client).to receive(:add_comment)
       end
 
@@ -462,8 +465,38 @@ RSpec.describe Activities::MergePullRequestActivity do
       end
 
       it "does not post a duplicate comment when one already exists" do
-        existing = double(body: "<!-- paid: merge-permission-rejection --> earlier")
-        allow(client).to receive(:recent_issue_comments).and_return([ existing ])
+        existing = double(
+          body: "<!-- paid: merge-permission-rejection --> earlier",
+          user: double(login: "paid-bot")
+        )
+        allow(client).to receive_messages(
+          authenticated_login: "paid-bot",
+          recent_issue_comments: [ existing ]
+        )
+
+        activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(client).not_to have_received(:add_comment)
+      end
+
+      it "ignores a matching marker from a different author" do
+        spoof = double(
+          body: "<!-- paid: merge-permission-rejection --> earlier",
+          user: double(login: "someone-else")
+        )
+        allow(client).to receive_messages(
+          authenticated_login: "paid-bot",
+          recent_issue_comments: [ spoof ]
+        )
+
+        activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(client).to have_received(:add_comment)
+      end
+
+      it "does not post a comment when fetching recent comments fails" do
+        allow(client).to receive(:recent_issue_comments)
+          .and_raise(GithubClient::Error, "temporary outage")
 
         activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
 
@@ -548,6 +581,7 @@ RSpec.describe Activities::MergePullRequestActivity do
         allow(provider).to receive(:merge_pull_request)
           .and_raise(Automation::Providers::RepositoryProvider::ProviderError, rejection_message)
         allow(GithubClient).to receive(:new).and_return(client)
+        allow(client).to receive(:authenticated_login).and_return("paid-bot")
       end
 
       context "when the fallback merge succeeds" do
