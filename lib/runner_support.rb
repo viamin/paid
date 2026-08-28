@@ -347,14 +347,6 @@ module RunnerSupport
     "opencode" => %w[
       OPENAI_HEADER_X_AGENT_RUN_ID
       OPENAI_HEADER_X_PROXY_TOKEN
-    ].freeze,
-    "openrouter_free" => %w[
-      OPENAI_HEADER_X_AGENT_RUN_ID
-      OPENAI_HEADER_X_PROXY_TOKEN
-    ].freeze,
-    "openrouter_pareto" => %w[
-      OPENAI_HEADER_X_AGENT_RUN_ID
-      OPENAI_HEADER_X_PROXY_TOKEN
     ].freeze
   }.freeze
 

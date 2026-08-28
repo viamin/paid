@@ -719,11 +719,11 @@ class RunnersController < ApplicationController
   end
 
   def apply_new_runner_defaults(runner)
-    return unless runner.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
+    return unless runner.free_model_policy?
 
     submitted_runner_params = params[:runner].respond_to?(:to_unsafe_h) ? params[:runner].to_unsafe_h : params.fetch(:runner, {})
 
-    runner.auth_type = "api_key"
+    runner.auth_type = "api_key" if runner.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
     # @spec FREE-MODEL-RUNNER-002
     # @spec FREE-MODEL-RUNNER-003
     runner.enabled_for_agent_runs = true if runner.enabled_for_agent_runs.nil?

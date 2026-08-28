@@ -21,15 +21,15 @@ mirroring `openrouter_free`). D3 keeps `openrouter/pareto-code` a plain
 catalog row rather than a third policy value — Pareto routing is not modeled
 here.
 
-This segment covers the `Runner` model config surface, validations, and
-display naming for `model_policy`. It does not change execution-path
-dispatch (`agent_harness_runner_runtime`, `openrouter_free_runner_runtime`)
-or free-model rotation (`FreeModels::Rotation`) — both stay keyed on the
-legacy `openrouter_free` runner key until the follow-up issues (5/8, 6/8)
-extend them to recognize `model_policy == "free"`. The legacy
+This segment covers the `Runner` model config surface, validations, display
+naming, runtime dispatch, and free-model rotation for `model_policy`. An
+`opencode` runner with `model_policy == "free"` now executes through the same
+OpenRouter free-model execution plan and rotation flow as the legacy
+`openrouter_free` runner, keyed by the runner's routing identifier so
+policy-based rows preserve their own recovery state. The legacy
 `openrouter_free` runner key and its dedicated form section
-(`free-model-runner-config`) remain fully functional and unchanged pending a
-later migration issue that moves existing rows onto the new config shape.
+(`free-model-runner-config`) remain fully functional pending the later
+migration issue that moves existing rows onto the new config shape.
 
 ## Design
 
@@ -64,21 +64,12 @@ any other `runner_key`.
   draw on the same OpenRouter free-tier quota. This is a real AR validation,
   not just a UI affordance: it also blocks pairing a legacy `openrouter_free`
   runner with an `opencode` free-policy runner on the same credential.
-- Phase gate (`opencode_free_policy_runner_must_not_be_enabled`,
-  MODEL-POLICY-011): until dispatch recognizes `model_policy == "free"`
-  (issues 5/8 and 6/8, MODEL-POLICY-009), a free-policy `opencode` runner
-  fails validation when enabled for agent runs, fallback, or chat. Every
-  dispatch path (`RunAgentActivity#selected_runner_runtime`,
-  `AgentRuns::RunnerResolver`, `Models::Select`, `Runners::TestAgent`)
-  reads `agent_harness_runner_runtime`, which is `nil` for a free-policy
-  runner because `opencode_direct_outbound?` requires `opencode_model_id`;
-  an enabled free-policy runner would fall through to a bare
-  `ProviderRuntime` without its OpenRouter credential (no
-  `OPENROUTER_API_KEY` env, no base_url), and preflight passes such a
-  runner because it is enabled and holds an api-key record. A fully
-  disabled free-policy runner remains valid to pre-configure; the legacy
-  `openrouter_free` runner is unaffected. Remove this gate when 5/8 wires
-  free-policy dispatch.
+- A free-policy `opencode` runner may be enabled for agent runs, fallback,
+  and chat once it passes the same free-model validations as the legacy
+  `openrouter_free` runner. Runtime dispatch resolves its tier model and
+  builds the OpenRouter runtime through `Runners::FreeModelExecutionPlan`,
+  so the request carries the same base URL, API-key env binding, and
+  `OpenRouterDataRouting` metadata as the legacy runner.
 
 ### Defaults and display
 

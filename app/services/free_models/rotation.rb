@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module FreeModels
-  # Selects the next free-model to retry within the openrouter_free runner
+  # Selects the next free-model to retry within an OpenRouter free-model runner
   # after a rate-limit error. Walks tiers starting at the supplied
   # `current_tier` and downward (high -> mid -> low), replacing the
   # rate-limited model with the highest-capability candidate that is
@@ -22,7 +22,7 @@ module FreeModels
       new(...).call
     end
 
-    # @param runner [Runner] The openrouter_free runner whose current model
+    # @param runner [Runner] The free-model runner whose current model
     #   was rate-limited.
     # @param current_model_id [String, nil] The model id that just failed.
     # @param current_tier [String, nil] The tier the failed call was running
@@ -44,7 +44,7 @@ module FreeModels
     end
 
     def call
-      return exhausted_result unless openrouter_free?
+      return exhausted_result unless free_model_policy_runner?
 
       previous_model_id = effective_current_model_id
       runner_state = find_runner_state
@@ -81,20 +81,16 @@ module FreeModels
 
     attr_reader :runner, :user, :project
 
-    def openrouter_free?
-      runner&.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
+    def free_model_policy_runner?
+      runner&.free_model_policy?
     end
 
-    # RunnerState rows for the openrouter_free runner are keyed by the bare
-    # runner_key string ("openrouter_free"), NOT the Runner#state_key
-    # routing key ("runner:<id>"). The Knowledge subsystem (RunnerSelector +
-    # RunnerExecutor) selects and records state against this bare identifier
-    # because UserSetting stores kb_chat_runner/kb_embedding_runner as the
-    # bare runner_key. Keying here by runner_key keeps rotation state on the
-    # same row the executor writes per-model rate limits to, and preserves
-    # any pre-existing circuit-breaker/rate-limit state across the upgrade.
+    # Legacy openrouter_free rows keep their historical bare-key RunnerState;
+    # policy-based OpenCode free runners key their rotation state by routing
+    # key so multiple free-policy runners on distinct credentials do not
+    # collide.
     def runner_state_name
-      Runner::OPENROUTER_FREE_RUNNER_KEY
+      runner&.free_model_rotation_state_key
     end
 
     def exhausted_result(previous_model_id: nil)
@@ -225,10 +221,10 @@ module FreeModels
     # swallowed so recovery never breaks a healthy runner; the snapshot is
     # still cleared so a stale mapping is not retried.
     def self.restore_preferred!(runner:, user:)
-      return false unless runner.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
+      return false unless runner.free_model_policy?
       return false unless user
 
-      state = user.runner_states.find_by(runner_name: Runner::OPENROUTER_FREE_RUNNER_KEY)
+      state = user.runner_states.find_by(runner_name: runner.free_model_rotation_state_key)
       return false unless state
 
       snapshot = state.preferred_tier_model_ids

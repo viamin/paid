@@ -811,6 +811,17 @@ RSpec.describe "Runners" do
       )
     end
 
+    # @spec MODEL-POLICY-005 MODEL-POLICY-009
+    it "creates an opencode free-policy runner with default free tier mappings and suggested flags" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+      seed_openrouter_synced_free_models
+      post_create_free_policy_runner(api_key:)
+
+      expect(response).to redirect_to(runners_path)
+      runner = user.runners.find_by!(runner_key: "opencode", auth_type: "api_key")
+      expect_free_policy_runner_defaults(runner)
+    end
+
     it "rejects kilocode API-key providers without a model id" do
       api_key = create(:provider_api_key, user: user, api_service_type: "inception")
 
@@ -937,7 +948,7 @@ RSpec.describe "Runners" do
       expect(response.body).to include("must include an OpenCode model id")
     end
 
-    # @spec MODEL-POLICY-008 MODEL-POLICY-011
+    # @spec MODEL-POLICY-008 MODEL-POLICY-009
     it "creates a disabled free-policy OpenCode runner without a model id when the API provider is openrouter" do
       api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
 
@@ -952,15 +963,17 @@ RSpec.describe "Runners" do
       expect(runner).not_to be_enabled_for_chat
     end
 
-    # @spec MODEL-POLICY-011
-    it "rejects creating an enabled free-policy OpenCode runner until free-policy dispatch lands" do
+    # @spec MODEL-POLICY-009
+    it "creates an enabled free-policy OpenCode runner" do
       api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
 
       post runners_path, params: { runner: free_policy_runner_params(api_key_id: api_key.id, enabled: true) }
 
-      expect(response).to have_http_status(:unprocessable_content)
-      expect(response.body).to include("OpenCode free model policy cannot be enabled until free-policy dispatch lands")
-      expect(user.runners.where(runner_key: "opencode", auth_type: "api_key")).not_to exist
+      expect(response).to redirect_to(runners_path)
+      runner = user.runners.find_by!(runner_key: "opencode", auth_type: "api_key")
+      expect(runner).to be_enabled_for_agent_runs
+      expect(runner).to be_enabled_for_fallback
+      expect(runner).to be_enabled_for_chat
     end
 
     # @spec MODEL-POLICY-002 MODEL-POLICY-008
@@ -1572,6 +1585,21 @@ RSpec.describe "Runners" do
     end
   end
 
+  def expect_free_policy_runner_defaults(runner)
+    aggregate_failures do
+      expect(runner.opencode_model_policy).to eq("free")
+      expect(runner.tier_model_ids).to eq(
+        "low" => "free-low",
+        "mid" => "free-mid",
+        "high" => "free-high"
+      )
+      expect(runner.fallback_role).to eq("rate_limit_fallback")
+      expect(runner.enabled_for_agent_runs).to be(true)
+      expect(runner.enabled_for_chat).to be(true)
+      expect(runner.enabled_for_fallback).to be(true)
+    end
+  end
+
   def seed_free_runner_form_models
     create(:llm_model, model_id: "high-free", provider: "deepseek", tier: "high", pricing_tier: "free", capability_score: 8.0,
       catalog_source: "openrouter_sync")
@@ -1606,6 +1634,21 @@ RSpec.describe "Runners" do
         enabled_for_agent_runs: true,
         enabled_for_fallback: true
       }.deep_merge(runner_attrs)
+    }
+  end
+
+  def post_create_free_policy_runner(api_key:)
+    post runners_path, params: {
+      runner: {
+        runner_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key_id: api_key.id,
+        config: {
+          opencode: {
+            model_policy: "free"
+          }
+        }
+      }
     }
   end
 end

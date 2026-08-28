@@ -88,6 +88,30 @@ RSpec.describe HealthChecks::Checks::Project::SensitiveDataFreeModel do
     expect(described_class.call(project)).to eq([])
   end
 
+  it "returns no findings when the default create_pr runner is an opencode free-policy runner" do
+    model = create(:llm_model, :free, model_id: "free-model", catalog_source: "manual")
+    owner = create(:user)
+    openrouter_key = create(:provider_api_key, user: owner, api_service_type: "openrouter")
+    openrouter_runner = create(
+      :runner,
+      user: owner,
+      runner_key: "opencode",
+      auth_type: "api_key",
+      provider_api_key: openrouter_key,
+      config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } }
+    )
+    owner.settings.update!(default_agent_runner: openrouter_runner.routing_key)
+    project = build(
+      :project,
+      created_by: owner,
+      account: owner.account,
+      data_classification: "confidential",
+      model_preferences: { "required_model_id" => model.model_id }
+    )
+
+    expect(described_class.call(project)).to eq([])
+  end
+
   it "ignores required models incompatible with the create_pr runner" do
     model = create(:llm_model, :free, :openai, model_id: "gpt-4o-mini", catalog_source: "manual")
     owner = create(:user)
@@ -145,7 +169,8 @@ RSpec.describe HealthChecks::Checks::Project::SensitiveDataFreeModel do
       Runner,
       runner_key: "openrouter_free",
       auth_type: "api_key",
-      agent_harness_runner_runtime: nil
+      agent_harness_runner_runtime: nil,
+      required_api_service_type: "openrouter"
     )
     selected_settings = instance_double(UserSetting)
 

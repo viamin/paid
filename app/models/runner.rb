@@ -8,6 +8,7 @@ class Runner < ApplicationRecord
   has_logidze
   include Discard::Model
   include LegacyAttributeBridge
+  include Runners::OpenRouterDataRouting
 
   OPENROUTER_FREE_RUNNER_KEY = "openrouter_free"
   OPENROUTER_FREE_MODEL_PROVIDER = "openrouter"
@@ -202,7 +203,6 @@ class Runner < ApplicationRecord
   validate :free_model_policy_runner_must_be_unique_per_credential
   validate :opencode_model_policy_must_be_valid
   validate :opencode_api_key_config_must_be_valid
-  validate :opencode_free_policy_runner_must_not_be_enabled
   validate :kilocode_api_key_config_must_be_valid
   validate :pi_api_key_config_must_be_valid
   validate :omp_api_key_config_must_be_valid
@@ -502,7 +502,9 @@ class Runner < ApplicationRecord
   end
 
   def requires_direct_outbound?
-    opencode_direct_outbound? || kilocode_direct_outbound? || pi_direct_outbound? || omp_direct_outbound? || openrouter_free_direct_outbound? || openrouter_pareto_direct_outbound?
+    opencode_direct_outbound? || opencode_free_policy_direct_outbound? ||
+      kilocode_direct_outbound? || pi_direct_outbound? || omp_direct_outbound? ||
+      openrouter_free_direct_outbound? || openrouter_pareto_direct_outbound?
   end
 
   def opencode_required_api_service_type
@@ -632,8 +634,8 @@ class Runner < ApplicationRecord
     [ "sh", "-lc", script, "--", prompt ]
   end
 
-  def agent_harness_runner_runtime
-    return opencode_runner_runtime if opencode_direct_outbound?
+  def agent_harness_runner_runtime(project: nil)
+    return opencode_runner_runtime(project: project) if opencode_direct_outbound?
     return pi_runner_runtime if pi_agent_harness_runtime?
     return omp_runner_runtime if omp_agent_harness_runtime?
 
@@ -981,11 +983,12 @@ class Runner < ApplicationRecord
   # not wipe a pre-existing recovery snapshot.
   def clear_free_model_rotation_snapshot
     return if new_record?
-    return unless runner_key == OPENROUTER_FREE_RUNNER_KEY
+    state_key = free_model_rotation_state_key
+    return if state_key.blank?
     return unless will_save_change_to_tier_model_ids?
     return unless user
 
-    state = user.runner_states.find_by(runner_name: OPENROUTER_FREE_RUNNER_KEY)
+    state = user.runner_states.find_by(runner_name: state_key)
     state&.clear_preferred_tier_model_ids!
   end
 
@@ -1300,22 +1303,6 @@ class Runner < ApplicationRecord
         (opencode_preflight_timeout_seconds.nil? || opencode_preflight_timeout_seconds < MIN_PREFLIGHT_TIMEOUT_SECONDS)
       errors.add(:config, "must include an OpenCode preflight timeout of at least #{MIN_PREFLIGHT_TIMEOUT_SECONDS} second")
     end
-  end
-
-  # Phase gate until RDR-065 5/8 (MODEL-POLICY-009) wires dispatch to
-  # free_model_policy?. Every dispatch path reads agent_harness_runner_runtime,
-  # which is nil for a free-policy runner because opencode_direct_outbound?
-  # requires opencode_model_id, so an enabled free-policy runner would execute
-  # opencode without its OpenRouter credential (bare ProviderRuntime, no
-  # env/base_url). Preflight cannot catch it: the runner is enabled and holds
-  # an api-key record. A fully disabled free-policy runner stays valid to
-  # pre-configure; the legacy openrouter_free runner dispatches as before.
-  # @spec MODEL-POLICY-011
-  def opencode_free_policy_runner_must_not_be_enabled
-    return unless opencode_model_policy == "free"
-    return unless enabled_for_agent_runs? || enabled_for_fallback? || enabled_for_chat?
-
-    errors.add(:base, "OpenCode free model policy cannot be enabled until free-policy dispatch lands (RDR-065 5/8)")
   end
 
   # @spec MODEL-POLICY-004
@@ -1730,11 +1717,26 @@ class Runner < ApplicationRecord
   end
   public :required_api_service_type
 
+  def free_model_rotation_state_key
+    return OPENROUTER_FREE_RUNNER_KEY if openrouter_free?
+    return routing_key if free_model_policy?
+
+    nil
+  end
+  public :free_model_rotation_state_key
+
   def opencode_direct_outbound?
     runner_key == "opencode" &&
       api_key? &&
       OPENCODE_API_PROVIDER_KEYS.include?(opencode_api_provider) &&
       opencode_model_id.present?
+  end
+
+  def opencode_free_policy_direct_outbound?
+    runner_key == "opencode" &&
+      api_key? &&
+      opencode_model_policy == "free" &&
+      required_api_service_type == OPENROUTER_FREE_MODEL_PROVIDER
   end
 
   def kilocode_direct_outbound?
@@ -1825,7 +1827,7 @@ class Runner < ApplicationRecord
     direct_outbound_llm_model_provider
   end
 
-  def opencode_runner_runtime
+  def opencode_runner_runtime(project: nil)
     model_id = opencode_qualified_model
     raise ArgumentError, "Missing OpenCode model id for runner #{id || runner_key}" if model_id.blank?
 
@@ -1879,6 +1881,10 @@ class Runner < ApplicationRecord
       # silently mislabeling the block.
       provider_key = api_config.fetch(:opencode_model_provider)
       metadata_config["provider"] = { provider_key => provider_config }
+    end
+    if opencode_api_provider == OPENROUTER_FREE_MODEL_PROVIDER && project.present?
+      metadata_config["provider"] ||= {}
+      metadata_config["provider"]["openrouter"] = build_provider_routing(project)
     end
 
     AgentHarness::ProviderRuntime.new(
@@ -1964,6 +1970,12 @@ class Runner < ApplicationRecord
     openrouter_provider_runtime(config)
   end
   public :openrouter_free_runner_runtime
+
+  def free_model_policy_runner_runtime(project:, model_id:)
+    config = Runners::FreeModelExecutionPlan.call(runner: self, model_id: model_id, project: project).config
+    openrouter_provider_runtime(config)
+  end
+  public :free_model_policy_runner_runtime
 
   def openrouter_pareto_runner_runtime(project:)
     config = Runners::ParetoExecutionPlan.call(runner: self, project: project).config

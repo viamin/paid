@@ -170,5 +170,29 @@ RSpec.describe Guardrails::DataClassificationPolicy do
         )
       end
     end
+
+    context "when the run uses an opencode runner backed by OpenRouter" do
+      let(:openrouter_key) { create(:provider_api_key, user: project.created_by, api_service_type: "openrouter") }
+      let(:openrouter_runner) do
+        create(
+          :runner,
+          user: project.created_by,
+          runner_key: "opencode",
+          auth_type: "api_key",
+          provider_api_key: openrouter_key,
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "openrouter/pareto-code" } }
+        )
+      end
+
+      before { agent_run.update!(runner: openrouter_runner) }
+
+      it "records routing metadata for confidential projects using a specific OpenRouter model" do
+        result = described_class.call(agent_run: agent_run, selection: selection)
+
+        expect(result).not_to be_warning
+        expect(result.provider_data_collection).to eq("deny")
+        expect(result.provider_zdr).to be_nil
+      end
+    end
   end
 end

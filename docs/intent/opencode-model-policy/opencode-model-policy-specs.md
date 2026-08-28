@@ -25,19 +25,6 @@
   that require free-pricing `LlmModel` rows, and their runner-compatibility
   counterparts that skip the generic compatibility check, SHALL key off this
   predicate rather than the `openrouter_free` runner key alone.
-- [x] **MODEL-POLICY-011** — Until dispatch recognizes `model_policy ==
-  "free"` (MODEL-POLICY-009, RDR-065 5/8), an `opencode` runner with
-  `model_policy: "free"` SHALL fail validation when
-  `enabled_for_agent_runs`, `enabled_for_fallback`, or `enabled_for_chat` is
-  set: every dispatch path reads `agent_harness_runner_runtime`, which is
-  `nil` for a free-policy runner (`opencode_direct_outbound?` requires
-  `opencode_model_id`), so an enabled free-policy runner would execute
-  opencode without its OpenRouter credential (bare `ProviderRuntime`, no
-  env/base_url) and preflight cannot catch it. A fully disabled free-policy
-  runner SHALL remain valid to configure. The legacy `openrouter_free`
-  runner, whose dispatch is fully wired, SHALL NOT be affected by this gate.
-  The gate is removed when MODEL-POLICY-009 lands.
-
 ## Defaults and Display
 
 - [x] **MODEL-POLICY-005** — When a `free_model_policy?` runner (legacy or
@@ -63,13 +50,14 @@
   `model_policy` under the `opencode` config block so the free policy can be
   set through the runner create/update form.
 
-## Deferred
-
-- [D] **MODEL-POLICY-009** — Runtime dispatch
+- [x] **MODEL-POLICY-009** — Runtime dispatch
   (`agent_harness_runner_runtime`/`requires_direct_outbound?`) and free-model
-  rotation (`FreeModels::Rotation`) recognizing `model_policy == "free"` on
-  `opencode` runners the same way they recognize the legacy `openrouter_free`
-  runner key. Deferred to RDR-065 issues 5/8 and 6/8.
+  rotation (`FreeModels::Rotation`) SHALL recognize `model_policy == "free"`
+  on `opencode` runners the same way they recognize the legacy
+  `openrouter_free` runner key, including rate-limit recovery snapshots keyed
+  by the runner's routing identifier.
+
+## Deferred
 - [D] **MODEL-POLICY-010** — Re-scoping `Runner.single_instance_runner_key?`
   (the "Add Runner" UI-list helper) from a bare runner-key check onto the
   `free_model_policy?` config predicate. Deferred to the

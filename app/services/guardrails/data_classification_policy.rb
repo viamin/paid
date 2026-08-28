@@ -84,16 +84,18 @@ module Guardrails
     end
 
     def openrouter_routed?
-      # The openrouter_free and openrouter_pareto runners always send requests
-      # through OpenRouter with data_collection/zdr set (see
-      # Runners::FreeModelExecutionPlan and Runners::ParetoExecutionPlan),
-      # regardless of the selected model's catalog_source — so treat them as
-      # OpenRouter-routed even for plain DeepSeek/Qwen/etc rows.
-      runner_key == "openrouter_free" || runner_key == "openrouter_pareto" || model&.catalog_source == "openrouter_sync"
+      runner_openrouter_routed? || model&.catalog_source == "openrouter_sync"
     end
 
     def runner_key
       agent_run.runner&.runner_key || agent_run.effective_runner
+    end
+
+    def runner_openrouter_routed?
+      runner = agent_run.runner
+      return %w[openrouter_free openrouter_pareto].include?(runner_key) unless runner
+
+      runner.required_api_service_type == "openrouter"
     end
 
     def routing_params

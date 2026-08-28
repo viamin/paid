@@ -374,10 +374,11 @@ module Runners
     def container_provider_runtime
       return kilocode_provider_runtime if kilocode_direct_outbound?
       return openrouter_free_provider_runtime if openrouter_free_direct_outbound?
+      return free_model_policy_provider_runtime if free_model_policy_direct_outbound?
       return openrouter_pareto_provider_runtime if openrouter_pareto_direct_outbound?
       return subscription_provider_runtime if subscription_provider_runtime?
 
-      runner.agent_harness_runner_runtime
+      runner.agent_harness_runner_runtime(project: test_project)
     end
 
     def openrouter_free_direct_outbound?
@@ -395,6 +396,20 @@ module Runners
       raise MissingProjectContextError, "openrouter_free runner has no resolvable model" if model_id.blank?
 
       runner.openrouter_free_runner_runtime(project: test_project, model_id: model_id)
+    end
+
+    def free_model_policy_direct_outbound?
+      runner.runner_key == "opencode" &&
+        runner.api_key? &&
+        runner.free_model_policy? &&
+        runner.required_api_service_type == "openrouter"
+    end
+
+    def free_model_policy_provider_runtime
+      model_id = resolve_openrouter_free_model_id
+      raise MissingProjectContextError, "free-model runner has no resolvable model" if model_id.blank?
+
+      runner.free_model_policy_runner_runtime(project: test_project, model_id: model_id)
     end
 
     def resolve_openrouter_free_model_id

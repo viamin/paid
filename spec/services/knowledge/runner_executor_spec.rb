@@ -221,7 +221,7 @@ RSpec.describe Knowledge::RunnerExecutor do
 
     context "with openrouter_free rotation" do
       let!(:free_model_high) { create(:llm_model, :free, model_id: "free-high-current", tier: "high", capability_score: 7.0) }
-      let!(:free_model_high_alt) { create(:llm_model, :free, model_id: "free-high-other", tier: "high", capability_score: 5.0) }
+      let(:free_model_high_alt) { create(:llm_model, :free, model_id: "free-high-other", tier: "high", capability_score: 5.0) }
       let!(:free_model_mid) { create(:llm_model, :free, model_id: "free-mid", tier: "mid", capability_score: 4.0) }
       let(:api_key) { create(:provider_api_key, user: user, api_service_type: "openrouter") }
       let(:openrouter_runner) do
@@ -238,6 +238,7 @@ RSpec.describe Knowledge::RunnerExecutor do
       end
 
       before do
+        free_model_high_alt
         allow(Knowledge::RunnerSelector).to receive(:for_chat)
           .with(user_setting: user_setting)
           .and_return([ Runner::OPENROUTER_FREE_RUNNER_KEY, "openai" ])
@@ -388,6 +389,51 @@ RSpec.describe Knowledge::RunnerExecutor do
         # No routing-key row must be created — state stays on the bare key.
         expect(user.runner_states.where.not(runner_name: Runner::OPENROUTER_FREE_RUNNER_KEY)
           .where(runner_name: openrouter_runner.state_key)).not_to exist
+      end
+    end
+
+    context "with opencode free-policy rotation" do
+      let!(:free_model_high) { create(:llm_model, :free, model_id: "free-high-current", tier: "high", capability_score: 7.0) }
+      let!(:free_model_high_alt) { create(:llm_model, :free, model_id: "free-high-other", tier: "high", capability_score: 5.0) }
+      let!(:free_model_mid) { create(:llm_model, :free, model_id: "free-mid", tier: "mid", capability_score: 4.0) }
+      let(:api_key) { create(:provider_api_key, user: user, api_service_type: "openrouter") }
+      let(:free_policy_runner) do
+        user.runners.create!(
+          runner_key: "opencode",
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } },
+          tier_model_ids: {
+            "high" => free_model_high.model_id,
+            "mid" => free_model_mid.model_id,
+            "low" => free_model_mid.model_id
+          }
+        )
+      end
+
+      before do
+        free_model_high_alt
+        allow(Knowledge::RunnerSelector).to receive(:for_chat)
+          .with(user_setting: user_setting)
+          .and_return([ free_policy_runner.routing_key, "openai" ])
+      end
+
+      it "retries the same routing-key runner after free-model rotation" do
+        executor = described_class.new(user_setting: user_setting, operation: :chat)
+        attempt = 0
+
+        result = executor.execute do |runner|
+          attempt += 1
+          if runner == free_policy_runner.routing_key && attempt == 1
+            raise AgentHarness::RateLimitError, "rate limited"
+          end
+
+          "response from #{runner}"
+        end
+
+        expect(result).to eq("response from #{free_policy_runner.routing_key}")
+        expect(attempt).to eq(2)
+        expect(free_policy_runner.reload.tier_model_ids["high"]).to eq(free_model_high.model_id)
       end
     end
   end

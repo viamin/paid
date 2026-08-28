@@ -16,10 +16,15 @@ module Models
     class RunnerLike
       attr_reader :tier_model_ids, :runner_key, :direct_outbound_llm_model_provider
 
-      def initialize(tier_model_ids:, runner_key: nil, direct_outbound_llm_model_provider: nil)
+      def initialize(tier_model_ids:, runner_key: nil, direct_outbound_llm_model_provider: nil, free_model_policy: false)
         @tier_model_ids = tier_model_ids
         @runner_key = runner_key
         @direct_outbound_llm_model_provider = direct_outbound_llm_model_provider
+        @free_model_policy = free_model_policy
+      end
+
+      def free_model_policy?
+        @free_model_policy
       end
     end
 
@@ -153,7 +158,8 @@ RSpec.describe Models::RunnerTierLookup, :no_db do
         Models::RunnerTierLookupSpec::RunnerLike,
         runner_key: "pi",
         tier_model_ids: {},
-        direct_outbound_llm_model_provider: "minimax"
+        direct_outbound_llm_model_provider: "minimax",
+        free_model_policy?: false
       )
       dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike,
         runner: runner, project: unrestricted_project))
@@ -163,13 +169,14 @@ RSpec.describe Models::RunnerTierLookup, :no_db do
       expect(dummy.compatible_scope(scope)).to eq(minimax_scope)
     end
 
-    it "constrains openrouter_free runners to the free pricing tier" do
+    it "constrains free-model-policy runners to the free pricing tier" do
       free_scope = instance_double(Models::RunnerTierLookupSpec::ActiveScopeLike)
       runner = instance_double(
         Models::RunnerTierLookupSpec::RunnerLike,
-        runner_key: "openrouter_free",
+        runner_key: "opencode",
         tier_model_ids: {},
-        direct_outbound_llm_model_provider: nil
+        direct_outbound_llm_model_provider: nil,
+        free_model_policy?: true
       )
       dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike,
         runner: runner, project: unrestricted_project))

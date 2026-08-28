@@ -72,11 +72,18 @@ module HealthChecks
         end
 
         def preferred_agent_type_openrouter?
-          %w[openrouter_free openrouter_pareto].include?(model_preferences["preferred_agent_type"])
+          legacy_openrouter_runner_key?(model_preferences["preferred_agent_type"])
         end
 
         def create_pr_runner_openrouter?
-          %w[openrouter_free openrouter_pareto].include?(create_pr_runner_key)
+          runner = create_pr_runner
+          return legacy_openrouter_runner_key?(create_pr_runner_key) unless runner
+
+          runner.required_api_service_type == "openrouter"
+        end
+
+        def legacy_openrouter_runner_key?(value)
+          %w[openrouter_free openrouter_pareto].include?(value)
         end
 
         # Health checks run without an AgentRun, so mirror the runtime

@@ -56,6 +56,36 @@ RSpec.describe FreeModels::Rotation do
       end
     end
 
+    context "when the runner is an opencode free-policy runner" do
+      let(:tier_model_ids) { { "high" => "high-current", "mid" => "mid-current", "low" => "low-current" } }
+      let(:runner) do
+        tier_model_ids.each do |tier, model_id|
+          next if LlmModel.exists?(model_id: model_id)
+
+          create(:llm_model, :free, model_id: model_id, tier: tier, capability_score: 5.0)
+        end
+
+        user.runners.create!(
+          runner_key: "opencode",
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } },
+          tier_model_ids: tier_model_ids
+        )
+      end
+
+      before { free_model(tier: "high", capability_score: 8.0, model_id: "high-other") }
+
+      it "rotates and keys the snapshot to the runner routing key" do
+        result = described_class.call(runner: runner, current_model_id: "high-current",
+          user: user, current_tier: "high")
+
+        expect(result.rotated?).to be true
+        state = user.runner_states.find_by!(runner_name: runner.routing_key)
+        expect(state.preferred_tier_model_ids).to eq(tier_model_ids)
+      end
+    end
+
     context "with candidates in the current tier" do
       let(:tier_model_ids) { { "high" => "high-current", "mid" => "mid-current", "low" => "low-current" } }
 

@@ -1023,6 +1023,32 @@ RSpec.describe Activities::RunAgentActivity do
       )
     end
 
+    it "routes opencode free-policy runs through the OpenRouter free-model runtime" do
+      api_key = create(:runner_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret")
+      free_model = create(:llm_model, model_id: "deepseek/deepseek-v4-flash:free", provider: "deepseek", tier: "mid", pricing_tier: "free")
+      run = build_openrouter_free_run(project: project, model: free_model, data_classification: "restricted")
+      runner = create_free_policy_opencode_runner(user:, api_key:, model_id: free_model.model_id)
+
+      runtime = activity.send(:selected_runner_runtime, runner.routing_key, user, run)
+
+      expect_openrouter_runtime(runtime,
+        model_id: "deepseek/deepseek-v4-flash:free",
+        api_key: "sk-openrouter-secret",
+        provider_routing: { "openrouter" => { data_collection: "deny", zdr: true } })
+    end
+
+    it "adds OpenRouter provider routing to specific OpenRouter opencode runs" do
+      opencode_context = build_opencode_context(user)
+      create(:model_selection, agent_run: agent_run, llm_model: create(:llm_model, model_id: "openrouter/pareto-code", provider: "openrouter"))
+      project.update!(data_classification: "confidential")
+
+      runtime = activity.send(:selected_runner_runtime, opencode_context.runner_candidate, user, agent_run)
+
+      expect(runtime.metadata[:config]["provider"]).to eq(
+        { "openrouter" => { data_collection: "deny" } }
+      )
+    end
+
     it "raises instead of falling back to an unpinned runtime when no free model resolves for openrouter_free" do
       api_key = create(:runner_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret")
       free_model = create(:llm_model, model_id: "deepseek/deepseek-v4-flash:free", provider: "deepseek", tier: "mid", pricing_tier: "free")
@@ -1035,6 +1061,29 @@ RSpec.describe Activities::RunAgentActivity do
 
       expect do
         activity.send(:selected_runner_runtime, runner, user, run)
+      end.to raise_error(Activities::RunAgentActivity::RunnerExecutionError, /no resolvable free model/)
+    end
+
+    it "raises instead of falling back to an unpinned runtime when no free model resolves for opencode free policy" do
+      api_key = create(:runner_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret")
+      free_model = create(:llm_model, model_id: "deepseek/deepseek-v4-flash:free", provider: "deepseek", tier: "mid", pricing_tier: "free")
+      run = build_openrouter_free_run(project: project, model: free_model, data_classification: "internal")
+      runner = create(
+        :runner,
+        user: user,
+        runner_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } },
+        tier_model_ids: LlmModel::TIERS.index_with { free_model.model_id }
+      )
+
+      allow(Runners::ResolveTierModel).to receive(:call).and_return(
+        Runners::ResolveTierModel::Result.new(error: "no model configured")
+      )
+
+      expect do
+        activity.send(:selected_runner_runtime, runner.routing_key, user, run)
       end.to raise_error(Activities::RunAgentActivity::RunnerExecutionError, /no resolvable free model/)
     end
 
@@ -1931,9 +1980,13 @@ RSpec.describe Activities::RunAgentActivity do
     fourth_config = JSON.parse(execute_calls.fourth.second[:preparation].file_writes.first.content)
 
     expect(third_config).to include("model" => "moonshotai/kimi-k2-0905")
-    expect(third_config).not_to have_key("provider")
+    expect(third_config["provider"]).to eq(
+      "openrouter" => { "data_collection" => "allow" }
+    )
     expect(fourth_config).to include("model" => "moonshotai/kimi-k2-0905")
-    expect(fourth_config).not_to have_key("provider")
+    expect(fourth_config["provider"]).to eq(
+      "openrouter" => { "data_collection" => "allow" }
+    )
   end
 
   def expect_resolved_model_attempts(agent_run, opencode_runner)
@@ -2061,6 +2114,29 @@ RSpec.describe Activities::RunAgentActivity do
       tier_model_ids: LlmModel::TIERS.index_with { model }
     ).tap do |runner|
       runner.update!(tier_models: LlmModel::TIERS.index_with { { "model_id" => model, "provider_id" => runner.id } })
+    end
+  end
+
+  def create_free_policy_opencode_runner(user:, api_key:, model_id:)
+    create(
+      :runner,
+      user: user,
+      runner_key: "opencode",
+      auth_type: "api_key",
+      provider_api_key: api_key,
+      config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } },
+      tier_model_ids: LlmModel::TIERS.index_with { model_id }
+    )
+  end
+
+  def expect_openrouter_runtime(runtime, model_id:, api_key:, provider_routing:)
+    aggregate_failures do
+      expect(runtime.model).to eq(model_id)
+      expect(runtime.env).to include(
+        "OPENROUTER_API_KEY" => api_key,
+        "OPENAI_BASE_URL" => "https://openrouter.ai/api/v1"
+      )
+      expect(runtime.metadata[:config]["provider"]).to eq(provider_routing)
     end
   end
 
