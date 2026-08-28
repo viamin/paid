@@ -1,6 +1,35 @@
 import { Controller } from "@hotwired/stimulus"
 
-const FREE_POLICY_OPTION = "__free_policy__"
+// Reads runner→service-type mapping from the backend-provided meta tag so that
+// RunnerSupport::RUNNER_API_SERVICE_TYPE remains the single source of truth.
+// Falls back to a hardcoded mapping if the meta tag is missing.
+function loadRunnerApiServiceType() {
+  try {
+    const meta = document.querySelector("meta[name='runner-api-service-type']")
+    if (meta && meta.content) {
+      const parsed = JSON.parse(meta.content)
+      if (parsed && typeof parsed === "object") return parsed
+    }
+  } catch {
+    // Fall back to the default mapping below.
+  }
+
+  return {
+    claude: "anthropic",
+    cursor: "anthropic",
+    codex: "openai",
+    gemini: "google",
+    openrouter_free: "openrouter",
+    openrouter_pareto: "openrouter",
+  }
+}
+
+const RUNNER_API_SERVICE_TYPE = loadRunnerApiServiceType()
+
+// Runner keys that use dynamic api_provider selection.
+const DYNAMIC_API_RUNNER_KEYS = new Set(["opencode", "kilocode", "pi", "omp"])
+
+const FREE_POLICY_OPTION = "free"
 const CUSTOM_OPTION = "custom"
 
 function parseJson(value, fallback) {
@@ -33,7 +62,8 @@ export default class extends Controller {
     "kilocodeSettings",
     "piSettings",
     "ompSettings",
-    "directOutboundApiProviderSelect",
+    "dynamicModelSelect",
+    "dynamicModelManualInput",
     "tierSettings",
     "tierSelect",
     "modelSettings",
@@ -102,6 +132,7 @@ export default class extends Controller {
       this.hideLegacySettings()
     } else {
       this.refreshLegacySettings(runnerKey, isApiKey)
+      this.refreshDynamicModelOptions(runnerKey)
     }
 
     this.refreshTierSettings(runnerKey)
@@ -210,8 +241,6 @@ export default class extends Controller {
 
   refreshApiKeyOptions(runnerKey = this.currentRunnerKey()) {
     if (!this.hasApiKeySelectTarget) return
-
-    const allowedServiceTypes = this.allowedApiServiceTypesFor(runnerKey)
     let selectedOptionVisible = false
 
     this.apiKeyOptionTargets.forEach((option) => {
@@ -221,7 +250,7 @@ export default class extends Controller {
       }
 
       const serviceType = option.dataset.apiServiceType || ""
-      const visible = allowedServiceTypes ? allowedServiceTypes.has(serviceType) : false
+      const visible = this.apiKeyVisibleForRunner(runnerKey, serviceType)
       option.hidden = !visible
       if (visible && option.selected) selectedOptionVisible = true
     })
@@ -238,8 +267,8 @@ export default class extends Controller {
     this.modelSelectTarget.innerHTML = ""
     this.modelSelectTarget.append(this.buildOption("", "Select a model"))
 
-    const leading = options.filter((option) => option.kind !== "catalog")
-    const catalog = options.filter((option) => option.kind === "catalog")
+    const leading = options.filter((option) => option.kind !== "model")
+    const catalog = options.filter((option) => option.kind === "model")
 
     leading.forEach((option) => {
       this.modelSelectTarget.append(this.buildOption(option.value, option.label))
@@ -328,44 +357,40 @@ export default class extends Controller {
     return this.initialApiServiceTypeValue || ""
   }
 
-  allowedApiServiceTypesFor(runnerKey) {
-    if (!runnerKey) return null
+  refreshDynamicModelOptions(runnerKey = this.currentRunnerKey()) {
+    this.dynamicModelSelectTargets.forEach((select) => {
+      const currentRunnerKey = select.dataset.runnerKey
+      const matches = currentRunnerKey === runnerKey && this.runnerApiKeyMode()
+      const serviceType = this.requiredApiServiceTypeFor(currentRunnerKey)
+      const optionsByServiceType = this.modelOptionsByServiceType(select)
+      const options = serviceType ? optionsByServiceType[serviceType] || [] : []
+      const selectedValue = select.value
+      // No catalog rows (and no preserved current-model entry) for this
+      // provider: fall back to a manual text entry instead of a dead,
+      // permanently-disabled select (see LlmModel::CUSTOM_MODEL_OPTION).
+      const manualEntry = matches && Boolean(serviceType) && options.length === 0
+      const manualInput = this.manualModelInputFor(currentRunnerKey)
 
-    // Flagged path: the exact allowed service types are the keys the server
-    // built into modelOptionsValue from the same Ruby constants that define
-    // this runner's API providers (supported_service_types_for).
-    if (this.modelOptionsMap[runnerKey]) {
-      const serviceTypes = Object.keys(this.modelOptionsMap[runnerKey])
-      return serviceTypes.length > 0 ? new Set(serviceTypes) : null
-    }
+      this.replaceDynamicModelOptions(select, options, serviceType)
 
-    // Legacy path: the runner's own api_provider <select> still renders one
-    // data-service-type per option from Runner::DIRECT_OUTBOUND_API_PROVIDERS
-    // / PI_API_PROVIDERS / OMP_API_PROVIDERS, so derive from the DOM instead
-    // of hardcoding the provider list a second time.
-    if (runnerKey === "opencode" || runnerKey === "kilocode" || runnerKey === "pi" || runnerKey === "omp") {
-      return this.directOutboundServiceTypesFromSelect(runnerKey)
-    }
+      const values = options.map((option) => option[1])
+      if (values.includes(selectedValue)) {
+        select.value = selectedValue
+      }
 
-    if (runnerKey === "openrouter_free" || runnerKey === "openrouter_pareto") return new Set(["openrouter"])
+      select.hidden = manualEntry
+      select.disabled = !matches || !serviceType || options.length === 0
+      select.dataset.currentServiceType = matches ? serviceType || "" : ""
 
-    const staticType = parseJson(
-      document.querySelector("meta[name='runner-api-service-type']")?.content,
-      {}
-    )[runnerKey]
-    return staticType ? new Set([staticType]) : null
+      if (manualInput) {
+        manualInput.hidden = !manualEntry
+        manualInput.disabled = !manualEntry
+      }
+    })
   }
 
-  directOutboundServiceTypesFromSelect(runnerKey) {
-    const select = this.directOutboundApiProviderSelectTargets.find((el) => el.dataset.runnerKey === runnerKey)
-    if (!select) return null
-
-    const serviceTypes = new Set()
-    for (const option of select.options) {
-      const serviceType = option.dataset?.serviceType
-      if (option.value && serviceType) serviceTypes.add(serviceType)
-    }
-    return serviceTypes.size > 0 ? serviceTypes : null
+  manualModelInputFor(runnerKey) {
+    return (this.dynamicModelManualInputTargets || []).find((target) => target.dataset.runnerKey === runnerKey)
   }
 
   runnerApiKeyMode() {
@@ -373,6 +398,83 @@ export default class extends Controller {
     if (selected) return selected.value === "api_key"
 
     return this.authTypeValue === "api_key"
+  }
+
+  requiredApiServiceTypeFor(runnerKey) {
+    if (!runnerKey) return null
+
+    // OpenCode, KiloCode, Pi, and Oh My Pi derive their effective provider from
+    // the selected API key's service type.
+    if (DYNAMIC_API_RUNNER_KEYS.has(runnerKey)) {
+      const selectedApiKey = this.selectedApiKeyOption()
+      if (selectedApiKey?.dataset.apiServiceType) return selectedApiKey.dataset.apiServiceType
+
+      const modelSelect = this.dynamicModelSelectTargets.find(
+        (target) => target.dataset.runnerKey === runnerKey
+      )
+      const cachedServiceType = modelSelect?.dataset.currentServiceType
+      if (this.dynamicServiceTypesFor(runnerKey).has(cachedServiceType)) {
+        return cachedServiceType
+      }
+
+      return null
+    }
+
+    // Returns null for unknown/unmapped runners (e.g. copilot), which causes
+    // refreshApiKeyOptions to hide all API key options — the correct behavior
+    // since those runners have no compatible API key type.
+    return RUNNER_API_SERVICE_TYPE[runnerKey] || null
+  }
+
+  apiKeyVisibleForRunner(runnerKey, serviceType) {
+    if (!runnerKey) return false
+
+    // Flagged path: the exact allowed service types are the keys the server
+    // built into modelOptionsValue from the same Ruby constants that define
+    // this runner's API providers (supported_service_types_for).
+    if (this.modelPolicyFormEnabledValue && this.directOutboundRunnerKeys.has(runnerKey)) {
+      return new Set(Object.keys(this.modelOptionsMap[runnerKey] || {})).has(serviceType)
+    }
+
+    if (DYNAMIC_API_RUNNER_KEYS.has(runnerKey)) {
+      return this.dynamicServiceTypesFor(runnerKey).has(serviceType)
+    }
+
+    const requiredServiceType = this.requiredApiServiceTypeFor(runnerKey)
+    return requiredServiceType !== null && serviceType === requiredServiceType
+  }
+
+  dynamicServiceTypesFor(runnerKey) {
+    const select = this.dynamicModelSelectTargets.find((target) => target.dataset.runnerKey === runnerKey)
+    return new Set(Object.keys(this.modelOptionsByServiceType(select)))
+  }
+
+  modelOptionsByServiceType(select) {
+    if (!select?.dataset.modelOptionsByServiceType) return {}
+
+    try {
+      const parsed = JSON.parse(select.dataset.modelOptionsByServiceType)
+      return parsed && typeof parsed === "object" ? parsed : {}
+    } catch {
+      return {}
+    }
+  }
+
+  replaceDynamicModelOptions(select, options, serviceType) {
+    const placeholder = !serviceType ? "Select an API key first" :
+      select.dataset.optionalModel === "true" ? "Use provider default" : "Select a model"
+    select.options.length = 0
+    select.add(new Option(placeholder, ""))
+
+    options.forEach(([label, value]) => {
+      select.add(new Option(label, value))
+    })
+  }
+
+  selectedApiKeyOption() {
+    if (!this.hasApiKeySelectTarget) return null
+
+    return this.apiKeySelectTarget.selectedOptions[0] || null
   }
 
   currentRunnerKey() {

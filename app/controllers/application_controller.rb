@@ -85,7 +85,12 @@ class ApplicationController < ActionController::Base
   end
 
   def skip_pundit?
-    devise_controller? || is_a?(HomeController) || is_a?(DashboardController) || is_a?(QualityDashboardsController)
+    devise_controller? ||
+      is_a?(HomeController) ||
+      is_a?(DashboardController) ||
+      is_a?(InboxController) ||
+      is_a?(LegacyInboxRedirectsController) ||
+      is_a?(QualityDashboardsController)
   end
 
   def verify_policy_scoped?

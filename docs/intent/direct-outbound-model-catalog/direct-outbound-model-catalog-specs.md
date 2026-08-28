@@ -33,3 +33,27 @@
   system SHALL return an empty relation from `LlmModel.dropdown_options_for`
   so the caller can render `LlmModel::CUSTOM_MODEL_OPTION` alone instead of an
   empty select.
+
+## Provider-Derived Runner Setup
+
+- [x] **DIRECT-OUTBOUND-CATALOG-006** — When the runner form renders an
+  API-key direct-outbound runner (`opencode`, `kilocode`, `pi`, `omp`), the
+  system SHALL derive the effective provider from the selected API key's
+  `api_service_type` instead of rendering a second `api_provider` form control.
+- [x] **DIRECT-OUTBOUND-CATALOG-007** — When the selected API key changes for
+  an API-key direct-outbound runner, the system SHALL refresh the model
+  dropdown to the catalog rows for that key's `api_service_type`.
+- [x] **DIRECT-OUTBOUND-CATALOG-008** — When a new or updated API-key
+  direct-outbound runner is saved, the system SHALL stop persisting
+  `config[runner_key]["api_provider"]`; legacy stored values remain a fallback
+  only for pre-existing rows that have not yet been rewritten.
+- [x] **DIRECT-OUTBOUND-CATALOG-009** — When the runner form renders the model
+  dropdown for an existing API-key direct-outbound runner whose configured
+  model is outside the active catalog for its derived provider (deactivated
+  or manually entered), the system SHALL still render that model as a
+  selectable, pre-selected option, so saving an unrelated field never
+  silently clears or invalidates it.
+- [x] **DIRECT-OUTBOUND-CATALOG-010** — When the derived provider for an
+  API-key direct-outbound runner has no active catalog rows and no currently
+  configured model to preserve, the runner form SHALL render a manual
+  model-id text field instead of a permanently disabled, empty select.

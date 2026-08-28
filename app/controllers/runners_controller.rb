@@ -311,6 +311,7 @@ class RunnersController < ApplicationController
     # Single-instance keys are subtracted once the user already has one so
     # the "Add Runner" CTA reflects reality.
     @available_api_keys = current_user.provider_api_keys.ordered
+    @available_api_keys_by_service_type = group_api_keys_by_service_type(@available_api_keys)
     candidate_api_key_keys = addable_keys.select do |key|
       @available_api_keys.any? { |ak| compatible_api_key_for_runner?(api_key: ak, runner_key: key) }
     end
@@ -702,8 +703,8 @@ class RunnersController < ApplicationController
   end
 
   def compatible_api_key_for_runner?(api_key:, runner_key:)
-    # Direct-outbound runners support multiple API key types depending on the
-    # selected api_provider, so check against all compatible service types.
+    # Direct-outbound runners derive their effective provider from the selected
+    # API key, so any service type in that runner's compatible set is valid.
     if %w[opencode kilocode].include?(runner_key)
       return resource_model_class::DIRECT_OUTBOUND_SERVICE_TYPES.include?(api_key.api_service_type)
     end
@@ -775,11 +776,7 @@ class RunnersController < ApplicationController
   # same object as PI_API_PROVIDERS) and neither runner has a runner-specific
   # compatibility contract in agent-harness yet, so their option sets are
   # always identical — the omp map reuses Pi's instead of recomputing it.
-  # catalog_cache/compatibility_cache dedupe the remaining work across the
-  # service types shared by opencode/kilocode/pi (e.g. anthropic, openrouter).
   def model_options_map
-    catalog_cache = {}
-    compatibility_cache = {}
     omp_aliases_pi = Runner::OMP_API_PROVIDERS.equal?(Runner::PI_API_PROVIDERS)
 
     runner_map = FORM_MODEL_RUNNER_KEYS.each_with_object({}) do |runner_key, map|
@@ -789,11 +786,9 @@ class RunnersController < ApplicationController
       map[runner_key] = service_types.index_with do |service_type|
         Runners::ModelOptions.call(
           runner_key: runner_key,
-          api_service_type: service_type,
-          auth_type: "api_key",
-          catalog_cache: catalog_cache,
-          compatibility_cache: compatibility_cache
-        ).options
+          api_provider: service_type,
+          auth_type: "api_key"
+        ).map { |entry| { value: entry.value, label: entry.label, kind: entry.kind.to_s, family: entry.family } }
       end
     end
 
@@ -832,12 +827,12 @@ class RunnersController < ApplicationController
     custom_model_id = attrs["custom_model_id"].to_s.strip.presence
 
     if runner_key == "opencode"
-      runner_config["model_policy"] = selected_model == Runners::ModelOptions::FREE_POLICY_OPTION ? "free" : "specific"
+      runner_config["model_policy"] = selected_model == Runners::ModelOptions::FREE_POLICY_VALUE ? "free" : "specific"
     end
 
     if selected_model == LlmModel::CUSTOM_MODEL_OPTION
       runner_config["model"] = custom_model_id
-    elsif selected_model == Runners::ModelOptions::FREE_POLICY_OPTION
+    elsif selected_model == Runners::ModelOptions::FREE_POLICY_VALUE
       runner_config.delete("model")
     elsif selected_model.present?
       runner_config["model"] = selected_model
@@ -854,6 +849,13 @@ class RunnersController < ApplicationController
     @available_api_keys&.find { |api_key| api_key.id == api_key_id.to_i }&.api_service_type ||
       current_user.provider_api_keys.find_by(id: api_key_id)&.api_service_type
   end
+
+  def group_api_keys_by_service_type(api_keys)
+    api_keys.group_by(&:api_service_type).sort_by do |service_type, _keys|
+      RunnerSupport.api_service_type_label(service_type)
+    end
+  end
+
 
   def enabled_agent_runner_identifiers
     executable_keys = resource_container_executable_keys

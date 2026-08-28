@@ -1436,6 +1436,127 @@ RSpec.describe Runner do
     end
   end
 
+  describe "derived direct-outbound api providers" do
+    let(:account) { create(:account, slug: "derived-provider-#{SecureRandom.hex(6)}") }
+    let(:user) { create(:user, account: account, email: "derived-provider-#{SecureRandom.hex(6)}@example.com") }
+
+    # @spec DIRECT-OUTBOUND-CATALOG-008
+    it "derives the OpenCode api provider from the selected API key and ignores a stale stored value" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
+      create(:llm_model, model_id: "claude-sonnet-4-20250514", provider: "anthropic", tier: "mid")
+
+      runner = build(
+        :runner,
+        user: user,
+        runner_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "claude-sonnet-4-20250514" } }
+      )
+
+      expect(runner.opencode_api_provider).to eq("anthropic")
+      expect(runner).to be_valid
+    end
+
+    # @spec DIRECT-OUTBOUND-CATALOG-008
+    it "keeps honoring the legacy OpenCode config value when no provider_api_key is present" do
+      runner = build(
+        :runner,
+        user: user,
+        runner_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: nil,
+        config: { "opencode" => { "api_provider" => "minimax", "model" => "MiniMax-M3" } }
+      )
+
+      expect(runner.opencode_api_provider).to eq("minimax")
+    end
+
+    # @spec DIRECT-OUTBOUND-CATALOG-008
+    it "does not default a new record's api provider before a key is selected" do
+      runner = build(
+        :runner,
+        user: user,
+        runner_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: nil,
+        config: {}
+      )
+
+      expect(runner.opencode_api_provider).to be_nil
+      expect(runner.opencode_required_api_service_type).to be_nil
+    end
+
+    # @spec DIRECT-OUTBOUND-CATALOG-008
+    it "falls back to the default provider for a persisted record with no key or legacy value" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
+      create(:llm_model, model_id: "claude-sonnet-4-20250514", provider: "anthropic", tier: "mid")
+      runner = create(
+        :runner,
+        user: user,
+        runner_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "model" => "claude-sonnet-4-20250514" } }
+      )
+      runner.provider_api_key = nil
+
+      expect(runner.opencode_api_provider).to eq(Runner::OPENCODE_DEFAULT_API_PROVIDER)
+    end
+
+    # @spec DIRECT-OUTBOUND-CATALOG-008
+    it "validates the selected model against the provider derived from the API key" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
+      create(:llm_model, model_id: "moonshotai/kimi-k2-0905", provider: "openrouter", tier: "mid")
+
+      runner = build(
+        :runner,
+        user: user,
+        runner_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } }
+      )
+
+      expect(runner).not_to be_valid
+      expect(runner.errors[:config].join).to include("expected Anthropic")
+    end
+
+    # @spec DIRECT-OUTBOUND-CATALOG-008
+    it "derives the Pi provider from the selected API key" do
+      deepseek_key = create(:provider_api_key, user: user, api_service_type: "deepseek")
+      create(:llm_model, model_id: "deepseek-chat", provider: "deepseek", tier: "mid")
+
+      pi_runner = build(
+        :runner,
+        user: user,
+        runner_key: "pi",
+        auth_type: "api_key",
+        provider_api_key: deepseek_key,
+        config: { "pi" => { "api_provider" => "minimax", "model" => "deepseek-chat" } }
+      )
+      expect(pi_runner.pi_api_provider).to eq("deepseek")
+      expect(pi_runner).to be_valid
+    end
+
+    it "derives the Oh My Pi provider from the selected API key" do
+      deepseek_key = create(:provider_api_key, user: user, api_service_type: "deepseek")
+      create(:llm_model, model_id: "deepseek-chat", provider: "deepseek", tier: "mid")
+
+      omp_runner = build(
+        :runner,
+        user: user,
+        runner_key: "omp",
+        auth_type: "api_key",
+        provider_api_key: deepseek_key,
+        config: { "omp" => { "api_provider" => "minimax", "model" => "deepseek-chat" } }
+      )
+
+      expect(omp_runner.omp_api_provider).to eq("deepseek")
+      expect(omp_runner).to be_valid
+    end
+  end
+
   describe "sync_direct_outbound_tier_models callback" do
     let(:account) { create(:account, slug: "sync-tier-#{SecureRandom.hex(6)}") }
     let(:user) { create(:user, account: account, email: "sync-tier-#{SecureRandom.hex(6)}@example.com") }

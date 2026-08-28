@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe "dashboard inbox routing", :no_db do
+RSpec.describe "inbox routing", :no_db do
   around do |example|
     Rails.application.reload_routes!
     example.run
@@ -16,28 +16,36 @@ RSpec.describe "dashboard inbox routing", :no_db do
     end.new
   end
 
-  it "exposes the inbox index path under /dashboard/inbox" do
-    expect(route_helpers.dashboard_inbox_path).to eq("/dashboard/inbox")
+  it "exposes the inbox index path under /inbox" do
+    expect(route_helpers.inbox_path).to eq("/inbox")
   end
 
-  it "exposes the inbox detail frame path under /dashboard/inbox/entries" do
-    expect(route_helpers.dashboard_inbox_entry_path(entry_kind: "clarifying_questions", entry_id: "42")).to eq(
-      "/dashboard/inbox/entries/clarifying_questions/42"
+  it "exposes the inbox member path under /inbox/:entry_id" do
+    expect(route_helpers.inbox_entry_path("clarifying_questions:42")).to eq("/inbox/clarifying_questions:42")
+  end
+
+  it "routes /inbox to the dedicated inbox controller" do
+    expect(get: "/inbox").to route_to(controller: "inbox", action: "index")
+  end
+
+  it "routes /inbox/:entry_id to the dedicated inbox controller" do
+    expect(get: "/inbox/clarifying_questions:42").to route_to(
+      controller: "inbox",
+      action: "show",
+      entry_id: "clarifying_questions:42"
     )
   end
 
-  it "routes every registered inbox entry kind through the detail endpoint" do
-    Inbox::Queue::KINDS.each do |kind|
-      expect(get: "/dashboard/inbox/entries/#{kind}/42").to route_to(
-        controller: "dashboard",
-        action: "inbox_detail",
-        entry_kind: kind,
-        entry_id: "42"
-      )
-    end
+  it "keeps the legacy dashboard collection alias routable" do
+    expect(get: "/dashboard/inbox").to route_to(controller: "legacy_inbox_redirects", action: "index")
   end
 
-  it "rejects unknown inbox entry kinds" do
-    expect(get: "/dashboard/inbox/entries/not-a-kind/42").not_to be_routable
+  it "keeps the legacy dashboard member alias routable" do
+    expect(get: "/dashboard/inbox/entries/clarifying_questions/42").to route_to(
+      controller: "legacy_inbox_redirects",
+      action: "show",
+      entry_kind: "clarifying_questions",
+      entry_id: "42"
+    )
   end
 end

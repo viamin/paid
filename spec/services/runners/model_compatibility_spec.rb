@@ -173,14 +173,26 @@ RSpec.describe Runners::ModelCompatibility do
 
       context "with a model from the correct provider (anthropic)" do
         let(:model_id) { "claude-opus-4-5" }
+        let(:llm_model) { create(:llm_model, model_id: "claude-opus-4-5", provider: "anthropic") }
 
         before do
-          create(:llm_model, model_id: "claude-opus-4-5", provider: "anthropic")
+          llm_model
         end
 
         it "returns unknown — subscription entitlements are not statically checkable" do
           expect(result).to be_unknown
           expect(result.source).to eq("agent_harness")
+        end
+
+        it "reuses a provided catalog row instead of re-querying by model_id" do
+          expect(LlmModel).not_to receive(:find_by)
+
+          described_class.call(
+            runner_key: runner_key,
+            model_id: model_id,
+            auth_type: auth_type,
+            llm_model: llm_model
+          )
         end
       end
 

@@ -387,7 +387,7 @@ class Runner < ApplicationRecord
   def opencode_api_provider
     return nil unless runner_key == "opencode"
 
-    opencode_config["api_provider"].presence || OPENCODE_DEFAULT_API_PROVIDER
+    derived_api_provider_for(provider_api_key, legacy_value: opencode_config["api_provider"], default: OPENCODE_DEFAULT_API_PROVIDER)
   end
 
   def opencode_model_id
@@ -436,7 +436,7 @@ class Runner < ApplicationRecord
   def kilocode_api_provider
     return nil unless runner_key == "kilocode"
 
-    kilocode_config["api_provider"].presence || KILOCODE_DEFAULT_API_PROVIDER
+    derived_api_provider_for(provider_api_key, legacy_value: kilocode_config["api_provider"], default: KILOCODE_DEFAULT_API_PROVIDER)
   end
 
   def kilocode_model_id
@@ -464,7 +464,7 @@ class Runner < ApplicationRecord
   def pi_api_provider
     return nil unless runner_key == "pi"
 
-    pi_config["api_provider"].presence || PI_DEFAULT_API_PROVIDER
+    derived_api_provider_for(provider_api_key, legacy_value: pi_config["api_provider"], default: PI_DEFAULT_API_PROVIDER)
   end
 
   def pi_model_id
@@ -486,7 +486,7 @@ class Runner < ApplicationRecord
   def omp_api_provider
     return nil unless runner_key == "omp"
 
-    omp_config["api_provider"].presence || OMP_DEFAULT_API_PROVIDER
+    derived_api_provider_for(provider_api_key, legacy_value: omp_config["api_provider"], default: OMP_DEFAULT_API_PROVIDER)
   end
 
   def omp_model_id
@@ -1303,6 +1303,7 @@ class Runner < ApplicationRecord
     return unless runner_key == "opencode"
     return unless api_key?
 
+    # @spec DIRECT-OUTBOUND-CATALOG-008
     unless OPENCODE_API_PROVIDER_KEYS.include?(opencode_api_provider)
       errors.add(:config, "must include a supported OpenCode API provider")
     end
@@ -1676,6 +1677,7 @@ class Runner < ApplicationRecord
     return unless runner_key == "kilocode"
     return unless api_key?
 
+    # @spec DIRECT-OUTBOUND-CATALOG-008
     unless KILOCODE_API_PROVIDER_KEYS.include?(kilocode_api_provider)
       errors.add(:config, "must include a supported KiloCode API provider")
     end
@@ -1694,6 +1696,7 @@ class Runner < ApplicationRecord
     return unless runner_key == "pi"
     return unless api_key?
 
+    # @spec DIRECT-OUTBOUND-CATALOG-008
     unless PI_API_PROVIDER_KEYS.include?(pi_api_provider)
       errors.add(:config, "must include a supported Pi API provider")
     end
@@ -1703,6 +1706,7 @@ class Runner < ApplicationRecord
     return unless runner_key == "omp"
     return unless api_key?
 
+    # @spec DIRECT-OUTBOUND-CATALOG-008
     unless OMP_API_PROVIDER_KEYS.include?(omp_api_provider)
       errors.add(:config, "must include a supported Oh My Pi API provider")
     end
@@ -1803,6 +1807,19 @@ class Runner < ApplicationRecord
       .lazy
       .map { |candidate| LlmModel.find_by(model_id: candidate) }
       .find(&:present?)
+  end
+
+  # New records must not default to a provider before the user has actually
+  # selected an API key -- the model list depends on the selected key, and the
+  # initial state should stay on "Select an API key first". Persisted rows
+  # (including pre-migration rows with only a legacy config value) keep
+  # falling back to `default` so existing runners don't change behavior.
+  def derived_api_provider_for(api_key, legacy_value:, default:)
+    return api_key.api_service_type if api_key.present?
+    return legacy_value.to_s if legacy_value.present?
+    return default if persisted?
+
+    nil
   end
 
   def direct_outbound_catalog_model_id_candidates(model_id)

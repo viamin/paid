@@ -14,16 +14,16 @@
      end %>
 <% initial_api_service_type = runner.provider_api_key&.api_service_type %>
 <% initial_model_options = if feature_flagged_model_form && initial_api_service_type.present?
-     Runners::ModelOptions.call(runner_key: runner.runner_key, api_service_type: initial_api_service_type).options
+     Runners::ModelOptions.call(runner_key: runner.runner_key, api_provider: initial_api_service_type)
    else
      []
    end %>
-<% initial_model_values = initial_model_options.map { |option| option[:value] } %>
+<% initial_model_values = initial_model_options.map(&:value) %>
 <% direct_outbound_model_id = runner.direct_outbound_model_id.to_s.presence %>
 <% selected_model_choice = if submitted_model_selection_choice.present?
      submitted_model_selection_choice
    elsif runner.opencode_model_policy == "free"
-     Runners::ModelOptions::FREE_POLICY_OPTION
+     Runners::ModelOptions::FREE_POLICY_VALUE
    elsif direct_outbound_model_id.present? && initial_model_values.include?(direct_outbound_model_id)
      direct_outbound_model_id
    elsif direct_outbound_model_id.present?
@@ -46,6 +46,18 @@
       runner_form_model_options_value: runner_model_options_map_json,
       runner_form_initial_api_service_type_value: initial_api_service_type
     } do |form| %>
+  <% direct_outbound_service_types = Runner::DIRECT_OUTBOUND_API_PROVIDERS.values.map { |config| config[:service_type] }.uniq %>
+  <% pi_service_types = Runner::PI_API_PROVIDERS.values.map { |config| config[:service_type] }.uniq %>
+  <% api_keys_by_service_type = local_assigns[:available_api_keys_by_service_type].presence ||
+       available_api_keys.group_by(&:api_service_type).sort_by { |service_type, _keys| RunnerSupport.api_service_type_label(service_type) } %>
+  <% direct_outbound_models = LlmModel.active.where(provider: direct_outbound_service_types).order(:display_name).group_by(&:provider) %>
+  <% pi_models = LlmModel.active.where(provider: pi_service_types).order(:display_name).group_by(&:provider) %>
+  <% direct_outbound_model_options = direct_outbound_service_types.index_with do |service_type|
+       (direct_outbound_models[service_type] || []).map { |model| [model.display_name, model.model_id] }
+     end %>
+  <% pi_model_options = pi_service_types.index_with do |service_type|
+       (pi_models[service_type] || []).map { |model| [model.display_name, model.model_id] }
+     end %>
 
   <% if runner.errors.any? %>
     <div class="rounded-md bg-red-50 p-4">
@@ -152,8 +164,8 @@
                 data-runner-form-target="apiKeySelect"
                 data-action="change->runner-form#refreshRunnerSpecificFields">
           <option value="" data-runner-form-target="apiKeyOption">Select an API key</option>
-          <% available_api_keys.group_by(&:api_service_type).sort.each do |service_type, api_keys| %>
-            <optgroup label="<%= RunnerSupport.api_service_type_label(service_type) %>">
+          <% api_keys_by_service_type.each do |service_type, api_keys| %>
+            <optgroup label="<%= RunnerSupport.api_service_type_label(service_type) %> (<%= pluralize(api_keys.size, "key") %>)">
               <% api_keys.each do |ak| %>
                 <option value="<%= ak.id %>"
                         <% if runner.provider_api_key_id == ak.id %>selected<% end %>
@@ -239,14 +251,13 @@
                   data-initial-model-selection="<%= selected_model_choice %>"
                   data-action="change->runner-form#refreshModelState">
             <option value="">Select a model</option>
-            <% initial_model_options.each do |option| %>
-              <% next if option[:kind] == "catalog" %>
-              <option value="<%= option[:value] %>" <% if selected_model_choice == option[:value] %>selected<% end %>><%= option[:label] %></option>
+            <% initial_model_options.reject(&:model?).each do |option| %>
+              <option value="<%= option.value %>" <% if selected_model_choice == option.value %>selected<% end %>><%= option.label %></option>
             <% end %>
-            <% initial_model_options.select { |option| option[:kind] == "catalog" }.group_by { |option| option[:family] }.each do |family, options| %>
+            <% initial_model_options.select(&:model?).group_by(&:family).each do |family, options| %>
               <optgroup label="<%= family %>">
                 <% options.each do |option| %>
-                  <option value="<%= option[:value] %>" <% if selected_model_choice == option[:value] %>selected<% end %>><%= option[:label] %></option>
+                  <option value="<%= option.value %>" <% if selected_model_choice == option.value %>selected<% end %>><%= option.label %></option>
                 <% end %>
               </optgroup>
             <% end %>
@@ -283,75 +294,83 @@
     </div>
   <% else %>
     <% opencode_settings_enabled = is_api_key && runner.runner_key == "opencode" %>
-    <% opencode_api_provider = runner.opencode_api_provider || Runner::OPENCODE_DEFAULT_API_PROVIDER %>
+    <% opencode_service_type = runner.opencode_required_api_service_type %>
+    <% opencode_model_options = model_options_preserving_current(direct_outbound_model_options.fetch(opencode_service_type, []), runner.opencode_model_id) %>
+    <% opencode_model_options_json = model_options_by_service_type_json(direct_outbound_model_options, opencode_service_type, opencode_model_options) %>
+    <% opencode_manual_entry = opencode_settings_enabled && opencode_service_type.present? && opencode_model_options.empty? %>
     <div data-runner-form-target="opencodeSettings" <% unless opencode_settings_enabled %>hidden<% end %>>
       <div class="rounded-lg border border-gray-200 p-4">
-        <h3 class="text-sm font-semibold text-gray-900">OpenCode Model Settings</h3>
-        <p class="mt-1 text-xs text-gray-500">Configure the upstream API provider and model for this OpenCode entry.</p>
+        <h3 class="text-sm font-semibold text-gray-900">OpenCode Model</h3>
+        <p class="mt-1 text-xs text-gray-500">Choose a key above, then pick one of that provider's catalog models for this OpenCode entry.</p>
 
         <div class="mt-4">
-          <label for="runner_config_opencode_api_provider" class="block text-sm font-medium text-gray-900">API Provider</label>
-          <select id="runner_config_opencode_api_provider"
-                  name="runner[config][opencode][api_provider]"
-                  <% unless opencode_settings_enabled %>disabled<% end %>
+          <label for="runner_config_opencode_model" class="block text-sm font-medium text-gray-900">Model</label>
+          <select id="runner_config_opencode_model"
+                  name="runner[config][opencode][model]"
+                  <% if opencode_manual_entry %>hidden<% end %>
+                  <% unless opencode_settings_enabled && opencode_service_type.present? && opencode_model_options.any? %>disabled<% end %>
                   class="mt-2 block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
-                  data-runner-form-target="directOutboundApiProviderSelect"
+                  data-runner-form-target="dynamicModelSelect"
                   data-runner-key="opencode"
-                  data-action="change->runner-form#refreshRunnerSpecificFields">
-            <% Runner::DIRECT_OUTBOUND_API_PROVIDERS.each do |slug, cfg| %>
-              <option value="<%= slug %>" data-service-type="<%= cfg[:service_type] %>" <% if opencode_api_provider == slug %>selected<% end %>><%= cfg[:label] %></option>
+                  data-current-service-type="<%= opencode_service_type %>"
+                  data-model-options-by-service-type="<%= json_escape(opencode_model_options_json.to_json) %>">
+            <option value=""><%= opencode_service_type.present? ? "Select a model" : "Select an API key first" %></option>
+            <% opencode_model_options.each do |display_name, model_id| %>
+              <option value="<%= model_id %>" <% if runner.opencode_model_id == model_id %>selected<% end %>><%= display_name %></option>
             <% end %>
           </select>
-        </div>
-
-        <div class="mt-4">
-          <label for="runner_config_opencode_model" class="block text-sm font-medium text-gray-900">Model ID</label>
-          <input id="runner_config_opencode_model"
+          <input type="text"
+                 id="runner_config_opencode_model_manual"
                  name="runner[config][opencode][model]"
-                 type="text"
-                 value="<%= runner.opencode_model_id %>"
-                 placeholder="moonshotai/kimi-k2-0905"
+                 value="<%= runner.opencode_model_id if opencode_manual_entry %>"
+                 placeholder="No catalog models yet for this provider — enter a model id"
                  autocomplete="off"
-                  <% unless opencode_settings_enabled %>disabled<% end %>
+                 <% unless opencode_manual_entry %>hidden disabled<% end %>
+                 data-runner-form-target="dynamicModelManualInput"
+                 data-runner-key="opencode"
                  class="mt-2 block w-full rounded-md border-0 px-3 py-1.5 font-mono text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
-          <p class="mt-1 text-xs text-gray-500">Required. The model identifier for the selected API provider.</p>
+          <p class="mt-1 text-xs text-gray-500">Required. Only models from the selected key's provider are available.</p>
         </div>
       </div>
     </div>
 
     <% kilocode_settings_enabled = is_api_key && runner.runner_key == "kilocode" %>
-    <% kilocode_api_provider = runner.kilocode_api_provider || Runner::KILOCODE_DEFAULT_API_PROVIDER %>
+    <% kilocode_service_type = runner.kilocode_required_api_service_type %>
+    <% kilocode_model_options = model_options_preserving_current(direct_outbound_model_options.fetch(kilocode_service_type, []), runner.kilocode_model_id) %>
+    <% kilocode_model_options_json = model_options_by_service_type_json(direct_outbound_model_options, kilocode_service_type, kilocode_model_options) %>
+    <% kilocode_manual_entry = kilocode_settings_enabled && kilocode_service_type.present? && kilocode_model_options.empty? %>
     <div data-runner-form-target="kilocodeSettings" <% unless kilocode_settings_enabled %>hidden<% end %>>
       <div class="rounded-lg border border-gray-200 p-4">
-        <h3 class="text-sm font-semibold text-gray-900">KiloCode Model Settings</h3>
-        <p class="mt-1 text-xs text-gray-500">Configure the upstream API provider and model for this KiloCode entry.</p>
+        <h3 class="text-sm font-semibold text-gray-900">KiloCode Model</h3>
+        <p class="mt-1 text-xs text-gray-500">Choose a key above, then pick one of that provider's catalog models for this KiloCode entry.</p>
 
         <div class="mt-4">
-          <label for="runner_config_kilocode_api_provider" class="block text-sm font-medium text-gray-900">API Provider</label>
-          <select id="runner_config_kilocode_api_provider"
-                  name="runner[config][kilocode][api_provider]"
-                  <% unless kilocode_settings_enabled %>disabled<% end %>
+          <label for="runner_config_kilocode_model" class="block text-sm font-medium text-gray-900">Model</label>
+          <select id="runner_config_kilocode_model"
+                  name="runner[config][kilocode][model]"
+                  <% if kilocode_manual_entry %>hidden<% end %>
+                  <% unless kilocode_settings_enabled && kilocode_service_type.present? && kilocode_model_options.any? %>disabled<% end %>
                   class="mt-2 block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
-                  data-runner-form-target="directOutboundApiProviderSelect"
+                  data-runner-form-target="dynamicModelSelect"
                   data-runner-key="kilocode"
-                  data-action="change->runner-form#refreshRunnerSpecificFields">
-            <% Runner::DIRECT_OUTBOUND_API_PROVIDERS.each do |slug, cfg| %>
-              <option value="<%= slug %>" data-service-type="<%= cfg[:service_type] %>" <% if kilocode_api_provider == slug %>selected<% end %>><%= cfg[:label] %></option>
+                  data-current-service-type="<%= kilocode_service_type %>"
+                  data-model-options-by-service-type="<%= json_escape(kilocode_model_options_json.to_json) %>">
+            <option value=""><%= kilocode_service_type.present? ? "Select a model" : "Select an API key first" %></option>
+            <% kilocode_model_options.each do |display_name, model_id| %>
+              <option value="<%= model_id %>" <% if runner.kilocode_model_id == model_id %>selected<% end %>><%= display_name %></option>
             <% end %>
           </select>
-        </div>
-
-        <div class="mt-4">
-          <label for="runner_config_kilocode_model" class="block text-sm font-medium text-gray-900">Model ID</label>
-          <input id="runner_config_kilocode_model"
+          <input type="text"
+                 id="runner_config_kilocode_model_manual"
                  name="runner[config][kilocode][model]"
-                 type="text"
-                 value="<%= runner.kilocode_model_id %>"
-                 placeholder="mercury-2"
+                 value="<%= runner.kilocode_model_id if kilocode_manual_entry %>"
+                 placeholder="No catalog models yet for this provider — enter a model id"
                  autocomplete="off"
-                  <% unless kilocode_settings_enabled %>disabled<% end %>
+                 <% unless kilocode_manual_entry %>hidden disabled<% end %>
+                 data-runner-form-target="dynamicModelManualInput"
+                 data-runner-key="kilocode"
                  class="mt-2 block w-full rounded-md border-0 px-3 py-1.5 font-mono text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
-          <p class="mt-1 text-xs text-gray-500">Required. The model identifier for the selected API provider.</p>
+          <p class="mt-1 text-xs text-gray-500">Required. Only models from the selected key's provider are available.</p>
         </div>
 
         <div class="mt-4">
@@ -371,82 +390,92 @@
     </div>
 
     <% pi_settings_enabled = is_api_key && runner.runner_key == "pi" %>
-    <% pi_api_provider = runner.pi_api_provider || Runner::PI_DEFAULT_API_PROVIDER %>
+    <% pi_service_type = runner.pi_required_api_service_type %>
+    <% pi_runner_model_options = model_options_preserving_current(pi_model_options.fetch(pi_service_type, []), runner.pi_model_id) %>
+    <% pi_runner_model_options_json = model_options_by_service_type_json(pi_model_options, pi_service_type, pi_runner_model_options) %>
+    <% pi_manual_entry = pi_settings_enabled && pi_service_type.present? && pi_runner_model_options.empty? %>
     <div data-runner-form-target="piSettings" <% unless pi_settings_enabled %>hidden<% end %>>
       <div class="rounded-lg border border-gray-200 p-4">
-        <h3 class="text-sm font-semibold text-gray-900">Pi API Key Settings</h3>
-        <p class="mt-1 text-xs text-gray-500">Choose the upstream Pi provider to pair with this API key. Model selection is optional.</p>
+        <h3 class="text-sm font-semibold text-gray-900">Pi Model</h3>
+        <p class="mt-1 text-xs text-gray-500">Choose a key above, then optionally pick one of that provider's catalog models for this Pi entry.</p>
 
         <div class="mt-4">
-          <label for="runner_config_pi_api_provider" class="block text-sm font-medium text-gray-900">API Provider</label>
-          <select id="runner_config_pi_api_provider"
-                  name="runner[config][pi][api_provider]"
-                  <% unless pi_settings_enabled %>disabled<% end %>
+          <label for="runner_config_pi_model" class="block text-sm font-medium text-gray-900">Model</label>
+          <select id="runner_config_pi_model"
+                  name="runner[config][pi][model]"
+                  <% if pi_manual_entry %>hidden<% end %>
+                  <% unless pi_settings_enabled && pi_service_type.present? && pi_runner_model_options.any? %>disabled<% end %>
                   class="mt-2 block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
-                  data-runner-form-target="directOutboundApiProviderSelect"
+                  data-runner-form-target="dynamicModelSelect"
                   data-runner-key="pi"
-                  data-action="change->runner-form#refreshRunnerSpecificFields">
-            <% Runner::PI_API_PROVIDERS.each do |slug, cfg| %>
-              <option value="<%= slug %>" data-service-type="<%= cfg[:service_type] %>" <% if pi_api_provider == slug %>selected<% end %>><%= cfg[:label] %></option>
+                  data-optional-model="true"
+                  data-current-service-type="<%= pi_service_type %>"
+                  data-model-options-by-service-type="<%= json_escape(pi_runner_model_options_json.to_json) %>">
+            <option value=""><%= pi_service_type.present? ? "Use provider default" : "Select an API key first" %></option>
+            <% pi_runner_model_options.each do |display_name, model_id| %>
+              <option value="<%= model_id %>" <% if runner.pi_model_id == model_id %>selected<% end %>><%= display_name %></option>
             <% end %>
           </select>
-        </div>
-
-        <div class="mt-4">
-          <label for="runner_config_pi_model" class="block text-sm font-medium text-gray-900">Model ID</label>
-          <input id="runner_config_pi_model"
+          <input type="text"
+                 id="runner_config_pi_model_manual"
                  name="runner[config][pi][model]"
-                 type="text"
-                 value="<%= runner.pi_model_id %>"
-                 placeholder="Optional: deepseek-chat"
+                 value="<%= runner.pi_model_id if pi_manual_entry %>"
+                 placeholder="Optional: enter a model id manually"
                  autocomplete="off"
-                  <% unless pi_settings_enabled %>disabled<% end %>
+                 <% unless pi_manual_entry %>hidden disabled<% end %>
+                 data-runner-form-target="dynamicModelManualInput"
+                 data-runner-key="pi"
                  class="mt-2 block w-full rounded-md border-0 px-3 py-1.5 font-mono text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
-          <p class="mt-1 text-xs text-gray-500">Optional. Leave blank to let Pi use its default or previously selected model for the chosen provider.</p>
+          <p class="mt-1 text-xs text-gray-500">Optional. Leave blank to let Pi use its provider default.</p>
         </div>
       </div>
     </div>
 
     <% omp_settings_enabled = is_api_key && runner.runner_key == "omp" %>
-    <% omp_api_provider = runner.omp_api_provider || Runner::OMP_DEFAULT_API_PROVIDER %>
+    <% omp_service_type = runner.omp_required_api_service_type %>
+    <% omp_model_options = model_options_preserving_current(pi_model_options.fetch(omp_service_type, []), runner.omp_model_id) %>
+    <% omp_model_options_json = model_options_by_service_type_json(pi_model_options, omp_service_type, omp_model_options) %>
+    <% omp_manual_entry = omp_settings_enabled && omp_service_type.present? && omp_model_options.empty? %>
     <div data-runner-form-target="ompSettings" <% unless omp_settings_enabled %>hidden<% end %>>
       <div class="rounded-lg border border-gray-200 p-4">
-        <h3 class="text-sm font-semibold text-gray-900">Oh My Pi API Key Settings</h3>
-        <p class="mt-1 text-xs text-gray-500">Choose the upstream Oh My Pi provider to pair with this API key. Model selection is optional.</p>
+        <h3 class="text-sm font-semibold text-gray-900">Oh My Pi Model</h3>
+        <p class="mt-1 text-xs text-gray-500">Choose a key above, then optionally pick one of that provider's catalog models for this Oh My Pi entry.</p>
 
         <div class="mt-4">
-          <label for="runner_config_omp_api_provider" class="block text-sm font-medium text-gray-900">API Provider</label>
-          <select id="runner_config_omp_api_provider"
-                  name="runner[config][omp][api_provider]"
-                  <% unless omp_settings_enabled %>disabled<% end %>
+          <label for="runner_config_omp_model" class="block text-sm font-medium text-gray-900">Model</label>
+          <select id="runner_config_omp_model"
+                  name="runner[config][omp][model]"
+                  <% if omp_manual_entry %>hidden<% end %>
+                  <% unless omp_settings_enabled && omp_service_type.present? && omp_model_options.any? %>disabled<% end %>
                   class="mt-2 block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
-                  data-runner-form-target="directOutboundApiProviderSelect"
+                  data-runner-form-target="dynamicModelSelect"
                   data-runner-key="omp"
-                  data-action="change->runner-form#refreshRunnerSpecificFields">
-            <% Runner::OMP_API_PROVIDERS.each do |slug, cfg| %>
-              <option value="<%= slug %>" data-service-type="<%= cfg[:service_type] %>" <% if omp_api_provider == slug %>selected<% end %>><%= cfg[:label] %></option>
+                  data-optional-model="true"
+                  data-current-service-type="<%= omp_service_type %>"
+                  data-model-options-by-service-type="<%= json_escape(omp_model_options_json.to_json) %>">
+            <option value=""><%= omp_service_type.present? ? "Use provider default" : "Select an API key first" %></option>
+            <% omp_model_options.each do |display_name, model_id| %>
+              <option value="<%= model_id %>" <% if runner.omp_model_id == model_id %>selected<% end %>><%= display_name %></option>
             <% end %>
           </select>
-        </div>
-
-        <div class="mt-4">
-          <label for="runner_config_omp_model" class="block text-sm font-medium text-gray-900">Model ID</label>
-          <input id="runner_config_omp_model"
+          <input type="text"
+                 id="runner_config_omp_model_manual"
                  name="runner[config][omp][model]"
-                 type="text"
-                 value="<%= runner.omp_model_id %>"
-                 placeholder="Optional: deepseek-chat"
+                 value="<%= runner.omp_model_id if omp_manual_entry %>"
+                 placeholder="Optional: enter a model id manually"
                  autocomplete="off"
-                  <% unless omp_settings_enabled %>disabled<% end %>
+                 <% unless omp_manual_entry %>hidden disabled<% end %>
+                 data-runner-form-target="dynamicModelManualInput"
+                 data-runner-key="omp"
                  class="mt-2 block w-full rounded-md border-0 px-3 py-1.5 font-mono text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
-          <p class="mt-1 text-xs text-gray-500">Optional. Leave blank to let Oh My Pi use its default or previously selected model for the chosen provider.</p>
+          <p class="mt-1 text-xs text-gray-500">Optional. Leave blank to let Oh My Pi use its provider default.</p>
         </div>
       </div>
     </div>
   <% end %>
 
   <% tier_model_provider = Runners::DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER[runner.runner_key.to_s] %>
-  <% free_runner = runner.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY || selected_model_choice == Runners::ModelOptions::FREE_POLICY_OPTION %>
+  <% free_runner = runner.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY || selected_model_choice == Runners::ModelOptions::FREE_POLICY_VALUE %>
   <%# Flagged OpenCode can switch its model dropdown to OpenRouter Free client-side, so the free-tier
       picker must be in the DOM even when the runner is currently in specific-model mode — otherwise the
       Stimulus controller has nothing to reveal and the form falls back to submitting stale, non-free
