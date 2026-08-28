@@ -4,13 +4,16 @@ module Capacity
   # @spec INFRA-SPEND-001
   class InfrastructureSpend
     class << self
-      def spent_cents(account: nil, starts_at:, ends_at: Time.current, project: nil, runner: nil)
+      def spent_cents(account: nil, starts_at:, ends_at: Time.current, project: nil, runner: nil,
+        scope_modifier: nil, overlap_ends_at: nil)
         new(
           account: account,
           starts_at: starts_at,
           ends_at: ends_at,
           project: project,
-          runner: runner
+          runner: runner,
+          scope_modifier: scope_modifier,
+          overlap_ends_at: overlap_ends_at
         ).spent_cents
       end
 
@@ -33,12 +36,14 @@ module Capacity
       end
     end
 
-    def initialize(account:, starts_at:, ends_at:, project: nil, runner: nil)
+    def initialize(account:, starts_at:, ends_at:, project: nil, runner: nil, scope_modifier: nil, overlap_ends_at: nil)
       @account = account
       @starts_at = starts_at
       @ends_at = ends_at
       @project = project
       @runner = runner
+      @scope_modifier = scope_modifier
+      @overlap_ends_at = overlap_ends_at
     end
 
     def spent_cents
@@ -48,7 +53,7 @@ module Capacity
 
     private
 
-    attr_reader :account, :ends_at, :project, :runner, :starts_at
+    attr_reader :account, :ends_at, :overlap_ends_at, :project, :runner, :scope_modifier, :starts_at
 
     def overlapping_runs
       @overlapping_runs ||= TenantContext.with_system_access do
@@ -56,13 +61,13 @@ module Capacity
           .joins(:project)
           .where.not(provisioning_started_at: nil)
           .where("agent_runs.provisioning_started_at < ?", ends_at)
-          .where("agent_runs.completed_at IS NULL OR agent_runs.completed_at >= ?", starts_at)
+          .where(Arel.sql(overlap_ends_at_sql).gteq(starts_at))
           .where("agent_runs.completed_at IS NOT NULL OR agent_runs.status IN (?)", AgentRun::ACTIVE_STATUSES)
 
         scope = scope.where(projects: { account_id: account.id }) if account
         scope = scope.where(project_id: project.id) if project
         scope = scope.where(runner_id: runner.id) if runner
-        scope
+        scope_modifier ? scope_modifier.call(scope) : scope
       end
     end
 
@@ -89,7 +94,7 @@ module Capacity
             #{rate_cents_per_hour_sql} *
             GREATEST(
               EXTRACT(EPOCH FROM (
-                LEAST(COALESCE(agent_runs.completed_at, #{quoted_ends_at}), #{quoted_ends_at}) -
+                #{overlap_ends_at_sql} -
                 GREATEST(agent_runs.provisioning_started_at, #{quoted_starts_at})
               )),
               0
@@ -108,6 +113,10 @@ module Capacity
       SQL
     end
 
+    def quoted_overlap_ends_at
+      @quoted_overlap_ends_at ||= connection.quote(overlap_ends_at)
+    end
+
     def rate_cents_per_hour_expression
       @rate_cents_per_hour_expression ||= Arel.sql(rate_cents_per_hour_sql)
     end
@@ -118,6 +127,14 @@ module Capacity
 
     def quoted_starts_at
       @quoted_starts_at ||= connection.quote(starts_at)
+    end
+
+    def overlap_ends_at_sql
+      return quoted_overlap_ends_at if overlap_ends_at.present?
+
+      @default_overlap_ends_at_sql ||= <<~SQL.squish
+        LEAST(COALESCE(agent_runs.completed_at, #{quoted_ends_at}), #{quoted_ends_at})
+      SQL
     end
 
     def connection
