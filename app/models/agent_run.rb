@@ -2812,6 +2812,8 @@ class AgentRun < ApplicationRecord
     # the row write below clobbering a container_id the run may have picked
     # up in the meantime via redispatch.
     target_container_id = container_id
+    target_runner_handle = runner_handle.presence
+    rehydrate_runner_handle_for_cleanup(target_runner_handle)
 
     # Safety net for a worker killed mid-provision: the workspace volume
     # may exist with no container_id to drive a normal cleanup. Run before
@@ -2831,7 +2833,11 @@ class AgentRun < ApplicationRecord
     end
 
     if execution_runner_enabled? && @current_handle
-      cleanup_via_runner(force: force, expected_container_id: target_container_id)
+      cleanup_via_runner(
+        force: force,
+        expected_container_id: target_container_id,
+        expected_runner_handle: target_runner_handle
+      )
     else
       ensure_container_service!
       @container_service.cleanup(force: force, preserve_workspace_volume: preserve_workspace_volume)
@@ -3182,14 +3188,17 @@ class AgentRun < ApplicationRecord
   # tearing down a parked run's old environment) must not wipe out
   # container_id/runner_handle if the row has since been re-dispatched to a
   # different environment out from under it.
-  def cleanup_via_runner(force: false, expected_container_id: nil)
+  def cleanup_via_runner(force: false, expected_container_id: nil, expected_runner_handle: nil)
     runner = ExecutionRunners.resolve_for(self)
     runner.cleanup(handle: @current_handle, force: force)
   rescue ExecutionRunners::ProvisionError
     nil
   ensure
     @current_handle = nil
-    clear_execution_environment_reference_if_unchanged!(expected_container_id, also_clear: { runner_handle: nil })
+    clear_execution_environment_reference_for_runner_if_unchanged!(
+      expected_container_id,
+      expected_runner_handle
+    )
   end
 
   # Clears persisted container reference columns after a stale runner handle is
@@ -3203,6 +3212,22 @@ class AgentRun < ApplicationRecord
     @current_handle = nil
     update_columns(container_id: nil, container_host: nil, runner_handle: nil)
     clear_runtime_image_selection!
+  end
+
+  def rehydrate_runner_handle_for_cleanup(target_runner_handle)
+    return if @current_handle || !execution_runner_enabled? || target_runner_handle.blank?
+
+    @current_handle = ExecutionRunners::RunnerHandle.from_json(target_runner_handle)
+  end
+
+  def clear_execution_environment_reference_for_runner_if_unchanged!(expected_container_id, expected_runner_handle)
+    updates = { container_id: nil, container_host: nil, runner_handle: nil }
+    relation = self.class.where(id: id, container_id: expected_container_id, runner_handle: expected_runner_handle)
+    relation.update_all(updates)
+
+    return unless container_id == expected_container_id && runner_handle == expected_runner_handle
+
+    assign_attributes(updates)
   end
 
   def set_initiating_user_from_current_user

@@ -2844,6 +2844,22 @@ RSpec.describe AgentRun do
           expect(reloaded.container_host).to be_nil
           expect(reloaded.runner_handle).to be_nil
         end
+
+        it "rehydrates a persisted runner_handle before cleanup on a freshly loaded run" do
+          agent_run = create(:agent_run, worktree_path: worktree_path)
+          handle = build_handle(agent_run)
+          agent_run.update!(runner_handle: handle.to_storage)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          allow(mock_runner).to receive(:cleanup)
+
+          described_class.find(agent_run.id).cleanup_container(force: true)
+
+          expect(mock_runner).to have_received(:cleanup).with(handle: handle, force: true)
+          reloaded = agent_run.reload
+          expect(reloaded.container_id).to be_nil
+          expect(reloaded.container_host).to be_nil
+          expect(reloaded.runner_handle).to be_nil
+        end
       end
 
       describe "#execute_in_container (runner shim)" do

@@ -80,6 +80,28 @@ RSpec.describe AgentRunCancellationJob, type: :job do
       expect(agent_run.reload.container_id).to be_nil
     end
 
+    it "rehydrates the persisted runner_handle before cleanup" do
+      handle = ExecutionRunners::RunnerHandle.new(
+        runner_type: :local_docker,
+        identifier: "runner-container-123",
+        host: "local",
+        workspace_ref: "paid-workspace-#{agent_run.id}",
+        metadata: { "agent_run_id" => agent_run.id, "worktree_path" => nil, "environment" => {} }
+      )
+      agent_run.update!(container_id: nil, container_host: nil, runner_handle: handle.to_storage)
+      FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+      runner = instance_double(ExecutionRunners::LocalDockerRunner, cleanup: nil)
+      allow(ExecutionRunners).to receive(:resolve_for).with(instance_of(AgentRun)).and_return(runner)
+
+      described_class.perform_now(agent_run.id)
+
+      expect(runner).to have_received(:cleanup).with(handle: handle, force: true)
+      reloaded = agent_run.reload
+      expect(reloaded.container_id).to be_nil
+      expect(reloaded.container_host).to be_nil
+      expect(reloaded.runner_handle).to be_nil
+    end
+
     it "does not raise when agent run is not found" do
       expect { described_class.perform_now(-1) }.not_to raise_error
     end
