@@ -22,7 +22,7 @@ RSpec.describe PullRequests::ReviewSurface, :no_db do
   end
 
   after do
-    FileUtils.remove_entry(worktree_path)
+    FileUtils.remove_entry(worktree_path) if Dir.exist?(worktree_path)
   end
 
   context "with an RSpec file" do
@@ -110,6 +110,20 @@ RSpec.describe PullRequests::ReviewSurface, :no_db do
       expect(body).to include("## Test Outline")
       expect(body).to include("Projects::Import")
       expect(body).to include("creates a project")
+    end
+  end
+
+  context "when the stored worktree path is missing" do
+    let(:worktree_path) { "/var/paid/worktrees/project-123" }
+    let(:changed_files_output) { "" }
+
+    it "treats the run as having no diff and skips git" do # @spec TDD-PR-002
+      expect(Open3).not_to receive(:capture2)
+
+      body = described_class.call(body: "## Summary\n\nTest PR", agent_run: agent_run)
+
+      expect(body).to include("## Summary")
+      expect(body).not_to include("## Test Outline")
     end
   end
 end

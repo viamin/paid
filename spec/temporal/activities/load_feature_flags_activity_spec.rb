@@ -25,7 +25,8 @@ RSpec.describe Activities::LoadFeatureFlagsActivity do
           execution_runner_enabled: false,
           managed_subscription_runner_auth: false,
           prompt_assembly: false,
-          prompt_assembly_shadow_compare: false
+          prompt_assembly_shadow_compare: false,
+          runner_model_policy_form: false
         },
         project_missing: false
       )
