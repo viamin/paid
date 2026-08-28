@@ -49,6 +49,7 @@ module Orchestration
           metadata: metadata
         )
         ensure_orchestration_decision!
+        bump_inbox_cache_version
         decision
       rescue ActiveRecord::RecordNotUnique
         DecompositionDecision.find_by!(decision_key: decision_key).tap { ensure_orchestration_decision! }
@@ -179,6 +180,15 @@ module Orchestration
 
       def project
         @project ||= Project.find(project_id)
+      end
+
+      # A new decision row is how both a pending plan review appears and how
+      # it later resolves (`open_plan_reviews` reads the latest decision per
+      # workflow), so bumping here on every fresh decision covers both the
+      # inbox nav badge's plan-review candidates.
+      # @spec OPERATOR-INBOX-010
+      def bump_inbox_cache_version
+        Dashboard::CacheVersion.bump(project.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
       end
 
       def attach_strategy_version(orchestration_decision)

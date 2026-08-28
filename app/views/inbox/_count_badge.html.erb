@@ -1,0 +1,5 @@
+<% if count > 0 %>
+  <span class="flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+    <%= count > Inbox::Count::DISPLAY_CAP ? "#{Inbox::Count::DISPLAY_CAP}+" : count %>
+  </span>
+<% end %>

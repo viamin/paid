@@ -2,7 +2,7 @@
 
 class InboxController < ApplicationController
   before_action :authenticate_user!
-  before_action :load_inbox
+  before_action :load_inbox, only: %i[index show]
 
   # @spec OPERATOR-INBOX-001 @spec OPERATOR-INBOX-003
   def index
@@ -17,6 +17,13 @@ class InboxController < ApplicationController
 
     @detail_view = true
     render :index
+  end
+
+  # Lazy-loaded by the top-level nav badge Turbo Frame so ordinary page
+  # renders never build the full Inbox::Queue.
+  # @spec OPERATOR-INBOX-010
+  def count
+    @inbox_count = Inbox::Count.call(user: current_user)
   end
 
   private

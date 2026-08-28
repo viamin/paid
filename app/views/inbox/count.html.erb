@@ -1,0 +1,9 @@
+<%# Lazy-loaded by both the desktop and mobile nav Inbox links (see
+    app/views/layouts/application.html.erb). Turbo matches each requesting
+    frame against the response by id, so one response serves both. %>
+<%= turbo_frame_tag "inbox_nav_badge_desktop" do %>
+  <%= render "inbox/count_badge", count: @inbox_count %>
+<% end %>
+<%= turbo_frame_tag "inbox_nav_badge_mobile" do %>
+  <%= render "inbox/count_badge", count: @inbox_count %>
+<% end %>

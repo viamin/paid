@@ -67,6 +67,10 @@
               <% nav_menu_class = "absolute left-0 top-full z-10 mt-2 hidden min-w-48 overflow-hidden rounded-md bg-white py-1 shadow-lg ring-1 ring-black/5 dark:bg-gray-800 dark:ring-white/10" %>
               <% nav_menu_item_class = "block whitespace-nowrap px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-700" %>
               <%= link_to "Dashboard", dashboard_path, class: nav_link_class %>
+              <span class="relative inline-flex items-center gap-1">
+                <%= link_to "Inbox", inbox_path, class: nav_link_class %>
+                <%= turbo_frame_tag "inbox_nav_badge_desktop", loading: :lazy, src: inbox_count_path %>
+              </span>
               <%= link_to "Projects", projects_path, class: nav_link_class %>
               <%= link_to "Agent Runs", agent_runs_path, class: nav_link_class %>
               <%= link_to "Chat", chat_sessions_path, class: nav_link_class %>
@@ -105,7 +109,6 @@
                   <%= link_to "Quality", quality_dashboard_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close" } %>
                   <%= link_to "Prompts", prompts_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close" } %>
                   <%= link_to "Prompt Reviews", prompt_reviews_queue_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close" } %>
-                  <%= link_to "Inbox", inbox_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close" } %>
                   <%= link_to "Knowledge", knowledge_search_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close" } %>
                 </div>
               </div>
@@ -223,6 +226,10 @@
             <% mobile_link_class = "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white" %>
             <% mobile_heading_class = "px-3 pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500" %>
             <%= link_to "Dashboard", dashboard_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
+            <div class="flex items-center justify-between">
+              <%= link_to "Inbox", inbox_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
+              <%= turbo_frame_tag "inbox_nav_badge_mobile", loading: :lazy, src: inbox_count_path %>
+            </div>
             <%= link_to "Projects", projects_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
             <%= link_to "Agent Runs", agent_runs_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
             <%= link_to "Chat", chat_sessions_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
@@ -241,7 +248,6 @@
             <%= link_to "Quality", quality_dashboard_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
             <%= link_to "Prompts", prompts_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
             <%= link_to "Prompt Reviews", prompt_reviews_queue_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
-            <%= link_to "Inbox", inbox_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
             <%= link_to "Knowledge", knowledge_search_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
 
             <p class="<%= mobile_heading_class %>">Operations</p>

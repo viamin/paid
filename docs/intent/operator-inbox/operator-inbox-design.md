@@ -67,6 +67,44 @@ Backed by `DecompositionDecision.open_plan_reviews`, scoped through
 the inbox detail pane can show the breakdown and submit approve/reject/revise
 actions without leaving the inbox.
 
+## Navigation
+
+The inbox is a top-level nav item (desktop and mobile), placed immediately
+after Dashboard and before Projects, with an unread-style count badge — the
+same first-class placement as the notifications bell.
+
+A full `Inbox::Queue.call` per page render is too heavy for the nav: it loads
+issue bodies to parse clarifying questions, runs the auto-pick project gate,
+and queries open plan reviews. So the badge is async, not inline:
+
+1. The nav renders a lazy Turbo Frame (`inbox_nav_badge_desktop` /
+   `inbox_nav_badge_mobile`) pointing at `GET /inbox/count` — the same lazy-frame
+   pattern the notification bell's dropdown content already uses. Page render
+   never builds the queue.
+2. `Inbox::Count` computes an approximate candidate count in a couple of
+   indexed queries — no issue bodies, no `ClarifyingQuestions::Parse` — and
+   caches it per user for 90 seconds via `Dashboard::CacheVersion` (scope
+   `:inbox`), the same account-scoped version-bump pattern
+   `Dashboard::QueuePreview` uses.
+3. The version bumps on queue-mutating events: `Issue` bumps it whenever
+   `needs_input_since` changes or a waiting issue flips `github_state`
+   between open/closed (covers entering needs_input, answer submission,
+   manual-review escalation, and direct GitHub close/reopen without waiting
+   for TTL expiry); `Orchestration::DecompositionDecisions::Log` bumps it on
+   every decision write (covers both a new pending plan review appearing and
+   an existing one resolving, since `open_plan_reviews` reads the latest
+   decision per workflow).
+4. The count is intentionally approximate: it includes `needs_input` rows
+   without checking whether they have parseable questions yet (questionless
+   rows are rare and self-repair during sync), trading exactness for staying
+   a couple of single-purpose indexed queries instead of an
+   `Inbox::Queue`-shaped scan. Drift is bounded to that one edge case and a
+   TTL window.
+
+Future inbox kinds (e.g. `merge_approval` from #3655) extend the count the
+same way `Inbox::Queue` extends: add the candidate query to `Inbox::Count`
+and a matching cache-bump site, no nav or controller changes needed.
+
 ## Decisions
 
 - **One queue service, not per-page queries**: the inbox page and any future
@@ -96,3 +134,9 @@ actions without leaving the inbox.
   redirects after review actions.
 - `spec/requests/projects/clarifying_questions_spec.rb` covers inbox queue
   return/next-navigation through the existing answer form.
+- `spec/requests/navigation_spec.rb` covers top-level nav placement, Insights
+  dropdown removal, and the lazy badge frame markup.
+- `spec/requests/inbox_spec.rb` also covers `GET /inbox/count` badge
+  rendering (zero/hidden, count, `99+` cap).
+- `spec/services/inbox/count_spec.rb` covers the approximate count query and
+  cache invalidation on needs_input transitions and decision writes.
