@@ -126,6 +126,8 @@ class MigrateOpenrouterFreeParetoRunnersToOpencode < ActiveRecord::Migration[8.1
 
       rekey_state!(state, target_name: "runner:#{runner_id}")
     end
+
+    rekey_unambiguous_opencode_free_policy_states!
   end
 
   # At most one RunnerState row exists per (user, legacy bare key) —
@@ -157,5 +159,33 @@ class MigrateOpenrouterFreeParetoRunnersToOpencode < ActiveRecord::Migration[8.1
     merged_metadata = (legacy_state.metadata || {}).merge(existing.metadata || {})
     existing.update_columns(metadata: merged_metadata, updated_at: Time.current)
     legacy_state.destroy
+  end
+
+  def rekey_unambiguous_opencode_free_policy_states!
+    MigrationRunnerState.where(runner_name: TARGET_KEY).find_each do |state|
+      target_runner_id = unambiguous_opencode_free_policy_runner_id_for(state.user_id)
+      next unless target_runner_id
+
+      rekey_state!(state, target_name: "runner:#{target_runner_id}")
+    end
+  end
+
+  def unambiguous_opencode_free_policy_runner_id_for(user_id)
+    kept_opencode_rows = MigrationRunner.where(user_id: user_id, runner_key: TARGET_KEY, discarded_at: nil).to_a
+    free_policy_rows = kept_opencode_rows.select { |runner| free_policy_opencode_runner?(runner) }
+    return unless free_policy_rows.one?
+    return if kept_opencode_rows.any? { |runner| specific_model_opencode_runner?(runner) }
+
+    free_policy_rows.first.id
+  end
+
+  def free_policy_opencode_runner?(runner)
+    runner.config.is_a?(Hash) && runner.config.dig(TARGET_KEY, "model_policy") == "free"
+  end
+
+  def specific_model_opencode_runner?(runner)
+    return false unless runner.config.is_a?(Hash)
+
+    !free_policy_opencode_runner?(runner)
   end
 end

@@ -1023,6 +1023,24 @@ RSpec.describe Activities::RunAgentActivity do
       )
     end
 
+    it "preserves OpenRouter provider routing for migrated pareto runs" do # @spec MODEL-POLICY-009
+      api_key = create(:runner_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret")
+      project.update!(data_classification: "restricted")
+      runner = create_migrated_pareto_runner(user: user, api_key: api_key)
+      restricted_run = create_runner_backed_agent_run(project: project, runner: runner)
+
+      runtime = activity.send(:selected_runner_runtime, runner, user, restricted_run)
+
+      expect(runtime.model).to eq("openrouter/pareto-code")
+      expect(runtime.env).to include(
+        "OPENROUTER_API_KEY" => "sk-openrouter-secret",
+        "OPENAI_BASE_URL" => "https://openrouter.ai/api/v1"
+      )
+      expect(runtime.metadata[:config]["provider"]).to eq(
+        { "openrouter" => { data_collection: "deny", zdr: true } }
+      )
+    end
+
     it "resolves a config-blind KiloCode free-policy runtime instead of passing nil to provider qualification" do # @spec MODEL-POLICY-011
       api_key = create(:runner_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret")
       free_model = create(:llm_model, model_id: "deepseek/deepseek-v4-flash:free", provider: "deepseek", tier: "mid", pricing_tier: "free",
@@ -2003,9 +2021,9 @@ RSpec.describe Activities::RunAgentActivity do
     fourth_config = JSON.parse(execute_calls.fourth.second[:preparation].file_writes.first.content)
 
     expect(third_config).to include("model" => "moonshotai/kimi-k2-0905")
-    expect(third_config).not_to have_key("provider")
+    expect(third_config.fetch("provider")).to eq("openrouter" => { "data_collection" => "allow" })
     expect(fourth_config).to include("model" => "moonshotai/kimi-k2-0905")
-    expect(fourth_config).not_to have_key("provider")
+    expect(fourth_config.fetch("provider")).to eq("openrouter" => { "data_collection" => "allow" })
   end
 
   def expect_resolved_model_attempts(agent_run, opencode_runner)
@@ -2172,6 +2190,20 @@ RSpec.describe Activities::RunAgentActivity do
       tier_models: {
         "mid" => { "model_id" => model, "provider_id" => 17 }
       }
+    )
+  end
+
+  def create_migrated_pareto_runner(user:, api_key:)
+    create(
+      :runner,
+      user: user,
+      runner_key: "opencode",
+      auth_type: "api_key",
+      provider_api_key: api_key,
+      enabled_for_agent_runs: true,
+      enabled_for_chat: false,
+      enabled_for_fallback: false,
+      config: { "opencode" => { "model_policy" => "specific", "model" => "openrouter/pareto-code" } }
     )
   end
 

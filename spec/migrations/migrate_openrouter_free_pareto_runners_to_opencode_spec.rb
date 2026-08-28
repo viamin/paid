@@ -40,6 +40,23 @@ RSpec.describe MigrateOpenrouterFreeParetoRunnersToOpencode, :aggregate_failures
     )
   end
 
+  def opencode_runner(name:, fallback_role:, config:)
+    described_class::MigrationRunner.create!(
+      user_id: user.id, runner_key: "opencode", provider_key: "opencode", auth_type: "api_key",
+      provider_api_key_id: provider_api_key.id, name: name, weight: 1,
+      enabled_for_agent_runs: true, enabled_for_chat: true, enabled_for_fallback: true,
+      fallback_role: fallback_role, config: config,
+      created_at: Time.current, updated_at: Time.current
+    )
+  end
+
+  def create_runner_state(runner_name:, metadata:)
+    described_class::MigrationRunnerState.create!(
+      user_id: user.id, runner_name: runner_name, circuit_state: "closed", failure_count: 0,
+      metadata: metadata, created_at: Time.current, updated_at: Time.current
+    )
+  end
+
   it "migrates an openrouter_free row to opencode with model_policy free, preserving id/tier_model_ids/weight" do
     tier_ids = { "low" => "free/model-a", "mid" => "free/model-a", "high" => "free/model-b" }
     runner = legacy_runner(runner_key: "openrouter_free", tier_model_ids: tier_ids, weight: 5)
@@ -145,6 +162,46 @@ RSpec.describe MigrateOpenrouterFreeParetoRunnersToOpencode, :aggregate_failures
     expect(merged.metadata["quota_status"]).to eq({ "available" => true })
     expect(merged.metadata["rate_limited_models"]).to be_present
     expect(described_class::MigrationRunnerState.exists?(runner_name: "openrouter_free", user_id: user.id)).to be false
+  end
+
+  it "rekeys an existing bare opencode RunnerState when exactly one kept free-policy opencode runner owns it" do # @spec MODEL-POLICY-012
+    runner = opencode_runner(
+      name: "OpenCode Free",
+      fallback_role: "rate_limit_fallback",
+      config: { "opencode" => { "model_policy" => "free" } }
+    )
+    create_runner_state(
+      runner_name: "opencode",
+      metadata: {
+        "preferred_tier_model_ids" => { "mid" => "free/model-a" },
+        "rate_limited_models" => { "free/model-a" => 1.hour.from_now.iso8601 }
+      }
+    )
+
+    migration.migrate(:up)
+
+    migrated = described_class::MigrationRunnerState.find_by!(user_id: user.id, runner_name: "runner:#{runner.id}")
+    expect(migrated.metadata["preferred_tier_model_ids"]).to eq({ "mid" => "free/model-a" })
+    expect(migrated.metadata["rate_limited_models"]).to be_present
+    expect(described_class::MigrationRunnerState.exists?(user_id: user.id, runner_name: "opencode")).to be(false)
+  end
+
+  it "leaves a bare opencode RunnerState in place when kept specific-model opencode runners make ownership ambiguous" do # @spec MODEL-POLICY-012
+    opencode_runner(
+      name: "OpenCode Free",
+      fallback_role: "rate_limit_fallback",
+      config: { "opencode" => { "model_policy" => "free" } }
+    )
+    opencode_runner(
+      name: "OpenCode Specific",
+      fallback_role: "standard",
+      config: { "opencode" => { "model_policy" => "specific", "model" => "openrouter/pareto-code" } }
+    )
+    create_runner_state(runner_name: "opencode", metadata: { "preferred_tier_model_ids" => { "mid" => "free/model-a" } })
+
+    migration.migrate(:up)
+
+    expect(described_class::MigrationRunnerState.exists?(user_id: user.id, runner_name: "opencode")).to be(true)
   end
 
   it "does not touch runners that are not the legacy runner keys" do

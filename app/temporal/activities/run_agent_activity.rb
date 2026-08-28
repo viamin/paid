@@ -861,7 +861,7 @@ module Activities
 
     def selected_runner_runtime(runner_candidate, user, agent_run)
       runner_entry = runner_entry_for(runner_candidate, user) if runner_candidate
-      configured_runtime = runner_entry&.free_model_policy? ? nil : runner_entry&.agent_harness_runner_runtime
+      configured_runtime = runner_entry&.free_model_policy? ? nil : runner_entry&.agent_harness_runner_runtime(project: agent_run&.project)
       return nil if codex_subscription_auth_runtime?(runner_entry) ||
         codex_subscription_auth_candidate?(runner_candidate, user)
 

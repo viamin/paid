@@ -8,6 +8,7 @@ class Runner < ApplicationRecord
   has_logidze
   include Discard::Model
   include LegacyAttributeBridge
+  include Runners::OpenRouterDataRouting
 
   OPENROUTER_FREE_MODEL_PROVIDER = "openrouter"
   DIRECT_OUTBOUND_FREE_POLICY_RUNNER_KEYS = %w[opencode kilocode pi omp].freeze
@@ -625,9 +626,9 @@ class Runner < ApplicationRecord
     [ "sh", "-lc", script, "--", prompt ]
   end
 
-  def agent_harness_runner_runtime
-    return free_model_policy_runner_runtime(project: nil, model_id: free_policy_default_model_id) if direct_outbound_free_policy?
-    return opencode_runner_runtime if opencode_direct_outbound?
+  def agent_harness_runner_runtime(project: nil)
+    return free_model_policy_runner_runtime(project: project, model_id: free_policy_default_model_id) if direct_outbound_free_policy?
+    return opencode_runner_runtime(project: project) if opencode_direct_outbound?
     return pi_runner_runtime if pi_agent_harness_runtime?
     return omp_runner_runtime if omp_agent_harness_runtime?
 
@@ -1787,7 +1788,7 @@ class Runner < ApplicationRecord
     direct_outbound_llm_model_provider
   end
 
-  def opencode_runner_runtime
+  def opencode_runner_runtime(project: nil)
     model_id = opencode_qualified_model
     raise ArgumentError, "Missing OpenCode model id for runner #{id || runner_key}" if model_id.blank?
 
@@ -1832,23 +1833,12 @@ class Runner < ApplicationRecord
       env["OPENAI_BASE_URL"] = api_config[:base_url]
     end
 
-    metadata_config = {}
-    unless provider_config.empty?
-      # provider_config is populated for @ai-sdk/anthropic entries and for
-      # :opencode_custom entries that extend a built-in provider with a model
-      # opencode's catalog lacks; both always declare opencode_model_provider.
-      # fetch (not ||) so a future entry that forgets it fails loudly instead of
-      # silently mislabeling the block.
-      provider_key = api_config.fetch(:opencode_model_provider)
-      metadata_config["provider"] = { provider_key => provider_config }
-    end
-
     AgentHarness::ProviderRuntime.new(
       model: model_id,
       env: env,
       unset_env: opencode_direct_outbound_unset_env(env),
       metadata: {
-        config: metadata_config
+        config: opencode_runtime_metadata_config(api_config, provider_config, project)
       }
     )
   end
@@ -1898,6 +1888,26 @@ class Runner < ApplicationRecord
     return qualified if prefix.blank? || !qualified.start_with?("#{prefix}/")
 
     qualified.delete_prefix("#{prefix}/")
+  end
+
+  def opencode_runtime_metadata_config(api_config, provider_config, project)
+    provider_metadata = {}
+
+    unless provider_config.empty?
+      # provider_config is populated for @ai-sdk/anthropic entries and for
+      # :opencode_custom entries that extend a built-in provider with a model
+      # opencode's catalog lacks; both always declare opencode_model_provider.
+      # fetch (not ||) so a future entry that forgets it fails loudly instead of
+      # silently mislabeling the block.
+      provider_key = api_config.fetch(:opencode_model_provider)
+      provider_metadata[provider_key] = provider_config
+    end
+
+    if project.present? && api_config[:service_type] == OPENROUTER_FREE_MODEL_PROVIDER
+      provider_metadata["openrouter"] = provider_metadata.fetch("openrouter", {}).merge(build_provider_routing(project))
+    end
+
+    provider_metadata.any? ? { "provider" => provider_metadata } : {}
   end
 
   def pi_runner_runtime
