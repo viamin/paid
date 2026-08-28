@@ -1494,10 +1494,18 @@ module Containers
       )
     end
 
+    # Strict: a run must execute in an image that actually provides its
+    # runtimes, so a project whose detected languages have no agent image
+    # fails the provision instead of quietly landing in the base image
+    # (RDR-046 / POLYGLOT-TEST-006). An explicit +options[:image]+ override
+    # still wins — the caller has named the image deliberately.
+    # +.compatibility_for+ already rescues +ImageResolver::Error+, so queue
+    # scheduling reports the project as incompatible rather than crashing.
+    # @spec POLYGLOT-TEST-006
     def resolve_requested_project_image
       return unless project
 
-      Containers::ImageResolver.resolve(project)
+      Containers::ImageResolver.resolve(project, strict: true)
     end
 
     # In manual mode the memory limit comes straight from

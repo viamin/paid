@@ -80,6 +80,8 @@ module Containers
       return unless enabled_for?(agent_run)
       return unless pool_compatible_options?(options)
 
+      return if unsupported_runtime_languages.any?
+
       entry = claim_entry(agent_run, options: options, container_host: container_host)
       return unless entry
 
@@ -122,6 +124,8 @@ module Containers
     # GoodJob total_limit: 1 concurrency guard racing with itself.
     def replenish_unlocked
       cleanup_claimed_finished_runs
+      return drain_unsupported_runtime_pool if unsupported_runtime_languages.any?
+
       cleanup_stale_pool_entries
       trim_excess_warm_entries
       missing_count.times { warm_one }
@@ -141,10 +145,43 @@ module Containers
     # Image warmed and claimed for this project's pool. Resolves from the
     # project's language profile (RDR-046 / POLYGLOT-TEST-004) so a warmed
     # container matches the image a run will actually request via
-    # +Containers::Provision+. Falls back to the base image when the project
-    # has no extended runtime needs.
+    # +Containers::Provision+. Strict so an unsupported runtime can never
+    # resolve to the base image here; the acquire/replenish entry points check
+    # +unsupported_runtime_languages+ first, so the raise is a backstop rather
+    # than the normal path.
     def resolved_image
-      Containers::ImageResolver.resolve(project)
+      Containers::ImageResolver.resolve(project, strict: true)
+    end
+
+    # Detected languages this project needs that no agent image provides
+    # (RDR-046 / POLYGLOT-TEST-006). Resolved non-strictly so the pool can
+    # disable itself quietly; the run itself still fails loudly when
+    # +Containers::Provision+ resolves the same project in strict mode.
+    def unsupported_runtime_languages
+      return @unsupported_runtime_languages if defined?(@unsupported_runtime_languages)
+
+      resolver = Containers::ImageResolver.new(project)
+      resolver.resolve
+      @unsupported_runtime_languages = resolver.unsupported_languages
+    end
+
+    # An unsupported-runtime project keeps no pool. Warming one would bake the
+    # base image into a pool entry whose warm-time runtime selection is copied
+    # onto the claiming run, bypassing Provision's strict project-image
+    # resolution — exactly the silent base-image fallback POLYGLOT-TEST-008
+    # forbids. Entries left over from a supported earlier profile are drained
+    # rather than ignored: every other pool path is keyed on +resolved_image+,
+    # which now raises, so they would leak containers forever.
+    # @spec POLYGLOT-TEST-008
+    def drain_unsupported_runtime_pool
+      Rails.logger.warn(
+        message: "container_manager.pool_disabled_unsupported_runtime",
+        project_id: project.id,
+        container_host: container_host,
+        unsupported_languages: unsupported_runtime_languages
+      )
+      entries = project.container_pool_entries.where(container_host: container_host, status: %w[warm warming])
+      entries.find_each { |entry| remove_entry(entry, force: true) }
     end
 
     def enabled_for?(agent_run)

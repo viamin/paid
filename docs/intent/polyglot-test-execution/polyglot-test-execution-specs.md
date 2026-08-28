@@ -65,9 +65,17 @@
   runtime(s) rather than silently substituting the base image. In strict mode
   the resolver SHALL raise so callers that must run in the correct image fail
   loudly; in the default fallback mode it SHALL resolve to the base image and
-  expose the unsupported languages for observability.
-  *Code:* `app/services/containers/image_resolver.rb`.
-  *Test:* `spec/services/containers/image_resolver_spec.rb`.
+  expose the unsupported languages for observability. The provisioning path
+  SHALL resolve strictly so a project with no buildable image fails its run
+  instead of provisioning the base image; the warm pool SHALL warm nothing for
+  such a project (and drain leftover entries) so a pooled claim cannot bypass
+  that strict resolution.
+  *Code:* `app/services/containers/image_resolver.rb`,
+  `app/services/containers/provision.rb`,
+  `app/services/containers/pool_manager.rb`.
+  *Test:* `spec/services/containers/image_resolver_spec.rb`,
+  `spec/services/containers/provision_spec.rb`,
+  `spec/services/containers/pool_manager_spec.rb`.
 
 - [x] **POLYGLOT-TEST-007** — When a container is provisioned with a resolved
   combo image tag that is absent on the target Docker host, the system SHALL
