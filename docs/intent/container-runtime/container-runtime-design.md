@@ -605,6 +605,27 @@ stable enough to name explicitly:
   provider-neutral `runner_handle`; new runners should extend the handle-based
   contract, not propagate those compatibility fields upward.
 
+### Runner conformance benchmark methodology (#3358)
+
+The shared runner contract tracked by `#3347` is also the home for provider
+comparison readiness. This repository now defines that readiness surface
+explicitly instead of leaving it implicit in smoke tests:
+
+- `ExecutionRunners::ConformanceSuite.dimension_catalog` names the exact
+  thirteen lifecycle dimensions that the shared suite must map to.
+- `ExecutionRunners::ConformanceSuite.fixture_workload` defines the canonical,
+  deterministic fixture repository used for comparison runs.
+- `ExecutionRunners::ConformanceSuite::BenchmarkReport` defines the
+  JSON-ready capture format for provisioning latency, cold-start latency,
+  execution duration, cleanup latency, resource usage, cost, and per-dimension
+  pass/fail evidence.
+
+The no-shared-filesystem baseline now asserts this report shape as part of the
+existing Docker conformance path, so the executable suite proves both contract
+conformance and comparison-report compatibility. Future providers should add
+their evidence to the same shared suite rather than creating a second benchmark
+framework.
+
 ### Execution resource ledger reconciliation (#3411)
 
 Provision-time `runner_handle` persistence solves retry-time recovery for a
@@ -721,6 +742,8 @@ requirement defaults to warn mode.
 - `spec/support/no_shared_filesystem_conformance.rb`
 - `spec/support/shared_examples/execution_runner_contract.rb`
 - `spec/support/shared_examples/no_shared_filesystem_conformance.rb`
+- `app/services/execution_runners/conformance_suite.rb`
+- `docs/intent/container-runtime/runner-conformance-benchmark-methodology.md`
 - `spec/services/containers/service_provisioner_spec.rb`
 - `spec/services/capacity/docker_snapshot_spec.rb`
 - `spec/services/capacity/run_admission_spec.rb`

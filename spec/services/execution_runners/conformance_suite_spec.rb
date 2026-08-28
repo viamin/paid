@@ -1,0 +1,158 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+# @spec CONTAINER-RUNTIME-045
+RSpec.describe ExecutionRunners::ConformanceSuite do
+  describe ".fixture_workload" do
+    it "describes the deterministic fixture repository used by the shared suite" do
+      workload = described_class.fixture_workload
+
+      expect(workload).to include(
+        "name" => "runner-conformance-fixture",
+        "entrypoint" => "bin/conformance-task",
+        "expected_stdout" => "CONFORMANCE_OK",
+        "expected_artifact_path" => "artifacts/conformance-result.json",
+        "requires_llm" => false
+      )
+      expect(Rails.root.join(workload.fetch("relative_repo_path"))).to exist
+    end
+  end
+
+  describe ".dimension_catalog" do
+    it "defines the 13 production-readiness dimensions for #3347 coverage" do
+      expect(described_class.dimension_catalog.map { |entry| entry.fetch("key") }).to eq(
+        %w[
+          provision_execution
+          clone_fixture_repository
+          inject_configuration
+          provide_secrets_securely
+          run_workload
+          provision_service_dependencies
+          retrieve_and_stream_logs
+          report_success_or_failure
+          handle_non_zero_exits
+          enforce_timeout
+          cancel_running_workload
+          clean_up_resources
+          demonstrate_retry_and_idempotency
+        ]
+      )
+    end
+  end
+
+  describe ExecutionRunners::ConformanceSuite::BenchmarkReport do
+    let(:generated_at) { Time.utc(2026, 8, 28, 12, 0, 5) }
+    let(:agent_run) do
+      create(
+        :agent_run,
+        peak_cpu_percent: 55.5,
+        peak_memory_bytes: 134_217_728,
+        container_metrics_count: 4,
+        infra_cost_cents: 17,
+        billed_duration_seconds: 45
+      )
+    end
+    let(:timestamps) do
+      {
+        provision_requested_at: Time.utc(2026, 8, 28, 12, 0, 0),
+        environment_ready_at: Time.utc(2026, 8, 28, 12, 0, 1),
+        first_output_at: Time.utc(2026, 8, 28, 12, 0, 2),
+        workload_started_at: Time.utc(2026, 8, 28, 12, 0, 1),
+        workload_finished_at: Time.utc(2026, 8, 28, 12, 0, 4),
+        cleanup_requested_at: Time.utc(2026, 8, 28, 12, 0, 4),
+        cleanup_finished_at: generated_at
+      }
+    end
+    let(:dimension_results) do
+      described_class.default_dimension_results(
+        passed: %w[
+          provision_execution
+          clone_fixture_repository
+          inject_configuration
+          provide_secrets_securely
+          run_workload
+          provision_service_dependencies
+          retrieve_and_stream_logs
+          report_success_or_failure
+          clean_up_resources
+        ],
+        evidence: {
+          "run_workload" => "fixture wrote artifacts/conformance-result.json"
+        }
+      )
+    end
+    let(:execution_result) do
+      ExecutionRunners::ExecutionResult.success(stdout: "CONFORMANCE_OK\n")
+    end
+
+    it "serializes a JSON-ready benchmark report with lifecycle metrics" do
+      report = build_report(execution_result:, dimension_results:)
+
+      expect_report_header(report)
+      expect_benchmark_metrics(report)
+      expect_resource_usage(report)
+      expect_cost(report)
+      expect_dimensions(report)
+      expect(report.as_json.fetch("result")).to include("success" => true, "exit_code" => 0)
+    end
+
+    it "rejects reports missing one of the required dimensions" do
+      incomplete = dimension_results.reject { |entry| entry.fetch("key") == "cancel_running_workload" }
+
+      expect do
+        build_report(
+          execution_result: ExecutionRunners::ExecutionResult.success(stdout: "ok"),
+          dimension_results: incomplete
+        )
+      end.to raise_error(ArgumentError, /Missing conformance dimensions: cancel_running_workload/)
+    end
+
+    def build_report(execution_result:, dimension_results:)
+      described_class.build(
+        runner_type: :local_docker,
+        runner_backend: "local",
+        timestamps: timestamps,
+        execution_result: execution_result,
+        agent_run: agent_run,
+        dimension_results: dimension_results
+      )
+    end
+
+    def expect_report_header(report)
+      expect(report.to_h).to include(
+        schema_version: "runner_conformance_benchmark.v1",
+        generated_at: "2026-08-28T12:00:05Z"
+      )
+    end
+
+    def expect_benchmark_metrics(report)
+      expect(report.to_h.fetch(:benchmark)).to eq(
+        "provisioning_latency_ms" => 1000,
+        "cold_start_latency_ms" => 2000,
+        "execution_duration_ms" => 3000,
+        "cleanup_latency_ms" => 1000
+      )
+    end
+
+    def expect_resource_usage(report)
+      expect(report.to_h.fetch(:resource_usage)).to include(
+        "peak_cpu_percent" => 55.5,
+        "peak_memory_bytes" => 134_217_728,
+        "peak_disk_bytes" => nil,
+        "container_metric_samples" => 4
+      )
+    end
+
+    def expect_cost(report)
+      expect(report.to_h.fetch(:cost)).to include(
+        "estimated_infra_cost_cents" => 17,
+        "billed_duration_seconds" => 45
+      )
+    end
+
+    def expect_dimensions(report)
+      expect(report.to_h.fetch(:dimensions).size).to eq(13)
+    end
+  end
+end

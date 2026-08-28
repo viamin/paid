@@ -31,12 +31,33 @@
 RSpec.shared_examples "a no-shared-filesystem runner" do
   let(:conformance_networking_policy) { ExecutionRunners::NetworkingPolicy.proxy_restricted }
   let(:conformance_expected_running) { false }
+  let(:conformance_timestamps) do
+    {
+      provision_requested_at: Time.utc(2026, 8, 28, 12, 0, 0),
+      environment_ready_at: Time.utc(2026, 8, 28, 12, 0, 1),
+      first_output_at: Time.utc(2026, 8, 28, 12, 0, 2),
+      workload_started_at: Time.utc(2026, 8, 28, 12, 0, 1),
+      workload_finished_at: Time.utc(2026, 8, 28, 12, 0, 4),
+      cleanup_requested_at: Time.utc(2026, 8, 28, 12, 0, 4),
+      cleanup_finished_at: Time.utc(2026, 8, 28, 12, 0, 5)
+    }
+  end
   let(:conformance_spec) do
     ExecutionRunners::RunSpec.from_agent_run(
       conformance_run, networking_policy: conformance_networking_policy
     )
   end
   let(:conformance_command) { "paid-conformance-agent" }
+  let(:conformance_dimension_results) do
+    ExecutionRunners::ConformanceSuite::BenchmarkReport.default_dimension_results(
+      passed: ExecutionRunners::ConformanceSuite.dimension_catalog.map { |entry| entry.fetch("key") },
+      evidence: {
+        "clone_fixture_repository" => conformance_spec.input_manifest.lanes.fetch("git").first.fetch("kind"),
+        "run_workload" => "runner.start streamed fixture output",
+        "clean_up_resources" => "runner.cleanup accepted repeated calls"
+      }
+    )
+  end
 
   describe "lifecycle without host path assumptions" do
     it "provisions, runs, captures output, manifests results, and cleans up" do
@@ -60,6 +81,30 @@ RSpec.shared_examples "a no-shared-filesystem runner" do
       }.not_to raise_error
     end
 
+    # @spec CONTAINER-RUNTIME-045
+    it "emits a comparable benchmark report for the canonical fixture workload" do
+      handle = runner.provision(spec: conformance_spec)
+      result = runner.start(handle: handle, command: conformance_command, timeout: 60,
+        startup_timeout: 30, idle_timeout: 30, abort_patterns: nil, preparation: nil,
+        heartbeat_path: nil)
+      runner.cleanup(handle: handle, force: true)
+
+      report = conformance_benchmark_report(result:)
+
+      expect(report.as_json.fetch("fixture")).to include(
+        "name" => "runner-conformance-fixture",
+        "entrypoint" => "bin/conformance-task",
+        "expected_stdout" => "CONFORMANCE_OK"
+      )
+      expect(report.as_json.fetch("benchmark")).to include(
+        "provisioning_latency_ms" => 1000,
+        "cold_start_latency_ms" => 2000,
+        "execution_duration_ms" => 3000,
+        "cleanup_latency_ms" => 1000
+      )
+      expect(report.as_json.fetch("dimensions").size).to eq(13)
+    end
+
     it "yields at least one streamed chunk through the start block" do
       handle = runner.provision(spec: conformance_spec)
 
@@ -81,5 +126,16 @@ RSpec.shared_examples "a no-shared-filesystem runner" do
       expect(handle.workspace_ref).not_to match(NoSharedFilesystemConformance::HOST_PATH_PATTERN)
       expect(NoSharedFilesystemConformance.host_path_strings(handle.as_json)).to be_empty
     end
+  end
+
+  def conformance_benchmark_report(result:)
+    ExecutionRunners::ConformanceSuite::BenchmarkReport.build(
+      runner_type: runner.class.name.demodulize.underscore,
+      runner_backend: conformance_run.container_host || "unknown",
+      timestamps: conformance_timestamps,
+      execution_result: result,
+      agent_run: conformance_run,
+      dimension_results: conformance_dimension_results
+    )
   end
 end

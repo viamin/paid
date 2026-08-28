@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+mkdir -p artifacts
+cat > artifacts/conformance-result.json <<'JSON'
+{"status":"ok","token":"CONFORMANCE_OK","fixture_version":1}
+JSON
+
+printf 'CONFORMANCE_OK\n'
