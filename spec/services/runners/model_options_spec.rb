@@ -179,4 +179,46 @@ RSpec.describe Runners::ModelOptions do
       end
     end
   end
+
+  describe ".call_by_provider" do
+    let(:auth_type) { "api_key" }
+
+    before do
+      create(:llm_model, model_id: "claude-opus-4-5", display_name: "Claude Opus 4.5", provider: "anthropic",
+        family: "claude-4", tier: "high", capability_score: 10.0)
+      create(:llm_model, :openai, model_id: "gpt-5.6-preview", family: "gpt-5", tier: "high", capability_score: 9.9)
+    end
+
+    it "returns the same entries per provider as calling .call individually" do # @spec RUNNER-MODEL-OPTIONS-006
+      batched = described_class.call_by_provider(runner_key: "opencode", api_providers: %w[anthropic openai], auth_type: auth_type)
+
+      expect(batched["anthropic"].map(&:value)).to eq(
+        described_class.call(runner_key: "opencode", api_provider: "anthropic", auth_type: auth_type).map(&:value)
+      )
+      expect(batched["openai"].map(&:value)).to eq(
+        described_class.call(runner_key: "opencode", api_provider: "openai", auth_type: auth_type).map(&:value)
+      )
+    end
+
+    it "issues a single LlmModel query regardless of the number of providers" do
+      query_count = 0
+      counter = ->(*, payload) { query_count += 1 unless payload[:name] == "SCHEMA" }
+      ActiveSupport::Notifications.subscribed(counter, "sql.active_record") do
+        described_class.call_by_provider(runner_key: "opencode", api_providers: %w[anthropic openai], auth_type: auth_type)
+      end
+
+      expect(query_count).to eq(1)
+    end
+
+    it "includes openrouter-synced rows in the openrouter group without duplicating the vendor group" do
+      create(:llm_model, model_id: "deepseek/deepseek-chat-v3", display_name: "DeepSeek Chat v3 (free)",
+        provider: "deepseek", family: nil, tier: "mid", capability_score: 6.0,
+        pricing_tier: "free", catalog_source: "openrouter_sync")
+
+      batched = described_class.call_by_provider(runner_key: "kilocode", api_providers: %w[openrouter deepseek], auth_type: auth_type)
+
+      expect(batched["openrouter"].select(&:model?).map(&:value)).to include("deepseek/deepseek-chat-v3")
+      expect(batched["deepseek"].select(&:model?).map(&:value)).to eq(%w[deepseek/deepseek-chat-v3])
+    end
+  end
 end

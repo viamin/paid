@@ -48,12 +48,12 @@ module RunnersHelper
   # runner key, grouped by the api_service_type of the key that would select
   # them. Single source of truth for the runner_model_policy_form dropdown so
   # the form, the JS re-render on key change, and Runners::DefaultTierModelIds
-  # cannot drift.
+  # cannot drift. Delegates to the batched Runners::ModelOptions.call_by_provider
+  # so a form render issues one LlmModel query per runner_key instead of one
+  # per service type.
   # @spec MODEL-POLICY-FORM-001
   def catalog_model_entries_by_service_type(runner_key:, service_types:, auth_type:)
-    service_types.index_with do |service_type|
-      Runners::ModelOptions.call(runner_key: runner_key, api_provider: service_type, auth_type: auth_type)
-    end
+    Runners::ModelOptions.call_by_provider(runner_key: runner_key, api_providers: service_types, auth_type: auth_type)
   end
 
   # @spec MODEL-POLICY-FORM-006
