@@ -109,6 +109,19 @@ the current container name for troubleshooting. High-cardinality correlation
 fields remain in the JSON payload so operators can query them with LogQL
 `| json` filters without exploding label cardinality.
 
+## Durable per-run failure detail vs. process logs
+
+The JSON process-log stream above is complete but not durable across log
+rotation, and it is not queryable per run once it has scrolled off. For
+failures a specific `agent_run` needs to remain diagnosable for (e.g. per-LLM-
+provider failures during `analyze_issue`, see `docs/intent/issue-analysis/`
+`ISSUE-ANALYSIS-013`), the run itself persists a structured, redacted
+`AgentRunLog` entry alongside the process-log line, so the detail survives
+rotation and is groupable by a normalized category rather than free-text
+messages. The structured JSON log line remains the source of truth for live
+tailing/alerting; the `AgentRunLog` entry is the durable, run-scoped
+counterpart — neither replaces the other.
+
 ## What this is not
 
 - **Not a raw `prometheus-client` middleware install.** The current app uses a

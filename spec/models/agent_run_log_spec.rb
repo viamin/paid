@@ -85,6 +85,36 @@ RSpec.describe AgentRunLog do
         expect(described_class.chronological.last).to eq(newer_log)
       end
     end
+
+    # @spec ISSUE-ANALYSIS-013
+    describe ".provider_failures" do
+      it "returns only system logs tagged with the provider-failure type" do
+        provider_failure = create(:agent_run_log, :system,
+          metadata: { type: described_class::PROVIDER_FAILURE_TYPE, provider: "claude" })
+        create(:agent_run_log, :system, metadata: { type: "model_selection_decision" })
+        create(:agent_run_log, :stdout)
+
+        expect(described_class.provider_failures).to contain_exactly(provider_failure)
+      end
+    end
+  end
+
+  # @spec ISSUE-ANALYSIS-013
+  describe ".provider_failure_categories" do
+    it "groups persisted provider-failure entries by normalized failure category" do
+      agent_run = create(:agent_run)
+      other_run = create(:agent_run)
+      create(:agent_run_log, :system, agent_run: agent_run,
+        metadata: { type: described_class::PROVIDER_FAILURE_TYPE, failure_category: "installation" })
+      create(:agent_run_log, :system, agent_run: agent_run,
+        metadata: { type: described_class::PROVIDER_FAILURE_TYPE, failure_category: "auth_expired" })
+      create(:agent_run_log, :system, agent_run: other_run,
+        metadata: { type: described_class::PROVIDER_FAILURE_TYPE, failure_category: "installation" })
+
+      counts = described_class.provider_failure_categories([ agent_run.id ])
+
+      expect(counts).to eq("installation" => 1, "auth_expired" => 1)
+    end
   end
 
   describe "constants" do
