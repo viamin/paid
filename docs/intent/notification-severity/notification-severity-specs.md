@@ -45,3 +45,14 @@
   *Code:* `app/controllers/notifications_controller.rb`,
   `app/views/notifications/index.html.erb`.
   *Test:* `spec/requests/notifications_spec.rb`.
+
+- [x] **NOTIFICATION-SEVERITY-006** — The bell dropdown's "Mark all read"
+  button visibility SHALL be driven by whether any active, unread
+  notification exists (any severity, including `info`), independent of the
+  badge count. Restricting the badge to `warning`/`error` (SEVERITY-004)
+  SHALL NOT hide the bulk-read action when only `info` notifications are
+  unread, since the dropdown itself still lists them.
+  *Code:* `app/helpers/notifications_helper.rb#unread_notifications?`,
+  `app/views/notifications/_bell.html.erb`,
+  `app/services/notifications/broadcasting.rb`.
+  *Test:* `spec/helpers/notifications_helper_spec.rb`.

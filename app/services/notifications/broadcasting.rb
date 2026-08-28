@@ -12,13 +12,13 @@ module Notifications
     def broadcast_account_notification_updates(account)
       # Account-wide broadcasts show only account-wide (user_id: nil) notifications,
       # since we cannot know which user is viewing the page.
-      unread_count = Notification.where(account: account, user_id: nil).badging.count
+      base = Notification.where(account: account, user_id: nil)
 
       Turbo::StreamsChannel.broadcast_replace_to(
         account, :notification_updates,
         target: "notification_bell",
         partial: "notifications/bell",
-        locals: { account: account, unread_count: unread_count }
+        locals: { account: account, unread_count: base.badging.count, any_unread: base.active.unread.exists? }
       )
     end
 
@@ -27,13 +27,12 @@ module Notifications
       # broadcast to the user's personal stream so the bell badge updates
       # without a page reload.
       user_visible = Notification.where(account: account, user_id: [ nil, user.id ])
-      unread_count = user_visible.badging.count
 
       Turbo::StreamsChannel.broadcast_replace_to(
         user, :notification_updates,
         target: "notification_bell",
         partial: "notifications/bell",
-        locals: { account: account, unread_count: unread_count }
+        locals: { account: account, unread_count: user_visible.badging.count, any_unread: user_visible.active.unread.exists? }
       )
     end
   end

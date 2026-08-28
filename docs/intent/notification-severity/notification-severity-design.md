@@ -86,6 +86,15 @@ index page (`app/views/notifications/index.html.erb` already exposes an
 `info` filter option) — this segment changes what the *badge counts*, not
 what the page *lists*.
 
+The bell dropdown lists all active, unread notifications regardless of
+severity (`NotificationsController#index` under `dropdown: "true"`), so the
+"Mark all read" button's visibility cannot reuse the badge count — an
+account with only unread `info` notifications would show dropdown items with
+no way to bulk-clear them. `NotificationsHelper#unread_notifications?` (and
+the `any_unread` local threaded through `Notifications::Broadcasting`) tracks
+this separately from `unread_notification_count`, using `active.unread` with
+no severity filter.
+
 `index_notifications_on_badge` is `(account_id, nav_section, read_at)` —
 severity is not a leading or trailing column, so adding a `severity IN (...)`
 predicate does not change which index Postgres picks for the `account_id`

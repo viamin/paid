@@ -48,4 +48,42 @@ RSpec.describe NotificationsHelper, :db do
       expect(helper.unread_notification_count).to eq(0)
     end
   end
+
+  describe "#unread_notifications?" do
+    let(:account) { create(:account) }
+    let(:user) { create(:user, account: account) }
+
+    before do
+      current_account, current_user = account, user
+      helper.define_singleton_method(:current_account) { current_account }
+      helper.define_singleton_method(:current_user) { current_user }
+    end
+
+    it "returns false when there is no current account" do
+      allow(helper).to receive(:current_account).and_return(nil)
+
+      expect(helper.unread_notifications?).to be(false)
+    end
+
+    # @spec NOTIFICATION-SEVERITY-006
+    it "returns true when only info notifications are unread" do
+      create(:notification, :info, account: account)
+
+      expect(helper.unread_notifications?).to be(true)
+    end
+
+    # @spec NOTIFICATION-SEVERITY-006
+    it "returns false when there are no unread notifications" do
+      create(:notification, :warning, :read, account: account)
+
+      expect(helper.unread_notifications?).to be(false)
+    end
+
+    it "excludes dismissed and resolved notifications" do
+      create(:notification, :info, :dismissed, account: account)
+      create(:notification, :warning, :resolved, account: account)
+
+      expect(helper.unread_notifications?).to be(false)
+    end
+  end
 end

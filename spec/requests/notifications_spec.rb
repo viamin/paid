@@ -83,6 +83,17 @@ RSpec.describe "Notifications" do
       expect(response.body).to include("Info alert")
     end
 
+    # @spec NOTIFICATION-SEVERITY-006
+    it "still shows the mark-all-read button when only info notifications are unread" do
+      create(:notification, :info, account: account, title: "Info alert")
+
+      get notifications_path
+
+      bell = Nokogiri::HTML(response.body).at_css("#notification_bell")
+      expect(bell.at_css("span.bg-red-500")).to be_nil
+      expect(bell.at_css("form[action='#{mark_all_read_notifications_path}']")).to be_present
+    end
+
     it "renders dropdown content when dropdown param is true" do
       create(:notification, account: account, title: "Dropdown alert")
 
