@@ -234,6 +234,21 @@ RSpec.describe Automation::Strategies::AutoReview do
       )
     end
 
+    it "emits a request_review decision for the owner on owner_approval_stale triggers" do
+      result = evaluate(scan: {
+        issue_id: pull_request.id,
+        pr_number: 42,
+        phase: "ready",
+        owner_reviewer_login: "bob",
+        triggers: [ { type: "owner_approval_stale", head_sha: "deadbeef" } ]
+      })
+
+      expect(result.to_h[:decisions]).to eq([
+        { type: "request_review", pr_number: 42, reviewers: [ "bob" ],
+          issue_id: pull_request.id, head_sha: "deadbeef" }
+      ])
+    end
+
     it "routes review_goal_retry to both a record_review_goal_retry and a queue_review_run decision" do
       result = evaluate(scan: {
         issue_id: pull_request.id,

@@ -32,11 +32,13 @@ module Automation
         new(type: "start_planning", payload: { issue_id: issue_id })
       end
 
-      def request_review(pr_number:, reviewers:)
+      def request_review(pr_number:, reviewers:, issue_id: nil, head_sha: nil)
         new(type: "request_review", payload: {
           pr_number: pr_number,
-          reviewers: reviewers
-        })
+          reviewers: reviewers,
+          issue_id: issue_id,
+          head_sha: head_sha
+        }.compact)
       end
 
       def dispatch_claude_review(pr_number:)

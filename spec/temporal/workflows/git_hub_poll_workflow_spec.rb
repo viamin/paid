@@ -19,6 +19,18 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     allow(Temporalio::Workflow).to receive(:now).and_return(Time.now)
   end
 
+  def exhausted_activity_error(activity_type)
+    Temporalio::Error::ActivityError.new(
+      "activity failed",
+      scheduled_event_id: 1,
+      started_event_id: 2,
+      identity: "worker-1",
+      activity_type: activity_type,
+      activity_id: "activity-1",
+      retry_state: Temporalio::Error::RetryState::MAXIMUM_ATTEMPTS_REACHED
+    )
+  end
+
   describe "#execute" do
     it "is defined as a Temporal workflow" do
       expect(described_class).to be < Workflows::BaseWorkflow
@@ -67,10 +79,12 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
   describe "#execute_automation_decision" do
     let(:project_id) { 1 }
+    let(:logger) { instance_double(Logger, warn: nil) }
 
     before do
       allow(workflow).to receive(:run_activity)
       allow(workflow).to receive(:quality_gate_allows_run?).and_return(true)
+      allow(Temporalio::Workflow).to receive(:logger).and_return(logger)
     end
 
     it "routes dispatch_claude_review decisions to DispatchClaudeReviewActivity" do
@@ -83,6 +97,125 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         Activities::DispatchClaudeReviewActivity,
         { project_id:, pr_number: 42 },
         timeout: 60
+      )
+    end
+
+    it "routes request_review decisions to RequestReviewActivity" do
+      workflow.execute_automation_decision(
+        project_id:,
+        decision: { type: "request_review", pr_number: 42, reviewers: [ "viamin" ] }
+      )
+
+      expect(workflow).to have_received(:run_activity).with(
+        Activities::RequestReviewActivity,
+        { project_id:, pr_number: 42, reviewers: [ "viamin" ] },
+        timeout: 60
+      )
+    end
+
+    # @spec AUTO-MERGE-007
+    it "stamps owner_review_requested_sha when the request_review decision carries issue_id and head_sha" do
+      allow(workflow).to receive(:run_activity)
+        .with(
+          Activities::RequestReviewActivity,
+          { project_id:, pr_number: 42, reviewers: [ "viamin" ] },
+          timeout: 60
+        )
+        .and_return({ requested: [ "viamin" ] })
+
+      workflow.execute_automation_decision(
+        project_id:,
+        decision: {
+          type: "request_review", pr_number: 42, reviewers: [ "viamin" ],
+          issue_id: 7, head_sha: "abc123"
+        }
+      )
+
+      expect(workflow).to have_received(:run_activity).with(
+        Activities::RecordOwnerReviewRequestActivity,
+        { issue_id: 7, head_sha: "abc123" },
+        timeout: 30
+      )
+    end
+
+    it "stamps owner_review_requested_sha when the owner review request is already pending" do
+      allow(workflow).to receive(:run_activity)
+        .with(
+          Activities::RequestReviewActivity,
+          { project_id:, pr_number: 42, reviewers: [ "viamin" ] },
+          timeout: 60
+        )
+        .and_return({ requested: [], already_pending: [ "viamin" ] })
+
+      workflow.execute_automation_decision(
+        project_id:,
+        decision: {
+          type: "request_review", pr_number: 42, reviewers: [ "viamin" ],
+          issue_id: 7, head_sha: "abc123"
+        }
+      )
+
+      expect(workflow).to have_received(:run_activity).with(
+        Activities::RecordOwnerReviewRequestActivity,
+        { issue_id: 7, head_sha: "abc123" },
+        timeout: 30
+      )
+    end
+
+    it "does not stamp owner_review_requested_sha when request_review fails transiently" do
+      error = exhausted_activity_error("RequestReviewActivity")
+      allow(workflow).to receive(:run_activity)
+        .with(
+          Activities::RequestReviewActivity,
+          { project_id:, pr_number: 42, reviewers: [ "viamin" ] },
+          timeout: 60
+        )
+        .and_raise(error)
+      allow(workflow).to receive(:record_swallowed_non_critical_activity_failure)
+
+      workflow.execute_automation_decision(
+        project_id:,
+        decision: {
+          type: "request_review", pr_number: 42, reviewers: [ "viamin" ],
+          issue_id: 7, head_sha: "abc123"
+        }
+      )
+
+      expect(workflow).not_to have_received(:run_activity).with(
+        Activities::RecordOwnerReviewRequestActivity, anything, anything
+      )
+    end
+
+    it "does not stamp owner_review_requested_sha when request_review returns a handled 422 no-op" do
+      allow(workflow).to receive(:run_activity)
+        .with(
+          Activities::RequestReviewActivity,
+          { project_id:, pr_number: 42, reviewers: [ "viamin" ] },
+          timeout: 60
+        )
+        .and_return({ requested: [], error: "Review cannot be requested" })
+
+      workflow.execute_automation_decision(
+        project_id:,
+        decision: {
+          type: "request_review", pr_number: 42, reviewers: [ "viamin" ],
+          issue_id: 7, head_sha: "abc123"
+        }
+      )
+
+      expect(workflow).not_to have_received(:run_activity).with(
+        Activities::RecordOwnerReviewRequestActivity, anything, anything
+      )
+    end
+
+    it "does not stamp owner_review_requested_sha when the request_review decision omits issue_id/head_sha" do
+      workflow.execute_automation_decision(
+        project_id:,
+        decision: { type: "request_review", pr_number: 42, reviewers: [ "copilot" ] }
+      )
+
+      expect(workflow).not_to have_received(:run_activity).with(
+        Activities::RecordOwnerReviewRequestActivity, anything, anything
       )
     end
 
@@ -357,18 +490,6 @@ RSpec.describe Workflows::GitHubPollWorkflow do
   describe "non-critical exhausted retry failures" do
     let(:workflow) { described_class.new }
     let(:logger) { instance_double(Logger, warn: nil) }
-
-    def exhausted_activity_error(activity_type)
-      Temporalio::Error::ActivityError.new(
-        "activity failed",
-        scheduled_event_id: 1,
-        started_event_id: 2,
-        identity: "worker-1",
-        activity_type: activity_type,
-        activity_id: "activity-1",
-        retry_state: Temporalio::Error::RetryState::MAXIMUM_ATTEMPTS_REACHED
-      )
-    end
 
     before do
       allow(Temporalio::Workflow).to receive(:logger).and_return(logger)

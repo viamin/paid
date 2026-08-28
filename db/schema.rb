@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_27_113917) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_28_031257) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1309,7 +1309,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_27_113917) do
     t.check_constraint "billed_duration_seconds >= 0", name: "chk_execution_usages_billed_duration_nonneg"
     t.check_constraint "infra_cost_cents >= 0", name: "chk_execution_usages_infra_cost_nonneg"
     t.check_constraint "rate_cents_per_hour >= 0", name: "chk_execution_usages_rate_nonneg"
-    t.check_constraint "termination_reason::text = ANY (ARRAY['completed'::character varying::text, 'cancelled'::character varying::text, 'timed_out'::character varying::text, 'failed'::character varying::text, 'evicted'::character varying::text])", name: "chk_execution_usages_termination_reason_valid"
+    t.check_constraint "termination_reason::text = ANY (ARRAY['completed'::character varying, 'cancelled'::character varying, 'timed_out'::character varying, 'failed'::character varying, 'evicted'::character varying]::text[])", name: "chk_execution_usages_termination_reason_valid"
   end
 
   create_table "external_connector_events", comment: "Events ingested from external connectors (Jira, Linear, Slack, etc.) for coexistence workflows.", force: :cascade do |t|
@@ -1600,6 +1600,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_27_113917) do
     t.jsonb "needs_input_questions", comment: "Parsed clarifying questions persisted when a needs-input comment is posted, so the dashboard queue can render without a per-issue GitHub API round-trip"
     t.datetime "needs_input_since", comment: "When this issue entered paid_state \"needs_input\". Cleared when it leaves. Used by Inbox::Queue to order oldest-waiting-first and to render \"waiting Xh\" labels."
     t.datetime "operational_failure_reset_at"
+    t.string "owner_review_requested_sha", limit: 40, comment: "PR HEAD commit SHA the last owner re-review request was issued for. Prevents re-requesting review from the owner on every poll cycle once auto-merge is blocked only by a stale owner approval for the same commit."
     t.string "paid_state", default: "new", null: false
     t.bigint "parent_issue_id"
     t.boolean "paused", default: false, null: false, comment: "When true, mirrors the paid-paused GitHub label and excludes the issue from auto-pick. PR review/escalation automation is not yet gated by this flag."
