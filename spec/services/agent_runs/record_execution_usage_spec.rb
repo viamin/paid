@@ -97,6 +97,7 @@ RSpec.describe AgentRuns::RecordExecutionUsage do
     # @spec EXEC-USAGE-011
     it "mirrors an existing row onto a run whose denormalized columns were never stamped" do
       usage = create(:execution_usage, agent_run: agent_run, runner_backend: "local",
+        provider_resource_id: "fly-machine-abc",
         provisioned_at: provisioned_at, terminated_at: terminated_at,
         billed_duration_seconds: 600, infra_cost_cents: 25, rate_cents_per_hour: 150)
       agent_run.update_columns(runner_backend: nil, billed_duration_seconds: 0, infra_cost_cents: 0)
