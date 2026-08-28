@@ -27,6 +27,7 @@ RSpec.describe DependabotAutoMergeJob do
   before do
     allow(GithubClient).to receive(:new).and_return(client)
     allow(client).to receive_messages(
+      authenticated_login: "paid-bot",
       pull_requests: [ dependabot_pr ],
       pull_request: dependabot_pr,
       check_runs_for_ref: green_checks,
@@ -292,12 +293,27 @@ RSpec.describe DependabotAutoMergeJob do
       end
 
       it "does not post a duplicate comment when one already exists" do
-        existing = double(body: "#{described_class::MERGE_PERMISSION_COMMENT_MARKER} earlier")
+        existing = double(
+          body: "#{described_class::MERGE_PERMISSION_COMMENT_MARKER} earlier",
+          user: double(login: "paid-bot")
+        )
         allow(client).to receive(:recent_issue_comments).and_return([ existing ])
 
         described_class.perform_now(project.id)
 
         expect(client).not_to have_received(:add_comment)
+      end
+
+      it "ignores a matching marker from a different author" do
+        spoof = double(
+          body: "#{described_class::MERGE_PERMISSION_COMMENT_MARKER} earlier",
+          user: double(login: "someone-else")
+        )
+        allow(client).to receive(:recent_issue_comments).and_return([ spoof ])
+
+        described_class.perform_now(project.id)
+
+        expect(client).to have_received(:add_comment)
       end
 
       it "does not post duplicate comments across repeated polling cycles" do
@@ -306,12 +322,23 @@ RSpec.describe DependabotAutoMergeJob do
           posted << body
         end
         allow(client).to receive(:recent_issue_comments) do
-          posted.map { |body| double(body: body) }
+          posted.map do |body|
+            double(body: body, user: double(login: "paid-bot"))
+          end
         end
 
         3.times { described_class.perform_now(project.id) }
 
         expect(posted.size).to eq(1)
+      end
+
+      it "does not post a comment when fetching recent comments fails" do
+        allow(client).to receive(:recent_issue_comments)
+          .and_raise(GithubClient::Error, "temporary outage")
+
+        described_class.perform_now(project.id)
+
+        expect(client).not_to have_received(:add_comment)
       end
 
       it "does not post a comment for a transient non-403 failure" do
@@ -423,7 +450,9 @@ RSpec.describe DependabotAutoMergeJob do
         )
         posted = []
         allow(client).to receive(:add_comment) { |_repo, _number, body| posted << body }
-        allow(client).to receive(:recent_issue_comments) { posted.map { |body| double(body: body) } }
+        allow(client).to receive(:recent_issue_comments) do
+          posted.map { |body| double(body: body, user: double(login: "paid-bot")) }
+        end
 
         2.times { described_class.perform_now(project.id) }
 

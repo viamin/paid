@@ -46,9 +46,21 @@ module AutoMergeAttempts
 
     attr_reader :project, :pr_number, :marker, :title, :intro, :fallback_attempted, :logger, :log_component
 
+    # Match only Paid-authored marker comments when we know the current
+    # authenticated login. That prevents third-party comments containing the
+    # public marker string from suppressing this blocker notice. If the login
+    # lookup or recent-comment fetch fails, fall back to the safe default and
+    # skip posting for this cycle so transient GitHub API errors do not create
+    # duplicate comments on every poll.
     def comment_present?(client)
+      paid_login = client.authenticated_login
       comments = client.recent_issue_comments(project.full_name, pr_number)
-      comments.any? { |comment| comment.respond_to?(:body) && comment.body&.include?(marker) }
+      comments.any? do |comment|
+        next false unless comment.respond_to?(:body) && comment.body&.include?(marker)
+        next true if paid_login.nil?
+
+        comment.user&.login&.downcase == paid_login
+      end
     rescue GithubClient::Error => e
       logger.warn(
         message: "#{log_component}.merge_permission_comment_check_failed",
@@ -57,7 +69,7 @@ module AutoMergeAttempts
         error_class: e.class.name,
         error_message: e.message.to_s.truncate(200)
       )
-      false
+      true
     end
 
     def body
