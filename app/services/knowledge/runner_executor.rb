@@ -112,14 +112,23 @@ module Knowledge
       end
     end
 
+    # Keyed by the resolved free-model runner's free_model_rotation_state_key
+    # when one exists, so writes land on the same RunnerState row
+    # FreeModels::Rotation reads rate_limited_model_ids from (routing key for
+    # policy-based free runners, bare "openrouter_free" for the legacy row).
+    # Falls back to the bare name passed in for every other runner.
     def runner_state_for(runner)
       @runner_states ||= {}
       @runner_states[runner] ||= @user_setting.user
         .runner_states
-        .find_or_create_by!(runner_name: runner.to_s) { |s|
+        .find_or_create_by!(runner_name: runner_state_key_for(runner)) { |s|
           s.circuit_state = "closed"
           s.failure_count = 0
         }
+    end
+
+    def runner_state_key_for(runner)
+      rotation_runner_record(runner)&.free_model_rotation_state_key || runner.to_s
     end
 
     # Returns the free-model Runner record for the current user when the
@@ -139,7 +148,7 @@ module Knowledge
       return @rotation_runner_records[key] if @rotation_runner_records.key?(key)
 
       record = Runner.for_identifier(@user_setting.user, key)
-      @rotation_runner_records[key] = record if record&.free_model_policy?
+      @rotation_runner_records[key] = record&.free_model_policy? ? record : nil
     end
 
     def rotation_runner?(runner)

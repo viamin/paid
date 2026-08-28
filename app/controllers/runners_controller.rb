@@ -722,12 +722,21 @@ class RunnersController < ApplicationController
     return unless runner.free_model_policy?
 
     submitted_runner_params = params[:runner].respond_to?(:to_unsafe_h) ? params[:runner].to_unsafe_h : params.fetch(:runner, {})
+    legacy_openrouter_free = runner.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
+    chat_param_submitted = submitted_runner_params.key?("enabled_for_chat") || submitted_runner_params.key?(:enabled_for_chat)
 
-    runner.auth_type = "api_key" if runner.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
+    runner.auth_type = "api_key" if legacy_openrouter_free
     # @spec FREE-MODEL-RUNNER-002
     # @spec FREE-MODEL-RUNNER-003
     runner.enabled_for_agent_runs = true if runner.enabled_for_agent_runs.nil?
-    runner.enabled_for_chat = true if runner.enabled_for_chat.nil?
+    # Chat dispatch (ChatSessions::BuildLlmClient, Containers::ChatSessionManager)
+    # does not resolve a free-tier model for policy-based free runners the way
+    # Temporal's RunAgentActivity#selected_runner_runtime does for agent runs —
+    # only the legacy openrouter_free runner has that support today. The
+    # enabled_for_chat column defaults to true, so leaving it untouched here
+    # would silently enable chat dispatch to a paid default model instead of
+    # the free tier; force it off unless the user explicitly opted in.
+    runner.enabled_for_chat = false if !legacy_openrouter_free && !chat_param_submitted
     runner.enabled_for_fallback = true if runner.enabled_for_fallback.nil?
     runner.fallback_role = "rate_limit_fallback" unless submitted_runner_params.key?("fallback_role") || submitted_runner_params.key?(:fallback_role)
     runner.tier_model_ids = FreeModels::DefaultTierModels.call if runner.tier_model_ids.blank?

@@ -972,13 +972,15 @@ class Runner < ApplicationRecord
     self.tier_model_ids = {}
   end
 
-  # When the user explicitly changes tier_model_ids on an openrouter_free
-  # runner, drop any free-model rotation recovery snapshot so a later
-  # successful run does not revert their edit back to the pre-rotation
-  # mapping. System rotations set +rotating_tier_models+ to skip this.
-  # The snapshot lives on the RunnerState row keyed by the bare runner_key
-  # (matching FreeModels::Rotation and Knowledge::RunnerExecutor), NOT the
-  # routing-key state_key, so the lookup uses the same key that wrote it.
+  # When the user explicitly changes tier_model_ids on a free-policy runner,
+  # drop any free-model rotation recovery snapshot so a later successful run
+  # does not revert their edit back to the pre-rotation mapping. System
+  # rotations set +rotating_tier_models+ to skip this.
+  # The snapshot lives on the RunnerState row keyed by
+  # free_model_rotation_state_key — the bare runner_key for legacy
+  # openrouter_free rows, the routing key for policy-based free runners —
+  # matching FreeModels::Rotation, so the lookup uses the same key that
+  # wrote it.
   # Only relevant when editing an existing runner — creating a runner must
   # not wipe a pre-existing recovery snapshot.
   def clear_free_model_rotation_snapshot

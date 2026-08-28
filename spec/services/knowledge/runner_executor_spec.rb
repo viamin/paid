@@ -413,27 +413,48 @@ RSpec.describe Knowledge::RunnerExecutor do
 
       before do
         free_model_high_alt
+        free_policy_runner # ensure created
+        # RunnerSelector.for_chat delivers the bare runner_key ("opencode"),
+        # never the "runner:<id>" routing key -- UserSetting validates
+        # kb_chat_runner against bare APP_RUNNER_KEYS and
+        # available_chat_runner_keys plucks bare runner_keys. Stubbing the
+        # routing key here would exercise a shape the real selectors never
+        # produce.
         allow(Knowledge::RunnerSelector).to receive(:for_chat)
           .with(user_setting: user_setting)
-          .and_return([ free_policy_runner.routing_key, "openai" ])
+          .and_return([ "opencode", "openai" ])
       end
 
-      it "retries the same routing-key runner after free-model rotation" do
+      it "retries the same bare-keyed runner after free-model rotation" do
         executor = described_class.new(user_setting: user_setting, operation: :chat)
         attempt = 0
 
         result = executor.execute do |runner|
           attempt += 1
-          if runner == free_policy_runner.routing_key && attempt == 1
+          if runner == "opencode" && attempt == 1
             raise AgentHarness::RateLimitError, "rate limited"
           end
 
           "response from #{runner}"
         end
 
-        expect(result).to eq("response from #{free_policy_runner.routing_key}")
+        expect(result).to eq("response from opencode")
         expect(attempt).to eq(2)
         expect(free_policy_runner.reload.tier_model_ids["high"]).to eq(free_model_high.model_id)
+      end
+
+      it "keys rotation RunnerState by the routing key, not the bare name" do
+        executor = described_class.new(user_setting: user_setting, operation: :chat)
+
+        executor.execute do |runner|
+          raise AgentHarness::RateLimitError, "rate limited" if runner == "opencode"
+          "ok"
+        end
+
+        routing_key_state = user.runner_states.find_by(runner_name: free_policy_runner.routing_key)
+        expect(routing_key_state).to be_present
+        expect(routing_key_state.rate_limited_model_ids).to include(free_model_high.model_id)
+        expect(user.runner_states.where(runner_name: "opencode")).not_to exist
       end
     end
   end
