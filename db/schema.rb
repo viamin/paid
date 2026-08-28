@@ -2094,7 +2094,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_27_113917) do
     t.index ["project_id", "pull_request_number", "status"], name: "idx_page_load_findings_pr_status"
     t.index ["project_id"], name: "index_page_load_regression_findings_on_project_id"
     t.check_constraint "followup_attempts >= 0", name: "chk_page_load_findings_attempts_non_negative"
-    t.check_constraint "status::text = ANY (ARRAY['open'::character varying, 'resolved'::character varying, 'superseded'::character varying]::text[])", name: "chk_page_load_findings_status_valid"
+    t.check_constraint "status::text = ANY (ARRAY['open'::character varying::text, 'resolved'::character varying::text, 'superseded'::character varying::text])", name: "chk_page_load_findings_status_valid"
   end
 
   create_table "pending_install_claims", comment: "Server-side claims tying a freshly-returned GitHub App installation to a Paid account, so the signed `installation` webhook can finalize the GithubInstallation row for a first-time install into a brand-new org where the existing signals (project owner match, prior installation row) cannot resolve the account.", force: :cascade do |t|
