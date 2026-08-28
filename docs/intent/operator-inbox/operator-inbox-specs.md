@@ -19,6 +19,14 @@
   *Code:* `app/services/inbox/queue.rb`, `app/models/decomposition_decision.rb`.
   *Test:* `spec/services/inbox/queue_spec.rb`.
 
+- [x] **OPERATOR-INBOX-002A** — When an open PR's persisted auto-merge blocker
+  snapshot reduces to approval-only failures (`owner_approved` and/or
+  `reviews_fresh`) with no other failed or not-evaluated blockers, the system
+  SHALL expose that PR as a `merge_approval` inbox entry until a later PR scan
+  records a non-approval blocker, a fresh approval, or a merge/close outcome.
+  *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/merge_approval.rb`.
+  *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`.
+
 - [x] **OPERATOR-INBOX-003** — When the inbox renders on desktop, the system
   SHALL show the queue list and the selected entry detail at the same time; on
   mobile, the system SHALL support a master-detail flow where the member route

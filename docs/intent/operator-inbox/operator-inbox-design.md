@@ -67,6 +67,17 @@ Backed by `DecompositionDecision.open_plan_reviews`, scoped through
 the inbox detail pane can show the breakdown and submit approve/reject/revise
 actions without leaving the inbox.
 
+### `merge_approval`
+
+Backed by the PR scanner's persisted auto-merge blocker snapshot on `Issue`.
+The inbox only surfaces PRs whose failed blockers are approval-only
+(`owner_approved` and/or `reviews_fresh`) and whose `not_evaluated` blocker
+list is empty, so red CI, merge conflicts, unresolved review threads, and
+unresolved dependencies stay out of the human-approval queue. The detail pane
+reuses the standard PR badge and GitHub-link conventions and directs the
+operator to re-approve on GitHub, after which the next scan naturally removes
+the entry.
+
 ## Navigation
 
 The inbox is a top-level nav item (desktop and mobile), placed immediately

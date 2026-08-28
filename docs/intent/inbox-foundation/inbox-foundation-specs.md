@@ -32,27 +32,30 @@
 
 - [x] **INBOX-FOUNDATION-003** — `Inbox::Queue.call(user:, project: nil)` SHALL
   return a list of `Entry` structs with shape
-  `kind: :clarifying_questions, project:, issue:, questions:, waiting_since:`.
-  Each entry SHALL be typed by `kind` so future kinds
-  (`:plan_review`, `:pr_owner_approval`, `:paused_run_decision`) can register
-  without UI churn.
+  `kind:, project:, issue:, waiting_since:` plus the payload fields each kind
+  renders (`questions:` for `:clarifying_questions`, `tasks:` for
+  `:plan_review`, and approval-blocker summary/detail for `:merge_approval`).
+  Each entry SHALL be typed by `kind` so future kinds can register without UI
+  churn.
   *Tests:* `spec/services/inbox/queue_spec.rb`.
   *Code:* `app/services/inbox/queue.rb`.
 
 - [x] **INBOX-FOUNDATION-004** — `Inbox::Queue` SHALL order entries
-  oldest-waiting-first by `needs_input_since ASC` (nulls last), with a stable
+  oldest-waiting-first by each entry's `waiting_since ASC` (nulls last), with a stable
   tiebreak of `(projects.owner, projects.repo, issues.github_number,
   issues.id)` so the order is deterministic across calls.
   *Tests:* `spec/services/inbox/queue_spec.rb`.
-  *Code:* `app/services/inbox/queue.rb#ordered_issues`.
+  *Code:* `app/services/inbox/queue.rb`.
 
 - [x] **INBOX-FOUNDATION-005** — `Inbox::Queue` SHALL include both issues and
-  pull requests (i.e. SHALL NOT filter on `is_pull_request`). Today no PR
-  matches because the existing `needs_input` flow only fires on issues; the
-  filter is dropped structurally so the inbox is ready for future
-  PR-blocking kinds.
+  pull requests (i.e. SHALL NOT filter on `is_pull_request`). Open PRs whose
+  persisted auto-merge blockers reduce to approval-only failures
+  (`owner_approved` and/or `reviews_fresh`) with every other signal green
+  SHALL appear as `merge_approval` entries; PRs still blocked on checks,
+  conflicts, review threads, or dependencies SHALL NOT appear.
   *Tests:* `spec/services/inbox/queue_spec.rb`.
-  *Code:* `app/services/inbox/queue.rb#ordered_issues`.
+  *Code:* `app/services/inbox/queue.rb`,
+  `app/services/inbox/merge_approval.rb`.
 
 - [x] **INBOX-FOUNDATION-006** — `Inbox::Queue` SHALL keep the same scoping
   and visibility semantics as `Dashboard::NeedsInputQueue`: auto-pick

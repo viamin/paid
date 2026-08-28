@@ -30,7 +30,7 @@ module Inbox
     attr_reader :user
 
     def compute_count
-      needs_input_count + open_plan_review_count
+      needs_input_count + open_plan_review_count + merge_approval_count
     end
 
     def needs_input_count
@@ -42,6 +42,33 @@ module Inbox
 
     def open_plan_review_count
       PlanReviewPolicy::Scope.new(user, DecompositionDecision).resolve.open_plan_reviews.count
+    end
+
+    def merge_approval_count
+      project_ids = gated_project_ids
+      return 0 if project_ids.empty?
+
+      merge_approval_candidates(project_ids).count { |issue| Inbox::MergeApproval.call(issue).present? }
+    end
+
+    # Narrows to rows that could plausibly be approval-only blockers before
+    # falling back to Ruby for the full Inbox::MergeApproval signal check,
+    # so this stays a bounded scan instead of one Issue instantiation per
+    # open, ready PR on the account.
+    def merge_approval_candidates(project_ids)
+      Issue
+        .includes(:project)
+        .where(
+          project_id: project_ids,
+          is_pull_request: true,
+          github_state: "open",
+          pr_review_phase: "ready",
+          merge_permission_rejected_at: nil
+        )
+        .where.not(auto_merge_evaluated_at: nil)
+        .where.not(auto_merge_blockers: nil)
+        .where.not(projects: { auto_merge_mode: "off" })
+        .where.not(projects: { owner_reviewer_login: nil })
     end
 
     def gated_project_ids

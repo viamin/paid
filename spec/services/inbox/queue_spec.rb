@@ -12,6 +12,8 @@ RSpec.describe Inbox::Queue do
       created_by: user,
       auto_pick_enabled: true,
       active: true,
+      auto_merge_mode: "all",
+      owner_reviewer_login: "viamin",
       owner: "acme",
       repo: "alpha"
     )
@@ -28,18 +30,21 @@ RSpec.describe Inbox::Queue do
   # @spec INBOX-FOUNDATION-003 @spec INBOX-FOUNDATION-004
   # @spec INBOX-FOUNDATION-005 @spec INBOX-FOUNDATION-006
   describe ".call" do
-    it "returns typed entries for clarifying questions and plan reviews" do
+    it "returns typed entries for clarifying questions, plan reviews, and merge approvals" do
       issue = create_needs_input(body: questions_body)
       review = create_plan_review(project: project, workflow_id: "planning-workflow-1")
+      pr = create_merge_approval_pr
 
       entries = described_class.call(user: user)
 
       expect(entries.map(&:kind)).to include(
         described_class::CLARIFYING_QUESTIONS_KIND,
-        described_class::PLAN_REVIEW_KIND
+        described_class::PLAN_REVIEW_KIND,
+        described_class::MERGE_APPROVAL_KIND
       )
       expect_clarifying_entry(entries, issue)
       expect_plan_review_entry(entries, review)
+      expect_merge_approval_entry(entries, pr)
     end
 
     it "exposes waiting_since from needs_input_since so a future inbox UI can show waiting age" do
@@ -90,6 +95,16 @@ RSpec.describe Inbox::Queue do
       expect(entries.map(&:record)).to eq([ review ])
     end
 
+    it "filters to merge approvals when kind: merge_approval is requested" do
+      create_needs_input(body: questions_body)
+      create_plan_review(project: project, workflow_id: "planning-workflow-1")
+      pr = create_merge_approval_pr
+
+      entries = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
+
+      expect(entries.map(&:record)).to eq([ pr ])
+    end
+
     it "excludes plan reviews that are no longer open" do
       review_issue = create(:issue, project: project)
       create_plan_review(project: project, issue: review_issue, workflow_id: "planning-workflow-1", plan_data: {})
@@ -106,6 +121,29 @@ RSpec.describe Inbox::Queue do
       entries = described_class.call(user: user, kind: described_class::PLAN_REVIEW_KIND)
 
       expect(entries).to be_empty
+    end
+
+    it "does not include PRs whose blockers are not approval-only" do
+      create_merge_approval_pr(github_number: 10)
+      failing_checks = create_merge_approval_pr(github_number: 20)
+      unresolved_dependencies = create_merge_approval_pr(github_number: 30)
+
+      failing_checks.update!(
+        auto_merge_blockers: snapshot_hash(
+          failed: [ blocker(signal: "checks_green", reason_code: "checks_not_green") ],
+          not_evaluated: []
+        )
+      )
+      unresolved_dependencies.update!(
+        auto_merge_blockers: snapshot_hash(
+          failed: [ blocker(signal: "owner_approved", reason_code: "owner_approval_missing") ],
+          not_evaluated: [ blocker(signal: "dependencies_resolved", status: "not_evaluated", reason_code: "dependencies_unresolved") ]
+        )
+      )
+
+      entries = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
+
+      expect(entries.map(&:record)).to contain_exactly(project.issues.find_by!(github_number: 10))
     end
   end
 
@@ -163,10 +201,11 @@ RSpec.describe Inbox::Queue do
       clarifying = create_needs_input(github_number: 10, body: questions_body)
       clarifying.update_columns(needs_input_since: nil)
       review = create_plan_review(project: project, workflow_id: "planning-workflow-1")
+      approval = create_merge_approval_pr(github_number: 30, waiting_since: 2.days.ago)
 
       order = described_class.call(user: user).map(&:record)
 
-      expect(order).to eq([ review, clarifying ])
+      expect(order).to eq([ approval, review, clarifying ])
     end
   end
 
@@ -255,6 +294,36 @@ RSpec.describe Inbox::Queue do
     )
   end
 
+  def create_merge_approval_pr(github_number: 40, waiting_since: 2.hours.ago, blockers: nil)
+    create(
+      :issue,
+      :pull_request,
+      project: project,
+      github_number: github_number,
+      github_updated_at: waiting_since,
+      awaiting_approval_since: waiting_since,
+      auto_merge_evaluated_at: Time.current,
+      auto_merge_blockers: blockers || snapshot_hash(
+        failed: [ blocker(signal: "owner_approved", reason_code: "owner_approval_missing") ],
+        not_evaluated: []
+      )
+    )
+  end
+
+  def snapshot_hash(failed:, not_evaluated:)
+    { "failed" => failed, "not_evaluated" => not_evaluated }
+  end
+
+  def blocker(signal:, reason_code:, status: "failed")
+    {
+      "signal" => signal,
+      "status" => status,
+      "reason_code" => reason_code,
+      "sanitized_message" => "#{signal} is blocking auto-merge",
+      "next_action" => "Resolve #{reason_code}"
+    }
+  end
+
   def expect_clarifying_entry(entries, issue)
     clarifying_entry = entries.find { |entry| entry.record == issue }
 
@@ -279,5 +348,20 @@ RSpec.describe Inbox::Queue do
       tasks: [ { "title" => "Task 1", "description" => "Do the thing" } ],
       questions: []
     )
+  end
+
+  def expect_merge_approval_entry(entries, pr)
+    approval_entry = entries.find { |entry| entry.record == pr }
+
+    expect(approval_entry).to have_attributes(
+      id: "#{described_class::MERGE_APPROVAL_KIND}:#{pr.id}",
+      kind: described_class::MERGE_APPROVAL_KIND,
+      project: project,
+      issue: pr,
+      tasks: [],
+      questions: [],
+      waiting_since: pr.awaiting_approval_since
+    )
+    expect(approval_entry.summary).to eq("Waiting for owner approval")
   end
 end

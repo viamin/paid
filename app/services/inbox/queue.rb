@@ -4,9 +4,11 @@ module Inbox
   class Queue
     CLARIFYING_QUESTIONS_KIND = "clarifying_questions"
     PLAN_REVIEW_KIND = "plan_review"
+    MERGE_APPROVAL_KIND = "merge_approval"
     KINDS = [
       CLARIFYING_QUESTIONS_KIND,
-      PLAN_REVIEW_KIND
+      PLAN_REVIEW_KIND,
+      MERGE_APPROVAL_KIND
     ].freeze
 
     Entry = Struct.new(
@@ -18,6 +20,7 @@ module Inbox
       :waiting_since,
       :questions,
       :tasks,
+      :summary_text,
       keyword_init: true
     ) do
       def to_param
@@ -32,16 +35,19 @@ module Inbox
         kind == CLARIFYING_QUESTIONS_KIND
       end
 
+      def merge_approval?
+        kind == MERGE_APPROVAL_KIND
+      end
+
       def title
         issue.title
       end
 
       def summary
-        if clarifying_questions?
-          questions.first(2).join(" ").truncate(220)
-        else
-          "#{tasks.size} proposed tasks"
-        end
+        return questions.first(2).join(" ").truncate(220) if clarifying_questions?
+        return summary_text if merge_approval?
+
+        "#{tasks.size} proposed tasks"
       end
     end
 
@@ -60,6 +66,7 @@ module Inbox
       entries = []
       entries.concat(clarifying_question_entries) if include_kind?(CLARIFYING_QUESTIONS_KIND)
       entries.concat(plan_review_entries) if include_kind?(PLAN_REVIEW_KIND)
+      entries.concat(merge_approval_entries) if include_kind?(MERGE_APPROVAL_KIND)
       sort_entries(entries)
     end
 
@@ -97,7 +104,8 @@ module Inbox
           record: issue,
           waiting_since: issue.needs_input_since,
           questions: questions,
-          tasks: []
+          tasks: [],
+          summary_text: nil
         )
       end
     end
@@ -177,8 +185,39 @@ module Inbox
           record: review,
           waiting_since: review.created_at,
           questions: [],
-          tasks: tasks
+          tasks: tasks,
+          summary_text: nil
         )
+      end
+    end
+
+    def merge_approval_entries
+      merge_approval_issues.filter_map do |issue|
+        snapshot = Inbox::MergeApproval.call(issue)
+        next unless snapshot
+
+        Entry.new(
+          id: "#{MERGE_APPROVAL_KIND}:#{issue.id}",
+          kind: MERGE_APPROVAL_KIND,
+          project: issue.project,
+          issue: issue,
+          record: issue,
+          waiting_since: snapshot.waiting_since,
+          questions: [],
+          tasks: [],
+          summary_text: snapshot.summary
+        )
+      end
+    end
+
+    def merge_approval_issues
+      @merge_approval_issues ||= begin
+        ids = scoped_projects.map(&:id)
+        return Issue.none if ids.empty?
+
+        Issue
+          .includes(:project)
+          .where(project_id: ids, is_pull_request: true, github_state: "open", pr_review_phase: "ready")
       end
     end
   end
