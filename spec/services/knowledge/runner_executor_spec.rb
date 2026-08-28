@@ -402,6 +402,7 @@ RSpec.describe Knowledge::RunnerExecutor do
           runner_key: "opencode",
           auth_type: "api_key",
           provider_api_key: api_key,
+          enabled_for_chat: false,
           config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } },
           tier_model_ids: {
             "high" => free_model_high.model_id,

@@ -202,6 +202,7 @@ class Runner < ApplicationRecord
   validate :api_key_entry_must_be_unique
   validate :free_model_policy_runner_must_be_unique_per_credential
   validate :opencode_model_policy_must_be_valid
+  validate :opencode_free_policy_chat_must_be_disabled
   validate :opencode_api_key_config_must_be_valid
   validate :kilocode_api_key_config_must_be_valid
   validate :pi_api_key_config_must_be_valid
@@ -1287,6 +1288,24 @@ class Runner < ApplicationRecord
     return if opencode_api_provider == "openrouter"
 
     errors.add(:config, "OpenCode free model policy requires the OpenRouter API provider")
+  end
+
+  # Chat dispatch (ChatSessions::BuildLlmClient, Containers::ChatSessionManager)
+  # does not resolve a free-tier model for policy-based free runners the way
+  # Temporal's RunAgentActivity#selected_runner_runtime does for agent runs —
+  # only the legacy openrouter_free runner has that support today. Without
+  # this guard, the enabled_for_chat column's DB default of true (or an
+  # update outside RunnersController#apply_new_runner_defaults, which only
+  # runs on create) would silently enable chat dispatch to a paid fallback
+  # model instead of the free tier. Drop once chat-side free-model
+  # resolution lands for policy-based free runners.
+  # @spec MODEL-POLICY-011
+  def opencode_free_policy_chat_must_be_disabled
+    return unless runner_key == "opencode"
+    return unless opencode_model_policy == "free"
+    return unless enabled_for_chat?
+
+    errors.add(:enabled_for_chat, "cannot be enabled until chat dispatch resolves a free-tier model for free-policy runners")
   end
 
   # @spec MODEL-POLICY-002 MODEL-POLICY-003

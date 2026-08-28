@@ -870,6 +870,7 @@ RSpec.describe Runners::TestAgent do
           provider_api_key: api_key,
           enabled_for_agent_runs: false,
           enabled_for_fallback: false,
+          enabled_for_chat: false,
           config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } },
           tier_model_ids: LlmModel::TIERS.index_with { free_model.model_id }
         )

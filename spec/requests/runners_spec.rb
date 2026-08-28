@@ -68,13 +68,13 @@ RSpec.describe "Runners" do
     }
   end
 
-  def free_policy_runner_params(api_key_id:, api_provider: "openrouter", enabled: false)
+  def free_policy_runner_params(api_key_id:, api_provider: "openrouter", enabled: false, enabled_for_chat: false)
     {
       runner_key: "opencode",
       auth_type: "api_key",
       provider_api_key_id: api_key_id,
       enabled_for_agent_runs: enabled,
-      enabled_for_chat: enabled,
+      enabled_for_chat: enabled_for_chat,
       enabled_for_fallback: enabled,
       config: {
         opencode: {
@@ -973,7 +973,19 @@ RSpec.describe "Runners" do
       runner = user.runners.find_by!(runner_key: "opencode", auth_type: "api_key")
       expect(runner).to be_enabled_for_agent_runs
       expect(runner).to be_enabled_for_fallback
-      expect(runner).to be_enabled_for_chat
+      expect(runner).not_to be_enabled_for_chat
+    end
+
+    # @spec MODEL-POLICY-011
+    it "rejects an explicit request to enable chat for a free-policy OpenCode runner" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+
+      post runners_path, params: {
+        runner: free_policy_runner_params(api_key_id: api_key.id, enabled: true, enabled_for_chat: true)
+      }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.body).to include("cannot be enabled until chat dispatch resolves a free-tier model for free-policy runners")
     end
 
     # @spec MODEL-POLICY-002 MODEL-POLICY-008

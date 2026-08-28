@@ -25,6 +25,7 @@
   that require free-pricing `LlmModel` rows, and their runner-compatibility
   counterparts that skip the generic compatibility check, SHALL key off this
   predicate rather than the `openrouter_free` runner key alone.
+
 ## Defaults and Display
 
 - [x] **MODEL-POLICY-005** — When a `free_model_policy?` runner (legacy or
@@ -56,8 +57,19 @@
   on `opencode` runners the same way they recognize the legacy
   `openrouter_free` runner key, including rate-limit recovery snapshots keyed
   by the runner's routing identifier.
+- [x] **MODEL-POLICY-011** — A free-policy `opencode` runner (`model_policy
+  == "free"`) SHALL fail validation with an error on `:enabled_for_chat` if
+  `enabled_for_chat` is true, on create, update, or any other save path.
+  Chat dispatch does not yet resolve a free-tier model for policy-based free
+  runners, so this validation is the enforcement point that prevents a
+  free-policy runner from silently falling through to a paid default model
+  in chat — regardless of the `enabled_for_chat` column's `true` DB default
+  or a save that bypasses `RunnersController`. The legacy `openrouter_free`
+  runner key is unaffected. Deferred: relax once chat dispatch resolves a
+  free-tier model for policy-based free runners.
 
 ## Deferred
+
 - [D] **MODEL-POLICY-010** — Re-scoping `Runner.single_instance_runner_key?`
   (the "Add Runner" UI-list helper) from a bare runner-key check onto the
   `free_model_policy?` config predicate. Deferred to the

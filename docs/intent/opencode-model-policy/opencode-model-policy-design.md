@@ -64,12 +64,24 @@ any other `runner_key`.
   draw on the same OpenRouter free-tier quota. This is a real AR validation,
   not just a UI affordance: it also blocks pairing a legacy `openrouter_free`
   runner with an `opencode` free-policy runner on the same credential.
-- A free-policy `opencode` runner may be enabled for agent runs, fallback,
-  and chat once it passes the same free-model validations as the legacy
+- A free-policy `opencode` runner may be enabled for agent runs and fallback
+  once it passes the same free-model validations as the legacy
   `openrouter_free` runner. Runtime dispatch resolves its tier model and
   builds the OpenRouter runtime through `Runners::FreeModelExecutionPlan`,
   so the request carries the same base URL, API-key env binding, and
   `OpenRouterDataRouting` metadata as the legacy runner.
+- Chat is different: chat dispatch (`ChatSessions::BuildLlmClient`,
+  `Containers::ChatSessionManager`) does not yet resolve a free-tier model
+  for policy-based free runners — only the legacy `openrouter_free` runner
+  has that support today. `Runner#opencode_free_policy_chat_must_be_disabled`
+  rejects `enabled_for_chat: true` on any free-policy `opencode` runner
+  (create, update, or a row written outside `RunnersController`), so it
+  cannot end up chat-enabled and silently fall through to a paid default
+  model. `RunnersController#apply_new_runner_defaults` additionally defaults
+  `enabled_for_chat` to `false` on create as a UX convenience, but the model
+  validation is what actually enforces the gate. This will be relaxed once
+  chat-side free-model resolution lands for policy-based free runners.
+  (`MODEL-POLICY-011`)
 
 ### Defaults and display
 

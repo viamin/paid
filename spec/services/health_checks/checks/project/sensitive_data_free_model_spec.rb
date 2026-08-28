@@ -95,9 +95,9 @@ RSpec.describe HealthChecks::Checks::Project::SensitiveDataFreeModel do
     openrouter_runner = create(
       :runner,
       user: owner,
-      runner_key: "opencode",
-      auth_type: "api_key",
+      runner_key: "opencode", auth_type: "api_key",
       provider_api_key: openrouter_key,
+      enabled_for_chat: false,
       config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } }
     )
     owner.settings.update!(default_agent_runner: openrouter_runner.routing_key)
