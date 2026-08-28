@@ -131,7 +131,7 @@ RSpec.describe Capacity::InfrastructureSpend do
       project: project,
       starts_at: Time.utc(2026, 8, 23, 12, 0, 0),
       ends_at: Time.utc(2026, 8, 23, 13, 0, 0),
-      scope_modifier: ->(scope) { scope.where.missing(:execution_usage) }
+      scope_modifier: ->(scope) { scope.where.missing(:execution_usages) }
     )
 
     expect(pending_run.execution_usage).to be_nil
