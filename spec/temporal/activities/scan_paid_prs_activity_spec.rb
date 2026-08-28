@@ -2101,6 +2101,17 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |x| x[:type] } }
         expect(trigger_types).not_to include("review_bot_review_pending", "review_bot_comments")
       end
+
+      it "degrades to no clean-comment bypass when fetching recent issue comments fails" do
+        allow(github_client).to receive(:recent_issue_comments)
+          .with(project.full_name, 42)
+          .and_raise(GithubClient::Error, "transient")
+
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).to include("review_bot_review_pending")
+      end
     end
 
     context "when a codex clean comment supersedes an older non-clean codex review" do
@@ -6350,6 +6361,263 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when auto-merge requires owner approval but no owner reviewer is configured" do
+      let(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+      end
+
+      before do
+        project.update!(owner_reviewer_login: nil, auto_merge_mode: "all")
+        stub_github_for_pr(author_login: "someone-else", reviews: default_clean_copilot_review)
+      end
+
+      # @spec PR-ESCALATION-025
+      it "does not start the awaiting_approval timer" do
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to eq([])
+        expect(pr_issue.reload.awaiting_approval_since).to be_nil
+      end
+    end
+
+    # --- Approval-wait ceiling escalation (awaiting_approval) ---
+
+    # @spec PR-ESCALATION-024
+    # @spec PR-ESCALATION-025
+    context "when a ready PR is green and blocked only on owner approval" do
+      let(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+      end
+
+      before do
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
+        stub_github_for_pr(author_login: "someone-else", reviews: default_clean_copilot_review)
+      end
+
+      it "stamps the wait on first observation and does not escalate before the ceiling" do
+        pr_issue
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to eq([])
+        expect(pr_issue.reload.awaiting_approval_since).to be_present
+      end
+
+      it "does not rebuild the auto-merge signals when approval is the only blocker" do
+        pr_issue
+
+        # Exactly two passes are legitimate: one inside the auto-merge
+        # signal build (no_outstanding_review_feedback?) and one inside
+        # ready-trigger detection. A third call would mean the signal set
+        # was rebuilt after analyze_auto_merge already evaluated it.
+        expect(github_client).to receive(:recent_issue_comments).twice
+          .with(project.full_name, pr_issue.github_number)
+          .and_return([])
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to eq([])
+        expect(pr_issue.reload.awaiting_approval_since).to be_present
+      end
+
+      it "does not escalate while the wait is under the ceiling" do
+        pr_issue.update_columns(awaiting_approval_since: 23.hours.ago)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to eq([])
+        expect(pr_issue.reload.pr_review_phase).to eq("ready")
+      end
+
+      it "escalates with the awaiting_approval reason once the ceiling is exceeded" do
+        pr_issue.update_columns(awaiting_approval_since: 25.hours.ago)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first[:triggers].first
+        expect(trigger[:type]).to eq("escalate_to_owner")
+        expect(trigger[:reason_key]).to eq("awaiting_approval")
+        expect(trigger[:details]).to include("waiting only for owner approval")
+      end
+
+      it "escalates even when GitHub's updated_at has stopped advancing" do
+        pr_issue.update_columns(
+          awaiting_approval_since: 25.hours.ago,
+          last_pr_scan_at: 26.hours.ago,
+          github_updated_at: 27.hours.ago
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result).size).to eq(1)
+        expect(automation_scan_results(result).first[:triggers].first[:reason_key]).to eq("awaiting_approval")
+      end
+
+      it "measures the wait from first observation, not from PR creation" do
+        pr_issue.update_columns(github_created_at: 2.weeks.ago)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to eq([])
+        expect(pr_issue.reload.awaiting_approval_since).to be_within(2.seconds).of(Time.current)
+      end
+
+      it "clears the wait and keeps the follow-up path when CI is failing" do
+        pr_issue.update_columns(awaiting_approval_since: 25.hours.ago)
+        stub_github_for_pr(
+          author_login: "someone-else",
+          checks: [ { name: "ci", conclusion: "failure" } ],
+          reviews: default_clean_copilot_review
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = automation_scan_results(result).first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("ci_failure")
+        expect(trigger_types).not_to include("escalate_to_owner")
+        expect(pr_issue.reload.awaiting_approval_since).to be_nil
+      end
+
+      it "clears the wait when the approval is stale for the head commit" do
+        pr_issue.update_columns(awaiting_approval_since: 25.hours.ago)
+        stub_github_for_pr(
+          author_login: "someone-else",
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: 2.hours.ago }
+          ],
+          head_committed_at: 1.hour.ago
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to eq([])
+        expect(pr_issue.reload.awaiting_approval_since).to be_nil
+      end
+
+      it "clears the wait when a dependency PR is unmerged" do
+        pr_issue.update_columns(awaiting_approval_since: 25.hours.ago, body: "Depends on #41")
+        allow(github_client).to receive(:issue_comments)
+          .with(project.full_name, 42)
+          .and_return([])
+        allow(github_client).to receive(:pull_request)
+          .with(project.full_name, 41)
+          .and_return(OpenStruct.new(number: 41, merged: false, merged_at: nil))
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to eq([])
+        expect(pr_issue.reload.awaiting_approval_since).to be_nil
+      end
+
+      it "does not stamp the wait when auto-merge is disabled" do
+        project.update!(auto_merge_mode: "off")
+        pr_issue.update_columns(awaiting_approval_since: 25.hours.ago)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to eq([])
+        expect(pr_issue.reload.awaiting_approval_since).to be_nil
+      end
+
+      it "restarts the wait after a non-approval blocker appears and clears" do
+        pr_issue.update_columns(awaiting_approval_since: 30.hours.ago)
+        stub_github_for_pr(
+          author_login: "someone-else",
+          checks: [ { name: "ci", conclusion: "failure" } ],
+          reviews: default_clean_copilot_review
+        )
+        activity.execute(project_id: project.id)
+        expect(pr_issue.reload.awaiting_approval_since).to be_nil
+
+        pr_issue.update_columns(github_updated_at: Time.current)
+        stub_github_for_pr(author_login: "someone-else", reviews: default_clean_copilot_review)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to eq([])
+        expect(pr_issue.reload.awaiting_approval_since).to be_within(2.minutes).of(Time.current)
+      end
+
+      it "honors a shorter per-project ceiling" do
+        project.update!(pr_approval_escalation_hours: 2)
+        pr_issue.update_columns(awaiting_approval_since: 3.hours.ago)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result).size).to eq(1)
+        expect(automation_scan_results(result).first[:triggers].first[:reason_key]).to eq("awaiting_approval")
+      end
+
+      it "never escalates when the ceiling is disabled" do
+        project.update!(pr_approval_escalation_hours: 0)
+        pr_issue.update_columns(awaiting_approval_since: 30.days.ago)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to eq([])
+      end
+    end
+
+    # @spec PR-ESCALATION-024
+    context "when a PR escalated for awaiting_approval is scanned again" do
+      before do
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation", "paid-escalated" ],
+          pr_review_phase: "escalated",
+          pr_escalation_reason: "awaiting_approval",
+          pr_escalation_started_at: 1.hour.ago,
+          paid_state: "completed")
+        stub_github_for_pr(author_login: "someone-else", reviews: default_clean_copilot_review)
+      end
+
+      it "does not re-escalate while the escalation is current" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = automation_scan_results(result).flat_map { |r| r[:triggers].map { |t| t[:type] } }
+        expect(trigger_types).not_to include("escalate_to_owner")
+        expect(trigger_types).not_to include("dismiss_escalation")
+      end
+    end
+
+    # @spec PR-ESCALATION-027
+    context "when the owner approves a PR escalated for awaiting_approval" do
+      before do
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation", "paid-escalated" ],
+          pr_review_phase: "escalated",
+          pr_escalation_reason: "awaiting_approval",
+          pr_escalation_started_at: 1.hour.ago,
+          paid_state: "completed")
+        stub_github_for_pr(
+          author_login: "someone-else",
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current }
+          ]
+        )
+      end
+
+      it "returns the owner_approved trigger without requiring label removal" do
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
+        expect(trigger[:triggers].first[:type]).to eq("owner_approved")
+      end
+    end
+
     # --- Bot-authored PR auto-merge setting ---
 
     context "when allow_bot_authored_pr_auto_merge is disabled (default)" do
@@ -6512,6 +6780,40 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       it "blocks auto-merge because the manual reviewer's approval is stale" do
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to eq([])
+      end
+    end
+
+    context "when the configured manual reviewer is not allowlisted and their approval is stale" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          auto_merge_mode: "all",
+          allowed_github_usernames: [ "viamin" ],
+          review_settings: {
+            "enabled" => true,
+            "methods" => {
+              "manual" => { "enabled" => true, "reviewer_login" => "reviewer" }
+            }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "reviewer", state: "APPROVED", body: "", submitted_at: 3.hours.ago },
+            { id: 2, user_login: "viamin", state: "APPROVED", body: "", submitted_at: 30.minutes.ago }
+          ],
+          head_committed_at: 1.hour.ago
+        )
+      end
+
+      it "blocks auto-merge because the manual reviewer still gates freshness" do
         result = activity.execute(project_id: project.id)
 
         expect(automation_scan_results(result)).to eq([])

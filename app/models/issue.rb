@@ -3,16 +3,23 @@
 class Issue < ApplicationRecord
   PAID_STATES = %w[new planning in_progress completed failed needs_input manual_review recommend_close analyzed].freeze
   PR_REVIEW_PHASES = %w[draft restarted ready merged escalated].freeze
+  # The first four reasons denote agent failure. `awaiting_approval` denotes
+  # an unanswered human gate: the PR is green, blocked only on owner
+  # approval, and has waited past the project ceiling. It must stay
+  # distinguishable because `pr_escalation_reason` drives behavior elsewhere
+  # (e.g. the token-limit override in #clear_escalation!).
   PR_ESCALATION_REASONS = %w[
     operational_failures
     failure_streak
     review_goal_retry_limit
     pr_auto_continue_token_limit
+    awaiting_approval
   ].freeze
   PR_ESCALATION_REASON_OPERATIONAL_FAILURES = "operational_failures"
   PR_ESCALATION_REASON_FAILURE_STREAK = "failure_streak"
   PR_ESCALATION_REASON_REVIEW_GOAL_RETRY_LIMIT = "review_goal_retry_limit"
   PR_ESCALATION_REASON_PR_AUTO_CONTINUE_TOKEN_LIMIT = "pr_auto_continue_token_limit"
+  PR_ESCALATION_REASON_AWAITING_APPROVAL = "awaiting_approval"
 
   # Default per-issue per-provider retry cap: after a single provider fails this
   # many times for one issue, it is excluded from scheduling for that issue. Used
@@ -346,13 +353,14 @@ class Issue < ApplicationRecord
   # not earn a fresh failure budget.
   #
   # @spec PR-ESCALATION-005 @spec PR-ESCALATION-006 @spec PR-ESCALATION-007
-  # @spec PR-ESCALATION-008
+  # @spec PR-ESCALATION-008 @spec PR-ESCALATION-025 @spec PR-ESCALATION-026
   def clear_escalation!(draft:, reset_counters: true)
     token_limit_override = pr_escalation_reason == PR_ESCALATION_REASON_PR_AUTO_CONTINUE_TOKEN_LIMIT
     attrs = {
       labels: labels - %w[paid-escalated paid-dismiss-escalation],
       pr_review_phase: draft ? "restarted" : "ready",
       pr_escalation_reason: nil,
+      awaiting_approval_since: nil,
       ci_retry_requested_at: nil
     }
     attrs.merge!(escalation_counter_reset_attributes) if reset_counters

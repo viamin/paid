@@ -125,7 +125,9 @@ module Automation
 
       # Fetches conversation comments using the scanner's historical
       # "recent comments, then paginate if the cutoff window might extend
-      # beyond the first page" behavior.
+      # beyond the first page" behavior. Returns nil (not []) on a
+      # transient fetch failure, matching fetch_reviews/fetch_check_runs,
+      # so callers can distinguish "no comments" from "unverifiable."
       def fetch_recent_issue_comments(issue:, cutoff: nil)
         comments = client.recent_issue_comments(providers.repo, issue.github_number)
 
@@ -139,7 +141,7 @@ module Automation
         raise
       rescue GithubClient::Error => e
         log_signal_error("recent_issue_comments", issue, e)
-        []
+        nil
       end
 
       # Returns the raw review-comment hashes the stale-review guard

@@ -5,7 +5,8 @@ module ApplicationHelper
     "failure_streak" => "Failure streak",
     "review_goal_retry_limit" => "Retry limit",
     "pr_auto_continue_token_limit" => "Token cap",
-    "operational_failures" => "Infrastructure failures"
+    "operational_failures" => "Infrastructure failures",
+    "awaiting_approval" => "Awaiting approval"
   }.freeze
 
   ESCALATION_COUNTER_LABELS = {
@@ -16,6 +17,21 @@ module ApplicationHelper
 
   def escalation_reason_label(reason)
     ESCALATION_REASON_LABELS.fetch(reason.to_s, "Stopped")
+  end
+
+  # The Unblock confirmation names what clearing does. For an
+  # awaiting_approval escalation no counters were tripped and no token cap is
+  # waived — the generic agent-failure wording would be misleading.
+  # @spec PR-ESCALATION-026
+  def unblock_confirmation_text(entry)
+    pr = entry.pull_request
+    if entry.reason == Issue::PR_ESCALATION_REASON_AWAITING_APPROVAL
+      return "Clear the escalation on #{pr.project.full_name}##{pr.github_number}? " \
+             "Approving the PR also clears it — unblocking alone just returns it to the scanner."
+    end
+
+    "Clear the escalation on #{pr.project.full_name}##{pr.github_number}? " \
+      "This resets its attempt counters, waives the token cap for this PR, and returns it to the scanner."
   end
 
   def escalation_counter_label(name)

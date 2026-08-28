@@ -189,6 +189,62 @@
   *Code:* `Projects::AgentRunsController#unblock_flash`.
   *Test:* `spec/requests/agent_runs_spec.rb`.
 
+## Escalating an unanswered approval gate
+
+The four agent-failure reasons above denote Paid failing. An
+`awaiting_approval` escalation denotes the opposite: the PR is green, every
+automatic-merge precondition except owner approval is satisfied, and nobody
+has answered the approval gate. Past a ceiling, "nobody is coming" is a
+genuine failure, and escalation is the backstop — the inbox entry and the
+review re-request get the first chance to work; this fires only when they
+have failed for long enough.
+
+- [x] **PR-ESCALATION-024** — While a ready-phase pull request satisfies
+  every automatic-merge precondition except owner approval, and that state
+  has persisted longer than the project's configured approval-wait ceiling,
+  the scan SHALL escalate the pull request with the `awaiting_approval`
+  escalation reason, and SHALL escalate it exactly once per wait. Escalation
+  SHALL NOT fire before the ceiling, so the inbox entry and the
+  review-re-request paths keep priority.
+  *Code:* `ScanPaidPrsActivity#scan_ready_pr`,
+  `ScanPaidPrsActivity#track_approval_wait!`,
+  `ScanPaidPrsActivity#approval_wait_exceeds_ceiling?`.
+  *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.
+
+- [x] **PR-ESCALATION-025** — The approval wait SHALL be measured from the
+  scan's first observation that the pull request is blocked only on
+  approval, not from pull request creation, and the measured wait SHALL
+  reset whenever any non-approval blocking signal appears, so that a pull
+  request blocked by any non-approval signal does not escalate under the
+  `awaiting_approval` reason.
+  *Code:* `ScanPaidPrsActivity#track_approval_wait!`,
+  `ScanPaidPrsActivity#blocked_only_on_approval?`,
+  `MarkEscalatedActivity#execute`, `Issue#clear_escalation!`.
+  *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.
+
+- [x] **PR-ESCALATION-026** — An `awaiting_approval` escalation SHALL be
+  recorded with its own `pr_escalation_reason` member that inherits none of
+  the behavior attached to the agent-failure reasons (including the
+  `pr_auto_continue_token_limit` override stamped by
+  `Issue#clear_escalation!`), and its escalation comment SHALL name
+  re-approval as the remedy instead of the agent-failure resolution steps.
+  *Code:* `Issue::PR_ESCALATION_REASON_AWAITING_APPROVAL`,
+  `MarkEscalatedActivity#escalation_resolution_steps`,
+  `Issue#clear_escalation!`.
+  *Test:* `spec/temporal/activities/mark_escalated_activity_spec.rb`,
+  `spec/models/issue_spec.rb`.
+
+- [x] **PR-ESCALATION-027** — When the owner approves a pull request
+  escalated for `awaiting_approval`, the next scan SHALL route it to
+  auto-merge without requiring label removal or any other manual step, and
+  the scan SHALL NOT re-escalate it while the escalation cycle is current.
+  *Code:* `ScanPaidPrsActivity#scan_escalated_pr`,
+  `ScanPaidPrsActivity#escalation_dismissed?`,
+  `MarkEscalatedActivity#escalation_still_applies?`,
+  `MergePullRequestActivity#execute`.
+  *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`,
+  `spec/temporal/activities/mark_escalated_activity_spec.rb`.
+
 ## Migration
 
 - [x] **PR-ESCALATION-018** — The migration retiring the escalation-set pause

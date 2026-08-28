@@ -1819,6 +1819,17 @@ RSpec.describe "Projects" do
         expect(response).to redirect_to(project_path(project))
       end
 
+      # @spec PR-ESCALATION-024
+      it "persists the PR approval escalation ceiling" do
+        project = create(:project, account: account, github_token: github_token, pr_approval_escalation_hours: 24)
+
+        expect {
+          patch project_path(project), params: { project: { pr_approval_escalation_hours: 6 } }
+        }.to change { project.reload.pr_approval_escalation_hours }.from(24).to(6)
+
+        expect(response).to redirect_to(project_path(project))
+      end
+
       it "persists screenshot settings" do
         project = create(:project, account: account, github_token: github_token)
         patch project_path(project), params: screenshot_update_params

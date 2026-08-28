@@ -560,6 +560,7 @@ class ProjectsController < ApplicationController
       :token_budget_max_input_tokens,
       :owner_reviewer_login, :merge_method, :max_draft_review_rounds, :auto_pick_enabled, :auto_merge_mode,
       :max_pr_auto_continue_tokens,
+      :pr_approval_escalation_hours,
       :allow_bot_authored_pr_auto_merge, :auto_fix_merge_conflicts, :auto_scan_security,
       :lid_mode, :tdd_mode,
       :generated_label_name, :automation_label_name,

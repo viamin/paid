@@ -78,6 +78,25 @@ RSpec.describe Automation::Signals::PullRequestCollector do
     end
   end
 
+  describe "#fetch_recent_issue_comments" do
+    it "returns the raw comments on success" do
+      comments = [ OpenStruct.new(user: OpenStruct.new(login: "reviewer"), created_at: Time.current) ]
+      comments.define_singleton_method(:multi_page?) { false }
+      allow(client).to receive(:recent_issue_comments).with("acme/widgets", 42).and_return(comments)
+
+      expect(collector.fetch_recent_issue_comments(issue:)).to eq(comments)
+    end
+
+    # Regression: a nil return (not []) lets callers distinguish "no
+    # comments" from "fetch failed," so a re-validation gate does not
+    # mistake an unverifiable fetch for a clean signal.
+    it "returns nil (not []) on a transient GitHub error" do
+      allow(client).to receive(:recent_issue_comments).and_raise(GithubClient::Error, "transient")
+
+      expect(collector.fetch_recent_issue_comments(issue:)).to be_nil
+    end
+  end
+
   describe "#fetch_check_runs" do
     let(:pr_snapshot) do
       Automation::Signals::PullRequestSnapshot.from_provider(build_provider_pr)
