@@ -49,18 +49,20 @@ module AutoMergeAttempts
     # Match only Paid-authored marker comments when we know the current
     # authenticated login. That prevents third-party comments containing the
     # public marker string from suppressing this blocker notice. If the login
-    # lookup or recent-comment fetch fails, fall back to the safe default and
-    # skip posting for this cycle so transient GitHub API errors do not create
+    # lookup or comment fetch fails, fall back to the safe default and skip
+    # posting for this cycle so transient GitHub API errors do not create
     # duplicate comments on every poll.
+    #
+    # Unlike the HEAD-SHA-scoped marker in RequestReviewActivity (where a
+    # stale marker naturally falls out of relevance once HEAD moves), this
+    # marker is static for the life of the PR. So the recent-comments window
+    # alone isn't enough to guarantee "post exactly once" on long-lived PRs —
+    # we walk older pages (mirroring Screenshots::PrComment) until we find the
+    # marker or exhaust the comment history.
     def comment_present?(client)
       paid_login = client.authenticated_login
       comments = client.recent_issue_comments(project.full_name, pr_number)
-      comments.any? do |comment|
-        next false unless comment.respond_to?(:body) && comment.body&.include?(marker)
-        next true if paid_login.nil?
-
-        comment.user&.login&.downcase == paid_login
-      end
+      marker_comment_in_pages?(client, comments, paid_login)
     rescue GithubClient::Error => e
       logger.warn(
         message: "#{log_component}.merge_permission_comment_check_failed",
@@ -70,6 +72,24 @@ module AutoMergeAttempts
         error_message: e.message.to_s.truncate(200)
       )
       true
+    end
+
+    def marker_comment_in_pages?(client, comments, paid_login)
+      loop do
+        return true if comments.any? { |comment| marker_comment?(comment, paid_login) }
+        break unless comments.respond_to?(:next_older_page_url) && comments.next_older_page_url
+
+        comments = client.fetch_issue_comment_page(comments.next_older_page_url)
+      end
+
+      false
+    end
+
+    def marker_comment?(comment, paid_login)
+      return false unless comment.respond_to?(:body) && comment.body&.include?(marker)
+      return true if paid_login.nil?
+
+      comment.user&.login&.downcase == paid_login
     end
 
     def body
