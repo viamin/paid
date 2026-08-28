@@ -1159,13 +1159,20 @@ module Activities
     # True when the only failed auto-merge blocker for this scan is the
     # review-freshness signal, i.e. every other auto-merge precondition
     # (CI, mergeability, review feedback, blocking reviews) is satisfied.
+    # Also requires that no blocker was left `not_evaluated` (e.g. a
+    # compare/merge-base API failure) — those signals are unproven, not
+    # green, so we must not treat the PR as otherwise clean.
     # Reads the snapshot `auto_merge_eligible?` already staged earlier in
     # this same `scan_ready_pr` call.
     def stale_approval_only_blocker?(issue)
-      failed = auto_merge_snapshots.dig(issue.id, "failed")
+      snapshot = auto_merge_snapshots[issue.id]
+      return false if snapshot.blank?
+
+      failed = snapshot["failed"]
+      not_evaluated = snapshot["not_evaluated"]
       return false if failed.blank?
 
-      failed.size == 1 && failed.first["signal"] == "reviews_fresh"
+      not_evaluated.blank? && failed.size == 1 && failed.first["signal"] == "reviews_fresh"
     end
 
     def draft_trigger_payload(issue, triggers)
@@ -3499,8 +3506,7 @@ module Activities
         checks_green: checks_green,
         mergeable: mergeable,
         review_feedback_clear: review_feedback_clear,
-        blocking_reviews_complete: blocking_reviews_complete,
-        reviews_fresh: reviews_fresh
+        blocking_reviews_complete: blocking_reviews_complete
       )
         dependencies_resolved?(client, project, issue)
       else
@@ -3569,14 +3575,18 @@ module Activities
       analysis.eligible?
     end
 
+    # Deliberately excludes `reviews_fresh`: the owner-approval-stale trigger
+    # (@spec AUTO-MERGE-007) needs to know whether dependencies are truly
+    # resolved even when staleness is the only other blocker, so it can tell
+    # a PR that is genuinely otherwise-green from one where dependencies were
+    # never checked. See `stale_approval_only_blocker?`.
     def human_dependency_check_required?(owner_approved:, checks_green:, mergeable:,
-      review_feedback_clear:, blocking_reviews_complete:, reviews_fresh:)
+      review_feedback_clear:, blocking_reviews_complete:)
       owner_approved &&
         checks_green &&
         mergeable &&
         review_feedback_clear &&
-        blocking_reviews_complete &&
-        reviews_fresh
+        blocking_reviews_complete
     end
 
     def bot_dependency_check_required?(dependabot_eligible:, merge_executor_supported:, checks_green:, mergeable:)

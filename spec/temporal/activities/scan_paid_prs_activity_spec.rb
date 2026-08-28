@@ -111,6 +111,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     result.fetch(:prs_to_trigger)
   end
 
+  def decision_types(result)
+    result[:automation_results].flat_map { |r| r[:decisions].map { |d| d[:type] } }
+  end
+
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive_messages(rate_limit_remaining!: 100, check_run_log: "")
@@ -444,21 +448,18 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           checks: [ { name: "rspec", conclusion: "success" } ],
           reviews: [ { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current } ]
         )
-        allow(activity).to receive_messages(
-          owner_approved_or_self_authored?: true,
-          no_outstanding_review_feedback?: true,
-          all_blocking_review_methods_complete?: true,
-          review_stale_for_head?: true
-        )
+        allow(activity).to receive_messages(owner_approved_or_self_authored?: true, no_outstanding_review_feedback?: false,
+          all_blocking_review_methods_complete?: true, review_stale_for_head?: false)
         expect(activity).not_to receive(:dependencies_resolved?)
 
         freeze_time do
-          activity.execute(project_id: project.id)
+          result = activity.execute(project_id: project.id)
 
           pr_issue.reload
           expect(pr_issue.last_pr_scan_at).to eq(Time.current)
           expect(pr_issue.auto_merge_evaluated_at).to eq(Time.current)
           expect(pr_issue.auto_merge_blockers).to eq(expected_auto_merge_blockers)
+          expect(decision_types(result)).not_to include("request_review")
         end
       end
 
@@ -513,8 +514,23 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        decision_types = result[:automation_results].flat_map { |r| r[:decisions].map { |d| d[:type] } }
-        expect(decision_types).not_to include("request_review")
+        expect(decision_types(result)).not_to include("request_review")
+      end
+
+      it "does not re-request review when a declared dependency is unresolved" do
+        project.update!(auto_merge_mode: "all", owner_reviewer_login: "viamin")
+        pr_issue.update!(pr_review_phase: "ready", body: "Depends on #41")
+        stub_owner_approval_ready_signals
+        allow(github_client).to receive(:issue_comments)
+          .with(project.full_name, 42)
+          .and_return([])
+        allow(github_client).to receive(:pull_request)
+          .with(project.full_name, 41)
+          .and_return(OpenStruct.new(number: 41, merged: false, merged_at: nil))
+
+        result = activity.execute(project_id: project.id)
+
+        expect(decision_types(result)).not_to include("request_review")
       end
 
       it "preserves a prior auto-merge snapshot when only the merge-conflict rescan path runs" do
@@ -11317,11 +11333,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     {
       "failed" => [
         {
-          "signal" => "reviews_fresh",
+          "signal" => "review_feedback_clear",
           "status" => "failed",
-          "reason_code" => "stale_approval",
-          "sanitized_message" => "The owner approval is stale for the current HEAD commit.",
-          "next_action" => "Ask @viamin to re-approve this pull request for the current HEAD commit, then wait for the next automatic merge evaluation."
+          "reason_code" => "review_feedback_pending",
+          "sanitized_message" => "Outstanding review feedback still blocks auto-merge.",
+          "next_action" => "Resolve the outstanding review feedback, then wait for the next automatic merge evaluation."
         }
       ],
       "not_evaluated" => [
