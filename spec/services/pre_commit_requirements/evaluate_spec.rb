@@ -31,28 +31,28 @@ RSpec.describe PreCommitRequirements::Evaluate do # @spec QUALITY-LOOPS-002 # @s
       before do
         create(:pre_commit_requirement, account: account, user: initiating_user, name: "lint", command: "bin/lint")
         create(:pre_commit_requirement, account: account, user: owner, name: "owner-only", command: "bin/owner")
-        allow(agent_run).to receive(:execute_in_container).with("bin/lint", stream: false).and_return(success_result)
+        allow(agent_run).to receive(:execute_in_execution_environment).with("bin/lint", stream: false).and_return(success_result)
       end
 
       it "binds user-level requirements to the initiating user" do
         result = described_class.call(agent_run: agent_run)
 
         expect(result[:results].map { |entry| entry[:name] }).to eq([ "lint" ])
-        expect(agent_run).to have_received(:execute_in_container).with("bin/lint", stream: false)
+        expect(agent_run).to have_received(:execute_in_execution_environment).with("bin/lint", stream: false)
       end
     end
 
     context "when the run has no initiating user" do
       before do
         create(:pre_commit_requirement, account: account, user: owner, name: "lint", command: "bin/lint")
-        allow(agent_run).to receive(:execute_in_container).with("bin/lint", stream: false).and_return(success_result)
+        allow(agent_run).to receive(:execute_in_execution_environment).with("bin/lint", stream: false).and_return(success_result)
       end
 
       it "falls back to the project owner" do
         result = described_class.call(agent_run: agent_run)
 
         expect(result[:results].map { |entry| entry[:name] }).to eq([ "lint" ])
-        expect(agent_run).to have_received(:execute_in_container).with("bin/lint", stream: false)
+        expect(agent_run).to have_received(:execute_in_execution_environment).with("bin/lint", stream: false)
       end
     end
 
@@ -74,7 +74,7 @@ RSpec.describe PreCommitRequirements::Evaluate do # @spec QUALITY-LOOPS-002 # @s
       before do
         create(:pre_commit_requirement, account: account, name: "lint", command: "bin/lint")
         # success_result has exit_code: 0 but is a Result.success — make it truly pass
-        allow(agent_run).to receive(:execute_in_container).with("bin/lint", stream: false).and_return(success_result)
+        allow(agent_run).to receive(:execute_in_execution_environment).with("bin/lint", stream: false).and_return(success_result)
       end
 
       it "returns passed" do
@@ -98,7 +98,7 @@ RSpec.describe PreCommitRequirements::Evaluate do # @spec QUALITY-LOOPS-002 # @s
     context "with a failing blocking check" do
       before do
         create(:pre_commit_requirement, account: account, name: "lint", command: "bin/lint", failure_behavior: "block")
-        allow(agent_run).to receive(:execute_in_container).with("bin/lint", stream: false).and_return(failure_result)
+        allow(agent_run).to receive(:execute_in_execution_environment).with("bin/lint", stream: false).and_return(failure_result)
       end
 
       it "returns not passed and blocking" do
@@ -122,7 +122,7 @@ RSpec.describe PreCommitRequirements::Evaluate do # @spec QUALITY-LOOPS-002 # @s
 
       before do
         create(:pre_commit_requirement, account: account, name: "lint", command: "bin/lint", failure_behavior: "block")
-        allow(agent_run).to receive(:execute_in_container).with("bin/lint", stream: false).and_return(binary_failure_result)
+        allow(agent_run).to receive(:execute_in_execution_environment).with("bin/lint", stream: false).and_return(binary_failure_result)
       end
 
       it "normalizes output before joining stdout and stderr" do
@@ -136,7 +136,7 @@ RSpec.describe PreCommitRequirements::Evaluate do # @spec QUALITY-LOOPS-002 # @s
     context "with a failing warn-only check" do
       before do
         create(:pre_commit_requirement, account: account, name: "lint", command: "bin/lint", failure_behavior: "warn")
-        allow(agent_run).to receive(:execute_in_container).with("bin/lint", stream: false).and_return(failure_result)
+        allow(agent_run).to receive(:execute_in_execution_environment).with("bin/lint", stream: false).and_return(failure_result)
       end
 
       it "returns passed overall but individual check failed" do
@@ -160,7 +160,7 @@ RSpec.describe PreCommitRequirements::Evaluate do # @spec QUALITY-LOOPS-002 # @s
         mutant_command = MutantResultsReader.with_results_dir(
           "bundle exec mutant run --since HEAD\\~1 --use rspec --jobs 1 --results-dir .mutant/results"
         )
-        allow(agent_run).to receive(:execute_in_container).with(
+        allow(agent_run).to receive(:execute_in_execution_environment).with(
           mutant_command,
           stream: false
         ).and_return(success_result)
@@ -207,7 +207,7 @@ RSpec.describe PreCommitRequirements::Evaluate do # @spec QUALITY-LOOPS-002 # @s
         mutant_command = MutantResultsReader.with_results_dir(
           "bundle exec mutant run --since HEAD\\~1 --use rspec --jobs 1 --results-dir .mutant/results"
         )
-        allow(agent_run).to receive(:execute_in_container).with(
+        allow(agent_run).to receive(:execute_in_execution_environment).with(
           mutant_command,
           stream: false
         ).and_return(success_result)
@@ -242,7 +242,7 @@ RSpec.describe PreCommitRequirements::Evaluate do # @spec QUALITY-LOOPS-002 # @s
     context "with a container execution error" do
       before do
         create(:pre_commit_requirement, account: account, name: "lint", command: "bin/lint")
-        allow(agent_run).to receive(:execute_in_container)
+        allow(agent_run).to receive(:execute_in_execution_environment)
           .and_raise(Containers::Provision::ExecutionError.new(
             "command failed", exit_code: 1, stdout: "output", stderr: "lint error on line 5"
           ))
@@ -259,7 +259,7 @@ RSpec.describe PreCommitRequirements::Evaluate do # @spec QUALITY-LOOPS-002 # @s
     context "with a binary encoded container execution error" do
       before do
         create(:pre_commit_requirement, account: account, name: "lint", command: "bin/lint")
-        allow(agent_run).to receive(:execute_in_container)
+        allow(agent_run).to receive(:execute_in_execution_environment)
           .and_raise(Containers::Provision::ExecutionError.new(
             "command failed", exit_code: 1, stdout: "bad \xFF stdout\x00".b, stderr: "bad \xFE stderr\x00".b
           ))
@@ -276,7 +276,7 @@ RSpec.describe PreCommitRequirements::Evaluate do # @spec QUALITY-LOOPS-002 # @s
     context "with a container execution error without stdout/stderr" do
       before do
         create(:pre_commit_requirement, account: account, name: "lint", command: "bin/lint")
-        allow(agent_run).to receive(:execute_in_container)
+        allow(agent_run).to receive(:execute_in_execution_environment)
           .and_raise(Containers::Provision::ExecutionError.new("command failed", exit_code: 1))
       end
 
@@ -291,7 +291,7 @@ RSpec.describe PreCommitRequirements::Evaluate do # @spec QUALITY-LOOPS-002 # @s
     context "with a timeout error" do
       before do
         create(:pre_commit_requirement, account: account, name: "lint", command: "bin/lint")
-        allow(agent_run).to receive(:execute_in_container)
+        allow(agent_run).to receive(:execute_in_execution_environment)
           .and_raise(Containers::Provision::TimeoutError.new("timed out"))
       end
 
@@ -306,7 +306,7 @@ RSpec.describe PreCommitRequirements::Evaluate do # @spec QUALITY-LOOPS-002 # @s
     context "with a binary encoded container error message" do
       before do
         create(:pre_commit_requirement, account: account, name: "lint", command: "bin/lint")
-        allow(agent_run).to receive(:execute_in_container)
+        allow(agent_run).to receive(:execute_in_execution_environment)
           .and_raise(Containers::Provision::ProvisionError.new("timed out \xFF\x00".b))
       end
 
@@ -337,11 +337,11 @@ RSpec.describe PreCommitRequirements::Evaluate do # @spec QUALITY-LOOPS-002 # @s
       before do
         create(:pre_commit_requirement, :with_auto_fix, account: account, name: "lint", command: "bin/lint")
         call_count = 0
-        allow(agent_run).to receive(:execute_in_container).with("bin/lint", stream: false) do
+        allow(agent_run).to receive(:execute_in_execution_environment).with("bin/lint", stream: false) do
           call_count += 1
           call_count == 1 ? failure_result : success_result
         end
-        allow(agent_run).to receive(:execute_in_container).with("bin/lint -a", stream: false).and_return(success_result)
+        allow(agent_run).to receive(:execute_in_execution_environment).with("bin/lint -a", stream: false).and_return(success_result)
       end
 
       it "retries after fix and marks as auto-fixed" do
@@ -355,8 +355,8 @@ RSpec.describe PreCommitRequirements::Evaluate do # @spec QUALITY-LOOPS-002 # @s
     context "with auto-fix that exhausts retries" do
       before do
         create(:pre_commit_requirement, :with_auto_fix, account: account, name: "lint", command: "bin/lint")
-        allow(agent_run).to receive(:execute_in_container).with("bin/lint", stream: false).and_return(failure_result)
-        allow(agent_run).to receive(:execute_in_container).with("bin/lint -a", stream: false).and_return(success_result)
+        allow(agent_run).to receive(:execute_in_execution_environment).with("bin/lint", stream: false).and_return(failure_result)
+        allow(agent_run).to receive(:execute_in_execution_environment).with("bin/lint -a", stream: false).and_return(success_result)
       end
 
       it "returns failed check after max attempts" do
@@ -393,8 +393,8 @@ RSpec.describe PreCommitRequirements::Evaluate do # @spec QUALITY-LOOPS-002 # @s
     context "with auto-fix that raises an error" do
       before do
         create(:pre_commit_requirement, :with_auto_fix, account: account, name: "lint", command: "bin/lint")
-        allow(agent_run).to receive(:execute_in_container).with("bin/lint", stream: false).and_return(failure_result)
-        allow(agent_run).to receive(:execute_in_container).with("bin/lint -a", stream: false)
+        allow(agent_run).to receive(:execute_in_execution_environment).with("bin/lint", stream: false).and_return(failure_result)
+        allow(agent_run).to receive(:execute_in_execution_environment).with("bin/lint -a", stream: false)
           .and_raise(Containers::Provision::ExecutionError.new(
             "fix crashed", exit_code: 1, stderr: "fix error detail"
           ))
@@ -413,8 +413,8 @@ RSpec.describe PreCommitRequirements::Evaluate do # @spec QUALITY-LOOPS-002 # @s
     context "with auto-fix that raises a binary encoded container error" do
       before do
         create(:pre_commit_requirement, :with_auto_fix, account: account, name: "lint", command: "bin/lint")
-        allow(agent_run).to receive(:execute_in_container).with("bin/lint", stream: false).and_return(failure_result)
-        allow(agent_run).to receive(:execute_in_container).with("bin/lint -a", stream: false)
+        allow(agent_run).to receive(:execute_in_execution_environment).with("bin/lint", stream: false).and_return(failure_result)
+        allow(agent_run).to receive(:execute_in_execution_environment).with("bin/lint -a", stream: false)
           .and_raise(Containers::Provision::ProvisionError.new("fix crashed \xFF\x00".b))
       end
 

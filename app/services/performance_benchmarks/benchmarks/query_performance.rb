@@ -10,7 +10,7 @@ module PerformanceBenchmarks
       KEY = "query_performance"
       WINDOW = 7.days
       LIMIT = 100
-      PHASE_KEYS = %w[provision_container run_agent create_pull_request].freeze
+      PHASE_KEYS = %w[provision_execution_environment provision_container run_agent create_pull_request].freeze
 
       def self.call(...)
         new(...).call

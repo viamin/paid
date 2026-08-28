@@ -3,7 +3,7 @@
 require "rails_helper"
 
 RSpec.describe AgentRun, :no_db do
-  describe "#provision_container" do
+  describe "#provision_execution_environment" do
     let(:project) { double(id: 42) }
     let(:recorded_container_id) { nil }
     let(:agent_run) do
@@ -42,7 +42,7 @@ RSpec.describe AgentRun, :no_db do
 
       allow(Containers::PoolManager).to receive(:new).with(project: project).and_return(pool_manager)
 
-      agent_run.provision_container
+      agent_run.provision_execution_environment
 
       expect(agent_run.persisted_updates).to include(container_id: "warm-container", container_host: "remote")
     end
@@ -57,7 +57,7 @@ RSpec.describe AgentRun, :no_db do
       allow(provision_service).to receive(:provision).and_return(result)
       allow(PoolReplenishmentJob).to receive(:perform_later)
 
-      agent_run.provision_container
+      agent_run.provision_execution_environment
 
       expect(agent_run.persisted_updates).to include(container_id: "fresh-container", container_host: "remote")
       expect(PoolReplenishmentJob).to have_received(:perform_later).with(project.id)
@@ -74,7 +74,7 @@ RSpec.describe AgentRun, :no_db do
         expect(Containers::Provision).not_to receive(:new)
 
         expect {
-          agent_run.provision_container
+          agent_run.provision_execution_environment
         }.to raise_error(error)
       end
     end

@@ -11,7 +11,7 @@
   bind-mount compatibility path instead of the normal default.
   *Tests:* `spec/services/containers/provision_spec.rb`,
   `spec/models/agent_run_spec.rb`
-  *Code:* `Containers::Provision`, `AgentRun#provision_container`
+  *Code:* `Containers::Provision`, `AgentRun#provision_execution_environment`
 
 - [x] **CONTAINER-RUNTIME-002** — When Paid resolves Docker host placement for
   a new run, the system SHALL record explicit or preferred host-selection
@@ -184,7 +184,8 @@
   handles.
   *Tests:* `spec/models/agent_run_spec.rb`,
   `spec/migrations/add_runner_handle_to_execution_tables_spec.rb`
-  *Code:* `AgentRun#provision_via_runner`, `AgentRun#reuse_or_reconcile_via_runner`
+  *Code:* `AgentRun#provision_execution_environment`,
+  `AgentRun#provision_via_runner`, `AgentRun#reuse_or_reconcile_via_runner`
 
 - [x] **CONTAINER-RUNTIME-017** — The system SHALL isolate networking policy
   from Docker network implementation by carrying an

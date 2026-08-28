@@ -3,11 +3,11 @@
 module Workflows
   # Orchestrates the complete agent execution lifecycle:
   # 1. Create an AgentRun record
-  # 2. Provision a Docker container (with empty workspace)
-  # 3. Clone repo and create branch inside the container
+  # 2. Provision the execution environment (with empty workspace)
+  # 3. Clone repo and create branch inside the execution environment
   # 4. Run the agent to make code changes
   # 5. Push the branch and create a PR (if changes were made)
-  # 6. Clean up container and worktree records
+  # 6. Clean up execution-environment and worktree records
   #
   # Git operations (clone, push) run inside the container, authenticated
   # via the git credential helper proxy. No git credentials touch the host.
@@ -199,7 +199,7 @@ module Workflows
             { agent_run_id: agent_run_id }, timeout: 180)
         end
 
-        # Step 2: Provision container (with empty workspace directory).
+        # Step 2: Provision the execution environment (with empty workspace directory).
         # The activity heartbeats while provisioning so a workflow
         # cancellation interrupts an in-flight provision promptly (within one
         # heartbeat interval) instead of waiting for start_to_close.

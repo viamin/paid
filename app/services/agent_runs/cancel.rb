@@ -38,9 +38,9 @@ module AgentRuns
     end
 
     def cleanup_container
-      return if agent_run.container_id.blank?
+      return if agent_run.container_id.blank? && agent_run.runner_handle.blank?
 
-      agent_run.cleanup_container(force: true)
+      agent_run.cleanup_execution_environment(force: true)
     end
   end
 end

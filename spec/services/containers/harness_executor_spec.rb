@@ -8,12 +8,12 @@ RSpec.describe Containers::HarnessExecutor do
   let(:executor) { described_class.new(agent_run) }
 
   describe "#execute" do
-    it "delegates to execute_in_container and returns a CommandExecutor::Result" do
+    it "delegates to execute_in_execution_environment and returns a CommandExecutor::Result" do
       container_result = Containers::Provision::Result.success(
         stdout: "OK", stderr: "", exit_code: 0
       )
       allow(Process).to receive(:clock_gettime).with(Process::CLOCK_MONOTONIC).and_return(100.0, 100.25)
-      allow(agent_run).to receive(:execute_in_container).and_return(container_result)
+      allow(agent_run).to receive(:execute_in_execution_environment).and_return(container_result)
 
       result = executor.execute(%w[echo hello], timeout: 30, env: { "FOO" => "bar" })
 
@@ -29,14 +29,14 @@ RSpec.describe Containers::HarnessExecutor do
       container_result = Containers::Provision::Result.success(
         stdout: "", stderr: "", exit_code: 0
       )
-      allow(agent_run).to receive(:execute_in_container).and_return(container_result)
+      allow(agent_run).to receive(:execute_in_execution_environment).and_return(container_result)
 
       executor.execute(
         %w[codex exec test],
         env: { "KEEP" => "value", "UNSET_ME" => nil, "ALSO_UNSET" => nil }
       )
 
-      expect(agent_run).to have_received(:execute_in_container).with(
+      expect(agent_run).to have_received(:execute_in_execution_environment).with(
         %w[env -u UNSET_ME -u ALSO_UNSET codex exec test],
         timeout: nil,
         stream: false,
@@ -49,14 +49,14 @@ RSpec.describe Containers::HarnessExecutor do
       container_result = Containers::Provision::Result.success(
         stdout: "", stderr: "", exit_code: 0
       )
-      allow(agent_run).to receive(:execute_in_container).and_return(container_result)
+      allow(agent_run).to receive(:execute_in_execution_environment).and_return(container_result)
 
       executor.execute(
         "kilo run test",
         env: { "SAFE_VAR" => nil }
       )
 
-      expect(agent_run).to have_received(:execute_in_container).with(
+      expect(agent_run).to have_received(:execute_in_execution_environment).with(
         [ "sh", "-c", "env -u SAFE_VAR kilo run test" ],
         timeout: nil,
         stream: false,
@@ -69,7 +69,7 @@ RSpec.describe Containers::HarnessExecutor do
       container_result = Containers::Provision::Result.failure(
         error: "auth failed", stdout: "", stderr: "auth failed", exit_code: 1
       )
-      allow(agent_run).to receive(:execute_in_container).and_return(container_result)
+      allow(agent_run).to receive(:execute_in_execution_environment).and_return(container_result)
 
       result = executor.execute(%w[test])
 
@@ -81,11 +81,11 @@ RSpec.describe Containers::HarnessExecutor do
       container_result = Containers::Provision::Result.success(
         stdout: "", stderr: "", exit_code: 0
       )
-      allow(agent_run).to receive(:execute_in_container).and_return(container_result)
+      allow(agent_run).to receive(:execute_in_execution_environment).and_return(container_result)
 
       executor.execute(%w[kilo run --format json hello])
 
-      expect(agent_run).to have_received(:execute_in_container).with(
+      expect(agent_run).to have_received(:execute_in_execution_environment).with(
         %w[kilo run --auto --print-logs --format json hello],
         timeout: nil,
         stream: false,
@@ -98,11 +98,11 @@ RSpec.describe Containers::HarnessExecutor do
       container_result = Containers::Provision::Result.success(
         stdout: "", stderr: "", exit_code: 0
       )
-      allow(agent_run).to receive(:execute_in_container).and_return(container_result)
+      allow(agent_run).to receive(:execute_in_execution_environment).and_return(container_result)
 
       executor.execute(%w[kilo run --auto --format json hello])
 
-      expect(agent_run).to have_received(:execute_in_container).with(
+      expect(agent_run).to have_received(:execute_in_execution_environment).with(
         %w[kilo run --auto --format json hello],
         timeout: nil,
         stream: false,
@@ -115,11 +115,11 @@ RSpec.describe Containers::HarnessExecutor do
       container_result = Containers::Provision::Result.success(
         stdout: "", stderr: "", exit_code: 0
       )
-      allow(agent_run).to receive(:execute_in_container).and_return(container_result)
+      allow(agent_run).to receive(:execute_in_execution_environment).and_return(container_result)
 
       executor.execute(%w[codex exec test])
 
-      expect(agent_run).to have_received(:execute_in_container).with(
+      expect(agent_run).to have_received(:execute_in_execution_environment).with(
         %w[codex exec test],
         timeout: nil,
         stream: false,
@@ -132,11 +132,11 @@ RSpec.describe Containers::HarnessExecutor do
       container_result = Containers::Provision::Result.success(
         stdout: "", stderr: "", exit_code: 0
       )
-      allow(agent_run).to receive(:execute_in_container).and_return(container_result)
+      allow(agent_run).to receive(:execute_in_execution_environment).and_return(container_result)
 
       executor.execute(%w[kilo run --format json hello], env: { "STAY" => "val", "REMOVE" => nil })
 
-      expect(agent_run).to have_received(:execute_in_container).with(
+      expect(agent_run).to have_received(:execute_in_execution_environment).with(
         %w[env -u REMOVE kilo run --auto --print-logs --format json hello],
         timeout: nil,
         stream: false,
@@ -150,11 +150,11 @@ RSpec.describe Containers::HarnessExecutor do
         stdout: "", stderr: "", exit_code: 0
       )
       preparation = instance_double(AgentHarness::ExecutionPreparation)
-      allow(agent_run).to receive(:execute_in_container).and_return(container_result)
+      allow(agent_run).to receive(:execute_in_execution_environment).and_return(container_result)
 
       executor.execute(%w[opencode run test], preparation: preparation)
 
-      expect(agent_run).to have_received(:execute_in_container).with(
+      expect(agent_run).to have_received(:execute_in_execution_environment).with(
         %w[opencode run test],
         timeout: nil,
         stream: false,
@@ -169,10 +169,10 @@ RSpec.describe Containers::HarnessExecutor do
       container_result = Containers::Provision::Result.success(
         stdout: "/usr/local/bin/claude\n", stderr: "", exit_code: 0
       )
-      allow(agent_run).to receive(:execute_in_container).and_return(container_result)
+      allow(agent_run).to receive(:execute_in_execution_environment).and_return(container_result)
 
       expect(executor.which("claude")).to eq("/usr/local/bin/claude")
-      expect(agent_run).to have_received(:execute_in_container).with(
+      expect(agent_run).to have_received(:execute_in_execution_environment).with(
         [ "sh", "-c", "command -v -- claude" ],
         stream: false,
         env: {},
@@ -184,12 +184,12 @@ RSpec.describe Containers::HarnessExecutor do
       container_result = Containers::Provision::Result.success(
         stdout: "", stderr: "", exit_code: 0
       )
-      allow(agent_run).to receive(:execute_in_container).and_return(container_result)
+      allow(agent_run).to receive(:execute_in_execution_environment).and_return(container_result)
       binary = "claude; rm -rf /"
 
       executor.which(binary)
 
-      expect(agent_run).to have_received(:execute_in_container).with(
+      expect(agent_run).to have_received(:execute_in_execution_environment).with(
         [ "sh", "-c", "command -v -- #{Shellwords.escape(binary)}" ],
         stream: false,
         env: {},
@@ -201,7 +201,7 @@ RSpec.describe Containers::HarnessExecutor do
       container_result = Containers::Provision::Result.failure(
         error: "not found", stdout: "", stderr: "", exit_code: 1
       )
-      allow(agent_run).to receive(:execute_in_container).and_return(container_result)
+      allow(agent_run).to receive(:execute_in_execution_environment).and_return(container_result)
 
       expect(executor.which("claude")).to be_nil
     end
