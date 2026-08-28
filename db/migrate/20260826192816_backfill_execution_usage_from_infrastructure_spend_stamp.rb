@@ -160,12 +160,17 @@ class BackfillExecutionUsageFromInfrastructureSpendStamp < ActiveRecord::Migrati
   end
 
   def backfill_agent_run_columns!(rows)
-    rows.each do |row|
-      MigrationAgentRun.where(id: row[:agent_run_id]).update_all(
-        runner_backend: row[:runner_backend],
-        infra_cost_cents: row[:infra_cost_cents],
-        billed_duration_seconds: row[:billed_duration_seconds]
-      )
+    safety_assured do
+      execute(<<~SQL.squish)
+        UPDATE agent_runs
+        SET runner_backend = backfill.runner_backend,
+          infra_cost_cents = backfill.infra_cost_cents,
+          billed_duration_seconds = backfill.billed_duration_seconds
+        FROM (
+          VALUES #{backfill_row_values_sql(rows)}
+        ) AS backfill(agent_run_id, runner_backend, infra_cost_cents, billed_duration_seconds)
+        WHERE agent_runs.id = backfill.agent_run_id
+      SQL
     end
   end
 
@@ -192,5 +197,16 @@ class BackfillExecutionUsageFromInfrastructureSpendStamp < ActiveRecord::Migrati
       safety_assured { execute("SET LOCAL paid.bypass_tenant_rls = 'true'") }
       yield
     end
+  end
+
+  def backfill_row_values_sql(rows)
+    rows.map do |row|
+      "(#{quoted(row[:agent_run_id])}, #{quoted(row[:runner_backend])}, " \
+        "#{quoted(row[:infra_cost_cents])}, #{quoted(row[:billed_duration_seconds])})"
+    end.join(", ")
+  end
+
+  def quoted(value)
+    ActiveRecord::Base.connection.quote(value)
   end
 end

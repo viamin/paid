@@ -154,7 +154,8 @@ RSpec.describe BackfillExecutionUsageFromInfrastructureSpendStamp, :aggregate_fa
   end
 
   it "re-applies tenant bypass for each batch cycle, including the final empty scan" do
-    501.times { stamped_run(:completed) }
+    stub_const("#{described_class}::BATCH_SIZE", 2)
+    3.times { stamped_run(:completed) }
     allow(migration).to receive(:execute).and_call_original
 
     migration.migrate(:up)
