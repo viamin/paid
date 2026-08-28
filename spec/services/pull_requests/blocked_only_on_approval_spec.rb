@@ -582,6 +582,37 @@ RSpec.describe PullRequests::BlockedOnlyOnApproval do
       end
     end
 
+    context "with a body-only review-bot method configured" do
+      before do
+        project.update!(review_settings: {
+          "enabled" => true,
+          "methods" => { "codex" => { "enabled" => true } }
+        })
+      end
+
+      # @spec PR-ESCALATION-025
+      it "returns true when a clean body-only bot issue comment supersedes an older non-clean review" do
+        sha = "abc123"
+        stub_pr_data(green_pr_data(sha: sha))
+        stub_checks(sha, green_checks)
+        stub_reviews(
+          [ { id: 200, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+              body: "Found 2 issues that should be addressed.", submitted_at: 2.hours.ago } ]
+        )
+        stub_review_threads([])
+        stub_head_commit(sha: sha)
+        stub_issue_comments([
+          OpenStruct.new(
+            user: OpenStruct.new(login: "chatgpt-codex-connector"),
+            body: "Codex Review: Didn't find any major issues. Bravo.",
+            created_at: 1.hour.ago
+          )
+        ])
+
+        expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(true)
+      end
+    end
+
     context "with address_all_bot_reviews enabled and a non-configured bot review" do
       before do
         project.update!(review_settings: {

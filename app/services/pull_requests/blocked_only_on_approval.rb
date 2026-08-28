@@ -312,9 +312,48 @@ module PullRequests
 
       latest = latest_allowed_bot_review(reviews, allowed_bot_logins)
       return true if latest.nil?
+      return true if body_only_bot_clean_comment_present?(allowed_bot_logins, latest)
 
       paid_agent_clean_review?(latest) ||
         Activities::ScanPaidPrsActivity::REVIEW_BOT_CLEAN_PATTERN.match?(latest[:body])
+    end
+
+    def body_only_bot_clean_comment_present?(allowed_bot_logins, latest_review)
+      return false if allowed_bot_logins.empty?
+      return false unless allowed_bot_logins.subset?(Activities::ScanPaidPrsActivity::BODY_ONLY_REVIEW_BOT_LOGINS)
+
+      latest_clean_comment = latest_body_only_bot_clean_comment(allowed_bot_logins)
+      return false unless latest_clean_comment
+
+      latest_review_provider_key = body_only_review_provider_key_for(latest_review[:user_login])
+      comment_provider_key = body_only_review_provider_key_for(latest_clean_comment.user&.login)
+      return false if comment_provider_key.nil?
+      return false if latest_review_provider_key && latest_review_provider_key != comment_provider_key
+
+      review_time = latest_review[:submitted_at]
+      comment_time = latest_clean_comment.created_at
+      return true if review_time.nil? || comment_time.nil?
+
+      comment_time >= review_time
+    end
+
+    def latest_body_only_bot_clean_comment(allowed_bot_logins)
+      comments = collector.fetch_recent_issue_comments(issue: @issue) || []
+      bot_comments = comments.select do |comment|
+        allowed_bot_logins.include?(comment.user&.login&.downcase)
+      end
+
+      bot_comments
+        .select { |comment| Activities::ScanPaidPrsActivity::BODY_ONLY_BOT_CLEAN_COMMENT_PATTERN.match?(comment.body.to_s) }
+        .max_by { |comment| comment.created_at || Time.at(0) }
+    end
+
+    def body_only_review_provider_key_for(login)
+      return nil if login.blank?
+
+      Activities::ScanPaidPrsActivity::BODY_ONLY_REVIEW_PROVIDER_KEYS.find do |provider_key|
+        RunnerSupport.runner_bot_username_for?(provider_key, login)
+      end
     end
 
     def latest_allowed_bot_review(reviews, allowed_bot_logins)
