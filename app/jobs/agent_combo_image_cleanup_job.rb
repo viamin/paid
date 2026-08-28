@@ -38,7 +38,7 @@ class AgentComboImageCleanupJob < ApplicationJob
       next if referenced.include?(entry[:image])
       next if tag_in_use?(entry[:image], backend)
 
-      prune_tag(entry[:image], backend)
+      prune_tag(entry, backend)
     end
   end
 
@@ -78,8 +78,9 @@ class AgentComboImageCleanupJob < ApplicationJob
     true
   end
 
-  def prune_tag(tag, backend)
-    built_at = pruneable_built_at(tag, backend)
+  def prune_tag(entry, backend)
+    tag = entry.fetch(:image)
+    built_at = pruneable_built_at(tag, backend, listed_labels: entry.fetch(:labels, {}))
     return unless built_at
 
     backend.delete_image(tag, force: true)
@@ -91,13 +92,25 @@ class AgentComboImageCleanupJob < ApplicationJob
     )
   end
 
-  def pruneable_built_at(tag, backend)
-    label_sets = backend.image_label_sets(tag)
+  def pruneable_built_at(tag, backend, listed_labels:)
+    label_sets = label_sets_for_prune(tag, backend, listed_labels)
     built_ats = label_sets.filter_map { |labels| parse_built_at(labels) }
     return if built_ats.size != label_sets.size
 
     newest_copy = built_ats.max
     newest_copy if newest_copy < RETENTION.ago
+  end
+
+  def label_sets_for_prune(tag, backend, listed_labels)
+    backend.image_label_sets(tag)
+  rescue Docker::Error::NotFoundError => e
+    Rails.logger.warn(
+      message: "agent_combo_image_cleanup.partial_tag_visibility",
+      image: tag,
+      backend: backend.identifier,
+      error: e.message
+    )
+    [ listed_labels ]
   end
 
   def parse_built_at(labels)

@@ -194,6 +194,24 @@ RSpec.describe AgentComboImageCleanupJob do
 
       expect(other_backend).to have_received(:delete_image).with(tag, force: true)
     end
+
+    it "prunes a skewed swarm tag without aborting later tags on the same backend" do
+      other_tag = "paid-agent:elixir-go-node-python-ruby"
+      stub_combo_images(
+        { image: tag, id: "sha256:abc", labels: stale_labels },
+        { image: other_tag, id: "sha256:def", labels: stale_labels }
+      )
+      allow(backend).to receive(:image_in_use?).with(tag).and_return(false)
+      allow(backend).to receive(:image_in_use?).with(other_tag).and_return(false)
+      allow(backend).to receive(:image_label_sets).with(tag)
+        .and_raise(Docker::Error::NotFoundError, "missing on worker-2")
+      allow(backend).to receive(:delete_image)
+
+      job.perform
+
+      expect(backend).to have_received(:delete_image).with(tag, force: true)
+      expect(backend).to have_received(:delete_image).with(other_tag, force: true)
+    end
   end
 
   def stub_combo_images_for(target_backend, **entry)
