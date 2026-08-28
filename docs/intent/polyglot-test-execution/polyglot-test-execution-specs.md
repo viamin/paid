@@ -105,7 +105,10 @@
   provisioning use of a combo tag whose recorded base digest no longer matches
   the current base image SHALL rebuild the combo against the new base.
   Rebuilds SHALL also be available eagerly (rake task / build script) so
-  operators can cascade after a base bump without waiting for a run. The
+  operators can cascade after a base bump without waiting for a run. The build
+  script SHALL accept the resolver token set for the target combo tag,
+  including explicitly listed base runtimes (`node`, `python`, `ruby`), while
+  still composing only the extended-runtime layers. The
   eager sweep SHALL enumerate only tags the language-layer matrix can compose,
   so other `paid-agent:` tags present on a backend (the base image alias, an
   operator's own build) neither fail the sweep nor are rebuilt.

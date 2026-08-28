@@ -6,14 +6,15 @@
 #   IMAGE_TAG=v1.0.0 ./scripts/build-agent-image.sh  # Build with custom tag
 #   PUSH=true ./scripts/build-agent-image.sh    # Build and push to registry
 #
-# Combo language layers (RDR-046 / #3613): pass extended runtimes to also
-# build the matching combo images on top of the freshly built base:
+# Combo language layers (RDR-046 / #3613): pass the resolver tokens for the
+# target combo image to also build it on top of the freshly built base:
 #   COMBO_LANGUAGES="elixir" ./scripts/build-agent-image.sh
+#   COMBO_LANGUAGES="go node python ruby" ./scripts/build-agent-image.sh
 #   COMBO_LANGUAGES="elixir go rust swift" ./scripts/build-agent-image.sh
 # Tags follow Containers::ImageResolver: paid-agent:<sorted-language-tokens>,
-# built only from the extended runtimes actually passed — base runtimes
-# (node/python/ruby) are never added automatically, since the resolver only
-# includes a base token when a project's own detected languages name it.
+# built only from the extended runtimes in that token set — base runtimes
+# (node/python/ruby) may be included explicitly when the resolver tag includes
+# them, but they do not produce their own Docker layers.
 # REBUILD_COMBO=true re-pulls/rebuilds existing combos (cascade after a base
 # bump); by default an existing combo tag is left untouched.
 
@@ -274,26 +275,34 @@ if [ "${PUSH}" = "true" ]; then
 fi
 
 # Optionally build combo language-layer images on top of the base
-# (RDR-046 Phase 3 / #3613). COMBO_LANGUAGES holds a space-separated list of
-# extended runtimes (elixir go rust swift); the layers build as a chain and the
-# final image is tagged with COMBO_TAG. The default mirrors what
-# Containers::ImageResolver actually resolves a project to: the resolver's tag
-# is exactly the project's detected language tokens, sorted and joined — it
-# never adds base runtimes (node/python/ruby) that weren't detected. So the
-# default COMBO_TAG here is just the sorted, unique COMBO_LANGUAGES tokens,
-# regardless of how many are passed. Override COMBO_TAG to build a different
-# tag than the default (e.g. to also fold in base tokens for a project whose
-# test_languages explicitly list them).
+# (RDR-046 Phase 3 / #3613).
+#
+# Resolver-token input: COMBO_LANGUAGES may include both base
+# (node python ruby) and extended (elixir go rust swift) tokens so operators
+# can pass the exact Containers::ImageResolver tag shape they want to rebuild.
+# Only the extended tokens produce Docker layers; base tokens only affect the
+# final tag name.
 COMBO_LANGUAGES="${COMBO_LANGUAGES:-}"
 
 if [ -n "${COMBO_LANGUAGES}" ]; then
     LANGUAGES_DIR="${PROJECT_ROOT}/docker/agent/languages"
+    base_tokens=""
+    extended_tokens=""
 
     for combo in ${COMBO_LANGUAGES}; do
         case "${combo}" in
-            elixir|go|rust|swift) ;;
-            *) echo "ERROR: Unknown extended runtime '${combo}' (expected elixir, go, rust, or swift)" >&2; exit 1 ;;
+            node|python|ruby) base_tokens="${base_tokens} ${combo}" ;;
+            elixir|go|rust|swift) extended_tokens="${extended_tokens} ${combo}" ;;
+            *) echo "ERROR: Unknown combo runtime '${combo}' (expected node, python, ruby, elixir, go, rust, or swift)" >&2; exit 1 ;;
         esac
+    done
+
+    if [ -z "${extended_tokens# }" ]; then
+        echo "ERROR: COMBO_LANGUAGES must include at least one extended runtime (elixir, go, rust, or swift)" >&2
+        exit 1
+    fi
+
+    for combo in ${extended_tokens}; do
         if [ ! -f "${LANGUAGES_DIR}/${combo}.dockerfile" ]; then
             echo "ERROR: Missing language layer ${LANGUAGES_DIR}/${combo}.dockerfile" >&2
             exit 1
@@ -301,11 +310,10 @@ if [ -n "${COMBO_LANGUAGES}" ]; then
     done
 
     # Sorted, unique tokens — mirrors the tag grammar of
-    # Containers::ImageResolver#tag_for, which never adds base runtime
-    # tokens (node/python/ruby) that weren't among the detected languages.
+    # Containers::ImageResolver#tag_for for the final combo tag.
     # shellcheck disable=SC2086 # intentional word-splitting of the space-separated list
-    TAG_TOKENS=$(printf '%s\n' ${COMBO_LANGUAGES} | sort -u | tr '\n' '-' | sed 's/-$//')
-    COMBO_TAG="${COMBO_TAG:-${IMAGE_NAME}:${TAG_TOKENS}}"
+    ALL_TAG_TOKENS=$(printf '%s\n' ${extended_tokens} ${base_tokens} | sort -u | tr '\n' '-' | sed 's/-$//')
+    COMBO_TAG="${COMBO_TAG:-${IMAGE_NAME}:${ALL_TAG_TOKENS}}"
 
     if [ "${REBUILD_COMBO}" != "true" ] && docker image inspect "${COMBO_TAG}" >/dev/null 2>&1; then
         echo ""
@@ -325,7 +333,7 @@ if [ -n "${COMBO_LANGUAGES}" ]; then
         COMBO_BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
         COMBO_FROM="${FULL_IMAGE}"
         # shellcheck disable=SC2086 # intentional word-splitting of the space-separated list
-        SORTED_LANGUAGES=$(printf '%s\n' ${COMBO_LANGUAGES} | sort)
+        SORTED_LANGUAGES=$(printf '%s\n' ${extended_tokens} | sort -u)
         # shellcheck disable=SC2086 # intentional word-splitting of the space-separated list
         LAYER_COUNT=$(printf '%s\n' ${SORTED_LANGUAGES} | wc -l)
         LAYER_INDEX=0

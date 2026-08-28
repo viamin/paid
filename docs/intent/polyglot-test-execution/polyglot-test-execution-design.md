@@ -116,7 +116,11 @@ instead (POLYGLOT-TEST-006).
   the first provision for a new language combination pays the build cost
   (POLYGLOT-TEST-007). `scripts/build-agent-image.sh COMBO_LANGUAGES=...` and
   `rake containers:rebuild_combo_images` provide the explicit pre-build /
-  cascade path for operators and CI.
+  cascade path for operators and CI. The script accepts the resolver token set
+  for the target tag, so an eager rebuild for
+  `paid-agent:go-node-python-ruby` passes
+  `COMBO_LANGUAGES="go node python ruby"` and still composes only the `go`
+  language layer on top of the rebuilt base image.
 - **Cache invalidation:** Every built combo carries labels recording the base
   image digest it was built against (`dev.paid.agent-image.base-digest`,
   `.built-at`, `.languages`). When the base image is rebuilt (new local
