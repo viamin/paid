@@ -103,20 +103,53 @@ instead (POLYGLOT-TEST-006).
 
 - **Build:** Combo images are built `FROM` the base image, each adding one
   language toolchain layer. The tag is deterministic from the language set, so
-  the same project always resolves the same tag.
-- **Cache invalidation:** A base-image patch is a new `paid-agent:latest`.
-  Combo layers rebuild against the new base; because the tag embeds only the
-  language set (not a version), consumers always resolve the latest build of
-  that combo.
-- **Fallback:** When a resolved combo image is absent on a host, Docker fails
-  clearly at container creation (image not found) rather than silently running
-  in the base image — the explicit failure is the contract.
+  the same project always resolves the same tag. `Containers::ComboImageBuilder`
+  owns the pipeline: the language layers live in
+  `docker/agent/languages/{elixir,go,rust,swift}.dockerfile`, each written as
+  `ARG BASE_IMAGE` + `FROM ${BASE_IMAGE}` + a pinned, checksum-verified
+  toolchain install. A combo with multiple extended runtimes builds as a chain
+  (each layer `FROM` the previous image), tagging only the final image with the
+  resolved combo tag.
+- **Build-on-first-use:** `Containers::Provision` calls
+  `ComboImageBuilder.ensure_available(image, backend:)` before creating the
+  container. If the tag is already present and current, the build is skipped;
+  the first provision for a new language combination pays the build cost
+  (POLYGLOT-TEST-007). `scripts/build-agent-image.sh COMBO_LANGUAGES=...` and
+  `rake containers:rebuild_combo_images` provide the explicit pre-build /
+  cascade path for operators and CI. The script accepts the resolver token set
+  for the target tag, so an eager rebuild for
+  `paid-agent:go-node-python-ruby` passes
+  `COMBO_LANGUAGES="go node python ruby"` and still composes only the `go`
+  language layer on top of the rebuilt base image.
+- **Cache invalidation:** Every built combo carries labels recording the base
+  image digest it was built against (`dev.paid.agent-image.base-digest`,
+  `.built-at`, `.languages`). When the base image is rebuilt (new local
+  digest), the next `ensure_available` for a combo detects the digest mismatch
+  and rebuilds the combo against the new base, so a base patch cascades
+  lazily; the rake task / `REBUILD_COMBO=true` script path cascades eagerly
+  (POLYGLOT-TEST-009).
+- **Fallback — none:** A tag with unknown tokens, a failed build, or a missing
+  base image raises a specific error and the provision fails; the system never
+  silently runs in the base image when a combo was resolved (POLYGLOT-TEST-008).
+  Non-Paid image references (explicit overrides, immutable catalog digests
+  from RDR-059) are not the builder's to produce and pass through untouched.
+- **Ownership boundary:** The builder owns exactly the `paid-agent:<tokens>`
+  tags whose token set parses under the resolver's grammar and names at least
+  one extended runtime (`ComboImageBuilder.buildable?`). Other tags that share
+  the `paid-agent:` namespace — the base image, its documented
+  `paid-agent:ruby-node-python` alias, an operator's `IMAGE_TAG=` build — are
+  not combo images, so the cascade task and the cleanup job never enumerate
+  them: an unbuildable tag sitting on a backend can neither fail the sweep nor
+  become a prune candidate.
+- **Stale-image cleanup:** `AgentComboImageCleanupJob` (daily GoodJob cron)
+  removes combo tags that no active project resolves to and no running
+  container uses, once their `built-at` label is older than 30 days. The base
+  image is never pruned (POLYGLOT-TEST-010).
 
 ## What this is not
 
 - **Not structured multi-language test parsing.** Exit-code-only result handling
   remains the current contract.
-- **Not a claim that every language runtime is available today.** The segment
-  exists because those runtimes still need explicit implementation work.
 - **Not iOS build support.** Swift support is scoped to Linux-capable Swift
-  Package Manager projects rather than Xcode/iOS-only targets.
+  Package Manager projects rather than Xcode/iOS-only targets (the Swift
+  language layer installs the official Linux toolchain for `swift test`).

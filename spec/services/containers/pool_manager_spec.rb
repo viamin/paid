@@ -235,6 +235,17 @@ RSpec.describe Containers::PoolManager do
       )
     end
 
+    it "bypasses the pool for an unsupported runtime so provisioning fails loudly instead" do
+      # @spec POLYGLOT-TEST-008
+      entry = create(:container_pool_entry, project: project)
+      project.update!(repo_profile: { "test_languages" => %w[Kotlin Ruby] })
+
+      result = described_class.new(project: project, target_size: 1).acquire(agent_run: agent_run)
+
+      expect(result).to be_nil
+      expect(entry.reload.status).to eq("warm")
+    end
+
     it "bypasses the pool when caller options require a different container shape" do
       entry = create(:container_pool_entry, project: project)
 
@@ -383,6 +394,49 @@ RSpec.describe Containers::PoolManager do
 
       entry = project.container_pool_entries.sole
       expect(entry.image).to eq("paid-agent:go")
+    end
+
+    it "warms nothing for an unsupported runtime instead of falling back to the base image" do
+      # @spec POLYGLOT-TEST-008
+      project.update!(repo_profile: { "test_languages" => %w[Kotlin Ruby] })
+      network_probe = instance_double(Containers::Provision, network_name: "paid_agent")
+      allow(Containers::Provision).to receive(:new).with(project: project).and_return(network_probe)
+
+      described_class.new(project: project, target_size: 1).replenish
+
+      expect(project.container_pool_entries).to be_empty
+    end
+
+    it "drains warm entries left over from a supported earlier profile" do
+      # @spec POLYGLOT-TEST-008
+      entry = create(:container_pool_entry, project: project)
+      project.update!(repo_profile: { "test_languages" => %w[Kotlin Ruby] })
+      container = instance_double(Docker::Container, info: { "State" => { "Running" => true } }, stop: true, delete: true)
+      volume = instance_double(Docker::Volume, remove: true)
+      allow(Docker::Container).to receive(:get).with(entry.container_id).and_return(container)
+      allow(Docker::Volume).to receive(:get).with(entry.workspace_volume).and_return(volume)
+
+      described_class.new(project: project, target_size: 1).replenish
+
+      expect(ContainerPoolEntry.exists?(entry.id)).to be(false)
+    end
+
+    it "keeps replenishing other projects when one has an unsupported runtime" do
+      unsupported = create(:project, repo_profile: { "test_languages" => %w[Kotlin] })
+      provision = instance_double(Containers::Provision)
+      allow(Containers::Provision).to receive(:new).and_return(provision)
+      allow(provision).to receive_messages(
+        network_name: "paid_agent",
+        provision: Containers::Provision::Result.success(container_id: "warm-1", container_host: "local"),
+        runtime_image_selection: nil
+      )
+
+      expect {
+        [ unsupported, project ].each { |proj| described_class.new(project: proj, target_size: 1).replenish }
+      }.not_to raise_error
+
+      expect(unsupported.container_pool_entries).to be_empty
+      expect(project.container_pool_entries.warm.sole.container_id).to eq("warm-1")
     end
 
     it "keeps host-specific target counts separate during replenishment" do

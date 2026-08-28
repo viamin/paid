@@ -184,6 +184,20 @@ module Containers
         containers + list_node_local_containers(options:, exclude_ids: service_task_container_ids)
       end
 
+      # Swarm's /services endpoint has no "ancestor" filter (only
+      # id/label/mode/name), so the container-list based default in {Base}
+      # can't detect usage here — it either raises or silently ignores the
+      # filter and returns unrelated services. Compare each service's task
+      # template image reference instead. Swarm resolves a pushed image's
+      # tag to a `tag@digest` reference on the running service, so match on
+      # the tag portion only; combo images build and run locally per node
+      # with no registry to resolve against, so they keep the plain tag.
+      def image_in_use?(tag)
+        parse_json(manager_connection.get("/services")).any? do |service|
+          service.dig("Spec", "TaskTemplate", "ContainerSpec", "Image").to_s.split("@").first == tag
+        end
+      end
+
       def get_network(name)
         Docker::Network.get(name, {}, manager_connection)
       end
@@ -210,6 +224,51 @@ module Containers
           raise Docker::Error::NotFoundError, "Image #{name} not found on swarm node #{node_hostname(node) || node.fetch('ID', 'unknown')}: #{error.message}"
         end
         image
+      end
+
+      def image_label_sets(name)
+        healthy_node_images(name).map { |image| image.info["Labels"] || {} }
+      end
+
+      # Builds the image on every healthy node so any node can run it. Docker::Image.build
+      # tars the Dockerfile per call, so each node gets its own request body.
+      def build_image(dockerfile, opts = {}, &block)
+        nodes = healthy_nodes
+        raise Docker::Error::NotFoundError, "Image #{opts[:t] || "unknown"} not built: no healthy swarm nodes available" if nodes.empty?
+
+        nodes.map do |node|
+          Docker::Image.build(dockerfile, opts, node_connection(node), &block)
+        end
+      end
+
+      # Combo images build independently per node (see {ComboImageBuilder}),
+      # so the same tag legitimately carries a different image ID on every
+      # node. Callers (e.g. {ComboImageBuilder.combo_images}) key off
+      # RepoTags, not IDs, so dedupe on tag to avoid surfacing the same tag
+      # once per node.
+      def list_images(opts = {})
+        seen_tags = Set.new
+        healthy_nodes.each_with_object([]) do |node, images|
+          Docker::Image.all(opts, node_connection(node)).each do |image|
+            tags = image.info["RepoTags"] || []
+            next if tags.present? && tags.all? { |tag| seen_tags.include?(tag) }
+
+            seen_tags.merge(tags)
+            images << image
+          end
+        end
+      end
+
+      # Combo tags can be missing from some nodes (see {#list_images}), so a
+      # per-node NotFoundError is expected skew, not a failure: skip it and
+      # keep deleting on the remaining nodes so partially converged clusters
+      # can still clean themselves up.
+      def delete_image(name, **opts)
+        healthy_nodes.each do |node|
+          Docker::Image.remove(name, opts, node_connection(node))
+        rescue Docker::Error::NotFoundError
+          next
+        end
       end
 
       def list_volumes
@@ -241,6 +300,17 @@ module Containers
       def delete_volume(volume, **options)
         node = node_by_hostname(volume.host) || raise(Docker::Error::NotFoundError, "Swarm node #{volume.host.inspect} not found")
         Docker::Volume.get(volume.id, {}, node_connection(node)).remove(**options)
+      end
+
+      def healthy_node_images(name)
+        nodes = healthy_nodes
+        raise Docker::Error::NotFoundError, "Image #{name} not found: no healthy swarm nodes available" if nodes.empty?
+
+        nodes.map do |node|
+          Docker::Image.get(name, {}, node_connection(node))
+        rescue Docker::Error::NotFoundError => error
+          raise Docker::Error::NotFoundError, "Image #{name} not found on swarm node #{node_hostname(node) || node.fetch('ID', 'unknown')}: #{error.message}"
+        end
       end
 
       def inspect_service(id)

@@ -158,6 +158,46 @@ RSpec.describe AgentRunPatterns::Detect do
         expect(cluster.details[:sample_messages]).to include("No LLM provider produced an issue analysis")
       end
 
+      # @spec ISSUE-ANALYSIS-013
+      it "clusters analyze_issue provider-exhaustion failures on normalized failure categories instead of provider names" do
+        create_provider_exhaustion_run("All issue-analysis providers exhausted: claude (auth_expired)")
+        create_provider_exhaustion_run("All issue-analysis providers exhausted: codex (auth_expired)")
+        # The third run attempted one more provider: attempt counts must not
+        # split the cluster any more than provider names may.
+        create_provider_exhaustion_run(
+          "All issue-analysis providers exhausted: opencode (auth_expired), claude (auth_expired)",
+          failure_log_count: 2
+        )
+
+        cluster = described_class.call(account: account).find { |pattern| pattern.type == :error_cluster }
+
+        expect(cluster.goal).to eq("analyze_issue")
+        expect(cluster.details[:occurrence_count]).to eq(3)
+        expect(cluster.details[:error_pattern]).to eq("All issue-analysis providers exhausted: auth_expired")
+        expect(cluster.details[:provider_failure_categories]).to eq("auth_expired" => 4)
+        expect(cluster.details[:sample_messages]).to contain_exactly(
+          "All issue-analysis providers exhausted: claude (auth_expired)",
+          "All issue-analysis providers exhausted: codex (auth_expired)",
+          "All issue-analysis providers exhausted: opencode (auth_expired), claude (auth_expired)"
+        )
+      end
+
+      # @spec ISSUE-ANALYSIS-013
+      # Structured provider-failure logs are persisted best-effort; without
+      # them the detector still groups exhaustion failures on one stable key
+      # instead of the variable free-text provider detail.
+      it "clusters provider-exhaustion failures on the stable prefix when structured provider-failure logs are missing" do
+        create_provider_exhaustion_run("All issue-analysis providers exhausted: claude (auth_expired)", failure_log_count: 0)
+        create_provider_exhaustion_run("All issue-analysis providers exhausted: codex (installation)", failure_log_count: 0)
+        create_provider_exhaustion_run("All issue-analysis providers exhausted", failure_log_count: 0)
+
+        cluster = described_class.call(account: account).find { |pattern| pattern.type == :error_cluster }
+
+        expect(cluster.details[:error_pattern]).to eq("All issue-analysis providers exhausted")
+        expect(cluster.details[:occurrence_count]).to eq(3)
+        expect(cluster.details[:provider_failure_categories]).to eq({})
+      end
+
       it "normalizes similar error messages" do
         create(:agent_run, :failed, project: project, goal: "enhance_issue",
           error_message: "Timeout after 120s for run abc12345", completed_at: Time.current)
@@ -261,6 +301,18 @@ RSpec.describe AgentRunPatterns::Detect do
             stdout: (5..24).map { |index| "stdout line #{index}" }.join("\n")
           )
         )
+      end
+
+      def create_provider_exhaustion_run(error_message, failure_log_count: 1)
+        run = create(:agent_run, :failed, project: project, goal: "analyze_issue",
+          error_message: error_message, completed_at: Time.current)
+        create_list(:agent_run_log, failure_log_count, :system, agent_run: run, content: "token expired",
+          metadata: {
+            type: AgentRunLog::PROVIDER_FAILURE_TYPE,
+            provider: "ignored-for-clustering",
+            failure_category: "auth_expired"
+          })
+        run
       end
 
       def build_evidence_cluster

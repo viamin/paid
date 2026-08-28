@@ -861,7 +861,7 @@ module Activities
 
     def selected_runner_runtime(runner_candidate, user, agent_run)
       runner_entry = runner_entry_for(runner_candidate, user) if runner_candidate
-      configured_runtime = runner_entry&.agent_harness_runner_runtime
+      configured_runtime = runner_entry&.free_model_policy? ? nil : runner_entry&.agent_harness_runner_runtime
       return nil if codex_subscription_auth_runtime?(runner_entry) ||
         codex_subscription_auth_candidate?(runner_candidate, user)
 
@@ -883,6 +883,15 @@ module Activities
         # The Pareto router selects models dynamically; no tier model resolution
         # is needed — route the request directly through the Pareto router.
         return runner_entry.openrouter_pareto_runner_runtime(project: agent_run&.project)
+      end
+
+      if runner_entry&.free_model_policy?
+        if model_id.blank?
+          raise RunnerExecutionError,
+            "#{runner_entry.runner_key} runner #{runner_entry.id} has no resolvable free model for this run"
+        end
+
+        return runner_entry.free_model_policy_runner_runtime(project: agent_run&.project, model_id: model_id)
       end
 
       return configured_runtime if configured_runtime && model_id.blank?
@@ -3415,7 +3424,7 @@ module Activities
 
     def reprovision_container_for_fallback!(agent_run)
       agent_run.ensure_proxy_token!
-      agent_run.provision_container
+      agent_run.provision_container(restart_provisioning_cycle: true)
       return unless agent_run.repo_cloned?
 
       container_service = reconnect_container(agent_run)

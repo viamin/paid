@@ -203,6 +203,12 @@ Rails.application.configure do
       class: "ScreenshotCleanupJob",
       description: "Delete uploaded screenshots older than the retention window"
     },
+    agent_combo_image_cleanup: {
+      cron: "45 3 * * *",
+      queue: "maintenance",
+      class: "AgentComboImageCleanupJob",
+      description: "Prune unreferenced paid-agent combo images past the retention window (RDR-046)"
+    },
     orphan_branch_reaper: {
       cron: "0 * * * *",
       class: "OrphanBranchReaperJob",

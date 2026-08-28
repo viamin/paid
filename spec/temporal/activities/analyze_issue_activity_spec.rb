@@ -561,7 +561,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
 
       expect {
         activity.execute(agent_run_id: agent_run.id)
-      }.to raise_error(Temporalio::Error::ApplicationError, "All issue-analysis providers exhausted: claude")
+      }.to raise_error(Temporalio::Error::ApplicationError, "All issue-analysis providers exhausted: claude (unknown)")
 
       runner_state = project.effective_owner.settings.user.runner_states.find_by(runner_name: "claude")
       expect(runner_state).to be_present
@@ -622,7 +622,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
 
       expect {
         activity.execute(agent_run_id: agent_run.id)
-      }.to raise_error(Temporalio::Error::ApplicationError, "All issue-analysis providers exhausted: claude")
+      }.to raise_error(Temporalio::Error::ApplicationError, "All issue-analysis providers exhausted: claude (auth_expired)")
 
       runner_state = project.effective_owner.settings.user.runner_states.find_by(runner_name: "claude")
       expect(runner_state.circuit_state).to eq("open")
@@ -637,11 +637,50 @@ RSpec.describe Activities::AnalyzeIssueActivity do
 
       expect {
         activity.execute(agent_run_id: agent_run.id)
-      }.to raise_error(Temporalio::Error::ApplicationError, "All issue-analysis providers exhausted: claude")
+      }.to raise_error(Temporalio::Error::ApplicationError, "All issue-analysis providers exhausted: claude (auth_expired)")
 
       runner_state = project.effective_owner.settings.user.runner_states.find_by(runner_name: "claude")
       expect(runner_state.circuit_state).to eq("open")
       expect(runner_state.failure_count).to eq(1)
+    end
+
+    # @spec ISSUE-ANALYSIS-013
+    it "persists a structured AgentRunLog entry for the failed provider attempt" do
+      allow(AgentHarness).to receive(:send_message).and_return(
+        failed_response(error: "401 Unauthorized: invalid API key", exit_code: 7)
+      )
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError)
+
+      log = agent_run.reload.agent_run_logs.provider_failures.sole
+      expect(log.log_type).to eq("system")
+      expect(log.content).to eq("401 Unauthorized: invalid API key")
+      expect(log.metadata).to include(
+        "type" => AgentRunLog::PROVIDER_FAILURE_TYPE,
+        "provider" => "claude",
+        "attempt" => 1,
+        "failure_category" => "auth_expired",
+        "exit_code" => 7
+      )
+    end
+
+    # @spec ISSUE-ANALYSIS-013
+    it "redacts and truncates secrets out of the persisted provider-failure message" do
+      secret = "sk-#{'a' * 20}"
+      allow(AgentHarness).to receive(:send_message).and_raise(
+        AgentHarness::ProviderUnavailableError.new("boom while using key #{secret} and #{'x' * 600}")
+      )
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError)
+
+      log = agent_run.reload.agent_run_logs.provider_failures.sole
+      expect(log.content).not_to include(secret)
+      expect(log.content).to include("[REDACTED:api_key]")
+      expect(log.content.length).to be <= AgentRun::MAX_PROVIDER_ATTEMPT_ERROR_MESSAGE_LENGTH
     end
   end
 
