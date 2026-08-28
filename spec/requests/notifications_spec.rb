@@ -75,6 +75,14 @@ RSpec.describe "Notifications" do
       expect(response.body).to include("Warning alert")
     end
 
+    # @spec NOTIFICATION-SEVERITY-005
+    it "still lists and filters info notifications even though they no longer badge" do
+      create(:notification, :info, account: account, title: "Info alert")
+
+      get notifications_path(severity: "info")
+      expect(response.body).to include("Info alert")
+    end
+
     it "renders dropdown content when dropdown param is true" do
       create(:notification, account: account, title: "Dropdown alert")
 
