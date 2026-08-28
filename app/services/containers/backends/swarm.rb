@@ -233,7 +233,10 @@ module Containers
       # Builds the image on every healthy node so any node can run it. Docker::Image.build
       # tars the Dockerfile per call, so each node gets its own request body.
       def build_image(dockerfile, opts = {}, &block)
-        healthy_nodes.map do |node|
+        nodes = healthy_nodes
+        raise Docker::Error::NotFoundError, "Image #{opts[:t] || "unknown"} not built: no healthy swarm nodes available" if nodes.empty?
+
+        nodes.map do |node|
           Docker::Image.build(dockerfile, opts, node_connection(node), &block)
         end
       end

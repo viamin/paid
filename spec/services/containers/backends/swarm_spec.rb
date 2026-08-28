@@ -160,6 +160,16 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
     expect(backend.build_image("FROM scratch", { t: "paid-agent:go" })).to eq([ node1_image, node2_image ])
   end
 
+  it "raises when no healthy swarm nodes are available to build an image" do
+    unavailable_node = node_payload.deep_dup
+    unavailable_node["Status"]["State"] = "down"
+    stub_manager_get("/nodes", [ unavailable_node ])
+
+    expect {
+      backend.build_image("FROM scratch", { t: "paid-agent:go" })
+    }.to raise_error(Docker::Error::NotFoundError, /paid-agent:go.*no healthy swarm nodes available/)
+  end
+
   it "dedupes images across nodes by repo tag, not per-node image id" do
     second_node = build_node_payload(id: "node-2", host: "worker-2", addr: "10.0.0.26")
     node1_image = instance_double(Docker::Image, id: "sha256:node1", info: { "RepoTags" => [ "paid-agent:python-node" ] })
