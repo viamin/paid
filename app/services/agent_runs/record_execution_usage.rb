@@ -149,13 +149,8 @@ class AgentRuns::RecordExecutionUsage
 
   def existing_recording_for_cycle
     relation = agent_run.execution_usages.where(provisioned_at: provisioned_at)
-    relation = relation.or(recordings_for_provider_resource) if provider_resource_id.present?
-
+    relation = relation.where(provider_resource_id: provider_resource_id) if provider_resource_id.present?
     relation.order(terminated_at: :desc, id: :desc).first
-  end
-
-  def recordings_for_provider_resource
-    agent_run.execution_usages.where(provider_resource_id: provider_resource_id)
   end
 
   def denormalized_usage_columns(latest_usage)

@@ -142,6 +142,31 @@ RSpec.describe AgentRuns::RecordExecutionUsage do
     end
 
     # @spec EXEC-USAGE-011
+    it "creates a new row when a provider resource id is reused for a later provisioning cycle" do
+      stamp_rate(agent_run, 60)
+      first = record_usage(env: rate_60_per_hour, agent_run: agent_run, termination_reason: "evicted")[:usage]
+      reprovisioned_at = first.terminated_at + 10.minutes
+
+      stamp_rate(agent_run, 120)
+      result = record_usage(
+        env: { "INFRA_SPEND_RATE_CENTS_PER_HOUR__LOCAL" => "999" },
+        agent_run: agent_run,
+        provider_resource_id: first.provider_resource_id,
+        provisioned_at: reprovisioned_at,
+        completed_at: reprovisioned_at + 20.minutes,
+        terminated_at: reprovisioned_at + 20.minutes,
+        termination_reason: "completed"
+      )
+
+      usages = agent_run.reload.execution_usages.order(:provisioned_at, :id)
+      expect(usages.count).to eq(2)
+      expect(usages.map(&:id)).to eq([ first.id, result[:usage].id ])
+      expect(usages.map(&:provider_resource_id)).to eq([ first.provider_resource_id, first.provider_resource_id ])
+      expect(result[:usage].provisioned_at).to eq(reprovisioned_at)
+      expect(result[:usage].rate_cents_per_hour).to eq(120)
+    end
+
+    # @spec EXEC-USAGE-011
     it "preserves the prior cycle as its own row when a new billing cycle is recorded" do
       first_usage, result = reprovisioned_usage(agent_run)
       usage = agent_run.reload.execution_usage
