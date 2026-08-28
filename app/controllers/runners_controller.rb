@@ -236,8 +236,8 @@ class RunnersController < ApplicationController
     end
     attrs = raw_params.permit(
       *permitted,
-      config: { opencode: [ :api_provider, :model, :model_policy ], kilocode: [ :api_provider, :model, :preflight_timeout_seconds ],
-                pi: [ :api_provider, :model ], omp: [ :api_provider, :model ] },
+      config: { opencode: [ :api_provider, :model, :model_policy ], kilocode: [ :api_provider, :model, :model_policy, :preflight_timeout_seconds ],
+                pi: [ :api_provider, :model, :model_policy ], omp: [ :api_provider, :model, :model_policy ] },
       tier_model_ids: LlmModel::TIERS,
       complexity_thresholds: Runner::COMPLEXITY_THRESHOLD_KEYS
     )
@@ -250,6 +250,7 @@ class RunnersController < ApplicationController
 
     runner_key = attrs[:runner_key].presence || attrs[:provider_key].presence || @runner&.runner_key
     config = config.slice(runner_key) if runner_key.present?
+    normalize_direct_outbound_free_policy!(config, runner_key)
 
     result = attrs.to_h.merge("config" => config)
     result["runner_key"] = result.delete("provider_key") if result.key?("provider_key")
@@ -260,6 +261,17 @@ class RunnersController < ApplicationController
       result["complexity_thresholds"] = normalize_complexity_thresholds(result["complexity_thresholds"])
     end
     result
+  end
+
+  def normalize_direct_outbound_free_policy!(config, runner_key)
+    return unless Runner::DIRECT_OUTBOUND_FREE_POLICY_RUNNER_KEYS.include?(runner_key)
+
+    runner_config = config[runner_key]
+    return unless runner_config.is_a?(Hash)
+    return unless runner_config["model"] == Runners::ModelOptions::FREE_POLICY_VALUE
+
+    runner_config["model_policy"] = Runners::ModelOptions::FREE_POLICY_VALUE
+    runner_config.delete("model")
   end
 
   # Coerces blank-string form inputs to nil and integer-like strings to Ints,

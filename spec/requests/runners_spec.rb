@@ -68,18 +68,34 @@ RSpec.describe "Runners" do
     }
   end
 
-  def free_policy_runner_params(api_key_id:, api_provider: "openrouter", enabled: false)
+  def free_policy_runner_params(api_key_id:, runner_key: "opencode", api_provider: "openrouter", enabled: false)
     {
-      runner_key: "opencode",
+      runner_key: runner_key,
       auth_type: "api_key",
       provider_api_key_id: api_key_id,
       enabled_for_agent_runs: enabled,
       enabled_for_chat: enabled,
       enabled_for_fallback: enabled,
       config: {
-        opencode: {
+        runner_key => {
           api_provider: api_provider,
           model_policy: "free"
+        }
+      }
+    }
+  end
+
+  def form_style_free_policy_runner_params(api_key_id:, runner_key:)
+    {
+      runner_key: runner_key,
+      auth_type: "api_key",
+      provider_api_key_id: api_key_id,
+      enabled_for_agent_runs: false,
+      enabled_for_chat: false,
+      enabled_for_fallback: false,
+      config: {
+        runner_key => {
+          model: Runners::ModelOptions::FREE_POLICY_VALUE
         }
       }
     }
@@ -952,15 +968,14 @@ RSpec.describe "Runners" do
       expect(runner).not_to be_enabled_for_chat
     end
 
-    # @spec MODEL-POLICY-011
-    it "rejects creating an enabled free-policy OpenCode runner until free-policy dispatch lands" do
+    # @spec MODEL-POLICY-009 MODEL-POLICY-011
+    it "creates an enabled free-policy OpenCode runner when the API provider is openrouter" do
       api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
 
       post runners_path, params: { runner: free_policy_runner_params(api_key_id: api_key.id, enabled: true) }
 
-      expect(response).to have_http_status(:unprocessable_content)
-      expect(response.body).to include("OpenCode free model policy cannot be enabled until free-policy dispatch lands")
-      expect(user.runners.where(runner_key: "opencode", auth_type: "api_key")).not_to exist
+      expect(response).to redirect_to(runners_path)
+      expect(user.runners.find_by!(runner_key: "opencode", auth_type: "api_key")).to be_present
     end
 
     # @spec MODEL-POLICY-002 MODEL-POLICY-008
@@ -971,6 +986,29 @@ RSpec.describe "Runners" do
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(response.body).to include("OpenCode free model policy requires the OpenRouter API provider")
+    end
+
+    it "permits free policy for kilocode, pi, and omp" do
+      %w[kilocode pi omp].each do |runner_key|
+        api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+        post runners_path, params: { runner: free_policy_runner_params(api_key_id: api_key.id, runner_key: runner_key) }
+
+        expect(response).to redirect_to(runners_path)
+        expect(user.runners.find_by!(runner_key: runner_key, auth_type: "api_key")).to be_free_model_policy
+      end
+    end
+
+    it "normalizes the form's OpenRouter Free option into free policy for each supported direct-outbound runner" do
+      %w[opencode kilocode pi omp].each do |runner_key|
+        api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+
+        post runners_path, params: { runner: form_style_free_policy_runner_params(api_key_id: api_key.id, runner_key: runner_key) }
+
+        expect(response).to redirect_to(runners_path)
+        runner = user.runners.find_by!(runner_key: runner_key, auth_type: "api_key")
+        expect(runner).to be_free_model_policy
+        expect(runner.config.fetch(runner_key)).not_to have_key("model")
+      end
     end
 
     # @spec DIRECT-OUTBOUND-CATALOG-008
@@ -1160,6 +1198,31 @@ RSpec.describe "Runners" do
 
       expect(response).to have_http_status(:ok)
       expect_free_runner_form_guidance(response.body)
+    end
+
+    it "renders the free policy option and free-model tier controls for supported direct-outbound OpenRouter runners" do
+      seed_free_runner_form_models
+
+      %w[opencode kilocode pi omp].each do |runner_key|
+        api_key = create(:provider_api_key, user: user, api_service_type: "openrouter", name: "OpenRouter #{runner_key}")
+        runner = user.runners.create!(
+          runner_key: runner_key,
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          enabled_for_agent_runs: false,
+          enabled_for_chat: false,
+          enabled_for_fallback: false,
+          config: { runner_key => { "api_provider" => "openrouter", "model_policy" => "free" } }
+        )
+
+        get edit_runner_path(runner)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include('value="free" selected')
+        expect(response.body).to include('data-tier-visibility="free_policy"')
+        expect(response.body).to include("Free Model Configuration")
+        expect(response.body).to include("OpenRouter Free (curated, tiered)")
+      end
     end
   end
 
@@ -1375,8 +1438,11 @@ RSpec.describe "Runners" do
       runner = user.runners.create!(
         runner_key: "pi",
         auth_type: "api_key",
-        provider_api_key: api_key
+        provider_api_key: api_key,
+        config: { "pi" => { "api_provider" => "mistral", "model" => "mistral-large-latest" } }
       )
+      LlmModel.find_by!(model_id: "mistral-large-latest").update!(active: false)
+      runner.update_columns(config: { "pi" => { "api_provider" => "mistral" } }, tier_model_ids: {})
 
       get edit_runner_path(runner)
 
@@ -1385,7 +1451,9 @@ RSpec.describe "Runners" do
       select_tag = response.body[/<select[^>]*name="runner\[config\]\[pi\]\[model\]"[^>]*>/m]
       expect(manual_input).to be_present
       expect(manual_input).not_to include("disabled")
+      expect(manual_input).not_to include("hidden")
       expect(select_tag).to include("disabled")
+      expect(select_tag).to include("hidden")
     end
 
     it "renders complexity_thresholds inputs with balanced bracket names so Rack parses them as a nested hash" do

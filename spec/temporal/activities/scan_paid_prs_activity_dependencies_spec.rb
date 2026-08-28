@@ -156,20 +156,18 @@ RSpec.describe Activities::ScanPaidPrsActivity, :no_db do
         checks_green: true,
         mergeable: true,
         review_feedback_clear: true,
-        blocking_reviews_complete: true,
-        reviews_fresh: true
+        blocking_reviews_complete: true
       )).to be(false)
     end
 
-    it "returns true only when the other human gates are satisfied" do
+    it "returns true when the other human gates are satisfied" do
       expect(activity.send(
         :human_dependency_check_required?,
         owner_approved: true,
         checks_green: true,
         mergeable: true,
         review_feedback_clear: true,
-        blocking_reviews_complete: true,
-        reviews_fresh: true
+        blocking_reviews_complete: true
       )).to be(true)
     end
   end

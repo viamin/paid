@@ -2058,6 +2058,17 @@ RSpec.describe AgentRun do
       end
 
       describe "#provision_container" do
+        def dead_container_double(id)
+          instance_double(
+            Docker::Container,
+            id: id,
+            refresh!: true,
+            stop: true,
+            delete: true,
+            info: { "State" => { "Running" => false } }
+          )
+        end
+
         it "provisions a container and persists container_id" do
           agent_run = create(:agent_run, worktree_path: worktree_path)
 
@@ -2177,14 +2188,7 @@ RSpec.describe AgentRun do
 
         it "reconciles a dead recorded container on Temporal retry and provisions a fresh one" do
           agent_run = create(:agent_run, worktree_path: worktree_path, container_id: "dead-container")
-          dead = instance_double(
-            Docker::Container,
-            id: "dead-container",
-            refresh!: true,
-            stop: true,
-            delete: true,
-            info: { "State" => { "Running" => false } }
-          )
+          dead = dead_container_double("dead-container")
           allow(Docker::Container).to receive(:get).with("dead-container").and_return(dead)
 
           result = agent_run.provision_container
@@ -2204,6 +2208,36 @@ RSpec.describe AgentRun do
 
           expect(result).to be_success
           expect(agent_run.reload.container_id).to eq("abc123container")
+        end
+
+        # @spec EXEC-USAGE-011
+        it "restamps the provisioning cycle even when a reconcile reprovision claims a pooled container" do
+          agent_run = create(:agent_run, worktree_path: worktree_path, container_id: "dead-container",
+                             container_host: "local", provisioning_started_at: 30.minutes.ago)
+          dead = dead_container_double("dead-container")
+          allow(Docker::Container).to receive(:get).with("dead-container").and_return(dead)
+          stale_provisioning_started_at = agent_run.provisioning_started_at
+          pooled_result = Containers::Provision::Result.success(
+            container_id: "warm-container", container_host: "remote",
+            service: instance_double(Containers::Provision), pool_entry_id: 123
+          )
+          allow(Containers::PoolManager).to receive(:new)
+            .with(project: agent_run.project)
+            .and_return(instance_double(Containers::PoolManager, acquire: pooled_result))
+
+          result = agent_run.provision_container(restart_provisioning_cycle: true)
+
+          expect(result).to be_success
+          expect(agent_run.reload.container_id).to eq("warm-container")
+          # The old machine's cycle was already closed out by the reconcile's
+          # cleanup_container call, keyed to the pre-restamp timestamp.
+          old_usage = ExecutionUsage.find_by(agent_run_id: agent_run.id, provider_resource_id: "dead-container")
+          expect(old_usage.provisioned_at).to be_within(1.second).of(stale_provisioning_started_at)
+          # provisioning_started_at must move forward even though a pooled
+          # claim short-circuited the fresh-provision branch, so the pooled
+          # container's later cleanup records its own row instead of
+          # matching (and silently dropping into) the closed-out cycle above.
+          expect(agent_run.provisioning_started_at).to be > stale_provisioning_started_at
         end
       end
 
@@ -2433,6 +2467,72 @@ RSpec.describe AgentRun do
 
           agent_run.cleanup_container(force: true)
           expect(agent_run.reload.container_id).to be_nil
+        end
+
+        # @spec EXEC-USAGE-009
+        it "records execution usage once the container is confirmed torn down" do
+          agent_run = create(:agent_run, :completed, worktree_path: worktree_path,
+            container_id: "abc123container", container_host: "local",
+            provisioning_started_at: 2.hours.ago, started_at: 100.minutes.ago, completed_at: 1.hour.ago)
+          allow(Docker::Container).to receive(:get).with("abc123container").and_return(mock_container)
+          allow(mock_container).to receive(:delete)
+
+          agent_run.cleanup_container
+
+          usage = agent_run.reload.execution_usage
+          expect(usage).to be_present
+          expect(usage.runner_backend).to eq("local")
+          expect(usage.provider_resource_id).to eq("abc123container")
+          expect(usage.termination_reason).to eq("completed")
+          expect(agent_run.infra_cost_cents).to eq(usage.infra_cost_cents)
+        end
+
+        it "logs and continues when execution usage persistence fails after teardown" do
+          agent_run = create(:agent_run, :completed, worktree_path: worktree_path,
+            container_id: "abc123container", container_host: "local",
+            provisioning_started_at: 2.hours.ago, started_at: 100.minutes.ago, completed_at: 1.hour.ago)
+          allow(Docker::Container).to receive(:get).with("abc123container").and_return(mock_container)
+          allow(mock_container).to receive(:delete)
+          allow(AgentRuns::RecordExecutionUsage).to receive(:call).and_raise(
+            ActiveRecord::RecordInvalid.new(build(:execution_usage))
+          )
+          allow(Rails.logger).to receive(:warn)
+
+          expect { agent_run.cleanup_container(force: true) }.not_to raise_error
+
+          expect(agent_run.reload.container_id).to be_nil
+          expect(Rails.logger).to have_received(:warn).with(
+            hash_including(
+              message: "agent_execution.record_execution_usage_persist_failed",
+              agent_run_id: agent_run.id,
+              error_class: "ActiveRecord::RecordInvalid"
+            )
+          )
+        end
+
+        # @spec EXEC-USAGE-009
+        it "maps a non-terminal status to an evicted termination reason" do
+          agent_run = create(:agent_run, :rate_limited, worktree_path: worktree_path,
+            container_id: "abc123container", container_host: "local",
+            provisioning_started_at: 2.hours.ago, started_at: 100.minutes.ago)
+          allow(Docker::Container).to receive(:get).with("abc123container").and_return(mock_container)
+          allow(mock_container).to receive(:delete)
+
+          agent_run.cleanup_container
+
+          expect(agent_run.reload.execution_usage.termination_reason).to eq("evicted")
+        end
+
+        # @spec EXEC-USAGE-009
+        it "does not record execution usage for a run that never reached provisioning" do
+          agent_run = create(:agent_run, :completed, worktree_path: worktree_path,
+            container_id: "abc123container", container_host: "local")
+          allow(Docker::Container).to receive(:get).with("abc123container").and_return(mock_container)
+          allow(mock_container).to receive(:delete)
+
+          agent_run.cleanup_container
+
+          expect(agent_run.reload.execution_usage).to be_nil
         end
       end
 
@@ -2798,6 +2898,59 @@ RSpec.describe AgentRun do
           expect(reloaded.container_id).to eq("fresh-container")
           handle = ExecutionRunners::RunnerHandle.from_record(reloaded)
           expect(handle.identifier).to eq("fresh-container")
+        end
+
+        # @spec EXEC-USAGE-011
+        it "records the stale handle's usage before tearing it down for a fallback reprovision" do
+          agent_run = create(:agent_run, worktree_path: worktree_path,
+                             container_id: "runner-container-123", container_host: "local",
+                             provisioning_started_at: 30.minutes.ago)
+          agent_run.update!(runner_handle: build_handle(agent_run).to_storage)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          fresh_handle = build_handle(agent_run, identifier: "fresh-container")
+          allow(mock_runner).to receive_messages(running?: false, cleanup: nil, provision: fresh_handle)
+          allow(Containers::PoolManager).to receive(:new)
+            .with(project: agent_run.project)
+            .and_return(instance_double(Containers::PoolManager, acquire: nil))
+          allow(PoolReplenishmentJob).to receive(:perform_later)
+          stale_provisioning_started_at = agent_run.provisioning_started_at
+
+          agent_run.provision_container(restart_provisioning_cycle: true)
+
+          usage = ExecutionUsage.find_by(agent_run_id: agent_run.id, provider_resource_id: "runner-container-123")
+          expect(usage).to be_present
+          expect(usage.provisioned_at).to be_within(1.second).of(stale_provisioning_started_at)
+          expect(agent_run.reload.provisioning_started_at).to be > stale_provisioning_started_at
+        end
+
+        # @spec EXEC-USAGE-011
+        it "restamps the provisioning cycle even when the reprovision claims a pooled container" do
+          agent_run = create(:agent_run, worktree_path: worktree_path,
+                             container_id: "runner-container-123", container_host: "local",
+                             provisioning_started_at: 30.minutes.ago)
+          agent_run.update!(runner_handle: build_handle(agent_run).to_storage)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          allow(mock_runner).to receive_messages(running?: false, cleanup: nil)
+          stale_provisioning_started_at = agent_run.provisioning_started_at
+          pooled_result = Containers::Provision::Result.success(
+            container_id: "warm-container", container_host: "remote",
+            service: instance_double(Containers::Provision), pool_entry_id: 123
+          )
+          allow(Containers::PoolManager).to receive(:new)
+            .with(project: agent_run.project)
+            .and_return(instance_double(Containers::PoolManager, acquire: pooled_result))
+
+          result = agent_run.provision_container(restart_provisioning_cycle: true)
+
+          expect(result).to be_success
+          expect(agent_run.reload.container_id).to eq("warm-container")
+          usage = ExecutionUsage.find_by(agent_run_id: agent_run.id, provider_resource_id: "runner-container-123")
+          expect(usage.provisioned_at).to be_within(1.second).of(stale_provisioning_started_at)
+          # provisioning_started_at must move forward even though a pooled
+          # claim short-circuited the fresh-provision branch, so the pooled
+          # container's later cleanup records its own row instead of
+          # matching (and silently dropping into) the closed-out cycle above.
+          expect(agent_run.provisioning_started_at).to be > stale_provisioning_started_at
         end
 
         it "re-derives authority grants matching the freshly re-derived networking policy on retry" do
@@ -6326,6 +6479,161 @@ RSpec.describe AgentRun do
         agent_run = create(:agent_run, container_host: nil, external_metadata: {})
 
         expect(agent_run.workspace_volume_host).to be_nil
+      end
+    end
+  end
+
+  describe "execution usage denormalization" do
+    # @spec EXEC-USAGE-002
+    it "destroys execution_usages with the run" do
+      agent_run = create(:agent_run, :completed)
+      create_list(:execution_usage, 2, agent_run: agent_run)
+
+      expect { agent_run.destroy }.to change(ExecutionUsage, :count).by(-2)
+    end
+
+    # @spec EXEC-USAGE-011
+    it "keeps billed lifetime stable when a fallback cleanup pass re-records after teardown" do
+      agent_run = create(:agent_run, :completed, container_host: "local",
+        provisioning_started_at: 2.hours.ago, started_at: 100.minutes.ago, completed_at: 1.hour.ago)
+      agent_run.record_execution_usage_after_cleanup!(
+        container_id: "abc123container", container_host: "local", terminated_at: 1.hour.ago
+      )
+      first = agent_run.reload.execution_usage
+
+      agent_run.record_execution_usage_after_cleanup!(
+        container_id: nil, container_host: "local", terminated_at: Time.current
+      )
+
+      agent_run.reload
+      expect(ExecutionUsage.where(agent_run_id: agent_run.id).count).to eq(1)
+      expect(agent_run.execution_usage.terminated_at).to be_within(1.second).of(first.terminated_at)
+      expect(agent_run.execution_usage.billed_duration_seconds).to eq(first.billed_duration_seconds)
+      expect(agent_run.execution_usage.provider_resource_id).to eq("abc123container")
+      expect(agent_run.billed_duration_seconds).to eq(first.billed_duration_seconds)
+      expect(agent_run.infra_cost_cents).to eq(first.infra_cost_cents)
+    end
+
+    # @spec EXEC-USAGE-011
+    it "keeps prior-cycle rows and sums billed duration and infra cost when re-provisioning starts a new cycle" do
+      # Park/resume, stale requeue, and `reprovision_container_for_fallback!`
+      # all tear one resource down, later provision another, and finally
+      # clean up. When the second cycle's recording lands with a
+      # `provisioning_started_at` past the first cycle's `terminated_at`,
+      # the recorder folds the prior cycle's billed duration and infra
+      # cost into the new row so the run's total infra spend survives
+      # into `AgentRun#total_cost_cents`.
+      agent_run = create(:agent_run, :completed, container_host: "local",
+        provisioning_started_at: 2.hours.ago, started_at: 100.minutes.ago,
+        completed_at: 1.hour.ago,
+        external_metadata: { "infrastructure_spend" => { "rate_cents_per_hour" => 120 } })
+      agent_run.record_execution_usage_after_cleanup!(
+        container_id: "first-container", container_host: "local", terminated_at: 1.hour.ago)
+      first = agent_run.reload.execution_usage
+
+      # New cycle: re-provisioned 30 minutes ago, billed for another 20
+      # minutes (10.minutes.ago). The provisioning_started_at update
+      # mimics ProcessRunQueueJob#record_provisioning_start! which a
+      # park/resume or stale requeue path writes when the new workflow
+      # admission starts. `completed_at` is updated to the second cycle's
+      # wall-clock end — otherwise the (completed_at >= provisioned_at)
+      # check constraint on execution_usages rejects the new row.
+      agent_run.update_columns(provisioning_started_at: 30.minutes.ago,
+        started_at: 25.minutes.ago, completed_at: 10.minutes.ago)
+      agent_run.record_execution_usage_after_cleanup!(
+        container_id: "second-container", container_host: "local", terminated_at: 10.minutes.ago)
+
+      usage = agent_run.reload.execution_usage
+      expect(ExecutionUsage.where(agent_run_id: agent_run.id).count).to eq(2)
+      expect(usage.provider_resource_id).to eq("second-container")
+      expect(usage.billed_duration_seconds).to eq(20 * 60)
+      expect(usage.infra_cost_cents).to eq(((120 * 20 * 60) / 3600.0).round)
+      expect(first.reload.provider_resource_id).to eq("first-container")
+      agent_run.reload
+      expect(agent_run.infra_cost_cents).to eq(first.infra_cost_cents + usage.infra_cost_cents)
+      expect(agent_run.billed_duration_seconds).to eq(first.billed_duration_seconds + usage.billed_duration_seconds)
+    end
+
+    it "truncates the recorded runner backend to the execution usage limit" do
+      long_host = "host-" * 20
+      agent_run = create(:agent_run, :completed, container_host: nil,
+        provisioning_started_at: 2.hours.ago, started_at: 100.minutes.ago, completed_at: 1.hour.ago,
+        external_metadata: { "planned_container_host" => long_host })
+
+      agent_run.record_execution_usage_after_cleanup!(
+        container_id: "abc123container",
+        container_host: agent_run.workspace_volume_host,
+        terminated_at: Time.current
+      )
+
+      expect(agent_run.reload.execution_usage.runner_backend).to eq(long_host.truncate(64))
+    end
+
+    # @spec EXEC-USAGE-006
+    it "returns total_cost_cents as the sum of LLM and infra cost" do
+      agent_run = create(:agent_run, :completed, cost_cents: 123, infra_cost_cents: 45)
+
+      expect(agent_run.total_cost_cents).to eq(168)
+    end
+
+    it "treats nil infra_cost_cents as zero for the total" do
+      agent_run = build(:agent_run, cost_cents: 100, infra_cost_cents: nil)
+      expect(agent_run.total_cost_cents).to eq(100)
+    end
+
+    it "reports has_execution_usage? from the association" do
+      agent_run = create(:agent_run, :completed)
+      expect(agent_run.has_execution_usage?).to be(false)
+
+      create(:execution_usage, agent_run: agent_run)
+      expect(agent_run.reload.has_execution_usage?).to be(true)
+    end
+
+    describe "validations" do
+      subject { build(:agent_run) }
+
+      it { is_expected.to validate_numericality_of(:infra_cost_cents).is_greater_than_or_equal_to(0) }
+      it { is_expected.to validate_numericality_of(:billed_duration_seconds).is_greater_than_or_equal_to(0) }
+      it { is_expected.to validate_length_of(:runner_backend).is_at_most(64) }
+    end
+
+    describe "scopes" do
+      let(:project) { create(:project) }
+
+      let(:local_run) do
+        run = create(:agent_run, :completed, project: project, runner_backend: "local")
+        create(:execution_usage,
+          agent_run: run,
+          runner_backend: "local",
+          provisioned_at: 2.hours.ago,
+          terminated_at: 1.hour.ago,
+          termination_reason: "completed")
+        run
+      end
+
+      let(:fly_run) do
+        run = create(:agent_run, :completed, project: project, runner_backend: "fly_machine")
+        create(:execution_usage,
+          agent_run: run,
+          runner_backend: "fly_machine",
+          provisioned_at: 2.hours.ago,
+          terminated_at: 1.hour.ago,
+          termination_reason: "completed")
+        run
+      end
+
+      let(:plain_run) { create(:agent_run, :completed, project: project) }
+
+      before { local_run; fly_run; plain_run }
+
+      it "with_execution_usage returns only runs with a usage row" do
+        expect(described_class.with_execution_usage).to contain_exactly(local_run, fly_run)
+      end
+
+      it "by_runner_backend filters on the denormalized column" do
+        expect(described_class.by_runner_backend("local")).to contain_exactly(local_run)
+        expect(described_class.by_runner_backend("fly_machine")).to contain_exactly(fly_run)
+        expect(described_class.by_runner_backend("missing")).to be_empty
       end
     end
   end

@@ -78,6 +78,16 @@ module Containers
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
+      # Whether any container currently references the given image tag. The
+      # default implementation uses the Docker Engine container-list
+      # "ancestor" filter, which single-daemon backends (local/remote)
+      # support natively. Backends without an ancestor-filterable
+      # container-list endpoint (e.g. Swarm, whose /services API has no
+      # such filter) must override this with a backend-appropriate check.
+      def image_in_use?(tag)
+        list_containers(filters: { ancestor: [ tag ] }.to_json).any?
+      end
+
       # Lists containers that serve live-preview traffic for the tunnel
       # server. The default filters by the preview tunnel label, which works
       # for any Docker-backed backend. A non-Docker backend (e.g. a future
@@ -101,6 +111,40 @@ module Containers
       end
 
       def get_image(_name)
+        raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+      end
+
+      # Returns one label hash per backing daemon that holds the requested
+      # image reference. Single-daemon backends naturally return one entry;
+      # multi-daemon backends (e.g. swarm) override this so callers can make
+      # cluster-wide freshness decisions instead of trusting a single image
+      # object.
+      def image_label_sets(name)
+        [ get_image(name).info["Labels"] || {} ]
+      end
+
+      # Builds an image from a Dockerfile string (no build context files —
+      # language layers install from the network, so the context is the
+      # Dockerfile alone). Streams build output to the optional block.
+      # @param dockerfile [String] full Dockerfile content
+      # @param opts [Hash] Docker /build query options (:t, :buildargs,
+      #   :labels, :nocache, ...) — callers that build a layered chain of
+      #   images MUST pass :t and chain subsequent layers FROM that tag, not
+      #   from the return value's id: multi-host backends build
+      #   independently per host and only the shared tag is guaranteed to
+      #   resolve consistently everywhere.
+      # @return [Docker::Image, Array<Docker::Image>] the built image, or one
+      #   built image per host for backends that build on multiple hosts
+      def build_image(_dockerfile, _opts = {})
+        raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+      end
+
+      def list_images(_opts = {})
+        raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+      end
+
+      # Removes an image (or a single tag of it) by reference.
+      def delete_image(_name, **_opts)
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 

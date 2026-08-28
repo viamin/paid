@@ -39,9 +39,8 @@ module Projects
       infra_month = infrastructure_cost_cents(starts_at: month_start, ends_at: now)
       infra_total = infrastructure_total_cost_cents
 
-      completed = project.agent_runs.where(status: "completed")
-      run_count = completed.count
-      avg_cost = run_count.zero? ? 0 : (completed.sum(:cost_cents).to_f / run_count).round
+      run_count = completed_runs.count
+      avg_cost = avg_cost_per_run_cents(run_count, ends_at: now)
 
       {
         total_cost_cents: project.total_cost_cents,
@@ -154,6 +153,19 @@ module Projects
       billable_scope.cost_by_request_type.sort_by { |_, v| -v }
     end
 
+    def completed_runs
+      @completed_runs ||= project.agent_runs.where(status: "completed")
+    end
+
+    def avg_cost_per_run_cents(run_count, ends_at:)
+      return 0 if run_count.zero?
+
+      total_cost = completed_runs.sum(:cost_cents) +
+        recorded_completed_infrastructure_cost_cents(ends_at:) +
+        pending_completed_infrastructure_cost_cents(ends_at:)
+      (total_cost.to_f / run_count).round
+    end
+
     def daily_costs
       raw_costs = billable_scope.daily_costs(days: 30)
       today = Time.current.to_date
@@ -194,16 +206,101 @@ module Projects
     end
 
     def infrastructure_cost_cents(starts_at:, ends_at:)
-      Capacity::InfrastructureSpend.spent_cents(
-        account: project.account,
-        project: project,
-        starts_at: starts_at,
-        ends_at: ends_at
-      )
+      historical_infrastructure_cost_cents(starts_at:, ends_at:) +
+        pending_infrastructure_cost_cents(starts_at:, ends_at:)
     end
 
     def infrastructure_total_cost_cents
       infrastructure_cost_cents(starts_at: Time.at(0), ends_at: Time.current)
+    end
+
+    def historical_infrastructure_cost_cents(starts_at:, ends_at:)
+      TenantContext.with_system_access do
+        ExecutionUsage
+          .joins(agent_run: :project)
+          .where(projects: { id: project.id })
+          .where("execution_usages.provisioned_at < ?", ends_at)
+          .where("execution_usages.terminated_at >= ?", starts_at)
+          .sum(Arel.sql(execution_usage_overlap_cost_sql(starts_at:, ends_at:)))
+          .to_i
+      end
+    end
+
+    def pending_infrastructure_cost_cents(starts_at:, ends_at:)
+      Capacity::InfrastructureSpend.spent_cents(
+        project: project,
+        starts_at: starts_at,
+        ends_at: ends_at,
+        scope_modifier: ->(scope) { pending_execution_usage_scope(scope) },
+        overlap_ends_at: ends_at
+      )
+    end
+
+    def pending_completed_infrastructure_cost_cents(ends_at:)
+      Capacity::InfrastructureSpend.spent_cents(
+        project: project,
+        starts_at: Time.at(0),
+        ends_at: ends_at,
+        scope_modifier: ->(scope) { pending_execution_usage_scope(scope.where(status: "completed")) },
+        overlap_ends_at: ends_at
+      )
+    end
+
+    def recorded_completed_infrastructure_cost_cents(ends_at:)
+      TenantContext.with_system_access do
+        ExecutionUsage
+          .joins(agent_run: :project)
+          .where(projects: { id: project.id }, agent_runs: { status: "completed" })
+          .where("execution_usages.provisioned_at < ?", ends_at)
+          .sum(:infra_cost_cents)
+          .to_i
+      end
+    end
+
+    # A run is "pending" when its CURRENT cycle's billing has not yet been
+    # recorded. A run can already have older `ExecutionUsage` rows from prior
+    # billing cycles (park/resume, stale requeue,
+    # `reprovision_container_for_fallback!`) while its current cycle is still
+    # live; those runs must keep accruing pending spend from their current
+    # `provisioning_started_at` until cleanup records that cycle.
+    def pending_execution_usage_scope(scope)
+      scope.where(<<~SQL.squish)
+        NOT EXISTS (
+          SELECT 1
+          FROM execution_usages
+          WHERE execution_usages.agent_run_id = agent_runs.id
+            AND execution_usages.provisioned_at >= agent_runs.provisioning_started_at
+        )
+      SQL
+    end
+
+    # Prorates the row's *persisted* `infra_cost_cents` across the requested
+    # window rather than re-pricing it from `rate_cents_per_hour` and the row
+    # timestamps. A zero-length lifetime contributes its full persisted spend
+    # when the window contains that instant instead of dividing by zero.
+    # @spec EXEC-USAGE-007
+    def execution_usage_overlap_cost_sql(starts_at:, ends_at:)
+      <<~SQL.squish
+        ROUND(
+          execution_usages.infra_cost_cents *
+          CASE
+            WHEN execution_usages.terminated_at <= execution_usages.provisioned_at THEN 1
+            ELSE GREATEST(
+              EXTRACT(EPOCH FROM (
+                LEAST(execution_usages.terminated_at, #{quote_time(ends_at)}) -
+                GREATEST(execution_usages.provisioned_at, #{quote_time(starts_at)})
+              )),
+              0
+            ) / EXTRACT(EPOCH FROM (
+              execution_usages.terminated_at - execution_usages.provisioned_at
+            ))
+          END
+        )
+      SQL
+    end
+
+    def quote_time(time)
+      ActiveRecord::Base.connection.quote(time)
     end
   end
 end

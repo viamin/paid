@@ -203,6 +203,9 @@ class AgentRun < ApplicationRecord
   has_many :bundle_outcomes, dependent: :destroy
   has_many :strategy_experiment_assignments, dependent: :destroy
   has_many :container_metrics, dependent: :delete_all
+  has_many :execution_usages, dependent: :destroy
+  has_one :execution_usage, -> { order(provisioned_at: :desc, terminated_at: :desc, id: :desc) },
+    class_name: "ExecutionUsage"
   has_many :quality_metrics, dependent: :destroy
   has_many :style_guide_run_exposures, dependent: :destroy
   has_many :orchestration_decisions, dependent: :nullify
@@ -282,6 +285,9 @@ class AgentRun < ApplicationRecord
   validates :tokens_input, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :tokens_output, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :cost_cents, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
+  validates :infra_cost_cents, numericality: { greater_than_or_equal_to: 0 }
+  validates :billed_duration_seconds, numericality: { greater_than_or_equal_to: 0 }
+  validates :runner_backend, length: { maximum: 64 }, allow_nil: true
   validates :duration_seconds, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :source_pull_request_number, numericality: { greater_than: 0 }, allow_nil: true
   validates :expected_draft_review_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true
@@ -384,6 +390,8 @@ class AgentRun < ApplicationRecord
   # because `internal_agent` is shared with legitimate externally-ingested runs
   # (AgentRuns::IngestExternal). See `synthetic_operational_run?`.
   scope :excluding_synthetic, -> { where(synthetic: false) }
+  scope :with_execution_usage, -> { joins(:execution_usages).distinct }
+  scope :by_runner_backend, ->(backend) { where(runner_backend: backend.to_s) }
 
   # Transcript/diagnostic payload columns are never rendered by list views
   # (dashboard cards, queue preview, activity stream); skipping them keeps
@@ -1892,6 +1900,20 @@ class AgentRun < ApplicationRecord
     tokens_input.to_i + tokens_output.to_i
   end
 
+  # @spec EXEC-USAGE-006
+  # Sum of LLM cost (cost_cents) and infra cost (infra_cost_cents).
+  # Both columns are denormalized on the run, so this is a single-row
+  # calculation without joining execution_usages.
+  def total_cost_cents
+    cost_cents.to_i + infra_cost_cents.to_i
+  end
+
+  # @spec EXEC-USAGE-006
+  # Whether this run has any infra usage recorded.
+  def has_execution_usage?
+    execution_usages.exists?
+  end
+
   # Returns total tokens consumed across all streaming turns.
   def streaming_total_tokens
     Array(streaming_turns_data).sum { |turn| turn["input_tokens"].to_i + turn["output_tokens"].to_i }
@@ -2733,7 +2755,7 @@ class AgentRun < ApplicationRecord
   # @param options [Hash] Override default container options
   # @return [Containers::Provision::Result] Result with container_id on success
   # @raise [Containers::Provision::ProvisionError] When container creation fails
-  def provision_execution_environment(**options)
+  def provision_execution_environment(restart_provisioning_cycle: false, **options)
     networking_policy = nil
     if authority_grants.blank? || authority_grants["grants"].blank?
       networking_policy = Containers::Provision.networking_policy_for(
@@ -2743,10 +2765,14 @@ class AgentRun < ApplicationRecord
     end
 
     if execution_runner_enabled?
-      return provision_via_runner(networking_policy: networking_policy, **options)
+      return provision_via_runner(
+        networking_policy: networking_policy,
+        restart_provisioning_cycle: restart_provisioning_cycle,
+        **options
+      )
     end
 
-    return reuse_or_reconcile_container(**options) if container_id.present?
+    return reuse_or_reconcile_container(restart_provisioning_cycle: restart_provisioning_cycle, **options) if container_id.present?
 
     # Deliberately not threading networking_policy through here: on the
     # direct-provision path (execution_runner disabled) there is no runner to
@@ -2755,7 +2781,7 @@ class AgentRun < ApplicationRecord
     # side effects. Passing a policy would make it skip those (see
     # Containers::Provision#ensure_network!/#apply_network_restrictions!),
     # silently dropping egress isolation for first provisions.
-    provision_new_container(**options)
+    provision_new_container(restart_provisioning_cycle: restart_provisioning_cycle, **options)
   end
 
   # Compatibility shim for legacy container-named callers.
@@ -2814,6 +2840,7 @@ class AgentRun < ApplicationRecord
     target_container_id = container_id
     target_runner_handle = runner_handle.presence
     rehydrate_runner_handle_for_cleanup(target_runner_handle)
+    target_container_host = workspace_volume_host
 
     # Safety net for a worker killed mid-provision: the workspace volume
     # may exist with no container_id to drive a normal cleanup. Run before
@@ -2829,6 +2856,7 @@ class AgentRun < ApplicationRecord
       @current_handle = nil
       clear_execution_environment_reference_if_unchanged!(target_container_id)
       ExecutionResource.mark_cleaned_for!(agent_run: self)
+      record_execution_usage_after_cleanup!(container_id: target_container_id, container_host: target_container_host)
       return
     end
 
@@ -2845,6 +2873,7 @@ class AgentRun < ApplicationRecord
       clear_execution_environment_reference_if_unchanged!(target_container_id)
     end
     ExecutionResource.mark_cleaned_for!(agent_run: self)
+    record_execution_usage_after_cleanup!(container_id: target_container_id, container_host: target_container_host)
   rescue Containers::Provision::Error, ExecutionRunners::Error => e
     ExecutionResource.record_cleanup_failure_for!(agent_run: self, error: e)
     # Container may already be gone; clear the reference anyway
@@ -2859,17 +2888,111 @@ class AgentRun < ApplicationRecord
     cleanup_orphaned_workspace_volume unless preserve_workspace_volume
   end
 
+  # Compatibility shim for legacy container-named callers.
+  def cleanup_container(force: false, preserve_workspace_volume: false)
+    cleanup_execution_environment(force: force, preserve_workspace_volume: preserve_workspace_volume)
+  end
+
+  # Maps AgentRun::STATUSES to ExecutionUsage::TERMINATION_REASONS. Statuses
+  # with no explicit entry (queued, running, paused, rate_limited, retried)
+  # are recorded as "evicted" by record_execution_usage!'s fallback — the
+  # cloud resource was reclaimed independent of the run reaching a normal
+  # terminal outcome (e.g. ExecutionControlParkCleanupJob tearing down a
+  # parked run's environment).
+  EXECUTION_TERMINATION_REASON_BY_STATUS = {
+    "completed" => "completed",
+    "no_output" => "completed",
+    "cancelled" => "cancelled",
+    "timeout" => "timed_out",
+    "failed" => "failed",
+    "token_budget_exceeded" => "failed",
+    "auth_expired" => "failed"
+  }.freeze
+
+  # Records the per-run infrastructure usage/cost summary once the cloud
+  # resource backing this run has actually been torn down. Used by the
+  # primary cleanup path and the fallback janitors so delayed cleanup still
+  # closes out billable lifetime accounting exactly once per run.
+  # @spec EXEC-USAGE-009
+  def record_execution_usage_after_cleanup!(container_id:, container_host:, terminated_at: Time.current)
+    record_execution_usage!(container_id: container_id, container_host: container_host, terminated_at: terminated_at)
+  rescue ActiveRecord::ActiveRecordError => e
+    Rails.logger.warn(
+      message: "agent_execution.record_execution_usage_persist_failed",
+      agent_run_id: id,
+      error_class: e.class.name,
+      error: e.message
+    )
+    nil
+  end
+
+  def record_execution_usage!(container_id:, container_host:, terminated_at:)
+    return if provisioning_started_at.blank? || container_host.blank?
+
+    resources = Capacity::RequestedResources.for_agent_run(self)
+    AgentRuns::RecordExecutionUsage.call(
+      agent_run: self,
+      runner_backend: normalized_execution_usage_runner_backend(container_host),
+      provider_resource_id: container_id,
+      provisioned_at: provisioning_started_at,
+      execution_started_at: started_at,
+      completed_at: completed_at,
+      terminated_at: terminated_at,
+      requested_cpu_cores: execution_usage_cpu_cores(resources),
+      requested_memory_mib: execution_usage_memory_mib(resources),
+      requested_disk_gb: execution_usage_disk_gb(resources),
+      termination_reason: EXECUTION_TERMINATION_REASON_BY_STATUS.fetch(status, "evicted")
+    )
+  end
+  private :record_execution_usage!
+
+  def restamp_provisioning_cycle!
+    self.provisioning_started_at = Time.current
+    return unless external_metadata.is_a?(Hash)
+
+    self.external_metadata = external_metadata.merge("provisioning_started_at" => provisioning_started_at.iso8601)
+  end
+  private :restamp_provisioning_cycle!
+
+  def persisted_provisioning_cycle_attributes
+    attributes = instance_variable_get(:@attributes)
+    return {} unless attributes.respond_to?(:fetch_value)
+
+    {
+      provisioning_started_at: provisioning_started_at,
+      external_metadata: external_metadata
+    }
+  end
+  private :persisted_provisioning_cycle_attributes
+
+  def normalized_execution_usage_runner_backend(container_host)
+    container_host.to_s.truncate(64)
+  end
+  private :normalized_execution_usage_runner_backend
+
+  # Docker CPU quota is expressed in units where 100_000 = 1 CPU core
+  # (Containers::Provision's CpuPeriod) — convert back to cores.
+  def execution_usage_cpu_cores(resources)
+    (resources[:cpu_quota].to_f / 100_000.0).round(3)
+  end
+  private :execution_usage_cpu_cores
+
+  def execution_usage_memory_mib(resources)
+    (resources[:memory_bytes].to_f / 1.megabyte).round
+  end
+  private :execution_usage_memory_mib
+
+  def execution_usage_disk_gb(resources)
+    (resources[:disk_bytes].to_f / 1.gigabyte).round
+  end
+  private :execution_usage_disk_gb
+
   # Clears persisted execution-environment references only if container_id
   # still matches the environment this method just tore down. A run cleaned up
   # from a stale snapshot (see cleanup_execution_environment above) may have
   # already been re-dispatched to a different environment by the time teardown
   # finishes; an unconditional write here would silently wipe the new
   # environment's id out from under the run that is now using it.
-  # Compatibility shim for legacy container-named callers.
-  def cleanup_container(force: false, preserve_workspace_volume: false)
-    cleanup_execution_environment(force: force, preserve_workspace_volume: preserve_workspace_volume)
-  end
-
   def clear_execution_environment_reference_if_unchanged!(expected_container_id, also_clear: {})
     updates = also_clear.merge(container_id: nil, container_host: nil)
     self.class.where(id: id, container_id: expected_container_id).update_all(updates)
@@ -3059,10 +3182,10 @@ class AgentRun < ApplicationRecord
   # Deriving it here keeps the manifest accurate for subscription-auth /
   # direct-outbound recovery rather than defaulting to proxy_mode when a
   # +nil+ policy falls through (RDR-058, RDR-054).
-  def provision_via_runner(networking_policy: nil, **options)
-    return reuse_or_reconcile_via_runner(**options) if runner_handle.present?
+  def provision_via_runner(networking_policy: nil, restart_provisioning_cycle: false, **options)
+    return reuse_or_reconcile_via_runner(restart_provisioning_cycle: restart_provisioning_cycle, **options) if runner_handle.present?
 
-    return reuse_or_reconcile_container(**options) if container_id.present?
+    return reuse_or_reconcile_container(restart_provisioning_cycle: restart_provisioning_cycle, **options) if container_id.present?
 
     planned_container_host = options.delete(:container_host)
     pool_host_scope = planned_container_host.presence || container_host.presence
@@ -3074,6 +3197,14 @@ class AgentRun < ApplicationRecord
     # 3600s default for pooled runs (CONTAINER-RUNTIME-027).
     options[:timeout_seconds] = ExecutionRunners::RunSpec.resolve_timeout_seconds(self, options)
 
+    # Restamped before the pooled claim (not just the fresh-provision branch
+    # below) so a reprovision that claims a warm container still starts a new
+    # cycle key. Otherwise the pooled container's lifetime would be recorded
+    # under the torn-down machine's provisioning_started_at and silently
+    # dropped when AgentRuns::RecordExecutionUsage matches the already-closed
+    # cycle (EXEC-USAGE-011).
+    restamp_provisioning_cycle! if restart_provisioning_cycle
+
     pooled_result = acquire_pooled_container(pool_host_scope: pool_host_scope, **options)
     return pooled_result if pooled_result
 
@@ -3084,7 +3215,8 @@ class AgentRun < ApplicationRecord
     spec = ExecutionRunners::RunSpec.from_agent_run(self, networking_policy: resolved_policy, **options)
     @current_handle = runner.provision(spec: spec)
     update!(container_id: @current_handle.identifier, container_host: @current_handle.host,
-            runner_handle: @current_handle.to_storage)
+            runner_handle: @current_handle.to_storage,
+            **persisted_provisioning_cycle_attributes)
     ExecutionResource.track_environment!(agent_run: self, handle: @current_handle)
     PoolReplenishmentJob.perform_later(project_id)
 
@@ -3115,7 +3247,15 @@ class AgentRun < ApplicationRecord
       return Containers::Provision::Result.success(container_id: handle.identifier, container_host: handle.host)
     end
 
-    runner.cleanup(handle: handle, force: true) if handle
+    if handle
+      runner.cleanup(handle: handle, force: true)
+      # The stale machine's lifetime must be closed out here, before
+      # clear_runner_reference!/provision_via_runner's restamp moves
+      # provisioning_started_at forward — cleanup_container never runs for
+      # this handle, so this is the only place its usage gets recorded
+      # (EXEC-USAGE-011).
+      record_execution_usage_after_cleanup!(container_id: handle.identifier, container_host: handle.host)
+    end
     clear_runner_reference!
     provision_via_runner(**options)
   end
@@ -3535,7 +3675,7 @@ class AgentRun < ApplicationRecord
   # provision_container safe to invoke again on a Temporal retry. A recorded
   # container that has died or been removed is reconciled away before a fresh
   # one is provisioned, so a retry never leaks a duplicate container.
-  def reuse_or_reconcile_container(**options)
+  def reuse_or_reconcile_container(restart_provisioning_cycle: false, **options)
     service = reconnect_recorded_container_for_reuse
 
     if service&.container_running?
@@ -3550,7 +3690,7 @@ class AgentRun < ApplicationRecord
     end
 
     reconcile_stale_container!(service)
-    provision_new_container(**options)
+    provision_new_container(restart_provisioning_cycle: restart_provisioning_cycle, **options)
   end
 
   def reconnect_recorded_container_for_reuse
@@ -3572,7 +3712,7 @@ class AgentRun < ApplicationRecord
 
   # Provisions a brand-new container when there is no existing container to
   # reuse. Tries the warm pool first, then falls back to a fresh provision.
-  def provision_new_container(networking_policy: nil, **options)
+  def provision_new_container(networking_policy: nil, restart_provisioning_cycle: false, **options)
     # RDR-048 (#2947): a caller (e.g. the queue processor) may know which
     # Docker host this run was admitted against before any container
     # resource exists. The container_host column on the run is intentionally
@@ -3584,6 +3724,14 @@ class AgentRun < ApplicationRecord
     # is only updated from the actual provision/pool result below.
     planned_container_host = options.delete(:container_host)
     pool_host_scope = planned_container_host.presence || container_host.presence
+
+    # Restamped before the pooled claim (not just the fresh-provision branch
+    # below) so a reprovision that claims a warm container still starts a new
+    # cycle key. Otherwise the pooled container's lifetime would be recorded
+    # under the torn-down machine's provisioning_started_at and silently
+    # dropped when AgentRuns::RecordExecutionUsage matches the already-closed
+    # cycle (EXEC-USAGE-011).
+    restamp_provisioning_cycle! if restart_provisioning_cycle
 
     pooled_result = acquire_pooled_container(pool_host_scope: pool_host_scope, **options)
     return pooled_result if pooled_result
@@ -3600,7 +3748,8 @@ class AgentRun < ApplicationRecord
     )
     result = @container_service.provision
     if result.success?
-      update!(container_id: result[:container_id], container_host: result[:container_host])
+      update!(container_id: result[:container_id], container_host: result[:container_host],
+        **persisted_provisioning_cycle_attributes)
       ExecutionResource.track_environment!(
         agent_run: self,
         identifier: result[:container_id],

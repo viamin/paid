@@ -83,6 +83,31 @@ module Containers
       BASE_IMAGE
     end
 
+    # True when the reference names a Paid combo tag (a +paid-agent:<tokens>+
+    # image other than the base). Non-Paid references (explicit overrides,
+    # immutable catalog digests) are never combo tags.
+    def self.combo?(image)
+      image != BASE_IMAGE && image.to_s.start_with?("#{IMAGE_PREFIX}:")
+    end
+
+    # Parses a paid-agent combo tag back into its language tokens.
+    #
+    # @return [Array<String>, nil] the sorted token set for a well-formed
+    #   combo tag; +nil+ for the base image and for references outside the
+    #   +paid-agent+ namespace (those are not ours to build or validate).
+    # @raise [UnsupportedRuntimeError] when the tag names tokens outside the
+    #   supported runtime matrix — such an image can never be built.
+    # @spec POLYGLOT-TEST-008
+    def self.combo_tokens(image)
+      return unless combo?(image)
+
+      tokens = image.split(":", 2).second.to_s.split("-").reject(&:blank?)
+      unknown = tokens - BASE_LANGUAGES - EXTENDED_LANGUAGES
+      raise UnsupportedRuntimeError, unknown if unknown.any?
+
+      tokens
+    end
+
     # @return [String] the resolved Docker image reference
     # @spec POLYGLOT-TEST-004
     # @spec POLYGLOT-TEST-006
@@ -110,14 +135,32 @@ module Containers
     end
 
     # Reads the project's detected language set, mirroring the precedence used
-    # by +Prompts::LanguageCommands+: +Project#test_languages+ takes priority,
-    # then +Project#detected_languages+, then the single detected primary
-    # language as a final fallback.
+    # by +Prompts::LanguageCommands+: the raw persisted +repo_profile+
+    # languages come first so an unsupported-only profile is still visible in
+    # strict mode, then +Project#test_languages+, +Project#detected_languages+,
+    # and finally the single detected primary language.
     def detected_languages
       @detected_languages ||= begin
-        langs = test_language_array.presence || detected_language_array.presence || primary_language_array
+        langs = repo_profile_language_array.presence ||
+          test_language_array.presence ||
+          detected_language_array.presence ||
+          primary_language_array
         langs.map { |language| language.to_s.strip.downcase }.reject(&:blank?).uniq
       end
+    end
+
+    def repo_profile_language_array
+      return [] unless project.respond_to?(:repo_profile)
+
+      profile = project.repo_profile
+      return [] unless profile.is_a?(Hash)
+
+      # Stringified for parity with +Projects::RepoProfile.normalize+: an
+      # in-memory profile assigned with symbol keys must read the same as the
+      # string-keyed jsonb round-trip, or an unsupported runtime would slip
+      # past strict mode until the record reloads.
+      profile = profile.deep_stringify_keys
+      Array(profile["test_languages"].presence || profile["languages"])
     end
 
     def test_language_array
