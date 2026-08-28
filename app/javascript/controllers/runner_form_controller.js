@@ -284,10 +284,9 @@ export default class extends Controller {
     })
   }
 
-  // Only one of {select, manual input} carries the `name` attribute at a
-  // time, so the sentinel value ("free"/"custom") itself is never submitted
-  // as the model id. The select stays enabled so the user can freely switch
-  // back to a catalog row without a page reload.
+  // The server accepts stable fallback params (`model` + optional
+  // `manual_model`) so non-JS submissions still normalize cleanly. JS only
+  // manages visibility/disabled state and the hidden model_policy field.
   // @spec MODEL-POLICY-FORM-003 MODEL-POLICY-FORM-004
   handlePolicyModelChange(event) {
     this.syncPolicyModelField(event.target)
@@ -297,16 +296,12 @@ export default class extends Controller {
     const runnerKey = select.dataset.runnerKey
     const manualInput = this.policyManualInputFor(runnerKey)
     const policyField = this.policyFieldFor(runnerKey)
-    const fieldName = `runner[config][${runnerKey}][model]`
     const isCustom = select.value === "custom"
     const isFree = select.value === "free"
-
-    select.name = isCustom || isFree ? "" : fieldName
 
     if (manualInput) {
       manualInput.hidden = !isCustom
       manualInput.disabled = !isCustom
-      manualInput.name = isCustom ? fieldName : ""
     }
 
     if (policyField) {

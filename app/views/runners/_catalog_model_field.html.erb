@@ -8,9 +8,7 @@
   )
   current_entries = entries_by_service_type.fetch(current_service_type, [])
   initial = catalog_model_initial_selection(current_entries, current_model_id: current_model_id, model_policy: current_model_policy)
-  manual_active = initial[:selected] == LlmModel::CUSTOM_MODEL_OPTION
   free_active = initial[:selected] == Runners::ModelOptions::FREE_POLICY_VALUE
-  select_name = manual_active || free_active ? nil : "runner[config][#{runner_key}][model]"
   select_disabled = current_service_type.blank? || current_entries.empty?
   placeholder = if current_service_type.blank?
                   "Select an API key first"
@@ -21,7 +19,7 @@
                 end
 %>
 <select id="runner_config_<%= runner_key %>_model"
-        <% if select_name %>name="<%= select_name %>"<% end %>
+        name="runner[config][<%= runner_key %>][model]"
         <% if select_disabled %>disabled<% end %>
         class="mt-2 block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
         data-runner-form-target="policyModelSelect"
@@ -47,11 +45,10 @@
 </select>
 <input type="text"
        id="runner_config_<%= runner_key %>_model_manual"
-       <% if manual_active %>name="runner[config][<%= runner_key %>][model]"<% end %>
-       value="<%= initial[:manual] if manual_active %>"
+       name="runner[config][<%= runner_key %>][manual_model]"
+       value="<%= initial[:manual] %>"
        placeholder="<%= optional ? "Optional: enter a model id manually" : "Enter a model id" %>"
        autocomplete="off"
-       <% unless manual_active %>hidden disabled<% end %>
        data-runner-form-target="policyModelManualInput"
        data-runner-key="<%= runner_key %>"
        class="mt-2 block w-full rounded-md border-0 px-3 py-1.5 font-mono text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">

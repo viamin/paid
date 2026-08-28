@@ -27,15 +27,17 @@
 ## Sentinel submission
 
 - [x] **MODEL-POLICY-FORM-003** — Selecting the Custom sentinel SHALL reveal
-  the manual text input and move the `runner[config][<key>][model]` `name`
-  attribute onto it, so the literal sentinel value is never submitted as the
-  model id. The `<select>` SHALL remain enabled so the user can switch back
-  to a catalog row without reloading the page.
+  the manual text input and submit its value through a stable server-backed
+  fallback, so the server persists the entered model id instead of the
+  literal sentinel. The `<select>` SHALL remain enabled so the user can
+  switch back to a catalog row without reloading the page, and a
+  server-rendered submission SHALL still work if Stimulus does not boot.
 - [x] **MODEL-POLICY-FORM-004** — Selecting the Free sentinel (opencode +
-  OpenRouter only) SHALL drop the `name` attribute from both the `<select>`
-  and the manual input, and SHALL set the hidden
-  `runner[config][opencode][model_policy]` field to `"free"`; no model id
-  SHALL be submitted for this selection.
+  OpenRouter only) SHALL normalize to `model_policy = "free"` and no stored
+  model id, while selecting any non-Free row SHALL normalize back to
+  `model_policy = "specific"` even if the hidden field still carries the
+  prior Free value. A server-rendered submission SHALL still work if
+  Stimulus does not boot.
 - [ ] **MODEL-POLICY-FORM-005** — KiloCode, Pi, and Oh My Pi SHALL NOT render
   a `model_policy` field or a Free sentinel option in any state; only
   `opencode` supports the Free policy today (RDR-065 D6). Deferred: porting

@@ -236,8 +236,8 @@ class RunnersController < ApplicationController
     end
     attrs = raw_params.permit(
       *permitted,
-      config: { opencode: [ :api_provider, :model, :model_policy ], kilocode: [ :api_provider, :model, :preflight_timeout_seconds ],
-                pi: [ :api_provider, :model ], omp: [ :api_provider, :model ] },
+      config: { opencode: [ :api_provider, :model, :manual_model, :model_policy ], kilocode: [ :api_provider, :model, :manual_model, :preflight_timeout_seconds ],
+                pi: [ :api_provider, :model, :manual_model ], omp: [ :api_provider, :model, :manual_model ] },
       tier_model_ids: LlmModel::TIERS,
       complexity_thresholds: Runner::COMPLEXITY_THRESHOLD_KEYS
     )
@@ -250,6 +250,7 @@ class RunnersController < ApplicationController
 
     runner_key = attrs[:runner_key].presence || attrs[:provider_key].presence || @runner&.runner_key
     config = config.slice(runner_key) if runner_key.present?
+    normalize_policy_model_submission!(config:, runner_key:)
 
     result = attrs.to_h.merge("config" => config)
     result["runner_key"] = result.delete("provider_key") if result.key?("provider_key")
@@ -260,6 +261,34 @@ class RunnersController < ApplicationController
       result["complexity_thresholds"] = normalize_complexity_thresholds(result["complexity_thresholds"])
     end
     result
+  end
+
+  # Normalizes the catalog-form sentinel values into the persisted config
+  # shape so server-rendered submissions remain valid even if Stimulus does
+  # not boot. The form always submits `model`, and may also submit
+  # `manual_model`; this method folds those into the existing `model` /
+  # `model_policy` contract.
+  # @spec MODEL-POLICY-FORM-003 MODEL-POLICY-FORM-004
+  def normalize_policy_model_submission!(config:, runner_key:)
+    runner_config = config[runner_key]
+    return unless runner_config.is_a?(Hash)
+
+    model = runner_config["model"].to_s
+
+    case model
+    when LlmModel::CUSTOM_MODEL_OPTION
+      runner_config["model"] = runner_config["manual_model"].to_s
+      runner_config["model_policy"] = "specific" if runner_key == "opencode"
+    when Runners::ModelOptions::FREE_POLICY_VALUE
+      runner_config.delete("model")
+      runner_config["model_policy"] = "free" if runner_key == "opencode"
+    else
+      if runner_key == "opencode" && runner_config.key?("model_policy") && model.present?
+        runner_config["model_policy"] = "specific"
+      end
+    end
+
+    runner_config.delete("manual_model")
   end
 
   # Coerces blank-string form inputs to nil and integer-like strings to Ints,

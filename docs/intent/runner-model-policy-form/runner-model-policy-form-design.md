@@ -79,29 +79,32 @@ Case 4 covers both a genuinely custom (not-yet-cataloged) id and a
 previously-cataloged id that has since been deactivated — the same
 degradation the legacy manual-entry fallback already handled.
 
-### Name-swap instead of hide/disable
+### Stable server fallback plus JS hide/disable
 
-Only one of `{select, manual input}` carries a `name` attribute at a time, so
-neither sentinel value (`"free"`, `"custom"`) is ever submitted as the model
-id:
+The server-rendered form must remain submission-valid even if Stimulus never
+boots, so the markup submits a stable shape and the controller normalizes it
+back into the persisted config contract:
 
-- Selecting **Custom** moves the `name` from the select to the manual input
-  (which is revealed). The select stays enabled so the user can switch back
-  to a catalog row without reloading the page.
-- Selecting **Free** (opencode + OpenRouter only) drops the `name` from both
-  the select and the manual input, and sets the hidden
-  `runner[config][opencode][model_policy]` field to `"free"`. No model id is
-  submitted — `sync_direct_outbound_tier_models` already populates
-  `tier_model_ids` from `FreeModels::DefaultTierModels` for any
-  `free_model_policy?` runner (MODEL-POLICY-005), so the dropdown does not
-  need to render a full tier picker for the general case.
+- The `<select>` always submits `runner[config][<key>][model]`, including the
+  sentinel values `"free"` and `"custom"`.
+- The manual input always submits
+  `runner[config][<key>][manual_model]`; without JS it remains visible so the
+  user can still choose **Custom** and enter a model id in the same request.
+- `RunnersController#runner_params` normalizes the submission:
+  - `"custom"` copies `manual_model` into `model` and forces
+    `model_policy = "specific"` for `opencode`.
+  - `"free"` clears `model` and forces `model_policy = "free"` for
+    `opencode`.
+  - Any non-Free row forces `model_policy = "specific"` for `opencode`, so a
+    stale hidden input from an initially-free render cannot keep the runner on
+    the Free policy.
 
-`app/javascript/controllers/runner_form_controller.js` implements this via
-`syncPolicyModelField`, invoked on `change` and on every
-`refreshPolicyModelOptions` re-render (including initial `connect()`), so a
-server-rendered initial "free"/"custom" selection and a client-driven one
-converge on the same DOM state. `modelSelectFor`/`serviceTypesFor` generalize
-the pre-existing `dynamicModelSelectTargets`-only helpers to search both the
+`app/javascript/controllers/runner_form_controller.js` still implements the
+interactive behavior via `syncPolicyModelField`, invoked on `change` and on
+every `refreshPolicyModelOptions` re-render (including initial `connect()`),
+but now it only manages visibility/disabled state and the hidden
+`model_policy` field. `modelSelectFor`/`serviceTypesFor` generalize the
+pre-existing `dynamicModelSelectTargets`-only helpers to search both the
 legacy and the new target lists, since exactly one variant renders per page
 load.
 

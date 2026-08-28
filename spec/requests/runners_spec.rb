@@ -85,6 +85,48 @@ RSpec.describe "Runners" do
     }
   end
 
+  def create_free_policy_opencode_runner(api_key:)
+    user.runners.create!(
+      runner_key: "opencode",
+      auth_type: "api_key",
+      provider_api_key: api_key,
+      enabled_for_agent_runs: false,
+      enabled_for_chat: false,
+      enabled_for_fallback: false,
+      config: { "opencode" => { "model_policy" => "free" } }
+    )
+  end
+
+  def non_js_custom_runner_params(api_key_id:, model:)
+    {
+      runner_key: "opencode",
+      auth_type: "api_key",
+      provider_api_key_id: api_key_id,
+      enabled_for_agent_runs: true,
+      enabled_for_fallback: true,
+      config: {
+        opencode: {
+          model: "custom",
+          manual_model: model
+        }
+      }
+    }
+  end
+
+  def non_js_switch_from_free_params(model:)
+    {
+      enabled_for_agent_runs: false,
+      enabled_for_chat: false,
+      enabled_for_fallback: false,
+      config: {
+        opencode: {
+          model: model,
+          model_policy: "free"
+        }
+      }
+    }
+  end
+
   describe "GET /runners" do
     context "when not authenticated" do
       it "redirects to sign in" do
@@ -1447,17 +1489,9 @@ RSpec.describe "Runners" do
       end
 
       # @spec MODEL-POLICY-FORM-004
-      it "preselects the Free sentinel and drops the model select's name for a free-policy OpenCode runner" do
+      it "preselects the Free sentinel while keeping the model select submittable without JS" do
         api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
-        runner = user.runners.create!(
-          runner_key: "opencode",
-          auth_type: "api_key",
-          provider_api_key: api_key,
-          enabled_for_agent_runs: false,
-          enabled_for_chat: false,
-          enabled_for_fallback: false,
-          config: { "opencode" => { "model_policy" => "free" } }
-        )
+        runner = create_free_policy_opencode_runner(api_key:)
 
         get edit_runner_path(runner)
 
@@ -1465,13 +1499,16 @@ RSpec.describe "Runners" do
         select = catalog_select_node(response.body, "opencode")
         selected = select.at_css("option[selected]")
         expect(selected["value"]).to eq("free")
-        expect(select["name"]).to be_nil
+        expect(select["name"]).to eq("runner[config][opencode][model]")
         policy_field = Nokogiri::HTML(response.body).at_css('input[data-runner-form-target="policyModelPolicyField"]')
         expect(policy_field["value"]).to eq("free")
+        manual_input = Nokogiri::HTML(response.body).at_css("#runner_config_opencode_model_manual")
+        expect(manual_input["name"]).to eq("runner[config][opencode][manual_model]")
+        expect(manual_input["disabled"]).to be_nil
       end
 
       # @spec MODEL-POLICY-FORM-003
-      it "preselects Custom and prefills the manual input when the current model id is no longer active in the catalog" do
+      it "preselects Custom and keeps the manual fallback field submittable without JS when the current model id is no longer active in the catalog" do
         api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
         runner = user.runners.create!(
           runner_key: "opencode",
@@ -1487,10 +1524,11 @@ RSpec.describe "Runners" do
         select = catalog_select_node(response.body, "opencode")
         selected = select.at_css("option[selected]")
         expect(selected["value"]).to eq("custom")
-        expect(select["name"]).to be_nil
+        expect(select["name"]).to eq("runner[config][opencode][model]")
         manual_input = Nokogiri::HTML(response.body).at_css("#runner_config_opencode_model_manual")
-        expect(manual_input["name"]).to eq("runner[config][opencode][model]")
+        expect(manual_input["name"]).to eq("runner[config][opencode][manual_model]")
         expect(manual_input["value"]).to eq("moonshotai/kimi-k2.6")
+        expect(manual_input["disabled"]).to be_nil
       end
 
       # @spec MODEL-POLICY-FORM-005
@@ -1508,6 +1546,31 @@ RSpec.describe "Runners" do
         expect(response).to have_http_status(:ok)
         expect(response.body).not_to include('name="runner[config][kilocode][model_policy]"')
         expect(catalog_select_node(response.body, "kilocode").at_css('option[value="free"]')).to be_nil
+      end
+
+      # @spec MODEL-POLICY-FORM-003
+      it "normalizes a non-JS custom sentinel submission to the manual model id" do
+        api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+
+        post runners_path, params: { runner: non_js_custom_runner_params(api_key_id: api_key.id, model: "openrouter/custom-non-js") }
+
+        expect(response).to redirect_to(runners_path)
+        runner = user.runners.order(:created_at).last
+        expect(runner.config.dig("opencode", "model")).to eq("openrouter/custom-non-js")
+        expect(runner.config.dig("opencode", "model_policy")).to eq("specific")
+      end
+
+      # @spec MODEL-POLICY-FORM-004
+      it "normalizes a non-JS switch away from free policy back to a specific catalog model" do
+        api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+        runner = create_free_policy_opencode_runner(api_key:)
+
+        patch runner_path(runner), params: { runner: non_js_switch_from_free_params(model: "moonshotai/kimi-k2-0905") }
+
+        expect(response).to redirect_to(runners_path)
+        runner.reload
+        expect(runner.config.dig("opencode", "model")).to eq("moonshotai/kimi-k2-0905")
+        expect(runner.config.dig("opencode", "model_policy")).to eq("specific")
       end
     end
 
