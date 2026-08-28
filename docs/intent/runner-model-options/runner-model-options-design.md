@@ -26,11 +26,14 @@ that derivation across call sites is how defaults and dropdowns drift apart.
 single source of truth for model choices per `(runner_key, api_provider,
 auth_type)`. It returns an ordered list of `Entry` values:
 
-1. **Free policy entry** (first, only when `runner_key == "opencode"` and
-   `api_provider == "openrouter"` in phase 1): value `"free"` — persisted as
-   `model_policy: "free"` by #3668 — with kind `:free_policy`. Selecting it
-   reveals the free-model tier picker. The phase-1 gate is RDR-065 D2/D6;
-   Pi/Oh My Pi/KiloCode unlock in the follow-up issue.
+1. **Free policy entry** (first, when `runner_key` is one of `opencode`,
+   `kilocode`, `pi`, or `omp`, and `api_provider == "openrouter"`): value
+   `"free"` — persisted as `model_policy: "free"` — with kind
+   `:free_policy`. Selecting it reveals the free-model tier picker. This
+   extends the originally shipped OpenCode-only gate from #3668 to the other
+   direct-outbound runners in follow-up issue #3673 because their provider
+   registries already include OpenRouter and the same dropdown contract
+   applies.
 2. **Catalog entries** (`kind: :model`): active `LlmModel` rows scoped to the
    provider, ordered family → descending capability so the form can render
    `<optgroup>`s by `family` (falling back to the catalog provider when

@@ -22,9 +22,7 @@ module Runners
     FREE_POLICY_LABEL = "OpenRouter Free (curated, tiered)"
     CUSTOM_MODEL_LABEL = "Custom model ID…"
 
-    # Phase-1 gate (RDR-065 D2/D6): the Free policy is offered for OpenCode
-    # on OpenRouter only; Pi/Oh My Pi/KiloCode unlock in a follow-up issue.
-    FREE_POLICY_RUNNER_KEY = "opencode"
+    FREE_POLICY_RUNNER_KEYS = Runner::DIRECT_OUTBOUND_FREE_POLICY_RUNNER_KEYS
     FREE_POLICY_API_PROVIDER = "openrouter"
 
     def self.call(runner_key:, api_provider:, auth_type: DefaultTierModelIds::DEFAULT_AUTH_TYPE)
@@ -46,7 +44,7 @@ module Runners
     attr_reader :runner_key, :api_provider, :auth_type
 
     def free_policy_entry # @spec RUNNER-MODEL-OPTIONS-004
-      return unless runner_key == FREE_POLICY_RUNNER_KEY && api_provider == FREE_POLICY_API_PROVIDER
+      return unless FREE_POLICY_RUNNER_KEYS.include?(runner_key) && api_provider == FREE_POLICY_API_PROVIDER
 
       Entry.new(value: FREE_POLICY_VALUE, label: FREE_POLICY_LABEL, kind: :free_policy)
     end

@@ -132,25 +132,25 @@ RSpec.describe Runners::ModelOptions do
           provider: "openrouter", family: "openrouter", tier: "mid", capability_score: 8.5)
       end
 
-      it "prepends it for opencode on openrouter" do # @spec RUNNER-MODEL-OPTIONS-004
-        result = described_class.call(runner_key: "opencode", api_provider: "openrouter", auth_type: "api_key")
-        expect(result.first).to have_attributes(
-          value: described_class::FREE_POLICY_VALUE,
-          label: described_class::FREE_POLICY_LABEL,
-          kind: :free_policy
-        )
-        expect(result.first).to be_free_policy
-      end
-
-      it "does not offer it for kilocode, pi, or omp on openrouter (phase-1 gate)" do
-        %w[kilocode pi omp].each do |key|
+      it "prepends it for each supported direct-outbound runner on openrouter" do # @spec RUNNER-MODEL-OPTIONS-004
+        %w[opencode kilocode pi omp].each do |key|
           result = described_class.call(runner_key: key, api_provider: "openrouter", auth_type: "api_key")
-          expect(result.none?(&:free_policy?)).to be true
+          expect(result.first).to have_attributes(
+            value: described_class::FREE_POLICY_VALUE,
+            label: described_class::FREE_POLICY_LABEL,
+            kind: :free_policy
+          )
+          expect(result.first).to be_free_policy
         end
       end
 
-      it "does not offer it for opencode on another provider" do
-        result = described_class.call(runner_key: "opencode", api_provider: "anthropic", auth_type: "api_key")
+      it "does not offer it for unsupported runner/provider pairs" do
+        %w[opencode kilocode pi omp].each do |key|
+          result = described_class.call(runner_key: key, api_provider: "anthropic", auth_type: "api_key")
+          expect(result.none?(&:free_policy?)).to be true
+        end
+
+        result = described_class.call(runner_key: "cursor", api_provider: "openrouter", auth_type: "api_key")
         expect(result.none?(&:free_policy?)).to be true
       end
     end
