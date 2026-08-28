@@ -89,3 +89,21 @@
   *Code:* `app/controllers/inbox_controller.rb`,
   `app/controllers/legacy_inbox_redirects_controller.rb`.
   *Test:* `spec/requests/inbox_spec.rb`, `spec/requests/dashboard_spec.rb`.
+
+- [x] **OPERATOR-INBOX-010** — When a signed-in user views the main
+  navigation (desktop or mobile), the system SHALL render Inbox as a
+  top-level, unscoped nav item immediately after Dashboard and before
+  Projects, SHALL NOT list it in the Insights dropdown, and SHALL render its
+  unread-style count badge as a lazy Turbo Frame backed by a short-TTL,
+  per-user cached count at `GET /inbox/count` so ordinary page renders never
+  build `Inbox::Queue`. The cached count SHALL invalidate on needs_input
+  transitions and on decomposition-decision writes (plan review creation and
+  resolution), and SHALL render capped at `99+` and hidden at zero, matching
+  the bell's badge markup classes.
+  *Code:* `app/views/layouts/application.html.erb`,
+  `app/controllers/inbox_controller.rb`, `app/services/inbox/count.rb`,
+  `app/services/dashboard/cache_version.rb`, `app/models/issue.rb`,
+  `app/services/orchestration/decomposition_decisions/log.rb`,
+  `app/views/inbox/count.html.erb`, `app/views/inbox/_count_badge.html.erb`.
+  *Test:* `spec/requests/navigation_spec.rb`, `spec/requests/inbox_spec.rb`,
+  `spec/services/inbox/count_spec.rb`.

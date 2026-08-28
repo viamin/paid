@@ -248,4 +248,55 @@ RSpec.describe "Inbox" do
       expect(response.body).not_to include("<strong>inbox</strong>", "<strong>markdown</strong>")
     end
   end
+
+  # @spec OPERATOR-INBOX-010
+  describe "GET /inbox/count" do
+    def badge_text(document, frame_id)
+      document.at_css("turbo-frame##{frame_id} span")&.text&.strip
+    end
+
+    it "renders no badge pill for either frame when nothing is waiting" do
+      get inbox_count_path
+
+      expect(response).to have_http_status(:ok)
+      document = Nokogiri::HTML(response.body)
+
+      expect(badge_text(document, "inbox_nav_badge_desktop")).to be_nil
+      expect(badge_text(document, "inbox_nav_badge_mobile")).to be_nil
+    end
+
+    it "renders the waiting count in both the desktop and mobile badge frames" do
+      create(:issue, :needs_input, project: project, body: questions_body)
+      create(:issue, :needs_input, project: second_project, body: questions_body)
+
+      get inbox_count_path
+
+      expect(response).to have_http_status(:ok)
+      document = Nokogiri::HTML(response.body)
+
+      expect(badge_text(document, "inbox_nav_badge_desktop")).to eq("2")
+      expect(badge_text(document, "inbox_nav_badge_mobile")).to eq("2")
+    end
+
+    it "caps the displayed count at 99+ once past the display cap" do
+      101.times { |n| create(:issue, :needs_input, project: project, github_number: 1000 + n, body: questions_body) }
+
+      get inbox_count_path
+
+      document = Nokogiri::HTML(response.body)
+      expect(badge_text(document, "inbox_nav_badge_desktop")).to eq("99+")
+    end
+
+    it "matches the Inbox page's needs-input entry count when questions parse cleanly" do
+      create(:issue, :needs_input, project: project, body: questions_body)
+      create(:issue, :needs_input, project: second_project, body: questions_body)
+
+      get inbox_count_path
+      badge_count = badge_text(Nokogiri::HTML(response.body), "inbox_nav_badge_desktop").to_i
+
+      queue_size = Inbox::Queue.call(user: user).size
+
+      expect(badge_count).to eq(queue_size)
+    end
+  end
 end

@@ -5,6 +5,7 @@ module Dashboard
     VERSION_TTL = 30.days
     LISTS_SCOPE = :lists
     STATS_SCOPE = :stats
+    INBOX_SCOPE = :inbox
 
     def self.current(account, scope: LISTS_SCOPE)
       new(account:, scope:).current
