@@ -86,6 +86,46 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       )
     end
 
+    it "routes request_review decisions to RequestReviewActivity" do
+      workflow.execute_automation_decision(
+        project_id:,
+        decision: { type: "request_review", pr_number: 42, reviewers: [ "viamin" ] }
+      )
+
+      expect(workflow).to have_received(:run_activity).with(
+        Activities::RequestReviewActivity,
+        { project_id:, pr_number: 42, reviewers: [ "viamin" ] },
+        timeout: 60
+      )
+    end
+
+    it "stamps owner_review_requested_sha when the request_review decision carries issue_id and head_sha" do
+      workflow.execute_automation_decision(
+        project_id:,
+        decision: {
+          type: "request_review", pr_number: 42, reviewers: [ "viamin" ],
+          issue_id: 7, head_sha: "abc123"
+        }
+      )
+
+      expect(workflow).to have_received(:run_activity).with(
+        Activities::RecordOwnerReviewRequestActivity,
+        { issue_id: 7, head_sha: "abc123" },
+        timeout: 30
+      )
+    end
+
+    it "does not stamp owner_review_requested_sha when the request_review decision omits issue_id/head_sha" do
+      workflow.execute_automation_decision(
+        project_id:,
+        decision: { type: "request_review", pr_number: 42, reviewers: [ "copilot" ] }
+      )
+
+      expect(workflow).not_to have_received(:run_activity).with(
+        Activities::RecordOwnerReviewRequestActivity, anything, anything
+      )
+    end
+
     it "warns when a decision type is not implemented" do
       logger = instance_double(Logger, warn: true)
       allow(Temporalio::Workflow).to receive(:logger).and_return(logger)

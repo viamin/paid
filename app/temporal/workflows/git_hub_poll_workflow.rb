@@ -88,6 +88,7 @@ module Workflows
       when "request_review"
         request_review(project_id, decision[:pr_number], decision[:reviewers],
           log_key: "pr_review.request_review_failed")
+        record_owner_review_request(decision)
       when "dispatch_claude_review"
         run_activity(Activities::DispatchClaudeReviewActivity, {
           project_id: project_id,
@@ -528,6 +529,20 @@ module Workflows
         pr_number: pr_number,
         error: e.message
       )
+    end
+
+    # Stamps the HEAD sha a stale-owner-approval re-request was issued for,
+    # so the scanner does not re-request every poll cycle for the same
+    # commit. Only decisions built for that trigger carry :issue_id and
+    # :head_sha (see Automation::Strategies::AutoReview#owner_approval_stale_decision);
+    # other request_review callers (manual reviewer, bot chains) omit them.
+    # Stamped regardless of whether the GitHub request above succeeded, since
+    # the guard is "at most once per sha issued", not "at most once until success".
+    def record_owner_review_request(decision)
+      return if decision[:issue_id].blank? || decision[:head_sha].blank?
+
+      run_activity(Activities::RecordOwnerReviewRequestActivity,
+        { issue_id: decision[:issue_id], head_sha: decision[:head_sha] }, timeout: 30)
     end
 
     def handle_owner_approved(project_id, pr_data)

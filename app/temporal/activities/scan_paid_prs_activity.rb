@@ -950,7 +950,7 @@ module Activities
       triggers = detect_ready_triggers(project, client, issue,
         pr_data: pr_data, checks: checks, reviews: reviews, unresolved_threads: unresolved_threads)
       return :skipped if triggers.nil?
-      return nil if triggers.empty?
+      return owner_approval_stale_trigger(project, issue, pr_data) if triggers.empty?
 
       # Hard gate: stop queuing create_pr follow-ups once the total run limit
       # is hit and escalate instead (#3271).
@@ -1119,6 +1119,53 @@ module Activities
         triggers: [ { type: "owner_approved", details: "Owner approval requirement satisfied" } ],
         phase: "ready"
       }
+    end
+
+    # A PR that is otherwise fully green (no CI, thread, or review-bot
+    # triggers) but blocked from auto-merge solely by a stale owner approval
+    # gets nothing on GitHub: the original approval is still recorded there,
+    # so the PR never surfaces in the owner's "Awaiting your review" queue.
+    # Re-requesting review puts it back where the owner already looks.
+    # Guarded to at most one request per HEAD sha via
+    # `issue.owner_review_requested_sha`, stamped once the request is issued
+    # (see GitHubPollWorkflow#record_owner_review_request).
+    # @spec AUTO-MERGE-007
+    def owner_approval_stale_trigger(project, issue, pr_data)
+      return nil unless stale_approval_only_blocker?(issue)
+
+      head_sha = pr_data&.head&.sha
+      return nil if head_sha.blank? || head_sha == issue.owner_review_requested_sha
+
+      owner_reviewer_login = project.owner_reviewer_login
+      return nil if owner_reviewer_login.blank?
+
+      trigger = {
+        type: "owner_approval_stale",
+        details: "Owner approval is stale for the current HEAD commit; re-requesting review",
+        head_sha: head_sha
+      }
+      log_triggers(project, issue, [ trigger ])
+
+      {
+        focus: focus_for(project, [ trigger ]),
+        issue_id: issue.id,
+        pr_number: issue.github_number,
+        triggers: [ trigger ],
+        phase: "ready",
+        owner_reviewer_login: owner_reviewer_login
+      }
+    end
+
+    # True when the only failed auto-merge blocker for this scan is the
+    # review-freshness signal, i.e. every other auto-merge precondition
+    # (CI, mergeability, review feedback, blocking reviews) is satisfied.
+    # Reads the snapshot `auto_merge_eligible?` already staged earlier in
+    # this same `scan_ready_pr` call.
+    def stale_approval_only_blocker?(issue)
+      failed = auto_merge_snapshots.dig(issue.id, "failed")
+      return false if failed.blank?
+
+      failed.size == 1 && failed.first["signal"] == "reviews_fresh"
     end
 
     def draft_trigger_payload(issue, triggers)

@@ -94,3 +94,25 @@
   *Test:*
   `spec/services/automation/signals/pull_request_collector_spec.rb`,
   `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.
+
+- [x] **AUTO-MERGE-007** — When the persisted auto-merge blocker snapshot for
+  a human-authored pull request reduces to exactly the stale-approval signal
+  (every other auto-merge precondition satisfied), the system SHALL
+  re-request GitHub review from the project's configured owner reviewer, at
+  most once per PR HEAD commit SHA. The system SHALL NOT emit a request when
+  any other signal (CI, mergeability, review feedback, blocking reviews, or
+  threads) is also blocking, and a GitHub API failure while issuing the
+  request SHALL be logged without failing the poll cycle or blocking other
+  PRs in the same scan.
+  *Code:* `app/temporal/activities/scan_paid_prs_activity.rb`
+  (`#owner_approval_stale_trigger`, `#stale_approval_only_blocker?`),
+  `app/services/automation/strategies/auto_review.rb`
+  (`#owner_approval_stale_decision`),
+  `app/temporal/activities/record_owner_review_request_activity.rb`,
+  `app/temporal/workflows/git_hub_poll_workflow.rb`
+  (`#record_owner_review_request`),
+  `db/migrate/20260828031257_add_owner_review_requested_sha_to_issues.rb`.
+  *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`,
+  `spec/services/automation/strategies/auto_review_spec.rb`,
+  `spec/temporal/activities/record_owner_review_request_activity_spec.rb`,
+  `spec/temporal/workflows/git_hub_poll_workflow_spec.rb`.

@@ -82,6 +82,23 @@ what happened without raw logs, tokens, webhook secrets, or stack traces.
 Attempt rows are tenant-scoped through PostgreSQL row-level security keyed on
 `projects.account_id`, so access follows project visibility.
 
+GitHub's own mergeable/review state does not reflect Paid's stricter
+freshness gate: an approval GitHub still counts as valid can be stale by
+Paid's first-parent-walk policy above, so a PR the owner would consider done
+sits green in Paid's dashboard while GitHub shows nothing for the owner to
+do — the approving review is still on record there. When the persisted
+auto-merge blocker snapshot reduces to exactly that stale-approval signal
+(every other precondition green), the scan re-requests GitHub review from
+the project's `owner_reviewer_login`, which puts the PR back in the owner's
+native "Awaiting your review" queue. The request is guarded to at most one
+per PR HEAD commit SHA: the workflow stamps `issues.owner_review_requested_sha`
+after issuing the request (regardless of whether the GitHub call itself
+succeeded, since the guard bounds how often we ask, not whether the ask
+landed), and the scan skips re-requesting until a new commit changes that
+sha. A PR blocked by anything else (red CI, unresolved threads, incomplete
+blocking reviews) is waiting on the agent, not the owner, and never
+generates a request.
+
 ## What this is not
 
 - **Not a blanket bypass of human control.** Projects must opt in through

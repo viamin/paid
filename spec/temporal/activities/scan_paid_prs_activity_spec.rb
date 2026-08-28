@@ -462,6 +462,61 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         end
       end
 
+      it "re-requests review from the owner when auto-merge is blocked only by a stale approval" do
+        project.update!(auto_merge_mode: "all", owner_reviewer_login: "viamin")
+        pr_issue.update!(pr_review_phase: "ready")
+        stub_owner_approval_ready_signals
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:automation_results]).to contain_exactly(
+          hash_including(
+            decisions: [
+              { type: "request_review", pr_number: 42, reviewers: [ "viamin" ],
+                issue_id: pr_issue.id, head_sha: "abc123" }
+            ]
+          )
+        )
+      end
+
+      it "does not re-request review when the owner was already asked for the current HEAD sha" do
+        project.update!(auto_merge_mode: "all", owner_reviewer_login: "viamin")
+        pr_issue.update!(pr_review_phase: "ready", owner_review_requested_sha: "abc123")
+        stub_owner_approval_ready_signals
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:automation_results]).to eq([])
+      end
+
+      it "re-requests review again once a new commit invalidates a previously re-requested approval" do
+        project.update!(auto_merge_mode: "all", owner_reviewer_login: "viamin")
+        pr_issue.update!(pr_review_phase: "ready", owner_review_requested_sha: "old-sha")
+        stub_owner_approval_ready_signals(head_sha: "new-sha")
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:automation_results]).to contain_exactly(
+          hash_including(
+            decisions: [
+              { type: "request_review", pr_number: 42, reviewers: [ "viamin" ],
+                issue_id: pr_issue.id, head_sha: "new-sha" }
+            ]
+          )
+        )
+      end
+
+      it "does not re-request review when another signal is also blocking auto-merge" do
+        project.update!(auto_merge_mode: "all", owner_reviewer_login: "viamin")
+        pr_issue.update!(pr_review_phase: "ready")
+        stub_owner_approval_ready_signals(checks_conclusion: "failure")
+
+        result = activity.execute(project_id: project.id)
+
+        decision_types = result[:automation_results].flat_map { |r| r[:decisions].map { |d| d[:type] } }
+        expect(decision_types).not_to include("request_review")
+      end
+
       it "preserves a prior auto-merge snapshot when only the merge-conflict rescan path runs" do
         project.update!(auto_fix_merge_conflicts: true)
         prior_evaluated_at = 30.minutes.ago
@@ -6452,10 +6507,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
 
-      it "blocks auto-merge due to stale review" do
+      it "blocks auto-merge due to stale review and re-requests owner review" do
         result = activity.execute(project_id: project.id)
 
-        expect(automation_scan_results(result)).to eq([])
+        expect(automation_scan_results(result).size).to eq(1)
+        expect(automation_scan_results(result).first[:triggers].first[:type]).to eq("owner_approval_stale")
       end
     end
 
@@ -6511,10 +6567,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
 
-      it "blocks auto-merge because the manual reviewer's approval is stale" do
+      it "blocks auto-merge because the manual reviewer's approval is stale and re-requests owner review" do
         result = activity.execute(project_id: project.id)
 
-        expect(automation_scan_results(result)).to eq([])
+        expect(automation_scan_results(result).size).to eq(1)
+        expect(automation_scan_results(result).first[:triggers].first[:type]).to eq("owner_approval_stale")
       end
     end
 
@@ -6638,10 +6695,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
 
-      it "blocks auto-merge because the merge introduced author-side content" do
+      it "blocks auto-merge because the merge introduced author-side content and re-requests owner review" do
         result = activity.execute(project_id: project.id)
 
-        expect(automation_scan_results(result)).to eq([])
+        expect(automation_scan_results(result).size).to eq(1)
+        expect(automation_scan_results(result).first[:triggers].first[:type]).to eq("owner_approval_stale")
       end
     end
 
@@ -6674,10 +6732,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
 
-      it "blocks auto-merge because the real commit invalidates the approval" do
+      it "blocks auto-merge because the real commit invalidates the approval and re-requests owner review" do
         result = activity.execute(project_id: project.id)
 
-        expect(automation_scan_results(result)).to eq([])
+        expect(automation_scan_results(result).size).to eq(1)
+        expect(automation_scan_results(result).first[:triggers].first[:type]).to eq("owner_approval_stale")
       end
     end
 
@@ -6710,10 +6769,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
 
-      it "blocks auto-merge because the merge brought in non-base content" do
+      it "blocks auto-merge because the merge brought in non-base content and re-requests owner review" do
         result = activity.execute(project_id: project.id)
 
-        expect(automation_scan_results(result)).to eq([])
+        expect(automation_scan_results(result).size).to eq(1)
+        expect(automation_scan_results(result).first[:triggers].first[:type]).to eq("owner_approval_stale")
       end
     end
 
@@ -6744,10 +6804,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           .and_raise(GithubClient::Error, "boom")
       end
 
-      it "blocks auto-merge by failing closed" do
+      it "blocks auto-merge by failing closed and re-requests owner review" do
         result = activity.execute(project_id: project.id)
 
-        expect(automation_scan_results(result)).to eq([])
+        expect(automation_scan_results(result).size).to eq(1)
+        expect(automation_scan_results(result).first[:triggers].first[:type]).to eq("owner_approval_stale")
       end
     end
 
@@ -6797,10 +6858,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           .and_return(OpenStruct.new(status: "ahead"))
       end
 
-      it "blocks auto-merge by failing closed" do
+      it "blocks auto-merge by failing closed and re-requests owner review" do
         result = activity.execute(project_id: project.id)
 
-        expect(automation_scan_results(result)).to eq([])
+        expect(automation_scan_results(result).size).to eq(1)
+        expect(automation_scan_results(result).first[:triggers].first[:type]).to eq("owner_approval_stale")
       end
     end
 
@@ -11048,6 +11110,20 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       checks: [ { name: "ci", conclusion: "success" } ],
       review_threads: [],
       reviews: []
+    )
+  end
+
+  def stub_owner_approval_ready_signals(checks_conclusion: "success", head_sha: "abc123")
+    stub_github_for_pr(
+      checks: [ { name: "rspec", conclusion: checks_conclusion } ],
+      reviews: [ { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current } ],
+      head_sha: head_sha
+    )
+    allow(activity).to receive_messages(
+      owner_approved_or_self_authored?: true,
+      no_outstanding_review_feedback?: true,
+      all_blocking_review_methods_complete?: true,
+      review_stale_for_head?: true
     )
   end
 
