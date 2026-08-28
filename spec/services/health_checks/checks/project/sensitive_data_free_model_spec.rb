@@ -112,6 +112,25 @@ RSpec.describe HealthChecks::Checks::Project::SensitiveDataFreeModel do
     expect(described_class.call(project)).to eq([])
   end
 
+  it "still returns a warning when the default create_pr runner is a pi runner backed by an OpenRouter API key" do
+    model = create(:llm_model, :free, model_id: "free-model", catalog_source: "manual")
+    owner = create(:user)
+    openrouter_key = create(:provider_api_key, user: owner, api_service_type: "openrouter")
+    pi_runner = create(:runner, user: owner, runner_key: "pi", auth_type: "api_key", provider_api_key: openrouter_key)
+    owner.settings.update!(default_agent_runner: pi_runner.routing_key)
+    project = build(
+      :project,
+      created_by: owner,
+      account: owner.account,
+      data_classification: "confidential",
+      model_preferences: { "required_model_id" => model.model_id }
+    )
+
+    expect(described_class.call(project)).to contain_exactly(
+      have_attributes(code: :sensitive_data_free_model, severity: :warning)
+    )
+  end
+
   it "ignores required models incompatible with the create_pr runner" do
     model = create(:llm_model, :free, :openai, model_id: "gpt-4o-mini", catalog_source: "manual")
     owner = create(:user)

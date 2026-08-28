@@ -194,5 +194,30 @@ RSpec.describe Guardrails::DataClassificationPolicy do
         expect(result.provider_zdr).to be_nil
       end
     end
+
+    context "when the run uses a pi runner backed by an OpenRouter API key" do
+      let(:openrouter_key) { create(:provider_api_key, user: project.created_by, api_service_type: "openrouter") }
+      let(:pi_runner) do
+        create(
+          :runner,
+          user: project.created_by,
+          runner_key: "pi",
+          auth_type: "api_key",
+          provider_api_key: openrouter_key
+        )
+      end
+
+      before { agent_run.update!(runner: pi_runner) }
+
+      # @spec FREE-MODEL-003
+      it "still warns because pi does not attach OpenRouter provider routing" do
+        result = described_class.call(agent_run: agent_run, selection: selection)
+
+        expect(result).to be_warning
+        expect(result.provider_data_collection).to be_nil
+        expect(result.provider_zdr).to be_nil
+        expect_warning_log_for(agent_run)
+      end
+    end
   end
 end

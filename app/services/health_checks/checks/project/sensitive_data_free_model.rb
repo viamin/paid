@@ -79,7 +79,13 @@ module HealthChecks
           runner = create_pr_runner
           return legacy_openrouter_runner_key?(create_pr_runner_key) unless runner
 
-          runner.required_api_service_type == "openrouter"
+          # Only these runner keys attach data_collection/zdr routing metadata
+          # (see Runners::OpenRouterDataRouting call sites). kilocode/pi/omp
+          # runners can also resolve required_api_service_type to "openrouter"
+          # when configured with an OpenRouter API key, but they route as
+          # direct outbound API calls, not through OpenRouter's own routing.
+          %w[opencode openrouter_free openrouter_pareto].include?(runner.runner_key) &&
+            runner.required_api_service_type == "openrouter"
         end
 
         def legacy_openrouter_runner_key?(value)
