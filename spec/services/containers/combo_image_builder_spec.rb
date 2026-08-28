@@ -25,6 +25,9 @@ RSpec.describe Containers::ComboImageBuilder do
 
   before do
     stub_base_present
+    allow(backend).to receive(:image_label_sets) do |image|
+      [ backend.get_image(image).info["Labels"] || {} ]
+    end
     allow(Rails.logger).to receive(:public_send)
   end
 
@@ -62,8 +65,8 @@ RSpec.describe Containers::ComboImageBuilder do
 
     # @spec POLYGLOT-TEST-007
     it "reuses an existing, current combo without rebuilding" do
-      allow(backend).to receive(:get_image).with("paid-agent:go").and_return(
-        combo_image(labels: { described_class::BASE_DIGEST_LABEL => base_image.id })
+      allow(backend).to receive(:image_label_sets).with("paid-agent:go").and_return(
+        [ { described_class::BASE_DIGEST_LABEL => base_image.id } ]
       )
       allow(backend).to receive(:build_image)
 
@@ -155,8 +158,8 @@ RSpec.describe Containers::ComboImageBuilder do
   describe ".ensure_available — cache invalidation" do
     # @spec POLYGLOT-TEST-009
     it "rebuilds a combo whose recorded base digest no longer matches the base image" do
-      allow(backend).to receive(:get_image).with("paid-agent:go").and_return(
-        combo_image(labels: { described_class::BASE_DIGEST_LABEL => "sha256:#{'0' * 64}" })
+      allow(backend).to receive(:image_label_sets).with("paid-agent:go").and_return(
+        [ { described_class::BASE_DIGEST_LABEL => "sha256:#{'0' * 64}" } ]
       )
       allow(backend).to receive(:build_image).and_return(built_image)
 
@@ -168,16 +171,28 @@ RSpec.describe Containers::ComboImageBuilder do
 
     # @spec POLYGLOT-TEST-009
     it "rebuilds an unlabelled combo (built outside the builder)" do
-      allow(backend).to receive(:get_image).with("paid-agent:go").and_return(combo_image(labels: {}))
+      allow(backend).to receive(:image_label_sets).with("paid-agent:go").and_return([ {} ])
 
       allow(backend).to receive(:build_image).and_return(built_image)
 
       expect(described_class.ensure_available("paid-agent:go", backend: backend).status).to eq(:rebuilt)
     end
 
+    it "rebuilds a swarm combo when any healthy node has a stale copy of the tag" do
+      allow(backend).to receive(:image_label_sets).with("paid-agent:go").and_return(
+        [
+          { described_class::BASE_DIGEST_LABEL => base_image.id },
+          { described_class::BASE_DIGEST_LABEL => "sha256:#{'0' * 64}" }
+        ]
+      )
+      allow(backend).to receive(:build_image).and_return(built_image)
+
+      expect(described_class.ensure_available("paid-agent:go", backend: backend).status).to eq(:rebuilt)
+    end
+
     it "force_rebuild bypasses the existence check" do
-      allow(backend).to receive(:get_image).with("paid-agent:go").and_return(
-        combo_image(labels: { described_class::BASE_DIGEST_LABEL => base_image.id })
+      allow(backend).to receive(:image_label_sets).with("paid-agent:go").and_return(
+        [ { described_class::BASE_DIGEST_LABEL => base_image.id } ]
       )
       allow(backend).to receive(:build_image).and_return(built_image)
 

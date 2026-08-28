@@ -226,6 +226,10 @@ module Containers
         image
       end
 
+      def image_label_sets(name)
+        healthy_node_images(name).map { |image| image.info["Labels"] || {} }
+      end
+
       # Builds the image on every healthy node so any node can run it. Docker::Image.build
       # tars the Dockerfile per call, so each node gets its own request body.
       def build_image(dockerfile, opts = {}, &block)
@@ -293,6 +297,17 @@ module Containers
       def delete_volume(volume, **options)
         node = node_by_hostname(volume.host) || raise(Docker::Error::NotFoundError, "Swarm node #{volume.host.inspect} not found")
         Docker::Volume.get(volume.id, {}, node_connection(node)).remove(**options)
+      end
+
+      def healthy_node_images(name)
+        nodes = healthy_nodes
+        raise Docker::Error::NotFoundError, "Image #{name} not found: no healthy swarm nodes available" if nodes.empty?
+
+        nodes.map do |node|
+          Docker::Image.get(name, {}, node_connection(node))
+        rescue Docker::Error::NotFoundError => error
+          raise Docker::Error::NotFoundError, "Image #{name} not found on swarm node #{node_hostname(node) || node.fetch('ID', 'unknown')}: #{error.message}"
+        end
       end
 
       def inspect_service(id)

@@ -114,6 +114,15 @@ module Containers
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
+      # Returns one label hash per backing daemon that holds the requested
+      # image reference. Single-daemon backends naturally return one entry;
+      # multi-daemon backends (e.g. swarm) override this so callers can make
+      # cluster-wide freshness decisions instead of trusting a single image
+      # object.
+      def image_label_sets(name)
+        [ get_image(name).info["Labels"] || {} ]
+      end
+
       # Builds an image from a Dockerfile string (no build context files —
       # language layers install from the network, so the context is the
       # Dockerfile alone). Streams build output to the optional block.

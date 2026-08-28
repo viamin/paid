@@ -200,16 +200,16 @@ module Containers
 
     # @return [Symbol] :missing, :stale, or :current
     def current_status(image)
-      labels = image_labels(image)
-      return :missing unless labels
+      labels = image_label_sets(image)
+      return :missing if labels.empty?
 
-      labels[BASE_DIGEST_LABEL] == base_image_digest ? :current : :stale
+      labels.all? { |label_set| label_set[BASE_DIGEST_LABEL] == base_image_digest } ? :current : :stale
     end
 
-    def image_labels(image)
-      backend.get_image(image).info["Labels"]
+    def image_label_sets(image)
+      backend.image_label_sets(image)
     rescue Docker::Error::NotFoundError
-      nil
+      []
     end
 
     def base_image_digest

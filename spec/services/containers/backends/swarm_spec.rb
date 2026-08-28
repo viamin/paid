@@ -132,6 +132,21 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
     expect(Docker::Image).to have_received(:get).twice
   end
 
+  it "returns image labels for every healthy swarm node copy of a tag" do
+    second_node = build_node_payload(id: "node-2", host: "worker-2", addr: "10.0.0.26")
+    node1_image = instance_double(Docker::Image, info: { "Labels" => { "digest" => "sha256:1" } })
+    node2_image = instance_double(Docker::Image, info: { "Labels" => { "digest" => "sha256:2" } })
+
+    stub_manager_get("/nodes", [ node_payload, second_node ])
+    allow(Docker::Image).to receive(:get)
+      .with("paid-agent:go", {}, kind_of(Docker::Connection))
+      .and_return(node1_image, node2_image)
+
+    expect(backend.image_label_sets("paid-agent:go")).to eq(
+      [ { "digest" => "sha256:1" }, { "digest" => "sha256:2" } ]
+    )
+  end
+
   it "builds an image on every healthy node via docker-api's string-body build API" do
     second_node = build_node_payload(id: "node-2", host: "worker-2", addr: "10.0.0.26")
     node1_image = instance_double(Docker::Image)
