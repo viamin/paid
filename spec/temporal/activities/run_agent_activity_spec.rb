@@ -976,7 +976,7 @@ RSpec.describe Activities::RunAgentActivity do
 
       # OpenRouter ids are "<vendor>/<model>" slugs that opencode addresses
       # directly, so they pass through unchanged (matching the execute path and
-      # openrouter_free runtime) rather than gaining a redundant prefix.
+      # free-policy runtime) rather than gaining a redundant prefix.
       expect(runtime).to have_attributes(model: "moonshotai/kimi-k2-0905", api_provider: nil)
     end
 
@@ -1005,7 +1005,7 @@ RSpec.describe Activities::RunAgentActivity do
       expect(runtime.model).to eq("minimax/MiniMax-M3")
     end
 
-    it "builds OpenRouter provider routing for openrouter_free runs from project classification" do
+    it "builds OpenRouter provider routing for free-policy runs from project classification" do
       api_key = create(:runner_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret")
       free_model = create(:llm_model, model_id: "deepseek/deepseek-v4-flash:free", provider: "deepseek", tier: "mid", pricing_tier: "free")
       restricted_run = build_openrouter_free_run(project: project, model: free_model, data_classification: "restricted")
@@ -1095,7 +1095,7 @@ RSpec.describe Activities::RunAgentActivity do
       expect(runtime).to have_attributes(model: "qwen/qwen3-coder:free", api_provider: "openrouter")
     end
 
-    it "raises instead of falling back to an unpinned runtime when no free model resolves for openrouter_free" do
+    it "raises instead of falling back to an unpinned runtime when no free model resolves for a free-policy runner" do
       api_key = create(:runner_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret")
       free_model = create(:llm_model, model_id: "deepseek/deepseek-v4-flash:free", provider: "deepseek", tier: "mid", pricing_tier: "free")
       run = build_openrouter_free_run(project: project, model: free_model, data_classification: "internal")
@@ -2127,9 +2127,10 @@ RSpec.describe Activities::RunAgentActivity do
     create(
       :runner,
       user: user,
-      runner_key: "openrouter_free",
+      runner_key: "opencode",
       auth_type: "api_key",
       provider_api_key: api_key,
+      config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } },
       tier_model_ids: LlmModel::TIERS.index_with { model }
     ).tap do |runner|
       runner.update!(tier_models: LlmModel::TIERS.index_with { { "model_id" => model, "provider_id" => runner.id } })
@@ -4384,10 +4385,10 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.runners_attempted).to eq([])
       end
 
-      it "filters openrouter_free before execution when no free model resolves for the requested tier" do
+      it "filters a free-policy runner before execution when no free model resolves for the requested tier" do
         fallback_runner = create_low_only_openrouter_free_runner(user: user)
         user.settings.update!(fallback_enabled: true, fallback_runners: [ fallback_runner.routing_key ])
-        allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude openrouter_free])
+        allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude opencode])
 
         expect(container_service).not_to receive(:execute)
 

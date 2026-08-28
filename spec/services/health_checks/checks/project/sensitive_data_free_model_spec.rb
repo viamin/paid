@@ -69,13 +69,9 @@ RSpec.describe HealthChecks::Checks::Project::SensitiveDataFreeModel do
     model = create(:llm_model, :free, model_id: "free-model", catalog_source: "manual")
     owner = create(:user)
     openrouter_key = create(:provider_api_key, user: owner, api_service_type: "openrouter")
-    openrouter_runner = create(
-      :runner,
-      user: owner,
-      runner_key: "openrouter_free",
-      auth_type: "api_key",
-      provider_api_key: openrouter_key
-    )
+    openrouter_runner = create(:runner, user: owner, runner_key: "opencode", auth_type: "api_key", provider_api_key: openrouter_key,
+      config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } },
+      tier_model_ids: LlmModel::TIERS.index_with { model.model_id })
     owner.settings.update!(default_agent_runner: openrouter_runner.routing_key)
     project = build(
       :project,
@@ -143,8 +139,10 @@ RSpec.describe HealthChecks::Checks::Project::SensitiveDataFreeModel do
     settings = owner.settings
     openrouter_runner = instance_double(
       Runner,
-      runner_key: "openrouter_free",
+      runner_key: "opencode",
       auth_type: "api_key",
+      free_model_policy?: true,
+      required_api_service_type: "openrouter",
       agent_harness_runner_runtime: nil
     )
     selected_settings = instance_double(UserSetting)

@@ -403,7 +403,7 @@
     <div class="rounded-lg border border-gray-200 p-4"
          data-runner-form-target="tierSettings"
          data-tier-runner-key="<%= runner.runner_key %>"
-         data-tier-visibility="<%= runner.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY ? "always" : "free_policy" %>">
+         data-tier-visibility="free_policy">
       <% if free_runner %>
         <div class="flex flex-wrap items-center gap-2">
           <h3 class="text-sm font-semibold text-gray-900">Free Model Configuration</h3>

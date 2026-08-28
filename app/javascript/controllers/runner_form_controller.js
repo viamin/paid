@@ -19,8 +19,6 @@ function loadRunnerApiServiceType() {
     cursor: "anthropic",
     codex: "openai",
     gemini: "google",
-    openrouter_free: "openrouter",
-    openrouter_pareto: "openrouter",
   }
 }
 
@@ -281,8 +279,6 @@ export default class extends Controller {
   }
 
   freePolicySelectedFor(runnerKey) {
-    if (runnerKey === "openrouter_free") return true
-
     const select = this.dynamicModelSelectTargets.find((target) => target.dataset.runnerKey === runnerKey)
     if (!select) return false
 

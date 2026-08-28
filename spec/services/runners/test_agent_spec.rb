@@ -812,18 +812,19 @@ RSpec.describe Runners::TestAgent do
       end
     end
 
-    context "when direct-outbound openrouter_free is tested" do
+    context "when a direct-outbound free-policy opencode runner is tested" do
       let(:api_key) { create(:runner_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret") }
       let!(:free_model) { create(:llm_model, model_id: "deepseek/deepseek-v4-flash:free", provider: "deepseek", tier: "mid", pricing_tier: "free") }
       let(:runner_record) do
         create(
           :runner,
           user: user,
-          runner_key: "openrouter_free",
+          runner_key: "opencode",
           auth_type: "api_key",
           provider_api_key: api_key,
           enabled_for_agent_runs: false,
           enabled_for_fallback: false,
+          config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } },
           tier_model_ids: LlmModel::TIERS.index_with { free_model.model_id }
         ).tap do |runner|
           runner.update!(tier_models: LlmModel::TIERS.index_with { { "model_id" => free_model.model_id, "provider_id" => runner.id } })

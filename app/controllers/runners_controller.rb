@@ -292,35 +292,20 @@ class RunnersController < ApplicationController
   def load_runner_options
     addable_keys = resource_addable_keys
     existing_subscription_keys = resource_records.kept_only.subscription.pluck(:runner_key)
-    # Only single-instance api_key runners (e.g. openrouter_free) are hidden
-    # once added. Other api_key runners (opencode, kilocode, pi, omp) allow
-    # legitimate duplicates when the API key or name differs, so they must
-    # keep appearing in the "Add Runner" options.
-    existing_single_instance_keys = resource_records.kept_only.api_key.pluck(:runner_key)
-      .select { |key| Runner.single_instance_runner_key?(key) }
-    subscription_addable_keys = addable_keys.reject { |key| api_key_only_runner?(key) }
 
     # Subscription runners: only show keys not yet added
     @subscription_runner_options = if @runner&.persisted?
-      subscription_addable_keys - (existing_subscription_keys - [ @runner.runner_key ])
+      addable_keys - (existing_subscription_keys - [ @runner.runner_key ])
     else
-      subscription_addable_keys - existing_subscription_keys
+      addable_keys - existing_subscription_keys
     end
 
     # API key runners: show all addable keys that have a compatible API key.
-    # Single-instance keys are subtracted once the user already has one so
-    # the "Add Runner" CTA reflects reality.
     @available_api_keys = current_user.provider_api_keys.ordered
     @available_api_keys_by_service_type = group_api_keys_by_service_type(@available_api_keys)
-    candidate_api_key_keys = addable_keys.select do |key|
+    @api_key_runner_options = addable_keys.select do |key|
       @available_api_keys.any? { |ak| compatible_api_key_for_runner?(api_key: ak, runner_key: key) }
     end
-    @api_key_runner_options =
-      if @runner&.persisted?
-        candidate_api_key_keys - (existing_single_instance_keys - [ @runner.runner_key ])
-      else
-        candidate_api_key_keys - existing_single_instance_keys
-      end
 
     # Combined for backward compat
     @runner_options = @subscription_runner_options
@@ -514,7 +499,7 @@ class RunnersController < ApplicationController
 
   def load_index_context
     @runners = policy_scope(resource_model_class).ordered
-    @free_model_runners = @runners.select { |runner| runner.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY }
+    @free_model_runners = @runners.select(&:free_model_policy?)
     @runner_states = cached_runner_states
     @user_setting = current_user.settings
 
@@ -565,19 +550,13 @@ class RunnersController < ApplicationController
     )
     @available_api_keys = current_user.provider_api_keys.ordered
     existing_subscription_keys = @runners.select(&:subscription?).map(&:runner_key)
-    # Only single-instance runner keys are hidden from the index "Add Runner"
-    # CTA once added; other api_key runners allow legitimate duplicates.
-    existing_single_instance_keys = @runners.map(&:runner_key)
-      .select { |key| Runner.single_instance_runner_key?(key) }
     addable_keys = resource_addable_keys
-    subscription_addable_keys = addable_keys.reject { |key| api_key_only_runner?(key) }
     api_key_compatible_addable_keys =
       addable_keys.select do |key|
         @available_api_keys.any? { |api_key| compatible_api_key_for_runner?(api_key: api_key, runner_key: key) }
       end
-    visible_api_key_keys = api_key_compatible_addable_keys.reject { |key| existing_single_instance_keys.include?(key) }
     @addable_runner_options = (
-      (subscription_addable_keys - existing_subscription_keys) + visible_api_key_keys
+      (addable_keys - existing_subscription_keys) + api_key_compatible_addable_keys
     ).uniq.presence || []
   end
 
@@ -711,7 +690,6 @@ class RunnersController < ApplicationController
     if runner_key == "omp"
       return resource_model_class::OMP_API_PROVIDERS.values.any? { |config| config[:service_type] == api_key.api_service_type }
     end
-    return api_key.api_service_type == "openrouter" if runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
 
     api_key.api_service_type == resource_api_service_type_for(runner_key)
   end
@@ -731,7 +709,7 @@ class RunnersController < ApplicationController
   end
 
   def apply_new_runner_defaults(runner)
-    return unless runner.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
+    return unless runner.new_record? && runner.free_model_policy?
 
     submitted_runner_params = params[:runner].respond_to?(:to_unsafe_h) ? params[:runner].to_unsafe_h : params.fetch(:runner, {})
 
@@ -742,11 +720,6 @@ class RunnersController < ApplicationController
     runner.enabled_for_chat = true if runner.enabled_for_chat.nil?
     runner.enabled_for_fallback = true if runner.enabled_for_fallback.nil?
     runner.fallback_role = "rate_limit_fallback" unless submitted_runner_params.key?("fallback_role") || submitted_runner_params.key?(:fallback_role)
-    runner.tier_model_ids = FreeModels::DefaultTierModels.call if runner.tier_model_ids.blank?
-  end
-
-  def api_key_only_runner?(runner_key)
-    runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
   end
 
   def group_api_keys_by_service_type(api_keys)

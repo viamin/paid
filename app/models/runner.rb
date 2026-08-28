@@ -9,15 +9,12 @@ class Runner < ApplicationRecord
   include Discard::Model
   include LegacyAttributeBridge
 
-  OPENROUTER_FREE_RUNNER_KEY = "openrouter_free"
   OPENROUTER_FREE_MODEL_PROVIDER = "openrouter"
-  OPENROUTER_PARETO_RUNNER_KEY = "openrouter_pareto"
   DIRECT_OUTBOUND_FREE_POLICY_RUNNER_KEYS = %w[opencode kilocode pi omp].freeze
   # model_policy narrows how a direct-outbound runner picks its model:
   # "specific" pins a single configured model id (the default); "free"
-  # drives selection from tier_model_ids via a tier picker, mirroring the
-  # legacy openrouter_free runner. Free policy is valid only when the runner
-  # resolves to the openrouter API provider.
+  # drives selection from tier_model_ids via a tier picker. Free policy is
+  # valid only when the runner resolves to the openrouter API provider.
   # @spec MODEL-POLICY-001 MODEL-POLICY-002 MODEL-POLICY-003
   MODEL_POLICIES = %w[specific free].freeze
 
@@ -207,8 +204,6 @@ class Runner < ApplicationRecord
   validate :pi_api_key_config_must_be_valid
   validate :omp_api_key_config_must_be_valid
   validate :direct_outbound_config_models_must_exist_in_catalog
-  validate :openrouter_free_requires_api_key_auth
-  validate :openrouter_pareto_requires_api_key_auth
   validate :tier_model_ids_must_be_valid
   validate :tier_model_ids_must_be_runner_compatible
   validate :tier_models_must_be_valid
@@ -403,14 +398,12 @@ class Runner < ApplicationRecord
     direct_outbound_model_policy
   end
 
-  # True for any runner enforcing the free-model tier_model_ids contract:
-  # the legacy dedicated openrouter_free runner, or a direct-outbound runner
-  # configured with model_policy "free". Both must resolve tier_model_ids
-  # exclusively to free LlmModel rows and are curated the same way by
+  # True for a direct-outbound runner configured with model_policy "free".
+  # Must resolve tier_model_ids exclusively to free LlmModel rows, curated by
   # sync_direct_outbound_tier_models.
   # @spec MODEL-POLICY-004
   def free_model_policy?
-    openrouter_free? || direct_outbound_free_policy?
+    direct_outbound_free_policy?
   end
 
   def opencode_preflight_timeout_seconds
@@ -502,7 +495,7 @@ class Runner < ApplicationRecord
   end
 
   def requires_direct_outbound?
-    opencode_direct_outbound? || kilocode_direct_outbound? || pi_direct_outbound? || omp_direct_outbound? || openrouter_free_direct_outbound? || openrouter_pareto_direct_outbound?
+    opencode_direct_outbound? || kilocode_direct_outbound? || pi_direct_outbound? || omp_direct_outbound?
   end
 
   def opencode_required_api_service_type
@@ -550,8 +543,7 @@ class Runner < ApplicationRecord
   #
   # A model id that already carries a "/" is left untouched: OpenRouter-routed
   # ids are "<vendor>/<model>" slugs (e.g. "moonshotai/kimi-k2-0905") that
-  # opencode addresses directly — the bare slug is the form the execute path and
-  # the openrouter_free runtime ship today. No-op for runners that do not
+  # opencode addresses directly. No-op for runners that do not
   # provider-qualify their models.
   def qualified_model_for(model_id)
     return model_id if model_id.blank? || model_id.include?("/")
@@ -643,7 +635,7 @@ class Runner < ApplicationRecord
   end
 
   def agent_harness_runtime?
-    direct_outbound_free_policy? || opencode_agent_harness_runtime? || copilot_agent_harness_runtime? || pi_agent_harness_runtime? || omp_agent_harness_runtime? || openrouter_free_agent_harness_runtime? || openrouter_pareto_agent_harness_runtime?
+    direct_outbound_free_policy? || opencode_agent_harness_runtime? || copilot_agent_harness_runtime? || pi_agent_harness_runtime? || omp_agent_harness_runtime?
   end
 
   def opencode_agent_harness_runtime?
@@ -664,14 +656,6 @@ class Runner < ApplicationRecord
     runner_key == "omp" &&
       api_key? &&
       OMP_API_PROVIDER_KEYS.include?(omp_api_provider)
-  end
-
-  def openrouter_free_agent_harness_runtime?
-    openrouter_free_direct_outbound?
-  end
-
-  def openrouter_pareto_agent_harness_runtime?
-    openrouter_pareto_direct_outbound?
   end
 
   def direct_outbound_model_id
@@ -762,8 +746,6 @@ class Runner < ApplicationRecord
 
   def self.display_name_for(runner_key)
     return "Unknown" if runner_key.blank?
-    return "OpenRouter Free" if runner_key.to_s == OPENROUTER_FREE_RUNNER_KEY
-    return "OpenRouter Pareto" if runner_key.to_s == OPENROUTER_PARETO_RUNNER_KEY
 
     provider = AgentHarness.provider(RunnerSupport.harness_runner_key_for(runner_key).to_sym)
 
@@ -794,23 +776,6 @@ class Runner < ApplicationRecord
 
   def self.addable_runner_key?(runner_key)
     RunnerSupport.addable_runner_key?(runner_key)
-  end
-
-  # Returns true for runner keys that a user may only configure a single
-  # instance of regardless of credential. Such keys are hidden from the "Add
-  # Runner" UI once the user already has one. Today only the legacy
-  # openrouter_free runner key is single-instance at this coarse,
-  # credential-agnostic granularity.
-  #
-  # opencode runners configured with model_policy "free" are NOT covered
-  # here: opencode legitimately allows multiple runners (specific-model or
-  # free-policy) with different API keys, so their single-instance rule is
-  # the finer-grained "one free-policy runner per user per OpenRouter
-  # credential" enforced by +free_model_policy_runner_must_be_unique_per_credential+
-  # instead. Re-scoping this UI-list helper onto that same config predicate
-  # is tracked alongside the openrouter_free -> opencode migration issue.
-  def self.single_instance_runner_key?(runner_key)
-    runner_key.to_s == OPENROUTER_FREE_RUNNER_KEY
   end
 
   def self.harness_runner_key_for(runner_key)
@@ -950,9 +915,6 @@ class Runner < ApplicationRecord
       self.tier_model_ids = default_tier_model_ids if default_tier_model_ids.present?
       return
     end
-    # openrouter_pareto selects models dynamically via the Pareto router; no tier
-    # model IDs are needed or managed by the app.
-    return if runner_key == OPENROUTER_PARETO_RUNNER_KEY
 
     return unless requires_direct_outbound?
     return unless direct_outbound_model_id.present?
@@ -965,22 +927,22 @@ class Runner < ApplicationRecord
   # @spec MODEL-POLICY-005
   def clear_stale_direct_outbound_tier_models
     return unless tier_model_ids.present?
-    return if free_model_policy? || runner_key == OPENROUTER_PARETO_RUNNER_KEY
+    return if free_model_policy?
     return unless direct_outbound_capable_runner?
     return if requires_direct_outbound? && direct_outbound_model_id.present?
 
     self.tier_model_ids = {}
   end
 
-  # When the user explicitly changes tier_model_ids on an openrouter_free
-  # runner, drop any free-model rotation recovery snapshot so a later
-  # successful run does not revert their edit back to the pre-rotation
-  # mapping. System rotations set +rotating_tier_models+ to skip this.
-  # The snapshot lives on the RunnerState row keyed by the bare runner_key
-  # (matching FreeModels::Rotation and Knowledge::RunnerExecutor), NOT the
-  # routing-key state_key, so the lookup uses the same key that wrote it.
+  # When the user explicitly changes tier_model_ids on a free-policy runner,
+  # drop any free-model rotation recovery snapshot so a later successful run
+  # does not revert their edit back to the pre-rotation mapping. System
+  # rotations set +rotating_tier_models+ to skip this. The snapshot lives on
+  # the RunnerState row keyed by the runner's routing-key state_key (matching
+  # FreeModels::Rotation), so the lookup uses the same key that wrote it.
   # Only relevant when editing an existing runner — creating a runner must
   # not wipe a pre-existing recovery snapshot.
+  # @spec MODEL-POLICY-012
   def clear_free_model_rotation_snapshot
     return if new_record?
     return unless free_model_policy?
@@ -988,12 +950,12 @@ class Runner < ApplicationRecord
     return unless will_save_change_to_tier_model_ids?
     return unless user
 
-    state = user.runner_states.find_by(runner_name: runner_key)
+    state = user.runner_states.find_by(runner_name: state_key)
     state&.clear_preferred_tier_model_ids!
   end
 
   def direct_outbound_capable_runner?
-    %w[kilocode opencode openrouter_free openrouter_pareto pi omp].include?(runner_key)
+    %w[kilocode opencode pi omp].include?(runner_key)
   end
 
   def direct_outbound_api_key_env_var(api_provider)
@@ -1217,14 +1179,12 @@ class Runner < ApplicationRecord
     errors.add(:runner_key, "already has an entry with this API key")
   end
 
-  # Enforces "one free-policy runner per user per OpenRouter credential":
-  # a user may hold a free-policy runner (legacy openrouter_free, or opencode
-  # with model_policy "free") per distinct provider_api_key/integration_credential,
-  # but not two pointed at the same credential — they would both draw on the
-  # same free-tier quota. This is deliberately broader than
-  # api_key_entry_must_be_unique's per-runner_key scope: it also blocks
-  # pairing a legacy openrouter_free runner with an opencode free-policy
-  # runner on the same credential.
+  # Enforces "one free-policy runner per user per OpenRouter credential": a
+  # user may hold a free-policy runner (e.g. opencode with model_policy
+  # "free") per distinct provider_api_key/integration_credential, but not two
+  # pointed at the same credential — they would both draw on the same
+  # free-tier quota. This is deliberately broader than
+  # api_key_entry_must_be_unique's per-runner_key scope.
   # @spec MODEL-POLICY-007
   def free_model_policy_runner_must_be_unique_per_credential
     return unless free_model_policy?
@@ -1247,20 +1207,6 @@ class Runner < ApplicationRecord
     return if integration_credential.active?
 
     errors.add(:integration_credential, "must be active")
-  end
-
-  def openrouter_free_requires_api_key_auth
-    return unless runner_key == OPENROUTER_FREE_RUNNER_KEY
-    return if api_key?
-
-    errors.add(:auth_type, "must be API key for OpenRouter Free")
-  end
-
-  def openrouter_pareto_requires_api_key_auth
-    return unless runner_key == OPENROUTER_PARETO_RUNNER_KEY
-    return if api_key?
-
-    errors.add(:auth_type, "must be API key for OpenRouter Pareto")
   end
 
   # Runs for every direct-outbound free-policy-capable runner regardless of
@@ -1366,11 +1312,6 @@ class Runner < ApplicationRecord
             errors.add(:tier_model_ids, "must match the configured direct-outbound model #{configured}")
             return
           end
-        end
-      elsif runner_key == OPENROUTER_FREE_RUNNER_KEY
-        unless model.free? && model.provider == OPENROUTER_FREE_MODEL_PROVIDER
-          errors.add(:tier_model_ids, "model #{model_id} must be a free OpenRouter model")
-          return
         end
       elsif expected_provider && model.provider != expected_provider
         errors.add(:tier_model_ids, "model #{model_id} does not belong to runner #{runner_key}")
@@ -1744,10 +1685,6 @@ class Runner < ApplicationRecord
       omp_model_id.present?
   end
 
-  def openrouter_free?
-    runner_key == "openrouter_free"
-  end
-
   def direct_outbound_free_policy_supported_runner?
     DIRECT_OUTBOUND_FREE_POLICY_RUNNER_KEYS.include?(runner_key)
   end
@@ -1776,22 +1713,6 @@ class Runner < ApplicationRecord
 
   def omp_free_model_policy_runtime?
     runner_key == "omp" && direct_outbound_free_policy? && omp_api_provider == OPENROUTER_FREE_MODEL_PROVIDER
-  end
-
-  def openrouter_free_direct_outbound?
-    runner_key == "openrouter_free" &&
-      api_key? &&
-      required_api_service_type == "openrouter"
-  end
-
-  def openrouter_pareto?
-    runner_key == "openrouter_pareto"
-  end
-
-  def openrouter_pareto_direct_outbound?
-    runner_key == "openrouter_pareto" &&
-      api_key? &&
-      required_api_service_type == "openrouter"
   end
 
   def direct_outbound_runner_label
@@ -2000,21 +1921,9 @@ class Runner < ApplicationRecord
     )
   end
 
-  def openrouter_free_runner_runtime(project:, model_id:)
-    config = Runners::FreeModelExecutionPlan.call(runner: self, model_id: model_id, project: project).config
-    openrouter_provider_runtime(config)
-  end
-  public :openrouter_free_runner_runtime
-
-  def openrouter_pareto_runner_runtime(project:)
-    config = Runners::ParetoExecutionPlan.call(runner: self, project: project).config
-    openrouter_provider_runtime(config)
-  end
-  public :openrouter_pareto_runner_runtime
-
-  # Shared builder for OpenRouter-backed runners (free-model and Pareto). Both
-  # resolve their config via an execution plan and translate it into the same
-  # AgentHarness runtime, so the provider routing/metadata shape stays in sync.
+  # Shared builder for OpenRouter-backed free-policy runners. Resolves the
+  # model via Runners::FreeModelExecutionPlan and translates it into the
+  # AgentHarness runtime.
   def openrouter_provider_runtime(config)
     AgentHarness::ProviderRuntime.new(
       model: config.fetch(:model),
