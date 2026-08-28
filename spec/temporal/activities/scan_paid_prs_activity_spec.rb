@@ -6588,7 +6588,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(automation_scan_results(result)).to contain_exactly(
+        expect(result[:automation_results]).to contain_exactly(
           hash_including(
             decisions: [
               { type: "request_review", pr_number: 42, reviewers: [ "viamin" ],
