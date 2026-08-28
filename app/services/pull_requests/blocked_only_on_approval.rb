@@ -370,15 +370,8 @@ module PullRequests
       review[:body]&.include?(Activities::ScanPaidPrsActivity::PAID_REVIEW_CLEAN_MARKER) || false
     end
 
-    # Cheap mirror of the scan's check_non_enabled_bot_reviews: when the
-    # project has address_all_bot_reviews? on, a review or unresolved
-    # thread from a bot outside the enabled set also blocks, not just
-    # bots the project explicitly configured. Simplified relative to the
-    # scan's version — it does not replay the body-only-bot "needs
-    # followup"/diff-touches-reviewed-files nuance, so it treats any
-    # non-clean review from a non-enabled bot as blocking. That is
-    # conservative in the same direction as the rest of this class: it
-    # can hold a PR the scan would release, never the reverse.
+    # Mirrors the scan's non-enabled-bot blocker path so re-validation and
+    # scan treat body-only bots the same way under address_all_bot_reviews?.
     def non_enabled_bot_reviews_clear?(reviews, unresolved_threads)
       return true unless @project.address_all_bot_reviews?
 
@@ -389,9 +382,60 @@ module PullRequests
         thread[:comments].any? { |c| non_enabled_logins.include?(c[:author]&.downcase) }
       end
 
+      latest_non_enabled_reviews(reviews, non_enabled_logins).all? do |review|
+        non_enabled_bot_review_clear?(review)
+      end
+    end
+
+    def latest_non_enabled_reviews(reviews, non_enabled_logins)
       Array(reviews)
-        .select { |r| non_enabled_logins.include?(r[:user_login]&.downcase) }
-        .all? { |r| paid_agent_clean_review?(r) || Activities::ScanPaidPrsActivity::REVIEW_BOT_CLEAN_PATTERN.match?(r[:body]) }
+        .select { |review| non_enabled_logins.include?(review[:user_login]&.downcase) }
+        .group_by { |review| provider_key_or_login_for(review[:user_login]) }
+        .values
+        .map { |bot_reviews| bot_reviews.max_by { |review| review[:submitted_at] || Time.at(0) } }
+    end
+
+    def non_enabled_bot_review_clear?(review)
+      return true if review.nil?
+
+      bot_login = review[:user_login]&.downcase
+      return true if body_only_bot_clean_comment_supersedes_review?(bot_login, review)
+      return true if paid_agent_clean_review?(review)
+      return true if Activities::ScanPaidPrsActivity::REVIEW_BOT_CLEAN_PATTERN.match?(review[:body].to_s)
+      return false unless body_only_review_bot?(bot_login)
+      return false if body_only_review_needs_followup?(review, last_completed_run)
+
+      collector.review_diff_touches_reviewed_files?(issue: @issue, review:)
+    end
+
+    def body_only_bot_clean_comment_supersedes_review?(bot_login, latest_review)
+      return false unless body_only_review_bot?(bot_login)
+
+      provider_key = RunnerSupport.runner_key_for_bot_username(bot_login)
+      bot_logins = RunnerSupport.runner_bot_usernames_for(provider_key)
+      body_only_bot_clean_comment_present?(bot_logins, latest_review)
+    end
+
+    def provider_key_or_login_for(login)
+      RunnerSupport.runner_key_for_bot_username(login) || login&.downcase
+    end
+
+    def body_only_review_bot?(login)
+      return false if login.nil?
+
+      Activities::ScanPaidPrsActivity::BODY_ONLY_REVIEW_BOT_LOGINS.include?(login.downcase)
+    end
+
+    def body_only_review_needs_followup?(latest_review, last_run)
+      return false if latest_review.nil?
+
+      submitted_at = latest_review[:submitted_at]
+      return true if submitted_at.nil?
+
+      cutoff = last_run&.completed_at
+      return true if cutoff.nil?
+
+      submitted_at > cutoff
     end
 
     # Mirrors the scan's human_review_thread_triggers + review_bot_thread_triggers:

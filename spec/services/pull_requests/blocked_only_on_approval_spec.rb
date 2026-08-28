@@ -115,6 +115,36 @@ RSpec.describe PullRequests::BlockedOnlyOnApproval do
       .and_return(comments)
   end
 
+  def stub_review_comments(comments)
+    allow(client).to receive(:pull_request_review_comments)
+      .with(project.full_name, issue.github_number)
+      .and_return(comments)
+  end
+
+  def stub_changed_files(base_sha:, head_sha:, files:)
+    allow(client).to receive(:compare_changed_files)
+      .with(project.full_name, base_sha, head_sha)
+      .and_return(files)
+  end
+
+  def stub_non_configured_body_only_bot_review(sha:, submitted_at:, body:, commit_id: nil)
+    stub_pr_data(green_pr_data(sha: sha))
+    stub_checks(sha, green_checks)
+
+    review = {
+      id: 200,
+      user_login: "chatgpt-codex-connector",
+      state: "COMMENTED",
+      body: body,
+      submitted_at: submitted_at
+    }
+    review[:commit_id] = commit_id if commit_id
+
+    stub_reviews(green_reviews + [ review ])
+    stub_review_threads([])
+    stub_head_commit(sha: sha)
+  end
+
   describe ".call" do
     it "returns true when every precondition is green and the PR is unapproved" do
       sha = "abc123"
@@ -636,6 +666,7 @@ RSpec.describe PullRequests::BlockedOnlyOnApproval do
         stub_review_threads([])
         stub_head_commit(sha: sha)
         stub_issue_comments
+        stub_review_comments([])
 
         expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(false)
       end
@@ -652,6 +683,7 @@ RSpec.describe PullRequests::BlockedOnlyOnApproval do
         ])
         stub_head_commit(sha: sha)
         stub_issue_comments
+        stub_review_comments([])
 
         expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(false)
       end
@@ -670,6 +702,51 @@ RSpec.describe PullRequests::BlockedOnlyOnApproval do
         stub_review_threads([])
         stub_head_commit(sha: sha)
         stub_issue_comments
+        stub_review_comments([])
+
+        expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(true)
+      end
+
+      # @spec PR-ESCALATION-025
+      it "returns true when a non-configured body-only bot's clean issue comment supersedes its review" do
+        sha = "abc123"
+        stub_non_configured_body_only_bot_review(
+          sha: sha,
+          body: "Here are some suggestions.",
+          submitted_at: 2.hours.ago
+        )
+        stub_issue_comments([
+          OpenStruct.new(
+            user: OpenStruct.new(login: "chatgpt-codex-connector"),
+            body: "Codex Review: Didn't find any major issues. Bravo.",
+            created_at: 1.hour.ago
+          )
+        ])
+        stub_review_comments([])
+
+        expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(true)
+      end
+
+      # @spec PR-ESCALATION-025
+      it "returns true when a non-configured body-only bot reviewed files that changed after the last completed run" do
+        sha = "head123"
+        create(:agent_run,
+          project: project,
+          issue: issue,
+          goal: "create_pr",
+          status: "completed",
+          completed_at: 2.hours.ago)
+        stub_non_configured_body_only_bot_review(
+          sha: sha,
+          body: "Here are some suggestions.",
+          submitted_at: 3.hours.ago,
+          commit_id: "reviewed123"
+        )
+        stub_issue_comments
+        stub_review_comments([
+          { pull_request_review_id: 200, path: "app/models/user.rb" }
+        ])
+        stub_changed_files(base_sha: "reviewed123", head_sha: sha, files: [ "app/models/user.rb" ])
 
         expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(true)
       end
