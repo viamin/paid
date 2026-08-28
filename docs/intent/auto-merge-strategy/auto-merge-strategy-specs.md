@@ -30,7 +30,14 @@
   push fallback configured, it SHALL retry the merge with that fallback client.
   Terminal workflow-permission merge rejections SHALL mark the synced PR row
   for the existing merge-permission cooldown and clear that marker after a
-  later successful merge.
+  later successful merge. When a workflow-permission rejection is terminal
+  (no PAT fallback configured, or the configured fallback also failed), the
+  system SHALL post exactly one sanitized, marker-deduped PR comment
+  identifying the blocker and the next action, using distinct wording for the
+  fallback-not-configured and fallback-failed cases, and SHALL NOT include
+  raw GitHub error payloads, credential/token values, or stack traces in the
+  comment body. No comment SHALL be posted for transient errors or unrelated
+  non-403 failures.
   *Code:* `app/jobs/dependabot_auto_merge_job.rb`.
   *Test:* `spec/jobs/dependabot_auto_merge_job_spec.rb`.
 

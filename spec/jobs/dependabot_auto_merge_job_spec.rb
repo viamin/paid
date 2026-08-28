@@ -27,10 +27,12 @@ RSpec.describe DependabotAutoMergeJob do
   before do
     allow(GithubClient).to receive(:new).and_return(client)
     allow(client).to receive_messages(
+      authenticated_login: "paid-bot",
       pull_requests: [ dependabot_pr ],
       pull_request: dependabot_pr,
       check_runs_for_ref: green_checks,
-      combined_status: { state: "success", total_count: 1 }
+      combined_status: { state: "success", total_count: 1 },
+      recent_issue_comments: []
     )
     allow(client).to receive(:merge_pull_request)
     allow(client).to receive(:add_labels_to_issue)
@@ -255,6 +257,101 @@ RSpec.describe DependabotAutoMergeJob do
       expect { described_class.perform_now(project.id) }.not_to raise_error
     end
 
+    context "when a workflow-permission rejection has no PAT fallback configured" do
+      let(:rejection_message) do
+        "403 - refusing to allow a GitHub App to create or update workflow " \
+          "`.github/workflows/ci.yml` without `workflows` permission " \
+          "for token ghs_super_secret_app_token_value"
+      end
+
+      before do
+        allow(client).to receive(:merge_pull_request).and_raise(
+          GithubClient::ApiError.new(rejection_message, status: 403)
+        )
+      end
+
+      it "posts a deduped comment explaining the App needs the workflows permission" do
+        described_class.perform_now(project.id)
+
+        expect(client).to have_received(:add_comment) do |repo, number, body|
+          expect(repo).to eq(project.full_name)
+          expect(number).to eq(42)
+          expect(body).to include(described_class::MERGE_PERMISSION_COMMENT_MARKER)
+          expect(body).to include("auto-merge blocked")
+          expect(body).to include("grant the App the `workflows` permission")
+          expect(body).to include("configure a PAT push-fallback")
+        end
+      end
+
+      it "does not leak the raw GitHub error message or credential details in the comment" do
+        described_class.perform_now(project.id)
+
+        expect(client).to have_received(:add_comment) do |_repo, _number, body|
+          expect(body).not_to include("ghs_super_secret_app_token_value")
+          expect(body).not_to include(rejection_message)
+        end
+      end
+
+      it "does not post a duplicate comment when one already exists" do
+        existing = double(
+          body: "#{described_class::MERGE_PERMISSION_COMMENT_MARKER} earlier",
+          user: double(login: "paid-bot")
+        )
+        allow(client).to receive(:recent_issue_comments).and_return([ existing ])
+
+        described_class.perform_now(project.id)
+
+        expect(client).not_to have_received(:add_comment)
+      end
+
+      it "ignores a matching marker from a different author" do
+        spoof = double(
+          body: "#{described_class::MERGE_PERMISSION_COMMENT_MARKER} earlier",
+          user: double(login: "someone-else")
+        )
+        allow(client).to receive(:recent_issue_comments).and_return([ spoof ])
+
+        described_class.perform_now(project.id)
+
+        expect(client).to have_received(:add_comment)
+      end
+
+      it "does not post duplicate comments across repeated polling cycles" do
+        posted = []
+        allow(client).to receive(:add_comment) do |_repo, _number, body|
+          posted << body
+        end
+        allow(client).to receive(:recent_issue_comments) do
+          posted.map do |body|
+            double(body: body, user: double(login: "paid-bot"))
+          end
+        end
+
+        3.times { described_class.perform_now(project.id) }
+
+        expect(posted.size).to eq(1)
+      end
+
+      it "does not post a comment when fetching recent comments fails" do
+        allow(client).to receive(:recent_issue_comments)
+          .and_raise(GithubClient::Error, "temporary outage")
+
+        described_class.perform_now(project.id)
+
+        expect(client).not_to have_received(:add_comment)
+      end
+
+      it "does not post a comment for a transient non-403 failure" do
+        allow(client).to receive(:merge_pull_request).and_raise(
+          GithubClient::ApiError.new("Merge conflict", status: 409)
+        )
+
+        described_class.perform_now(project.id)
+
+        expect(client).not_to have_received(:add_comment)
+      end
+    end
+
     context "with a configured PAT fallback" do
       let(:project) { create(:project, :with_github_installation, auto_merge_mode: "dependabot_only") }
       let(:fallback_token) { create(:github_token, :with_workflow_scope, account: project.account) }
@@ -322,6 +419,44 @@ RSpec.describe DependabotAutoMergeJob do
           reason_code: AutoMergeAttempts::Record::REASON_MISSING_WORKFLOWS_PERMISSION,
           credential_mode: "pat_fallback"
         )
+      end
+
+      it "posts a comment noting the PAT fallback also failed, distinct from the not-configured wording" do
+        rejection = "refusing to allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows` permission"
+        allow(client).to receive(:merge_pull_request).and_raise(
+          GithubClient::ApiError.new(rejection, status: 403)
+        )
+        allow(fallback_client).to receive(:merge_pull_request).and_raise(
+          GithubClient::ApiError.new(rejection, status: 403)
+        )
+
+        described_class.perform_now(project.id)
+
+        expect(client).to have_received(:add_comment) do |_repo, _number, body|
+          expect(body).to include(described_class::MERGE_PERMISSION_COMMENT_MARKER)
+          expect(body).to include("PAT push-fallback credential also could not merge")
+          expect(body).not_to include("grant the App the `workflows` permission")
+          expect(body).not_to include(rejection)
+        end
+      end
+
+      it "does not post a duplicate comment on a repeated evaluation" do
+        rejection = "refusing to allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows` permission"
+        allow(client).to receive(:merge_pull_request).and_raise(
+          GithubClient::ApiError.new(rejection, status: 403)
+        )
+        allow(fallback_client).to receive(:merge_pull_request).and_raise(
+          GithubClient::ApiError.new(rejection, status: 403)
+        )
+        posted = []
+        allow(client).to receive(:add_comment) { |_repo, _number, body| posted << body }
+        allow(client).to receive(:recent_issue_comments) do
+          posted.map { |body| double(body: body, user: double(login: Github::AppRegistry.bot_login)) }
+        end
+
+        2.times { described_class.perform_now(project.id) }
+
+        expect(posted.size).to eq(1)
       end
 
       it "skips merge attempts while a permission rejection is cooling down" do
