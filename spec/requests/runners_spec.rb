@@ -1388,6 +1388,129 @@ RSpec.describe "Runners" do
       expect(select_tag).to include("disabled")
     end
 
+    # @spec MODEL-POLICY-FORM-001 MODEL-POLICY-FORM-002 MODEL-POLICY-FORM-006
+    context "when runner_model_policy_form is enabled" do
+      before { FeatureFlags.enable!(:runner_model_policy_form) }
+
+      # The runner-key-specific Model <select> node, parsed with Nokogiri so
+      # assertions read the rendered <option>s rather than the raw HTML —
+      # the select's own data-model-entries-by-service-type attribute value
+      # contains a literal ">" (from "change->runner-form#...") that breaks
+      # naive [^>]* tag-boundary regexes, and it intentionally carries every
+      # service type's entries (Free included) up front for the JS re-render,
+      # so a substring check against the raw body would see the embedded
+      # JSON for keys/providers that are not currently selected.
+      def catalog_select_node(body, runner_key)
+        Nokogiri::HTML(body).at_css("select#runner_config_#{runner_key}_model")
+      end
+
+      it "renders the Free policy option, catalog rows, and the Custom sentinel for OpenCode on an OpenRouter key" do
+        api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+        LlmModel.find_by!(model_id: "moonshotai/kimi-k2-0905").update!(display_name: "Kimi K2", family: "Kimi")
+        runner = user.runners.create!(
+          runner_key: "opencode",
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          config: { "opencode" => { "model" => "moonshotai/kimi-k2-0905" } }
+        )
+
+        get edit_runner_path(runner)
+
+        expect(response).to have_http_status(:ok)
+        select = catalog_select_node(response.body, "opencode")
+        expect(select.at_css('option[value="free"]').text).to eq("OpenRouter Free (curated, tiered)")
+        expect(select.at_css('option[value="custom"]').text).to eq("Custom model ID…")
+        selected = select.at_css("option[selected]")
+        expect(selected["value"]).to eq("moonshotai/kimi-k2-0905")
+        expect(selected.text).to eq("Kimi K2")
+        expect(response.body).to include('name="runner[config][opencode][model_policy]"')
+        expect(response.body).not_to include('name="runner[config][opencode][api_provider]"')
+      end
+
+      it "omits the Free policy option for OpenCode on a non-OpenRouter key" do
+        api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
+        create(:llm_model, model_id: "claude-sonnet-4-20250514", provider: "anthropic", display_name: "Claude Sonnet 4")
+        runner = user.runners.create!(
+          runner_key: "opencode",
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          config: { "opencode" => { "model" => "claude-sonnet-4-20250514" } }
+        )
+
+        get edit_runner_path(runner)
+
+        expect(response).to have_http_status(:ok)
+        select = catalog_select_node(response.body, "opencode")
+        expect(select.at_css('option[value="free"]')).to be_nil
+        selected = select.at_css("option[selected]")
+        expect(selected["value"]).to eq("claude-sonnet-4-20250514")
+      end
+
+      # @spec MODEL-POLICY-FORM-004
+      it "preselects the Free sentinel and drops the model select's name for a free-policy OpenCode runner" do
+        api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+        runner = user.runners.create!(
+          runner_key: "opencode",
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          enabled_for_agent_runs: false,
+          enabled_for_chat: false,
+          enabled_for_fallback: false,
+          config: { "opencode" => { "model_policy" => "free" } }
+        )
+
+        get edit_runner_path(runner)
+
+        expect(response).to have_http_status(:ok)
+        select = catalog_select_node(response.body, "opencode")
+        selected = select.at_css("option[selected]")
+        expect(selected["value"]).to eq("free")
+        expect(select["name"]).to be_nil
+        policy_field = Nokogiri::HTML(response.body).at_css('input[data-runner-form-target="policyModelPolicyField"]')
+        expect(policy_field["value"]).to eq("free")
+      end
+
+      # @spec MODEL-POLICY-FORM-003
+      it "preselects Custom and prefills the manual input when the current model id is no longer active in the catalog" do
+        api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+        runner = user.runners.create!(
+          runner_key: "opencode",
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          config: { "opencode" => { "model" => "moonshotai/kimi-k2.6" } }
+        )
+        LlmModel.find_by!(model_id: "moonshotai/kimi-k2.6").update!(active: false)
+
+        get edit_runner_path(runner)
+
+        expect(response).to have_http_status(:ok)
+        select = catalog_select_node(response.body, "opencode")
+        selected = select.at_css("option[selected]")
+        expect(selected["value"]).to eq("custom")
+        expect(select["name"]).to be_nil
+        manual_input = Nokogiri::HTML(response.body).at_css("#runner_config_opencode_model_manual")
+        expect(manual_input["name"]).to eq("runner[config][opencode][model]")
+        expect(manual_input["value"]).to eq("moonshotai/kimi-k2.6")
+      end
+
+      # @spec MODEL-POLICY-FORM-005
+      it "does not render a model_policy field or the Free option for KiloCode" do
+        api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+        runner = user.runners.create!(
+          runner_key: "kilocode",
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          config: { "kilocode" => { "model" => "moonshotai/kimi-k2-0905" } }
+        )
+
+        get edit_runner_path(runner)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).not_to include('name="runner[config][kilocode][model_policy]"')
+        expect(catalog_select_node(response.body, "kilocode").at_css('option[value="free"]')).to be_nil
+      end
+    end
+
     it "renders complexity_thresholds inputs with balanced bracket names so Rack parses them as a nested hash" do
       runner = user.runners.find_by!(runner_key: "claude")
 

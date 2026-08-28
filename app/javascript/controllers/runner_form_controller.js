@@ -48,6 +48,9 @@ export default class extends Controller {
     "ompSettings",
     "dynamicModelSelect",
     "dynamicModelManualInput",
+    "policyModelSelect",
+    "policyModelManualInput",
+    "policyModelPolicyField",
     "tierSettings",
     "tierSelect",
   ]
@@ -131,6 +134,7 @@ export default class extends Controller {
     this.refreshTierSettings(runnerKey)
     this.refreshApiKeyOptions(runnerKey)
     this.refreshDynamicModelOptions(runnerKey)
+    this.refreshPolicyModelOptions(runnerKey)
   }
 
   refreshTierSettings(runnerKey = this.currentRunnerKey()) {
@@ -207,6 +211,134 @@ export default class extends Controller {
     return (this.dynamicModelManualInputTargets || []).find((target) => target.dataset.runnerKey === runnerKey)
   }
 
+  // RDR-065 (#3669): Runners::ModelOptions-driven select behind
+  // runner_model_policy_form. Renders catalog rows grouped by family, an
+  // optional Free-policy sentinel, and a trailing "Custom model ID…"
+  // sentinel that reveals policyModelManualInput. Coexists with the legacy
+  // dynamicModelSelect target above; only one renders per page load, so
+  // methods for each no-op harmlessly when their targets are absent.
+  refreshPolicyModelOptions(runnerKey = this.currentRunnerKey()) {
+    this.policyModelSelectTargets.forEach((select) => {
+      const selectRunnerKey = select.dataset.runnerKey
+      const matches = selectRunnerKey === runnerKey && this.runnerApiKeyMode()
+      const serviceType = this.requiredApiServiceTypeFor(selectRunnerKey)
+      const entriesByServiceType = this.modelEntriesByServiceType(select)
+      const entries = serviceType ? entriesByServiceType[serviceType] || [] : []
+      const selectedValue = select.value
+
+      this.replacePolicyModelOptions(select, entries, serviceType)
+
+      const values = entries.map((entry) => entry.value)
+      select.value = values.includes(selectedValue) ? selectedValue : ""
+
+      select.disabled = !matches || !serviceType || entries.length === 0
+      select.dataset.currentServiceType = matches ? serviceType || "" : ""
+
+      this.syncPolicyModelField(select)
+    })
+  }
+
+  modelEntriesByServiceType(select) {
+    if (!select?.dataset.modelEntriesByServiceType) return {}
+
+    try {
+      const parsed = JSON.parse(select.dataset.modelEntriesByServiceType)
+      return parsed && typeof parsed === "object" ? parsed : {}
+    } catch {
+      return {}
+    }
+  }
+
+  replacePolicyModelOptions(select, entries, serviceType) {
+    const placeholder = !serviceType ? "Select an API key first" :
+      select.dataset.optionalModel === "true" ? "Use provider default" : "Select a model"
+    select.options.length = 0
+    select.add(new Option(placeholder, ""))
+
+    entries.filter((entry) => entry.kind === "free_policy").forEach((entry) => {
+      select.add(new Option(entry.label, entry.value))
+    })
+
+    const families = []
+    const entriesByFamily = {}
+    entries.filter((entry) => entry.kind === "model").forEach((entry) => {
+      const family = entry.family || "Other"
+      if (!entriesByFamily[family]) {
+        entriesByFamily[family] = []
+        families.push(family)
+      }
+      entriesByFamily[family].push(entry)
+    })
+
+    families.forEach((family) => {
+      const group = document.createElement("optgroup")
+      group.label = family
+      entriesByFamily[family].forEach((entry) => {
+        group.appendChild(new Option(entry.label, entry.value))
+      })
+      select.add(group)
+    })
+
+    entries.filter((entry) => entry.kind === "custom").forEach((entry) => {
+      select.add(new Option(entry.label, entry.value))
+    })
+  }
+
+  // Only one of {select, manual input} carries the `name` attribute at a
+  // time, so the sentinel value ("free"/"custom") itself is never submitted
+  // as the model id. The select stays enabled so the user can freely switch
+  // back to a catalog row without a page reload.
+  // @spec MODEL-POLICY-FORM-003 MODEL-POLICY-FORM-004
+  handlePolicyModelChange(event) {
+    this.syncPolicyModelField(event.target)
+  }
+
+  syncPolicyModelField(select) {
+    const runnerKey = select.dataset.runnerKey
+    const manualInput = this.policyManualInputFor(runnerKey)
+    const policyField = this.policyFieldFor(runnerKey)
+    const fieldName = `runner[config][${runnerKey}][model]`
+    const isCustom = select.value === "custom"
+    const isFree = select.value === "free"
+
+    select.name = isCustom || isFree ? "" : fieldName
+
+    if (manualInput) {
+      manualInput.hidden = !isCustom
+      manualInput.disabled = !isCustom
+      manualInput.name = isCustom ? fieldName : ""
+    }
+
+    if (policyField) {
+      policyField.value = isFree ? "free" : "specific"
+    }
+  }
+
+  policyManualInputFor(runnerKey) {
+    return (this.policyModelManualInputTargets || []).find((target) => target.dataset.runnerKey === runnerKey)
+  }
+
+  policyFieldFor(runnerKey) {
+    return (this.policyModelPolicyFieldTargets || []).find((target) => target.dataset.runnerKey === runnerKey)
+  }
+
+  modelSelectFor(runnerKey) {
+    return (
+      this.dynamicModelSelectTargets.find((target) => target.dataset.runnerKey === runnerKey) ||
+      this.policyModelSelectTargets.find((target) => target.dataset.runnerKey === runnerKey) ||
+      null
+    )
+  }
+
+  serviceTypesFor(select) {
+    if (!select) return new Set()
+    if (select.dataset.modelEntriesByServiceType) {
+      return new Set(Object.keys(this.modelEntriesByServiceType(select)))
+    }
+
+    return new Set(Object.keys(this.modelOptionsByServiceType(select)))
+  }
+
   runnerApiKeyMode() {
     const selected = this.element.querySelector("input[type='radio'][name*='auth_type']:checked")
     if (selected) return selected.value === "api_key"
@@ -223,9 +355,7 @@ export default class extends Controller {
       const selectedApiKey = this.selectedApiKeyOption()
       if (selectedApiKey?.dataset.apiServiceType) return selectedApiKey.dataset.apiServiceType
 
-      const modelSelect = this.dynamicModelSelectTargets.find(
-        (target) => target.dataset.runnerKey === runnerKey
-      )
+      const modelSelect = this.modelSelectFor(runnerKey)
       const cachedServiceType = modelSelect?.dataset.currentServiceType
       if (this.dynamicServiceTypesFor(runnerKey).has(cachedServiceType)) {
         return cachedServiceType
@@ -251,8 +381,7 @@ export default class extends Controller {
   }
 
   dynamicServiceTypesFor(runnerKey) {
-    const select = this.dynamicModelSelectTargets.find((target) => target.dataset.runnerKey === runnerKey)
-    return new Set(Object.keys(this.modelOptionsByServiceType(select)))
+    return this.serviceTypesFor(this.modelSelectFor(runnerKey))
   }
 
   modelOptionsByServiceType(select) {

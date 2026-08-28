@@ -43,4 +43,36 @@ module RunnersHelper
 
     base_options_by_service_type.merge(service_type => effective_options)
   end
+
+  # RDR-065 (#3669): Runners::ModelOptions entries for a direct-outbound
+  # runner key, grouped by the api_service_type of the key that would select
+  # them. Single source of truth for the runner_model_policy_form dropdown so
+  # the form, the JS re-render on key change, and Runners::DefaultTierModelIds
+  # cannot drift.
+  # @spec MODEL-POLICY-FORM-001
+  def catalog_model_entries_by_service_type(runner_key:, service_types:, auth_type:)
+    service_types.index_with do |service_type|
+      Runners::ModelOptions.call(runner_key: runner_key, api_provider: service_type, auth_type: auth_type)
+    end
+  end
+
+  # @spec MODEL-POLICY-FORM-006
+  def catalog_model_entries_json(entries_by_service_type)
+    entries_by_service_type.transform_values do |entries|
+      entries.map { |entry| { value: entry.value, label: entry.label, kind: entry.kind.to_s, family: entry.family } }
+    end
+  end
+
+  # Determines which <option> should be preselected for a persisted or
+  # previously-submitted direct-outbound model value: the Free policy
+  # sentinel, a catalog model id, or the Custom sentinel (with the manual
+  # input prefilled) when the stored id falls outside the current catalog.
+  # @spec MODEL-POLICY-FORM-002
+  def catalog_model_initial_selection(entries, current_model_id:, model_policy:)
+    return { selected: Runners::ModelOptions::FREE_POLICY_VALUE, manual: nil } if model_policy == "free"
+    return { selected: "", manual: nil } if current_model_id.blank?
+    return { selected: current_model_id, manual: nil } if entries.any? { |entry| entry.model? && entry.value == current_model_id }
+
+    { selected: LlmModel::CUSTOM_MODEL_OPTION, manual: current_model_id }
+  end
 end

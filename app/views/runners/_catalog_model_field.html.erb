@@ -1,0 +1,64 @@
+<%# RDR-065 (#3669): catalog-driven Model select behind runner_model_policy_form.
+    Locals: runner_key, service_types, current_service_type, current_model_id,
+    current_model_policy, optional, supports_model_policy
+    @spec MODEL-POLICY-FORM-002 MODEL-POLICY-FORM-003 MODEL-POLICY-FORM-004 MODEL-POLICY-FORM-005 %>
+<%
+  entries_by_service_type = catalog_model_entries_by_service_type(
+    runner_key: runner_key, service_types: service_types, auth_type: "api_key"
+  )
+  current_entries = entries_by_service_type.fetch(current_service_type, [])
+  initial = catalog_model_initial_selection(current_entries, current_model_id: current_model_id, model_policy: current_model_policy)
+  manual_active = initial[:selected] == LlmModel::CUSTOM_MODEL_OPTION
+  free_active = initial[:selected] == Runners::ModelOptions::FREE_POLICY_VALUE
+  select_name = manual_active || free_active ? nil : "runner[config][#{runner_key}][model]"
+  select_disabled = current_service_type.blank? || current_entries.empty?
+  placeholder = if current_service_type.blank?
+                  "Select an API key first"
+                elsif optional
+                  "Use provider default"
+                else
+                  "Select a model"
+                end
+%>
+<select id="runner_config_<%= runner_key %>_model"
+        <% if select_name %>name="<%= select_name %>"<% end %>
+        <% if select_disabled %>disabled<% end %>
+        class="mt-2 block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+        data-runner-form-target="policyModelSelect"
+        data-runner-key="<%= runner_key %>"
+        data-optional-model="<%= optional %>"
+        data-current-service-type="<%= current_service_type %>"
+        data-action="change->runner-form#handlePolicyModelChange"
+        data-model-entries-by-service-type="<%= json_escape(catalog_model_entries_json(entries_by_service_type).to_json) %>">
+  <option value=""><%= placeholder %></option>
+  <% current_entries.select(&:free_policy?).each do |entry| %>
+    <option value="<%= entry.value %>" <% if initial[:selected] == entry.value %>selected<% end %>><%= entry.label %></option>
+  <% end %>
+  <% current_entries.select(&:model?).group_by(&:family).each do |family, family_entries| %>
+    <optgroup label="<%= family %>">
+      <% family_entries.each do |entry| %>
+        <option value="<%= entry.value %>" <% if initial[:selected] == entry.value %>selected<% end %>><%= entry.label %></option>
+      <% end %>
+    </optgroup>
+  <% end %>
+  <% current_entries.select(&:custom?).each do |entry| %>
+    <option value="<%= entry.value %>" <% if initial[:selected] == entry.value %>selected<% end %>><%= entry.label %></option>
+  <% end %>
+</select>
+<input type="text"
+       id="runner_config_<%= runner_key %>_model_manual"
+       <% if manual_active %>name="runner[config][<%= runner_key %>][model]"<% end %>
+       value="<%= initial[:manual] if manual_active %>"
+       placeholder="<%= optional ? "Optional: enter a model id manually" : "Enter a model id" %>"
+       autocomplete="off"
+       <% unless manual_active %>hidden disabled<% end %>
+       data-runner-form-target="policyModelManualInput"
+       data-runner-key="<%= runner_key %>"
+       class="mt-2 block w-full rounded-md border-0 px-3 py-1.5 font-mono text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+<% if supports_model_policy %>
+  <input type="hidden"
+         name="runner[config][<%= runner_key %>][model_policy]"
+         value="<%= free_active ? "free" : "specific" %>"
+         data-runner-form-target="policyModelPolicyField"
+         data-runner-key="<%= runner_key %>">
+<% end %>

@@ -42,6 +42,14 @@ class FeatureFlags
       intent: "Build both legacy and PromptAssembly PR prompts for the same run input and persist a capped data-only comparison without changing the served prompt.",
       rollout_plan: "Default-off; enable only for scoped prompt investigation because it builds the alternate prompt path.",
       cleanup_criteria: "Remove once PromptAssembly parity is proven or a dedicated prompt comparison UI exists."
+    ),
+    # @spec MODEL-POLICY-FORM-001
+    runner_model_policy_form: Definition.new(
+      name: :runner_model_policy_form,
+      owner: "runner-model-selection",
+      intent: "Gate the RDR-065 catalog-driven Model dropdown (Runners::ModelOptions: Free policy / Pareto / specific catalog rows / custom) on direct-outbound runners (opencode, kilocode, pi, omp) so free-text model ids are replaced by a discoverable, compatibility-filtered select.",
+      rollout_plan: "Per-tenant opt-in via tenant_settings.features; percentage-of-actors rollout once telemetry confirms parity with the legacy free-text model form (RDR-065).",
+      cleanup_criteria: "Remove once the new dropdown is the default for at least one billing period and Models::DetectBrokenRunnerModels / runner_settings_invalid telemetry matches or improves vs. legacy, and the openrouter_free/openrouter_pareto migration (RDR-065) is verified."
     )
   }.freeze
 
