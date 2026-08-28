@@ -18,9 +18,10 @@
   system SHALL require its derived API provider to be `"openrouter"` and
   SHALL NOT require the runner-specific model id to be present.
 - [x] **MODEL-POLICY-003** — When a direct-outbound runner's `model_policy`
-  is `"specific"` (explicit or defaulted), the system SHALL continue to
-  require its runner-specific model id to be present, unchanged from prior
-  behavior.
+  is `"specific"` (explicit or defaulted), the system SHALL preserve each
+  runner's prior model-id contract: `opencode` and `kilocode` continue to
+  require a configured model id, while `pi` and `omp` continue to allow a
+  blank model and defer to the provider default.
 - [x] **MODEL-POLICY-004** — `Runner#free_model_policy?` SHALL be true for
   the legacy `openrouter_free` runner key and for any `opencode`,
   `kilocode`, `pi`, or `omp` runner with `model_policy == "free"`. The

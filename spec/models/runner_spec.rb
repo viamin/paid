@@ -989,16 +989,28 @@ RSpec.describe Runner do
           expect(runner).not_to be_valid
           expect(runner.errors[:auth_type]).to include("must be API key for the free model policy")
         end
+      end
 
-        it "still requires a model id for #{runner_key} specific policy" do # @spec MODEL-POLICY-003
+      it "still requires a model id for kilocode specific policy" do # @spec MODEL-POLICY-003
+        api_key = create(:provider_api_key, user: runner.user, api_service_type: "openrouter")
+        runner.auth_type = "api_key"
+        runner.provider_api_key = api_key
+        runner.runner_key = "kilocode"
+        runner.config = { "kilocode" => { "api_provider" => "openrouter", "model_policy" => "specific", "model" => "" } }
+
+        expect(runner).not_to be_valid
+        expect(runner.errors[:config].join).to include("KiloCode model id")
+      end
+
+      %w[pi omp].each do |runner_key|
+        it "keeps the #{runner_key} model optional for specific policy" do # @spec MODEL-POLICY-003
           api_key = create(:provider_api_key, user: runner.user, api_service_type: "openrouter")
           runner.auth_type = "api_key"
           runner.provider_api_key = api_key
           runner.runner_key = runner_key
           runner.config = { runner_key => { "api_provider" => "openrouter", "model_policy" => "specific", "model" => "" } }
 
-          expect(runner).not_to be_valid
-          expect(runner.errors[:config].join).to include("model id")
+          expect(runner).to be_valid
         end
       end
     end

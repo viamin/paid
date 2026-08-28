@@ -85,6 +85,22 @@ RSpec.describe "Runners" do
     }
   end
 
+  def form_style_free_policy_runner_params(api_key_id:, runner_key:)
+    {
+      runner_key: runner_key,
+      auth_type: "api_key",
+      provider_api_key_id: api_key_id,
+      enabled_for_agent_runs: false,
+      enabled_for_chat: false,
+      enabled_for_fallback: false,
+      config: {
+        runner_key => {
+          model: Runners::ModelOptions::FREE_POLICY_VALUE
+        }
+      }
+    }
+  end
+
   describe "GET /runners" do
     context "when not authenticated" do
       it "redirects to sign in" do
@@ -982,6 +998,19 @@ RSpec.describe "Runners" do
       end
     end
 
+    it "normalizes the form's OpenRouter Free option into free policy for each supported direct-outbound runner" do
+      %w[opencode kilocode pi omp].each do |runner_key|
+        api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+
+        post runners_path, params: { runner: form_style_free_policy_runner_params(api_key_id: api_key.id, runner_key: runner_key) }
+
+        expect(response).to redirect_to(runners_path)
+        runner = user.runners.find_by!(runner_key: runner_key, auth_type: "api_key")
+        expect(runner).to be_free_model_policy
+        expect(runner.config.fetch(runner_key)).not_to have_key("model")
+      end
+    end
+
     # @spec DIRECT-OUTBOUND-CATALOG-008
     it "persists only the model config for Oh My Pi and derives the provider from the API key" do
       KnownDirectOutboundModels.seed_model(model_id: "deepseek-chat", provider: "deepseek")
@@ -1169,6 +1198,31 @@ RSpec.describe "Runners" do
 
       expect(response).to have_http_status(:ok)
       expect_free_runner_form_guidance(response.body)
+    end
+
+    it "renders the free policy option and free-model tier controls for supported direct-outbound OpenRouter runners" do
+      seed_free_runner_form_models
+
+      %w[opencode kilocode pi omp].each do |runner_key|
+        api_key = create(:provider_api_key, user: user, api_service_type: "openrouter", name: "OpenRouter #{runner_key}")
+        runner = user.runners.create!(
+          runner_key: runner_key,
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          enabled_for_agent_runs: false,
+          enabled_for_chat: false,
+          enabled_for_fallback: false,
+          config: { runner_key => { "api_provider" => "openrouter", "model_policy" => "free" } }
+        )
+
+        get edit_runner_path(runner)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include('value="free" selected')
+        expect(response.body).to include('data-tier-visibility="free_policy"')
+        expect(response.body).to include("Free Model Configuration")
+        expect(response.body).to include("OpenRouter Free (curated, tiered)")
+      end
     end
   end
 

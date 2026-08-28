@@ -58,8 +58,9 @@ the runner key/provider.
 - `free` is valid only when the runner's derived API provider is
   `openrouter`.
 - `specific` (the default) still requires the runner-specific configured
-  model id (`opencode_model_id`, `kilocode_model_id`, `pi_model_id`,
-  `omp_model_id`), unchanged from prior behavior.
+  model id for `opencode` and `kilocode`, unchanged from prior behavior.
+  `pi` and `omp` keep their existing optional model field in specific mode,
+  so a blank model continues to defer to the provider default.
 - `free` requires `tier_model_ids` to resolve exclusively to free `LlmModel`
   rows, the same contract already enforced for `openrouter_free`.
   `Runner#free_model_policy?` unifies both the legacy runner-key check and

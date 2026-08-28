@@ -1672,8 +1672,6 @@ class Runner < ApplicationRecord
     unless PI_API_PROVIDER_KEYS.include?(pi_api_provider)
       errors.add(:config, "must include a supported Pi API provider")
     end
-
-    errors.add(:config, "must include a Pi model id") if direct_outbound_model_policy != "free" && pi_model_id.blank?
   end
 
   def omp_api_key_config_must_be_valid
@@ -1684,8 +1682,6 @@ class Runner < ApplicationRecord
     unless OMP_API_PROVIDER_KEYS.include?(omp_api_provider)
       errors.add(:config, "must include a supported Oh My Pi API provider")
     end
-
-    errors.add(:config, "must include an Oh My Pi model id") if direct_outbound_model_policy != "free" && omp_model_id.blank?
   end
 
   # Validates that an existing catalog row for the configured model id belongs
