@@ -364,12 +364,12 @@ class RunnersController < ApplicationController
 
   def validate_runner_key_enabled!
     return if @runner.runner_key.blank?
-    return if resource_addable_key?(@runner.runner_key)
+    return if create_addable_key?(@runner.runner_key)
     # Unsupported keys are caught by the model's inclusion validation;
     # here we only flag supported-but-not-yet-installed runners.
     return unless resource_supported_key?(@runner.runner_key)
 
-    @runner.errors.add(:runner_key, "is not available in paid-agent yet")
+    @runner.errors.add(:runner_key, unavailable_runner_key_message(@runner.runner_key))
   end
 
   def toggle_runner_flag(attribute, partial)
@@ -766,6 +766,23 @@ class RunnersController < ApplicationController
 
   def api_key_only_runner?(runner_key)
     runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
+  end
+
+  def create_addable_key?(runner_key)
+    if runner_model_policy_form_enabled?
+      feature_flagged_runner_addable_keys.include?(runner_key)
+    else
+      resource_addable_key?(runner_key)
+    end
+  end
+
+  def unavailable_runner_key_message(runner_key)
+    if runner_model_policy_form_enabled? &&
+        [ Runner::OPENROUTER_FREE_RUNNER_KEY, Runner::OPENROUTER_PARETO_RUNNER_KEY ].include?(runner_key)
+      "is not available while the runner model policy form is enabled"
+    else
+      "is not available in paid-agent yet"
+    end
   end
 
   def feature_flagged_runner_addable_keys

@@ -859,6 +859,23 @@ RSpec.describe "Runners" do
       expect(runner.opencode_model_id).to eq("moonshotai/kimi-k2-0905")
     end
 
+    it "rejects hidden pseudo-runners when the runner model policy form flag is enabled" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+      enable_runner_model_policy_form_for(user)
+
+      post runners_path, params: {
+        runner: {
+          runner_key: "openrouter_free",
+          auth_type: "api_key",
+          provider_api_key_id: api_key.id
+        }
+      }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.body).to include("Runner key is not available while the runner model policy form is enabled")
+      expect(user.runners.find_by(runner_key: "openrouter_free", auth_type: "api_key")).to be_nil
+    end
+
     # @spec FREE-MODEL-RUNNER-002
     it "creates an openrouter_free runner with default free tier mappings and suggested flags" do
       api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
