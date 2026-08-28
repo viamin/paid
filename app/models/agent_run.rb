@@ -2927,6 +2927,17 @@ class AgentRun < ApplicationRecord
   end
   private :restamp_provisioning_cycle!
 
+  def persisted_provisioning_cycle_attributes
+    attributes = instance_variable_get(:@attributes)
+    return {} unless attributes.respond_to?(:fetch_value)
+
+    {
+      provisioning_started_at: provisioning_started_at,
+      external_metadata: external_metadata
+    }
+  end
+  private :persisted_provisioning_cycle_attributes
+
   def normalized_execution_usage_runner_backend(container_host)
     container_host.to_s.truncate(64)
   end
@@ -3166,7 +3177,7 @@ class AgentRun < ApplicationRecord
     @current_handle = runner.provision(spec: spec)
     update!(container_id: @current_handle.identifier, container_host: @current_handle.host,
             runner_handle: @current_handle.to_storage,
-            provisioning_started_at: provisioning_started_at, external_metadata: external_metadata)
+            **persisted_provisioning_cycle_attributes)
     ExecutionResource.track_environment!(agent_run: self, handle: @current_handle)
     PoolReplenishmentJob.perform_later(project_id)
 
@@ -3679,7 +3690,7 @@ class AgentRun < ApplicationRecord
     result = @container_service.provision
     if result.success?
       update!(container_id: result[:container_id], container_host: result[:container_host],
-        provisioning_started_at: provisioning_started_at, external_metadata: external_metadata)
+        **persisted_provisioning_cycle_attributes)
       ExecutionResource.track_environment!(
         agent_run: self,
         identifier: result[:container_id],
