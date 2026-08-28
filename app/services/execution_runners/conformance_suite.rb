@@ -181,21 +181,20 @@ module ExecutionRunners
         end
 
         def default_dimension_results(passed:, evidence: {})
-          catalog_by_key = ConformanceSuite.dimension_catalog.index_by { |dimension| dimension.fetch("key") }
+          validate_catalog_keys!(passed, label: "Unknown conformance dimensions")
+          passed_keys = normalize_catalog_keys(passed)
+          evidence_by_key = normalize_catalog_hash(evidence)
 
           ConformanceSuite.dimension_catalog.map do |dimension|
             key = dimension.fetch("key")
             {
               "key" => key,
               "label" => dimension.fetch("label"),
-              "status" => passed.include?(key) ? "pass" : "not_exercised",
+              "status" => passed_keys.include?(key) ? "pass" : "not_exercised",
               "activities" => dimension.fetch("activities"),
               "description" => dimension.fetch("description"),
-              "evidence" => evidence[key]
+              "evidence" => evidence_by_key[key]
             }.compact
-          end.tap do |results|
-            extra = evidence.keys.map(&:to_s) - catalog_by_key.keys
-            raise ArgumentError, "Unknown conformance dimensions: #{extra.join(', ')}" if extra.any?
           end
         end
 
@@ -203,10 +202,34 @@ module ExecutionRunners
 
         def normalize_dimensions(dimension_results)
           keys = dimension_results.map { |entry| entry.fetch("key") }
+          duplicates = keys.tally.filter_map { |key, count| key if count > 1 }
+          raise ArgumentError, "Duplicate conformance dimensions: #{duplicates.join(', ')}" if duplicates.any?
+
+          unknown = keys - catalog_keys
+          raise ArgumentError, "Unknown conformance dimensions: #{unknown.join(', ')}" if unknown.any?
+
           missing = ConformanceSuite.dimension_catalog.map { |entry| entry.fetch("key") } - keys
           raise ArgumentError, "Missing conformance dimensions: #{missing.join(', ')}" if missing.any?
 
           dimension_results
+        end
+
+        def validate_catalog_keys!(keys, label:)
+          unknown = normalize_catalog_keys(keys) - catalog_keys
+          raise ArgumentError, "#{label}: #{unknown.join(', ')}" if unknown.any?
+        end
+
+        def normalize_catalog_hash(hash)
+          validate_catalog_keys!(hash.keys, label: "Unknown conformance dimensions")
+          hash.transform_keys(&:to_s)
+        end
+
+        def normalize_catalog_keys(keys)
+          keys.map(&:to_s)
+        end
+
+        def catalog_keys
+          @catalog_keys ||= ConformanceSuite.dimension_catalog.map { |dimension| dimension.fetch("key") }
         end
 
         def milliseconds_between(started_at, finished_at)

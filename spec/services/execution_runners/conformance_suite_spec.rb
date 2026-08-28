@@ -108,6 +108,59 @@ RSpec.describe ExecutionRunners::ConformanceSuite do
       end.to raise_error(ArgumentError, /Missing conformance dimensions: cancel_running_workload/)
     end
 
+    it "rejects default dimension results with unknown passed keys" do
+      expect do
+        described_class.default_dimension_results(
+          passed: %w[run_worklaod],
+          evidence: {}
+        )
+      end.to raise_error(ArgumentError, /Unknown conformance dimensions: run_worklaod/)
+    end
+
+    it "normalizes symbol keys before marking dimensions as passed or attaching evidence" do
+      results = described_class.default_dimension_results(
+        passed: [ :run_workload ],
+        evidence: { run_workload: "fixture wrote artifacts/conformance-result.json" }
+      )
+
+      run_workload = results.find { |entry| entry.fetch("key") == "run_workload" }
+
+      expect(run_workload).to include(
+        "status" => "pass",
+        "evidence" => "fixture wrote artifacts/conformance-result.json"
+      )
+    end
+
+    it "rejects reports with duplicate dimensions" do
+      duplicate = dimension_results + [ dimension_results.fetch(0) ]
+
+      expect do
+        build_report(
+          execution_result: ExecutionRunners::ExecutionResult.success(stdout: "ok"),
+          dimension_results: duplicate
+        )
+      end.to raise_error(ArgumentError, /Duplicate conformance dimensions: provision_execution/)
+    end
+
+    it "rejects reports with unknown dimensions" do
+      extra = dimension_results + [
+        {
+          "key" => "unexpected_dimension",
+          "label" => "Unexpected dimension",
+          "status" => "pass",
+          "activities" => [],
+          "description" => "Unexpected"
+        }
+      ]
+
+      expect do
+        build_report(
+          execution_result: ExecutionRunners::ExecutionResult.success(stdout: "ok"),
+          dimension_results: extra
+        )
+      end.to raise_error(ArgumentError, /Unknown conformance dimensions: unexpected_dimension/)
+    end
+
     def build_report(execution_result:, dimension_results:)
       described_class.build(
         runner_type: :local_docker,
