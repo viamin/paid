@@ -34,8 +34,9 @@ RSpec.describe Inbox::Count do
       create(:issue, :needs_input, project: project)
       create_merge_approval_pr
       create(:decomposition_decision, project: project, workflow_id: "wf-1", decision_key: "wf-1:pending", decision_type: "planning_outcome", outcome: "plan_pending_review")
+      create(:notification, :error, account: account, subject: project, blocking: true)
 
-      expect(described_class.call(user: user)).to eq(4)
+      expect(described_class.call(user: user)).to eq(5)
     end
 
     it "excludes closed issues and issues on non-gated projects" do
@@ -112,6 +113,21 @@ RSpec.describe Inbox::Count do
 
       expect(first).to eq(0)
       expect(refreshed).to eq(1)
+    end
+
+    # @spec OPERATOR-INBOX-002B @spec NOTIFICATION-SEVERITY-008
+    it "bumps the cache automatically when a blocking notification enters or leaves the inbox" do
+      first = described_class.call(user: user)
+
+      notification = create(:notification, :error, account: account, subject: project, blocking: true)
+      after_create = described_class.call(user: user)
+
+      notification.update!(resolved_at: Time.current)
+      after_resolve = described_class.call(user: user)
+
+      expect(first).to eq(0)
+      expect(after_create).to eq(1)
+      expect(after_resolve).to eq(0)
     end
 
     it "excludes ready PRs that have not yet been evaluated for auto-merge" do

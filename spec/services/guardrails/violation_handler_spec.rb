@@ -94,6 +94,41 @@ RSpec.describe Guardrails::ViolationHandler do
       expect(agent_run.guardrail_context["recommended_action"]).to be_present
     end
 
+    # @spec NOTIFICATION-SEVERITY-010
+    it "marks token budget violations as blocking for PR continuation runs" do
+      agent_run.update!(count_toward_draft_review_round: true, expected_draft_review_count: 1)
+
+      described_class.call(
+        agent_run: agent_run,
+        violation_type: "token_budget",
+        details: "Run consumed 250000 input tokens (budget: 200000) without producing output"
+      )
+
+      expect(Notifications::Publish).to have_received(:call).with(
+        hash_including(
+          source: "guardrail_token_budget",
+          severity: :error,
+          blocking: true
+        )
+      )
+    end
+
+    it "keeps token budget violations notification-only for non-PR runs" do
+      described_class.call(
+        agent_run: agent_run,
+        violation_type: "token_budget",
+        details: "Run consumed 250000 input tokens (budget: 200000) without producing output"
+      )
+
+      expect(Notifications::Publish).to have_received(:call).with(
+        hash_including(
+          source: "guardrail_token_budget",
+          severity: :error,
+          blocking: false
+        )
+      )
+    end
+
     it "pauses the agent run on anomaly detection" do
       result = described_class.call(
         agent_run: agent_run,

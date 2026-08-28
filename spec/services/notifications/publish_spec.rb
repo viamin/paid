@@ -40,6 +40,62 @@ RSpec.describe Notifications::Publish do
       expect(notification.severity).to eq("warning")
     end
 
+    # @spec NOTIFICATION-SEVERITY-007
+    it "defaults blocking to false" do
+      notification = described_class.call(
+        account: account,
+        source: "stalled_draft_pr",
+        subject: project,
+        severity: :warning,
+        title: "PR stuck"
+      )
+
+      expect(notification.blocking).to be(false)
+    end
+
+    # @spec NOTIFICATION-SEVERITY-007
+    it "defaults blocking notification actions to the inbox member route" do
+      notification = described_class.call(
+        account: account,
+        source: "pr_followup_limit_reached",
+        subject: project,
+        severity: :error,
+        blocking: true,
+        title: "PR follow-up stopped"
+      )
+
+      expect(notification.action_url).to eq("/inbox/action_required:#{notification.id}")
+    end
+
+    # @spec NOTIFICATION-SEVERITY-007
+    it "preserves an explicit action_url for blocking notifications" do
+      notification = described_class.call(
+        account: account,
+        source: "quality_auto_resume_cooldown",
+        subject: project,
+        severity: :error,
+        blocking: true,
+        title: "Needs manual review",
+        action_url: "/projects/#{project.id}/quality_dashboard"
+      )
+
+      expect(notification.action_url).to eq("/projects/#{project.id}/quality_dashboard")
+    end
+
+    # @spec NOTIFICATION-SEVERITY-007
+    it "rejects blocking notifications with non-error severity" do
+      expect {
+        described_class.call(
+          account: account,
+          source: "bad_blocking",
+          subject: project,
+          severity: :warning,
+          blocking: true,
+          title: "Invalid"
+        )
+      }.to raise_error(ActiveRecord::RecordInvalid, /Blocking requires error severity/)
+    end
+
     context "when called with the same account/source/subject" do
       let(:common_attrs) { { account: account, source: "stalled_draft_pr", subject: project } }
 

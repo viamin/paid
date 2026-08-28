@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_28_031257) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_28_222402) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1309,7 +1309,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_031257) do
     t.check_constraint "billed_duration_seconds >= 0", name: "chk_execution_usages_billed_duration_nonneg"
     t.check_constraint "infra_cost_cents >= 0", name: "chk_execution_usages_infra_cost_nonneg"
     t.check_constraint "rate_cents_per_hour >= 0", name: "chk_execution_usages_rate_nonneg"
-    t.check_constraint "termination_reason::text = ANY (ARRAY['completed'::character varying, 'cancelled'::character varying, 'timed_out'::character varying, 'failed'::character varying, 'evicted'::character varying]::text[])", name: "chk_execution_usages_termination_reason_valid"
+    t.check_constraint "termination_reason::text = ANY (ARRAY['completed'::character varying::text, 'cancelled'::character varying::text, 'timed_out'::character varying::text, 'failed'::character varying::text, 'evicted'::character varying::text])", name: "chk_execution_usages_termination_reason_valid"
   end
 
   create_table "external_connector_events", comment: "Events ingested from external connectors (Jira, Linear, Slack, etc.) for coexistence workflows.", force: :cascade do |t|
@@ -1961,6 +1961,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_031257) do
   create_table "notifications", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "action_url"
+    t.boolean "blocking", default: false, null: false, comment: "True when the notification's error state cannot self-resolve and requires human action to resume work."
     t.datetime "created_at", null: false
     t.text "description"
     t.datetime "dismissed_at"
@@ -1975,7 +1976,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_031257) do
     t.string "title", null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id"
-    t.index ["account_id", "nav_section", "read_at"], name: "index_notifications_on_badge"
+    t.index ["account_id", "blocking", "read_at"], name: "index_notifications_on_badge", where: "((dismissed_at IS NULL) AND (resolved_at IS NULL))"
     t.index ["account_id", "read_at", "dismissed_at"], name: "index_notifications_on_unread"
     t.index ["account_id", "source", "subject_type", "subject_id"], name: "index_notifications_on_dedup_account_wide", unique: true, where: "(user_id IS NULL)"
     t.index ["account_id", "user_id", "source", "subject_type", "subject_id"], name: "index_notifications_on_dedup", unique: true

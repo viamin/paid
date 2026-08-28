@@ -30,7 +30,7 @@ module Inbox
     attr_reader :user
 
     def compute_count
-      needs_input_count + open_plan_review_count + merge_approval_count
+      needs_input_count + open_plan_review_count + merge_approval_count + action_required_count
     end
 
     def needs_input_count
@@ -49,6 +49,10 @@ module Inbox
       return 0 if project_ids.empty?
 
       merge_approval_candidates(project_ids).count { |issue| Inbox::MergeApproval.call(issue).present? }
+    end
+
+    def action_required_count
+      NotificationPolicy::Scope.new(user, Notification).resolve.active.blocking.count
     end
 
     # Narrows to rows that could plausibly be approval-only blockers before

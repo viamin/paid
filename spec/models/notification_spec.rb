@@ -62,6 +62,14 @@ RSpec.describe Notification do
       notification.severity = :error
       expect(notification).to be_valid
     end
+
+    # @spec NOTIFICATION-SEVERITY-007
+    it "requires blocking notifications to use error severity" do
+      notification = build(:notification, blocking: true, severity: :warning)
+
+      expect(notification).not_to be_valid
+      expect(notification.errors[:blocking]).to include("requires error severity")
+    end
   end
 
   describe "enums" do
@@ -125,6 +133,16 @@ RSpec.describe Notification do
         create(:notification, :warning, :resolved, account: account)
 
         expect(described_class.badging).to be_empty
+      end
+    end
+
+    describe ".blocking" do
+      # @spec NOTIFICATION-SEVERITY-007
+      it "returns only blocking notifications" do
+        blocking = create(:notification, :error, account: account, blocking: true)
+        create(:notification, :error, account: account, blocking: false)
+
+        expect(described_class.blocking).to contain_exactly(blocking)
       end
     end
 
