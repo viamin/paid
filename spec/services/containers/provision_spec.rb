@@ -514,6 +514,16 @@ RSpec.describe Containers::Provision do
       expect(svc.options[:image]).to eq("paid-agent:elixir-node-ruby")
     end
 
+    it "fails loudly when the project's runtime is unsupported" do
+      project.update!(repo_profile: { "test_languages" => %w[Kotlin Ruby] })
+
+      svc = described_class.new(agent_run: agent_run, worktree_path: worktree_path)
+
+      expect {
+        svc.options[:image]
+      }.to raise_error(Containers::ImageResolver::UnsupportedRuntimeError, /kotlin/)
+    end
+
     it "lets an explicit image override override the resolved project image" do
       project.update!(primary_language: "Go")
 

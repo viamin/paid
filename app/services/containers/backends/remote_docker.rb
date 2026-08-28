@@ -107,6 +107,18 @@ module Containers
         Docker::Image.get(name, {}, connection)
       end
 
+      def build_image(dockerfile, opts = {}, &block)
+        Docker::Image.build(dockerfile, opts, connection, &block)
+      end
+
+      def list_images(opts = {})
+        Docker::Image.all(opts, connection)
+      end
+
+      def delete_image(name, **opts)
+        Docker::Image.remove(name, opts, connection)
+      end
+
       def list_volumes
         Docker::Volume.all({}, connection)
       end

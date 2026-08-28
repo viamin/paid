@@ -132,6 +132,57 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
     expect(Docker::Image).to have_received(:get).twice
   end
 
+  it "returns image labels for every healthy swarm node copy of a tag" do
+    second_node = build_node_payload(id: "node-2", host: "worker-2", addr: "10.0.0.26")
+    node1_image = instance_double(Docker::Image, info: { "Labels" => { "digest" => "sha256:1" } })
+    node2_image = instance_double(Docker::Image, info: { "Labels" => { "digest" => "sha256:2" } })
+
+    stub_manager_get("/nodes", [ node_payload, second_node ])
+    allow(Docker::Image).to receive(:get)
+      .with("paid-agent:go", {}, kind_of(Docker::Connection))
+      .and_return(node1_image, node2_image)
+
+    expect(backend.image_label_sets("paid-agent:go")).to eq(
+      [ { "digest" => "sha256:1" }, { "digest" => "sha256:2" } ]
+    )
+  end
+
+  it "builds an image on every healthy node via docker-api's string-body build API" do
+    second_node = build_node_payload(id: "node-2", host: "worker-2", addr: "10.0.0.26")
+    node1_image = instance_double(Docker::Image)
+    node2_image = instance_double(Docker::Image)
+
+    stub_manager_get("/nodes", [ node_payload, second_node ])
+    allow(Docker::Image).to receive(:build)
+      .with("FROM scratch", { t: "paid-agent:go" }, kind_of(Docker::Connection))
+      .and_return(node1_image, node2_image)
+
+    expect(backend.build_image("FROM scratch", { t: "paid-agent:go" })).to eq([ node1_image, node2_image ])
+  end
+
+  it "raises when no healthy swarm nodes are available to build an image" do
+    unavailable_node = node_payload.deep_dup
+    unavailable_node["Status"]["State"] = "down"
+    stub_manager_get("/nodes", [ unavailable_node ])
+
+    expect {
+      backend.build_image("FROM scratch", { t: "paid-agent:go" })
+    }.to raise_error(Docker::Error::NotFoundError, /paid-agent:go.*no healthy swarm nodes available/)
+  end
+
+  it "dedupes images across nodes by repo tag, not per-node image id" do
+    second_node = build_node_payload(id: "node-2", host: "worker-2", addr: "10.0.0.26")
+    node1_image = instance_double(Docker::Image, id: "sha256:node1", info: { "RepoTags" => [ "paid-agent:python-node" ] })
+    node2_image = instance_double(Docker::Image, id: "sha256:node2", info: { "RepoTags" => [ "paid-agent:python-node" ] })
+
+    stub_manager_get("/nodes", [ node_payload, second_node ])
+    allow(Docker::Image).to receive(:all).with({}, kind_of(Docker::Connection)).and_return([ node1_image ], [ node2_image ])
+
+    images = backend.list_images
+
+    expect(images).to contain_exactly(node1_image)
+  end
+
   it "raises when a healthy swarm node is missing the image" do
     second_node = build_node_payload(id: "node-2", host: "worker-2", addr: "10.0.0.26")
     image = instance_double(Docker::Image)
@@ -148,6 +199,22 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
     expect {
       backend.get_image("paid-agent:latest")
     }.to raise_error(Docker::Error::NotFoundError, /worker-2/)
+  end
+
+  it "deletes an image on every healthy node, tolerating nodes where the tag never converged" do
+    second_node = build_node_payload(id: "node-2", host: "worker-2", addr: "10.0.0.26")
+    call_count = 0
+
+    stub_manager_get("/nodes", [ node_payload, second_node ])
+    allow(Docker::Image).to receive(:remove).with("paid-agent:python-node", {}, kind_of(Docker::Connection)) do
+      call_count += 1
+      raise Docker::Error::NotFoundError, "No such image: paid-agent:python-node" if call_count == 2
+    end
+
+    expect {
+      backend.delete_image("paid-agent:python-node")
+    }.not_to raise_error
+    expect(Docker::Image).to have_received(:remove).twice
   end
 
   it "keeps recognizing persisted node hostnames even when the node is not ready" do
@@ -269,6 +336,27 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
 
     expect(services.map(&:service_id)).to eq([ service_id, other_service_id ])
     expect(tasks_request).to have_been_requested.once
+  end
+
+  it "detects image usage from service task template images, not a container-list filter" do
+    in_use_service = service_payload.deep_dup
+    in_use_service["Spec"]["TaskTemplate"]["ContainerSpec"]["Image"] = "paid-agent:go-node"
+    other_service = service_payload.deep_dup
+    other_service["ID"] = "svc-456"
+    other_service["Spec"]["TaskTemplate"]["ContainerSpec"]["Image"] = "paid-agent:ruby-python"
+    stub_manager_get("/services", [ in_use_service, other_service ])
+
+    expect(backend.image_in_use?("paid-agent:go-node")).to be(true)
+    expect(backend.image_in_use?("paid-agent:unused")).to be(false)
+  end
+
+  it "matches a service image resolved to a registry digest by its tag" do
+    digested_service = service_payload.deep_dup
+    digested_service["Spec"]["TaskTemplate"]["ContainerSpec"]["Image"] =
+      "paid-agent:go-node@sha256:#{"a" * 64}"
+    stub_manager_get("/services", [ digested_service ])
+
+    expect(backend.image_in_use?("paid-agent:go-node")).to be(true)
   end
 
   it "includes standalone node-local containers for capacity snapshots without duplicating swarm tasks" do

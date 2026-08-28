@@ -5,13 +5,15 @@ require "rails_helper"
 RSpec.describe Containers::ImageResolver do
   # A lightweight stand-in for Project that exposes only the normalized repo-
   # profile API the resolver reads. Keeps the spec fast and behavior-focused.
-  def project_double(test_languages: [], detected_languages: [], detected_language: nil)
+  def project_double(repo_profile: nil, test_languages: [], detected_languages: [], detected_language: nil)
     instance_double(
       Project,
+      repo_profile: repo_profile,
       test_languages: test_languages,
       detected_languages: detected_languages,
       detected_language: detected_language
     ).tap do |dbl|
+      allow(dbl).to receive(:respond_to?).with(:repo_profile).and_return(true)
       allow(dbl).to receive(:respond_to?).with(:test_languages).and_return(true)
       allow(dbl).to receive(:respond_to?).with(:detected_languages).and_return(true)
       allow(dbl).to receive(:respond_to?).with(:detected_language).and_return(true)
@@ -146,6 +148,22 @@ RSpec.describe Containers::ImageResolver do
     end
 
     context "when in strict mode" do
+      it "raises for an unsupported repo-profile test language" do
+        project = project_double(repo_profile: { "test_languages" => %w[kotlin ruby] })
+
+        expect {
+          described_class.resolve(project, strict: true)
+        }.to raise_error(described_class::UnsupportedRuntimeError, /kotlin/)
+      end
+
+      it "raises for a symbol-keyed repo profile assigned before the jsonb round-trip" do
+        project = project_double(repo_profile: { test_languages: %w[kotlin ruby] })
+
+        expect {
+          described_class.resolve(project, strict: true)
+        }.to raise_error(described_class::UnsupportedRuntimeError, /kotlin/)
+      end
+
       it "raises when a detected language is unsupported" do
         project = project_double(detected_language: "kotlin")
         expect {

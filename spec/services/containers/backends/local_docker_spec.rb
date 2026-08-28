@@ -52,4 +52,19 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
 
     expect(backend.create_volume("paid-workspace-1", "Labels" => { "paid.managed" => "true" })).to eq(volume)
   end
+
+  it "builds an image from a Dockerfile string via docker-api's string-body build API" do
+    built_image = instance_double(Docker::Image)
+    allow(Docker::Image).to receive(:build).with("FROM scratch", { t: "paid-agent:go" }).and_return(built_image)
+
+    expect(backend.build_image("FROM scratch", { t: "paid-agent:go" })).to eq(built_image)
+  end
+
+  it "checks image usage via the ancestor container-list filter" do
+    allow(Docker::Container).to receive(:all)
+      .with(filters: { ancestor: [ "paid-agent:go-node" ] }.to_json)
+      .and_return([ container ])
+
+    expect(backend.image_in_use?("paid-agent:go-node")).to be(true)
+  end
 end

@@ -81,6 +81,12 @@ RSpec.describe Containers::Backends::RemoteDocker, :no_db do
     expect(backend.list_volumes).to eq([ volume ])
   end
 
+  it "builds an image from a Dockerfile string via docker-api's string-body build API" do
+    allow(Docker::Image).to receive(:build).with("FROM scratch", { t: "paid-agent:go" }, connection).and_return(image)
+
+    expect(backend.build_image("FROM scratch", { t: "paid-agent:go" })).to eq(image)
+  end
+
   it "accepts host keywords for shared volume cleanup paths" do
     allow(Docker::Volume).to receive(:get).with("paid-workspace-1", connection).and_return(volume)
     allow(Docker::Volume).to receive(:create)

@@ -364,6 +364,7 @@ module Containers
       )
 
       validate_backend_mount_support!
+      ensure_runtime_image_available!
       prepare_heartbeat_dir! if backend.supports_host_paths?
       prepare_workspace!
       ensure_network!
@@ -1493,10 +1494,18 @@ module Containers
       )
     end
 
+    # Strict: a run must execute in an image that actually provides its
+    # runtimes, so a project whose detected languages have no agent image
+    # fails the provision instead of quietly landing in the base image
+    # (RDR-046 / POLYGLOT-TEST-006). An explicit +options[:image]+ override
+    # still wins — the caller has named the image deliberately.
+    # +.compatibility_for+ already rescues +ImageResolver::Error+, so queue
+    # scheduling reports the project as incompatible rather than crashing.
+    # @spec POLYGLOT-TEST-006
     def resolve_requested_project_image
       return unless project
 
-      Containers::ImageResolver.resolve(project)
+      Containers::ImageResolver.resolve(project, strict: true)
     end
 
     # In manual mode the memory limit comes straight from
@@ -3279,6 +3288,20 @@ module Containers
       return if rejections.empty?
 
       raise ProvisionError, format_backend_mount_rejections(rejections)
+    end
+
+    # Build-on-first-use for resolved combo images (RDR-046 / #3613): before a
+    # container is created, guarantee the selected image tag actually exists on
+    # the backend. Base, foreign, and immutable catalog references are not the
+    # builder's to produce and pass through untouched; unbuildable tags and
+    # failed builds fail the provision loudly instead of silently running in
+    # the base image.
+    # @spec POLYGLOT-TEST-007
+    # @spec POLYGLOT-TEST-008
+    def ensure_runtime_image_available!
+      Containers::ComboImageBuilder.ensure_available(options[:image], backend: backend)
+    rescue Containers::ComboImageBuilder::Error => e
+      raise ProvisionError, e.message
     end
 
     def worktree_mount_rejection
