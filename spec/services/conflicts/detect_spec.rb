@@ -159,6 +159,36 @@ RSpec.describe Conflicts::Detect do
         )
       end
 
+      it "diffs through a rehydrated runner_handle even when the runner flag has since been disabled" do
+        # A run may have completed while execution_runner_enabled was on, then the
+        # flag gets turned off before conflict detection runs. The persisted
+        # runner_handle must still drive the diff instead of falling through to
+        # the legacy container path (which has no container_id to reconnect to).
+        FeatureFlags.disable!(:execution_runner_enabled)
+        stub_runner_diff(stdout: "src/app.rb\nsrc/config.rb\n")
+
+        run_a = create(:agent_run, :completed, project: project,
+          branch_name: "paid/runner-flag-off-a",
+          base_commit_sha: base_sha,
+          result_commit_sha: "b" * 40,
+          container_id: nil,
+          runner_handle: runner_handle(identifier: "runner-flag-off-a").to_storage)
+        run_b = create_run(result_sha: "c" * 40, changed_files: [ "src/app.rb" ])
+
+        allow(WorktreeService).to receive(:new).and_raise(StandardError, "no repo")
+
+        result = described_class.call(
+          agent_run_ids: [ run_a.id, run_b.id ],
+          project_id: project.id
+        )
+
+        expect(result[:has_conflicts]).to be true
+        expect(result[:conflicting_pairs]).to contain_exactly(
+          { runs: [ run_a.id, run_b.id ], files: [ "src/app.rb" ] }
+        )
+        expect(result[:failed_run_ids]).to be_empty
+      end
+
       it "falls through to metadata when bare repo diff fails" do
         run_a = create_run(result_sha: "b" * 40, changed_files: [ "src/app.rb" ])
         run_b = create_run(result_sha: "c" * 40, changed_files: [ "src/app.rb" ])

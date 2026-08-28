@@ -2772,7 +2772,7 @@ class AgentRun < ApplicationRecord
   # @raise [Containers::Provision::ProvisionError] When container not provisioned
   # @raise [Containers::Provision::TimeoutError] When command times out
   def execute_in_execution_environment(command, timeout: nil, stream: true, env: {}, preparation: nil)
-    if execution_runner_enabled? && @current_handle
+    if @current_handle
       return execute_via_runner(command, timeout: timeout, env: env, preparation: preparation)
     end
 

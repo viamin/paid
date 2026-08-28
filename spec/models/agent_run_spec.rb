@@ -2932,6 +2932,27 @@ RSpec.describe AgentRun do
           expect(result[:stdout]).to eq("reconnected\n")
         end
 
+        it "routes through the runner when a handle is set but the feature flag has since been disabled" do
+          # A run's handle may be rehydrated (e.g. by Conflicts::Detect) after the
+          # project has turned execution_runner_enabled back off. The persisted
+          # handle must still drive execution instead of falling through to the
+          # legacy container path, which has no container_id to reconnect to.
+          agent_run = create(:agent_run, worktree_path: worktree_path)
+          FeatureFlags.disable!(:execution_runner_enabled)
+          agent_run.instance_variable_set(:@current_handle, mock_handle)
+          mock_handle.metadata["agent_run_id"] = agent_run.id
+
+          result = agent_run.execute_in_container("echo hello")
+
+          expect(mock_runner).to have_received(:start).with(
+            handle: mock_handle, command: "echo hello", timeout: nil,
+            startup_timeout: nil, idle_timeout: nil, abort_patterns: nil,
+            preparation: nil, heartbeat_path: nil
+          )
+          expect(result).to be_success
+          expect(result[:stdout]).to eq("runner-output\n")
+        end
+
         it "translates ExecutionError to Provision::ExecutionError" do
           agent_run = create(:agent_run, worktree_path: worktree_path)
           FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
