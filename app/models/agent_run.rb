@@ -204,7 +204,8 @@ class AgentRun < ApplicationRecord
   has_many :strategy_experiment_assignments, dependent: :destroy
   has_many :container_metrics, dependent: :delete_all
   has_many :execution_usages, dependent: :destroy
-  has_one :execution_usage, -> { order(terminated_at: :desc, id: :desc) }, class_name: "ExecutionUsage"
+  has_one :execution_usage, -> { order(provisioned_at: :desc, terminated_at: :desc, id: :desc) },
+    class_name: "ExecutionUsage"
   has_many :quality_metrics, dependent: :destroy
   has_many :style_guide_run_exposures, dependent: :destroy
   has_many :orchestration_decisions, dependent: :nullify

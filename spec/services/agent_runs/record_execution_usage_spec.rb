@@ -135,6 +135,12 @@ RSpec.describe AgentRuns::RecordExecutionUsage do
       expect(agent_run.infra_cost_cents).to eq(usages.sum(&:infra_cost_cents))
     end
 
+    it "treats the most recently provisioned cycle as the singular execution_usage" do
+      _first_usage, second_usage = late_then_reprovisioned_usage(agent_run)
+
+      expect(agent_run.reload.execution_usage).to eq(second_usage)
+    end
+
     # @spec EXEC-USAGE-011
     it "preserves the prior cycle as its own row when a new billing cycle is recorded" do
       first_usage, result = reprovisioned_usage(agent_run)
