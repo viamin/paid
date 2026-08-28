@@ -1023,6 +1023,75 @@ RSpec.describe Activities::RunAgentActivity do
       )
     end
 
+    it "resolves a config-blind KiloCode free-policy runtime instead of passing nil to provider qualification" do # @spec MODEL-POLICY-011
+      api_key = create(:runner_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret")
+      free_model = create(:llm_model, model_id: "deepseek/deepseek-v4-flash:free", provider: "deepseek", tier: "mid", pricing_tier: "free",
+        catalog_source: "openrouter_sync")
+      runner = create(
+        :runner,
+        user: user,
+        runner_key: "kilocode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        enabled_for_agent_runs: true,
+        enabled_for_chat: false,
+        enabled_for_fallback: false,
+        config: { "kilocode" => { "api_provider" => "openrouter", "model_policy" => "free" } },
+        tier_model_ids: { "mid" => free_model.model_id }
+      )
+      run = create_runner_backed_agent_run(project: project, runner: runner)
+
+      runtime = activity.send(:selected_runner_runtime, runner, user, run)
+
+      expect(runtime.model).to eq("openai-compatible/deepseek/deepseek-v4-flash:free")
+    end
+
+    it "passes the OpenRouter provider override through Pi free-policy dispatch" do # @spec MODEL-POLICY-011
+      api_key = create(:runner_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret")
+      free_model = create(:llm_model, model_id: "moonshotai/kimi-k2:free", provider: "moonshotai", tier: "mid", pricing_tier: "free",
+        catalog_source: "openrouter_sync")
+      runner = create(
+        :runner,
+        user: user,
+        runner_key: "pi",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        enabled_for_agent_runs: true,
+        enabled_for_chat: false,
+        enabled_for_fallback: false,
+        config: { "pi" => { "api_provider" => "openrouter", "model_policy" => "free" } },
+        tier_model_ids: { "mid" => free_model.model_id }
+      )
+      run = create_runner_backed_agent_run(project: project, runner: runner)
+
+      runtime = activity.send(:selected_runner_runtime, runner, user, run)
+
+      expect(runtime).to have_attributes(model: "moonshotai/kimi-k2:free", api_provider: "openrouter")
+    end
+
+    it "passes the OpenRouter provider override through OMP free-policy dispatch" do # @spec MODEL-POLICY-011
+      api_key = create(:runner_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret")
+      free_model = create(:llm_model, model_id: "qwen/qwen3-coder:free", provider: "qwen", tier: "mid", pricing_tier: "free",
+        catalog_source: "openrouter_sync")
+      runner = create(
+        :runner,
+        user: user,
+        runner_key: "omp",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        enabled_for_agent_runs: true,
+        enabled_for_chat: false,
+        enabled_for_fallback: false,
+        config: { "omp" => { "api_provider" => "openrouter", "model_policy" => "free" } },
+        tier_model_ids: { "mid" => free_model.model_id }
+      )
+      run = create_runner_backed_agent_run(project: project, runner: runner)
+
+      runtime = activity.send(:selected_runner_runtime, runner, user, run)
+
+      expect(runtime).to have_attributes(model: "qwen/qwen3-coder:free", api_provider: "openrouter")
+    end
+
     it "raises instead of falling back to an unpinned runtime when no free model resolves for openrouter_free" do
       api_key = create(:runner_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret")
       free_model = create(:llm_model, model_id: "deepseek/deepseek-v4-flash:free", provider: "deepseek", tier: "mid", pricing_tier: "free")

@@ -634,7 +634,7 @@ class Runner < ApplicationRecord
   end
 
   def agent_harness_runner_runtime
-    return free_model_policy_runner_runtime(project: nil, model_id: nil) if direct_outbound_free_policy?
+    return free_model_policy_runner_runtime(project: nil, model_id: free_policy_default_model_id) if direct_outbound_free_policy?
     return opencode_runner_runtime if opencode_direct_outbound?
     return pi_runner_runtime if pi_agent_harness_runtime?
     return omp_runner_runtime if omp_agent_harness_runtime?
@@ -1278,6 +1278,8 @@ class Runner < ApplicationRecord
     end
 
     return unless direct_outbound_free_policy?
+
+    errors.add(:auth_type, "must be API key for the free model policy") unless api_key?
 
     return if direct_outbound_api_provider == OPENROUTER_FREE_MODEL_PROVIDER
 
@@ -2042,6 +2044,9 @@ class Runner < ApplicationRecord
   public :free_model_policy_runner_runtime
 
   def free_policy_direct_outbound_runtime(project:, model_id:)
+    model_id ||= free_policy_default_model_id
+    raise ArgumentError, "#{runner_key} runner has no resolvable free model" if model_id.blank?
+
     config = Runners::FreeModelExecutionPlan.call(runner: self, model_id: model_id, project: project).config
 
     case runner_key
@@ -2059,6 +2064,7 @@ class Runner < ApplicationRecord
   def pi_free_policy_runtime(config)
     AgentHarness::ProviderRuntime.new(
       model: config.fetch(:model),
+      api_provider: pi_api_provider,
       env: {
         config.fetch(:api_key_env) => effective_api_secret.to_s,
         "OPENAI_BASE_URL" => config.fetch(:base_url)
@@ -2081,6 +2087,7 @@ class Runner < ApplicationRecord
   def omp_free_policy_runtime(config)
     AgentHarness::ProviderRuntime.new(
       model: config.fetch(:model),
+      api_provider: omp_api_provider,
       env: omp_runtime_env.merge("OPENAI_BASE_URL" => config.fetch(:base_url)),
       unset_env: %w[OPENAI_HEADER_X_AGENT_RUN_ID OPENAI_HEADER_X_PROXY_TOKEN],
       metadata: {
@@ -2124,6 +2131,18 @@ class Runner < ApplicationRecord
         }
       }
     )
+  end
+
+  # Resolves the highest-tier free model for config-blind dispatch paths such
+  # as chat planning and compatibility checks. Live agent-run execution passes
+  # an explicit model_id from model selection / tier resolution instead.
+  def free_policy_default_model_id
+    LlmModel::TIERS.each do |tier|
+      result = Runners::ResolveTierModel.call(runner: self, tier: tier, user: user)
+      return result.model_id if result.success? && result.model_id.present?
+    end
+
+    nil
   end
 
   def omp_api_key_env_var

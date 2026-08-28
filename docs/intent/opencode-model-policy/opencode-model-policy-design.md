@@ -79,6 +79,12 @@ the runner key/provider.
   `openrouter_free` runner. Pi and OMP additionally carry their existing
   auth metadata/env alongside the OpenRouter routing metadata. KiloCode
   translates the same routing into its provider-options config shape.
+- Pi and OMP still depend on upstream CLI support to consume that
+  OpenRouter provider-routing metadata: Paid can force `--provider
+  openrouter` via `api_provider`, but the harness Pi/OMP providers do not
+  currently interpret `metadata[:config]` for OpenRouter routing, so
+  data-classification routing on those paths remains an upstream gap rather
+  than an app-side omission.
 
 ### Defaults and display
 

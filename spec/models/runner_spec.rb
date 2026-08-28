@@ -981,6 +981,15 @@ RSpec.describe Runner do
           expect(runner.errors[:config].join).to include("free model policy requires the OpenRouter API provider")
         end
 
+        it "requires API key auth for enabled #{runner_key} free-policy runners" do # @spec MODEL-POLICY-011
+          runner.auth_type = "subscription"
+          runner.runner_key = runner_key
+          runner.config = { runner_key => { "api_provider" => "openrouter", "model_policy" => "free" } }
+
+          expect(runner).not_to be_valid
+          expect(runner.errors[:auth_type]).to include("must be API key for the free model policy")
+        end
+
         it "still requires a model id for #{runner_key} specific policy" do # @spec MODEL-POLICY-003
           api_key = create(:provider_api_key, user: runner.user, api_service_type: "openrouter")
           runner.auth_type = "api_key"
@@ -1796,6 +1805,19 @@ RSpec.describe Runner do
       )
     end
 
+    def create_free_policy_direct_outbound_runner(runner_key:, model_id:, provider_api_key: api_key)
+      create(
+        :runner,
+        user: user,
+        runner_key: runner_key,
+        auth_type: "api_key",
+        provider_api_key: provider_api_key,
+        enabled_for_agent_runs: false, enabled_for_chat: false, enabled_for_fallback: false,
+        config: { runner_key => { "api_provider" => "openrouter", "model_policy" => "free" } },
+        tier_model_ids: { "mid" => model_id }
+      )
+    end
+
     def expect_unset_env(runtime, *keys)
       expect(runtime.unset_env).to include(*keys)
     end
@@ -1959,6 +1981,66 @@ RSpec.describe Runner do
       expect(runner.direct_outbound_exec_env).to eq({})
       expect(runner.direct_outbound_exec_command(command_prefix: %w[opencode run], prompt: "ping")).to eq(%w[opencode run ping])
       expect(runner.agent_harness_runner_runtime).to be_nil
+    end
+
+    it "resolves a free-policy KiloCode runtime for config-blind dispatch paths" do # @spec MODEL-POLICY-011
+      free_model = create(:llm_model, model_id: "deepseek/deepseek-v4-flash:free", provider: "deepseek", tier: "mid", pricing_tier: "free",
+        catalog_source: "openrouter_sync")
+      free_runner = create_free_policy_direct_outbound_runner(runner_key: "kilocode", model_id: free_model.model_id)
+
+      runtime = free_runner.agent_harness_runner_runtime
+
+      expect(runtime.model).to eq("openai-compatible/deepseek/deepseek-v4-flash:free")
+      expect(runtime.metadata[:config]["provider"]).to include(
+        "openai-compatible" => hash_including(
+          "models" => include(
+            "deepseek/deepseek-v4-flash:free" => hash_including("id" => "deepseek/deepseek-v4-flash:free")
+          )
+        )
+      )
+    end
+
+    it "raises a clear error when a free-policy KiloCode runner has no resolvable model" do # @spec MODEL-POLICY-011
+      free_runner = create_free_policy_direct_outbound_runner(runner_key: "kilocode", model_id: "placeholder")
+      free_runner.update_columns(tier_model_ids: {})
+
+      allow(Runners::ResolveTierModel).to receive(:call).and_return(
+        Runners::ResolveTierModel::Result.new(error: "no model configured")
+      )
+
+      expect do
+        free_runner.agent_harness_runner_runtime
+      end.to raise_error(ArgumentError, /kilocode runner has no resolvable free model/)
+    end
+
+    it "includes the OpenRouter provider override in Pi free-policy runtimes" do # @spec MODEL-POLICY-011
+      free_model = create(:llm_model, model_id: "moonshotai/kimi-k2:free", provider: "moonshotai", tier: "mid", pricing_tier: "free",
+        catalog_source: "openrouter_sync")
+      free_runner = create_free_policy_direct_outbound_runner(runner_key: "pi", model_id: free_model.model_id)
+
+      runtime = free_runner.agent_harness_runner_runtime
+
+      expect(runtime.model).to eq("moonshotai/kimi-k2:free")
+      expect(runtime.api_provider).to eq("openrouter")
+      expect(runtime.env).to include(
+        "OPENROUTER_API_KEY" => "sk-openrouter-secret",
+        "OPENAI_BASE_URL" => "https://openrouter.ai/api/v1"
+      )
+    end
+
+    it "includes the OpenRouter provider override in OMP free-policy runtimes" do # @spec MODEL-POLICY-011
+      free_model = create(:llm_model, model_id: "qwen/qwen3-coder:free", provider: "qwen", tier: "mid", pricing_tier: "free",
+        catalog_source: "openrouter_sync")
+      free_runner = create_free_policy_direct_outbound_runner(runner_key: "omp", model_id: free_model.model_id)
+
+      runtime = free_runner.agent_harness_runner_runtime
+
+      expect(runtime.model).to eq("qwen/qwen3-coder:free")
+      expect(runtime.api_provider).to eq("openrouter")
+      expect(runtime.env).to include(
+        "OPENROUTER_API_KEY" => "sk-openrouter-secret",
+        "OPENAI_BASE_URL" => "https://openrouter.ai/api/v1"
+      )
     end
   end
 
