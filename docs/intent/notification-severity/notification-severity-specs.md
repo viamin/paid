@@ -28,11 +28,15 @@
   *Test:* `spec/services/notifications/rules/zero_iteration_timeout_spec.rb`.
 
 - [x] **NOTIFICATION-SEVERITY-004** — When computing the bell-badge unread
-  count, the system SHALL count only active, unread notifications with
-  severity `warning` or `error`; `info` notifications SHALL NOT contribute to
-  the badge count.
-  *Code:* `app/helpers/notifications_helper.rb#unread_notification_count`.
-  *Test:* `spec/helpers/notifications_helper_spec.rb`.
+  count — whether for a full render or for a Turbo-stream bell replacement
+  broadcast after publish/resolve — the system SHALL count only active,
+  unread notifications with severity `warning` or `error`; `info`
+  notifications SHALL NOT contribute to the badge count.
+  *Code:* `app/models/notification.rb` (`.badging` scope),
+  `app/helpers/notifications_helper.rb#unread_notification_count`,
+  `app/services/notifications/broadcasting.rb`.
+  *Test:* `spec/models/notification_spec.rb`, `spec/helpers/notifications_helper_spec.rb`,
+  `spec/services/notifications/publish_spec.rb`, `spec/services/notifications/resolve_spec.rb`.
 
 - [x] **NOTIFICATION-SEVERITY-005** — The notifications index page SHALL
   continue to list and allow filtering by `info`-severity notifications; the

@@ -69,10 +69,16 @@ the system does next will change the outcome.
 
 The bell badge counts unread notifications the user has not already
 dismissed or had auto-resolved, restricted to `warning` and `error`
-severities:
+severities. The rule is defined once in the `Notification.badging` scope
+(`app/models/notification.rb`) and consumed by both badge-count call sites,
+so a full render and a Turbo-stream bell replacement can never disagree:
+
+- `NotificationsHelper#unread_notification_count` — full page renders
+- `Notifications::Broadcasting` — Turbo-stream `broadcast_replace_to`
+  updates pushed after `Notifications::Publish` / `Notifications::Resolve`
 
 ```ruby
-visible_notifications.active.unread.where(severity: %i[warning error]).count
+scope :badging, -> { active.unread.where(severity: %i[warning error]) }
 ```
 
 `info` notifications remain fully visible and filterable on the notifications
