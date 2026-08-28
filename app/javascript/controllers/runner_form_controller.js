@@ -218,7 +218,7 @@ export default class extends Controller {
   // dynamicModelSelect target above; only one renders per page load, so
   // methods for each no-op harmlessly when their targets are absent.
   refreshPolicyModelOptions(runnerKey = this.currentRunnerKey()) {
-    this.policyModelSelectTargets.forEach((select) => {
+    (this.policyModelSelectTargets || []).forEach((select) => {
       const selectRunnerKey = select.dataset.runnerKey
       const matches = selectRunnerKey === runnerKey && this.runnerApiKeyMode()
       const serviceType = this.requiredApiServiceTypeFor(selectRunnerKey)
@@ -320,7 +320,7 @@ export default class extends Controller {
   modelSelectFor(runnerKey) {
     return (
       this.dynamicModelSelectTargets.find((target) => target.dataset.runnerKey === runnerKey) ||
-      this.policyModelSelectTargets.find((target) => target.dataset.runnerKey === runnerKey) ||
+      (this.policyModelSelectTargets || []).find((target) => target.dataset.runnerKey === runnerKey) ||
       null
     )
   }
