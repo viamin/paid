@@ -120,7 +120,7 @@ module Conflicts
     def diff_files_from_container(run)
       return Set.new if run.container_id.blank?
 
-      result = run.execute_in_container(
+      result = run.execute_in_execution_environment(
         [ "git", "diff", "--name-only", run.base_commit_sha, run.result_commit_sha ],
         timeout: 30,
         stream: false

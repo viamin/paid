@@ -454,7 +454,7 @@ module Runners
     # subsequent smoke test runs.
     def prepare_kilocode_config!(run)
       config_json = runner.kilocode_config_json
-      run.execute_in_container(
+      run.execute_in_execution_environment(
         [ "sh", "-c",
           "mkdir -p /home/agent/.config/kilocode && " \
           "printf '%s' \"$KILOCODE_CONFIG_B64\" | base64 -d > /home/agent/.config/kilocode/kilo.json" ],

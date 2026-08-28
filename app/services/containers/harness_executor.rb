@@ -17,7 +17,7 @@ module Containers
       effective_command = inject_kilocode_auto_flags(wrapped_command(command, unset_vars))
       started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
-      result = @agent_run.execute_in_container(
+      result = @agent_run.execute_in_execution_environment(
         effective_command,
         timeout: timeout,
         stream: false,
@@ -35,7 +35,7 @@ module Containers
     end
 
     def which(binary)
-      result = @agent_run.execute_in_container(
+      result = @agent_run.execute_in_execution_environment(
         [ "sh", "-c", "command -v -- #{Shellwords.escape(binary.to_s)}" ],
         stream: false,
         env: {},

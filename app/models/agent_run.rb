@@ -2719,7 +2719,7 @@ class AgentRun < ApplicationRecord
   # Container management integration methods.
   # These delegate to Containers::Provision for actual implementation.
 
-  # Provisions a Docker container for this agent run.
+  # Provisions the execution environment for this agent run.
   #
   # Idempotent across retries: if a previous attempt already recorded a live
   # container (e.g. a Temporal activity retry after a worker crash mid-provision),
@@ -2733,7 +2733,7 @@ class AgentRun < ApplicationRecord
   # @param options [Hash] Override default container options
   # @return [Containers::Provision::Result] Result with container_id on success
   # @raise [Containers::Provision::ProvisionError] When container creation fails
-  def provision_container(**options)
+  def provision_execution_environment(**options)
     networking_policy = nil
     if authority_grants.blank? || authority_grants["grants"].blank?
       networking_policy = Containers::Provision.networking_policy_for(
@@ -2758,7 +2758,12 @@ class AgentRun < ApplicationRecord
     provision_new_container(**options)
   end
 
-  # Executes a command in the provisioned container.
+  # Compatibility shim for legacy container-named callers.
+  def provision_container(**options)
+    provision_execution_environment(**options)
+  end
+
+  # Executes a command in the provisioned execution environment.
   #
   # @param command [String, Array<String>] Command to execute
   # @param timeout [Integer] Timeout in seconds (default from container options)
@@ -2766,7 +2771,7 @@ class AgentRun < ApplicationRecord
   # @return [Containers::Provision::Result] Result with stdout, stderr, exit_code
   # @raise [Containers::Provision::ProvisionError] When container not provisioned
   # @raise [Containers::Provision::TimeoutError] When command times out
-  def execute_in_container(command, timeout: nil, stream: true, env: {}, preparation: nil)
+  def execute_in_execution_environment(command, timeout: nil, stream: true, env: {}, preparation: nil)
     if execution_runner_enabled? && @current_handle
       return execute_via_runner(command, timeout: timeout, env: env, preparation: preparation)
     end
@@ -2775,7 +2780,18 @@ class AgentRun < ApplicationRecord
     @container_service.execute(command, timeout: timeout, stream: stream, env: env, preparation: preparation)
   end
 
-  # Cleans up the provisioned container.
+  # Compatibility shim for legacy container-named callers.
+  def execute_in_container(command, timeout: nil, stream: true, env: {}, preparation: nil)
+    execute_in_execution_environment(
+      command,
+      timeout: timeout,
+      stream: stream,
+      env: env,
+      preparation: preparation
+    )
+  end
+
+  # Cleans up the provisioned execution environment.
   #
   # Always attempts to remove the agent run's named workspace volume as a
   # safety net, even when no container_id is recorded — a worker killed
@@ -2789,7 +2805,7 @@ class AgentRun < ApplicationRecord
   #   workspace volume — see Containers::Provision#cleanup for why a caller
   #   tearing down a stale container reference needs this.
   # @return [void]
-  def cleanup_container(force: false, preserve_workspace_volume: false)
+  def cleanup_execution_environment(force: false, preserve_workspace_volume: false)
     # Snapshot up front: a caller operating on a stale id (e.g.
     # ExecutionControlParkCleanupJob, which assigns a park-time snapshot
     # before calling this method) must tear down *that* container without
@@ -2809,7 +2825,7 @@ class AgentRun < ApplicationRecord
     if Containers::PoolManager.cleanup_claimed_container(agent_run: self, force: force)
       @container_service = nil
       @current_handle = nil
-      clear_container_id_if_unchanged!(target_container_id)
+      clear_execution_environment_reference_if_unchanged!(target_container_id)
       ExecutionResource.mark_cleaned_for!(agent_run: self)
       return
     end
@@ -2820,7 +2836,7 @@ class AgentRun < ApplicationRecord
       ensure_container_service!
       @container_service.cleanup(force: force, preserve_workspace_volume: preserve_workspace_volume)
       @container_service = nil
-      clear_container_id_if_unchanged!(target_container_id)
+      clear_execution_environment_reference_if_unchanged!(target_container_id)
     end
     ExecutionResource.mark_cleaned_for!(agent_run: self)
   rescue Containers::Provision::Error, ExecutionRunners::Error => e
@@ -2828,7 +2844,7 @@ class AgentRun < ApplicationRecord
     # Container may already be gone; clear the reference anyway
     @container_service = nil
     @current_handle = nil
-    clear_container_id_if_unchanged!(target_container_id, also_clear: { runner_handle: nil })
+    clear_execution_environment_reference_if_unchanged!(target_container_id, also_clear: { runner_handle: nil })
     # The container is gone but the workspace volume may still exist.
     # Provision#cleanup would normally handle this in its ensure block,
     # but we never reached it, so clean up the volume directly. Skip it
@@ -2837,20 +2853,25 @@ class AgentRun < ApplicationRecord
     cleanup_orphaned_workspace_volume unless preserve_workspace_volume
   end
 
-  # Clears container_id (and any also_clear columns) only if container_id
-  # still matches the container this method just tore down. A run cleaned up
-  # from a stale snapshot (see cleanup_container above) may have already been
-  # re-dispatched to a different container by the time teardown finishes; an
-  # unconditional write here would silently wipe the new container's id out
-  # from under the run that is now using it.
-  def clear_container_id_if_unchanged!(expected_container_id, also_clear: {})
+  # Clears persisted execution-environment references only if container_id
+  # still matches the environment this method just tore down. A run cleaned up
+  # from a stale snapshot (see cleanup_execution_environment above) may have
+  # already been re-dispatched to a different environment by the time teardown
+  # finishes; an unconditional write here would silently wipe the new
+  # environment's id out from under the run that is now using it.
+  # Compatibility shim for legacy container-named callers.
+  def cleanup_container(force: false, preserve_workspace_volume: false)
+    cleanup_execution_environment(force: force, preserve_workspace_volume: preserve_workspace_volume)
+  end
+
+  def clear_execution_environment_reference_if_unchanged!(expected_container_id, also_clear: {})
     updates = also_clear.merge(container_id: nil, container_host: nil)
     self.class.where(id: id, container_id: expected_container_id).update_all(updates)
     assign_attributes(updates) if container_id == expected_container_id
   end
 
-  # Persists the id of a container that provisioning created but never
-  # recorded, so a later CleanupContainerActivity can tear it down.
+  # Persists the id of an execution environment that provisioning created but
+  # never recorded, so a later cleanup activity can tear it down.
   #
   # Two paths:
   # 1. Runner path (+execution_runner_enabled?+): when the runner provisioned
@@ -2871,10 +2892,10 @@ class AgentRun < ApplicationRecord
   # CleanupContainerActivity could previously only reclaim its workspace
   # volume by name. Recording the in-flight container here closes that leak.
   #
-  # No-op when a container_id is already recorded or no in-flight container
+  # No-op when a container_id is already recorded or no in-flight environment
   # exists (e.g. the worker was killed before create_container). Returns the
-  # recorded container id, or nil.
-  def recover_in_flight_container!
+  # recorded environment identifier, or nil.
+  def recover_in_flight_execution_environment!
     return if container_id.present?
 
     # Runner path: persist the in-flight handle before Thread#kill discards it.
@@ -2917,12 +2938,17 @@ class AgentRun < ApplicationRecord
     container.id
   end
 
-  # Executes a block with a provisioned container, ensuring cleanup.
+  # Compatibility shim for legacy container-named callers.
+  def recover_in_flight_container!
+    recover_in_flight_execution_environment!
+  end
+
+  # Executes a block with a provisioned execution environment, ensuring cleanup.
   #
   # @param options [Hash] Override default container options
   # @yield [self] The agent run with provisioned container
   # @return [Object] The return value of the block
-  def with_container(**options, &)
+  def with_execution_environment(**options, &)
     Containers::Provision.with_container(
       agent_run: self,
       worktree_path: worktree_path.presence,
@@ -2933,6 +2959,11 @@ class AgentRun < ApplicationRecord
     ensure
       @container_service = nil
     end
+  end
+
+  # Compatibility shim for legacy container-named callers.
+  def with_container(**options, &)
+    with_execution_environment(**options, &)
   end
 
   # Lazily generates and persists a proxy token for runs that were created
@@ -3145,7 +3176,8 @@ class AgentRun < ApplicationRecord
 
   # Cleans up through the runner interface. Idempotent on missing resources.
   #
-  # +expected_container_id+ mirrors clear_container_id_if_unchanged! below: a
+  # +expected_container_id+ mirrors
+  # +clear_execution_environment_reference_if_unchanged!+ below: a
   # caller operating on a stale snapshot (e.g. ExecutionControlParkCleanupJob
   # tearing down a parked run's old environment) must not wipe out
   # container_id/runner_handle if the row has since been re-dispatched to a
@@ -3157,7 +3189,7 @@ class AgentRun < ApplicationRecord
     nil
   ensure
     @current_handle = nil
-    clear_container_id_if_unchanged!(expected_container_id, also_clear: { runner_handle: nil })
+    clear_execution_environment_reference_if_unchanged!(expected_container_id, also_clear: { runner_handle: nil })
   end
 
   # Clears persisted container reference columns after a stale runner handle is
