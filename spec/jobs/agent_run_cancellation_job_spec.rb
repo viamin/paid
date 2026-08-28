@@ -80,7 +80,7 @@ RSpec.describe AgentRunCancellationJob, type: :job do
       expect(agent_run.reload.container_id).to be_nil
     end
 
-    it "rehydrates the persisted runner_handle before cleanup" do
+    it "rehydrates the persisted runner_handle before cleanup even after the runner flag is disabled" do
       handle = ExecutionRunners::RunnerHandle.new(
         runner_type: :local_docker,
         identifier: "runner-container-123",
@@ -89,7 +89,6 @@ RSpec.describe AgentRunCancellationJob, type: :job do
         metadata: { "agent_run_id" => agent_run.id, "worktree_path" => nil, "environment" => {} }
       )
       agent_run.update!(container_id: nil, container_host: nil, runner_handle: handle.to_storage)
-      FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
       runner = instance_double(ExecutionRunners::LocalDockerRunner, cleanup: nil)
       allow(ExecutionRunners).to receive(:resolve_for).with(instance_of(AgentRun)).and_return(runner)
 

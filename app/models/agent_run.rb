@@ -2832,7 +2832,7 @@ class AgentRun < ApplicationRecord
       return
     end
 
-    if execution_runner_enabled? && @current_handle
+    if @current_handle
       cleanup_via_runner(
         force: force,
         expected_container_id: target_container_id,
@@ -3215,7 +3215,7 @@ class AgentRun < ApplicationRecord
   end
 
   def rehydrate_runner_handle_for_cleanup(target_runner_handle)
-    return if @current_handle || !execution_runner_enabled? || target_runner_handle.blank?
+    return if @current_handle || target_runner_handle.blank?
 
     @current_handle = ExecutionRunners::RunnerHandle.from_json(target_runner_handle)
   end

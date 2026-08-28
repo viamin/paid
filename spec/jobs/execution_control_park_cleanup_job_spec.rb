@@ -105,8 +105,6 @@ RSpec.describe ExecutionControlParkCleanupJob, type: :job do
     end
 
     it "reconstructs the runner handle for runner-backed runs so cleanup takes the runner path" do
-      FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
-
       handle_hash = ExecutionRunners::RunnerHandle.new(
         runner_type: :contract,
         identifier: "container-123",
@@ -128,8 +126,6 @@ RSpec.describe ExecutionControlParkCleanupJob, type: :job do
     end
 
     it "cleans up runner-backed runs even when only the persisted handle snapshot is available" do
-      FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
-
       handle_hash = ExecutionRunners::RunnerHandle.new(
         runner_type: :contract,
         identifier: "runner-environment-123",
