@@ -65,6 +65,10 @@ module Containers
 
     BUILD_OUTPUT_TAIL_LINES = 40
 
+    ADVISORY_LOCK_SQL = "SELECT pg_advisory_lock($1, $2)".freeze
+    ADVISORY_UNLOCK_SQL = "SELECT pg_advisory_unlock($1, $2)".freeze
+    LOCK_NAMESPACE = 1_357_180_005
+
     class << self
       # The language layer Dockerfiles live in the repository, next to the
       # base agent image Dockerfile.
@@ -258,19 +262,31 @@ module Containers
       message
     end
 
-    # Serializes builds of the same image across processes on this host. The
-    # existence/staleness check runs inside the lock, so a process that waited
-    # on the lock sees the winner's image and skips its own duplicate build.
+    # Serializes builds of the same image tag across every process that
+    # shares this Rails app's Postgres database — not just this host. A file
+    # lock only coordinates processes on one machine; for `remote_docker` and
+    # `swarm` backends, multiple app/GoodJob instances can build the same
+    # combo tag concurrently against the same backend, and because the
+    # intermediate tag name is deterministic
+    # (`paid-agent-build:<combo>--layer0`), one build can untag it while
+    # another is still using it as `FROM`. A Postgres advisory lock, keyed by
+    # image tag, is visible to every process regardless of which host or
+    # backend it is building against. The existence/staleness check runs
+    # inside the lock, so a process that waited on the lock sees the
+    # winner's image and skips its own duplicate build.
     def with_build_lock(image)
-      lock_dir = Rails.root.join("tmp/combo-image-builds")
-      FileUtils.mkdir_p(lock_dir)
-      File.open(File.join(lock_dir, "#{image.tr(":", "__")}.lock"), File::RDWR | File::CREAT, 0o600) do |file|
-        file.flock(File::LOCK_EX)
-        @build_output_tail = nil
-        yield
-      ensure
-        @build_output_tail = nil
-      end
+      lock_key = advisory_lock_key(image)
+      raw_connection = ActiveRecord::Base.connection.raw_connection
+      raw_connection.exec_params(ADVISORY_LOCK_SQL, [ LOCK_NAMESPACE, lock_key ])
+      @build_output_tail = nil
+      yield
+    ensure
+      @build_output_tail = nil
+      raw_connection&.exec_params(ADVISORY_UNLOCK_SQL, [ LOCK_NAMESPACE, lock_key ])
+    end
+
+    def advisory_lock_key(image)
+      Digest::SHA256.digest(image).unpack1("l>")
     end
 
     def elapsed_ms(started)
