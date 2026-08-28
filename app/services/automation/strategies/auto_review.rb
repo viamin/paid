@@ -128,6 +128,11 @@ module Automation
           return decisions
         end
 
+        if trigger_types.include?("owner_approval_stale")
+          decisions << owner_approval_stale_decision(signals)
+          return decisions
+        end
+
         if trigger_types.include?("review_goal_retry")
           return review_goal_retry_decisions(signals, plugins, outcomes, trigger_types)
         end
@@ -341,6 +346,17 @@ module Automation
       # so a dismissal never silently preserves a limit the owner cleared.
       def dismissal_owner_initiated?(signals)
         signals.trigger("dismiss_escalation")&.fetch(:owner_initiated, true) != false
+      end
+
+      # @spec AUTO-MERGE-007
+      def owner_approval_stale_decision(signals)
+        trigger = signals.trigger("owner_approval_stale") || {}
+        Automation::Decision.request_review(
+          issue_id: signals.issue_id,
+          pr_number: signals.pr_number,
+          reviewers: [ signals.owner_reviewer_login ].compact,
+          head_sha: trigger[:head_sha]
+        )
       end
 
       def escalate_decision(signals)

@@ -25,10 +25,11 @@
 
 ## Free Policy Entry
 
-- [x] **RUNNER-MODEL-OPTIONS-004** — When `runner_key` is `opencode` and
-  `api_provider` is `openrouter`, the system SHALL prepend a `:free_policy`
-  entry with value `"free"`; for any other `(runner_key, api_provider)` pair
-  the system SHALL NOT offer it (phase-1 gate, RDR-065 D2/D6).
+- [x] **RUNNER-MODEL-OPTIONS-004** — When `runner_key` is one of
+  `opencode`, `kilocode`, `pi`, or `omp` and `api_provider` is
+  `openrouter`, the system SHALL prepend a `:free_policy` entry with value
+  `"free"`; for any other `(runner_key, api_provider)` pair the system
+  SHALL NOT offer it.
 
 ## Custom Sentinel
 

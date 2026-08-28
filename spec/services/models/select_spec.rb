@@ -414,37 +414,45 @@ RSpec.describe Models::Select do
       end
     end
 
-    context "when an openrouter_free run is forced to a non-free override model" do
+    context "when an OpenRouter-backed free-policy run is forced to an override model" do
       let!(:free_model) { create(:llm_model, model_id: "deepseek/deepseek-v4-flash:free", provider: "deepseek", tier: "mid", pricing_tier: "free", capability_score: 8.0) }
       let!(:paid_model) { create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic", tier: "mid", pricing_tier: "paid", capability_score: 9.0) }
       let(:openrouter_key) { create(:provider_api_key, user: project.created_by, api_service_type: "openrouter") }
-      let(:openrouter_free_runner) do
+      let(:runner_key) { "openrouter_free" }
+      let(:free_policy_runner) do
         create(
           :runner,
           user: project.created_by,
-          runner_key: "openrouter_free",
+          runner_key: runner_key,
           auth_type: "api_key",
           provider_api_key: openrouter_key,
+          config: { runner_key => { "api_provider" => "openrouter", "model_policy" => "free" } },
           tier_model_ids: LlmModel::TIERS.index_with { free_model.model_id }
         )
       end
 
-      before { agent_run.update!(runner: openrouter_free_runner) }
+      before { agent_run.update!(runner: free_policy_runner) }
 
-      it "returns no selection instead of persisting a paid model" do
-        project.update!(model_preferences: { "required_model_id" => paid_model.model_id })
+      %w[openrouter_free opencode kilocode pi omp].each do |free_policy_runner_key|
+        context "when the runner is #{free_policy_runner_key}" do
+          let(:runner_key) { free_policy_runner_key }
 
-        expect(described_class.call(agent_run: agent_run)).to be_nil
-        expect(agent_run.model_selection).to be_nil
-      end
+          it "returns no selection instead of persisting a paid model" do
+            project.update!(model_preferences: { "required_model_id" => paid_model.model_id })
 
-      it "persists a free override model" do
-        project.update!(model_preferences: { "required_model_id" => free_model.model_id })
+            expect(described_class.call(agent_run: agent_run)).to be_nil
+            expect(agent_run.model_selection).to be_nil
+          end
 
-        selection = described_class.call(agent_run: agent_run)
+          it "persists a free override model" do
+            project.update!(model_preferences: { "required_model_id" => free_model.model_id })
 
-        expect(selection).to be_present
-        expect(selection.llm_model).to eq(free_model)
+            selection = described_class.call(agent_run: agent_run)
+
+            expect(selection).to be_present
+            expect(selection.llm_model).to eq(free_model)
+          end
+        end
       end
     end
 

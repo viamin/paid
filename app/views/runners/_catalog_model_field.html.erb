@@ -7,6 +7,7 @@
     runner_key: runner_key, service_types: service_types, auth_type: "api_key"
   )
   current_entries = entries_by_service_type.fetch(current_service_type, [])
+  current_entries = current_entries.reject(&:free_policy?) unless supports_model_policy
   initial = catalog_model_initial_selection(current_entries, current_model_id: current_model_id, model_policy: current_model_policy)
   free_active = initial[:selected] == Runners::ModelOptions::FREE_POLICY_VALUE
   select_disabled = current_service_type.blank? || current_entries.empty?

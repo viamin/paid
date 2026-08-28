@@ -960,6 +960,12 @@ module Activities
       return :skipped if triggers.nil?
 
       if triggers.empty?
+        stale_owner_review_trigger = owner_approval_stale_trigger(project, issue, pr_data, client:, reviews:)
+        unless stale_owner_review_trigger.nil?
+          track_approval_wait!(project, issue, blocked_only_on_approval: false)
+          return stale_owner_review_trigger
+        end
+
         # No actionable signal and not auto-merge eligible. When the *only*
         # thing between this PR and a merge is the owner's approval, that
         # wait is tracked and — past the project ceiling — escalated.
@@ -1220,6 +1226,64 @@ module Activities
         triggers: [ { type: "owner_approved", details: "Owner approval requirement satisfied" } ],
         phase: "ready"
       }
+    end
+
+    # A PR that is otherwise fully green (no CI, thread, or review-bot
+    # triggers) but blocked from auto-merge solely by a stale owner approval
+    # gets nothing on GitHub: the original approval is still recorded there,
+    # so the PR never surfaces in the owner's "Awaiting your review" queue.
+    # Re-requesting review puts it back where the owner already looks.
+    # Guarded to at most one request per HEAD sha via
+    # `issue.owner_review_requested_sha`, stamped once the request is issued
+    # (see GitHubPollWorkflow#record_owner_review_request).
+    # @spec AUTO-MERGE-007
+    def owner_approval_stale_trigger(project, issue, pr_data, client:, reviews:)
+      return nil unless stale_approval_only_blocker?(issue)
+      return nil unless owner_approval_stale_for_head?(project, issue, pr_data, client, reviews)
+
+      head_sha = pr_data&.head&.sha
+      return nil if head_sha.blank? || head_sha == issue.owner_review_requested_sha
+
+      owner_reviewer_login = project.owner_reviewer_login
+      return nil if owner_reviewer_login.blank?
+      # GitHub rejects review requests for the PR author with a handled 422;
+      # skip here so an owner-authored PR does not retry the same no-op forever.
+      return nil if owner_is_pr_author?(project, pr_data)
+
+      trigger = {
+        type: "owner_approval_stale",
+        details: "Owner approval is stale for the current HEAD commit; re-requesting review",
+        head_sha: head_sha
+      }
+      log_triggers(project, issue, [ trigger ])
+
+      {
+        focus: focus_for(project, [ trigger ]),
+        issue_id: issue.id,
+        pr_number: issue.github_number,
+        triggers: [ trigger ],
+        phase: "ready",
+        owner_reviewer_login: owner_reviewer_login
+      }
+    end
+
+    # True when the only failed auto-merge blocker for this scan is the
+    # review-freshness signal, i.e. every other auto-merge precondition
+    # (CI, mergeability, review feedback, blocking reviews) is satisfied.
+    # Also requires that no blocker was left `not_evaluated` (e.g. a
+    # compare/merge-base API failure) — those signals are unproven, not
+    # green, so we must not treat the PR as otherwise clean.
+    # Reads the snapshot `auto_merge_eligible?` already staged earlier in
+    # this same `scan_ready_pr` call.
+    def stale_approval_only_blocker?(issue)
+      snapshot = auto_merge_snapshots[issue.id]
+      return false if snapshot.blank?
+
+      failed = snapshot["failed"]
+      not_evaluated = snapshot["not_evaluated"]
+      return false if failed.blank?
+
+      not_evaluated.blank? && failed.size == 1 && failed.first["signal"] == "reviews_fresh"
     end
 
     def draft_trigger_payload(issue, triggers)
@@ -2920,27 +2984,28 @@ module Activities
 
     # --- Stale review detection ---
 
-    # Returns true when any enabled blocking review signal has a stale
-    # approval — i.e. the HEAD commit was pushed after the relevant
-    # reviewer's latest approval AND the post-approval range contains
-    # content attributable to the PR author. Clean base-branch merges
-    # (see AUTO-MERGE-006) carry no author-side content and keep the
-    # approval fresh. Each blocking signal is checked individually so
-    # that an owner re-approval cannot mask a stale manual review from
-    # the configured reviewer.
+    # Returns a per-PR freshness verdict: :stale when any enabled blocking
+    # review signal has a stale approval — i.e. the HEAD commit was pushed
+    # after the relevant reviewer's latest approval AND the post-approval
+    # range contains content attributable to the PR author; :not_evaluated
+    # when the post-approval range could not be classified; :fresh
+    # otherwise. Clean base-branch merges (see AUTO-MERGE-006) carry no
+    # author-side content and keep the approval fresh. Each blocking
+    # signal is checked individually so that an owner re-approval cannot
+    # mask a stale manual review from the configured reviewer.
     # @spec AUTO-MERGE-006
-    def review_stale_for_head?(client, project, issue, pr_data, reviews)
-      return false if reviews.nil?
+    def review_freshness_for_head(client, project, issue, pr_data, reviews)
+      return :fresh if reviews.nil?
 
       head_committed_at = fetch_head_commit_date(client, project, issue, pr_data)
-      return false if head_committed_at.nil?
+      return :fresh if head_committed_at.nil?
 
       blocking_approvals = blocking_approvals_for(project, reviews)
-      return false if blocking_approvals.empty?
+      return :fresh if blocking_approvals.empty?
 
       head_sha = pr_data&.head&.sha
       base_branch = pr_data&.base_ref
-      return true if head_sha.blank? || base_branch.blank?
+      return :stale if head_sha.blank? || base_branch.blank?
 
       collector = pull_request_collector(project, client:)
 
@@ -2951,20 +3016,21 @@ module Activities
       # the post-approval range must consist entirely of content-free
       # base merges for the approval to remain fresh. Any approval that
       # fails the check keeps the PR stale.
-      blocking_approvals.any? do |approval|
-        stale_by_timestamp = head_committed_at > approval[:submitted_at]
-        next false unless stale_by_timestamp
-
-        commit_id = approval[:commit_id]
-        next true if commit_id.blank?
-
-        !collector.only_base_merge_commits_since?(
-          approval_sha: commit_id,
+      freshness_states = blocking_approvals.map do |approval|
+        freshness_state_for_approval(
+          approval: approval,
+          head_committed_at: head_committed_at,
           head_sha: head_sha,
           base_branch: base_branch,
-          issue: issue
+          issue: issue,
+          collector: collector
         )
       end
+
+      return :stale if freshness_states.include?(:stale)
+      return :not_evaluated if freshness_states.include?(:not_evaluated)
+
+      :fresh
     end
 
     def fetch_head_commit_date(client, project, issue, pr_data)
@@ -2980,9 +3046,7 @@ module Activities
     def blocking_approvals_for(project, reviews)
       approvals = []
 
-      owner = latest_approval_for(project, reviews) do |r|
-        r[:user_login]&.downcase == project.owner_reviewer_login&.downcase
-      end
+      owner = owner_approval_for(project, reviews)
       approvals << owner if owner
 
       if project.review_method_enabled?("manual")
@@ -2996,6 +3060,53 @@ module Activities
       end
 
       approvals
+    end
+
+    def owner_approval_stale_for_head?(project, issue, pr_data, client, reviews)
+      owner_approval = owner_approval_for(project, reviews)
+      return false if owner_approval.nil?
+      return true unless project.review_method_enabled?("manual")
+
+      head_committed_at = fetch_head_commit_date(client, project, issue, pr_data)
+      return false if head_committed_at.nil?
+
+      head_sha = pr_data&.head&.sha
+      base_branch = pr_data&.base_ref
+      return true if head_sha.blank? || base_branch.blank?
+
+      freshness_state_for_approval(
+        approval: owner_approval,
+        head_committed_at: head_committed_at,
+        head_sha: head_sha,
+        base_branch: base_branch,
+        issue: issue,
+        collector: pull_request_collector(project, client:)
+      ) == :stale
+    end
+
+    def owner_approval_for(project, reviews)
+      latest_approval_for(project, reviews) do |r|
+        r[:user_login]&.downcase == project.owner_reviewer_login&.downcase
+      end
+    end
+
+    def freshness_state_for_approval(approval:, head_committed_at:, head_sha:, base_branch:, issue:, collector:)
+      stale_by_timestamp = head_committed_at > approval[:submitted_at]
+      return :fresh unless stale_by_timestamp
+
+      commit_id = approval[:commit_id]
+      return :stale if commit_id.blank?
+
+      range_is_clean = collector.only_base_merge_commits_since?(
+        approval_sha: commit_id,
+        head_sha: head_sha,
+        base_branch: base_branch,
+        issue: issue
+      )
+      return :fresh if range_is_clean
+      return :not_evaluated if collector.last_base_merge_range_status == :not_evaluated
+
+      :stale
     end
 
     # Returns the most recent submitted_at timestamp and matching commit_id
@@ -3283,6 +3394,10 @@ module Activities
       Reviews::OwnerApproval.paid_agent_pr_author?(project:, login:)
     end
 
+    def owner_is_pr_author?(project, pr_data)
+      Reviews::OwnerApproval.author_is_owner?(project:, pr_data:)
+    end
+
     # A PR authored by a third-party automation bot (Dependabot, Renovate,
     # github-actions) whose PRs skip Paid's review/merge flow. Excludes the
     # project's own agent bot — without this, app-backed projects whose agent
@@ -3331,6 +3446,7 @@ module Activities
     # and the strategy's evaluation of them, so callers can reuse both
     # without re-running the signal gates.
     AutoMergeEvaluation = Data.define(:signals, :analysis)
+    AutoMergeSignalBuild = Data.define(:signals, :review_freshness)
 
     # Evaluates human-authored PR merge eligibility via the AutoMerge
     # strategy. Collects signals from provider data, persists the blocker
@@ -3351,15 +3467,17 @@ module Activities
     # which would evaluate the expensive GitHub gates twice.
     def analyze_auto_merge(project, client, issue, pr_data:, checks:, reviews:, unresolved_threads: nil,
       progress_state: nil)
-      signals = build_auto_merge_signals(project, client, issue,
+      signal_build = build_auto_merge_signals(project, client, issue,
         pr_data: pr_data, checks: checks, reviews: reviews, unresolved_threads: unresolved_threads,
         progress_state: progress_state)
-      return if signals.nil?
+      return if signal_build.nil?
+
+      signals = signal_build.signals
 
       log_skip_auto_merge(project, issue) if signals.skip_auto_merge?
 
       analysis = evaluate_auto_merge(project, signals)
-      stage_auto_merge_snapshot(issue, analysis)
+      stage_auto_merge_snapshot(issue, analysis, review_freshness: signal_build.review_freshness)
       AutoMergeEvaluation.new(signals:, analysis:)
     end
 
@@ -3382,14 +3500,14 @@ module Activities
       blocking_reviews_complete = all_blocking_review_methods_complete?(
         project, issue, reviews, checks: checks, pr_data: pr_data, progress_state: progress_state
       )
-      reviews_fresh = !review_stale_for_head?(client, project, issue, pr_data, reviews)
+      review_freshness = review_freshness_for_head(client, project, issue, pr_data, reviews)
+      reviews_fresh = review_freshness == :fresh
       dependencies_resolved = if human_dependency_check_required?(
         owner_approved: owner_approved,
         checks_green: checks_green,
         mergeable: mergeable,
         review_feedback_clear: review_feedback_clear,
-        blocking_reviews_complete: blocking_reviews_complete,
-        reviews_fresh: reviews_fresh
+        blocking_reviews_complete: blocking_reviews_complete
       )
         dependencies_resolved?(client, project, issue)
       else
@@ -3398,16 +3516,7 @@ module Activities
 
       skip_label = issue.has_label?(Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL)
 
-      if skip_label
-        logger.info(
-          message: "pr_scanner.auto_merge_skipped_by_label",
-          project_id: project.id,
-          pr_number: issue.github_number,
-          label: Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL
-        )
-      end
-
-      Automation::Strategies::AutoMerge::Signals.build(
+      signals = Automation::Strategies::AutoMerge::Signals.build(
         issue_id: issue.id,
         pr_number: issue.github_number,
         owner_approved: owner_approved,
@@ -3419,6 +3528,8 @@ module Activities
         dependencies_resolved: dependencies_resolved,
         skip_auto_merge: skip_label
       )
+
+      AutoMergeSignalBuild.new(signals:, review_freshness:)
     end
 
     # Evaluates bot-authored PR merge eligibility via the AutoMerge
@@ -3461,14 +3572,18 @@ module Activities
       analysis.eligible?
     end
 
+    # Deliberately excludes `reviews_fresh`: the owner-approval-stale trigger
+    # (@spec AUTO-MERGE-007) needs to know whether dependencies are truly
+    # resolved even when staleness is the only other blocker, so it can tell
+    # a PR that is genuinely otherwise-green from one where dependencies were
+    # never checked. See `stale_approval_only_blocker?`.
     def human_dependency_check_required?(owner_approved:, checks_green:, mergeable:,
-      review_feedback_clear:, blocking_reviews_complete:, reviews_fresh:)
+      review_feedback_clear:, blocking_reviews_complete:)
       owner_approved &&
         checks_green &&
         mergeable &&
         review_feedback_clear &&
-        blocking_reviews_complete &&
-        reviews_fresh
+        blocking_reviews_complete
     end
 
     def bot_dependency_check_required?(dependabot_eligible:, merge_executor_supported:, checks_green:, mergeable:)
@@ -3549,11 +3664,31 @@ module Activities
       @auto_merge_snapshots ||= {}
     end
 
-    def stage_auto_merge_snapshot(issue, analysis)
-      auto_merge_snapshots[issue.id] = {
+    def stage_auto_merge_snapshot(issue, analysis, review_freshness: :fresh)
+      snapshot = {
         "failed" => analysis.failed_blockers.map(&:to_h).map(&:stringify_keys),
         "not_evaluated" => analysis.not_evaluated_blockers.map(&:to_h).map(&:stringify_keys)
       }
+
+      remap_review_freshness_failure!(snapshot) if review_freshness == :not_evaluated
+
+      auto_merge_snapshots[issue.id] = snapshot
+    end
+
+    def remap_review_freshness_failure!(snapshot)
+      failed = Array(snapshot["failed"])
+      review_freshness_blocker = failed.find { |blocker| blocker["signal"] == "reviews_fresh" }
+      return unless review_freshness_blocker
+
+      snapshot["failed"] = failed.reject { |blocker| blocker["signal"] == "reviews_fresh" }
+      snapshot["not_evaluated"] = Array(snapshot["not_evaluated"]) + [
+        review_freshness_blocker.merge(
+          "status" => "not_evaluated",
+          "reason_code" => "review_freshness_not_evaluated",
+          "sanitized_message" => "Review freshness could not be evaluated for the current HEAD commit.",
+          "next_action" => "Resolve the freshness-classification error, then let Paid re-evaluate auto-merge eligibility."
+        )
+      ]
     end
 
     def log_skip_auto_merge(project, issue)
