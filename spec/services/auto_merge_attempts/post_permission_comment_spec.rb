@@ -97,4 +97,23 @@ RSpec.describe AutoMergeAttempts::PostPermissionComment do
       expect(client).not_to have_received(:add_comment)
     end
   end
+
+  context "when the authenticated login is unknown" do
+    before do
+      allow(client).to receive(:authenticated_login).and_return(nil)
+    end
+
+    it "does not post a comment, treating unknown identity as a safe skip" do
+      call
+
+      expect(client).not_to have_received(:add_comment)
+    end
+
+    it "does not fetch comments to check for a marker, since a third-party comment containing " \
+       "the marker text must not be trusted without a known author" do
+      call
+
+      expect(client).not_to have_received(:recent_issue_comments)
+    end
+  end
 end

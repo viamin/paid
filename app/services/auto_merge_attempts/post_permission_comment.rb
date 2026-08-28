@@ -48,10 +48,13 @@ module AutoMergeAttempts
 
     # Match only Paid-authored marker comments when we know the current
     # authenticated login. That prevents third-party comments containing the
-    # public marker string from suppressing this blocker notice. If the login
-    # lookup or comment fetch fails, fall back to the safe default and skip
-    # posting for this cycle so transient GitHub API errors do not create
-    # duplicate comments on every poll.
+    # public marker string from suppressing this blocker notice. `nil` means
+    # the identity is unknown (per GithubClient#authenticated_login), not
+    # "trust any author" — so treat it the same as a fetch failure and skip
+    # posting for this cycle rather than matching marker text from any
+    # author. If the login lookup or comment fetch fails, fall back to the
+    # safe default and skip posting for this cycle so transient GitHub API
+    # errors do not create duplicate comments on every poll.
     #
     # Unlike the HEAD-SHA-scoped marker in RequestReviewActivity (where a
     # stale marker naturally falls out of relevance once HEAD moves), this
@@ -61,6 +64,8 @@ module AutoMergeAttempts
     # marker or exhaust the comment history.
     def comment_present?(client)
       paid_login = client.authenticated_login
+      return true if paid_login.nil?
+
       comments = client.recent_issue_comments(project.full_name, pr_number)
       marker_comment_in_pages?(client, comments, paid_login)
     rescue GithubClient::Error => e
@@ -87,7 +92,6 @@ module AutoMergeAttempts
 
     def marker_comment?(comment, paid_login)
       return false unless comment.respond_to?(:body) && comment.body&.include?(marker)
-      return true if paid_login.nil?
 
       comment.user&.login&.downcase == paid_login
     end
