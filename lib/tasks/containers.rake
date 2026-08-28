@@ -10,14 +10,16 @@ namespace :containers do
     # non-strict resolution would still compute a combo tag for the
     # supported subset — Containers::Provision resolves in strict mode and
     # rejects those projects outright, so rebuilding that tag would waste a
-    # build on an image no run can ever use.
+    # build on an image no run can ever use. The tag itself is gated on
+    # ComboImageBuilder.buildable? rather than the broader namespace check,
+    # so only tags the language matrix can actually compose enter the sweep.
     resolved = TenantContext.with_system_access do
       Project.find_each.filter_map do |project|
         resolver = Containers::ImageResolver.new(project)
         image = resolver.resolve
         next if resolver.unsupported_languages.any?
 
-        Containers::ImageResolver.combo?(image) ? image : nil
+        builder.buildable?(image) ? image : nil
       end.uniq
     end
 

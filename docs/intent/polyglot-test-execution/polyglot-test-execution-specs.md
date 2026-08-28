@@ -105,15 +105,20 @@
   provisioning use of a combo tag whose recorded base digest no longer matches
   the current base image SHALL rebuild the combo against the new base.
   Rebuilds SHALL also be available eagerly (rake task / build script) so
-  operators can cascade after a base bump without waiting for a run.
+  operators can cascade after a base bump without waiting for a run. The
+  eager sweep SHALL enumerate only tags the language-layer matrix can compose,
+  so other `paid-agent:` tags present on a backend (the base image alias, an
+  operator's own build) neither fail the sweep nor are rebuilt.
   *Code:* `app/services/containers/combo_image_builder.rb`,
   `lib/tasks/containers.rake`, `scripts/build-agent-image.sh`.
-  *Test:* `spec/services/containers/combo_image_builder_spec.rb`.
+  *Test:* `spec/services/containers/combo_image_builder_spec.rb`,
+  `spec/tasks/containers_rake_spec.rb`.
 
 - [x] **POLYGLOT-TEST-010** — The system SHALL periodically prune combo image
   tags that no active project resolves to and no running container uses, once
   they have been unreferenced past a retention window (30 days). The base
-  image SHALL never be pruned by this job.
+  image, and any other `paid-agent:` tag the builder did not produce, SHALL
+  never be pruned by this job.
   *Code:* `app/jobs/agent_combo_image_cleanup_job.rb`,
   `config/initializers/good_job.rb`.
   *Test:* `spec/jobs/agent_combo_image_cleanup_job_spec.rb`.

@@ -59,8 +59,9 @@ module Containers
     LANGUAGES_LABEL = "#{LABEL_NAMESPACE}.languages"
 
     # Tag namespace for intermediate chain layers. Deliberately outside the
-    # +paid-agent:+ namespace so {ImageResolver.combo?} never mistakes an
-    # in-progress layer for a resolvable combo tag.
+    # +paid-agent:+ namespace so neither {ImageResolver.combo?} nor
+    # {.combo_images} ever mistakes an in-progress layer for a resolvable
+    # combo tag.
     INTERMEDIATE_TAG_PREFIX = "paid-agent-build"
 
     BUILD_OUTPUT_TAIL_LINES = 40
@@ -101,19 +102,38 @@ module Containers
         new(backend: backend).build(image, tokens, nocache: true)
       end
 
-      # Lists paid-agent combo images present on the backend with their
-      # labels. Used by the cascade task and the stale-image cleanup job.
+      # Lists the paid-agent combo images present on the backend with their
+      # labels. Used by the cascade task and the stale-image cleanup job, both
+      # of which feed every entry straight back into a build or prune
+      # decision — so the list is restricted to tags this builder can actually
+      # build ({.buildable?}), not the whole +paid-agent:+ namespace. Other
+      # tags in that namespace exist on real backends (the documented
+      # +paid-agent:ruby-node-python+ base alias, an operator's
+      # +IMAGE_TAG=v1.0.0+ build) and can never be composed from the language
+      # matrix; enumerating them would only make the cascade task report
+      # failures for images it was never meant to own.
       #
-      # @return [Array<Hash>] one entry per combo tag with :image, :id, and
-      #   :labels keys.
+      # @return [Array<Hash>] one entry per buildable combo tag with :image,
+      #   :id, and :labels keys.
       def combo_images(backend: Containers.backend)
         backend.list_images.flat_map do |docker_image|
           (docker_image.info["RepoTags"] || []).filter_map do |tag|
-            next unless ImageResolver.combo?(tag)
+            next unless buildable?(tag)
 
             { image: tag, id: docker_image.id, labels: docker_image.info["Labels"] || {} }
           end
         end
+      end
+
+      # True when the reference is a combo tag this builder can compose: it
+      # parses under the resolver's tag grammar and names at least one
+      # extended runtime layer. Unlike {.parse_combo_tokens}, which is the
+      # loud path for a tag a caller demanded, this is the quiet predicate for
+      # enumerating what is already on a backend.
+      def buildable?(image)
+        parse_combo_tokens(image).present?
+      rescue UnbuildableImageError
+        false
       end
 
       # Normalizes resolver grammar violations into the builder's

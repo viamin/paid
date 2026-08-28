@@ -297,5 +297,34 @@ RSpec.describe Containers::ComboImageBuilder do
         hash_including(image: "paid-agent:go", id: "sha256:#{'c' * 64}")
       )
     end
+
+    # @spec POLYGLOT-TEST-009
+    # @spec POLYGLOT-TEST-010
+    it "skips paid-agent tags the language-layer matrix cannot build" do
+      unbuildable = instance_double(Docker::Image, id: "sha256:#{'e' * 64}", info: {
+        # The documented base alias (no extended runtime layer) and an
+        # operator's own IMAGE_TAG build (tokens outside the matrix). Both are
+        # paid-agent tags the builder can never rebuild, so listing them would
+        # only feed guaranteed failures to the cascade task and cleanup job.
+        "RepoTags" => [ "paid-agent:ruby-node-python", "paid-agent:v1.0.0" ], "Labels" => {}
+      })
+      allow(backend).to receive(:list_images).and_return([ unbuildable ])
+
+      expect(described_class.combo_images(backend: backend)).to be_empty
+    end
+  end
+
+  describe ".buildable?" do
+    it "is true only for paid-agent tags naming at least one buildable extended runtime" do
+      expect(described_class).to be_buildable("paid-agent:go")
+      expect(described_class).to be_buildable("paid-agent:go-node-ruby")
+    end
+
+    it "is false for the base image, non-paid references, and unbuildable paid-agent tags" do
+      expect(described_class).not_to be_buildable("paid-agent:latest")
+      expect(described_class).not_to be_buildable("ubuntu:24.04")
+      expect(described_class).not_to be_buildable("paid-agent:ruby-node-python")
+      expect(described_class).not_to be_buildable("paid-agent:v1.0.0")
+    end
   end
 end

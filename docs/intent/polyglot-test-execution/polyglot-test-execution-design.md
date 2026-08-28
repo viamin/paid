@@ -129,6 +129,14 @@ instead (POLYGLOT-TEST-006).
   silently runs in the base image when a combo was resolved (POLYGLOT-TEST-008).
   Non-Paid image references (explicit overrides, immutable catalog digests
   from RDR-059) are not the builder's to produce and pass through untouched.
+- **Ownership boundary:** The builder owns exactly the `paid-agent:<tokens>`
+  tags whose token set parses under the resolver's grammar and names at least
+  one extended runtime (`ComboImageBuilder.buildable?`). Other tags that share
+  the `paid-agent:` namespace — the base image, its documented
+  `paid-agent:ruby-node-python` alias, an operator's `IMAGE_TAG=` build — are
+  not combo images, so the cascade task and the cleanup job never enumerate
+  them: an unbuildable tag sitting on a backend can neither fail the sweep nor
+  become a prune candidate.
 - **Stale-image cleanup:** `AgentComboImageCleanupJob` (daily GoodJob cron)
   removes combo tags that no active project resolves to and no running
   container uses, once their `built-at` label is older than 30 days. The base

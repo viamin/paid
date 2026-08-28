@@ -60,6 +60,10 @@ class AgentComboImageCleanupJob < ApplicationJob
   # supported subset (paid-agent:go) — Containers::Provision resolves in
   # strict mode and rejects those projects outright, so that tag is never
   # actually reachable and must not be kept alive on its account.
+  #
+  # Gated on ComboImageBuilder.buildable? — the same predicate that decides
+  # which tags #prune_backend enumerates — so the referenced set and the
+  # candidate set always speak about the same population of tags.
   def referenced_combo_tags
     TenantContext.with_system_access do
       Project.find_each.filter_map do |project|
@@ -67,7 +71,7 @@ class AgentComboImageCleanupJob < ApplicationJob
         image = resolver.resolve
         next if resolver.unsupported_languages.any?
 
-        Containers::ImageResolver.combo?(image) ? image : nil
+        Containers::ComboImageBuilder.buildable?(image) ? image : nil
       end
     end.to_set
   end

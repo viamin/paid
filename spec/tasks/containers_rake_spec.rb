@@ -24,6 +24,21 @@ RSpec.describe "containers:rebuild_combo_images" do
     expect(Containers::ComboImageBuilder).to have_received(:force_rebuild).with("paid-agent:go", backend: backend)
   end
 
+  # @spec POLYGLOT-TEST-009
+  it "ignores paid-agent tags on the backend that the language-layer matrix cannot build" do
+    allow(Containers::ComboImageBuilder).to receive(:combo_images).with(backend: backend).and_call_original
+    allow(backend).to receive(:list_images).and_return([
+      instance_double(Docker::Image, id: "sha256:abc", info: {
+        # The documented base alias sits in the paid-agent namespace but has no
+        # extended runtime layer, so it must not enter the sweep at all.
+        "RepoTags" => [ "paid-agent:ruby-node-python", "paid-agent:go" ], "Labels" => {}
+      })
+    ])
+
+    expect { task.invoke }.to output(/Rebuilt paid-agent:go on local/).to_stdout
+    expect(Containers::ComboImageBuilder).to have_received(:force_rebuild).once
+  end
+
   it "rebuilds combo images resolved from a project's repo profile" do
     create(:project, repo_profile: { "test_languages" => %w[go] })
 

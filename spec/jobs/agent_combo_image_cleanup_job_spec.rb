@@ -117,6 +117,28 @@ RSpec.describe AgentComboImageCleanupJob do
       expect(backend).not_to have_received(:delete_image)
     end
 
+    # @spec POLYGLOT-TEST-010
+    it "never prunes a paid-agent tag the builder did not produce" do
+      # The documented base alias and an operator's own IMAGE_TAG build share
+      # the paid-agent namespace but are not combo images, so they must not
+      # become prune candidates however old and unreferenced they are.
+      allow(Containers::ComboImageBuilder).to receive(:combo_images).with(backend: backend).and_call_original
+      allow(backend).to receive_messages(
+        list_images: [
+          instance_double(Docker::Image, id: "sha256:abc", info: {
+            "RepoTags" => [ "paid-agent:ruby-node-python", "paid-agent:v1.0.0" ],
+            "Labels" => stale_labels
+          })
+        ],
+        image_in_use?: false
+      )
+      allow(backend).to receive(:delete_image)
+
+      job.perform
+
+      expect(backend).not_to have_received(:delete_image)
+    end
+
     it "continues sweeping other backends when one backend fails" do
       other_backend = instance_double(Containers::Backends::Base, identifier: "worker-1")
       allow(Containers).to receive(:all_backends).and_return([ backend, other_backend ])
