@@ -113,6 +113,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       )
     end
 
+    # @spec AUTO-MERGE-007
     it "stamps owner_review_requested_sha when the request_review decision carries issue_id and head_sha" do
       allow(workflow).to receive(:run_activity)
         .with(

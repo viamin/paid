@@ -540,6 +540,7 @@ module Workflows
     # request or an idempotent already-pending outcome, so handled GitHub
     # no-ops and transient workflow failures retry on the next poll instead
     # of suppressing the re-request for that HEAD forever.
+    # @spec AUTO-MERGE-007
     def record_owner_review_request(decision)
       return if decision[:issue_id].blank? || decision[:head_sha].blank?
 

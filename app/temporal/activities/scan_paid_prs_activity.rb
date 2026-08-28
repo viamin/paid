@@ -3067,14 +3067,15 @@ module Activities
 
     # --- Stale review detection ---
 
-    # Returns true when any enabled blocking review signal has a stale
-    # approval — i.e. the HEAD commit was pushed after the relevant
-    # reviewer's latest approval AND the post-approval range contains
-    # content attributable to the PR author. Clean base-branch merges
-    # (see AUTO-MERGE-006) carry no author-side content and keep the
-    # approval fresh. Each blocking signal is checked individually so
-    # that an owner re-approval cannot mask a stale manual review from
-    # the configured reviewer.
+    # Returns a per-PR freshness verdict: :stale when any enabled blocking
+    # review signal has a stale approval — i.e. the HEAD commit was pushed
+    # after the relevant reviewer's latest approval AND the post-approval
+    # range contains content attributable to the PR author; :not_evaluated
+    # when the post-approval range could not be classified; :fresh
+    # otherwise. Clean base-branch merges (see AUTO-MERGE-006) carry no
+    # author-side content and keep the approval fresh. Each blocking
+    # signal is checked individually so that an owner re-approval cannot
+    # mask a stale manual review from the configured reviewer.
     # @spec AUTO-MERGE-006
     def review_freshness_for_head(client, project, issue, pr_data, reviews)
       return :fresh if reviews.nil?

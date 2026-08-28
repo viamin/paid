@@ -4,6 +4,7 @@ module Activities
   # Stamps the PR HEAD sha a stale-owner-approval re-review request was
   # issued for, so the scanner does not re-request review from the owner on
   # every poll cycle for the same commit (#3656).
+  # @spec AUTO-MERGE-007
   class RecordOwnerReviewRequestActivity < BaseActivity
     activity_name "RecordOwnerReviewRequest"
 

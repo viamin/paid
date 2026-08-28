@@ -9,6 +9,7 @@ RSpec.describe Activities::RecordOwnerReviewRequestActivity do
     create(:issue, :pull_request, project: project, github_number: 42)
   end
 
+  # @spec AUTO-MERGE-007
   describe "#execute" do
     it "stamps owner_review_requested_sha on the issue" do
       activity.execute(issue_id: issue.id, head_sha: "abc123")
