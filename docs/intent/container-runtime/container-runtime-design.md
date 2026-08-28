@@ -622,9 +622,11 @@ explicitly instead of leaving it implicit in smoke tests:
 
 The no-shared-filesystem baseline now asserts this report shape as part of the
 existing Docker conformance path, so the executable suite proves both contract
-conformance and comparison-report compatibility. Future providers should add
-their evidence to the same shared suite rather than creating a second benchmark
-framework.
+conformance and comparison-report compatibility. That stubbed baseline reports
+only the dimensions it actually exercises and labels the workload it actually
+ran; fixture metadata belongs only on runs that truly execute the deterministic
+repository fixture. Future providers should add their evidence to the same
+shared suite rather than creating a second benchmark framework.
 
 ### Execution resource ledger reconciliation (#3411)
 

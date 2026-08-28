@@ -31,15 +31,23 @@
 RSpec.shared_examples "a no-shared-filesystem runner" do
   let(:conformance_networking_policy) { ExecutionRunners::NetworkingPolicy.proxy_restricted }
   let(:conformance_expected_running) { false }
-  let(:conformance_timestamps) do
+  let(:conformance_command) { "paid-conformance-agent" }
+  let(:conformance_passed_dimensions) do
+    %w[
+      provision_execution
+      clone_fixture_repository
+      run_workload
+      retrieve_and_stream_logs
+      report_success_or_failure
+      clean_up_resources
+    ]
+  end
+  let(:conformance_report_fixture) do
     {
-      provision_requested_at: Time.utc(2026, 8, 28, 12, 0, 0),
-      environment_ready_at: Time.utc(2026, 8, 28, 12, 0, 1),
-      first_output_at: Time.utc(2026, 8, 28, 12, 0, 2),
-      workload_started_at: Time.utc(2026, 8, 28, 12, 0, 1),
-      workload_finished_at: Time.utc(2026, 8, 28, 12, 0, 4),
-      cleanup_requested_at: Time.utc(2026, 8, 28, 12, 0, 4),
-      cleanup_finished_at: Time.utc(2026, 8, 28, 12, 0, 5)
+      "name" => "runner-contract-baseline",
+      "entrypoint" => conformance_command,
+      "requires_llm" => false,
+      "description" => "Shared-example baseline workload. Override this metadata when the suite actually runs the repository fixture."
     }
   end
   let(:conformance_spec) do
@@ -47,13 +55,15 @@ RSpec.shared_examples "a no-shared-filesystem runner" do
       conformance_run, networking_policy: conformance_networking_policy
     )
   end
-  let(:conformance_command) { "paid-conformance-agent" }
   let(:conformance_dimension_results) do
     ExecutionRunners::ConformanceSuite::BenchmarkReport.default_dimension_results(
-      passed: ExecutionRunners::ConformanceSuite.dimension_catalog.map { |entry| entry.fetch("key") },
+      passed: conformance_passed_dimensions,
       evidence: {
-        "clone_fixture_repository" => conformance_spec.input_manifest.lanes.fetch("git").first.fetch("kind"),
-        "run_workload" => "runner.start streamed fixture output",
+        "provision_execution" => "runner.provision returned a RunnerHandle",
+        "clone_fixture_repository" => "input_manifest declares a repository_checkout Git lane",
+        "run_workload" => "runner.start executed #{conformance_command}",
+        "retrieve_and_stream_logs" => "runner.start yielded streamed stdout/stderr chunks",
+        "report_success_or_failure" => "ExecutionResult captured terminal exit state",
         "clean_up_resources" => "runner.cleanup accepted repeated calls"
       }
     )
@@ -82,27 +92,16 @@ RSpec.shared_examples "a no-shared-filesystem runner" do
     end
 
     # @spec CONTAINER-RUNTIME-045
-    it "emits a comparable benchmark report for the canonical fixture workload" do
-      handle = runner.provision(spec: conformance_spec)
-      result = runner.start(handle: handle, command: conformance_command, timeout: 60,
-        startup_timeout: 30, idle_timeout: 30, abort_patterns: nil, preparation: nil,
-        heartbeat_path: nil)
-      runner.cleanup(handle: handle, force: true)
+    it "emits a comparable benchmark report for the workload it exercised" do
+      run = measured_conformance_run
+      checkout_lane = conformance_spec.input_manifest.lanes.fetch("git")
 
-      report = conformance_benchmark_report(result:)
+      report = conformance_benchmark_report(result: run.fetch(:result), timestamps: run.fetch(:timestamps))
 
-      expect(report.as_json.fetch("fixture")).to include(
-        "name" => "runner-conformance-fixture",
-        "entrypoint" => "bin/conformance-task",
-        "expected_stdout" => "CONFORMANCE_OK"
-      )
-      expect(report.as_json.fetch("benchmark")).to include(
-        "provisioning_latency_ms" => 1000,
-        "cold_start_latency_ms" => 2000,
-        "execution_duration_ms" => 3000,
-        "cleanup_latency_ms" => 1000
-      )
-      expect(report.as_json.fetch("dimensions").size).to eq(13)
+      expect_checkout_lane(checkout_lane)
+      expect_report_fixture(report)
+      expect_report_benchmarks(report)
+      expect_report_dimensions(report)
     end
 
     it "yields at least one streamed chunk through the start block" do
@@ -128,14 +127,73 @@ RSpec.shared_examples "a no-shared-filesystem runner" do
     end
   end
 
-  def conformance_benchmark_report(result:)
+  def conformance_benchmark_report(result:, timestamps:)
     ExecutionRunners::ConformanceSuite::BenchmarkReport.build(
       runner_type: runner.class.name.demodulize.underscore,
       runner_backend: conformance_run.container_host || "unknown",
-      timestamps: conformance_timestamps,
+      timestamps: timestamps,
       execution_result: result,
       agent_run: conformance_run,
-      dimension_results: conformance_dimension_results
+      dimension_results: conformance_dimension_results,
+      fixture: conformance_report_fixture
     )
+  end
+
+  def measured_conformance_run
+    timestamps = { provision_requested_at: Time.now.utc }
+    handle = runner.provision(spec: conformance_spec)
+    timestamps[:environment_ready_at] = Time.now.utc
+    timestamps[:workload_started_at] = Time.now.utc
+
+    first_output_at = nil
+    result = runner.start(handle: handle, command: conformance_command, timeout: 60,
+      startup_timeout: 30, idle_timeout: 30, abort_patterns: nil, preparation: nil,
+      heartbeat_path: nil) do |stream, chunk|
+        first_output_at ||= Time.now.utc
+        yield stream, chunk if block_given?
+      end
+
+    timestamps[:first_output_at] = first_output_at || timestamps.fetch(:workload_started_at)
+    timestamps[:workload_finished_at] = Time.now.utc
+    timestamps[:cleanup_requested_at] = Time.now.utc
+    runner.cleanup(handle: handle, force: true)
+    timestamps[:cleanup_finished_at] = Time.now.utc
+
+    {
+      handle: handle,
+      result: result,
+      timestamps: timestamps
+    }
+  end
+
+  def expect_checkout_lane(checkout_lane)
+    expect(checkout_lane).to include(hash_including("kind" => "repository_checkout"))
+  end
+
+  def expect_report_fixture(report)
+    expect(report.as_json.fetch("fixture")).to include(
+      "name" => "runner-contract-baseline",
+      "entrypoint" => conformance_command
+    )
+  end
+
+  def expect_report_benchmarks(report)
+    expect(report.as_json.fetch("benchmark")).to include(
+      "provisioning_latency_ms" => be >= 0,
+      "cold_start_latency_ms" => be >= 0,
+      "execution_duration_ms" => be >= 0,
+      "cleanup_latency_ms" => be >= 0
+    )
+  end
+
+  def expect_report_dimensions(report)
+    expect(report.as_json.fetch("dimensions")).to include(
+      hash_including("key" => "run_workload", "status" => "pass"),
+      hash_including("key" => "handle_non_zero_exits", "status" => "not_exercised"),
+      hash_including("key" => "enforce_timeout", "status" => "not_exercised"),
+      hash_including("key" => "cancel_running_workload", "status" => "not_exercised"),
+      hash_including("key" => "demonstrate_retry_and_idempotency", "status" => "not_exercised")
+    )
+    expect(report.as_json.fetch("dimensions").size).to eq(13)
   end
 end

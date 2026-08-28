@@ -32,6 +32,11 @@ It is intentionally small and deterministic:
 Use this fixture when comparing providers so the workload itself does not add
 model or prompt variance to the benchmark.
 
+The shared no-shared-filesystem example also emits benchmark-shape JSON during
+its stubbed baseline checks. That path must describe the workload it actually
+ran; only runs that truly execute this repository fixture should label the
+report with the fixture metadata above.
+
 ## Required Lifecycle Dimensions
 
 The shared contract tracked by `#3347` should map its checks to these exact
@@ -142,13 +147,16 @@ When running against a future provider:
 
 1. Implement the runner against `ExecutionRunners::Base`.
 2. Prove the shared contract and no-shared-filesystem suite pass.
-3. Capture the emitted `runner_conformance_benchmark.v1` JSON.
+3. Capture the emitted `runner_conformance_benchmark.v1` JSON from the run that
+   actually executed the comparison workload.
 4. Store repeated runs for the same fixture and provider configuration.
 5. Compare providers only within the same fixture revision and resource profile.
 
 ## Interpreting Results
 
 - Treat pass/fail on the thirteen dimensions as the readiness gate.
+- Treat dimensions that remain `not_exercised` as uncovered until a suite run
+  proves them.
 - Treat benchmark values as comparison data only after the suite passes.
 - Compare cold-start and provisioning separately: they answer different
   provider questions.
