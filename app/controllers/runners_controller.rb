@@ -75,6 +75,7 @@ class RunnersController < ApplicationController
     end
 
     @runner = resource_records.new(auth_type: auth_type, runner_key: requested_runner_key)
+    apply_requested_model_policy(@runner, requested_runner_key)
     apply_new_runner_defaults(@runner)
     authorize @runner
   end
@@ -713,6 +714,7 @@ class RunnersController < ApplicationController
 
     submitted_runner_params = params[:runner].respond_to?(:to_unsafe_h) ? params[:runner].to_unsafe_h : params.fetch(:runner, {})
 
+    runner.tier_model_ids = FreeModels::DefaultTierModels.call if runner.tier_model_ids.blank?
     runner.auth_type = "api_key"
     # @spec FREE-MODEL-RUNNER-002
     # @spec FREE-MODEL-RUNNER-003
@@ -720,6 +722,17 @@ class RunnersController < ApplicationController
     runner.enabled_for_chat = true if runner.enabled_for_chat.nil?
     runner.enabled_for_fallback = true if runner.enabled_for_fallback.nil?
     runner.fallback_role = "rate_limit_fallback" unless submitted_runner_params.key?("fallback_role") || submitted_runner_params.key?(:fallback_role)
+  end
+
+  def apply_requested_model_policy(runner, runner_key)
+    return unless Runner::DIRECT_OUTBOUND_FREE_POLICY_RUNNER_KEYS.include?(runner_key)
+    return unless params[:model_policy] == Runners::ModelOptions::FREE_POLICY_VALUE
+
+    runner.config = {
+      runner_key => {
+        "model_policy" => Runners::ModelOptions::FREE_POLICY_VALUE
+      }
+    }
   end
 
   def group_api_keys_by_service_type(api_keys)

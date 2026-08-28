@@ -9,7 +9,7 @@
       </p>
     </div>
     <%= link_to (@openrouter_free_runner ? "Edit Free Models Runner" : "Configure Free Models Runner"),
-                (@openrouter_free_runner ? edit_runner_path(@openrouter_free_runner) : new_runner_path(form_variant: "api_key", runner_key: "opencode")),
+                (@openrouter_free_runner ? edit_runner_path(@openrouter_free_runner) : new_runner_path(form_variant: "api_key", runner_key: "opencode", model_policy: Runners::ModelOptions::FREE_POLICY_VALUE)),
                 class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
   </div>
 

@@ -1179,6 +1179,25 @@ RSpec.describe "Runners" do
       expect_free_runner_form_guidance(response.body)
     end
 
+    # @spec FREE-MODEL-RUNNER-004
+    # @spec FREE-MODEL-RUNNER-005
+    # @spec FREE-MODEL-RUNNER-006
+    it "shows free-model configuration guidance on the new form for the free-model catalog entry point" do
+      create(:provider_api_key, user: user, api_service_type: "openrouter", name: "OpenRouter")
+      seed_free_runner_form_models
+      allow(RunnerSupport).to receive(:addable_runner_keys).and_return(%w[opencode])
+
+      get new_runner_path(
+        form_variant: "api_key",
+        runner_key: "opencode",
+        model_policy: Runners::ModelOptions::FREE_POLICY_VALUE
+      )
+
+      expect(response).to have_http_status(:ok)
+      expect_free_runner_form_guidance(response.body)
+      expect(response.body).to include('value="api_key" checked="checked"')
+    end
+
     it "renders the free policy option and free-model tier controls for supported direct-outbound OpenRouter runners" do
       seed_free_runner_form_models
 
