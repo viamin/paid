@@ -1485,6 +1485,31 @@ RSpec.describe "Runners" do
       expect(response.body).not_to include('id="runner_config_opencode_api_provider"')
     end
 
+    # @spec MODEL-POLICY-005
+    it "renders the free-tier picker for a flagged specific-model OpenCode runner so it can be revealed on switch to free" do
+      seed_openrouter_model_dropdown_catalog
+      seed_openrouter_synced_free_models
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+      enable_runner_model_policy_form_for(user)
+      runner = user.runners.create!(
+        runner_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } }
+      )
+
+      get edit_runner_path(runner)
+
+      expect(response).to have_http_status(:ok)
+      doc = Nokogiri::HTML(response.body)
+      tier_settings = doc.at_css("[data-runner-form-target='tierSettings']")
+      expect(tier_settings).to be_present
+      expect(tier_settings["data-tier-runner-key"]).to eq("opencode")
+      expect(tier_settings["data-model-policy-state"]).to eq("free")
+      expect(response.body).to include("Free Model Configuration")
+      expect_selected_free_tier_defaults(doc)
+    end
+
     it "renders Oh My Pi config inputs for persisted OMP API-key runners" do
       KnownDirectOutboundModels.seed_model(model_id: "deepseek-chat", provider: "deepseek")
       api_key = create(:provider_api_key, user: user, api_service_type: "deepseek")

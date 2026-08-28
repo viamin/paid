@@ -447,7 +447,13 @@
 
   <% tier_model_provider = Runners::DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER[runner.runner_key.to_s] %>
   <% free_runner = runner.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY || selected_model_choice == Runners::ModelOptions::FREE_POLICY_OPTION %>
-  <% tier_models = if free_runner
+  <%# Flagged OpenCode can switch its model dropdown to OpenRouter Free client-side, so the free-tier
+      picker must be in the DOM even when the runner is currently in specific-model mode — otherwise the
+      Stimulus controller has nothing to reveal and the form falls back to submitting stale, non-free
+      tier_model_ids (rejected by tier_model_ids_must_be_valid). %>
+  <% opencode_free_capable = feature_flagged_model_form && runner.runner_key == "opencode" %>
+  <% render_free_tier_block = free_runner || opencode_free_capable %>
+  <% tier_models = if render_free_tier_block
        LlmModel.openrouter_synced_free.active.order(:display_name)
      elsif tier_model_provider
        LlmModel.active.by_provider(tier_model_provider).order(:display_name)
@@ -455,14 +461,23 @@
        []
      end %>
   <% if tier_models.any? %>
-    <% tier_runner_key = free_runner && feature_flagged_model_form ? "opencode" : runner.runner_key %>
-    <% current_tier_ids = runner.tier_model_ids.presence ||
-         (free_runner ? FreeModels::DefaultTierModels.call : Runners::DefaultTierModelIds.call(runner_key: tier_runner_key)) %>
+    <% tier_runner_key = render_free_tier_block && feature_flagged_model_form ? "opencode" : runner.runner_key %>
+    <%# Only trust the persisted tier_model_ids when the runner is actually free today — for a
+        specific-mode runner rendering this block purely so it's ready to reveal on a client-side
+        switch to Free, runner.tier_model_ids still holds the specific-mode mapping and would leave
+        the free selects matching nothing. %>
+    <% current_tier_ids = if free_runner
+         runner.tier_model_ids.presence || FreeModels::DefaultTierModels.call
+       elsif render_free_tier_block
+         FreeModels::DefaultTierModels.call
+       else
+         runner.tier_model_ids.presence || Runners::DefaultTierModelIds.call(runner_key: tier_runner_key)
+       end %>
     <div class="rounded-lg border border-gray-200 p-4"
          data-runner-form-target="tierSettings"
          data-tier-runner-key="<%= tier_runner_key %>"
-         data-model-policy-state="<%= free_runner ? "free" : "specific" %>">
-      <% if free_runner %>
+         data-model-policy-state="<%= render_free_tier_block ? "free" : "specific" %>">
+      <% if render_free_tier_block %>
         <div class="flex flex-wrap items-center gap-2">
           <h3 class="text-sm font-semibold text-gray-900">Free Model Configuration</h3>
           <span class="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">Free</span>
@@ -507,7 +522,7 @@
                   data-runner-form-target="tierSelect"
                   class="mt-1 block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
             <option value="">— None —</option>
-            <% if free_runner %>
+            <% if render_free_tier_block %>
               <% grouped_free_models = tier_models.group_by { |model| model.tier.presence || "untiered" } %>
               <% LlmModel::TIERS.each do |group_tier| %>
                 <% models_for_group = grouped_free_models[group_tier] || [] %>
