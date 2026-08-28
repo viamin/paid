@@ -2058,6 +2058,17 @@ RSpec.describe AgentRun do
       end
 
       describe "#provision_container" do
+        def dead_container_double(id)
+          instance_double(
+            Docker::Container,
+            id: id,
+            refresh!: true,
+            stop: true,
+            delete: true,
+            info: { "State" => { "Running" => false } }
+          )
+        end
+
         it "provisions a container and persists container_id" do
           agent_run = create(:agent_run, worktree_path: worktree_path)
 
@@ -2177,14 +2188,7 @@ RSpec.describe AgentRun do
 
         it "reconciles a dead recorded container on Temporal retry and provisions a fresh one" do
           agent_run = create(:agent_run, worktree_path: worktree_path, container_id: "dead-container")
-          dead = instance_double(
-            Docker::Container,
-            id: "dead-container",
-            refresh!: true,
-            stop: true,
-            delete: true,
-            info: { "State" => { "Running" => false } }
-          )
+          dead = dead_container_double("dead-container")
           allow(Docker::Container).to receive(:get).with("dead-container").and_return(dead)
 
           result = agent_run.provision_container
@@ -2210,14 +2214,7 @@ RSpec.describe AgentRun do
         it "restamps the provisioning cycle even when a reconcile reprovision claims a pooled container" do
           agent_run = create(:agent_run, worktree_path: worktree_path, container_id: "dead-container",
                              container_host: "local", provisioning_started_at: 30.minutes.ago)
-          dead = instance_double(
-            Docker::Container,
-            id: "dead-container",
-            refresh!: true,
-            stop: true,
-            delete: true,
-            info: { "State" => { "Running" => false } }
-          )
+          dead = dead_container_double("dead-container")
           allow(Docker::Container).to receive(:get).with("dead-container").and_return(dead)
           stale_provisioning_started_at = agent_run.provisioning_started_at
           pooled_result = Containers::Provision::Result.success(

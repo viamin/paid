@@ -18,6 +18,20 @@ RSpec.describe "Projects::CostDashboards" do
     context "when authenticated" do
       before { sign_in user }
 
+      def create_completed_infra_execution_usage(run)
+        create(:execution_usage,
+          agent_run: run,
+          runner_backend: "local",
+          provisioned_at: 2.hours.ago,
+          execution_started_at: 2.hours.ago,
+          completed_at: 1.hour.ago,
+          terminated_at: 1.hour.ago,
+          billed_duration_seconds: 3600,
+          termination_reason: "completed",
+          infra_cost_cents: 120,
+          rate_cents_per_hour: 120)
+      end
+
       it "renders the cost dashboard" do
         get project_cost_dashboard_path(project)
 
@@ -61,17 +75,7 @@ RSpec.describe "Projects::CostDashboards" do
         # accounting instead of collapsing the summary row to
         # "No cost data available yet."
         run = create(:agent_run, project: project, status: "completed", cost_cents: 0)
-        create(:execution_usage,
-          agent_run: run,
-          runner_backend: "local",
-          provisioned_at: 2.hours.ago,
-          execution_started_at: 2.hours.ago,
-          completed_at: 1.hour.ago,
-          terminated_at: 1.hour.ago,
-          billed_duration_seconds: 3600,
-          termination_reason: "completed",
-          infra_cost_cents: 120,
-          rate_cents_per_hour: 120)
+        create_completed_infra_execution_usage(run)
         project.update!(total_cost_cents: 0)
 
         get project_cost_dashboard_path(project)
