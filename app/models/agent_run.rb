@@ -2880,10 +2880,12 @@ class AgentRun < ApplicationRecord
   # never recorded, so a later cleanup activity can tear it down.
   #
   # Two paths:
-  # 1. Runner path (+execution_runner_enabled?+): when the runner provisioned
-  #    the environment and the handle is in memory (+@current_handle+) but
-  #    not yet persisted, persists +runner_handle+ alongside +container_id+
-  #    and +container_host+ (RDR-054).
+  # 1. Runner path: when a runner provisioned the environment and the handle
+  #    is in memory (+@current_handle+) but not yet persisted, persists
+  #    +runner_handle+ alongside +container_id+ and +container_host+
+  #    (RDR-054). Driven by the presence of +@current_handle+, not the live
+  #    +execution_runner_enabled?+ flag, so a handle survives a flag flip
+  #    before +Thread#kill+ discards it.
   # 2. Legacy path: recovers the in-flight Docker container from
   #    +@container_service+ when a provisioning worker was forcibly
   #    terminated before the container id could be recorded.
@@ -2905,7 +2907,7 @@ class AgentRun < ApplicationRecord
     return if container_id.present?
 
     # Runner path: persist the in-flight handle before Thread#kill discards it.
-    if execution_runner_enabled? && @current_handle && runner_handle.blank?
+    if @current_handle && runner_handle.blank?
       handle_hash = @current_handle.to_storage
       self.class.where(id: id, runner_handle: nil)
         .update_all(runner_handle: handle_hash, container_id: @current_handle.identifier,

@@ -2278,6 +2278,24 @@ RSpec.describe AgentRun do
           expect(handle.runner_type).to eq(:local_docker)
         end
 
+        it "runner path: persists the in-memory handle even after the runner feature flag has since been disabled" do
+          # drain_worker's Thread#kill fallback can race a flag flip: a run may
+          # start provisioning through a runner and then have the project's
+          # execution_runner_enabled flag turned off before recovery runs. The
+          # in-memory handle must still drive recovery so CleanupContainerActivity
+          # has something to reconnect to, instead of silently no-oping.
+          agent_run = create(:agent_run, worktree_path: worktree_path, container_id: nil)
+          FeatureFlags.disable!(:execution_runner_enabled)
+          agent_run.instance_variable_set(:@current_handle, runner_handle)
+
+          result = agent_run.recover_in_flight_container!
+
+          expect(result).to eq("runner-container-999")
+          reloaded = agent_run.reload
+          expect(reloaded.container_id).to eq("runner-container-999")
+          expect(reloaded.container_host).to eq("remote")
+        end
+
         it "runner path: is a no-op when a container_id is already recorded" do
           agent_run = create(:agent_run, worktree_path: worktree_path, container_id: "existing")
           FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
