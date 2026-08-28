@@ -41,10 +41,12 @@ module Activities
       # failed. Stamped even on same-phase re-escalations so the marker always
       # names the current cycle.
       # @spec PR-ESCALATION-002 @spec PR-ESCALATION-004 @spec PR-ESCALATION-019
+      # @spec PR-ESCALATION-025
       issue.update!(
         pr_review_phase: "escalated",
         pr_escalation_reason: reason_key,
         pr_escalation_started_at: Time.current,
+        awaiting_approval_since: nil,
         labels: escalated_labels(issue)
       )
       post_escalation_comment(client, project, issue, input[:reason], reason_key:, phase_before:)
@@ -77,10 +79,50 @@ module Activities
     private
 
     def escalation_still_applies?(project, issue, input:)
-      return true unless resolve_escalation_reason(input) == Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES
+      case resolve_escalation_reason(input)
+      when Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES
+        progress_state = PullRequests::ProgressState.call(project:, issue:)
+        operational_failure_breaker_holds?(issue, progress_state)
+      when Issue::PR_ESCALATION_REASON_AWAITING_APPROVAL
+        approval_wait_still_holds?(issue)
+      else
+        true
+      end
+    end
 
-      progress_state = PullRequests::ProgressState.call(project:, issue:)
-      operational_failure_breaker_holds?(issue, progress_state)
+    # The approval-wait escalation was decided from a ready-phase scan. If the
+    # PR left the ready phase, was closed, picked up a non-approval blocker
+    # (failing CI, new review feedback, unresolved dependency, the
+    # skip-auto-merge label), or became owner-approved before this activity
+    # ran, the wait is over and escalating now would be stale — it would
+    # tell the owner to approve a PR that is actually blocked for another
+    # reason. Re-runs the scan's blocked_only_on_approval? check against
+    # fresh GitHub data and the current approval-wait ceiling. A race-window
+    # escalation that does sneak through is NOT self-clearing: escalated-phase
+    # scanning is recovery-only, so it stays until the owner removes the label
+    # or restarts the draft — which is why the re-validation above must stay
+    # as complete as the scan's gate.
+    # @spec PR-ESCALATION-024 @spec PR-ESCALATION-027
+    def approval_wait_still_holds?(issue)
+      project = issue.project
+      client = project.client
+      return false unless client
+      return false unless approval_wait_exceeds_ceiling?(project, issue)
+
+      PullRequests::BlockedOnlyOnApproval.call(
+        project: project,
+        client: client,
+        issue: issue,
+        logger: logger
+      )
+    end
+
+    def approval_wait_exceeds_ceiling?(project, issue)
+      ceiling_hours = project.pr_approval_escalation_hours.to_i
+      return false if ceiling_hours <= 0
+      return false if issue.awaiting_approval_since.blank?
+
+      issue.awaiting_approval_since <= ceiling_hours.hours.ago
     end
 
     def operational_failure_breaker_holds?(issue, progress_state)
@@ -207,6 +249,18 @@ module Activities
         return [
           "- **Raise `Max PR Auto-Continue Tokens`** in project settings to resume automatic follow-ups",
           "- **Remove the `paid-escalated` label** after raising the limit to let automation try again"
+        ]
+      end
+
+      # An awaiting_approval escalation is an unanswered human gate, not an
+      # agent failure: the generic steps below ("remove the label", "convert
+      # to draft") describe how to restart a failing agent and would be
+      # actively misleading here. Re-approval both clears the escalation and
+      # lets auto-merge complete — no label surgery.
+      # @spec PR-ESCALATION-026
+      if reason_key == Issue::PR_ESCALATION_REASON_AWAITING_APPROVAL
+        return [
+          "- **Approve (or re-approve) this PR** — approval clears this escalation and lets auto-merge finish on the next scan"
         ]
       end
 
