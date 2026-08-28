@@ -5,8 +5,32 @@ require "rails_helper"
 RSpec.describe "Inbox" do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
-  let(:project) { create(:project, account: account, created_by: user, auto_pick_enabled: true, active: true, owner: "acme", repo: "alpha") }
-  let(:second_project) { create(:project, account: account, created_by: user, auto_pick_enabled: true, active: true, owner: "acme", repo: "beta") }
+  let(:project) do
+    create(
+      :project,
+      account: account,
+      created_by: user,
+      auto_pick_enabled: true,
+      active: true,
+      auto_merge_mode: "all",
+      owner_reviewer_login: "viamin",
+      owner: "acme",
+      repo: "alpha"
+    )
+  end
+  let(:second_project) do
+    create(
+      :project,
+      account: account,
+      created_by: user,
+      auto_pick_enabled: true,
+      active: true,
+      auto_merge_mode: "all",
+      owner_reviewer_login: "viamin",
+      owner: "acme",
+      repo: "beta"
+    )
+  end
   let(:plan_review_issue) { create(:issue, project: project, title: "Review me") }
   let(:questions_body) do
     <<~BODY
@@ -29,6 +53,7 @@ RSpec.describe "Inbox" do
     create(:issue, :needs_input, project: second_project, title: "Beta question", body: questions_body)
     create(:issue, :closed, :needs_input, project: project, title: "Closed question", body: questions_body)
     create(:issue, :pull_request, :needs_input, project: project, title: "PR question", body: questions_body)
+    create_merge_approval_pr(title: "Approval blocked PR", github_number: 999)
     create(
       :decomposition_decision,
       project: project,
@@ -49,7 +74,7 @@ RSpec.describe "Inbox" do
 
     expect(response).to have_http_status(:ok)
     expect(response.body).to include("Inbox", project.full_name, second_project.full_name)
-    expect(response.body).to include("Alpha question", "Beta question", "PR question", "Review me")
+    expect(response.body).to include("Alpha question", "Beta question", "PR question", "Approval blocked PR", "Review me")
     expect(response.body).to include("Visible task", "What is the expected behavior?")
     expect(response.body).not_to include("Closed question")
   end
@@ -178,6 +203,20 @@ RSpec.describe "Inbox" do
     expect(master_detail["data-inbox-master-detail-detail-open-value"]).to eq("true")
   end
 
+  it "renders merge-approval detail with the PR action and blocker summary" do
+    pr = create_merge_approval_pr(title: "Approval blocked PR")
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::MERGE_APPROVAL_KIND, pr),
+      project_id: project.id,
+      kind: Inbox::Queue::MERGE_APPROVAL_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Merge Approval", "PR", "Re-approve on GitHub", "View PR")
+    expect(response.body).to include("Waiting for owner re-approval on the current HEAD commit")
+  end
+
   # @spec OPERATOR-INBOX-006
   it "renders an unknown waiting age for a legacy entry without a timestamp" do
     issue = create(:issue, :needs_input, project: project, title: "Legacy question", body: questions_body)
@@ -268,14 +307,15 @@ RSpec.describe "Inbox" do
     it "renders the waiting count in both the desktop and mobile badge frames" do
       create(:issue, :needs_input, project: project, body: questions_body)
       create(:issue, :needs_input, project: second_project, body: questions_body)
+      create_merge_approval_pr(snapshot: owner_approval_snapshot)
 
       get inbox_count_path
 
       expect(response).to have_http_status(:ok)
       document = Nokogiri::HTML(response.body)
 
-      expect(badge_text(document, "inbox_nav_badge_desktop")).to eq("2")
-      expect(badge_text(document, "inbox_nav_badge_mobile")).to eq("2")
+      expect(badge_text(document, "inbox_nav_badge_desktop")).to eq("3")
+      expect(badge_text(document, "inbox_nav_badge_mobile")).to eq("3")
     end
 
     it "caps the displayed count at 99+ once past the display cap" do
@@ -298,5 +338,45 @@ RSpec.describe "Inbox" do
 
       expect(badge_count).to eq(queue_size)
     end
+  end
+
+  def create_merge_approval_pr(title: "Approval blocked PR", github_number: 123, snapshot: stale_approval_snapshot)
+    create(
+      :issue,
+      :pull_request,
+      project: project,
+      title: title,
+      github_number: github_number,
+      github_updated_at: 2.days.ago,
+      awaiting_approval_since: 2.days.ago,
+      auto_merge_evaluated_at: Time.current,
+      auto_merge_blockers: snapshot
+    )
+  end
+
+  def stale_approval_snapshot
+    {
+      "failed" => [ {
+        "signal" => "reviews_fresh",
+        "status" => "failed",
+        "reason_code" => "stale_approval",
+        "sanitized_message" => "The owner approval is stale for the current HEAD commit.",
+        "next_action" => "Ask @viamin to re-approve this pull request for the current HEAD commit."
+      } ],
+      "not_evaluated" => []
+    }
+  end
+
+  def owner_approval_snapshot
+    {
+      "failed" => [ {
+        "signal" => "owner_approved",
+        "status" => "failed",
+        "reason_code" => "owner_approval_missing",
+        "sanitized_message" => "Owner approval is missing.",
+        "next_action" => "Ask the owner to approve."
+      } ],
+      "not_evaluated" => []
+    }
   end
 end

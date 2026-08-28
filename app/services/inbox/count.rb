@@ -30,7 +30,7 @@ module Inbox
     attr_reader :user
 
     def compute_count
-      needs_input_count + open_plan_review_count
+      needs_input_count + open_plan_review_count + merge_approval_count
     end
 
     def needs_input_count
@@ -42,6 +42,16 @@ module Inbox
 
     def open_plan_review_count
       PlanReviewPolicy::Scope.new(user, DecompositionDecision).resolve.open_plan_reviews.count
+    end
+
+    def merge_approval_count
+      project_ids = gated_project_ids
+      return 0 if project_ids.empty?
+
+      Issue
+        .includes(:project)
+        .where(project_id: project_ids, is_pull_request: true, github_state: "open", pr_review_phase: "ready")
+        .count { |issue| Inbox::MergeApproval.call(issue).present? }
     end
 
     def gated_project_ids

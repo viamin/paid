@@ -15,16 +15,27 @@ RSpec.describe Inbox::Count do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
   let(:project) do
-    create(:project, account: account, created_by: user, auto_pick_enabled: true, active: true, owner: "acme", repo: "alpha")
+    create(
+      :project,
+      account: account,
+      created_by: user,
+      auto_pick_enabled: true,
+      active: true,
+      auto_merge_mode: "all",
+      owner_reviewer_login: "viamin",
+      owner: "acme",
+      repo: "alpha"
+    )
   end
 
   describe ".call" do
-    it "counts needs_input candidates on gated projects plus open plan reviews" do
+    it "counts needs_input candidates, merge approvals, and open plan reviews" do
       create(:issue, :needs_input, project: project)
       create(:issue, :needs_input, project: project)
+      create_merge_approval_pr
       create(:decomposition_decision, project: project, workflow_id: "wf-1", decision_key: "wf-1:pending", decision_type: "planning_outcome", outcome: "plan_pending_review")
 
-      expect(described_class.call(user: user)).to eq(3)
+      expect(described_class.call(user: user)).to eq(4)
     end
 
     it "excludes closed issues and issues on non-gated projects" do
@@ -102,5 +113,50 @@ RSpec.describe Inbox::Count do
       expect(first).to eq(0)
       expect(refreshed).to eq(1)
     end
+
+    it "bumps the cache automatically when a PR enters or leaves the merge-approval queue" do
+      pr = create(
+        :issue,
+        :pull_request,
+        project: project,
+        auto_merge_evaluated_at: Time.current,
+        auto_merge_blockers: { "failed" => [], "not_evaluated" => [] }
+      )
+      first = described_class.call(user: user)
+
+      pr.update!(awaiting_approval_since: 1.hour.ago, auto_merge_blockers: approval_only_snapshot)
+      after_enter = described_class.call(user: user)
+
+      pr.update!(auto_merge_blockers: { "failed" => [], "not_evaluated" => [] })
+      after_exit = described_class.call(user: user)
+
+      expect(first).to eq(0)
+      expect(after_enter).to eq(1)
+      expect(after_exit).to eq(0)
+    end
+  end
+
+  def create_merge_approval_pr
+    create(
+      :issue,
+      :pull_request,
+      project: project,
+      auto_merge_evaluated_at: Time.current,
+      awaiting_approval_since: 2.hours.ago,
+      auto_merge_blockers: approval_only_snapshot
+    )
+  end
+
+  def approval_only_snapshot
+    {
+      "failed" => [ {
+        "signal" => "owner_approved",
+        "status" => "failed",
+        "reason_code" => "owner_approval_missing",
+        "sanitized_message" => "Owner approval is missing.",
+        "next_action" => "Ask the owner to approve."
+      } ],
+      "not_evaluated" => []
+    }
   end
 end
