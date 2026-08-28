@@ -189,7 +189,7 @@ RSpec.describe Activities::RunAgentActivity do
 
     activity.send(:run_runner_preflight!,
       agent_run: agent_run,
-      container_service: container_service,
+      execution_environment: container_service,
       command_context: command_context,
       runner: provider.runner_key,
       execution_env: {})
