@@ -23,7 +23,7 @@ module Runners
       raise ArgumentError, "OpenRouter API key required" if @runner.effective_api_secret.to_s.blank?
       unless @runner.required_api_service_type == OPENROUTER_PROVIDER_KEY
         raise ArgumentError,
-          "openrouter_free runner must use the OpenRouter API service type " \
+          "#{@runner.runner_key} runner must use the OpenRouter API service type " \
           "(got #{@runner.required_api_service_type.inspect})"
       end
 

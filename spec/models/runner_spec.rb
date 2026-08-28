@@ -774,7 +774,7 @@ RSpec.describe Runner do
       )
     end
 
-    # @spec MODEL-POLICY-001 MODEL-POLICY-002 MODEL-POLICY-003 MODEL-POLICY-004 MODEL-POLICY-006 MODEL-POLICY-007 MODEL-POLICY-011
+    # @spec MODEL-POLICY-001 MODEL-POLICY-002 MODEL-POLICY-003 MODEL-POLICY-004 MODEL-POLICY-006 MODEL-POLICY-007 MODEL-POLICY-009 MODEL-POLICY-011
     describe "opencode model_policy" do
       it "defaults to specific when unset" do
         runner.runner_key = "opencode"
@@ -811,56 +811,7 @@ RSpec.describe Runner do
         expect(runner).to be_valid
       end
 
-      # @spec MODEL-POLICY-011
-      it "rejects a free-policy runner enabled for agent runs until free-policy dispatch lands" do
-        api_key = create(:provider_api_key, user: runner.user, api_service_type: "openrouter")
-        runner.auth_type = "api_key"
-        runner.provider_api_key = api_key
-        runner.runner_key = "opencode"
-        runner.config = { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } }
-
-        expect(runner).not_to be_valid
-        expect(runner.errors[:base]).to include("OpenCode free model policy cannot be enabled until free-policy dispatch lands (RDR-065 5/8)")
-      end
-
-      # @spec MODEL-POLICY-011
-      it "rejects a free-policy runner enabled for fallback only" do
-        api_key = create(:provider_api_key, user: runner.user, api_service_type: "openrouter")
-        runner.auth_type = "api_key"
-        runner.provider_api_key = api_key
-        runner.runner_key = "opencode"
-        runner.assign_attributes(enabled_for_agent_runs: false, enabled_for_chat: false)
-        runner.config = { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } }
-
-        expect(runner).not_to be_valid
-        expect(runner.errors[:base]).to include("OpenCode free model policy cannot be enabled until free-policy dispatch lands (RDR-065 5/8)")
-      end
-
-      # @spec MODEL-POLICY-011
-      it "rejects a free-policy runner enabled for chat only" do
-        api_key = create(:provider_api_key, user: runner.user, api_service_type: "openrouter")
-        runner.auth_type = "api_key"
-        runner.provider_api_key = api_key
-        runner.runner_key = "opencode"
-        runner.assign_attributes(enabled_for_agent_runs: false, enabled_for_fallback: false)
-        runner.config = { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } }
-
-        expect(runner).not_to be_valid
-        expect(runner.errors[:base]).to include("OpenCode free model policy cannot be enabled until free-policy dispatch lands (RDR-065 5/8)")
-      end
-
-      # @spec MODEL-POLICY-011
-      it "does not gate the legacy openrouter_free runner" do
-        api_key = create(:provider_api_key, user: runner.user, api_service_type: "openrouter")
-        runner.auth_type = "api_key"
-        runner.provider_api_key = api_key
-        runner.runner_key = "openrouter_free"
-
-        expect(runner).to be_valid
-        expect(runner.errors[:base]).to be_empty
-      end
-
-      it "rejects the free policy on a non-openrouter API provider (phase-1 gate)" do
+      it "rejects the free policy on a non-openrouter API provider" do
         api_key = create(:provider_api_key, user: runner.user, api_service_type: "minimax")
         runner.auth_type = "api_key"
         runner.provider_api_key = api_key
@@ -1002,6 +953,44 @@ RSpec.describe Runner do
           config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } })
 
         expect(specific).to be_valid
+      end
+    end
+
+    describe "free model policy on other direct-outbound runners" do
+      %w[kilocode pi omp].each do |runner_key|
+        it "allows #{runner_key} free policy without a model id when the API provider is openrouter" do # @spec MODEL-POLICY-002
+          api_key = create(:provider_api_key, user: runner.user, api_service_type: "openrouter")
+          runner.auth_type = "api_key"
+          runner.provider_api_key = api_key
+          runner.runner_key = runner_key
+          runner.assign_attributes(enabled_for_agent_runs: false, enabled_for_chat: false, enabled_for_fallback: false)
+          runner.config = { runner_key => { "api_provider" => "openrouter", "model_policy" => "free" } }
+
+          expect(runner).to be_valid
+          expect(runner).to be_free_model_policy
+        end
+
+        it "rejects #{runner_key} free policy on a non-openrouter API provider" do # @spec MODEL-POLICY-002
+          api_key = create(:provider_api_key, user: runner.user, api_service_type: "anthropic")
+          runner.auth_type = "api_key"
+          runner.provider_api_key = api_key
+          runner.runner_key = runner_key
+          runner.config = { runner_key => { "api_provider" => "anthropic", "model_policy" => "free" } }
+
+          expect(runner).not_to be_valid
+          expect(runner.errors[:config].join).to include("free model policy requires the OpenRouter API provider")
+        end
+
+        it "still requires a model id for #{runner_key} specific policy" do # @spec MODEL-POLICY-003
+          api_key = create(:provider_api_key, user: runner.user, api_service_type: "openrouter")
+          runner.auth_type = "api_key"
+          runner.provider_api_key = api_key
+          runner.runner_key = runner_key
+          runner.config = { runner_key => { "api_provider" => "openrouter", "model_policy" => "specific", "model" => "" } }
+
+          expect(runner).not_to be_valid
+          expect(runner.errors[:config].join).to include("model id")
+        end
       end
     end
 

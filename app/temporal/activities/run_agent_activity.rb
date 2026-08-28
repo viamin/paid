@@ -885,6 +885,15 @@ module Activities
         return runner_entry.openrouter_pareto_runner_runtime(project: agent_run&.project)
       end
 
+      if runner_entry&.free_model_policy?
+        if model_id.blank?
+          raise RunnerExecutionError,
+            "#{runner_entry.runner_key} runner #{runner_entry.id} has no resolvable free model for this run"
+        end
+
+        return runner_entry.free_model_policy_runner_runtime(project: agent_run&.project, model_id: model_id)
+      end
+
       return configured_runtime if configured_runtime && model_id.blank?
       return nil if model_id.blank?
 

@@ -3,55 +3,63 @@ parent: PAID
 prefix: MODEL-POLICY
 ---
 
-# Low-Level Design: OpenCode Model Policy Configuration
+# Low-Level Design: Direct-Outbound Free Model Policy Configuration
 
 > Companion to the high-level design (`docs/high-level-design.md`). Tracks
-> GitHub issue #3668 (RDR-065, 4/8), implementing decisions D2/D3 from #3663.
-> A prerequisite for issues 5/8 and 6/8, which wire the free policy into
-> runtime dispatch and free-model rotation respectively.
+> GitHub issue #3668 (RDR-065, 4/8), widened by follow-up issue #3673 after
+> #3663/#3672 closeout. This segment covers the `model_policy` config for the
+> direct-outbound runners that can route through OpenRouter (`opencode`,
+> `kilocode`, `pi`, `omp`).
 
 ## Context
 
 Paid ships a dedicated `openrouter_free` runner key for OpenRouter's
-free-tier model rotation. RDR-065 D2/D3 replace that special-cased runner key
-with a `model_policy` config knob on the general-purpose `opencode` runner:
-`"specific"` (pin one configured model, the existing default behavior) or
-`"free"` (drive selection from `tier_model_ids` via the free-tier picker,
-mirroring `openrouter_free`). D3 keeps `openrouter/pareto-code` a plain
-catalog row rather than a third policy value — Pareto routing is not modeled
-here.
+free-tier model rotation. RDR-065 D2/D3 introduced a `model_policy` config
+knob on the general-purpose `opencode` runner, and issue #3673 extends the
+same policy shape to the other direct-outbound runners whose provider maps
+already include OpenRouter: `kilocode`, `pi`, and `omp`. The policy values
+remain `"specific"` (pin one configured model, the existing default
+behavior) and `"free"` (drive selection from `tier_model_ids` via the
+free-tier picker, mirroring `openrouter_free`). D3 keeps
+`openrouter/pareto-code` a plain catalog row rather than a third policy
+value.
 
-This segment covers the `Runner` model config surface, validations, and
-display naming for `model_policy`. It does not change execution-path
-dispatch (`agent_harness_runner_runtime`, `openrouter_free_runner_runtime`)
-or free-model rotation (`FreeModels::Rotation`) — both stay keyed on the
-legacy `openrouter_free` runner key until the follow-up issues (5/8, 6/8)
-extend them to recognize `model_policy == "free"`. The legacy
+This segment covers the `Runner` model config surface, validations, display
+naming, runtime dispatch, and OpenRouter routing metadata for
+`model_policy`. It also widens `FreeModels::Rotation` to recognize any
+`free_model_policy?` runner whose resolved provider is OpenRouter. The legacy
 `openrouter_free` runner key and its dedicated form section
-(`free-model-runner-config`) remain fully functional and unchanged pending a
-later migration issue that moves existing rows onto the new config shape.
+(`free-model-runner-config`) remain fully functional pending a later
+migration issue that moves existing rows onto the new config shape.
 
 ## Design
 
 ### `model_policy` config
 
-`runners.config["opencode"]["model_policy"]` accepts `"specific"` (default,
-may be omitted) or `"free"`. `Runner#opencode_model_policy` reads it, nil for
-any other `runner_key`.
+`runners.config[<runner_key>]["model_policy"]` accepts `"specific"` (default,
+may be omitted) or `"free"` for the direct-outbound runner keys
+`opencode`, `kilocode`, `pi`, and `omp`. Runner accessors expose
+`#opencode_model_policy`; the follow-up broadening uses the same config key
+for the other runners and keys the shared predicate off the stored value plus
+the runner key/provider.
 
 ```ruby
 { "opencode" => { "model" => "...", "model_policy" => "specific" } }  # default
 { "opencode" => { "model_policy" => "free" } }                         # tier picker drives tier_model_ids
+{ "pi" => { "model_policy" => "free" } }
+{ "omp" => { "model_policy" => "free" } }
+{ "kilocode" => { "model_policy" => "free" } }
 ```
 
 ### Validation
 
 - `model_policy` must be one of `Runner::MODEL_POLICIES` (`specific`,
   `free`).
-- `free` is gated to the `opencode` runner key with the `openrouter` API
-  provider (phase-1; Pi/OMP/KiloCode free policies are a follow-up issue).
-- `specific` (the default) still requires `opencode_model_id`, unchanged from
-  prior behavior.
+- `free` is valid only when the runner's derived API provider is
+  `openrouter`.
+- `specific` (the default) still requires the runner-specific configured
+  model id (`opencode_model_id`, `kilocode_model_id`, `pi_model_id`,
+  `omp_model_id`), unchanged from prior behavior.
 - `free` requires `tier_model_ids` to resolve exclusively to free `LlmModel`
   rows, the same contract already enforced for `openrouter_free`.
   `Runner#free_model_policy?` unifies both the legacy runner-key check and
@@ -64,21 +72,13 @@ any other `runner_key`.
   draw on the same OpenRouter free-tier quota. This is a real AR validation,
   not just a UI affordance: it also blocks pairing a legacy `openrouter_free`
   runner with an `opencode` free-policy runner on the same credential.
-- Phase gate (`opencode_free_policy_runner_must_not_be_enabled`,
-  MODEL-POLICY-011): until dispatch recognizes `model_policy == "free"`
-  (issues 5/8 and 6/8, MODEL-POLICY-009), a free-policy `opencode` runner
-  fails validation when enabled for agent runs, fallback, or chat. Every
-  dispatch path (`RunAgentActivity#selected_runner_runtime`,
-  `AgentRuns::RunnerResolver`, `Models::Select`, `Runners::TestAgent`)
-  reads `agent_harness_runner_runtime`, which is `nil` for a free-policy
-  runner because `opencode_direct_outbound?` requires `opencode_model_id`;
-  an enabled free-policy runner would fall through to a bare
-  `ProviderRuntime` without its OpenRouter credential (no
-  `OPENROUTER_API_KEY` env, no base_url), and preflight passes such a
-  runner because it is enabled and holds an api-key record. A fully
-  disabled free-policy runner remains valid to pre-configure; the legacy
-  `openrouter_free` runner is unaffected. Remove this gate when 5/8 wires
-  free-policy dispatch.
+- Dispatch for `model_policy == "free"` is now wired for the supported
+  direct-outbound runners. `agent_harness_runner_runtime` resolves the
+  free-tier model through `Runners::FreeModelExecutionPlan` and emits the
+  same OpenRouter provider-routing metadata shape used by the legacy
+  `openrouter_free` runner. Pi and OMP additionally carry their existing
+  auth metadata/env alongside the OpenRouter routing metadata. KiloCode
+  translates the same routing into its provider-options config shape.
 
 ### Defaults and display
 
@@ -87,11 +87,23 @@ any other `runner_key`.
   (legacy or config-driven), matching the existing `openrouter_free` default
   behavior. `clear_stale_direct_outbound_tier_models` is likewise widened so
   it does not wipe that curated mapping on unrelated saves.
-- `Runner#display_name` renders `"OpenCode Free (<API provider label>)"` for
-  a free-policy `opencode` runner (e.g. `"OpenCode Free (OpenRouter)"`),
+- `Runner#display_name` renders `"<Runner label> Free (<API provider label>)"`
+  for a free-policy direct-outbound runner (for example,
+  `"OpenCode Free (OpenRouter)"`, `"Pi Free (OpenRouter)"`,
+  `"Oh My Pi Free (OpenRouter)"`, `"KiloCode Free (OpenRouter)"`),
   matching the `"(API Key)"` suffix convention used elsewhere.
   `display_name_for` (the class-level, config-blind variant) and the legacy
   `openrouter_free` display path are unchanged.
+
+### Rotation parity
+
+`FreeModels::Rotation` now keys off `Runner#free_model_policy?` plus the
+resolved OpenRouter provider instead of the legacy `openrouter_free` runner
+key alone. That parity is safe for all four supported direct-outbound
+runners because the service only manipulates `tier_model_ids` and
+`RunnerState` metadata; provider-specific rate-limit parsing still happens
+upstream in `agent_harness`, which already surfaces `AgentHarness::RateLimitError`
+to the callers that decide whether to invoke rotation.
 
 ### UI-list single-instance helper (deferred)
 

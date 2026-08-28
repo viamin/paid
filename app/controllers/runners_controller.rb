@@ -236,8 +236,8 @@ class RunnersController < ApplicationController
     end
     attrs = raw_params.permit(
       *permitted,
-      config: { opencode: [ :api_provider, :model, :model_policy ], kilocode: [ :api_provider, :model, :preflight_timeout_seconds ],
-                pi: [ :api_provider, :model ], omp: [ :api_provider, :model ] },
+      config: { opencode: [ :api_provider, :model, :model_policy ], kilocode: [ :api_provider, :model, :model_policy, :preflight_timeout_seconds ],
+                pi: [ :api_provider, :model, :model_policy ], omp: [ :api_provider, :model, :model_policy ] },
       tier_model_ids: LlmModel::TIERS,
       complexity_thresholds: Runner::COMPLEXITY_THRESHOLD_KEYS
     )
