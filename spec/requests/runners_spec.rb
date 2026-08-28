@@ -53,7 +53,7 @@ RSpec.describe "Runners" do
     }
   end
 
-  def direct_outbound_runner_params(runner_key:, api_key_id:, api_provider:, model:)
+  def direct_outbound_runner_params(runner_key:, api_key_id:, model:)
     {
       runner_key: runner_key,
       auth_type: "api_key",
@@ -62,8 +62,24 @@ RSpec.describe "Runners" do
       enabled_for_fallback: true,
       config: {
         runner_key => {
-          api_provider: api_provider,
           model: model
+        }
+      }
+    }
+  end
+
+  def free_policy_runner_params(api_key_id:, api_provider: "openrouter", enabled: false)
+    {
+      runner_key: "opencode",
+      auth_type: "api_key",
+      provider_api_key_id: api_key_id,
+      enabled_for_agent_runs: enabled,
+      enabled_for_chat: enabled,
+      enabled_for_fallback: enabled,
+      config: {
+        opencode: {
+          api_provider: api_provider,
+          model_policy: "free"
         }
       }
     }
@@ -738,7 +754,8 @@ RSpec.describe "Runners" do
       expect(user.runners.find_by(runner_key: "opencode")).to be_present
     end
 
-    it "persists nested OpenCode config for API-key providers" do
+    # @spec DIRECT-OUTBOUND-CATALOG-008
+    it "persists only the model config for OpenCode and derives the provider from the API key" do
       api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
 
       post runners_path, params: {
@@ -750,7 +767,6 @@ RSpec.describe "Runners" do
           enabled_for_fallback: true,
           config: {
             opencode: {
-              api_provider: "openrouter",
               model: "moonshotai/kimi-k2-0905"
             }
           }
@@ -761,6 +777,7 @@ RSpec.describe "Runners" do
       runner = user.runners.find_by!(runner_key: "opencode", auth_type: "api_key")
       expect(runner.opencode_api_provider).to eq("openrouter")
       expect(runner.opencode_model_id).to eq("moonshotai/kimi-k2-0905")
+      expect(runner.config).to eq("opencode" => { "model" => "moonshotai/kimi-k2-0905" })
     end
 
     # @spec FREE-MODEL-RUNNER-002
@@ -830,7 +847,6 @@ RSpec.describe "Runners" do
         runner: direct_outbound_runner_params(
           runner_key: "kilocode",
           api_key_id: api_key.id,
-          api_provider: "zai_coding",
           model: "glm-5.2"
         )
       }
@@ -848,7 +864,6 @@ RSpec.describe "Runners" do
         runner: direct_outbound_runner_params(
           runner_key: "kilocode",
           api_key_id: api_key.id,
-          api_provider: "zai_coding",
           model: "glm-5.2"
         )
       }
@@ -870,7 +885,6 @@ RSpec.describe "Runners" do
         runner: direct_outbound_runner_params(
           runner_key: "opencode",
           api_key_id: api_key.id,
-          api_provider: "zai_coding",
           model: "glm-5.2"
         )
       }
@@ -888,7 +902,6 @@ RSpec.describe "Runners" do
         runner: direct_outbound_runner_params(
           runner_key: "opencode",
           api_key_id: api_key.id,
-          api_provider: "zai_coding",
           model: "glm-5.2"
         )
       }
@@ -914,7 +927,6 @@ RSpec.describe "Runners" do
           enabled_for_fallback: true,
           config: {
             opencode: {
-              api_provider: "openrouter",
               model: ""
             }
           }
@@ -925,7 +937,44 @@ RSpec.describe "Runners" do
       expect(response.body).to include("must include an OpenCode model id")
     end
 
-    it "persists nested Oh My Pi config for API-key providers" do
+    # @spec MODEL-POLICY-008 MODEL-POLICY-011
+    it "creates a disabled free-policy OpenCode runner without a model id when the API provider is openrouter" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+
+      post runners_path, params: { runner: free_policy_runner_params(api_key_id: api_key.id) }
+
+      expect(response).to redirect_to(runners_path)
+      runner = user.runners.find_by!(runner_key: "opencode", auth_type: "api_key")
+      expect(runner.opencode_model_policy).to eq("free")
+      expect(runner.opencode_model_id).to be_nil
+      expect(runner).not_to be_enabled_for_agent_runs
+      expect(runner).not_to be_enabled_for_fallback
+      expect(runner).not_to be_enabled_for_chat
+    end
+
+    # @spec MODEL-POLICY-011
+    it "rejects creating an enabled free-policy OpenCode runner until free-policy dispatch lands" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+
+      post runners_path, params: { runner: free_policy_runner_params(api_key_id: api_key.id, enabled: true) }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.body).to include("OpenCode free model policy cannot be enabled until free-policy dispatch lands")
+      expect(user.runners.where(runner_key: "opencode", auth_type: "api_key")).not_to exist
+    end
+
+    # @spec MODEL-POLICY-002 MODEL-POLICY-008
+    it "rejects an OpenCode free policy on a non-openrouter API provider" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "inception")
+
+      post runners_path, params: { runner: free_policy_runner_params(api_key_id: api_key.id, api_provider: "inception") }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.body).to include("OpenCode free model policy requires the OpenRouter API provider")
+    end
+
+    # @spec DIRECT-OUTBOUND-CATALOG-008
+    it "persists only the model config for Oh My Pi and derives the provider from the API key" do
       KnownDirectOutboundModels.seed_model(model_id: "deepseek-chat", provider: "deepseek")
       api_key = create(:provider_api_key, user: user, api_service_type: "deepseek")
 
@@ -933,7 +982,6 @@ RSpec.describe "Runners" do
         runner: direct_outbound_runner_params(
           runner_key: "omp",
           api_key_id: api_key.id,
-          api_provider: "deepseek",
           model: "deepseek-chat"
         )
       }
@@ -942,6 +990,7 @@ RSpec.describe "Runners" do
       runner = user.runners.find_by!(runner_key: "omp", auth_type: "api_key")
       expect(runner.omp_api_provider).to eq("deepseek")
       expect(runner.omp_model_id).to eq("deepseek-chat")
+      expect(runner.config).to eq("omp" => { "model" => "deepseek-chat" })
       expect(runner.display_name).to eq("Oh My Pi deepseek-chat (API Key)")
     end
   end
@@ -991,6 +1040,38 @@ RSpec.describe "Runners" do
       expect(response).to have_http_status(:ok)
       expect(response.body).to include('option value="omp"')
       expect(response.body).to include("Oh My Pi")
+    end
+
+    # @spec DIRECT-OUTBOUND-CATALOG-006
+    it "groups API keys by provider and omits direct-outbound api_provider selects from the API-key form" do
+      create(:provider_api_key, user: user, api_service_type: "openrouter", name: "OpenRouter A")
+      create(:provider_api_key, user: user, api_service_type: "openrouter", name: "OpenRouter B")
+      create(:provider_api_key, user: user, api_service_type: "anthropic", name: "Anthropic Key")
+      create(:llm_model, model_id: "moonshotai/kimi-k2-0905", provider: "openrouter", display_name: "Kimi K2")
+      create(:llm_model, model_id: "claude-sonnet-4-20250514", provider: "anthropic", display_name: "Claude Sonnet 4")
+      allow(RunnerSupport).to receive(:addable_runner_keys).and_return(%w[opencode])
+
+      get new_runner_path(form_variant: "api_key", runner_key: "opencode")
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include('<optgroup label="Anthropic (1 key)">')
+      expect(response.body).to include('<optgroup label="OpenRouter (2 keys)">')
+      expect(response.body).not_to include('name="runner[config][opencode][api_provider]"')
+      expect(response.body).to include('name="runner[config][opencode][model]"')
+    end
+
+    # @spec DIRECT-OUTBOUND-CATALOG-008
+    it "does not preselect a provider's models before an API key is chosen on a new OpenCode runner" do
+      create(:provider_api_key, user: user, api_service_type: "openrouter", name: "OpenRouter")
+      create(:llm_model, model_id: "moonshotai/kimi-k2-0905", provider: "openrouter", display_name: "Kimi K2")
+      allow(RunnerSupport).to receive(:addable_runner_keys).and_return(%w[opencode])
+
+      get new_runner_path(form_variant: "api_key", runner_key: "opencode")
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include('data-current-service-type=""')
+      expect(response.body).to include('<option value="">Select an API key first</option>')
+      expect(response.body).not_to include('<option value="moonshotai/kimi-k2-0905"')
     end
 
     it "defaults back to subscription when the requested runner already has an active managed credential" do
@@ -1224,17 +1305,19 @@ RSpec.describe "Runners" do
       expect(response.body).to include("Leave empty for unlimited")
     end
 
-    it "renders OpenCode config inputs disabled for non-OpenCode providers" do
+    # @spec DIRECT-OUTBOUND-CATALOG-006
+    it "renders OpenCode model inputs without an api_provider select for non-OpenCode runners" do
       runner = user.runners.find_by!(runner_key: "claude")
 
       get edit_runner_path(runner)
 
       expect(response).to have_http_status(:ok)
-      expect(response.body).to match(/name="runner\[config\]\[opencode\]\[api_provider\]".*disabled/m)
+      expect(response.body).not_to include('name="runner[config][opencode][api_provider]"')
       expect(response.body).to match(/name="runner\[config\]\[opencode\]\[model\]".*disabled/m)
     end
 
-    it "renders Oh My Pi config inputs for persisted OMP API-key runners" do
+    # @spec DIRECT-OUTBOUND-CATALOG-006
+    it "renders Oh My Pi model inputs for persisted OMP API-key runners without an api_provider select" do
       KnownDirectOutboundModels.seed_model(model_id: "deepseek-chat", provider: "deepseek")
       api_key = create(:provider_api_key, user: user, api_service_type: "deepseek")
       runner = user.runners.create!(
@@ -1247,9 +1330,62 @@ RSpec.describe "Runners" do
       get edit_runner_path(runner)
 
       expect(response).to have_http_status(:ok)
-      expect(response.body).to include("Oh My Pi API Key Settings")
-      expect(response.body).to include('name="runner[config][omp][api_provider]"')
+      expect(response.body).to include("Oh My Pi Model")
+      expect(response.body).not_to include('name="runner[config][omp][api_provider]"')
       expect(response.body).to include('name="runner[config][omp][model]"')
+    end
+
+    # @spec DIRECT-OUTBOUND-CATALOG-009
+    it "preserves a required OpenCode model that has since been deactivated in the catalog" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+      runner = user.runners.create!(
+        runner_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "model" => "retired/model-x" } }
+      )
+      LlmModel.find_by!(model_id: "retired/model-x").update!(active: false)
+
+      get edit_runner_path(runner)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to match(%r{<option value="retired/model-x"\s+selected>})
+    end
+
+    # @spec DIRECT-OUTBOUND-CATALOG-009
+    it "preserves an optional Pi model that has since been deactivated in the catalog" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "deepseek")
+      runner = user.runners.create!(
+        runner_key: "pi",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "pi" => { "model" => "deepseek-legacy" } }
+      )
+      LlmModel.find_by!(model_id: "deepseek-legacy").update!(active: false)
+
+      get edit_runner_path(runner)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to match(/<option value="deepseek-legacy"\s+selected>/)
+    end
+
+    # @spec DIRECT-OUTBOUND-CATALOG-010
+    it "renders a manual model entry field when the derived provider has no catalog rows and no saved model" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "mistral")
+      runner = user.runners.create!(
+        runner_key: "pi",
+        auth_type: "api_key",
+        provider_api_key: api_key
+      )
+
+      get edit_runner_path(runner)
+
+      expect(response).to have_http_status(:ok)
+      manual_input = response.body[/<input[^>]*name="runner\[config\]\[pi\]\[model\]"[^>]*data-runner-form-target="dynamicModelManualInput"[^>]*>/]
+      select_tag = response.body[/<select[^>]*name="runner\[config\]\[pi\]\[model\]"[^>]*>/m]
+      expect(manual_input).to be_present
+      expect(manual_input).not_to include("disabled")
+      expect(select_tag).to include("disabled")
     end
 
     it "renders complexity_thresholds inputs with balanced bracket names so Rack parses them as a nested hash" do

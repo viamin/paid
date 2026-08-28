@@ -1,6 +1,9 @@
 <% content_for(:title) { "Inbox - Paid" } %>
 
-<div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+<%# @spec OPERATOR-INBOX-003 %>
+<div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8"
+     data-controller="inbox-master-detail"
+     data-inbox-master-detail-detail-open-value="<%= @detail_view %>">
   <div class="mb-6 flex items-center justify-between gap-4">
     <div>
       <h1 class="text-2xl font-semibold text-gray-900">Inbox</h1>
@@ -21,11 +24,11 @@
       ].each do |label, kind| %>
         <% active = @selected_kind == kind || (@selected_kind.nil? && kind.nil?) %>
         <%= link_to label,
-            inbox_path_for(scoped_project: @scoped_project, selected_kind: kind),
-            class: [
-              "rounded-full px-3 py-1.5 text-sm font-medium",
-              active ? "bg-indigo-600 text-white" : "bg-white text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
-            ].join(" ") %>
+              inbox_path(**inbox_query_params(project: @scoped_project, kind: kind)),
+              class: [
+                "rounded-full px-3 py-1.5 text-sm font-medium",
+                active ? "bg-indigo-600 text-white" : "bg-white text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+              ].join(" ") %>
       <% end %>
     </div>
   </div>
@@ -37,9 +40,16 @@
         Paid does not currently have any clarifying-question or plan-review items waiting here.
       </p>
     </div>
+  <%# Split-pane activates at Tailwind's `lg` breakpoint (≥1024px) instead of
+      the `md` (≥768px) called out in #3506: the answer form renders multi-row
+      textareas and a sticky submit, so the 22rem list + flexible detail grid
+      needs the wider viewport to avoid cramping the textareas into a
+      sub-300px column. Below `lg` the master-detail Stimulus controller takes
+      over and stacks the panes. %>
   <% else %>
     <div class="grid gap-6 lg:grid-cols-[22rem,1fr]">
-      <aside class="<%= @detail_view ? 'hidden lg:block' : 'block' %>">
+      <aside class="<%= @detail_view ? 'hidden lg:block' : 'block' %>"
+             data-inbox-master-detail-target="list">
         <%= render "dashboard/inbox_list",
               entries: @inbox_entries,
               selected_entry: @selected_entry,
@@ -47,11 +57,14 @@
               selected_kind: @selected_kind %>
       </aside>
 
-      <section class="<%= @detail_view ? 'block' : 'hidden lg:block' %>">
-        <%= render "dashboard/inbox_detail",
-              entry: @selected_entry,
-              scoped_project: @scoped_project,
-              selected_kind: @selected_kind %>
+      <section class="<%= @detail_view ? 'block' : 'hidden lg:block' %>"
+               data-inbox-master-detail-target="detailSection">
+        <%= turbo_frame_tag "inbox-detail" do %>
+          <%= render "dashboard/inbox_detail",
+                entry: @selected_entry,
+                scoped_project: @scoped_project,
+                selected_kind: @selected_kind %>
+        <% end %>
       </section>
     </div>
   <% end %>

@@ -956,7 +956,7 @@ RSpec.describe "Dashboard" do
       get dashboard_eligibility_breakdown_path
 
       document = Nokogiri::HTML(response.body)
-      link = document.at_css(%(a[href="#{dashboard_inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)}"]))
+      link = document.at_css(%(a[href="#{inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)}"]))
 
       expect(link).to be_present
       expect(link.text).to include("1 needs input")
@@ -975,7 +975,7 @@ RSpec.describe "Dashboard" do
       get dashboard_needs_input_path(project_id: project.id)
 
       expect(response).to redirect_to(
-        dashboard_inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
+        inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
       )
     end
   end
@@ -984,185 +984,54 @@ RSpec.describe "Dashboard" do
     let(:account) { create(:account) }
     let(:user) { create(:user, account: account) }
     let(:project) { create(:project, account: account, created_by: user, auto_pick_enabled: true, active: true, owner: "acme", repo: "alpha") }
-    let(:second_project) { create(:project, account: account, created_by: user, auto_pick_enabled: true, active: true, owner: "acme", repo: "beta") }
-    let(:plan_review_issue) { create(:issue, project: project, title: "Review me") }
-    let(:questions_body) do
-      <<~BODY
-        <!-- paid:enhance-issue -->
-
-        ## Clarifying questions
-        1. What is the expected behavior?
-        2. Should this be behind a flag?
-      BODY
-    end
 
     before { sign_in user }
 
-    it "lists clarifying-question and plan-review entries across auto-pick projects" do
-      review = create_inbox_entries_for_dashboard_inbox
-
-      get dashboard_inbox_path(entry_kind: Inbox::Queue::PLAN_REVIEW_KIND, entry_id: review.id, view: "detail")
-
-      expect(response).to have_http_status(:ok)
-      expect(response.body).to include("Inbox", project.full_name, second_project.full_name)
-      expect(response.body).to include("Alpha question", "Beta question", "PR question", "Review me")
-      expect(response.body).to include("Visible task", "What is the expected behavior?")
-      expect(response.body).not_to include("Closed question")
-    end
-
-    it "supports project scoping" do
-      create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
-      create(:issue, :needs_input, project: second_project, title: "Beta question", body: questions_body)
-
+    it "permanently redirects the legacy collection path to /inbox" do
       get dashboard_inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
 
-      expect(response).to have_http_status(:ok)
-      expect(response.body).to include(project.full_name)
-      expect(response.body).to include("Alpha question")
-      expect(response.body).not_to include(second_project.full_name)
-      expect(response.body).not_to include("Beta question")
-      document = Nokogiri::HTML(response.body)
-      link = document.at_css("a[href*='#{project_issue_clarifying_questions_path(project, project.issues.find_by!(title: "Alpha question"))}']")
-
-      expect(link).to be_present
-      expect(link["href"]).to eq(
-        project_issue_clarifying_questions_path(
-          project,
-          project.issues.find_by!(title: "Alpha question"),
-          queue: "dashboard_inbox",
-          queue_project_id: project.id,
-          return_to: dashboard_inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
-        )
+      expect(response).to redirect_to(
+        inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
       )
+      expect(response).to have_http_status(:moved_permanently)
     end
 
-    it "renders a mobile detail state when an entry is selected" do
-      issue = create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
+    it "translates legacy entry_kind and entry_id params into the member route" do
+      issue = create(:issue, :needs_input, project: project, needs_input_questions: [ "What is the expected behavior?" ])
 
       get dashboard_inbox_path(
+        project_id: project.id,
+        kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
         entry_kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
         entry_id: issue.id,
         view: "detail"
       )
 
-      expect(response).to have_http_status(:ok)
-      expect(response.body).to include("Back to queue")
-      expect(response.body).to include("Answer Questions")
-      expect(response.body).to include("lg:grid-cols-[22rem,1fr]")
+      expect(response).to redirect_to(
+        inbox_entry_path(
+          "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{issue.id}",
+          project_id: project.id,
+          kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND
+        )
+      )
+      expect(response).to have_http_status(:moved_permanently)
     end
 
-    # @spec OPERATOR-INBOX-007
-    it "renders PR clarifying entries with a PR badge and PR-specific GitHub link text" do
-      pull_request = create(:issue, :needs_input, :pull_request, project: project, title: "PR question", body: questions_body)
+    it "translates the legacy selected param into the member route" do
+      issue = create(:issue, :needs_input, project: project, needs_input_questions: [ "What is the expected behavior?" ])
 
       get dashboard_inbox_path(
-        entry_kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
-        entry_id: pull_request.id,
-        view: "detail"
+        project_id: project.id,
+        kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+        selected: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{issue.id}"
       )
 
-      expect(response).to have_http_status(:ok)
-      expect(response.body).to include("View PR")
-      document = Nokogiri::HTML(response.body)
-      pr_link = document.at_css(%(a[href="#{pull_request.github_url}"]))
-      expect(pr_link).to be_present
-      expect(pr_link.text).to eq("View PR")
-      expect(document.css("span").map { |node| node.text.squish }).to include("PR")
-    end
-
-    # @spec OPERATOR-INBOX-006
-    it "renders an unknown waiting age for a legacy entry without a timestamp" do
-      issue = create(:issue, :needs_input, project: project, title: "Legacy question", body: questions_body)
-      issue.update_columns(needs_input_since: nil)
-
-      get dashboard_inbox_path(
-        entry_kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
-        entry_id: issue.id,
-        view: "detail"
-      )
-
-      expect(response).to have_http_status(:ok)
-      document = Nokogiri::HTML(response.body)
-      expect(document.at_css("[data-testid='inbox-list-waiting-age']").text.strip).to eq("Waiting —")
-      expect(document.at_css("[data-testid='inbox-detail-waiting-age']").text.strip).to eq("Waiting —")
-    end
-
-    context "when a clarifying question contains markdown" do
-      let(:markdown_question) { "Should `foo_bar` use **snake_case** or [camelCase](https://example.com)?" }
-      let(:markdown_body) do
-        <<~BODY
-          <!-- paid:enhance-issue -->
-
-          ## Clarifying questions
-          1. #{markdown_question}
-        BODY
-      end
-
-      it "wires the raw question text into the markdown-text controller for client-side rendering" do
-        issue = create(:issue, :needs_input, project: project, title: "Markdown question", body: markdown_body)
-
-        get dashboard_inbox_path(
-          entry_kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
-          entry_id: issue.id,
-          view: "detail"
+      expect(response).to redirect_to(
+        inbox_entry_path(
+          "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{issue.id}",
+          project_id: project.id,
+          kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND
         )
-
-        question_node = Nokogiri::HTML(response.body).at_css('[data-controller="markdown-text"]')
-
-        expect(question_node).to be_present
-        expect(question_node["data-markdown-text-content-value"]).to eq(markdown_question)
-        expect(response.body).to include(CGI.escapeHTML(markdown_question))
-        expect(response.body).not_to include("<strong>snake_case</strong>")
-      end
-    end
-
-    context "when a plan review task contains markdown" do
-      let(:markdown_title) { "Wire `markdown-text` into the **inbox** partial" }
-      let(:markdown_description) { "Should `description` use **markdown** or [plaintext](https://example.com)?" }
-      let(:review) do
-        create(
-          :decomposition_decision,
-          project: project,
-          issue: plan_review_issue,
-          workflow_id: "planning-workflow-1",
-          decision_key: "planning-workflow-1:plan_review:pending",
-          decision_type: "planning_outcome",
-          outcome: "plan_pending_review",
-          plan_data: { "tasks" => [ { "title" => markdown_title, "description" => markdown_description } ] }
-        )
-      end
-
-      it "wires the raw title and description into the markdown-text controller for client-side rendering" do
-        get dashboard_inbox_path(
-          entry_kind: Inbox::Queue::PLAN_REVIEW_KIND,
-          entry_id: review.id,
-          view: "detail"
-        )
-
-        content_values = Nokogiri::HTML(response.body)
-          .css('[data-controller="markdown-text"]')
-          .map { |node| node["data-markdown-text-content-value"] }
-
-        expect(content_values).to include(markdown_title, markdown_description)
-        expect(response.body).to include(CGI.escapeHTML(markdown_title), CGI.escapeHTML(markdown_description))
-        expect(response.body).not_to include("<strong>inbox</strong>", "<strong>markdown</strong>")
-      end
-    end
-
-    def create_inbox_entries_for_dashboard_inbox
-      create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
-      create(:issue, :needs_input, project: second_project, title: "Beta question", body: questions_body)
-      create(:issue, :closed, :needs_input, project: project, title: "Closed question", body: questions_body)
-      create(:issue, :pull_request, :needs_input, project: project, title: "PR question", body: questions_body)
-      create(
-        :decomposition_decision,
-        project: project,
-        issue: plan_review_issue,
-        workflow_id: "planning-workflow-1",
-        decision_key: "planning-workflow-1:plan_review:pending",
-        decision_type: "planning_outcome",
-        outcome: "plan_pending_review",
-        plan_data: { "tasks" => [ { "title" => "Visible task", "description" => "Visible description" } ] }
       )
     end
   end

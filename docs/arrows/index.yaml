@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-08-24
+last_updated: 2026-08-27
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -114,6 +114,30 @@ arrows:
     taxonomy: catalog
     status: OK
     audited: 2026-08-03
+  direct-outbound-model-catalog:
+    title: Direct-Outbound Model Catalog Coverage
+    path: docs/intent/direct-outbound-model-catalog/direct-outbound-model-catalog-design.md
+    specs: docs/intent/direct-outbound-model-catalog/direct-outbound-model-catalog-specs.md
+    parent: PAID
+    taxonomy: catalog
+    status: OK
+    audited: 2026-08-27
+  opencode-model-policy:
+    title: OpenCode Model Policy Configuration
+    path: docs/intent/opencode-model-policy/opencode-model-policy-design.md
+    specs: docs/intent/opencode-model-policy/opencode-model-policy-specs.md
+    parent: PAID
+    taxonomy: catalog
+    status: OK
+    audited: 2026-08-27
+  runner-model-options:
+    title: Runner Model Options
+    path: docs/intent/runner-model-options/runner-model-options-design.md
+    specs: docs/intent/runner-model-options/runner-model-options-specs.md
+    parent: PAID
+    taxonomy: catalog
+    status: OK
+    audited: 2026-08-27
   rails-control-plane:
     title: Rails Control Plane
     path: docs/intent/rails-control-plane/rails-control-plane-design.md

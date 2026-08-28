@@ -838,6 +838,29 @@ RSpec.describe Issue do
         expect(escalated_pr.reload.pr_auto_continue_token_limit_overridden_at).to be_nil
       end
 
+      # @spec PR-ESCALATION-026
+      it "does not record a token-cap override for an awaiting_approval escalation" do
+        escalated_pr.update!(
+          pr_escalation_reason: Issue::PR_ESCALATION_REASON_AWAITING_APPROVAL,
+          awaiting_approval_since: 2.days.ago
+        )
+
+        escalated_pr.clear_escalation!(draft: false)
+
+        escalated_pr.reload
+        expect(escalated_pr.pr_auto_continue_token_limit_overridden_at).to be_nil
+        expect(escalated_pr.awaiting_approval_since).to be_nil
+      end
+
+      # @spec PR-ESCALATION-025
+      it "clears the approval-wait stamp when an escalation is cleared" do
+        escalated_pr.update!(awaiting_approval_since: 2.days.ago)
+
+        escalated_pr.clear_escalation!(draft: false)
+
+        expect(escalated_pr.reload.awaiting_approval_since).to be_nil
+      end
+
       # @spec PR-ESCALATION-008
       it "releases the hold without zeroing counters when the clearing is not owner-initiated" do
         escalated_pr.update!(pr_escalation_reason: Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES)

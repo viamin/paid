@@ -33,9 +33,21 @@ it from drifting apart.
 | `review_goal_retry_limit` | Review-goal runs keep failing | `review_goal_retry_count` vs the project's review-goal retry limit |
 | `pr_auto_continue_token_limit` | Automatic runs on the PR have spent the project's token budget | tokens used vs `max_pr_auto_continue_tokens` |
 | `operational_failures` | Provider/infrastructure failures burst *and* the PR went stale without meaningful progress | `consecutive_operational_failures`, `last_meaningful_progress_at` |
+| `awaiting_approval` | A green PR, blocked only on owner approval, has waited past the project ceiling | `awaiting_approval_since` vs `pr_approval_escalation_hours` |
+
+The first four reasons denote agent failure — Paid could not make progress.
+`awaiting_approval` denotes an unanswered human gate: every
+automatic-merge precondition except owner approval is satisfied and nobody
+has answered it. It is the backstop, not the first response: the inbox entry
+and the review re-request get a fair chance to work first, and past the
+ceiling "nobody is coming" is itself the failure.
 
 Escalation requires confirmation across `REQUIRED_STUCK_CONFIRMATIONS` scan
 cycles (`stuck_confirmation_count`), so a single bad scan cannot stop a PR.
+That confirmation gate applies to the failure detectors; the approval wait
+carries its own time-based ceiling (`pr_approval_escalation_hours`, default
+24 hours) because the stuck state it measures — an unanswered approval —
+cannot be a scan artifact.
 
 ## The escalated phase is the hold
 
@@ -91,6 +103,34 @@ hold returns the PR to the scan, which picks the work on the next cycle.
 
 A fourth path clears the hold without an owner: an `operational_failures`
 escalation whose failure signals have recovered dismisses itself.
+
+For an `awaiting_approval` escalation the recovery path is the gate itself:
+the owner approving the PR routes it to auto-merge on the next scan, which
+merges it and clears the escalation — no label surgery. The escalation
+comment therefore names re-approval as the remedy, not the agent-failure
+steps ("remove the label", "convert to draft") that would be actively
+misleading for a PR that already passed every other check.
+
+## The approval-wait ceiling
+
+The wait is measured from the scan's **first observation** that the PR is
+blocked only on approval (`awaiting_approval_since`), not from PR creation —
+a PR that was legitimately in review for a week has not been waiting on
+approval for a week. Whenever any non-approval blocking signal appears (CI
+failure, review feedback, a conflict, a stale approval, an unmerged
+dependency), the stamp is cleared; if the PR later returns to
+blocked-only-on-approval, the wait restarts from that observation.
+
+The ceiling is per project (`pr_approval_escalation_hours`, default 24,
+`0` disables). One day is long enough for the inbox entry and the review
+re-request to work first. Because the escalated PR stays in the scan
+(staleness ceiling applies to escalated PRs regardless of author), approval
+is detected and the hold clears itself without manual intervention.
+
+`awaiting_approval` deliberately inherits none of the behavior attached to
+the agent-failure reasons: clearing it does not stamp the
+`pr_auto_continue_token_limit` override, and its escalation carries no
+failure-budget semantics — there were no failed attempts to reset.
 
 ## The clearing operation
 
@@ -201,6 +241,8 @@ The panel reads issue state directly, like the other dashboard panels. It is a
 | Operational auto-dismissal | Releases the hold, leaves counters | Apply the full reset like the owner-initiated paths | The full reset is justified by owner attention, which auto-dismissal does not involve. Recovering infrastructure should return the PR to work, not grant it a fresh failure budget. |
 | Token-cap override on clearing | Stamp `pr_auto_continue_token_limit_overridden_at` | Zero the token usage; raise the project cap | Token spend is real and already incurred; it cannot be un-spent. The override is the owner granting one PR permission to exceed the cap, and it is scoped to that PR. |
 | What Unblock enqueues | Nothing; the scan picks the work | Enqueue a `create_pr` follow-up immediately | What a stopped PR needs next is a semantic judgment the scan already makes from live PR state. A button that hardcodes `create_pr` queues the wrong run for a PR stopped on a review-goal retry limit. Costs one poll cycle. |
+| Approval-wait origin | First scan observation of blocked-only-on-approval (`awaiting_approval_since`) | PR creation time; the last green CI run | The wait is a property of the approval gate, not of the PR. Creation time counts review time the owner was never asked to answer for; the gate can also open and close as other blockers appear, so the stamp resets when they do. |
+| Approval-wait ceiling | Per-project hours (`pr_approval_escalation_hours`, default 24, 0 disables) | A fixed constant; scan-confirmation counts | How long an owner should take is a team property. The failure detectors need scan confirmations because their signal can be a scan artifact; an unanswered approval cannot be. |
 | Queued runs at escalation | Left alone | Cancel them, as the operator pause does | The hold governs what work is decided next, not what is already running. A run in flight finishes and reports, which is information the owner wants before deciding. |
 | Where blocked PRs surface | Dashboard panel querying issue state | A `Notifications::Rule`; a per-project page only | Notifications are event-shaped and dismissible; a stopped PR is a standing condition that should be visible until it is cleared. The account dashboard is where cross-project standing conditions already live. |
 | Unblock scope | Escalated PRs only | Also list and clear operator-paused PRs | An operator pause is a deliberate choice, not a fault. Listing it as blocked work would invite clearing a hold the owner meant to keep. |

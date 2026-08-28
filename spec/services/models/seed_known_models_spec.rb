@@ -22,6 +22,7 @@ RSpec.describe Models::SeedKnownModels do
       expect(registry).to have_received(:refresh!).once
     end
 
+    # @spec DIRECT-OUTBOUND-CATALOG-002
     it "updates existing models on re-sync" do
       described_class.call
 
@@ -187,6 +188,38 @@ RSpec.describe Models::SeedKnownModels do
 
       expect(LlmModel.find_by!(model_id: "gpt-5.5-pro").active).to be(false)
       expect(LlmModel.find_by!(model_id: "gpt-5.3-codex").active).to be(false)
+    end
+
+    # @spec DIRECT-OUTBOUND-CATALOG-001
+    it "gives every direct-outbound provider a dropdown-eligible catalog row (RDR-065)" do
+      described_class.call
+
+      Runner::DIRECT_OUTBOUND_API_PROVIDERS.each_value do |config|
+        expect(LlmModel.dropdown_options_for(config.fetch(:service_type))).not_to be_empty,
+          "expected #{config.fetch(:service_type)} to have at least one active catalog row"
+      end
+    end
+
+    # @spec DIRECT-OUTBOUND-CATALOG-003
+    it "seeds the openrouter pareto row as a seeded (not openrouter_sync) paid catalog entry" do
+      described_class.call
+
+      pareto = LlmModel.find_by!(model_id: "openrouter/pareto-code")
+      expect(pareto.provider).to eq("openrouter")
+      expect(pareto.catalog_source).to eq("seeded")
+      expect(pareto.pricing_tier).to eq("paid")
+      expect(pareto.active).to be(true)
+    end
+
+    # @spec DIRECT-OUTBOUND-CATALOG-001
+    it "seeds catalog rows for deepseek, mistral, xai, zai, and inception" do
+      described_class.call
+
+      expect(LlmModel.find_by(model_id: "deepseek-chat").provider).to eq("deepseek")
+      expect(LlmModel.find_by(model_id: "devstral-2512").provider).to eq("mistral")
+      expect(LlmModel.find_by(model_id: "grok-4.3").provider).to eq("xai")
+      expect(LlmModel.find_by(model_id: "glm-5.2v").provider).to eq("zai")
+      expect(LlmModel.find_by(model_id: "mercury-2").provider).to eq("inception")
     end
   end
 

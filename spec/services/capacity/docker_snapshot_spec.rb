@@ -150,7 +150,12 @@ RSpec.describe Capacity::DockerSnapshot do
 
       expect(snapshot).to be_degraded
       expect(snapshot.available_memory_bytes).to eq(0)
-      expect(snapshot.degraded_reasons).to include("container_sample_failed")
+      # With concurrent sampling, some workers may start before the shared
+      # deadline expires and time out individually while later workers are
+      # skipped once the budget is gone. Either degraded reason is valid here.
+      expect(
+        snapshot.degraded_reasons & %w[container_sample_failed container_sampling_budget_exceeded]
+      ).not_to be_empty
       expect(snapshot.usage_buckets.values.sum(&:container_count)).to eq(container_rows.size)
     end
 

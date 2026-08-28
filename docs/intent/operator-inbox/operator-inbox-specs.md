@@ -9,8 +9,8 @@
   system SHALL list actionable clarifying-question entries drawn from the
   existing needs-input queue, preserving the user's project visibility and any
   explicit project scope filter.
-  *Code:* `app/services/inbox/queue.rb`, `app/controllers/dashboard_controller.rb`.
-  *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/dashboard_spec.rb`.
+  *Code:* `app/services/inbox/queue.rb`, `app/controllers/inbox_controller.rb`.
+  *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`.
 
 - [x] **OPERATOR-INBOX-002** — When a planning workflow records an open
   `plan_pending_review` decomposition decision and the user can manage the
@@ -21,12 +21,13 @@
 
 - [x] **OPERATOR-INBOX-003** — When the inbox renders on desktop, the system
   SHALL show the queue list and the selected entry detail at the same time; on
-  mobile, the system SHALL support a master-detail flow where selecting an
-  entry opens the detail pane with a path back to the list.
-  *Code:* `app/views/dashboard/inbox.html.erb`,
+  mobile, the system SHALL support a master-detail flow where the member route
+  opens the detail pane with a path back to the list.
+  *Code:* `app/controllers/inbox_controller.rb`,
+  `app/views/inbox/index.html.erb`,
   `app/views/dashboard/_inbox_list.html.erb`,
   `app/views/dashboard/_inbox_detail.html.erb`.
-  *Test:* `spec/requests/dashboard_spec.rb`.
+  *Test:* `spec/requests/inbox_spec.rb`.
 
 - [x] **OPERATOR-INBOX-004** — When a user approves, rejects, or revises a
   pending plan review from the inbox, the system SHALL signal the planning
@@ -45,9 +46,10 @@
   timestamp, the system SHALL keep the entry visible and SHALL render
   `Waiting —` in both the queue list and selected-entry detail instead of
   deriving an age or failing the inbox page.
+  *Code:* `app/views/inbox/index.html.erb`,
   *Code:* `app/views/dashboard/_inbox_list.html.erb`,
   `app/views/dashboard/_inbox_detail.html.erb`.
-  *Test:* `spec/requests/dashboard_spec.rb`.
+  *Test:* `spec/requests/inbox_spec.rb`.
 
 - [x] **OPERATOR-INBOX-007** — When a clarifying-question inbox entry is backed
   by a pull request record, the system SHALL load that PR through the existing
@@ -58,10 +60,32 @@
   *Code:* `app/controllers/projects/clarifying_questions_controller.rb`,
   `app/helpers/dashboard_helper.rb`,
   `app/helpers/issues_helper.rb`,
+  `app/views/inbox/index.html.erb`,
   `app/views/dashboard/_inbox_list.html.erb`,
   `app/views/dashboard/_inbox_detail.html.erb`,
   `app/views/dashboard/_inbox_detail_clarifying_questions.html.erb`,
   `app/services/clarifying_questions/clear_needs_input.rb`.
-  *Test:* `spec/requests/dashboard_spec.rb`,
+  *Test:* `spec/requests/inbox_spec.rb`,
   `spec/requests/projects/clarifying_questions_spec.rb`,
   `spec/services/clarifying_questions/clear_needs_input_spec.rb`.
+
+- [x] **OPERATOR-INBOX-008** — When a clarifying-question inbox entry is
+  selected, the system SHALL render every question and answer field inline in
+  the detail pane as a single one-page form; on successful submission the
+  system SHALL auto-advance the detail pane to the next actionable entry in
+  the operator's current scope (or the drained empty state); on a validation
+  or GitHub-post failure the system SHALL redirect back into the same detail
+  frame and SHALL repopulate the submitted answers from a one-shot flash so
+  the operator does not retype them, bounded to a byte budget that keeps the
+  serialized session cookie under its size ceiling.
+  *Code:* `app/controllers/projects/clarifying_questions_controller.rb`,
+  `app/views/dashboard/_inbox_detail_clarifying_questions.html.erb`.
+  *Test:* `spec/requests/projects/clarifying_questions_spec.rb`.
+
+- [x] **OPERATOR-INBOX-009** — When a signed-in user opens `/inbox/:entry_id`
+  for a stale or invalid entry in their current queue scope, the system SHALL
+  redirect to `/inbox` with `303 See Other` instead of silently selecting the
+  first available entry or returning a `404`.
+  *Code:* `app/controllers/inbox_controller.rb`,
+  `app/controllers/legacy_inbox_redirects_controller.rb`.
+  *Test:* `spec/requests/inbox_spec.rb`, `spec/requests/dashboard_spec.rb`.

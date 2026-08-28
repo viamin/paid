@@ -194,17 +194,9 @@ RSpec.describe Tools::GetPullRequestDetails do
     end
 
     it "explains a workflow-permission blocker for app-backed projects with PAT fallback" do
-      fallback_token = create(:github_token, account: account)
-      project.update!(
-        github_token: nil,
-        github_installation: create(:github_installation, account: account),
-        git_push_pat_fallback_enabled: true,
-        git_push_fallback_token: fallback_token
-      )
-      pr.update!(
-        merge_permission_rejected_at: Time.current,
-        merge_permission_rejection_reason: "refusing to allow a GitHub App to create or update without `workflows` permission"
-      )
+      configure_app_project_with_pat_fallback(project)
+      stub_app_installation_token
+      persist_workflows_permission_rejection(pr)
 
       result = tool.call(project_id: project.id, issue_id: pr.id)
 
@@ -215,6 +207,7 @@ RSpec.describe Tools::GetPullRequestDetails do
         merge_permission_rejected: true,
         next_action: "Check the configured PAT fallback credential and the GitHub App permissions, then merge manually or wait for the next automatic check."
       )
+      expect_app_installation_token_lookup(project)
     end
 
     it "reports a PR merged out-of-band as merged even when a stale merge-permission rejection is still persisted" do
@@ -408,6 +401,33 @@ RSpec.describe Tools::GetPullRequestDetails do
     pr.update!(
       merge_permission_rejected_at: Time.current,
       merge_permission_rejection_reason: message
+    )
+  end
+
+  def configure_app_project_with_pat_fallback(project)
+    project.update!(
+      github_token: nil,
+      github_installation: create(:github_installation, account: account),
+      git_push_pat_fallback_enabled: true,
+      git_push_fallback_token: create(:github_token, account: account)
+    )
+  end
+
+  def stub_app_installation_token
+    allow(Github::AppInstallation).to receive(:token_for).and_return("app-installation-token")
+  end
+
+  def persist_workflows_permission_rejection(pr)
+    pr.update!(
+      merge_permission_rejected_at: Time.current,
+      merge_permission_rejection_reason: "refusing to allow a GitHub App to create or update without `workflows` permission"
+    )
+  end
+
+  def expect_app_installation_token_lookup(project)
+    expect(Github::AppInstallation).to have_received(:token_for).with(
+      installation_id: project.github_installation.github_installation_id,
+      repo_full_name: project.full_name
     )
   end
 

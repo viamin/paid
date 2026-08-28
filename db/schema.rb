@@ -1576,6 +1576,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_27_113917) do
     t.boolean "auto_continue_paused", default: false, null: false
     t.jsonb "auto_merge_blockers", comment: "Latest authoritative auto-merge blocker snapshot from the PR scanner. Stores failed blockers separately from checks that were not evaluated because an earlier gate already failed."
     t.datetime "auto_merge_evaluated_at", comment: "When the latest authoritative auto-merge blocker snapshot was recorded by the PR scanner."
+    t.datetime "awaiting_approval_since", comment: "When the scan first observed this PR green and blocked only on owner approval; cleared whenever a non-approval blocker appears. Drives the awaiting_approval escalation ceiling."
     t.text "body"
     t.datetime "ci_action_dispatched_at"
     t.datetime "ci_retry_requested_at"
@@ -2399,6 +2400,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_27_113917) do
     t.integer "poll_interval_seconds", default: 60, null: false
     t.jsonb "pr_action_labels", default: [], null: false
     t.boolean "pr_aggregation_enabled", default: false, null: false
+    t.integer "pr_approval_escalation_hours", default: 24, null: false, comment: "Hours a ready PR may sit green and blocked only on owner approval before escalating; 0 disables the awaiting_approval escalation."
     t.string "preferred_docker_host_identifier", comment: "Optional project-level Docker host preference overriding the account default for manual placement."
     t.string "primary_language", comment: "Primary language of the repository as reported by GitHub (e.g. Ruby, Elixir, Swift). Used to detect and badge the project type."
     t.jsonb "priority_labels", default: {"P1" => "P1", "P2" => "P2", "P3" => "P3"}, null: false

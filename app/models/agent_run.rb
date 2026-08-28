@@ -2379,7 +2379,14 @@ class AgentRun < ApplicationRecord
   # @param limit [Integer] Max number of log entries to fetch (default 500)
   # @return [String] The agent summary text (may be empty)
   def agent_summary(limit: 500)
-    extract_text_from_stdout(logs_text(log_type: "stdout", limit: limit), succeeded: successful?)
+    normalized_agent_output(logs_text(log_type: "stdout", limit: limit))
+  end
+
+  # Normalizes caller-supplied stdout through the run's provider parser.
+  # Callers that already selected the relevant log window use this to avoid a
+  # second query with different ordering or truncation semantics.
+  def normalized_agent_output(raw_stdout, succeeded: successful?)
+    extract_text_from_stdout(raw_stdout, succeeded: succeeded)
   end
 
   # Returns the agent's output, preferring stdout but falling back to stderr.
