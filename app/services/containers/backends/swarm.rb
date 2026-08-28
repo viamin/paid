@@ -226,14 +226,11 @@ module Containers
         image
       end
 
-      # Builds the image on every healthy node so any node can run it. The tar
-      # is recreated per node because build_from_tar consumes its stream.
+      # Builds the image on every healthy node so any node can run it. Docker::Image.build
+      # tars the Dockerfile per call, so each node gets its own request body.
       def build_image(dockerfile, opts = {}, &block)
         healthy_nodes.map do |node|
-          Docker::Image.build_from_tar(
-            Docker::Util.create_tar("Dockerfile" => dockerfile),
-            opts, node_connection(node), &block
-          )
+          Docker::Image.build(dockerfile, opts, node_connection(node), &block)
         end
       end
 

@@ -76,7 +76,7 @@ module Containers
       end
 
       def build_image(dockerfile, opts = {}, &block)
-        Docker::Image.build_from_tar(Docker::Util.create_tar("Dockerfile" => dockerfile), opts, &block)
+        Docker::Image.build(dockerfile, opts, &block)
       end
 
       def list_images(opts = {})

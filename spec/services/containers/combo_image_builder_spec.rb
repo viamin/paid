@@ -238,6 +238,34 @@ RSpec.describe Containers::ComboImageBuilder do
       }.to raise_error(described_class::UnbuildableImageError, /No language layer Dockerfile/)
     end
 
+    it "wraps a daemon 404 from the build itself as a build failure, not a missing-Dockerfile error" do
+      stub_combo_absent("paid-agent:go")
+      allow(backend).to receive(:build_image).and_raise(Docker::Error::NotFoundError.new("no such image: FROM ref"))
+
+      expect {
+        described_class.ensure_available("paid-agent:go", backend: backend)
+      }.to raise_error(described_class::BuildError, /no such image/)
+    end
+
+    it "untags completed intermediate layers when a later layer's build fails" do
+      stub_combo_absent("paid-agent:go-rust")
+      per_node_images = [ instance_double(Docker::Image, id: "sha256:#{'1' * 64}") ]
+      call_count = 0
+      allow(backend).to receive(:build_image) do |*_args, &_block|
+        call_count += 1
+        raise Docker::Error::ServerError, "returned non-zero code" if call_count == 2
+
+        per_node_images
+      end
+      allow(backend).to receive(:delete_image)
+
+      expect {
+        described_class.ensure_available("paid-agent:go-rust", backend: backend)
+      }.to raise_error(described_class::BuildError)
+
+      expect(backend).to have_received(:delete_image).with("paid-agent-build:go-rust--layer0").once
+    end
+
     it "logs build failures" do
       stub_combo_absent("paid-agent:go")
       allow(backend).to receive(:build_image).and_raise(Docker::Error::ServerError.new("boom"))

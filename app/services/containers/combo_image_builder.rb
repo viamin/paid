@@ -153,9 +153,9 @@ module Containers
       layers = ImageResolver::EXTENDED_LANGUAGES & tokens
       started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       log(:info, "agent_image.build.start", image: image, layers: layers, nocache: nocache)
+      intermediate_tags = []
       digest = base_image_digest
       from = ImageResolver::BASE_IMAGE
-      intermediate_tags = []
       layers.each_with_index do |token, index|
         tag = index == layers.size - 1 ? image : intermediate_tag(image, index)
         build_layer(token, from: from, tag: tag, base_digest: digest, nocache: nocache)
@@ -168,6 +168,7 @@ module Containers
       Result.new(image: image, status: :built, duration_ms: duration_ms)
     rescue Docker::Error::DockerError, Error => e
       log(:error, "agent_image.build.failed", image: image, error: "#{e.class}: #{e.message}", duration_ms: elapsed_ms(started))
+      untag_intermediates(intermediate_tags)
       raise
     end
 
@@ -211,7 +212,7 @@ module Containers
       opts[:nocache] = "1" if nocache
 
       backend.build_image(dockerfile, opts) { |chunk| capture_build_output(chunk) }
-    rescue Docker::Error::NotFoundError, Errno::ENOENT => e
+    rescue Errno::ENOENT => e
       raise UnbuildableImageError, "No language layer Dockerfile for #{token.inspect} (#{e.class}: #{e.message})"
     rescue Docker::Error::DockerError => e
       raise BuildError, build_failure_message(token, tag, e)
