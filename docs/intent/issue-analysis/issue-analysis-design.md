@@ -54,6 +54,66 @@ If no provider is available at all, `call_llm` raises a non-retryable
 `AnalyzeIssueLlmFailed` ("No LLM provider produced an issue analysis") rather
 than silently masking the outage.
 
+## Durable per-provider failure records
+
+Prior to #3641, the per-provider errors that `call_llm` classifies (see below)
+were only ever written to the process log via `logger.warn` — useful while a
+worker is live, gone once the log rotates. When every candidate provider fails
+for a *different* reason (an OpenCode binary architecture mismatch, an
+unauthenticated `claude`, an incompatible Codex model), the run detail and
+failure-pattern systems could only see the generic exhaustion message, not the
+distinct root causes an operator needs to act on.
+
+Every provider-attempt failure inside `call_llm` — raised
+(`AgentHarness::RateLimitError`, `AgentHarness::AuthenticationError`, any other
+`AgentHarness::Error`) or response-shaped (`UnsuccessfulResponseError`) —
+SHALL also persist a structured `AgentRunLog` entry (`ISSUE-ANALYSIS-013`) via
+`record_provider_attempt_failure!`, using the existing `log_type: "system"` +
+`metadata["type"]` discriminator convention (mirrors `Models::Select`'s
+`model_selection_decision` entries) rather than adding a new `log_type` value:
+
+- `metadata["type"]` — `AgentRunLog::PROVIDER_FAILURE_TYPE`
+  (`"issue_analysis_provider_failure"`)
+- `metadata["provider"]`, `metadata["attempt"]`
+- `metadata["failure_category"]` — a normalized category, not raw provider
+  text: the raised error's own `error_category` when it has one (e.g.
+  `ProviderInstallationError` defaults to `:installation`, which is exactly
+  the OpenCode-architecture-mismatch bucket), `:rate_limited` /
+  `:auth_expired` for their dedicated rescue clauses, otherwise
+  `AgentHarness::ErrorTaxonomy.classify(error)` / `.classify_message(response.error)`
+  — the same taxonomy `record_response_failure` already uses for circuit-breaker
+  classification (`ISSUE-ANALYSIS-007`/`ISSUE-ANALYSIS-009`), so the category
+  on the durable record always agrees with the category that drove the circuit
+  breaker.
+- `metadata["exit_code"]` — present only for response-shaped failures, where
+  `AgentHarness::Response#exit_code` is meaningful.
+- `content` — the provider's error message run through
+  `AgentRun::ErrorMessageSanitizer.call` (the same redaction/truncation
+  pipeline already used for `runners_attempted` entries), never the raw
+  payload, so secrets and unbounded text never reach a durable record.
+
+Persisting the log entry itself is best-effort: a failure to write it is
+rescued and logged as a warning rather than allowed to break the failover
+loop, mirroring `Models::Select#persist_agent_run_decision_log`.
+
+`AgentRunLog.provider_failures` scopes to these entries and
+`AgentRunLog.provider_failure_categories(agent_run_ids)` groups them by
+`failure_category`. `AgentRunLog.provider_failure_categories_by_run` keeps the
+same data per run so `AgentRunPatterns::Detect` can cluster analyze-issue
+provider-exhaustion incidents on the run's normalized category set — category
+names only; provider names and attempt counts never participate in the cluster
+key — instead of the variable provider detail embedded in the terminal error
+text. When the structured logs are missing (log persistence is best-effort),
+the detector degrades to the stable bare exhaustion prefix rather than the
+free-text message.
+
+The final provider-exhaustion error (`issue_analysis_provider_exhaustion_message`)
+now summarizes every attempted provider and its normalized category —
+`"All issue-analysis providers exhausted: opencode (installation), claude
+(auth_expired), codex (permanent)"` — instead of just the provider name list,
+so the terminal error itself is actionable without cross-referencing
+`agent_run_logs`. It never includes raw provider error text.
+
 ## Transient rate-limit handling and circuit-breaker recording
 
 Candidates existing in `chat_providers` does not guarantee they still succeed

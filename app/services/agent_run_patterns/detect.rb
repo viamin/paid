@@ -16,6 +16,7 @@ module AgentRunPatterns
     EVIDENCE_RUNNER_CONFIG_LIMIT = 5
     EVIDENCE_SAFE_RUNNER_CONFIG_FIELDS = %w[runner_key auth_type tier_model_ids].freeze
     DETECTION_FINISHED_STATUSES = (AgentRun::FINISHED_STATUSES - [ "retried" ]).freeze
+    ANALYZE_ISSUE_PROVIDER_EXHAUSTION_PREFIX = "All issue-analysis providers exhausted"
 
     Pattern = Data.define(:type, :goal, :severity, :details)
 
@@ -116,14 +117,16 @@ module AgentRunPatterns
       failed_runs = runs.select { |r| AgentRun::FAILURE_STATUSES.include?(r.status) }
       return [] if failed_runs.empty?
 
+      provider_failure_categories = load_provider_failure_categories_by_run(failed_runs)
       by_normalized_error = failed_runs
         .select { |r| r.error_message.present? }
-        .group_by { |r| normalize_error(r.error_message) }
+        .group_by { |r| error_pattern_for(r, provider_failure_categories: provider_failure_categories) }
 
       clusters = []
       by_normalized_error.each do |normalized_msg, error_runs|
         next unless error_runs.size >= ERROR_CLUSTER_MIN_SIZE
 
+        error_run_ids = error_runs.map(&:id)
         clusters << Pattern.new(
           type: :error_cluster,
           goal: goal,
@@ -136,13 +139,64 @@ module AgentRunPatterns
             total_failures: failed_runs.size,
             sample_messages: error_runs.map(&:error_message).compact.uniq.first(3),
             evidence_bundle: build_evidence_bundle(error_runs),
-            run_ids: error_runs.map(&:id),
+            run_ids: error_run_ids,
             statuses: error_runs.group_by(&:status).transform_values(&:count)
-          )
+          ).merge(provider_failure_details(error_run_ids, normalized_msg))
         )
       end
 
       clusters
+    end
+
+    # Loads per-run structured failure categories, but only for analyze-issue
+    # provider-exhaustion runs — the only ones whose cluster key derives from
+    # AgentRunLog data instead of normalized error text — so goals without
+    # exhaustion failures pay no extra query.
+    def load_provider_failure_categories_by_run(failed_runs)
+      exhaustion_run_ids = failed_runs
+        .select { |run| analyze_issue_provider_exhaustion?(run, read_attribute(run, :error_message).to_s) }
+        .filter_map { |run| read_attribute(run, :id) }
+      return {} if exhaustion_run_ids.empty?
+
+      AgentRunLog.provider_failure_categories_by_run(exhaustion_run_ids)
+    end
+
+    def error_pattern_for(run, provider_failure_categories:)
+      message = read_attribute(run, :error_message)
+      return if message.blank?
+
+      return normalize_error(message) unless analyze_issue_provider_exhaustion?(run, message)
+
+      exhaustion_error_pattern(provider_failure_categories[read_attribute(run, :id)])
+    end
+
+    def analyze_issue_provider_exhaustion?(run, message)
+      read_attribute(run, :goal) == "analyze_issue" && message.start_with?(ANALYZE_ISSUE_PROVIDER_EXHAUSTION_PREFIX)
+    end
+
+    # Stable cluster key for provider-exhaustion failures: the exhaustion
+    # prefix plus the run's sorted distinct failure categories. Provider names
+    # and attempt counts never participate, so exhaustion incidents cluster on
+    # the structured category regardless of which — or how many — providers
+    # were attempted.
+    def exhaustion_error_pattern(category_counts)
+      categories = category_counts.to_h.keys.map(&:to_s).reject(&:blank?).sort
+      [ ANALYZE_ISSUE_PROVIDER_EXHAUSTION_PREFIX, categories.join(", ").presence ].compact.join(": ")
+    end
+
+    # Attaches aggregated provider-failure categories to exhaustion clusters
+    # only — the key is meaningless (and would cost a wasted query) for
+    # clusters keyed on normalized free-text error messages.
+    def provider_failure_details(run_ids, error_pattern)
+      return {} unless error_pattern.start_with?(ANALYZE_ISSUE_PROVIDER_EXHAUSTION_PREFIX)
+
+      { provider_failure_categories: provider_failure_category_counts_for(run_ids) }
+    end
+
+    def provider_failure_category_counts_for(run_ids)
+      return {} if Array(run_ids).empty?
+
+      AgentRunLog.provider_failure_categories(run_ids)
     end
 
     def normalize_error(message)

@@ -136,6 +136,37 @@
   *Code:* `app/temporal/activities/analyze_issue_activity.rb#chat_providers`,
   `RunnerSupport.lean_first`.
 
+- [x] **ISSUE-ANALYSIS-013** — Every provider-attempt failure inside `call_llm`
+  (raised or response-shaped) SHALL persist a structured `AgentRunLog` entry
+  (`log_type: "system"`, `metadata["type"] == AgentRunLog::PROVIDER_FAILURE_TYPE`)
+  carrying the provider, attempt number, a normalized `failure_category`
+  (the same taxonomy `ISSUE-ANALYSIS-007`/`ISSUE-ANALYSIS-009` already use for
+  circuit-breaker classification), and an exit code when known — with the
+  message run through `AgentRun::ErrorMessageSanitizer` so secrets and
+  unbounded provider payloads are never persisted. The final
+  provider-exhaustion error SHALL summarize every attempted provider and its
+  normalized category instead of only the provider name list. Log persistence
+  failures SHALL be rescued and warn-logged rather than breaking the failover
+  loop. `AgentRunLog.provider_failures` / `.provider_failure_categories` SHALL
+  allow grouping on the structured category rather than free-text messages,
+  and `AgentRunPatterns::Detect` SHALL cluster analyze-issue
+  provider-exhaustion failures on the run's normalized failure-category set
+  (category names only — never provider names or attempt counts), degrading to
+  the stable exhaustion prefix when structured logs are missing, so clustering
+  stays stable even though the terminal error text now includes
+  provider-specific detail.
+  *Tests:* `spec/temporal/activities/analyze_issue_activity_spec.rb`
+  ("persists a structured AgentRunLog entry for the failed provider attempt",
+  "redacts and truncates secrets out of the persisted provider-failure message"),
+  `spec/models/agent_run_log_spec.rb` (".provider_failures", ".provider_failure_categories",
+  ".provider_failure_categories_by_run"),
+  `spec/services/agent_run_patterns/detect_spec.rb`
+  ("clusters analyze_issue provider-exhaustion failures on normalized failure categories instead of provider names",
+  "clusters provider-exhaustion failures on the stable prefix when structured provider-failure logs are missing").
+  *Code:* `app/temporal/activities/analyze_issue_activity.rb#record_provider_attempt_failure!`,
+  `#failure_category_for`, `#issue_analysis_provider_exhaustion_message`,
+  `app/models/agent_run_log.rb`, `app/services/agent_run_patterns/detect.rb`.
+
 ## Trust and response contract
 
 - [x] **ISSUE-ANALYSIS-004** — The system SHALL reject untrusted issues and

@@ -172,12 +172,13 @@ module Activities
       { content: "", sections: [], total_tokens: 0 }
     end
 
-    # @spec ISSUE-ANALYSIS-003 ISSUE-ANALYSIS-006 ISSUE-ANALYSIS-007
+    # @spec ISSUE-ANALYSIS-003 ISSUE-ANALYSIS-006 ISSUE-ANALYSIS-007 ISSUE-ANALYSIS-013
     def call_llm(agent_run, prompt)
       user_setting = owner_user_setting(agent_run.project)
       providers = chat_providers(agent_run.project)
       rate_limited_count = 0
       earliest_reset_at = nil
+      attempted_failures = []
 
       providers.each_with_index do |provider, index|
         response = track_issue_analysis_phase(
@@ -210,6 +211,13 @@ module Activities
         return response
       rescue UnsuccessfulResponseError => e
         log_failed_response(agent_run, provider, e.response)
+        category = classify_response_error(e.response)
+        record_provider_attempt_failure!(
+          agent_run: agent_run, provider: provider, attempt: index + 1, category: category,
+          exit_code: e.response.respond_to?(:exit_code) ? e.response.exit_code : nil,
+          message: e.response.respond_to?(:error) ? e.response.error : nil
+        )
+        attempted_failures << { provider: provider.to_s, category: category }
         reset_at = record_response_failure(user_setting, provider, e.response)
         if reset_at
           rate_limited_count += 1
@@ -220,15 +228,31 @@ module Activities
         earliest_reset_at = [ earliest_reset_at, e.reset_time ].compact.min
         record_runner_rate_limit(user_setting, provider, reset_at: e.reset_time)
         log_provider_failure(agent_run, provider, e)
+        record_provider_attempt_failure!(
+          agent_run: agent_run, provider: provider, attempt: index + 1, category: :rate_limited,
+          exit_code: nil, message: e.message
+        )
+        attempted_failures << { provider: provider.to_s, category: :rate_limited }
       rescue AgentHarness::AuthenticationError => e
         record_runner_auth_failure(user_setting, provider)
         log_provider_failure(agent_run, provider, e)
+        record_provider_attempt_failure!(
+          agent_run: agent_run, provider: provider, attempt: index + 1, category: :auth_expired,
+          exit_code: nil, message: e.message
+        )
+        attempted_failures << { provider: provider.to_s, category: :auth_expired }
       rescue AgentHarness::Error => e
         record_runner_failure(user_setting, provider)
         log_provider_failure(agent_run, provider, e)
+        category = failure_category_for(e)
+        record_provider_attempt_failure!(
+          agent_run: agent_run, provider: provider, attempt: index + 1, category: category,
+          exit_code: nil, message: e.message
+        )
+        attempted_failures << { provider: provider.to_s, category: category }
       end
 
-      raise_llm_failure!(agent_run, providers, rate_limited_count, earliest_reset_at)
+      raise_llm_failure!(agent_run, rate_limited_count, earliest_reset_at, attempted_failures)
     end
 
     # @spec ISSUE-ANALYSIS-006
@@ -239,10 +263,12 @@ module Activities
     # instead of failing the issue analysis permanently. Any other failure
     # mix (including "no candidates at all") keeps the existing non-retryable
     # AnalyzeIssueLlmFailed error.
-    def raise_llm_failure!(agent_run, providers, rate_limited_count, reset_at)
-      if providers.any? && rate_limited_count == providers.size
+    def raise_llm_failure!(agent_run, rate_limited_count, reset_at, attempted_failures)
+      attempted_providers = attempted_failures.map { |failure| failure[:provider] }
+
+      if attempted_providers.any? && rate_limited_count == attempted_providers.size
         agent_run.rate_limit!(
-          error: "All LLM providers rate limited: #{providers.join(', ')}",
+          error: "All LLM providers rate limited: #{attempted_providers.join(', ')}",
           reset_at: reset_at || 60.seconds.from_now
         )
         raise Temporalio::Error::ApplicationError.new(
@@ -252,15 +278,21 @@ module Activities
       end
 
       raise Temporalio::Error::ApplicationError.new(
-        issue_analysis_provider_exhaustion_message(providers),
+        issue_analysis_provider_exhaustion_message(attempted_failures),
         type: "AnalyzeIssueLlmFailed",
         non_retryable: true
       )
     end
 
-    def issue_analysis_provider_exhaustion_message(providers) # @spec ISSUE-ANALYSIS-010
-      suffix = providers.any? ? ": #{providers.join(', ')}" : ""
-      "All issue-analysis providers exhausted#{suffix}"
+    # @spec ISSUE-ANALYSIS-010 ISSUE-ANALYSIS-013
+    # Summarizes attempted providers and their normalized failure categories
+    # (never the raw provider error text, which may contain secrets) so the
+    # durable terminal error is actionable without re-reading process logs.
+    def issue_analysis_provider_exhaustion_message(attempted_failures)
+      return "All issue-analysis providers exhausted" if attempted_failures.empty?
+
+      summary = attempted_failures.map { |f| "#{f[:provider]} (#{f[:category]})" }.join(", ")
+      "All issue-analysis providers exhausted: #{summary}"
     end
 
     # @spec ISSUE-ANALYSIS-007 ISSUE-ANALYSIS-009
@@ -290,6 +322,42 @@ module Activities
       return :unknown if response.error.blank?
 
       AgentHarness::ErrorTaxonomy.classify_message(response.error)
+    end
+
+    # @spec ISSUE-ANALYSIS-013
+    # Prefers a raised error's own error_category (e.g. ProviderInstallationError
+    # defaults to :installation) over generic message classification, since the
+    # error class already encodes a more specific category than regex matching
+    # on its message would.
+    def failure_category_for(error)
+      (error.respond_to?(:error_category) && error.error_category) || AgentHarness::ErrorTaxonomy.classify(error)
+    end
+
+    # @spec ISSUE-ANALYSIS-013
+    # Persists the durable, structured counterpart to the process-log-only
+    # `log_provider_failure`/`log_failed_response` lines: provider, normalized
+    # failure category, exit code (when known), and a redacted/truncated
+    # message — via the same sanitizer used for runner-attempt error text, so
+    # secrets and unbounded provider payloads never land in agent_run_logs.
+    def record_provider_attempt_failure!(agent_run:, provider:, attempt:, category:, exit_code:, message:)
+      agent_run.agent_run_logs.create!(
+        log_type: "system",
+        content: AgentRun::ErrorMessageSanitizer.call(text: message) || "(no error message)",
+        metadata: {
+          type: AgentRunLog::PROVIDER_FAILURE_TYPE,
+          provider: provider.to_s,
+          attempt: attempt,
+          failure_category: category.to_s,
+          exit_code: exit_code
+        }.compact
+      )
+    rescue => log_error
+      logger.warn(
+        message: "agent_execution.analyze_issue_provider_failure_log_failed",
+        agent_run_id: agent_run.id,
+        provider: provider,
+        error: log_error.message
+      )
     end
 
     def log_provider_failure(agent_run, provider, error)
