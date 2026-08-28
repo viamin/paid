@@ -3,13 +3,15 @@
 require "rails_helper"
 
 RSpec.describe Containers::RuntimeImageSelector do
-  def project_double(test_languages: [], detected_languages: [], detected_language: nil)
+  def project_double(repo_profile: nil, test_languages: [], detected_languages: [], detected_language: nil)
     instance_double(
       Project,
+      repo_profile: repo_profile,
       test_languages: test_languages,
       detected_languages: detected_languages,
       detected_language: detected_language
     ).tap do |dbl|
+      allow(dbl).to receive(:respond_to?).with(:repo_profile).and_return(true)
       allow(dbl).to receive(:respond_to?).with(:test_languages).and_return(true)
       allow(dbl).to receive(:respond_to?).with(:detected_languages).and_return(true)
       allow(dbl).to receive(:respond_to?).with(:detected_language).and_return(true)

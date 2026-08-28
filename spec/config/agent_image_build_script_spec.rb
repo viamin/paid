@@ -44,6 +44,26 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(script_source).to include('RUBY_CONTRACT_ENV=(env PAID_SKIP_DATABASE_RUNTIME_ROLE_GUARD=true)')
       expect(script_source).to include('CLAUDE_CONTRACT=$("${RUBY_CONTRACT_ENV[@]}" bundle exec ruby')
     end
+
+    it "stamps combo image layers with the dev.paid.agent-image.* labels ComboImageBuilder reads" do
+      expect(script_source).to include('COMBO_LABEL_NAMESPACE="dev.paid.agent-image"')
+      expect(script_source).to include('COMBO_BASE_DIGEST=$(docker image inspect --format \'{{.Id}}\' "${FULL_IMAGE}")')
+      expect(script_source).to include('--label "${COMBO_LABEL_NAMESPACE}.base-digest=${COMBO_BASE_DIGEST}"')
+      expect(script_source).to include('--label "${COMBO_LABEL_NAMESPACE}.built-at=${COMBO_BUILT_AT}"')
+      expect(script_source).to include('--label "${COMBO_LABEL_NAMESPACE}.languages=${lang}"')
+    end
+
+    # @spec POLYGLOT-TEST-009
+    it "derives the default combo tag from the full resolver token set while building only extended layers" do
+      expect(script_source).to include('# Resolver-token input: COMBO_LANGUAGES may include both base')
+      expect(script_source).to include("base_tokens=\"\"")
+      expect(script_source).to include("extended_tokens=\"\"")
+      expect(script_source).to include('node|python|ruby) base_tokens="${base_tokens} ${combo}" ;;')
+      expect(script_source).to include('elixir|go|rust|swift) extended_tokens="${extended_tokens} ${combo}" ;;')
+      expect(script_source).to include("ALL_TAG_TOKENS=$(printf '%s\\n' ${extended_tokens} ${base_tokens} | sort -u | tr '\\n' '-' | sed 's/-$//')")
+      expect(script_source).to include('COMBO_TAG="${COMBO_TAG:-${IMAGE_NAME}:${ALL_TAG_TOKENS}}"')
+      expect(script_source).to include("SORTED_LANGUAGES=$(printf '%s\\n' ${extended_tokens} | sort -u)")
+    end
   end
 
   describe AgentImageWorkflow do
