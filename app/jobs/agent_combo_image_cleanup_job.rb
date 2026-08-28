@@ -66,7 +66,7 @@ class AgentComboImageCleanupJob < ApplicationJob
   # candidate set always speak about the same population of tags.
   def referenced_combo_tags
     TenantContext.with_system_access do
-      Project.find_each.filter_map do |project|
+      Project.active.find_each.filter_map do |project|
         resolver = Containers::ImageResolver.new(project)
         image = resolver.resolve
         next if resolver.unsupported_languages.any?

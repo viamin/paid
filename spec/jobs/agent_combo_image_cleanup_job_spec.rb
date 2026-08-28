@@ -5,13 +5,15 @@ require "rails_helper"
 RSpec.describe AgentComboImageCleanupJob do
   let(:job) { described_class.new }
   let(:backend) { instance_double(Containers::Backends::Base, identifier: "local") }
+  let(:active_projects) { instance_double(ActiveRecord::Relation) }
   let(:tag) { "paid-agent:go-node-python-ruby" }
   let(:stale_labels) { { Containers::ComboImageBuilder::BUILT_AT_LABEL => 31.days.ago.iso8601 } }
   let(:fresh_labels) { { Containers::ComboImageBuilder::BUILT_AT_LABEL => 1.day.ago.iso8601 } }
 
   before do
     allow(Containers).to receive(:all_backends).and_return([ backend ])
-    allow(Project).to receive(:find_each).and_return([])
+    allow(Project).to receive(:active).and_return(active_projects)
+    allow(active_projects).to receive(:find_each).and_return([])
   end
 
   def stub_combo_images(*entries)
@@ -28,7 +30,7 @@ RSpec.describe AgentComboImageCleanupJob do
       ensure
         in_system_access = false
       end
-      allow(Project).to receive(:find_each) do
+      allow(active_projects).to receive(:find_each) do
         found_in_system_access = in_system_access
         []
       end
@@ -64,7 +66,7 @@ RSpec.describe AgentComboImageCleanupJob do
 
     it "keeps a combo tag still referenced by a project" do
       project = instance_double(Project)
-      allow(Project).to receive(:find_each).and_return([ project ])
+      allow(active_projects).to receive(:find_each).and_return([ project ])
       stub_resolver(project, image: tag, unsupported_languages: [])
       stub_combo_images(image: tag, id: "sha256:abc", labels: stale_labels)
       allow(backend).to receive(:delete_image)
@@ -76,7 +78,7 @@ RSpec.describe AgentComboImageCleanupJob do
 
     it "prunes a combo tag whose only referencing project has an unsupported runtime" do
       project = instance_double(Project)
-      allow(Project).to receive(:find_each).and_return([ project ])
+      allow(active_projects).to receive(:find_each).and_return([ project ])
       stub_resolver(project, image: tag, unsupported_languages: [ "kotlin" ])
       stub_combo_images(image: tag, id: "sha256:abc", labels: stale_labels)
       allow(backend).to receive(:image_in_use?).and_return(false)
@@ -84,6 +86,21 @@ RSpec.describe AgentComboImageCleanupJob do
 
       job.perform
 
+      expect(backend).to have_received(:delete_image).with(tag, force: true)
+    end
+
+    it "prunes a combo tag when only inactive projects resolve to it" do
+      inactive_project = instance_double(Project)
+      allow(active_projects).to receive(:find_each).and_return([])
+      allow(Project).to receive(:find_each).and_return([ inactive_project ])
+      expect(Containers::ImageResolver).not_to receive(:new).with(inactive_project)
+      stub_combo_images(image: tag, id: "sha256:abc", labels: stale_labels)
+      allow(backend).to receive(:image_in_use?).and_return(false)
+      allow(backend).to receive(:delete_image)
+
+      job.perform
+
+      expect(Project).to have_received(:active)
       expect(backend).to have_received(:delete_image).with(tag, force: true)
     end
 
