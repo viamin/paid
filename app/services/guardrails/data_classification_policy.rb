@@ -95,13 +95,7 @@ module Guardrails
       runner = agent_run.runner
       return %w[openrouter_free openrouter_pareto].include?(runner_key) unless runner
 
-      # Only these runner keys attach data_collection/zdr routing metadata
-      # (see Runners::OpenRouterDataRouting call sites). kilocode/pi/omp
-      # runners can also resolve required_api_service_type to "openrouter"
-      # when configured with an OpenRouter API key, but they route as direct
-      # outbound API calls, not through OpenRouter's own provider routing.
-      %w[opencode openrouter_free openrouter_pareto].include?(runner.runner_key) &&
-        runner.required_api_service_type == "openrouter"
+      runner.openrouter_provider_routed?
     end
 
     def routing_params

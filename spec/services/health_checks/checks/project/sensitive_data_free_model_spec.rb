@@ -112,6 +112,24 @@ RSpec.describe HealthChecks::Checks::Project::SensitiveDataFreeModel do
     expect(described_class.call(project)).to eq([])
   end
 
+  it "still returns a warning when the default create_pr runner is an opencode subscription runner" do
+    model = create(:llm_model, :free, model_id: "free-model", catalog_source: "manual")
+    owner = create(:user)
+    subscription_runner = create(:runner, user: owner, runner_key: "opencode", auth_type: "subscription")
+    owner.settings.update!(default_agent_runner: subscription_runner.routing_key)
+    project = build(
+      :project,
+      created_by: owner,
+      account: owner.account,
+      data_classification: "confidential",
+      model_preferences: { "required_model_id" => model.model_id }
+    )
+
+    expect(described_class.call(project)).to contain_exactly(
+      have_attributes(code: :sensitive_data_free_model, severity: :warning)
+    )
+  end
+
   it "still returns a warning when the default create_pr runner is a pi runner backed by an OpenRouter API key" do
     model = create(:llm_model, :free, model_id: "free-model", catalog_source: "manual")
     owner = create(:user)
@@ -188,7 +206,7 @@ RSpec.describe HealthChecks::Checks::Project::SensitiveDataFreeModel do
       Runner,
       runner_key: "openrouter_free",
       auth_type: "api_key",
-      agent_harness_runner_runtime: nil,
+      openrouter_provider_routed?: true,
       required_api_service_type: "openrouter"
     )
     selected_settings = instance_double(UserSetting)
@@ -197,5 +215,6 @@ RSpec.describe HealthChecks::Checks::Project::SensitiveDataFreeModel do
     allow(settings).to receive(:dup).and_return(selected_settings)
     allow(selected_settings).to receive(:select_automated_runner_identifier).with(goal: "create_pr").and_return("runner-123")
     allow(Runner).to receive(:for_identifier).with(owner, "runner-123").and_return(openrouter_runner)
+    allow(openrouter_runner).to receive(:agent_harness_runner_runtime).with(project: project).and_return(nil)
   end
 end

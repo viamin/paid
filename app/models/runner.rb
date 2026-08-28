@@ -642,6 +642,7 @@ class Runner < ApplicationRecord
 
     nil
   end
+  public :agent_harness_runner_runtime
 
   def agent_harness_runtime?
     opencode_agent_harness_runtime? || copilot_agent_harness_runtime? || pi_agent_harness_runtime? || omp_agent_harness_runtime? || openrouter_free_agent_harness_runtime? || openrouter_pareto_agent_harness_runtime?
@@ -1759,6 +1760,16 @@ class Runner < ApplicationRecord
       opencode_model_policy == "free" &&
       required_api_service_type == OPENROUTER_FREE_MODEL_PROVIDER
   end
+
+  def openrouter_provider_routed?
+    return true if openrouter_free_direct_outbound? || openrouter_pareto_direct_outbound?
+
+    runner_key == "opencode" &&
+      api_key? &&
+      required_api_service_type == OPENROUTER_FREE_MODEL_PROVIDER &&
+      (opencode_direct_outbound? || opencode_free_policy_direct_outbound?)
+  end
+  public :openrouter_provider_routed?
 
   def kilocode_direct_outbound?
     runner_key == "kilocode" &&
