@@ -6601,11 +6601,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
 
-      it "blocks auto-merge because the manual reviewer's approval is stale and re-requests owner review" do
+      it "blocks auto-merge because the manual reviewer's approval is stale without re-requesting owner review" do
         result = activity.execute(project_id: project.id)
 
-        expect(automation_scan_results(result).size).to eq(1)
-        expect(automation_scan_results(result).first[:triggers].first[:type]).to eq("owner_approval_stale")
+        expect(automation_scan_results(result)).to eq([])
       end
     end
 

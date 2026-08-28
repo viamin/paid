@@ -950,7 +950,7 @@ module Activities
       triggers = detect_ready_triggers(project, client, issue,
         pr_data: pr_data, checks: checks, reviews: reviews, unresolved_threads: unresolved_threads)
       return :skipped if triggers.nil?
-      return owner_approval_stale_trigger(project, issue, pr_data) if triggers.empty?
+      return owner_approval_stale_trigger(project, issue, pr_data, client:, reviews:) if triggers.empty?
 
       # Hard gate: stop queuing create_pr follow-ups once the total run limit
       # is hit and escalate instead (#3271).
@@ -1130,8 +1130,9 @@ module Activities
     # `issue.owner_review_requested_sha`, stamped once the request is issued
     # (see GitHubPollWorkflow#record_owner_review_request).
     # @spec AUTO-MERGE-007
-    def owner_approval_stale_trigger(project, issue, pr_data)
+    def owner_approval_stale_trigger(project, issue, pr_data, client:, reviews:)
       return nil unless stale_approval_only_blocker?(issue)
+      return nil unless owner_approval_stale_for_head?(project, issue, pr_data, client, reviews)
 
       head_sha = pr_data&.head&.sha
       return nil if head_sha.blank? || head_sha == issue.owner_review_requested_sha
@@ -3100,22 +3101,14 @@ module Activities
       # base merges for the approval to remain fresh. Any approval that
       # fails the check keeps the PR stale.
       freshness_states = blocking_approvals.map do |approval|
-        stale_by_timestamp = head_committed_at > approval[:submitted_at]
-        next :fresh unless stale_by_timestamp
-
-        commit_id = approval[:commit_id]
-        next :stale if commit_id.blank?
-
-        range_is_clean = collector.only_base_merge_commits_since?(
-          approval_sha: commit_id,
+        freshness_state_for_approval(
+          approval: approval,
+          head_committed_at: head_committed_at,
           head_sha: head_sha,
           base_branch: base_branch,
-          issue: issue
+          issue: issue,
+          collector: collector
         )
-        next :fresh if range_is_clean
-        next :not_evaluated if collector.last_base_merge_range_status == :not_evaluated
-
-        :stale
       end
 
       return :stale if freshness_states.include?(:stale)
@@ -3137,9 +3130,7 @@ module Activities
     def blocking_approvals_for(project, reviews)
       approvals = []
 
-      owner = latest_approval_for(project, reviews) do |r|
-        r[:user_login]&.downcase == project.owner_reviewer_login&.downcase
-      end
+      owner = owner_approval_for(project, reviews)
       approvals << owner if owner
 
       if project.review_method_enabled?("manual")
@@ -3153,6 +3144,52 @@ module Activities
       end
 
       approvals
+    end
+
+    def owner_approval_stale_for_head?(project, issue, pr_data, client, reviews)
+      owner_approval = owner_approval_for(project, reviews)
+      return false if owner_approval.nil?
+
+      head_committed_at = fetch_head_commit_date(client, project, issue, pr_data)
+      return false if head_committed_at.nil?
+
+      head_sha = pr_data&.head&.sha
+      base_branch = pr_data&.base_ref
+      return true if head_sha.blank? || base_branch.blank?
+
+      freshness_state_for_approval(
+        approval: owner_approval,
+        head_committed_at: head_committed_at,
+        head_sha: head_sha,
+        base_branch: base_branch,
+        issue: issue,
+        collector: pull_request_collector(project, client:)
+      ) == :stale
+    end
+
+    def owner_approval_for(project, reviews)
+      latest_approval_for(project, reviews) do |r|
+        r[:user_login]&.downcase == project.owner_reviewer_login&.downcase
+      end
+    end
+
+    def freshness_state_for_approval(approval:, head_committed_at:, head_sha:, base_branch:, issue:, collector:)
+      stale_by_timestamp = head_committed_at > approval[:submitted_at]
+      return :fresh unless stale_by_timestamp
+
+      commit_id = approval[:commit_id]
+      return :stale if commit_id.blank?
+
+      range_is_clean = collector.only_base_merge_commits_since?(
+        approval_sha: commit_id,
+        head_sha: head_sha,
+        base_branch: base_branch,
+        issue: issue
+      )
+      return :fresh if range_is_clean
+      return :not_evaluated if collector.last_base_merge_range_status == :not_evaluated
+
+      :stale
     end
 
     # Returns the most recent submitted_at timestamp and matching commit_id
