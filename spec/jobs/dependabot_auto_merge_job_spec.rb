@@ -451,7 +451,7 @@ RSpec.describe DependabotAutoMergeJob do
         posted = []
         allow(client).to receive(:add_comment) { |_repo, _number, body| posted << body }
         allow(client).to receive(:recent_issue_comments) do
-          posted.map { |body| double(body: body, user: double(login: "paid-bot")) }
+          posted.map { |body| double(body: body, user: double(login: Github::AppRegistry.bot_login)) }
         end
 
         2.times { described_class.perform_now(project.id) }

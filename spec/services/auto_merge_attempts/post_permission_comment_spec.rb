@@ -9,7 +9,7 @@ RSpec.describe AutoMergeAttempts::PostPermissionComment do
   let(:marker) { "<!-- paid: dependabot-merge-permission-rejection -->" }
 
   before do
-    allow(project).to receive(:client).and_return(client)
+    allow(project).to receive_messages(client: client, github_author_login: nil)
     allow(client).to receive(:authenticated_login).and_return("paid-bot")
     allow(client).to receive(:add_comment)
   end
@@ -98,23 +98,55 @@ RSpec.describe AutoMergeAttempts::PostPermissionComment do
     end
   end
 
-  context "when the authenticated login is unknown" do
+  context "when the authenticated login is unknown (e.g. an installation-token-backed client, " \
+          "where GET /user is unsupported)" do
     before do
       allow(client).to receive(:authenticated_login).and_return(nil)
-      allow(client).to receive(:recent_issue_comments)
     end
 
-    it "does not post a comment, treating unknown identity as a safe skip" do
+    it "still fetches and matches on marker text alone, rather than skip posting outright" do
+      allow(client).to receive(:recent_issue_comments).and_return([])
+
+      call
+
+      expect(client).to have_received(:recent_issue_comments)
+      expect(client).to have_received(:add_comment)
+    end
+
+    it "does not post when a marker comment already exists, even from an unverified author" do
+      existing_comment = double(body: "#{marker} earlier", user: double(login: "someone-else"))
+      allow(client).to receive(:recent_issue_comments).and_return([ existing_comment ])
+
+      call
+
+      expect(client).not_to have_received(:add_comment)
+    end
+  end
+
+  context "when the project resolves its own bot login without an API call " \
+          "(installation-token-backed project)" do
+    let(:existing_comment) { double(body: "#{marker} earlier", user: double(login: "paid-agents[bot]")) }
+
+    before do
+      allow(project).to receive(:github_author_login).and_return("paid-agents[bot]")
+      allow(client).to receive(:authenticated_login).and_raise("should not be called when project resolves login")
+    end
+
+    it "matches marker comments against the project's bot login, never calling authenticated_login" do
+      allow(client).to receive(:recent_issue_comments).and_return([ existing_comment ])
+
       call
 
       expect(client).not_to have_received(:add_comment)
     end
 
-    it "does not fetch comments to check for a marker, since a third-party comment containing " \
-       "the marker text must not be trusted without a known author" do
+    it "posts the comment when no marker comment is authored by the project's bot login" do
+      spoof = double(body: "#{marker} earlier", user: double(login: "someone-else"))
+      allow(client).to receive(:recent_issue_comments).and_return([ spoof ])
+
       call
 
-      expect(client).not_to have_received(:recent_issue_comments)
+      expect(client).to have_received(:add_comment)
     end
   end
 end
