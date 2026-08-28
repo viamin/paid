@@ -20,13 +20,13 @@ module Scaling
 
     attr_reader :account, :alerts
 
+    # @spec NOTIFICATION-SEVERITY-002
     def publish_notification(alert)
-      severity = alert.severity == :critical ? :error : :warning
       Notifications::Publish.call(
         account: account,
         source: "queue_monitor",
         subject: account,
-        severity: severity,
+        severity: :info,
         title: "Queue depth #{alert.severity}: #{alert.queue_name}",
         description: "#{alert.queue_name} (#{alert.queue_type}) has #{alert.depth} pending items (threshold: #{alert.threshold})",
         metadata: {
