@@ -97,15 +97,17 @@ module Activities
     # ran, the wait is over and escalating now would be stale — it would
     # tell the owner to approve a PR that is actually blocked for another
     # reason. Re-runs the scan's blocked_only_on_approval? check against
-    # fresh GitHub data. A race-window escalation that does sneak through is
-    # NOT self-clearing: escalated-phase scanning is recovery-only, so it
-    # stays until the owner removes the label or restarts the draft — which
-    # is why the re-validation above must stay as complete as the scan's gate.
-    # @spec PR-ESCALATION-027
+    # fresh GitHub data and the current approval-wait ceiling. A race-window
+    # escalation that does sneak through is NOT self-clearing: escalated-phase
+    # scanning is recovery-only, so it stays until the owner removes the label
+    # or restarts the draft — which is why the re-validation above must stay
+    # as complete as the scan's gate.
+    # @spec PR-ESCALATION-024 @spec PR-ESCALATION-027
     def approval_wait_still_holds?(issue)
       project = issue.project
       client = project.client
       return false unless client
+      return false unless approval_wait_exceeds_ceiling?(project, issue)
 
       PullRequests::BlockedOnlyOnApproval.call(
         project: project,
@@ -113,6 +115,14 @@ module Activities
         issue: issue,
         logger: logger
       )
+    end
+
+    def approval_wait_exceeds_ceiling?(project, issue)
+      ceiling_hours = project.pr_approval_escalation_hours.to_i
+      return false if ceiling_hours <= 0
+      return false if issue.awaiting_approval_since.blank?
+
+      issue.awaiting_approval_since <= ceiling_hours.hours.ago
     end
 
     def operational_failure_breaker_holds?(issue, progress_state)

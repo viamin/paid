@@ -204,7 +204,7 @@ RSpec.describe Activities::MarkEscalatedActivity do
 
       # @spec PR-ESCALATION-026
       it "stores awaiting_approval escalations separately" do
-        issue.update!(pr_review_phase: "ready")
+        issue.update!(pr_review_phase: "ready", awaiting_approval_since: 2.days.ago)
         configure_awaiting_approval_project!(issue)
         stub_blocked_only_on_approval_check!(issue: issue)
 
@@ -361,6 +361,44 @@ RSpec.describe Activities::MarkEscalatedActivity do
       it "skips an awaiting_approval escalation when auto-merge was disabled in the race window" do
         issue.update!(pr_review_phase: "ready", awaiting_approval_since: 2.days.ago)
         issue.project.update!(auto_merge_mode: "off")
+
+        result = activity.execute(
+          issue_id: issue.id,
+          reason_key: "awaiting_approval",
+          reason: "This PR has been green and waiting only for owner approval for more than 24 hours"
+        )
+
+        expect(result).to eq(updated: false)
+        expect(issue.reload.pr_review_phase).to eq("ready")
+        expect(issue.reload.pr_escalation_reason).to be_nil
+        expect(github_client).not_to have_received(:add_labels_to_issue)
+        expect(github_client).not_to have_received(:add_comment)
+      end
+
+      # @spec PR-ESCALATION-024 @spec PR-ESCALATION-027
+      it "skips an awaiting_approval escalation when the ceiling was disabled in the race window" do
+        issue.update!(pr_review_phase: "ready", awaiting_approval_since: 2.days.ago)
+        configure_awaiting_approval_project!(issue)
+        issue.project.update!(pr_approval_escalation_hours: 0)
+
+        result = activity.execute(
+          issue_id: issue.id,
+          reason_key: "awaiting_approval",
+          reason: "This PR has been green and waiting only for owner approval for more than 24 hours"
+        )
+
+        expect(result).to eq(updated: false)
+        expect(issue.reload.pr_review_phase).to eq("ready")
+        expect(issue.reload.pr_escalation_reason).to be_nil
+        expect(github_client).not_to have_received(:add_labels_to_issue)
+        expect(github_client).not_to have_received(:add_comment)
+      end
+
+      # @spec PR-ESCALATION-024 @spec PR-ESCALATION-027
+      it "skips an awaiting_approval escalation when the ceiling was raised above the current wait" do
+        issue.update!(pr_review_phase: "ready", awaiting_approval_since: 2.days.ago)
+        configure_awaiting_approval_project!(issue)
+        issue.project.update!(pr_approval_escalation_hours: 72)
 
         result = activity.execute(
           issue_id: issue.id,
