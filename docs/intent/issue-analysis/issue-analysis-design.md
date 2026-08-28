@@ -98,9 +98,14 @@ loop, mirroring `Models::Select#persist_agent_run_decision_log`.
 
 `AgentRunLog.provider_failures` scopes to these entries and
 `AgentRunLog.provider_failure_categories(agent_run_ids)` groups them by
-`failure_category` — the hook a future failure-pattern detector (see
-`AgentRunPatterns::Detect`) can use instead of re-parsing free-text error
-messages.
+`failure_category`. `AgentRunLog.provider_failure_categories_by_run` keeps the
+same data per run so `AgentRunPatterns::Detect` can cluster analyze-issue
+provider-exhaustion incidents on the run's normalized category set — category
+names only; provider names and attempt counts never participate in the cluster
+key — instead of the variable provider detail embedded in the terminal error
+text. When the structured logs are missing (log persistence is best-effort),
+the detector degrades to the stable bare exhaustion prefix rather than the
+free-text message.
 
 The final provider-exhaustion error (`issue_analysis_provider_exhaustion_message`)
 now summarizes every attempted provider and its normalized category —

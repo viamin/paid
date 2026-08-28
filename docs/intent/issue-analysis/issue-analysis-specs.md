@@ -148,14 +148,24 @@
   normalized category instead of only the provider name list. Log persistence
   failures SHALL be rescued and warn-logged rather than breaking the failover
   loop. `AgentRunLog.provider_failures` / `.provider_failure_categories` SHALL
-  allow grouping on the structured category rather than free-text messages.
+  allow grouping on the structured category rather than free-text messages,
+  and `AgentRunPatterns::Detect` SHALL cluster analyze-issue
+  provider-exhaustion failures on the run's normalized failure-category set
+  (category names only — never provider names or attempt counts), degrading to
+  the stable exhaustion prefix when structured logs are missing, so clustering
+  stays stable even though the terminal error text now includes
+  provider-specific detail.
   *Tests:* `spec/temporal/activities/analyze_issue_activity_spec.rb`
   ("persists a structured AgentRunLog entry for the failed provider attempt",
   "redacts and truncates secrets out of the persisted provider-failure message"),
-  `spec/models/agent_run_log_spec.rb` (".provider_failures", ".provider_failure_categories").
+  `spec/models/agent_run_log_spec.rb` (".provider_failures", ".provider_failure_categories",
+  ".provider_failure_categories_by_run"),
+  `spec/services/agent_run_patterns/detect_spec.rb`
+  ("clusters analyze_issue provider-exhaustion failures on normalized failure categories instead of provider names",
+  "clusters provider-exhaustion failures on the stable prefix when structured provider-failure logs are missing").
   *Code:* `app/temporal/activities/analyze_issue_activity.rb#record_provider_attempt_failure!`,
   `#failure_category_for`, `#issue_analysis_provider_exhaustion_message`,
-  `app/models/agent_run_log.rb`.
+  `app/models/agent_run_log.rb`, `app/services/agent_run_patterns/detect.rb`.
 
 ## Trust and response contract
 

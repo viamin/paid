@@ -117,6 +117,27 @@ RSpec.describe AgentRunLog do
     end
   end
 
+  # @spec ISSUE-ANALYSIS-013
+  describe ".provider_failure_categories_by_run" do
+    it "returns per-run normalized failure-category counts" do
+      agent_run = create(:agent_run)
+      other_run = create(:agent_run)
+      create_list(:agent_run_log, 2, :system, agent_run: agent_run,
+        metadata: { type: described_class::PROVIDER_FAILURE_TYPE, failure_category: "installation" })
+      create(:agent_run_log, :system, agent_run: agent_run,
+        metadata: { type: described_class::PROVIDER_FAILURE_TYPE, failure_category: "auth_expired" })
+      create(:agent_run_log, :system, agent_run: other_run,
+        metadata: { type: described_class::PROVIDER_FAILURE_TYPE, failure_category: "installation" })
+
+      counts = described_class.provider_failure_categories_by_run([ agent_run.id, other_run.id ])
+
+      expect(counts).to eq(
+        agent_run.id => { "auth_expired" => 1, "installation" => 2 },
+        other_run.id => { "installation" => 1 }
+      )
+    end
+  end
+
   describe "constants" do
     it "defines valid LOG_TYPES" do
       expect(described_class::LOG_TYPES).to eq(%w[stdout stderr system metric])

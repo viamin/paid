@@ -29,4 +29,18 @@ class AgentRunLog < ApplicationRecord
   def self.provider_failure_categories(agent_run_ids)
     provider_failures.where(agent_run_id: agent_run_ids).group("metadata ->> 'failure_category'").count
   end
+
+  # @spec ISSUE-ANALYSIS-013
+  # Returns per-run category counts so detectors can cluster provider-exhaustion
+  # failures on normalized categories instead of variable provider names.
+  def self.provider_failure_categories_by_run(agent_run_ids)
+    provider_failures
+      .where(agent_run_id: agent_run_ids)
+      .group(:agent_run_id, "metadata ->> 'failure_category'")
+      .count
+      .each_with_object({}) do |((agent_run_id, category), count), grouped|
+        grouped[agent_run_id] ||= {}
+        grouped[agent_run_id][category] = count
+      end
+  end
 end
