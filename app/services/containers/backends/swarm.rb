@@ -252,9 +252,15 @@ module Containers
         end
       end
 
+      # Combo tags can be missing from some nodes (see {#list_images}), so a
+      # per-node NotFoundError is expected skew, not a failure: skip it and
+      # keep deleting on the remaining nodes so partially converged clusters
+      # can still clean themselves up.
       def delete_image(name, **opts)
         healthy_nodes.each do |node|
           Docker::Image.remove(name, opts, node_connection(node))
+        rescue Docker::Error::NotFoundError
+          next
         end
       end
 

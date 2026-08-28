@@ -176,6 +176,22 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
     }.to raise_error(Docker::Error::NotFoundError, /worker-2/)
   end
 
+  it "deletes an image on every healthy node, tolerating nodes where the tag never converged" do
+    second_node = build_node_payload(id: "node-2", host: "worker-2", addr: "10.0.0.26")
+    call_count = 0
+
+    stub_manager_get("/nodes", [ node_payload, second_node ])
+    allow(Docker::Image).to receive(:remove).with("paid-agent:python-node", {}, kind_of(Docker::Connection)) do
+      call_count += 1
+      raise Docker::Error::NotFoundError, "No such image: paid-agent:python-node" if call_count == 2
+    end
+
+    expect {
+      backend.delete_image("paid-agent:python-node")
+    }.not_to raise_error
+    expect(Docker::Image).to have_received(:remove).twice
+  end
+
   it "keeps recognizing persisted node hostnames even when the node is not ready" do
     down_node = node_payload.deep_dup
     down_node["Status"]["State"] = "down"
