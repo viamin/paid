@@ -274,15 +274,21 @@ class RunnersController < ApplicationController
     return unless runner_config.is_a?(Hash)
 
     model = runner_config["model"].to_s
+    manual_model = runner_config["manual_model"].to_s
 
     case model
     when LlmModel::CUSTOM_MODEL_OPTION
-      runner_config["model"] = runner_config["manual_model"].to_s
+      runner_config["model"] = manual_model
       runner_config["model_policy"] = "specific" if runner_key == "opencode"
     when Runners::ModelOptions::FREE_POLICY_VALUE
       runner_config.delete("model")
       runner_config["model_policy"] = "free" if runner_key == "opencode"
     else
+      if model.blank? && manual_model.present?
+        runner_config["model"] = manual_model
+        runner_config["model_policy"] = "specific" if runner_key == "opencode"
+      end
+
       if runner_key == "opencode" && runner_config.key?("model_policy") && model.present?
         runner_config["model_policy"] = "specific"
       end

@@ -1560,6 +1560,32 @@ RSpec.describe "Runners" do
         expect(runner.config.dig("opencode", "model_policy")).to eq("specific")
       end
 
+      # @spec MODEL-POLICY-FORM-003
+      it "normalizes a non-JS manual model submission when the sentinel select value is missing" do
+        api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+
+        post runners_path, params: {
+          runner: {
+            runner_key: "opencode",
+            auth_type: "api_key",
+            provider_api_key_id: api_key.id,
+            enabled_for_agent_runs: true,
+            enabled_for_fallback: true,
+            config: {
+              opencode: {
+                model: "",
+                manual_model: "openrouter/manual-without-sentinel"
+              }
+            }
+          }
+        }
+
+        expect(response).to redirect_to(runners_path)
+        runner = user.runners.order(:created_at).last
+        expect(runner.config.dig("opencode", "model")).to eq("openrouter/manual-without-sentinel")
+        expect(runner.config.dig("opencode", "model_policy")).to eq("specific")
+      end
+
       # @spec MODEL-POLICY-FORM-004
       it "normalizes a non-JS switch away from free policy back to a specific catalog model" do
         api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
