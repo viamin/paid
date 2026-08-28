@@ -11,6 +11,7 @@ class AgentRunPhase < ApplicationRecord
     "analyze_issue_provider_attempt" => "Analyze Issue Provider Attempt",
     "provision_services" => "Provision Services",
     "provision_container" => "Provision Container",
+    "provision_execution_environment" => "Provision Execution Environment",
     "provision_mcp_servers" => "Provision MCP Servers",
     "provision_browser_container" => "Provision Verification Browser",
     "clone_repo" => "Clone Repo",
@@ -25,6 +26,7 @@ class AgentRunPhase < ApplicationRecord
     "complete_existing_pr_run" => "Complete Existing PR Run",
     "mark_agent_run_complete" => "Mark Agent Run Complete",
     "cleanup_container" => "Cleanup Container",
+    "cleanup_execution_environment" => "Cleanup Execution Environment",
     "cleanup_services" => "Cleanup Services",
     "cleanup_worktree" => "Cleanup Worktree"
   }.freeze

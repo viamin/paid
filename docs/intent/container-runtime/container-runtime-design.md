@@ -155,6 +155,17 @@ are shipped, and `#3336` stays open pending only `#3345` (remove Docker
 concepts from `AgentRun`/Temporal) and `#3348` (document a second runner
 implementation) — no other residual gaps were found.
 
+`#3345` stages the final higher-level cleanup by making the runner boundary the
+authoritative orchestration contract without removing compatibility columns yet.
+`AgentRun` exposes runner-oriented orchestration entry points
+(`provision_execution_environment`, `execute_in_execution_environment`,
+`cleanup_execution_environment`, `recover_in_flight_execution_environment!`,
+`with_execution_environment`) and keeps the older container-named methods only
+as explicit compatibility shims. Temporal phase tracking records
+`provision_execution_environment` / `cleanup_execution_environment` as the
+current orchestration phase keys while still labeling older persisted
+`provision_container` / `cleanup_container` rows for historical compatibility.
+
 - `ExecutionRunners::Base` is the abstract interface: `provision`, `start`,
   `running?`, `reconnect`, `status`, `cancel`, `cleanup`, `.compatible?`, `.ping`. Method
   names and parameters never reference Docker concepts.
@@ -194,8 +205,9 @@ implementation) — no other residual gaps were found.
 A `runner_handle` jsonb column on `agent_runs` (alongside, not replacing,
 `container_id`/`container_host`) stores the serialized `RunnerHandle` so a
 Temporal activity retry can recover after a worker restart or failover. When a
-retry finds a persisted `runner_handle`, `AgentRun#provision_via_runner` routes
-through `reuse_or_reconcile_via_runner`: it loads the handle via
+retry finds a persisted `runner_handle`, `AgentRun#provision_execution_environment`
+routes through `provision_via_runner`, which in turn routes through
+`reuse_or_reconcile_via_runner`: it loads the handle via
 `RunnerHandle.from_record`, checks `runner.running?`, and either reuses the
 still-running environment or cleans up a dead/missing one before provisioning
 fresh. A data migration backfills `runner_handle` from existing

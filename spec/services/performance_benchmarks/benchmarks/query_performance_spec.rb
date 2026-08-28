@@ -26,7 +26,7 @@ RSpec.describe PerformanceBenchmarks::Benchmarks::QueryPerformance do
       project = create(:project)
       agent_run = create(:agent_run, project: project)
 
-      create_phase(agent_run, phase_key: "provision_container", phase_group: "setup", started_at: 1.day.ago, duration_seconds: 15)
+      create_phase(agent_run, phase_key: "provision_execution_environment", phase_group: "setup", started_at: 1.day.ago, duration_seconds: 15)
       create_phase(agent_run, phase_key: "run_agent", phase_group: "agent", started_at: 1.day.ago + 1.minute, duration_seconds: 40)
       create_phase(agent_run, phase_key: "create_pull_request", phase_group: "post", started_at: 1.day.ago + 2.minutes, duration_seconds: 2)
       create_phase(agent_run, phase_key: "push_branch", phase_group: "post", started_at: 1.day.ago + 3.minutes, duration_seconds: 3)

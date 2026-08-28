@@ -36,7 +36,7 @@ RSpec.describe Activities::ProvisionContainerActivity do
   describe "#execute" do
     it "provisions a container for the agent run" do
       expect(agent_run).to receive(:ensure_proxy_token!).and_return("token")
-      expect(agent_run).to receive(:provision_container)
+      expect(agent_run).to receive(:provision_execution_environment)
       allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
 
       result = activity.execute(agent_run_id: agent_run.id)
@@ -69,7 +69,7 @@ RSpec.describe Activities::ProvisionContainerActivity do
     it "keeps the egress policy snapshot auditable when provisioning fails" do
       allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
       allow(agent_run).to receive(:ensure_proxy_token!).and_return("token")
-      allow(agent_run).to receive(:provision_container)
+      allow(agent_run).to receive(:provision_execution_environment)
         .and_raise(Containers::Provision::ProvisionError, "provision exploded")
 
       expect {
@@ -86,7 +86,7 @@ RSpec.describe Activities::ProvisionContainerActivity do
       ENV["PAID_PROXY_EXTERNAL_URL"] = "https://proxy.example.test:3443"
       allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
       allow(agent_run).to receive(:ensure_proxy_token!).and_return("token")
-      allow(agent_run).to receive(:provision_container)
+      allow(agent_run).to receive(:provision_execution_environment)
 
       activity.execute(agent_run_id: agent_run.id, container_host: "remote-worker-1")
 
@@ -105,7 +105,7 @@ RSpec.describe Activities::ProvisionContainerActivity do
 
       allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
       allow(agent_run).to receive(:ensure_proxy_token!).and_return("token")
-      expect(agent_run).not_to receive(:provision_container)
+      expect(agent_run).not_to receive(:provision_execution_environment)
 
       expect {
         activity.execute(agent_run_id: agent_run.id)
@@ -172,14 +172,14 @@ RSpec.describe Activities::ProvisionContainerActivity do
 
     it "calls provision directly when no activity context is present" do
       allow(Temporalio::Activity::Context).to receive(:current_or_nil).and_return(nil)
-      expect(agent_run).to receive(:provision_container).and_return(:result)
+      expect(agent_run).to receive(:provision_execution_environment).and_return(:result)
 
       expect(activity.send(:provision_with_heartbeat, agent_run)).to eq(:result)
     end
 
     it "returns the provisioning result and emits heartbeats while it runs" do
       allow(Temporalio::Activity::Context).to receive(:current_or_nil).and_return(mock_context)
-      allow(agent_run).to receive(:provision_container) do
+      allow(agent_run).to receive(:provision_execution_environment) do
         sleep 0.15
         :provisioned
       end
@@ -200,7 +200,7 @@ RSpec.describe Activities::ProvisionContainerActivity do
       allow(Temporalio::Activity::Context).to receive(:current_or_nil).and_return(mock_context)
 
       gate = Queue.new
-      allow(agent_run).to receive(:provision_container) do
+      allow(agent_run).to receive(:provision_execution_environment) do
         gate.pop # simulate a wedged Docker call that never completes on its own
         :provisioned
       end
@@ -221,7 +221,7 @@ RSpec.describe Activities::ProvisionContainerActivity do
 
     it "propagates exceptions raised during provisioning" do
       allow(Temporalio::Activity::Context).to receive(:current_or_nil).and_return(mock_context)
-      allow(agent_run).to receive(:provision_container).and_raise(Containers::Provision::ProvisionError, "boom")
+      allow(agent_run).to receive(:provision_execution_environment).and_raise(Containers::Provision::ProvisionError, "boom")
 
       expect {
         activity.send(:provision_with_heartbeat, agent_run, interval: 0.02)
@@ -231,7 +231,7 @@ RSpec.describe Activities::ProvisionContainerActivity do
     it "re-raises CanceledError from heartbeat and stops the worker" do
       allow(Temporalio::Activity::Context).to receive(:current_or_nil).and_return(mock_context)
       allow(mock_context).to receive(:heartbeat).and_raise(Temporalio::Error::CanceledError, "canceled")
-      allow(agent_run).to receive(:provision_container) { sleep 0.2 }
+      allow(agent_run).to receive(:provision_execution_environment) { sleep 0.2 }
 
       expect {
         activity.send(:provision_with_heartbeat, agent_run, interval: 0.01)
@@ -242,7 +242,7 @@ RSpec.describe Activities::ProvisionContainerActivity do
       allow(Temporalio::Activity::Context).to receive(:current_or_nil).and_return(mock_context)
       allow(mock_context).to receive(:heartbeat).and_raise(Temporalio::Error::CanceledError, "canceled")
       finished = []
-      allow(agent_run).to receive(:provision_container) { sleep 0.1; finished << true }
+      allow(agent_run).to receive(:provision_execution_environment) { sleep 0.1; finished << true }
 
       expect {
         activity.send(:provision_with_heartbeat, agent_run, interval: 0.01, grace_seconds: 5)
@@ -257,7 +257,7 @@ RSpec.describe Activities::ProvisionContainerActivity do
       allow(Temporalio::Activity::Context).to receive(:current_or_nil).and_return(mock_context)
       allow(mock_context).to receive(:heartbeat).and_raise(Temporalio::Error::CanceledError, "canceled")
       interrupted = []
-      allow(agent_run).to receive(:provision_container) do
+      allow(agent_run).to receive(:provision_execution_environment) do
         sleep 10
       rescue Interrupt
         interrupted << true
@@ -289,7 +289,7 @@ RSpec.describe Activities::ProvisionContainerActivity do
         end
       end
 
-      allow(agent_run).to receive(:recover_in_flight_container!).and_return("recovered-container")
+      allow(agent_run).to receive(:recover_in_flight_execution_environment!).and_return("recovered-container")
 
       activity.send(:drain_worker, worker, canceled: true, grace_seconds: 0.05, agent_run: agent_run)
 
@@ -305,7 +305,7 @@ RSpec.describe Activities::ProvisionContainerActivity do
       expect(worker).not_to be_alive
       # recover runs only on the Thread#kill path, proving the in-flight
       # container is recorded before the worker is forcibly terminated.
-      expect(agent_run).to have_received(:recover_in_flight_container!)
+      expect(agent_run).to have_received(:recover_in_flight_execution_environment!)
     end
   end
 end

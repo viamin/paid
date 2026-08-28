@@ -15,8 +15,8 @@ module Activities
         return { agent_run_id: agent_run_id }
       end
 
-      track_phase(agent_run_id: agent_run_id, phase_key: "cleanup_container", phase_group: "cleanup", agent_run: agent_run) do
-        agent_run.cleanup_container(force: true)
+      track_phase(agent_run_id: agent_run_id, phase_key: "cleanup_execution_environment", phase_group: "cleanup", agent_run: agent_run) do
+        agent_run.cleanup_execution_environment(force: true)
 
         logger.info(
           message: "agent_execution.container_cleaned",

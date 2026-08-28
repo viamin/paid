@@ -17,7 +17,7 @@ module PerformanceBenchmarks
 
       def call
         samples = AgentRunPhase
-          .where(phase_key: "provision_container", status: "completed")
+          .where(phase_key: %w[provision_execution_environment provision_container], status: "completed")
           .where(started_at: (now - WINDOW)..now)
           .order(started_at: :desc)
           .limit(LIMIT)
@@ -36,7 +36,7 @@ module PerformanceBenchmarks
       def skipped
         Measurement.skipped(
           key: KEY,
-          reason: "No completed provision_container phases found in the last 30 days.",
+          reason: "No completed execution-environment provisioning phases found in the last 30 days.",
           metadata: metadata
         )
       end

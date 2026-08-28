@@ -72,7 +72,7 @@ module PreCommitRequirements
     def run_check(requirement)
       return { passed: false, output: "No container available" } unless agent_run.container_id.present?
 
-      result = agent_run.execute_in_container(resolve_command(requirement), stream: false)
+      result = agent_run.execute_in_execution_environment(resolve_command(requirement), stream: false)
       passed = container_result_success?(result)
       output = container_result_output(result)
 
@@ -90,7 +90,7 @@ module PreCommitRequirements
       end
 
       MAX_AUTO_FIX_ATTEMPTS.times do |attempt|
-        fix_result = agent_run.execute_in_container(requirement.fix_command, stream: false)
+        fix_result = agent_run.execute_in_execution_environment(requirement.fix_command, stream: false)
 
         unless container_result_success?(fix_result)
           fix_output = container_result_output(fix_result).to_s.truncate(10_000)

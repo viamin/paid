@@ -77,6 +77,6 @@ class ExecutionControlParkCleanupJob < ApplicationJob
       agent_run.instance_variable_set(:@current_handle, runner_handle)
     end
 
-    agent_run.cleanup_container(force: true, preserve_workspace_volume: redispatched)
+    agent_run.cleanup_execution_environment(force: true, preserve_workspace_volume: redispatched)
   end
 end

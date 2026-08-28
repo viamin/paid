@@ -1,14 +1,14 @@
 # frozen_string_literal: true
 
 module Activities
-  # Provisions a Docker container with an empty workspace directory.
+  # Provisions the run execution environment with an empty workspace directory.
   #
   # The container is created before any git operations. Git clone happens
   # inside the container in the subsequent CloneRepoActivity.
   #
   # Idempotent: re-running this activity for a run that already has a live
-  # container reuses it instead of creating a duplicate (see
-  # AgentRun#provision_container). A periodic heartbeat is sent while
+  # environment reuses it instead of creating a duplicate (see
+  # AgentRun#provision_execution_environment). A periodic heartbeat is sent while
   # provisioning so a workflow cancellation interrupts an in-flight provision
   # promptly (within one heartbeat interval) instead of waiting for
   # start_to_close. The heartbeat does NOT surface a wedged Docker call
@@ -22,7 +22,7 @@ module Activities
   # enough to catch an Interrupt does not orphan the half-created container
   # or workspace volume. Thread#kill (the last-resort path for truly stuck
   # I/O) bypasses ensure/rescue, so drain_worker first persists any
-  # in-flight container via AgentRun#recover_in_flight_container! (giving
+  # in-flight environment via AgentRun#recover_in_flight_execution_environment! (giving
   # CleanupContainerActivity a recorded id to remove) and the workflow's
   # cleanup ensure-block still falls back to
   # cleanup_orphaned_workspace_volume by name for any residual volume.
@@ -42,7 +42,7 @@ module Activities
     def execute(input)
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
-      track_phase(agent_run_id: agent_run_id, phase_key: "provision_container", phase_group: "setup", agent_run: agent_run) do
+      track_phase(agent_run_id: agent_run_id, phase_key: "provision_execution_environment", phase_group: "setup", agent_run: agent_run) do
         agent_run.ensure_proxy_token!
         # RDR-055: resolve and snapshot the egress policy before any
         # provisioning work so failed provisions remain auditable, and fail
@@ -109,7 +109,7 @@ module Activities
     def provision_with_heartbeat(agent_run, interval: HEARTBEAT_INTERVAL_SECONDS,
                                  grace_seconds: CANCEL_GRACE_SECONDS, planned_container_host: nil)
       context = Temporalio::Activity::Context.current_or_nil
-      return agent_run.provision_container(container_host: planned_container_host) unless context
+      return agent_run.provision_execution_environment(container_host: planned_container_host) unless context
 
       tenant_account_id = Current.account&.id
       worker = Thread.new { run_provision_in_context(agent_run, tenant_account_id, planned_container_host: planned_container_host) }
@@ -138,7 +138,7 @@ module Activities
     # executor, tenant RLS context, and a scoped DB connection so the worker
     # thread does not share the activity thread's thread-local state.
     def run_provision_in_context(agent_run, tenant_account_id, planned_container_host: nil)
-      work = proc { agent_run.provision_container(container_host: planned_container_host) }
+      work = proc { agent_run.provision_execution_environment(container_host: planned_container_host) }
 
       db_scoped = proc do
         if defined?(ActiveRecord::Base) && ActiveRecord::Base.respond_to?(:connection_pool)
@@ -187,7 +187,7 @@ module Activities
     # container or workspace volume. Thread#kill (last resort for a worker
     # truly stuck in an uninterruptible Docker call) bypasses rescue/ensure,
     # so before killing we recover any container the worker already created
-    # via AgentRun#recover_in_flight_container! — persisting its id so the
+    # via AgentRun#recover_in_flight_execution_environment! — persisting its id so the
     # workflow's CleanupContainerActivity can remove it instead of leaking it
     # until the orphan janitor runs. Any residual workspace volume is still
     # cleaned up downstream by cleanup_orphaned_workspace_volume (by name
@@ -208,7 +208,7 @@ module Activities
         # blocking I/O is not mutating its Ruby state — and is best-effort so
         # the kill always proceeds even if the recover write fails.
         begin
-          agent_run&.recover_in_flight_container!
+          agent_run&.recover_in_flight_execution_environment!
         rescue StandardError => e
           logger.warn(
             message: "agent_execution.in_flight_container_recover_failed",
