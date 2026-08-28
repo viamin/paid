@@ -358,59 +358,19 @@ class DependabotAutoMergeJob < ApplicationJob
   end
 
   def post_merge_permission_comment(project, pr_number, fallback_attempted:)
-    client = project.client
-    return unless client
-
-    return if merge_permission_comment_present?(client, project, pr_number)
-
-    next_step = if fallback_attempted
-      "**Next step:** the configured PAT push-fallback credential also could not merge this PR — " \
-        "check that it has not expired or been revoked, then merge manually or wait for the next automatic check."
-    else
-      "**Next step:** grant the App the `workflows` permission, or configure a PAT push-fallback " \
-        "credential for this project, then merge manually or wait for the next automatic check."
-    end
-
-    body = [
-      MERGE_PERMISSION_COMMENT_MARKER,
-      "**Dependabot auto-merge blocked: missing GitHub App permission**",
-      "",
-      "Paid could not auto-merge this Dependabot PR because the GitHub App installation token " \
+    AutoMergeAttempts::PostPermissionComment.call(
+      project: project,
+      pr_number: pr_number,
+      marker: MERGE_PERMISSION_COMMENT_MARKER,
+      title: "**Dependabot auto-merge blocked: missing GitHub App permission**",
+      intro: "Paid could not auto-merge this Dependabot PR because the GitHub App installation token " \
         "lacks a permission needed for a change under `.github/workflows/` " \
         "(most commonly the `workflows` permission). This is permanent until " \
         "the App's permissions change, so Paid will keep checking periodically " \
         "rather than retrying every cycle.",
-      "",
-      next_step
-    ].join("\n")
-
-    client.add_comment(project.full_name, pr_number, body)
-    Rails.logger.info(
-      message: "dependabot_auto_merge.merge_permission_comment_posted",
-      project_id: project.id,
-      pr_number: pr_number
+      fallback_attempted: fallback_attempted,
+      logger: Rails.logger,
+      log_component: "dependabot_auto_merge"
     )
-  rescue GithubClient::Error => e
-    Rails.logger.warn(
-      message: "dependabot_auto_merge.merge_permission_comment_failed",
-      project_id: project.id,
-      pr_number: pr_number,
-      error_class: e.class.name,
-      error_message: e.message.to_s.truncate(200)
-    )
-  end
-
-  def merge_permission_comment_present?(client, project, pr_number)
-    comments = client.recent_issue_comments(project.full_name, pr_number)
-    comments.any? { |comment| comment.respond_to?(:body) && comment.body&.include?(MERGE_PERMISSION_COMMENT_MARKER) }
-  rescue GithubClient::Error => e
-    Rails.logger.warn(
-      message: "dependabot_auto_merge.merge_permission_comment_check_failed",
-      project_id: project.id,
-      pr_number: pr_number,
-      error_class: e.class.name,
-      error_message: e.message.to_s.truncate(200)
-    )
-    false
   end
 end
