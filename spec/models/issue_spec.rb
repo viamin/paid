@@ -1526,6 +1526,53 @@ RSpec.describe Issue do
     end
   end
 
+  # @spec OPERATOR-INBOX-010
+  describe "inbox count cache invalidation" do
+    let(:account) { create(:account) }
+    let(:project) { create(:project, account: account) }
+
+    before do
+      allow(Dashboard::CacheVersion).to receive(:bump)
+    end
+
+    it "bumps the inbox cache when an issue transitions into needs_input" do
+      issue = create(:issue, project: project, paid_state: "new")
+
+      issue.update!(paid_state: "needs_input")
+
+      expect(Dashboard::CacheVersion).to have_received(:bump)
+        .with(account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+    end
+
+    it "bumps the inbox cache when a needs_input issue closes on GitHub" do
+      issue = create(:issue, :needs_input, project: project, github_state: "open")
+
+      issue.update!(github_state: "closed")
+
+      expect(Dashboard::CacheVersion).to have_received(:bump)
+        .with(account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+        .twice
+    end
+
+    it "bumps the inbox cache when a closed needs_input issue reopens on GitHub" do
+      issue = create(:issue, :needs_input, project: project, github_state: "closed")
+
+      issue.update!(github_state: "open")
+
+      expect(Dashboard::CacheVersion).to have_received(:bump)
+        .with(account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+        .twice
+    end
+
+    it "does not bump the inbox cache for github_state changes outside needs_input" do
+      issue = create(:issue, project: project, github_state: "open", paid_state: "planning")
+
+      issue.update!(github_state: "closed")
+
+      expect(Dashboard::CacheVersion).not_to have_received(:bump)
+    end
+  end
+
   describe "broadcast callbacks" do
     let(:project) { create(:project) }
 

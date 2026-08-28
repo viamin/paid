@@ -96,8 +96,9 @@
   Projects, SHALL NOT list it in the Insights dropdown, and SHALL render its
   unread-style count badge as a lazy Turbo Frame backed by a short-TTL,
   per-user cached count at `GET /inbox/count` so ordinary page renders never
-  build `Inbox::Queue`. The cached count SHALL invalidate on needs_input
-  transitions and on decomposition-decision writes (plan review creation and
+  build `Inbox::Queue`. The cached count SHALL invalidate when an issue enters
+  or leaves the needs_input queue, when a needs_input issue closes or reopens
+  on GitHub, and on decomposition-decision writes (plan review creation and
   resolution), and SHALL render capped at `99+` and hidden at zero, matching
   the bell's badge markup classes.
   *Code:* `app/views/layouts/application.html.erb`,

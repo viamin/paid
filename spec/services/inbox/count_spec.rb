@@ -69,6 +69,21 @@ RSpec.describe Inbox::Count do
       expect(refreshed).to eq(1)
     end
 
+    it "refreshes the cached count when a needs_input issue closes and reopens on GitHub" do
+      issue = create(:issue, :needs_input, project: project)
+      first = described_class.call(user: user)
+
+      issue.update!(github_state: "closed")
+      after_close = described_class.call(user: user)
+
+      issue.update!(github_state: "open")
+      after_reopen = described_class.call(user: user)
+
+      expect(first).to eq(1)
+      expect(after_close).to eq(0)
+      expect(after_reopen).to eq(1)
+    end
+
     it "bumps the cache automatically when a plan review decision is logged" do
       Strategies::SeedBaselineOrchestration.call
       first = described_class.call(user: user)

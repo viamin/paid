@@ -123,10 +123,11 @@ class Issue < ApplicationRecord
   before_save :sync_needs_input_since, if: :will_save_change_to_paid_state?
 
   # Invalidates the cached inbox nav badge count whenever an issue enters or
-  # leaves the needs_input queue, so the async badge endpoint recomputes
-  # instead of serving a stale number for the rest of its TTL.
+  # leaves the needs_input queue, or when a waiting issue is closed/reopened
+  # on GitHub, so the async badge endpoint recomputes instead of serving a
+  # stale number for the rest of its TTL.
   # @spec OPERATOR-INBOX-010
-  after_commit :bump_inbox_cache_version, if: :saved_change_to_needs_input_since?
+  after_commit :bump_inbox_cache_version, if: :inbox_count_cache_invalidation_needed?
 
   scope :by_paid_state, ->(state) { where(paid_state: state) }
   scope :root_issues, -> { where(parent_issue_id: nil) }
@@ -571,8 +572,16 @@ class Issue < ApplicationRecord
 
   private
 
+  def inbox_count_cache_invalidation_needed?
+    saved_change_to_needs_input_since? || waiting_issue_github_state_changed?
+  end
+
   def bump_inbox_cache_version
     Dashboard::CacheVersion.bump(project.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+  end
+
+  def waiting_issue_github_state_changed?
+    saved_change_to_github_state? && paid_state == "needs_input"
   end
 
   # Every counter an escalation accumulated, plus the markers that tell

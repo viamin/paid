@@ -87,12 +87,13 @@ and queries open plan reviews. So the badge is async, not inline:
    `:inbox`), the same account-scoped version-bump pattern
    `Dashboard::QueuePreview` uses.
 3. The version bumps on queue-mutating events: `Issue` bumps it whenever
-   `needs_input_since` changes (covers entering needs_input, answer
-   submission, and manual-review escalation, since all of those flow through
-   the same `paid_state` transition); `Orchestration::DecompositionDecisions::Log`
-   bumps it on every decision write (covers both a new pending plan review
-   appearing and an existing one resolving, since `open_plan_reviews` reads
-   the latest decision per workflow).
+   `needs_input_since` changes or a waiting issue flips `github_state`
+   between open/closed (covers entering needs_input, answer submission,
+   manual-review escalation, and direct GitHub close/reopen without waiting
+   for TTL expiry); `Orchestration::DecompositionDecisions::Log` bumps it on
+   every decision write (covers both a new pending plan review appearing and
+   an existing one resolving, since `open_plan_reviews` reads the latest
+   decision per workflow).
 4. The count is intentionally approximate: it includes `needs_input` rows
    without checking whether they have parseable questions yet (questionless
    rows are rare and self-repair during sync), trading exactness for staying
