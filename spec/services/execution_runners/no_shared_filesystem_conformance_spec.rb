@@ -257,6 +257,22 @@ RSpec.describe NoSharedFilesystemConformance do
       expect(described_class.fixture_workload_command?(command)).to be(false)
     end
 
+    it "does not match a command that clones into a different path than it runs the entrypoint from" do
+      command = described_class.fixture_workload_command(
+        source: "/srv/conformance-fixture.git", destination: "/tmp/conformance/repo"
+      ).sub("/tmp/conformance/repo &&", "/tmp/somewhere-else &&")
+
+      expect(described_class.fixture_workload_command?(command)).to be(false)
+    end
+
+    it "does not match a canonical workload wrapped in extra host-side steps" do
+      command = "cp -r /host/fixture /tmp/staging && #{described_class.fixture_workload_command(
+        source: "/tmp/staging", destination: "/tmp/conformance/repo"
+      )}"
+
+      expect(described_class.fixture_workload_command?(command)).to be(false)
+    end
+
     it "returns the stdout the real fixture entrypoint produces" do
       Dir.mktmpdir("conformance-fixture-check") do |checkout|
         FileUtils.cp_r("#{Rails.root.join(fixture.fetch('relative_repo_path'))}/.", checkout)

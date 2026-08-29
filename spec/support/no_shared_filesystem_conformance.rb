@@ -81,25 +81,28 @@ module NoSharedFilesystemConformance
       ].join(" && ")
     end
 
-    # Whether the given command is the fixture workload. Runner specs whose
-    # execution platform is doubled use this at the runner seam to answer with
+    # Whether the given command is exactly the fixture workload command
+    # {fixture_workload_command} builds for the clone source and checkout path
+    # the command itself names. Runner specs whose execution platform is
+    # doubled use this at the runner seam to answer with
     # {fixture_workload_stdout} instead of their generic canned output.
     #
-    # Matches on the full command shape {fixture_workload_command} builds —
-    # the clone, the entrypoint, and the artifact readback — rather than the
-    # entrypoint token alone. An entrypoint-only match would still treat a
-    # runner regression that dropped the clone step or stopped reading the
-    # artifact back over stdout as a legitimate fixture run, silently
-    # replacing that broken command with the canned passing output.
+    # The comparison is byte-for-byte against the rebuilt canonical command, so
+    # a runner regression that clones a different source, checks out somewhere
+    # other than the directory it runs the entrypoint in, drops the artifact
+    # readback, or wraps the workload in extra host-side steps no longer
+    # collects the canned passing output — it falls through to the runner
+    # spec's generic stub and fails the conformance example.
     #
     # @param command [String, Array<String>]
+    # @param fixture [Hash] fixture workload definition
     # @return [Boolean]
     def fixture_workload_command?(command, fixture: ExecutionRunners::ConformanceSuite.fixture_workload)
       joined = Array(command).join(" ")
+      source, destination = fixture_clone_operands(joined)
+      return false if source.nil?
 
-      joined.include?("git clone") &&
-        joined.include?(fixture.fetch("entrypoint")) &&
-        joined.include?("cat #{Shellwords.escape(fixture.fetch('expected_artifact_path'))}")
+      joined == fixture_workload_command(source: source, destination: destination, fixture: fixture)
     end
 
     # The stdout the fixture workload produces inside the environment: the
@@ -159,6 +162,20 @@ module NoSharedFilesystemConformance
     end
 
     private
+
+    # Clone source and checkout path named by the command's leading `git clone`
+    # step, or nil when the command does not open with one.
+    #
+    # @param joined [String] whole command
+    # @return [Array(String, String), nil]
+    def fixture_clone_operands(joined)
+      words = Shellwords.split(joined.split(" && ").first.to_s)
+      return nil unless words.size == 5 && words.first(3) == %w[git clone --quiet]
+
+      words.last(2)
+    rescue ArgumentError
+      nil
+    end
 
     def collect_strings(value, strings)
       case value
