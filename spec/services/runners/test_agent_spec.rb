@@ -806,7 +806,7 @@ RSpec.describe Runners::TestAgent do
           container_executable_runner_key?: true, harness_runner_key_for: "kilocode")
         stub_insert_all
         allow(test_run).to receive(:with_container).and_yield(test_run)
-        allow(test_run).to receive(:execute_in_container).and_return(prep_result)
+        allow(test_run).to receive(:execute_in_execution_environment).and_return(prep_result)
         allow(AgentHarness).to receive(:check_provider).and_return(
           name: :kilocode, status: "ok", message: "Smoke test passed", latency_ms: 30, error_category: nil, check: :smoke_test
         )
@@ -826,7 +826,7 @@ RSpec.describe Runners::TestAgent do
       it "materializes the kilocode config file before the smoke test" do
         described_class.call(runner: provider)
 
-        expect(test_run).to have_received(:execute_in_container).with(
+        expect(test_run).to have_received(:execute_in_execution_environment).with(
           [ "sh", "-c", satisfy { |script|
             script.include?("mkdir -p /home/agent/.config/kilocode") &&
               script.include?("/home/agent/.config/kilocode/kilo.json")
@@ -837,7 +837,7 @@ RSpec.describe Runners::TestAgent do
 
       it "generates a v7.1.3-compatible config with provider as a record" do
         captured_env = nil
-        allow(test_run).to receive(:execute_in_container) do |cmd, **kwargs|
+        allow(test_run).to receive(:execute_in_execution_environment) do |cmd, **kwargs|
           captured_env = kwargs[:env] if cmd.is_a?(Array) && cmd.join.include?("kilo.json")
           prep_result
         end

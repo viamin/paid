@@ -42,6 +42,13 @@ class FeatureFlags
       intent: "Build both legacy and PromptAssembly PR prompts for the same run input and persist a capped data-only comparison without changing the served prompt.",
       rollout_plan: "Default-off; enable only for scoped prompt investigation because it builds the alternate prompt path.",
       cleanup_criteria: "Remove once PromptAssembly parity is proven or a dedicated prompt comparison UI exists."
+    ),
+    runner_model_policy_form: Definition.new(
+      name: :runner_model_policy_form,
+      owner: "runner-config",
+      intent: "Gate the runner form rework that derives provider choice from API keys and uses catalog-backed model selection for direct-outbound runners (RDR-065).",
+      rollout_plan: "Default-off; opt in per tenant via tenant_settings.features, then expand after form parity metrics match or beat the legacy flow.",
+      cleanup_criteria: "Remove once the catalog-backed runner model form is the default and the legacy direct-outbound form path is retired."
     )
   }.freeze
 

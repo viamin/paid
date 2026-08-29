@@ -27,9 +27,25 @@ const RUNNER_API_SERVICE_TYPE = loadRunnerApiServiceType()
 // Runner keys that use dynamic api_provider selection.
 const DYNAMIC_API_RUNNER_KEYS = new Set(["opencode", "kilocode", "pi", "omp"])
 
+const FREE_POLICY_OPTION = "free"
+const CUSTOM_OPTION = "custom"
+
+function parseJson(value, fallback) {
+  if (!value) return fallback
+
+  try {
+    return JSON.parse(value)
+  } catch {
+    return fallback
+  }
+}
+
 export default class extends Controller {
   static values = {
     authType: String,
+    modelPolicyFormEnabled: Boolean,
+    modelOptions: String,
+    initialApiServiceType: String,
   }
 
   static targets = [
@@ -48,10 +64,31 @@ export default class extends Controller {
     "dynamicModelManualInput",
     "tierSettings",
     "tierSelect",
+    "modelSettings",
+    "modelSelect",
+    "customModelField",
+    "customModelInput",
+    "configField",
+    "kilocodePreflightField",
   ]
 
   connect() {
     this.toggleAuthType()
+  }
+
+  // Parsed once and memoized: this.modelOptionsValue is set once by the
+  // server and never mutated client-side, and the map can be large (it
+  // embeds the full catalog per service type).
+  get modelOptionsMap() {
+    this._modelOptionsMap ||= parseJson(this.modelOptionsValue, {})
+    return this._modelOptionsMap
+  }
+
+  // Runner keys with a model dropdown (Runner-side FORM_MODEL_RUNNER_KEYS),
+  // derived from the map's own keys so the frontend never hardcodes a list
+  // that could drift from the backend constants that built it.
+  get directOutboundRunnerKeys() {
+    return new Set(Object.keys(this.modelOptionsMap))
   }
 
   toggleAuthType() {
@@ -61,30 +98,22 @@ export default class extends Controller {
 
     this.subscriptionFieldsTargets.forEach((el) => {
       el.hidden = isApiKey
-      el.querySelectorAll("select, input").forEach((control) => {
-        control.disabled = isApiKey
-      })
+      this.toggleControls(el, !isApiKey)
     })
 
     this.apiKeyFieldsTargets.forEach((el) => {
       el.hidden = !isApiKey
-      el.querySelectorAll("select, input").forEach((control) => {
-        control.disabled = !isApiKey
-      })
+      this.toggleControls(el, isApiKey)
     })
 
     this.apiKeySelectContainerTargets.forEach((el) => {
       el.hidden = !isApiKey
-      el.querySelectorAll("select, input").forEach((control) => {
-        control.disabled = !isApiKey
-      })
+      this.toggleControls(el, isApiKey)
     })
 
     this.fallbackRoleFieldTargets.forEach((el) => {
       el.hidden = !isApiKey
-      el.querySelectorAll("select, input").forEach((control) => {
-        control.disabled = !isApiKey
-      })
+      this.toggleControls(el, isApiKey)
     })
 
     this.refreshRunnerSpecificFields()
@@ -93,42 +122,99 @@ export default class extends Controller {
   refreshRunnerSpecificFields() {
     const runnerKey = this.currentRunnerKey()
     const isApiKey = this.runnerApiKeyMode()
-    const showOpenCodeSettings = isApiKey && runnerKey === "opencode"
-    const showKiloCodeSettings = isApiKey && runnerKey === "kilocode"
-    const showPiSettings = isApiKey && runnerKey === "pi"
-    const showOmpSettings = isApiKey && runnerKey === "omp"
-
-    this.opencodeSettingsTargets.forEach((el) => {
-      el.hidden = !showOpenCodeSettings
-      el.querySelectorAll("select, input").forEach((control) => {
-        control.disabled = !showOpenCodeSettings
-      })
-    })
-
-    this.kilocodeSettingsTargets.forEach((el) => {
-      el.hidden = !showKiloCodeSettings
-      el.querySelectorAll("select, input").forEach((control) => {
-        control.disabled = !showKiloCodeSettings
-      })
-    })
-
-    this.piSettingsTargets.forEach((el) => {
-      el.hidden = !showPiSettings
-      el.querySelectorAll("select, input").forEach((control) => {
-        control.disabled = !showPiSettings
-      })
-    })
-
-    this.ompSettingsTargets.forEach((el) => {
-      el.hidden = !showOmpSettings
-      el.querySelectorAll("select, input").forEach((control) => {
-        control.disabled = !showOmpSettings
-      })
-    })
 
     this.refreshApiKeyOptions(runnerKey)
-    this.refreshDynamicModelOptions(runnerKey)
+
+    if (this.modelPolicyFormEnabledValue) {
+      this.refreshFeatureFlaggedModelForm(runnerKey, isApiKey)
+      this.hideLegacySettings()
+    } else {
+      this.refreshLegacySettings(runnerKey, isApiKey)
+      this.refreshDynamicModelOptions(runnerKey)
+    }
     this.refreshTierSettings(runnerKey)
+  }
+
+  refreshModelState() {
+    if (!this.modelPolicyFormEnabledValue) return
+
+    this.toggleCustomModelField(this.hasModelSelectTarget && this.modelSelectTarget.value === CUSTOM_OPTION)
+    this.syncModelConfig()
+    this.refreshTierSettings(this.currentRunnerKey())
+    if (this.hasModelSelectTarget) {
+      this.modelSelectTarget.dataset.initialModelSelection = this.modelSelectTarget.value
+    }
+  }
+
+  syncModelConfig() {
+    if (!this.modelPolicyFormEnabledValue) return
+
+    const runnerKey = this.currentRunnerKey()
+    if (!this.directOutboundRunnerKeys.has(runnerKey)) return
+
+    const serviceType = this.selectedApiServiceType()
+    const modelChoice = this.hasModelSelectTarget ? this.modelSelectTarget.value : ""
+    const customModelId = this.hasCustomModelInputTarget ? this.customModelInputTarget.value.trim() : ""
+
+    this.setConfigField(runnerKey, "api_provider", this.providerKeyFor(serviceType))
+    this.setConfigField(
+      runnerKey,
+      "model_policy",
+      modelChoice === FREE_POLICY_OPTION ? "free" : "specific"
+    )
+
+    if (modelChoice === FREE_POLICY_OPTION) {
+      this.setConfigField(runnerKey, "model", "")
+    } else if (modelChoice === CUSTOM_OPTION) {
+      this.setConfigField(runnerKey, "model", customModelId)
+    } else {
+      this.setConfigField(runnerKey, "model", modelChoice)
+    }
+  }
+
+  refreshFeatureFlaggedModelForm(runnerKey, isApiKey) {
+    const showModelSettings = isApiKey && this.directOutboundRunnerKeys.has(runnerKey)
+    const serviceType = this.selectedApiServiceType()
+
+    this.modelSettingsTargets.forEach((el) => {
+      el.hidden = !showModelSettings
+    })
+
+    this.kilocodePreflightFieldTargets.forEach((el) => {
+      el.hidden = !(showModelSettings && runnerKey === "kilocode")
+    })
+
+    this.toggleConfigFields(runnerKey, showModelSettings && Boolean(serviceType))
+
+    if (!showModelSettings || !this.hasModelSelectTarget) {
+      this.disableModelControls(true)
+      return
+    }
+
+    this.populateModelOptions(runnerKey, serviceType)
+    this.disableModelControls(!serviceType)
+    this.syncModelConfig()
+  }
+
+  refreshLegacySettings(runnerKey, isApiKey) {
+    this.toggleLegacySection(this.opencodeSettingsTargets, isApiKey && runnerKey === "opencode")
+    this.toggleLegacySection(this.kilocodeSettingsTargets, isApiKey && runnerKey === "kilocode")
+    this.toggleLegacySection(this.piSettingsTargets, isApiKey && runnerKey === "pi")
+    this.toggleLegacySection(this.ompSettingsTargets, isApiKey && runnerKey === "omp")
+  }
+
+  hideLegacySettings() {
+    this.toggleLegacySection(this.opencodeSettingsTargets, false)
+    this.toggleLegacySection(this.kilocodeSettingsTargets, false)
+    this.toggleLegacySection(this.piSettingsTargets, false)
+    this.toggleLegacySection(this.ompSettingsTargets, false)
+  }
+
+  toggleLegacySection(targets, visible) {
+    targets.forEach((el) => {
+      el.hidden = !visible
+      this.toggleControls(el, visible)
+    })
   }
 
   refreshTierSettings(runnerKey = this.currentRunnerKey()) {
@@ -143,7 +229,6 @@ export default class extends Controller {
       const container = select.closest("[data-runner-form-target='tierSettings']")
       const matches = container && !container.hidden
       select.disabled = !matches
-      if (!matches) select.value = ""
     })
   }
 
@@ -160,14 +245,109 @@ export default class extends Controller {
       const serviceType = option.dataset.apiServiceType || ""
       const visible = this.apiKeyVisibleForRunner(runnerKey, serviceType)
       option.hidden = !visible
-      if (visible && option.selected) {
-        selectedOptionVisible = true
-      }
+      if (visible && option.selected) selectedOptionVisible = true
     })
 
     if (!selectedOptionVisible) {
       this.apiKeySelectTarget.value = ""
     }
+  }
+
+  populateModelOptions(runnerKey, serviceType) {
+    const options = this.modelOptionsMap[runnerKey]?.[serviceType] || []
+    const currentValue = this.currentModelSelectionValue(options)
+
+    this.modelSelectTarget.innerHTML = ""
+    this.modelSelectTarget.append(this.buildOption("", "Select a model"))
+
+    const leading = options.filter((option) => option.kind !== "model")
+    const catalog = options.filter((option) => option.kind === "model")
+
+    leading.forEach((option) => {
+      this.modelSelectTarget.append(this.buildOption(option.value, option.label))
+    })
+
+    const groupedCatalog = catalog.reduce((groups, option) => {
+      const family = option.family || "Other"
+      groups[family] ||= []
+      groups[family].push(option)
+      return groups
+    }, {})
+
+    Object.entries(groupedCatalog).forEach(([family, groupOptions]) => {
+      const optgroup = document.createElement("optgroup")
+      optgroup.label = family
+      groupOptions.forEach((option) => {
+        optgroup.append(this.buildOption(option.value, option.label))
+      })
+      this.modelSelectTarget.append(optgroup)
+    })
+
+    this.modelSelectTarget.value = currentValue
+    this.toggleCustomModelField(currentValue === CUSTOM_OPTION)
+  }
+
+  currentModelSelectionValue(options) {
+    const current = this.hasModelSelectTarget ? this.modelSelectTarget.value : ""
+    const initial = this.modelSelectTarget.dataset.initialModelSelection || ""
+    const values = new Set(options.map((option) => option.value))
+
+    if (values.has(current)) return current
+    if (values.has(initial)) return initial
+    if (this.hasCustomModelInputTarget && this.customModelInputTarget.value.trim() !== "") return CUSTOM_OPTION
+
+    return ""
+  }
+
+  toggleCustomModelField(visible) {
+    this.customModelFieldTargets.forEach((el) => {
+      el.hidden = !visible
+      this.toggleControls(el, visible)
+    })
+
+    if (!visible && this.hasCustomModelInputTarget) {
+      this.customModelInputTarget.value = ""
+    }
+  }
+
+  disableModelControls(disabled) {
+    if (this.hasModelSelectTarget) this.modelSelectTarget.disabled = disabled
+
+    const showCustom = !disabled && this.hasModelSelectTarget && this.modelSelectTarget.value === CUSTOM_OPTION
+    this.toggleCustomModelField(showCustom)
+  }
+
+  buildOption(value, label) {
+    const option = document.createElement("option")
+    option.value = value
+    option.textContent = label
+    return option
+  }
+
+  setConfigField(runnerKey, fieldName, value) {
+    const field = this.configFieldTargets.find((input) => {
+      return input.dataset.runnerKey === runnerKey && input.dataset.configField === fieldName
+    })
+    if (field) field.value = value || ""
+  }
+
+  toggleConfigFields(activeRunnerKey, enabled) {
+    this.configFieldTargets.forEach((field) => {
+      field.disabled = !(enabled && field.dataset.runnerKey === activeRunnerKey)
+    })
+  }
+
+  providerKeyFor(serviceType) {
+    return serviceType || ""
+  }
+
+  selectedApiServiceType() {
+    if (this.hasApiKeySelectTarget) {
+      const selected = this.apiKeySelectTarget.selectedOptions[0]
+      if (selected?.dataset?.apiServiceType) return selected.dataset.apiServiceType
+    }
+
+    return this.initialApiServiceTypeValue || ""
   }
 
   refreshDynamicModelOptions(runnerKey = this.currentRunnerKey()) {
@@ -243,6 +423,14 @@ export default class extends Controller {
 
   apiKeyVisibleForRunner(runnerKey, serviceType) {
     if (!runnerKey) return false
+
+    // Flagged path: the exact allowed service types are the keys the server
+    // built into modelOptionsValue from the same Ruby constants that define
+    // this runner's API providers (supported_service_types_for).
+    if (this.modelPolicyFormEnabledValue && this.directOutboundRunnerKeys.has(runnerKey)) {
+      return new Set(Object.keys(this.modelOptionsMap[runnerKey] || {})).has(serviceType)
+    }
+
     if (DYNAMIC_API_RUNNER_KEYS.has(runnerKey)) {
       return this.dynamicServiceTypesFor(runnerKey).has(serviceType)
     }
@@ -279,6 +467,11 @@ export default class extends Controller {
   }
 
   freePolicySelectedFor(runnerKey) {
+    if (runnerKey === "openrouter_free") return true
+
+    if (this.modelPolicyFormEnabledValue && this.directOutboundRunnerKeys.has(runnerKey)) {
+      return this.hasModelSelectTarget && this.modelSelectTarget.value === FREE_POLICY_OPTION
+    }
     const select = this.dynamicModelSelectTargets.find((target) => target.dataset.runnerKey === runnerKey)
     if (!select) return false
 
@@ -298,5 +491,11 @@ export default class extends Controller {
 
     const hiddenField = this.element.querySelector("input[name='runner[runner_key]']")
     return hiddenField?.value || ""
+  }
+
+  toggleControls(element, enabled) {
+    element.querySelectorAll("select, input").forEach((control) => {
+      control.disabled = !enabled
+    })
   }
 }

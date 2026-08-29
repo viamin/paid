@@ -2312,6 +2312,24 @@ RSpec.describe AgentRun do
           expect(handle.runner_type).to eq(:local_docker)
         end
 
+        it "runner path: persists the in-memory handle even after the runner feature flag has since been disabled" do
+          # drain_worker's Thread#kill fallback can race a flag flip: a run may
+          # start provisioning through a runner and then have the project's
+          # execution_runner_enabled flag turned off before recovery runs. The
+          # in-memory handle must still drive recovery so CleanupContainerActivity
+          # has something to reconnect to, instead of silently no-oping.
+          agent_run = create(:agent_run, worktree_path: worktree_path, container_id: nil)
+          FeatureFlags.disable!(:execution_runner_enabled)
+          agent_run.instance_variable_set(:@current_handle, runner_handle)
+
+          result = agent_run.recover_in_flight_container!
+
+          expect(result).to eq("runner-container-999")
+          reloaded = agent_run.reload
+          expect(reloaded.container_id).to eq("runner-container-999")
+          expect(reloaded.container_host).to eq("remote")
+        end
+
         it "runner path: is a no-op when a container_id is already recorded" do
           agent_run = create(:agent_run, worktree_path: worktree_path, container_id: "existing")
           FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
@@ -2997,6 +3015,22 @@ RSpec.describe AgentRun do
           expect(reloaded.container_host).to be_nil
           expect(reloaded.runner_handle).to be_nil
         end
+
+        it "rehydrates a persisted runner_handle before cleanup on a freshly loaded run" do
+          agent_run = create(:agent_run, worktree_path: worktree_path)
+          handle = build_handle(agent_run)
+          agent_run.update!(runner_handle: handle.to_storage)
+          FeatureFlags.enable!(:execution_runner_enabled, project: agent_run.project)
+          allow(mock_runner).to receive(:cleanup)
+
+          described_class.find(agent_run.id).cleanup_container(force: true)
+
+          expect(mock_runner).to have_received(:cleanup).with(handle: handle, force: true)
+          reloaded = agent_run.reload
+          expect(reloaded.container_id).to be_nil
+          expect(reloaded.container_host).to be_nil
+          expect(reloaded.runner_handle).to be_nil
+        end
       end
 
       describe "#execute_in_container (runner shim)" do
@@ -3067,6 +3101,27 @@ RSpec.describe AgentRun do
 
           expect(result).to be_success
           expect(result[:stdout]).to eq("reconnected\n")
+        end
+
+        it "routes through the runner when a handle is set but the feature flag has since been disabled" do
+          # A run's handle may be rehydrated (e.g. by Conflicts::Detect) after the
+          # project has turned execution_runner_enabled back off. The persisted
+          # handle must still drive execution instead of falling through to the
+          # legacy container path, which has no container_id to reconnect to.
+          agent_run = create(:agent_run, worktree_path: worktree_path)
+          FeatureFlags.disable!(:execution_runner_enabled)
+          agent_run.instance_variable_set(:@current_handle, mock_handle)
+          mock_handle.metadata["agent_run_id"] = agent_run.id
+
+          result = agent_run.execute_in_container("echo hello")
+
+          expect(mock_runner).to have_received(:start).with(
+            handle: mock_handle, command: "echo hello", timeout: nil,
+            startup_timeout: nil, idle_timeout: nil, abort_patterns: nil,
+            preparation: nil, heartbeat_path: nil
+          )
+          expect(result).to be_success
+          expect(result[:stdout]).to eq("runner-output\n")
         end
 
         it "translates ExecutionError to Provision::ExecutionError" do

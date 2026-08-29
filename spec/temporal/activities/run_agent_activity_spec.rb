@@ -189,7 +189,7 @@ RSpec.describe Activities::RunAgentActivity do
 
     activity.send(:run_runner_preflight!,
       agent_run: agent_run,
-      container_service: container_service,
+      execution_environment: container_service,
       command_context: command_context,
       runner: provider.runner_key,
       execution_env: {})
@@ -4055,7 +4055,7 @@ expect(container_service).to receive(:execute).with(
       end
 
       it "reprovisions the container and continues with the fallback runner" do
-        expect(agent_run).to receive(:provision_container).with(restart_provisioning_cycle: true) do
+        expect(agent_run).to receive(:provision_execution_environment).with(restart_provisioning_cycle: true) do
           agent_run.update!(container_id: "reprovisioned-123")
         end
 
@@ -4096,7 +4096,7 @@ expect(container_service).to receive(:execute).with(
             exec_success
           end
         end
-        allow(agent_run).to receive(:provision_container) { agent_run.update!(container_id: "reprovisioned-123") }
+        allow(agent_run).to receive(:provision_execution_environment) { agent_run.update!(container_id: "reprovisioned-123") }
         allow(Containers::Provision).to receive(:reconnect) do |agent_run:, container_id:|
           raise "unexpected container id #{container_id}" unless [ "abc123", "reprovisioned-123" ].include?(container_id)
 
@@ -4149,7 +4149,7 @@ expect(container_service).to receive(:execute).with(
           end
         end
 
-        allow(agent_run).to receive(:provision_container) { agent_run.update!(container_id: "reprovisioned-123") }
+        allow(agent_run).to receive(:provision_execution_environment) { agent_run.update!(container_id: "reprovisioned-123") }
 
         reconnect_calls = 0
         allow(Containers::Provision).to receive(:reconnect) do |agent_run:, container_id:|
@@ -4191,7 +4191,7 @@ expect(container_service).to receive(:execute).with(
             diagnostics: { "elapsed_seconds" => 901.2, "output_received" => true, "heartbeat_active" => false }
           )
         end
-        allow(agent_run).to receive(:provision_container).and_raise(Containers::Provision::ProvisionError, "docker unavailable")
+        allow(agent_run).to receive(:provision_execution_environment).and_raise(Containers::Provision::ProvisionError, "docker unavailable")
       end
 
       it "preserves the timeout instead of failing the fallback with no container" do

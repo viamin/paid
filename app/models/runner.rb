@@ -800,6 +800,20 @@ class Runner < ApplicationRecord
     RunnerSupport.api_service_type_for(runner_key)
   end
 
+  def self.api_service_type_to_provider_key(service_type)
+    normalized = service_type.to_s
+
+    DIRECT_OUTBOUND_API_PROVIDERS.each do |provider_key, config|
+      return provider_key if config[:service_type] == normalized
+    end
+
+    PI_API_PROVIDERS.each do |provider_key, config|
+      return provider_key if config[:service_type] == normalized
+    end
+
+    nil
+  end
+
   def self.routing_key?(identifier)
     routing_key_prefix_for(identifier).present?
   end
