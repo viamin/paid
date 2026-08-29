@@ -764,3 +764,24 @@
   *Tests:* `spec/services/execution_runners/local_docker_runner_spec.rb`
   *Code:* `ExecutionRunners::LocalDockerRunner.capabilities`,
   `ExecutionRunners::Base.capability_compatibility_for`
+
+- [x] **CONTAINER-RUNTIME-045** — The repository SHALL define the production-
+  readiness dimensions and benchmark capture shape that the shared runner
+  contract work tracked by `#3347` must exercise. The dimension catalog SHALL
+  cover exactly thirteen lifecycle checks: provision execution, clone fixture
+  repository, inject configuration, provide secrets securely, run workload,
+  provision service dependencies, retrieve and stream logs, report
+  success/failure, handle non-zero exits, enforce timeout, cancel a running
+  workload, clean up resources, and demonstrate retry/idempotency. The
+  benchmark report SHALL be JSON-ready and include the canonical fixture
+  workload identity plus provisioning latency, cold-start latency, execution
+  duration, cleanup latency, resource-usage fields, and estimated
+  infrastructure-cost fields so different providers can be compared
+  programmatically. The existing Docker runner SHALL emit this report from the
+  shared no-shared-filesystem conformance baseline.
+  *Tests:* `spec/services/execution_runners/conformance_suite_spec.rb`,
+  `spec/support/shared_examples/no_shared_filesystem_conformance.rb`,
+  `spec/services/execution_runners/local_docker_runner_spec.rb`
+  *Code:* `app/services/execution_runners/conformance_suite.rb`,
+  `spec/fixtures/execution_runners/conformance_repo/`,
+  `docs/intent/container-runtime/runner-conformance-benchmark-methodology.md`
