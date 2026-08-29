@@ -230,7 +230,9 @@ RSpec.describe ExecutionRunners::ConformanceSuite do
         agent_run, networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted
       )
     end
-    let(:handle) { instance_double(ExecutionRunners::RunnerHandle, host: "provisioned-host") }
+    let(:handle) do
+      instance_double(ExecutionRunners::RunnerHandle, host: "provisioned-host", runner_type: :local_docker)
+    end
     let(:runner) { instance_double(ExecutionRunners::Base, provision: handle, cleanup: nil) }
     let(:dimension_results) do
       ExecutionRunners::ConformanceSuite::BenchmarkReport.default_dimension_results(
@@ -266,6 +268,14 @@ RSpec.describe ExecutionRunners::ConformanceSuite do
       # run's pre-provision container_host (which stays "local" here while
       # the stubbed handle reports a different host).
       expect(result.report.as_json.fetch("runner")).to include("runner_backend" => "provisioned-host")
+    end
+
+    it "reports the canonical runner type from the handle, not the runner's Ruby class name" do
+      allow(runner).to receive(:start).and_return(ExecutionRunners::ExecutionResult.success(stdout: "ok"))
+
+      result = run_benchmark
+
+      expect(result.report.as_json.fetch("runner")).to include("runner_type" => "local_docker")
     end
 
     # @spec CONTAINER-RUNTIME-045

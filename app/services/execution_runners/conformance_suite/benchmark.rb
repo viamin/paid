@@ -115,7 +115,7 @@ module ExecutionRunners
 
         Rails.logger.warn(
           message: "container_manager.conformance_cleanup_failed",
-          runner_type: runner.class.name,
+          runner_type: handle.runner_type,
           error_class: error.class.name,
           error_message: error.message
         )
@@ -123,7 +123,7 @@ module ExecutionRunners
 
       def build_report(handle, timestamps, execution_result)
         BenchmarkReport.build(
-          runner_type: runner.class.name.demodulize.underscore,
+          runner_type: handle.runner_type,
           runner_backend: handle.host || "unknown",
           timestamps: timestamps,
           execution_result: execution_result,
