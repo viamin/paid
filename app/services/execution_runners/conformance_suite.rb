@@ -156,7 +156,7 @@ module ExecutionRunners
                 timestamps.fetch(:provision_requested_at),
                 timestamps.fetch(:environment_ready_at)
               ),
-              "cold_start_latency_ms" => milliseconds_between(
+              "cold_start_latency_ms" => timestamps.fetch(:first_output_at) && milliseconds_between(
                 timestamps.fetch(:provision_requested_at),
                 timestamps.fetch(:first_output_at)
               ),

@@ -290,6 +290,15 @@ RSpec.describe ExecutionRunners::ConformanceSuite do
     end
 
     # @spec CONTAINER-RUNTIME-045
+    it "nulls out cold_start_latency_ms when a startup timeout raises before any output streamed" do
+      allow(runner).to receive(:start).and_raise(ExecutionRunners::StartupTimeoutError, "no startup output")
+
+      result = run_benchmark
+
+      expect(result.report.as_json.fetch("benchmark")).to include("cold_start_latency_ms" => nil)
+    end
+
+    # @spec CONTAINER-RUNTIME-045
     it "captures a non-zero-exit translation error into the same report contract as a returned failure" do
       allow(runner).to receive(:start).and_raise(
         ExecutionRunners::ExecutionError.new("boom", exit_code: 17, stdout: "partial\n", stderr: "bad time")

@@ -141,6 +141,11 @@ Example shape:
 }
 ```
 
+`benchmark.cold_start_latency_ms` is `null` when the runner never streamed
+any output before the workload failed (for example a startup timeout),
+rather than reporting a fabricated near-zero latency computed from an
+unrelated timestamp.
+
 ## Running The Suite
 
 For the Docker baseline in CI or locally, run the shared no-shared-filesystem

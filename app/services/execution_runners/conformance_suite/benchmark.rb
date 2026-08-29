@@ -83,8 +83,12 @@ module ExecutionRunners
         failure_result_for(error)
       end
 
+      # first_output_at stays nil when the workload never streamed any output
+      # before #start raised (e.g. StartupTimeoutError) — BenchmarkReport
+      # must null out cold_start_latency_ms for that run rather than
+      # reporting a fabricated near-zero latency.
       def record_completion_timestamps(timestamps, first_output_at)
-        timestamps[:first_output_at] = first_output_at || timestamps.fetch(:workload_started_at)
+        timestamps[:first_output_at] = first_output_at
         timestamps[:workload_finished_at] = Time.now.utc
       end
 
