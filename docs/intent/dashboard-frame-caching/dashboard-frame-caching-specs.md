@@ -62,5 +62,7 @@
 - [x] **DASHBOARD-FRAME-CACHE-008** — The dashboard loading placeholders and
   live indicator SHALL respect reduced-motion preferences by limiting pulse and
   ping animations to motion-safe contexts and rendering them static otherwise.
-  *Code:* `app/views/dashboard/show.html.erb`.
-  *Test:* `spec/requests/dashboard_spec.rb`.
+  *Code:* `app/views/dashboard/show.html.erb`,
+  `app/views/dashboard/_queue_preview_frame.html.erb`.
+  *Test:* `spec/requests/dashboard_spec.rb`,
+  `spec/views/dashboard/queue_preview_frame_partial_spec.rb`.
