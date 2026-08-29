@@ -263,18 +263,44 @@ RSpec.describe ExecutionRunners::ConformanceSuite do
       expect(result.report.as_json.fetch("runner")).to include("runner_backend" => "provisioned-host")
     end
 
-    it "cleans up the provisioned environment when the workload raises" do
+    # @spec CONTAINER-RUNTIME-045
+    it "cleans up and still emits a benchmark report when the workload raises a classified timeout" do
       allow(runner).to receive(:start).and_raise(ExecutionRunners::TimeoutError, "wall-clock timeout")
 
-      expect { run_benchmark }.to raise_error(ExecutionRunners::TimeoutError, /wall-clock timeout/)
+      result = run_benchmark
+
       expect(runner).to have_received(:cleanup).with(handle: handle, force: true)
+      expect(result.execution_result).to be_failure
+      expect(result.report.as_json.fetch("result")).to include("success" => false, "exit_code" => 1)
     end
 
-    it "keeps the original workload failure when cleanup fails too" do
+    # @spec CONTAINER-RUNTIME-045
+    it "captures a non-zero-exit translation error into the same report contract as a returned failure" do
+      allow(runner).to receive(:start).and_raise(
+        ExecutionRunners::ExecutionError.new("boom", exit_code: 17, stdout: "partial\n", stderr: "bad time")
+      )
+
+      result = run_benchmark
+
+      expect(runner).to have_received(:cleanup).with(handle: handle, force: true)
+      expect(result.execution_result).to be_failure
+      expect(result.execution_result.exit_code).to eq(17)
+      expect(result.execution_result.stdout).to eq("partial\n")
+      expect(result.report.as_json.fetch("result")).to include("success" => false, "exit_code" => 17)
+    end
+
+    it "raises the cleanup failure when the workload's own failure was already captured in the report" do
       allow(runner).to receive(:start).and_raise(ExecutionRunners::StartupTimeoutError, "no startup output")
       allow(runner).to receive(:cleanup).and_raise(ExecutionRunners::Error, "teardown failed")
 
-      expect { run_benchmark }.to raise_error(ExecutionRunners::StartupTimeoutError, /no startup output/)
+      expect { run_benchmark }.to raise_error(ExecutionRunners::Error, /teardown failed/)
+    end
+
+    it "keeps an unclassified workload bug visible when cleanup fails too" do
+      allow(runner).to receive(:start).and_raise(ArgumentError, "not a runner contract error")
+      allow(runner).to receive(:cleanup).and_raise(ExecutionRunners::Error, "teardown failed")
+
+      expect { run_benchmark }.to raise_error(ArgumentError, /not a runner contract error/)
     end
 
     it "surfaces a cleanup failure when the workload itself succeeded" do
@@ -282,6 +308,13 @@ RSpec.describe ExecutionRunners::ConformanceSuite do
       allow(runner).to receive(:cleanup).and_raise(ExecutionRunners::Error, "teardown failed")
 
       expect { run_benchmark }.to raise_error(ExecutionRunners::Error, /teardown failed/)
+    end
+
+    it "lets an unclassified workload bug propagate without building a report" do
+      allow(runner).to receive(:start).and_raise(ArgumentError, "not a runner contract error")
+
+      expect { run_benchmark }.to raise_error(ArgumentError, /not a runner contract error/)
+      expect(runner).to have_received(:cleanup).with(handle: handle, force: true)
     end
 
     def run_benchmark

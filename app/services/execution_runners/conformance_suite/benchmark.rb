@@ -45,10 +45,12 @@ module ExecutionRunners
 
       attr_reader :runner, :spec, :dimension_results, :fixture
 
-      # The runner contract allows #start to raise (timeout, startup failure,
-      # non-zero exit translation). The environment provisioned before this
-      # call has to be released on that path too, so cleanup runs from an
-      # ensure rather than only on the happy path.
+      # The environment provisioned before this call has to be released
+      # whether the workload succeeds, fails, or raises an unclassified bug,
+      # so cleanup runs from an ensure rather than only on the happy path.
+      # Classified runner failures never reach this rescue — {#execute}
+      # converts them into a reportable ExecutionResult so build_report still
+      # runs for them. Only a bug propagating out of {#execute} lands here.
       def execute_with_cleanup(handle:, command:, timestamps:, &block)
         workload_error = nil
         execute(handle: handle, command: command, timestamps: timestamps, &block)
@@ -59,6 +61,13 @@ module ExecutionRunners
         capture_cleanup(handle: handle, timestamps: timestamps, failure: workload_error)
       end
 
+      # The runner contract allows #start to raise for a classified failure
+      # (timeout, startup failure, non-zero exit translation) instead of
+      # returning a failing ExecutionResult. That outcome is captured here as
+      # an ExecutionResult, the same shape a runner returns for a failing
+      # workload, so the benchmark report still gets built for it — a runner
+      # signaling failure by raising must produce the same
+      # runner_conformance_benchmark.v1 payload as one that returns normally.
       def execute(handle:, command:, timestamps:)
         first_output_at = nil
         timeout = spec.resources&.timeout_seconds || ExecutionResources.profile("standard").timeout_seconds
@@ -67,16 +76,36 @@ module ExecutionRunners
             first_output_at ||= Time.now.utc
             yield stream, chunk if block_given?
           end
-        timestamps[:first_output_at] = first_output_at || timestamps.fetch(:workload_started_at)
-        timestamps[:workload_finished_at] = Time.now.utc
+        record_completion_timestamps(timestamps, first_output_at)
         result
+      rescue ExecutionRunners::Error => error
+        record_completion_timestamps(timestamps, first_output_at)
+        failure_result_for(error)
       end
 
-      # A cleanup failure raised while +failure+ (the workload error already
+      def record_completion_timestamps(timestamps, first_output_at)
+        timestamps[:first_output_at] = first_output_at || timestamps.fetch(:workload_started_at)
+        timestamps[:workload_finished_at] = Time.now.utc
+      end
+
+      # Mirrors the shape a runner returns from #start for a failing
+      # workload (see {ExecutionRunners::LocalDockerRunner#translate_result})
+      # so {BenchmarkReport.build} sees one ExecutionResult contract
+      # regardless of whether the runner raised or returned.
+      def failure_result_for(error)
+        return ExecutionResult.failure(exit_code: 1, stderr: error.message) unless error.is_a?(ExecutionError)
+
+        ExecutionResult.failure(
+          exit_code: error.exit_code || 1, stdout: error.stdout.to_s, stderr: error.stderr.to_s
+        )
+      end
+
+      # A cleanup failure raised while +failure+ (an unclassified bug already
       # propagating) is present is logged rather than raised: replacing that
-      # error would hide the failure the benchmark run set out to report. On
-      # the success path a cleanup failure is itself a conformance failure and
-      # propagates normally.
+      # error would hide the bug the benchmark run set out to surface. On
+      # every other path — including a classified runner failure {#execute}
+      # already converted into a report — a cleanup failure is itself a
+      # conformance failure and propagates normally.
       def capture_cleanup(handle:, timestamps:, failure:)
         timestamps[:cleanup_requested_at] = Time.now.utc
         runner.cleanup(handle: handle, force: true)
