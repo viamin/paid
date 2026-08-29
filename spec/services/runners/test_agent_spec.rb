@@ -745,6 +745,43 @@ RSpec.describe Runners::TestAgent do
       end
     end
 
+    context "when a direct-outbound specific-model opencode runner (e.g. migrated Pareto) is tested" do
+      let(:api_key) { create(:runner_api_key, user: user, api_service_type: "openrouter") }
+      let(:runner_record) do
+        create(
+          :provider,
+          user: user,
+          runner_key: "opencode",
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          enabled_for_agent_runs: false,
+          enabled_for_fallback: false,
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "openrouter/pareto-code", "model_policy" => "specific" } }
+        )
+      end
+
+      before do
+        allow(RunnerSupport).to receive_messages(supported_runner_key?: true,
+          container_executable_runner_key?: true, harness_runner_key_for: "opencode")
+        stub_container_smoke_test(
+          name: :opencode, status: "ok", message: "Smoke test passed", latency_ms: 30, error_category: nil, check: :smoke_test
+        )
+      end
+
+      it "passes the test project so the runtime carries data-collection/zdr routing metadata" do
+        described_class.call(runner: provider)
+
+        expect(AgentHarness).to have_received(:check_provider).with(
+          :opencode,
+          timeout: 60,
+          executor: an_instance_of(Containers::HarnessExecutor),
+          provider_runtime: have_attributes(
+            metadata: hash_including(config: hash_including("provider" => hash_including("openrouter")))
+          )
+        )
+      end
+    end
+
     context "when direct-outbound kilocode is tested" do
       let(:api_key) { create(:runner_api_key, user: user, api_service_type: "anthropic") }
       let(:runner_record) do

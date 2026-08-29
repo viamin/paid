@@ -47,6 +47,7 @@ class MigrateOpenrouterFreeParetoRunnersToOpencode < ActiveRecord::Migration[8.1
   def up
     migrated = migrate_runners!
     migrate_runner_states!(migrated)
+    remap_legacy_agent_run_runner_keys!
   end
 
   def down
@@ -187,5 +188,22 @@ class MigrateOpenrouterFreeParetoRunnersToOpencode < ActiveRecord::Migration[8.1
     return false unless runner.config.is_a?(Hash)
 
     !free_policy_opencode_runner?(runner)
+  end
+
+  # agent_runs.agent_type / final_runner still carry the retired keys;
+  # AGENT_TYPES no longer includes them, so any queued/parked legacy
+  # run would fail validation on claim and be force-failed by the
+  # dispatcher. Remap to the runner key the rows now dispatch through.
+  def remap_legacy_agent_run_runner_keys!
+    safety_assured do
+      execute <<~SQL
+        UPDATE agent_runs SET agent_type = '#{TARGET_KEY}'
+        WHERE agent_type IN ('openrouter_free', 'openrouter_pareto')
+      SQL
+      execute <<~SQL
+        UPDATE agent_runs SET final_runner = '#{TARGET_KEY}'
+        WHERE final_runner IN ('openrouter_free', 'openrouter_pareto')
+      SQL
+    end
   end
 end

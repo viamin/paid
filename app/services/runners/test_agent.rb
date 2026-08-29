@@ -376,7 +376,7 @@ module Runners
       return kilocode_provider_runtime if kilocode_direct_outbound?
       return subscription_provider_runtime if subscription_provider_runtime?
 
-      runner.agent_harness_runner_runtime
+      runner.agent_harness_runner_runtime(project: test_project)
     end
 
     # Builds the OpenRouter-routed runtime for free-policy smoke tests.

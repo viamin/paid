@@ -211,4 +211,18 @@ RSpec.describe MigrateOpenrouterFreeParetoRunnersToOpencode, :aggregate_failures
 
     expect(other.reload.runner_key).to eq("cursor")
   end
+
+  it "remaps legacy agent_type/final_runner values on agent_runs so parked/queued legacy runs stay claimable" do # @spec MODEL-POLICY-010
+    project = create(:project)
+    run = create(:agent_run, project: project, agent_type: "claude_code", status: "queued")
+    ActiveRecord::Base.connection.execute(<<~SQL)
+      UPDATE agent_runs SET agent_type = 'openrouter_pareto', final_runner = 'openrouter_free' WHERE id = #{run.id}
+    SQL
+
+    migration.migrate(:up)
+
+    reloaded = AgentRun.find(run.id)
+    expect(reloaded.agent_type).to eq("opencode")
+    expect(reloaded.final_runner).to eq("opencode")
+  end
 end
