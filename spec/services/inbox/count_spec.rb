@@ -137,6 +137,18 @@ RSpec.describe Inbox::Count do
       expect(described_class.call(user: user)).to eq(0)
     end
 
+    # @spec OPERATOR-INBOX-002B
+    it "batch-preloads subject projects for action_required instead of querying per row" do
+      create_agent_run_blocking_notification(github_number: 100)
+      single_row_queries = count_queries { described_class.call(user: user) }
+
+      create_agent_run_blocking_notification(github_number: 200)
+      create_agent_run_blocking_notification(github_number: 300)
+      multi_row_queries = count_queries { described_class.call(user: user) }
+
+      expect(multi_row_queries).to eq(single_row_queries)
+    end
+
     it "excludes ready PRs that have not yet been evaluated for auto-merge" do
       create(:issue, :pull_request, project: project)
 
@@ -186,6 +198,12 @@ RSpec.describe Inbox::Count do
       expect(after_enter).to eq(1)
       expect(after_exit).to eq(0)
     end
+  end
+
+  def create_agent_run_blocking_notification(github_number:)
+    issue = create(:issue, project: project, github_number: github_number)
+    agent_run = create(:agent_run, project: project, issue: issue)
+    create(:notification, :error, account: account, subject: agent_run, blocking: true)
   end
 
   def create_merge_approval_pr

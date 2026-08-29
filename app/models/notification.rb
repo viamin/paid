@@ -28,6 +28,18 @@ class Notification < ApplicationRecord
   scope :for_nav_section, ->(section) { where(nav_section: section) }
   scope :recent, -> { order(created_at: :desc) }
 
+  # resolved_project dereferences subject.project for every subject that is
+  # not itself a Project, so batch those associations by subject class before
+  # counting or rendering a set of notifications — otherwise each row costs an
+  # extra project lookup. Subjects must already be loaded (includes(:subject)).
+  def self.preload_resolved_projects(notifications)
+    notifications.filter_map(&:subject).group_by(&:class).each do |klass, subjects|
+      next unless klass.reflect_on_association(:project)
+
+      ActiveRecord::Associations::Preloader.new(records: subjects, associations: :project).call
+    end
+  end
+
   def active?
     dismissed_at.nil? && resolved_at.nil?
   end

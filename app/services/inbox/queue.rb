@@ -277,13 +277,10 @@ module Inbox
     # up front so an inbox page with N blocking notifications doesn't issue
     # O(N) extra project/PR lookups.
     def preload_notification_subjects(notifications)
-      subjects = notifications.filter_map(&:subject)
+      Notification.preload_resolved_projects(notifications)
 
-      issues = subjects.select { |subject| subject.is_a?(Issue) }
-      ActiveRecord::Associations::Preloader.new(records: issues, associations: :project).call
-
-      agent_runs = subjects.select { |subject| subject.is_a?(AgentRun) }
-      ActiveRecord::Associations::Preloader.new(records: agent_runs, associations: [ :project, :issue ]).call
+      agent_runs = notifications.filter_map(&:subject).select { |subject| subject.is_a?(AgentRun) }
+      ActiveRecord::Associations::Preloader.new(records: agent_runs, associations: :issue).call
       AgentRun.preload_source_pull_requests(agent_runs)
     end
 

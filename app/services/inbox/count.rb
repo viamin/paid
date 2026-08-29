@@ -56,9 +56,11 @@ module Inbox
     # to), so counting them would inflate the badge past what the queue
     # shows and beyond what the default action_required URL can open.
     def action_required_count
-      NotificationPolicy::Scope.new(user, Notification).resolve.active.blocking
+      notifications = NotificationPolicy::Scope.new(user, Notification).resolve.active.blocking
         .includes(:subject)
-        .count { |notification| notification.resolved_project.present? }
+        .to_a
+      Notification.preload_resolved_projects(notifications)
+      notifications.count { |notification| notification.resolved_project.present? }
     end
 
     # Narrows to rows that could plausibly be approval-only blockers before
