@@ -230,13 +230,14 @@ RSpec.describe "Runners" do
         expect_disabled_checkbox(row: row, label: "Fallback", checked: true, title: "Enabled (rate-limit only)")
       end
 
-      it "shows the free models badge and section for an openrouter_free runner" do
+      it "shows the free models badge and section for a free-policy opencode runner" do
         free_model = create(:llm_model, model_id: "high-free", provider: "openrouter", tier: "high", pricing_tier: "free")
         api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
         user.runners.create!(
-          runner_key: "openrouter_free",
+          runner_key: "opencode",
           auth_type: "api_key",
           provider_api_key: api_key,
+          config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } },
           tier_model_ids: LlmModel::TIERS.index_with { free_model.model_id }
         )
 
@@ -877,12 +878,12 @@ RSpec.describe "Runners" do
     end
 
     # @spec FREE-MODEL-RUNNER-002
-    it "creates an openrouter_free runner with default free tier mappings and suggested flags" do
+    it "creates a free-policy opencode runner with default free tier mappings and suggested flags" do
       api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
       seed_openrouter_synced_free_models
-      post_create_openrouter_free_runner(api_key:)
+      post_create_free_policy_opencode_runner(api_key:)
       expect(response).to redirect_to(runners_path)
-      runner = user.runners.find_by!(runner_key: "openrouter_free", auth_type: "api_key")
+      runner = user.runners.find_by!(runner_key: "opencode", auth_type: "api_key")
       expect(runner.tier_model_ids).to eq(
         "low" => "free-low",
         "mid" => "free-mid",
@@ -895,15 +896,15 @@ RSpec.describe "Runners" do
     end
 
     # @spec FREE-MODEL-RUNNER-003
-    it "preserves explicit openrouter_free settings supplied by the user" do
+    it "preserves explicit free-policy opencode settings supplied by the user" do
       api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
       seed_openrouter_synced_free_models
       create_free_model_override
-      post_create_openrouter_free_runner(api_key:, runner_attrs: explicit_openrouter_free_runner_attrs)
+      post_create_free_policy_opencode_runner(api_key:, runner_attrs: explicit_openrouter_free_runner_attrs)
 
       expect(response).to redirect_to(runners_path)
       expect_openrouter_free_runner_overrides(
-        user.runners.find_by!(runner_key: "openrouter_free", auth_type: "api_key")
+        user.runners.find_by!(runner_key: "opencode", auth_type: "api_key")
       )
     end
 
@@ -1286,25 +1287,14 @@ RSpec.describe "Runners" do
       expect(response.body).to include("Paid prefers it over host-mounted Claude auth")
     end
 
-    it "hides openrouter_free once the user already has one configured" do
-      create(:provider_api_key, user: user, api_service_type: "openrouter", name: "OpenRouter")
-      free_model = create(:llm_model, model_id: "free-low", provider: "openrouter", tier: "low", pricing_tier: "free")
-      user.runners.create!(
-        runner_key: "openrouter_free",
-        auth_type: "api_key",
-        provider_api_key: user.provider_api_keys.first,
-        tier_model_ids: LlmModel::TIERS.index_with { free_model.model_id }
-      )
-      allow(RunnerSupport).to receive(:addable_runner_keys).and_return(%w[claude openrouter_free kilocode])
-
-      get new_runner_path(form_variant: "api_key")
-
-      expect(response).to have_http_status(:ok)
-      # Single-instance runner is hidden once added...
-      expect(response.body).not_to include('option value="openrouter_free"')
-      # ...but other API-key runners remain available.
-      expect(response.body).to include('option value="kilocode"')
-    end
+    # NOTE: The "single-instance runner key" concept (a key hidden from the
+    # "Add Runner" options once one instance exists) was removed by RDR-065
+    # (#3671) along with the legacy openrouter_free/openrouter_pareto runner
+    # keys. Every current api_key runner key (opencode, kilocode, pi, omp)
+    # legitimately allows duplicates, so there is no longer any key this
+    # scenario applies to. See app/controllers/runners_controller.rb
+    # `load_runner_options`, which no longer computes or subtracts a
+    # single-instance key set.
 
     it "keeps offering duplicate-capable API-key runners after one is added" do
       api_key = create(:provider_api_key, user: user, api_service_type: "openrouter", name: "OpenRouter")
@@ -1327,25 +1317,28 @@ RSpec.describe "Runners" do
       expect(response.body).to include('option value="opencode"')
     end
 
-    it "keeps the index Add Runner CTA available while only the single-instance runner is hidden" do
-      create(:provider_api_key, user: user, api_service_type: "openrouter", name: "OpenRouter")
-      free_model = create(:llm_model, model_id: "free-low", provider: "openrouter", tier: "low", pricing_tier: "free")
-      user.runners.create!(
-        runner_key: "openrouter_free",
-        auth_type: "api_key",
-        provider_api_key: user.provider_api_keys.first,
-        tier_model_ids: LlmModel::TIERS.index_with { free_model.model_id }
-      )
-      # openrouter_free is hidden (single-instance, already added) but kilocode
-      # is a duplicate-capable API-key runner with a compatible key, so the
-      # "Add Runner" CTA must remain instead of showing "No More Runners Yet".
-      allow(RunnerSupport).to receive(:addable_runner_keys).and_return(%w[claude openrouter_free kilocode])
+    # NOTE: See the removal note above `"keeps offering duplicate-capable
+    # API-key runners after one is added"` — the single-instance-key hiding
+    # behavior this scenario exercised no longer exists post-RDR-065.
 
-      get runners_path
+    # @spec FREE-MODEL-RUNNER-004
+    # @spec FREE-MODEL-RUNNER-005
+    # @spec FREE-MODEL-RUNNER-006
+    it "shows free-model configuration guidance on the edit form for a free-policy opencode runner" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter", name: "OpenRouter")
+      seed_free_runner_form_models
+      runner = user.runners.create!(
+        runner_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } },
+        tier_model_ids: { "high" => "high-free", "mid" => "mid-free", "low" => "low-free" }
+      )
+
+      get edit_runner_path(runner)
 
       expect(response).to have_http_status(:ok)
-      expect(response.body).to include("Add Runner")
-      expect(response.body).not_to include("No More Runners Yet")
+      expect_free_runner_form_guidance(response.body)
     end
 
     it "hides free and pareto pseudo-runners when the runner model policy form flag is enabled" do
@@ -1377,15 +1370,20 @@ RSpec.describe "Runners" do
     # @spec FREE-MODEL-RUNNER-004
     # @spec FREE-MODEL-RUNNER-005
     # @spec FREE-MODEL-RUNNER-006
-    it "prefills openrouter_free setup from the catalog link with free-model guidance" do
+    it "shows free-model configuration guidance on the new form for the free-model catalog entry point" do
       create(:provider_api_key, user: user, api_service_type: "openrouter", name: "OpenRouter")
       seed_free_runner_form_models
-      allow(RunnerSupport).to receive(:addable_runner_keys).and_return(%w[claude openrouter_free])
+      allow(RunnerSupport).to receive(:addable_runner_keys).and_return(%w[opencode])
 
-      get new_runner_path(form_variant: "api_key", runner_key: "openrouter_free")
+      get new_runner_path(
+        form_variant: "api_key",
+        runner_key: "opencode",
+        model_policy: Runners::ModelOptions::FREE_POLICY_VALUE
+      )
 
       expect(response).to have_http_status(:ok)
       expect_free_runner_form_guidance(response.body)
+      expect(response.body).to include('value="api_key" checked="checked"')
     end
 
     it "renders the free policy option and free-model tier controls for supported direct-outbound OpenRouter runners" do
@@ -1930,14 +1928,15 @@ RSpec.describe "Runners" do
     end
   end
 
-  def post_create_openrouter_free_runner(api_key:, runner_attrs: {})
+  def post_create_free_policy_opencode_runner(api_key:, runner_attrs: {})
     post runners_path, params: {
       runner: {
-        runner_key: "openrouter_free",
+        runner_key: "opencode",
         auth_type: "api_key",
         provider_api_key_id: api_key.id,
         enabled_for_agent_runs: true,
-        enabled_for_fallback: true
+        enabled_for_fallback: true,
+        config: { opencode: { api_provider: "openrouter", model_policy: "free" } }
       }.deep_merge(runner_attrs)
     }
   end

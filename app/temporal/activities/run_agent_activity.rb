@@ -861,31 +861,17 @@ module Activities
 
     def selected_runner_runtime(runner_candidate, user, agent_run)
       runner_entry = runner_entry_for(runner_candidate, user) if runner_candidate
-      configured_runtime = runner_entry&.free_model_policy? ? nil : runner_entry&.agent_harness_runner_runtime
+      configured_runtime = runner_entry&.free_model_policy? ? nil : runner_entry&.agent_harness_runner_runtime(project: agent_run&.project)
       return nil if codex_subscription_auth_runtime?(runner_entry) ||
         codex_subscription_auth_candidate?(runner_candidate, user)
 
       resolved_model = resolve_tier_model_for(runner_candidate, agent_run, user)
       model_id = resolved_model&.model_id
-      if runner_entry&.runner_key == "openrouter_free"
-        # Fail loudly rather than fall through to an unpinned opencode runtime.
-        # Without a resolvable free model, HarnessExecutionPlan would plan a
-        # plain opencode run that silently leaves the openrouter_free contract.
-        if model_id.blank?
-          raise RunnerExecutionError,
-            "openrouter_free runner #{runner_entry.id} has no resolvable free model for this run"
-        end
-
-        return runner_entry.openrouter_free_runner_runtime(project: agent_run&.project, model_id: model_id)
-      end
-
-      if runner_entry&.runner_key == "openrouter_pareto"
-        # The Pareto router selects models dynamically; no tier model resolution
-        # is needed — route the request directly through the Pareto router.
-        return runner_entry.openrouter_pareto_runner_runtime(project: agent_run&.project)
-      end
-
       if runner_entry&.free_model_policy?
+        # Fail loudly rather than fall through to an unpinned opencode
+        # runtime. Without a resolvable free model, HarnessExecutionPlan
+        # would plan a plain opencode run that silently leaves the
+        # free-policy contract.
         if model_id.blank?
           raise RunnerExecutionError,
             "#{runner_entry.runner_key} runner #{runner_entry.id} has no resolvable free model for this run"
@@ -952,14 +938,16 @@ module Activities
     end
 
     # Direct-outbound runners (opencode, kilocode, pi, omp) bring their own
-    # model from config and bypass the LlmModel tier catalog. openrouter_free
-    # is excluded because it still requires a tier-resolved free model.
-    # Uses the runner entry when available; falls back to the resolved runner
-    # key so bare agent-type candidates (e.g. "opencode") are still recognized.
+    # model from config and bypass the LlmModel tier catalog. A free-policy
+    # runner is excluded because it still requires a tier-resolved free
+    # model. Uses the runner entry when available; falls back to the
+    # resolved runner key so bare agent-type candidates (e.g. "opencode")
+    # are still recognized.
     def direct_outbound_runner?(runner_candidate, user)
       runner_entry = runner_entry_for(runner_candidate, user)
+      return false if runner_entry&.free_model_policy?
+
       runner_key = runner_entry&.runner_key || RunnerSupport.runner_key_for_agent_type(runner_candidate)
-      return false if runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
 
       runner_entry&.requires_direct_outbound? ||
         Runners::DefaultTierModelIds::DIRECT_OUTBOUND_RUNNER_KEYS.include?(runner_key)

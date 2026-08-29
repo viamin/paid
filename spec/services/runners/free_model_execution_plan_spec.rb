@@ -10,9 +10,10 @@ RSpec.describe Runners::FreeModelExecutionPlan do
       create(
         :runner,
         user: user,
-        runner_key: "openrouter_free",
+        runner_key: "opencode",
         auth_type: "api_key",
-        provider_api_key: api_key
+        provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } }
       )
     end
 
