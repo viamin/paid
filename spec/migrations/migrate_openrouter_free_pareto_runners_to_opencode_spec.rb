@@ -225,4 +225,44 @@ RSpec.describe MigrateOpenrouterFreeParetoRunnersToOpencode, :aggregate_failures
     expect(reloaded.agent_type).to eq("opencode")
     expect(reloaded.final_runner).to eq("opencode")
   end
+
+  it "rekeys runner_key and lookup_key on resource profiles so learned tuning keeps matching" do # @spec MODEL-POLICY-010
+    profile = create(:agent_run_resource_profile, runner_key: "openrouter_pareto", goal: "create_pr")
+
+    migration.migrate(:up)
+
+    reloaded = profile.reload
+    expect(reloaded.runner_key).to eq("opencode")
+    expect(reloaded.lookup_key).to eq(
+      AgentRunResourceProfile.lookup_key_for(
+        profile_level: "specific",
+        account_id: profile.account_id,
+        project_id: profile.project_id,
+        runner_key: "opencode",
+        goal: "create_pr"
+      )
+    )
+  end
+
+  it "skips rekeying a resource profile that would collide with an existing opencode profile at the same scope" do # @spec MODEL-POLICY-010
+    legacy_profile = create(:agent_run_resource_profile, runner_key: "openrouter_free", goal: "create_pr")
+    colliding_opencode_profile = create(
+      :agent_run_resource_profile,
+      account: legacy_profile.account, project: legacy_profile.project,
+      runner_key: "opencode", goal: "create_pr"
+    )
+
+    migration.migrate(:up)
+
+    expect(legacy_profile.reload.runner_key).to eq("openrouter_free")
+    expect(colliding_opencode_profile.reload.runner_key).to eq("opencode")
+  end
+
+  it "does not touch resource profiles for other runner keys" do
+    other_profile = create(:agent_run_resource_profile, runner_key: "claude")
+
+    migration.migrate(:up)
+
+    expect(other_profile.reload.runner_key).to eq("claude")
+  end
 end

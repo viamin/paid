@@ -48,6 +48,7 @@ class MigrateOpenrouterFreeParetoRunnersToOpencode < ActiveRecord::Migration[8.1
     migrated = migrate_runners!
     migrate_runner_states!(migrated)
     remap_legacy_agent_run_runner_keys!
+    remap_legacy_resource_profile_runner_keys!
   end
 
   def down
@@ -203,6 +204,30 @@ class MigrateOpenrouterFreeParetoRunnersToOpencode < ActiveRecord::Migration[8.1
       execute <<~SQL
         UPDATE agent_runs SET final_runner = '#{TARGET_KEY}'
         WHERE final_runner IN ('openrouter_free', 'openrouter_pareto')
+      SQL
+    end
+  end
+
+  # Learned resource profiles are matched by the same effective-runner key
+  # remapped above (AgentRun.effective_runner_sql /
+  # AgentRun#resource_profile_runner_key), so historical rows keyed by the
+  # legacy runner_key would silently stop matching post-migration. Rekey
+  # runner_key and the embedded "runner=<key>" segment of lookup_key;
+  # lookup_key is unique, so skip rows that would collide with an existing
+  # opencode profile at the same scope rather than merging their learned
+  # stats.
+  def remap_legacy_resource_profile_runner_keys!
+    safety_assured do
+      execute <<~SQL
+        UPDATE agent_run_resource_profiles p
+        SET runner_key = '#{TARGET_KEY}',
+            lookup_key = replace(p.lookup_key, 'runner=' || p.runner_key, 'runner=#{TARGET_KEY}')
+        WHERE p.runner_key IN ('openrouter_free', 'openrouter_pareto')
+          AND NOT EXISTS (
+            SELECT 1 FROM agent_run_resource_profiles o
+            WHERE o.lookup_key = replace(p.lookup_key, 'runner=' || p.runner_key, 'runner=#{TARGET_KEY}')
+              AND o.id <> p.id
+          )
       SQL
     end
   end
