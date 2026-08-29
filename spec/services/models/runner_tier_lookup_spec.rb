@@ -169,7 +169,7 @@ RSpec.describe Models::RunnerTierLookup, :no_db do
       expect(dummy.compatible_scope(scope)).to eq(minimax_scope)
     end
 
-    %w[openrouter_free opencode kilocode pi omp].each do |runner_key|
+    %w[opencode kilocode pi omp].each do |runner_key|
       it "constrains #{runner_key} runners in free policy mode to the free pricing tier" do
         free_scope = instance_double(Models::RunnerTierLookupSpec::ActiveScopeLike)
         runner = instance_double(

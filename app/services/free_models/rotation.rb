@@ -85,13 +85,15 @@ module FreeModels
       runner&.free_model_policy? && runner&.required_api_service_type == Runner::OPENROUTER_FREE_MODEL_PROVIDER
     end
 
-    # RunnerState rows for knowledge-selected free-policy runners are keyed by
-    # the bare runner_key string, not the API-key routing key. Keying by
-    # runner_key keeps rotation state on the same row the knowledge executor
-    # writes per-model rate limits to, and preserves the legacy
-    # openrouter_free state row across the widened policy path.
+    # @spec MODEL-POLICY-012
+    # RunnerState rows for free-policy runners are keyed by the runner's
+    # routing-key state_key, not the bare runner_key string — a user may hold
+    # several free-policy opencode runners (one per OpenRouter credential),
+    # so a bare-key row would collide across them. Knowledge::RunnerExecutor
+    # resolves the same state_key for its free-policy interactions so both
+    # subsystems read/write the same row.
     def runner_state_name
-      runner.runner_key
+      runner.state_key
     end
 
     def exhausted_result(previous_model_id: nil)
@@ -226,7 +228,7 @@ module FreeModels
       return false unless runner.required_api_service_type == Runner::OPENROUTER_FREE_MODEL_PROVIDER
       return false unless user
 
-      state = user.runner_states.find_by(runner_name: runner.runner_key)
+      state = user.runner_states.find_by(runner_name: runner.state_key)
       return false unless state
 
       snapshot = state.preferred_tier_model_ids

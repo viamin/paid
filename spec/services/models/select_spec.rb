@@ -418,7 +418,7 @@ RSpec.describe Models::Select do
       let!(:free_model) { create(:llm_model, model_id: "deepseek/deepseek-v4-flash:free", provider: "deepseek", tier: "mid", pricing_tier: "free", capability_score: 8.0) }
       let!(:paid_model) { create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic", tier: "mid", pricing_tier: "paid", capability_score: 9.0) }
       let(:openrouter_key) { create(:provider_api_key, user: project.created_by, api_service_type: "openrouter") }
-      let(:runner_key) { "openrouter_free" }
+      let(:runner_key) { "opencode" }
       let(:free_policy_runner) do
         create(
           :runner,
@@ -433,7 +433,7 @@ RSpec.describe Models::Select do
 
       before { agent_run.update!(runner: free_policy_runner) }
 
-      %w[openrouter_free opencode kilocode pi omp].each do |free_policy_runner_key|
+      %w[opencode kilocode pi omp].each do |free_policy_runner_key|
         context "when the runner is #{free_policy_runner_key}" do
           let(:runner_key) { free_policy_runner_key }
 
