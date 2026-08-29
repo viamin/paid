@@ -44,6 +44,7 @@
         <div class="mt-4">
           <%= dashboard_chartkick_chart "LineChart", data[:series],
               id: "pr-cycle-time-chart",
+              caption: "Daily average and median hours from issue creation to PR merge, with outliers above #{outlier_cutoff} hours excluded.",
               height: "320px",
               colors: ["#6366f1", "#10b981", "#f59e0b"],
               xtitle: "Merge Date",

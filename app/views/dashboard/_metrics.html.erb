@@ -87,6 +87,7 @@
         <div class="mt-4">
           <%= dashboard_chartkick_chart "ColumnChart", stats[:daily_run_status_chart],
               id: "daily-runs-chart",
+              caption: "Agent runs per day, stacked by completed and failed status, over the last 30 days.",
               stacked: true,
               height: "320px",
               colors: ["#dc2626", "#16a34a"],
@@ -142,6 +143,7 @@
           <div class="mt-4">
             <%= dashboard_chartkick_chart "ColumnChart", outcome_data[:series],
                 id: "daily-outcome-chart",
+                caption: "PR Creation run outcomes per day for #{outcome_window_label}, grouped by completion status.",
                 stacked: true,
                 height: "280px",
                 colors: outcome_data[:colors],
@@ -176,6 +178,7 @@
             <h4 class="text-xs font-medium text-gray-500 uppercase tracking-wider">Daily Completion Rate %</h4>
             <%= dashboard_chartkick_chart "LineChart", outcome_data[:completion_rate],
                 id: "daily-completion-rate-chart",
+                caption: "Daily PR creation completion rate percentage for #{outcome_window_label}.",
                 height: "180px",
                 colors: ["#16a34a"],
                 xtitle: "Day",
@@ -297,6 +300,7 @@
           <% end %>
           <%= dashboard_chartkick_chart "LineChart", dtc[:series],
               id: "duration-trend-chart",
+              caption: "Daily average and median (p50) duration in seconds for completed PR creation runs.",
               height: "320px",
               colors: ["#4f46e5", "#059669", "#94a3b8"],
               xtitle: "Date",
