@@ -227,10 +227,7 @@ module Guardrails
     end
 
     def blocking_notification?
-      violation_type == "token_budget" && (
-        agent_run.count_toward_draft_review_round? ||
-        agent_run.trigger_type == "pull_request"
-      )
+      violation_type == "token_budget" && agent_run.existing_pr?
     end
 
     def notification_action_url
