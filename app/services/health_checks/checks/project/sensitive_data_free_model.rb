@@ -130,10 +130,16 @@ module HealthChecks
             runner_key: runner.runner_key,
             model_id: model.model_id,
             auth_type: runner.auth_type,
-            provider_runtime: runner.agent_harness_runner_runtime(project: subject)
+            provider_runtime: compatible_runner_runtime(runner)
           )
 
           !result&.unsupported?
+        end
+
+        def compatible_runner_runtime(runner)
+          runner.agent_harness_runner_runtime(project: subject)
+        rescue ArgumentError
+          nil
         end
       end
     end
