@@ -34,7 +34,7 @@
         </div>
       <% end %>
 
-      <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
           <dt class="truncate text-sm font-medium text-gray-500">Total Decisions</dt>
           <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900"><%= number_with_delimiter(total_count) %></dd>
@@ -42,29 +42,29 @@
         <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
           <dt class="truncate text-sm font-medium text-gray-500">Successful</dt>
           <dd class="mt-1 text-3xl font-semibold tracking-tight text-emerald-600"><%= number_with_delimiter(successful_count) %></dd>
-          <p class="mt-2 text-xs text-gray-500">Includes applied, deferred, and auto-resolved decisions.</p>
+          <dd class="mt-2 text-xs text-gray-500">Includes applied, deferred, and auto-resolved decisions.</dd>
         </div>
         <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
           <dt class="truncate text-sm font-medium text-gray-500">No-op</dt>
           <dd class="mt-1 text-3xl font-semibold tracking-tight text-amber-600"><%= number_with_delimiter(noop_count) %></dd>
-          <p class="mt-2 text-xs text-gray-500">Recorded but intentionally skipped or unchanged.</p>
+          <dd class="mt-2 text-xs text-gray-500">Recorded but intentionally skipped or unchanged.</dd>
         </div>
         <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
           <dt class="truncate text-sm font-medium text-gray-500">Failed Decisions</dt>
           <dd class="mt-1 text-3xl font-semibold tracking-tight text-rose-600"><%= number_with_delimiter(failed_count) %></dd>
-          <p class="mt-2 text-xs text-gray-500">Errors or blocked orchestration paths.</p>
+          <dd class="mt-2 text-xs text-gray-500">Errors or blocked orchestration paths.</dd>
         </div>
         <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
           <dt class="truncate text-sm font-medium text-gray-500">Linked Run Outcomes</dt>
           <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900"><%= number_with_delimiter(summary[:linked_agent_run_count]) %></dd>
-          <p class="mt-2 text-xs text-gray-500"><%= number_with_delimiter(summary[:completed_run_count]) %> completed, <%= number_with_delimiter(summary[:failed_run_count]) %> failed</p>
+          <dd class="mt-2 text-xs text-gray-500"><%= number_with_delimiter(summary[:completed_run_count]) %> completed, <%= number_with_delimiter(summary[:failed_run_count]) %> failed</dd>
         </div>
         <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
           <dt class="truncate text-sm font-medium text-gray-500">Decision Actors</dt>
           <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900"><%= number_with_delimiter(actor_count) %></dd>
-          <p class="mt-2 text-xs text-gray-500"><%= number_with_delimiter(project_count) %> projects contributing context</p>
+          <dd class="mt-2 text-xs text-gray-500"><%= number_with_delimiter(project_count) %> projects contributing context</dd>
         </div>
-      </div>
+      </dl>
 
       <div class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-6">
         <div class="overflow-hidden rounded-lg bg-white shadow xl:col-span-2">
