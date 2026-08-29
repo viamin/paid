@@ -184,14 +184,23 @@ RSpec.shared_examples "a no-shared-filesystem runner" do
     )
   end
 
+  # Pins every dimension's status explicitly (not just the ones this baseline
+  # exercises) so a future runner that starts covering, e.g.,
+  # `inject_configuration` shows up here as an intentional change to this
+  # list rather than silently passing through `include`. This baseline only
+  # exercises `conformance_passed_dimensions`; the rest stay `not_exercised`
+  # until the shared runner contract work (#3347) covers them for a given
+  # runner.
   def expect_report_dimensions(report)
-    expect(report.as_json.fetch("dimensions")).to include(
-      hash_including("key" => "run_workload", "status" => "pass"),
-      hash_including("key" => "handle_non_zero_exits", "status" => "not_exercised"),
-      hash_including("key" => "enforce_timeout", "status" => "not_exercised"),
-      hash_including("key" => "cancel_running_workload", "status" => "not_exercised"),
-      hash_including("key" => "demonstrate_retry_and_idempotency", "status" => "not_exercised")
-    )
-    expect(report.as_json.fetch("dimensions").size).to eq(13)
+    dimensions = report.as_json.fetch("dimensions")
+    expect(dimensions.size).to eq(13)
+
+    expected_statuses = ExecutionRunners::ConformanceSuite.dimension_catalog.to_h do |dimension|
+      key = dimension.fetch("key")
+      [ key, conformance_passed_dimensions.include?(key) ? "pass" : "not_exercised" ]
+    end
+
+    actual_statuses = dimensions.to_h { |dimension| [ dimension.fetch("key"), dimension.fetch("status") ] }
+    expect(actual_statuses).to eq(expected_statuses)
   end
 end

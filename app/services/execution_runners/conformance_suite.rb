@@ -2,9 +2,16 @@
 
 module ExecutionRunners
   # Production-readiness surface for the shared runner conformance suite
-  # (#3358): the thirteen lifecycle dimensions the suite must exercise, the
-  # canonical deterministic fixture workload, and the JSON benchmark capture
-  # format (`runner_conformance_benchmark.v1`) used for provider comparison.
+  # (#3358): the thirteen lifecycle dimensions the suite maps its checks to,
+  # the canonical deterministic fixture workload, and the JSON benchmark
+  # capture format (`runner_conformance_benchmark.v1`) used for provider
+  # comparison. This module only defines the catalog and report contract;
+  # #3358 does not itself exercise every dimension. The shared
+  # no-shared-filesystem conformance baseline currently exercises six of the
+  # thirteen (see `conformance_passed_dimensions` there) and reports the rest
+  # as `not_exercised`. Closing that gap for a given runner is tracked by
+  # `#3347`, which owns the shared runner contract itself — see "Scope Split
+  # With #3347" in `docs/intent/container-runtime/runner-conformance-benchmark-methodology.md`.
   # The executable checks live in the shared no-shared-filesystem conformance
   # examples, which drive report generation through {ConformanceSuite::Benchmark}
   # (a runner-owned harness, not test scaffolding); this module is the catalog
