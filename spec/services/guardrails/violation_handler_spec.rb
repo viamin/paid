@@ -115,7 +115,8 @@ RSpec.describe Guardrails::ViolationHandler do
     end
 
     # @spec NOTIFICATION-SEVERITY-010
-    it "marks token budget violations as blocking for ordinary PR follow-up runs" do
+    # @spec NOTIFICATION-SEVERITY-012
+    it "marks token budget violations as blocking for ordinary PR follow-up runs with remediation metadata" do
       agent_run.update!(source_pull_request_number: 42)
 
       described_class.call(
@@ -124,13 +125,12 @@ RSpec.describe Guardrails::ViolationHandler do
         details: "Run consumed 250000 input tokens (budget: 200000) without producing output"
       )
 
-      expect(Notifications::Publish).to have_received(:call).with(
-        hash_including(
-          source: "guardrail_token_budget",
-          severity: :error,
-          blocking: true
-        )
-      )
+      expect(Notifications::Publish).to have_received(:call).with(hash_including(
+        source: "guardrail_token_budget",
+        severity: :error,
+        blocking: true,
+        metadata: hash_including(expected_pr_token_budget_metadata)
+      ))
     end
 
     it "keeps token budget violations notification-only for non-PR runs" do
@@ -393,5 +393,16 @@ RSpec.describe Guardrails::ViolationHandler do
         )
       )
     end
+  end
+
+  def expected_pr_token_budget_metadata
+    {
+      recommended_action: "PR exhausted its input token budget - review output so far, or raise the project/provider token budget to let continuation proceed.",
+      remediation_steps: [
+        "Review the PR output and logs produced before the token budget was exhausted.",
+        "Raise the project or provider input token budget if you want continuation to proceed automatically.",
+        "Re-run or continue the PR after adjusting the budget or taking over manually."
+      ]
+    }
   end
 end

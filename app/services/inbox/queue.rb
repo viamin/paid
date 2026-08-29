@@ -279,8 +279,12 @@ module Inbox
     def preload_notification_subjects(notifications)
       Notification.preload_resolved_projects(notifications)
 
-      agent_runs = notifications.filter_map(&:subject).select { |subject| subject.is_a?(AgentRun) }
+      subjects = notifications.filter_map(&:subject)
+      agent_runs = subjects.select { |subject| subject.is_a?(AgentRun) }
+      runners = subjects.select { |subject| subject.is_a?(Runner) }
+
       ActiveRecord::Associations::Preloader.new(records: agent_runs, associations: :issue).call
+      ActiveRecord::Associations::Preloader.new(records: runners, associations: :user).call
       AgentRun.preload_source_pull_requests(agent_runs)
     end
 
@@ -297,11 +301,24 @@ module Inbox
       when AgentRun then notification.subject.source_pull_request_record || notification.subject.issue
       end
 
-      [ notification.resolved_project, issue ]
+      project = case notification.subject
+      when Runner then runner_project(notification.subject)
+      else notification.resolved_project
+      end
+
+      [ project, issue ]
     end
 
     def project_filter_excludes?(candidate_project)
       project.present? && candidate_project.id != project.id
+    end
+
+    def runner_project(runner)
+      runner_projects_by_user_id[runner.user_id]&.first
+    end
+
+    def runner_projects_by_user_id
+      @runner_projects_by_user_id ||= scoped_projects.group_by(&:created_by_id)
     end
   end
 end
