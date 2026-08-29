@@ -7,6 +7,7 @@ module QualityPause
     MAX_RESUMES = 3
     WINDOW = 24.hours
     NOTIFICATION_SOURCE = "quality_auto_resume_cooldown"
+    RECOMMENDED_ACTION = "Review the quality dashboard and resume manually or adjust thresholds.".freeze
 
     def self.call(...)
       new(...).call
@@ -64,9 +65,13 @@ module QualityPause
         source: NOTIFICATION_SOURCE,
         subject: project,
         severity: :error,
+        blocking: true,
         title: "Quality pause requires manual review for #{project.name}",
         description: "Automatic resume was stopped after #{MAX_RESUMES} quality recoveries in #{WINDOW.to_i / 1.hour.to_i} hours.",
-        metadata: resume_metadata.merge(max_auto_resumes: MAX_RESUMES),
+        metadata: resume_metadata.merge(
+          max_auto_resumes: MAX_RESUMES,
+          recommended_action: RECOMMENDED_ACTION
+        ),
         action_url: "/projects/#{project.id}/quality_dashboard",
         nav_section: "projects"
       )

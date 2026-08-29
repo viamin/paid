@@ -55,6 +55,19 @@ RSpec.describe "Inbox" do
     create(:issue, :pull_request, :needs_input, project: project, title: "PR question", body: questions_body)
     create_merge_approval_pr(title: "Approval blocked PR", github_number: 999)
     create(
+      :notification,
+      :error,
+      account: account,
+      subject: project,
+      source: "quality_auto_resume_cooldown",
+      blocking: true,
+      title: "Quality pause requires manual review",
+      metadata: {
+        "recommended_action" => "Review the quality dashboard and resume manually or adjust thresholds.",
+        "remediation_steps" => [ "Open the quality dashboard", "Resume manually or adjust thresholds" ]
+      }
+    )
+    create(
       :decomposition_decision,
       project: project,
       issue: plan_review_issue,
@@ -74,9 +87,24 @@ RSpec.describe "Inbox" do
 
     expect(response).to have_http_status(:ok)
     expect(response.body).to include("Inbox", project.full_name, second_project.full_name)
-    expect(response.body).to include("Alpha question", "Beta question", "PR question", "Approval blocked PR", "Review me")
+    expect(response.body).to include("Alpha question", "Beta question", "PR question", "Approval blocked PR", "Review me", "Quality pause requires manual review")
     expect(response.body).to include("Visible task", "What is the expected behavior?")
     expect(response.body).not_to include("Closed question")
+  end
+
+  # @spec NOTIFICATION-SEVERITY-009
+  it "renders action_required detail with remediation steps" do
+    notification = create_action_required_notification
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification),
+      kind: Inbox::Queue::ACTION_REQUIRED_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Action Required", "Quality pause requires manual review")
+    expect(response.body).to include("Review the quality dashboard and resume manually or adjust thresholds.")
+    expect(response.body).to include("Open the quality dashboard", "Resume manually or adjust thresholds")
   end
 
   it "selects the first entry on the collection route" do
@@ -351,6 +379,22 @@ RSpec.describe "Inbox" do
       awaiting_approval_since: 2.days.ago,
       auto_merge_evaluated_at: Time.current,
       auto_merge_blockers: snapshot
+    )
+  end
+
+  def create_action_required_notification(subject: project, source: "quality_auto_resume_cooldown")
+    create(
+      :notification,
+      :error,
+      account: account,
+      subject: subject,
+      source: source,
+      blocking: true,
+      title: "Quality pause requires manual review",
+      metadata: {
+        "recommended_action" => "Review the quality dashboard and resume manually or adjust thresholds.",
+        "remediation_steps" => [ "Open the quality dashboard", "Resume manually or adjust thresholds" ]
+      }
     )
   end
 

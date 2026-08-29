@@ -27,6 +27,15 @@
   *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/merge_approval.rb`.
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`.
 
+- [x] **OPERATOR-INBOX-002B** — When a visible notification is active and
+  `blocking: true`, the system SHALL expose it as an `action_required` inbox
+  entry until the notification resolves or is dismissed, reusing notification
+  metadata for remediation copy instead of introducing a separate persistence
+  model.
+  *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`.
+  *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`,
+  `spec/services/inbox/count_spec.rb`.
+
 - [x] **OPERATOR-INBOX-003** — When the inbox renders on desktop, the system
   SHALL show the queue list and the selected entry detail at the same time; on
   mobile, the system SHALL support a master-detail flow where the member route

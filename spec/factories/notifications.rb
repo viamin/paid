@@ -5,6 +5,7 @@ FactoryBot.define do
     account
     sequence(:source) { |n| "test_rule_#{n}" }
     severity { :warning }
+    blocking { false }
     sequence(:title) { |n| "Test notification #{n}" }
     description { "A test notification description" }
     metadata { {} }

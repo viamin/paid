@@ -67,6 +67,18 @@ Backed by `DecompositionDecision.open_plan_reviews`, scoped through
 the inbox detail pane can show the breakdown and submit approve/reject/revise
 actions without leaving the inbox.
 
+### `action_required`
+
+Backed by `NotificationPolicy::Scope.new(user, Notification).resolve
+.active.blocking`, not by a separate inbox table. This kind covers work that
+has halted and cannot self-resolve, so the persisted notification itself is
+the source of truth for both bell badging and inbox derivation.
+
+The entry payload carries the source notification, the related
+project/issue/run context when it can be derived from the subject, and
+remediation guidance from notification metadata (`recommended_action`, plus
+optional `remediation_steps` / `remediation_context`).
+
 ### `merge_approval`
 
 Backed by the PR scanner's persisted auto-merge blocker snapshot on `Issue`.
@@ -112,9 +124,10 @@ and queries open plan reviews. So the badge is async, not inline:
    `Inbox::Queue`-shaped scan. Drift is bounded to that one edge case and a
    TTL window.
 
-Future inbox kinds (e.g. `merge_approval` from #3655) extend the count the
-same way `Inbox::Queue` extends: add the candidate query to `Inbox::Count`
-and a matching cache-bump site, no nav or controller changes needed.
+Future inbox kinds extend the count the same way `Inbox::Queue` extends: add
+the candidate query to `Inbox::Count` and a matching cache-bump site, no nav
+or controller changes needed. `action_required` uses notification lifecycle
+updates as its cache-bump source.
 
 ## Decisions
 
@@ -136,11 +149,12 @@ and a matching cache-bump site, no nav or controller changes needed.
 ## Testing
 
 - `spec/services/inbox/queue_spec.rb` covers typed discovery of
-  clarifying-question and plan-review entries.
+  clarifying-question, plan-review, merge-approval, and action-required
+  entries.
 - `spec/requests/dashboard_spec.rb` covers legacy dashboard redirects into the
   inbox.
 - `spec/requests/inbox_spec.rb` covers the inbox layouts, member selection,
-  and stale-entry redirects.
+  stale-entry redirects, and action-required detail rendering.
 - `spec/requests/plan_reviews_spec.rb` covers signal dispatch and inbox
   redirects after review actions.
 - `spec/requests/projects/clarifying_questions_spec.rb` covers inbox queue

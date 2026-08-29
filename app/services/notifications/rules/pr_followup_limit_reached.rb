@@ -32,15 +32,17 @@ module Notifications
       def build(issue)
         count = progress_state_for(issue).consecutive_unsuccessful_automatic_runs
         limit = issue.project.max_pr_followup_runs
+        recommended_action = "Take over the PR manually — automatic follow-ups stopped at #{count}/#{limit}."
         {
-          severity: :info,
+          severity: :error,
+          blocking: true,
           title: "PR ##{issue.github_number} hit the follow-up limit",
           description: "#{count}/#{limit} consecutive unsuccessful automatic PR runs.",
           nav_section: "projects",
-          action_url: project_path(issue.project),
           metadata: {
             consecutive_unsuccessful_automatic_runs: count,
-            max_pr_followup_runs: limit
+            max_pr_followup_runs: limit,
+            recommended_action: recommended_action
           }
         }
       end
