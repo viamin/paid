@@ -55,6 +55,19 @@ RSpec.describe "Dashboard" do
         expect(response.body).to include("Dashboard")
       end
 
+      it "renders motion-safe dashboard placeholders and live indicator" do # @spec DASHBOARD-FRAME-CACHE-008
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        live_ping = doc.at_css("#live-indicator > span.absolute")
+        skeletons = doc.css(".motion-safe\\:animate-pulse")
+
+        expect(live_ping["class"]).to include("motion-safe:animate-ping")
+        expect(live_ping["class"]).to include("motion-reduce:animate-none")
+        expect(skeletons).not_to be_empty
+        expect(skeletons).to all(satisfy { |node| node["class"].include?("motion-reduce:animate-none") })
+      end
+
       it "displays the user name" do
         get dashboard_path
         expect(response.body).to include("John Doe")
