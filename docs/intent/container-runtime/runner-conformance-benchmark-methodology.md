@@ -102,7 +102,7 @@ Example shape:
     "requires_llm": false
   },
   "runner": {
-    "runner_type": "local_docker_runner",
+    "runner_type": "local_docker",
     "runner_backend": "local"
   },
   "benchmark": {

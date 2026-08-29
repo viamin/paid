@@ -125,13 +125,23 @@ module ExecutionRunners
         )
       end
 
+      # spec.agent_run is the object built before runner.start/runner.cleanup
+      # ran; resource and cost fields (peak_cpu_percent, peak_memory_bytes,
+      # container_metrics_count, infra_cost_cents, billed_duration_seconds)
+      # are written straight to the database by metrics collection and
+      # execution-usage recording during and after the run, so that
+      # in-memory copy can be stale. Reloading, and threading the freshest
+      # ExecutionUsage row through explicitly, keeps the report honest even
+      # when both writers race the reload.
       def build_report(handle, timestamps, execution_result)
+        agent_run = spec.agent_run.reload
         BenchmarkReport.build(
           runner_type: handle.runner_type,
           runner_backend: handle.host || "unknown",
           timestamps: timestamps,
           execution_result: execution_result,
-          agent_run: spec.agent_run,
+          agent_run: agent_run,
+          execution_usage: agent_run.execution_usage,
           dimension_results: dimension_results,
           fixture: fixture
         )
