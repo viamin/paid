@@ -5,11 +5,11 @@ prefix: NOTIFICATION-SEVERITY
 
 # Low-Level Design: Notification Severity Taxonomy
 
-> Companion to the high-level design (`docs/high-level-design.md`). First of a
-> three-part chain establishing a written notification-severity taxonomy:
-> this segment (classification + badge scope) → `blocking` column + inbox
-> derivation (#BLOCKING) → runner-auth notification gap + PR blocking entries
-> (#GAPS).
+> Companion to the high-level design (`docs/high-level-design.md`). This
+> segment now covers the written notification-severity taxonomy, the
+> `blocking` distinction inside `error`, and the bridge from blocking
+> notifications into the operator inbox. Remaining follow-up stays tracked in
+> `#GAPS`.
 
 ## Purpose
 
@@ -23,11 +23,11 @@ from that gap:
 - At least one genuinely blocking condition (`pr_followup_limit_reached`) is
   classified `info` and never surfaces.
 
-This segment defines the classification rule every publisher must apply, and
+This segment defines the classification rule every publisher must apply,
 records how the current set of publishers maps onto it (Classification
-Record, below). It intentionally does **not** introduce a `blocking` column
-or change inbox derivation — that is `#BLOCKING`. It only fixes `severity`
-values and what the bell badge counts.
+Record, below), and formalizes the persisted `blocking` answer to "does a
+human have to do something for work to continue?" Severity keeps the bell
+honest; `blocking` decides when an `error` also enters the operator inbox.
 
 ## The two-test classification gate
 
@@ -39,10 +39,8 @@ Apply both tests, in order, to decide a notification's severity:
    an event or a telemetry sample) → **Info**.
 2. **If halted, can it self-resolve?** Self-resolution means a retry,
    escalation path, quota window, or automated recovery clears the condition
-   without a human doing anything. If it self-resolves → **Error** (no inbox
-   entry — `#BLOCKING` will formalize this distinction with a `blocking`
-   column). If it cannot self-resolve → **Error**, and semantically
-   *Blocking* (inbox-worthy once `#BLOCKING` lands).
+   without a human doing anything. If it self-resolves → **Error**. If it
+   cannot self-resolve → **Error** plus `blocking: true`.
 
 If work is merely **degraded but continuing** (a soft signal short of halting
 — rising failure counts, a PR waiting longer than usual, quota usage
@@ -58,12 +56,31 @@ the system does next will change the outcome.
 
 ### Summary
 
-| Test result | Severity | Badges bell | Inbox (future `#BLOCKING`) |
+| Test result | Severity | Badges bell | Inbox |
 |---|---|---|---|
 | Event/telemetry, nothing halted | `info` | No | No |
 | Degraded, work continues | `warning` | Yes | No |
 | Halted, self-resolves (retry/quota window/escalation) | `error` | Yes | No |
-| Halted, cannot self-resolve | `error` | Yes | Yes (once `#BLOCKING` lands) |
+| Halted, cannot self-resolve | `error` + `blocking: true` | Yes | Yes |
+
+## Blocking flag and inbox bridge
+
+`notifications.blocking` is narrower than `error`:
+
+- every blocking notification is `error`
+- not every `error` notification is blocking
+
+The operator inbox derives `action_required` rows from
+`NotificationPolicy::Scope.new(user, Notification).resolve.active.blocking`.
+That keeps bell state, notifications state, and inbox state aligned without a
+second persistence model or publisher-specific inbox branching.
+
+Blocking notifications default their action target to the inbox member route
+(`/inbox/action_required:<notification.id>`) unless the publisher provides a
+more specific remediation URL. Inbox detail rendering uses
+`metadata.recommended_action` as the canonical operator instruction and can
+also render ordered `remediation_steps` plus small structured
+`remediation_context` details when a publisher provides them.
 
 ## Badge semantics
 
@@ -95,13 +112,11 @@ the `any_unread` local threaded through `Notifications::Broadcasting`) tracks
 this separately from `unread_notification_count`, using `active.unread` with
 no severity filter.
 
-`index_notifications_on_badge` is `(account_id, nav_section, read_at)` —
-severity is not a leading or trailing column, so adding a `severity IN (...)`
-predicate does not change which index Postgres picks for the `account_id`
-equality lookup; it filters the matched rows after the index scan. Bell-badge
-queries scope to one account with a handful of unread rows at a time, so the
-added filter is not performance-sensitive enough to justify widening the
-index (revisit if `#BLOCKING`'s inbox derivation query needs it).
+`index_notifications_on_badge` widens so both bell-badge and
+`active.blocking` inbox-derivation queries stay account-scoped and
+index-backed. The leading account key remains the same; the added `blocking`
+and active-state columns let the inbox count/queue avoid a second
+notification-specific index.
 
 ## Classification Record
 
@@ -114,16 +129,16 @@ without an action are already correctly classified.
 | `agent_run_anomaly` | Statistical anomaly on a run's metrics | `warning`/`error` (critical→error) | Info — `guardrail_will_fire?` already routes the actionable case (critical anomaly on a *running* run) to `guardrail_anomaly` instead of this source; what reaches `Publish` here is always non-actionable telemetry about a run that is already finished or not at risk | **Reclassify → always `info`** |
 | `queue_monitor` | Background queue depth over threshold | `warning`/`error` | Info — internal operational signal on `subject: account`; nothing user-facing to click, no run/PR is halted | **Reclassify → always `info`** |
 | `zero_iteration_timeout` | Run timed out with 0 iterations, 0 input tokens, no `container_id` | `error` (static) | Warning — a platform-bug signal that routes to the exception-handler/issue-filing path automatically; the run itself is terminal but the *response* to the signal is automatic, not a user action | **Reclassify → `warning`** |
-| `pr_followup_limit_reached` | PR hit `max_pr_followup_runs` with no successful follow-up | `info` (static) | Blocking (halted, no auto-recovery — the PR sits until a human intervenes) | Deferred — needs the `blocking`/inbox machinery from `#BLOCKING` to surface correctly; reclassifying severity alone without that lands a false-positive-free but easy-to-miss `error`. Out of scope here (see `#GAPS`) |
+| `pr_followup_limit_reached` | PR hit `max_pr_followup_runs` with no successful follow-up | `info` (static) | Blocking (halted, no auto-recovery — the PR sits until a human intervenes) | **Reclassify → `error` + `blocking: true`** with manual-takeover remediation |
 | `agent_run_pattern_detector` (`agent_run_patterns/notify.rb`) | Recurring failure pattern across runs | `error` if worst pattern is error else `warning` | Matches gate already (halted pattern vs. degraded trend) | None |
 | `agent_run_pattern_detector` (`agent_run_patterns/apply_decision.rb`) | Self-heal remediation applied, notify-only | `warning` (static) | Matches — remediation already applied automatically, work continues | None (note: this call site hardcodes `warning` where the sibling call site computes it dynamically off pattern severity; harmless today since `apply_decision` only notifies on the notify-only path, but worth reconciling if a future pattern type needs the escalation) |
 | `infra_spend_threshold_*` (8 variants) | Spend projection breaches a global/account/project/runner threshold | `error` for `emergency_disable`/`park` actions, `warning` for `fail_fast` | Matches — `emergency_disable`/`park` halt spend with no self-resolution short of the next window; `fail_fast` is a degraded posture, not a halt | None |
 | `exception_handler` | Unhandled exception classified | `error` if `p1` else `warning` | Matches — p1 is a halted/urgent condition, other priorities are degraded signals | None |
-| `guardrail_*` (6 variants: `loop_detected`, `time_limit`, `token_limit`, `cost_limit`, `token_budget`, `anomaly`) | Guardrail terminates or pauses a run | `error` (static) | Matches — every guardrail firing halts the run; whether it self-resolves (pause, resumable) vs. not (terminal) is exactly the `blocking` distinction `#BLOCKING` adds on top of this `error` | None |
+| `guardrail_*` (6 variants: `loop_detected`, `time_limit`, `token_limit`, `cost_limit`, `token_budget`, `anomaly`) | Guardrail terminates or pauses a run | `error` (static) | Matches — every guardrail firing halts the run; whether it self-resolves (pause, resumable) vs. not (terminal) is carried by `blocking` | `token_budget` on PR-continuation runs becomes **`blocking: true`**; other guardrails stay notification-only unless they separately require human takeover |
 | `health_check/*` (10 finding codes) | Project/user configuration drift finding | `error` or `warning` per finding code | Matches — findings that block agent runs from functioning (`no_agent_runners`, `missing_git_hub_credential`) are `error`; softer drift (`deprecated_model`, `missing_default_runner`) is `warning` | None |
 | `issue_merge_subscription` | Subscribed issue/PR merged or closed | `info` (static) | Matches — pure event notification, nothing halted, nothing to act on | None (this is the "merge events" badge complaint from the issue — already `info`; it stopped badging once the badge query excludes `info`, no source-level change needed) |
 | `quality_gate_breach` | Quality metrics breach configured thresholds | `error` for severe/multi breach, `warning` otherwise | Matches — severe breach halts the gate (blocks merges), lesser breach is a degrading trend | None |
-| `quality_auto_resume_cooldown` | Auto-resume hit its cooldown cap | `error` (static) | Matches — halted, requires manual review to resume, no further automatic retry | None |
+| `quality_auto_resume_cooldown` | Auto-resume hit its cooldown cap | `error` (static) | Matches — halted, requires manual review to resume, no further automatic retry | **Add `blocking: true`** with remediation to review the quality dashboard and resume manually or adjust thresholds |
 | `quality_recovery` | Automatic quality recovery failed | `error` (static) | Matches — halted, the automated recovery path itself failed | None |
 | `scanner_wedged_on_pending_review` | PR scanner sees repeated unsatisfied pending-review triggers | `warning` (static) | Matches — degraded (stuck waiting), not yet a hard halt; can still clear when the review bot responds | None |
 | `repeated_no_changes` | Issue's recent runs repeatedly produced no changes | `info` (static) | Matches — informational trend, no run is halted | None |
@@ -132,15 +147,6 @@ without an action are already correctly classified.
 
 ## What this is not
 
-- **Not a `blocking` column or inbox derivation.** Sources marked
-  "Blocking" in the gate above still map to `error` today; the boolean that
-  distinguishes self-resolving `error` from inbox-worthy `error` is
-  `#BLOCKING`'s job.
-- **Not a fix for `pr_followup_limit_reached`.** It stays `info` in this
-  segment because reclassifying it to `error` without the inbox/blocking
-  machinery from `#BLOCKING` would surface it as a plain badge item
-  indistinguishable from self-resolving errors, defeating the point. Tracked
-  under `#GAPS`.
 - **Not a consolidation of near-duplicate rules.** `provider_quota_exhausted`
   and `runner_quota_exhausted` share identical threshold logic across an STI
   boundary (`Provider < Runner`); `agent_run_pattern_detector`'s two call

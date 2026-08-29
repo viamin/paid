@@ -30,7 +30,7 @@ module Inbox
     attr_reader :user
 
     def compute_count
-      needs_input_count + open_plan_review_count + merge_approval_count
+      needs_input_count + open_plan_review_count + merge_approval_count + action_required_count
     end
 
     def needs_input_count
@@ -49,6 +49,18 @@ module Inbox
       return 0 if project_ids.empty?
 
       merge_approval_candidates(project_ids).count { |issue| Inbox::MergeApproval.call(issue).present? }
+    end
+
+    # Excludes notifications whose subject cannot be resolved to a project:
+    # Inbox::Queue can't render those entries (they have nowhere to route
+    # to), so counting them would inflate the badge past what the queue
+    # shows and beyond what the default action_required URL can open.
+    def action_required_count
+      notifications = NotificationPolicy::Scope.new(user, Notification).resolve.active.blocking
+        .includes(:subject)
+        .to_a
+      Notification.preload_resolved_projects(notifications)
+      notifications.count { |notification| notification.resolved_project.present? }
     end
 
     # Narrows to rows that could plausibly be approval-only blockers before
