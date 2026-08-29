@@ -85,10 +85,21 @@ module NoSharedFilesystemConformance
     # execution platform is doubled use this at the runner seam to answer with
     # {fixture_workload_stdout} instead of their generic canned output.
     #
+    # Matches on the full command shape {fixture_workload_command} builds —
+    # the clone, the entrypoint, and the artifact readback — rather than the
+    # entrypoint token alone. An entrypoint-only match would still treat a
+    # runner regression that dropped the clone step or stopped reading the
+    # artifact back over stdout as a legitimate fixture run, silently
+    # replacing that broken command with the canned passing output.
+    #
     # @param command [String, Array<String>]
     # @return [Boolean]
     def fixture_workload_command?(command, fixture: ExecutionRunners::ConformanceSuite.fixture_workload)
-      Array(command).join(" ").include?(fixture.fetch("entrypoint"))
+      joined = Array(command).join(" ")
+
+      joined.include?("git clone") &&
+        joined.include?(fixture.fetch("entrypoint")) &&
+        joined.include?("cat #{Shellwords.escape(fixture.fetch('expected_artifact_path'))}")
     end
 
     # The stdout the fixture workload produces inside the environment: the
@@ -101,7 +112,7 @@ module NoSharedFilesystemConformance
     # @return [String]
     def fixture_workload_stdout(fixture: ExecutionRunners::ConformanceSuite.fixture_workload)
       token = fixture.fetch("expected_stdout")
-      artifact = { "status" => "ok", "token" => token, "fixture_version" => 1 }
+      artifact = { "status" => "ok", "token" => token, "fixture_version" => fixture.fetch("fixture_version") }
 
       "#{token}\n#{FIXTURE_ARTIFACT_MARKER}#{artifact.to_json}\n"
     end

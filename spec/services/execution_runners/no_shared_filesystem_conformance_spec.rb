@@ -243,6 +243,20 @@ RSpec.describe NoSharedFilesystemConformance do
       expect(described_class.fixture_workload_command?("paid-conformance-agent")).to be(false)
     end
 
+    it "does not match a command that runs the entrypoint without cloning the fixture repository" do
+      command = "cd /tmp/conformance/repo && #{fixture.fetch('entrypoint')} && " \
+        "cat #{fixture.fetch('expected_artifact_path')}"
+
+      expect(described_class.fixture_workload_command?(command)).to be(false)
+    end
+
+    it "does not match a command that clones and runs the entrypoint without reading the artifact back" do
+      command = "git clone --quiet /srv/conformance-fixture.git /tmp/conformance/repo && " \
+        "cd /tmp/conformance/repo && #{fixture.fetch('entrypoint')}"
+
+      expect(described_class.fixture_workload_command?(command)).to be(false)
+    end
+
     it "returns the stdout the real fixture entrypoint produces" do
       Dir.mktmpdir("conformance-fixture-check") do |checkout|
         FileUtils.cp_r("#{Rails.root.join(fixture.fetch('relative_repo_path'))}/.", checkout)
@@ -257,7 +271,10 @@ RSpec.describe NoSharedFilesystemConformance do
     it "reports the artifact the workload wrote back to stdout" do
       artifact = described_class.reported_fixture_artifact(described_class.fixture_workload_stdout)
 
-      expect(artifact).to include("token" => fixture.fetch("expected_stdout"))
+      expect(artifact).to include(
+        "token" => fixture.fetch("expected_stdout"),
+        "fixture_version" => fixture.fetch("fixture_version")
+      )
     end
 
     it "reports no artifact when the stream never carried one" do

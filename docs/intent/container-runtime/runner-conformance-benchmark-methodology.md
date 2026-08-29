@@ -98,6 +98,7 @@ Example shape:
     "entrypoint": "bin/conformance-task",
     "expected_stdout": "CONFORMANCE_OK",
     "expected_artifact_path": "artifacts/conformance-result.json",
+    "fixture_version": 1,
     "requires_llm": false
   },
   "runner": {
@@ -160,7 +161,9 @@ When running against a future provider:
 3. Capture the emitted `runner_conformance_benchmark.v1` JSON from the run that
    actually executed the comparison workload.
 4. Store repeated runs for the same fixture and provider configuration.
-5. Compare providers only within the same fixture revision and resource profile.
+5. Compare providers only within the same fixture revision and resource
+   profile — check the `fixture.fixture_version` field on each stored report
+   rather than relying on when the runs happened.
 
 ## Interpreting Results
 

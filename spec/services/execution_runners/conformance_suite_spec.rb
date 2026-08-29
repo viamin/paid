@@ -13,6 +13,7 @@ RSpec.describe ExecutionRunners::ConformanceSuite do
         "entrypoint" => "bin/conformance-task",
         "expected_stdout" => "CONFORMANCE_OK",
         "expected_artifact_path" => "artifacts/conformance-result.json",
+        "fixture_version" => 1,
         "requires_llm" => false
       )
       expect(Rails.root.join(workload.fetch("relative_repo_path"))).to exist
@@ -95,6 +96,10 @@ RSpec.describe ExecutionRunners::ConformanceSuite do
       expect_cost(report)
       expect_dimensions(report)
       expect(report.as_json.fetch("result")).to include("success" => true, "exit_code" => 0)
+      # Provider comparisons must stay within the same fixture revision, so
+      # the version travels on the stored report itself rather than living
+      # only inside the streamed artifact.
+      expect(report.as_json.fetch("fixture")).to include("fixture_version" => 1)
     end
 
     it "rejects reports missing one of the required dimensions" do

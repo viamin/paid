@@ -103,6 +103,14 @@ module ExecutionRunners
       }
     ].freeze
 
+    # Bump when the fixture repository's behavior, entrypoint, or artifact
+    # shape changes. Carried on every benchmark report's `fixture` field so
+    # provider comparisons stay self-describing: the methodology requires
+    # comparing providers only within the same fixture revision, and that
+    # revision must travel with the stored benchmark data rather than live
+    # only inside the streamed artifact.
+    FIXTURE_VERSION = 1
+
     def self.fixture_workload
       {
         "name" => "runner-conformance-fixture",
@@ -110,6 +118,7 @@ module ExecutionRunners
         "entrypoint" => "bin/conformance-task",
         "expected_stdout" => "CONFORMANCE_OK",
         "expected_artifact_path" => "artifacts/conformance-result.json",
+        "fixture_version" => FIXTURE_VERSION,
         "requires_llm" => false,
         "description" => "Minimal deterministic fixture that writes a JSON artifact and prints a fixed token."
       }
