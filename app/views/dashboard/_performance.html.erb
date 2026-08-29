@@ -34,7 +34,7 @@
           <h3 class="text-sm font-semibold text-gray-900"><%= outcome_label(outcome) %></h3>
           <p class="mt-1 text-xs text-gray-500"><%= number_with_delimiter(perf[:run_count]) %> runs</p>
           <% if perf[:run_count] > 0 %>
-            <div class="mt-3 flex flex-wrap gap-4 text-sm">
+            <dl class="mt-3 flex flex-wrap gap-4 text-sm">
               <% if perf[:avg_cost_cents].to_i > 0 %>
                 <div>
                   <dt class="text-xs text-gray-500">Avg Cost</dt>
@@ -51,7 +51,7 @@
                 <dt class="text-xs text-gray-500">Avg Duration</dt>
                 <dd class="mt-1 font-semibold text-gray-900"><%= format_duration(perf[:avg_duration_seconds]) %></dd>
               </div>
-            </div>
+            </dl>
             <% if perf[:total_cost_cents].to_i > 0 || perf[:total_tokens].to_i > 0 %>
               <div class="mt-2 text-xs text-gray-500">
                 Total:<%= " $#{format("%.2f", perf[:total_cost_cents].to_i / 100.0)}" if perf[:total_cost_cents].to_i > 0 %><%= "#{" · " if perf[:total_cost_cents].to_i > 0}#{number_with_delimiter(perf[:total_tokens])} tokens" if perf[:total_tokens].to_i > 0 %>
