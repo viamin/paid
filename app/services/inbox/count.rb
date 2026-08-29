@@ -51,16 +51,17 @@ module Inbox
       merge_approval_candidates(project_ids).count { |issue| Inbox::MergeApproval.call(issue).present? }
     end
 
-    # Excludes notifications whose subject cannot be resolved to a project:
-    # Inbox::Queue can't render those entries (they have nowhere to route
-    # to), so counting them would inflate the badge past what the queue
-    # shows and beyond what the default action_required URL can open.
+    # Excludes notifications whose subject cannot be projected into a visible
+    # inbox project. Runner-scoped blocking notifications borrow the owner's
+    # first visible auto-pick project so they can render in the queue without a
+    # runner-specific inbox lane.
     def action_required_count
       notifications = NotificationPolicy::Scope.new(user, Notification).resolve.active.blocking
         .includes(:subject)
         .to_a
       Notification.preload_resolved_projects(notifications)
-      notifications.count { |notification| notification.resolved_project.present? }
+      preload_runner_users(notifications)
+      notifications.count { |notification| project_for(notification).present? }
     end
 
     # Narrows to rows that could plausibly be approval-only blockers before
@@ -100,6 +101,32 @@ module Inbox
       owner_ids = [ user.id ]
       owner_ids << nil if AgentRun.orphaned_project_owner?(user)
       owner_ids
+    end
+
+    def preload_runner_users(notifications)
+      runners = notifications.filter_map(&:subject).select { |subject| subject.is_a?(Runner) }
+      ActiveRecord::Associations::Preloader.new(records: runners, associations: :user).call
+    end
+
+    def project_for(notification)
+      return runner_projects_by_user_id[notification.subject.user_id]&.first if notification.subject.is_a?(Runner)
+
+      notification.resolved_project
+    end
+
+    def runner_projects_by_user_id
+      @runner_projects_by_user_id ||= begin
+        Project
+          .includes(account: :tenant_setting, created_by: :user_setting)
+          .where(
+            account_id: user.account_id,
+            created_by_id: visible_owner_ids,
+            auto_pick_enabled: true,
+            active: true
+          )
+          .select { |candidate| Issues::AutoPickProjectGate.call(candidate) }
+          .group_by(&:created_by_id)
+      end
     end
 
     def cache_key

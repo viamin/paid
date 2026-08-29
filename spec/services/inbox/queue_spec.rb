@@ -64,6 +64,31 @@ RSpec.describe Inbox::Queue do
       expect(action_required_entry.tasks).to eq([ "Open the quality dashboard", "Resume manually or adjust thresholds" ])
     end
 
+    # @spec NOTIFICATION-SEVERITY-011
+    it "projects runner-scoped blocking notifications into action_required using the owner's visible project" do
+      project
+      runner_notification = create(
+        :notification,
+        :error,
+        account: account,
+        subject: user.runners.find_by!(runner_key: "claude", auth_type: "subscription"),
+        source: "runner_subscription_auth_ineligible",
+        blocking: true,
+        action_url: "/runners/1/edit",
+        title: "Runner auth broken",
+        metadata: {
+          "recommended_action" => "Re-authenticate this runner in Runner Settings so future runs can authenticate again.",
+          "remediation_steps" => [ "Open Runner Settings", "Reconnect the managed credential" ]
+        }
+      )
+
+      entries = described_class.call(user: user, kind: described_class::ACTION_REQUIRED_KIND)
+
+      action_required_entry = entries.find { |entry| entry.record == runner_notification }
+      expect(action_required_entry).to have_attributes(**expected_runner_action_required_entry)
+      expect(action_required_entry.tasks).to eq([ "Open Runner Settings", "Reconnect the managed credential" ])
+    end
+
     it "exposes waiting_since from needs_input_since so a future inbox UI can show waiting age" do
       stamp = 2.days.ago
       issue = create_needs_input(body: questions_body)
@@ -415,6 +440,15 @@ RSpec.describe Inbox::Queue do
         "remediation_steps" => [ "Open the quality dashboard", "Resume manually or adjust thresholds" ]
       }
     )
+  end
+
+  def expected_runner_action_required_entry
+    {
+      project: project,
+      issue: nil,
+      action_url: "/runners/1/edit",
+      summary_text: "Re-authenticate this runner in Runner Settings so future runs can authenticate again."
+    }
   end
 
   def snapshot_hash(failed:, not_evaluated:)

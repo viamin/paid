@@ -15,6 +15,7 @@ module Notifications
     def perform
       runners = Runner.includes(user: :runner_states).to_a
       Rules::RunnerQuotaExhausted.call(scope: runners)
+      Rules::RunnerSubscriptionAuthIneligible.call(scope: runners)
     end
   end
 end
