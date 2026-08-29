@@ -208,4 +208,69 @@ RSpec.describe ExecutionRunners::ConformanceSuite do
       expect(report.to_h.fetch(:dimensions).size).to eq(13)
     end
   end
+
+  # @spec CONTAINER-RUNTIME-045
+  describe ExecutionRunners::ConformanceSuite::Benchmark do
+    let(:agent_run) do
+      create(
+        :agent_run,
+        goal: "create_pr",
+        branch_name: "feature/conformance",
+        base_commit_sha: "cafebabecafebabecafebabecafebabecafebabe",
+        container_host: "local"
+      )
+    end
+    let(:run_spec) do
+      ExecutionRunners::RunSpec.from_agent_run(
+        agent_run, networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted
+      )
+    end
+    let(:handle) { instance_double(ExecutionRunners::RunnerHandle) }
+    let(:runner) { instance_double(ExecutionRunners::Base, provision: handle, cleanup: nil) }
+    let(:dimension_results) do
+      ExecutionRunners::ConformanceSuite::BenchmarkReport.default_dimension_results(
+        passed: %w[provision_execution run_workload clean_up_resources]
+      )
+    end
+
+    it "reports cleanup latency from the runner's own teardown" do
+      allow(runner).to receive(:start) do |**_, &block|
+        block&.call(:stdout, "CONFORMANCE_OK\n")
+        ExecutionRunners::ExecutionResult.success(stdout: "CONFORMANCE_OK\n")
+      end
+
+      result = run_benchmark
+
+      expect(runner).to have_received(:cleanup).with(handle: handle, force: true)
+      expect(result.report.as_json.fetch("benchmark")).to include("cleanup_latency_ms" => be >= 0)
+    end
+
+    it "cleans up the provisioned environment when the workload raises" do
+      allow(runner).to receive(:start).and_raise(ExecutionRunners::TimeoutError, "wall-clock timeout")
+
+      expect { run_benchmark }.to raise_error(ExecutionRunners::TimeoutError, /wall-clock timeout/)
+      expect(runner).to have_received(:cleanup).with(handle: handle, force: true)
+    end
+
+    it "keeps the original workload failure when cleanup fails too" do
+      allow(runner).to receive(:start).and_raise(ExecutionRunners::StartupTimeoutError, "no startup output")
+      allow(runner).to receive(:cleanup).and_raise(ExecutionRunners::Error, "teardown failed")
+
+      expect { run_benchmark }.to raise_error(ExecutionRunners::StartupTimeoutError, /no startup output/)
+    end
+
+    it "surfaces a cleanup failure when the workload itself succeeded" do
+      allow(runner).to receive(:start).and_return(ExecutionRunners::ExecutionResult.success(stdout: "ok"))
+      allow(runner).to receive(:cleanup).and_raise(ExecutionRunners::Error, "teardown failed")
+
+      expect { run_benchmark }.to raise_error(ExecutionRunners::Error, /teardown failed/)
+    end
+
+    def run_benchmark
+      described_class.run(
+        runner: runner, spec: run_spec, command: "bin/conformance-task",
+        dimension_results: dimension_results
+      )
+    end
+  end
 end

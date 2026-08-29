@@ -33,15 +33,19 @@ Use this fixture when comparing providers so the workload itself does not add
 model or prompt variance to the benchmark.
 
 The shared no-shared-filesystem example emits benchmark-shape JSON from a
-Docker-stubbed baseline — `Containers::Provision` is doubled — but the
-benchmark check itself drives a real `git clone` of this fixture through the
-runner's own `#start`, then executes `bin/conformance-task` for real, so the
-emitted report legitimately carries the fixture metadata above. Report
-generation itself is runner-owned production code
+Docker-stubbed baseline — `Containers::Provision` is doubled — by submitting
+the real fixture workload command (clone this repository fixture, run
+`bin/conformance-task`, print the artifact it wrote) through the runner's own
+`#start`, and asserting the fixture token and artifact come back over the
+runner's own stdout stream. Evidence is read only from that stream: host
+filesystem state is never inspected, because a runner executing inside its own
+environment never populates it, and executing the workload on the host instead
+would assert nothing about the runner boundary. Report generation itself is
+runner-owned production code
 (`ExecutionRunners::ConformanceSuite::Benchmark`), not test-only bookkeeping,
-so a regression there fails the suite. Any baseline that does not truly
-execute this repository fixture must not label its report with this
-fixture's identity.
+so a regression there fails the suite. The stubbed baseline proves report
+compatibility only: comparison-grade numbers must come from an unstubbed run
+whose execution platform truly clones and executes this repository fixture.
 
 ## Required Lifecycle Dimensions
 

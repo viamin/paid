@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "rails_helper"
-require "open3"
 
 # @spec CONTAINER-RUNTIME-010
 # @spec CONTAINER-RUNTIME-011
@@ -2188,14 +2187,16 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
         cleanup: nil
       )
       allow(provision_service).to receive(:execute) do |command, **_, &block|
-        # The conformance benchmark test drives the real fixture entrypoint
-        # through this command; run it for real so the benchmark evidences
-        # an actual clone-and-execute rather than a canned stub response.
-        # Every other lifecycle test in the shared example passes the inert
-        # default conformance_command, which falls through to the canned
-        # output below.
-        stdout = if command.include?(ExecutionRunners::ConformanceSuite.fixture_workload.fetch("entrypoint"))
-          Open3.capture3(command).first
+        # The stub stays at the runner seam: for the conformance benchmark's
+        # fixture workload it returns the output that workload produces inside
+        # the environment (entrypoint token plus the artifact read back on the
+        # same stream), never executing the command on the host — host-side
+        # execution would keep passing even if the runner stopped running
+        # commands inside the provisioned environment. Every other lifecycle
+        # example passes the inert default conformance_command, which falls
+        # through to the generic canned output below.
+        stdout = if NoSharedFilesystemConformance.fixture_workload_command?(command)
+          NoSharedFilesystemConformance.fixture_workload_stdout
         else
           "conformance output\n"
         end
