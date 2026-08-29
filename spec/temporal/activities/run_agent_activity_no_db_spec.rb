@@ -208,10 +208,17 @@ RSpec.describe Activities::RunAgentActivity, :no_db do
   describe "#direct_outbound_runner?" do
     let(:activity) { described_class.new }
 
-    it "treats bare openrouter_pareto candidates as direct outbound" do
-      allow(activity).to receive(:runner_entry_for).with("openrouter_pareto", nil).and_return(nil)
+    it "treats bare opencode candidates as direct outbound" do
+      allow(activity).to receive(:runner_entry_for).with("opencode", nil).and_return(nil)
 
-      expect(activity.send(:direct_outbound_runner?, "openrouter_pareto", nil)).to be(true)
+      expect(activity.send(:direct_outbound_runner?, "opencode", nil)).to be(true)
+    end
+
+    it "excludes a resolved free-policy runner entry even though its bare key is direct-outbound" do
+      free_policy_entry = instance_double(Runner, free_model_policy?: true)
+      allow(activity).to receive(:runner_entry_for).with("opencode", nil).and_return(free_policy_entry)
+
+      expect(activity.send(:direct_outbound_runner?, "opencode", nil)).to be(false)
     end
   end
 

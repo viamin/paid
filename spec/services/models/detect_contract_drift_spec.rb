@@ -135,10 +135,10 @@ RSpec.describe Models::DetectContractDrift do
         )
       )
 
-      described_class.call(runner_keys: %w[openrouter_pareto], auth_types: %w[subscription])
+      described_class.call(runner_keys: %w[opencode], auth_types: %w[subscription])
 
       expect(Runners::ModelCompatibility).to have_received(:call).with(hash_including(
-        runner_key: "openrouter_pareto",
+        runner_key: "opencode",
         model_id: model_id,
         auth_type: "subscription"
       ))

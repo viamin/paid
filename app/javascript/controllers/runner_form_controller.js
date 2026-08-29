@@ -19,8 +19,6 @@ function loadRunnerApiServiceType() {
     cursor: "anthropic",
     codex: "openai",
     gemini: "google",
-    openrouter_free: "openrouter",
-    openrouter_pareto: "openrouter",
   }
 }
 
@@ -474,7 +472,6 @@ export default class extends Controller {
     if (this.modelPolicyFormEnabledValue && this.directOutboundRunnerKeys.has(runnerKey)) {
       return this.hasModelSelectTarget && this.modelSelectTarget.value === FREE_POLICY_OPTION
     }
-
     const select = this.dynamicModelSelectTargets.find((target) => target.dataset.runnerKey === runnerKey)
     if (!select) return false
 

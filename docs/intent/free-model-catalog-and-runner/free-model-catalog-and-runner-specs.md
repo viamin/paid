@@ -5,7 +5,7 @@
 > Each ID is a grep target across specs, tests, and code
 > (`grep -r FREE-MODEL-001`).
 
-- [x] **FREE-MODEL-001** — When the `openrouter_free` runner builds an
+- [x] **FREE-MODEL-001** — When a free-policy runner builds an
   execution plan, the system SHALL derive `provider_routing` from the
   project's `data_classification`, mapping `restricted` to
   `{ data_collection: "deny", zdr: true }`.

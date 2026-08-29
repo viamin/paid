@@ -13,7 +13,17 @@
 
 ## Implementation Status
 
-Implemented. Paid ships the full free-model catalog and runner flow described here: `LlmModel` free-model fields, project `data_classification`, the `openrouter_free` runner, OpenRouter data-routing controls, daily OpenRouter free-model sync, deterministic classification, quality-bar filtering, default tier selection, rotation for knowledge execution, catalog UI, exclusions, and runner wiring. The phase chain that originally tracked this work (#2378, #2381, #2380, #2379, #2383, #2382, #2384, #2385) is closed.
+Implemented. Paid ships the full free-model catalog and runner flow described here: `LlmModel` free-model fields, project `data_classification`, OpenRouter data-routing controls, daily OpenRouter free-model sync, deterministic classification, quality-bar filtering, default tier selection, rotation for knowledge execution, catalog UI, exclusions, and runner wiring. The phase chain that originally tracked this work (#2378, #2381, #2380, #2379, #2383, #2382, #2384, #2385) is closed.
+
+**Superseded (RDR-065, #3671):** the dedicated `openrouter_free` (and
+`openrouter_pareto`) runner keys this RDR introduced no longer exist.
+[RDR-065](RDR-065-runner-model-selection-ux.md) folded them into the
+`opencode` runner as a `model_policy: "free"` config value (any
+OpenRouter-keyed direct-outbound runner may now hold that policy); a data
+migration converted every existing row in place, preserving `runner:<id>`
+identifiers. The catalog, sync, classification, quality-bar, and rotation
+machinery described below is unchanged and still the load-bearing
+implementation — only the runner-key presentation moved.
 
 ## Closeout Audit (2026-08-04)
 

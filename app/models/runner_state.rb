@@ -49,7 +49,7 @@ class RunnerState < ApplicationRecord
   end
 
   # Per-model rate-limit tracking for runners that support model rotation
-  # (e.g. openrouter_free). The metadata jsonb column stores
+  # (free-policy direct-outbound runners). The metadata jsonb column stores
   # `rate_limited_models` as `{ "model_id" => "reset_at_iso8601" }`. Entries
   # whose reset_at is in the past are pruned on read so rotation only sees
   # currently active windows.
@@ -123,8 +123,8 @@ class RunnerState < ApplicationRecord
     end
   end
 
-  # Preferred tier_model_ids recovery point for free-model rotation. When the
-  # openrouter_free runner rotates away from the user's configured model to
+  # Preferred tier_model_ids recovery point for free-model rotation. When a
+  # free-policy runner rotates away from the user's configured model to
   # dodge a rate limit, the original mapping is snapshotted here so it can be
   # restored once the rate-limit storm clears. Without this, repeated
   # rotations would permanently drift tier_model_ids toward lower-capability

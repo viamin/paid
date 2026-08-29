@@ -65,7 +65,7 @@
             <td class="px-4 py-3 text-sm font-medium text-gray-900">
               <div class="flex flex-wrap items-center gap-2">
                 <span><%= runner.display_name %></span>
-                <% if runner.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY %>
+                <% if runner.free_model_policy? %>
                   <span class="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">Free Models</span>
                 <% end %>
               </div>
@@ -182,7 +182,7 @@
                 <button data-test-agent-target="button" data-action="test-agent#test" type="button" class="font-medium text-emerald-600 hover:text-emerald-500">Test Runner</button>
                 <div data-test-agent-target="result"></div>
               </div>
-              <% if runner.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY %>
+              <% if runner.free_model_policy? %>
                 <%= link_to "Free Models", free_models_path, class: "ml-3 font-medium text-sky-600 hover:text-sky-500" %>
               <% end %>
               <%= link_to "Edit", edit_runner_path(runner), class: "ml-3 font-medium text-indigo-600 hover:text-indigo-500" %>

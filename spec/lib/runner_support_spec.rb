@@ -33,10 +33,6 @@ RSpec.describe RunnerSupport do
       expect(described_class::CONTAINER_EXECUTABLE_RUNNER_KEYS).to include("opencode")
     end
 
-    it "includes openrouter_free" do
-      expect(described_class::CONTAINER_EXECUTABLE_RUNNER_KEYS).to include("openrouter_free")
-    end
-
     it "includes copilot with autopilot mode support" do
       expect(described_class::CONTAINER_EXECUTABLE_RUNNER_KEYS).to include("copilot")
     end
@@ -70,11 +66,6 @@ RSpec.describe RunnerSupport do
     it "includes opencode when backed by the agent harness registry" do
       keys = described_class.container_executable_runner_keys
       expect(keys).to include("opencode")
-    end
-
-    it "includes openrouter_free when backed by the agent harness registry" do
-      keys = described_class.container_executable_runner_keys
-      expect(keys).to include("openrouter_free")
     end
 
     it "includes copilot when backed by the agent harness registry" do
@@ -112,10 +103,6 @@ RSpec.describe RunnerSupport do
 
     it "returns true for opencode" do
       expect(described_class.container_executable_runner_key?("opencode")).to be true
-    end
-
-    it "returns true for openrouter_free" do
-      expect(described_class.container_executable_runner_key?("openrouter_free")).to be true
     end
 
     it "returns true for copilot" do
@@ -255,10 +242,6 @@ RSpec.describe RunnerSupport do
 
     it "returns openai for codex" do
       expect(described_class.api_service_type_for("codex")).to eq("openai")
-    end
-
-    it "returns openrouter for openrouter_free" do
-      expect(described_class.api_service_type_for("openrouter_free")).to eq("openrouter")
     end
 
     it "returns google for gemini" do
@@ -471,8 +454,6 @@ RSpec.describe RunnerSupport do
           "gemini" => "gemini",
           "kilocode" => "kilo",
           "opencode" => "opencode",
-          "openrouter_free" => "opencode",
-          "openrouter_pareto" => "opencode",
           "pi" => "pi",
           "omp" => "omp"
         }
@@ -558,23 +539,14 @@ RSpec.describe RunnerSupport do
       end
     end
 
-    describe "openrouter_free inclusion" do
-      it "is listed in APP_RUNNER_KEYS as a known runner" do
-        expect(described_class::APP_RUNNER_KEYS).to include("openrouter_free")
-      end
-
-      it "is addable as a container-executable runner" do
-        expect(described_class.addable_runner_key?("openrouter_free")).to be true
-      end
-    end
-
-    describe "openrouter_pareto inclusion" do
-      it "is listed in APP_RUNNER_KEYS as a known runner" do
-        expect(described_class::APP_RUNNER_KEYS).to include("openrouter_pareto")
-      end
-
-      it "is addable as a container-executable runner" do
-        expect(described_class.addable_runner_key?("openrouter_pareto")).to be true
+    describe "legacy openrouter_free/openrouter_pareto retirement (RDR-065 #3671)" do
+      it "is absent from every registry the UI and dispatch read" do
+        %w[openrouter_free openrouter_pareto].each do |legacy_key|
+          expect(described_class::APP_RUNNER_KEYS).not_to include(legacy_key)
+          expect(described_class::CONTAINER_EXECUTABLE_RUNNER_KEYS).not_to include(legacy_key)
+          expect(described_class.addable_runner_key?(legacy_key)).to be false
+          expect(described_class.supported_runner_key?(legacy_key)).to be false
+        end
       end
     end
   end

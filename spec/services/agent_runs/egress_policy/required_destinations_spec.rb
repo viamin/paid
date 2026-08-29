@@ -106,9 +106,9 @@ RSpec.describe AgentRuns::EgressPolicy::RequiredDestinations do
         .to contain_exactly("generativelanguage.googleapis.com")
     end
 
-    it "maps the openrouter_free and openrouter_pareto runners to OpenRouter" do
-      free = build(:runner, runner_key: "openrouter_free")
-      pareto = build(:runner, runner_key: "openrouter_pareto")
+    it "maps free-policy and Pareto-model opencode runners to OpenRouter" do
+      free = build(:runner, runner_key: "opencode", config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } })
+      pareto = build(:runner, runner_key: "opencode", config: { "opencode" => { "api_provider" => "openrouter", "model" => "openrouter/pareto-code" } })
 
       expect(described_class.provider(runner: free).map { |d| d["host"] }).to contain_exactly("openrouter.ai")
       expect(described_class.provider(runner: pareto).map { |d| d["host"] }).to contain_exactly("openrouter.ai")
@@ -133,8 +133,7 @@ RSpec.describe AgentRuns::EgressPolicy::RequiredDestinations do
     # no direct-outbound mode, so its runs resolve proxy_restricted and never
     # consult provider destinations. Every other container-executable key must
     # be classified (fixed-host or config-derived) or its provider traffic
-    # would silently drop out of the audit snapshot — the gap that previously
-    # hid openrouter_free/openrouter_pareto provider hosts (EGRESS-POLICY-002).
+    # would silently drop out of the audit snapshot (EGRESS-POLICY-002).
     it "classifies every container-executable runner key" do
       proxy_only_runner_keys = %w[cursor]
 

@@ -701,10 +701,11 @@ module Models
         tier: "mid"
       },
       # Pareto row (RDR-065 D3): openrouter/pareto-code is OpenRouter's Pareto
-      # Router, not a fixed model — Runners::ParetoExecutionPlan lets
-      # OpenRouter choose the actual backing coding model per request
-      # server-side. This row exists so the model dropdown (#3663) and
-      # tier/selection code have a catalog entry to list and resolve.
+      # Router, not a fixed model — OpenRouter chooses the actual backing
+      # coding model per request server-side. This row exists so the model
+      # dropdown (#3663) and tier/selection code have a catalog entry to list
+      # and resolve; it dispatches through the ordinary opencode
+      # specific-model runtime like any other catalog row (RDR-065 #3671).
       # catalog_source is explicitly "seeded" (not "openrouter_sync") so
       # FreeModels::Sync#deactivate_missing_models!, which only targets
       # LlmModel.openrouter_synced_free (catalog_source: "openrouter_sync"

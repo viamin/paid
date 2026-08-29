@@ -8,6 +8,9 @@ module MigrationSpecHelpers
       service_container_metrics
       service_containers
       workflow_states
+      agent_run_resource_profiles
+      agent_runs
+      issues
       projects
       runners
       runner_states

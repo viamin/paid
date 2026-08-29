@@ -9,7 +9,7 @@ module Runners
       "gemini" => "google"
     }.freeze
 
-    DIRECT_OUTBOUND_RUNNER_KEYS = %w[kilocode opencode openrouter_free openrouter_pareto pi omp].freeze
+    DIRECT_OUTBOUND_RUNNER_KEYS = %w[kilocode opencode pi omp].freeze
 
     # Compatibility gate applied when callers have no concrete auth context
     # (e.g. the admin form seeding a brand-new runner). Callers on the dispatch
@@ -27,8 +27,6 @@ module Runners
     end
 
     def call
-      return FreeModels::DefaultTierModels.call if @runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
-
       model_provider = RUNNER_KEY_TO_MODEL_PROVIDER[@runner_key]
       return {} if model_provider.blank? && !DIRECT_OUTBOUND_RUNNER_KEYS.include?(@runner_key)
 

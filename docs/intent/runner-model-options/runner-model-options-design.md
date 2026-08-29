@@ -63,11 +63,14 @@ auth_type)`. It returns an ordered list of `Entry` values:
 
 `Runners::DefaultTierModelIds` derives its standard-provider tier defaults
 from this service (highest-capability compatible entry per tier), so tier
-defaults and dropdown contents cannot diverge. Its `openrouter_free` branch
-stays on `FreeModels::DefaultTierModels`, which also rejects below-quality-bar
-rows — a stricter rule that belongs to the free-model rotation path, not to
-option listing (below-quality-bar models remain manually selectable, matching
-the existing tier-mapping UI copy).
+defaults and dropdown contents cannot diverge. It has no free-policy branch:
+free-policy runners (`model_policy: "free"`, any direct-outbound key)
+resolve their tier defaults directly through
+`Runner#sync_direct_outbound_tier_models` calling
+`FreeModels::DefaultTierModels`, which also rejects below-quality-bar rows —
+a stricter rule that belongs to the free-model rotation path, not to option
+listing (below-quality-bar models remain manually selectable, matching the
+existing tier-mapping UI copy).
 
 ## What this is not
 

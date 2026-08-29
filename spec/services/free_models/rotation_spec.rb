@@ -16,9 +16,10 @@ RSpec.describe FreeModels::Rotation do
     end
 
     user.runners.create!(
-      runner_key: Runner::OPENROUTER_FREE_RUNNER_KEY,
+      runner_key: "opencode",
       auth_type: "api_key",
       provider_api_key: api_key,
+      config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } },
       tier_model_ids: tier_model_ids
     )
   end
@@ -116,7 +117,7 @@ RSpec.describe FreeModels::Rotation do
         free_model(tier: "mid", capability_score: 5.5, model_id: "mid-other")
         free_model(tier: "mid", capability_score: 5.0, model_id: "mid-extra")
         free_model(tier: "high", capability_score: 9.0, model_id: "high-other")
-        runner.user.runner_states.create!(runner_name: Runner::OPENROUTER_FREE_RUNNER_KEY,
+        runner.user.runner_states.create!(runner_name: runner.state_key,
           metadata: { RunnerState::RATE_LIMITED_MODELS_METADATA_KEY => {
             "high-current" => 5.minutes.from_now.iso8601,
             "high-other" => 5.minutes.from_now.iso8601
@@ -141,7 +142,7 @@ RSpec.describe FreeModels::Rotation do
       before do
         free_model(tier: "high", capability_score: 8.0, model_id: "high-other")
         free_model(tier: "mid", capability_score: 5.0, model_id: "mid-other")
-        runner.user.runner_states.create!(runner_name: Runner::OPENROUTER_FREE_RUNNER_KEY,
+        runner.user.runner_states.create!(runner_name: runner.state_key,
           metadata: { RunnerState::RATE_LIMITED_MODELS_METADATA_KEY => {
             "high-current" => 5.minutes.from_now.iso8601,
             "high-other" => 5.minutes.from_now.iso8601,
@@ -225,7 +226,7 @@ RSpec.describe FreeModels::Rotation do
       before do
         free_model(tier: "high", capability_score: 9.0, model_id: "high-blocked")
         free_model(tier: "high", capability_score: 5.0, model_id: "high-available")
-        runner.user.runner_states.create!(runner_name: Runner::OPENROUTER_FREE_RUNNER_KEY,
+        runner.user.runner_states.create!(runner_name: runner.state_key,
           metadata: { RunnerState::RATE_LIMITED_MODELS_METADATA_KEY => {
             "high-blocked" => 5.minutes.from_now.iso8601
           } })
@@ -245,7 +246,7 @@ RSpec.describe FreeModels::Rotation do
       before { free_model(tier: "high", capability_score: 8.0, model_id: "high-other") }
 
       def runner_state
-        user.runner_states.find_or_create_by!(runner_name: Runner::OPENROUTER_FREE_RUNNER_KEY)
+        user.runner_states.find_or_create_by!(runner_name: runner.state_key)
       end
 
       it "snapshots the original tier_model_ids before the first rotation" do
@@ -290,7 +291,7 @@ RSpec.describe FreeModels::Rotation do
       before { free_model(tier: "high", capability_score: 8.0, model_id: "high-other") }
 
       def runner_state
-        user.runner_states.find_or_create_by!(runner_name: Runner::OPENROUTER_FREE_RUNNER_KEY)
+        user.runner_states.find_or_create_by!(runner_name: runner.state_key)
       end
 
       it "restores the original tier_model_ids and clears the snapshot" do
@@ -321,7 +322,7 @@ RSpec.describe FreeModels::Rotation do
         expect(runner.reload.tier_model_ids).to eq(tier_model_ids)
       end
 
-      it "returns false for non-openrouter_free runners" do
+      it "returns false for non-free-policy runners" do
         existing = user.runners.kept_only.find_by(runner_key: "claude")
         subscription_runner = existing || user.runners.create!(runner_key: "claude", auth_type: "subscription")
 
@@ -331,9 +332,10 @@ RSpec.describe FreeModels::Rotation do
       it "is a graceful no-op when a snapshotted model was deleted since rotation" do
         described_class.call(runner: runner, current_model_id: "high-current",
           user: user, current_tier: "high")
-        # openrouter_free requires every tier mapped, so a snapshot referencing
-        # a now-deleted model cannot be restored; recovery must not break the
-        # healthy runner. The snapshot is still cleared so it is not retried.
+        # A free-policy runner requires every tier mapped, so a snapshot
+        # referencing a now-deleted model cannot be restored; recovery must
+        # not break the healthy runner. The snapshot is still cleared so it
+        # is not retried.
         LlmModel.find_by(model_id: "mid-current")&.destroy
 
         restored = described_class.restore_preferred!(runner: runner.reload, user: user)

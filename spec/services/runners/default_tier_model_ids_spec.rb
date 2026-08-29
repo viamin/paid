@@ -30,23 +30,6 @@ RSpec.describe Runners::DefaultTierModelIds do
       expect(described_class.call(runner_key: "opencode")).to eq({})
     end
 
-    it "returns free-model mappings for openrouter_free from the synced catalog" do
-      create(:llm_model, model_id: "free-low", provider: "deepseek", tier: "low", pricing_tier: "free", capability_score: 4.0,
-        catalog_source: "openrouter_sync")
-      create(:llm_model, model_id: "free-mid", provider: "moonshotai", tier: "mid", pricing_tier: "free", capability_score: 6.0,
-        catalog_source: "openrouter_sync")
-      create(:llm_model, model_id: "free-high", provider: "qwen", tier: "high", pricing_tier: "free", capability_score: 8.0,
-        catalog_source: "openrouter_sync")
-      create(:llm_model, model_id: "manual-free", provider: "manual-provider", tier: "high", pricing_tier: "free", capability_score: 9.5,
-        catalog_source: "manual")
-
-      expect(described_class.call(runner_key: "openrouter_free")).to eq(
-        "low" => "free-low",
-        "mid" => "free-mid",
-        "high" => "free-high"
-      )
-    end
-
     context "when the highest-capability model is supported by the updated Codex CLI" do
       before do
         create(:llm_model, model_id: "gpt-5.5", provider: "openai", tier: "high", capability_score: 9.9)

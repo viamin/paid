@@ -19,12 +19,13 @@ had none. A model dropdown filtered by provider (`LlmModel.by_provider`)
 renders empty for any provider with zero catalog rows, so those five
 providers had no usable model selection UI.
 
-Separately, `Runners::ParetoExecutionPlan` lets OpenRouter choose the actual
-backing coding model per request server-side rather than Paid targeting a
-fixed model id. That routing mode needs a catalog row (`model_id:
-"openrouter/pareto-code"`) so the dropdown and tier/selection code have
-something to list and resolve, even though the row does not describe a single
-fixed model's real limits.
+Separately, OpenRouter's Pareto Router chooses the actual backing coding
+model per request server-side rather than Paid targeting a fixed model id.
+That routing mode needs a catalog row (`model_id: "openrouter/pareto-code"`)
+so the dropdown and tier/selection code have something to list and resolve,
+even though the row does not describe a single fixed model's real limits. It
+dispatches through the ordinary opencode specific-model runtime like any
+other catalog row rather than a dedicated execution plan (RDR-065, #3671).
 
 ## Decision
 

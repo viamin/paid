@@ -27,18 +27,17 @@ module AgentRuns
       RUN_LOCAL_CATEGORIES = %w[service_container preview_tunnel].freeze
 
       # Runner keys whose upstream provider host set is fixed by the runner
-      # itself, not chosen through runner config: subscription-auth CLIs
-      # (claude/codex/gemini/copilot) and the OpenRouter-backed runners
-      # (openrouter_free/openrouter_pareto, which always target openrouter.ai
-      # via their execution plans). These hosts must be reachable directly
-      # from the container in subscription_auth/direct_outbound modes.
+      # itself, not chosen through runner config: the subscription-auth CLIs
+      # (claude/codex/gemini/copilot). These hosts must be reachable directly
+      # from the container in subscription_auth mode. Direct-outbound
+      # runners (opencode/kilocode/pi/omp) — including OpenRouter-routed free
+      # policy and Pareto model selections — resolve their host generically
+      # via direct_outbound_provider_hosts below.
       FIXED_HOST_PROVIDER_RUNNERS = {
         "claude" => %w[api.anthropic.com claude.ai],
         "codex" => %w[chatgpt.com api.openai.com auth.openai.com],
         "gemini" => %w[generativelanguage.googleapis.com oauth2.googleapis.com accounts.google.com cloudcode-pa.googleapis.com],
-        "copilot" => %w[api.githubcopilot.com copilot-proxy.githubusercontent.com api.github.com],
-        "openrouter_free" => %w[openrouter.ai],
-        "openrouter_pareto" => %w[openrouter.ai]
+        "copilot" => %w[api.githubcopilot.com copilot-proxy.githubusercontent.com api.github.com]
       }.freeze
 
       # Direct-outbound runner keys whose configured API provider supplies an

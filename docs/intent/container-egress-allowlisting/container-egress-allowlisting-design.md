@@ -70,10 +70,12 @@ never tenant settings:
 - **github** — `github.com` and `api.github.com` for repo checkout and PR
   operations, for every agent run;
 - **runner provider** — subscription provider hosts (Anthropic, OpenAI,
-  Google, GitHub Copilot), the fixed OpenRouter host for the
-  `openrouter_free`/`openrouter_pareto` runners, or the configured
-  direct-outbound API provider host, only when the run's network mode is
-  `subscription_auth` or `direct_outbound`.
+  Google, GitHub Copilot), or the configured direct-outbound API provider
+  host — resolved generically from the runner's derived API provider for
+  `opencode`/`kilocode`/`pi`/`omp`, including OpenRouter-routed free-policy
+  and Pareto model selections (RDR-065, #3671; no runner-key special case
+  remains) — only when the run's network mode is `subscription_auth` or
+  `direct_outbound`.
 - **run-local categories** — provider-neutral category names
   (`service_container`, `preview_tunnel`) that remain code-owned in the
   registry and are expanded into concrete host/port destinations later by the
