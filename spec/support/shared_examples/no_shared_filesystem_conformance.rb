@@ -105,6 +105,9 @@ RSpec.shared_examples "a no-shared-filesystem runner" do
       benchmark = conformance_benchmark_run(command: conformance_fixture_workload_command)
       stdout = benchmark.execution_result.stdout
 
+      expect(benchmark.execution_result).to be_success
+      expect(benchmark.report.as_json.fetch("result")).to include("success" => true)
+
       # Every piece of workload evidence returns over the runner's own stdout:
       # the entrypoint token, then the artifact the entrypoint wrote, read back
       # on the same stream. Host filesystem state is deliberately not inspected
