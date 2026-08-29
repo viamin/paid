@@ -130,6 +130,13 @@ RSpec.describe Inbox::Count do
       expect(after_resolve).to eq(0)
     end
 
+    # @spec OPERATOR-INBOX-002B
+    it "excludes blocking notifications whose subject does not resolve to a project" do
+      create(:notification, :error, account: account, subject: account, blocking: true)
+
+      expect(described_class.call(user: user)).to eq(0)
+    end
+
     it "excludes ready PRs that have not yet been evaluated for auto-merge" do
       create(:issue, :pull_request, project: project)
 

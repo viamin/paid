@@ -51,8 +51,14 @@ module Inbox
       merge_approval_candidates(project_ids).count { |issue| Inbox::MergeApproval.call(issue).present? }
     end
 
+    # Excludes notifications whose subject cannot be resolved to a project:
+    # Inbox::Queue can't render those entries (they have nowhere to route
+    # to), so counting them would inflate the badge past what the queue
+    # shows and beyond what the default action_required URL can open.
     def action_required_count
-      NotificationPolicy::Scope.new(user, Notification).resolve.active.blocking.count
+      NotificationPolicy::Scope.new(user, Notification).resolve.active.blocking
+        .includes(:subject)
+        .count { |notification| notification.resolved_project.present? }
     end
 
     # Narrows to rows that could plausibly be approval-only blockers before

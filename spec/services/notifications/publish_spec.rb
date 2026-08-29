@@ -68,6 +68,20 @@ RSpec.describe Notifications::Publish do
     end
 
     # @spec NOTIFICATION-SEVERITY-007
+    it "leaves action_url blank for blocking notifications whose subject has no project" do
+      notification = described_class.call(
+        account: account,
+        source: "account_level_blocking",
+        subject: account,
+        severity: :error,
+        blocking: true,
+        title: "Account-level blocker"
+      )
+
+      expect(notification.action_url).to be_nil
+    end
+
+    # @spec NOTIFICATION-SEVERITY-007
     it "preserves an explicit action_url for blocking notifications" do
       notification = described_class.call(
         account: account,

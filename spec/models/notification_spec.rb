@@ -164,4 +164,34 @@ RSpec.describe Notification do
       end
     end
   end
+
+  describe "#resolved_project" do
+    let(:account) { create(:account) }
+    let(:project) { create(:project, account: account) }
+
+    it "returns the subject itself when the subject is a project" do
+      notification = create(:notification, account: account, subject: project)
+
+      expect(notification.resolved_project).to eq(project)
+    end
+
+    it "returns the subject's project when the subject responds to :project" do
+      issue = create(:issue, project: project)
+      notification = create(:notification, account: account, subject: issue)
+
+      expect(notification.resolved_project).to eq(project)
+    end
+
+    it "returns nil when the subject does not resolve to a project" do
+      notification = create(:notification, account: account, subject: account)
+
+      expect(notification.resolved_project).to be_nil
+    end
+
+    it "returns nil when there is no subject" do
+      notification = create(:notification, account: account, subject: nil)
+
+      expect(notification.resolved_project).to be_nil
+    end
+  end
 end

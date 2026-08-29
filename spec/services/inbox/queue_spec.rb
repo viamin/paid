@@ -185,6 +185,16 @@ RSpec.describe Inbox::Queue do
     end
 
     # @spec OPERATOR-INBOX-002B
+    it "excludes blocking notifications whose subject does not resolve to a project" do
+      blocking = create(:notification, :error, account: account, subject: project, blocking: true)
+      create(:notification, :error, account: account, subject: account, source: "account_level_blocking", blocking: true)
+
+      entries = described_class.call(user: user, kind: described_class::ACTION_REQUIRED_KIND)
+
+      expect(entries.map(&:record)).to eq([ blocking ])
+    end
+
+    # @spec OPERATOR-INBOX-002B
     it "links action_required entries for existing-PR agent runs to the source PR, not the originating issue" do
       originating_issue = create(:issue, project: project, github_number: 5)
       pull_request = create(:issue, :pull_request, project: project, github_number: 42)

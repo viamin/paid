@@ -295,19 +295,12 @@ module Inbox
     end
 
     def notification_context(notification)
-      subject = notification.subject
-
-      case subject
-      when Issue
-        [ subject.project, subject ]
-      when Project
-        [ subject, nil ]
-      when AgentRun
-        [ subject.project, subject.source_pull_request_record || subject.issue ]
-      else
-        project = subject.respond_to?(:project) ? subject.project : nil
-        [ project, nil ]
+      issue = case notification.subject
+      when Issue then notification.subject
+      when AgentRun then notification.subject.source_pull_request_record || notification.subject.issue
       end
+
+      [ notification.resolved_project, issue ]
     end
 
     def project_filter_excludes?(candidate_project)

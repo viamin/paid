@@ -71,10 +71,18 @@ module Notifications
       return if action_url.present?
       return if notification.action_url.present?
 
-      notification.update_column(:action_url, default_action_url(notification))
+      url = default_action_url(notification)
+      notification.update_column(:action_url, url) if url
     end
 
+    # Inbox::Queue only surfaces action_required entries whose subject
+    # resolves to a project, so defaulting to /inbox/action_required:<id>
+    # for a project-less (e.g. account-level) blocking notification would
+    # link somewhere the queue can't render, redirecting back to /inbox
+    # with nothing to open.
     def default_action_url(notification)
+      return unless notification.resolved_project
+
       "/inbox/action_required:#{notification.id}"
     end
   end

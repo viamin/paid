@@ -32,6 +32,19 @@ class Notification < ApplicationRecord
     dismissed_at.nil? && resolved_at.nil?
   end
 
+  # Blocking notifications route to /inbox/action_required:<id>, which the
+  # inbox queue only renders for entries with a project (it drives the
+  # project badge, scoping, and detail view). Subjects that are already a
+  # Project resolve to themselves; everything else resolves via its own
+  # `project` association if it has one. Account-level or project-less
+  # subjects (or a nil subject) resolve to nil, and callers must treat that
+  # as "cannot be surfaced in the inbox".
+  def resolved_project
+    return subject if subject.is_a?(Project)
+
+    subject.project if subject.respond_to?(:project)
+  end
+
   private
 
   # @spec NOTIFICATION-SEVERITY-007
