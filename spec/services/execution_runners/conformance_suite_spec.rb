@@ -225,11 +225,25 @@ RSpec.describe ExecutionRunners::ConformanceSuite do
         agent_run, networking_policy: ExecutionRunners::NetworkingPolicy.proxy_restricted
       )
     end
-    let(:handle) { instance_double(ExecutionRunners::RunnerHandle) }
+    let(:handle) { instance_double(ExecutionRunners::RunnerHandle, host: "provisioned-host") }
     let(:runner) { instance_double(ExecutionRunners::Base, provision: handle, cleanup: nil) }
     let(:dimension_results) do
       ExecutionRunners::ConformanceSuite::BenchmarkReport.default_dimension_results(
         passed: %w[provision_execution run_workload clean_up_resources]
+      )
+    end
+
+    it "starts the workload with the timeout carried on the run's resources, not a shorter hardcoded limit" do
+      allow(runner).to receive(:start).and_return(ExecutionRunners::ExecutionResult.success(stdout: "ok"))
+
+      run_benchmark
+
+      expect(runner).to have_received(:start).with(
+        hash_including(
+          timeout: run_spec.resources.timeout_seconds,
+          startup_timeout: run_spec.resources.timeout_seconds,
+          idle_timeout: run_spec.resources.timeout_seconds
+        )
       )
     end
 
@@ -243,6 +257,10 @@ RSpec.describe ExecutionRunners::ConformanceSuite do
 
       expect(runner).to have_received(:cleanup).with(handle: handle, force: true)
       expect(result.report.as_json.fetch("benchmark")).to include("cleanup_latency_ms" => be >= 0)
+      # runner_backend must reflect the provisioned handle, not the agent
+      # run's pre-provision container_host (which stays "local" here while
+      # the stubbed handle reports a different host).
+      expect(result.report.as_json.fetch("runner")).to include("runner_backend" => "provisioned-host")
     end
 
     it "cleans up the provisioned environment when the workload raises" do

@@ -37,7 +37,7 @@ module ExecutionRunners
 
         Result.new(
           handle: handle, execution_result: execution_result,
-          report: build_report(timestamps, execution_result)
+          report: build_report(handle, timestamps, execution_result)
         )
       end
 
@@ -61,8 +61,9 @@ module ExecutionRunners
 
       def execute(handle:, command:, timestamps:)
         first_output_at = nil
-        result = runner.start(handle: handle, command: command, timeout: 60, startup_timeout: 30,
-          idle_timeout: 30, abort_patterns: nil, preparation: nil, heartbeat_path: nil) do |stream, chunk|
+        timeout = spec.resources&.timeout_seconds || ExecutionResources.profile("standard").timeout_seconds
+        result = runner.start(handle: handle, command: command, timeout: timeout, startup_timeout: timeout,
+          idle_timeout: timeout, abort_patterns: nil, preparation: nil, heartbeat_path: nil) do |stream, chunk|
             first_output_at ||= Time.now.utc
             yield stream, chunk if block_given?
           end
@@ -91,10 +92,10 @@ module ExecutionRunners
         )
       end
 
-      def build_report(timestamps, execution_result)
+      def build_report(handle, timestamps, execution_result)
         BenchmarkReport.build(
           runner_type: runner.class.name.demodulize.underscore,
-          runner_backend: spec.agent_run.container_host || "unknown",
+          runner_backend: handle.host || "unknown",
           timestamps: timestamps,
           execution_result: execution_result,
           agent_run: spec.agent_run,
