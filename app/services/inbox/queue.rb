@@ -259,11 +259,32 @@ module Inbox
     end
 
     def visible_blocking_notifications
-      NotificationPolicy::Scope.new(user, Notification).resolve
-        .active
-        .blocking
-        .includes(:subject)
-        .recent
+      @visible_blocking_notifications ||= begin
+        notifications = NotificationPolicy::Scope.new(user, Notification).resolve
+          .active
+          .blocking
+          .includes(:subject)
+          .recent
+          .to_a
+
+        preload_notification_subjects(notifications)
+        notifications
+      end
+    end
+
+    # notification_context dereferences subject.project for every entry, and
+    # for AgentRun subjects also calls source_pull_request_record. Batch both
+    # up front so an inbox page with N blocking notifications doesn't issue
+    # O(N) extra project/PR lookups.
+    def preload_notification_subjects(notifications)
+      subjects = notifications.filter_map(&:subject)
+
+      issues = subjects.select { |subject| subject.is_a?(Issue) }
+      ActiveRecord::Associations::Preloader.new(records: issues, associations: :project).call
+
+      agent_runs = subjects.select { |subject| subject.is_a?(AgentRun) }
+      ActiveRecord::Associations::Preloader.new(records: agent_runs, associations: [ :project, :issue ]).call
+      AgentRun.preload_source_pull_requests(agent_runs)
     end
 
     def remediation_steps_for(notification)

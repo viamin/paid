@@ -198,6 +198,22 @@ RSpec.describe Inbox::Queue do
       action_required_entry = entries.find { |entry| entry.record == notification }
       expect(action_required_entry.issue).to eq(pull_request)
     end
+
+    # @spec OPERATOR-INBOX-002B
+    it "batch-preloads project and source PR lookups for action_required entries instead of querying per row" do
+      create_agent_run_blocking_notification(github_number: 100, source_pull_request_number: 101)
+      single_row_queries = count_queries do
+        described_class.call(user: user, kind: described_class::ACTION_REQUIRED_KIND)
+      end
+
+      create_agent_run_blocking_notification(github_number: 200, source_pull_request_number: 201)
+      create_agent_run_blocking_notification(github_number: 300, source_pull_request_number: 301)
+      multi_row_queries = count_queries do
+        described_class.call(user: user, kind: described_class::ACTION_REQUIRED_KIND)
+      end
+
+      expect(multi_row_queries).to eq(single_row_queries)
+    end
   end
 
   describe "ordering" do
@@ -364,6 +380,15 @@ RSpec.describe Inbox::Queue do
         not_evaluated: []
       )
     )
+  end
+
+  def create_agent_run_blocking_notification(github_number:, source_pull_request_number:)
+    originating_issue = create(:issue, project: project, github_number: github_number)
+    create(:issue, :pull_request, project: project, github_number: source_pull_request_number)
+    agent_run = create(:agent_run, :existing_pr, project: project, issue: originating_issue,
+      source_pull_request_number: source_pull_request_number)
+    create(:notification, :error, account: account, subject: agent_run,
+      source: "guardrail_token_budget", blocking: true)
   end
 
   def create_action_required_notification(subject: project, source: "quality_auto_resume_cooldown")
