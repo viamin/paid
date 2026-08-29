@@ -164,26 +164,46 @@ RSpec.describe Models::RunnerTierLookup, :no_db do
       dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike,
         runner: runner, project: unrestricted_project))
 
+      allow(runner).to receive(:free_model_policy?).and_return(false)
       allow(scope).to receive(:by_provider).with("minimax").and_return(minimax_scope)
 
       expect(dummy.compatible_scope(scope)).to eq(minimax_scope)
     end
 
-    it "constrains free-model-policy runners to the free pricing tier" do
-      free_scope = instance_double(Models::RunnerTierLookupSpec::ActiveScopeLike)
+    %w[openrouter_free opencode kilocode pi omp].each do |runner_key|
+      it "constrains #{runner_key} runners in free policy mode to the free pricing tier" do
+        free_scope = instance_double(Models::RunnerTierLookupSpec::ActiveScopeLike)
+        runner = instance_double(
+          Models::RunnerTierLookupSpec::RunnerLike,
+          runner_key: runner_key,
+          tier_model_ids: {},
+          direct_outbound_llm_model_provider: nil
+        )
+        dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike,
+          runner: runner, project: unrestricted_project))
+
+        allow(runner).to receive(:free_model_policy?).and_return(true)
+        allow(scope).to receive(:free).and_return(free_scope)
+
+        expect(dummy.compatible_scope(scope)).to eq(free_scope)
+      end
+    end
+
+    it "does not constrain a non-free-policy OpenCode runner to free models" do
+      provider_scope = instance_double(Models::RunnerTierLookupSpec::ActiveScopeLike)
       runner = instance_double(
         Models::RunnerTierLookupSpec::RunnerLike,
         runner_key: "opencode",
         tier_model_ids: {},
-        direct_outbound_llm_model_provider: nil,
-        free_model_policy?: true
+        direct_outbound_llm_model_provider: "openrouter"
       )
       dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike,
         runner: runner, project: unrestricted_project))
 
-      allow(scope).to receive(:free).and_return(free_scope)
+      allow(runner).to receive(:free_model_policy?).and_return(false)
+      allow(scope).to receive(:by_provider).with("openrouter").and_return(provider_scope)
 
-      expect(dummy.compatible_scope(scope)).to eq(free_scope)
+      expect(dummy.compatible_scope(scope)).to eq(provider_scope)
     end
 
     it "narrows the scope to allowlisted providers when the project restricts routing" do

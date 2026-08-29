@@ -48,11 +48,11 @@ RSpec.describe AgentRuns::Cancel do
 
     it "cleans up the container when present" do
       agent_run.update!(container_id: "container-123")
-      allow(agent_run).to receive(:cleanup_container)
+      allow(agent_run).to receive(:cleanup_execution_environment)
 
       described_class.call(agent_run: agent_run)
 
-      expect(agent_run).to have_received(:cleanup_container).with(force: true)
+      expect(agent_run).to have_received(:cleanup_execution_environment).with(force: true)
     end
   end
 end

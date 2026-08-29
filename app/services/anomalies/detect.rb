@@ -198,8 +198,9 @@ module Anomalies
       agent_run.running? && anomalies.any? { |anomaly| anomaly.severity == "critical" }
     end
 
-    def notification_severity(anomalies)
-      anomalies.any? { |anomaly| anomaly.severity == "critical" } ? :error : :warning
+    # @spec NOTIFICATION-SEVERITY-001
+    def notification_severity(_anomalies)
+      :info
     end
 
     def resolve_prior_anomaly_notification

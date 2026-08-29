@@ -372,9 +372,9 @@ module Runners
     # env vars so the CLI uses its mounted local auth state, matching the
     # behavior of RunAgentActivity.subscription_auth_command.
     def container_provider_runtime
+      return free_model_policy_provider_runtime if runner.free_model_policy?
       return kilocode_provider_runtime if kilocode_direct_outbound?
       return openrouter_free_provider_runtime if openrouter_free_direct_outbound?
-      return free_model_policy_provider_runtime if free_model_policy_direct_outbound?
       return openrouter_pareto_provider_runtime if openrouter_pareto_direct_outbound?
       return subscription_provider_runtime if subscription_provider_runtime?
 
@@ -398,16 +398,9 @@ module Runners
       runner.openrouter_free_runner_runtime(project: test_project, model_id: model_id)
     end
 
-    def free_model_policy_direct_outbound?
-      runner.runner_key == "opencode" &&
-        runner.api_key? &&
-        runner.free_model_policy? &&
-        runner.required_api_service_type == "openrouter"
-    end
-
     def free_model_policy_provider_runtime
       model_id = resolve_openrouter_free_model_id
-      raise MissingProjectContextError, "free-model runner has no resolvable model" if model_id.blank?
+      raise MissingProjectContextError, "#{runner.runner_key} runner has no resolvable free model" if model_id.blank?
 
       runner.free_model_policy_runner_runtime(project: test_project, model_id: model_id)
     end
@@ -469,7 +462,7 @@ module Runners
     # subsequent smoke test runs.
     def prepare_kilocode_config!(run)
       config_json = runner.kilocode_config_json
-      run.execute_in_container(
+      run.execute_in_execution_environment(
         [ "sh", "-c",
           "mkdir -p /home/agent/.config/kilocode && " \
           "printf '%s' \"$KILOCODE_CONFIG_B64\" | base64 -d > /home/agent/.config/kilocode/kilo.json" ],

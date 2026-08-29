@@ -13,11 +13,12 @@ class Runner < ApplicationRecord
   OPENROUTER_FREE_RUNNER_KEY = "openrouter_free"
   OPENROUTER_FREE_MODEL_PROVIDER = "openrouter"
   OPENROUTER_PARETO_RUNNER_KEY = "openrouter_pareto"
+  DIRECT_OUTBOUND_FREE_POLICY_RUNNER_KEYS = %w[opencode kilocode pi omp].freeze
   # model_policy narrows how a direct-outbound runner picks its model:
   # "specific" pins a single configured model id (the default); "free"
   # drives selection from tier_model_ids via a tier picker, mirroring the
-  # legacy openrouter_free runner. Phase-1 gates "free" to the opencode
-  # runner key on the openrouter API provider only.
+  # legacy openrouter_free runner. Free policy is valid only when the runner
+  # resolves to the openrouter API provider.
   # @spec MODEL-POLICY-001 MODEL-POLICY-002 MODEL-POLICY-003
   MODEL_POLICIES = %w[specific free].freeze
 
@@ -201,7 +202,7 @@ class Runner < ApplicationRecord
   validate :subscription_must_have_standard_fallback_role
   validate :api_key_entry_must_be_unique
   validate :free_model_policy_runner_must_be_unique_per_credential
-  validate :opencode_model_policy_must_be_valid
+  validate :direct_outbound_model_policy_must_be_valid
   validate :opencode_free_policy_chat_must_be_disabled
   validate :opencode_api_key_config_must_be_valid
   validate :kilocode_api_key_config_must_be_valid
@@ -253,9 +254,9 @@ class Runner < ApplicationRecord
   def display_name
     return name if name.present?
 
-    if opencode_model_policy == "free"
-      provider_label = DIRECT_OUTBOUND_API_PROVIDERS.dig(opencode_api_provider, :label) || "OpenRouter"
-      label = "OpenCode Free (#{provider_label})"
+    if direct_outbound_free_policy?
+      provider_label = direct_outbound_api_label || "OpenRouter"
+      label = "#{direct_outbound_runner_label} Free (#{provider_label})"
       label += " (API Key)" if api_key?
       return label
     end
@@ -401,17 +402,17 @@ class Runner < ApplicationRecord
   def opencode_model_policy
     return nil unless runner_key == "opencode"
 
-    opencode_config["model_policy"].presence || "specific"
+    direct_outbound_model_policy
   end
 
   # True for any runner enforcing the free-model tier_model_ids contract:
-  # the legacy dedicated openrouter_free runner, or an opencode runner
+  # the legacy dedicated openrouter_free runner, or a direct-outbound runner
   # configured with model_policy "free". Both must resolve tier_model_ids
   # exclusively to free LlmModel rows and are curated the same way by
   # sync_direct_outbound_tier_models.
   # @spec MODEL-POLICY-004
   def free_model_policy?
-    openrouter_free? || opencode_model_policy == "free"
+    openrouter_free? || direct_outbound_free_policy?
   end
 
   def opencode_preflight_timeout_seconds
@@ -577,8 +578,9 @@ class Runner < ApplicationRecord
     { kilocode_api_key_env_var => api_key }
   end
 
-  def kilocode_runner_runtime
-    model_id = kilocode_model_id
+  def kilocode_runner_runtime(project: nil, model_id: kilocode_model_id)
+    return free_model_policy_runner_runtime(project: project, model_id: model_id) if kilocode_free_model_policy_runtime?
+
     raise ArgumentError, "Missing KiloCode model id for runner #{id || runner_key}" if model_id.blank?
 
     api_config = DIRECT_OUTBOUND_API_PROVIDERS.fetch(kilocode_api_provider, DIRECT_OUTBOUND_API_PROVIDERS["anthropic"])
@@ -636,6 +638,7 @@ class Runner < ApplicationRecord
   end
 
   def agent_harness_runner_runtime(project: nil)
+    return free_model_policy_runner_runtime(project: project, model_id: free_policy_default_model_id) if direct_outbound_free_policy?
     return opencode_runner_runtime(project: project) if opencode_direct_outbound?
     return pi_runner_runtime if pi_agent_harness_runtime?
     return omp_runner_runtime if omp_agent_harness_runtime?
@@ -645,7 +648,7 @@ class Runner < ApplicationRecord
   public :agent_harness_runner_runtime
 
   def agent_harness_runtime?
-    opencode_agent_harness_runtime? || copilot_agent_harness_runtime? || pi_agent_harness_runtime? || omp_agent_harness_runtime? || openrouter_free_agent_harness_runtime? || openrouter_pareto_agent_harness_runtime?
+    direct_outbound_free_policy? || opencode_agent_harness_runtime? || copilot_agent_harness_runtime? || pi_agent_harness_runtime? || omp_agent_harness_runtime? || openrouter_free_agent_harness_runtime? || openrouter_pareto_agent_harness_runtime?
   end
 
   def opencode_agent_harness_runtime?
@@ -834,6 +837,20 @@ class Runner < ApplicationRecord
 
   def self.api_service_type_for(runner_key)
     RunnerSupport.api_service_type_for(runner_key)
+  end
+
+  def self.api_service_type_to_provider_key(service_type)
+    normalized = service_type.to_s
+
+    DIRECT_OUTBOUND_API_PROVIDERS.each do |provider_key, config|
+      return provider_key if config[:service_type] == normalized
+    end
+
+    PI_API_PROVIDERS.each do |provider_key, config|
+      return provider_key if config[:service_type] == normalized
+    end
+
+    nil
   end
 
   def self.routing_key?(identifier)
@@ -1121,11 +1138,11 @@ class Runner < ApplicationRecord
     when "opencode"
       [ config.dig("opencode", "model"), config.dig("opencode", "model_policy") ]
     when "kilocode"
-      config.dig("kilocode", "model")
+      [ config.dig("kilocode", "model"), config.dig("kilocode", "model_policy") ]
     when "pi"
-      config.dig("pi", "model")
+      [ config.dig("pi", "model"), config.dig("pi", "model_policy") ]
     when "omp"
-      config.dig("omp", "model")
+      [ config.dig("omp", "model"), config.dig("omp", "model_policy") ]
     end
   end
 
@@ -1267,28 +1284,27 @@ class Runner < ApplicationRecord
     errors.add(:auth_type, "must be API key for OpenRouter Pareto")
   end
 
-  # Runs for every opencode runner regardless of auth type, unlike
-  # opencode_api_key_config_must_be_valid below: model_policy determines
-  # whether the runner is free_model_policy? (which feeds validators and
-  # dispatch logic for subscription and api_key rows alike), so a crafted
-  # value must fail loudly instead of silently passing when auth_type isn't
-  # api_key.
+  # Runs for every direct-outbound free-policy-capable runner regardless of
+  # auth type: model_policy determines whether the runner is free_model_policy?
+  # (which feeds validators and dispatch logic for subscription and api_key
+  # rows alike), so a crafted value must fail loudly instead of silently
+  # passing when auth_type isn't api_key.
   # @spec MODEL-POLICY-001 MODEL-POLICY-002 MODEL-POLICY-003
-  def opencode_model_policy_must_be_valid
-    return unless runner_key == "opencode"
+  def direct_outbound_model_policy_must_be_valid
+    return unless direct_outbound_free_policy_supported_runner?
 
-    unless MODEL_POLICIES.include?(opencode_model_policy)
-      errors.add(:config, "must include a supported OpenCode model policy")
+    unless MODEL_POLICIES.include?(direct_outbound_model_policy)
+      errors.add(:config, "must include a supported #{direct_outbound_runner_label} model policy")
       return
     end
 
-    return unless opencode_model_policy == "free"
+    return unless direct_outbound_free_policy?
 
-    # Phase-1 gate: free-model routing is only wired up for OpenRouter.
-    # Pi/OMP/KiloCode free policies land in a follow-up issue.
-    return if opencode_api_provider == "openrouter"
+    errors.add(:auth_type, "must be API key for the free model policy") unless api_key?
 
-    errors.add(:config, "OpenCode free model policy requires the OpenRouter API provider")
+    return if direct_outbound_api_provider == OPENROUTER_FREE_MODEL_PROVIDER
+
+    errors.add(:config, "#{direct_outbound_runner_label} free model policy requires the OpenRouter API provider")
   end
 
   # Chat dispatch (ChatSessions::BuildLlmClient, Containers::ChatSessionManager)
@@ -1300,7 +1316,7 @@ class Runner < ApplicationRecord
   # runs on create) would silently enable chat dispatch to a paid fallback
   # model instead of the free tier. Drop once chat-side free-model
   # resolution lands for policy-based free runners.
-  # @spec MODEL-POLICY-011
+  # @spec MODEL-POLICY-012
   def opencode_free_policy_chat_must_be_disabled
     return unless runner_key == "opencode"
     return unless opencode_model_policy == "free"
@@ -1677,7 +1693,7 @@ class Runner < ApplicationRecord
       errors.add(:config, "must include a supported KiloCode API provider")
     end
 
-    if kilocode_model_id.blank?
+    if direct_outbound_model_policy != "free" && kilocode_model_id.blank?
       errors.add(:config, "must include a KiloCode model id")
     end
 
@@ -1796,6 +1812,36 @@ class Runner < ApplicationRecord
     runner_key == "openrouter_free"
   end
 
+  def direct_outbound_free_policy_supported_runner?
+    DIRECT_OUTBOUND_FREE_POLICY_RUNNER_KEYS.include?(runner_key)
+  end
+
+  def direct_outbound_model_policy
+    return nil unless direct_outbound_free_policy_supported_runner?
+
+    direct_outbound_config.fetch("model_policy", "").presence || "specific"
+  end
+
+  def direct_outbound_free_policy?
+    direct_outbound_model_policy == "free"
+  end
+
+  def opencode_free_model_policy_runtime?
+    runner_key == "opencode" && direct_outbound_free_policy? && opencode_api_provider == OPENROUTER_FREE_MODEL_PROVIDER
+  end
+
+  def kilocode_free_model_policy_runtime?
+    runner_key == "kilocode" && direct_outbound_free_policy? && kilocode_api_provider == OPENROUTER_FREE_MODEL_PROVIDER
+  end
+
+  def pi_free_model_policy_runtime?
+    runner_key == "pi" && direct_outbound_free_policy? && pi_api_provider == OPENROUTER_FREE_MODEL_PROVIDER
+  end
+
+  def omp_free_model_policy_runtime?
+    runner_key == "omp" && direct_outbound_free_policy? && omp_api_provider == OPENROUTER_FREE_MODEL_PROVIDER
+  end
+
   def openrouter_free_direct_outbound?
     runner_key == "openrouter_free" &&
       api_key? &&
@@ -1819,6 +1865,31 @@ class Runner < ApplicationRecord
     when "pi" then "Pi"
     when "omp" then "Oh My Pi"
     else runner_key.to_s
+    end
+  end
+
+  def direct_outbound_config
+    return {} unless direct_outbound_free_policy_supported_runner?
+    return {} unless config.is_a?(Hash)
+
+    config.fetch(runner_key, {})
+  end
+
+  def direct_outbound_api_provider
+    case runner_key
+    when "opencode" then opencode_api_provider
+    when "kilocode" then kilocode_api_provider
+    when "pi" then pi_api_provider
+    when "omp" then omp_api_provider
+    end
+  end
+
+  def direct_outbound_api_label
+    case runner_key
+    when "pi", "omp"
+      PI_API_PROVIDERS.dig(direct_outbound_api_provider, :label)
+    else
+      DIRECT_OUTBOUND_API_PROVIDERS.dig(direct_outbound_api_provider, :label)
     end
   end
 
@@ -2036,6 +2107,113 @@ class Runner < ApplicationRecord
     )
   end
   private :openrouter_provider_runtime
+
+  def free_model_policy_runner_runtime(project:, model_id:)
+    free_policy_direct_outbound_runtime(project: project, model_id: model_id)
+  end
+  public :free_model_policy_runner_runtime
+
+  def free_policy_direct_outbound_runtime(project:, model_id:)
+    model_id ||= free_policy_default_model_id
+    raise ArgumentError, "#{runner_key} runner has no resolvable free model" if model_id.blank?
+
+    config = Runners::FreeModelExecutionPlan.call(runner: self, model_id: model_id, project: project).config
+
+    case runner_key
+    when "kilocode"
+      kilocode_free_policy_runtime(config)
+    when "pi"
+      pi_free_policy_runtime(config)
+    when "omp"
+      omp_free_policy_runtime(config)
+    else
+      openrouter_provider_runtime(config)
+    end
+  end
+
+  def pi_free_policy_runtime(config)
+    AgentHarness::ProviderRuntime.new(
+      model: config.fetch(:model),
+      api_provider: pi_api_provider,
+      env: {
+        config.fetch(:api_key_env) => effective_api_secret.to_s,
+        "OPENAI_BASE_URL" => config.fetch(:base_url)
+      },
+      unset_env: %w[OPENAI_HEADER_X_AGENT_RUN_ID OPENAI_HEADER_X_PROXY_TOKEN],
+      metadata: {
+        "paid_pi_auth_entry" => {
+          "provider" => pi_api_provider,
+          "api_key" => effective_api_secret.to_s
+        },
+        config: {
+          "provider" => {
+            "openrouter" => config.fetch(:provider_routing)
+          }
+        }
+      }
+    )
+  end
+
+  def omp_free_policy_runtime(config)
+    AgentHarness::ProviderRuntime.new(
+      model: config.fetch(:model),
+      api_provider: omp_api_provider,
+      env: omp_runtime_env.merge("OPENAI_BASE_URL" => config.fetch(:base_url)),
+      unset_env: %w[OPENAI_HEADER_X_AGENT_RUN_ID OPENAI_HEADER_X_PROXY_TOKEN],
+      metadata: {
+        config: {
+          "provider" => {
+            "openrouter" => config.fetch(:provider_routing)
+          }
+        }
+      }
+    )
+  end
+
+  def kilocode_free_policy_runtime(config)
+    model_id = config.fetch(:model)
+    options = {
+      "apiKey" => "{env:#{config.fetch(:api_key_env)}}",
+      "baseURL" => config.fetch(:base_url),
+      "providerRouting" => config.fetch(:provider_routing)
+    }
+
+    AgentHarness::ProviderRuntime.new(
+      model: kilocode_qualified_model("openai-compatible", model_id),
+      env: kilocode_runtime_env,
+      metadata: {
+        config: {
+          "provider" => {
+            "openai-compatible" => {
+              "options" => options,
+              "models" => {
+                model_id => {
+                  "name" => model_id,
+                  "id" => model_id,
+                  "tool_call" => true
+                }
+              }
+            }
+          },
+          "permission" => {
+            "external_directory" => KILOCODE_EXTERNAL_DIRECTORY_PERMISSIONS
+          }
+        }
+      }
+    )
+  end
+
+  # Resolves the highest-tier free model for config-blind dispatch paths such
+  # as chat planning and compatibility checks. Live agent-run execution passes
+  # an explicit model_id from model selection / tier resolution instead.
+  def free_policy_default_model_id
+    return @free_policy_default_model_id if defined?(@free_policy_default_model_id)
+
+    @free_policy_default_model_id = LlmModel::TIERS.reverse.filter_map do |tier|
+      result = Runners::ResolveTierModel.call(runner: self, tier: tier, user: user)
+      result.model_id if result.success? && result.model_id.present?
+    end.first
+  end
 
   def omp_api_key_env_var
     api_config = OMP_API_PROVIDERS[omp_api_provider.to_s]

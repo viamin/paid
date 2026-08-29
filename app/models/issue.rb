@@ -573,7 +573,9 @@ class Issue < ApplicationRecord
   private
 
   def inbox_count_cache_invalidation_needed?
-    saved_change_to_needs_input_since? || waiting_issue_github_state_changed?
+    saved_change_to_needs_input_since? ||
+      waiting_issue_github_state_changed? ||
+      merge_approval_candidate_state_changed?
   end
 
   def bump_inbox_cache_version
@@ -582,6 +584,17 @@ class Issue < ApplicationRecord
 
   def waiting_issue_github_state_changed?
     saved_change_to_github_state? && paid_state == "needs_input"
+  end
+
+  def merge_approval_candidate_state_changed?
+    is_pull_request? && (
+      saved_change_to_auto_merge_blockers? ||
+      saved_change_to_auto_merge_evaluated_at? ||
+      saved_change_to_awaiting_approval_since? ||
+      saved_change_to_merge_permission_rejected_at? ||
+      saved_change_to_pr_review_phase? ||
+      saved_change_to_github_state?
+    )
   end
 
   # Every counter an escalation accumulated, plus the markers that tell

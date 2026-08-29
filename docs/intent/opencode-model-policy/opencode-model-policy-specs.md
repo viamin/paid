@@ -1,7 +1,8 @@
-# EARS Specs: OpenCode Model Policy Configuration
+# EARS Specs: Direct-Outbound Free Model Policy Configuration
 
-> Testable claims for the `model_policy` config knob on the `opencode`
-> runner. Status markers: `[x]` implemented · `[ ]` active gap ·
+> Testable claims for the `model_policy` config knob on the direct-outbound
+> runners that can route through OpenRouter (`opencode`, `kilocode`, `pi`,
+> `omp`). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target across specs, tests, and code
 > (`grep -r MODEL-POLICY-001`).
 
@@ -12,19 +13,29 @@
   `"specific"`. For any other `runner_key`, it SHALL return `nil`. A
   `model_policy` value outside `Runner::MODEL_POLICIES` SHALL fail
   validation with an error on `:config`.
-- [x] **MODEL-POLICY-002** — When an `opencode` runner sets
-  `model_policy: "free"`, the system SHALL require its API provider to be
-  `"openrouter"` (phase-1 gate) and SHALL NOT require `opencode_model_id` to
-  be present.
-- [x] **MODEL-POLICY-003** — When an `opencode` runner's `model_policy` is
-  `"specific"` (explicit or defaulted), the system SHALL continue to require
-  `opencode_model_id` to be present, unchanged from prior behavior.
+- [x] **MODEL-POLICY-002** — When a direct-outbound runner in
+  `opencode`, `kilocode`, `pi`, or `omp` sets `model_policy: "free"`, the
+  system SHALL require its derived API provider to be `"openrouter"` and
+  SHALL NOT require the runner-specific model id to be present.
+- [x] **MODEL-POLICY-003** — When a direct-outbound runner's `model_policy`
+  is `"specific"` (explicit or defaulted), the system SHALL preserve each
+  runner's prior model-id contract: `opencode` and `kilocode` continue to
+  require a configured model id, while `pi` and `omp` continue to allow a
+  blank model and defer to the provider default.
 - [x] **MODEL-POLICY-004** — `Runner#free_model_policy?` SHALL be true for
-  the legacy `openrouter_free` runner key and for any `opencode` runner with
-  `model_policy == "free"`. The `tier_model_ids`/`tier_models` validations
-  that require free-pricing `LlmModel` rows, and their runner-compatibility
-  counterparts that skip the generic compatibility check, SHALL key off this
-  predicate rather than the `openrouter_free` runner key alone.
+  the legacy `openrouter_free` runner key and for any `opencode`,
+  `kilocode`, `pi`, or `omp` runner with `model_policy == "free"`. The
+  `tier_model_ids`/`tier_models` validations that require free-pricing
+  `LlmModel` rows, and their runner-compatibility counterparts that skip the
+  generic compatibility check, SHALL key off this predicate rather than the
+  `openrouter_free` runner key alone.
+- [x] **MODEL-POLICY-011** — When a free-policy direct-outbound runner in
+  `opencode`, `kilocode`, `pi`, or `omp` is enabled for agent runs or
+  fallback, the system SHALL dispatch it through an OpenRouter-aware
+  runtime that carries the runner's OpenRouter credential plus
+  data-classification routing metadata equivalent to the legacy
+  `openrouter_free` runner. Pi/OMP/KiloCode SHALL preserve their
+  runner-specific runtime metadata/env shape while adding that routing data.
 
 ## Defaults and Display
 
@@ -34,10 +45,10 @@
   `clear_stale_direct_outbound_tier_models` SHALL NOT clear an already-curated
   mapping on unrelated attribute saves.
 - [x] **MODEL-POLICY-006** — `Runner#display_name` for a free-policy
-  `opencode` runner without an explicit `name` SHALL render
-  `"OpenCode Free (<API provider label>)"` (e.g. `"OpenCode Free (OpenRouter)"`),
-  with the existing `" (API Key)"` suffix for api_key auth. The legacy
-  `openrouter_free` display path is unchanged.
+  direct-outbound runner without an explicit `name` SHALL render
+  `"<Runner label> Free (<API provider label>)"` (for example,
+  `"OpenCode Free (OpenRouter)"`), with the existing `" (API Key)"` suffix
+  for api_key auth. The legacy `openrouter_free` display path is unchanged.
 
 ## Uniqueness and Params
 
@@ -54,10 +65,10 @@
 - [x] **MODEL-POLICY-009** — Runtime dispatch
   (`agent_harness_runner_runtime`/`requires_direct_outbound?`) and free-model
   rotation (`FreeModels::Rotation`) SHALL recognize `model_policy == "free"`
-  on `opencode` runners the same way they recognize the legacy
-  `openrouter_free` runner key, including rate-limit recovery snapshots keyed
-  by the runner's routing identifier.
-- [x] **MODEL-POLICY-011** — A free-policy `opencode` runner (`model_policy
+  on `opencode`, `kilocode`, `pi`, and `omp` runners the same way they
+  recognize the legacy `openrouter_free` runner key, including rate-limit
+  recovery snapshots keyed by the runner's routing identifier.
+- [x] **MODEL-POLICY-012** — A free-policy `opencode` runner (`model_policy
   == "free"`) SHALL fail validation with an error on `:enabled_for_chat` if
   `enabled_for_chat` is true, on create, update, or any other save path.
   Chat dispatch does not yet resolve a free-tier model for policy-based free

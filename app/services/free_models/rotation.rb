@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 module FreeModels
-  # Selects the next free-model to retry within an OpenRouter free-model runner
-  # after a rate-limit error. Walks tiers starting at the supplied
+  # Selects the next free-model to retry within an OpenRouter-backed
+  # free-policy runner after a rate-limit error. Walks tiers starting at the supplied
   # `current_tier` and downward (high -> mid -> low), replacing the
   # rate-limited model with the highest-capability candidate that is
   # available (active, not user-excluded, not below the quality bar, and
@@ -22,7 +22,7 @@ module FreeModels
       new(...).call
     end
 
-    # @param runner [Runner] The free-model runner whose current model
+    # @param runner [Runner] The free-policy runner whose current model
     #   was rate-limited.
     # @param current_model_id [String, nil] The model id that just failed.
     # @param current_tier [String, nil] The tier the failed call was running

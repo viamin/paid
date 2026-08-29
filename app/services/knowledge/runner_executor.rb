@@ -131,7 +131,7 @@ module Knowledge
       rotation_runner_record(runner)&.free_model_rotation_state_key || runner.to_s
     end
 
-    # Returns the free-model Runner record for the current user when the
+    # Returns the free-policy Runner record for the current user when the
     # runner identifier points at one. The Runner record is what
     # FreeModels::Rotation needs in order to update tier_model_ids and read
     # the RunnerState.
@@ -140,7 +140,7 @@ module Knowledge
     # times for the same name (record_rate_limit -> free_model_id_for,
     # rotation_runner?, try_rotation, then record_success ->
     # restore_preferred_tier_model_ids), so caching avoids repeated find_by
-    # queries. Uses Hash#key? rather than ||= so nil results (non-openrouter
+    # queries. Uses Hash#key? rather than ||= so nil results (non-free-policy
     # names and missing-runner records) are cached too.
     def rotation_runner_record(runner_name)
       @rotation_runner_records ||= {}
@@ -155,7 +155,7 @@ module Knowledge
       rotation_runner_record(runner).present?
     end
 
-    # Best-effort guess at which model the openrouter_free runner was using
+    # Best-effort guess at which model the free-policy runner was using
     # when it rate-limited, used only when the error itself carries no model
     # id. Knowledge calls lean on the high-tier model, so walk tiers from
     # high down to low and return the first one the runner is configured for.
@@ -171,7 +171,7 @@ module Knowledge
       nil
     end
 
-    # Attempts to rotate the openrouter_free runner to a new free model and,
+    # Attempts to rotate the free-policy runner to a new free model and,
     # on success, records the rotation so the caller can retry with the same
     # runner. Returns the rotation result on success and nil when no
     # candidate is available (caller falls back to the next runner).

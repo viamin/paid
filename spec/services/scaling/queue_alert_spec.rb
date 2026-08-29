@@ -26,21 +26,23 @@ RSpec.describe Scaling::QueueAlert do
       )
     end
 
-    it "publishes a warning notification for warning alerts" do
+    # @spec NOTIFICATION-SEVERITY-002
+    it "publishes an info notification for warning alerts" do
       described_class.call(account: account, alerts: [ warning_alert ])
 
       notification = Notification.find_by(account: account, source: "queue_monitor")
       expect(notification).to be_present
-      expect(notification.severity).to eq("warning")
+      expect(notification.severity).to eq("info")
       expect(notification.title).to include("default")
     end
 
-    it "publishes an error notification for critical alerts" do
+    # @spec NOTIFICATION-SEVERITY-002
+    it "publishes an info notification for critical alerts" do
       described_class.call(account: account, alerts: [ critical_alert ])
 
       notification = Notification.find_by(account: account, source: "queue_monitor")
       expect(notification).to be_present
-      expect(notification.severity).to eq("error")
+      expect(notification.severity).to eq("info")
       expect(notification.title).to include("agent_runs")
     end
 
