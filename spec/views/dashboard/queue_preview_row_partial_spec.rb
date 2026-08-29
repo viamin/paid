@@ -12,13 +12,15 @@ RSpec.describe "dashboard/_queue_preview_row", :no_db, type: :view do
       :goal,
       :focus,
       :source_pull_request_number,
+      :cancellable?,
       keyword_init: true
     ).new(
       id: 7,
       project: project,
       goal: "create_pr",
       focus: "general",
-      source_pull_request_number: nil
+      source_pull_request_number: nil,
+      cancellable?: false
     )
   end
   let(:entry) do
