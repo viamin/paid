@@ -1,11 +1,14 @@
 # frozen_string_literal: true
 
+require_relative "runner_support"
+
 # Thin delegation layer to RunnerSupport for backward compatibility.
 # ProviderSupport and RunnerSupport are functionally equivalent after the
 # provider→runner rename. This module eliminates duplication by delegating
 # to RunnerSupport while maintaining the provider-key naming convention
-# at the call sites. The APP_PROVIDER_KEYS constant is kept in sync with
-# APP_RUNNER_KEYS minus runner-only keys (e.g., "omp", "pi").
+# at the call sites. APP_PROVIDER_KEYS is APP_RUNNER_KEYS minus the
+# runner-only "omp" ("pi" stays provider-side); this constant is no longer
+# read by the module and is kept only for specs.
 
 module ProviderSupport
   APP_PROVIDER_KEYS = %w[claude cursor codex copilot gemini opencode kilocode pi].freeze
@@ -49,11 +52,11 @@ module ProviderSupport
   end
 
   def addable_provider_keys
-    RunnerSupport.addable_runner_keys
+    container_executable_provider_keys
   end
 
   def addable_provider_key?(provider_key)
-    RunnerSupport.addable_runner_key?(provider_key)
+    addable_provider_keys.include?(provider_key.to_s)
   end
 
   def harness_provider_key_for(provider_key)
