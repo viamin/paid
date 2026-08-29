@@ -176,7 +176,7 @@ module DashboardHelper
     rows = dashboard_chart_table_rows(data_source)
     return "".html_safe if rows.blank?
 
-    column_names = rows.first.last.keys
+    column_names = rows.values.flat_map(&:keys).uniq
     tag.table(class: "sr-only") do
       safe_join([
         caption.present? ? tag.caption(caption) : nil,

@@ -36,6 +36,25 @@ RSpec.describe DashboardHelper, :no_db do
       ])
     end
 
+    # @spec DASHBOARD-CHART-A11Y-002
+    it "includes columns for series that are absent from the first x-axis label" do
+      html = helper.dashboard_chartkick_chart("ColumnChart", [
+        { name: "Completed", data: { "2026-01-01" => 3, "2026-01-02" => 5, "2026-01-03" => 2 } },
+        { name: "Failed", data: { "2026-01-03" => 1 } }
+      ])
+
+      table = Nokogiri::HTML.fragment(html).at_css("table")
+      headers = table.css("thead th").map(&:text)
+      rows = table.css("tbody tr").map { |tr| tr.css("th, td").map(&:text) }
+
+      expect(headers).to eq([ "", "Completed", "Failed" ])
+      expect(rows).to eq([
+        [ "2026-01-01", "3", "No data" ],
+        [ "2026-01-02", "5", "No data" ],
+        [ "2026-01-03", "2", "1" ]
+      ])
+    end
+
     # @spec DASHBOARD-CHART-A11Y-003
     it "renders a single Value column for a bare hash data source" do
       html = helper.dashboard_chartkick_chart("LineChart", { "2026-01-01" => 92.5, "2026-01-02" => 88.0 })
