@@ -22,7 +22,7 @@
 
       <% summary = data[:summary] %>
       <% if summary[:total_merged] > 0 %>
-        <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-4">
+        <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-4">
           <div class="text-center">
             <dt class="text-xs font-medium text-gray-500">Total Merged</dt>
             <dd class="mt-1 text-2xl font-semibold text-gray-900"><%= summary[:total_merged] %></dd>
@@ -39,7 +39,7 @@
             <dt class="text-xs font-medium text-gray-500">Days with Data</dt>
             <dd class="mt-1 text-2xl font-semibold text-gray-900"><%= summary[:total_days] %></dd>
           </div>
-        </div>
+        </dl>
 
         <div class="mt-4">
           <%= dashboard_chartkick_chart "LineChart", data[:series],

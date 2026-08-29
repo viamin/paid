@@ -14,7 +14,7 @@
   <%# Run Volume & Outcome %>
   <div>
     <h2 class="text-lg font-semibold text-gray-900">Run Volume &amp; Outcome</h2>
-    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
         <dt class="truncate text-sm font-medium text-gray-500">Total Runs</dt>
         <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
@@ -39,7 +39,7 @@
           <%= number_with_delimiter(stats[:run_volume][:active]) %>
         </dd>
       </div>
-    </div>
+    </dl>
 
     <%# Status breakdown %>
     <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
@@ -220,7 +220,7 @@
   <% if has_cost_or_token_data %>
     <div class="mt-8">
       <h2 class="text-lg font-semibold text-gray-900">Cost &amp; Token Usage</h2>
-      <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
           <dt class="truncate text-sm font-medium text-gray-500">Total Cost</dt>
           <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
@@ -245,8 +245,8 @@
             $<%= format("%.2f", cost_tokens[:avg_cost_per_run_cents] / 100.0) %>
           </dd>
         </div>
-      </div>
-      <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+      </dl>
+      <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
           <dt class="truncate text-sm font-medium text-gray-500">Avg Tokens / Run</dt>
           <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
@@ -259,14 +259,14 @@
             <%= cost_tokens[:avg_iterations_per_run] %>
           </dd>
         </div>
-      </div>
+      </dl>
     </div>
   <% end %>
 
   <%# Duration Percentiles %>
   <div class="mt-8">
     <h2 class="text-lg font-semibold text-gray-900">Duration (Completed Runs)</h2>
-    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <% { "Median (p50)" => :p50, "p75" => :p75, "p90" => :p90, "Average" => :avg }.each do |label, key| %>
         <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
           <dt class="truncate text-sm font-medium text-gray-500"><%= label %></dt>
@@ -275,7 +275,7 @@
           </dd>
         </div>
       <% end %>
-    </div>
+    </dl>
   </div>
 
   <%# Duration Trend Chart %>
@@ -323,7 +323,7 @@
     <h2 class="text-lg font-semibold text-gray-900">Run Phase Breakdown</h2>
     <p class="mt-1 text-sm text-gray-500">Separate queue and setup overhead from prompt preparation, agent execution, and wrap-up work.</p>
     <% phase_groups = stats[:phase_breakdown].keys %>
-    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       <% phase_groups.each do |phase_group| %>
         <% phase_stats = stats[:phase_breakdown][phase_group] %>
         <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
@@ -338,7 +338,7 @@
           </dd>
         </div>
       <% end %>
-    </div>
+    </dl>
 
     <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
       <div class="px-4 py-5 sm:p-6">
@@ -374,7 +374,7 @@
     <h2 class="text-lg font-semibold text-gray-900">Issue Completion <span class="text-sm font-normal text-gray-500">(All Time)</span></h2>
     <% ic = stats[:issue_completion] %>
     <% if ic[:merged_count] > 0 %>
-      <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
           <dt class="truncate text-sm font-medium text-gray-500">Merged PRs (with agent runs)</dt>
           <dd class="mt-1 text-3xl font-semibold tracking-tight text-green-600">
@@ -402,7 +402,7 @@
             <%= format_duration(ic[:agent_run_seconds][:avg_seconds]) %>
           </dd>
         </div>
-      </div>
+      </dl>
 
       <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
