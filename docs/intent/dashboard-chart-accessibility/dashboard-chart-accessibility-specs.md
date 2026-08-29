@@ -49,4 +49,7 @@
   `app/views/dashboard/_pr_cycle_time.html.erb`,
   `app/views/dashboard/_orchestration_decisions.html.erb`,
   `app/views/runners/_provider_outcomes.html.erb`.
-  *Test:* `spec/views/dashboard/*_partial_spec.rb`.
+  *Test:* `spec/views/dashboard/metrics_partial_spec.rb`,
+  `spec/views/dashboard/pr_cycle_time_partial_spec.rb`,
+  `spec/views/dashboard/orchestration_decisions_partial_spec.rb`,
+  `spec/views/runners/provider_outcomes_partial_spec.rb`.
