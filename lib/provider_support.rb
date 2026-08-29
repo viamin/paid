@@ -11,9 +11,9 @@ require_relative "runner_support"
 # read by the module and is kept only for specs.
 
 module ProviderSupport
-  APP_PROVIDER_KEYS = %w[claude cursor codex copilot gemini opencode kilocode pi].freeze
-  # Provider-executable keys exclude "omp" which is runner-only
-  CONTAINER_EXECUTABLE_PROVIDER_KEYS = Set.new(%w[claude codex copilot cursor gemini kilocode opencode pi]).freeze
+  # Provider-side sets are the runner-side sets minus the runner-only "omp".
+  APP_PROVIDER_KEYS = (RunnerSupport::APP_RUNNER_KEYS - %w[omp]).freeze
+  CONTAINER_EXECUTABLE_PROVIDER_KEYS = Set.new(RunnerSupport::CONTAINER_EXECUTABLE_RUNNER_KEYS - %w[omp]).freeze
   MAX_RATE_LIMIT_RESET_SECONDS = RunnerSupport::MAX_RATE_LIMIT_RESET_SECONDS
 
   # Shared constants
