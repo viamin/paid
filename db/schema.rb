@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_28_192834) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_28_222402) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1961,6 +1961,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_192834) do
   create_table "notifications", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "action_url"
+    t.boolean "blocking", default: false, null: false, comment: "True when the notification's error state cannot self-resolve and requires human action to resume work."
     t.datetime "created_at", null: false
     t.text "description"
     t.datetime "dismissed_at"
@@ -1975,7 +1976,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_192834) do
     t.string "title", null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id"
-    t.index ["account_id", "nav_section", "read_at"], name: "index_notifications_on_badge"
+    t.index ["account_id", "blocking", "read_at"], name: "index_notifications_on_badge", where: "((dismissed_at IS NULL) AND (resolved_at IS NULL))"
     t.index ["account_id", "read_at", "dismissed_at"], name: "index_notifications_on_unread"
     t.index ["account_id", "source", "subject_type", "subject_id"], name: "index_notifications_on_dedup_account_wide", unique: true, where: "(user_id IS NULL)"
     t.index ["account_id", "user_id", "source", "subject_type", "subject_id"], name: "index_notifications_on_dedup", unique: true

@@ -5,10 +5,12 @@ module Inbox
     CLARIFYING_QUESTIONS_KIND = "clarifying_questions"
     PLAN_REVIEW_KIND = "plan_review"
     MERGE_APPROVAL_KIND = "merge_approval"
+    ACTION_REQUIRED_KIND = "action_required"
     KINDS = [
       CLARIFYING_QUESTIONS_KIND,
       PLAN_REVIEW_KIND,
-      MERGE_APPROVAL_KIND
+      MERGE_APPROVAL_KIND,
+      ACTION_REQUIRED_KIND
     ].freeze
 
     Entry = Struct.new(
@@ -21,6 +23,8 @@ module Inbox
       :questions,
       :tasks,
       :summary_text,
+      :title_text,
+      :action_url,
       keyword_init: true
     ) do
       def to_param
@@ -39,13 +43,17 @@ module Inbox
         kind == MERGE_APPROVAL_KIND
       end
 
+      def action_required?
+        kind == ACTION_REQUIRED_KIND
+      end
+
       def title
-        issue.title
+        title_text.presence || issue&.title || record.try(:title)
       end
 
       def summary
         return questions.first(2).join(" ").truncate(220) if clarifying_questions?
-        return summary_text if merge_approval?
+        return summary_text if merge_approval? || action_required?
 
         "#{tasks.size} proposed tasks"
       end
@@ -67,6 +75,7 @@ module Inbox
       entries.concat(clarifying_question_entries) if include_kind?(CLARIFYING_QUESTIONS_KIND)
       entries.concat(plan_review_entries) if include_kind?(PLAN_REVIEW_KIND)
       entries.concat(merge_approval_entries) if include_kind?(MERGE_APPROVAL_KIND)
+      entries.concat(action_required_entries) if include_kind?(ACTION_REQUIRED_KIND)
       sort_entries(entries)
     end
 
@@ -83,9 +92,9 @@ module Inbox
         [
           entry.waiting_since.nil? ? 1 : 0,
           entry.waiting_since,
-          entry.project.owner,
-          entry.project.repo,
-          entry.issue.github_number,
+          entry.project&.owner.to_s,
+          entry.project&.repo.to_s,
+          entry.issue&.github_number || 0,
           entry.id
         ]
       end
@@ -105,7 +114,9 @@ module Inbox
           waiting_since: issue.needs_input_since,
           questions: questions,
           tasks: [],
-          summary_text: nil
+          summary_text: nil,
+          title_text: nil,
+          action_url: nil
         )
       end
     end
@@ -186,7 +197,9 @@ module Inbox
           waiting_since: review.created_at,
           questions: [],
           tasks: tasks,
-          summary_text: nil
+          summary_text: nil,
+          title_text: nil,
+          action_url: nil
         )
       end
     end
@@ -205,7 +218,31 @@ module Inbox
           waiting_since: snapshot.waiting_since,
           questions: [],
           tasks: [],
-          summary_text: snapshot.summary
+          summary_text: snapshot.summary,
+          title_text: nil,
+          action_url: nil
+        )
+      end
+    end
+
+    def action_required_entries
+      visible_blocking_notifications.filter_map do |notification|
+        project, issue = notification_context(notification)
+        next unless project
+        next if project_filter_excludes?(project)
+
+        Entry.new(
+          id: "#{ACTION_REQUIRED_KIND}:#{notification.id}",
+          kind: ACTION_REQUIRED_KIND,
+          project: project,
+          issue: issue,
+          record: notification,
+          waiting_since: notification.created_at,
+          questions: [],
+          tasks: remediation_steps_for(notification),
+          summary_text: notification.metadata["recommended_action"],
+          title_text: notification.title,
+          action_url: notification.action_url
         )
       end
     end
@@ -219,6 +256,52 @@ module Inbox
           .includes(:project)
           .where(project_id: ids, is_pull_request: true, github_state: "open", pr_review_phase: "ready")
       end
+    end
+
+    def visible_blocking_notifications
+      @visible_blocking_notifications ||= begin
+        notifications = NotificationPolicy::Scope.new(user, Notification).resolve
+          .active
+          .blocking
+          .includes(:subject)
+          .recent
+          .to_a
+
+        preload_notification_subjects(notifications)
+        notifications
+      end
+    end
+
+    # notification_context dereferences subject.project for every entry, and
+    # for AgentRun subjects also calls source_pull_request_record. Batch both
+    # up front so an inbox page with N blocking notifications doesn't issue
+    # O(N) extra project/PR lookups.
+    def preload_notification_subjects(notifications)
+      Notification.preload_resolved_projects(notifications)
+
+      agent_runs = notifications.filter_map(&:subject).select { |subject| subject.is_a?(AgentRun) }
+      ActiveRecord::Associations::Preloader.new(records: agent_runs, associations: :issue).call
+      AgentRun.preload_source_pull_requests(agent_runs)
+    end
+
+    def remediation_steps_for(notification)
+      steps = Array(notification.metadata["remediation_steps"])
+      return steps if steps.any?
+
+      Array(notification.metadata["recommended_action"])
+    end
+
+    def notification_context(notification)
+      issue = case notification.subject
+      when Issue then notification.subject
+      when AgentRun then notification.subject.source_pull_request_record || notification.subject.issue
+      end
+
+      [ notification.resolved_project, issue ]
+    end
+
+    def project_filter_excludes?(candidate_project)
+      project.present? && candidate_project.id != project.id
     end
   end
 end

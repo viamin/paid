@@ -140,6 +140,7 @@ module DashboardHelper
     end
   end
 
+  # @spec DASHBOARD-CHART-A11Y-001
   def dashboard_chartkick_chart(chart_type, data_source, **options)
     @dashboard_chartkick_chart_id ||= 0
 
@@ -147,12 +148,14 @@ module DashboardHelper
     height = (options.delete(:height) || "300px").to_s
     width = (options.delete(:width) || "100%").to_s
     loading = options.delete(:loading) || "Loading..."
+    caption = options.delete(:caption)
     chart_options = options.except(:html, :nonce, :defer, :content_for)
     chart_data = data_source.respond_to?(:chart_json) ? data_source.chart_json : data_source.to_json
 
-    tag.div(
+    chart_div = tag.div(
       loading,
       id: element_id,
+      aria: { hidden: "true" },
       style: "height: #{ERB::Util.html_escape(height)}; width: #{ERB::Util.html_escape(width)}; " \
         "text-align: center; color: #999; line-height: #{ERB::Util.html_escape(height)}; " \
         "font-size: 14px; font-family: 'Lucida Grande', 'Lucida Sans Unicode', Verdana, Arial, Helvetica, sans-serif;",
@@ -163,6 +166,60 @@ module DashboardHelper
         chartkick_options_value: chart_options.to_json
       }
     )
+
+    safe_join([ chart_div, dashboard_chart_data_table(data_source, caption) ])
+  end
+
+  # @spec DASHBOARD-CHART-A11Y-001
+  # @spec DASHBOARD-CHART-A11Y-004
+  def dashboard_chart_data_table(data_source, caption)
+    rows = dashboard_chart_table_rows(data_source)
+    return "".html_safe if rows.blank?
+
+    column_names = rows.values.flat_map(&:keys).uniq
+    tag.table(class: "sr-only") do
+      safe_join([
+        caption.present? ? tag.caption(caption) : nil,
+        dashboard_chart_table_head(column_names),
+        dashboard_chart_table_body(rows, column_names)
+      ].compact)
+    end
+  end
+
+  # @spec DASHBOARD-CHART-A11Y-002
+  # @spec DASHBOARD-CHART-A11Y-003
+  def dashboard_chart_table_rows(data_source)
+    case data_source
+    when Array
+      data_source.each_with_object({}) do |series, rows|
+        series[:data].each { |label, value| (rows[label] ||= {})[series[:name]] = value }
+      end
+    when Hash
+      data_source.transform_values { |value| { "Value" => value } }
+    else
+      {}
+    end
+  end
+
+  def dashboard_chart_table_head(column_names)
+    header_cells = column_names.map { |name| tag.th(name) }
+    tag.thead(tag.tr(safe_join([ tag.th("") ] + header_cells)))
+  end
+
+  def dashboard_chart_table_body(rows, column_names)
+    tag.tbody(safe_join(rows.map { |label, values| dashboard_chart_table_row(label, values, column_names) }))
+  end
+
+  def dashboard_chart_table_row(label, values, column_names)
+    cells = column_names.map { |name| tag.td(dashboard_chart_cell_value(values[name])) }
+    tag.tr(safe_join([ tag.th(label.to_s, scope: "row") ] + cells))
+  end
+
+  # @spec DASHBOARD-CHART-A11Y-005
+  def dashboard_chart_cell_value(value)
+    return "No data" if value.nil?
+
+    value.is_a?(Numeric) ? number_with_delimiter(value) : value.to_s
   end
 
   def chart_annotations(data)

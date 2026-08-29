@@ -68,10 +68,12 @@ RSpec.describe QualityPause::AutoResume do
       notification = Notification.find_by(account: project.account, source: "quality_auto_resume_cooldown")
       expect(notification).to be_present
       expect(notification.severity).to eq("error")
+      expect(notification.blocking).to be(true)
       expect(notification.subject).to eq(project)
       expect(notification.metadata).to include(
         "reason" => "model_change",
-        "max_auto_resumes" => 3
+        "max_auto_resumes" => 3,
+        "recommended_action" => "Review the quality dashboard and resume manually or adjust thresholds."
       )
     end
 

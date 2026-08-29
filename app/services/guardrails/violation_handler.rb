@@ -200,6 +200,7 @@ module Guardrails
         source: "guardrail_#{violation_type}",
         subject: agent_run,
         severity: notification_severity,
+        blocking: blocking_notification?,
         title: notification_title,
         description: details,
         metadata: {
@@ -211,7 +212,7 @@ module Guardrails
           recommended_action: context[:recommended_action],
           triggered_at: context[:triggered_at]
         },
-        action_url: project_agent_run_path(agent_run.project, agent_run),
+        action_url: notification_action_url,
         nav_section: "agent_runs"
       )
     end
@@ -223,6 +224,16 @@ module Guardrails
     def notification_title
       action = terminal_violation? ? "terminated" : "paused"
       "Agent run ##{agent_run.id} #{action} by #{violation_type.tr("_", " ")} guardrail"
+    end
+
+    def blocking_notification?
+      violation_type == "token_budget" && agent_run.existing_pr?
+    end
+
+    def notification_action_url
+      return if blocking_notification?
+
+      project_agent_run_path(agent_run.project, agent_run)
     end
 
     class Result

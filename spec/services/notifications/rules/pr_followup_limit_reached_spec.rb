@@ -151,9 +151,13 @@ RSpec.describe Notifications::Rules::PrFollowupLimitReached do
   end
 
   it "publishes when the follow-up limit is reached" do
-    expect {
-      described_class.call(scope: [ issue ])
-    }.to change(Notification, :count).by(1)
+    described_class.call(scope: [ issue ])
+
+    notification = Notification.find_by!(source: "pr_followup_limit_reached", subject: issue)
+    expect(notification).to have_attributes(severity: "error", blocking: true)
+    expect(notification.metadata).to include(
+      "recommended_action" => "Take over the PR manually — automatic follow-ups stopped at 3/3."
+    )
   end
 
   it "does not publish below the threshold" do

@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec DASHBOARD-CHART-A11Y-006
 RSpec.describe "dashboard/_orchestration_decisions", :no_db, type: :view do
   let(:report) do
     {
@@ -60,7 +61,8 @@ RSpec.describe "dashboard/_orchestration_decisions", :no_db, type: :view do
         }
       ],
       daily_volume: [
-        { day: Date.new(2026, 8, 1), successful_count: 7, noop_count: 3, failed_count: 2 }
+        { day: Date.new(2026, 8, 1), successful_count: 4, noop_count: 2, failed_count: 1 },
+        { day: Date.new(2026, 8, 2), successful_count: 3, noop_count: 1, failed_count: 1 }
       ]
     }
   end
@@ -89,5 +91,16 @@ RSpec.describe "dashboard/_orchestration_decisions", :no_db, type: :view do
   it "keeps the supporting card captions readable as definitions" do
     expect(metric_list.text).to include("Includes applied, deferred, and auto-resolved decisions.")
     expect(metric_list.text).to include("4 projects contributing context")
+  end
+
+  it "renders a captioned accessible table for the decision volume chart" do
+    render partial: "dashboard/orchestration_decisions", locals: { report: report, time_range: "cumulative" }
+
+    tables = Nokogiri::HTML.fragment(rendered).css("table.sr-only")
+    captions = tables.map { |table| table.at_css("caption")&.text }
+
+    expect(captions).to contain_exactly(
+      "Daily orchestration decision counts split by successful, no-op, and failed outcomes."
+    )
   end
 end

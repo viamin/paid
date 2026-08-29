@@ -47,6 +47,23 @@ RSpec.describe Inbox::Queue do
       expect_merge_approval_entry(entries, pr)
     end
 
+    # @spec OPERATOR-INBOX-002B @spec NOTIFICATION-SEVERITY-008
+    it "returns typed entries for visible blocking notifications" do
+      notification = create_action_required_notification
+
+      entries = described_class.call(user: user, kind: described_class::ACTION_REQUIRED_KIND)
+
+      action_required_entry = entries.find { |entry| entry.record == notification }
+      expect(action_required_entry).to have_attributes(
+        id: "#{described_class::ACTION_REQUIRED_KIND}:#{notification.id}",
+        kind: described_class::ACTION_REQUIRED_KIND,
+        project: project,
+        waiting_since: notification.created_at,
+        summary_text: "Review the quality dashboard and resume manually or adjust thresholds."
+      )
+      expect(action_required_entry.tasks).to eq([ "Open the quality dashboard", "Resume manually or adjust thresholds" ])
+    end
+
     it "exposes waiting_since from needs_input_since so a future inbox UI can show waiting age" do
       stamp = 2.days.ago
       issue = create_needs_input(body: questions_body)
@@ -105,6 +122,16 @@ RSpec.describe Inbox::Queue do
       expect(entries.map(&:record)).to eq([ pr ])
     end
 
+    it "filters to action_required when kind: action_required is requested" do
+      create_needs_input(body: questions_body)
+      create_plan_review(project: project, workflow_id: "planning-workflow-1")
+      notification = create(:notification, :error, account: account, subject: project, blocking: true)
+
+      entries = described_class.call(user: user, kind: described_class::ACTION_REQUIRED_KIND)
+
+      expect(entries.map(&:record)).to eq([ notification ])
+    end
+
     it "excludes plan reviews that are no longer open" do
       review_issue = create(:issue, project: project)
       create_plan_review(project: project, issue: review_issue, workflow_id: "planning-workflow-1", plan_data: {})
@@ -144,6 +171,58 @@ RSpec.describe Inbox::Queue do
       entries = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
 
       expect(entries.map(&:record)).to contain_exactly(project.issues.find_by!(github_number: 10))
+    end
+
+    it "excludes non-blocking and inactive notifications from action_required" do
+      blocking = create(:notification, :error, account: account, subject: project, blocking: true)
+      create(:notification, :error, account: account, subject: project, source: "quota_error", blocking: false)
+      create(:notification, :error, :resolved, account: account, subject: project, source: "resolved_blocking", blocking: true)
+      create(:notification, :error, :dismissed, account: account, subject: project, source: "dismissed_blocking", blocking: true)
+
+      entries = described_class.call(user: user, kind: described_class::ACTION_REQUIRED_KIND)
+
+      expect(entries.map(&:record)).to eq([ blocking ])
+    end
+
+    # @spec OPERATOR-INBOX-002B
+    it "excludes blocking notifications whose subject does not resolve to a project" do
+      blocking = create(:notification, :error, account: account, subject: project, blocking: true)
+      create(:notification, :error, account: account, subject: account, source: "account_level_blocking", blocking: true)
+
+      entries = described_class.call(user: user, kind: described_class::ACTION_REQUIRED_KIND)
+
+      expect(entries.map(&:record)).to eq([ blocking ])
+    end
+
+    # @spec OPERATOR-INBOX-002B
+    it "links action_required entries for existing-PR agent runs to the source PR, not the originating issue" do
+      originating_issue = create(:issue, project: project, github_number: 5)
+      pull_request = create(:issue, :pull_request, project: project, github_number: 42)
+      agent_run = create(:agent_run, :existing_pr, project: project, issue: originating_issue,
+        source_pull_request_number: 42)
+      notification = create(:notification, :error, account: account, subject: agent_run,
+        source: "guardrail_token_budget", blocking: true)
+
+      entries = described_class.call(user: user, kind: described_class::ACTION_REQUIRED_KIND)
+
+      action_required_entry = entries.find { |entry| entry.record == notification }
+      expect(action_required_entry.issue).to eq(pull_request)
+    end
+
+    # @spec OPERATOR-INBOX-002B
+    it "batch-preloads project and source PR lookups for action_required entries instead of querying per row" do
+      create_agent_run_blocking_notification(github_number: 100, source_pull_request_number: 101)
+      single_row_queries = count_queries do
+        described_class.call(user: user, kind: described_class::ACTION_REQUIRED_KIND)
+      end
+
+      create_agent_run_blocking_notification(github_number: 200, source_pull_request_number: 201)
+      create_agent_run_blocking_notification(github_number: 300, source_pull_request_number: 301)
+      multi_row_queries = count_queries do
+        described_class.call(user: user, kind: described_class::ACTION_REQUIRED_KIND)
+      end
+
+      expect(multi_row_queries).to eq(single_row_queries)
     end
   end
 
@@ -241,6 +320,7 @@ RSpec.describe Inbox::Queue do
     it "narrows to a single project when project: is provided" do
       scoped_issue = create_needs_input(github_number: 10, body: questions_body)
       scoped_review = create_plan_review(project: project, workflow_id: "planning-workflow-1")
+      scoped_notification = create(:notification, :error, account: account, subject: project, source: "action_required_alpha", blocking: true)
       other_project = create(
         :project,
         account: account,
@@ -252,10 +332,12 @@ RSpec.describe Inbox::Queue do
       )
       create_needs_input(github_number: 11, project: other_project, body: questions_body)
       create_plan_review(project: other_project, workflow_id: "planning-workflow-2")
+      other_notification = create(:notification, :error, account: account, subject: other_project, source: "action_required_beta", blocking: true)
 
       entries = described_class.call(user: user, project: project)
 
-      expect(entries.map(&:record)).to contain_exactly(scoped_issue, scoped_review)
+      expect(entries.map(&:record)).to include(scoped_issue, scoped_review, scoped_notification)
+      expect(entries.map(&:record)).not_to include(other_notification)
     end
 
     it "excludes clarifying-question projects from other accounts" do
@@ -307,6 +389,31 @@ RSpec.describe Inbox::Queue do
         failed: [ blocker(signal: "owner_approved", reason_code: "owner_approval_missing") ],
         not_evaluated: []
       )
+    )
+  end
+
+  def create_agent_run_blocking_notification(github_number:, source_pull_request_number:)
+    originating_issue = create(:issue, project: project, github_number: github_number)
+    create(:issue, :pull_request, project: project, github_number: source_pull_request_number)
+    agent_run = create(:agent_run, :existing_pr, project: project, issue: originating_issue,
+      source_pull_request_number: source_pull_request_number)
+    create(:notification, :error, account: account, subject: agent_run,
+      source: "guardrail_token_budget", blocking: true)
+  end
+
+  def create_action_required_notification(subject: project, source: "quality_auto_resume_cooldown")
+    create(
+      :notification,
+      :error,
+      account: account,
+      subject: subject,
+      source: source,
+      blocking: true,
+      title: "Quality pause requires manual review",
+      metadata: {
+        "recommended_action" => "Review the quality dashboard and resume manually or adjust thresholds.",
+        "remediation_steps" => [ "Open the quality dashboard", "Resume manually or adjust thresholds" ]
+      }
     )
   end
 
