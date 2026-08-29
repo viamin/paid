@@ -32,10 +32,13 @@ It is intentionally small and deterministic:
 Use this fixture when comparing providers so the workload itself does not add
 model or prompt variance to the benchmark.
 
-The shared no-shared-filesystem example also emits benchmark-shape JSON during
-its stubbed baseline checks. That path must describe the workload it actually
-ran; only runs that truly execute this repository fixture should label the
-report with the fixture metadata above.
+The shared no-shared-filesystem example emits benchmark-shape JSON from a
+Docker-stubbed baseline — `Containers::Provision` is doubled — but the
+benchmark check itself clones this fixture into an isolated directory and
+executes `bin/conformance-task` for real, so the emitted report legitimately
+carries the fixture metadata above. Any baseline that does not truly execute
+this repository fixture must not label its report with this fixture's
+identity.
 
 ## Required Lifecycle Dimensions
 

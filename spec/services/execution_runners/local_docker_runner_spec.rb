@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "open3"
 
 # @spec CONTAINER-RUNTIME-010
 # @spec CONTAINER-RUNTIME-011
@@ -2186,9 +2187,20 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
         container_status: { running: false, exit_code: 0, oom_killed: false, memory_limit_bytes: 1024 },
         cleanup: nil
       )
-      allow(provision_service).to receive(:execute) do |_, **_, &block|
-        block&.call(:stdout, "conformance output\n")
-        Containers::Provision::Result.success(stdout: "conformance output\n", stderr: "", exit_code: 0)
+      allow(provision_service).to receive(:execute) do |command, **_, &block|
+        # The conformance benchmark test drives the real fixture entrypoint
+        # through this command; run it for real so the benchmark evidences
+        # an actual clone-and-execute rather than a canned stub response.
+        # Every other lifecycle test in the shared example passes the inert
+        # default conformance_command, which falls through to the canned
+        # output below.
+        stdout = if command.include?(ExecutionRunners::ConformanceSuite.fixture_workload.fetch("entrypoint"))
+          Open3.capture3(command).first
+        else
+          "conformance output\n"
+        end
+        block&.call(:stdout, stdout)
+        Containers::Provision::Result.success(stdout: stdout, stderr: "", exit_code: 0)
       end
     end
   end
