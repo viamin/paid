@@ -8,7 +8,7 @@ class FreeModelsController < ApplicationController
 
     @project = selected_project
     @catalog = FreeModels::Catalog.call(project: @project)
-    @openrouter_free_runner = policy_scope(Runner).find { |runner| runner.free_model_policy? }
+    @openrouter_free_runner = policy_scope(Runner).find(&:free_model_policy?)
   end
 
   def project_preferences
