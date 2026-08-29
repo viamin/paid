@@ -2158,6 +2158,39 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
   # worktree for normal create-PR execution fails here.
   # @spec CONTAINER-RUNTIME-019
   it_behaves_like "a no-shared-filesystem runner" do
+    # This baseline never truly clones or runs
+    # spec/fixtures/execution_runners/conformance_repo — the +execute+ stub
+    # below only pattern-matches the fixture entrypoint token and returns
+    # canned output; it proves the runner correctly assembles and forwards the
+    # fixture workload command, not that a clone or execution occurred. Report
+    # a fixture identity and evidence that say so, so the emitted JSON can't
+    # be mistaken for a genuine unstubbed run of the canonical fixture.
+    let(:conformance_report_fixture) do
+      ExecutionRunners::ConformanceSuite.fixture_workload.merge(
+        "execution_platform" => "stubbed",
+        "note" => "Containers::Provision is doubled; this proves runner contract shape only, " \
+          "not a genuine clone/run of the fixture repository."
+      )
+    end
+
+    let(:conformance_dimension_results) do
+      ExecutionRunners::ConformanceSuite::BenchmarkReport.default_dimension_results(
+        passed: conformance_passed_dimensions,
+        evidence: {
+          "provision_execution" => "runner.provision returned a RunnerHandle",
+          "clone_fixture_repository" =>
+            "runner.start forwarded the fixture's `git clone` command through the runner contract; " \
+            "the stubbed platform returned canned output instead of performing a real clone",
+          "run_workload" =>
+            "the fixture entrypoint token and artifact returned over runner.start's own stream, " \
+            "produced by the stubbed platform rather than a genuine run of the fixture entrypoint",
+          "retrieve_and_stream_logs" => "runner.start yielded streamed stdout/stderr chunks",
+          "report_success_or_failure" => "ExecutionResult captured terminal exit state",
+          "clean_up_resources" => "runner.cleanup accepted repeated calls"
+        }
+      )
+    end
+
     let(:conformance_run) do
       create(
         :agent_run,
