@@ -15,16 +15,16 @@ RSpec.describe QdrantClient do
   end
 
   describe "#initialize" do
-    it "installs a timed connection with default timeouts" do
+    it "installs a connection with default timeouts" do
       described_class.new(url: url)
       connection = qdrant_client.connection
 
-      expect(connection).to be_a(described_class::TimedConnection)
+      expect(connection).to be_a(described_class::Connection)
       expect(connection.instance_variable_get(:@timeout)).to eq(5)
       expect(connection.instance_variable_get(:@open_timeout)).to eq(3)
     end
 
-    it "accepts custom timeout values for the timed connection" do
+    it "accepts custom timeout values for the connection" do
       described_class.new(url: url, timeout: 10, open_timeout: 7)
       connection = qdrant_client.connection
 
