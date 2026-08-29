@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_28_222402) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_29_222521) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2539,30 +2539,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_222402) do
     t.string "event_type", limit: 20, null: false, comment: "Quality gate transition being recorded: trigger or recovery."
     t.jsonb "metadata", default: {}, null: false, comment: "Structured context about the gate evaluation and follow-up actions."
     t.bigint "project_id", null: false
-    t.bigint "quality_gate_threshold_id", null: false
     t.bigint "quality_metric_id", null: false
+    t.bigint "quality_threshold_id", null: false
     t.decimal "score_value", precision: 5, scale: 4, null: false, comment: "Observed metric value that triggered the event."
     t.decimal "threshold_value", precision: 5, scale: 4, null: false, comment: "Specific threshold value that was breached or recovered."
     t.datetime "updated_at", null: false
     t.index ["project_id", "event_type", "created_at"], name: "idx_quality_gate_events_project_type_time"
     t.index ["project_id"], name: "index_quality_gate_events_on_project_id"
-    t.index ["quality_gate_threshold_id"], name: "index_quality_gate_events_on_quality_gate_threshold_id"
     t.index ["quality_metric_id"], name: "index_quality_gate_events_on_quality_metric_id"
-  end
-
-  create_table "quality_gate_thresholds", comment: "Defines per-project quality gate rules that trigger pauses or recovery when metrics breach expected bounds.", force: :cascade do |t|
-    t.datetime "created_at", null: false
-    t.boolean "enabled", default: true, null: false, comment: "Whether this threshold currently participates in quality gate evaluation."
-    t.jsonb "log_data"
-    t.decimal "max_threshold", precision: 5, scale: 4, comment: "Upper bound whose breach triggers the gate for metrics where too high is bad."
-    t.string "metric_key", limit: 50, null: false, comment: "Quality metric evaluated by the gate, such as composite_score, lint_clean, or review_score."
-    t.decimal "min_threshold", precision: 5, scale: 4, comment: "Lower bound whose breach triggers the gate for metrics where too low is bad."
-    t.bigint "project_id", null: false
-    t.string "severity", limit: 20, default: "warning", null: false, comment: "Severity assigned when the gate is breached: info, warning, or critical."
-    t.datetime "updated_at", null: false
-    t.index ["project_id", "enabled", "metric_key"], name: "idx_quality_gate_thresholds_project_enabled_metric"
-    t.index ["project_id", "metric_key"], name: "index_quality_gate_thresholds_on_project_id_and_metric_key", unique: true
-    t.index ["project_id"], name: "index_quality_gate_thresholds_on_project_id"
+    t.index ["quality_threshold_id"], name: "index_quality_gate_events_on_quality_threshold_id"
   end
 
   create_table "quality_metrics", force: :cascade do |t|
@@ -2631,9 +2616,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_222402) do
     t.boolean "enabled", default: true, null: false
     t.string "goal_type", limit: 50, null: false
     t.jsonb "log_data"
+    t.decimal "max_value", precision: 5, scale: 4, comment: "Upper bound whose breach triggers the gate for metrics where too high is bad."
     t.string "metric_type", limit: 50, null: false
-    t.decimal "min_value", precision: 5, scale: 4, null: false
+    t.decimal "min_value", precision: 5, scale: 4
     t.bigint "project_id"
+    t.string "severity", limit: 20, default: "warning", null: false, comment: "Severity assigned when the threshold is breached: info, warning, or critical."
     t.datetime "updated_at", null: false
     t.index ["account_id", "metric_type", "goal_type"], name: "index_quality_thresholds_on_account_defaults", unique: true, where: "(project_id IS NULL)"
     t.index ["account_id"], name: "index_quality_thresholds_on_account_id"
@@ -3568,9 +3555,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_222402) do
   add_foreign_key "provisioning_intents", "agent_runs"
   add_foreign_key "provisioning_intents", "projects"
   add_foreign_key "quality_gate_events", "projects"
-  add_foreign_key "quality_gate_events", "quality_gate_thresholds"
   add_foreign_key "quality_gate_events", "quality_metrics"
-  add_foreign_key "quality_gate_thresholds", "projects"
+  add_foreign_key "quality_gate_events", "quality_thresholds"
   add_foreign_key "quality_metrics", "agent_runs", on_delete: :cascade
   add_foreign_key "quality_metrics", "prompt_versions", on_delete: :nullify
   add_foreign_key "quality_pause_events", "agent_runs"
@@ -4531,10 +4517,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_222402) do
 
   create_trigger :logidze_on_provider_api_keys, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_provider_api_keys BEFORE INSERT OR UPDATE ON public.provider_api_keys FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{api_key}')
-  SQL
-
-  create_trigger :logidze_on_quality_gate_thresholds, sql_definition: <<-SQL
-      CREATE TRIGGER logidze_on_quality_gate_thresholds BEFORE INSERT OR UPDATE ON public.quality_gate_thresholds FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
   create_trigger :logidze_on_quality_thresholds, sql_definition: <<-SQL

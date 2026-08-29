@@ -135,6 +135,29 @@ RSpec.describe Activities::CheckQualityGateActivity do # @spec QUALITY-LOOPS-005
     expect(result[:breaches]).to include(hash_including(metric: "composite_score", current: 0.4, threshold: 0.6))
   end
 
+  it "blocks automatic runs when an enabled quality-gate threshold record is breached" do # @spec QUALITY-LOOPS-008
+    create(:quality_threshold, :gate, project: project, metric_type: "lint_clean", min_value: 0.9)
+    create_metric(0.9, scores: { "lint_clean" => 0.5 })
+    create_metric(0.9, scores: { "lint_clean" => 0.5 })
+    create_metric(0.9, scores: { "lint_clean" => 0.5 })
+
+    result = activity.execute(project_id: project.id)
+
+    expect(result).to include(allowed: false, blocked: true, reason: "quality_gate_breached")
+    expect(result[:breaches]).to include(hash_including(metric: "lint_clean", current: 0.5, severity: "warning"))
+  end
+
+  it "does not block on a disabled quality-gate threshold record" do # @spec QUALITY-LOOPS-008
+    create(:quality_threshold, :gate, :disabled, project: project, metric_type: "lint_clean", min_value: 0.9)
+    create_metric(0.9, scores: { "lint_clean" => 0.5 })
+    create_metric(0.9, scores: { "lint_clean" => 0.5 })
+    create_metric(0.9, scores: { "lint_clean" => 0.5 })
+
+    result = activity.execute(project_id: project.id)
+
+    expect(result).to include(allowed: true, blocked: false, reason: "quality_gate_passed")
+  end
+
   it "allows automatic runs while quality-triggered model escalation is active" do
     project.update!(model_preferences: {
       "quality_triggered_escalation" => {

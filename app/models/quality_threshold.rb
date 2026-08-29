@@ -15,6 +15,11 @@ class QualityThreshold < ApplicationRecord
   UNCONFIGURED_METRIC_TYPES = %w[ci_passed pr_merged tests_pass].freeze
   CONFIGURABLE_METRIC_TYPES = (METRIC_TYPES - UNCONFIGURED_METRIC_TYPES).freeze
   GOAL_TYPES = AgentRun::GOALS.freeze
+  # Sentinel goal_type for project-scoped quality-gate thresholds, which apply
+  # regardless of the triggering run's goal (see QualityMetrics::EvaluateGate
+  # and Activities::CheckQualityGateActivity). @spec QUALITY-LOOPS-008
+  ALL_GOALS = "all"
+  SEVERITIES = %w[info warning critical].freeze
   DEFAULT_DEFINITIONS = [
     { "metric_type" => "composite_score", "goal_type" => "create_pr", "min_value" => 0.5 }
   ].freeze
@@ -23,14 +28,18 @@ class QualityThreshold < ApplicationRecord
 
   belongs_to :account
   belongs_to :project, optional: true
+  has_many :quality_gate_events, dependent: :destroy
 
   before_validation :assign_account_from_project
 
   validates :metric_type, presence: true, inclusion: { in: METRIC_TYPES }
-  validates :goal_type, presence: true, inclusion: { in: GOAL_TYPES }
-  validates :min_value, numericality: { greater_than_or_equal_to: 0, less_than_or_equal_to: 1 }
+  validates :goal_type, presence: true, inclusion: { in: GOAL_TYPES + [ ALL_GOALS ] }
+  validates :severity, presence: true, inclusion: { in: SEVERITIES }
+  validates :min_value, numericality: { greater_than_or_equal_to: 0, less_than_or_equal_to: 1 }, allow_nil: true
+  validates :max_value, numericality: { greater_than_or_equal_to: 0, less_than_or_equal_to: 1 }, allow_nil: true
   validate :project_belongs_to_account
   validate :unique_scope
+  validate :at_least_one_threshold
 
   scope :account_defaults, -> { where(project_id: nil) }
   scope :project_overrides, -> { where.not(project_id: nil) }
@@ -77,7 +86,21 @@ class QualityThreshold < ApplicationRecord
   end
 
   def breached?(value)
-    value.present? && value.to_f < min_value.to_f
+    return false if value.blank?
+
+    value = value.to_f
+    (min_value.present? && value < min_value.to_f) ||
+      (max_value.present? && value > max_value.to_f)
+  end
+
+  def breached_value(value)
+    return nil unless breached?(value)
+
+    if min_value.present? && value.to_f < min_value.to_f
+      min_value
+    else
+      max_value
+    end
   end
 
   def inherited?
@@ -124,11 +147,11 @@ class QualityThreshold < ApplicationRecord
   end
 
   private_class_method def self.account_thresholds(account, metric_types: METRIC_TYPES)
-    account.quality_thresholds.account_defaults.where(metric_type: metric_types)
+    account.quality_thresholds.account_defaults.where(metric_type: metric_types).where.not(goal_type: ALL_GOALS)
   end
 
   private_class_method def self.project_thresholds(project, metric_types: METRIC_TYPES)
-    project.quality_thresholds.where(metric_type: metric_types)
+    project.quality_thresholds.where(metric_type: metric_types).where.not(goal_type: ALL_GOALS)
   end
 
   private_class_method def self.apply_overrides(thresholds, overrides, source_scope, known_only: false)
@@ -167,5 +190,11 @@ class QualityThreshold < ApplicationRecord
     duplicate = self.class.where(account: account, project: project, metric_type: metric_type, goal_type: goal_type)
     duplicate = duplicate.where.not(id: id) if persisted?
     errors.add(:metric_type, "already has a threshold for this goal") if duplicate.exists?
+  end
+
+  def at_least_one_threshold
+    return if min_value.present? || max_value.present?
+
+    errors.add(:base, "at least one threshold (min or max) must be set")
   end
 end
