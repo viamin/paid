@@ -98,9 +98,12 @@
   `spec/services/notifications/rules/pr_followup_limit_reached_spec.rb`,
   `spec/services/guardrails/violation_handler_spec.rb`.
 
-- [x] **NOTIFICATION-SEVERITY-011** — When a subscription runner's managed
-  authentication becomes ineligible with reason `credential_expired`,
-  `credential_refresh_failed`, or `managed_auth_missing`, the system SHALL
+- [x] **NOTIFICATION-SEVERITY-011** — When a subscription runner can no
+  longer authenticate on any backend — a failed managed credential
+  (`credential_expired`, `credential_refresh_failed`) or no resolvable auth
+  source at all (`managed_auth_missing`; runners whose fallback resolves to
+  host-forwarded or API-key-proxy auth per
+  `Runners::SubscriptionAuthEligibility` stay eligible) — the system SHALL
   publish one active notification with severity `error`, `blocking: true`,
   runner-edit remediation metadata, and an action URL to that runner's edit
   page; when the runner becomes eligible again, the system SHALL auto-resolve

@@ -69,6 +69,38 @@ RSpec.describe Notifications::Rules::RunnerSubscriptionAuthIneligible do
     }.not_to change(Notification, :count)
   end
 
+  # @spec NOTIFICATION-SEVERITY-011
+  it "does not publish for host-forwarded runners without a managed credential" do
+    gemini = create(:runner, user: user, runner_key: "gemini", auth_type: "subscription")
+
+    expect {
+      described_class.call(scope: [ runner, gemini ])
+    }.not_to change(Notification, :count)
+  end
+
+  # @spec NOTIFICATION-SEVERITY-011
+  it "does not publish for codex without a managed credential (API-key proxy fallback)" do
+    codex = create(:runner, user: user, runner_key: "codex", auth_type: "subscription")
+
+    expect {
+      described_class.call(scope: [ codex ])
+    }.not_to change(Notification, :count)
+  end
+
+  # @spec NOTIFICATION-SEVERITY-011
+  it "publishes managed_auth_missing when no managed credential or fallback auth path exists" do
+    opencode = create(:runner, user: user, runner_key: "opencode", auth_type: "subscription")
+
+    expect {
+      described_class.call(scope: [ opencode ])
+    }.to change(Notification, :count).by(1)
+
+    notification = Notification.find_by!(source: "runner_subscription_auth_ineligible", subject: opencode)
+    expect(notification).to have_attributes(severity: "error", blocking: true)
+    expect(notification.metadata).to include(expected_runner_notification_metadata("managed_auth_missing"))
+    expect(notification.title).to include("managed credential missing")
+  end
+
   def expected_runner_notification_metadata(reason)
     {
       "reason" => reason,

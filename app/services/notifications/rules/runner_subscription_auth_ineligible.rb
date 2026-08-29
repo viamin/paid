@@ -2,9 +2,26 @@
 
 module Notifications
   module Rules
+    # Publishes a blocking notification when a subscription runner can no
+    # longer authenticate on any backend. Auth eligibility mirrors the
+    # scheduler's auth-source resolution
+    # (Containers::ResolveHostForRun#subscription_auth_source_for) evaluated
+    # by Runners::SubscriptionAuthEligibility against the most permissive
+    # backend: a managed credential is the primary path, but runners with an
+    # API-key proxy (Codex) or host-forwarded fallback (Claude, Codex, Gemini,
+    # Copilot) can still authenticate without one. Only providers without any
+    # fallback path (OpenCode, Omp) surface `managed_auth_missing` when their
+    # managed credential is gone.
     class RunnerSubscriptionAuthIneligible < Rule
       SOURCE = "runner_subscription_auth_ineligible"
       REASONS = %i[credential_expired credential_refresh_failed managed_auth_missing].freeze
+
+      API_KEY_PROXY_SUBSCRIPTION_RUNNERS = %w[codex].freeze
+      HOST_FORWARDED_SUBSCRIPTION_RUNNERS = %w[claude codex gemini copilot].freeze
+
+      # A runner that cannot authenticate on a local, host-path-capable
+      # backend with a reachable proxy is blocked on every backend.
+      LOCAL_BACKEND = Struct.new(:identifier, :supports_host_paths?).new("local", true).freeze
 
       private
 
@@ -43,11 +60,42 @@ module Notifications
       end
 
       def ineligible_reason_for(runner)
-        return :managed_auth_missing unless (credential = latest_credential_for(runner))
-        return :credential_refresh_failed if latest_refresh_failed?(runner, credential)
-        return :credential_expired if credential_expired?(runner, credential)
+        result = Runners::SubscriptionAuthEligibility.call(
+          backend: LOCAL_BACKEND,
+          auth_source: auth_source_for(runner),
+          proxy_reachable: true
+        )
+        return nil if result.eligible?
+        return nil unless result.reason.in?(REASONS)
 
-        nil
+        result.reason
+      end
+
+      def auth_source_for(runner)
+        runner_key = runner.runner_key.to_s
+        auth_mode = auth_mode_for(runner, runner_key)
+        credential = auth_mode == :managed ? latest_credential_for(runner) : nil
+
+        Runners::SubscriptionAuthEligibility::AuthSource.new(
+          runner_key: runner_key,
+          auth_mode: auth_mode,
+          credential_state: credential ? credential_state_for(runner, credential) : nil
+        )
+      end
+
+      def auth_mode_for(runner, runner_key)
+        return :managed if latest_credential_for(runner)
+        return :api_key_proxy if API_KEY_PROXY_SUBSCRIPTION_RUNNERS.include?(runner_key)
+        return :host_forwarded if HOST_FORWARDED_SUBSCRIPTION_RUNNERS.include?(runner_key)
+
+        :none
+      end
+
+      def credential_state_for(runner, credential)
+        return :refresh_failed if latest_refresh_failed?(runner, credential)
+        return :expired if credential_expired?(runner, credential)
+
+        :active
       end
 
       def credential_expired?(runner, credential)
