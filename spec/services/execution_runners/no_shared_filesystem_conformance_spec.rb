@@ -1,6 +1,9 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "open3"
+require "shellwords"
+require "tmpdir"
 
 # Negative controls and contract invariants for the RDR-057
 # no-shared-filesystem conformance suite
@@ -214,6 +217,93 @@ RSpec.describe NoSharedFilesystemConformance do
 
       expect(described_class.host_path_strings(payload, allowed: [ "/workspace" ]))
         .to contain_exactly(host_worktree, "#{host_worktree}/diff.patch")
+    end
+  end
+
+  # The conformance suite observes the fixture workload only through the
+  # runner's own stdout, so these helpers are what keep a doubled execution
+  # platform honest: the canned stub output has to match, byte for byte, what
+  # the real fixture entrypoint prints inside an environment.
+  # @spec CONTAINER-RUNTIME-045
+  describe "fixture workload evidence" do
+    let(:fixture) { ExecutionRunners::ConformanceSuite.fixture_workload }
+
+    it "builds a command that clones, runs, and reads the fixture artifact back over stdout" do
+      command = described_class.fixture_workload_command(
+        source: "/srv/conformance-fixture.git", destination: "/tmp/conformance/repo"
+      )
+
+      expect(command).to include("git clone --quiet /srv/conformance-fixture.git /tmp/conformance/repo")
+      expect(command).to include("cd /tmp/conformance/repo", fixture.fetch("entrypoint"))
+      expect(command).to include("cat #{fixture.fetch('expected_artifact_path')}")
+      expect(described_class.fixture_workload_command?(command)).to be(true)
+    end
+
+    it "does not mistake an unrelated agent command for the fixture workload" do
+      expect(described_class.fixture_workload_command?("paid-conformance-agent")).to be(false)
+    end
+
+    it "does not match a command that runs the entrypoint without cloning the fixture repository" do
+      command = "cd /tmp/conformance/repo && #{fixture.fetch('entrypoint')} && " \
+        "cat #{fixture.fetch('expected_artifact_path')}"
+
+      expect(described_class.fixture_workload_command?(command)).to be(false)
+    end
+
+    it "does not match a command that clones and runs the entrypoint without reading the artifact back" do
+      command = "git clone --quiet /srv/conformance-fixture.git /tmp/conformance/repo && " \
+        "cd /tmp/conformance/repo && #{fixture.fetch('entrypoint')}"
+
+      expect(described_class.fixture_workload_command?(command)).to be(false)
+    end
+
+    it "does not match a command that clones into a different path than it runs the entrypoint from" do
+      command = described_class.fixture_workload_command(
+        source: "/srv/conformance-fixture.git", destination: "/tmp/conformance/repo"
+      ).sub("/tmp/conformance/repo &&", "/tmp/somewhere-else &&")
+
+      expect(described_class.fixture_workload_command?(command)).to be(false)
+    end
+
+    it "does not match a canonical workload wrapped in extra host-side steps" do
+      command = "cp -r /host/fixture /tmp/staging && #{described_class.fixture_workload_command(
+        source: "/tmp/staging", destination: "/tmp/conformance/repo"
+      )}"
+
+      expect(described_class.fixture_workload_command?(command)).to be(false)
+    end
+
+    it "returns the stdout the real fixture entrypoint produces" do
+      Dir.mktmpdir("conformance-fixture-check") do |checkout|
+        FileUtils.cp_r("#{Rails.root.join(fixture.fetch('relative_repo_path'))}/.", checkout)
+
+        stdout, status = Open3.capture2("bash", "-c", fixture_entrypoint_command, chdir: checkout)
+
+        expect(status).to be_success
+        expect(stdout).to eq(described_class.fixture_workload_stdout)
+      end
+    end
+
+    it "reports the artifact the workload wrote back to stdout" do
+      artifact = described_class.reported_fixture_artifact(described_class.fixture_workload_stdout)
+
+      expect(artifact).to include(
+        "token" => fixture.fetch("expected_stdout"),
+        "fixture_version" => fixture.fetch("fixture_version")
+      )
+    end
+
+    it "reports no artifact when the stream never carried one" do
+      expect(described_class.reported_fixture_artifact("#{fixture.fetch('expected_stdout')}\n")).to be_nil
+      expect(
+        described_class.reported_fixture_artifact("#{described_class::FIXTURE_ARTIFACT_MARKER}not-json\n")
+      ).to be_nil
+    end
+
+    def fixture_entrypoint_command
+      marker = Shellwords.escape(described_class::FIXTURE_ARTIFACT_MARKER)
+      "#{fixture.fetch('entrypoint')} && printf '%s' #{marker} && " \
+        "cat #{Shellwords.escape(fixture.fetch('expected_artifact_path'))}"
     end
   end
 end

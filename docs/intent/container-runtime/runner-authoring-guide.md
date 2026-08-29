@@ -163,6 +163,10 @@ Required shared coverage:
   ledger, and ownership-tag contract.
 - `spec/support/shared_examples/no_shared_filesystem_conformance.rb`
   This is the host-path-free create-PR conformance suite from `RDR-057`.
+- `app/services/execution_runners/conformance_suite.rb`
+  This names the thirteen production-readiness dimensions, the canonical
+  fixture workload, and the JSON benchmark report shape the shared suite must
+  emit for provider comparison work tracked by `#3358`.
 - `spec/support/shared_examples/secure_execution_runner_contract.rb`
   Use this when the runner exposes security-sensitive execution behavior the
   same way the Docker implementation does.
@@ -187,7 +191,11 @@ shaped.” It proves that:
 - the canonical create-PR scenario provisions without a host worktree path,
 - logs cross the boundary as streamed stdout/stderr chunks from `#start`,
 - handles and manifests do not leak host filesystem paths, and
-- the public contract surface does not grow Docker `exec` or bind-mount terms.
+- the public contract surface does not grow Docker `exec` or bind-mount terms,
+- the suite coverage maps back to the thirteen production-readiness dimensions
+  documented for `#3347`, and
+- the suite can emit `runner_conformance_benchmark.v1` JSON for apples-to-apples
+  provider comparison once a runner passes.
 
 ## Optional Fake Runner Spike
 
