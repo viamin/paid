@@ -183,25 +183,35 @@ RSpec.describe "Dashboard" do
         expect(mobile_marketplace_link.text.strip).to eq("Marketplace")
       end
 
-      it "renders the user email dropdown in the desktop navbar" do
+      it "renders the user email dropdown disclosure in the desktop navbar" do
         get dashboard_path
 
         doc = Nokogiri::HTML(response.body)
+        menu_disclosure = doc.at_css("#user-menu-disclosure")
         menu_button = doc.at_css("#user-menu-button")
         menu = doc.at_css("#user-menu")
 
+        expect(menu_disclosure).to be_present
+        expect(menu_disclosure["open"]).to be_nil
         expect(menu_button).to be_present
         expect(menu_button.text).to include(user.email)
-        expect(menu_button["aria-expanded"]).to eq("false")
-
+        expect(menu_button["aria-haspopup"]).to eq("menu")
+        expect(menu_button["aria-controls"]).to eq("user-menu")
         expect(menu).to be_present
         expect(menu["class"]).to include("hidden")
+      end
+
+      it "renders the user menu items in the desktop navbar" do
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        menu = doc.at_css("#user-menu")
         menu_labels = menu.css("a, form button").map { |node| node.text.strip }
         menu_roles = menu.css("a, form button").map { |node| node["role"] }
 
         expect(menu_labels).to include("Settings", "Account", "Sign out")
         expect(menu_roles).to all(eq("menuitem"))
-        expect(menu.css("a").map { |node| node["data-action"] }).to all(eq("dropdown#close"))
+        expect(menu.css("a").map { |node| node["data-action"] }).to all(be_nil)
       end
 
       it "removes settings and account actions from the desktop top-level nav" do
