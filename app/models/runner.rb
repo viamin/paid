@@ -2074,12 +2074,6 @@ class Runner < ApplicationRecord
   end
   public :openrouter_free_runner_runtime
 
-  def free_model_policy_runner_runtime(project:, model_id:)
-    config = Runners::FreeModelExecutionPlan.call(runner: self, model_id: model_id, project: project).config
-    openrouter_provider_runtime(config)
-  end
-  public :free_model_policy_runner_runtime
-
   def openrouter_pareto_runner_runtime(project:)
     config = Runners::ParetoExecutionPlan.call(runner: self, project: project).config
     openrouter_provider_runtime(config)
