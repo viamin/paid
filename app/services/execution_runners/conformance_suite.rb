@@ -6,7 +6,9 @@ module ExecutionRunners
   # canonical deterministic fixture workload, and the JSON benchmark capture
   # format (`runner_conformance_benchmark.v1`) used for provider comparison.
   # The executable checks live in the shared no-shared-filesystem conformance
-  # examples; this module is the catalog and report contract they emit.
+  # examples, which drive report generation through {ConformanceSuite::Benchmark}
+  # (a runner-owned harness, not test scaffolding); this module is the catalog
+  # and report contract they emit.
   # @spec CONTAINER-RUNTIME-045
   module ConformanceSuite
     SCHEMA_VERSION = "runner_conformance_benchmark.v1"

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "shellwords"
+require "open3"
 
 # Conformance suite proving a runner satisfies RDR-057's no-shared-filesystem
 # execution model. The suite drives the complete normal create-PR lifecycle —
@@ -55,7 +56,7 @@ RSpec.shared_examples "a no-shared-filesystem runner" do
       passed: conformance_passed_dimensions,
       evidence: {
         "provision_execution" => "runner.provision returned a RunnerHandle",
-        "clone_fixture_repository" => "fixture repository materialized into an isolated directory before execution",
+        "clone_fixture_repository" => "runner.start ran a real `git clone` of the fixture repo into an isolated dir",
         "run_workload" => "runner.start executed the cloned fixture entrypoint and produced its expected stdout token",
         "retrieve_and_stream_logs" => "runner.start yielded streamed stdout/stderr chunks",
         "report_success_or_failure" => "ExecutionResult captured terminal exit state",
@@ -89,29 +90,25 @@ RSpec.shared_examples "a no-shared-filesystem runner" do
     # @spec CONTAINER-RUNTIME-045
     it "emits a comparable benchmark report for the workload it actually cloned and ran" do
       fixture = ExecutionRunners::ConformanceSuite.fixture_workload
-      cloned_repo = clone_fixture_repository
+      destination = conformance_fixture_checkout_destination
 
-      # The entrypoint only exists once the clone materialized it: a runner
-      # that skipped cloning would have nothing here to execute.
-      expect(cloned_repo.join(fixture.fetch("entrypoint"))).to exist
-
-      run = measured_conformance_run(command: fixture_workload_command(cloned_repo, fixture))
+      # Nothing pre-populates `destination`: the command below must clone the
+      # fixture into it for real, through the runner's own #start, before the
+      # entrypoint or artifact can exist here. A runner that never performs
+      # the clone has nothing to execute and this test fails closed.
+      benchmark = conformance_benchmark_run(command: fixture_clone_and_run_command(destination, fixture))
       checkout_lane = conformance_spec.input_manifest.lanes.fetch("git")
 
-      # Proves run_workload actually executed the cloned fixture rather than
-      # an unrelated stubbed command: the token and artifact only appear if
-      # bin/conformance-task really ran from the cloned directory.
-      expect(run.fetch(:result).stdout).to include(fixture.fetch("expected_stdout"))
-      expect(cloned_repo.join(fixture.fetch("expected_artifact_path"))).to exist
-
-      report = conformance_benchmark_report(result: run.fetch(:result), timestamps: run.fetch(:timestamps))
+      expect(destination.join(fixture.fetch("entrypoint"))).to exist
+      expect(benchmark.execution_result.stdout).to include(fixture.fetch("expected_stdout"))
+      expect(destination.join(fixture.fetch("expected_artifact_path"))).to exist
 
       expect_checkout_lane(checkout_lane)
-      expect_report_fixture(report)
-      expect_report_benchmarks(report)
-      expect_report_dimensions(report)
+      expect_report_fixture(benchmark.report)
+      expect_report_benchmarks(benchmark.report)
+      expect_report_dimensions(benchmark.report)
     ensure
-      FileUtils.remove_entry(cloned_repo) if cloned_repo
+      FileUtils.remove_entry(destination.dirname) if destination
     end
 
     it "yields at least one streamed chunk through the start block" do
@@ -137,58 +134,51 @@ RSpec.shared_examples "a no-shared-filesystem runner" do
     end
   end
 
-  def conformance_benchmark_report(result:, timestamps:)
-    ExecutionRunners::ConformanceSuite::BenchmarkReport.build(
-      runner_type: runner.class.name.demodulize.underscore,
-      runner_backend: conformance_run.container_host || "unknown",
-      timestamps: timestamps,
-      execution_result: result,
-      agent_run: conformance_run,
+  # Delegates to the runner-owned benchmark harness (production code, not
+  # test scaffolding) so a regression in report generation fails this suite
+  # instead of silently disappearing into test-only bookkeeping.
+  def conformance_benchmark_run(command:)
+    ExecutionRunners::ConformanceSuite::Benchmark.run(
+      runner: runner,
+      spec: conformance_spec,
+      command: command,
       dimension_results: conformance_dimension_results,
       fixture: conformance_report_fixture
     )
   end
 
-  # Copies the fixture repository into an isolated directory, standing in
-  # for the in-environment clone a real runner would perform, so tests can
-  # prove a dimension is covered only when execution actually depended on
-  # the clone having happened.
-  def clone_fixture_repository
-    destination = Pathname(Dir.mktmpdir("conformance-fixture-clone"))
-    source = Rails.root.join(ExecutionRunners::ConformanceSuite::FIXTURE_REPO_RELATIVE_PATH)
-    FileUtils.cp_r("#{source}/.", destination)
-    destination
+  # A throwaway git repository built from the fixture tree, used only as a
+  # clone *source*. The checkout the assertions inspect is never built here:
+  # it comes from the runner-executed `git clone` in
+  # +fixture_clone_and_run_command+.
+  def conformance_fixture_git_source
+    @conformance_fixture_git_source ||= begin
+      source = Pathname(Dir.mktmpdir("conformance-fixture-source"))
+      fixture_root = Rails.root.join(ExecutionRunners::ConformanceSuite::FIXTURE_REPO_RELATIVE_PATH)
+      FileUtils.cp_r("#{fixture_root}/.", source)
+      run_git!(source, "init", "--quiet")
+      run_git!(source, "add", "-A")
+      run_git!(source, "-c", "user.email=conformance@paid.test", "-c", "user.name=Conformance",
+        "commit", "--quiet", "-m", "conformance fixture")
+      source
+    end
   end
 
-  def fixture_workload_command(cloned_repo, fixture)
-    "cd #{Shellwords.escape(cloned_repo.to_s)} && #{fixture.fetch('entrypoint')}"
+  def run_git!(dir, *args)
+    _stdout, status = Open3.capture2("git", "-C", dir.to_s, *args)
+    raise "git #{args.join(' ')} failed in #{dir}" unless status.success?
   end
 
-  def measured_conformance_run(command: conformance_command)
-    timestamps = { provision_requested_at: Time.now.utc }
-    handle = runner.provision(spec: conformance_spec)
-    timestamps[:environment_ready_at] = Time.now.utc
-    timestamps[:workload_started_at] = Time.now.utc
+  # A path that does not exist yet: nothing outside the runner populates it,
+  # so the workload command must `git clone` into it for real.
+  def conformance_fixture_checkout_destination
+    Pathname(Dir.mktmpdir("conformance-fixture-checkout")).join("repo")
+  end
 
-    first_output_at = nil
-    result = runner.start(handle: handle, command: command, timeout: 60,
-      startup_timeout: 30, idle_timeout: 30, abort_patterns: nil, preparation: nil,
-      heartbeat_path: nil) do |stream, chunk|
-        first_output_at ||= Time.now.utc
-        yield stream, chunk if block_given?
-      end
-
-    timestamps[:first_output_at] = first_output_at || timestamps.fetch(:workload_started_at)
-    timestamps[:workload_finished_at] = Time.now.utc
-    timestamps[:cleanup_requested_at] = Time.now.utc
-    runner.cleanup(handle: handle, force: true)
-    timestamps[:cleanup_finished_at] = Time.now.utc
-
-    {
-      handle: handle,
-      result: result,
-      timestamps: timestamps
-    }
+  def fixture_clone_and_run_command(destination, fixture)
+    clone = "git clone --quiet #{Shellwords.escape(conformance_fixture_git_source.to_s)} " \
+      "#{Shellwords.escape(destination.to_s)}"
+    "#{clone} && cd #{Shellwords.escape(destination.to_s)} && #{fixture.fetch('entrypoint')}"
   end
 
   def expect_checkout_lane(checkout_lane)

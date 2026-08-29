@@ -34,11 +34,14 @@ model or prompt variance to the benchmark.
 
 The shared no-shared-filesystem example emits benchmark-shape JSON from a
 Docker-stubbed baseline — `Containers::Provision` is doubled — but the
-benchmark check itself clones this fixture into an isolated directory and
-executes `bin/conformance-task` for real, so the emitted report legitimately
-carries the fixture metadata above. Any baseline that does not truly execute
-this repository fixture must not label its report with this fixture's
-identity.
+benchmark check itself drives a real `git clone` of this fixture through the
+runner's own `#start`, then executes `bin/conformance-task` for real, so the
+emitted report legitimately carries the fixture metadata above. Report
+generation itself is runner-owned production code
+(`ExecutionRunners::ConformanceSuite::Benchmark`), not test-only bookkeeping,
+so a regression there fails the suite. Any baseline that does not truly
+execute this repository fixture must not label its report with this
+fixture's identity.
 
 ## Required Lifecycle Dimensions
 
