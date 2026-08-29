@@ -282,17 +282,11 @@ module Inbox
       when Project
         [ subject, nil ]
       when AgentRun
-        [ subject.project, subject.issue || pull_request_for(subject) ]
+        [ subject.project, subject.source_pull_request_record || subject.issue ]
       else
         project = subject.respond_to?(:project) ? subject.project : nil
         [ project, nil ]
       end
-    end
-
-    def pull_request_for(agent_run)
-      return unless agent_run.project && agent_run.source_pull_request_number
-
-      agent_run.project.issues.find_by(github_number: agent_run.source_pull_request_number, is_pull_request: true)
     end
 
     def project_filter_excludes?(candidate_project)

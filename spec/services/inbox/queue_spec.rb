@@ -183,6 +183,21 @@ RSpec.describe Inbox::Queue do
 
       expect(entries.map(&:record)).to eq([ blocking ])
     end
+
+    # @spec OPERATOR-INBOX-002B
+    it "links action_required entries for existing-PR agent runs to the source PR, not the originating issue" do
+      originating_issue = create(:issue, project: project, github_number: 5)
+      pull_request = create(:issue, :pull_request, project: project, github_number: 42)
+      agent_run = create(:agent_run, :existing_pr, project: project, issue: originating_issue,
+        source_pull_request_number: 42)
+      notification = create(:notification, :error, account: account, subject: agent_run,
+        source: "guardrail_token_budget", blocking: true)
+
+      entries = described_class.call(user: user, kind: described_class::ACTION_REQUIRED_KIND)
+
+      action_required_entry = entries.find { |entry| entry.record == notification }
+      expect(action_required_entry.issue).to eq(pull_request)
+    end
   end
 
   describe "ordering" do
