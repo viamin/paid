@@ -696,6 +696,9 @@ RSpec.describe "Dashboard" do
         expect(response.body).to include("Paused Project")
         expect(response.body).to include("34.0%")
         expect(response.body).to include(edit_project_path(project))
+
+        review_link = Nokogiri::HTML(response.body).at_css("#quality-paused-projects a[href='#{edit_project_path(project)}']")
+        expect(review_link["class"]).to include("min-h-11")
       end
 
       it "shows the quality-paused notice above the queue and explains the empty queue" do

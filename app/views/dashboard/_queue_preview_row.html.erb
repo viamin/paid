@@ -14,13 +14,13 @@
   <td class="px-3 py-3 text-sm text-gray-500"><%= agent_run_context_display(entry.run) %></td>
   <td class="whitespace-nowrap px-3 py-3 text-right text-sm">
     <div class="inline-flex items-center gap-2">
-      <%= link_to "View", project_agent_run_member_path(entry.run.project, entry.run), class: "text-indigo-600 hover:text-indigo-900", data: { turbo_frame: "_top" } %>
+      <%= link_to "View", project_agent_run_member_path(entry.run.project, entry.run), class: "inline-flex min-h-11 items-center px-2 text-indigo-600 hover:text-indigo-900", data: { turbo_frame: "_top" } %>
       <% if policy(entry.run).cancel? && entry.run.cancellable? %>
         <%= button_to "Cancel", dashboard_cancel_agent_run_member_path(entry.run),
           method: :post,
           params: { source: "queue_preview" },
           form: { data: { turbo_stream: true } },
-          class: "inline-flex items-center rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100",
+          class: "inline-flex min-h-11 items-center rounded-md bg-red-50 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-100",
           data: { turbo_confirm: "Cancel this agent run?" } %>
       <% end %>
     </div>
