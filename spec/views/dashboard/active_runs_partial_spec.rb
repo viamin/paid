@@ -59,6 +59,8 @@ RSpec.describe "dashboard/_active_runs", :no_db, type: :view do
     expect(row.text).to include("2 - P1")
     expect(row.text).to include("Issue #42")
     expect(row.text).to include("PR Creation")
+    expect(row.css("a").find { |a| a.text == "View" }["class"]).to include("min-h-11")
+    expect(row.css("button").find { |b| b.text == "Cancel" }["class"]).to include("min-h-11")
   end
 
   it "renders the focus badge alongside the goal label when the run is focused" do

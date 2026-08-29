@@ -56,4 +56,16 @@ RSpec.describe "dashboard/_queue_preview_row", :no_db, type: :view do
     expect(row.text).to include("Review Feedback")
     expect(row.at_css(".focus-badge")).to be_present
   end
+
+  it "gives the View and Cancel actions touch-target-sized hit areas" do
+    allow(run).to receive(:cancellable?).and_return(true)
+    policy_double = instance_double(AgentRunPolicy, cancel?: true)
+    view.define_singleton_method(:policy) { |_| policy_double }
+
+    render partial: "dashboard/queue_preview_row", locals: { entry: entry }
+
+    row = Nokogiri::HTML.fragment(rendered).at_css("tr#agent_run_7_queue_preview_row")
+    expect(row.css("a").find { |a| a.text == "View" }["class"]).to include("min-h-11")
+    expect(row.css("button").find { |b| b.text == "Cancel" }["class"]).to include("min-h-11")
+  end
 end

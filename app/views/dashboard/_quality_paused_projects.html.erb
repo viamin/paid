@@ -23,9 +23,9 @@
             </p>
           </div>
           <% if policy(project).update? %>
-            <%= link_to "Review", edit_project_path(project), class: "shrink-0 text-sm font-medium text-amber-900 hover:text-amber-700 dark:hover:text-amber-300" %>
+            <%= link_to "Review", edit_project_path(project), class: "inline-flex min-h-11 shrink-0 items-center px-2 text-sm font-medium text-amber-900 hover:text-amber-700 dark:hover:text-amber-300" %>
           <% else %>
-            <%= link_to "View", project_path(project), class: "shrink-0 text-sm font-medium text-amber-900 hover:text-amber-700 dark:hover:text-amber-300" %>
+            <%= link_to "View", project_path(project), class: "inline-flex min-h-11 shrink-0 items-center px-2 text-sm font-medium text-amber-900 hover:text-amber-700 dark:hover:text-amber-300" %>
           <% end %>
         </div>
       <% end %>
