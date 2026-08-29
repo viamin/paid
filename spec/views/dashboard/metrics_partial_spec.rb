@@ -3,6 +3,7 @@
 require "rails_helper"
 
 # @spec DASHBOARD-CHART-A11Y-006
+# @spec DASHBOARD-FILTER-A11Y-002
 RSpec.describe "dashboard/_metrics", :no_db, type: :view do
   let(:stats) do
     {
@@ -80,5 +81,15 @@ RSpec.describe "dashboard/_metrics", :no_db, type: :view do
       "Daily PR creation completion rate percentage for Cumulative.",
       "Daily average and median (p50) duration in seconds for completed PR creation runs."
     )
+  end
+
+  it "marks the active time range filter link with aria-current=page" do
+    render partial: "dashboard/metrics", locals: { stats: stats, account: nil, time_range: "7d" }
+
+    labels = DashboardHelper::TIME_RANGE_LABELS.values
+    links = Nokogiri::HTML.fragment(rendered).css("a").select { |link| labels.include?(link.text) }
+    current_links = links.select { |link| link["aria-current"] == "page" }
+
+    expect(current_links.map(&:text)).to eq([ "Past Week" ])
   end
 end

@@ -140,6 +140,12 @@ module DashboardHelper
     end
   end
 
+  # @spec DASHBOARD-FILTER-A11Y-001
+  def dashboard_filter_link(label, url, active, **link_options)
+    aria = link_options.delete(:aria) || {}
+    link_to label, url, **link_options, class: filter_button_classes(active), aria: aria.merge(current: active ? "page" : nil)
+  end
+
   # @spec DASHBOARD-CHART-A11Y-001
   def dashboard_chartkick_chart(chart_type, data_source, **options)
     @dashboard_chartkick_chart_id ||= 0

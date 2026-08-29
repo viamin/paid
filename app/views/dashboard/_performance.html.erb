@@ -1,3 +1,4 @@
+<%# @spec DASHBOARD-FILTER-A11Y-002 %>
 <%= turbo_frame_tag "dashboard-performance" do %>
   <%# Filter Buttons %>
   <div class="mb-6 space-y-3">
@@ -5,9 +6,9 @@
     <div class="flex flex-wrap items-center gap-2">
       <span class="text-sm font-medium text-gray-500 mr-1">Status:</span>
       <% Dashboard::Stats::VALID_STATUSES.each do |s| %>
-        <%= link_to DashboardHelper::STATUS_FILTER_LABELS[s],
+        <%= dashboard_filter_link DashboardHelper::STATUS_FILTER_LABELS[s],
               dashboard_performance_path(status: s, goal: goal_filter, time_range: time_range),
-              class: filter_button_classes(status_filter == s),
+              status_filter == s,
               data: { turbo_frame: "dashboard-performance" } %>
       <% end %>
     </div>
@@ -16,9 +17,9 @@
     <div class="flex flex-wrap items-center gap-2">
       <span class="text-sm font-medium text-gray-500 mr-1">Type:</span>
       <% Dashboard::Stats::VALID_GOALS.each do |g| %>
-        <%= link_to DashboardHelper::GOAL_FILTER_LABELS[g],
+        <%= dashboard_filter_link DashboardHelper::GOAL_FILTER_LABELS[g],
               dashboard_performance_path(status: status_filter, goal: g, time_range: time_range),
-              class: filter_button_classes(goal_filter == g),
+              goal_filter == g,
               data: { turbo_frame: "dashboard-performance" } %>
       <% end %>
     </div>
