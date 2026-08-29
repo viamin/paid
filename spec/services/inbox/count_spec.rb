@@ -137,6 +137,15 @@ RSpec.describe Inbox::Count do
       expect(described_class.call(user: user)).to eq(0)
     end
 
+    # @spec NOTIFICATION-SEVERITY-011
+    it "counts runner-scoped blocking notifications when the owner has a visible project" do
+      project
+      runner = user.runners.find_by!(runner_key: "claude", auth_type: "subscription")
+      create(:notification, :error, account: account, subject: runner, blocking: true)
+
+      expect(described_class.call(user: user)).to eq(1)
+    end
+
     # @spec OPERATOR-INBOX-002B
     it "batch-preloads subject projects for action_required instead of querying per row" do
       create_agent_run_blocking_notification(github_number: 100)

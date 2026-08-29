@@ -97,3 +97,26 @@
   *Test:* `spec/services/quality_pause/auto_resume_spec.rb`,
   `spec/services/notifications/rules/pr_followup_limit_reached_spec.rb`,
   `spec/services/guardrails/violation_handler_spec.rb`.
+
+- [x] **NOTIFICATION-SEVERITY-011** — When a subscription runner's managed
+  authentication becomes ineligible with reason `credential_expired`,
+  `credential_refresh_failed`, or `managed_auth_missing`, the system SHALL
+  publish one active notification with severity `error`, `blocking: true`,
+  runner-edit remediation metadata, and an action URL to that runner's edit
+  page; when the runner becomes eligible again, the system SHALL auto-resolve
+  the notification.
+  *Code:* `app/services/notifications/rules/runner_subscription_auth_ineligible.rb`,
+  `app/jobs/notifications/check_runner_quotas_job.rb`.
+  *Test:* `spec/services/notifications/rules/runner_subscription_auth_ineligible_spec.rb`,
+  `spec/jobs/notifications/check_runner_quotas_job_spec.rb`.
+
+- [x] **NOTIFICATION-SEVERITY-012** — Blocking PR notifications SHALL include
+  concrete remediation metadata for the inbox detail pane: `pr_followup_limit_reached`
+  SHALL carry the run count, configured limit, PR URL, and a manual-takeover
+  recommendation; `guardrail_token_budget` on PR-continuation runs SHALL carry
+  PR-budget remediation guidance that tells the operator to review output so far
+  or raise the relevant token budget.
+  *Code:* `app/services/notifications/rules/pr_followup_limit_reached.rb`,
+  `app/services/guardrails/violation_handler.rb`.
+  *Test:* `spec/services/notifications/rules/pr_followup_limit_reached_spec.rb`,
+  `spec/services/guardrails/violation_handler_spec.rb`.
