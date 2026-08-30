@@ -62,6 +62,7 @@ class MergeQualityGateThresholdsIntoQualityThresholds < ActiveRecord::Migration[
         threshold.max_value = gate.max_threshold
         threshold.severity = gate.severity
         threshold.enabled = gate.enabled
+        threshold.log_data = gate.log_data
         threshold.created_at = gate.created_at
         threshold.updated_at = gate.updated_at
       end
