@@ -785,3 +785,25 @@
   *Code:* `app/services/execution_runners/conformance_suite.rb`,
   `spec/fixtures/execution_runners/conformance_repo/`,
   `docs/intent/container-runtime/runner-conformance-benchmark-methodology.md`
+
+- [x] **CONTAINER-RUNTIME-046** — The repository SHALL document that a native
+  `docker build` of `docker/agent/Dockerfile` on some older Docker hosts —
+  observed on QNAP Container Station (`Docker Engine 27.1.2-qnap8`) — can fail
+  while extracting build-time tarballs (e.g. the pinned Ruby source archive)
+  with `tar: ... Cannot change mode to ...: Bad address`. The documented root
+  cause SHALL be the glibc >= 2.39 `fchmodat2` syscall that Ubuntu 24.04's
+  `tar`/`chmod` now issue for every mode change: when the host kernel or its
+  seccomp filter (older `libseccomp`/`runc`) does not recognize `fchmodat2`
+  and returns an error other than `ENOSYS`, glibc cannot fall back to the
+  legacy `fchmodat` syscall and the chmod call fails outright — a host-level
+  incompatibility no `tar` flag on the image side can route around, since
+  every glibc-linked chmod call on the image (not just `tar`'s) goes through
+  the same syscall. The documented, supported path for affected hosts SHALL
+  be building `paid-agent:latest` on an unaffected Docker host and loading it
+  onto the affected host with `docker save | docker load` (already the
+  verified QNAP walkthrough path for `linux/amd64` image transfer), not a
+  native build on the affected host.
+  *Tests:* documentation-only acceptance; `spec/config/agent_image_build_script_spec.rb`
+  asserts the guide names the `fchmodat2` root cause and the `docker save` /
+  `docker load` transfer path.
+  *Code:* `docs/guides/remote-docker-setup.md`
