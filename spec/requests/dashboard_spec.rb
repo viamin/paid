@@ -831,7 +831,7 @@ RSpec.describe "Dashboard" do
         get dashboard_path
 
         doc = Nokogiri::HTML(response.body)
-        details_elements = doc.css("details")
+        details_elements = doc.at_css("main").css("details")
 
         expect(details_elements.length).to eq(4)
       end
