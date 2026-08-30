@@ -4,11 +4,10 @@ require_relative "runner_support"
 
 # Thin delegation layer to RunnerSupport for backward compatibility.
 # ProviderSupport and RunnerSupport are functionally equivalent after the
-# provider→runner rename. This module eliminates duplication by delegating
-# to RunnerSupport while maintaining the provider-key naming convention
-# at the call sites. APP_PROVIDER_KEYS is APP_RUNNER_KEYS minus the
-# runner-only "omp" ("pi" stays provider-side); this constant is no longer
-# read by the module and is kept only for specs.
+# provider→runner rename, except that the provider surface excludes the
+# runner-only "omp" key ("pi" stays provider-side). This module eliminates
+# duplication by delegating to RunnerSupport while maintaining the
+# provider-key naming convention and the narrower key set at the call sites.
 
 module ProviderSupport
   # Provider-side sets are the runner-side sets minus the runner-only "omp".
@@ -28,15 +27,15 @@ module ProviderSupport
   module_function
 
   def supported_provider_keys
-    RunnerSupport.supported_runner_keys
+    RunnerSupport.supported_runner_keys & APP_PROVIDER_KEYS
   end
 
   def supported_provider_key?(provider_key)
-    RunnerSupport.supported_runner_key?(provider_key)
+    APP_PROVIDER_KEYS.include?(provider_key.to_s) && RunnerSupport.supported_runner_key?(provider_key)
   end
 
   def supported_provider_keys_set
-    RunnerSupport.supported_runner_keys_set
+    RunnerSupport.supported_runner_keys_set & APP_PROVIDER_KEYS
   end
 
   def reset_supported_provider_keys!

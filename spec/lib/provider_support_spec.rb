@@ -182,6 +182,28 @@ RSpec.describe ProviderSupport do
 
       expect(supported_keys).not_to include("gemini")
     end
+
+    it "excludes the runner-only omp key even when omp is registered in the harness" do
+      allow(RunnerSupport).to receive(:supported_runner_keys).and_return(RunnerSupport::APP_RUNNER_KEYS)
+
+      expect(described_class.supported_provider_keys).not_to include("omp")
+    end
+  end
+
+  describe ".supported_provider_key?" do
+    it "returns false for the runner-only omp key even when omp is a supported runner" do
+      allow(RunnerSupport).to receive(:supported_runner_key?).with("omp").and_return(true)
+
+      expect(described_class.supported_provider_key?("omp")).to be false
+    end
+  end
+
+  describe ".supported_provider_keys_set" do
+    it "excludes the runner-only omp key even when omp is registered in the harness" do
+      allow(RunnerSupport).to receive(:supported_runner_keys_set).and_return(Set.new(RunnerSupport::APP_RUNNER_KEYS))
+
+      expect(described_class.supported_provider_keys_set).not_to include("omp")
+    end
   end
 
   describe ".subscription_auth_unset_vars_for" do
