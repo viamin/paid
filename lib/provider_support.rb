@@ -87,7 +87,7 @@ module ProviderSupport
   end
 
   def subscription_auth_unset_vars
-    RunnerSupport.subscription_auth_unset_vars
+    RunnerSupport.subscription_auth_unset_vars.slice(*CONTAINER_EXECUTABLE_PROVIDER_KEYS.to_a)
   end
 
   def proxy_health_check_api_key_for(provider_key)

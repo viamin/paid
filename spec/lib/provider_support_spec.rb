@@ -246,6 +246,26 @@ RSpec.describe ProviderSupport do
     end
   end
 
+  describe ".subscription_auth_unset_vars" do
+    it "excludes the runner-only omp key even when RunnerSupport returns it" do
+      allow(RunnerSupport).to receive(:subscription_auth_unset_vars).and_return(
+        "codex" => [ "OPENAI_API_KEY" ],
+        "omp" => [ "SOME_OMP_VAR" ]
+      )
+
+      expect(described_class.subscription_auth_unset_vars).not_to have_key("omp")
+    end
+
+    it "returns the vars for provider keys unchanged" do
+      allow(RunnerSupport).to receive(:subscription_auth_unset_vars).and_return(
+        "codex" => [ "OPENAI_API_KEY" ],
+        "omp" => [ "SOME_OMP_VAR" ]
+      )
+
+      expect(described_class.subscription_auth_unset_vars).to eq("codex" => [ "OPENAI_API_KEY" ])
+    end
+  end
+
   describe ".proxy_health_check_api_key_for" do
     it "returns :openai for codex" do
       expect(described_class.proxy_health_check_api_key_for("codex")).to eq(:openai)
