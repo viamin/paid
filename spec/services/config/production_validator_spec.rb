@@ -20,6 +20,7 @@ RSpec.describe Config::ProductionValidator do
   # A plain recording logger so specs can assert on emitted warnings without
   # coupling to Rails.logger or RSpec mock limitations.
   let(:logger) { LoggerRecorder.new }
+  let(:production_config_document) { Rails.root.join("docs/PRODUCTION_CONFIG.md").read }
 
   # Fully-valid production configuration; each spec overrides one field to test
   # a specific branch.
@@ -232,6 +233,18 @@ RSpec.describe Config::ProductionValidator do
     it "is false for deploy-time db tasks that carry secrets" do
       allow(described_class).to receive(:invoked_tasks).and_return([ "db:migrate" ])
       expect(described_class.build_command?).to be false
+    end
+  end
+
+  describe ".documentation", :no_db do
+    # @spec PROD-CONFIG-006
+    it "documents every required production infrastructure safety limit" do
+      missing_keys = Capacity::InfrastructureLimits::REQUIRED_PRODUCTION_KEYS.reject do |key|
+        production_config_document.include?(key)
+      end
+
+      expect(missing_keys).to be_empty,
+        "expected docs/PRODUCTION_CONFIG.md to document: #{missing_keys.join(', ')}"
     end
   end
 
