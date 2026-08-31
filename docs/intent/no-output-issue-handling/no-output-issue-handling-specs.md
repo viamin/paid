@@ -57,3 +57,11 @@
   `no_code_required`.
   *Tests:* `spec/temporal/activities/handle_no_output_issue_run_activity_spec.rb`.
   *Code:* `app/temporal/activities/handle_no_output_issue_run_activity.rb`.
+
+- [x] **NO-OUTPUT-ISSUE-006** — When a `no_code_required` outcome transitions
+  an issue to `paid_state: "completed"`, the system SHALL also stamp
+  `no_code_required_at` on the issue, permanently excluding it from Auto-Pick's
+  completed-issue recovery path (see AUTO-PICK-QUEUE-004) so the agent's
+  terminal declaration does not loop the issue back into the queue.
+  *Tests:* `spec/temporal/activities/handle_no_output_issue_run_activity_spec.rb`.
+  *Code:* `app/temporal/activities/handle_no_output_issue_run_activity.rb`.

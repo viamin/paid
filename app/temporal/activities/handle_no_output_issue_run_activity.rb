@@ -322,10 +322,18 @@ module Activities
     # agent-asserted completion, so the issue is marked `completed` (the same
     # paid_state used elsewhere for no-PR runs that finished the requested
     # work) rather than parked for human triage.
-    def handle_no_code_required(client, agent_run, rationale)
+    #
+    # `completed` is not terminal on its own: DefaultCandidateSource's
+    # completed-issue recovery path re-includes open completed issues whose
+    # last automatic run finished without a PR, so it would otherwise re-pick
+    # this issue and loop forever since the agent will likely declare
+    # no-code-required again. `no_code_required_at` marks this specific
+    # completion as agent-asserted-terminal so auto-pick permanently excludes
+    # it; only a manually triggered run can pick the issue up again.
+    def handle_no_code_required(client, agent_run, rationale) # @spec NO-OUTPUT-ISSUE-006
       project = agent_run.project
       issue = agent_run.issue
-      issue.update!(paid_state: "completed")
+      issue.update!(paid_state: "completed", no_code_required_at: Time.current)
       remove_trigger_labels(client, project, issue, agent_run.id)
       remove_needs_input_label(client, project, issue, agent_run.id)
       remove_recommend_close_label(client, project, issue, agent_run.id)

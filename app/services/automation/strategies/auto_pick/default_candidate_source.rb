@@ -94,7 +94,7 @@ module Automation
               .exists?
           end
 
-          def eligible_scope(project, excluding_run_id: nil)
+          def eligible_scope(project, excluding_run_id: nil) # @spec AUTO-PICK-QUEUE-004
             base = without_open_non_pr_subissues(base_scope(project, excluding_run_id: excluding_run_id))
 
             scope = base.where(paid_state: %w[new planning failed analyzed])
@@ -270,6 +270,12 @@ module Automation
               # retry cap (#2513) are not auto-pickable until the abandonment is
               # cleared (e.g. by a successful run).
               .where(runner_retry_abandoned_at: nil)
+              # An agent-declared no-code-required completion is terminal: unlike
+              # the generic completed-issue recovery below, re-picking it would
+              # just loop (the agent will likely declare no-code-required again).
+              # Applies regardless of paid_state so this guard survives a later
+              # paid_state reset the same way the merged-PR guard above does.
+              .where(no_code_required_at: nil)
 
             trusted_usernames = project.trusted_github_author_logins.presence
             if trusted_usernames

@@ -69,6 +69,17 @@ requested work — and the declared rationale is posted as a marker-tagged
 GitHub comment, satisfying the same "no silent stops" visibility guarantee as
 the other no-output outcomes.
 
+`paid_state: "completed"` is not terminal by itself: Auto-Pick's
+completed-issue recovery path (`DefaultCandidateSource`) deliberately
+re-includes open completed issues whose last automatic run finished without a
+PR, on the theory the failure may have been transient. That recovery would
+otherwise re-pick a no-code-required issue and loop it forever, since the
+agent will typically reach the same conclusion again. The issue is also
+stamped with `no_code_required_at`, which candidate selection treats as a
+permanent exclusion from that recovery path regardless of `paid_state` — the
+same style of always-on guard already used for merged-PR-linked issues. Only
+a manually triggered run can pick the issue up again.
+
 The declaration is parsed from the same wide, most-recent output window used
 for error classification — not from the truncated excerpt quoted back in the
 GitHub comment. Agents emit the declaration at the end of a run, so a narrow

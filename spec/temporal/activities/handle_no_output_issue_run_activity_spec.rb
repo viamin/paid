@@ -313,6 +313,18 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         expect(issue.reload.paid_state).to eq("completed")
       end
 
+      # @spec NO-OUTPUT-ISSUE-006
+      it "stamps no_code_required_at so auto-pick's completed-issue recovery never re-picks it" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        agent_run.log!("stdout", declaration)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(issue.reload.no_code_required_at).to be_present
+      end
+
       # @spec NO-OUTPUT-ISSUE-003
       it "does not add the paid-recommend-close label" do
         issue = create(:issue, :in_progress, project: project)
