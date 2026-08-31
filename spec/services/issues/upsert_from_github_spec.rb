@@ -119,6 +119,10 @@ RSpec.describe Issues::UpsertFromGithub do
     end
 
     describe "recommend_close label removal reset" do
+      let(:recommend_close_label_url) do
+        "https://api.github.com/repos/#{project.full_name}/issues/77/labels/paid-recommend-close"
+      end
+
       let(:project) { create(:project, auto_pick_enabled: true) }
       let(:github_issue) do
         OpenStruct.new(
@@ -136,6 +140,30 @@ RSpec.describe Issues::UpsertFromGithub do
         )
       end
 
+      before do
+        allow(Rails.logger).to receive(:info)
+      end
+
+      def mark_github_issue_closed(number:, issue_id:)
+        github_issue.id = issue_id
+        github_issue.number = number
+        github_issue.state = "closed"
+        github_issue.state_reason = "completed"
+        github_issue.pull_request = nil
+      end
+
+      def expect_recommend_close_reset_log(blocker:, dependent:)
+        expect(Rails.logger).to have_received(:info).with(hash_including(
+          message: "recommend_close.dependency_closed_reset",
+          blocker_issue_id: blocker.id,
+          blocker_github_number: blocker.github_number,
+          dependent_issue_id: dependent.id,
+          dependent_github_number: dependent.github_number,
+          project_id: project.id,
+          removed_label: "paid-recommend-close"
+        ))
+      end
+
       it "resets paid_state to new and re-enqueues when the recommend_close label is removed" do
         create(:issue, project: project, github_issue_id: 9000, github_number: 7,
           paid_state: "recommend_close", labels: [ "P1", "paid-recommend-close" ])
@@ -145,6 +173,62 @@ RSpec.describe Issues::UpsertFromGithub do
         }.to have_enqueued_job(Issues::ReenqueueEligibleJob)
 
         expect(project.issues.find_by(github_issue_id: 9000).paid_state).to eq("new")
+      end
+
+      # @spec AUTO-PICK-QUEUE-003
+      it "resets recommend_close dependents when a dependency closes and removes the label" do
+        blocker = create(:issue, project: project, github_issue_id: 1234, github_number: 42, github_state: "open")
+        dependent = create(:issue, project: project, github_number: 77,
+          paid_state: "recommend_close", labels: [ "P1", "paid-recommend-close" ])
+        create(:issue_dependency, issue: dependent, depends_on_issue: blocker)
+
+        mark_github_issue_closed(number: 42, issue_id: 1234)
+        stub_request(:delete, recommend_close_label_url).to_return(status: 200, body: "", headers: {})
+
+        expect {
+          described_class.call(project: project, github_issue: github_issue)
+        }.to have_enqueued_job(Issues::ReenqueueEligibleJob)
+
+        expect(dependent.reload.paid_state).to eq("new")
+        expect(dependent.labels).to eq([ "P1" ])
+        expect(WebMock).to have_requested(:delete, recommend_close_label_url)
+        expect_recommend_close_reset_log(blocker:, dependent:)
+      end
+
+      # @spec AUTO-PICK-QUEUE-003
+      it "keeps a recommend_close dependent parked when another dependency remains open" do
+        blocker = create(:issue, project: project, github_issue_id: 1234, github_number: 42, github_state: "open")
+        other_blocker = create(:issue, project: project, github_number: 43, github_state: "open")
+        dependent = create(:issue, project: project, github_number: 77,
+          paid_state: "recommend_close", labels: [ "P1", "paid-recommend-close" ])
+        create(:issue_dependency, issue: dependent, depends_on_issue: blocker)
+        create(:issue_dependency, issue: dependent, depends_on_issue: other_blocker)
+
+        mark_github_issue_closed(number: 42, issue_id: 1234)
+
+        expect {
+          described_class.call(project: project, github_issue: github_issue)
+        }.not_to have_enqueued_job(Issues::ReenqueueEligibleJob)
+
+        expect(dependent.reload.paid_state).to eq("recommend_close")
+        expect(dependent.labels).to eq([ "P1", "paid-recommend-close" ])
+        expect(WebMock).not_to have_requested(:delete, recommend_close_label_url)
+      end
+
+      # @spec AUTO-PICK-QUEUE-003
+      it "does not touch unrelated recommend_close issues with no dependencies" do
+        create(:issue, project: project, github_issue_id: 1234, github_number: 42, github_state: "open")
+        unrelated = create(:issue, project: project, github_number: 77,
+          paid_state: "recommend_close", labels: [ "P1", "paid-recommend-close" ])
+
+        mark_github_issue_closed(number: 42, issue_id: 1234)
+
+        expect {
+          described_class.call(project: project, github_issue: github_issue)
+        }.not_to have_enqueued_job(Issues::ReenqueueEligibleJob)
+
+        expect(unrelated.reload.paid_state).to eq("recommend_close")
+        expect(unrelated.labels).to eq([ "P1", "paid-recommend-close" ])
       end
 
       it "does not reset when the label is still present" do

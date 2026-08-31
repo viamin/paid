@@ -583,6 +583,15 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to include(parent.id)
     end
 
+    # @spec AUTO-PICK-QUEUE-003
+    it "does not resurrect a recommend_close issue with no dependencies during queue sweeps" do
+      create(:issue, :recommend_close, project: project, github_number: 1)
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to be_empty
+    end
+
     it "uses project skip labels before user, tenant, and defaults" do
       project.update!(auto_pick_skip_labels: %w[blocked])
       project.created_by.settings.update!(auto_pick_skip_labels: %w[user-skip])
