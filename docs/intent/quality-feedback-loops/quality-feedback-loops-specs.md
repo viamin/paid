@@ -50,6 +50,22 @@
   *Code:* `app/services/automation/review_bot_trigger.rb`.
   *Test:* `spec/services/automation/review_bot_trigger_spec.rb`.
 
+- [x] **QUALITY-LOOPS-008** — Project-scoped quality-gate breach detection
+  (`QualityMetrics::EvaluateGate` and
+  `Activities::CheckQualityGateActivity#threshold_breaches`) SHALL read
+  enabled `QualityThreshold` records scoped to the reserved
+  `goal_type: "all"` sentinel, uniquely per project and metric type,
+  evaluating both an optional `min_value` floor and an optional `max_value`
+  ceiling, and SHALL exclude those records from the goal-scoped
+  `.effective_for`/`.configurable_for` default and override resolution used
+  by quality-pause and the quality dashboard.
+  *Code:* `app/models/quality_threshold.rb`,
+  `app/services/quality_metrics/evaluate_gate.rb`,
+  `app/temporal/activities/check_quality_gate_activity.rb`.
+  *Test:* `spec/models/quality_threshold_spec.rb`,
+  `spec/services/quality_metrics/evaluate_gate_spec.rb`,
+  `spec/temporal/activities/check_quality_gate_activity_spec.rb`.
+
 - [x] **QUALITY-LOOPS-007** — The project pre-commit requirements surface
   SHALL provide a dedicated warden security-scan fieldset managing the
   requirement named `warden_scan` with `check_type: "security_scan"`, SHALL

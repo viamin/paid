@@ -171,13 +171,13 @@ module Activities
       breaches
     end
 
-    def threshold_breaches(metrics)
-      project.quality_gate_thresholds.enabled.filter_map do |threshold|
-        score = average(score_values(metrics, threshold.metric_key))
+    def threshold_breaches(metrics) # @spec QUALITY-LOOPS-008
+      project.quality_thresholds.enabled.for_goal(QualityThreshold::ALL_GOALS).filter_map do |threshold|
+        score = average(score_values(metrics, threshold.metric_type))
         next unless threshold.breached?(score)
 
         breach_hash(
-          metric: threshold.metric_key,
+          metric: threshold.metric_type,
           current: score,
           threshold: threshold.breached_value(score).to_f,
           severity: threshold.severity
@@ -185,11 +185,11 @@ module Activities
       end
     end
 
-    def score_values(metrics, metric_key)
-      if metric_key == "composite_score"
+    def score_values(metrics, metric_type)
+      if metric_type == "composite_score"
         metrics.map { |metric| metric.composite_score.to_f }
       else
-        metrics.filter_map { |metric| metric.scores&.dig(metric_key)&.to_f }
+        metrics.filter_map { |metric| metric.scores&.dig(metric_type)&.to_f }
       end
     end
 

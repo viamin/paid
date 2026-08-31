@@ -17,8 +17,8 @@ RSpec.describe QualityMetrics::EvaluateGate do
 
     context "with a min threshold" do
       let(:threshold) do
-        create(:quality_gate_threshold, project: project,
-          metric_key: "composite_score", min_threshold: 0.6)
+        create(:quality_threshold, :gate, project: project,
+          metric_type: "composite_score", min_value: 0.6)
       end
 
       before { threshold }
@@ -70,8 +70,8 @@ RSpec.describe QualityMetrics::EvaluateGate do
 
     context "with disabled threshold" do
       it "skips disabled thresholds" do
-        create(:quality_gate_threshold, :disabled, project: project,
-          metric_key: "composite_score", min_threshold: 0.6)
+        create(:quality_threshold, :gate, :disabled, project: project,
+          metric_type: "composite_score", min_value: 0.6)
         metric = create(:quality_metric, agent_run: run, composite_score: 0.4)
 
         expect { described_class.call(quality_metric: metric) }
@@ -81,8 +81,8 @@ RSpec.describe QualityMetrics::EvaluateGate do
 
     context "with individual score threshold" do
       let(:threshold) do
-        create(:quality_gate_threshold, project: project,
-          metric_key: "ci_passed", min_threshold: 0.5)
+        create(:quality_threshold, :gate, project: project,
+          metric_type: "ci_passed", min_value: 0.5)
       end
 
       before { threshold }
