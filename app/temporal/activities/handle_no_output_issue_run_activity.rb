@@ -110,11 +110,11 @@ module Activities
       project = agent_run.project
       client = project.client
       # Small window: quoted back to humans in the GitHub comment only.
-      # Classification reads wider windows (see classification_text_for and
-      # declaration_text_for) so it never turns on where output landed.
+      # Classification reads a wider recent-log window so it never turns on
+      # where output landed.
       agent_summary = agent_run.agent_summary_with_stderr_fallback(limit: 100)
       diagnostic_output = classification_text_for(agent_run)
-      no_code_required_rationale = parse_no_code_required_rationale(declaration_text_for(agent_run))
+      no_code_required_rationale = parse_no_code_required_rationale(diagnostic_output)
       outcome = classify_outcome(agent_run, output_present, diagnostic_output, no_code_required_rationale)
 
       track_phase(agent_run_id: agent_run_id, phase_key: "handle_no_output_issue_run", phase_group: "post", agent_run: agent_run, metadata: { outcome: outcome }) do
@@ -230,25 +230,6 @@ module Activities
 
     def classification_text_for(agent_run)
       normalized_text(recent_log_content(agent_run, %w[stdout stderr]))
-    end
-
-    # @spec NO-OUTPUT-ISSUE-005
-    # Output window used for classification, as opposed to the smaller excerpt
-    # quoted back in the GitHub comment. Agents emit the no-code-required
-    # declaration at the end of a run, so parsing it from the comment excerpt
-    # would let a verbose run push the declaration out of the window and be
-    # silently misclassified as recommend_close.
-    #
-    # Combines stdout and stderr rather than falling back to stderr only when
-    # stdout is blank: agent_summary_with_stderr_fallback treats stderr as a
-    # legitimate output channel for issue runs, so a mixed-output run (normal
-    # progress on stdout, the no-code-required block on stderr) must still be
-    # searched on both streams or the declaration is missed.
-    def declaration_text_for(agent_run)
-      stdout = agent_run.normalized_agent_output(recent_log_content(agent_run, %w[stdout]))
-      stderr = recent_log_content(agent_run, %w[stderr])
-
-      [ stdout, stderr ].select(&:present?).join("\n")
     end
 
     # Most recent CLASSIFICATION_LOG_LIMIT entries, restored to chronological
@@ -648,7 +629,7 @@ module Activities
 
     def comment_exists?(client, project, issue, marker)
       comments = client.recent_issue_comments(project.full_name, issue.github_number)
-      comments.any? { |c| c.respond_to?(:body) && c.body&.include?(marker) }
+      comments.any? { |comment| paid_bot_marker_comment?(project, comment, marker) }
     rescue GithubClient::Error => e
       logger.warn(
         message: "agent_execution.fetch_comments_failed",
@@ -656,6 +637,16 @@ module Activities
         error: e.message
       )
       false
+    end
+
+    # Restrict marker dedupe to Paid's own bot-authored comments. The marker
+    # text is unauthenticated plain text, so a human collaborator can forge it
+    # and must not be able to suppress the platform's explanation comment.
+    def paid_bot_marker_comment?(project, comment, marker)
+      return false unless comment.respond_to?(:body) && comment.body&.include?(marker)
+
+      login = comment.respond_to?(:user) ? comment.user&.login : nil
+      project.paid_bot_author?(login)
     end
   end
 end

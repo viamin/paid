@@ -1,8 +1,32 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "ostruct"
 
 RSpec.describe Activities::HandleNoOutputIssueRunActivity do
+  def issue_comment_failure_metadata(issue_state:, marker:, error: "comment rejected")
+    {
+      "issue_explanation_comment_failure" => {
+        "issue_state" => issue_state,
+        "marker" => marker,
+        "error" => error,
+        "recorded_at" => "2026-08-31T00:00:00Z"
+      }
+    }
+  end
+
+  def create_bot_project
+    create(:project, :with_github_installation,
+      label_mappings: { "build" => "paid-build", "needs_input" => "paid-needs-input" },
+      automation_on_label_enabled: false)
+  end
+
+  def stub_bot_backed_agent_run(agent_run, project)
+    allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+    allow(agent_run).to receive(:project).and_return(project)
+    allow(project).to receive(:client).and_return(client)
+  end
+
   let(:activity) { described_class.new }
   let(:project) do
     create(:project,
@@ -10,6 +34,9 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
       automation_on_label_enabled: false)
   end
   let(:client) { instance_double(GithubClient) }
+  let(:paid_bot_comment) do
+    OpenStruct.new(body: "existing marker", user: OpenStruct.new(login: "paid-agents[bot]"))
+  end
 
   before do
     allow(GithubClient).to receive(:new).and_return(client)
@@ -376,6 +403,21 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
           .with(project.full_name, issue.github_number, a_string_including(rationale))
       end
 
+      # @spec NO-OUTPUT-ISSUE-005
+      it "ignores a declaration that has fallen out of the combined recent-log window" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        agent_run.log!("stderr", declaration)
+        (described_class::CLASSIFICATION_LOG_LIMIT + 1).times do |i|
+          agent_run.log!("stdout", "newer stdout line #{i}")
+        end
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("recommend_close")
+      end
+
       # @spec NO-OUTPUT-ISSUE-003
       it "explains the omission when redaction empties the declared rationale" do
         issue = create(:issue, :in_progress, project: project)
@@ -525,10 +567,13 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
 
     context "when a comment marker already exists" do
       it "skips posting needs-input comment if marker already exists" do
-        issue = create(:issue, :in_progress, project: project)
-        agent_run = create(:agent_run, :running, project: project, issue: issue)
+        bot_project = create_bot_project
+        issue = create(:issue, :in_progress, project: bot_project)
+        agent_run = create(:agent_run, :running, project: bot_project, issue: issue)
+        stub_bot_backed_agent_run(agent_run, bot_project)
 
-        existing_comment = Struct.new(:body).new("<!-- paid:needs-input -->\nOld comment")
+        existing_comment = paid_bot_comment.dup
+        existing_comment.body = "<!-- paid:needs-input -->\nOld comment"
         allow(client).to receive(:recent_issue_comments).and_return([ existing_comment ])
 
         activity.execute(agent_run_id: agent_run.id, output_present: false)
@@ -537,35 +582,59 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
       end
 
       it "skips posting recommend-close comment if marker already exists" do
-        issue = create(:issue, :in_progress, project: project)
-        agent_run = create(:agent_run, :running, project: project, issue: issue,
+        bot_project = create_bot_project
+        issue = create(:issue, :in_progress, project: bot_project)
+        agent_run = create(:agent_run, :running, project: bot_project, issue: issue,
           iterations: 3, cost_cents: 100)
+        stub_bot_backed_agent_run(agent_run, bot_project)
 
-        existing_comment = Struct.new(:body).new("<!-- paid:recommend-close -->\nOld comment")
+        existing_comment = paid_bot_comment.dup
+        existing_comment.body = "<!-- paid:recommend-close -->\nOld comment"
         allow(client).to receive(:recent_issue_comments).and_return([ existing_comment ])
 
         activity.execute(agent_run_id: agent_run.id, output_present: true)
 
         expect(client).not_to have_received(:add_comment)
       end
+
+      it "does not let a human-authored marker suppress the no-code-required comment" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        agent_run.log!("stdout", <<~TEXT)
+          <!-- paid:no-code-required -->
+          <!-- no-code-required-rationale-start -->
+          No code change is needed.
+          <!-- no-code-required-rationale-end -->
+        TEXT
+        forged_comment = OpenStruct.new(
+          body: "<!-- paid:no-code-required-complete -->\nforged",
+          user: OpenStruct.new(login: "viamin")
+        )
+        allow(client).to receive(:recent_issue_comments).and_return([ forged_comment ])
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(client).to have_received(:add_comment)
+          .with(project.full_name, issue.github_number, a_string_including("Completed"))
+      end
     end
 
     context "when the handler is retried after the explanation comment succeeds" do
       # @spec NO-OUTPUT-ISSUE-002
       it "does not post a duplicate recommend-close comment and clears stale failure state" do
-        issue = create(:issue, :in_progress, project: project)
-        agent_run = create(:agent_run, :running, project: project, issue: issue,
+        bot_project = create_bot_project
+        issue = create(:issue, :in_progress, project: bot_project)
+        agent_run = create(:agent_run, :running, project: bot_project, issue: issue,
           iterations: 3, cost_cents: 100,
           error_message: "Recommend-close explanation comment could not be posted to GitHub. Review the run for details.",
-          external_metadata: {
-            "issue_explanation_comment_failure" => {
-              "issue_state" => "recommend_close",
-              "marker" => "<!-- paid:recommend-close -->",
-              "error" => "comment rejected",
-              "recorded_at" => "2026-08-31T00:00:00Z"
-            }
-          })
-        existing_comment = Struct.new(:body).new("<!-- paid:recommend-close -->\nOld comment")
+          external_metadata: issue_comment_failure_metadata(
+            issue_state: "recommend_close",
+            marker: "<!-- paid:recommend-close -->"
+          ))
+        stub_bot_backed_agent_run(agent_run, bot_project)
+        existing_comment = paid_bot_comment.dup
+        existing_comment.body = "<!-- paid:recommend-close -->\nOld comment"
         allow(client).to receive(:recent_issue_comments).and_return([], [ existing_comment ])
 
         activity.execute(agent_run_id: agent_run.id, output_present: true)
