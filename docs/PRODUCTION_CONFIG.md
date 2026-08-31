@@ -36,6 +36,38 @@ For deployment sizing and process topology, see [SCALING.md](SCALING.md).
 | Database credentials | `DATABASE_URL` **or** `PAID_DATABASE_PASSWORD` | `database.yml` production block hardcodes `username: paid` and `database: paid_production`; the password comes from `PAID_DATABASE_PASSWORD`. A full `DATABASE_URL` overrides everything. Either one must be present. Use `DB_HOST` to point at a remote database server. |
 | Qdrant API key | `QDRANT_API_KEY` env var **or** `qdrant.api_key` in Rails credentials | Required for the knowledge base. `Paid.qdrant_api_key` returns the value (credentials first, then `QDRANT_API_KEY`); the validator surfaces it together with any other missing setting. |
 
+### Required infrastructure-safety limits
+
+Production also fails fast unless the aggregate capacity and provisioning-rate
+limits below are set to positive integers. This keeps admission control
+fail-closed in cloud deployments instead of silently using development defaults.
+
+| Category | Required settings | Purpose |
+|---|---|---|
+| Aggregate requested CPU ceilings | `MAX_GLOBAL_REQUESTED_CPU_QUOTA`, `MAX_BACKEND_REQUESTED_CPU_QUOTA` | Caps the sum of requested CPU across all active executions globally and per selected backend/host. |
+| Aggregate requested memory ceilings | `MAX_GLOBAL_REQUESTED_MEMORY_BYTES`, `MAX_BACKEND_REQUESTED_MEMORY_BYTES` | Caps the sum of requested memory across all active executions globally and per selected backend/host. |
+| Aggregate requested disk ceilings | `MAX_GLOBAL_REQUESTED_DISK_BYTES`, `MAX_BACKEND_REQUESTED_DISK_BYTES` | Caps the sum of requested disk across all active executions globally and per selected backend/host. |
+| Per-execution maxima | `MAX_EXECUTION_CPU_QUOTA`, `MAX_EXECUTION_MEMORY_BYTES`, `MAX_EXECUTION_DISK_BYTES` | Rejects a single run whose requested resource tuple is too large before provisioning starts. |
+| Provisioning-rate window | `PROVISIONING_RATE_WINDOW_SECONDS`, `MAX_GLOBAL_PROVISIONINGS_PER_WINDOW`, `MAX_ACCOUNT_PROVISIONINGS_PER_WINDOW`, `MAX_PROJECT_PROVISIONINGS_PER_WINDOW` | Applies global, per-account, and per-project backpressure so a queue burst cannot provision unbounded cloud resources. |
+
+Example:
+
+```env
+MAX_GLOBAL_REQUESTED_CPU_QUOTA=8000000
+MAX_BACKEND_REQUESTED_CPU_QUOTA=2000000
+MAX_GLOBAL_REQUESTED_MEMORY_BYTES=137438953472
+MAX_BACKEND_REQUESTED_MEMORY_BYTES=34359738368
+MAX_GLOBAL_REQUESTED_DISK_BYTES=274877906944
+MAX_BACKEND_REQUESTED_DISK_BYTES=68719476736
+MAX_EXECUTION_CPU_QUOTA=400000
+MAX_EXECUTION_MEMORY_BYTES=17179869184
+MAX_EXECUTION_DISK_BYTES=4294967296
+PROVISIONING_RATE_WINDOW_SECONDS=600
+MAX_GLOBAL_PROVISIONINGS_PER_WINDOW=25
+MAX_ACCOUNT_PROVISIONINGS_PER_WINDOW=10
+MAX_PROJECT_PROVISIONINGS_PER_WINDOW=5
+```
+
 ### Failure message
 
 When a required setting is missing, boot aborts with a message like:
@@ -76,6 +108,19 @@ QDRANT_API_KEY=...                # or qdrant.api_key credential
 TEMPORAL_ADDRESS=temporal:7233    # the compose/kamal service DNS name (not localhost)
 REDIS_URL=redis://redis:6379/0    # if Redis-backed features are used
 QDRANT_URL=http://qdrant:6333
+MAX_GLOBAL_REQUESTED_CPU_QUOTA=8000000
+MAX_BACKEND_REQUESTED_CPU_QUOTA=2000000
+MAX_GLOBAL_REQUESTED_MEMORY_BYTES=137438953472
+MAX_BACKEND_REQUESTED_MEMORY_BYTES=34359738368
+MAX_GLOBAL_REQUESTED_DISK_BYTES=274877906944
+MAX_BACKEND_REQUESTED_DISK_BYTES=68719476736
+MAX_EXECUTION_CPU_QUOTA=400000
+MAX_EXECUTION_MEMORY_BYTES=17179869184
+MAX_EXECUTION_DISK_BYTES=4294967296
+PROVISIONING_RATE_WINDOW_SECONDS=600
+MAX_GLOBAL_PROVISIONINGS_PER_WINDOW=25
+MAX_ACCOUNT_PROVISIONINGS_PER_WINDOW=10
+MAX_PROJECT_PROVISIONINGS_PER_WINDOW=5
 ```
 
 Kamal injects these per role from `.kamal/secrets`; `RAILS_MASTER_KEY` is always
