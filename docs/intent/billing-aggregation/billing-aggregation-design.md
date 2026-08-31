@@ -53,3 +53,11 @@ The `RDR-018a` implementation intentionally stays provider-agnostic:
 
 Those remain separate product decisions, not gaps in this segment's shipped
 intent.
+
+Infrastructure spend is also intentionally outside this segment. Operator
+infrastructure spend accounting and its pre-provisioning spend thresholds (see
+the [`infrastructure-spend-thresholds`](../infrastructure-spend-thresholds/)
+segment) never feed billing periods, invoices, `CostBudget`, or project cost
+totals — they are an execution-safety control, not customer billing. Cost
+dashboards may *present* the two totals side by side, but the ledgers stay
+separate.
