@@ -75,14 +75,19 @@ can never carry raw secret material.
   *outcome* of credential-class and network-policy decisions made
   elsewhere (RDR-058's `ExecutionRunners::NetworkingPolicy`), it does not
   make those decisions.
-- **Not wired into every execution call site yet.** This segment ships the
-  model, validations, retention job, and factory/spec scaffolding.
 
 ## Lifecycle Instrumentation
 
 Execution lifecycle call sites record the RDR-061 investigation events through
-`ExecutionAuditEvent.record!`, with the call-site wiring kept thin and the
-event normalization shared in one helper layer.
+`ExecutionAuditEvents::Lifecycle` (`app/services/execution_audit_events/lifecycle.rb`),
+with the call-site wiring kept thin and the event normalization shared in one
+helper layer. The helper derives project/account from the run, normalizes the
+networking-policy payload, looks up the persisted `ExecutionResourceLedgerEntry`
+or `ProvisioningIntent` row when a resource id is available, and threads the
+Temporal workflow id, request id, and runner-handle id through `metadata` so
+RDR-061 investigation questions can be answered without joining other models.
+Call sites pass only class names, ids, digests, and other non-secret metadata;
+secret-shaped values are still rejected by the model-layer scans.
 
 - **Admission lifecycle.** Run creation and dequeue admission emit
   `execution.requested`, `execution.queued`, `execution.admitted`, and
