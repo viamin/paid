@@ -20,14 +20,17 @@ module Activities
     activity_name "HandleNoOutputIssueRun"
 
     CLASSIFICATION_LOG_LIMIT = 500
-    MAX_FOLLOWUP_ISSUES_PER_RUN = 1
     PAID_NEEDS_INPUT_LABEL = "paid-needs-input"
     PAID_RECOMMEND_CLOSE_LABEL = "paid-recommend-close"
     NEEDS_INPUT_COMMENT_MARKER = "<!-- paid:needs-input -->"
     RECOMMEND_CLOSE_COMMENT_MARKER = "<!-- paid:recommend-close -->"
     ISSUE_EXPLANATION_COMMENT_FAILURE_KEY = "issue_explanation_comment_failure"
-    FOLLOWUP_TITLE_PATTERN = /<!--\s*followup-title:\s*(.+?)\s*-->/.freeze
-    FOLLOWUP_BODY_PATTERN = /<!--\s*followup-body-start\s*-->\n?(.*?)\n?<!--\s*followup-body-end\s*-->/m.freeze
+    # Matches a single paired follow-up plan: a `followup-title:` comment
+    # directly followed by `followup-body-start` / `followup-body-end`
+    # comments. The `(?!<!--).` lookahead prevents the title capture from
+    # crossing another HTML comment opener, so a stray title marker without
+    # its body cannot be combined with a later complete body block.
+    FOLLOWUP_PLAN_PATTERN = /<!--\s*followup-title:\s*((?:(?!<!--).)+?)\s*-->\s*<!--\s*followup-body-start\s*-->\n?(.*?)\n?<!--\s*followup-body-end\s*-->/m.freeze
 
     SUPPLEMENTARY_ERROR_PATTERNS = [
       /quota exceeded/i,
@@ -338,8 +341,11 @@ module Activities
     def parse_followup_plan(summary)
       return nil if summary.blank?
 
-      title = summary.scan(FOLLOWUP_TITLE_PATTERN).flatten.first(MAX_FOLLOWUP_ISSUES_PER_RUN).first&.strip
-      body = summary.scan(FOLLOWUP_BODY_PATTERN).flatten.first(MAX_FOLLOWUP_ISSUES_PER_RUN).first&.strip
+      match = summary.match(FOLLOWUP_PLAN_PATTERN)
+      return nil unless match
+
+      title = match[1]&.strip
+      body = match[2]&.strip
       return nil if title.blank? || body.blank?
 
       {

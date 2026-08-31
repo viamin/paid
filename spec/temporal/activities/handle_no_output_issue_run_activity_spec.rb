@@ -373,6 +373,53 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
       end
     end
 
+    context "when stray follow-up markers appear without a paired body block" do
+      let(:issue) { create(:issue, :in_progress, project: project) }
+      let(:agent_run) do
+        create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+      end
+
+      # @spec NO-OUTPUT-ISSUE-004
+      it "does not synthesize a follow-up plan from a stray title and a separate body block" do
+        agent_run.log!("stdout", <<~SUMMARY)
+          The work is blocked.
+
+          <!-- followup-title: stray -->
+
+          Some intermediate prose about why nothing shipped.
+
+          <!-- followup-body-start -->
+          This body should not be combined with the stray title above.
+          <!-- followup-body-end -->
+        SUMMARY
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("recommend_close")
+        expect(client).not_to have_received(:create_issue)
+        expect(client).not_to have_received(:update_issue)
+        expect(issue.reload.paid_state).to eq("recommend_close")
+        expect(project.issues.where.not(id: issue.id)).to be_empty
+      end
+
+      # @spec NO-OUTPUT-ISSUE-004
+      it "rejects a stray body block that has no paired followup-title" do
+        agent_run.log!("stdout", <<~SUMMARY)
+          The work is blocked.
+
+          <!-- followup-body-start -->
+          A body with no paired title marker.
+          <!-- followup-body-end -->
+        SUMMARY
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("recommend_close")
+        expect(client).not_to have_received(:create_issue)
+      end
+    end
+
     context "when a matching open follow-up issue already exists" do
       let(:parent_issue) { create(:issue, :in_progress, project: project, body: "Parent body") }
       let(:followup_title) { "Implement the missing gateway adapter" }
