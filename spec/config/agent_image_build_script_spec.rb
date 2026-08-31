@@ -11,6 +11,9 @@ end
 class AgentImageDockerfile < Pathname
 end
 
+class RemoteDockerSetupGuide < Pathname
+end
+
 RSpec.describe AgentImageBuildScript, :no_db do
   describe "build script" do
     subject(:script_source) { Rails.root.join("scripts/build-agent-image.sh").read }
@@ -246,6 +249,25 @@ RSpec.describe AgentImageBuildScript, :no_db do
 
       expect(wrapper).to include('export WARDEN_OPENAI_API_KEY="${WARDEN_OPENAI_API_KEY:-${OPENAI_API_KEY:-}}"')
       expect(wrapper).to include('export WARDEN_OPENAI_BASE_URL="${WARDEN_OPENAI_BASE_URL:-${OPENAI_BASE_URL:-}}"')
+    end
+  end
+
+  describe RemoteDockerSetupGuide do
+    # @spec CONTAINER-RUNTIME-046
+    describe "QNAP native build guidance" do
+      subject(:guide_source) { Rails.root.join("docs/guides/remote-docker-setup.md").read }
+
+      it "documents the glibc fchmodat2 root cause of the QNAP tar extraction failure" do
+        expect(guide_source).to include("Do not run a native `docker build` of `docker/agent/Dockerfile` directly against QNAP Container Station")
+        expect(guide_source).to include("Cannot change mode to rwxr-xr-x: Bad address")
+        expect(guide_source).to include("fchmodat2")
+        expect(guide_source).to include("issue `#3544`")
+      end
+
+      it "points affected hosts at the docker save/load transfer path instead of a tar workaround" do
+        expect(guide_source).to include("docker save | docker load")
+        expect(guide_source).to include("not something this Dockerfile can route around")
+      end
     end
   end
 end
