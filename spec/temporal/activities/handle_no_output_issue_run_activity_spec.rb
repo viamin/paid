@@ -361,6 +361,21 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         expect(result[:outcome]).to eq("no_code_required")
       end
 
+      # @spec NO-OUTPUT-ISSUE-005
+      it "detects the declaration on stderr even when stdout has ordinary progress output" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        agent_run.log!("stdout", "normal progress output, no declaration here")
+        agent_run.log!("stderr", declaration)
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("no_code_required")
+        expect(client).to have_received(:add_comment)
+          .with(project.full_name, issue.github_number, a_string_including(rationale))
+      end
+
       # @spec NO-OUTPUT-ISSUE-003
       it "explains the omission when redaction empties the declared rationale" do
         issue = create(:issue, :in_progress, project: project)

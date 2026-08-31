@@ -238,11 +238,17 @@ module Activities
     # declaration at the end of a run, so parsing it from the comment excerpt
     # would let a verbose run push the declaration out of the window and be
     # silently misclassified as recommend_close.
+    #
+    # Combines stdout and stderr rather than falling back to stderr only when
+    # stdout is blank: agent_summary_with_stderr_fallback treats stderr as a
+    # legitimate output channel for issue runs, so a mixed-output run (normal
+    # progress on stdout, the no-code-required block on stderr) must still be
+    # searched on both streams or the declaration is missed.
     def declaration_text_for(agent_run)
       stdout = agent_run.normalized_agent_output(recent_log_content(agent_run, %w[stdout]))
-      return stdout if stdout.present?
+      stderr = recent_log_content(agent_run, %w[stderr])
 
-      recent_log_content(agent_run, %w[stderr])
+      [ stdout, stderr ].select(&:present?).join("\n")
     end
 
     # Most recent CLASSIFICATION_LOG_LIMIT entries, restored to chronological
