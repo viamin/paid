@@ -2,6 +2,7 @@
 
 class Issue < ApplicationRecord
   PAID_STATES = %w[new planning in_progress completed failed needs_input manual_review recommend_close analyzed].freeze
+  NON_BLOCKING_OPEN_DEPENDENCY_STATES = %w[recommend_close completed].freeze
   PR_REVIEW_PHASES = %w[draft restarted ready merged escalated].freeze
   # The first four reasons denote agent failure. `awaiting_approval` denotes
   # an unanswered human gate: the PR is green, blocked only on owner
@@ -148,15 +149,15 @@ class Issue < ApplicationRecord
   scope :auto_continue_active, -> { where(auto_continue_paused: false) }
   scope :ready_for_work, ->(project) {
     # Match blocking_issues / lifecycle_statuses semantics: open dependencies
-    # excluding recommend_close (treated as effectively resolved pending
-    # human confirmation, so they should not gate downstream work).
+    # excluding agent-parked or agent-completed blockers, which are treated as
+    # effectively resolved for downstream scheduling until GitHub is closed.
     blocked_by_local_open = IssueDependency
       .joins(:issue, :depends_on_issue)
       .where(
         depends_on_issue: { github_state: "open" },
         issues: { project_id: project.id }
       )
-      .where.not(depends_on_issue: { paid_state: "recommend_close" })
+      .where.not(depends_on_issue: { paid_state: NON_BLOCKING_OPEN_DEPENDENCY_STATES })
       .select(:issue_id)
 
     # Deployment-blocked deps: target PR has merged/closed, but has not
@@ -383,7 +384,7 @@ class Issue < ApplicationRecord
   end
 
   def blocking_issues
-    dependencies.where(github_state: "open").where.not(paid_state: "recommend_close")
+    dependencies.where(github_state: "open").where.not(paid_state: NON_BLOCKING_OPEN_DEPENDENCY_STATES)
   end
 
   # Deployment-blocked dependencies whose target PR has merged/closed but
@@ -434,11 +435,12 @@ class Issue < ApplicationRecord
 
     issue_ids = issues.map(&:id)
 
-    # Match blocking_issues semantics: open dependencies excluding recommend_close
+    # Match blocking_issues semantics: open dependencies excluding non-blocking
+    # parked/completed blockers.
     blocked_by_local = IssueDependency
       .joins(:depends_on_issue)
       .where(issue_id: issue_ids, depends_on_issue: { github_state: "open" })
-      .where.not(depends_on_issue: { paid_state: "recommend_close" })
+      .where.not(depends_on_issue: { paid_state: NON_BLOCKING_OPEN_DEPENDENCY_STATES })
       .pluck(:issue_id)
       .to_set
 
@@ -456,11 +458,11 @@ class Issue < ApplicationRecord
       .to_set
 
     # External deps that still block follow the same rule as ready_for_work:
-    # the dep is satisfied when the target is closed (or parked at
-    # recommend_close) in a sibling project of the same account. Grouped
-    # by account_id because the issues collection may span tenants in
-    # principle (it currently does not in the ProjectsController caller,
-    # but the method does not enforce that).
+    # the dep is satisfied when the target is closed or left open only for
+    # human follow-up after an agent-complete/agent-parked outcome in a sibling
+    # project of the same account. Grouped by account_id because the issues
+    # collection may span tenants in principle (it currently does not in the
+    # ProjectsController caller, but the method does not enforce that).
     blocked_by_external = issues
       .group_by { |i| i.project.account_id }
       .flat_map { |account_id, account_issues|
@@ -474,12 +476,12 @@ class Issue < ApplicationRecord
 
     # Match auto-pick's without_open_non_pr_subissues semantics: a parent is
     # blocked while it still has open non-PR sub-issues. Mirrors the
-    # dependency rule above by exempting recommend_close sub-issues.
+    # dependency rule above by exempting recommend_close/completed sub-issues.
     blocked_by_open_subissues = where(
       parent_issue_id: issue_ids,
       is_pull_request: false,
       github_state: "open"
-    ).where.not(paid_state: "recommend_close")
+    ).where.not(paid_state: NON_BLOCKING_OPEN_DEPENDENCY_STATES)
       .pluck(:parent_issue_id)
       .to_set
 

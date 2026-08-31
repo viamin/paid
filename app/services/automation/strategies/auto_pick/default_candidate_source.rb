@@ -315,7 +315,7 @@ module Automation
                   AND sub_issues.project_id = issues.project_id
                   AND sub_issues.is_pull_request = FALSE
                   AND sub_issues.github_state = 'open'
-                  AND sub_issues.paid_state IS DISTINCT FROM 'recommend_close'
+                  AND sub_issues.paid_state NOT IN ('recommend_close', 'completed')
               )
             SQL
           end

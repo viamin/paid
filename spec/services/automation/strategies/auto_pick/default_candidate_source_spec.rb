@@ -583,6 +583,15 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to include(parent.id)
     end
 
+    it "keeps a parent eligible when its only open sub-issue is completed" do
+      parent = create(:issue, project: project, github_number: 1)
+      create(:issue, :completed, project: project, github_number: 2, parent_issue: parent)
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to include(parent.id)
+    end
+
     # @spec AUTO-PICK-QUEUE-003
     it "does not resurrect a recommend_close issue with no dependencies during queue sweeps" do
       create(:issue, :recommend_close, project: project, github_number: 1)
