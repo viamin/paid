@@ -94,7 +94,10 @@ For `blocked_on_gap`, retries must also remain side-effect safe:
 - Before filing, the activity checks for an existing open same-project issue
   with the same truncated title and reuses it instead of creating a duplicate.
 - Before mutating the parent body, it checks whether the dependency line is
-  already present and avoids appending it twice.
+  already present and avoids appending it twice. When the parent already has a
+  dependency section — in either the tight `## Dependencies\n- #N` form the
+  dependency parser reads by default or a blank-line-separated form — the new
+  entry is merged into that section instead of adding a second heading.
 - Every created or reused follow-up is recorded in the account audit trail with
   the parent issue, child issue, and agent run identifiers.
 

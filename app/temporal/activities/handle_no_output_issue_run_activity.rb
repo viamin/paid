@@ -388,15 +388,19 @@ module Activities
       dep_line = ProjectConventions::IssueDependencies.depends_on_line(project:, github_number:, resolved:)
       dep_entry = "- #{dep_line}"
       text = body.to_s.rstrip
-      return text if text.include?(dep_line)
+      return text if text.match?(/#{Regexp.escape(dep_line)}\b/)
 
-      section_pattern = /(#{Regexp.escape(heading)}\n\n)(.*?)(?=\n## |\z)/m
+      # Matches an existing dependency section the way Issues::ParseDependencies
+      # reads one: the heading alone on its line (either "## Dependencies\n- x"
+      # or a blank-line-separated body), ending at the next markdown heading of
+      # any level or the end of the body.
+      section_pattern = /^(#{Regexp.escape(heading)}[ \t]*)(?:\n|\z)(.*?)(?=\n[#]{1,6}[ \t]|\z)/m
       return "#{text}\n\n#{heading}\n\n#{dep_entry}" unless text.match?(section_pattern)
 
       text.sub(section_pattern) do
         section_header = Regexp.last_match(1)
         section_body = Regexp.last_match(2).to_s.rstrip
-        "#{section_header}#{section_body}\n#{dep_entry}"
+        "#{section_header}\n#{section_body}\n#{dep_entry}"
       end
     end
 

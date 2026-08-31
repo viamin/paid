@@ -347,6 +347,74 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
       end
     end
 
+    context "when the parent issue already has a ## Dependencies section" do
+      let(:parent_issue) { create(:issue, :in_progress, project: project, body: parent_body) }
+      let(:followup_title) { "Implement the missing gateway adapter" }
+      let(:followup_body) { "The umbrella cannot close until the adapter exists." }
+      let(:agent_run) do
+        create(:agent_run, :running, project: project, issue: parent_issue,
+          iterations: 3, cost_cents: 100)
+      end
+
+      before do
+        create(:issue, project: project, github_number: 4101, title: "Pre-existing dependency")
+        agent_run.log!("stdout", <<~SUMMARY)
+          The umbrella is blocked on missing implementation work.
+
+          <!-- followup-title: #{followup_title} -->
+          <!-- followup-body-start -->
+          #{followup_body}
+          <!-- followup-body-end -->
+        SUMMARY
+        allow(client).to receive(:create_issue).and_return(
+          gh_issue_response(project:, number: 88, id: 8800, title: followup_title, body: followup_body)
+        )
+        allow(client).to receive(:update_issue)
+      end
+
+      context "when the section uses the canonical single-newline format" do
+        let(:parent_body) { "Umbrella issue\n\n## Dependencies\n- Depends on #4101\n" }
+
+        # @spec NO-OUTPUT-ISSUE-003
+        it "appends to the existing section instead of adding a second heading" do
+          activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+          updated = parent_issue.reload.body
+          expect(updated.scan("## Dependencies").count).to eq(1)
+          expect(updated).to include("## Dependencies\n- Depends on #4101\n- Depends on #88")
+          expect(parent_issue.dependencies.pluck(:github_number)).to contain_exactly(88, 4101)
+        end
+      end
+
+      context "when the section is blank-line separated and followed by another section" do
+        let(:parent_body) { "## Dependencies\n\n- Depends on #4101\n\n## Notes\nParking spot." }
+
+        # @spec NO-OUTPUT-ISSUE-003
+        it "appends within the existing section, before the next heading" do
+          activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+          updated = parent_issue.reload.body
+          expect(updated.scan("## Dependencies").count).to eq(1)
+          expect(updated.index("- Depends on #88")).to be < updated.index("## Notes")
+          expect(parent_issue.dependencies.pluck(:github_number)).to contain_exactly(88, 4101)
+        end
+      end
+
+      context "when the section is followed by a heading of a different level" do
+        let(:parent_body) { "## Dependencies\n- Depends on #4101\n\n### Detail\nExtra context" }
+
+        # @spec NO-OUTPUT-ISSUE-003
+        it "keeps the appended dependency inside the section so the parser records it" do
+          activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+          updated = parent_issue.reload.body
+          expect(updated.scan("## Dependencies").count).to eq(1)
+          expect(updated.index("- Depends on #88")).to be < updated.index("### Detail")
+          expect(parent_issue.dependencies.pluck(:github_number)).to contain_exactly(88, 4101)
+        end
+      end
+    end
+
     context "when the follow-up marker is malformed or partial" do
       let(:issue) { create(:issue, :in_progress, project: project) }
       let(:agent_run) do
