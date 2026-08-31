@@ -7,9 +7,6 @@ import { application } from "./application"
 import AgentRunActionsController from "./agent_run_actions_controller"
 application.register("agent-run-actions", AgentRunActionsController)
 
-import ChartkickController from "./chartkick_controller"
-application.register("chartkick", ChartkickController)
-
 import ChatController from "./chat_controller"
 application.register("chat", ChatController)
 

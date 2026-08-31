@@ -69,11 +69,10 @@ RSpec.describe "dashboard/_metrics", :no_db, type: :view do
     allow(view).to receive(:dashboard_path).and_return("/dashboard")
   end
 
-  it "renders a captioned accessible table for every chart on the page" do
+  it "renders captions for accessibility for every chart on the page" do
     render partial: "dashboard/metrics", locals: { stats: stats, account: nil, time_range: "cumulative" }
 
-    tables = Nokogiri::HTML.fragment(rendered).css("table.sr-only")
-    captions = tables.map { |table| table.at_css("caption")&.text }
+    captions = Nokogiri::HTML.fragment(rendered).css("p.sr-only").map { |p| p.text.strip }
 
     expect(captions).to contain_exactly(
       "Agent runs per day, stacked by completed and failed status, over the last 30 days.",

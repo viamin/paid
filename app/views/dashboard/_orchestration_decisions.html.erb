@@ -275,7 +275,7 @@
           </p>
           <% if daily_volume.size >= 2 %>
             <div class="mt-4">
-              <%= dashboard_chartkick_chart "ColumnChart", [
+              <%= column_chart [
                 {
                   name: "Successful",
                   data: daily_volume.to_h { |row| [row[:day], row[:successful_count]] }
@@ -290,11 +290,9 @@
                 }
               ],
                   id: "decision-volume-chart",
-                  caption: "Daily orchestration decision counts split by successful, no-op, and failed outcomes.",
                   stacked: true,
                   height: "280px",
                   colors: ["#059669", "#d97706", "#e11d48"],
-                  discrete: true,
                   library: {
                     plugins: {
                       legend: {
@@ -315,6 +313,9 @@
                       }
                     }
                   } %>
+              <%= tag.p(class: "sr-only") do %>
+                Daily orchestration decision counts split by successful, no-op, and failed outcomes.
+              <% end %>
             </div>
           <% end %>
         </div>
