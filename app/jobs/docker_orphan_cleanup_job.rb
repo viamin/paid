@@ -40,7 +40,7 @@ class DockerOrphanCleanupJob < ApplicationJob
       pool_removed += cleanup_pool_containers(backend: backend)
       collector_removed += cleanup_collector_containers(backend: backend)
       service_removed += cleanup_service_containers(backend: backend)
-      cleanup_preview_tunnel_reservations(backend: backend)
+      prune_stale_preview_tunnel_port_reservations(backend: backend)
       backend_volume_result = cleanup_volumes(backend: backend)
       volume_result = volume_result.merge(backend_volume_result) { |_key, old_val, new_val| old_val + new_val }
     end
@@ -238,7 +238,7 @@ class DockerOrphanCleanupJob < ApplicationJob
     { found: volumes.size, removed: removed, failed: failed, active: active, retained: retained }
   end
 
-  def cleanup_preview_tunnel_reservations(backend:)
+  def prune_stale_preview_tunnel_port_reservations(backend:)
     Previews::TunnelManager.prune_stale_reservations!(
       range: Previews::TunnelManager.port_range,
       backend: backend

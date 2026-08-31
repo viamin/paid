@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_29_222521) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_31_093614) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2209,15 +2209,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_29_222521) do
     t.datetime "updated_at", null: false
     t.index ["reservation_key"], name: "index_preview_tunnel_port_reservations_on_reservation_key", unique: true
     t.index ["tunnel_port"], name: "index_preview_tunnel_port_reservations_on_tunnel_port", unique: true
-  end
-
-  create_table "preview_tunnel_reservations", comment: "Tracks preview tunnel ports reserved across Ruby processes so concurrent preview boots cannot allocate the same port.", force: :cascade do |t|
-    t.datetime "created_at", null: false
-    t.string "owner_key", comment: "Logical owner identifier for the process/session that reserved the preview tunnel port."
-    t.integer "owner_pid", comment: "PID of the worker process that created the reservation so dead-worker leases can be reclaimed."
-    t.integer "port", null: false, comment: "TCP port reserved for a preview tunnel listener on the control-plane host."
-    t.datetime "updated_at", null: false
-    t.index ["port"], name: "index_preview_tunnel_reservations_on_port", unique: true
   end
 
   create_table "project_baselines", comment: "Stores per-project historical baselines for run metrics so anomalies can be detected against recent norms.", force: :cascade do |t|
