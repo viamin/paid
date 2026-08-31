@@ -24,6 +24,7 @@ module Activities
     PAID_RECOMMEND_CLOSE_LABEL = "paid-recommend-close"
     NEEDS_INPUT_COMMENT_MARKER = "<!-- paid:needs-input -->"
     RECOMMEND_CLOSE_COMMENT_MARKER = "<!-- paid:recommend-close -->"
+    ISSUE_EXPLANATION_COMMENT_FAILURE_KEY = "issue_explanation_comment_failure"
 
     SUPPLEMENTARY_ERROR_PATTERNS = [
       /quota exceeded/i,
@@ -81,7 +82,7 @@ module Activities
     PERMISSION_REQUESTED_PATTERN = /permission requested:/i
     TOOL_PERMISSION_REJECTED_PATTERN = /the user rejected permission to use this specific tool call/i
 
-    def execute(input)
+    def execute(input) # @spec NO-OUTPUT-ISSUE-001 NO-OUTPUT-ISSUE-002
       agent_run_id = input[:agent_run_id]
       output_present = input.fetch(:output_present, false)
 
@@ -272,7 +273,7 @@ module Activities
       add_needs_input_label(client, project, issue)
       remove_recommend_close_label(client, project, issue, agent_run.id)
       remove_trigger_labels(client, project, issue, agent_run.id)
-      post_needs_input_comment(client, project, issue, agent_summary)
+      post_needs_input_comment(client, agent_run, agent_summary)
     end
 
     def handle_recommend_close(client, agent_run, agent_summary)
@@ -282,7 +283,7 @@ module Activities
       remove_trigger_labels(client, project, issue, agent_run.id)
       remove_needs_input_label(client, project, issue, agent_run.id)
       add_recommend_close_label(client, project, issue)
-      post_recommend_close_comment(client, project, issue, agent_summary)
+      post_recommend_close_comment(client, agent_run, agent_summary)
     end
 
     def mark_complete_without_issue(agent_run)
@@ -380,9 +381,8 @@ module Activities
       text.each_line.reject { |line| provider_error_redaction_line?(line) }.join.strip
     end
 
-    def post_needs_input_comment(client, project, issue, agent_summary)
-      return if comment_exists?(client, project, issue, NEEDS_INPUT_COMMENT_MARKER)
-
+    def post_needs_input_comment(client, agent_run, agent_summary)
+      project = agent_run.project
       automation_label = triggering_label_for(project)
       needs_input_label = project.label_for_stage("needs_input") || PAID_NEEDS_INPUT_LABEL
       sanitized_summary = sanitize_summary_for_github(agent_summary)
@@ -419,18 +419,18 @@ module Activities
       next_steps << ""
       lines.concat(next_steps)
 
-      client.add_comment(project.full_name, issue.github_number, lines.join("\n"))
-    rescue GithubClient::Error => e
-      logger.warn(
-        message: "agent_execution.needs_input_comment_failed",
-        issue_number: issue.github_number,
-        error: e.message
+      post_issue_explanation_comment(
+        client,
+        agent_run,
+        issue_state: "needs_input",
+        marker: NEEDS_INPUT_COMMENT_MARKER,
+        message: lines.join("\n"),
+        log_message: "agent_execution.needs_input_comment_failed"
       )
     end
 
-    def post_recommend_close_comment(client, project, issue, agent_summary)
-      return if comment_exists?(client, project, issue, RECOMMEND_CLOSE_COMMENT_MARKER)
-
+    def post_recommend_close_comment(client, agent_run, agent_summary)
+      project = agent_run.project
       automation_label = triggering_label_for(project)
       sanitized_summary = sanitize_summary_for_github(agent_summary)
 
@@ -465,13 +465,78 @@ module Activities
         ""
       ])
 
-      client.add_comment(project.full_name, issue.github_number, lines.join("\n"))
+      post_issue_explanation_comment(
+        client,
+        agent_run,
+        issue_state: "recommend_close",
+        marker: RECOMMEND_CLOSE_COMMENT_MARKER,
+        message: lines.join("\n"),
+        log_message: "agent_execution.recommend_close_comment_failed"
+      )
+    end
+
+    # @spec NO-OUTPUT-ISSUE-001 NO-OUTPUT-ISSUE-002
+    def post_issue_explanation_comment(client, agent_run, issue_state:, marker:, message:, log_message:)
+      project = agent_run.project
+      issue = agent_run.issue
+
+      if comment_exists?(client, project, issue, marker)
+        clear_issue_explanation_comment_failure!(agent_run)
+        return
+      end
+
+      client.add_comment(project.full_name, issue.github_number, message)
+      clear_issue_explanation_comment_failure!(agent_run)
     rescue GithubClient::Error => e
+      record_issue_explanation_comment_failure!(agent_run, issue_state: issue_state, marker: marker, error: e.message)
       logger.warn(
-        message: "agent_execution.recommend_close_comment_failed",
+        message: log_message,
+        agent_run_id: agent_run.id,
         issue_number: issue.github_number,
         error: e.message
       )
+    end
+
+    def record_issue_explanation_comment_failure!(agent_run, issue_state:, marker:, error:)
+      metadata = agent_run.external_metadata.is_a?(Hash) ? agent_run.external_metadata.deep_dup : {}
+      metadata[ISSUE_EXPLANATION_COMMENT_FAILURE_KEY] = {
+        "issue_state" => issue_state,
+        "marker" => marker,
+        "error" => error.to_s.truncate(500),
+        "recorded_at" => Time.current.iso8601
+      }
+      agent_run.update!(
+        error_message: issue_explanation_comment_failure_summary(issue_state),
+        external_metadata: metadata
+      )
+    end
+
+    def clear_issue_explanation_comment_failure!(agent_run)
+      metadata = agent_run.external_metadata.is_a?(Hash) ? agent_run.external_metadata.deep_dup : {}
+      return unless metadata.delete(ISSUE_EXPLANATION_COMMENT_FAILURE_KEY) || issue_explanation_comment_failure?(agent_run.error_message)
+
+      attributes = { external_metadata: metadata }
+      attributes[:error_message] = nil if issue_explanation_comment_failure?(agent_run.error_message)
+      agent_run.update!(attributes)
+    end
+
+    def issue_explanation_comment_failure_summary(issue_state)
+      "#{issue_explanation_comment_failure_label(issue_state)} explanation comment could not be posted to GitHub. Review the run for details."
+    end
+
+    def issue_explanation_comment_failure?(error_message)
+      error_message.to_s.include?("explanation comment could not be posted to GitHub")
+    end
+
+    def issue_explanation_comment_failure_label(issue_state)
+      case issue_state
+      when "needs_input"
+        "Needs-input"
+      when "recommend_close"
+        "Recommend-close"
+      else
+        issue_state.to_s.tr("_", "-").humanize
+      end
     end
 
     def comment_exists?(client, project, issue, marker)
