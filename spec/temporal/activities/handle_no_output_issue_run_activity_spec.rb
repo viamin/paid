@@ -523,6 +523,52 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
       end
     end
 
+    context "when the activity is retried after GitHub confirms issue creation but before the local upsert completes" do
+      let(:parent_issue) { create(:issue, :in_progress, project: project, body: "Parent body") }
+      let(:followup_title) { "Implement the missing gateway adapter" }
+      let(:followup_body) { "The umbrella cannot close until the adapter exists." }
+      let(:agent_run) do
+        create(:agent_run, :running, project: project, issue: parent_issue,
+          iterations: 3, cost_cents: 100)
+      end
+      let(:gh_issue) { gh_issue_response(project:, number: 88, id: 8800, title: followup_title, body: followup_body) }
+
+      before do
+        agent_run.log!("stdout", <<~SUMMARY)
+          <!-- followup-title: #{followup_title} -->
+          <!-- followup-body-start -->
+          #{followup_body}
+          <!-- followup-body-end -->
+        SUMMARY
+        allow(client).to receive_messages(create_issue: gh_issue, issue: gh_issue)
+        allow(client).to receive(:update_issue)
+      end
+
+      # @spec NO-OUTPUT-ISSUE-005
+      it "reuses the created GitHub issue on retry instead of creating a duplicate" do
+        call_count = 0
+        allow(Issues::UpsertFromGithub).to receive(:call).and_wrap_original do |original, **kwargs|
+          call_count += 1
+          raise "simulated crash before local upsert persists" if call_count == 1
+
+          original.call(**kwargs)
+        end
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id, output_present: true)
+        }.to raise_error("simulated crash before local upsert persists")
+
+        expect(project.issues.where(github_number: 88)).to be_empty
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("blocked_on_gap")
+        expect(client).to have_received(:create_issue).once
+        expect(client).to have_received(:issue).with(project.full_name, 88).once
+        expect(project.issues.where(github_number: 88).count).to eq(1)
+      end
+    end
+
     context "when multiple follow-up marker blocks are emitted" do
       let(:issue) { create(:issue, :in_progress, project: project, body: "Parent body") }
       let(:agent_run) do

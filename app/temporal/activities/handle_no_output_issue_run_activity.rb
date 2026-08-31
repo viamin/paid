@@ -25,6 +25,12 @@ module Activities
     NEEDS_INPUT_COMMENT_MARKER = "<!-- paid:needs-input -->"
     RECOMMEND_CLOSE_COMMENT_MARKER = "<!-- paid:recommend-close -->"
     ISSUE_EXPLANATION_COMMENT_FAILURE_KEY = "issue_explanation_comment_failure"
+    # Durable marker recorded on the run immediately after GitHub confirms
+    # follow-up issue creation, before Issues::UpsertFromGithub.call runs.
+    # If the activity is retried between those two steps (crash, timeout),
+    # the retry finds this marker and reuses the already-created GitHub
+    # issue instead of calling create_issue again — see NO-OUTPUT-ISSUE-005.
+    FOLLOWUP_ISSUE_CREATION_METADATA_KEY = "followup_issue_creation"
     # Matches a single paired follow-up plan: a `followup-title:` comment
     # directly followed by `followup-body-start` / `followup-body-end`
     # comments. The `(?!<!--).` lookahead prevents the title capture from
@@ -362,14 +368,33 @@ module Activities
         .first
       return [ existing_issue, true ] if existing_issue
 
+      if (pending_github_number = pending_followup_github_number(agent_run))
+        gh_issue = client.issue(project.full_name, pending_github_number)
+        return [ Issues::UpsertFromGithub.call(project:, github_issue: gh_issue), true ]
+      end
+
       gh_issue = client.create_issue(
         project.full_name,
         title: followup_plan[:title],
         body: followup_plan[:body],
         labels: followup_issue_labels(project, agent_run)
       )
+      record_pending_followup_issue!(agent_run, github_number: gh_issue.number)
 
       [ Issues::UpsertFromGithub.call(project:, github_issue: gh_issue), false ]
+    end
+
+    def pending_followup_github_number(agent_run)
+      metadata = agent_run.external_metadata
+      return nil unless metadata.is_a?(Hash)
+
+      metadata.dig(FOLLOWUP_ISSUE_CREATION_METADATA_KEY, "github_number")
+    end
+
+    def record_pending_followup_issue!(agent_run, github_number:)
+      metadata = agent_run.external_metadata.is_a?(Hash) ? agent_run.external_metadata.deep_dup : {}
+      metadata[FOLLOWUP_ISSUE_CREATION_METADATA_KEY] = { "github_number" => github_number }
+      agent_run.update!(external_metadata: metadata)
     end
 
     def followup_issue_labels(project, agent_run)
