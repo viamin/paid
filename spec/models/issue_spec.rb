@@ -147,6 +147,14 @@ RSpec.describe Issue do
         expect(described_class.ready_for_work(project)).to include(issue)
       end
 
+      it "includes issues whose only open dep is paid_state completed" do
+        dep = create(:issue, :completed, project: project, github_state: "open")
+        issue = create(:issue, project: project)
+        create(:issue_dependency, issue: issue, depends_on_issue: dep)
+
+        expect(described_class.ready_for_work(project)).to include(issue)
+      end
+
       it "excludes closed issues" do
         issue = create(:issue, project: project, github_state: "closed")
 
@@ -199,6 +207,15 @@ RSpec.describe Issue do
 
         it "includes the issue when the external dep target is open but paid_state=recommend_close" do
           create(:issue, :recommend_close, project: sibling_project, github_number: 42, github_state: "open")
+          create(:issue_dependency, issue: issue, depends_on_issue: nil,
+                                    depends_on_owner: "viamin", depends_on_repo: "agent-harness",
+                                    depends_on_number: 42)
+
+          expect(described_class.ready_for_work(project)).to include(issue)
+        end
+
+        it "includes the issue when the external dep target is open but paid_state=completed" do
+          create(:issue, :completed, project: sibling_project, github_number: 42, github_state: "open")
           create(:issue_dependency, issue: issue, depends_on_issue: nil,
                                     depends_on_owner: "viamin", depends_on_repo: "agent-harness",
                                     depends_on_number: 42)
@@ -1340,6 +1357,16 @@ RSpec.describe Issue do
 
       expect(issue.blocking_issues).to contain_exactly(open_dep)
     end
+
+    it "excludes open dependencies in completed state" do
+      open_dep = create(:issue, project: project, github_state: "open")
+      completed_dep = create(:issue, :completed, project: project, github_state: "open")
+      issue = create(:issue, project: project)
+      create(:issue_dependency, issue: issue, depends_on_issue: open_dep)
+      create(:issue_dependency, issue: issue, depends_on_issue: completed_dep)
+
+      expect(issue.blocking_issues).to contain_exactly(open_dep)
+    end
   end
 
   describe "#dependent_issues" do
@@ -1952,6 +1979,16 @@ RSpec.describe Issue do
       expect(result[issue.id]).to eq(:eligible)
     end
 
+    it "returns :eligible when open dependency has paid_state completed" do
+      issue = create(:issue, project: project, github_state: "open")
+      dep = create(:issue, :completed, project: project, github_state: "open")
+      create(:issue_dependency, issue: issue, depends_on_issue: dep)
+
+      result = described_class.lifecycle_statuses([ issue ])
+
+      expect(result[issue.id]).to eq(:eligible)
+    end
+
     it "returns :eligible when local dependency is closed" do
       issue = create(:issue, project: project, github_state: "open")
       dep = create(:issue, project: project, github_state: "closed")
@@ -2040,6 +2077,15 @@ RSpec.describe Issue do
     it "returns :eligible when the only open sub-issue is paid_state recommend_close" do
       parent = create(:issue, project: project, github_state: "open")
       create(:issue, :recommend_close, project: project, github_state: "open", parent_issue: parent)
+
+      result = described_class.lifecycle_statuses([ parent ])
+
+      expect(result[parent.id]).to eq(:eligible)
+    end
+
+    it "returns :eligible when the only open sub-issue is paid_state completed" do
+      parent = create(:issue, project: project, github_state: "open")
+      create(:issue, :completed, project: project, github_state: "open", parent_issue: parent)
 
       result = described_class.lifecycle_statuses([ parent ])
 

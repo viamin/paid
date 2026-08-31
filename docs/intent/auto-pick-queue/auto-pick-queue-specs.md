@@ -33,3 +33,11 @@
   *Tests:* `spec/services/issues/upsert_from_github_spec.rb`,
   `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
   *Code:* `app/services/issues/upsert_from_github.rb`, `app/models/issue.rb`.
+
+- [x] **AUTO-PICK-QUEUE-004** — When an issue has `no_code_required_at` set
+  (an agent explicitly declared the issue's work complete without a code
+  change), Auto-Pick candidate selection SHALL permanently exclude that issue
+  from the completed-issue recovery path, regardless of `paid_state`, so a
+  no-code-required issue does not loop back into the queue on its own.
+  *Tests:* `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
+  *Code:* `app/services/automation/strategies/auto_pick/default_candidate_source.rb`.

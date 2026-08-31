@@ -25,3 +25,43 @@
   recorded explanation-comment failure for that run.
   *Tests:* `spec/temporal/activities/handle_no_output_issue_run_activity_spec.rb`.
   *Code:* `app/temporal/activities/handle_no_output_issue_run_activity.rb`.
+
+## Goal-aware classification for no-code-required completions
+
+- [x] **NO-OUTPUT-ISSUE-003** — When an issue-scoped no-output run's agent
+  output contains a `<!-- paid:no-code-required -->` declaration marker with a
+  non-blank rationale fenced between `<!-- no-code-required-rationale-start
+  -->` and `<!-- no-code-required-rationale-end -->`, the system SHALL
+  classify the outcome as `no_code_required` — distinct from `recommend_close`
+  — SHALL transition the issue to `paid_state: "completed"`, and SHALL post a
+  marker-tagged GitHub comment surfacing the declared rationale for a human.
+  This lets an umbrella, verification, or audit issue whose successful
+  closeout requires no code change (e.g. #3441) complete honestly instead of
+  being parked as `recommend_close`.
+  *Tests:* `spec/temporal/activities/handle_no_output_issue_run_activity_spec.rb`.
+  *Code:* `app/temporal/activities/handle_no_output_issue_run_activity.rb`.
+
+- [x] **NO-OUTPUT-ISSUE-004** — When an issue-scoped no-output run's agent
+  output contains no no-code-required declaration marker, or the marker is
+  present without a non-blank rationale block, the system SHALL classify the
+  outcome using the existing `provider_error` / `infrastructure_error` /
+  `needs_input` / `recommend_close` heuristics unchanged.
+  *Tests:* `spec/temporal/activities/handle_no_output_issue_run_activity_spec.rb`.
+  *Code:* `app/temporal/activities/handle_no_output_issue_run_activity.rb`.
+
+- [x] **NO-OUTPUT-ISSUE-005** — While classifying an issue-scoped no-output
+  run, the system SHALL search for the no-code-required declaration across the
+  same most-recent output window used for error classification, independently
+  of the smaller output excerpt quoted in the GitHub comment, so a verbose run
+  that emits the declaration outside the excerpt window is still classified
+  `no_code_required`.
+  *Tests:* `spec/temporal/activities/handle_no_output_issue_run_activity_spec.rb`.
+  *Code:* `app/temporal/activities/handle_no_output_issue_run_activity.rb`.
+
+- [x] **NO-OUTPUT-ISSUE-006** — When a `no_code_required` outcome transitions
+  an issue to `paid_state: "completed"`, the system SHALL also stamp
+  `no_code_required_at` on the issue, permanently excluding it from Auto-Pick's
+  completed-issue recovery path (see AUTO-PICK-QUEUE-004) so the agent's
+  terminal declaration does not loop the issue back into the queue.
+  *Tests:* `spec/temporal/activities/handle_no_output_issue_run_activity_spec.rb`.
+  *Code:* `app/temporal/activities/handle_no_output_issue_run_activity.rb`.
