@@ -816,7 +816,12 @@
   `NetworkPolicy.ensure_network!`) SHALL only apply the production-only
   `Internal: true` / masquerade-disabled config to non-remote backends; the
   in-container firewall continues to provide the egress restriction layer for
-  remote proxy-mode runs. This mirrors the guided setup wizard's
+  remote proxy-mode runs. `NetworkPolicy.ensure_network!` SHALL additionally
+  detect the broken pre-existing state where a `paid_agent` network was
+  already created with `Internal: true` on a remote backend, and SHALL raise
+  a `NetworkPolicy::Error` instructing the operator to remove the network
+  (Docker does not allow toggling `Internal` on an existing network). This
+  mirrors the guided setup wizard's
   `DockerHosts::SetupActionRunner#docker_network_create_config`, which never
   applied `Internal` for any backend, and the remote Docker setup guide, which
   documents creating `paid_agent` as non-internal on remote hosts (issue

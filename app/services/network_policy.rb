@@ -144,9 +144,14 @@ class NetworkPolicy
     # Ensures the agent Docker network exists. Creates it if missing.
     #
     # @return [Docker::Network] the agent network
-    # @raise [Error] if network creation fails
+    # @raise [Error] if network creation fails or a pre-existing
+    #   Docker-internal network on a remote backend would block the
+    #   proxy-mode callback to PAID_PROXY_EXTERNAL_URL (issue #3545).
+    # @spec CONTAINER-RUNTIME-047
     def ensure_network!(network: NETWORK_NAME, backend: Containers.backend)
-      backend.get_network(network)
+      existing = backend.get_network(network)
+      reject_internal_remote_network!(existing, network_name: network, backend: backend)
+      existing
     rescue Docker::Error::NotFoundError
       raise Error, "Docker network #{network} does not exist" unless network == NETWORK_NAME
 
@@ -450,6 +455,33 @@ class NetworkPolicy
       backend.create_network(NETWORK_NAME, config)
     rescue Docker::Error::DockerError => e
       raise Error, "Failed to create agent network: #{e.message}"
+    end
+
+    # Rejects the broken #3545 state where a pre-existing paid_agent network
+    # is Docker-internal on a remote backend. Docker does not allow the
+    # Internal flag to be toggled on an existing network, so the operator must
+    # remove it manually for create_network to recreate it correctly. The
+    # in-container firewall continues to provide the egress restriction
+    # layer for remote proxy-mode runs (RDR-062).
+    # @spec CONTAINER-RUNTIME-047
+    def reject_internal_remote_network!(network, network_name:, backend:)
+      return unless network_name == NETWORK_NAME
+      return unless backend.remote?
+      return unless network.info.is_a?(Hash) && network.info["Internal"] == true
+
+      Rails.logger.error(
+        message: "network_policy.reject_internal_remote_network",
+        network: network_name,
+        host: backend.identifier
+      )
+      raise Error, internal_remote_network_message(backend)
+    end
+
+    def internal_remote_network_message(backend)
+      "Docker network '#{NETWORK_NAME}' on #{backend.identifier} is Docker-internal " \
+        "and blocks the proxy-mode callback to PAID_PROXY_EXTERNAL_URL (issue #3545). " \
+        "Run `docker network rm #{NETWORK_NAME}` on #{backend.identifier} and retry; " \
+        "create_network will recreate it as a non-internal bridge."
     end
 
     # Validates a CIDR notation string. Returns the validated string.
