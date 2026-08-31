@@ -278,7 +278,19 @@ Do not use `docker compose --profile setup build agent-image` for this flow. The
 QNAP-specific caveats:
 
 - If the QNAP is `x86_64`, the image loaded there must be `linux/amd64`. On Apple Silicon or other ARM development hosts, build an amd64 image, for example with `DOCKER_DEFAULT_PLATFORM=linux/amd64 IMAGE_TAG=qnap-amd64 ./scripts/build-agent-image.sh`, then tag it as `paid-agent:latest` on the QNAP.
-- Native image builds on QNAP Container Station may fail while extracting Ruby tarballs with `tar: ... Cannot change mode ... Bad address`; see issue `#3544`. Building elsewhere and loading the image onto QNAP is the safer path for now.
+- **Do not run a native `docker build` of `docker/agent/Dockerfile` directly against QNAP Container Station's Docker engine.** On a verified QNAP host (`Docker Engine 27.1.2-qnap8`, `containerd v1.7.20`, `runc 1.1.13`), the build fails while extracting the pinned Ruby source tarball:
+
+  ```text
+  ruby-3.4.8.tar.gz: OK
+  tar: ruby-3.4.8/.bundle/bin: Cannot change mode to rwxr-xr-x: Bad address
+  tar: ruby-3.4.8/.bundle/build_info: Cannot change mode to rwxr-xr-x: Bad address
+  ...
+  tar: Exiting with failure status due to previous errors
+  ```
+
+  Root cause: Ubuntu 24.04 ships glibc >= 2.39, which now backs `chmod`/`fchmod`/`fchmodat` with the newer `fchmodat2` syscall for every mode change `tar` performs during extraction. On host kernels or seccomp filters that do not recognize `fchmodat2` (older `libseccomp`/`runc`, as shipped by some QNAP Container Station builds), the syscall returns an error other than `ENOSYS`, so glibc cannot fall back to the legacy `fchmodat` syscall and the chmod call fails with `EFAULT` ("Bad address"). This is a host kernel/seccomp incompatibility, not a `tar` flag problem: every glibc-linked chmod call in the image — not just `tar`'s — goes through the same syscall, so the same failure would resurface at the very next tarball extraction (Node.js, ast-grep, scc, rathole, rtk, the Cursor CLI artifact, ...) even if the Ruby step were special-cased. See issue `#3544` for the full reproduction.
+  - **Supported path**: build `paid-agent:latest` on an unaffected Docker host (a laptop, devcontainer, or CI runner) and transfer it with `docker save | docker load`, as described in the `docker save`/`docker load` steps below in this section. This is the same verified path already used to get a `linux/amd64` image onto the NAS.
+  - If you want to confirm whether a specific QNAP host still hits this, updating Container Station (and, if exposed, the underlying `libseccomp`/QTS kernel packages) to a version with `libseccomp >= 2.55` may resolve it upstream — but that is QNAP/Container Station platform maintenance, not something this Dockerfile can route around.
 - The Oh My Pi Bun installer can drift from the `agent-harness` Bun pin; see issue `#3542`. If the build fails at the Oh My Pi Bun version check, fix the pin/contract before treating QNAP as broken.
 
 Options for getting the image onto the NAS:
