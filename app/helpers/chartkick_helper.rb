@@ -25,10 +25,21 @@ module ChartkickHelper
     width = (options.delete(:width) || "100%").to_s
     loading = options.delete(:loading) || "Loading..."
     caption = options.delete(:caption)
-    chart_options = options.except(:html, :nonce, :defer, :content_for)
+    custom_html = options.delete(:html)
+    chart_options = options.except(:nonce, :defer, :content_for)
     chart_data = data_source.respond_to?(:chart_json) ? data_source.chart_json : data_source.to_json
 
-    chart_div = tag.div(
+    chart_div = if custom_html.present?
+      chartkick_custom_placeholder(custom_html, element_id, height, width, loading)
+    else
+      chartkick_default_placeholder(chart_type, chart_data, chart_options, element_id, height, width, loading)
+    end
+
+    safe_join([ chart_div, chartkick_data_table(data_source, caption) ])
+  end
+
+  def chartkick_default_placeholder(chart_type, chart_data, chart_options, element_id, height, width, loading)
+    tag.div(
       loading,
       id: element_id,
       aria: { hidden: "true" },
@@ -42,8 +53,26 @@ module ChartkickHelper
         chartkick_options_value: chart_options.to_json
       }
     )
+  end
 
-    safe_join([ chart_div, chartkick_data_table(data_source, caption) ])
+  # Preserves the upstream Chartkick::Helper#chartkick_chart `html:` override
+  # path (placeholder markup as a %{id}/%{height}/%{width}/%{loading} format
+  # string) instead of always emitting the Stimulus-wired placeholder div. A
+  # caller that opts into this escape hatch owns the resulting markup,
+  # including any data attributes the chartkick controller needs to wire up.
+  def chartkick_custom_placeholder(html_template, element_id, height, width, loading)
+    [ height, width ].each do |value|
+      raise ArgumentError, "Invalid height or width" unless /\A[a-zA-Z0-9%.]*\z/.match?(value)
+    end
+
+    html_vars = {
+      id: ERB::Util.html_escape(element_id),
+      height: ERB::Util.html_escape(height),
+      width: ERB::Util.html_escape(width),
+      loading: ERB::Util.html_escape(loading)
+    }
+
+    (html_template % html_vars).html_safe
   end
 
   # @spec DASHBOARD-CHART-A11Y-001

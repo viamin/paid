@@ -137,5 +137,31 @@ RSpec.describe ChartkickHelper, :no_db do
 
       expect(Nokogiri::HTML.fragment(html).at_css("#loading-chart").text).to eq("Loading...")
     end
+
+    # @spec DASHBOARD-CHART-A11Y-001
+    it "honors a caller-supplied html: placeholder override instead of the default div" do
+      html = helper.line_chart({ "2026-01-01" => 1 }, html: '<div id="custom" class="x">X</div>')
+
+      fragment = Nokogiri::HTML.fragment(html)
+      custom_div = fragment.at_css("#custom")
+
+      expect(custom_div["class"]).to eq("x")
+      expect(custom_div.text).to eq("X")
+      expect(fragment.at_css("[data-controller=\"chartkick\"]")).to be_nil
+    end
+
+    # @spec DASHBOARD-CHART-A11Y-001
+    it "interpolates %{id}/%{height}/%{width}/%{loading} into a custom html: template" do
+      html = helper.line_chart(
+        { "2026-01-01" => 1 },
+        id: "templated-chart",
+        loading: "Fetching...",
+        html: '<div id="%{id}" data-height="%{height}">%{loading}</div>'
+      )
+
+      custom_div = Nokogiri::HTML.fragment(html).at_css("#templated-chart")
+      expect(custom_div["data-height"]).to eq("300px")
+      expect(custom_div.text).to eq("Fetching...")
+    end
   end
 end
