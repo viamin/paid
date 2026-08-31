@@ -115,7 +115,7 @@ module Knowledge
             timeout:
           )
         end
-      rescue StandardError => e
+      rescue AgentHarness::Error => e
         message = if retryable_error?(e)
                     "Embedding API request failed after #{MAX_RETRIES} retries: #{e.message}"
         else

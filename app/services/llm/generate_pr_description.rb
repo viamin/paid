@@ -94,7 +94,7 @@ module Llm
       RetryHelper.with_retries(
         max_attempts: MAX_ATTEMPTS,
         retryable: ->(error) { RETRYABLE_ERRORS.any? { |klass| error.is_a?(klass) } },
-        delay_fn: ->(attempt, error) { RETRY_DELAYS[attempt] || RETRY_DELAYS.last },
+        delay_fn: ->(attempt, error) { RETRY_DELAYS[attempt - 1] || RETRY_DELAYS.last },
         sleep_fn: method(:sleep)
       ) do
         attempt_single_request
