@@ -88,6 +88,48 @@ RSpec.describe Knowledge::ContextBundle::Build do
       end
     end
 
+    context "with OKF curated knowledge artifacts" do
+      before do
+        artifact = create(:knowledge_artifact,
+          project: project,
+          collector_run: collector_run,
+          collector_type: "okf",
+          artifact_type: "okf_concept",
+          scope_path: ".okf/concepts/auth.md",
+          identifier: "Auth flows",
+          content: "Users sign in with SSO.",
+          metadata: {
+            "source_path" => ".okf/concepts/auth.md",
+            "concept_type" => "concept",
+            "title" => "Auth flows",
+            "tags" => %w[auth]
+          },
+          status: "active")
+        create(:knowledge_chunk,
+          knowledge_artifact: artifact,
+          project: project,
+          chunk_type: "definition",
+          content: "Users sign in with SSO.")
+      end
+
+      # @spec KNOWLEDGE-OKF-003
+      it "includes an explicit OKF curated knowledge section" do
+        result = described_class.call(issue: issue, project: project)
+
+        expect(result[:sections]).to include(:okf)
+        expect(result[:content]).to include("Curated Knowledge (OKF bundle)")
+        expect(result[:content]).to include("Auth flows")
+        expect(result[:content]).to include("Users sign in with SSO.")
+        expect(result[:artifact_type_counts]).to include("okf_concept" => 1)
+      end
+
+      it "preloads active ordered chunks for OKF artifacts" do
+        artifacts = described_class.new(issue: issue, project: project).send(:active_artifacts, "okf_concept")
+
+        expect(artifacts.map { |artifact| artifact.association(:active_ordered_chunks) }).to all(be_loaded)
+      end
+    end
+
     context "with symbol artifacts" do
       before do
         create(:knowledge_artifact,

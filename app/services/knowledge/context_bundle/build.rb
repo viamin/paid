@@ -20,10 +20,10 @@ module Knowledge
       # @spec KNOWLEDGE-005
       DEFAULT_TOKEN_BUDGET = 4000
 
-      # Section builders in priority order.
-      # Conventions section is not yet implemented — will be added when
-      # a conventions collector lands in the knowledge pipeline.
-      SECTION_ORDER = %i[business_context documents routes symbols schema hotspots decisions change_intents stats].freeze
+      # Section builders in priority order. Curated sources (maintainer
+      # business context, imported documents, OKF bundles) come before derived
+      # collector output.
+      SECTION_ORDER = %i[business_context documents okf routes symbols schema hotspots decisions change_intents stats].freeze
 
       attr_reader :issue, :project, :agent_run, :agent_run_id, :token_budget, :section_order
 
@@ -124,6 +124,31 @@ module Knowledge
           content: lines.join("\n\n"),
           artifacts: artifacts,
           chunk_count: total_chunks
+        )
+      end
+
+      # @spec KNOWLEDGE-OKF-003
+      def build_okf_section
+        artifacts = active_artifacts("okf_concept")
+        return nil if artifacts.empty?
+
+        chunk_count = 0
+        lines = artifacts.map do |artifact|
+          title = artifact.metadata&.dig("title") || artifact.identifier
+          concept_type = artifact.metadata&.dig("concept_type")
+          heading = concept_type ? "#{title} (#{concept_type})" : title
+          body_chunk = artifact.active_ordered_chunks.find { |chunk| chunk.chunk_type == "definition" }
+          body = body_chunk&.content.presence || artifact.content.to_s
+          chunk_count += 1 if body_chunk
+          "#### #{heading}\n#{body.tr("\n", " ").truncate(400)}"
+        end
+
+        artifact_section(
+          name: :okf,
+          heading: "Curated Knowledge (OKF bundle)",
+          content: lines.join("\n\n"),
+          artifacts: artifacts,
+          chunk_count: chunk_count
         )
       end
 
@@ -292,6 +317,7 @@ module Knowledge
         {
           business_context: "business_context",
           documents: "reference_document",
+          okf: "okf_concept",
           routes: "route",
           symbols: "symbol",
           hotspots: "churn_hotspot",
@@ -357,6 +383,12 @@ module Knowledge
             .includes(:active_ordered_chunks)
             .order(:identifier)
             .limit(10)
+            .to_a
+        elsif type == "okf_concept"
+          scope
+            .includes(:active_ordered_chunks)
+            .order(:identifier)
+            .limit(20)
             .to_a
         elsif type == "churn_hotspot"
           # Order by hotspot rank (lower = hotter), with nulls last, then by
