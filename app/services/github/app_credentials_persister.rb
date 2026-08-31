@@ -98,19 +98,9 @@ module Github
 
     def write_to_credentials(payload)
       existing = credentials.config || {}
-      merged = deep_merge(existing, payload.transform_keys(&:to_s))
-      yaml = YAML.dump(stringify_keys(merged))
+      merged = existing.deep_merge(payload.transform_keys(&:to_s))
+      yaml = YAML.dump(merged.deep_stringify_keys)
       credentials.write(yaml)
-    end
-
-    def deep_merge(left, right)
-      left.deep_merge(right)
-    end
-
-    def stringify_keys(hash)
-      hash.each_with_object({}) do |(key, value), acc|
-        acc[key.to_s] = value.is_a?(Hash) ? stringify_keys(value) : value
-      end
     end
 
     def manual_instructions(payload)
