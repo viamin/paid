@@ -102,6 +102,13 @@ RSpec.describe AccountActivityEvent do
       expect(event.description).to eq("Retried agent run #42 -> #99")
     end
 
+    it "describes agent-run follow-up issue creation" do
+      event = described_class.new(action: "agent_run.followup_issue_created", metadata: {
+        "agent_run_id" => 42, "followup_github_number" => 88
+      })
+      expect(event.description).to eq("Filed follow-up issue #88 for agent run #42")
+    end
+
     it "describes issue search audit events" do
       event = described_class.new(action: "search_issues.executed", metadata: {
         "project_name" => "paid", "query" => "duplicate"
@@ -158,6 +165,13 @@ RSpec.describe AccountActivityEvent do
     it "returns empty array for run events" do
       event = described_class.new(action: "agent_run.created")
       expect(event.detail_lines).to eq([])
+    end
+
+    it "returns parent issue details for follow-up issue audit events" do
+      event = described_class.new(action: "agent_run.followup_issue_created", metadata: {
+        "parent_github_number" => 7
+      })
+      expect(event.detail_lines).to eq([ "Parent issue: #7" ])
     end
 
     it "returns query details for issue search audit events" do
