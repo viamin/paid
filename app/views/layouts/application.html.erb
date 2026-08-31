@@ -60,7 +60,7 @@
           </div>
 
           <%# Desktop navigation %>
-          <div class="hidden lg:flex lg:items-center lg:space-x-4">
+          <div class="hidden lg:flex lg:items-center lg:space-x-4" data-controller="disclosure-group">
             <% if user_signed_in? %>
               <% nav_link_class = "whitespace-nowrap text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-white" %>
               <% nav_trigger_class = "inline-flex items-center gap-1 whitespace-nowrap text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-white" %>
@@ -87,115 +87,96 @@
               <% end %>
 
               <%# Insights dropdown: quality, prompting, and knowledge %>
-              <div class="relative" data-controller="dropdown">
-                <button type="button"
-                        id="insights-menu-button"
-                        class="<%= nav_trigger_class %>"
-                        aria-haspopup="menu"
-                        aria-expanded="false"
-                        aria-controls="insights-menu"
-                        data-action="dropdown#toggle"
-                        data-dropdown-target="button">
+              <details id="insights-menu-disclosure" class="relative group" data-disclosure-group-target="disclosure">
+                <summary id="insights-menu-button"
+                         aria-haspopup="menu"
+                         aria-controls="insights-menu"
+                         class="<%= nav_trigger_class %> list-none [&::-webkit-details-marker]:hidden">
                   <span>Insights</span>
                   <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                     <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.168l3.71-3.938a.75.75 0 1 1 1.08 1.04l-4.25 4.5a.75.75 0 0 1-1.08 0l-4.25-4.5a.75.75 0 0 1 .02-1.06Z" clip-rule="evenodd" />
                   </svg>
-                </button>
+                </summary>
                 <div id="insights-menu"
-                     class="<%= nav_menu_class %>"
+                     class="<%= nav_menu_class %> group-open:block"
                      role="menu"
-                     aria-labelledby="insights-menu-button"
-                     data-dropdown-target="menu">
-                  <%= link_to "Quality", quality_dashboard_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close" } %>
-                  <%= link_to "Prompts", prompts_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close" } %>
-                  <%= link_to "Prompt Reviews", prompt_reviews_queue_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close" } %>
-                  <%= link_to "Knowledge", knowledge_search_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close" } %>
+                     aria-labelledby="insights-menu-button">
+                  <%= link_to "Quality", quality_dashboard_path, class: nav_menu_item_class, role: "menuitem" %>
+                  <%= link_to "Prompts", prompts_path, class: nav_menu_item_class, role: "menuitem" %>
+                  <%= link_to "Prompt Reviews", prompt_reviews_queue_path, class: nav_menu_item_class, role: "menuitem" %>
+                  <%= link_to "Knowledge", knowledge_search_path, class: nav_menu_item_class, role: "menuitem" %>
                 </div>
-              </div>
+              </details>
 
               <%# Operations dropdown: infrastructure, integrations, and incidents %>
-              <div class="relative" data-controller="dropdown">
-                <button type="button"
-                        id="operations-menu-button"
-                        class="<%= nav_trigger_class %>"
-                        aria-haspopup="menu"
-                        aria-expanded="false"
-                        aria-controls="operations-menu"
-                        data-action="dropdown#toggle"
-                        data-dropdown-target="button">
+              <details id="operations-menu-disclosure" class="relative group" data-disclosure-group-target="disclosure">
+                <summary id="operations-menu-button"
+                         aria-haspopup="menu"
+                         aria-controls="operations-menu"
+                         class="<%= nav_trigger_class %> list-none [&::-webkit-details-marker]:hidden">
                   <span>Operations</span>
                   <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                     <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.168l3.71-3.938a.75.75 0 1 1 1.08 1.04l-4.25 4.5a.75.75 0 0 1-1.08 0l-4.25-4.5a.75.75 0 0 1 .02-1.06Z" clip-rule="evenodd" />
                   </svg>
-                </button>
+                </summary>
                 <div id="operations-menu"
-                     class="<%= nav_menu_class %>"
+                     class="<%= nav_menu_class %> group-open:block"
                      role="menu"
-                     aria-labelledby="operations-menu-button"
-                     data-dropdown-target="menu">
-                  <%= link_to "Runners", runners_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close" } %>
+                     aria-labelledby="operations-menu-button">
+                  <%= link_to "Runners", runners_path, class: nav_menu_item_class, role: "menuitem" %>
                   <% if policy(ServiceContainer).index? %>
-                    <%= link_to "Services", service_containers_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close" } %>
+                    <%= link_to "Services", service_containers_path, class: nav_menu_item_class, role: "menuitem" %>
                   <% end %>
-                  <%= link_to "Integrations", integrations_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close" } %>
-                  <%= link_to "Marketplace", marketplace_entries_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close" } %>
+                  <%= link_to "Integrations", integrations_path, class: nav_menu_item_class, role: "menuitem" %>
+                  <%= link_to "Marketplace", marketplace_entries_path, class: nav_menu_item_class, role: "menuitem" %>
                   <% if policy(CodexLoginSession.new(account: current_account)).new? %>
-                    <%= link_to "Codex Login", new_codex_login_session_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close" } %>
+                    <%= link_to "Codex Login", new_codex_login_session_path, class: nav_menu_item_class, role: "menuitem" %>
                   <% end %>
                   <% if policy(ExceptionIncident).index? %>
-                    <%= link_to "Exception incidents", exception_incidents_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close" } %>
+                    <%= link_to "Exception incidents", exception_incidents_path, class: nav_menu_item_class, role: "menuitem" %>
                   <% end %>
                 </div>
-              </div>
+              </details>
 
               <%= render "notifications/bell", account: current_account %>
               <% user_menu_button_id = "user-menu-button" %>
               <% user_menu_id = "user-menu" %>
-              <div class="relative" data-controller="dropdown">
-                <button type="button"
-                        id="<%= user_menu_button_id %>"
-                        class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm text-gray-700 hover:bg-gray-50 hover:text-gray-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white"
-                        aria-haspopup="menu"
-                        aria-expanded="false"
-                        aria-controls="<%= user_menu_id %>"
-                        data-action="dropdown#toggle"
-                        data-dropdown-target="button">
+              <details id="user-menu-disclosure" class="relative group" data-disclosure-group-target="disclosure">
+                <summary id="<%= user_menu_button_id %>"
+                         aria-haspopup="menu"
+                         aria-controls="<%= user_menu_id %>"
+                         class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm text-gray-700 hover:bg-gray-50 hover:text-gray-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 list-none [&::-webkit-details-marker]:hidden dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white">
                   <span class="max-w-[12rem] truncate"><%= current_user.email %></span>
                   <svg class="h-4 w-4 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                     <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.168l3.71-3.938a.75.75 0 1 1 1.08 1.04l-4.25 4.5a.75.75 0 0 1-1.08 0l-4.25-4.5a.75.75 0 0 1 .02-1.06Z" clip-rule="evenodd" />
                   </svg>
-                </button>
+                </summary>
                 <div id="<%= user_menu_id %>"
-                     class="absolute right-0 top-full z-10 mt-2 hidden min-w-48 overflow-hidden rounded-md bg-white py-1 shadow-lg ring-1 ring-black/5 dark:bg-gray-800 dark:ring-white/10"
+                     class="absolute right-0 top-full z-10 mt-2 hidden min-w-48 overflow-hidden rounded-md bg-white py-1 shadow-lg ring-1 ring-black/5 group-open:block dark:bg-gray-800 dark:ring-white/10"
                      role="menu"
-                     aria-labelledby="<%= user_menu_button_id %>"
-                     data-dropdown-target="menu">
+                     aria-labelledby="<%= user_menu_button_id %>">
                   <%= link_to "Settings",
                     edit_user_settings_path,
                     class: "block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-700",
-                    role: "menuitem",
-                    data: { action: "dropdown#close" } %>
+                    role: "menuitem" %>
                   <%= link_to "Account",
                     account_path,
                     class: "block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-700",
-                    role: "menuitem",
-                    data: { action: "dropdown#close" } %>
+                    role: "menuitem" %>
                   <% if policy(current_account).update? %>
                     <%= link_to "Tenant",
                       edit_tenant_configuration_path,
                       class: "block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-700",
-                      role: "menuitem",
-                      data: { action: "dropdown#close" } %>
+                      role: "menuitem" %>
                   <% end %>
                   <%= button_to "Sign out",
                     destroy_user_session_path,
                     method: :delete,
                     form_class: "w-full",
                     class: "block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-700",
-                    role: "menuitem",
-                    form: { data: { action: "submit->dropdown#close" } } %>
+                    role: "menuitem" %>
                 </div>
-              </div>
+              </details>
             <% else %>
               <%= link_to "Sign in", new_user_session_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-white" %>
               <%= link_to "Sign up", new_user_registration_path, class: "ml-4 inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>

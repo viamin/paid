@@ -7,17 +7,11 @@ import { application } from "./application"
 import AgentRunActionsController from "./agent_run_actions_controller"
 application.register("agent-run-actions", AgentRunActionsController)
 
-import CheckboxToggleController from "./checkbox_toggle_controller"
-application.register("checkbox-toggle", CheckboxToggleController)
-
-import ChatController from "./chat_controller"
-application.register("chat", ChatController)
-
 import ChartkickController from "./chartkick_controller"
 application.register("chartkick", ChartkickController)
 
-import CollapsiblePanelController from "./collapsible_panel_controller"
-application.register("collapsible-panel", CollapsiblePanelController)
+import ChatController from "./chat_controller"
+application.register("chat", ChatController)
 
 import ChatInputController from "./chat_input_controller"
 application.register("chat-input", ChatInputController)
@@ -34,8 +28,14 @@ application.register("chat-session-list", ChatSessionListController)
 import ChatStreamController from "./chat_stream_controller"
 application.register("chat-stream", ChatStreamController)
 
+import CheckboxToggleController from "./checkbox_toggle_controller"
+application.register("checkbox-toggle", CheckboxToggleController)
+
 import ClarifyingQuestionsController from "./clarifying_questions_controller"
 application.register("clarifying-questions", ClarifyingQuestionsController)
+
+import CollapsiblePanelController from "./collapsible_panel_controller"
+application.register("collapsible-panel", CollapsiblePanelController)
 
 import ConfirmDeleteController from "./confirm_delete_controller"
 application.register("confirm-delete", ConfirmDeleteController)
@@ -43,8 +43,8 @@ application.register("confirm-delete", ConfirmDeleteController)
 import DashboardFramesController from "./dashboard_frames_controller"
 application.register("dashboard-frames", DashboardFramesController)
 
-import DropdownController from "./dropdown_controller"
-application.register("dropdown", DropdownController)
+import DisclosureGroupController from "./disclosure_group_controller"
+application.register("disclosure-group", DisclosureGroupController)
 
 import ElapsedTimeController from "./elapsed_time_controller"
 application.register("elapsed-time", ElapsedTimeController)
@@ -85,14 +85,14 @@ application.register("notification-dropdown", NotificationDropdownController)
 import ProjectSettingsFormController from "./project_settings_form_controller"
 application.register("project-settings-form", ProjectSettingsFormController)
 
-import RunnerFormController from "./runner_form_controller"
-application.register("runner-form", RunnerFormController)
-
 import RepositorySelectorController from "./repository_selector_controller"
 application.register("repository-selector", RepositorySelectorController)
 
 import RetryDockerHostController from "./retry_docker_host_controller"
 application.register("retry-docker-host", RetryDockerHostController)
+
+import RunnerFormController from "./runner_form_controller"
+application.register("runner-form", RunnerFormController)
 
 import RunnerWeightsController from "./runner_weights_controller"
 application.register("runner-weights", RunnerWeightsController)
