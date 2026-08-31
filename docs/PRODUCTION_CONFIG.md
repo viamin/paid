@@ -68,6 +68,42 @@ MAX_ACCOUNT_PROVISIONINGS_PER_WINDOW=10
 MAX_PROJECT_PROVISIONINGS_PER_WINDOW=5
 ```
 
+### Optional infrastructure spend thresholds
+
+Infrastructure spend thresholds are **optional** Paid-owned safety controls.
+They default to `0` (disabled) and are not required for boot — unlike the
+resource and provisioning-rate ceilings above — but once set to a positive
+integer they are enforced fail-closed on the same pre-provisioning admission
+path (see [`docs/intent/infrastructure-spend-thresholds/`](intent/infrastructure-spend-thresholds/)
+and [RDR-061](rdrs/RDR-061-infrastructure-safety-and-audit.md)).
+
+| Category | Settings | Purpose |
+|---|---|---|
+| Host pricing | `INFRA_SPEND_RATE_CENTS_PER_HOUR` | Host-priced hourly rate used to account and project infrastructure spend. A per-host override uses the same key with a `__<HOST>` suffix (e.g. `INFRA_SPEND_RATE_CENTS_PER_HOUR__GPU_HOST_1`). |
+| Projection horizon | `INFRA_SPEND_PROJECTION_SECONDS` | How far ahead the candidate run's projected spend reaches, clipped to the remaining window. Defaults to `3600`. |
+| Global thresholds | `MAX_GLOBAL_INFRA_SPEND_HOURLY_CENTS`, `MAX_GLOBAL_INFRA_SPEND_DAILY_CENTS` | A projected breach parks queued runs until the window resets. A **daily** global breach escalates to an automatic global emergency `ExecutionControl` that clears itself once the daily window recovers. |
+| Account thresholds | `MAX_ACCOUNT_INFRA_SPEND_HOURLY_CENTS`, `MAX_ACCOUNT_INFRA_SPEND_DAILY_CENTS` | A projected breach parks the account's queued runs until the window resets. |
+| Project thresholds | `MAX_PROJECT_INFRA_SPEND_HOURLY_CENTS`, `MAX_PROJECT_INFRA_SPEND_DAILY_CENTS` | A projected breach parks the project's queued runs until the window resets. |
+| Runner thresholds | `MAX_RUNNER_INFRA_SPEND_HOURLY_CENTS`, `MAX_RUNNER_INFRA_SPEND_DAILY_CENTS` | A projected breach fails that runner fast on the queue path and reroutes to another healthy runner when available. |
+
+```env
+INFRA_SPEND_RATE_CENTS_PER_HOUR=90
+INFRA_SPEND_PROJECTION_SECONDS=3600
+MAX_GLOBAL_INFRA_SPEND_HOURLY_CENTS=5000
+MAX_GLOBAL_INFRA_SPEND_DAILY_CENTS=50000
+MAX_ACCOUNT_INFRA_SPEND_HOURLY_CENTS=1000
+MAX_ACCOUNT_INFRA_SPEND_DAILY_CENTS=10000
+MAX_PROJECT_INFRA_SPEND_HOURLY_CENTS=250
+MAX_PROJECT_INFRA_SPEND_DAILY_CENTS=2500
+MAX_RUNNER_INFRA_SPEND_HOURLY_CENTS=100
+MAX_RUNNER_INFRA_SPEND_DAILY_CENTS=1000
+```
+
+Provider quotas, budgets, and billing alarms remain **defense-in-depth
+backstops**: they are expected to exist, but Paid enforces its own thresholds
+before provider provisioning starts rather than relying on provider-side
+controls as the primary enforcement model.
+
 ### Failure message
 
 When a required setting is missing, boot aborts with a message like:

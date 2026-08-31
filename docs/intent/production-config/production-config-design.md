@@ -57,6 +57,15 @@ It runs from an `after_initialize` hook in
   Rake top-level tasks plus ARGV) and skips them, so the image build is not
   falsely blocked. Runtime processes and deploy-time `db:*` tasks carry secrets
   and are validated.
+- **Infrastructure spend thresholds are optional, not boot-required.** The
+  aggregate resource and provisioning-rate ceilings are required so capacity
+  admission fails closed in every production deploy, but infrastructure spend
+  thresholds (`MAX_*_INFRA_SPEND_*_CENTS` and the `INFRA_SPEND_*` pricing /
+  projection settings) default to disabled (`0`) and are deliberately absent
+  from the boot-required set: spend limits are an operator choice layered onto
+  admission by the [`infrastructure-spend-thresholds`](../infrastructure-spend-thresholds/)
+  segment. The complete optional variable list lives in
+  `docs/PRODUCTION_CONFIG.md`.
 - **No generic config framework.** Simple explicit checks only; no
   dry-validation or RailsConfig gem (per the issue's non-goals).
 
