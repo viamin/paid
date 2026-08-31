@@ -807,3 +807,24 @@
   asserts the guide names the `fchmodat2` root cause and the `docker save` /
   `docker load` transfer path.
   *Code:* `docs/guides/remote-docker-setup.md`
+
+- [x] **CONTAINER-RUNTIME-047** — Auto-created `paid_agent` networks SHALL NOT
+  be marked Docker-internal when the owning backend is remote, even in
+  production, because remote proxy-mode containers must reach
+  `PAID_PROXY_EXTERNAL_URL` on the Paid control plane and a Docker-internal
+  bridge network blocks that callback. `NetworkPolicy.create_network` (via
+  `NetworkPolicy.ensure_network!`) SHALL only apply the production-only
+  `Internal: true` / masquerade-disabled config to non-remote backends; the
+  in-container firewall continues to provide the egress restriction layer for
+  remote proxy-mode runs. `NetworkPolicy.ensure_network!` SHALL additionally
+  detect the broken pre-existing state where a `paid_agent` network was
+  already created with `Internal: true` on a remote backend, and SHALL raise
+  a `NetworkPolicy::Error` instructing the operator to remove the network
+  (Docker does not allow toggling `Internal` on an existing network). This
+  mirrors the guided setup wizard's
+  `DockerHosts::SetupActionRunner#docker_network_create_config`, which never
+  applied `Internal` for any backend, and the remote Docker setup guide, which
+  documents creating `paid_agent` as non-internal on remote hosts (issue
+  `#3545`).
+  *Tests:* `spec/services/network_policy_spec.rb`
+  *Code:* `NetworkPolicy.create_network`, `NetworkPolicy.ensure_network!`

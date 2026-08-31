@@ -37,6 +37,107 @@ RSpec.describe NetworkPolicy, :no_db do
         expect(backend).not_to receive(:create_network)
         described_class.ensure_network!
       end
+
+      context "when the existing network is Docker-internal on a remote backend" do
+        # @spec CONTAINER-RUNTIME-047
+        let(:internal_network) do
+          instance_double(
+            Docker::Network,
+            info: {
+              "IPAM" => {
+                "Config" => [ { "Subnet" => "172.28.0.0/16", "Gateway" => "172.28.0.1" } ]
+              },
+              "Internal" => true
+            }
+          )
+        end
+        let(:remote_backend) do
+          instance_double(
+            Containers::Backends::RemoteDocker,
+            identifier: "worker-1",
+            remote?: true
+          )
+        end
+
+        before do
+          allow(remote_backend).to receive(:get_network)
+            .with(described_class::NETWORK_NAME)
+            .and_return(internal_network)
+        end
+
+        it "raises NetworkPolicy::Error with remediation guidance" do
+          expect { described_class.ensure_network!(backend: remote_backend) }
+            .to raise_error(
+              described_class::Error,
+              /Docker network 'paid_agent' on worker-1 is Docker-internal.*PAID_PROXY_EXTERNAL_URL.*docker network rm paid_agent/
+            )
+        end
+
+        it "does not create a replacement network automatically" do
+          expect(remote_backend).not_to receive(:create_network)
+          expect { described_class.ensure_network!(backend: remote_backend) }
+            .to raise_error(described_class::Error)
+        end
+
+        it "logs the rejection" do
+          expect(Rails.logger).to receive(:error).with(
+            hash_including(
+              message: "network_policy.reject_internal_remote_network",
+              network: described_class::NETWORK_NAME,
+              host: "worker-1"
+            )
+          )
+          expect { described_class.ensure_network!(backend: remote_backend) }
+            .to raise_error(described_class::Error)
+        end
+      end
+
+      context "when the existing network is non-internal on a remote backend" do
+        # @spec CONTAINER-RUNTIME-047
+        let(:remote_backend) do
+          instance_double(
+            Containers::Backends::RemoteDocker,
+            identifier: "worker-1",
+            remote?: true
+          )
+        end
+
+        before do
+          allow(remote_backend).to receive(:get_network)
+            .with(described_class::NETWORK_NAME)
+            .and_return(mock_network)
+        end
+
+        it "returns the existing non-internal network on a remote backend" do
+          result = described_class.ensure_network!(backend: remote_backend)
+          expect(result).to eq(mock_network)
+        end
+      end
+
+      context "when the existing network is Docker-internal on a local backend" do
+        let(:internal_network) do
+          instance_double(
+            Docker::Network,
+            info: {
+              "IPAM" => {
+                "Config" => [ { "Subnet" => "172.28.0.0/16", "Gateway" => "172.28.0.1" } ]
+              },
+              "Internal" => true
+            }
+          )
+        end
+
+        before do
+          allow(backend).to receive(:get_network)
+            .with(described_class::NETWORK_NAME)
+            .and_return(internal_network)
+        end
+
+        it "returns the existing internal network on a local backend" do
+          result = described_class.ensure_network!
+          expect(result).to eq(internal_network)
+        end
+      end
     end
 
     context "when network does not exist" do
@@ -87,6 +188,23 @@ RSpec.describe NetworkPolicy, :no_db do
           ).and_return(mock_network)
 
           described_class.ensure_network!
+        end
+      end
+
+      context "when in production with a remote backend" do
+        # @spec CONTAINER-RUNTIME-047
+        it "creates a non-internal network so remote containers can reach PAID_PROXY_EXTERNAL_URL" do
+          allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("production"))
+          remote_backend = instance_double(Containers::Backends::RemoteDocker, identifier: "worker-1", remote?: true)
+          allow(remote_backend).to receive(:get_network)
+            .with(described_class::NETWORK_NAME)
+            .and_raise(Docker::Error::NotFoundError)
+          expect(remote_backend).to receive(:create_network).with(
+            described_class::NETWORK_NAME,
+            hash_not_including("Internal" => true)
+          ).and_return(mock_network)
+
+          described_class.ensure_network!(backend: remote_backend)
         end
       end
 
