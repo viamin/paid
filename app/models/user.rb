@@ -10,6 +10,7 @@ class User < ApplicationRecord
   has_many :issue_merge_subscriptions, dependent: :destroy
   has_many :created_github_tokens, class_name: "GithubToken", foreign_key: :created_by_id, dependent: :nullify, inverse_of: :created_by
   has_many :created_integration_credentials, class_name: "IntegrationCredential", foreign_key: :created_by_id, dependent: :nullify, inverse_of: :created_by
+  has_many :created_login_sessions, class_name: "LoginSession", foreign_key: :created_by_id, dependent: :destroy, inverse_of: :created_by
   has_many :created_claude_login_sessions, class_name: "ClaudeLoginSession", foreign_key: :created_by_id, dependent: :destroy, inverse_of: :created_by
   has_many :created_codex_login_sessions, class_name: "CodexLoginSession", foreign_key: :created_by_id, dependent: :destroy, inverse_of: :created_by
   has_many :created_runner_credentials, class_name: "RunnerCredential", foreign_key: :created_by_id, dependent: :nullify, inverse_of: :created_by
