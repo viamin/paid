@@ -989,7 +989,7 @@ module Containers
         begin
           stop_container(force: force)
           backend.delete_container(container, force: force, v: true)
-          preview_tunnel_released = release_preview_tunnel_reservation!
+          preview_tunnel_released = release_preview_tunnel_port_reservation!
           log_system("container.cleanup.success")
           ExecutionAuditEvents::Lifecycle.record(
             event_name: "execution.resource_cleanup_succeeded",
@@ -1023,7 +1023,7 @@ module Containers
           )
           begin
             backend.delete_container(container, force: true, v: true)
-            preview_tunnel_released = release_preview_tunnel_reservation!
+            preview_tunnel_released = release_preview_tunnel_port_reservation!
             ExecutionAuditEvents::Lifecycle.record(
               event_name: "execution.resource_cleanup_succeeded",
               actor_id: "containers.provision",
@@ -1039,7 +1039,7 @@ module Containers
         end
       end
 
-      preview_tunnel_released ||= release_preview_tunnel_reservation!
+      preview_tunnel_released ||= release_preview_tunnel_port_reservation!
       log_system("container.preview_tunnel_port_released", tunnel_port: preview_tunnel.tunnel_port) if preview_tunnel_released
       @container = nil
       cleanup_workspace_volume unless preserve_workspace_volume
@@ -2628,7 +2628,7 @@ module Containers
       "rathole --client #{config_path} > #{Shellwords.escape(log_path)} 2>&1 &"
     end
 
-    def release_preview_tunnel_reservation!
+    def release_preview_tunnel_port_reservation!
       return false unless preview_tunnel?
 
       Previews::TunnelManager.release_port(key: preview_tunnel.session_token)
