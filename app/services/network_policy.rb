@@ -419,11 +419,18 @@ class NetworkPolicy
       ENV["HOME"].presence || (Dir.respond_to?(:home) ? Dir.home : nil)
     end
 
+    # Remote backends are excluded from the production Docker-internal
+    # config: remote proxy-mode containers must call back to
+    # PAID_PROXY_EXTERNAL_URL on the Paid control plane, and a
+    # Docker-internal bridge network blocks that callback. The in-container
+    # firewall still provides the egress restriction layer (issue #3545).
+    # @spec CONTAINER-RUNTIME-047
     def create_network(backend:)
       Rails.logger.info(
         message: "network_policy.create_network",
         network: NETWORK_NAME,
-        subnet: NETWORK_SUBNET
+        subnet: NETWORK_SUBNET,
+        remote: backend.remote?
       )
 
       config = {
@@ -433,7 +440,7 @@ class NetworkPolicy
         }
       }
 
-      if Rails.env.production?
+      if Rails.env.production? && !backend.remote?
         config["Internal"] = true
         config["Options"] = {
           "com.docker.network.bridge.enable_ip_masquerade" => "false"

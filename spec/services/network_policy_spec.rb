@@ -90,6 +90,23 @@ RSpec.describe NetworkPolicy, :no_db do
         end
       end
 
+      context "when in production with a remote backend" do
+        # @spec CONTAINER-RUNTIME-047
+        it "creates a non-internal network so remote containers can reach PAID_PROXY_EXTERNAL_URL" do
+          allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("production"))
+          remote_backend = instance_double(Containers::Backends::RemoteDocker, identifier: "worker-1", remote?: true)
+          allow(remote_backend).to receive(:get_network)
+            .with(described_class::NETWORK_NAME)
+            .and_raise(Docker::Error::NotFoundError)
+          expect(remote_backend).to receive(:create_network).with(
+            described_class::NETWORK_NAME,
+            hash_not_including("Internal" => true)
+          ).and_return(mock_network)
+
+          described_class.ensure_network!(backend: remote_backend)
+        end
+      end
+
       it "returns the newly created network" do
         result = described_class.ensure_network!
         expect(result).to eq(mock_network)
