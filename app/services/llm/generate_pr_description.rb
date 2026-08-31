@@ -29,10 +29,13 @@ module Llm
     MAX_ATTEMPTS = 3
     RETRY_DELAYS = [ 2, 4 ].freeze
 
+    class RequestFailedError < StandardError; end
+
     RETRYABLE_ERRORS = [
       AgentHarness::ProviderError,
       AgentHarness::TimeoutError,
-      AgentHarness::RateLimitError
+      AgentHarness::RateLimitError,
+      RequestFailedError
     ].freeze
 
     PROMPT_SLUG = "generation.pr_description"
@@ -88,22 +91,19 @@ module Llm
     private
 
     def request_description
-      MAX_ATTEMPTS.times do |attempt|
-        outcome = attempt_single_request
-        return outcome[:description] if outcome[:done]
-
-        break if attempt == MAX_ATTEMPTS - 1
-
-        log_retry(attempt, outcome[:error])
-        sleep RETRY_DELAYS[attempt] || RETRY_DELAYS.last
+      RetryHelper.with_retries(
+        max_attempts: MAX_ATTEMPTS,
+        retryable: ->(error) { RETRYABLE_ERRORS.any? { |klass| error.is_a?(klass) } },
+        delay_fn: ->(attempt, error) { RETRY_DELAYS[attempt] || RETRY_DELAYS.last },
+        sleep_fn: method(:sleep)
+      ) do
+        attempt_single_request
       end
-
+    rescue *RETRYABLE_ERRORS => e
+      log_retry_exhausted(e)
       nil
     end
 
-    # Returns a hash with :done (true when the result is final — success or
-    # empty-but-successful) and :description (the text, or nil). When :done
-    # is false the caller should retry.
     def attempt_single_request
       response = AgentHarness.send_message(
         prompt,
@@ -115,20 +115,17 @@ module Llm
       )
 
       if response.success?
-        { done: true, description: normalize_output(response.output).presence }
+        normalize_output(response.output).presence
       else
-        { done: false, error: "LLM response unsuccessful: #{response.error}" }
+        raise RequestFailedError, response.error
       end
-    rescue *RETRYABLE_ERRORS => e
-      { done: false, error: "#{e.class.name}: #{e.message}" }
     end
 
-    def log_retry(attempt, error)
+    def log_retry_exhausted(error)
       Rails.logger.info(
-        message: "llm.generate_pr_description_retrying",
-        attempt: attempt + 2,
+        message: "llm.generate_pr_description_retries_exhausted",
         max_attempts: MAX_ATTEMPTS,
-        error: error
+        error: "#{error.class.name}: #{error.message}"
       )
     end
 

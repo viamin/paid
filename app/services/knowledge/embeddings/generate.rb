@@ -99,9 +99,12 @@ module Knowledge
       private
 
       def request_embeddings(texts)
-        retries = 0
-
-        begin
+        RetryHelper.with_retries(
+          max_attempts: MAX_RETRIES,
+          retryable: ->(error) { retryable_error?(error) },
+          delay_fn: ->(attempt, error) { retry_delay(error, attempt) },
+          sleep_fn: method(:sleep)
+        ) do
           AgentHarness.embed(
             texts,
             model: model,
@@ -111,28 +114,22 @@ module Knowledge
             headers: request_headers,
             timeout:
           )
-        rescue AgentHarness::AuthenticationError => e
-          raise EmbeddingError, "Embedding API request failed: #{e.message}"
-        rescue AgentHarness::RateLimitError, AgentHarness::TimeoutError => e
-          retry_request(error: e, retries: retries) { |count| retries = count }
-          retry
-        rescue AgentHarness::ProviderError => e
-          raise EmbeddingError, "Embedding API request failed: #{e.message}" unless retryable_provider_error?(e)
-
-          retry_request(error: e, retries: retries) { |count| retries = count }
-          retry
         end
+      rescue StandardError => e
+        message = if retryable_error?(e)
+                    "Embedding API request failed after #{MAX_RETRIES} retries: #{e.message}"
+        else
+                    "Embedding API request failed: #{e.message}"
+        end
+        raise EmbeddingError, message
       end
 
-      def retry_request(error:, retries:)
-        retries += 1
-        if retries <= MAX_RETRIES
-          sleep(retry_delay(error, retries))
-          yield(retries)
-          return
-        end
+      def retryable_error?(error)
+        return true if error.is_a?(AgentHarness::RateLimitError)
+        return true if error.is_a?(AgentHarness::TimeoutError)
+        return retryable_provider_error?(error) if error.is_a?(AgentHarness::ProviderError)
 
-        raise EmbeddingError, "Embedding API request failed after #{MAX_RETRIES} retries: #{error.message}"
+        false
       end
 
       # Respects Retry-After header when present, otherwise uses exponential backoff.
