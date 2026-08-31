@@ -56,15 +56,22 @@ and logged as `capacity.infrastructure_spend_rate_missing`, not guessed.
 
 ## Threshold Model
 
-Threshold values come from `Capacity::InfrastructureLimits` and are optional:
+Threshold values come from `Capacity::InfrastructureLimits` and are optional
+(`0`/unset disables the check; they are not part of the boot-required
+production set — see `docs/PRODUCTION_CONFIG.md`):
 
-- global hourly / daily thresholds
-- account hourly / daily thresholds
-- project hourly / daily thresholds
-- runner hourly / daily thresholds
+- global hourly / daily thresholds — `MAX_GLOBAL_INFRA_SPEND_HOURLY_CENTS`,
+  `MAX_GLOBAL_INFRA_SPEND_DAILY_CENTS`
+- account hourly / daily thresholds — `MAX_ACCOUNT_INFRA_SPEND_HOURLY_CENTS`,
+  `MAX_ACCOUNT_INFRA_SPEND_DAILY_CENTS`
+- project hourly / daily thresholds — `MAX_PROJECT_INFRA_SPEND_HOURLY_CENTS`,
+  `MAX_PROJECT_INFRA_SPEND_DAILY_CENTS`
+- runner hourly / daily thresholds — `MAX_RUNNER_INFRA_SPEND_HOURLY_CENTS`,
+  `MAX_RUNNER_INFRA_SPEND_DAILY_CENTS`
 
-Paid also records a configurable projection horizon for the candidate run. The
-guard uses:
+Host pricing comes from `INFRA_SPEND_RATE_CENTS_PER_HOUR` (optionally
+overridden per host with a `__<HOST>` suffix), and the projection horizon from
+`INFRA_SPEND_PROJECTION_SECONDS`. The guard uses:
 
 - accrued spend in the relevant window for already-started runs, plus
 - projected spend for the candidate run over the configured horizon, clipped to
@@ -72,6 +79,11 @@ guard uses:
 
 This is an estimate by design: it is good enough for admission safety without
 pretending to be a billing engine.
+
+Provider quotas, budgets, and billing alarms are **defense-in-depth
+backstops**, not the enforcement model: Paid denies admission itself, before
+provider provisioning starts, and provider-side controls only catch what slips
+past Paid's own thresholds.
 
 ## Enforcement Behavior
 
