@@ -143,15 +143,13 @@ without an action are already correctly classified.
 | `quality_recovery` | Automatic quality recovery failed | `error` (static) | Matches — halted, the automated recovery path itself failed | None |
 | `scanner_wedged_on_pending_review` | PR scanner sees repeated unsatisfied pending-review triggers | `warning` (static) | Matches — degraded (stuck waiting), not yet a hard halt; can still clear when the review bot responds | None |
 | `repeated_no_changes` | Issue's recent runs repeatedly produced no changes | `info` (static) | Matches — informational trend, no run is halted | None |
-| `provider_quota_exhausted` / `runner_quota_exhausted` | Provider/runner rate-limited past a threshold duration | `warning` under 2h, `error` at/over 2h | Matches — rate limiting is a quota window (self-resolving), so `error` here means "halted, self-resolving," consistent with the gate; short rate limits are a degraded posture (`warning`) | None |
+| `runner_quota_exhausted` | Runner rate-limited past a threshold duration | `warning` under 2h, `error` at/over 2h | Matches — rate limiting is a quota window (self-resolving), so `error` here means "halted, self-resolving," consistent with the gate; short rate limits are a degraded posture (`warning`) | None |
 | `stalled_draft_pr` | Draft/restarted PR stuck past a failure-count threshold | `warning` under 10 failures, `error` at/over | Matches — escalating failure count models the halted-vs-degraded line directly | None |
 
 ## What this is not
 
-- **Not a consolidation of near-duplicate rules.** `provider_quota_exhausted`
-  and `runner_quota_exhausted` share identical threshold logic across an STI
-  boundary (`Provider < Runner`); `agent_run_pattern_detector`'s two call
-  sites compute severity differently. Both are pre-existing and out of scope
-  here — flagged for a future cleanup, not part of this taxonomy change.
+- **Not a consolidation of near-duplicate rules.** `agent_run_pattern_detector`'s
+  two call sites compute severity differently. This is pre-existing and out of
+  scope here — flagged for a future cleanup, not part of this taxonomy change.
 - **Not a change to the notifications index page.** `info` notifications stay
   listed and filterable there; only the bell badge count changes.
