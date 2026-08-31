@@ -143,11 +143,15 @@ module ProviderSupport
   end
 
   def aggregated_error_classification_patterns(category)
-    RunnerSupport.aggregated_error_classification_patterns(category)
+    supported_provider_keys.flat_map { |key| error_classification_patterns_for(key, category) }.uniq
   end
 
   def aggregated_noisy_error_patterns
-    RunnerSupport.aggregated_noisy_error_patterns
+    supported_provider_keys.flat_map do |key|
+      harness_provider_for(key).noisy_error_patterns
+    rescue AgentHarness::ConfigurationError, KeyError
+      []
+    end.uniq
   end
 
   def translate_provider_error(provider_key, message)

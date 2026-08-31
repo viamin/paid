@@ -266,6 +266,30 @@ RSpec.describe ProviderSupport do
     end
   end
 
+  describe ".aggregated_error_classification_patterns" do
+    it "excludes the runner-only omp key even when RunnerSupport would include it" do
+      allow(described_class).to receive(:supported_provider_keys).and_return(RunnerSupport::APP_RUNNER_KEYS)
+      allow(described_class).to receive(:error_classification_patterns_for) do |key, category|
+        key == "omp" ? [ "omp-only-pattern" ] : RunnerSupport.error_classification_patterns_for(key, category)
+      end
+
+      patterns = described_class.aggregated_error_classification_patterns(:quota)
+
+      expect(patterns).not_to include("omp-only-pattern")
+    end
+  end
+
+  describe ".aggregated_noisy_error_patterns" do
+    it "excludes the omp-only generic noisy patterns" do
+      omp_patterns = AgentHarness.provider(:omp).noisy_error_patterns
+
+      patterns = described_class.aggregated_noisy_error_patterns
+
+      expect(omp_patterns).not_to be_empty
+      expect(patterns & omp_patterns).to be_empty
+    end
+  end
+
   describe ".proxy_health_check_api_key_for" do
     it "returns :openai for codex" do
       expect(described_class.proxy_health_check_api_key_for("codex")).to eq(:openai)
