@@ -4,7 +4,7 @@ class QualityGateEvent < ApplicationRecord
   EVENT_TYPES = %w[trigger recovery].freeze
 
   belongs_to :project
-  belongs_to :quality_gate_threshold
+  belongs_to :quality_threshold
   belongs_to :quality_metric
 
   validates :event_type, presence: true, inclusion: { in: EVENT_TYPES }

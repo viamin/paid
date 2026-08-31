@@ -7,6 +7,8 @@ module QualityMetrics
   #
   # @example
   #   QualityMetrics::EvaluateGate.call(quality_metric: metric)
+  #
+  # @spec QUALITY-LOOPS-008
   class EvaluateGate
     def self.call(...)
       new(...).call
@@ -20,7 +22,7 @@ module QualityMetrics
     def call
       return [] unless @project
 
-      thresholds = @project.quality_gate_thresholds.enabled
+      thresholds = @project.quality_thresholds.enabled.for_goal(QualityThreshold::ALL_GOALS)
       return [] if thresholds.empty?
 
       events = []
@@ -34,7 +36,7 @@ module QualityMetrics
     private
 
     def evaluate_threshold(threshold)
-      score = score_for(threshold.metric_key)
+      score = score_for(threshold.metric_type)
       return nil if score.nil?
 
       previously_breached = last_event_was_trigger?(threshold)
@@ -46,11 +48,11 @@ module QualityMetrics
       end
     end
 
-    def score_for(metric_key)
-      if metric_key == "composite_score"
+    def score_for(metric_type)
+      if metric_type == "composite_score"
         @quality_metric.composite_score&.to_f
       else
-        @quality_metric.scores&.dig(metric_key)&.to_f
+        @quality_metric.scores&.dig(metric_type)&.to_f
       end
     end
 
@@ -64,13 +66,13 @@ module QualityMetrics
     def create_event(threshold, score, event_type)
       QualityGateEvent.create!(
         project: @project,
-        quality_gate_threshold: threshold,
+        quality_threshold: threshold,
         quality_metric: @quality_metric,
         event_type: event_type,
         score_value: score,
-        threshold_value: threshold.breached_value(score) || threshold.min_threshold || threshold.max_threshold,
+        threshold_value: threshold.breached_value(score) || threshold.min_value || threshold.max_value,
         metadata: {
-          metric_key: threshold.metric_key,
+          metric_type: threshold.metric_type,
           severity: threshold.severity
         }
       )

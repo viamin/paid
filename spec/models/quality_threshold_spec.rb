@@ -55,6 +55,27 @@ RSpec.describe QualityThreshold do
 
       expect(duplicate).not_to be_valid
     end
+
+    it "requires valid severity" do
+      threshold = build(:quality_threshold, :gate, severity: "extreme")
+
+      expect(threshold).not_to be_valid
+    end
+
+    it "requires at least one of min_value or max_value" do
+      threshold = build(:quality_threshold, :gate, min_value: nil, max_value: nil)
+
+      expect(threshold).not_to be_valid
+      expect(threshold.errors[:base]).to include("at least one threshold (min or max) must be set")
+    end
+
+    it "enforces uniqueness of metric_type per project for gate thresholds" do
+      existing = create(:quality_threshold, :gate)
+      duplicate = build(:quality_threshold, :gate,
+        project: existing.project, metric_type: existing.metric_type)
+
+      expect(duplicate).not_to be_valid
+    end
   end
 
   describe ".effective_for" do
@@ -208,6 +229,65 @@ RSpec.describe QualityThreshold do
 
       expect(threshold.breached?(0.4)).to be true
       expect(threshold.breached?(0.5)).to be false
+    end
+
+    it "returns false for a nil score" do
+      threshold = build(:quality_threshold, min_value: 0.5)
+
+      expect(threshold.breached?(nil)).to be false
+    end
+
+    context "with a max_value ceiling (gate thresholds)" do
+      let(:threshold) { build(:quality_threshold, :gate, :with_max, min_value: 0.5, max_value: 0.95) }
+
+      it "returns true when the score is below the minimum" do
+        expect(threshold.breached?(0.3)).to be true
+      end
+
+      it "returns true when the score is above the maximum" do
+        expect(threshold.breached?(0.98)).to be true
+      end
+
+      it "returns false when the score is within range" do
+        expect(threshold.breached?(0.7)).to be false
+      end
+    end
+  end
+
+  describe "#breached_value" do
+    let(:threshold) { build(:quality_threshold, :gate, :with_max, min_value: 0.5, max_value: 0.95) }
+
+    it "returns min_value when the score is below it" do
+      expect(threshold.breached_value(0.3)).to eq(0.5)
+    end
+
+    it "returns max_value when the score is above it" do
+      expect(threshold.breached_value(0.98)).to eq(0.95)
+    end
+
+    it "returns nil when not breached" do
+      expect(threshold.breached_value(0.7)).to be_nil
+    end
+  end
+
+  describe "gate thresholds" do
+    it "are excluded from .effective_for regardless of goal_type filter" do
+      project = create(:project)
+      create(:quality_threshold, :gate, project: project, metric_type: "lint_clean", min_value: 0.9)
+
+      expect(described_class.effective_for(project: project).map(&:metric_type)).not_to include("lint_clean")
+      expect(described_class.effective_for(project: project, goal_type: "create_pr").map(&:metric_type))
+        .not_to include("lint_clean")
+    end
+
+    it "are excluded from .configurable_for" do
+      project = create(:project)
+      create(:quality_threshold, :gate, project: project, metric_type: "lint_clean", min_value: 0.9)
+
+      thresholds = described_class.configurable_for(project: project)
+
+      expect(thresholds.map { |threshold| [ threshold.metric_type, threshold.goal_type ] })
+        .not_to include([ "lint_clean", QualityThreshold::ALL_GOALS ])
     end
   end
 end
