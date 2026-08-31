@@ -56,6 +56,7 @@
               <%# Stacked column chart %>
               <%= column_chart entry[:series],
                     id: "provider-outcomes-chart-#{index}",
+                    caption: "Daily run outcomes for #{entry[:provider]}, stacked by status.",
                     stacked: true,
                     height: "200px",
                     colors: entry[:colors],
@@ -66,9 +67,6 @@
                         y: { stacked: true, ticks: { precision: 0, font: { size: 10 } } }
                       }
                     } %>
-              <%= tag.p(class: "sr-only") do %>
-                Daily run outcomes for <%= entry[:provider] %>, stacked by status.
-              <% end %>
             </div>
           <% end %>
         </div>

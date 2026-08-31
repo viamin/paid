@@ -290,9 +290,11 @@
                 }
               ],
                   id: "decision-volume-chart",
+                  caption: "Daily orchestration decision counts split by successful, no-op, and failed outcomes.",
                   stacked: true,
                   height: "280px",
                   colors: ["#059669", "#d97706", "#e11d48"],
+                  discrete: true,
                   library: {
                     plugins: {
                       legend: {
@@ -313,9 +315,6 @@
                       }
                     }
                   } %>
-              <%= tag.p(class: "sr-only") do %>
-                Daily orchestration decision counts split by successful, no-op, and failed outcomes.
-              <% end %>
             </div>
           <% end %>
         </div>

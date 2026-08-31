@@ -89,11 +89,14 @@
         <div class="mt-4">
           <%= column_chart stats[:daily_run_status_chart],
               id: "daily-runs-chart",
+              caption: "Agent runs per day, stacked by completed and failed status, over the last 30 days.",
               stacked: true,
               height: "320px",
               colors: ["#dc2626", "#16a34a"],
               xtitle: "Day",
               ytitle: "Runs",
+              discrete: true,
+              thousands: ",",
               library: {
                 plugins: {
                   legend: {
@@ -114,9 +117,6 @@
                   }
                 }
               } %>
-          <%= tag.p(class: "sr-only") do %>
-            Agent runs per day, stacked by completed and failed status, over the last 30 days.
-          <% end %>
         </div>
       </div>
     </div>
@@ -145,11 +145,14 @@
           <div class="mt-4">
             <%= column_chart outcome_data[:series],
                 id: "daily-outcome-chart",
+                caption: "PR Creation run outcomes per day for #{outcome_window_label}, grouped by completion status.",
                 stacked: true,
                 height: "280px",
                 colors: outcome_data[:colors],
                 xtitle: "Day",
                 ytitle: "Runs",
+                discrete: true,
+                thousands: ",",
                 library: {
                   plugins: {
                     legend: {
@@ -170,9 +173,6 @@
                     }
                   }
                 } %>
-            <%= tag.p(class: "sr-only") do %>
-              PR Creation run outcomes per day for <%= outcome_window_label %>, grouped by completion status.
-            <% end %>
           </div>
 
           <%# Completion rate % line chart %>
@@ -180,10 +180,12 @@
             <h4 class="text-xs font-medium text-gray-500 uppercase tracking-wider">Daily Completion Rate %</h4>
             <%= line_chart outcome_data[:completion_rate],
                 id: "daily-completion-rate-chart",
+                caption: "Daily PR creation completion rate percentage for #{outcome_window_label}.",
                 height: "180px",
                 colors: ["#16a34a"],
                 xtitle: "Day",
                 ytitle: "Completion %",
+                discrete: true,
                 library: {
                   plugins: {
                     legend: { display: false }
@@ -195,9 +197,6 @@
                     }
                   }
                 } %>
-            <%= tag.p(class: "sr-only") do %>
-              Daily PR creation completion rate percentage for <%= outcome_window_label %>.
-            <% end %>
           </div>
 
           <%# Legend with overall distribution stats %>
@@ -303,6 +302,7 @@
           <% end %>
           <%= line_chart dtc[:series],
               id: "duration-trend-chart",
+              caption: "Daily average and median (p50) duration in seconds for completed PR creation runs.",
               height: "320px",
               colors: ["#4f46e5", "#059669", "#94a3b8"],
               xtitle: "Date",
@@ -315,9 +315,6 @@
                   y: { beginAtZero: true }
                 }
               } %>
-          <%= tag.p(class: "sr-only") do %>
-            Daily average and median (p50) duration in seconds for completed PR creation runs.
-          <% end %>
         </div>
       </div>
     <% else %>

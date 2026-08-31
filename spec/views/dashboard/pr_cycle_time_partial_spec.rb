@@ -21,10 +21,11 @@ RSpec.describe "dashboard/_pr_cycle_time", :no_db, type: :view do
     allow(view).to receive(:dashboard_pr_cycle_time_path).and_return("/dashboard/pr_cycle_time")
   end
 
-  it "renders a captioned accessible text for the cycle time chart" do
+  it "renders a captioned accessible table for the cycle time chart" do
     render partial: "dashboard/pr_cycle_time", locals: { data: data, time_range: "cumulative", outlier_cutoff: 72 }
 
-    captions = Nokogiri::HTML.fragment(rendered).css("p.sr-only").map { |p| p.text.strip }
+    tables = Nokogiri::HTML.fragment(rendered).css("table.sr-only")
+    captions = tables.map { |table| table.at_css("caption")&.text }
 
     expect(captions).to contain_exactly(
       "Daily average and median hours from issue creation to PR merge, with outliers above 72 hours excluded."

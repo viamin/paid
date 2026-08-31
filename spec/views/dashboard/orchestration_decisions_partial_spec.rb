@@ -93,10 +93,11 @@ RSpec.describe "dashboard/_orchestration_decisions", :no_db, type: :view do
     expect(metric_list.text).to include("4 projects contributing context")
   end
 
-  it "renders a captioned accessible text for the decision volume chart" do
+  it "renders a captioned accessible table for the decision volume chart" do
     render partial: "dashboard/orchestration_decisions", locals: { report: report, time_range: "cumulative" }
 
-    captions = Nokogiri::HTML.fragment(rendered).css("p.sr-only").map { |p| p.text.strip }
+    tables = Nokogiri::HTML.fragment(rendered).css("table.sr-only")
+    captions = tables.map { |table| table.at_css("caption")&.text }
 
     expect(captions).to contain_exactly(
       "Daily orchestration decision counts split by successful, no-op, and failed outcomes."
