@@ -333,6 +333,52 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
           .with(project.full_name, issue.github_number, "paid-needs-input")
       end
 
+      # @spec NO-OUTPUT-ISSUE-005
+      it "detects the declaration when a verbose run logs past the comment-excerpt window" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        150.times { |i| agent_run.log!("stdout", "chatty progress line #{i}") }
+        agent_run.log!("stdout", declaration)
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("no_code_required")
+        expect(client).to have_received(:add_comment)
+          .with(project.full_name, issue.github_number, a_string_including(rationale))
+      end
+
+      # @spec NO-OUTPUT-ISSUE-005
+      it "detects the declaration when the run logs heavily after declaring" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        agent_run.log!("stdout", declaration)
+        150.times { |i| agent_run.log!("stdout", "chatty follow-up line #{i}") }
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("no_code_required")
+      end
+
+      # @spec NO-OUTPUT-ISSUE-003
+      it "explains the omission when redaction empties the declared rationale" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        agent_run.log!("stdout", <<~TEXT)
+          <!-- paid:no-code-required -->
+          <!-- no-code-required-rationale-start -->
+          The linked account needs to add more credits, so no code change applies.
+          <!-- no-code-required-rationale-end -->
+        TEXT
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(client).to have_received(:add_comment)
+          .with(project.full_name, issue.github_number, a_string_including("rationale was withheld"))
+      end
+
       # @spec NO-OUTPUT-ISSUE-004
       it "falls through to recommend_close when the marker has no rationale block" do
         issue = create(:issue, :in_progress, project: project)

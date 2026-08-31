@@ -48,3 +48,12 @@
   `needs_input` / `recommend_close` heuristics unchanged.
   *Tests:* `spec/temporal/activities/handle_no_output_issue_run_activity_spec.rb`.
   *Code:* `app/temporal/activities/handle_no_output_issue_run_activity.rb`.
+
+- [x] **NO-OUTPUT-ISSUE-005** — While classifying an issue-scoped no-output
+  run, the system SHALL search for the no-code-required declaration across the
+  same most-recent output window used for error classification, independently
+  of the smaller output excerpt quoted in the GitHub comment, so a verbose run
+  that emits the declaration outside the excerpt window is still classified
+  `no_code_required`.
+  *Tests:* `spec/temporal/activities/handle_no_output_issue_run_activity_spec.rb`.
+  *Code:* `app/temporal/activities/handle_no_output_issue_run_activity.rb`.

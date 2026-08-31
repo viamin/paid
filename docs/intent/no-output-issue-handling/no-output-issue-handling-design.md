@@ -69,6 +69,14 @@ requested work — and the declared rationale is posted as a marker-tagged
 GitHub comment, satisfying the same "no silent stops" visibility guarantee as
 the other no-output outcomes.
 
+The declaration is parsed from the same wide, most-recent output window used
+for error classification — not from the truncated excerpt quoted back in the
+GitHub comment. Agents emit the declaration at the end of a run, so a narrow
+excerpt window would let a verbose run push the declaration out of view and
+silently downgrade an agent-asserted completion to `recommend_close`.
+Classification must never turn on where in the output a signal happened to
+land.
+
 This declaration channel is deliberately narrow: it only recognizes an
 explicit, well-formed marker from the agent's own output. It does not attempt
 to infer issue type from title, labels, or body content (that would be

@@ -32,8 +32,8 @@ module Activities
     NO_CODE_REQUIRED_COMMENT_MARKER = "<!-- paid:no-code-required-complete -->"
     ISSUE_EXPLANATION_COMMENT_FAILURE_KEY = "issue_explanation_comment_failure"
 
-    # Agent-emitted declaration channel (parsed from the agent's own summary
-    # output, never posted to GitHub verbatim). Mirrors the fenced-block
+    # Agent-emitted declaration channel (parsed from the agent's own output,
+    # never posted to GitHub verbatim). Mirrors the fenced-block
     # marker pattern used by ParseCrossRepoIssuePlanActivity.
     NO_CODE_REQUIRED_DECLARATION_PATTERN = /<!--\s*paid:no-code-required\s*-->/.freeze
     NO_CODE_REQUIRED_RATIONALE_PATTERN = /<!--\s*no-code-required-rationale-start\s*-->\n?(.*?)\n?<!--\s*no-code-required-rationale-end\s*-->/m.freeze
@@ -94,7 +94,7 @@ module Activities
     PERMISSION_REQUESTED_PATTERN = /permission requested:/i
     TOOL_PERMISSION_REJECTED_PATTERN = /the user rejected permission to use this specific tool call/i
 
-    def execute(input) # @spec NO-OUTPUT-ISSUE-001 NO-OUTPUT-ISSUE-002 NO-OUTPUT-ISSUE-003 NO-OUTPUT-ISSUE-004
+    def execute(input) # @spec NO-OUTPUT-ISSUE-001 NO-OUTPUT-ISSUE-002 NO-OUTPUT-ISSUE-003 NO-OUTPUT-ISSUE-004 NO-OUTPUT-ISSUE-005
       agent_run_id = input[:agent_run_id]
       output_present = input.fetch(:output_present, false)
 
@@ -109,9 +109,12 @@ module Activities
 
       project = agent_run.project
       client = project.client
+      # Small window: quoted back to humans in the GitHub comment only.
+      # Classification reads wider windows (see classification_text_for and
+      # declaration_text_for) so it never turns on where output landed.
       agent_summary = agent_run.agent_summary_with_stderr_fallback(limit: 100)
       diagnostic_output = classification_text_for(agent_run)
-      no_code_required_rationale = parse_no_code_required_rationale(agent_summary)
+      no_code_required_rationale = parse_no_code_required_rationale(declaration_text_for(agent_run))
       outcome = classify_outcome(agent_run, output_present, diagnostic_output, no_code_required_rationale)
 
       track_phase(agent_run_id: agent_run_id, phase_key: "handle_no_output_issue_run", phase_group: "post", agent_run: agent_run, metadata: { outcome: outcome }) do
@@ -181,11 +184,12 @@ module Activities
       "recommend_close"
     end
 
-    # Parses the agent's declared no-code-required rationale from its summary
-    # output. Returns nil unless both the declaration marker and a non-blank
-    # rationale block are present, so a malformed declaration (marker with no
-    # rationale) falls through to the existing classification heuristics
-    # instead of silently completing the issue with no human-visible reason.
+    # Parses the agent's declared no-code-required rationale from the
+    # classification output window. Returns nil unless both the declaration
+    # marker and a non-blank rationale block are present, so a malformed
+    # declaration (marker with no rationale) falls through to the existing
+    # classification heuristics instead of silently completing the issue with
+    # no human-visible reason.
     def parse_no_code_required_rationale(summary)
       return nil if summary.blank?
       return nil unless summary.match?(NO_CODE_REQUIRED_DECLARATION_PATTERN)
@@ -224,15 +228,33 @@ module Activities
     end
 
     def classification_text_for(agent_run)
-      recent_output = agent_run.agent_run_logs
-        .where(log_type: %w[stdout stderr])
+      normalized_text(recent_log_content(agent_run, %w[stdout stderr]))
+    end
+
+    # @spec NO-OUTPUT-ISSUE-005
+    # Output window used for classification, as opposed to the smaller excerpt
+    # quoted back in the GitHub comment. Agents emit the no-code-required
+    # declaration at the end of a run, so parsing it from the comment excerpt
+    # would let a verbose run push the declaration out of the window and be
+    # silently misclassified as recommend_close.
+    def declaration_text_for(agent_run)
+      stdout = agent_run.normalized_agent_output(recent_log_content(agent_run, %w[stdout]))
+      return stdout if stdout.present?
+
+      recent_log_content(agent_run, %w[stderr])
+    end
+
+    # Most recent CLASSIFICATION_LOG_LIMIT entries, restored to chronological
+    # order so multi-line agent output reads the way the agent emitted it.
+    def recent_log_content(agent_run, log_types)
+      agent_run.agent_run_logs
+        .where(log_type: log_types)
         .order(created_at: :desc, id: :desc)
         .limit(CLASSIFICATION_LOG_LIMIT)
         .pluck(:content)
         .reverse
         .join("\n")
-
-      normalized_text(recent_output)
+        .strip
     end
 
     def provider_error_classification_patterns
@@ -522,7 +544,10 @@ module Activities
     end
 
     def post_no_code_required_comment(client, agent_run, rationale)
-      sanitized_rationale = sanitize_summary_for_github(rationale)
+      # Redaction can empty an otherwise valid rationale (e.g. one that quotes
+      # credit/quota wording); say so rather than posting a blank section.
+      sanitized_rationale = sanitize_summary_for_github(rationale).presence ||
+        "(The agent's rationale was withheld because it matched provider-error redaction rules. See the run logs.)"
 
       lines = [
         NO_CODE_REQUIRED_COMMENT_MARKER,
