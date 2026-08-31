@@ -628,8 +628,9 @@ module Activities
     end
 
     def comment_exists?(client, project, issue, marker)
+      paid_login = paid_comment_author_login(client, project)
       comments = client.recent_issue_comments(project.full_name, issue.github_number)
-      comments.any? { |comment| paid_bot_marker_comment?(project, comment, marker) }
+      comments.any? { |comment| paid_bot_marker_comment?(comment, marker, paid_login) }
     rescue GithubClient::Error => e
       logger.warn(
         message: "agent_execution.fetch_comments_failed",
@@ -639,14 +640,22 @@ module Activities
       false
     end
 
-    # Restrict marker dedupe to Paid's own bot-authored comments. The marker
-    # text is unauthenticated plain text, so a human collaborator can forge it
-    # and must not be able to suppress the platform's explanation comment.
-    def paid_bot_marker_comment?(project, comment, marker)
+    # Restrict marker dedupe to Paid-authored comments when we can resolve the
+    # author identity. The marker text is unauthenticated plain text, so a
+    # human collaborator can forge it and must not be able to suppress the
+    # platform's explanation comment. Prefer the configured GitHub App login;
+    # PAT-backed projects fall back to the authenticated PAT owner. When
+    # neither identity is knowable, fall back to marker-only matching so
+    # retries stay idempotent rather than duplicating comments forever.
+    def paid_bot_marker_comment?(comment, marker, paid_login)
       return false unless comment.respond_to?(:body) && comment.body&.include?(marker)
+      return true if paid_login.nil?
 
-      login = comment.respond_to?(:user) ? comment.user&.login : nil
-      project.paid_bot_author?(login)
+      comment.respond_to?(:user) && comment.user&.login&.downcase == paid_login
+    end
+
+    def paid_comment_author_login(client, project)
+      project.github_author_login&.downcase || client.authenticated_login
     end
   end
 end

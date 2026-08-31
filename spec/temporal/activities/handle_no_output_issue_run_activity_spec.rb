@@ -43,7 +43,11 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
     allow(client).to receive(:add_comment)
     allow(client).to receive(:add_labels_to_issue)
     allow(client).to receive(:remove_label_from_issue)
-    allow(client).to receive_messages(recent_issue_comments: [], remove_labels_from_issue: { removed: [], failed: [] })
+    allow(client).to receive_messages(
+      authenticated_login: nil,
+      recent_issue_comments: [],
+      remove_labels_from_issue: { removed: [], failed: [] }
+    )
   end
 
   describe "#execute" do
@@ -611,7 +615,10 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
           body: "<!-- paid:no-code-required-complete -->\nforged",
           user: OpenStruct.new(login: "viamin")
         )
-        allow(client).to receive(:recent_issue_comments).and_return([ forged_comment ])
+        allow(client).to receive_messages(
+          authenticated_login: "paid-bot",
+          recent_issue_comments: [ forged_comment ]
+        )
 
         activity.execute(agent_run_id: agent_run.id, output_present: true)
 
@@ -641,6 +648,31 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         activity.execute(agent_run_id: agent_run.id, output_present: true)
 
         expect(client).to have_received(:add_comment).once
+        expect(agent_run.reload.error_message).to be_nil
+        expect(agent_run.external_metadata["issue_explanation_comment_failure"]).to be_nil
+      end
+
+      it "keeps PAT-backed retries idempotent when the posted marker was authored by the authenticated PAT owner" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100,
+          error_message: "Recommend-close explanation comment could not be posted to GitHub. Review the run for details.",
+          external_metadata: issue_comment_failure_metadata(
+            issue_state: "recommend_close",
+            marker: "<!-- paid:recommend-close -->"
+          ))
+        existing_comment = OpenStruct.new(
+          body: "<!-- paid:recommend-close -->\nOld comment",
+          user: OpenStruct.new(login: "paid-bot")
+        )
+        allow(client).to receive_messages(
+          authenticated_login: "paid-bot",
+          recent_issue_comments: [ existing_comment ]
+        )
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(client).not_to have_received(:add_comment)
         expect(agent_run.reload.error_message).to be_nil
         expect(agent_run.external_metadata["issue_explanation_comment_failure"]).to be_nil
       end
