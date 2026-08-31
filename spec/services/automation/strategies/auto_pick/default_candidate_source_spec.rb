@@ -541,6 +541,24 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to contain_exactly(issue.id)
     end
 
+    it "excludes an agent-declared no-code-required completion from the completed-issue recovery path" do # @spec AUTO-PICK-QUEUE-004
+      issue = create(:issue, project: project, paid_state: "completed", no_code_required_at: Time.current)
+      create(:agent_run, :completed, :automatic, project: project, issue: issue,
+        goal: "create_pr", auto_pick: true, pull_request_number: nil, pull_request_url: nil)
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to be_empty
+    end
+
+    it "keeps excluding a no-code-required issue even after paid_state is reset to a pre-completion state" do # @spec AUTO-PICK-QUEUE-004
+      create(:issue, project: project, paid_state: "new", no_code_required_at: Time.current)
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to be_empty
+    end
+
     it "excludes completed issues whose completed run was not a recoverable auto-pick run" do
       manual_issue = create(:issue, project: project, paid_state: "completed", github_number: 50)
       analyze_issue = create(:issue, project: project, paid_state: "completed", github_number: 51)
@@ -577,6 +595,15 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
     it "keeps a parent eligible when its only open sub-issue is recommend_close" do
       parent = create(:issue, project: project, github_number: 1)
       create(:issue, :recommend_close, project: project, github_number: 2, parent_issue: parent)
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to include(parent.id)
+    end
+
+    it "keeps a parent eligible when its only open sub-issue is completed" do
+      parent = create(:issue, project: project, github_number: 1)
+      create(:issue, :completed, project: project, github_number: 2, parent_issue: parent)
 
       scope = described_class.eligible_scope(project)
 

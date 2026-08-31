@@ -4,6 +4,11 @@ module Activities
   # Handles issue-based agent runs that complete without producing a PR or commit.
   #
   # Classifies the outcome as either:
+  # - `no_code_required`: the agent explicitly declared (via a marker in its
+  #   output) that the issue's work is complete and no code change is needed
+  #   — e.g. an umbrella/verification issue whose closeout scope is docs and
+  #   follow-up filing. Distinct from `recommend_close` because it is an
+  #   agent-asserted completion, not a Paid-side guess.
   # - `recommend_close`: agent performed real work (iterations/cost > 0) but
   #   produced no code changes (issue may be already satisfied, obsolete, or
   #   not actionable)
@@ -24,7 +29,14 @@ module Activities
     PAID_RECOMMEND_CLOSE_LABEL = "paid-recommend-close"
     NEEDS_INPUT_COMMENT_MARKER = "<!-- paid:needs-input -->"
     RECOMMEND_CLOSE_COMMENT_MARKER = "<!-- paid:recommend-close -->"
+    NO_CODE_REQUIRED_COMMENT_MARKER = "<!-- paid:no-code-required-complete -->"
     ISSUE_EXPLANATION_COMMENT_FAILURE_KEY = "issue_explanation_comment_failure"
+
+    # Agent-emitted declaration channel (parsed from the agent's own output,
+    # never posted to GitHub verbatim). Mirrors the fenced-block
+    # marker pattern used by ParseCrossRepoIssuePlanActivity.
+    NO_CODE_REQUIRED_DECLARATION_PATTERN = /<!--\s*paid:no-code-required\s*-->/.freeze
+    NO_CODE_REQUIRED_RATIONALE_PATTERN = /<!--\s*no-code-required-rationale-start\s*-->\n?(.*?)\n?<!--\s*no-code-required-rationale-end\s*-->/m.freeze
 
     SUPPLEMENTARY_ERROR_PATTERNS = [
       /quota exceeded/i,
@@ -82,7 +94,7 @@ module Activities
     PERMISSION_REQUESTED_PATTERN = /permission requested:/i
     TOOL_PERMISSION_REJECTED_PATTERN = /the user rejected permission to use this specific tool call/i
 
-    def execute(input) # @spec NO-OUTPUT-ISSUE-001 NO-OUTPUT-ISSUE-002
+    def execute(input) # @spec NO-OUTPUT-ISSUE-001 NO-OUTPUT-ISSUE-002 NO-OUTPUT-ISSUE-003 NO-OUTPUT-ISSUE-004 NO-OUTPUT-ISSUE-005
       agent_run_id = input[:agent_run_id]
       output_present = input.fetch(:output_present, false)
 
@@ -97,9 +109,13 @@ module Activities
 
       project = agent_run.project
       client = project.client
+      # Small window: quoted back to humans in the GitHub comment only.
+      # Classification reads a wider recent-log window so it never turns on
+      # where output landed.
       agent_summary = agent_run.agent_summary_with_stderr_fallback(limit: 100)
       diagnostic_output = classification_text_for(agent_run)
-      outcome = classify_outcome(agent_run, output_present, diagnostic_output)
+      no_code_required_rationale = parse_no_code_required_rationale(diagnostic_output)
+      outcome = classify_outcome(agent_run, output_present, diagnostic_output, no_code_required_rationale)
 
       track_phase(agent_run_id: agent_run_id, phase_key: "handle_no_output_issue_run", phase_group: "post", agent_run: agent_run, metadata: { outcome: outcome }) do
         case outcome
@@ -107,6 +123,10 @@ module Activities
           handle_provider_error(client, agent_run, agent_summary)
         when "infrastructure_error"
           handle_infrastructure_error(client, agent_run, agent_summary)
+        when "no_code_required"
+          handle_no_code_required(client, agent_run, no_code_required_rationale)
+          agent_run.complete!
+          agent_run.log!("system", "Completed without PR: #{outcome}")
         when "needs_input"
           handle_needs_input(client, agent_run, agent_summary)
           agent_run.complete!
@@ -136,7 +156,7 @@ module Activities
     # and evidence that the agent actually performed work. Defense in depth:
     # even if RunAgentActivity failed to detect a provider error, this check
     # prevents credit/quota errors from being misclassified as recommend_close.
-    def classify_outcome(agent_run, output_present, diagnostic_output)
+    def classify_outcome(agent_run, output_present, diagnostic_output, no_code_required_rationale)
       return "infrastructure_error" if terminal_infrastructure_error_output?(diagnostic_output)
 
       unless output_present
@@ -160,7 +180,22 @@ module Activities
         return "infrastructure_error"
       end
 
+      return "no_code_required" if no_code_required_rationale.present?
+
       "recommend_close"
+    end
+
+    # Parses the agent's declared no-code-required rationale from the
+    # classification output window. Returns nil unless both the declaration
+    # marker and a non-blank rationale block are present, so a malformed
+    # declaration (marker with no rationale) falls through to the existing
+    # classification heuristics instead of silently completing the issue with
+    # no human-visible reason.
+    def parse_no_code_required_rationale(summary)
+      return nil if summary.blank?
+      return nil unless summary.match?(NO_CODE_REQUIRED_DECLARATION_PATTERN)
+
+      summary[NO_CODE_REQUIRED_RATIONALE_PATTERN, 1]&.strip.presence
     end
 
     def provider_error_output?(text)
@@ -194,15 +229,20 @@ module Activities
     end
 
     def classification_text_for(agent_run)
-      recent_output = agent_run.agent_run_logs
-        .where(log_type: %w[stdout stderr])
+      normalized_text(recent_log_content(agent_run, %w[stdout stderr]))
+    end
+
+    # Most recent CLASSIFICATION_LOG_LIMIT entries, restored to chronological
+    # order so multi-line agent output reads the way the agent emitted it.
+    def recent_log_content(agent_run, log_types)
+      agent_run.agent_run_logs
+        .where(log_type: log_types)
         .order(created_at: :desc, id: :desc)
         .limit(CLASSIFICATION_LOG_LIMIT)
         .pluck(:content)
         .reverse
         .join("\n")
-
-      normalized_text(recent_output)
+        .strip
     end
 
     def provider_error_classification_patterns
@@ -274,6 +314,30 @@ module Activities
       remove_recommend_close_label(client, project, issue, agent_run.id)
       remove_trigger_labels(client, project, issue, agent_run.id)
       post_needs_input_comment(client, agent_run, agent_summary)
+    end
+
+    # The agent explicitly declared this issue's work complete without a code
+    # change (e.g. an umbrella/verification issue whose closeout scope is
+    # docs/follow-ups). Distinct from recommend_close: this is an
+    # agent-asserted completion, so the issue is marked `completed` (the same
+    # paid_state used elsewhere for no-PR runs that finished the requested
+    # work) rather than parked for human triage.
+    #
+    # `completed` is not terminal on its own: DefaultCandidateSource's
+    # completed-issue recovery path re-includes open completed issues whose
+    # last automatic run finished without a PR, so it would otherwise re-pick
+    # this issue and loop forever since the agent will likely declare
+    # no-code-required again. `no_code_required_at` marks this specific
+    # completion as agent-asserted-terminal so auto-pick permanently excludes
+    # it; only a manually triggered run can pick the issue up again.
+    def handle_no_code_required(client, agent_run, rationale) # @spec NO-OUTPUT-ISSUE-006
+      project = agent_run.project
+      issue = agent_run.issue
+      issue.update!(paid_state: "completed", no_code_required_at: Time.current)
+      remove_trigger_labels(client, project, issue, agent_run.id)
+      remove_needs_input_label(client, project, issue, agent_run.id)
+      remove_recommend_close_label(client, project, issue, agent_run.id)
+      post_no_code_required_comment(client, agent_run, rationale)
     end
 
     def handle_recommend_close(client, agent_run, agent_summary)
@@ -475,7 +539,39 @@ module Activities
       )
     end
 
-    # @spec NO-OUTPUT-ISSUE-001 NO-OUTPUT-ISSUE-002
+    def post_no_code_required_comment(client, agent_run, rationale)
+      # Redaction can empty an otherwise valid rationale (e.g. one that quotes
+      # credit/quota wording); say so rather than posting a blank section.
+      sanitized_rationale = sanitize_summary_for_github(rationale).presence ||
+        "(The agent's rationale was withheld because it matched provider-error redaction rules. See the run logs.)"
+
+      lines = [
+        NO_CODE_REQUIRED_COMMENT_MARKER,
+        "**Completed — No Code Change Required**",
+        "",
+        "The agent determined this issue's work is complete and no code change is required.",
+        "",
+        "**Rationale:**",
+        "",
+        sanitized_rationale.truncate(2000),
+        "",
+        "**Next steps:**",
+        "- If this rationale is correct, close the issue.",
+        "- If more work is needed, reopen with clarifying details and re-trigger the automation.",
+        ""
+      ]
+
+      post_issue_explanation_comment(
+        client,
+        agent_run,
+        issue_state: "completed",
+        marker: NO_CODE_REQUIRED_COMMENT_MARKER,
+        message: lines.join("\n"),
+        log_message: "agent_execution.no_code_required_comment_failed"
+      )
+    end
+
+    # @spec NO-OUTPUT-ISSUE-001 NO-OUTPUT-ISSUE-002 NO-OUTPUT-ISSUE-003
     def post_issue_explanation_comment(client, agent_run, issue_state:, marker:, message:, log_message:)
       project = agent_run.project
       issue = agent_run.issue
@@ -540,8 +636,9 @@ module Activities
     end
 
     def comment_exists?(client, project, issue, marker)
+      paid_login = paid_comment_author_login(client, project)
       comments = client.recent_issue_comments(project.full_name, issue.github_number)
-      comments.any? { |c| c.respond_to?(:body) && c.body&.include?(marker) }
+      comments.any? { |comment| paid_bot_marker_comment?(comment, marker, paid_login) }
     rescue GithubClient::Error => e
       logger.warn(
         message: "agent_execution.fetch_comments_failed",
@@ -549,6 +646,24 @@ module Activities
         error: e.message
       )
       false
+    end
+
+    # Restrict marker dedupe to Paid-authored comments when we can resolve the
+    # author identity. The marker text is unauthenticated plain text, so a
+    # human collaborator can forge it and must not be able to suppress the
+    # platform's explanation comment. Prefer the configured GitHub App login;
+    # PAT-backed projects fall back to the authenticated PAT owner. When
+    # neither identity is knowable, fall back to marker-only matching so
+    # retries stay idempotent rather than duplicating comments forever.
+    def paid_bot_marker_comment?(comment, marker, paid_login)
+      return false unless comment.respond_to?(:body) && comment.body&.include?(marker)
+      return true if paid_login.nil?
+
+      comment.respond_to?(:user) && comment.user&.login&.downcase == paid_login
+    end
+
+    def paid_comment_author_login(client, project)
+      project.github_author_login&.downcase || client.authenticated_login
     end
   end
 end
