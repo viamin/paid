@@ -138,6 +138,21 @@ RSpec.describe ChartkickHelper, :no_db do
       expect(Nokogiri::HTML.fragment(html).at_css("#loading-chart").text).to eq("Loading...")
     end
 
+    # @spec DASHBOARD-CHART-A11Y-008
+    it "rejects invalid height or width on the default placeholder path" do
+      expect {
+        helper.column_chart({ "2026-01-01" => 1 }, height: "300px; background:red")
+      }.to raise_error(ArgumentError, "Invalid height or width")
+
+      expect {
+        helper.column_chart({ "2026-01-01" => 1 }, width: "100%; background:red")
+      }.to raise_error(ArgumentError, "Invalid height or width")
+
+      expect {
+        helper.column_chart({ "2026-01-01" => 1 }, height: "300px; background:red", html: '<div id="%{id}"></div>')
+      }.to raise_error(ArgumentError, "Invalid height or width")
+    end
+
     # @spec DASHBOARD-CHART-A11Y-001
     it "honors a caller-supplied html: placeholder override instead of the default div" do
       html = helper.line_chart({ "2026-01-01" => 1 }, html: '<div id="custom" class="x">X</div>')

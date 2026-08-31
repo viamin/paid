@@ -21,8 +21,7 @@ module ChartkickHelper
     @chartkick_chart_id ||= 0
 
     element_id = options.delete(:id) || "chart-#{@chartkick_chart_id += 1}"
-    height = (options.delete(:height) || "300px").to_s
-    width = (options.delete(:width) || "100%").to_s
+    height, width = chartkick_dimensions(options)
     loading = options.delete(:loading) || "Loading..."
     caption = options.delete(:caption)
     custom_html = options.delete(:html)
@@ -61,10 +60,6 @@ module ChartkickHelper
   # caller that opts into this escape hatch owns the resulting markup,
   # including any data attributes the chartkick controller needs to wire up.
   def chartkick_custom_placeholder(html_template, element_id, height, width, loading)
-    [ height, width ].each do |value|
-      raise ArgumentError, "Invalid height or width" unless /\A[a-zA-Z0-9%.]*\z/.match?(value)
-    end
-
     html_vars = {
       id: ERB::Util.html_escape(element_id),
       height: ERB::Util.html_escape(height),
@@ -137,5 +132,16 @@ module ChartkickHelper
     return "No data" if value.nil?
 
     value.is_a?(Numeric) ? number_with_delimiter(value) : value.to_s
+  end
+
+  def chartkick_dimensions(options)
+    height = (options.delete(:height) || "300px").to_s
+    width = (options.delete(:width) || "100%").to_s
+
+    [ height, width ].each do |value|
+      raise ArgumentError, "Invalid height or width" unless /\A[a-zA-Z0-9%.]*\z/.match?(value)
+    end
+
+    [ height, width ]
   end
 end

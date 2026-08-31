@@ -54,6 +54,15 @@
   *Code:* `app/helpers/chartkick_helper.rb` (`chartkick_cell_value`).
   *Test:* `spec/helpers/chartkick_helper_spec.rb`.
 
+- [x] **DASHBOARD-CHART-A11Y-008** — When a Chartkick helper caller passes a
+  `height:` or `width:` value, the system SHALL reject values outside the
+  upstream Chartkick dimension allowlist before rendering either the default
+  placeholder div or an `html:` override, so placeholder sizing cannot inject
+  arbitrary CSS into the inline `style` attribute.
+  *Code:* `app/helpers/chartkick_helper.rb` (`chartkick_chart`,
+  `chartkick_dimensions`).
+  *Test:* `spec/helpers/chartkick_helper_spec.rb`.
+
 - [x] **DASHBOARD-CHART-A11Y-006** — Every dashboard/runner chart call site
   (`column_chart`/`line_chart` in `_metrics`, `_pr_cycle_time`,
   `_orchestration_decisions`, `runners/_provider_outcomes`) SHALL pass a

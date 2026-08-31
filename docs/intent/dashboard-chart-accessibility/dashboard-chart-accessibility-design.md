@@ -30,10 +30,10 @@ gem's stock `column_chart`/`line_chart` helpers. Two problems:
 ## Approach
 
 Call sites keep the standard Chartkick gem helpers (`column_chart`,
-`line_chart`, … — the standardization from #3524). `ChartkickHelper`
-(`app/helpers/chartkick_helper.rb`) overrides the gem's single internal
-entry point, `Chartkick::Helper#chartkick_chart`, so every gem chart helper
-in the app renders two things instead of one:
+`line_chart`, … — the call-site standardization proposed in #3524).
+`ChartkickHelper` (`app/helpers/chartkick_helper.rb`) overrides the gem's
+single internal entry point, `Chartkick::Helper#chartkick_chart`, so every
+gem chart helper in the app renders two things instead of one:
 
 1. The chart container `<div>`, marked `aria-hidden="true"` and carrying the
    chart definition as `data-*` attributes, which the `chartkick` Stimulus
@@ -66,6 +66,13 @@ treatment automatically, with no per-view accessibility work beyond adding a
   instead of a Paid-specific helper API that call sites must remember to use.
   The trade-off is coupling to the gem's private `chartkick_chart` seam,
   which the helper spec pins so a gem upgrade that changes it fails loudly.
+- **Retain the `chartkick` Stimulus controller, superseding #3524's
+  controller-cut proposal.** The gem's stock inline `<script>` output is
+  blocked by the nonce-only CSP on turbo-frame responses (issues #3458,
+  #3622), so removing the controller would leave every chart stuck on the
+  loading placeholder. This PR standardizes on the gem's public helpers at
+  the call sites, but intentionally keeps the existing controller as the
+  client-side execution path.
 - **`sr-only`, not a visible table.** The issue accepts either a concise
   adjacent table or an `sr-only` summary. A visible table would duplicate the
   stat tiles and legends most of these charts already render beside
