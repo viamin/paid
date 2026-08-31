@@ -4,6 +4,10 @@ class LoginSession < ApplicationRecord
   SESSION_TTL = 15.minutes
   STATUSES = %w[starting awaiting_code awaiting_authorization polling authorizing completed failed].freeze
   PROVIDERS = %w[claude codex].freeze
+  PROVIDER_STATUSES = {
+    "claude" => %w[starting awaiting_code authorizing completed failed],
+    "codex" => %w[starting awaiting_authorization polling completed failed]
+  }.freeze
 
   belongs_to :account
   belongs_to :created_by, class_name: "User"
@@ -20,6 +24,7 @@ class LoginSession < ApplicationRecord
   validate :created_by_belongs_to_account
   validate :integration_credential_belongs_to_account, if: -> { integration_credential.present? }
   validate :runner_credential_belongs_to_account, if: -> { runner_credential.present? }
+  validate :status_supported_by_provider, if: -> { provider.present? && status.present? }
 
   before_validation :assign_defaults, on: :create
 
@@ -84,5 +89,12 @@ class LoginSession < ApplicationRecord
     return if runner_credential.account_id == account_id
 
     errors.add(:runner_credential, "must belong to the same account")
+  end
+
+  # @spec SUBSCRIPTION-RUNNER-AUTH-005
+  def status_supported_by_provider
+    return if PROVIDER_STATUSES.fetch(provider, []).include?(status)
+
+    errors.add(:status, "is not valid for #{provider}")
   end
 end

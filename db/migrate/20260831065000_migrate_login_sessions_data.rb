@@ -13,11 +13,12 @@ class MigrateLoginSessionsData < ActiveRecord::Migration[8.1]
             container_id, metadata, created_at, updated_at
           )
           SELECT
-            account_id, created_by_id, integration_credential_id, NULL,
+            account_id, created_by_id, integration_credential_id, runner_credential_id,
             'claude', external_id, session_token, credential_name, status,
             oauth_url, error_message, expires_at, submitted_at, completed_at, failed_at,
             container_id, COALESCE(metadata, '{}'::jsonb), created_at, updated_at
           FROM claude_login_sessions
+          ON CONFLICT (external_id) DO NOTHING
         SQL
       end
 
@@ -38,6 +39,7 @@ class MigrateLoginSessionsData < ActiveRecord::Migration[8.1]
             error_message, expires_at, completed_at, failed_at,
             COALESCE(metadata, '{}'::jsonb), created_at, updated_at
           FROM codex_login_sessions
+          ON CONFLICT (external_id) DO NOTHING
         SQL
       end
     end
