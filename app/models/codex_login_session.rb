@@ -3,15 +3,11 @@
 class CodexLoginSession < LoginSession
   self.table_name = "login_sessions"
 
-  scope :filtered_by_provider, -> { where(provider: "codex") }
-
-  def self.all
-    super.filtered_by_provider
+  def self.policy_class
+    LoginSessionPolicy
   end
 
-  def self.where(*args, **kwargs)
-    super(*args, **kwargs).filtered_by_provider
-  end
+  default_scope { where(provider: "codex") }
 
   validates :provider, inclusion: { in: %w[codex] }, allow_nil: true
 

@@ -7,10 +7,10 @@ class CodexLoginSessionsController < ApplicationController
 
   def new
     @flow_definition = flow_definition_for_new
-    @codex_login_session = current_account.login_sessions.build(
+    @codex_login_session = CodexLoginSession.new(
+      account: current_account,
       created_by: current_user,
-      credential_name: @flow_definition.credential_name,
-      provider: "codex"
+      credential_name: @flow_definition.credential_name
     )
     apply_return_to(@codex_login_session, params[:return_to])
     apply_target_runner_key(@codex_login_session, resolved_target_runner_key)
@@ -20,9 +20,9 @@ class CodexLoginSessionsController < ApplicationController
   end
 
   def create
-    @codex_login_session = current_account.login_sessions.build(codex_login_session_params)
+    @codex_login_session = CodexLoginSession.new(codex_login_session_params)
+    @codex_login_session.account = current_account
     @codex_login_session.created_by = current_user
-    @codex_login_session.provider = "codex"
     authorize @codex_login_session
 
     if @codex_login_session.save
@@ -63,8 +63,8 @@ class CodexLoginSessionsController < ApplicationController
   private
 
   def set_codex_login_session
-    @codex_login_session = policy_scope(LoginSession).find_by!(external_id: params[:id])
-end
+    @codex_login_session = policy_scope(CodexLoginSession).find_by!(external_id: params[:id])
+  end
 
   def codex_login_session_params
     params.require(:codex_login_session).permit(:credential_name, metadata: [ :return_to, :target_runner_key ]).tap do |permitted|

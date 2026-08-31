@@ -7,10 +7,10 @@ class ClaudeLoginSessionsController < ApplicationController
 
   def new
     @flow_definition = flow_definition_for_new
-    @claude_login_session = current_account.login_sessions.build(
+    @claude_login_session = ClaudeLoginSession.new(
+      account: current_account,
       created_by: current_user,
-      credential_name: @flow_definition.credential_name,
-      provider: "claude"
+      credential_name: @flow_definition.credential_name
     )
     apply_return_to(@claude_login_session, params[:return_to])
     apply_target_runner_key(@claude_login_session, resolved_target_runner_key)
@@ -20,9 +20,9 @@ class ClaudeLoginSessionsController < ApplicationController
   end
 
   def create
-    @claude_login_session = current_account.login_sessions.build(claude_login_session_params)
+    @claude_login_session = ClaudeLoginSession.new(claude_login_session_params)
+    @claude_login_session.account = current_account
     @claude_login_session.created_by = current_user
-    @claude_login_session.provider = "claude"
     authorize @claude_login_session
 
     if @claude_login_session.save
@@ -61,8 +61,8 @@ class ClaudeLoginSessionsController < ApplicationController
   private
 
   def set_claude_login_session
-    @claude_login_session = policy_scope(LoginSession).find_by!(external_id: params[:id])
-end
+    @claude_login_session = policy_scope(ClaudeLoginSession).find_by!(external_id: params[:id])
+  end
 
   def claude_login_session_params
     params.require(:claude_login_session).permit(:credential_name, metadata: [ :return_to, :target_runner_key ]).tap do |permitted|
