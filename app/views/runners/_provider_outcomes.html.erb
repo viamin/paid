@@ -54,7 +54,7 @@
               <% end %>
 
               <%# Stacked column chart %>
-              <%= dashboard_chartkick_chart "ColumnChart", entry[:series],
+              <%= column_chart entry[:series],
                     id: "provider-outcomes-chart-#{index}",
                     caption: "Daily run outcomes for #{entry[:provider]}, stacked by status.",
                     stacked: true,

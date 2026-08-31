@@ -1,48 +1,70 @@
 # EARS Specs: Dashboard Chart Accessibility
 
-> Testable claims for the accessible non-canvas fallback on dashboard/runner
-> Chartkick charts. Status markers: `[x]` implemented · `[ ]` active gap ·
-> `[D]` deferred. Each ID is a grep target across specs, tests, and code
-> (`grep -r DASHBOARD-CHART-A11Y-001`).
+> Testable claims for the CSP-safe, accessible rendering of Chartkick gem
+> charts on dashboard/runner pages. Status markers: `[x]` implemented ·
+> `[ ]` active gap · `[D]` deferred. Each ID is a grep target across specs,
+> tests, and code (`grep -r DASHBOARD-CHART-A11Y-001`).
 
-- [x] **DASHBOARD-CHART-A11Y-001** — When `dashboard_chartkick_chart` renders
-  a chart, the system SHALL also render an adjacent `sr-only` `<table>`
-  exposing the same series data as the chart, and SHALL mark the chart's
-  canvas container `aria-hidden="true"` so assistive tech reads the table
-  instead of the canvas placeholder.
-  *Code:* `app/helpers/dashboard_helper.rb` (`dashboard_chartkick_chart`,
-  `dashboard_chart_data_table`).
-  *Test:* `spec/helpers/dashboard_helper_spec.rb`.
+- [x] **DASHBOARD-CHART-A11Y-001** — When a Chartkick gem chart helper
+  (`column_chart`, `line_chart`, …) renders a chart, the system SHALL render
+  the chart as `data-*` attributes on a placeholder div (no inline
+  `<script>`) for the `chartkick` Stimulus controller to instantiate, SHALL
+  also render an adjacent `sr-only` `<table>` exposing the same series data
+  as the chart, and SHALL mark the chart's canvas container
+  `aria-hidden="true"` so assistive tech reads the table instead of the
+  canvas placeholder.
+  *Code:* `app/helpers/chartkick_helper.rb` (`chartkick_chart`,
+  `chartkick_data_table`).
+  *Test:* `spec/helpers/chartkick_helper_spec.rb`.
 
 - [x] **DASHBOARD-CHART-A11Y-002** — When `data_source` is an `Array` of
   `{ name:, data: }` series (multi-series charts), the table SHALL have one
   column per series (headed by its `name`) and one row per x-axis label
   found across all series.
-  *Code:* `app/helpers/dashboard_helper.rb` (`dashboard_chart_table_rows`).
-  *Test:* `spec/helpers/dashboard_helper_spec.rb`.
+  *Code:* `app/helpers/chartkick_helper.rb` (`chartkick_table_rows`).
+  *Test:* `spec/helpers/chartkick_helper_spec.rb`.
 
 - [x] **DASHBOARD-CHART-A11Y-003** — When `data_source` is a bare `Hash` of
   `{ label => value }` (single-series charts, e.g. a completion-rate line),
   the table SHALL render a single data column rather than requiring callers
   to wrap it in a series array.
-  *Code:* `app/helpers/dashboard_helper.rb` (`dashboard_chart_table_rows`).
-  *Test:* `spec/helpers/dashboard_helper_spec.rb`.
+  *Code:* `app/helpers/chartkick_helper.rb` (`chartkick_table_rows`).
+  *Test:* `spec/helpers/chartkick_helper_spec.rb`.
+
+- [x] **DASHBOARD-CHART-A11Y-007** — When `data_source` is an `Array` of
+  `[ label, value ]` pairs (Chartkick's compact point-array encoding for a
+  single series, e.g. the quality-dashboard mutation-sweep trend and
+  per-run histogram), the table SHALL render a single "Value" column
+  rather than treating each pair as a series hash and raising on
+  `series[:data]`. An empty point array SHALL render no table (matching the
+  bare-hash empty behaviour) rather than raising.
+  *Code:* `app/helpers/chartkick_helper.rb` (`chartkick_table_rows`).
+  *Test:* `spec/helpers/chartkick_helper_spec.rb`.
 
 - [x] **DASHBOARD-CHART-A11Y-004** — When a `caption:` option is passed, the
   table SHALL include it as a `<caption>` element. When omitted, the table
   SHALL still render without a caption rather than raising.
-  *Code:* `app/helpers/dashboard_helper.rb` (`dashboard_chart_data_table`).
-  *Test:* `spec/helpers/dashboard_helper_spec.rb`.
+  *Code:* `app/helpers/chartkick_helper.rb` (`chartkick_data_table`).
+  *Test:* `spec/helpers/chartkick_helper_spec.rb`.
 
 - [x] **DASHBOARD-CHART-A11Y-005** — When a series value is `nil` (a day with
   no recorded data), the table SHALL render the cell as the text "No data"
   rather than an empty cell, so screen reader users get an explicit signal
   instead of silence.
-  *Code:* `app/helpers/dashboard_helper.rb` (`dashboard_chart_cell_value`).
-  *Test:* `spec/helpers/dashboard_helper_spec.rb`.
+  *Code:* `app/helpers/chartkick_helper.rb` (`chartkick_cell_value`).
+  *Test:* `spec/helpers/chartkick_helper_spec.rb`.
 
-- [x] **DASHBOARD-CHART-A11Y-006** — Every dashboard/runner call site of
-  `dashboard_chartkick_chart` (`_metrics`, `_pr_cycle_time`,
+- [x] **DASHBOARD-CHART-A11Y-008** — When a Chartkick helper caller passes a
+  `height:` or `width:` value, the system SHALL reject values outside the
+  upstream Chartkick dimension allowlist before rendering either the default
+  placeholder div or an `html:` override, so placeholder sizing cannot inject
+  arbitrary CSS into the inline `style` attribute.
+  *Code:* `app/helpers/chartkick_helper.rb` (`chartkick_chart`,
+  `chartkick_dimensions`).
+  *Test:* `spec/helpers/chartkick_helper_spec.rb`.
+
+- [x] **DASHBOARD-CHART-A11Y-006** — Every dashboard/runner chart call site
+  (`column_chart`/`line_chart` in `_metrics`, `_pr_cycle_time`,
   `_orchestration_decisions`, `runners/_provider_outcomes`) SHALL pass a
   `caption:` describing the chart's data.
   *Code:* `app/views/dashboard/_metrics.html.erb`,

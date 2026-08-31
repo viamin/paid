@@ -275,7 +275,7 @@
           </p>
           <% if daily_volume.size >= 2 %>
             <div class="mt-4">
-              <%= dashboard_chartkick_chart "ColumnChart", [
+              <%= column_chart [
                 {
                   name: "Successful",
                   data: daily_volume.to_h { |row| [row[:day], row[:successful_count]] }
