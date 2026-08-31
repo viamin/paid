@@ -136,6 +136,7 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
     end
 
     context "when output_present is true (recommend_close)" do
+      # @spec NO-OUTPUT-ISSUE-001
       it "sets issue paid_state to recommend_close" do
         issue = create(:issue, :in_progress, project: project)
         agent_run = create(:agent_run, :running, project: project, issue: issue,
@@ -223,6 +224,47 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
 
         expect(client).not_to have_received(:remove_label_from_issue)
           .with(project.full_name, issue.github_number, "paid-needs-input")
+      end
+
+      # @spec NO-OUTPUT-ISSUE-001
+      it "records a surfaced failure when recommend-close comment posting fails" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        allow(client).to receive(:add_comment).and_raise(GithubClient::Error, "comment rejected")
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(issue.reload.paid_state).to eq("recommend_close")
+        expect(agent_run.reload.error_message).to include("Recommend-close explanation comment could not be posted")
+        expect(agent_run.external_metadata["issue_explanation_comment_failure"]).to include(
+          "issue_state" => "recommend_close",
+          "marker" => "<!-- paid:recommend-close -->",
+          "error" => "comment rejected"
+        )
+      end
+    end
+
+    context "when classification resolves to needs_input" do
+      before do
+        allow(activity).to receive(:classify_outcome).and_return("needs_input")
+      end
+
+      # @spec NO-OUTPUT-ISSUE-001
+      it "records a surfaced failure when needs-input comment posting fails" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue)
+        allow(client).to receive(:add_comment).and_raise(GithubClient::Error, "comment rejected")
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(issue.reload.paid_state).to eq("needs_input")
+        expect(agent_run.reload.error_message).to include("Needs-input explanation comment could not be posted")
+        expect(agent_run.external_metadata["issue_explanation_comment_failure"]).to include(
+          "issue_state" => "needs_input",
+          "marker" => "<!-- paid:needs-input -->",
+          "error" => "comment rejected"
+        )
       end
     end
 
@@ -314,6 +356,33 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         activity.execute(agent_run_id: agent_run.id, output_present: true)
 
         expect(client).not_to have_received(:add_comment)
+      end
+    end
+
+    context "when the handler is retried after the explanation comment succeeds" do
+      # @spec NO-OUTPUT-ISSUE-002
+      it "does not post a duplicate recommend-close comment and clears stale failure state" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100,
+          error_message: "Recommend-close explanation comment could not be posted to GitHub. Review the run for details.",
+          external_metadata: {
+            "issue_explanation_comment_failure" => {
+              "issue_state" => "recommend_close",
+              "marker" => "<!-- paid:recommend-close -->",
+              "error" => "comment rejected",
+              "recorded_at" => "2026-08-31T00:00:00Z"
+            }
+          })
+        existing_comment = Struct.new(:body).new("<!-- paid:recommend-close -->\nOld comment")
+        allow(client).to receive(:recent_issue_comments).and_return([], [ existing_comment ])
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(client).to have_received(:add_comment).once
+        expect(agent_run.reload.error_message).to be_nil
+        expect(agent_run.external_metadata["issue_explanation_comment_failure"]).to be_nil
       end
     end
 
