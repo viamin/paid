@@ -83,6 +83,7 @@ RSpec.describe Knowledge::Embeddings::Generate do
 
       expect { generator.call(texts: texts) }
         .to raise_error(Knowledge::Embeddings::EmbeddingError, /after 3 retries/)
+      expect(AgentHarness).to have_received(:embed).exactly(4).times
     end
 
     it "respects Retry-After header on 429 responses" do

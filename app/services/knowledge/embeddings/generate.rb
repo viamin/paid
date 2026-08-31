@@ -100,7 +100,7 @@ module Knowledge
 
       def request_embeddings(texts)
         RetryHelper.with_retries(
-          max_attempts: MAX_RETRIES,
+          max_attempts: MAX_RETRIES + 1,
           retryable: ->(error) { retryable_error?(error) },
           delay_fn: ->(attempt, error) { retry_delay(error, attempt) },
           sleep_fn: method(:sleep)
