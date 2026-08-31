@@ -11,11 +11,28 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
   end
   let(:client) { instance_double(GithubClient) }
 
+  def gh_issue_response(project:, number:, id:, title:, body:)
+    Struct.new(:number, :id, :title, :body, :state, :user, :labels, :created_at, :updated_at, :html_url).new(
+      number,
+      id,
+      title,
+      body,
+      "open",
+      Struct.new(:login).new("paid-bot"),
+      [],
+      Time.current,
+      Time.current,
+      "https://github.com/#{project.full_name}/issues/#{number}"
+    )
+  end
+
   before do
     allow(GithubClient).to receive(:new).and_return(client)
     allow(client).to receive(:add_comment)
     allow(client).to receive(:add_labels_to_issue)
+    allow(client).to receive(:create_issue)
     allow(client).to receive(:remove_label_from_issue)
+    allow(client).to receive(:update_issue)
     allow(client).to receive_messages(recent_issue_comments: [], remove_labels_from_issue: { removed: [], failed: [] })
   end
 
@@ -242,6 +259,347 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
           "marker" => "<!-- paid:recommend-close -->",
           "error" => "comment rejected"
         )
+      end
+    end
+
+    context "when output_present is true and the agent emits a follow-up marker" do
+      let(:parent_issue) { create(:issue, :in_progress, project: project, body: "Parent body") }
+      let(:followup_title) { "Implement the missing gateway adapter" }
+      let(:followup_body) { "The umbrella cannot close until the adapter exists." }
+      let(:summary) do
+        <<~SUMMARY
+          The umbrella is blocked on missing implementation work.
+
+          <!-- followup-title: #{followup_title} -->
+          <!-- followup-body-start -->
+          #{followup_body}
+          <!-- followup-body-end -->
+        SUMMARY
+      end
+      let(:agent_run) do
+        create(:agent_run, :running, project: project, issue: parent_issue,
+          iterations: 3, cost_cents: 100)
+      end
+
+      before do
+        agent_run.log!("stdout", summary)
+        allow(client).to receive(:create_issue).and_return(
+          gh_issue_response(project:, number: 88, id: 8800, title: followup_title, body: followup_body)
+        )
+        allow(client).to receive(:update_issue)
+      end
+
+      # @spec NO-OUTPUT-ISSUE-003
+      it "classifies the run as blocked_on_gap and creates a follow-up issue" do
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("blocked_on_gap")
+        followup = project.issues.find_by!(github_number: 88)
+        expect(followup.title).to eq(followup_title)
+        expect(followup.body).to eq(followup_body)
+      end
+
+      # @spec NO-OUTPUT-ISSUE-003
+      it "writes an explicit dependency line into the parent and returns it to new" do
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(client).to have_received(:update_issue).with(
+          project.full_name,
+          parent_issue.github_number,
+          body: a_string_including("Depends on #88")
+        )
+        expect(parent_issue.reload.paid_state).to eq("new")
+        expect(parent_issue.body).to include("Depends on #88")
+        expect(parent_issue.dependencies.pluck(:github_number)).to eq([ 88 ])
+      end
+
+      # @spec NO-OUTPUT-ISSUE-003
+      it "keeps the parent out of auto-pick until the follow-up closes, then makes it eligible again" do
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(Issue.ready_for_work(project)).not_to include(parent_issue)
+        expect(Issue.lifecycle_statuses([ parent_issue.reload ])[parent_issue.id]).to eq(:blocked)
+
+        followup = project.issues.find_by!(github_number: 88)
+        followup.update!(github_state: "closed")
+
+        expect(Issue.ready_for_work(project)).to include(parent_issue.reload)
+        expect(Issue.lifecycle_statuses([ parent_issue.reload ])[parent_issue.id]).to eq(:eligible)
+      end
+
+      # @spec NO-OUTPUT-ISSUE-005
+      it "records an audit event for the follow-up creation" do
+        expect {
+          activity.execute(agent_run_id: agent_run.id, output_present: true)
+        }.to change(AccountActivityEvent, :count).by(1)
+
+        event = AccountActivityEvent.order(:id).last
+        expect(event.action).to eq("agent_run.followup_issue_created")
+        expect(event.subject).to eq(project.issues.find_by!(github_number: 88))
+        expect(event.metadata).to include(
+          "agent_run_id" => agent_run.id,
+          "parent_issue_id" => parent_issue.id,
+          "parent_github_number" => parent_issue.github_number,
+          "followup_issue_id" => project.issues.find_by!(github_number: 88).id,
+          "followup_github_number" => 88,
+          "deduplicated" => false
+        )
+      end
+    end
+
+    context "when the parent issue already has a ## Dependencies section" do
+      let(:parent_issue) { create(:issue, :in_progress, project: project, body: parent_body) }
+      let(:followup_title) { "Implement the missing gateway adapter" }
+      let(:followup_body) { "The umbrella cannot close until the adapter exists." }
+      let(:agent_run) do
+        create(:agent_run, :running, project: project, issue: parent_issue,
+          iterations: 3, cost_cents: 100)
+      end
+
+      before do
+        create(:issue, project: project, github_number: 4101, title: "Pre-existing dependency")
+        agent_run.log!("stdout", <<~SUMMARY)
+          The umbrella is blocked on missing implementation work.
+
+          <!-- followup-title: #{followup_title} -->
+          <!-- followup-body-start -->
+          #{followup_body}
+          <!-- followup-body-end -->
+        SUMMARY
+        allow(client).to receive(:create_issue).and_return(
+          gh_issue_response(project:, number: 88, id: 8800, title: followup_title, body: followup_body)
+        )
+        allow(client).to receive(:update_issue)
+      end
+
+      context "when the section uses the canonical single-newline format" do
+        let(:parent_body) { "Umbrella issue\n\n## Dependencies\n- Depends on #4101\n" }
+
+        # @spec NO-OUTPUT-ISSUE-003
+        it "appends to the existing section instead of adding a second heading" do
+          activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+          updated = parent_issue.reload.body
+          expect(updated.scan("## Dependencies").count).to eq(1)
+          expect(updated).to include("## Dependencies\n- Depends on #4101\n- Depends on #88")
+          expect(parent_issue.dependencies.pluck(:github_number)).to contain_exactly(88, 4101)
+        end
+      end
+
+      context "when the section is blank-line separated and followed by another section" do
+        let(:parent_body) { "## Dependencies\n\n- Depends on #4101\n\n## Notes\nParking spot." }
+
+        # @spec NO-OUTPUT-ISSUE-003
+        it "appends within the existing section, before the next heading" do
+          activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+          updated = parent_issue.reload.body
+          expect(updated.scan("## Dependencies").count).to eq(1)
+          expect(updated.index("- Depends on #88")).to be < updated.index("## Notes")
+          expect(parent_issue.dependencies.pluck(:github_number)).to contain_exactly(88, 4101)
+        end
+      end
+
+      context "when the section is followed by a heading of a different level" do
+        let(:parent_body) { "## Dependencies\n- Depends on #4101\n\n### Detail\nExtra context" }
+
+        # @spec NO-OUTPUT-ISSUE-003
+        it "keeps the appended dependency inside the section so the parser records it" do
+          activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+          updated = parent_issue.reload.body
+          expect(updated.scan("## Dependencies").count).to eq(1)
+          expect(updated.index("- Depends on #88")).to be < updated.index("### Detail")
+          expect(parent_issue.dependencies.pluck(:github_number)).to contain_exactly(88, 4101)
+        end
+      end
+    end
+
+    context "when the follow-up marker is malformed or partial" do
+      let(:issue) { create(:issue, :in_progress, project: project) }
+      let(:agent_run) do
+        create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+      end
+
+      before do
+        agent_run.log!("stdout", <<~SUMMARY)
+          The work is blocked.
+
+          <!-- followup-title: Missing body -->
+        SUMMARY
+      end
+
+      # @spec NO-OUTPUT-ISSUE-004
+      it "falls back to recommend_close without creating a follow-up issue" do
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("recommend_close")
+        expect(project.issues.where.not(id: issue.id)).to be_empty
+        expect(client).not_to have_received(:create_issue)
+        expect(client).not_to have_received(:update_issue)
+      end
+    end
+
+    context "when stray follow-up markers appear without a paired body block" do
+      let(:issue) { create(:issue, :in_progress, project: project) }
+      let(:agent_run) do
+        create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+      end
+
+      # @spec NO-OUTPUT-ISSUE-004
+      it "does not synthesize a follow-up plan from a stray title and a separate body block" do
+        agent_run.log!("stdout", <<~SUMMARY)
+          The work is blocked.
+
+          <!-- followup-title: stray -->
+
+          Some intermediate prose about why nothing shipped.
+
+          <!-- followup-body-start -->
+          This body should not be combined with the stray title above.
+          <!-- followup-body-end -->
+        SUMMARY
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("recommend_close")
+        expect(client).not_to have_received(:create_issue)
+        expect(client).not_to have_received(:update_issue)
+        expect(issue.reload.paid_state).to eq("recommend_close")
+        expect(project.issues.where.not(id: issue.id)).to be_empty
+      end
+
+      # @spec NO-OUTPUT-ISSUE-004
+      it "rejects a stray body block that has no paired followup-title" do
+        agent_run.log!("stdout", <<~SUMMARY)
+          The work is blocked.
+
+          <!-- followup-body-start -->
+          A body with no paired title marker.
+          <!-- followup-body-end -->
+        SUMMARY
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("recommend_close")
+        expect(client).not_to have_received(:create_issue)
+      end
+    end
+
+    context "when a matching open follow-up issue already exists" do
+      let(:parent_issue) { create(:issue, :in_progress, project: project, body: "Parent body") }
+      let(:followup_title) { "Implement the missing gateway adapter" }
+      let(:existing_followup) do
+        create(:issue, project: project, title: followup_title, github_number: 88, body: "Existing body")
+      end
+      let(:agent_run) do
+        create(:agent_run, :running, project: project, issue: parent_issue,
+          iterations: 3, cost_cents: 100)
+      end
+
+      before do
+        existing_followup
+        agent_run.log!("stdout", <<~SUMMARY)
+          <!-- followup-title: #{followup_title} -->
+          <!-- followup-body-start -->
+          New body that should not create a duplicate.
+          <!-- followup-body-end -->
+        SUMMARY
+        allow(client).to receive(:update_issue)
+      end
+
+      # @spec NO-OUTPUT-ISSUE-005
+      it "deduplicates against the open issue and avoids duplicating the parent dependency line on retry" do
+        first = activity.execute(agent_run_id: agent_run.id, output_present: true)
+        second = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(first[:outcome]).to eq("blocked_on_gap")
+        expect(second[:outcome]).to eq("blocked_on_gap")
+        expect(project.issues.where(title: followup_title).count).to eq(1)
+        expect(client).not_to have_received(:create_issue)
+        expect(parent_issue.reload.body.scan("Depends on #88").size).to eq(1)
+      end
+    end
+
+    context "when the activity is retried after GitHub confirms issue creation but before the local upsert completes" do
+      let(:parent_issue) { create(:issue, :in_progress, project: project, body: "Parent body") }
+      let(:followup_title) { "Implement the missing gateway adapter" }
+      let(:followup_body) { "The umbrella cannot close until the adapter exists." }
+      let(:agent_run) do
+        create(:agent_run, :running, project: project, issue: parent_issue,
+          iterations: 3, cost_cents: 100)
+      end
+      let(:gh_issue) { gh_issue_response(project:, number: 88, id: 8800, title: followup_title, body: followup_body) }
+
+      before do
+        agent_run.log!("stdout", <<~SUMMARY)
+          <!-- followup-title: #{followup_title} -->
+          <!-- followup-body-start -->
+          #{followup_body}
+          <!-- followup-body-end -->
+        SUMMARY
+        allow(client).to receive_messages(create_issue: gh_issue, issue: gh_issue)
+        allow(client).to receive(:update_issue)
+      end
+
+      # @spec NO-OUTPUT-ISSUE-005
+      it "reuses the created GitHub issue on retry instead of creating a duplicate" do
+        call_count = 0
+        allow(Issues::UpsertFromGithub).to receive(:call).and_wrap_original do |original, **kwargs|
+          call_count += 1
+          raise "simulated crash before local upsert persists" if call_count == 1
+
+          original.call(**kwargs)
+        end
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id, output_present: true)
+        }.to raise_error("simulated crash before local upsert persists")
+
+        expect(project.issues.where(github_number: 88)).to be_empty
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("blocked_on_gap")
+        expect(client).to have_received(:create_issue).once
+        expect(client).to have_received(:issue).with(project.full_name, 88).once
+        expect(project.issues.where(github_number: 88).count).to eq(1)
+      end
+    end
+
+    context "when multiple follow-up marker blocks are emitted" do
+      let(:issue) { create(:issue, :in_progress, project: project, body: "Parent body") }
+      let(:agent_run) do
+        create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+      end
+
+      before do
+        agent_run.log!("stdout", <<~SUMMARY)
+          <!-- followup-title: First gap -->
+          <!-- followup-body-start -->
+          First body
+          <!-- followup-body-end -->
+
+          <!-- followup-title: Second gap -->
+          <!-- followup-body-start -->
+          Second body
+          <!-- followup-body-end -->
+        SUMMARY
+        allow(client).to receive(:create_issue).and_return(
+          gh_issue_response(project:, number: 91, id: 9100, title: "First gap", body: "First body")
+        )
+        allow(client).to receive(:update_issue)
+      end
+
+      # @spec NO-OUTPUT-ISSUE-005
+      it "caps follow-up creation at one issue per run" do
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(client).to have_received(:create_issue).once
+        expect(project.issues.where.not(id: issue.id).pluck(:github_number)).to eq([ 91 ])
       end
     end
 
