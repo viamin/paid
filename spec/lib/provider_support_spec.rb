@@ -268,7 +268,7 @@ RSpec.describe ProviderSupport do
 
   describe ".aggregated_error_classification_patterns" do
     it "excludes the runner-only omp key even when RunnerSupport would include it" do
-      allow(described_class).to receive(:supported_provider_keys).and_return(RunnerSupport::APP_RUNNER_KEYS)
+      allow(RunnerSupport).to receive(:supported_runner_keys).and_return(RunnerSupport::APP_RUNNER_KEYS)
       allow(described_class).to receive(:error_classification_patterns_for) do |key, category|
         key == "omp" ? [ "omp-only-pattern" ] : RunnerSupport.error_classification_patterns_for(key, category)
       end
