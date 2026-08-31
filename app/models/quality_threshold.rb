@@ -146,6 +146,17 @@ class QualityThreshold < ApplicationRecord
     end
   end
 
+  # Excluding ALL_GOALS here keeps it out of `effective_for`/`configurable_for`
+  # (and therefore out of QualityMetrics::DashboardStats#gate_status, which
+  # calls `effective_for`). That is intentional, not a regression from the
+  # QualityGateThreshold merge: `gate_status` renders the goal-scoped
+  # auto-pause thresholds consumed by QualityPause::Check (QualityPauseEvent
+  # history), a different feature from the project-scoped ALL_GOALS admission
+  # gate consumed by QualityMetrics::EvaluateGate and
+  # Activities::CheckQualityGateActivity (QualityGateEvent history). Before
+  # this merge, QualityGateThreshold records were never surfaced by
+  # `gate_status` either — it never queried that model. See "Unified Quality
+  # Thresholds" in docs/intent/quality-feedback-loops/quality-feedback-loops-design.md.
   private_class_method def self.account_thresholds(account, metric_types: METRIC_TYPES)
     account.quality_thresholds.account_defaults.where(metric_type: metric_types).where.not(goal_type: ALL_GOALS)
   end

@@ -115,6 +115,16 @@ definitions. Gate thresholds have no dedicated controller or route today —
 they are managed directly (console/seed/spec) the same way the legacy
 `QualityGateThreshold` model was.
 
+Because `gate_status` in `QualityMetrics::DashboardStats` builds its list from
+`effective_for`, it never includes `goal_type: "all"` gate thresholds — the
+same as before this merge, when `gate_status` never queried
+`QualityGateThreshold` at all. Despite the shared "gate" name, the dashboard's
+`gate_status` widget reports the goal-scoped auto-pause thresholds consumed by
+`QualityPause::Check` (`QualityPauseEvent` history), not the project-scoped
+admission gate consumed by `QualityMetrics::EvaluateGate` and
+`Activities::CheckQualityGateActivity` (`QualityGateEvent` history). These
+remain two distinct features that happen to share vocabulary.
+
 ## Review-Bot Trigger Parsing
 
 Review-bot follow-up work is driven by a shared trigger payload parser:
