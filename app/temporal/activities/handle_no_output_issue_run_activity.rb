@@ -4,6 +4,11 @@ module Activities
   # Handles issue-based agent runs that complete without producing a PR or commit.
   #
   # Classifies the outcome as either:
+  # - `no_code_required`: the agent explicitly declared (via a marker in its
+  #   output) that the issue's work is complete and no code change is needed
+  #   — e.g. an umbrella/verification issue whose closeout scope is docs and
+  #   follow-up filing. Distinct from `recommend_close` because it is an
+  #   agent-asserted completion, not a Paid-side guess.
   # - `recommend_close`: agent performed real work (iterations/cost > 0) but
   #   produced no code changes (issue may be already satisfied, obsolete, or
   #   not actionable)
@@ -24,7 +29,14 @@ module Activities
     PAID_RECOMMEND_CLOSE_LABEL = "paid-recommend-close"
     NEEDS_INPUT_COMMENT_MARKER = "<!-- paid:needs-input -->"
     RECOMMEND_CLOSE_COMMENT_MARKER = "<!-- paid:recommend-close -->"
+    NO_CODE_REQUIRED_COMMENT_MARKER = "<!-- paid:no-code-required-complete -->"
     ISSUE_EXPLANATION_COMMENT_FAILURE_KEY = "issue_explanation_comment_failure"
+
+    # Agent-emitted declaration channel (parsed from the agent's own summary
+    # output, never posted to GitHub verbatim). Mirrors the fenced-block
+    # marker pattern used by ParseCrossRepoIssuePlanActivity.
+    NO_CODE_REQUIRED_DECLARATION_PATTERN = /<!--\s*paid:no-code-required\s*-->/.freeze
+    NO_CODE_REQUIRED_RATIONALE_PATTERN = /<!--\s*no-code-required-rationale-start\s*-->\n?(.*?)\n?<!--\s*no-code-required-rationale-end\s*-->/m.freeze
 
     SUPPLEMENTARY_ERROR_PATTERNS = [
       /quota exceeded/i,
@@ -82,7 +94,7 @@ module Activities
     PERMISSION_REQUESTED_PATTERN = /permission requested:/i
     TOOL_PERMISSION_REJECTED_PATTERN = /the user rejected permission to use this specific tool call/i
 
-    def execute(input) # @spec NO-OUTPUT-ISSUE-001 NO-OUTPUT-ISSUE-002
+    def execute(input) # @spec NO-OUTPUT-ISSUE-001 NO-OUTPUT-ISSUE-002 NO-OUTPUT-ISSUE-003 NO-OUTPUT-ISSUE-004
       agent_run_id = input[:agent_run_id]
       output_present = input.fetch(:output_present, false)
 
@@ -99,7 +111,8 @@ module Activities
       client = project.client
       agent_summary = agent_run.agent_summary_with_stderr_fallback(limit: 100)
       diagnostic_output = classification_text_for(agent_run)
-      outcome = classify_outcome(agent_run, output_present, diagnostic_output)
+      no_code_required_rationale = parse_no_code_required_rationale(agent_summary)
+      outcome = classify_outcome(agent_run, output_present, diagnostic_output, no_code_required_rationale)
 
       track_phase(agent_run_id: agent_run_id, phase_key: "handle_no_output_issue_run", phase_group: "post", agent_run: agent_run, metadata: { outcome: outcome }) do
         case outcome
@@ -107,6 +120,10 @@ module Activities
           handle_provider_error(client, agent_run, agent_summary)
         when "infrastructure_error"
           handle_infrastructure_error(client, agent_run, agent_summary)
+        when "no_code_required"
+          handle_no_code_required(client, agent_run, no_code_required_rationale)
+          agent_run.complete!
+          agent_run.log!("system", "Completed without PR: #{outcome}")
         when "needs_input"
           handle_needs_input(client, agent_run, agent_summary)
           agent_run.complete!
@@ -136,8 +153,9 @@ module Activities
     # and evidence that the agent actually performed work. Defense in depth:
     # even if RunAgentActivity failed to detect a provider error, this check
     # prevents credit/quota errors from being misclassified as recommend_close.
-    def classify_outcome(agent_run, output_present, diagnostic_output)
+    def classify_outcome(agent_run, output_present, diagnostic_output, no_code_required_rationale)
       return "infrastructure_error" if terminal_infrastructure_error_output?(diagnostic_output)
+      return "no_code_required" if no_code_required_rationale.present?
 
       unless output_present
         return "provider_error" if provider_error_output?(diagnostic_output)
@@ -161,6 +179,18 @@ module Activities
       end
 
       "recommend_close"
+    end
+
+    # Parses the agent's declared no-code-required rationale from its summary
+    # output. Returns nil unless both the declaration marker and a non-blank
+    # rationale block are present, so a malformed declaration (marker with no
+    # rationale) falls through to the existing classification heuristics
+    # instead of silently completing the issue with no human-visible reason.
+    def parse_no_code_required_rationale(summary)
+      return nil if summary.blank?
+      return nil unless summary.match?(NO_CODE_REQUIRED_DECLARATION_PATTERN)
+
+      summary[NO_CODE_REQUIRED_RATIONALE_PATTERN, 1]&.strip.presence
     end
 
     def provider_error_output?(text)
@@ -274,6 +304,22 @@ module Activities
       remove_recommend_close_label(client, project, issue, agent_run.id)
       remove_trigger_labels(client, project, issue, agent_run.id)
       post_needs_input_comment(client, agent_run, agent_summary)
+    end
+
+    # The agent explicitly declared this issue's work complete without a code
+    # change (e.g. an umbrella/verification issue whose closeout scope is
+    # docs/follow-ups). Distinct from recommend_close: this is an
+    # agent-asserted completion, so the issue is marked `completed` (the same
+    # paid_state used elsewhere for no-PR runs that finished the requested
+    # work) rather than parked for human triage.
+    def handle_no_code_required(client, agent_run, rationale)
+      project = agent_run.project
+      issue = agent_run.issue
+      issue.update!(paid_state: "completed")
+      remove_trigger_labels(client, project, issue, agent_run.id)
+      remove_needs_input_label(client, project, issue, agent_run.id)
+      remove_recommend_close_label(client, project, issue, agent_run.id)
+      post_no_code_required_comment(client, agent_run, rationale)
     end
 
     def handle_recommend_close(client, agent_run, agent_summary)
@@ -475,7 +521,36 @@ module Activities
       )
     end
 
-    # @spec NO-OUTPUT-ISSUE-001 NO-OUTPUT-ISSUE-002
+    def post_no_code_required_comment(client, agent_run, rationale)
+      sanitized_rationale = sanitize_summary_for_github(rationale)
+
+      lines = [
+        NO_CODE_REQUIRED_COMMENT_MARKER,
+        "**Completed — No Code Change Required**",
+        "",
+        "The agent determined this issue's work is complete and no code change is required.",
+        "",
+        "**Rationale:**",
+        "",
+        sanitized_rationale.truncate(2000),
+        "",
+        "**Next steps:**",
+        "- If this rationale is correct, close the issue.",
+        "- If more work is needed, reopen with clarifying details and re-trigger the automation.",
+        ""
+      ]
+
+      post_issue_explanation_comment(
+        client,
+        agent_run,
+        issue_state: "completed",
+        marker: NO_CODE_REQUIRED_COMMENT_MARKER,
+        message: lines.join("\n"),
+        log_message: "agent_execution.no_code_required_comment_failed"
+      )
+    end
+
+    # @spec NO-OUTPUT-ISSUE-001 NO-OUTPUT-ISSUE-002 NO-OUTPUT-ISSUE-003
     def post_issue_explanation_comment(client, agent_run, issue_state:, marker:, message:, log_message:)
       project = agent_run.project
       issue = agent_run.issue

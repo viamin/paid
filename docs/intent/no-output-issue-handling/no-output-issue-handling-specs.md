@@ -25,3 +25,26 @@
   recorded explanation-comment failure for that run.
   *Tests:* `spec/temporal/activities/handle_no_output_issue_run_activity_spec.rb`.
   *Code:* `app/temporal/activities/handle_no_output_issue_run_activity.rb`.
+
+## Goal-aware classification for no-code-required completions
+
+- [x] **NO-OUTPUT-ISSUE-003** — When an issue-scoped no-output run's agent
+  output contains a `<!-- paid:no-code-required -->` declaration marker with a
+  non-blank rationale fenced between `<!-- no-code-required-rationale-start
+  -->` and `<!-- no-code-required-rationale-end -->`, the system SHALL
+  classify the outcome as `no_code_required` — distinct from `recommend_close`
+  — SHALL transition the issue to `paid_state: "completed"`, and SHALL post a
+  marker-tagged GitHub comment surfacing the declared rationale for a human.
+  This lets an umbrella, verification, or audit issue whose successful
+  closeout requires no code change (e.g. #3441) complete honestly instead of
+  being parked as `recommend_close`.
+  *Tests:* `spec/temporal/activities/handle_no_output_issue_run_activity_spec.rb`.
+  *Code:* `app/temporal/activities/handle_no_output_issue_run_activity.rb`.
+
+- [x] **NO-OUTPUT-ISSUE-004** — When an issue-scoped no-output run's agent
+  output contains no no-code-required declaration marker, or the marker is
+  present without a non-blank rationale block, the system SHALL classify the
+  outcome using the existing `provider_error` / `infrastructure_error` /
+  `needs_input` / `recommend_close` heuristics unchanged.
+  *Tests:* `spec/temporal/activities/handle_no_output_issue_run_activity_spec.rb`.
+  *Code:* `app/temporal/activities/handle_no_output_issue_run_activity.rb`.

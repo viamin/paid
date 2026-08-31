@@ -245,6 +245,108 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
       end
     end
 
+    context "when the agent declares a no-code-required completion" do
+      let(:rationale) do
+        "The umbrella's closeout scope is documentation and follow-up filing, already completed via #3557 and #3583."
+      end
+      let(:declaration) do
+        <<~TEXT
+          <!-- paid:no-code-required -->
+          <!-- no-code-required-rationale-start -->
+          #{rationale}
+          <!-- no-code-required-rationale-end -->
+        TEXT
+      end
+
+      # @spec NO-OUTPUT-ISSUE-003
+      it "classifies the outcome as no_code_required, not recommend_close" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        agent_run.log!("stdout", declaration)
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("no_code_required")
+      end
+
+      # @spec NO-OUTPUT-ISSUE-003
+      it "sets issue paid_state to completed instead of recommend_close" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        agent_run.log!("stdout", declaration)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(issue.reload.paid_state).to eq("completed")
+      end
+
+      # @spec NO-OUTPUT-ISSUE-003
+      it "does not add the paid-recommend-close label" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        agent_run.log!("stdout", declaration)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(client).not_to have_received(:add_labels_to_issue)
+          .with(project.full_name, issue.github_number, [ "paid-recommend-close" ])
+      end
+
+      # @spec NO-OUTPUT-ISSUE-003
+      it "posts a comment surfacing the declared rationale for a human" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        agent_run.log!("stdout", declaration)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(client).to have_received(:add_comment)
+          .with(project.full_name, issue.github_number, a_string_including(rationale))
+      end
+
+      # @spec NO-OUTPUT-ISSUE-003
+      it "marks the agent run completed" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        agent_run.log!("stdout", declaration)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(agent_run.reload.status).to eq("completed")
+      end
+
+      # @spec NO-OUTPUT-ISSUE-003
+      it "removes the needs-input label if present" do
+        issue = create(:issue, :in_progress, project: project, labels: [ "paid-needs-input" ])
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        agent_run.log!("stdout", declaration)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(client).to have_received(:remove_label_from_issue)
+          .with(project.full_name, issue.github_number, "paid-needs-input")
+      end
+
+      # @spec NO-OUTPUT-ISSUE-004
+      it "falls through to recommend_close when the marker has no rationale block" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        agent_run.log!("stdout", "<!-- paid:no-code-required -->\nNo rationale block here.")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("recommend_close")
+        expect(issue.reload.paid_state).to eq("recommend_close")
+      end
+    end
+
     context "when classification resolves to needs_input" do
       before do
         allow(activity).to receive(:classify_outcome).and_return("needs_input")
