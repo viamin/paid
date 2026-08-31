@@ -182,6 +182,17 @@ RSpec.describe Llm::GeneratePrDescription do
       expect(AgentHarness).to have_received(:send_message).exactly(described_class::MAX_ATTEMPTS).times
     end
 
+    it "sleeps for RETRY_DELAYS in order across retries" do
+      sleep_args = []
+      allow_any_instance_of(described_class).to receive(:sleep) { |_, delay| sleep_args << delay } # rubocop:disable RSpec/AnyInstance
+      allow(AgentHarness).to receive(:send_message)
+        .and_raise(AgentHarness::ProviderError.new("Provider unavailable"))
+
+      described_class.call(agent_summary: agent_summary)
+
+      expect(sleep_args).to eq(described_class::RETRY_DELAYS)
+    end
+
     it "succeeds when a transient failure is followed by success on retry" do
       failed = instance_double(AgentHarness::Response, success?: false, output: "", error: "overloaded")
       success = instance_double(AgentHarness::Response, success?: true, output: generated_description)
