@@ -77,6 +77,37 @@ RSpec.describe ChartkickHelper, :no_db do
       expect(headers.text).to eq("Value")
     end
 
+    # @spec DASHBOARD-CHART-A11Y-007
+    it "treats an Array of [label, value] pairs as a single-series point array" do
+      html = helper.line_chart([
+        [ "2026-01-01", 0.5 ],
+        [ "2026-01-02", 0.6 ],
+        [ "2026-01-03", 0.55 ]
+      ])
+
+      fragment = Nokogiri::HTML.fragment(html)
+      table = fragment.at_css("table")
+      headers = table.css("thead th").map(&:text)
+      rows = table.css("tbody tr").map { |tr| tr.css("th, td").map(&:text) }
+
+      expect(headers).to eq([ "", "Value" ])
+      expect(rows).to eq([
+        [ "2026-01-01", "0.5" ],
+        [ "2026-01-02", "0.6" ],
+        [ "2026-01-03", "0.55" ]
+      ])
+    end
+
+    # @spec DASHBOARD-CHART-A11Y-007
+    it "handles an empty point array without raising" do
+      html = helper.column_chart([])
+
+      fragment = Nokogiri::HTML.fragment(html)
+      chart_div = fragment.at_css("div")
+      expect(chart_div).to be_present
+      expect(fragment.at_css("table")).to be_nil
+    end
+
     # @spec DASHBOARD-CHART-A11Y-004
     it "renders a caption when provided and omits it otherwise" do
       with_caption = helper.line_chart({ "2026-01-01" => 1 }, caption: "Daily total")

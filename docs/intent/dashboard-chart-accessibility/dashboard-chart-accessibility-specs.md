@@ -31,6 +31,16 @@
   *Code:* `app/helpers/chartkick_helper.rb` (`chartkick_table_rows`).
   *Test:* `spec/helpers/chartkick_helper_spec.rb`.
 
+- [x] **DASHBOARD-CHART-A11Y-007** — When `data_source` is an `Array` of
+  `[ label, value ]` pairs (Chartkick's compact point-array encoding for a
+  single series, e.g. the quality-dashboard mutation-sweep trend and
+  per-run histogram), the table SHALL render a single "Value" column
+  rather than treating each pair as a series hash and raising on
+  `series[:data]`. An empty point array SHALL render no table (matching the
+  bare-hash empty behaviour) rather than raising.
+  *Code:* `app/helpers/chartkick_helper.rb` (`chartkick_table_rows`).
+  *Test:* `spec/helpers/chartkick_helper_spec.rb`.
+
 - [x] **DASHBOARD-CHART-A11Y-004** — When a `caption:` option is passed, the
   table SHALL include it as a `<caption>` element. When omitted, the table
   SHALL still render without a caption rather than raising.

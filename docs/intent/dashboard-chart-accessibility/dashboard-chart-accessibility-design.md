@@ -43,12 +43,15 @@ in the app renders two things instead of one:
    chart renders from — row per x-axis category, column per series, with an
    optional `<caption>` from a `caption:` option describing the chart.
 
-Because every call site already passes `data_source` as one of two shapes —
+Because every call site passes `data_source` as one of three Chartkick shapes —
 an `Array` of `{ name:, data: { label => value } }` series (multi-series
-charts) or a bare `Hash` of `{ label => value }` (single-series, e.g. the
-completion-rate line) — the table builder normalizes both into rows before
-rendering, with `nil` values (days with no data) rendered as the text "No
-data" rather than an empty cell.
+charts), a bare `Hash` of `{ label => value }` (single-series, e.g. the
+completion-rate line), or an `Array` of `[ label, value ]` pairs (Chartkick's
+compact point-array encoding for a single series, used by the
+quality-dashboard mutation-sweep trend and per-run histogram) — the table
+builder normalizes all three into rows before rendering, with `nil` values
+(days with no data) rendered as the text "No data" rather than an empty
+cell.
 
 Centralizing this in the override means every current and future chart call
 site (dashboard, runner, and quality-dashboards views) gets the same

@@ -64,11 +64,23 @@ module ChartkickHelper
 
   # @spec DASHBOARD-CHART-A11Y-002
   # @spec DASHBOARD-CHART-A11Y-003
+  # @spec DASHBOARD-CHART-A11Y-007
   def chartkick_table_rows(data_source)
     case data_source
     when Array
-      data_source.each_with_object({}) do |series, rows|
-        series[:data].each { |label, value| (rows[label] ||= {})[series[:name]] = value }
+      if data_source.empty? || !data_source.first.is_a?(Hash)
+        # Point-array form: [[label, value], ...] — Chartkick's compact
+        # single-series encoding, used by the quality-dashboard trend
+        # sparkline and the per-run histogram. Render as a single
+        # "Value" column so screen-reader users get the same data the
+        # chart conveys.
+        data_source.each_with_object({}) do |(label, value), rows|
+          rows[label] = { "Value" => value }
+        end
+      else
+        data_source.each_with_object({}) do |series, rows|
+          series[:data].each { |label, value| (rows[label] ||= {})[series[:name]] = value }
+        end
       end
     when Hash
       data_source.transform_values { |value| { "Value" => value } }
