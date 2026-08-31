@@ -7,7 +7,8 @@ class ClaudeLoginSessionsController < ApplicationController
 
   def new
     @flow_definition = flow_definition_for_new
-    @claude_login_session = current_account.claude_login_sessions.build(
+    @claude_login_session = ClaudeLoginSession.new(
+      account: current_account,
       created_by: current_user,
       credential_name: @flow_definition.credential_name
     )
@@ -19,7 +20,8 @@ class ClaudeLoginSessionsController < ApplicationController
   end
 
   def create
-    @claude_login_session = current_account.claude_login_sessions.build(claude_login_session_params)
+    @claude_login_session = ClaudeLoginSession.new(claude_login_session_params)
+    @claude_login_session.account = current_account
     @claude_login_session.created_by = current_user
     authorize @claude_login_session
 

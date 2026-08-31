@@ -1555,7 +1555,7 @@ RSpec.describe Containers::Provision do
         expect { service.provision }.to raise_error(described_class::ProvisionError)
       end
 
-      it "releases preview tunnel port reservations when create_container fails before assigning the container" do
+      it "releases preview tunnel reservations when create_container fails before assigning the container" do
         preview_service = build_preview_tunnel_service(agent_run:, worktree_path:)
         PreviewTunnelPortReservation.create!(reservation_key: "preview-token", tunnel_port: 8201)
 
@@ -3932,7 +3932,7 @@ RSpec.describe Containers::Provision do
       service.cleanup
     end
 
-    it "releases preview tunnel port reservations after deleting the container" do
+    it "releases preview tunnel reservations after deleting the container" do
       preview_service = build_preview_tunnel_service(agent_run:, worktree_path:)
       allow(Containers::ProxyUrl).to receive(:resolve).with(backend: preview_service.backend, restricted: true).and_return("http://paid-proxy:3000")
       PreviewTunnelPortReservation.create!(reservation_key: "preview-token", tunnel_port: 8201)
@@ -3943,7 +3943,7 @@ RSpec.describe Containers::Provision do
       expect(PreviewTunnelPortReservation.find_by(reservation_key: "preview-token")).to be_nil
     end
 
-    it "releases preview tunnel port reservations when both delete attempts fail" do
+    it "releases preview tunnel reservations when both delete attempts fail" do
       preview_service = build_preview_tunnel_service(agent_run:, worktree_path:)
       allow(Containers::ProxyUrl).to receive(:resolve).with(backend: preview_service.backend, restricted: true).and_return("http://paid-proxy:3000")
       PreviewTunnelPortReservation.create!(reservation_key: "preview-token", tunnel_port: 8201)

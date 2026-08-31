@@ -129,7 +129,7 @@
                   <% end %>
                   <%= link_to "Integrations", integrations_path, class: nav_menu_item_class, role: "menuitem" %>
                   <%= link_to "Marketplace", marketplace_entries_path, class: nav_menu_item_class, role: "menuitem" %>
-                  <% if policy(CodexLoginSession.new(account: current_account)).new? %>
+                  <% if policy(LoginSession.new(account: current_account, provider: "codex")).new? %>
                     <%= link_to "Codex Login", new_codex_login_session_path, class: nav_menu_item_class, role: "menuitem" %>
                   <% end %>
                   <% if policy(ExceptionIncident).index? %>
@@ -238,7 +238,7 @@
             <% end %>
             <%= link_to "Integrations", integrations_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
             <%= link_to "Marketplace", marketplace_entries_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
-            <% if policy(CodexLoginSession.new(account: current_account)).new? %>
+            <% if policy(LoginSession.new(account: current_account, provider: "codex")).new? %>
               <%= link_to "Codex Login", new_codex_login_session_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
             <% end %>
             <% if policy(ExceptionIncident).index? %>

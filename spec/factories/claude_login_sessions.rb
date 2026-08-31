@@ -10,6 +10,7 @@ FactoryBot.define do
     status { "starting" }
     expires_at { 15.minutes.from_now }
     metadata { {} }
+    provider { "claude" }
 
     trait :awaiting_code do
       status { "awaiting_code" }

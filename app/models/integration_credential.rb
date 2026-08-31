@@ -6,7 +6,7 @@ class IntegrationCredential < ApplicationRecord
 
   belongs_to :account
   belongs_to :created_by, class_name: "User", optional: true
-  has_many :claude_login_sessions, dependent: :nullify
+  has_many :login_sessions, dependent: :nullify
 
   encrypts :secret
 

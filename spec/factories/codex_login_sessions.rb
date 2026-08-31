@@ -11,6 +11,7 @@ FactoryBot.define do
     poll_interval { 5 }
     expires_at { CodexLoginSession::SESSION_TTL.from_now }
     metadata { {} }
+    provider { "codex" }
 
     trait :awaiting_authorization do
       status { "awaiting_authorization" }
