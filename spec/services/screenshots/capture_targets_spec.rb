@@ -87,6 +87,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "workflow_status" ])
     end
 
+    it "maps the chartkick helper to every page that renders a chart" do
+      targets = described_class.call(changed_files: [ "app/helpers/chartkick_helper.rb" ])
+
+      expect(targets.map(&:slug)).to contain_exactly("dashboard", "providers", "project_quality_dashboard")
+    end
+
     it "maps nested helper files by their path under app/helpers" do
       targets = described_class.call(changed_files: [ "app/helpers/inbox/path_helper.rb" ])
 
