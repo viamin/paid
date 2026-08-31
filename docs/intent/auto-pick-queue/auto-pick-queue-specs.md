@@ -23,3 +23,13 @@
   *Tests:* `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
   *Code:* `app/services/automation/strategies/auto_pick/default_candidate_source.rb`,
   `app/services/issues/issue_analysis_backoff_reset_context.rb`.
+
+- [x] **AUTO-PICK-QUEUE-003** — When a blocking dependency closes, the system
+  SHALL reset an open dependent issue from `paid_state=recommend_close` to
+  `paid_state=new` only after all of that dependent's still-recorded blocking
+  dependencies are resolved, remove the mirrored recommend-close label so
+  GitHub labels and `paid_state` stay consistent, and rely on the existing
+  paid-state transition recheck path to re-enqueue the issue for Auto-Pick.
+  *Tests:* `spec/services/issues/upsert_from_github_spec.rb`,
+  `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
+  *Code:* `app/services/issues/upsert_from_github.rb`, `app/models/issue.rb`.
