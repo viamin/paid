@@ -158,7 +158,6 @@ module Activities
     # prevents credit/quota errors from being misclassified as recommend_close.
     def classify_outcome(agent_run, output_present, diagnostic_output, no_code_required_rationale)
       return "infrastructure_error" if terminal_infrastructure_error_output?(diagnostic_output)
-      return "no_code_required" if no_code_required_rationale.present?
 
       unless output_present
         return "provider_error" if provider_error_output?(diagnostic_output)
@@ -180,6 +179,8 @@ module Activities
 
         return "infrastructure_error"
       end
+
+      return "no_code_required" if no_code_required_rationale.present?
 
       "recommend_close"
     end

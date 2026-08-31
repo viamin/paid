@@ -391,6 +391,34 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         expect(result[:outcome]).to eq("recommend_close")
         expect(issue.reload.paid_state).to eq("recommend_close")
       end
+
+      # @spec NO-OUTPUT-ISSUE-004
+      it "does not classify as no_code_required when the run produced no output" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        agent_run.log!("stdout", declaration)
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: false)
+
+        expect(result[:outcome]).to eq("infrastructure_error")
+        expect(issue.reload.paid_state).to eq("failed")
+        expect(agent_run.reload.status).to eq("failed")
+      end
+
+      # @spec NO-OUTPUT-ISSUE-004
+      it "does not classify as no_code_required when the run did zero iterations" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, cost_cents: 100)
+        agent_run.log!("stdout", declaration)
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("infrastructure_error")
+        expect(issue.reload.paid_state).to eq("failed")
+        expect(agent_run.reload.status).to eq("failed")
+      end
     end
 
     context "when classification resolves to needs_input" do
