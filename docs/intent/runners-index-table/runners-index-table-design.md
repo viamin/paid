@@ -66,11 +66,14 @@ resolves — the divergence traced in issue #3458.
 
 Other chart surfaces that already render through the CSP-safe path include
 dashboard metrics, PR cycle time, and orchestration decisions:
-`DashboardHelper#dashboard_chartkick_chart`
-emits the chart data via `data-*` attributes on a placeholder `div`, and the
-`chartkick` Stimulus controller (`app/javascript/controllers/chartkick_controller.js`)
-instantiates the Chartkick chart client-side with no inline script. The
-provider outcomes partial now uses the same helper, and:
+`ChartkickHelper` (`app/helpers/chartkick_helper.rb`) overrides
+`Chartkick::Helper#chartkick_chart` — the single internal entry point behind
+the gem's `column_chart`/`line_chart` helpers that views call — emitting the
+chart data via `data-*` attributes on a placeholder `div`, which the
+`chartkick` Stimulus controller
+(`app/javascript/controllers/chartkick_controller.js`) instantiates
+client-side with no inline script. The provider outcomes partial uses the
+same gem helpers and therefore the same override, and:
 
 - element ids are derived from the entry's index in `provider_outcome_stats`
   (`provider-outcomes-chart-#{index}`) rather than interpolating the provider

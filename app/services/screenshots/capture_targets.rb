@@ -49,6 +49,7 @@ module Screenshots
 
     HELPER_TARGETS = {
       "application" => SHARED_TARGET_KEYS,
+      "chartkick" => %i[dashboard providers project_quality_dashboard],
       "cost_dashboard" => %i[project_cost_dashboard project_cost_snapshot],
       "inbox/path" => [ :dashboard ],
       "issues" => %i[dashboard project_show project_issue_clarifying_questions],
