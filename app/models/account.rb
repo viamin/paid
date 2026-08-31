@@ -24,8 +24,7 @@ class Account < ApplicationRecord
   has_many :github_tokens, dependent: :destroy
   has_many :github_installations, dependent: :destroy
   has_many :integration_credentials, dependent: :destroy
-  has_many :claude_login_sessions, dependent: :destroy
-  has_many :codex_login_sessions, dependent: :destroy
+  has_many :login_sessions, dependent: :destroy
   has_many :runner_credentials, dependent: :destroy
   has_many :linear_tokens, dependent: :destroy
   has_many :prompts, -> { where(project_id: nil) }, dependent: :destroy

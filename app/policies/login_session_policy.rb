@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-class CodexLoginSessionPolicy < ApplicationPolicy
+class LoginSessionPolicy < ApplicationPolicy
   def show?
     has_any_account_role?(:owner, :admin)
   end

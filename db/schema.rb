@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_31_093614) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_31_065100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -565,59 +565,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_31_093614) do
     t.index ["proxy_token"], name: "index_chat_sessions_on_proxy_token", unique: true
     t.index ["runner_id"], name: "index_chat_sessions_on_runner_id"
     t.index ["status"], name: "index_chat_sessions_on_status"
-  end
-
-  create_table "claude_login_sessions", force: :cascade do |t|
-    t.bigint "account_id", null: false, comment: "Account that owns this browser-completed Claude login session."
-    t.datetime "completed_at"
-    t.string "container_id"
-    t.datetime "created_at", null: false
-    t.bigint "created_by_id", null: false, comment: "User who initiated the Claude browser login."
-    t.string "credential_name", null: false, comment: "IntegrationCredential name to create or replace on successful capture."
-    t.text "error_message"
-    t.datetime "expires_at", comment: "Session expiry until completed; replaced with credential expiry after capture."
-    t.uuid "external_id", null: false, comment: "Opaque public identifier used in user-facing URLs."
-    t.datetime "failed_at"
-    t.bigint "integration_credential_id", comment: "Managed Claude credential captured when the login completes."
-    t.jsonb "metadata", default: {}, null: false, comment: "Structured runtime details such as return paths and parsed Claude metadata."
-    t.text "oauth_url"
-    t.bigint "runner_credential_id", comment: "Managed Claude runner credential captured when the browser login completes."
-    t.string "session_token", null: false, comment: "Time-boxed shared secret required to submit the browser code."
-    t.string "status", default: "starting", null: false, comment: "Browser login lifecycle state."
-    t.datetime "submitted_at"
-    t.datetime "updated_at", null: false
-    t.index ["account_id"], name: "index_claude_login_sessions_on_account_id"
-    t.index ["created_by_id"], name: "index_claude_login_sessions_on_created_by_id"
-    t.index ["external_id"], name: "index_claude_login_sessions_on_external_id", unique: true
-    t.index ["integration_credential_id"], name: "index_claude_login_sessions_on_integration_credential_id"
-    t.index ["runner_credential_id"], name: "index_claude_login_sessions_on_runner_credential_id"
-    t.index ["session_token"], name: "index_claude_login_sessions_on_session_token", unique: true
-  end
-
-  create_table "codex_login_sessions", comment: "Device-code Connect Codex login sessions (RDR-041 / #2962).", force: :cascade do |t|
-    t.bigint "account_id", null: false, comment: "Account that owns this Connect Codex login session."
-    t.datetime "completed_at"
-    t.datetime "created_at", null: false
-    t.bigint "created_by_id", null: false, comment: "User who initiated the Connect Codex login."
-    t.string "credential_name", null: false, comment: "RunnerCredential name to create or replace on successful capture."
-    t.text "device_code", comment: "Encrypted device_code used to poll the OAuth token endpoint."
-    t.text "error_message"
-    t.datetime "expires_at", comment: "Device-code expiry; replaced with credential expiry after capture."
-    t.uuid "external_id", null: false, comment: "Opaque public identifier used in user-facing URLs."
-    t.datetime "failed_at"
-    t.jsonb "metadata", default: {}, null: false, comment: "Structured runtime details such as return paths and parsed Codex metadata."
-    t.integer "poll_interval", comment: "Seconds between token-endpoint polls."
-    t.bigint "runner_credential_id", comment: "Managed Codex credential captured when the login completes."
-    t.string "session_token", null: false, comment: "Time-boxed shared secret required to advance the device-code poll."
-    t.string "status", default: "starting", null: false, comment: "Device-code login lifecycle state."
-    t.datetime "updated_at", null: false
-    t.string "user_code", comment: "Short code the user enters at the verification URI."
-    t.text "verification_uri", comment: "URI the user visits to authorize the device."
-    t.index ["account_id"], name: "index_codex_login_sessions_on_account_id"
-    t.index ["created_by_id"], name: "index_codex_login_sessions_on_created_by_id"
-    t.index ["external_id"], name: "index_codex_login_sessions_on_external_id", unique: true
-    t.index ["runner_credential_id"], name: "index_codex_login_sessions_on_runner_credential_id"
-    t.index ["session_token"], name: "index_codex_login_sessions_on_session_token", unique: true
   end
 
   create_table "collector_runs", force: :cascade do |t|
@@ -1842,6 +1789,38 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_31_093614) do
     t.index ["source_type", "source_id"], name: "index_llm_output_metrics_on_source_type_and_source_id"
   end
 
+  create_table "login_sessions", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Account that owns this login session."
+    t.datetime "completed_at"
+    t.string "container_id", comment: "Container ID (Claude only)."
+    t.datetime "created_at", null: false
+    t.bigint "created_by_id", null: false, comment: "User who initiated the login."
+    t.string "credential_name", null: false, comment: "Credential name to create or replace on successful capture."
+    t.text "device_code", comment: "Encrypted device_code (Codex only)."
+    t.text "error_message"
+    t.datetime "expires_at", comment: "Session/device-code expiry."
+    t.uuid "external_id", null: false, comment: "Opaque public identifier used in user-facing URLs."
+    t.datetime "failed_at"
+    t.bigint "integration_credential_id", comment: "Managed credential (Claude only)."
+    t.jsonb "metadata", default: {}, null: false, comment: "Structured runtime details."
+    t.text "oauth_url", comment: "OAuth URL (Claude only)."
+    t.integer "poll_interval", comment: "Seconds between token-endpoint polls (Codex only)."
+    t.string "provider", null: false, comment: "Provider: claude or codex."
+    t.bigint "runner_credential_id", comment: "Managed credential (Codex only)."
+    t.string "session_token", null: false, comment: "Time-boxed shared secret."
+    t.string "status", default: "starting", null: false, comment: "Login lifecycle state."
+    t.datetime "submitted_at", comment: "When code was submitted (Claude only)."
+    t.datetime "updated_at", null: false
+    t.string "user_code", comment: "Short code the user enters (Codex only)."
+    t.text "verification_uri", comment: "URI the user visits to authorize (Codex only)."
+    t.index ["account_id"], name: "index_login_sessions_on_account_id"
+    t.index ["created_by_id"], name: "index_login_sessions_on_created_by_id"
+    t.index ["external_id"], name: "index_login_sessions_on_external_id", unique: true
+    t.index ["integration_credential_id"], name: "index_login_sessions_on_integration_credential_id"
+    t.index ["runner_credential_id"], name: "index_login_sessions_on_runner_credential_id"
+    t.index ["session_token"], name: "index_login_sessions_on_session_token", unique: true
+  end
+
   create_table "marketplace_entries", comment: "Team-shareable agent enhancements that can be attached to agent runs", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "added_by_email", limit: 255, null: false
@@ -2209,6 +2188,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_31_093614) do
     t.datetime "updated_at", null: false
     t.index ["reservation_key"], name: "index_preview_tunnel_port_reservations_on_reservation_key", unique: true
     t.index ["tunnel_port"], name: "index_preview_tunnel_port_reservations_on_tunnel_port", unique: true
+  end
+
+  create_table "preview_tunnel_reservations", comment: "Tracks preview tunnel ports reserved across Ruby processes so concurrent preview boots cannot allocate the same port.", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "owner_key", comment: "Logical owner identifier for the process/session that reserved the preview tunnel port."
+    t.integer "owner_pid", comment: "PID of the worker process that created the reservation so dead-worker leases can be reclaimed."
+    t.integer "port", null: false, comment: "TCP port reserved for a preview tunnel listener on the control-plane host."
+    t.datetime "updated_at", null: false
+    t.index ["port"], name: "index_preview_tunnel_reservations_on_port", unique: true
   end
 
   create_table "project_baselines", comment: "Stores per-project historical baselines for run metrics so anomalies can be detected against recent norms.", force: :cascade do |t|
@@ -3375,13 +3363,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_31_093614) do
   add_foreign_key "chat_sessions", "projects"
   add_foreign_key "chat_sessions", "runners", name: "fk_chat_sessions_runner_id"
   add_foreign_key "chat_sessions", "users", column: "created_by_id"
-  add_foreign_key "claude_login_sessions", "accounts"
-  add_foreign_key "claude_login_sessions", "integration_credentials"
-  add_foreign_key "claude_login_sessions", "runner_credentials"
-  add_foreign_key "claude_login_sessions", "users", column: "created_by_id"
-  add_foreign_key "codex_login_sessions", "accounts"
-  add_foreign_key "codex_login_sessions", "runner_credentials"
-  add_foreign_key "codex_login_sessions", "users", column: "created_by_id"
   add_foreign_key "collector_runs", "project_versions"
   add_foreign_key "configuration_bundles", "accounts", on_delete: :cascade
   add_foreign_key "configuration_bundles", "llm_models", on_delete: :nullify
@@ -3482,6 +3463,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_31_093614) do
   add_foreign_key "llm_output_metrics", "accounts", on_delete: :cascade
   add_foreign_key "llm_output_metrics", "projects", on_delete: :cascade
   add_foreign_key "llm_output_metrics", "prompt_versions", on_delete: :nullify
+  add_foreign_key "login_sessions", "accounts"
+  add_foreign_key "login_sessions", "integration_credentials"
+  add_foreign_key "login_sessions", "runner_credentials"
+  add_foreign_key "login_sessions", "users", column: "created_by_id"
   add_foreign_key "marketplace_entries", "accounts"
   add_foreign_key "marketplace_entries", "marketplace_entry_versions", column: "current_version_id", on_delete: :nullify
   add_foreign_key "marketplace_entry_rules", "marketplace_entries"

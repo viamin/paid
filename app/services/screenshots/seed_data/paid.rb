@@ -237,7 +237,8 @@ module Screenshots
             record.secret = "sk-ant-#{'a' * 24}"
           end
 
-          claude_login_session = account.claude_login_sessions.find_or_create_by!(
+          claude_login_session = ClaudeLoginSession.find_or_create_by!(
+            account: account,
             credential_name: "Screenshot Claude Browser Login",
             created_by: user
           ) do |record|
@@ -246,7 +247,8 @@ module Screenshots
             record.metadata = {}
           end
 
-          codex_login_session = account.codex_login_sessions.find_or_create_by!(
+          codex_login_session = CodexLoginSession.find_or_create_by!(
+            account: account,
             credential_name: "Screenshot Codex Browser Login",
             created_by: user
           ) do |record|

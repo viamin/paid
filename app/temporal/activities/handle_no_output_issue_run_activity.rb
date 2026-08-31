@@ -25,18 +25,6 @@ module Activities
     NEEDS_INPUT_COMMENT_MARKER = "<!-- paid:needs-input -->"
     RECOMMEND_CLOSE_COMMENT_MARKER = "<!-- paid:recommend-close -->"
     ISSUE_EXPLANATION_COMMENT_FAILURE_KEY = "issue_explanation_comment_failure"
-    # Durable marker recorded on the run immediately after GitHub confirms
-    # follow-up issue creation, before Issues::UpsertFromGithub.call runs.
-    # If the activity is retried between those two steps (crash, timeout),
-    # the retry finds this marker and reuses the already-created GitHub
-    # issue instead of calling create_issue again — see NO-OUTPUT-ISSUE-005.
-    FOLLOWUP_ISSUE_CREATION_METADATA_KEY = "followup_issue_creation"
-    # Matches a single paired follow-up plan: a `followup-title:` comment
-    # directly followed by `followup-body-start` / `followup-body-end`
-    # comments. The `(?!<!--).` lookahead prevents the title capture from
-    # crossing another HTML comment opener, so a stray title marker without
-    # its body cannot be combined with a later complete body block.
-    FOLLOWUP_PLAN_PATTERN = /<!--\s*followup-title:\s*((?:(?!<!--).)+?)\s*-->\s*<!--\s*followup-body-start\s*-->\n?(.*?)\n?<!--\s*followup-body-end\s*-->/m.freeze
 
     SUPPLEMENTARY_ERROR_PATTERNS = [
       /quota exceeded/i,
@@ -94,7 +82,7 @@ module Activities
     PERMISSION_REQUESTED_PATTERN = /permission requested:/i
     TOOL_PERMISSION_REJECTED_PATTERN = /the user rejected permission to use this specific tool call/i
 
-    def execute(input) # @spec NO-OUTPUT-ISSUE-001 NO-OUTPUT-ISSUE-002 NO-OUTPUT-ISSUE-003 NO-OUTPUT-ISSUE-004 NO-OUTPUT-ISSUE-005
+    def execute(input) # @spec NO-OUTPUT-ISSUE-001 NO-OUTPUT-ISSUE-002
       agent_run_id = input[:agent_run_id]
       output_present = input.fetch(:output_present, false)
 
@@ -109,11 +97,9 @@ module Activities
 
       project = agent_run.project
       client = project.client
-      full_agent_summary = agent_run.agent_summary_with_stderr_fallback
       agent_summary = agent_run.agent_summary_with_stderr_fallback(limit: 100)
       diagnostic_output = classification_text_for(agent_run)
-      followup_plan = parse_followup_plan(full_agent_summary)
-      outcome = classify_outcome(agent_run, output_present, diagnostic_output, followup_plan:)
+      outcome = classify_outcome(agent_run, output_present, diagnostic_output)
 
       track_phase(agent_run_id: agent_run_id, phase_key: "handle_no_output_issue_run", phase_group: "post", agent_run: agent_run, metadata: { outcome: outcome }) do
         case outcome
@@ -123,10 +109,6 @@ module Activities
           handle_infrastructure_error(client, agent_run, agent_summary)
         when "needs_input"
           handle_needs_input(client, agent_run, agent_summary)
-          agent_run.complete!
-          agent_run.log!("system", "Completed without PR: #{outcome}")
-        when "blocked_on_gap"
-          handle_blocked_on_gap(client, agent_run, followup_plan)
           agent_run.complete!
           agent_run.log!("system", "Completed without PR: #{outcome}")
         else
@@ -154,7 +136,7 @@ module Activities
     # and evidence that the agent actually performed work. Defense in depth:
     # even if RunAgentActivity failed to detect a provider error, this check
     # prevents credit/quota errors from being misclassified as recommend_close.
-    def classify_outcome(agent_run, output_present, diagnostic_output, followup_plan: nil)
+    def classify_outcome(agent_run, output_present, diagnostic_output)
       return "infrastructure_error" if terminal_infrastructure_error_output?(diagnostic_output)
 
       unless output_present
@@ -177,8 +159,6 @@ module Activities
 
         return "infrastructure_error"
       end
-
-      return "blocked_on_gap" if followup_plan.present?
 
       "recommend_close"
     end
@@ -306,142 +286,11 @@ module Activities
       post_recommend_close_comment(client, agent_run, agent_summary)
     end
 
-    # @spec NO-OUTPUT-ISSUE-003 NO-OUTPUT-ISSUE-005
-    def handle_blocked_on_gap(client, agent_run, followup_plan)
-      project = agent_run.project
-      issue = agent_run.issue
-      followup_issue, deduplicated = create_or_reuse_followup_issue(
-        client:,
-        project:,
-        parent_issue: issue,
-        agent_run:,
-        followup_plan:
-      )
-
-      updated_body = append_followup_dependency_line(
-        body: issue.body,
-        github_number: followup_issue.github_number,
-        project:
-      )
-
-      client.update_issue(project.full_name, issue.github_number, body: updated_body)
-
-      Issue.transaction do
-        issue.update!(paid_state: "new", body: updated_body)
-        Issues::ParseDependencies.call(issue:)
-      end
-
-      remove_trigger_labels(client, project, issue, agent_run.id)
-      remove_needs_input_label(client, project, issue, agent_run.id)
-      remove_recommend_close_label(client, project, issue, agent_run.id)
-      audit_followup_issue(agent_run:, parent_issue: issue, followup_issue:, deduplicated:)
-    end
-
     def mark_complete_without_issue(agent_run)
       agent_run.complete!
       agent_run.log!("system", "Completed without PR: no_changes")
       ProcessRunQueueJob.perform_later
       { agent_run_id: agent_run.id, outcome: "no_changes" }
-    end
-
-    def parse_followup_plan(summary)
-      return nil if summary.blank?
-
-      match = summary.match(FOLLOWUP_PLAN_PATTERN)
-      return nil unless match
-
-      title = match[1]&.strip
-      body = match[2]&.strip
-      return nil if title.blank? || body.blank?
-
-      {
-        title: title.truncate(Llm::GenerateIssueTitle::MAX_TITLE_LENGTH),
-        body: body.truncate(50_000)
-      }
-    end
-
-    def create_or_reuse_followup_issue(client:, project:, parent_issue:, agent_run:, followup_plan:)
-      existing_issue = project.issues
-        .issues_only
-        .where(github_state: "open", title: followup_plan[:title])
-        .where.not(id: parent_issue.id)
-        .first
-      return [ existing_issue, true ] if existing_issue
-
-      if (pending_github_number = pending_followup_github_number(agent_run))
-        gh_issue = client.issue(project.full_name, pending_github_number)
-        return [ Issues::UpsertFromGithub.call(project:, github_issue: gh_issue), true ]
-      end
-
-      gh_issue = client.create_issue(
-        project.full_name,
-        title: followup_plan[:title],
-        body: followup_plan[:body],
-        labels: followup_issue_labels(project, agent_run)
-      )
-      record_pending_followup_issue!(agent_run, github_number: gh_issue.number)
-
-      [ Issues::UpsertFromGithub.call(project:, github_issue: gh_issue), false ]
-    end
-
-    def pending_followup_github_number(agent_run)
-      metadata = agent_run.external_metadata
-      return nil unless metadata.is_a?(Hash)
-
-      metadata.dig(FOLLOWUP_ISSUE_CREATION_METADATA_KEY, "github_number")
-    end
-
-    def record_pending_followup_issue!(agent_run, github_number:)
-      metadata = agent_run.external_metadata.is_a?(Hash) ? agent_run.external_metadata.deep_dup : {}
-      metadata[FOLLOWUP_ISSUE_CREATION_METADATA_KEY] = { "github_number" => github_number }
-      agent_run.update!(external_metadata: metadata)
-    end
-
-    def followup_issue_labels(project, agent_run)
-      labels = []
-      labels << project.automation_label_name if project.automation_on_label_enabled? && project.automation_label_name.present?
-      labels << project.generated_label_name if project.auto_add_labels_enabled?
-
-      priority_label = agent_run.project.priority_label_for(agent_run.priority_tier) if agent_run.priority_tier.present?
-      labels << priority_label if priority_label.present?
-      labels.uniq
-    end
-
-    def append_followup_dependency_line(body:, github_number:, project:)
-      resolved = ProjectConventions::IssueDependencies.convention_value(project)
-      heading = ProjectConventions::IssueDependencies.heading(project:, resolved:)
-      dep_line = ProjectConventions::IssueDependencies.depends_on_line(project:, github_number:, resolved:)
-      dep_entry = "- #{dep_line}"
-      text = body.to_s.rstrip
-      return text if text.match?(/#{Regexp.escape(dep_line)}\b/)
-
-      # Matches an existing dependency section the way Issues::ParseDependencies
-      # reads one: the heading alone on its line (either "## Dependencies\n- x"
-      # or a blank-line-separated body), ending at the next markdown heading of
-      # any level or the end of the body.
-      section_pattern = /^(#{Regexp.escape(heading)}[ \t]*)(?:\n|\z)(.*?)(?=\n[#]{1,6}[ \t]|\z)/m
-      return "#{text}\n\n#{heading}\n\n#{dep_entry}" unless text.match?(section_pattern)
-
-      text.sub(section_pattern) do
-        section_header = Regexp.last_match(1)
-        section_body = Regexp.last_match(2).to_s.rstrip
-        "#{section_header}\n#{section_body}\n#{dep_entry}"
-      end
-    end
-
-    def audit_followup_issue(agent_run:, parent_issue:, followup_issue:, deduplicated:)
-      Audit::RecordEvent.call(
-        action: "agent_run.followup_issue_created",
-        subject: followup_issue,
-        metadata: {
-          agent_run_id: agent_run.id,
-          parent_issue_id: parent_issue.id,
-          parent_github_number: parent_issue.github_number,
-          followup_issue_id: followup_issue.id,
-          followup_github_number: followup_issue.github_number,
-          deduplicated: deduplicated
-        }
-      )
     end
 
     def triggering_label_for(project)

@@ -254,7 +254,7 @@ RSpec.describe DockerOrphanCleanupJob do
       end
     end
 
-    context "with preview tunnel port reservations" do
+    context "with preview tunnel reservations" do
       before do
         stub_no_volumes
         stub_agent_containers

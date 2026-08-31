@@ -28,7 +28,7 @@
         </div>
       <% end %>
 
-      <%= form_with model: @codex_login_session, class: "mt-6 space-y-6" do |form| %>
+      <%= form_with model: @codex_login_session, url: codex_login_sessions_path, class: "mt-6 space-y-6" do |form| %>
         <% if @codex_login_session.errors.any? %>
           <div class="rounded-md bg-red-50 p-4">
             <h2 class="text-sm font-medium text-red-800">Please fix the following:</h2>
