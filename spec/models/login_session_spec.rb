@@ -24,4 +24,23 @@ RSpec.describe LoginSession do
       expect(build(:codex_login_session, status: "awaiting_authorization")).to be_valid
     end
   end
+
+  # @spec SUBSCRIPTION-RUNNER-AUTH-005
+  describe "create defaults" do
+    it "assigns the Codex poll interval before subclass callbacks populate provider" do
+      account = create(:account)
+      created_by = create(:user, account: account)
+
+      session = CodexLoginSession.create!(
+        account: account,
+        created_by: created_by,
+        credential_name: "Codex Subscription Login",
+        provider: nil,
+        poll_interval: nil
+      )
+
+      expect(session.provider).to eq("codex")
+      expect(session.poll_interval).to eq(5)
+    end
+  end
 end

@@ -69,8 +69,17 @@ class LoginSession < ApplicationRecord
     self.external_id ||= SecureRandom.uuid
     self.session_token ||= SecureRandom.hex(32)
     self.status ||= "starting"
-    self.poll_interval ||= 5 if provider == "codex"
+    self.poll_interval ||= 5 if defaults_provider == "codex"
     self.expires_at ||= SESSION_TTL.from_now
+  end
+
+  def defaults_provider
+    provider.presence || inferred_provider
+  end
+
+  def inferred_provider
+    return "claude" if instance_of?(ClaudeLoginSession)
+    "codex" if instance_of?(CodexLoginSession)
   end
 
   def created_by_belongs_to_account
