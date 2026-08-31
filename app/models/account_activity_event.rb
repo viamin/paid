@@ -40,6 +40,7 @@ class AccountActivityEvent < ApplicationRecord
     "agent_run.retried" => "run",
     "agent_run.terminated" => "run",
     "agent_run.resumed" => "run",
+    "agent_run.followup_issue_created" => "run",
     "run_shell.executed" => "run",
     "propose_pull_request.executed" => "run",
     "search_issues.executed" => "run",
@@ -170,6 +171,8 @@ class AccountActivityEvent < ApplicationRecord
       "Terminated agent run ##{metadata_value('agent_run_id')}"
     when "agent_run.resumed"
       "Resumed agent run ##{metadata_value('agent_run_id')}"
+    when "agent_run.followup_issue_created"
+      "Filed follow-up issue ##{metadata_value('followup_github_number')} for agent run ##{metadata_value('agent_run_id')}"
     when "propose_pull_request.executed"
       "Proposed pull request ##{metadata_value('pull_request_number')}"
     when "search_issues.executed"
@@ -227,6 +230,8 @@ class AccountActivityEvent < ApplicationRecord
       Array(metadata.to_h["result"]).compact
     when "agent_run.retried"
       Array(metadata.to_h["details"]).compact
+    when "agent_run.followup_issue_created"
+      Array(metadata.to_h["parent_github_number"]).compact.map { |number| "Parent issue: ##{number}" }
     when "propose_pull_request.executed"
       Array(metadata.to_h["pull_request_url"]).compact
     when "search_issues.executed"
