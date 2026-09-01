@@ -41,6 +41,13 @@ installation tokens and present the App bot identity; PAT-backed projects keep
 using their active token. Callers consume an opaque GitHub credential so the
 read/write path does not branch on auth mode.
 
+The runtime `GithubClient` surface intentionally separates two kinds of
+operations. Methods that add Paid-specific behavior stay explicit on the class
+(pagination control, payload shaping, compare summaries, GraphQL helpers,
+health-state recording). The plain Octokit pass-throughs stay on a delegated
+wrapper that applies the same error translation contract, so callers keep a
+small, stable API without duplicating rescue boilerplate throughout the class.
+
 Project-scoped GitHub diagnostics are exposed as a sanitized read model for
 customer users and chat agents. The diagnostics report derived facts only:
 credential mode, installation/token health, whether the project webhook secret

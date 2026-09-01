@@ -100,3 +100,12 @@
   `app/mcp/tools/get_project.rb`.
   *Test:* `spec/services/projects/github_diagnostics_spec.rb`,
   `spec/mcp/tools/get_project_spec.rb`.
+
+- [x] **GITHUB-SYNC-011** — When callers use the plain repository/issue/git
+  operations exposed by `GithubClient`, the system SHALL provide those
+  pass-throughs through one delegated wrapper that preserves `GithubClient`'s
+  error translation contract, so the class does not duplicate per-method
+  Octokit rescue boilerplate while callers still receive `GithubClient::*`
+  errors rather than raw Octokit exceptions.
+  *Code:* `app/services/github_client.rb`.
+  *Test:* `spec/services/github_client_spec.rb`.
