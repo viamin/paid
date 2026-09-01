@@ -237,6 +237,50 @@ RSpec.describe Tools::Registry do
         }
       },
       {
+        tool_name: "paid_knowledge_map",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> { { project_id: project.id } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :show?)
+          KnowledgeArtifact.active.for_project(project_record).group(:artifact_type).count
+        }
+      },
+      {
+        tool_name: "paid_knowledge_browse",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> { { project_id: project.id, artifact_type: "route" } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :show?)
+          KnowledgeArtifact.active.for_project(project_record).by_type("route").to_a
+        }
+      },
+      {
+        tool_name: "paid_knowledge_search",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> { { project_id: project.id, query: "agent run" } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :show?)
+          Knowledge::Search.call(project: project_record, query: "agent run", mode: "hybrid", limit: 10)
+        }
+      },
+      {
+        tool_name: "paid_knowledge_get",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> {
+          collector_run = create(:collector_run, project_version: create(:project_version, project: project))
+          artifact = create(:knowledge_artifact, project: project, collector_run: collector_run)
+          { project_id: project.id, artifact_id: artifact.id }
+        },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :show?)
+          project_record.knowledge_artifacts.order(:id).last
+        }
+      },
+      {
         tool_name: "read_repo_file",
         denied_user: -> { create(:user, :member, account: other_account) },
         arguments: -> { { project_id: project.id, path: "README.md" } },
