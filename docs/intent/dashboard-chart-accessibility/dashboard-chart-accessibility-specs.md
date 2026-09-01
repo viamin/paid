@@ -63,6 +63,29 @@
   `chartkick_dimensions`).
   *Test:* `spec/helpers/chartkick_helper_spec.rb`.
 
+- [x] **DASHBOARD-CHART-A11Y-009** — The default Chartkick placeholder DIV
+  SHALL source its loading text color and font family from theme CSS variables
+  rather than hard-coded values, so light and dark mode render through the same
+  theme contract.
+  *Code:* `app/helpers/chartkick_helper.rb` (`chartkick_default_placeholder`),
+  `app/assets/stylesheets/application.tailwind.css`.
+  *Test:* `spec/helpers/chartkick_helper_spec.rb`.
+
+- [x] **DASHBOARD-CHART-A11Y-010** — Dashboard chart call sites and chart
+  annotations SHALL source palette values from semantic theme tokens, and the
+  `chartkick` Stimulus controller SHALL resolve those tokens against the active
+  theme when creating or re-rendering a chart.
+  *Code:* `app/helpers/dashboard_helper.rb`,
+  `app/views/dashboard/_metrics.html.erb`,
+  `app/views/dashboard/_pr_cycle_time.html.erb`,
+  `app/javascript/controllers/chartkick_controller.js`,
+  `app/javascript/controllers/theme_controller.js`,
+  `app/assets/stylesheets/application.tailwind.css`.
+  *Test:* `spec/helpers/chartkick_helper_spec.rb`,
+  `spec/lib/chartkick_controller_node_harness_spec.rb`,
+  `spec/lib/theme_controller_node_harness_spec.rb`,
+  `spec/requests/dashboard_spec.rb`.
+
 - [x] **DASHBOARD-CHART-A11Y-006** — Every dashboard/runner chart call site
   (`column_chart`/`line_chart` in `_metrics`, `_pr_cycle_time`,
   `_orchestration_decisions`, `runners/_provider_outcomes`) SHALL pass a

@@ -982,11 +982,10 @@ RSpec.describe Dashboard::Stats do
           expect(status_names).to eq(Dashboard::Stats::OUTCOME_CHART_STATUSES.map(&:titleize))
         end
 
-        it "exposes colors aligned with the series order" do
+        it "keeps series order aligned with the dashboard theme mapping" do
           result = stats[:daily_outcome_chart]
-          expected = Dashboard::Stats::OUTCOME_CHART_STATUSES.map { |s| Dashboard::Stats::OUTCOME_CHART_COLORS[s] }
-          expect(result[:colors]).to eq(expected)
-          expect(result[:colors].length).to eq(result[:series].length)
+          expect(result[:series].map { |series| series[:name].downcase.tr(" ", "_") })
+            .to eq(Dashboard::Stats::OUTCOME_CHART_STATUSES)
         end
       end
 
@@ -1015,12 +1014,10 @@ RSpec.describe Dashboard::Stats do
           expect(result[:overall_completion_rate]).to eq(50.0)
         end
 
-        it "renders a Retried series and matching color" do
+        it "renders a Retried series" do
           result = stats[:daily_outcome_chart]
           names = result[:series].map { |s| s[:name] }
           expect(names).to include("Retried")
-          retried_index = names.index("Retried")
-          expect(result[:colors][retried_index]).to eq(Dashboard::Stats::OUTCOME_CHART_COLORS["retried"])
         end
       end
 

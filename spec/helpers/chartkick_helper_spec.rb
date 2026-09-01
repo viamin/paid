@@ -138,6 +138,16 @@ RSpec.describe ChartkickHelper, :no_db do
       expect(Nokogiri::HTML.fragment(html).at_css("#loading-chart").text).to eq("Loading...")
     end
 
+    # @spec DASHBOARD-CHART-A11Y-009
+    it "styles the loading placeholder with theme tokens instead of hard-coded colors" do
+      html = helper.column_chart({ "2026-01-01" => 1 }, id: "loading-chart")
+
+      style = Nokogiri::HTML.fragment(html).at_css("#loading-chart")["style"]
+
+      expect(style).to include("color: var(--chartkick-loading-color)")
+      expect(style).to include("font-family: var(--chartkick-loading-font-family)")
+    end
+
     # @spec DASHBOARD-CHART-A11Y-008
     it "rejects invalid height or width on the default placeholder path" do
       expect {

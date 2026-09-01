@@ -43,11 +43,35 @@ class ChartkickControllerNodeHarness
     const ChartkickController = new Function(transformed)();
 
     function run() {
+      const listeners = {};
       const staleChart = {
         destroyed: false,
         destroy() {
           this.destroyed = true;
         }
+      };
+
+      global.window = {
+        addEventListener(name, callback) {
+          listeners[name] = callback;
+        },
+        removeEventListener(name, callback) {
+          if (listeners[name] === callback) delete listeners[name];
+        },
+        getComputedStyle() {
+          return {
+            getPropertyValue(name) {
+              return {
+                "--dashboard-chart-success": "#4ade80",
+                "--dashboard-chart-annotation-border": "rgb(251 191 36 / 0.45)"
+              }[name] || "";
+            }
+          };
+        }
+      };
+
+      global.document = {
+        documentElement: {}
       };
 
       global.__chartkickStub.charts["chart-1"] = staleChart;
@@ -56,8 +80,23 @@ class ChartkickControllerNodeHarness
       controller.element = { id: "chart-1" };
       controller.typeValue = "LineChart";
       controller.dataValue = JSON.stringify({ "2026-07-15": 4 });
-      controller.optionsValue = JSON.stringify({ xtitle: "Day" });
+      controller.optionsValue = JSON.stringify({
+        xtitle: "Day",
+        colors: ["var(--dashboard-chart-success)"],
+        library: {
+          plugins: {
+            annotation: {
+              annotations: {
+                x: {
+                  borderColor: "var(--dashboard-chart-annotation-border)"
+                }
+              }
+            }
+          }
+        }
+      });
 
+      controller.initialize();
       controller.connect();
 
       if (!staleChart.destroyed) {
@@ -75,6 +114,20 @@ class ChartkickControllerNodeHarness
 
       if (chart.options.xtitle !== "Day") {
         throw new Error(`Expected parsed chart options to include xtitle, saw ${JSON.stringify(chart.options)}`);
+      }
+
+      if (chart.options.colors[0] !== "#4ade80") {
+        throw new Error(`Expected theme token colors to resolve before Chartkick render, saw ${JSON.stringify(chart.options.colors)}`);
+      }
+
+      if (chart.options.library.plugins.annotation.annotations.x.borderColor !== "rgb(251 191 36 / 0.45)") {
+        throw new Error(`Expected nested theme token to resolve, saw ${chart.options.library.plugins.annotation.annotations.x.borderColor}`);
+      }
+
+      listeners["theme:changed"]?.();
+
+      if (createdCharts.length !== 2) {
+        throw new Error(`Expected theme change to re-render the chart, saw ${createdCharts.length} charts`);
       }
 
       controller.disconnect();

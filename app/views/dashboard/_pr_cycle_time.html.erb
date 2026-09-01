@@ -47,7 +47,7 @@
               id: "pr-cycle-time-chart",
               caption: "Daily average and median hours from issue creation to PR merge, with outliers above #{outlier_cutoff} hours excluded.",
               height: "320px",
-              colors: ["#6366f1", "#10b981", "#f59e0b"],
+              colors: dashboard_chart_colors(:pr_cycle_time),
               xtitle: "Merge Date",
               ytitle: "Hours",
               curve: false,

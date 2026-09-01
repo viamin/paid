@@ -26,6 +26,10 @@ gem's stock `column_chart`/`line_chart` helpers. Two problems:
    text content of its own, so screen reader and other non-visual users cannot
    inspect the trend/outcome data the charts convey — the same data sighted
    users read off axes, legends, and tooltips.
+3. **Theme coherence.** The placeholder and several dashboard chart call sites
+   hard-code light-theme color values (`#999`, `#16a34a`, `#dc2626`,
+   `#6366f1`, `#10b981`, `#f59e0b`). In dark mode or under future theme
+   changes, those charts drift visually from the rest of the app.
 
 ## Approach
 
@@ -52,6 +56,15 @@ quality-dashboard mutation-sweep trend and per-run histogram) — the table
 builder normalizes all three into rows before rendering, with `nil` values
 (days with no data) rendered as the text "No data" rather than an empty
 cell.
+
+The same rendering seam now owns theme tokens for chart loading text and the
+dashboard-specific palettes. CSS variables on `:root` and `.dark` define the
+semantic chart colors. Dashboard helpers/views pass those tokens via the
+existing Chartkick option hashes, and the `chartkick` Stimulus controller
+resolves `var(--token)` references against the current computed theme before
+instantiating Chart.js. The theme controller emits a change event after every
+theme application so already-rendered charts can re-resolve and redraw without
+waiting for a full page reload.
 
 Centralizing this in the override means every current and future chart call
 site (dashboard, runner, and quality-dashboards views) gets the same
@@ -87,14 +100,20 @@ treatment automatically, with no per-view accessibility work beyond adding a
   name the actual data (e.g. "Agent runs per day, stacked by completion
   status"), which only the calling view knows; there is no reliable way to
   derive it from `data_source` or `chart_type` alone.
-- **No new JS.** The table is server-rendered alongside the existing div, so
-  it works identically whether or not the chartkick controller has finished
-  loading Chart.js.
+- **Use CSS variables for semantic chart colors, but resolve them in JS before
+  Chart.js sees them.** The issue specifically wants chart palettes to
+  participate in theming. CSS variables provide the theme contract; resolving
+  them in the controller keeps Chart.js on concrete color strings instead of
+  assuming canvas/chart plugins will interpret `var(...)` reliably.
+- **Redraw charts on theme changes.** A dashboard frame does not necessarily
+  reload when a user toggles dark mode. Re-rendering the existing chart on the
+  theme change event keeps palettes and annotation colors coherent in-session.
 
 ## What this is not
 
-- **Not a chart redesign.** Visual chart rendering, colors, and interactivity
-  are unchanged.
+- **Not a chart redesign.** Chart types, datasets, and interactions are
+  unchanged; only palette sourcing and loading-placeholder styling now follow
+  the app theme contract.
 - **Not chart-type-aware.** The table format is the same for column, line,
   and any future Chartkick chart type — it reflects the series data, not the
   visual encoding.

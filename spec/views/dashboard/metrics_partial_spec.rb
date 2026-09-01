@@ -24,7 +24,6 @@ RSpec.describe "dashboard/_metrics", :no_db, type: :view do
           { name: "Completed", data: { "2026-08-20" => 3 } },
           { name: "Failed", data: { "2026-08-20" => 1 } }
         ],
-        colors: [ "#16a34a", "#dc2626" ],
         completion_rate: { "2026-08-20" => 75.0 },
         overall_total: 4,
         overall_completed: 3,

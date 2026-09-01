@@ -13,17 +13,6 @@ module Dashboard
     # .finished) — dropping it would inflate the displayed completion rate
     # and mask exactly the regressions the chart exists to surface.
     OUTCOME_CHART_STATUSES = %w[completed failed timeout token_budget_exceeded no_output auth_expired rate_limited cancelled retried].freeze
-    OUTCOME_CHART_COLORS = {
-      "completed" => "#16a34a",
-      "failed" => "#dc2626",
-      "timeout" => "#f97316",
-      "token_budget_exceeded" => "#e11d48",
-      "no_output" => "#7c3aed",
-      "auth_expired" => "#2563eb",
-      "rate_limited" => "#ca8a04",
-      "cancelled" => "#6b7280",
-      "retried" => "#64748b"
-    }.freeze
     OUTCOME_CHART_WINDOW_DAYS = 30
     OUTCOME_CHART_CUMULATIVE_MAX_WINDOW_DAYS = 90
     PHASE_BREAKDOWN_WINDOW = 30.days
@@ -290,7 +279,6 @@ module Dashboard
 
       {
         series: series,
-        colors: OUTCOME_CHART_STATUSES.map { |s| OUTCOME_CHART_COLORS[s] },
         completion_rate: completion_rate,
         overall_total: overall_total,
         overall_completed: overall_completed,
