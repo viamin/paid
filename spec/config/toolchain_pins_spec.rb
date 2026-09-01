@@ -250,6 +250,17 @@ RSpec.describe ToolchainPins, :no_db do
     end
   end
 
+  # @spec TOOLCHAIN-PIN-012
+  describe "Tailwind package ownership" do
+    it "keeps Tailwind pinned through the CLI package without a redundant direct dependency" do
+      package_json = JSON.parse(Rails.root.join("package.json").read)
+      dependencies = package_json.fetch("dependencies")
+
+      expect(dependencies).to include("@tailwindcss/cli" => "4.3.3")
+      expect(dependencies).not_to have_key("tailwindcss")
+    end
+  end
+
   # @spec TOOLCHAIN-PIN-040
   describe "report-only runtimes" do
     subject(:pinned) do

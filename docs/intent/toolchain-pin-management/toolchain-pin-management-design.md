@@ -32,6 +32,12 @@ Pins fall into three ownership classes, and the class determines what
 server image plus its matching client packages. `bin/update` resolves the
 upstream version and rewrites every file that carries the pin.
 
+The app's JavaScript build manifest follows the same "pin only what we own"
+rule. When a build tool package already carries its runtime transitively, the
+manifest keeps the explicit tool package and omits the redundant direct
+runtime dependency, so the dependency graph stays smaller without changing the
+build entry point.
+
 **Contract-owned pins** belong to the `agent-harness` gem. The versions of the
 agent CLIs — Claude Code, Codex, OpenCode, Kilocode, Gemini, Copilot, Oh My Pi
 (`omp`), `pi`, Cursor — and Oh My Pi's Bun runtime are declared by
