@@ -2,6 +2,7 @@
 
 module Knowledge
   class BrowseController < ApplicationController
+    # @spec KNOWLEDGE-CURATED-003
     before_action :authenticate_user!
     before_action :set_project
 
@@ -12,6 +13,8 @@ module Knowledge
         .group(:artifact_type)
         .count
         .sort_by { |_, count| -count }
+      @curated_artifact_counts = @artifact_counts.select { |type, _| KnowledgeArtifact.curated_type?(type) }
+      @derived_artifact_counts = @artifact_counts.reject { |type, _| KnowledgeArtifact.curated_type?(type) }
       @total_artifacts = @artifact_counts.sum(&:last)
       @knowledge_map = Knowledge::Map::Build.call(project: @project)
     end
@@ -19,6 +22,7 @@ module Knowledge
     def show
       authorize @project, :show?
       @artifact_type = params[:id]
+      @curated = KnowledgeArtifact.curated_type?(@artifact_type)
       artifact_scope = KnowledgeArtifact.active
         .for_project(@project)
         .by_type(@artifact_type)

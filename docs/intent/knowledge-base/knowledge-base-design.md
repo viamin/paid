@@ -79,6 +79,40 @@ in the same bundle are still indexed.
 Context-bundle assembly includes active `okf_concept` artifacts under an
 explicit "Curated Knowledge (OKF bundle)" section.
 
+### Curated knowledge lane
+
+Some knowledge is durable, human/agent-authored context that explains why the
+system works a certain way rather than derived collector output: business
+context, imported documents, decision records, change intents, and OKF
+concepts. `KnowledgeArtifact::CURATED_ARTIFACT_TYPES` is the single canonical
+list of these curated artifact types; `KnowledgeArtifact.curated_type?` and
+`KnowledgeArtifact#curated?` classify any artifact type against it, and the
+`curated` / `derived` scopes filter by it. `Knowledge::Okf::Export` reuses the
+same constant rather than duplicating the list.
+
+This curated/derived distinction is surfaced everywhere knowledge is
+consumed or reported on, without a separate storage backend or new artifact
+schema — Postgres/Qdrant remain the runtime retrieval engine:
+
+- **Search** — `Knowledge::Search` tags every result with `curated: true/false`
+  so callers (the search UI, API consumers) can distinguish curated hits from
+  derived ones without a second lookup.
+- **Browse** — the knowledge browse index groups artifact-type tiles into a
+  "Curated Knowledge" section and a "Derived Knowledge" section; the
+  per-type browse page badges the type as Curated or Derived.
+- **Knowledge map** — `Knowledge::Map::Build` includes `lane_counts`, an
+  active/stale artifact-count breakdown by lane, alongside the existing
+  per-type `artifact_counts`.
+- **Usage stats** — `Knowledge::UsageStats#usage_by_lane` and
+  `Knowledge::DashboardStats#usage_by_lane` bucket existing
+  `knowledge_usage_stats` rows (already keyed by `artifact_type`) into
+  curated/derived totals rather than requiring a new usage-tracking column.
+- **Context bundles** — `Knowledge::ContextBundle::Build::SECTION_ORDER`
+  places every curated section (business context, imported documents, OKF,
+  decisions, change intents) before every derived section (routes, symbols,
+  schema, hotspots, stats), so curated knowledge is never pushed out of a
+  token-constrained bundle by codebase-derived context.
+
 ### OKF bundle export
 
 Paid remains the canonical knowledge store; OKF export (`Knowledge::Okf::Export`)

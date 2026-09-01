@@ -24,6 +24,7 @@ RSpec.describe Knowledge::Map::Build do
       expect(result[:project_id]).to eq(project.id)
       expect(result[:latest_commit]).to be_nil
       expect(result[:artifact_counts]).to eq({})
+      expect(result[:lane_counts]).to eq(curated: { active: 0, stale: 0 }, derived: { active: 0, stale: 0 })
       expect(result[:top_scopes]).to eq([])
       expect(result[:business_context]).to eq(present: false, artifact_count: 0, last_synthesized_at: nil)
       expect(result[:imported_documents]).to eq(count: 0, items: [])
@@ -50,6 +51,22 @@ RSpec.describe Knowledge::Map::Build do
       result = described_class.call(project: project)
 
       expect(result[:artifact_counts]).to eq("route" => { active: 2, stale: 1 })
+    end
+
+    # @spec KNOWLEDGE-CURATED-006
+    it "buckets active and stale artifact counts by curated/derived lane" do
+      project_version = create(:project_version, project: project)
+      collector_run = create(:collector_run, :completed, project_version: project_version, collector_type: "routes")
+      create(:knowledge_artifact, project: project, collector_run: collector_run, artifact_type: "route", status: "active")
+      create(:knowledge_artifact, project: project, collector_run: collector_run, artifact_type: "route", status: "stale")
+      create(:knowledge_artifact, project: project, collector_run: collector_run, artifact_type: "decision_record", status: "active")
+
+      result = described_class.call(project: project)
+
+      expect(result[:lane_counts]).to eq(
+        curated: { active: 1, stale: 0 },
+        derived: { active: 1, stale: 1 }
+      )
     end
 
     it "buckets active artifacts by their top-level scope directory" do

@@ -17,6 +17,17 @@ RSpec.describe Knowledge::ContextBundle::Build do
   end
   let(:collector_run) { create(:collector_run, :completed, project_version: create(:project_version, project: project)) }
 
+  # @spec KNOWLEDGE-CURATED-004
+  describe "SECTION_ORDER" do
+    it "orders every curated section before every derived section" do
+      order = described_class::SECTION_ORDER
+      curated_positions = %i[business_context documents okf decisions change_intents].map { |s| order.index(s) }
+      derived_positions = %i[routes symbols schema hotspots stats].map { |s| order.index(s) }
+
+      expect(curated_positions.max).to be < derived_positions.min
+    end
+  end
+
   describe ".call" do
     context "when knowledge base is empty" do
       it "returns an empty result with accurate query count" do
@@ -378,7 +389,7 @@ RSpec.describe Knowledge::ContextBundle::Build do
       it "includes all section types in correct order" do
         result = described_class.call(issue: issue, project: project)
 
-        expect(result[:sections]).to eq(%i[routes symbols schema hotspots decisions change_intents stats])
+        expect(result[:sections]).to eq(%i[decisions change_intents routes symbols schema hotspots stats])
         expect(result[:content]).to include("Codebase Context")
       end
 
