@@ -34,7 +34,7 @@ module Knowledge
       attr_reader :parsed, :project
 
       def resolve_chunk
-        KnowledgeChunk.for_project(project).find_by(id: parsed.chunk_id)
+        KnowledgeChunk.active.for_project(project).find_by(id: parsed.chunk_id)
       end
 
       def resolve_artifact

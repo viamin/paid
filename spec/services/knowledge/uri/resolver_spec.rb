@@ -21,6 +21,27 @@ RSpec.describe Knowledge::Uri::Resolver do
       expect(resolved).to eq(chunk)
     end
 
+    it "does not resolve a stale chunk through the active-view uri" do
+      uri = chunk.knowledge_uri
+      chunk.update!(status: "stale")
+
+      expect(described_class.call(uri, project: project)).to be_nil
+    end
+
+    it "does not resolve a redacted chunk through the active-view uri" do
+      uri = chunk.knowledge_uri
+      chunk.update!(status: "redacted")
+
+      expect(described_class.call(uri, project: project)).to be_nil
+    end
+
+    it "does not resolve a deleted chunk through the active-view uri" do
+      uri = chunk.knowledge_uri
+      chunk.update!(status: "deleted")
+
+      expect(described_class.call(uri, project: project)).to be_nil
+    end
+
     it "resolves an active-view artifact uri to its KnowledgeArtifact" do
       resolved = described_class.call(artifact.knowledge_uri, project: project)
 
