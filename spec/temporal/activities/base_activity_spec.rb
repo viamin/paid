@@ -126,6 +126,49 @@ RSpec.describe Activities::BaseActivity do
     end
   end
 
+  # @spec SESSION-SUMMARY-001
+  describe "#capture_session_summary_if_needed" do
+    let(:activity_class) do
+      Class.new(described_class) do
+        def execute(input)
+          input
+        end
+      end
+    end
+    let(:activity) do
+      stub_const("TestSessionSummaryActivity", activity_class)
+      TestSessionSummaryActivity.new
+    end
+
+    it "enqueues capture for a completed, non-synthetic run with a pull request" do
+      agent_run = create(:agent_run, :completed)
+
+      expect { activity.send(:capture_session_summary_if_needed, agent_run) }
+        .to have_enqueued_job(CaptureAgentRunSessionSummaryJob).with(agent_run.id)
+    end
+
+    it "does not enqueue capture for a run without a pull request" do
+      agent_run = create(:agent_run, :completed, pull_request_url: nil)
+
+      expect { activity.send(:capture_session_summary_if_needed, agent_run) }
+        .not_to have_enqueued_job(CaptureAgentRunSessionSummaryJob)
+    end
+
+    it "does not enqueue capture for a run that is not completed" do
+      agent_run = create(:agent_run, :failed)
+
+      expect { activity.send(:capture_session_summary_if_needed, agent_run) }
+        .not_to have_enqueued_job(CaptureAgentRunSessionSummaryJob)
+    end
+
+    it "does not enqueue capture for a synthetic run" do
+      agent_run = create(:agent_run, :completed, synthetic: true)
+
+      expect { activity.send(:capture_session_summary_if_needed, agent_run) }
+        .not_to have_enqueued_job(CaptureAgentRunSessionSummaryJob)
+    end
+  end
+
   describe "#with_periodic_heartbeat" do
     let(:activity_class) do
       Class.new(described_class) do

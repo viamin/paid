@@ -36,6 +36,14 @@ RSpec.describe Knowledge::ContextBundle::Build do
         expect(result[:content]).to eq("")
         expect(result[:sections]).to be_empty
         expect(result[:total_tokens]).to eq(0)
+        # session_summaries is excluded by default (opt-in), so the default
+        # query count is one less than the full SECTION_ORDER.
+        expect(result[:queries_made]).to eq(Knowledge::ContextBundle::Build::SECTION_ORDER.size - 1)
+      end
+
+      it "includes session_summaries in the query count when opted in" do
+        result = described_class.call(issue: issue, project: project, include_session_summaries: true)
+
         expect(result[:queries_made]).to eq(Knowledge::ContextBundle::Build::SECTION_ORDER.size)
       end
     end
@@ -155,6 +163,50 @@ RSpec.describe Knowledge::ContextBundle::Build do
         artifacts = described_class.new(issue: issue, project: project).send(:active_artifacts, "okf_concept")
 
         expect(artifacts.map { |artifact| artifact.association(:active_ordered_chunks) }).to all(be_loaded)
+      end
+    end
+
+    # @spec SESSION-SUMMARY-005
+    context "with session summary artifacts" do
+      before do
+        artifact = create(:knowledge_artifact,
+          project: project,
+          collector_run: collector_run,
+          collector_type: "session_summary",
+          artifact_type: "session_summary",
+          scope_path: "agent_runs/#{agent_run.id}/session_summary",
+          identifier: "Agent run ##{agent_run.id}",
+          content: "# Session Summary\nImplemented rate limiting.",
+          status: "active")
+        create(:knowledge_chunk,
+          knowledge_artifact: artifact,
+          project: project,
+          chunk_type: "summary",
+          content: "Implemented rate limiting for the public API.")
+      end
+
+      it "is excluded by default" do
+        result = described_class.call(issue: issue, project: project)
+
+        expect(result[:sections]).not_to include(:session_summaries)
+        expect(result[:content]).not_to include("Session Summaries")
+      end
+
+      it "is included and labeled as observations when opted in" do
+        result = described_class.call(issue: issue, project: project, include_session_summaries: true)
+
+        expect(result[:sections]).to include(:session_summaries)
+        expect(result[:content]).to include("Session Summaries (agent-run observations, not vetted intent)")
+        expect(result[:content]).to include("Implemented rate limiting for the public API.")
+        expect(result[:artifact_type_counts]).to include("session_summary" => 1)
+      end
+
+      it "records usage attribution when opted in with an agent_run_id" do
+        described_class.call(issue: issue, project: project, agent_run_id: agent_run.id, include_session_summaries: true)
+
+        stat = KnowledgeUsageStat.find_by(agent_run: agent_run, artifact_type: "session_summary")
+        expect(stat).to be_present
+        expect(stat.artifact_count).to eq(1)
       end
     end
 
@@ -396,7 +448,7 @@ RSpec.describe Knowledge::ContextBundle::Build do
       it "reports queries_made as the number of section types queried" do
         result = described_class.call(issue: issue, project: project)
 
-        expect(result[:queries_made]).to eq(Knowledge::ContextBundle::Build::SECTION_ORDER.size)
+        expect(result[:queries_made]).to eq(Knowledge::ContextBundle::Build::SECTION_ORDER.size - 1)
       end
     end
 
@@ -638,7 +690,7 @@ RSpec.describe Knowledge::ContextBundle::Build do
       result = described_class.new(issue: issue, project: project, agent_run: agent_run)
 
       expect(result.token_budget).to eq(4000)
-      expect(result.section_order).to eq(described_class::SECTION_ORDER)
+      expect(result.section_order).to eq(described_class::SECTION_ORDER - [ :session_summaries ])
       expect(Rails.logger).to have_received(:warn).with(
         message: "prompt_evolution.experiment_lookup_failed",
         config_key: "knowledge.token_budget",

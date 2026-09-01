@@ -88,7 +88,9 @@ module Activities
           llm_generated_description: pr_body&.fetch(:llm_generated_description, false)
         )
 
-        unless completed
+        if completed
+          capture_session_summary_if_needed(agent_run)
+        else
           logger.info(
             message: "agent_execution.pull_request_completion_skipped",
             agent_run_id: agent_run_id,

@@ -280,6 +280,19 @@ module Activities
       )
     end
 
+    # Enqueues session-summary capture for agent runs that produced a pull
+    # request. Scoped to completed, non-synthetic runs with PR output —
+    # runs with no code changes have nothing substantive to summarize.
+    #
+    # @spec SESSION-SUMMARY-001
+    def capture_session_summary_if_needed(agent_run)
+      return unless agent_run.status == "completed"
+      return if agent_run.synthetic?
+      return if agent_run.pull_request_url.blank?
+
+      CaptureAgentRunSessionSummaryJob.perform_later(agent_run.id)
+    end
+
     def track_phase(agent_run_id:, phase_key:, phase_group:, agent_run: nil, metadata: {}, started_at: Time.current, budget_seconds: nil)
       status = "completed"
       started_monotonic = monotonic_now

@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 class LlmOutputMetric < ApplicationRecord
-  OUTPUT_TYPES = %w[pr_description issue_title decision_record].freeze
-  SOURCE_TYPES = %w[PullRequest Issue DecisionRecord].freeze
+  OUTPUT_TYPES = %w[pr_description issue_title decision_record session_summary].freeze
+  SOURCE_TYPES = %w[PullRequest Issue DecisionRecord AgentRunSessionSummary].freeze
   # Weights for composite quality scoring by output type.
   OUTPUT_WEIGHTS = {
     "pr_description" => {

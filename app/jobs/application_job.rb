@@ -169,6 +169,7 @@ class ApplicationJob < ActiveJob::Base
       AgentRunCancellationJob,
       AgentRunResourceJanitorJob,
       AnomalyDetectionJob,
+      CaptureAgentRunSessionSummaryJob,
       ContainerMetricsCollectionJob,
       DiagnoseErrorJob,
       FailureRecoveryDecisionJob,

@@ -43,6 +43,10 @@ class AgentRunPolicy < ApplicationPolicy
     run_agent?
   end
 
+  def update?
+    run_agent?
+  end
+
   private
 
   def run_agent?
