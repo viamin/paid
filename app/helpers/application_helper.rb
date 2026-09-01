@@ -735,7 +735,7 @@ module ApplicationHelper
             "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round",
             aria: { hidden: "true" }, focusable: "false"
           ),
-          class: "[@media(hover:hover)_and_(pointer:fine)_and_(not_(any-pointer:coarse))]:hidden cursor-pointer text-gray-400 hover:text-gray-600 list-none",
+          class: "[@media(hover:hover)_and_(pointer:fine)_and_(not_(any-pointer:coarse))]:hidden cursor-pointer text-gray-400 hover:text-gray-600 list-none [&::-webkit-details-marker]:hidden",
           aria: { label: aria_label, describedby: dom_id }
         ),
         inner,

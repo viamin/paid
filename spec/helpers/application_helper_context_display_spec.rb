@@ -146,6 +146,20 @@ RSpec.describe ApplicationHelper, :no_db do
         expect(result).to include('role="tooltip"')
       end
 
+      it "hides the native disclosure marker on the custom summary" do
+        issue = stub_issue(github_number: 42, github_url: "https://github.com/o/r/issues/42",
+          title: "Fix bug")
+        run = stub_run("create_pr_goal?": true, issue: issue)
+        fragment = Nokogiri::HTML5.fragment(helper.agent_run_context_display(run))
+
+        # list-style:none alone does not remove the WebKit ::-webkit-details-marker,
+        # so Safari/iOS would draw the browser triangle next to the info icon
+        # (see #3517 review feedback).
+        summary_class = fragment.at_css("summary")["class"]
+        expect(summary_class).to include("list-none")
+        expect(summary_class).to include("[&::-webkit-details-marker]:hidden")
+      end
+
       it "associates the focusable link trigger with the tooltip content via aria-describedby" do
         issue = stub_issue(github_number: 42, github_url: "https://github.com/o/r/issues/42",
           title: "Fix bug")
