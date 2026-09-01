@@ -108,7 +108,7 @@ RSpec.describe ApplicationHelper, :no_db do
         run = stub_run("create_pr_goal?": true, issue: issue)
         result = helper.agent_run_context_display(run)
 
-        expect(result).to include('data-controller="tooltip"')
+        expect(result).to include("<details")
         expect(result).to include('role="tooltip"')
         expect(result).to include("@media(hover:hover)_and_(pointer:fine)_and_(not_(any-pointer:coarse))")
       end
@@ -119,21 +119,19 @@ RSpec.describe ApplicationHelper, :no_db do
         result = helper.agent_run_context_display(run)
 
         expect(result).to include('title="Issue #42"')
-        expect(result).to include('data-controller="tooltip"')
+        expect(result).to include("<details")
         expect(result).to include("@media(hover:hover)_and_(pointer:fine)_and_(not_(any-pointer:coarse))")
       end
 
-      it "includes aria attributes on tooltip button" do
+      it "includes aria attributes on tooltip summary" do
         issue = stub_issue(github_number: 42, github_url: "https://github.com/o/r/issues/42",
           title: "Fix bug")
         run = stub_run(id: 99, "create_pr_goal?": true, issue: issue)
         result = helper.agent_run_context_display(run)
 
-        expect(result).to include('aria-controls="context_99"')
-        expect(result).to include('aria-describedby="context_99"')
         expect(result).to include('aria-label="Show context details"')
-        expect(result).to include('aria-expanded="false"')
-        expect(result).to include('aria-hidden="true"')
+        expect(result).to include('id="context_99"')
+        expect(result).to include('role="tooltip"')
       end
     end
 
@@ -157,7 +155,7 @@ RSpec.describe ApplicationHelper, :no_db do
         result = helper.agent_run_context_display(run)
 
         expect(result).to include('title="Tighten tooltip coverage"')
-        expect(result).to include('data-controller="tooltip"')
+        expect(result).to include("<details")
       end
 
       it "shows source PR number as text when project is nil" do
@@ -237,7 +235,7 @@ RSpec.describe ApplicationHelper, :no_db do
         result = helper.agent_run_context_display(run)
 
         expect(result).to include('title="Document tooltip behavior"')
-        expect(result).to include('data-controller="tooltip"')
+        expect(result).to include("<details")
       end
 
       it "falls back to the issue label when no richer created issue tooltip is available" do
@@ -313,7 +311,7 @@ RSpec.describe ApplicationHelper, :no_db do
         result = helper.agent_run_context_display(run)
 
         expect(result).to include('title="Review the tooltip helper update"')
-        expect(result).to include('data-controller="tooltip"')
+        expect(result).to include("<details")
       end
 
       it "shows PR number as text when project is nil" do
@@ -348,7 +346,7 @@ RSpec.describe ApplicationHelper, :no_db do
         result = helper.agent_run_context_display(run)
 
         expect(result).to include('title="Issue #55"')
-        expect(result).to include('data-controller="tooltip"')
+        expect(result).to include("<details")
       end
 
       it "shows placeholder when no issue" do
@@ -430,7 +428,7 @@ RSpec.describe ApplicationHelper, :no_db do
 
       expect(result).to include("PR Creation")
       expect(result).not_to include("title=")
-      expect(result).not_to include('data-controller="tooltip"')
+      expect(result).not_to include("<details")
       expect(result).not_to include('role="tooltip"')
     end
 

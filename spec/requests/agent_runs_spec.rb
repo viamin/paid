@@ -57,7 +57,7 @@ RSpec.describe "AgentRuns" do
 
         expect(goal_cell.text).to include("PR Creation")
         expect(truncated_label["title"]).to be_nil
-        expect(goal_cell.at_css('[data-controller="tooltip"]')).to be_nil
+        expect(goal_cell.at_css('details')).to be_nil
         expect(goal_cell.at_css('span[role="tooltip"]')).to be_nil
       end
 
@@ -184,7 +184,7 @@ RSpec.describe "AgentRuns" do
         get agent_runs_path
 
         context_cell = cell_for_run(parsed_html, run, "Context")
-        tooltip_wrapper = context_cell.at_css('[data-controller="tooltip"]')
+        tooltip_wrapper = context_cell.at_css('details')
         tooltip_content = tooltip_wrapper&.at_css('span[role="tooltip"]')
 
         expect(context_cell.text).to include("PR ##{run.source_pull_request_number}")
@@ -208,7 +208,7 @@ RSpec.describe "AgentRuns" do
         expect(goal_cell.text).not_to include(goal_text)
         expect(context_cell.text).to include(goal_text)
         expect(context_cell.at_css("span[title]")["title"]).to eq(goal_text)
-        expect(context_cell.at_css('[data-controller="tooltip"]')).to be_present
+        expect(context_cell.at_css('details')).to be_present
       end
 
       it "shows a titleized fallback label for unexpected goal values" do
