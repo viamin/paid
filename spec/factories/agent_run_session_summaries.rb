@@ -21,7 +21,7 @@ FactoryBot.define do
       status { "promoted" }
       promoted_at { Time.current }
       promoted_by { association :user }
-      change_intent { association :change_intent, project: project }
+      change_intent { association :change_intent, :draft, project: project }
     end
   end
 end
