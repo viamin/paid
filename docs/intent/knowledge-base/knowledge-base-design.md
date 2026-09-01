@@ -54,6 +54,31 @@ on a populated knowledge base invalidates the Qdrant index and requires a
 re-embed; the embedding pipeline still records the new model id on each chunk
 as it is re-embedded.
 
+### OKF bundle indexing
+
+Projects that already maintain an OKF-style bundle — repo-local Markdown
+files with YAML frontmatter under a conventional `.okf/` root or an
+explicitly configured path (`options[:okf_paths]`) — get that bundle
+indexed as curated knowledge. The optional collector (`okf` collector
+type) skips cleanly when no bundle is present, so repositories without
+OKF bundles are unaffected. Adopting OKF is never required.
+
+Each valid concept file becomes a distinct curated artifact type
+(`okf_concept`) so curated bundle knowledge stays separate from derived
+collector output. Artifact metadata carries the source path, concept
+type, title, tags, and last-commit metadata for the file; the Markdown
+body is preserved verbatim as the artifact content and as curated
+definition chunks.
+
+Invalid bundle files (malformed frontmatter YAML, non-mapping
+frontmatter, missing frontmatter, empty body, oversized files) are
+recorded as findings in the collector run metadata rather than failing
+the collector run, and every other collector is unaffected. Valid files
+in the same bundle are still indexed.
+
+Context-bundle assembly includes active `okf_concept` artifacts under an
+explicit "Curated Knowledge (OKF bundle)" section.
+
 ### Search and retrieval
 
 Exact retrieval uses PostgreSQL identifier matching with trigram fallback.

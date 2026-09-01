@@ -76,6 +76,38 @@
   *Test:* `spec/temporal/workflows/knowledge_evolution_workflow_spec.rb`,
   `spec/temporal/activities/record_knowledge_recommendations_activity_spec.rb`.
 
+- [x] **KNOWLEDGE-OKF-001** — When Paid collects knowledge for a repository
+  that contains no OKF bundle, the OKF collector SHALL skip without producing
+  artifacts and SHALL leave other collectors and the overall collection status
+  unaffected.
+  *Code:* `app/services/knowledge/collectors/okf_collector.rb`,
+  `config/initializers/knowledge_collectors.rb`.
+  *Test:* `spec/services/knowledge/collectors/okf_collector_spec.rb`.
+
+- [x] **KNOWLEDGE-OKF-002** — When a repository contains an OKF bundle at a
+  conventional `.okf/` root or an explicitly configured path, the OKF collector
+  SHALL index each valid Markdown concept file with YAML frontmatter as a
+  searchable curated artifact of the distinct `okf_concept` type whose metadata
+  carries source path, concept type, title, tags, and last-commit metadata, and
+  SHALL preserve the Markdown body as the artifact content and as curated
+  definition chunks.
+  *Code:* `app/services/knowledge/collectors/okf_collector.rb`.
+  *Test:* `spec/services/knowledge/collectors/okf_collector_spec.rb`.
+
+- [x] **KNOWLEDGE-OKF-003** — When a knowledge context bundle is assembled for
+  a project with active `okf_concept` artifacts, the system SHALL include that
+  curated knowledge under an explicit OKF section within the token budget.
+  *Code:* `app/services/knowledge/context_bundle/build.rb`.
+  *Test:* `spec/services/knowledge/context_bundle/build_spec.rb`.
+
+- [x] **KNOWLEDGE-OKF-004** — When an OKF bundle file is invalid (missing or
+  malformed frontmatter, non-mapping frontmatter, empty body, or oversized
+  file), the OKF collector SHALL record a finding in the collector run
+  metadata, SHALL complete the run, and SHALL still index the valid files in
+  the same bundle.
+  *Code:* `app/services/knowledge/collectors/okf_collector.rb`.
+  *Test:* `spec/services/knowledge/collectors/okf_collector_spec.rb`.
+
 - [x] **KNOWLEDGE-EMBED-001** — When a user configures a knowledge base, the
   system SHALL let them pick any embedding model id served by the configured
   embedding runner together with the dimensions the model emits, validate

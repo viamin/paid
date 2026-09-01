@@ -123,6 +123,7 @@ Collectors are the data ingestion layer. Each collector analyzes one aspect of a
 | `ConfigKeyCollector` | `config_key` | `config_key` | Configuration keys and constants |
 | `TreeSitterCollector` | `tree_sitter` | `structure` | Generic AST-based extraction |
 | `DecisionRecordCollector` | `decision_records` | `decision_record` | Indexes architectural decision records |
+| `OkfCollector` | `okf` | `okf_concept` | Indexes repo-local OKF bundles (`.okf/` or configured paths) as curated knowledge; skips when no bundle exists |
 | `SchemaCollector` | `schema` | `schema` | Database schema structure extraction |
 
 ### Idempotency
