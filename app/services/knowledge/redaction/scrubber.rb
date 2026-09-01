@@ -86,6 +86,17 @@ module Knowledge
           collection_rebuilt = rebuild_collection!
         end
 
+        # Scrubbing can flip a chunk from "active" to "redacted" (or replace its
+        # content hash), both of which change whether an artifact still has
+        # exportable chunks. Bust the cached artifact counts + OKF export
+        # availability flag so the project page and bundle query stop
+        # advertising stale state. Skipped under dry_run because no rows moved.
+        if !dry_run && scrubbed_total.positive?
+          ActiveRecord.after_all_transactions_commit do
+            KnowledgeArtifact.bust_artifact_counts_cache(project.id)
+          end
+        end
+
         summary = build_summary(
           scanned_total: scanned_total,
           scrubbed_total: scrubbed_total,

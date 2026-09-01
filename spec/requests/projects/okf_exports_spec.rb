@@ -35,6 +35,16 @@ RSpec.describe "Projects::OkfExports" do
       expect(response.body).to include("okf_export_type_okf_concept")
     end
 
+    it "renders a non-Turbo form so the browser downloads the tar.gz instead of navigating" do
+      create_artifact_with_chunks(artifact_type: "okf_concept", chunk_statuses: [ "active" ])
+
+      get new_project_okf_export_path(project)
+
+      form = Nokogiri::HTML(response.body).at_css("form[action*='okf_export']")
+      expect(form).not_to be_nil
+      expect(form["data-turbo"]).to eq("false")
+    end
+
     it "omits artifact types whose matching artifacts have no active chunks" do
       create_artifact_with_chunks(artifact_type: "okf_concept", chunk_statuses: [ "redacted" ])
       create_artifact_with_chunks(artifact_type: "route", chunk_statuses: [ "active" ], identifier: "Users route")

@@ -23,7 +23,7 @@
       <div class="mb-4 rounded-md bg-red-50 p-4 text-sm text-red-700"><%= flash.now[:alert] %></div>
     <% end %>
 
-    <%= form_with url: project_okf_export_path(@project), scope: :okf_export, class: "space-y-6" do |form| %>
+    <%= form_with url: project_okf_export_path(@project), scope: :okf_export, local: true, data: { turbo: false }, class: "space-y-6" do |form| %>
       <fieldset>
         <legend class="text-sm font-medium text-gray-700">Curated knowledge</legend>
         <p class="text-xs text-gray-500">Maintainer-provided and imported knowledge — the recommended default.</p>
