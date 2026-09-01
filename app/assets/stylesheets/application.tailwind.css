@@ -2,6 +2,44 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+:root {
+  --chartkick-loading-color: #6b7280;
+  --chartkick-loading-font-family:
+    "Lucida Grande", "Lucida Sans Unicode", Verdana, Arial, Helvetica, sans-serif;
+  --dashboard-chart-success: #16a34a;
+  --dashboard-chart-danger: #dc2626;
+  --dashboard-chart-warning: #d97706;
+  --dashboard-chart-orange: #f97316;
+  --dashboard-chart-rose: #e11d48;
+  --dashboard-chart-violet: #7c3aed;
+  --dashboard-chart-blue: #2563eb;
+  --dashboard-chart-neutral: #6b7280;
+  --dashboard-chart-muted: #64748b;
+  --dashboard-chart-accent: #4f46e5;
+  --dashboard-chart-annotation-border: rgb(245 158 11 / 0.3);
+  --dashboard-chart-annotation-background: rgb(245 158 11 / 0.8);
+  --dashboard-chart-annotation-text: #fff;
+}
+
+.dark {
+  --chartkick-loading-color: #9ca3af;
+  --chartkick-loading-font-family:
+    "Lucida Grande", "Lucida Sans Unicode", Verdana, Arial, Helvetica, sans-serif;
+  --dashboard-chart-success: #4ade80;
+  --dashboard-chart-danger: #f87171;
+  --dashboard-chart-warning: #fbbf24;
+  --dashboard-chart-orange: #fb923c;
+  --dashboard-chart-rose: #fb7185;
+  --dashboard-chart-violet: #a78bfa;
+  --dashboard-chart-blue: #60a5fa;
+  --dashboard-chart-neutral: #9ca3af;
+  --dashboard-chart-muted: #94a3b8;
+  --dashboard-chart-accent: #818cf8;
+  --dashboard-chart-annotation-border: rgb(251 191 36 / 0.45);
+  --dashboard-chart-annotation-background: rgb(251 191 36 / 0.85);
+  --dashboard-chart-annotation-text: #111827;
+}
+
 /* ========================================
    Chat panel viewport bound
 

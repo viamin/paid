@@ -16,6 +16,9 @@
 # client-side, plus an adjacent sr-only <table> exposing the same series data
 # to assistive tech.
 module ChartkickHelper
+  CHARTKICK_LOADING_FONT_FAMILY = "var(--chartkick-loading-font-family)".freeze
+  CHARTKICK_LOADING_COLOR = "var(--chartkick-loading-color)".freeze
+
   # @spec DASHBOARD-CHART-A11Y-001
   def chartkick_chart(chart_type, data_source, **options)
     @chartkick_chart_id ||= 0
@@ -37,14 +40,13 @@ module ChartkickHelper
     safe_join([ chart_div, chartkick_data_table(data_source, caption) ])
   end
 
+  # @spec DASHBOARD-CHART-A11Y-009
   def chartkick_default_placeholder(chart_type, chart_data, chart_options, element_id, height, width, loading)
     tag.div(
       loading,
       id: element_id,
       aria: { hidden: "true" },
-      style: "height: #{ERB::Util.html_escape(height)}; width: #{ERB::Util.html_escape(width)}; " \
-        "text-align: center; color: #999; line-height: #{ERB::Util.html_escape(height)}; " \
-        "font-size: 14px; font-family: 'Lucida Grande', 'Lucida Sans Unicode', Verdana, Arial, Helvetica, sans-serif;",
+      style: chartkick_placeholder_style(height, width),
       data: {
         controller: "chartkick",
         chartkick_type_value: chart_type,
@@ -52,6 +54,13 @@ module ChartkickHelper
         chartkick_options_value: chart_options.to_json
       }
     )
+  end
+
+  # @spec DASHBOARD-CHART-A11Y-009
+  def chartkick_placeholder_style(height, width)
+    "height: #{ERB::Util.html_escape(height)}; width: #{ERB::Util.html_escape(width)}; " \
+      "text-align: center; color: #{CHARTKICK_LOADING_COLOR}; line-height: #{ERB::Util.html_escape(height)}; " \
+      "font-size: 14px; font-family: #{CHARTKICK_LOADING_FONT_FAMILY};"
   end
 
   # Preserves the upstream Chartkick::Helper#chartkick_chart `html:` override
