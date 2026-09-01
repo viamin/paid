@@ -145,6 +145,17 @@ RSpec.describe ApplicationHelper, :no_db do
         expect(result).to include('id="context_99"')
         expect(result).to include('role="tooltip"')
       end
+
+      it "associates the focusable link trigger with the tooltip content via aria-describedby" do
+        issue = stub_issue(github_number: 42, github_url: "https://github.com/o/r/issues/42",
+          title: "Fix bug")
+        run = stub_run(id: 99, "create_pr_goal?": true, issue: issue)
+        fragment = Nokogiri::HTML5.fragment(helper.agent_run_context_display(run))
+
+        expect(fragment.at_css("a")["aria-describedby"]).to eq("context_99")
+        expect(fragment.at_css("summary")["aria-describedby"]).to eq("context_99")
+        expect(fragment.at_css('span[role="tooltip"]')["id"]).to eq("context_99")
+      end
     end
 
     context "when create_pr goal without issue" do
@@ -202,6 +213,14 @@ RSpec.describe ApplicationHelper, :no_db do
 
         expect(result).to include("Refactor the flaky dashboard queue preview rows")
         expect(result).to include("text-gray-700")
+      end
+
+      it "associates the focusable text trigger with the tooltip content via aria-describedby" do
+        run = stub_run(id: 55, "create_pr_goal?": true, custom_prompt: "Refactor the flaky dashboard queue rows")
+        fragment = Nokogiri::HTML5.fragment(helper.agent_run_context_display(run))
+
+        expect(fragment.at_css('span[tabindex="0"]')["aria-describedby"]).to eq("context_55")
+        expect(fragment.at_css('span[role="tooltip"]')["id"]).to eq("context_55")
       end
 
       it "truncates long prompts to 60 characters in the displayed label" do

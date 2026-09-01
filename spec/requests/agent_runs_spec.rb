@@ -191,6 +191,7 @@ RSpec.describe "AgentRuns" do
         expect(tooltip_wrapper).to be_present
         expect(tooltip_content).to be_present
         expect(tooltip_content.text).to include(source_pull_request.title)
+        expect(tooltip_wrapper.at_css("a")["aria-describedby"]).to eq(tooltip_content["id"])
       end
 
       it "shows custom prompt context separately from the goal label" do

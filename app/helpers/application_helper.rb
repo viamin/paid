@@ -509,13 +509,17 @@ module ApplicationHelper
   def agent_run_context_display(run)
     context = agent_run_context(run)
     tooltip_id = "context_#{run.id}"
+    tooltip_present = context[:tooltip].present?
+    described_by = (tooltip_present ? tooltip_id : nil)
     inner = case context[:type]
     when :link
       link_to(context[:label], context[:url], target: "_blank", rel: "noopener noreferrer",
-        class: "text-indigo-600 hover:text-indigo-900", title: context[:tooltip])
+        class: "text-indigo-600 hover:text-indigo-900", title: context[:tooltip],
+        aria: { describedby: described_by })
     when :text
       tag.span(context[:label], class: context[:classes], title: context[:tooltip],
-        tabindex: (context[:tooltip].present? ? "0" : nil))
+        tabindex: (tooltip_present ? "0" : nil),
+        aria: { describedby: described_by })
     when :in_progress
       tag.span("Creating issue\u2026", class: "italic text-gray-500")
     else
@@ -714,6 +718,11 @@ module ApplicationHelper
   # keyboard focus of +inner+ (group-focus-within); on touch devices the icon
   # toggles the popover instead. Returns +inner+ unchanged when +tooltip_text+
   # is blank.
+  #
+  # Callers MUST wire `aria-describedby: dom_id` onto the focusable trigger
+  # they pass in, otherwise assistive technology cannot associate the
+  # `role="tooltip"` content with its trigger and screen reader users who
+  # focus the link/span hear no description (see #3517 review feedback).
   def mobile_tooltip_wrapper(inner, tooltip_text, dom_id, aria_label: "Show details")
     return inner if tooltip_text.blank?
 
@@ -727,7 +736,7 @@ module ApplicationHelper
             aria: { hidden: "true" }, focusable: "false"
           ),
           class: "[@media(hover:hover)_and_(pointer:fine)_and_(not_(any-pointer:coarse))]:hidden cursor-pointer text-gray-400 hover:text-gray-600 list-none",
-          aria: { label: aria_label }
+          aria: { label: aria_label, describedby: dom_id }
         ),
         inner,
         tag.span(
