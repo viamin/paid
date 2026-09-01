@@ -183,9 +183,11 @@
   separately from derived-artifact usage, bucketed from the existing
   per-artifact-type usage records.
   *Code:* `app/services/knowledge/usage_stats.rb`,
-  `app/services/knowledge/dashboard_stats.rb`.
+  `app/services/knowledge/dashboard_stats.rb`,
+  `app/views/dashboard/_knowledge_widget.html.erb`.
   *Test:* `spec/services/knowledge/usage_stats_spec.rb`,
-  `spec/services/knowledge/dashboard_stats_spec.rb`.
+  `spec/services/knowledge/dashboard_stats_spec.rb`,
+  `spec/views/dashboard/knowledge_widget_partial_spec.rb`.
 
 - [x] **KNOWLEDGE-CURATED-006** — When the knowledge map is built for a
   project, the system SHALL include an active/stale artifact-count breakdown
