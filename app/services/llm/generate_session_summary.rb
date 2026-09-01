@@ -16,6 +16,8 @@ module Llm
     MAX_TRANSCRIPT_LENGTH = 12_000
     PROMPT_SLUG = "knowledge.session_summary.draft"
     ARRAY_FIELDS = %i[files_touched decisions assumptions failures follow_ups learnings].freeze
+    GITHUB_TOKEN_IN_TEXT = /\b(?:ghp_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,}|gh[oushr]_[A-Za-z0-9]{36,})\b/
+    SECRET_PATTERNS = (StyleGuides::CollectCodeSamples::SECRET_PATTERNS + [ GITHUB_TOKEN_IN_TEXT ]).freeze
 
     # Fallback used only if the seeded prompt is missing or deactivated.
     # The active template lives in db/seeds/prompts.rb under PROMPT_SLUG.
@@ -103,14 +105,20 @@ module Llm
 
     def prompt_variables(transcript)
       {
-        issue_title: agent_run.issue&.title.to_s.presence || "N/A",
+        issue_title: redact_secrets(agent_run.issue&.title.to_s).presence || "N/A",
         issue_number: agent_run.issue&.github_number,
         pull_request_url: agent_run.pull_request_url.presence || "N/A",
         goal: agent_run.goal,
         status: agent_run.status,
-        error_message: agent_run.error_message.to_s.presence || "None",
-        transcript: transcript.truncate(MAX_TRANSCRIPT_LENGTH)
+        error_message: redact_secrets(agent_run.error_message.to_s).presence || "None",
+        transcript: redact_secrets(transcript).truncate(MAX_TRANSCRIPT_LENGTH)
       }
+    end
+
+    def redact_secrets(text)
+      SECRET_PATTERNS.reduce(text.to_s) do |result, pattern|
+        result.gsub(pattern, "[REDACTED]")
+      end
     end
 
     def parse_response(response)
@@ -132,8 +140,8 @@ module Llm
     end
 
     def build_result(parsed, response)
-      attrs = { summary: parsed[:summary].to_s, response: response }
-      ARRAY_FIELDS.each { |field| attrs[field] = Array(parsed[field]).map(&:to_s) }
+      attrs = { summary: redact_secrets(parsed[:summary]), response: response }
+      ARRAY_FIELDS.each { |field| attrs[field] = Array(parsed[field]).map { |value| redact_secrets(value) } }
 
       Result.new(**attrs)
     end

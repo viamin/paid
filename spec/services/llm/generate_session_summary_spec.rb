@@ -81,4 +81,63 @@ RSpec.describe Llm::GenerateSessionSummary do
       expect(result.summary).to eq("Implemented rate limiting and added tests.")
     end
   end
+
+  describe "secret redaction" do
+    it "redacts secrets in the transcript before sending it to the LLM" do
+      leaky_agent_run = create(:agent_run, :completed, project: project, issue: issue)
+      leaky_agent_run.log!("stdout", "Pushed with TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789 to origin.")
+
+      described_class.call(agent_run: leaky_agent_run)
+
+      expect(AgentHarness).to have_received(:send_message).with(
+        a_string_including("[REDACTED]").and(
+          satisfy { |s| !s.include?("ghp_abcdefghijklmnopqrstuvwxyz0123456789") }
+        ),
+        hash_including(provider: :claude)
+      )
+    end
+
+    it "redacts secrets in the issue title before sending it to the LLM" do
+      leaky_issue = create(:issue, project: project, title: "Rotate TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789")
+      leaky_agent_run = create(:agent_run, :completed, project: project, issue: leaky_issue)
+      leaky_agent_run.log!("stdout", "Some work happened.")
+
+      described_class.call(agent_run: leaky_agent_run)
+
+      expect(AgentHarness).to have_received(:send_message).with(
+        a_string_including("[REDACTED]").and(
+          satisfy { |s| !s.include?("ghp_abcdefghijklmnopqrstuvwxyz0123456789") }
+        ),
+        hash_including(provider: :claude)
+      )
+    end
+
+    it "redacts secrets in the error message before sending it to the LLM" do
+      leaky_agent_run = create(:agent_run, :completed, project: project, issue: issue,
+        error_message: "Failed: TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789 unreachable")
+      leaky_agent_run.log!("stdout", "Some work happened.")
+
+      described_class.call(agent_run: leaky_agent_run)
+
+      expect(AgentHarness).to have_received(:send_message).with(
+        a_string_including("[REDACTED]").and(
+          satisfy { |s| !s.include?("ghp_abcdefghijklmnopqrstuvwxyz0123456789") }
+        ),
+        hash_including(provider: :claude)
+      )
+    end
+
+    it "redacts secrets echoed back by the LLM into the parsed result" do
+      leaky_json = {
+        summary: "Committed a fix using TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789.",
+        files_touched: [], decisions: [], assumptions: [], failures: [], follow_ups: [], learnings: []
+      }.to_json
+      allow(llm_response).to receive(:output).and_return(leaky_json)
+
+      result = described_class.call(agent_run: agent_run)
+
+      expect(result.summary).to include("[REDACTED]")
+      expect(result.summary).not_to include("ghp_abcdefghijklmnopqrstuvwxyz0123456789")
+    end
+  end
 end
