@@ -81,6 +81,14 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "project_knowledge_search" ])
     end
 
+    it "maps knowledge quality screens instead of treating them as unmapped UI" do
+      controller_targets = described_class.call(changed_files: [ "app/controllers/knowledge/quality_controller.rb" ])
+      view_targets = described_class.call(changed_files: [ "app/views/knowledge/quality/show.html.erb" ])
+
+      expect(controller_targets.map(&:slug)).to eq([ "project_knowledge_quality" ])
+      expect(view_targets.map(&:slug)).to eq([ "project_knowledge_quality" ])
+    end
+
     it "maps helper files that do not follow the default helper-to-view naming convention" do
       targets = described_class.call(changed_files: [ "app/helpers/workflow_helper.rb" ])
 

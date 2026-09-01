@@ -46,7 +46,7 @@ module Knowledge
       end
 
       def self.check_codes
-        CHECK_CLASSES.map { |klass| klass.code }
+        CHECK_CLASSES.map(&:code)
       end
 
       # Aggregate findings into a severity histogram plus total. Exposed so
@@ -68,7 +68,7 @@ module Knowledge
         {
           project_id: project.id,
           generated_at: Time.current.iso8601,
-          checks: CHECK_CLASSES.map { |klass| klass.code },
+          checks: CHECK_CLASSES.map(&:code),
           findings: findings,
           truncated_checks: truncated_checks,
           summary: self.class.summarize(findings)
