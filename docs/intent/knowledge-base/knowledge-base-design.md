@@ -79,6 +79,27 @@ in the same bundle are still indexed.
 Context-bundle assembly includes active `okf_concept` artifacts under an
 explicit "Curated Knowledge (OKF bundle)" section.
 
+### OKF bundle export
+
+Paid remains the canonical knowledge store; OKF export (`Knowledge::Okf::Export`)
+is an opt-in diagnostic and portability path, not a sync target. A project
+member picks curated-only (`okf_concept`, `business_context`,
+`reference_document`, `decision_record`, `change_intent`) or additional
+derived artifact types (routes, symbols, schema, and similar collector
+output), and the service renders each selected active artifact as Markdown
+with YAML frontmatter, packaged as a downloadable `.tar.gz`
+(`Knowledge::Okf::BundleArchive`, stdlib-only, no new gem dependency).
+
+Frontmatter carries a `paid` block with the artifact's Paid knowledge-base
+URI, artifact type, collector type, scope, identifier, source commit SHA,
+and timestamps, so an exported file always traces back to the originating
+Paid KB record. Body content is taken only from the artifact's active
+chunks (preferring a `definition` chunk); artifacts with no active chunks —
+i.e. fully redacted — are skipped rather than falling back to raw,
+unscrubbed content. `Knowledge::Okf::Frontmatter` is shared between the OKF
+collector (parse) and the exporter (render), so every exported file
+round-trips through the same parser the collector uses to ingest a bundle.
+
 ### Search and retrieval
 
 Exact retrieval uses PostgreSQL identifier matching with trigram fallback.

@@ -12,7 +12,6 @@ module Knowledge
       DEFAULT_ROOTS = [ ".okf" ].freeze
       DEFAULT_CONCEPT_TYPE = "concept"
       MAX_FILE_BYTES = 1.megabyte
-      FRONTMATTER_DELIMITER = "---"
       GIT_LOG_FORMAT = "%H%x1f%aN%x1f%aI%x1f%s"
 
       def collect
@@ -91,16 +90,10 @@ module Knowledge
         raw = File.read(absolute_path)
         return invalid(relative_path, "file exceeds #{MAX_FILE_BYTES} bytes") if raw.bytesize > MAX_FILE_BYTES
 
-        frontmatter_raw, body = split_frontmatter(raw)
-        return invalid(relative_path, "missing YAML frontmatter delimiters") unless frontmatter_raw
+        result = Okf::Frontmatter.parse(raw)
+        return invalid(relative_path, result.error) unless result.valid?
 
-        frontmatter = YAML.safe_load(frontmatter_raw)
-        return invalid(relative_path, "frontmatter must be a YAML mapping") unless frontmatter.is_a?(Hash)
-        return invalid(relative_path, "empty concept body") if body.strip.empty?
-
-        [ concept_for(frontmatter, body, relative_path, root_relative_path), nil ]
-      rescue Psych::Exception => e
-        invalid(relative_path, "invalid frontmatter YAML: #{e.message}")
+        [ concept_for(result.frontmatter, result.body, relative_path, root_relative_path), nil ]
       rescue Errno::ENOENT, Errno::EACCES => e
         invalid(relative_path, "unreadable file: #{e.message}")
       end
@@ -118,16 +111,6 @@ module Knowledge
           body: body.strip,
           last_commit: last_commit_for(relative_path)
         }
-      end
-
-      def split_frontmatter(raw)
-        lines = raw.each_line.to_a
-        return nil unless lines.first&.chomp == FRONTMATTER_DELIMITER
-
-        closing = lines.drop(1).index { |line| line.chomp == FRONTMATTER_DELIMITER }
-        return nil unless closing
-
-        [ lines[1..closing].join, lines[(closing + 2)..].join ]
       end
 
       def title_for(frontmatter, relative_path)

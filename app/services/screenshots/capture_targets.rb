@@ -217,6 +217,7 @@ module Screenshots
       project_cost_dashboard: Target.new(slug: "project_cost_dashboard", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/cost_dashboard" }, requires_auth: true),
       project_context_intake: Target.new(slug: "project_context_intake", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/context_intake" }, requires_auth: true),
       project_pdf_knowledge_import_new: Target.new(slug: "project_pdf_knowledge_import_new", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/pdf_knowledge_import/new" }, requires_auth: true),
+      project_okf_export_new: Target.new(slug: "project_okf_export_new", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/okf_export/new" }, requires_auth: true),
       project_knowledge_search: Target.new(slug: "project_knowledge_search", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/knowledge/search" }, requires_auth: true),
       project_knowledge_browse: Target.new(slug: "project_knowledge_browse", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/knowledge/browse" }, requires_auth: true),
       project_knowledge_browse_show: Target.new(slug: "project_knowledge_browse_show", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/knowledge/browse/route" }, requires_auth: true),
@@ -362,6 +363,7 @@ module Screenshots
       "projects/screenshot_configs_controller.rb" => [ :project_edit ],
       "projects/convention_settings_controller.rb" => [ :project_convention_settings ],
       "projects/pdf_knowledge_imports_controller.rb" => [ :project_pdf_knowledge_import_new ],
+      "projects/okf_exports_controller.rb" => [ :project_okf_export_new ],
       "admin/github_app/setup_controller.rb" => [ :admin_github_app_setup ],
       "github_app/installations_controller.rb" => [ :integrations ],
       "marketplace_entry_pdf_imports_controller.rb" => [ :marketplace_entry_pdf_import_new ]
@@ -597,6 +599,7 @@ module Screenshots
       when /\Aknowledge\/browse\// then knowledge_browse_targets(relative_path.delete_prefix("knowledge/browse/"))
       when /\Aknowledge\/context_intake\// then [ :project_context_intake ]
       when /\Aprojects\/pdf_knowledge_imports\// then [ :project_pdf_knowledge_import_new ]
+      when /\Aprojects\/okf_exports\// then [ :project_okf_export_new ]
       when /\Aknowledge\/search\// then knowledge_search_targets(relative_path.delete_prefix("knowledge/search/"))
       when /\Aquality_dashboards\// then [ :quality_dashboard ]
       when "projects/agent_runs/provenance.html.erb" then [ :project_agent_run_provenance ]

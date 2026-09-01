@@ -606,6 +606,55 @@ RSpec.describe "Projects" do
         expect(response.body).to include("My Project")
       end
 
+      it "hides the OKF export link when the project has no effectively exportable knowledge" do
+        project = create(:project, account: account, github_token: github_token)
+        project_version = create(:project_version, project:)
+        collector_run = create(:collector_run, project_version:, collector_type: "okf")
+        redacted_artifact = create(:knowledge_artifact, collector_run:, project:, artifact_type: "okf_concept", identifier: "Redacted")
+        create(:knowledge_chunk, knowledge_artifact: redacted_artifact, project:, chunk_type: "definition",
+          content: "[REDACTED]", status: "redacted")
+        qa_artifact = create(:knowledge_artifact, collector_run:, project:, artifact_type: "qa_pair", identifier: "Q and A")
+        create(:knowledge_chunk, knowledge_artifact: qa_artifact, project:, chunk_type: "qa_pair",
+          content: "Question and answer", status: "active")
+
+        get project_path(project)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).not_to include(new_project_okf_export_path(project))
+      end
+
+      context "with a real cache store" do
+        around do |example|
+          original_cache = Rails.cache
+          Rails.cache = ActiveSupport::Cache::MemoryStore.new
+          example.run
+        ensure
+          Rails.cache = original_cache
+        end
+
+        it "caches the OKF export availability check and busts it when new exportable knowledge is indexed" do
+          project = create(:project, account: account, github_token: github_token)
+
+          get project_path(project)
+          expect(response.body).not_to include(new_project_okf_export_path(project))
+          expect(Rails.cache.read(KnowledgeArtifact.okf_export_available_cache_key(project.id))).to be(false)
+
+          project_version = create(:project_version, project:)
+          collector_run = create(:collector_run, project_version:, collector_type: "okf")
+          artifact = create(:knowledge_artifact, collector_run:, project:, artifact_type: "okf_concept", identifier: "Auth")
+          create(:knowledge_chunk, knowledge_artifact: artifact, project:, chunk_type: "definition",
+            content: "Body", status: "active")
+
+          get project_path(project)
+          expect(response.body).not_to include(new_project_okf_export_path(project))
+
+          KnowledgeArtifact.bust_artifact_counts_cache(project.id)
+
+          get project_path(project)
+          expect(response.body).to include(new_project_okf_export_path(project))
+        end
+      end
+
       it "shows the preview panel with current session details" do
         project = create(:project, account: account, github_token: github_token, name: "My Project")
         session = create(:preview_session, :ready, project: project, branch_name: "feature/preview", framework: "phoenix",

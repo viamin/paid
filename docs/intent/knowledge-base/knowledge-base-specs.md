@@ -124,6 +124,25 @@
   `spec/requests/api/knowledge_map_spec.rb`,
   `spec/requests/api/proxy/knowledge_map_spec.rb`.
 
+- [x] **KNOWLEDGE-OKF-005** — When a project member exports selected active
+  knowledge artifacts as an OKF bundle, the system SHALL render each selected
+  artifact as Markdown with YAML frontmatter carrying its artifact type,
+  collector type, scope, identifier, source commit SHA, timestamps, and a
+  Paid knowledge-base URI; SHALL exclude artifacts with no active
+  (non-redacted, non-stale) chunk content; SHALL let the caller choose
+  curated-only or additional derived artifact types; and SHALL package the
+  result as a downloadable archive whose files round-trip through the same
+  frontmatter parser the OKF collector uses to ingest bundles. The export is
+  opt-in and does not alter project knowledge state or imply OKF adoption.
+  *Code:* `app/services/knowledge/okf/export.rb`,
+  `app/services/knowledge/okf/frontmatter.rb`,
+  `app/services/knowledge/okf/bundle_archive.rb`,
+  `app/controllers/projects/okf_exports_controller.rb`.
+  *Test:* `spec/services/knowledge/okf/export_spec.rb`,
+  `spec/services/knowledge/okf/frontmatter_spec.rb`,
+  `spec/services/knowledge/okf/bundle_archive_spec.rb`,
+  `spec/requests/projects/okf_exports_spec.rb`.
+
 - [x] **KNOWLEDGE-EMBED-001** — When a user configures a knowledge base, the
   system SHALL let them pick any embedding model id served by the configured
   embedding runner together with the dimensions the model emits, validate

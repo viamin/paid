@@ -354,7 +354,12 @@
                stale_agent_runs_count: @stale_agent_runs_count,
                show_stale_cleanup_action: @show_stale_cleanup_action %>
 
-    <%= render "projects/knowledge", project: @project, collector_runs: @collector_runs, failed_collector_runs: @latest_failed_collector_runs, artifact_counts: @artifact_counts %>
+    <%= render "projects/knowledge",
+          project: @project,
+          collector_runs: @collector_runs,
+          failed_collector_runs: @latest_failed_collector_runs,
+          artifact_counts: @artifact_counts,
+          okf_export_available: @okf_export_available %>
 
     <% if @project.auto_merge_enabled? %>
       <%= render "projects/recent_merged_pull_requests",

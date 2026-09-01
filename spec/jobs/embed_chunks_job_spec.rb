@@ -5,6 +5,14 @@ require "rails_helper"
 RSpec.describe EmbedChunksJob do
   let(:project) { create(:project) }
 
+  def with_memory_cache
+    original = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    yield
+  ensure
+    Rails.cache = original
+  end
+
   describe "#perform" do
     it "calls the embedding pipeline without a project" do
       allow(Knowledge::Embeddings::Pipeline).to receive(:call)
@@ -72,6 +80,36 @@ RSpec.describe EmbedChunksJob do
       retries = described_class.rescue_handlers.select { |h| h[0] == "QdrantClient::ConnectionError" }
 
       expect(retries).not_to be_empty
+    end
+
+    it "busts the artifact counts and OKF export availability caches when a project is provided" do
+      with_memory_cache do
+        allow(Knowledge::Embeddings::Pipeline).to receive(:call)
+        Rails.cache.write(KnowledgeArtifact.artifact_counts_cache_key(project.id), { "route" => 3 })
+        Rails.cache.write(KnowledgeArtifact.okf_export_available_cache_key(project.id), true)
+
+        described_class.perform_now(project.id)
+
+        expect(Rails.cache.read(KnowledgeArtifact.artifact_counts_cache_key(project.id))).to be_nil
+        expect(Rails.cache.read(KnowledgeArtifact.okf_export_available_cache_key(project.id))).to be_nil
+      end
+    end
+
+    it "still busts the caches when the embedding pipeline raises" do
+      with_memory_cache do
+        allow(project).to receive(:semantic_search_available?).and_return(true)
+        allow(Knowledge::Embeddings::Pipeline).to receive(:call)
+          .and_raise(Knowledge::Embeddings::EmbeddingError, "boom")
+        Rails.cache.write(KnowledgeArtifact.artifact_counts_cache_key(project.id), { "route" => 3 })
+
+        begin
+          described_class.perform_now(project.id)
+        rescue Knowledge::Embeddings::EmbeddingError
+          # Expected — retry_on re-raises after exhausting attempts.
+        end
+
+        expect(Rails.cache.read(KnowledgeArtifact.artifact_counts_cache_key(project.id))).to be_nil
+      end
     end
   end
 end

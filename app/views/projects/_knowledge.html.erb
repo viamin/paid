@@ -30,6 +30,9 @@
           <%= link_to "Import PDF", new_project_pdf_knowledge_import_path(project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
         <% end %>
       <% end %>
+      <% if okf_export_available %>
+        <%= link_to "Export OKF", new_project_okf_export_path(project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+      <% end %>
       <%= link_to "Browse", project_knowledge_browse_index_path(project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
       <%= link_to "Search", project_knowledge_search_path(project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
     </div>
