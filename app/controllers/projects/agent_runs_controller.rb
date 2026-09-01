@@ -84,7 +84,7 @@ module Projects
 
     # @spec SESSION-SUMMARY-004
     def promote_session_summary
-      authorize @agent_run, :update?
+      authorize @project, :update?
       summary = @agent_run.agent_run_session_summary
 
       if summary.nil?

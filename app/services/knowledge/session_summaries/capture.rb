@@ -34,7 +34,12 @@ module Knowledge
         Knowledge::SessionSummaries::SyncKnowledgeArtifact.call(session_summary: summary)
         summary
       rescue ActiveRecord::RecordNotUnique
-        AgentRunSessionSummary.find_by(agent_run: agent_run)
+        # A concurrent capture won the insert race. Repair any missing
+        # knowledge artifact on the winner's row before returning so a
+        # swallowed SyncKnowledgeArtifact failure in the other job doesn't
+        # leave the summary permanently non-searchable.
+        existing_after_race = AgentRunSessionSummary.find_by(agent_run: agent_run)
+        existing_after_race && ensure_knowledge_artifact!(existing_after_race)
       end
 
       private

@@ -113,5 +113,22 @@ RSpec.describe Knowledge::SessionSummaries::Capture do
         expect(result).to eq(summary)
       }.to change { KnowledgeArtifact.active.where(artifact_type: "session_summary").count }.by(1)
     end
+
+    it "repairs the knowledge artifact when a concurrent capture wins the insert race" do
+      existing = create(:agent_run_session_summary, project: project, agent_run: agent_run, issue: issue)
+      find_by_calls = 0
+      allow(AgentRunSessionSummary).to receive(:find_by).and_wrap_original do |original, *args|
+        find_by_calls += 1
+        find_by_calls == 1 ? nil : existing
+      end
+      allow(AgentRunSessionSummary).to receive(:create!).and_raise(
+        ActiveRecord::RecordNotUnique.new("agent_run_id duplicate")
+      )
+
+      expect {
+        result = described_class.call(agent_run: agent_run)
+        expect(result).to eq(existing)
+      }.to change { KnowledgeArtifact.active.where(artifact_type: "session_summary").count }.by(1)
+    end
   end
 end

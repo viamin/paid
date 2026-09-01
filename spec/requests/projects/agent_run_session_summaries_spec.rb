@@ -61,6 +61,28 @@ RSpec.describe "Projects::AgentRuns session summaries" do
       expect(flash[:alert]).to eq("You are not authorized to perform this action.")
     end
 
+    it "denies a project member who can run agents but cannot edit project-level intent" do
+      project_member = create(:user, account: account)
+      project_member.add_role(:project_member, project)
+      sign_in project_member
+
+      post promote_session_summary_project_agent_run_path(project, agent_run)
+
+      expect(response).to have_http_status(:redirect)
+      expect(flash[:alert]).to eq("You are not authorized to perform this action.")
+      expect(session_summary.reload).not_to be_promoted
+    end
+
+    it "permits an account admin who can edit project-level intent" do
+      admin = create(:user, account: account)
+      admin.add_role(:admin, account)
+      sign_in admin
+
+      post promote_session_summary_project_agent_run_path(project, agent_run)
+
+      expect(response).to redirect_to(project_change_intent_path(project, session_summary.reload.change_intent))
+    end
+
     it "redirects with an alert when promotion raises a validation error" do
       invalid_record = ChangeIntent.new
       invalid_record.errors.add(:intent, "is too long")
