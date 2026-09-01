@@ -29,4 +29,33 @@ RSpec.describe DashboardHelper, :no_db do
       expect(link["data-turbo-frame"]).to eq("_top")
     end
   end
+
+  describe "#dashboard_chart_colors" do
+    # @spec DASHBOARD-CHART-A11Y-010
+    it "sources duration_trend colors from dedicated tokens, not generic ones with different hex values" do
+      expect(helper.dashboard_chart_colors(:duration_trend)).to eq(%w[
+        var(--dashboard-chart-accent)
+        var(--dashboard-chart-duration-median)
+        var(--dashboard-chart-duration-trend)
+      ])
+    end
+
+    # @spec DASHBOARD-CHART-A11Y-010
+    it "sources pr_cycle_time colors from dedicated tokens, not generic ones with different hex values" do
+      expect(helper.dashboard_chart_colors(:pr_cycle_time)).to eq(%w[
+        var(--dashboard-chart-pr-cycle-average)
+        var(--dashboard-chart-pr-cycle-median)
+        var(--dashboard-chart-pr-cycle-trend)
+      ])
+    end
+  end
+
+  describe "#dashboard_outcome_chart_colors" do
+    # @spec DASHBOARD-CHART-A11Y-010
+    it "sources the rate_limited color from a dedicated token, not the shared warning token" do
+      colors = helper.dashboard_outcome_chart_colors([ { name: "rate_limited" } ])
+
+      expect(colors).to eq(%w[var(--dashboard-chart-rate-limited)])
+    end
+  end
 end

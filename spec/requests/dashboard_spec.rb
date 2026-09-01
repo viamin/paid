@@ -1201,7 +1201,7 @@ RSpec.describe "Dashboard" do
       expect(chart).to be_present
       expect(chart["data-chartkick-type-value"]).to eq("LineChart")
       expect(chart["data-chartkick-options-value"]).to include("\"annotation\"")
-      expect(chart["data-chartkick-options-value"]).to include("var(--dashboard-chart-accent)")
+      expect(chart["data-chartkick-options-value"]).to include("var(--dashboard-chart-pr-cycle-average)")
       expect(chart["data-chartkick-options-value"]).to include("var(--dashboard-chart-annotation-border)")
       expect(doc.css("script")).to be_empty
     end

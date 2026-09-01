@@ -16,6 +16,12 @@
   --dashboard-chart-neutral: #6b7280;
   --dashboard-chart-muted: #64748b;
   --dashboard-chart-accent: #4f46e5;
+  --dashboard-chart-rate-limited: #ca8a04;
+  --dashboard-chart-duration-median: #059669;
+  --dashboard-chart-duration-trend: #94a3b8;
+  --dashboard-chart-pr-cycle-average: #6366f1;
+  --dashboard-chart-pr-cycle-median: #10b981;
+  --dashboard-chart-pr-cycle-trend: #f59e0b;
   --dashboard-chart-annotation-border: rgb(245 158 11 / 0.3);
   --dashboard-chart-annotation-background: rgb(245 158 11 / 0.8);
   --dashboard-chart-annotation-text: #fff;
@@ -35,6 +41,12 @@
   --dashboard-chart-neutral: #9ca3af;
   --dashboard-chart-muted: #94a3b8;
   --dashboard-chart-accent: #818cf8;
+  --dashboard-chart-rate-limited: #facc15;
+  --dashboard-chart-duration-median: #34d399;
+  --dashboard-chart-duration-trend: #cbd5e1;
+  --dashboard-chart-pr-cycle-average: #818cf8;
+  --dashboard-chart-pr-cycle-median: #34d399;
+  --dashboard-chart-pr-cycle-trend: #fbbf24;
   --dashboard-chart-annotation-border: rgb(251 191 36 / 0.45);
   --dashboard-chart-annotation-background: rgb(251 191 36 / 0.85);
   --dashboard-chart-annotation-text: #111827;

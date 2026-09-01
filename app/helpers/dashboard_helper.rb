@@ -102,13 +102,13 @@ module DashboardHelper
     ],
     duration_trend: %w[
       var(--dashboard-chart-accent)
-      var(--dashboard-chart-success)
-      var(--dashboard-chart-muted)
+      var(--dashboard-chart-duration-median)
+      var(--dashboard-chart-duration-trend)
     ],
     pr_cycle_time: %w[
-      var(--dashboard-chart-accent)
-      var(--dashboard-chart-success)
-      var(--dashboard-chart-warning)
+      var(--dashboard-chart-pr-cycle-average)
+      var(--dashboard-chart-pr-cycle-median)
+      var(--dashboard-chart-pr-cycle-trend)
     ]
   }.transform_values(&:freeze).freeze
 
@@ -119,7 +119,7 @@ module DashboardHelper
     "token_budget_exceeded" => "var(--dashboard-chart-rose)",
     "no_output" => "var(--dashboard-chart-violet)",
     "auth_expired" => "var(--dashboard-chart-blue)",
-    "rate_limited" => "var(--dashboard-chart-warning)",
+    "rate_limited" => "var(--dashboard-chart-rate-limited)",
     "cancelled" => "var(--dashboard-chart-neutral)",
     "retried" => "var(--dashboard-chart-muted)"
   }.freeze
