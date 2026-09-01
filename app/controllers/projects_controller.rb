@@ -104,11 +104,16 @@ class ProjectsController < ApplicationController
         .count
         .sort_by { |_, count| -count }
     end
-    @okf_export_available = KnowledgeArtifact.active
-      .for_project(@project)
-      .where(artifact_type: Knowledge::Okf::Export::EXPORTABLE_ARTIFACT_TYPES)
-      .with_active_chunks
-      .exists?
+    @okf_export_available = Rails.cache.fetch(
+      KnowledgeArtifact.okf_export_available_cache_key(@project.id),
+      expires_in: 10.minutes
+    ) do
+      KnowledgeArtifact.active
+        .for_project(@project)
+        .where(artifact_type: Knowledge::Okf::Export::EXPORTABLE_ARTIFACT_TYPES)
+        .with_active_chunks
+        .exists?
+    end
   end
 
   def new

@@ -24,20 +24,33 @@ module Knowledge
 
       MAX_ARTIFACTS = 500
 
+      # Aggregate ceiling across all selected types, on top of the per-type
+      # MAX_ARTIFACTS. Without this, selecting all exportable types can pull
+      # thousands of artifacts (plus their active chunks) into memory in a
+      # single synchronous web request.
+      MAX_TOTAL_ARTIFACTS = 2000
+
       # Deliberately not .md: the OkfCollector globs **/*.md when re-ingesting
       # a bundle from .okf/, and this file has no OKF frontmatter to parse.
       TRUNCATION_NOTICE_PATH = "TRUNCATION_NOTICE.txt"
 
+      # Tar entry basenames over 100 bytes raise Gem::Package::TooLongFileName
+      # in BundleArchive. Truncating the slug (rather than the whole path)
+      # keeps the artifact_type directory prefix and the id suffix intact so
+      # paths stay unique.
+      MAX_SLUG_LENGTH = 80
+
       BundleFile = Data.define(:relative_path, :content)
-      Result = Data.define(:files, :artifact_types, :skipped_count, :truncated_types)
+      Result = Data.define(:files, :artifact_types, :exported_count, :skipped_count, :truncated_types)
 
       def self.call(...) = new(...).call
 
-      def initialize(project:, artifact_types:, actor: nil, max_artifacts: MAX_ARTIFACTS, exported_at: Time.current)
+      def initialize(project:, artifact_types:, max_artifacts: MAX_ARTIFACTS,
+        max_total_artifacts: MAX_TOTAL_ARTIFACTS, exported_at: Time.current)
         @project = project
         @artifact_types = normalize_types(artifact_types)
-        @actor = actor
         @max_artifacts = max_artifacts
+        @max_total_artifacts = max_total_artifacts
         @exported_at = exported_at
       end
 
@@ -47,41 +60,56 @@ module Knowledge
         files = []
         skipped = 0
         truncated_types = []
+        exported_counts = {}
 
         artifact_types.each do |type|
-          fetched = fetch_artifacts(type)
-          truncated_types << type if fetched.size > max_artifacts
-          fetched.first(max_artifacts).each do |artifact|
+          remaining_capacity = max_total_artifacts - files.size
+          if remaining_capacity <= 0
+            truncated_types << type
+            exported_counts[type] = 0
+            next
+          end
+
+          type_limit = [ max_artifacts, remaining_capacity ].min
+          fetched = fetch_artifacts(type, type_limit)
+          truncated_types << type if fetched.size > type_limit
+          before = files.size
+          fetched.first(type_limit).each do |artifact|
             file = build_file(artifact)
             file ? files << file : skipped += 1
           end
+          exported_counts[type] = files.size - before
         end
 
-        record_audit_event(files.size, skipped, truncated_types)
-        files << truncation_notice_file(truncated_types) if truncated_types.any? && files.any?
-        Result.new(files: files, artifact_types: artifact_types, skipped_count: skipped, truncated_types: truncated_types)
+        exported_count = files.size
+        files << truncation_notice_file(truncated_types, exported_counts) if truncated_types.any? && files.any?
+        Result.new(files: files, artifact_types: artifact_types, exported_count: exported_count,
+          skipped_count: skipped, truncated_types: truncated_types)
       end
 
       private
 
-      attr_reader :project, :artifact_types, :actor, :max_artifacts, :exported_at
+      attr_reader :project, :artifact_types, :max_artifacts, :max_total_artifacts, :exported_at
 
       def normalize_types(types)
         Array(types).map(&:to_s).uniq & EXPORTABLE_ARTIFACT_TYPES
       end
 
-      # Fetches one extra row beyond max_artifacts so truncation can be
-      # detected without a separate COUNT query, then only the first
-      # max_artifacts are used. Applied per type (not globally) so a broad
-      # selection can't let one alphabetically-early type starve the rest.
-      def fetch_artifacts(type)
+      # Fetches one extra row beyond the effective limit so truncation can be
+      # detected without a separate COUNT query, then only the first `limit`
+      # are used. The per-type max_artifacts is applied (not a global split)
+      # so a broad selection can't let one alphabetically-early type starve
+      # the rest; the caller further narrows `limit` to the remaining slice
+      # of max_total_artifacts so this never over-fetches past the aggregate
+      # ceiling.
+      def fetch_artifacts(type, limit)
         KnowledgeArtifact
           .for_project(project)
           .active
           .where(artifact_type: type)
           .includes(:active_ordered_chunks, collector_run: :project_version)
           .order(:identifier, :id)
-          .limit(max_artifacts + 1)
+          .limit(limit + 1)
           .to_a
       end
 
@@ -149,29 +177,17 @@ module Knowledge
       end
 
       def relative_path_for(artifact)
-        slug = title_for(artifact).parameterize.presence || artifact.artifact_type
+        slug = title_for(artifact).parameterize.truncate(MAX_SLUG_LENGTH, omission: "").presence || artifact.artifact_type
         "#{artifact.artifact_type}/#{slug}-#{artifact.id}.md"
       end
 
-      def record_audit_event(exported_count, skipped_count, truncated_types)
-        Knowledge::Provenance::AuditLog.record(
-          event: :okf_bundle_exported,
-          project: project,
-          actor: actor || { type: "system" },
-          details: {
-            artifact_types: artifact_types,
-            exported_count: exported_count,
-            skipped_count: skipped_count,
-            truncated_types: truncated_types
-          }
-        )
-      end
-
-      def truncation_notice_file(truncated_types)
-        lines = truncated_types.map { |type| "  - #{type} (more than #{max_artifacts} matching, only #{max_artifacts} exported)" }
+      def truncation_notice_file(truncated_types, exported_counts)
+        lines = truncated_types.map { |type| "  - #{type} (#{exported_counts[type]} exported; more matched)" }
         content = <<~NOTICE
           This export was truncated: some selected artifact types had more
-          matching knowledge artifacts than the per-type export limit.
+          matching knowledge artifacts than the per-type export limit
+          (#{max_artifacts}) or the overall export limit
+          (#{max_total_artifacts} artifacts) was reached.
 
           Truncated types:
           #{lines.join("\n")}

@@ -85,5 +85,27 @@ RSpec.describe "Projects::OkfExports" do
       expect(response).to have_http_status(:unprocessable_content)
       expect(response.body).to include("select at least one exportable artifact type")
     end
+
+    it "records an audit event once the archive has been produced" do
+      create_artifact_with_chunks(artifact_type: "okf_concept", chunk_statuses: [ "active" ])
+
+      expect {
+        post project_okf_export_path(project), params: { okf_export: { artifact_types: [ "okf_concept" ] } }
+      }.to change(KnowledgeAuditEvent, :count).by(1)
+
+      event = KnowledgeAuditEvent.last
+      expect(event.event_type).to eq("okf_bundle_exported")
+      expect(event.actor_type).to eq("user")
+      expect(event.actor_id).to eq(user.id.to_s)
+      expect(event.details).to include(
+        "artifact_types" => [ "okf_concept" ], "exported_count" => 1, "skipped_count" => 0, "truncated_types" => []
+      )
+    end
+
+    it "does not record an audit event when no artifacts match the selection" do
+      expect {
+        post project_okf_export_path(project), params: { okf_export: { artifact_types: [ "okf_concept" ] } }
+      }.not_to change(KnowledgeAuditEvent, :count)
+    end
   end
 end

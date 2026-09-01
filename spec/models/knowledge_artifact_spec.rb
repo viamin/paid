@@ -92,4 +92,17 @@ RSpec.describe KnowledgeArtifact do
       end
     end
   end
+
+  describe ".bust_artifact_counts_cache" do
+    it "clears both the artifact counts cache and the OKF export availability cache" do
+      project_id = create(:project).id
+      Rails.cache.write(described_class.artifact_counts_cache_key(project_id), [ [ "route", 1 ] ])
+      Rails.cache.write(described_class.okf_export_available_cache_key(project_id), true)
+
+      described_class.bust_artifact_counts_cache(project_id)
+
+      expect(Rails.cache.read(described_class.artifact_counts_cache_key(project_id))).to be_nil
+      expect(Rails.cache.read(described_class.okf_export_available_cache_key(project_id))).to be_nil
+    end
+  end
 end

@@ -98,18 +98,56 @@ RSpec.describe Knowledge::Okf::Export do
       expect(result.artifact_types).to eq([ "okf_concept" ])
     end
 
-    it "records an audit event with export details" do
+    it "reports exported_count separately from files, which also carries the truncation notice" do
       artifact_with_chunks(chunk_types: [ [ "definition", "Body" ] ])
 
-      expect {
-        described_class.call(project:, artifact_types: [ "okf_concept" ], actor: { type: "user", id: "1" })
-      }.to change(KnowledgeAuditEvent, :count).by(1)
+      result = described_class.call(project:, artifact_types: [ "okf_concept" ])
 
-      event = KnowledgeAuditEvent.last
-      expect(event.event_type).to eq("okf_bundle_exported")
-      expect(event.details).to include(
-        "artifact_types" => [ "okf_concept" ], "exported_count" => 1, "skipped_count" => 0, "truncated_types" => []
+      expect(result.exported_count).to eq(1)
+      expect(result.files.length).to eq(1)
+    end
+
+    it "bounds the file slug so a long title cannot overflow the tar entry name limit" do
+      artifact_with_chunks(
+        chunk_types: [ [ "definition", "Body" ] ],
+        artifact_type: "reference_document",
+        identifier: "a" * 300
       )
+
+      result = described_class.call(project:, artifact_types: [ "reference_document" ])
+
+      relative_path = result.files.first.relative_path
+      basename = relative_path.split("/").last
+      expect(basename.bytesize).to be <= 100
+      expect(Knowledge::Okf::Frontmatter.parse(result.files.first.content)).to be_valid
+    end
+
+    context "when the aggregate artifact ceiling is reached" do
+      before do
+        3.times do |n|
+          artifact_with_chunks(chunk_types: [ [ "definition", "Body #{n}" ] ], artifact_type: "route",
+            identifier: "Route #{n}", scope_path: "app/routes_#{n}.rb")
+        end
+        artifact_with_chunks(chunk_types: [ [ "definition", "Concept body" ] ], artifact_type: "okf_concept")
+      end
+
+      it "stops appending once max_total_artifacts is hit and flags the remaining types as truncated" do
+        result = described_class.call(project:, artifact_types: [ "route", "okf_concept" ],
+          max_artifacts: 10, max_total_artifacts: 2)
+
+        route_files = result.files.count { |f| f.relative_path.start_with?("route/") }
+        concept_files = result.files.count { |f| f.relative_path.start_with?("okf_concept/") }
+        expect(route_files).to eq(2)
+        expect(concept_files).to eq(0)
+        expect(result.truncated_types).to eq([ "route", "okf_concept" ])
+      end
+
+      it "does not exceed max_total_artifacts across all types combined" do
+        result = described_class.call(project:, artifact_types: [ "route", "okf_concept" ],
+          max_artifacts: 10, max_total_artifacts: 2)
+
+        expect(result.exported_count).to eq(2)
+      end
     end
 
     context "when a selected type exceeds max_artifacts" do
@@ -137,12 +175,6 @@ RSpec.describe Knowledge::Okf::Export do
         notice = result.files.find { |f| f.relative_path == "TRUNCATION_NOTICE.txt" }
         expect(notice).to be_present
         expect(notice.content).to include("route")
-      end
-
-      it "records truncated_types in the audit event" do
-        described_class.call(project:, artifact_types: [ "route", "okf_concept" ], max_artifacts: 2)
-
-        expect(KnowledgeAuditEvent.last.details).to include("truncated_types" => [ "route" ])
       end
 
       it "does not truncate when max_artifacts is not exceeded" do
