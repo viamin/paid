@@ -8,15 +8,16 @@ RSpec.describe Knowledge::Okf::Export do
   let(:project_version) { create(:project_version, project:, commit_sha: "a" * 40) }
   let(:collector_run) { create(:collector_run, project_version:, collector_type: "okf") }
 
-  def artifact_with_chunks(chunk_types:, artifact_type: "okf_concept", metadata: {}, status: "active")
+  def artifact_with_chunks(chunk_types:, artifact_type: "okf_concept", metadata: {}, status: "active",
+    identifier: "Auth flows", scope_path: ".okf/concepts/auth.md")
     artifact = create(
       :knowledge_artifact,
       collector_run:,
       project:,
       artifact_type:,
       status:,
-      identifier: "Auth flows",
-      scope_path: ".okf/concepts/auth.md",
+      identifier:,
+      scope_path:,
       metadata: metadata
     )
     chunk_types.each_with_index do |(type, content, chunk_status), index|
@@ -106,7 +107,50 @@ RSpec.describe Knowledge::Okf::Export do
 
       event = KnowledgeAuditEvent.last
       expect(event.event_type).to eq("okf_bundle_exported")
-      expect(event.details).to include("artifact_types" => [ "okf_concept" ], "exported_count" => 1, "skipped_count" => 0)
+      expect(event.details).to include(
+        "artifact_types" => [ "okf_concept" ], "exported_count" => 1, "skipped_count" => 0, "truncated_types" => []
+      )
+    end
+
+    context "when a selected type exceeds max_artifacts" do
+      before do
+        3.times do |n|
+          artifact_with_chunks(chunk_types: [ [ "definition", "Body #{n}" ] ], artifact_type: "route",
+            identifier: "Route #{n}", scope_path: "app/routes_#{n}.rb")
+        end
+        artifact_with_chunks(chunk_types: [ [ "definition", "Concept body" ] ], artifact_type: "okf_concept")
+      end
+
+      it "applies the limit per type instead of starving later types" do
+        result = described_class.call(project:, artifact_types: [ "route", "okf_concept" ], max_artifacts: 2)
+
+        route_files = result.files.count { |f| f.relative_path.start_with?("route/") }
+        concept_files = result.files.count { |f| f.relative_path.start_with?("okf_concept/") }
+        expect(route_files).to eq(2)
+        expect(concept_files).to eq(1)
+      end
+
+      it "flags the truncated type on the result and includes a notice file in the bundle" do
+        result = described_class.call(project:, artifact_types: [ "route", "okf_concept" ], max_artifacts: 2)
+
+        expect(result.truncated_types).to eq([ "route" ])
+        notice = result.files.find { |f| f.relative_path == "TRUNCATION_NOTICE.txt" }
+        expect(notice).to be_present
+        expect(notice.content).to include("route")
+      end
+
+      it "records truncated_types in the audit event" do
+        described_class.call(project:, artifact_types: [ "route", "okf_concept" ], max_artifacts: 2)
+
+        expect(KnowledgeAuditEvent.last.details).to include("truncated_types" => [ "route" ])
+      end
+
+      it "does not truncate when max_artifacts is not exceeded" do
+        result = described_class.call(project:, artifact_types: [ "route", "okf_concept" ], max_artifacts: 10)
+
+        expect(result.truncated_types).to eq([])
+        expect(result.files.map(&:relative_path)).not_to include("TRUNCATION_NOTICE.txt")
+      end
     end
   end
 end

@@ -50,6 +50,14 @@ RSpec.describe "Projects::OkfExports" do
       expect(entries.length).to eq(1)
     end
 
+    it "does not set a truncation header when the export is complete" do
+      create_exportable_artifact
+
+      post project_okf_export_path(project), params: { okf_export: { artifact_types: [ "okf_concept" ] } }
+
+      expect(response.headers["X-Okf-Export-Truncated"]).to be_nil
+    end
+
     it "rerenders the form with an alert when no artifacts match the selection" do
       post project_okf_export_path(project), params: { okf_export: { artifact_types: [ "okf_concept" ] } }
 

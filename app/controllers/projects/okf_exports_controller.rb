@@ -19,6 +19,7 @@ module Projects
       )
       return render_empty_result if result.files.empty?
 
+      response.headers["X-Okf-Export-Truncated"] = result.truncated_types.join(",") if result.truncated_types.any?
       send_data Knowledge::Okf::BundleArchive.build(result.files),
         filename: "okf-export-#{@project.name.parameterize}-#{Date.current}.tar.gz",
         type: "application/gzip"

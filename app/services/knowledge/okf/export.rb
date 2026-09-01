@@ -24,8 +24,12 @@ module Knowledge
 
       MAX_ARTIFACTS = 500
 
+      # Deliberately not .md: the OkfCollector globs **/*.md when re-ingesting
+      # a bundle from .okf/, and this file has no OKF frontmatter to parse.
+      TRUNCATION_NOTICE_PATH = "TRUNCATION_NOTICE.txt"
+
       BundleFile = Data.define(:relative_path, :content)
-      Result = Data.define(:files, :artifact_types, :skipped_count)
+      Result = Data.define(:files, :artifact_types, :skipped_count, :truncated_types)
 
       def self.call(...) = new(...).call
 
@@ -42,13 +46,20 @@ module Knowledge
 
         files = []
         skipped = 0
-        fetch_artifacts.each do |artifact|
-          file = build_file(artifact)
-          file ? files << file : skipped += 1
+        truncated_types = []
+
+        artifact_types.each do |type|
+          fetched = fetch_artifacts(type)
+          truncated_types << type if fetched.size > max_artifacts
+          fetched.first(max_artifacts).each do |artifact|
+            file = build_file(artifact)
+            file ? files << file : skipped += 1
+          end
         end
 
-        record_audit_event(files.size, skipped)
-        Result.new(files: files, artifact_types: artifact_types, skipped_count: skipped)
+        record_audit_event(files.size, skipped, truncated_types)
+        files << truncation_notice_file(truncated_types) if truncated_types.any? && files.any?
+        Result.new(files: files, artifact_types: artifact_types, skipped_count: skipped, truncated_types: truncated_types)
       end
 
       private
@@ -59,14 +70,19 @@ module Knowledge
         Array(types).map(&:to_s).uniq & EXPORTABLE_ARTIFACT_TYPES
       end
 
-      def fetch_artifacts
+      # Fetches one extra row beyond max_artifacts so truncation can be
+      # detected without a separate COUNT query, then only the first
+      # max_artifacts are used. Applied per type (not globally) so a broad
+      # selection can't let one alphabetically-early type starve the rest.
+      def fetch_artifacts(type)
         KnowledgeArtifact
           .for_project(project)
           .active
-          .where(artifact_type: artifact_types)
+          .where(artifact_type: type)
           .includes(:active_ordered_chunks, collector_run: :project_version)
-          .order(:artifact_type, :identifier, :id)
-          .limit(max_artifacts)
+          .order(:identifier, :id)
+          .limit(max_artifacts + 1)
+          .to_a
       end
 
       # Renders and immediately re-parses the file so an artifact only ever
@@ -137,7 +153,7 @@ module Knowledge
         "#{artifact.artifact_type}/#{slug}-#{artifact.id}.md"
       end
 
-      def record_audit_event(exported_count, skipped_count)
+      def record_audit_event(exported_count, skipped_count, truncated_types)
         Knowledge::Provenance::AuditLog.record(
           event: :okf_bundle_exported,
           project: project,
@@ -145,9 +161,27 @@ module Knowledge
           details: {
             artifact_types: artifact_types,
             exported_count: exported_count,
-            skipped_count: skipped_count
+            skipped_count: skipped_count,
+            truncated_types: truncated_types
           }
         )
+      end
+
+      def truncation_notice_file(truncated_types)
+        lines = truncated_types.map { |type| "  - #{type} (more than #{max_artifacts} matching, only #{max_artifacts} exported)" }
+        content = <<~NOTICE
+          This export was truncated: some selected artifact types had more
+          matching knowledge artifacts than the per-type export limit.
+
+          Truncated types:
+          #{lines.join("\n")}
+
+          This bundle is incomplete for those types. To get a complete export,
+          narrow the artifact type selection and export the remaining types
+          separately.
+        NOTICE
+
+        BundleFile.new(relative_path: TRUNCATION_NOTICE_PATH, content: content)
       end
     end
   end
