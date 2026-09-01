@@ -80,8 +80,8 @@ module Containers
       checks << ping_check(backend)
       checks << daemon_info_check(backend)
       checks << architecture_check(backend, checks.last.details)
-      checks << network_check(backend, Containers.agent_network_name)
-      checks << network_check(backend, Containers.infra_network_name)
+      checks << network_check(backend, NetworkPolicy::NETWORK_NAME)
+      checks << network_check(backend, NetworkPolicy::INFRA_NETWORK_NAME)
       checks << image_check(backend)
       checks << proxy_callback_check(backend)
 
@@ -214,7 +214,7 @@ module Containers
       return compatible_payload unless requirements
 
       network_name = requirements.required_network.presence ||
-        (requirements.service_containers_required? ? Containers.infra_network_name : nil)
+        (requirements.service_containers_required? ? NetworkPolicy::INFRA_NETWORK_NAME : nil)
       if network_name && failed_check?(payload, "docker_network:#{network_name}")
         return incompatible_payload(
           check: "selected_run_capability",
