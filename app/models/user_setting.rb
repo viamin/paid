@@ -720,7 +720,7 @@ class UserSetting < ApplicationRecord
   def persist_round_robin_state!(state)
     return unless persisted?
 
-    update_column(:runner_round_robin_state, state)
+    update_columns(runner_round_robin_state: state)
   rescue ActiveRecord::ActiveRecordError => e
     Rails.logger.warn(
       message: "user_setting.round_robin_state_persist_failed",

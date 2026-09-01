@@ -112,7 +112,7 @@ class GithubToken < ApplicationRecord
   end
 
   def touch_last_used!
-    update_column(:last_used_at, Time.current)
+    update_columns(last_used_at: Time.current)
   end
 
   # Returns a GithubClient instance configured with this token.

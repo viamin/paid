@@ -181,7 +181,7 @@ class StyleGuide < ApplicationRecord
       created_by: created_by_for_snapshot,
       change_notes: "Initial version"
     )
-    update_column(:current_version_id, version.id)
+    update_columns(current_version_id: version.id)
   end
 
   def create_raw_content_version_snapshot!
@@ -190,7 +190,7 @@ class StyleGuide < ApplicationRecord
       parent_version: current_version,
       change_notes: "Updated style guide content"
     )
-    update_column(:current_version_id, version.id)
+    update_columns(current_version_id: version.id)
   end
 
   def create_version_snapshot!(created_by:, change_notes:, parent_version: nil)

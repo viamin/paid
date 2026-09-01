@@ -3779,7 +3779,7 @@ class AgentRun < ApplicationRecord
     )
   ensure
     @container_service = nil
-    update_column(:container_id, nil) if container_id.present?
+    update_columns(container_id: nil) if container_id.present?
     clear_runtime_image_selection!
   end
 

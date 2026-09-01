@@ -72,7 +72,7 @@ module Notifications
       return if notification.action_url.present?
 
       url = default_action_url(notification)
-      notification.update_column(:action_url, url) if url
+      notification.update_columns(action_url: url) if url
     end
 
     # Inbox::Queue only surfaces action_required entries whose subject
