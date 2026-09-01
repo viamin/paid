@@ -710,8 +710,10 @@ module ApplicationHelper
   end
 
   # Wraps content with a mobile-friendly info-icon tooltip using CSS-only details.
-  # Desktop users see the native title attribute; on touch devices the icon toggles
-  # a popover. Returns +inner+ unchanged when +tooltip_text+ is blank.
+  # Desktop users see the native title attribute on hover, and the popover on
+  # keyboard focus of +inner+ (group-focus-within); on touch devices the icon
+  # toggles the popover instead. Returns +inner+ unchanged when +tooltip_text+
+  # is blank.
   def mobile_tooltip_wrapper(inner, tooltip_text, dom_id, aria_label: "Show details")
     return inner if tooltip_text.blank?
 
@@ -732,7 +734,7 @@ module ApplicationHelper
           tooltip_text,
           id: dom_id,
           role: "tooltip",
-          class: "hidden group-open:block fixed z-50 w-48 rounded bg-gray-900 px-2 py-1 text-xs text-white shadow-lg"
+          class: "hidden group-open:block group-focus-within:block fixed z-50 w-48 rounded bg-gray-900 px-2 py-1 text-xs text-white shadow-lg"
         )
       ])
     end

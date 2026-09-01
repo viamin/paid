@@ -113,6 +113,18 @@ RSpec.describe ApplicationHelper, :no_db do
         expect(result).to include("@media(hover:hover)_and_(pointer:fine)_and_(not_(any-pointer:coarse))")
       end
 
+      it "reveals the tooltip on keyboard focus even when the info icon is hidden on fine-pointer devices" do
+        issue = stub_issue(github_number: 42, github_url: "https://github.com/o/r/issues/42",
+          title: "Fix the login bug")
+        run = stub_run("create_pr_goal?": true, issue: issue)
+        result = helper.agent_run_context_display(run)
+
+        # The disclosure triangle is hidden on hover-capable fine-pointer devices, but the
+        # tooltip content must still be reachable by focusing the underlying link/span so
+        # keyboard users on desktop are not locked out (see #3517 review feedback).
+        expect(result).to include("group-focus-within:block")
+      end
+
       it "falls back to the issue label tooltip when the issue title is absent" do
         issue = stub_issue(github_number: 42, github_url: "https://github.com/o/r/issues/42", title: nil)
         run = stub_run("create_pr_goal?": true, issue: issue)
