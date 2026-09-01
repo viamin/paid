@@ -17,9 +17,8 @@ module Knowledge
       include Rails.application.routes.url_helpers
 
       # @spec KNOWLEDGE-OKF-005
-      CURATED_ARTIFACT_TYPES = %w[
-        okf_concept business_context reference_document decision_record change_intent
-      ].freeze
+      # @spec KNOWLEDGE-CURATED-001
+      CURATED_ARTIFACT_TYPES = KnowledgeArtifact::CURATED_ARTIFACT_TYPES
       DERIVED_ARTIFACT_TYPES = %w[
         route symbol structure schema churn_hotspot config_key language_stat dependency project_convention
       ].freeze

@@ -18,6 +18,11 @@
                 <span class="inline-flex items-center rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">
                   <%= result[:artifact_type] %>
                 </span>
+                <% if result[:curated] %>
+                  <span class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                    Curated
+                  </span>
+                <% end %>
                 <% if result[:identifier].present? %>
                   <span class="text-sm font-medium text-gray-900">
                     <% if result[:artifact_id] %>

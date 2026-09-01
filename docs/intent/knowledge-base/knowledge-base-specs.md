@@ -143,6 +143,56 @@
   `spec/services/knowledge/okf/bundle_archive_spec.rb`,
   `spec/requests/projects/okf_exports_spec.rb`.
 
+- [x] **KNOWLEDGE-CURATED-001** — Paid SHALL maintain a single canonical list
+  of curated artifact types (durable, human/agent-authored knowledge —
+  business context, imported documents, decision records, change intents, OKF
+  concepts) distinct from derived collector output, and every consumer that
+  needs to classify an artifact type as curated or derived SHALL reference
+  that canonical list rather than duplicating it.
+  *Code:* `app/models/knowledge_artifact.rb`,
+  `app/services/knowledge/okf/export.rb`.
+  *Test:* `spec/models/knowledge_artifact_spec.rb`.
+
+- [x] **KNOWLEDGE-CURATED-002** — When knowledge search returns results, the
+  system SHALL tag each result with whether its artifact type is curated so
+  callers can distinguish curated knowledge from derived knowledge without a
+  second lookup.
+  *Code:* `app/services/knowledge/search.rb`.
+  *Test:* `spec/services/knowledge/search_spec.rb`.
+
+- [x] **KNOWLEDGE-CURATED-003** — When a project member browses knowledge,
+  the system SHALL present curated artifact types separately from derived
+  artifact types in the browse index and SHALL label an artifact type's
+  browse page as curated or derived.
+  *Code:* `app/controllers/knowledge/browse_controller.rb`,
+  `app/views/knowledge/browse/index.html.erb`,
+  `app/views/knowledge/browse/show.html.erb`.
+  *Test:* `spec/requests/knowledge/browse_spec.rb`.
+
+- [x] **KNOWLEDGE-CURATED-004** — When Paid assembles a knowledge context
+  bundle within a token budget, the system SHALL order curated sections
+  (business context, imported documents, OKF, decisions, change intents)
+  before derived sections (routes, symbols, schema, hotspots, stats) so
+  curated knowledge is not displaced by codebase-derived context under
+  budget pressure.
+  *Code:* `app/services/knowledge/context_bundle/build.rb`.
+  *Test:* `spec/services/knowledge/context_bundle/build_spec.rb`.
+
+- [x] **KNOWLEDGE-CURATED-005** — When usage stats are aggregated for a
+  project or account, the system SHALL report curated-knowledge usage
+  separately from derived-artifact usage, bucketed from the existing
+  per-artifact-type usage records.
+  *Code:* `app/services/knowledge/usage_stats.rb`,
+  `app/services/knowledge/dashboard_stats.rb`.
+  *Test:* `spec/services/knowledge/usage_stats_spec.rb`,
+  `spec/services/knowledge/dashboard_stats_spec.rb`.
+
+- [x] **KNOWLEDGE-CURATED-006** — When the knowledge map is built for a
+  project, the system SHALL include an active/stale artifact-count breakdown
+  by curated/derived lane alongside the existing per-type artifact counts.
+  *Code:* `app/services/knowledge/map/build.rb`.
+  *Test:* `spec/services/knowledge/map/build_spec.rb`.
+
 - [x] **KNOWLEDGE-EMBED-001** — When a user configures a knowledge base, the
   system SHALL let them pick any embedding model id served by the configured
   embedding runner together with the dimensions the model emits, validate
