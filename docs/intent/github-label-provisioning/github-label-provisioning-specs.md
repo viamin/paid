@@ -53,9 +53,14 @@
   `GithubClient::ApiError` with an actionable message instead of returning a
   partial result, and a failed per-label create or reconcile (403) SHALL be
   recorded in `Result#errors` so `Result#any_errors?` lets a caller detect
-  the failure before depending on the label existing.
-  *Code:* `app/services/projects/ensure_standard_labels.rb`.
-  *Test:* `spec/services/projects/ensure_standard_labels_spec.rb`.
+  the failure before depending on the label existing. Runtime call sites that
+  need a specific control label to exist before mutating local state SHALL bail
+  out when `Result#any_errors?` is true rather than claiming the state change
+  succeeded locally without a matching GitHub label.
+  *Code:* `app/services/projects/ensure_standard_labels.rb`,
+  `app/temporal/activities/mark_escalated_activity.rb`.
+  *Test:* `spec/services/projects/ensure_standard_labels_spec.rb`,
+  `spec/temporal/activities/mark_escalated_activity_spec.rb`.
 
 - [x] **GH-LABELS-006** — The escalation control labels
   (`paid-escalated`, `paid-dismiss-escalation`) SHALL be defined exactly

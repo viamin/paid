@@ -22,6 +22,8 @@ module Activities
         return { updated: false }
       end
 
+      return { updated: false } unless ensure_standard_labels(project, issue)
+
       # Escalation invalidates the prior "ready" claim. Strip the label
       # before applying paid-escalated so human triage queues and any
       # "merge when green" automation never see a window where both
@@ -163,6 +165,26 @@ module Activities
           phase: issue.pr_review_phase
         }
       )
+    end
+
+    # The paid-escalated write path cannot assume prior manual setup or a
+    # best-effort create-time sync. If the canonical label catalog cannot be
+    # reconciled now, bail out before mutating either GitHub or local phase
+    # state so the PR never looks escalated locally without a dismissible
+    # control label on GitHub.
+    # @spec GH-LABELS-005
+    def ensure_standard_labels(project, issue)
+      result = Projects::EnsureStandardLabels.call(project: project)
+      return true unless result.any_errors?
+
+      logger.warn(
+        message: "pr_review.escalation_label_sync_failed",
+        project_id: project.id,
+        issue_id: issue.id,
+        pr_number: issue.github_number,
+        failed_labels: result.errors.map { |error| error[:name] }
+      )
+      false
     end
 
     def remove_ready_label(client, project, issue)

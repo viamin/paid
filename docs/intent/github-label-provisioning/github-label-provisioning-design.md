@@ -169,11 +169,23 @@ site (escalation, auto-merge, release automation, etc.) — GitHub's API
 returning a 404 on an unrecognized label is a real but rare failure mode
 once the full catalog exists, and duplicating a list-labels-and-create
 round trip into every write call site would trade a rare, cheaply-recovered
-failure for a GitHub API call on every automation write. `FileModelHealthIssue`
-keeps its existing narrow exception to this: it calls `create_label`
-defensively immediately before filing a model-health issue, because that
-label is filed by a background job with no "Sync Labels" UI trigger in its
-path.
+failure for a GitHub API call on every automation write. Two narrow
+exceptions stay in place:
+
+- `FileModelHealthIssue` calls `create_label` defensively immediately before
+  filing a model-health issue, because that label is filed by a background
+  job with no "Sync Labels" UI trigger in its path.
+- `MarkEscalatedActivity` calls `Projects::EnsureStandardLabels` and bails out
+  if the sync reports any errors before it writes `paid-escalated` remotely
+  or flips `Issue#pr_review_phase` locally. Escalation is a control-state
+  transition whose recovery instructions explicitly depend on the label's
+  presence on GitHub, so claiming the local phase without a remotely
+  dismissible label would violate the user-visible contract. Only the sync
+  bails: if the catalog synced cleanly but the subsequent label write itself
+  fails transiently, the activity still escalates (the hold must reach the
+  owner) and the escalated-phase scan re-applies the missing label, so remote
+  state converges with the local phase
+  (`pr-escalation-recovery` specs PR-ESCALATION-019/021).
 
 ## Code
 
@@ -187,11 +199,15 @@ path.
 - `app/services/models/file_model_health_issue.rb` — reads `LABEL_COLOR`/
   `LABEL_DESCRIPTION` from `EnsureStandardLabels::LABEL_DEFINITIONS` instead
   of duplicating them.
+- `app/temporal/activities/mark_escalated_activity.rb` — fronts the
+  `paid-escalated` transition with `EnsureStandardLabels` and aborts the local
+  escalation when provisioning reports errors.
 - `app/controllers/projects_controller.rb` — `ensure_labels` (manual sync)
   and `ensure_labels_best_effort` (project creation) call sites, unchanged.
 
 Test: `spec/services/projects/ensure_standard_labels_spec.rb`,
-`spec/services/github_client_spec.rb`.
+`spec/services/github_client_spec.rb`,
+`spec/temporal/activities/mark_escalated_activity_spec.rb`.
 
 ## What this segment does NOT own
 
