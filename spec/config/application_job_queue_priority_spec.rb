@@ -72,6 +72,7 @@ RSpec.describe ApplicationJob, :no_db do
         ServiceContainerMetricsCollectionJob
       ],
       knowledge: %w[
+        CaptureAgentRunSessionSummaryJob
         EmbedChunksJob
         EnqueueKnowledgeCollectionJob
         KnowledgeEvolutionJob

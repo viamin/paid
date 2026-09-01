@@ -237,6 +237,12 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
         .to have_enqueued_job(ProcessRunQueueJob)
     end
 
+    # @spec SESSION-SUMMARY-001
+    it "enqueues session-summary capture" do
+      expect { activity.execute(agent_run_id: agent_run.id) }
+        .to have_enqueued_job(CaptureAgentRunSessionSummaryJob).with(agent_run.id)
+    end
+
     it "reports cancellation when the run is already cancelled" do
       agent_run.cancel!
 

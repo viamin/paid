@@ -1,0 +1,112 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+# @spec SESSION-SUMMARY-004
+RSpec.describe "Projects::AgentRuns session summaries" do
+  let(:account) { create(:account) }
+  let(:owner) { create(:user, :owner, account:) }
+  let(:project) { create(:project, account: account, created_by: owner) }
+  let(:agent_run) { create(:agent_run, :completed, project: project) }
+  let!(:session_summary) do
+    create(:agent_run_session_summary, project: project, agent_run: agent_run,
+      summary: "Implemented rate limiting.",
+      files_touched: [ "app/services/rate_limiter.rb" ])
+  end
+
+  before { sign_in owner }
+
+  describe "GET /projects/:project_id/agent_runs/:id" do
+    it "shows the session summary as an observation with a promote action" do
+      get project_agent_run_path(project, agent_run)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Session Summary")
+      expect(response.body).to include("Implemented rate limiting.")
+      expect(response.body).to include("Observation")
+      expect(response.body).to include("Promote to Change Intent")
+    end
+
+    it "renders a promoted summary safely after its draft change intent is discarded" do
+      change_intent = create(:change_intent, project: project, status: "draft")
+      session_summary.promote!(change_intent: change_intent, user: owner)
+      ChangeIntents::DiscardDraft.call(change_intent:)
+
+      get project_agent_run_path(project, agent_run)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Promoted draft discarded")
+      expect(response.body).not_to include("Promote to Change Intent")
+      expect(response.body).not_to include(project_change_intent_path(project, change_intent))
+    end
+  end
+
+  describe "POST /projects/:project_id/agent_runs/:id/promote_session_summary" do
+    it "promotes the summary to a draft change intent and redirects to it" do
+      post promote_session_summary_project_agent_run_path(project, agent_run)
+
+      session_summary.reload
+      expect(session_summary).to be_promoted
+      change_intent = session_summary.change_intent
+      expect(change_intent.status).to eq("draft")
+      expect(change_intent.intent).to eq("Implemented rate limiting.")
+      expect(response).to redirect_to(project_change_intent_path(project, change_intent))
+    end
+
+    it "redirects with an alert when the summary is already promoted" do
+      session_summary.promote!(change_intent: create(:change_intent, project: project), user: owner)
+
+      post promote_session_summary_project_agent_run_path(project, agent_run)
+
+      expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+      follow_redirect!
+      expect(response.body).to include("already promoted")
+    end
+
+    it "denies a viewer without run-agent access" do
+      viewer = create(:user, account: account)
+      viewer.add_role(:viewer, account)
+      sign_in viewer
+
+      post promote_session_summary_project_agent_run_path(project, agent_run)
+
+      expect(response).to have_http_status(:redirect)
+      expect(flash[:alert]).to eq("You are not authorized to perform this action.")
+    end
+
+    it "denies a project member who can run agents but cannot edit project-level intent" do
+      project_member = create(:user, account: account)
+      project_member.add_role(:project_member, project)
+      sign_in project_member
+
+      post promote_session_summary_project_agent_run_path(project, agent_run)
+
+      expect(response).to have_http_status(:redirect)
+      expect(flash[:alert]).to eq("You are not authorized to perform this action.")
+      expect(session_summary.reload).not_to be_promoted
+    end
+
+    it "permits an account admin who can edit project-level intent" do
+      admin = create(:user, account: account)
+      admin.add_role(:admin, account)
+      sign_in admin
+
+      post promote_session_summary_project_agent_run_path(project, agent_run)
+
+      expect(response).to redirect_to(project_change_intent_path(project, session_summary.reload.change_intent))
+    end
+
+    it "redirects with an alert when promotion raises a validation error" do
+      invalid_record = ChangeIntent.new
+      invalid_record.errors.add(:intent, "is too long")
+      allow(Knowledge::SessionSummaries::Promote).to receive(:call)
+        .and_raise(ActiveRecord::RecordInvalid.new(invalid_record))
+
+      post promote_session_summary_project_agent_run_path(project, agent_run)
+
+      expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+      follow_redirect!
+      expect(response.body).to include("Validation failed: Intent is too long")
+    end
+  end
+end

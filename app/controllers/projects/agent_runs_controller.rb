@@ -9,7 +9,9 @@ module Projects
     InvalidDockerHostSelectionError = Containers::ResolveHostForRun::InvalidDockerHostSelectionError
 
     before_action :set_project
-    before_action :set_agent_run, only: [ :show, :cancel, :retry, :refresh_auth, :diagnose_error, :resume, :terminate, :provenance ]
+    before_action :set_agent_run, only: [
+      :show, :cancel, :retry, :refresh_auth, :diagnose_error, :resume, :terminate, :provenance, :promote_session_summary
+    ]
 
     def index
       authorize @project, :show?
@@ -42,6 +44,7 @@ module Projects
       egress_audit_events = @agent_run.egress_security_events.audit_visible
       @egress_security_events = egress_audit_events.recent.limit(50).load
       @egress_denied_event_count = egress_audit_events.count
+      @session_summary = @agent_run.agent_run_session_summary
     end
 
     def provenance
@@ -77,6 +80,25 @@ module Projects
     def cancel
       authorize @agent_run
       cancel_agent_run(@agent_run, redirect_path: project_agent_run_path(@project, @agent_run))
+    end
+
+    # @spec SESSION-SUMMARY-004
+    def promote_session_summary
+      authorize @project, :update?
+      summary = @agent_run.agent_run_session_summary
+
+      if summary.nil?
+        redirect_to project_agent_run_path(@project, @agent_run), alert: "No session summary is available to promote."
+        return
+      end
+
+      change_intent = Knowledge::SessionSummaries::Promote.call(session_summary: summary, user: current_user)
+      redirect_to project_change_intent_path(@project, change_intent),
+        notice: "Session summary promoted to a draft Change Intent Record. Review and approve it to add it to the knowledge base."
+    rescue ActiveRecord::RecordInvalid => e
+      redirect_to project_agent_run_path(@project, @agent_run), alert: e.message
+    rescue ArgumentError => e
+      redirect_to project_agent_run_path(@project, @agent_run), alert: e.message
     end
 
     def new
