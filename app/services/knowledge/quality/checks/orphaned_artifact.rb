@@ -19,23 +19,23 @@ module Knowledge
       private
 
       def zero_chunk_findings(collector)
-        KnowledgeArtifact
+        scope = KnowledgeArtifact
           .active
           .for_project(project)
           .where.missing(:knowledge_chunks)
-          .find_each(batch_size: 200) do |artifact|
-            add_finding(
-              collector,
-              target_type: "KnowledgeArtifact",
-              target_id: artifact.id,
-              artifact_type: artifact.artifact_type,
-              detail: "active artifact has no chunks"
-            )
-          end
+
+        collect_scope(collector, scope) do |artifact|
+          build_finding(
+            target_type: "KnowledgeArtifact",
+            target_id: artifact.id,
+            artifact_type: artifact.artifact_type,
+            detail: "active artifact has no chunks"
+          )
+        end
       end
 
       def all_deleted_chunk_findings(collector)
-        KnowledgeArtifact
+        scope = KnowledgeArtifact
           .active
           .for_project(project)
           .joins(:knowledge_chunks)
@@ -43,15 +43,15 @@ module Knowledge
           .having(
             "COUNT(*) = SUM(CASE WHEN knowledge_chunks.status = 'deleted' THEN 1 ELSE 0 END)"
           )
-          .find_each(batch_size: 200) do |artifact|
-            add_finding(
-              collector,
-              target_type: "KnowledgeArtifact",
-              target_id: artifact.id,
-              artifact_type: artifact.artifact_type,
-              detail: "all chunks have status deleted"
-            )
-          end
+
+        collect_scope(collector, scope, grouped: true) do |artifact|
+          build_finding(
+            target_type: "KnowledgeArtifact",
+            target_id: artifact.id,
+            artifact_type: artifact.artifact_type,
+            detail: "all chunks have status deleted"
+          )
+        end
       end
     end
   end

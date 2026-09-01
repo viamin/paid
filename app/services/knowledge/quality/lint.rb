@@ -49,6 +49,19 @@ module Knowledge
         CHECK_CLASSES.map { |klass| klass.code }
       end
 
+      # Aggregate findings into a severity histogram plus total. Exposed so
+      # callers that filter the findings array (e.g. the API endpoint's
+      # `min_severity` param) can recompute the summary to match the
+      # filtered view instead of the raw report.
+      def self.summarize(findings)
+        buckets = SEVERITIES.index_with { 0 }.transform_keys(&:to_sym)
+        findings.each do |finding|
+          key = finding[:severity]&.to_sym
+          buckets[key] += 1 if buckets.key?(key)
+        end
+        buckets.merge(total: findings.size)
+      end
+
       def call
         findings, truncated_checks = run_checks
 
@@ -58,7 +71,7 @@ module Knowledge
           checks: CHECK_CLASSES.map { |klass| klass.code },
           findings: findings,
           truncated_checks: truncated_checks,
-          summary: summarize(findings)
+          summary: self.class.summarize(findings)
         }
       end
 
@@ -92,15 +105,6 @@ module Knowledge
           error: e.message
         )
         Checks::Base::Result.new(findings: [], omitted_count: 0)
-      end
-
-      def summarize(findings)
-        buckets = SEVERITIES.index_with { 0 }.transform_keys(&:to_sym)
-        findings.each do |finding|
-          key = finding[:severity]&.to_sym
-          buckets[key] += 1 if buckets.key?(key)
-        end
-        buckets.merge(total: findings.size)
       end
     end
   end

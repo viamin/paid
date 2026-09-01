@@ -66,6 +66,35 @@ module Knowledge
         }
       end
 
+      # Count-then-load pattern for scopes where every matching row (or
+      # group, for `GROUP BY ... HAVING` scopes) becomes exactly one
+      # finding. Runs a cheap aggregate first, then instantiates AR objects
+      # for only `remaining_capacity` rows and reports the rest as omitted.
+      # This keeps the work bounded, not just the payload — the whole point
+      # of the per-check cap in KNOWLEDGE-LINT-001.
+      #
+      # `grouped:` — when true, the scope has `GROUP BY`/`HAVING` and
+      # `.count` returns a Hash; we take its `.size` to get the number of
+      # distinct groups.
+      # `batch_size:` — passed to `find_each` for the load phase.
+      # The block receives each loaded record and returns the finding hash
+      # to store (usually via `build_finding(...)`).
+      def collect_scope(collector, scope, grouped: false, batch_size: 200)
+        total = grouped ? scope.count.size : scope.count
+        return if total.zero?
+
+        capacity = collector.remaining_capacity
+        loaded = 0
+        if capacity.positive?
+          limit = capacity == Float::INFINITY ? total : capacity
+          scope.limit(limit).find_each(batch_size: batch_size) do |record|
+            collector.add { yield(record) }
+            loaded += 1
+          end
+        end
+        collector.bump_count(total - loaded)
+      end
+
       class FindingCollector
         def initialize(max:)
           @max = max
@@ -78,6 +107,23 @@ module Knowledge
           return if @max && @findings.size >= @max
 
           @findings << yield
+        end
+
+        # Contribute `n` items to the seen-count without individually adding
+        # them via `add`. Used by count-then-load checks that computed the
+        # total from a cheap aggregate and loaded only up to
+        # `remaining_capacity` rows.
+        def bump_count(n)
+          @count += n
+        end
+
+        # How many more findings this collector will store before spilling
+        # into the omitted bucket. Returns `Float::INFINITY` when no cap
+        # was configured.
+        def remaining_capacity
+          return Float::INFINITY unless @max
+
+          [ @max - @findings.size, 0 ].max
         end
 
         def result

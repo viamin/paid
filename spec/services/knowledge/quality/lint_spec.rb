@@ -290,6 +290,38 @@ RSpec.describe Knowledge::Quality::Lint do
       expect(report[:summary][:total]).to eq(report[:findings].size)
     end
 
+    it "bounds AR instantiation to MAX_FINDINGS_PER_CHECK when a check overflows the cap" do
+      # KNOWLEDGE-LINT-001 promises a bounded report on large projects — the
+      # bound has to cover work, not just payload. If a check materialized
+      # every matching row before deciding what to store, tens of thousands
+      # of matches would blow up memory / DB round-trips on the sync request
+      # path.
+      project_version = create(:project_version, project: project)
+      collector_run = create(:collector_run, :completed, project_version: project_version, collector_type: "routes")
+      finding_count = described_class::MAX_FINDINGS_PER_CHECK + 5
+      finding_count.times do
+        create(:knowledge_artifact, project: project, collector_run: collector_run,
+          artifact_type: "route", status: "active")
+      end
+
+      instantiations = 0
+      original_new = KnowledgeArtifact.method(:instantiate)
+      allow(KnowledgeArtifact).to receive(:instantiate).and_wrap_original do |m, *args, **kwargs|
+        instantiations += 1
+        original_new.call(*args, **kwargs)
+      end
+
+      described_class.call(project: project)
+
+      # Bound is per-check; several checks may load rows, but each capped
+      # check should load at most MAX_FINDINGS_PER_CHECK from KnowledgeArtifact.
+      # OrphanedArtifact runs two capped queries against this table (zero-chunk
+      # and all-deleted-chunk paths), so a modest multiple of the cap is
+      # acceptable; the pre-fix behavior would have loaded ~finding_count rows
+      # for orphaned alone and again for stale_commit_reference.
+      expect(instantiations).to be < finding_count
+    end
+
     it "reports no truncated checks when every check stays within the cap" do
       report = described_class.call(project: project)
 

@@ -4,6 +4,16 @@ module Api
   class KnowledgeQualityController < ApplicationController
     MIN_SEVERITIES = %w[info warning error].freeze
     MIN_SEVERITY_RANK = MIN_SEVERITIES.each_with_index.to_h.freeze
+    RATE_LIMIT_MAX_REQUESTS = 20
+    RATE_LIMIT_PERIOD = 1.minute
+
+    # Report generation is strictly more expensive than semantic search
+    # (13 checks, aggregate queries, and — in the HTML view — a git subprocess),
+    # so this endpoint carries its own rate-limit guard tuned lower than the
+    # sibling search controller.
+    rate_limit to: RATE_LIMIT_MAX_REQUESTS, within: RATE_LIMIT_PERIOD,
+      by: -> { current_user&.id },
+      with: -> { render json: { error: "Rate limit exceeded" }, status: :too_many_requests }
 
     rescue_from ActiveRecord::RecordNotFound do
       render json: { error: "Project not found" }, status: :not_found
@@ -26,7 +36,16 @@ module Api
       end
 
       report = Knowledge::Quality::Lint.call(project: @project)
-      report[:findings] = filter_findings(report[:findings], min_severity) if min_severity
+      if min_severity
+        report[:findings] = filter_findings(report[:findings], min_severity)
+        # Recompute so summary counts match the filtered findings array, not
+        # the unfiltered report. Note that per-check truncation happens
+        # inside Lint before filtering — with a large project it's possible
+        # for error-severity findings to be dropped by the per-check cap
+        # after being crowded out by lower-severity findings from the same
+        # check. `truncated_checks` still reports which checks were capped.
+        report[:summary] = Knowledge::Quality::Lint.summarize(report[:findings])
+      end
       render json: report
     end
 

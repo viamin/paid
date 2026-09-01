@@ -14,20 +14,19 @@ module Knowledge
       severity "warning"
 
       def collect_findings(collector)
-        KnowledgeChunk
+        scope = KnowledgeChunk
           .active
           .for_project(project)
-          .includes(:knowledge_artifact)
           .where(embedding_model: nil)
-          .find_each(batch_size: 200) do |chunk|
-            add_finding(
-              collector,
-              target_type: "KnowledgeChunk",
-              target_id: chunk.id,
-              artifact_type: chunk.knowledge_artifact&.artifact_type,
-              detail: "active chunk has no embedding"
-            )
-          end
+
+        collect_scope(collector, scope.includes(:knowledge_artifact)) do |chunk|
+          build_finding(
+            target_type: "KnowledgeChunk",
+            target_id: chunk.id,
+            artifact_type: chunk.knowledge_artifact&.artifact_type,
+            detail: "active chunk has no embedding"
+          )
+        end
       end
     end
   end

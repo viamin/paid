@@ -19,9 +19,8 @@ module Knowledge
           .where(knowledge_artifacts: { project_id: project.id })
           .where("target_chunks.id IS NULL OR target_chunks.status = ?", "deleted")
 
-        link_scope.find_each(batch_size: 200) do |link|
-          add_finding(
-            collector,
+        collect_scope(collector, link_scope) do |link|
+          build_finding(
             target_type: "KnowledgeLink",
             target_id: link.id,
             detail: "link #{link.link_type} target_chunk=#{link.target_chunk_id} missing or deleted",

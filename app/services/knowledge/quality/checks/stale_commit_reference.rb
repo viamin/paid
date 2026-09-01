@@ -19,23 +19,22 @@ module Knowledge
         latest = latest_project_version
         return unless latest
 
-        KnowledgeArtifact
+        scope = KnowledgeArtifact
           .active
           .for_project(project)
           .joins(:collector_run)
-          .includes(collector_run: :project_version)
           .where.not(collector_runs: { project_version_id: latest.id })
-          .find_each(batch_size: 200) do |artifact|
-            run = artifact.collector_run
-            add_finding(
-              collector,
-              target_type: "KnowledgeArtifact",
-              target_id: artifact.id,
-              artifact_type: artifact.artifact_type,
-              detail: "collector indexed at #{run&.project_version&.commit_sha&.first(7)}, " \
-                      "HEAD is #{latest.commit_sha&.first(7)}"
-            )
-          end
+
+        collect_scope(collector, scope.includes(collector_run: :project_version)) do |artifact|
+          run = artifact.collector_run
+          build_finding(
+            target_type: "KnowledgeArtifact",
+            target_id: artifact.id,
+            artifact_type: artifact.artifact_type,
+            detail: "collector indexed at #{run&.project_version&.commit_sha&.first(7)}, " \
+                    "HEAD is #{latest.commit_sha&.first(7)}"
+          )
+        end
       end
     end
   end

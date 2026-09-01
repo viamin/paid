@@ -16,11 +16,16 @@ module Knowledge
       def collect_findings(collector)
         return if tracked_files.empty?
 
+        # Filesystem check filters out matches per-row, so we can't use the
+        # count-then-load shortcut. Bound work instead by breaking out once
+        # the collector is at capacity — further iteration would only add
+        # to the omitted bucket and can't surface a new finding.
         KnowledgeArtifact
           .active
           .for_project(project)
           .where.not(scope_path: [ nil, "" ])
           .find_each(batch_size: 200) do |artifact|
+            break unless collector.remaining_capacity.positive?
             next if file_exists?(artifact.scope_path)
 
             add_finding(
