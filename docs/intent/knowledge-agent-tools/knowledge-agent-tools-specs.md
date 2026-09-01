@@ -6,8 +6,11 @@
 > (`grep -r KNOWLEDGE-AGENT-TOOLS-001`).
 
 - [x] **KNOWLEDGE-AGENT-TOOLS-001** — When an authorized agent calls
-  `paid_knowledge_map` for a project, the system SHALL return active
-  knowledge artifact counts grouped by `artifact_type` for that project only.
+  `paid_knowledge_map` for a project, the system SHALL delegate to
+  `Knowledge::Map::Build` (the same service behind `api/knowledge_map`) and
+  SHALL return knowledge artifact counts (active and stale) grouped by
+  `artifact_type` plus the top scope paths, for that project only, so the
+  tool's numbers never diverge from the existing knowledge-map API.
   *Code:* `app/mcp/tools/knowledge_map.rb`.
   *Test:* `spec/mcp/tools/knowledge_map_spec.rb`.
 

@@ -14,35 +14,38 @@ RSpec.describe Tools::KnowledgeMap do
   let(:project_version) { create(:project_version, project: project) }
   let(:collector_run) { create(:collector_run, project_version: project_version) }
 
-  def create_artifact(artifact_type:, status: "active")
+  def create_artifact(artifact_type:, status: "active", scope_path: nil)
     create(:knowledge_artifact,
       project: project,
       collector_run: collector_run,
       artifact_type: artifact_type,
-      status: status)
+      status: status,
+      scope_path: scope_path)
   end
 
   describe "#call" do
-    it "returns active artifact counts grouped by type" do
-      create_artifact(artifact_type: "route")
-      create_artifact(artifact_type: "route")
-      create_artifact(artifact_type: "symbol")
-      create_artifact(artifact_type: "symbol", status: "stale")
+    it "returns active and stale artifact counts grouped by type, matching Knowledge::Map::Build" do
+      create_artifact(artifact_type: "route", scope_path: "app/controllers/a.rb")
+      create_artifact(artifact_type: "route", scope_path: "app/controllers/b.rb")
+      create_artifact(artifact_type: "symbol", scope_path: "app/models/user.rb")
+      create_artifact(artifact_type: "symbol", status: "stale", scope_path: "app/models/user.rb")
 
       result = tool.call(project_id: project.id)
+      overview = Knowledge::Map::Build.call(project: project)
 
       expect(result[:project_id]).to eq(project.id)
-      expect(result[:total_artifacts]).to eq(3)
+      expect(result[:total_artifacts]).to eq(4)
       expect(result[:artifact_types]).to contain_exactly(
         { artifact_type: "route", count: 2 },
-        { artifact_type: "symbol", count: 1 }
+        { artifact_type: "symbol", count: 2 }
       )
+      expect(result[:top_scopes]).to eq(overview[:top_scopes])
     end
 
-    it "returns an empty map when the project has no active artifacts" do
+    it "returns an empty map when the project has no artifacts" do
       result = tool.call(project_id: project.id)
 
-      expect(result).to eq(project_id: project.id, total_artifacts: 0, artifact_types: [])
+      expect(result).to eq(project_id: project.id, total_artifacts: 0, artifact_types: [], top_scopes: [])
     end
 
     it "raises for projects outside the user's account" do

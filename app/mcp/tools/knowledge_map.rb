@@ -6,7 +6,8 @@ module Tools
     def self.tool_name = "paid_knowledge_map"
 
     def self.description
-      "Get an overview of a project's knowledge base: active artifact counts grouped by type."
+      "Get an overview of a project's knowledge base: artifact counts (active and stale) " \
+        "grouped by type, plus top scope paths. Matches the api/knowledge_map overview."
     end
 
     def self.input_schema
@@ -21,16 +22,16 @@ module Tools
 
     def perform(project_id:)
       project = project_for(project_id)
-      artifact_types = KnowledgeArtifact.active.for_project(project)
-        .group(:artifact_type)
-        .count
-        .sort_by { |_, count| -count }
-        .map { |artifact_type, count| { artifact_type: artifact_type, count: count } }
+      overview = Knowledge::Map::Build.call(project: project)
+      artifact_types = overview[:artifact_counts]
+        .map { |artifact_type, counts| { artifact_type: artifact_type, count: counts.values.sum } }
+        .sort_by { |entry| -entry[:count] }
 
       {
         project_id: project.id,
         total_artifacts: artifact_types.sum { |entry| entry[:count] },
-        artifact_types: artifact_types
+        artifact_types: artifact_types,
+        top_scopes: overview[:top_scopes]
       }
     end
   end

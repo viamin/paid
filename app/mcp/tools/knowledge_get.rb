@@ -28,6 +28,7 @@ module Tools
       artifact = project.knowledge_artifacts.find(artifact_id)
       chunks = artifact.knowledge_chunks.where(status: %w[active stale]).order(:sequence, :created_at)
       chunk_count = chunks.count
+      visible_chunks = chunks.first(MAX_CHUNKS)
 
       {
         artifact_id: artifact.id,
@@ -39,8 +40,8 @@ module Tools
         collector_type: artifact.collector_type,
         project_version: version_info(artifact.collector_run&.project_version),
         chunk_count: chunk_count,
-        truncated: chunk_count > MAX_CHUNKS,
-        chunks: chunks.first(MAX_CHUNKS).map { |chunk| summarize_chunk(chunk) }
+        truncated: chunk_count > MAX_CHUNKS || visible_chunks.any? { |chunk| chunk.content.to_s.length > CHUNK_CONTENT_LIMIT },
+        chunks: visible_chunks.map { |chunk| summarize_chunk(chunk) }
       }
     end
 

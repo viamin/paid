@@ -64,13 +64,22 @@ RSpec.describe Tools::KnowledgeGet do
       expect(result[:truncated]).to be true
     end
 
-    it "truncates chunk content to the per-chunk limit" do
+    it "truncates chunk content to the per-chunk limit and flags truncation" do
       stub_const("Tools::KnowledgeGet::CHUNK_CONTENT_LIMIT", 10)
       create(:knowledge_chunk, knowledge_artifact: artifact, project: project, content: "x" * 50)
 
       result = tool.call(project_id: project.id, artifact_id: artifact.id)
 
       expect(result[:chunks].first[:content].length).to eq(10)
+      expect(result[:truncated]).to be true
+    end
+
+    it "does not flag truncation when content and chunk count are within bounds" do
+      create(:knowledge_chunk, knowledge_artifact: artifact, project: project, content: "short")
+
+      result = tool.call(project_id: project.id, artifact_id: artifact.id)
+
+      expect(result[:truncated]).to be false
     end
 
     it "raises for an artifact outside the project" do

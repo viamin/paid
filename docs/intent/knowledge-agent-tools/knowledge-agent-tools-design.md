@@ -27,9 +27,11 @@ expose tools like `search_intents` and `get_intent`. No new authentication or
 transport layer is introduced — the tools ride the existing chat-session MCP
 endpoint (`Api::McpController` → `PaidMcpServer` → `Tools::Registry`).
 
-- `paid_knowledge_map` — active artifact counts grouped by `artifact_type`
-  for a project, so an agent can see what kinds of knowledge exist before
-  drilling in.
+- `paid_knowledge_map` — artifact counts (active and stale) grouped by
+  `artifact_type` for a project, plus top scope paths, so an agent can see
+  what kinds of knowledge exist before drilling in. Delegates to
+  `Knowledge::Map::Build`, the same service behind `api/knowledge_map`, so
+  the two surfaces never disagree on counts.
 - `paid_knowledge_browse` — paginated listing of artifacts within one
   `artifact_type`, optionally filtered by a `scope_path` prefix (e.g. a
   directory), mirroring `Knowledge::BrowseController`.
