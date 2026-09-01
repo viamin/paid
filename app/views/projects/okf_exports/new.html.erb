@@ -1,0 +1,71 @@
+<% content_for(:title) { "Export OKF Bundle - #{@project.name} - Paid" } %>
+
+<div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to @project, class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+      <svg class="mr-1 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd" />
+      </svg>
+      Back to Project
+    <% end %>
+  </div>
+
+  <h1 class="text-2xl font-semibold text-gray-900">Export OKF Bundle</h1>
+  <p class="mt-1 text-sm text-gray-500">
+    Download selected active knowledge as an OKF-compatible Markdown + YAML frontmatter bundle for diagnostics,
+    portability, review, or bootstrapping a repo-local <code>.okf/</code> directory. This is an opt-in snapshot —
+    it does not change how this project's knowledge is stored, and does not imply the project uses OKF internally.
+    Redacted content is never included.
+  </p>
+
+  <div class="mt-6 rounded-lg bg-white p-6 shadow">
+    <% if flash.now[:alert].present? %>
+      <div class="mb-4 rounded-md bg-red-50 p-4 text-sm text-red-700"><%= flash.now[:alert] %></div>
+    <% end %>
+
+    <%= form_with url: project_okf_export_path(@project), scope: :okf_export, class: "space-y-6" do |form| %>
+      <fieldset>
+        <legend class="text-sm font-medium text-gray-700">Curated knowledge</legend>
+        <p class="text-xs text-gray-500">Maintainer-provided and imported knowledge — the recommended default.</p>
+        <div class="mt-3 space-y-2">
+          <% Knowledge::Okf::Export::CURATED_ARTIFACT_TYPES.each do |artifact_type| %>
+            <% count = @artifact_type_counts[artifact_type].to_i %>
+            <% next if count.zero? %>
+            <div class="flex items-center">
+              <input type="checkbox" name="okf_export[artifact_types][]" value="<%= artifact_type %>"
+                id="okf_export_type_<%= artifact_type %>" checked
+                class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600">
+              <label for="okf_export_type_<%= artifact_type %>" class="ml-3 block text-sm text-gray-900">
+                <%= artifact_type.titleize %> <span class="text-gray-400">(<%= count %>)</span>
+              </label>
+            </div>
+          <% end %>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend class="text-sm font-medium text-gray-700">Derived knowledge</legend>
+        <p class="text-xs text-gray-500">Collector-derived from the codebase (routes, symbols, schema, and similar).</p>
+        <div class="mt-3 space-y-2">
+          <% Knowledge::Okf::Export::DERIVED_ARTIFACT_TYPES.each do |artifact_type| %>
+            <% count = @artifact_type_counts[artifact_type].to_i %>
+            <% next if count.zero? %>
+            <div class="flex items-center">
+              <input type="checkbox" name="okf_export[artifact_types][]" value="<%= artifact_type %>"
+                id="okf_export_type_<%= artifact_type %>"
+                class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600">
+              <label for="okf_export_type_<%= artifact_type %>" class="ml-3 block text-sm text-gray-900">
+                <%= artifact_type.titleize %> <span class="text-gray-400">(<%= count %>)</span>
+              </label>
+            </div>
+          <% end %>
+        </div>
+      </fieldset>
+
+      <div class="flex items-center justify-end gap-4 border-t border-gray-200 pt-4">
+        <%= link_to "Cancel", @project, class: "text-sm font-medium text-gray-500 hover:text-gray-700" %>
+        <%= form.submit "Download Bundle", class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      </div>
+    <% end %>
+  </div>
+</div>

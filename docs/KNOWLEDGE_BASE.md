@@ -233,6 +233,16 @@ Returns:
 
 PostgreSQL `tsvector` columns on `knowledge_chunks` provide traditional full-text search with ranking. This complements the trigram-based exact search on identifiers.
 
+## OKF Bundle Export
+
+`Knowledge::Okf::Export` is an opt-in diagnostic/portability path: it renders selected active `KnowledgeArtifact` rows back into an OKF-compatible Markdown + YAML frontmatter bundle, packaged as a `.tar.gz` by `Knowledge::Okf::BundleArchive`. Paid is canonical — export never mutates project knowledge or implies OKF adoption.
+
+- **Type selection**: `Knowledge::Okf::Export::CURATED_ARTIFACT_TYPES` (`okf_concept`, `business_context`, `reference_document`, `decision_record`, `change_intent`) vs `DERIVED_ARTIFACT_TYPES` (collector-derived, e.g. `route`, `symbol`, `schema`). Callers pick either set.
+- **Redaction safety**: body content comes only from an artifact's active chunks (preferring a `definition` chunk). Fully redacted artifacts have no active chunks and are skipped, never falling back to raw unscrubbed content.
+- **Provenance**: rendered frontmatter carries a `paid` block with `kb_uri`, `artifact_type`, `collector_type`, `scope`, `identifier`, `commit_sha`, and timestamps.
+- **Shape guarantee**: `Knowledge::Okf::Frontmatter` is shared between `OkfCollector#collect` (parse) and `Export` (render); every rendered file is re-parsed before inclusion, so exported bundles always validate against the shape the collector ingests.
+- **Entry point**: `GET/POST /projects/:project_id/okf_export` (`Projects::OkfExportsController`).
+
 ## Infrastructure
 
 ### Services
