@@ -64,5 +64,25 @@ RSpec.describe Knowledge::Uri::Resolver do
 
       expect(described_class.call(forged_uri, project: project)).to be_nil
     end
+
+    it "resolves an artifact with a blank identifier through its uri" do
+      blank_artifact = create(:knowledge_artifact,
+        project: project, collector_run: collector_run,
+        artifact_type: "language_stat", scope_path: "config/routes.rb", identifier: "")
+
+      resolved = described_class.call(blank_artifact.knowledge_uri, project: project)
+
+      expect(resolved).to eq(blank_artifact)
+    end
+
+    it "resolves an artifact with a blank scope_path through its uri" do
+      blank_artifact = create(:knowledge_artifact,
+        project: project, collector_run: collector_run,
+        artifact_type: "language_stat", scope_path: "", identifier: "Ruby")
+
+      resolved = described_class.call(blank_artifact.knowledge_uri, project: project)
+
+      expect(resolved).to eq(blank_artifact)
+    end
   end
 end

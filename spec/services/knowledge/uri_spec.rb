@@ -79,10 +79,38 @@ RSpec.describe Knowledge::Uri do
       expect(parsed.commit_sha).to be_nil
     end
 
-    it "round-trips a blank scope_path as nil" do
+    it "round-trips a blank scope_path as an empty segment" do
       uri = described_class.build_artifact(project_id: 1, artifact_type: "language_stat", scope_path: nil, identifier: "Ruby")
 
-      expect(described_class.parse(uri).scope_path).to be_nil
+      expect(described_class.parse(uri).scope_path).to eq("")
+    end
+
+    it "round-trips a blank identifier as an empty segment" do
+      uri = described_class.build_artifact(project_id: 1, artifact_type: "language_stat", scope_path: "config/routes.rb", identifier: "")
+
+      expect(described_class.parse(uri).identifier).to eq("")
+    end
+
+    it "round-trips an empty string scope_path and identifier together" do
+      uri = described_class.build_artifact(project_id: 1, artifact_type: "language_stat", scope_path: "", identifier: "")
+
+      parsed = described_class.parse(uri)
+
+      expect(parsed.scope_path).to eq("")
+      expect(parsed.identifier).to eq("")
+    end
+
+    it "round-trips a blank identifier on a commit-pinned artifact uri" do
+      uri = described_class.build_artifact(
+        project_id: 1, artifact_type: "language_stat", scope_path: nil, identifier: "",
+        commit_sha: "abc123"
+      )
+
+      parsed = described_class.parse(uri)
+
+      expect(parsed.scope_path).to eq("")
+      expect(parsed.identifier).to eq("")
+      expect(parsed.commit_sha).to eq("abc123")
     end
 
     it "round-trips a chunk uri" do

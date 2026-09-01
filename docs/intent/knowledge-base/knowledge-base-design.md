@@ -101,8 +101,11 @@ paidkb://project/<project_id>/commit/<sha>/artifact/<artifact_type>/<scope>/<ide
 ```
 
 `<scope>` and `<identifier>` are percent-encoded; a blank scope_path or
-identifier encodes as an empty path segment rather than a sentinel string, so
-encode/decode stay lossless. The `commit/<sha>` segment adds a
+identifier encodes as an empty path segment rather than a sentinel string.
+Decode preserves the empty string so an artifact stored with `scope_path: ""`
+or `identifier: ""` still resolves through its URI; nil is normalized to `""`
+on round-trip because the grammar has no way to distinguish the two. The
+`commit/<sha>` segment adds a
 version-pinned handle (`KnowledgeArtifact#versioned_knowledge_uri`) that
 resolves against the artifact's project version even after it goes stale,
 without changing the active-view grammar.

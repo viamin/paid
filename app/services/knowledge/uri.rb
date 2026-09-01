@@ -16,7 +16,9 @@ module Knowledge
   #   separator.
   # - A blank scope_path or identifier encodes as an empty path segment
   #   (producing a literal "//" or trailing "/") rather than a sentinel
-  #   string, so encode/decode stay lossless and unambiguous.
+  #   string. Decode preserves "" so a stored empty-string artifact still
+  #   resolves back to its row; nil is normalized to "" on round-trip
+  #   because the grammar has no way to distinguish the two.
   # - The active-view handle (no "commit" segment) always resolves to
   #   whatever artifact/chunk is currently active; the "commit" segment adds
   #   a version-pinned handle without changing the active-view grammar.
@@ -128,7 +130,7 @@ module Knowledge
       end
 
       def decode(segment)
-        segment.present? ? CGI.unescape(segment) : nil
+        segment.nil? ? nil : CGI.unescape(segment)
       end
     end
   end
