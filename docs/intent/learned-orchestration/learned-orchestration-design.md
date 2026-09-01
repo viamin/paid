@@ -42,6 +42,18 @@ returns a structured result with:
 This keeps runtime call sites simple: callers can apply learned content when it
 exists and continue baseline behavior otherwise.
 
+## Provisioning
+
+Baseline strategy content (`Strategies::BaselineOrchestration.definitions`) is
+seeded by `Strategies::SeedBaselineOrchestration.call`, invoked from
+`db/seeds.rb` (fresh installs) and `bin/rails ci:bootstrap_test_defaults`
+(schema-only test databases). It is deliberately **not** seeded by a
+migration: `strategies`/`strategy_versions` carried mutually self-referencing
+RLS policies between the migration that enabled RLS on them and the migration
+that fixed the resulting recursion, so any migration in that window that
+queries either table fails on a from-scratch replay regardless of how the
+query is issued (see #3585).
+
 ## Accepted Divergence
 
 RDR-014's original automatic-promotion direction is not the production
