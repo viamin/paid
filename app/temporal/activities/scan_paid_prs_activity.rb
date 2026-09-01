@@ -50,7 +50,7 @@ module Activities
     # PROVIDER_BOT_USERNAMES, we can safely key off both author identity and
     # the marker without matching human-authored text.
     PAID_REVIEW_CLEAN_MARKER = "<!-- paid-review-clean -->"
-    PAID_ESCALATED_LABEL = "paid-escalated"
+    PAID_ESCALATED_LABEL = Issue::ESCALATED_LABEL
     TDD_TESTS_READY_FOR_REVIEW_LABEL = Projects::EnsureStandardLabels::LABEL_DEFINITIONS
       .dig(:tdd_test_review, :name)
       .freeze

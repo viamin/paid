@@ -6,7 +6,7 @@ module Activities
   class MarkEscalatedActivity < BaseActivity
     activity_name "MarkEscalated"
 
-    PAID_ESCALATED_LABEL = "paid-escalated"
+    PAID_ESCALATED_LABEL = Issue::ESCALATED_LABEL
     COMMENT_MARKER = "<!-- paid:escalation-note -->"
 
     def execute(input)

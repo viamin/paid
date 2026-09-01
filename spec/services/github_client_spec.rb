@@ -736,6 +736,29 @@ RSpec.describe GithubClient do
     end
   end
 
+  describe "#update_label" do
+    let(:repo) { "owner/repo" }
+
+    before do
+      stub_request(:patch, "#{api_base}/repos/#{repo}/labels/priority")
+        .with(
+          body: hash_including("color" => "00ff00", "description" => "Updated description")
+        )
+        .to_return(
+          status: 200,
+          body: { id: 3, name: "priority", color: "00ff00", description: "Updated description" }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+    end
+
+    it "updates an existing label's color and description" do
+      result = client.update_label(repo, "priority", color: "00ff00", description: "Updated description")
+
+      expect(result.color).to eq("00ff00")
+      expect(result.description).to eq("Updated description")
+    end
+  end
+
   describe "#add_labels_to_issue" do
     let(:repo) { "owner/repo" }
     let(:issue_number) { 1 }

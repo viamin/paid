@@ -52,11 +52,12 @@ add_column :projects, :tdd_mode, :string,
 
 ## Label provisioning
 
-`Projects::EnsureStandardLabels` already owns the idempotent create-or-flag
-flow for `paid-generated`, `paid-automation`, the enhance-issue pair,
-`paid-recommend-close`, `paid-paused`, and the priority tiers. The three
-test-review labels join that set with stable colors and descriptions so the
-sync path remains a single entry point.
+`Projects::EnsureStandardLabels` owns the single canonical provisioning
+contract for every Paid-owned and built-in control label — see
+[github-label-provisioning](../github-label-provisioning/github-label-provisioning-design.md)
+for the full inventory, the reconciliation behavior, and the `kind`
+taxonomy. The three test-review labels are part of that same catalog, with
+the stable colors and descriptions below.
 
 ## UI surface
 

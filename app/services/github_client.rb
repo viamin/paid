@@ -385,6 +385,17 @@ class GithubClient
     handle_errors { client.add_label(repo, name, color, description: description) }
   end
 
+  # Updates an existing label's color and/or description.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param name [String] Current label name
+  # @param color [String] New color (hex without #)
+  # @param description [String] New description
+  # @return [Sawyer::Resource] The updated label
+  def update_label(repo, name, color:, description: "")
+    handle_errors { client.update_label(repo, name, color: color, description: description) }
+  end
+
   # Adds labels to an issue or pull request.
   #
   # @param repo [String] Repository in "owner/name" format

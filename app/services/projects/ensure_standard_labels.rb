@@ -1,9 +1,20 @@
 # frozen_string_literal: true
 
 module Projects
-  # Ensures that the project's configured standard labels exist on the connected
-  # GitHub repository. Creates missing labels and flags existing labels whose
-  # color or description diverge from Paid defaults.
+  # Ensures that every Paid-owned and built-in control label exists on the
+  # connected GitHub repository, creating missing labels and reconciling the
+  # color/description of any that already exist but have drifted from the
+  # canonical definition. This is the single provisioning contract for every
+  # GitHub label with a Paid behavioral consequence — see
+  # docs/intent/github-label-provisioning/ for the full inventory and design.
+  #
+  # @spec GH-LABELS-001 @spec GH-LABELS-002 @spec GH-LABELS-004
+  #
+  # Each definition in {LABEL_DEFINITIONS} carries a `kind` that distinguishes
+  # three categories of GitHub label (@spec GH-LABELS-003):
+  # - `:control`      — applying or removing the label changes automation.
+  # - `:status`       — applied by Paid as an output/status marker.
+  # - `:informational` — descriptive taxonomy with no automation effect.
   #
   # Standard labels include:
   # - generated_label_name  (e.g. "paid-generated")
@@ -12,48 +23,82 @@ module Projects
   # - enhance_issue_enhanced_label_name    (e.g. "paid-enhanced")
   # - recommend_close                      (e.g. "paid-recommend-close"; overridable via
   #                                        Project#label_for_stage("recommend_close"))
-  # - paused                               (e.g. "paid-paused"; mirrors Issue#paused)
+  # - paused, escalated, dismiss_escalation, skip_auto_merge, auto_merged,
+  #   auto_merged_dependabot, auto_released, model_health (hard-coded, literal names)
   # - tdd test-review labels (RDR-056):
   #   * tests_ready_for_review             (paid-tests-ready-for-review)
   #   * tests_approved                     (paid-tests-approved)
   #   * test_changes_requested             (paid-test-changes-requested)
   # - Priority labels          (P1, P2, P3 by default)
+  # - The project's effective auto-pick skip labels (planning/research/waiting/
+  #   tracking/epic/needs-manual-setup by default; project/tenant/user overridable)
+  #
+  # Only labels in this canonical set are ever created or modified — any other
+  # repository label (user-owned taxonomy, third-party bot labels, etc.) is
+  # left untouched.
   #
   # @example
   #   result = Projects::EnsureStandardLabels.call(project: project)
-  #   result.created   # => ["paid-generated", "P1"]
-  #   result.existing  # => ["paid-automation"]
-  #   result.divergent # => [{ name: "P2", field: "color", expected: "ff9800", actual: "000000" }]
-  #   result.errors    # => []
+  #   result.created    # => ["paid-generated", "P1"]
+  #   result.existing   # => ["paid-automation"]
+  #   result.reconciled # => [{ name: "P2", fields: ["color"] }]
+  #   result.errors     # => []
   class EnsureStandardLabels
     LABEL_DEFINITIONS = {
-      generated: { color: "0e8a16", description: "Created by Paid" },
-      automation: { color: "1d76db", description: "Triggers Paid automation" },
-      enhance_issue_needs_input: { color: "d876e3", description: "Paid needs answers before enhancing this issue again" },
-      enhance_issue_enhanced: { color: "0e8a16", description: "Paid has added implementation context to this issue" },
-      recommend_close: { color: "fbca04", description: "Paid ran but produced no PR — human review needed" },
-      paused: { color: "5319e7", description: "Paused in Paid — excluded from issue auto-pick" },
+      generated: { color: "0e8a16", description: "Created by Paid", kind: :status },
+      automation: { color: "1d76db", description: "Triggers Paid automation for this issue; remove to opt out.", kind: :control },
+      enhance_issue_needs_input: { color: "d876e3", description: "Paid needs answers before enhancing this issue again", kind: :status },
+      enhance_issue_enhanced: { color: "0e8a16", description: "Paid has added implementation context to this issue", kind: :status },
+      recommend_close: { color: "fbca04", description: "Paid ran but produced no PR — human review needed", kind: :status },
+      paused: { color: "5319e7", description: "Pauses Paid automation on this issue; remove to resume.", kind: :control },
+      escalated: { color: "b60205", description: "Applied by Paid to pause automation for human review; remove to resume.", kind: :control },
+      dismiss_escalation: { color: "c2e0c6", description: "Alternate escalation-dismissed marker; cleared automatically by Paid.", kind: :status },
+      skip_auto_merge: { color: "e99695", description: "Blocks Paid from automatically merging this pull request.", kind: :control },
+      auto_merged: { color: "0e8a16", description: "Applied by Paid after automatically merging this pull request.", kind: :status },
+      auto_merged_dependabot: { color: "0e8a16", description: "Applied by Paid after automatically merging this Dependabot pull request.", kind: :status },
+      auto_released: { color: "0e8a16", description: "Applied by Paid after automatically merging this release pull request.", kind: :status },
+      model_health: { color: "5319e7", description: "Flags provider model drift or broken runner models. Informational only.", kind: :informational },
       tdd_test_review: {
         name: "paid-tests-ready-for-review",
         color: "fbca04",
-        description: "Paid draft PR contains proposed tests and is waiting for test review"
+        description: "Tests are ready for review; implementation is blocked until approved.",
+        kind: :control
       },
       tdd_tests_approved: {
         name: "paid-tests-approved",
         color: "0e8a16",
-        description: "Paid tests are approved; implementation may begin"
+        description: "Tests approved — Paid may begin implementation.",
+        kind: :status
       },
       tdd_test_changes_requested: {
         name: "paid-test-changes-requested",
         color: "d93f0b",
-        description: "Paid tests need changes before implementation starts"
+        description: "Test changes requested; implementation is blocked until resolved.",
+        kind: :control
       },
       priority: {
-        "P1" => { color: "d93f0b", description: "High priority" },
-        "P2" => { color: "ff9800", description: "Medium priority" },
-        "P3" => { color: "fbca04", description: "Low priority" }
+        "P1" => { color: "d93f0b", description: "High priority", kind: :informational },
+        "P2" => { color: "ff9800", description: "Medium priority", kind: :informational },
+        "P3" => { color: "fbca04", description: "Low priority", kind: :informational }
       }
     }.freeze
+
+    # Auto-pick skip labels are configurable per project/tenant/user
+    # (Project#effective_auto_pick_skip_labels), so they are keyed by label
+    # name rather than a fixed symbol. Names matching AutoPickSkipLabels::DEFAULTS
+    # get a specific consequence description; any project-custom name falls
+    # back to the generic one.
+    AUTO_PICK_SKIP_LABEL_COLOR = "bfd4f2"
+    AUTO_PICK_SKIP_LABEL_KIND = :control
+    AUTO_PICK_SKIP_LABEL_DESCRIPTIONS = {
+      "planning" => "Excludes this issue from Paid auto-pick while planning is in progress.",
+      "research" => "Excludes this issue from Paid auto-pick while research is in progress.",
+      "waiting" => "Excludes this issue from Paid auto-pick while it waits on something else.",
+      "tracking" => "Excludes this issue from Paid auto-pick; tracking/meta issue, not actionable.",
+      "epic" => "Excludes this issue from Paid auto-pick; epic/parent issue, not directly actionable.",
+      "needs-manual-setup" => "Excludes this issue from Paid auto-pick until manual setup is completed."
+    }.freeze
+    AUTO_PICK_SKIP_LABEL_DEFAULT_DESCRIPTION = "Excludes this issue from Paid auto-pick while applied."
 
     attr_reader :project
 
@@ -76,7 +121,7 @@ module Projects
 
       created = []
       existing = []
-      divergent = []
+      reconciled = []
       errors = []
 
       expected_labels.each do |expected|
@@ -86,13 +131,13 @@ module Projects
           create_label(client, repo, expected, created, errors)
         else
           existing << expected[:name]
-          check_divergence(remote, expected, divergent)
+          reconcile_divergence(client, repo, remote, expected, reconciled, errors)
         end
       end
 
-      log_result(created, existing, divergent, errors)
+      log_result(created, existing, reconciled, errors)
 
-      Result.new(created: created, existing: existing, divergent: divergent, errors: errors)
+      Result.new(created: created, existing: existing, reconciled: reconciled, errors: errors)
     end
 
     private
@@ -104,71 +149,89 @@ module Projects
     end
 
     def expected_labels
-      labels = []
+      [
+        *configurable_labels,
+        *recommend_close_label,
+        *fixed_control_labels,
+        *tdd_labels,
+        *auto_pick_skip_label_definitions,
+        *priority_label_definitions
+      ]
+    end
 
-      labels << {
-        name: project.generated_label_name,
-        color: LABEL_DEFINITIONS[:generated][:color],
-        description: LABEL_DEFINITIONS[:generated][:description]
-      }
+    def label_entry(name, key)
+      definition = LABEL_DEFINITIONS.fetch(key)
+      { name: name, color: definition[:color], description: definition[:description] }
+    end
 
-      labels << {
-        name: project.automation_label_name,
-        color: LABEL_DEFINITIONS[:automation][:color],
-        description: LABEL_DEFINITIONS[:automation][:description]
-      }
+    def configurable_labels
+      [
+        label_entry(project.generated_label_name, :generated),
+        label_entry(project.automation_label_name, :automation),
+        label_entry(project.enhance_issue_needs_input_label_name, :enhance_issue_needs_input),
+        label_entry(project.enhance_issue_enhanced_label_name, :enhance_issue_enhanced)
+      ]
+    end
 
-      labels << {
-        name: project.enhance_issue_needs_input_label_name,
-        color: LABEL_DEFINITIONS[:enhance_issue_needs_input][:color],
-        description: LABEL_DEFINITIONS[:enhance_issue_needs_input][:description]
-      }
-
-      labels << {
-        name: project.enhance_issue_enhanced_label_name,
-        color: LABEL_DEFINITIONS[:enhance_issue_enhanced][:color],
-        description: LABEL_DEFINITIONS[:enhance_issue_enhanced][:description]
-      }
-
-      # No dedicated column for the recommend_close label; the runtime
-      # resolves it via Project#label_for_stage with a constant fallback,
-      # so mirror that resolution here.
-      recommend_close_name = project.label_for_stage("recommend_close") ||
+    # No dedicated column for the recommend_close label; the runtime
+    # resolves it via Project#label_for_stage with a constant fallback,
+    # so mirror that resolution here.
+    def recommend_close_label
+      name = project.label_for_stage("recommend_close") ||
         Activities::HandleNoOutputIssueRunActivity::PAID_RECOMMEND_CLOSE_LABEL
-      labels << {
-        name: recommend_close_name,
-        color: LABEL_DEFINITIONS[:recommend_close][:color],
-        description: LABEL_DEFINITIONS[:recommend_close][:description]
-      }
+      [ label_entry(name, :recommend_close) ]
+    end
 
-      labels << {
-        name: Issue::PAUSED_LABEL,
-        color: LABEL_DEFINITIONS[:paused][:color],
-        description: LABEL_DEFINITIONS[:paused][:description]
-      }
+    # Hard-coded control/status labels (@spec GH-LABELS-006 for escalation).
+    # Names are deliberately literal and not configurable per-project — each
+    # is defined once on its owning class/model and referenced here so this
+    # is the single place their color/description are declared.
+    def fixed_control_labels
+      [
+        label_entry(Issue::PAUSED_LABEL, :paused),
+        label_entry(Issue::ESCALATED_LABEL, :escalated),
+        label_entry(Issue::DISMISS_ESCALATION_LABEL, :dismiss_escalation),
+        label_entry(Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL, :skip_auto_merge),
+        label_entry(Activities::MergePullRequestActivity::PAID_AUTO_MERGED_LABEL, :auto_merged),
+        label_entry(DependabotAutoMergeJob::PAID_AUTO_MERGED_LABEL, :auto_merged_dependabot),
+        label_entry(AutoReleaseEvaluationJob::PAID_AUTO_RELEASED_LABEL, :auto_released),
+        label_entry(Models::FileModelHealthIssue::LABEL, :model_health)
+      ]
+    end
 
-      # TDD test-review labels (RDR-056). Names are deliberately literal and
-      # not configurable per-project — Paid's queue and label-gate logic
-      # matches on these exact strings.
-      %i[tdd_test_review tdd_tests_approved tdd_test_changes_requested].each do |key|
-        definition = LABEL_DEFINITIONS[key]
-        labels << {
-          name: definition[:name],
-          color: definition[:color],
-          description: definition[:description]
+    # TDD test-review labels (RDR-056). Names are deliberately literal and
+    # not configurable per-project — Paid's queue and label-gate logic
+    # matches on these exact strings.
+    def tdd_labels
+      %i[tdd_test_review tdd_tests_approved tdd_test_changes_requested].map do |key|
+        definition = LABEL_DEFINITIONS.fetch(key)
+        { name: definition[:name], color: definition[:color], description: definition[:description] }
+      end
+    end
+
+    # Built-in auto-pick skip labels (planning/research/waiting/tracking/epic/
+    # needs-manual-setup by default). These are recognized regardless of who
+    # applies them, so they are provisioned with a description that states
+    # the auto-pick consequence rather than left as undocumented taxonomy.
+    def auto_pick_skip_label_definitions
+      project.effective_auto_pick_skip_labels.map do |name|
+        {
+          name: name,
+          color: AUTO_PICK_SKIP_LABEL_COLOR,
+          description: AUTO_PICK_SKIP_LABEL_DESCRIPTIONS[name] || AUTO_PICK_SKIP_LABEL_DEFAULT_DESCRIPTION
         }
       end
+    end
 
-      project.effective_priority_labels.each do |tier, label_name|
+    def priority_label_definitions
+      project.effective_priority_labels.map do |tier, label_name|
         defaults = LABEL_DEFINITIONS[:priority][tier] || {}
-        labels << {
+        {
           name: label_name,
           color: defaults[:color] || "ededed",
           description: defaults[:description] || "Priority #{tier}"
         }
       end
-
-      labels
     end
 
     def fetch_remote_labels(client, repo)
@@ -191,47 +254,61 @@ module Projects
         # Label was created between our fetch and create — treat as existing
         return
       end
-      if e.status == 403
-        errors << { name: expected[:name], error: "Insufficient permissions to create labels. Ensure the GitHub token has repo scope." }
-      else
-        errors << { name: expected[:name], error: e.message }
-      end
+      errors << { name: expected[:name], error: permission_aware_message(e, "create") }
     end
 
-    def check_divergence(remote, expected, divergent)
+    # Reconciles (rather than only reports) any color/description drift on an
+    # existing Paid-owned label, so stale descriptions never persist past the
+    # next sync (@spec GH-LABELS-002).
+    def reconcile_divergence(client, repo, remote, expected, reconciled, errors)
+      fields = divergent_fields(remote, expected)
+      return if fields.empty?
+
+      client.update_label(repo, remote.name, color: expected[:color], description: expected[:description])
+      reconciled << { name: expected[:name], fields: fields }
+    rescue GithubClient::ApiError => e
+      errors << { name: expected[:name], error: permission_aware_message(e, "update") }
+    end
+
+    def divergent_fields(remote, expected)
+      fields = []
+
       remote_color = remote.color.to_s.delete_prefix("#").downcase
       expected_color = expected[:color].to_s.delete_prefix("#").downcase
-
-      if remote_color != expected_color
-        divergent << { name: expected[:name], field: "color", expected: expected_color, actual: remote_color }
-      end
+      fields << "color" if remote_color != expected_color
 
       remote_desc = remote.respond_to?(:description) ? remote.description.to_s : ""
-      if expected[:description].present? && remote_desc != expected[:description]
-        divergent << { name: expected[:name], field: "description", expected: expected[:description], actual: remote_desc }
-      end
+      fields << "description" if expected[:description].present? && remote_desc != expected[:description]
+
+      fields
     end
 
-    def log_result(created, existing, divergent, errors)
+    def permission_aware_message(error, action)
+      return "Insufficient permissions to #{action} labels. Ensure the GitHub token has repo scope." if error.status == 403
+
+      error.message
+    end
+
+    def log_result(created, existing, reconciled, errors)
       Rails.logger.info(
         message: "github_sync.ensure_standard_labels",
         project_id: project.id,
         repo: project.full_name,
         created: created,
         existing: existing,
-        divergent_count: divergent.size,
+        reconciled_count: reconciled.size,
         error_count: errors.size
       )
     end
 
     # Result object returned by EnsureStandardLabels.
     class Result
-      attr_reader :created, :existing, :divergent, :errors
+      attr_reader :created, :existing, :reconciled, :errors
 
-      def initialize(created:, existing:, divergent:, errors:)
+      def initialize(created:, existing:, reconciled:, errors:)
         @created = created
         @existing = existing
-        @divergent = divergent
+        @reconciled = reconciled
         @errors = errors
       end
 
@@ -239,13 +316,13 @@ module Projects
         parts = []
         parts << "Created labels: #{created.join(', ')}." if created.any?
         parts << "#{existing.size} label(s) already present." if existing.any?
-        if divergent.any?
-          names = divergent.map { |d| d[:name] }.uniq
-          parts << "Labels with different settings: #{names.join(', ')}."
+        if reconciled.any?
+          names = reconciled.map { |r| r[:name] }.uniq
+          parts << "Reconciled labels: #{names.join(', ')}."
         end
         if errors.any?
           names = errors.map { |e| e[:name] }
-          parts << "Failed to create: #{names.join(', ')}."
+          parts << "Failed to sync: #{names.join(', ')}."
         end
         parts.join(" ").presence || "All standard labels are up to date."
       end

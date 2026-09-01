@@ -11,8 +11,8 @@ module Models
   # fingerprint marker embedded in the body, commenting when findings change.
   class FileModelHealthIssue
     LABEL = "model-health"
-    LABEL_COLOR = "5319e7"
-    LABEL_DESCRIPTION = "Provider model availability drift, contract drift, or broken runner models detected by Paid"
+    LABEL_COLOR = Projects::EnsureStandardLabels::LABEL_DEFINITIONS.dig(:model_health, :color)
+    LABEL_DESCRIPTION = Projects::EnsureStandardLabels::LABEL_DEFINITIONS.dig(:model_health, :description)
     FINGERPRINT_MARKER = "model-health-fingerprint"
     AGENT_HARNESS_REPO = "viamin/agent-harness"
 

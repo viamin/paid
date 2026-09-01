@@ -36,6 +36,16 @@ class Issue < ApplicationRecord
   # removing it flips `paused` back.
   PAUSED_LABEL = "paid-paused"
 
+  # Canonical names for the escalation control labels (@spec GH-LABELS-006).
+  # Defined once here and referenced by every activity/service that reads or
+  # writes them, so the literal string exists in a single place. Applying
+  # ESCALATED_LABEL pauses automation on a PR for human review; a trusted
+  # user removing it is the dismissal signal (see MarkEscalatedActivity,
+  # PullRequests::Unblock). DISMISS_ESCALATION_LABEL is an alternate marker
+  # cleared alongside it in #clear_escalation!.
+  ESCALATED_LABEL = "paid-escalated"
+  DISMISS_ESCALATION_LABEL = "paid-dismiss-escalation"
+
   # Constants for synthetic alert issues. Shared with
   # Activities::ScanSecurityAlertsActivity which creates these issues.
   GITHUB_SOURCE = "github"
@@ -365,7 +375,7 @@ class Issue < ApplicationRecord
   def clear_escalation!(draft:, reset_counters: true)
     token_limit_override = pr_escalation_reason == PR_ESCALATION_REASON_PR_AUTO_CONTINUE_TOKEN_LIMIT
     attrs = {
-      labels: labels - %w[paid-escalated paid-dismiss-escalation],
+      labels: labels - [ ESCALATED_LABEL, DISMISS_ESCALATION_LABEL ],
       pr_review_phase: draft ? "restarted" : "ready",
       pr_escalation_reason: nil,
       awaiting_approval_since: nil,
