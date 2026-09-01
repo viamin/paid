@@ -77,4 +77,28 @@ RSpec.describe Knowledge::Quality::Checks::StaleScopePath do
     expect(findings.map { |f| f[:target_id] }).to contain_exactly(missing.id.to_s)
     expect(findings.map { |f| f[:target_id] }).not_to include(present.id.to_s)
   end
+
+  it "skips artifacts from collectors that store identifier-shaped scope_paths" do
+    # DecisionCollector / ChangeIntentCollector / SessionSummaryCollector /
+    # ContextIntake::Synthesize / PdfImports::ImportToProject all store
+    # scope_paths that aren't repo-relative file paths (e.g. "decisions/42",
+    # "agent_runs/7/session_summary", "business_context/goals"). Comparing
+    # them to HEAD can never succeed, so flagging them produces permanent
+    # noise that crowds real drift findings out of the per-check cap.
+    virtual_run = create(:collector_run, :completed,
+      project_version: project_version, collector_type: "decision_record")
+    create(:knowledge_artifact, project: project, collector_run: virtual_run,
+      scope_path: "decisions/42")
+
+    findings = described_class.new(project: project).findings
+
+    expect(findings).to be_empty
+  end
+
+  it "only inspects file-backed collector types" do
+    expect(described_class::FILE_BACKED_COLLECTOR_TYPES).to contain_exactly(
+      "churn_hotspot", "symbol_index", "dependency", "config_key",
+      "project_conventions", "routes", "tree_sitter", "okf", "schema"
+    )
+  end
 end

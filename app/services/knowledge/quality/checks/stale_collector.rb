@@ -9,6 +9,15 @@ module Knowledge
     # than the project's most recently indexed version. Re-collection is
     # overdue for that collector; severity is warning because staleness here
     # usually reflects an upstream collection gap, not user-visible drift.
+    #
+    # Collector types whose runs are pinned to a synthetic project version
+    # (Knowledge::SessionSummaries::SyncKnowledgeArtifact and
+    # ChangeIntents::SyncKnowledgeArtifact both create one-per-record) are
+    # excluded: their "staleness against HEAD" is structural — they don't
+    # read from git, and their synthetic `committed_at` will rarely line up
+    # with a real HEAD timestamp. Flagging them would produce permanent
+    # noise the operator can't act on, since re-collection creates a fresh
+    # synthetic version alongside the existing one rather than updating it.
     class Checks::StaleCollector < Checks::Base
       include Checks::CollectorQueries
 
@@ -21,6 +30,7 @@ module Knowledge
 
         latest_runs.each do |type, run|
           next unless run.status == "completed"
+          next if synthetic_branch?(run)
           next unless run.project_version&.committed_at
           next unless run.project_version.committed_at < latest.committed_at
 
@@ -39,6 +49,10 @@ module Knowledge
 
       def latest_runs
         @latest_runs ||= latest_collector_runs_by_type
+      end
+
+      def synthetic_branch?(run)
+        SYNTHETIC_BRANCHES.include?(run.project_version&.branch)
       end
     end
   end

@@ -105,6 +105,85 @@ RSpec.describe Knowledge::Quality::Lint do
       expect(finding[:detail]).to include(latest_version.commit_sha.first(7))
     end
 
+    it "does not flag synthetic-branch project versions as 'latest'" do
+      # Knowledge::SessionSummaries::SyncKnowledgeArtifact and
+      # ChangeIntents::SyncKnowledgeArtifact both create one synthetic
+      # project-version per record, with a SHA1-of-a-string commit_sha and
+      # the record's timestamp as `committed_at`. They must not become
+      # "latest HEAD" — otherwise every artifact on a real run is flagged
+      # as a stale_commit_reference against HEAD, with the SHA pointing at
+      # a string that does not exist in git. Verify HEAD is reported as
+      # the real commit_sha, not the synthetic SHA1-of-a-string.
+      real_old = create(:project_version, project: project,
+        commit_sha: "a" * 40, branch: "main", committed_at: 2.days.ago)
+      real_new = create(:project_version, project: project,
+        commit_sha: "b" * 40, branch: "main", committed_at: 1.minute.ago)
+      synthetic_newer = create(:project_version, project: project,
+        commit_sha: Digest::SHA1.hexdigest("session-summaries/synthetic"),
+        branch: "session-summaries", committed_at: 1.second.ago)
+
+      routes_run = create(:collector_run, :completed,
+        project_version: real_old, collector_type: "routes")
+      create(:knowledge_artifact, project: project, collector_run: routes_run,
+        artifact_type: "route", status: "active")
+
+      report = described_class.call(project: project)
+
+      stale_commit = report[:findings].select { |f| f[:code] == "stale_commit_reference" }
+      expect(stale_commit.size).to eq(1)
+      expect(stale_commit.first[:detail]).to include(real_new.commit_sha.first(7))
+      expect(stale_commit.first[:detail]).not_to include(synthetic_newer.commit_sha.first(7))
+      expect(synthetic_newer.reload.committed_at).to be > real_new.committed_at
+    end
+
+    it "does not flag stale_commit_reference for artifacts on synthetic-branch runs" do
+      # Session summaries / change intents sync onto synthetic project
+      # versions; their artifacts can't be "re-collected against HEAD"
+      # because the data comes from DB records, not git. Even after
+      # latest_project_version excludes the synthetic version, those
+      # artifacts would otherwise be permanently flagged here.
+      create(:project_version, project: project,
+        commit_sha: "a" * 40, branch: "main", committed_at: 2.days.ago)
+      create(:project_version, project: project,
+        commit_sha: "b" * 40, branch: "main", committed_at: 1.minute.ago)
+      synthetic_version = create(:project_version, project: project,
+        commit_sha: Digest::SHA1.hexdigest("session-summaries/synthetic"),
+        branch: "session-summaries", committed_at: 1.hour.ago)
+      synthetic_run = create(:collector_run, :completed,
+        project_version: synthetic_version, collector_type: "session_summary")
+      create(:knowledge_artifact, project: project, collector_run: synthetic_run,
+        artifact_type: "session_summary", status: "active")
+
+      report = described_class.call(project: project)
+
+      stale_commit = report[:findings].select { |f| f[:code] == "stale_commit_reference" }
+      expect(stale_commit).to be_empty
+    end
+
+    it "does not flag synthetic-branch collectors as stale_collector" do
+      # A session-summary collector run lives on a synthetic project
+      # version. After excluding synthetic versions from latest, the run
+      # itself should also be excluded from stale_collector — otherwise it
+      # would be permanently flagged with HEAD pointing at a real SHA it
+      # was never indexed against.
+      real_old = create(:project_version, project: project,
+        commit_sha: "a" * 40, branch: "main", committed_at: 2.days.ago)
+      create(:project_version, project: project,
+        commit_sha: "b" * 40, branch: "main", committed_at: 1.minute.ago)
+      synthetic_version = create(:project_version, project: project,
+        commit_sha: Digest::SHA1.hexdigest("session-summaries/synthetic"),
+        branch: "session-summaries", committed_at: 1.hour.ago)
+      create(:collector_run, :completed,
+        project_version: synthetic_version, collector_type: "session_summary")
+      create(:collector_run, :completed,
+        project_version: real_old, collector_type: "routes")
+
+      report = described_class.call(project: project)
+
+      stale_collectors = report[:findings].select { |f| f[:code] == "stale_collector" }
+      expect(stale_collectors.map { |f| f[:target_id] }).not_to include("session_summary")
+    end
+
     it "flags active artifacts with zero chunks as orphaned_artifact" do
       project_version = create(:project_version, project: project)
       collector_run = create(:collector_run, :completed, project_version: project_version, collector_type: "routes")
