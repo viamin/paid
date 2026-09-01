@@ -6,18 +6,6 @@ module Containers
   CONTAINER_NOT_RUNNING_PATTERN = /is not running|No such container/i
 
   class << self
-    # Neutral accessors for Docker network names that centralize the string
-    # literals +paid_agent+ / +paid_internal+ so callers outside
-    # +LocalDockerRunner+ can refer to them without coupling to
-    # +NetworkPolicy+ (RDR-054).
-    def agent_network_name
-      NetworkPolicy::NETWORK_NAME
-    end
-
-    def infra_network_name
-      NetworkPolicy::INFRA_NETWORK_NAME
-    end
-
     def backend
       Rails.application.config.x.container_backend || Backends::Resolver.for(
         ENV.fetch("CONTAINER_BACKEND", "local").to_sym
