@@ -23,6 +23,7 @@ class KnowledgeArtifact < ApplicationRecord
   scope :stale, -> { where(status: "stale") }
   scope :by_type, ->(type) { where(artifact_type: type) }
   scope :for_project, ->(project) { where(project: project) }
+  scope :with_active_chunks, -> { joins(:active_ordered_chunks).distinct }
   scope :identifier_like, ->(query) {
     where("identifier % ?", query)
       .order(Arel.sql("similarity(identifier, #{connection.quote(query)}) DESC"), :id)

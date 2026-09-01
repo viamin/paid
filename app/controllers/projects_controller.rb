@@ -104,6 +104,11 @@ class ProjectsController < ApplicationController
         .count
         .sort_by { |_, count| -count }
     end
+    @okf_export_available = KnowledgeArtifact.active
+      .for_project(@project)
+      .where(artifact_type: Knowledge::Okf::Export::EXPORTABLE_ARTIFACT_TYPES)
+      .with_active_chunks
+      .exists?
   end
 
   def new

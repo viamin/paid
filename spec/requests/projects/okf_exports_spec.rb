@@ -15,15 +15,18 @@ RSpec.describe "Projects::OkfExports" do
 
   before { sign_in user }
 
-  def create_exportable_artifact
-    artifact = create(:knowledge_artifact, collector_run:, project:, artifact_type: "okf_concept", identifier: "Auth flows")
-    create(:knowledge_chunk, knowledge_artifact: artifact, project:, chunk_type: "definition", content: "Body.")
+  def create_artifact_with_chunks(artifact_type:, chunk_statuses:, identifier: "Auth flows")
+    artifact = create(:knowledge_artifact, collector_run:, project:, artifact_type:, identifier:)
+    chunk_statuses.each_with_index do |status, index|
+      create(:knowledge_chunk, knowledge_artifact: artifact, project:, chunk_type: "definition",
+        content: "Body #{index}.", status:, sequence: index)
+    end
     artifact
   end
 
   describe "GET /projects/:project_id/okf_export/new" do
     it "renders the export form with curated types pre-checked" do
-      create_exportable_artifact
+      create_artifact_with_chunks(artifact_type: "okf_concept", chunk_statuses: [ "active" ])
 
       get new_project_okf_export_path(project)
 
@@ -31,11 +34,22 @@ RSpec.describe "Projects::OkfExports" do
       expect(response.body).to include("Export OKF Bundle")
       expect(response.body).to include("okf_export_type_okf_concept")
     end
+
+    it "omits artifact types whose matching artifacts have no active chunks" do
+      create_artifact_with_chunks(artifact_type: "okf_concept", chunk_statuses: [ "redacted" ])
+      create_artifact_with_chunks(artifact_type: "route", chunk_statuses: [ "active" ], identifier: "Users route")
+
+      get new_project_okf_export_path(project)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).not_to include("okf_export_type_okf_concept")
+      expect(response.body).to include("okf_export_type_route")
+    end
   end
 
   describe "POST /projects/:project_id/okf_export" do
     it "streams a tar.gz bundle for the selected artifact types" do
-      create_exportable_artifact
+      create_artifact_with_chunks(artifact_type: "okf_concept", chunk_statuses: [ "active" ])
 
       post project_okf_export_path(project), params: { okf_export: { artifact_types: [ "okf_concept" ] } }
 
@@ -51,7 +65,7 @@ RSpec.describe "Projects::OkfExports" do
     end
 
     it "does not set a truncation header when the export is complete" do
-      create_exportable_artifact
+      create_artifact_with_chunks(artifact_type: "okf_concept", chunk_statuses: [ "active" ])
 
       post project_okf_export_path(project), params: { okf_export: { artifact_types: [ "okf_concept" ] } }
 

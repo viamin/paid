@@ -44,8 +44,9 @@ module Projects
     def artifact_type_counts
       KnowledgeArtifact.active.for_project(@project)
         .where(artifact_type: Knowledge::Okf::Export::EXPORTABLE_ARTIFACT_TYPES)
+        .with_active_chunks
         .group(:artifact_type)
-        .count
+        .count("DISTINCT knowledge_artifacts.id")
     end
 
     def render_empty_result
