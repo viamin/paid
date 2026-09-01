@@ -240,5 +240,5 @@
   `app/views/knowledge/quality/show.html.erb`.
   *Test:* `spec/services/knowledge/quality/lint_spec.rb`,
   `spec/services/knowledge/quality/checks/*_spec.rb`,
-  `spec/requests/api/knowledge_quality_spec.rb`,
+  `spec/requests/api/knowledge_quality_controller_spec.rb`,
   `spec/requests/knowledge/quality_spec.rb`.

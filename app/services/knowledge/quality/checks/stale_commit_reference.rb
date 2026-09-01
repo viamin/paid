@@ -21,6 +21,7 @@ module Knowledge
           .active
           .for_project(project)
           .joins(:collector_run)
+          .includes(collector_run: :project_version)
           .where.not(collector_runs: { project_version_id: latest.id })
           .find_each(batch_size: 200) do |artifact|
             run = artifact.collector_run

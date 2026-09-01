@@ -22,7 +22,7 @@ module Knowledge
             results << build_finding(
               target_type: "KnowledgeChunk",
               target_id: chunk.id,
-              artifact_type: chunk.knowledge_artifact&.artifact_type,
+              artifact_type: nil,
               detail: "active chunk has no parent artifact"
             )
           end

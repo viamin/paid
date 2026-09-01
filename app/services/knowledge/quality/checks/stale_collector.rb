@@ -37,6 +37,7 @@ module Knowledge
         @latest_runs ||= begin
           rows = CollectorRun
             .joins(:project_version)
+            .includes(:project_version)
             .where(project_versions: { project_id: project.id })
             .select("DISTINCT ON (collector_runs.collector_type) collector_runs.*")
             .order(:collector_type, created_at: :desc)

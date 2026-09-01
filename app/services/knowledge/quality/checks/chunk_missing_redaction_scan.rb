@@ -18,6 +18,7 @@ module Knowledge
         KnowledgeChunk
           .active
           .for_project(project)
+          .includes(:knowledge_artifact)
           .where(redaction_scanned_at: nil)
           .find_each(batch_size: 200) do |chunk|
             results << build_finding(
