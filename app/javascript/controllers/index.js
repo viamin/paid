@@ -55,9 +55,6 @@ application.register("form-submit", FormSubmitController)
 import GoalToggleController from "./goal_toggle_controller"
 application.register("goal-toggle", GoalToggleController)
 
-import HelloController from "./hello_controller"
-application.register("hello", HelloController)
-
 import InboxMasterDetailController from "./inbox_master_detail_controller"
 application.register("inbox-master-detail", InboxMasterDetailController)
 
