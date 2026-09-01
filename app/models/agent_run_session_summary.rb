@@ -13,6 +13,8 @@ class AgentRunSessionSummary < ApplicationRecord
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :summary, presence: true
   validate :project_matches_agent_run
+  validate :issue_belongs_to_same_project, if: -> { issue.present? }
+  validate :change_intent_belongs_to_same_project, if: -> { change_intent.present? }
 
   scope :for_project, ->(project) { where(project: project) }
   scope :observations, -> { where(status: "observation") }
@@ -42,5 +44,17 @@ class AgentRunSessionSummary < ApplicationRecord
     return unless project && agent_run
 
     errors.add(:project, "must match the agent run's project") if project_id != agent_run.project_id
+  end
+
+  def issue_belongs_to_same_project
+    return if issue.project_id == project_id
+
+    errors.add(:issue, "must belong to the same project")
+  end
+
+  def change_intent_belongs_to_same_project
+    return if change_intent.project_id == project_id
+
+    errors.add(:change_intent, "must belong to the same project")
   end
 end

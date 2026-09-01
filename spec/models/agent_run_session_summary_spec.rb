@@ -29,6 +29,25 @@ RSpec.describe AgentRunSessionSummary do
       expect(record.errors[:project]).to be_present
     end
 
+    it "requires the linked issue to belong to the same project" do
+      agent_run = create(:agent_run, :completed)
+      other_issue = create(:issue)
+      record = build(:agent_run_session_summary, agent_run: agent_run, project: agent_run.project,
+        issue: other_issue)
+      expect(record).not_to be_valid
+      expect(record.errors[:issue]).to be_present
+    end
+
+    it "requires the linked change intent to belong to the same project" do
+      agent_run = create(:agent_run, :completed)
+      other_change_intent = create(:change_intent)
+      record = build(:agent_run_session_summary, agent_run: agent_run, project: agent_run.project,
+        change_intent: other_change_intent, status: "promoted", promoted_at: Time.current,
+        promoted_by: create(:user))
+      expect(record).not_to be_valid
+      expect(record.errors[:change_intent]).to be_present
+    end
+
     it "enforces one summary per agent run" do
       agent_run = create(:agent_run, :completed)
       create(:agent_run_session_summary, agent_run: agent_run, project: agent_run.project)
