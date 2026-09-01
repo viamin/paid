@@ -44,25 +44,42 @@ module Knowledge
         skip!("repository path not available") if base.blank?
 
         @repo_base = File.expand_path(base)
-        (configured_roots + DEFAULT_ROOTS).filter_map { |relative| bundle_root(relative) }.uniq { |root| root[:relative] }
+        repo_realpath = File.realpath(@repo_base)
+        (configured_roots + DEFAULT_ROOTS)
+          .filter_map { |relative| bundle_root(relative, repo_realpath) }
+          .uniq { |root| root[:relative] }
+      rescue Errno::ENOENT, Errno::EACCES
+        skip!("repository path is not accessible")
+        []
       end
 
       def configured_roots
         Array(options[:okf_paths]).filter_map { |path| path.to_s.strip.presence }
       end
 
-      def bundle_root(relative)
+      # Resolve `relative` against the repo base and confirm it still lives
+      # inside the repository *after* symlinks are followed. Without the
+      # realpath check, an `.okf` symlink pointing to `/etc` would pass the
+      # lexical start_with? guard and let `Dir.glob` index arbitrary files.
+      def bundle_root(relative, repo_realpath)
         absolute = File.expand_path(relative, @repo_base)
-        return nil unless absolute.start_with?(@repo_base + File::SEPARATOR)
-        return nil unless File.directory?(absolute)
+        return nil unless absolute.start_with?("#{@repo_base}/")
 
-        { absolute: absolute, relative: absolute.delete_prefix("#{@repo_base}/") }
+        resolved = File.realpath(absolute)
+        return nil unless resolved.start_with?("#{repo_realpath}/")
+        return nil unless File.directory?(resolved)
+
+        { absolute: resolved, relative: resolved.delete_prefix("#{repo_realpath}/") }
+      rescue Errno::ENOENT, Errno::EACCES
+        nil
       end
 
       def concept_files(roots)
         roots.flat_map do |root|
           Dir.glob(File.join(root[:absolute], "**", "*.md")).sort.map do |path|
-            [ path, path.delete_prefix("#{@repo_base}/"), path.delete_prefix("#{root[:absolute]}/") ]
+            root_relative = path.delete_prefix("#{root[:absolute]}/")
+            relative_path = "#{root[:relative]}/#{root_relative}"
+            [ path, relative_path, root_relative ]
           end
         end.uniq
       end

@@ -185,6 +185,18 @@ RSpec.describe Knowledge::Collectors::OkfCollector do
 
         expect(escaping.collect.pluck(:identifier)).to eq([ "In bundle" ])
       end
+
+      it "rejects bundle roots that are symlinks pointing outside the repository" do
+        Dir.mktmpdir do |outside|
+          File.write(File.join(outside, "leaked.md"), "---\ntitle: Leaked concept\n---\n\nOutside body.\n")
+
+          okf_path = fixture_path.join(".okf")
+          FileUtils.rm_rf(okf_path)
+          File.symlink(outside, okf_path)
+
+          expect { collector.collect }.to raise_error(Knowledge::SkipCollector, /no OKF bundle found/)
+        end
+      end
     end
 
     context "with invalid OKF files" do

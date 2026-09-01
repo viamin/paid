@@ -123,6 +123,23 @@ RSpec.describe Knowledge::ContextBundle::Build do
         expect(result[:artifact_type_counts]).to include("okf_concept" => 1)
       end
 
+      it "counts truncated OKF artifacts accurately when the section exceeds the budget" do
+        long_body = (1..40).map { |i| "word#{i}" }.join(" ")
+        create_okf_artifacts!(count: 12, body: long_body)
+
+        result = described_class.call(issue: issue, project: project, agent_run_id: agent_run.id, token_budget: 200)
+
+        expect(result[:sections]).to include(:okf)
+        kept = result[:artifact_type_counts]["okf_concept"]
+        expect(kept).to be > 0
+        expect(kept).to be < 12
+
+        stat = KnowledgeUsageStat.find_by!(agent_run: agent_run, artifact_type: "okf_concept")
+        expect(stat.artifact_count).to eq(kept)
+        expect(stat.chunk_count).to eq(kept)
+        expect(stat.token_count).to be > 0
+      end
+
       it "preloads active ordered chunks for OKF artifacts" do
         artifacts = described_class.new(issue: issue, project: project).send(:active_artifacts, "okf_concept")
 
@@ -664,6 +681,26 @@ RSpec.describe Knowledge::ContextBundle::Build do
       # Without the fix, the bundle would break on the oversized route and miss decisions
       expect(result[:sections]).to include(:decisions)
       expect(result[:sections]).not_to include(:routes)
+    end
+  end
+
+  def create_okf_artifacts!(count:, body:)
+    count.times do |i|
+      artifact = create(:knowledge_artifact,
+        project: project,
+        collector_run: collector_run,
+        collector_type: "okf",
+        artifact_type: "okf_concept",
+        scope_path: ".okf/concepts/concept_#{i}.md",
+        identifier: "Concept #{i}",
+        content: body,
+        metadata: { "title" => "Concept #{i}", "concept_type" => "concept" },
+        status: "active")
+      create(:knowledge_chunk,
+        knowledge_artifact: artifact,
+        project: project,
+        chunk_type: "definition",
+        content: body)
     end
   end
 end

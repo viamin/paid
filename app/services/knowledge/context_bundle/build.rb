@@ -123,7 +123,8 @@ module Knowledge
           heading: "Business Context (maintainer-provided)",
           content: lines.join("\n\n"),
           artifacts: artifacts,
-          chunk_count: total_chunks
+          chunk_count: total_chunks,
+          item_marker: "#### "
         )
       end
 
@@ -148,7 +149,8 @@ module Knowledge
           heading: "Curated Knowledge (OKF bundle)",
           content: lines.join("\n\n"),
           artifacts: artifacts,
-          chunk_count: chunk_count
+          chunk_count: chunk_count,
+          item_marker: "#### "
         )
       end
 
@@ -301,7 +303,7 @@ module Knowledge
         artifact_section(name: :stats, heading: "Project Stats", content: lines.join("\n"), artifacts: artifacts)
       end
 
-      def artifact_section(name:, heading:, content:, artifacts:, chunk_count: 0)
+      def artifact_section(name:, heading:, content:, artifacts:, chunk_count: 0, item_marker: "- ")
         {
           name: name,
           heading: heading,
@@ -309,6 +311,7 @@ module Knowledge
           artifact_type: section_artifact_type(name),
           artifact_count: artifacts.size,
           chunk_count: chunk_count,
+          item_marker: item_marker,
           token_count: estimate_tokens("### #{heading}\n#{content}")
         }
       end
@@ -444,18 +447,44 @@ module Knowledge
 
         return nil if truncated_lines.empty?
 
+        # Roll back trailing item fragments so we don't count an artifact
+        # without its body (or vice versa) when sections like :okf render
+        # each item as a `#### heading\nbody` block.
+        truncated_lines = roll_back_partial_item(truncated_lines, section[:item_marker] || "- ")
+        return nil if truncated_lines.empty?
+
         truncated_content = truncated_lines.join("\n")
-        item_count = truncated_lines.count { |l| l.start_with?("- ") }
+        item_count = truncated_lines.count { |l| l.start_with?(section[:item_marker] || "- ") }
 
         {
           name: section[:name],
           heading: section[:heading],
           content: truncated_content,
           artifact_type: section[:artifact_type],
-          artifact_count: section[:name] == :business_context ? truncated_lines.count { |l| l.start_with?("#### ") } : item_count,
+          artifact_count: item_count,
           chunk_count: [ section[:chunk_count].to_i, item_count ].min,
+          item_marker: section[:item_marker],
           token_count: estimate_tokens("### #{section[:heading]}\n#{truncated_content}")
         }
+      end
+
+      # Drop a trailing incomplete item so the truncated section reports
+      # only items whose body survived the budget. Sections whose items
+      # are single "- " bullets already truncate atomically and skip this.
+      def roll_back_partial_item(truncated_lines, item_marker)
+        return truncated_lines if item_marker == "- "
+
+        item_indices = truncated_lines
+          .each_with_index
+          .select { |line, _| line.start_with?(item_marker) }
+          .map { |_, idx| idx }
+        return truncated_lines if item_indices.empty?
+
+        last_item_idx = item_indices.last
+        body_after = truncated_lines[(last_item_idx + 1)..] || []
+        return truncated_lines if body_after.any? { |line| line.strip.present? }
+
+        truncated_lines[0...last_item_idx]
       end
 
       # Fast token approximation: ~0.75 tokens per word (per issue spec)
