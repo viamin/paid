@@ -67,4 +67,37 @@
       </div>
     </div>
   <% end %>
+
+  <div class="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
+    <div class="overflow-hidden rounded-lg bg-white shadow">
+      <div class="px-4 py-5 sm:px-6">
+        <h2 class="text-base font-semibold text-gray-900">Collector Freshness</h2>
+      </div>
+      <ul class="divide-y divide-gray-200">
+        <% @knowledge_map[:collectors].each do |collector| %>
+          <li class="flex items-center justify-between px-4 py-3 sm:px-6">
+            <span class="text-sm text-gray-900"><%= collector[:collector_type].titleize %></span>
+            <span class="text-xs text-gray-500"><%= collector[:status].titleize %></span>
+          </li>
+        <% end %>
+      </ul>
+    </div>
+
+    <div class="overflow-hidden rounded-lg bg-white shadow">
+      <div class="px-4 py-5 sm:px-6">
+        <h2 class="text-base font-semibold text-gray-900">Coverage Gaps</h2>
+      </div>
+      <% if @knowledge_map[:gaps].any? %>
+        <ul class="divide-y divide-gray-200">
+          <% @knowledge_map[:gaps].each do |gap| %>
+            <li class="px-4 py-3 text-sm text-gray-900 sm:px-6">
+              <%= gap[:collector_type].titleize %> — <%= gap[:reason].titleize %>
+            </li>
+          <% end %>
+        </ul>
+      <% else %>
+        <p class="px-4 py-5 text-sm text-gray-500 sm:px-6">No known coverage gaps.</p>
+      <% end %>
+    </div>
+  </div>
 </div>
