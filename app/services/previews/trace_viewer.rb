@@ -36,15 +36,15 @@ module Previews
 
     # @param storage [Screenshots::Storage] Storage backend that owns the trace
     #   object-key contract. Defaults to a new {Screenshots::Storage}.
-    # @param artifact_storage [ArtifactStorage] Object storage backend used for
-    #   every S3 access (presigned URLs, `head_object`, `put_object`). Defaults
-    #   to a new {ArtifactStorage} resolved from the same configuration as
-    #   `storage`.
+    # @param artifact_storage [ArtifactStorage, nil] Object storage backend used
+    #   for every S3 access (presigned URLs, `head_object`, `put_object`).
+    #   Defaults to the backend composed by `storage` so injected bucket/region
+    #   overrides stay aligned between writes and reads.
     # @param viewer_prefix [String] S3 key prefix where the trace viewer static
     #   bundle is served from.
-    def initialize(storage: Screenshots::Storage.new, artifact_storage: ArtifactStorage.new, viewer_prefix: DEFAULT_VIEWER_PREFIX)
+    def initialize(storage: Screenshots::Storage.new, artifact_storage: nil, viewer_prefix: DEFAULT_VIEWER_PREFIX)
       @storage = storage
-      @artifact_storage = artifact_storage
+      @artifact_storage = artifact_storage || storage.artifact_storage
       @viewer_prefix = viewer_prefix.to_s
     end
 

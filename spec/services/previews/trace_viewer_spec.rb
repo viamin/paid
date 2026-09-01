@@ -28,6 +28,19 @@ RSpec.describe Previews::TraceViewer, :no_db do
     end
   end
 
+  describe "default artifact storage" do
+    it "reuses the artifact storage composed by the injected screenshot storage" do
+      composed_artifact_storage = instance_double(ArtifactStorage)
+      allow(storage).to receive(:artifact_storage).and_return(composed_artifact_storage)
+      allow(composed_artifact_storage).to receive(:configured?).and_return(true)
+
+      viewer = described_class.new(storage: storage)
+
+      expect(viewer.configured?).to be(true)
+      expect(composed_artifact_storage).to have_received(:configured?)
+    end
+  end
+
   describe "#trace_url" do
     it "returns a presigned URL for the trace object key" do
       expect(viewer.trace_url(**trace_params))

@@ -50,9 +50,8 @@ through `@artifact_storage` internally. Callers that need direct S3 access
 (`Previews::TraceViewer`) now depend on `ArtifactStorage` directly rather than
 via `Screenshots::Storage`. The historical re-exports (`DEFAULT_BUCKET`,
 `DEFAULT_REGION`, `MAX_URL_TTL`, `DEFAULT_URL_TTL`) and delegations
-(`client`/`s3_client`/`bucket`/`region`/`signed_url`/`configured?`) were cut
-so external callers must reference `ArtifactStorage` for the shared storage
-surface.
+(`client`/`bucket`/`region`/`signed_url`/`configured?`) were cut so external
+callers must reference `ArtifactStorage` for the shared storage surface.
 
 ## Scope decisions
 
@@ -67,9 +66,6 @@ surface.
 - **Content type from the filename.** `upload` infers the MIME type via
   `Marcel::MimeType.for(name:)` (extension-authoritative) rather than magic-byte
   sniffing, so the type the caller named the file is honored deterministically.
-- **`s3_client` is a delegating method, not an alias.** Implemented as
-  `def s3_client; client; end` so a dependency-injected `client` propagates
-  through both names (and through test doubles).
 - **Workspace storage stays out of scope.** Git worktree/workspace coupling is
   execution-scoped and tracked by the runner extraction (#3342). This segment
   provides the abstraction for *other* durable artifacts and documents the

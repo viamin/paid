@@ -68,16 +68,6 @@ class ArtifactStorage
     @client ||= Aws::S3::Client.new(client_options)
   end
 
-  # Backwards-compatible alias; `Previews::TraceViewer` historically reached
-  # for `s3_client` after `Screenshots::Storage` cut its re-export. Implemented
-  # as a delegation (rather than `alias`) so dependency-injected clients
-  # propagate through both names.
-  #
-  # @return [Aws::S3::Client]
-  def s3_client
-    client
-  end
-
   # Whether object storage credentials are configured (env var or Rails
   # credential). Callers degrade gracefully when this is false.
   #
