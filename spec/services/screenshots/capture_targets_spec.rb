@@ -582,6 +582,18 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "project_convention_settings" ])
     end
 
+    it "maps the okf exports controller to the okf export new page" do
+      targets = described_class.call(changed_files: [ "app/controllers/projects/okf_exports_controller.rb" ])
+
+      expect(targets.map(&:slug)).to eq([ "project_okf_export_new" ])
+    end
+
+    it "maps okf exports views to the okf export new page" do
+      targets = described_class.call(changed_files: [ "app/views/projects/okf_exports/new.html.erb" ])
+
+      expect(targets.map(&:slug)).to eq([ "project_okf_export_new" ])
+    end
+
     it "maps projects controller to include project_new target" do
       targets = described_class.call(changed_files: [ "app/controllers/projects_controller.rb" ])
 
