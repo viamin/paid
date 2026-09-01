@@ -178,7 +178,7 @@ the contract stays in sync with how the app actually reads configuration:
 | Qdrant API key | `Rails.application.credentials.dig(:qdrant, :api_key)` or `ENV["QDRANT_API_KEY"]` |
 | Workspace root | `Rails.application.config.x.workspace_root` (`config/application.rb`) |
 | Container backend | `ENV["CONTAINER_BACKEND"]`, `ENV["DOCKER_HOST"]` (`config/initializers/container_backend.rb`) |
-| Screenshots storage | `Screenshots::Storage.configured?` (`app/services/screenshots/storage.rb`) |
+| Screenshots storage | `ArtifactStorage.configured?` (`app/services/artifact_storage.rb`) |
 
 ## Testing the validator
 

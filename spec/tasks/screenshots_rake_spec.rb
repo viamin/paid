@@ -187,7 +187,7 @@ RSpec.describe "screenshots:capture", :no_db do
 
     def stub_branch_storage
       allow(GithubClient).to receive(:new).with(token: "ghp_test").and_return(github_client)
-      allow(Screenshots::Storage).to receive(:configured?).and_return(false)
+      allow(ArtifactStorage).to receive(:configured?).and_return(false)
       allow(Screenshots::BranchStorage).to receive_messages(configured?: true, token: "ghp_test")
       branch_storage = instance_double(Screenshots::BranchStorage)
       allow(Screenshots::BranchStorage).to receive(:new)
@@ -222,7 +222,7 @@ RSpec.describe "screenshots:capture", :no_db do
       File.write(File.join(output_dir, "dashboard.png"), "png")
       File.write(File.join(output_dir, "homepage.png"), "png")
       allow(GithubClient).to receive(:new).with(token: "ghp_test").and_return(github_client)
-      allow(Screenshots::Storage).to receive(:configured?).and_return(true)
+      allow(ArtifactStorage).to receive(:configured?).and_return(true)
       allow(Screenshots::Publish).to receive(:call)
 
       expect { task.invoke }.to output(/Published 2 screenshot\(s\) for PR #42\./).to_stdout
@@ -240,7 +240,7 @@ RSpec.describe "screenshots:capture", :no_db do
 
     it "updates the PR comment even when no screenshots were captured" do
       allow(GithubClient).to receive(:new).with(token: "ghp_test").and_return(github_client)
-      allow(Screenshots::Storage).to receive(:configured?).and_return(false)
+      allow(ArtifactStorage).to receive(:configured?).and_return(false)
       allow(Screenshots::BranchStorage).to receive(:configured?).and_return(false)
       allow(Screenshots::PrComment).to receive(:call)
 
@@ -258,7 +258,7 @@ RSpec.describe "screenshots:capture", :no_db do
     it "posts artifact fallback instructions when screenshots exist but no storage is configured" do
       File.write(File.join(output_dir, "dashboard.png"), "png")
       allow(GithubClient).to receive(:new).with(token: "ghp_test").and_return(github_client)
-      allow(Screenshots::Storage).to receive(:configured?).and_return(false)
+      allow(ArtifactStorage).to receive(:configured?).and_return(false)
       allow(Screenshots::BranchStorage).to receive(:configured?).and_return(false)
       allow(Screenshots::PrComment).to receive(:call)
 
@@ -360,7 +360,7 @@ RSpec.describe "screenshots:capture", :no_db do
       error = Screenshots::Publish::PublishError.new("upload failed")
 
       allow(GithubClient).to receive(:new).with(token: "ghp_test").and_return(github_client)
-      allow(Screenshots::Storage).to receive(:configured?).and_return(true)
+      allow(ArtifactStorage).to receive(:configured?).and_return(true)
       allow(Screenshots::Publish).to receive(:call).and_raise(error)
       allow(Screenshots::PrComment).to receive(:call)
 
@@ -393,7 +393,8 @@ RSpec.describe "screenshots:capture", :no_db do
 
     it "deletes screenshots for the PR from S3 and branch" do
       branch_storage = instance_double(Screenshots::BranchStorage)
-      allow(Screenshots::Storage).to receive_messages(configured?: true, new: storage)
+      allow(ArtifactStorage).to receive(:configured?).and_return(true)
+      allow(Screenshots::Storage).to receive_messages(new: storage)
       allow(storage).to receive(:delete_pr_screenshots)
       allow(Screenshots::BranchStorage).to receive_messages(configured?: true, token: "ghp_test")
       allow(Screenshots::BranchStorage).to receive(:new)
@@ -408,7 +409,7 @@ RSpec.describe "screenshots:capture", :no_db do
 
     it "skips S3 cleanup when not configured but still cleans branch" do
       branch_storage = instance_double(Screenshots::BranchStorage)
-      allow(Screenshots::Storage).to receive(:configured?).and_return(false)
+      allow(ArtifactStorage).to receive(:configured?).and_return(false)
       allow(Screenshots::BranchStorage).to receive_messages(configured?: true, token: "ghp_test")
       allow(Screenshots::BranchStorage).to receive(:new)
         .with(repo: "acme/web", github_token: "ghp_test")
@@ -420,7 +421,7 @@ RSpec.describe "screenshots:capture", :no_db do
     end
 
     it "skips cleanup when no storage is configured" do
-      allow(Screenshots::Storage).to receive(:configured?).and_return(false)
+      allow(ArtifactStorage).to receive(:configured?).and_return(false)
       allow(Screenshots::BranchStorage).to receive(:configured?).and_return(false)
 
       expect { task.invoke }.to output(/No screenshot storage configured/).to_stdout
