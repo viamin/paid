@@ -16,7 +16,12 @@
   auto-pick skip labels — creating any that are missing. Runtime write paths
   that apply one of these status labels after their primary GitHub action
   succeeds (`MarkPrReadyActivity`, `MergePullRequestActivity`,
-  `DependabotAutoMergeJob`, `AutoReleaseEvaluationJob`) SHALL call
+  `DependabotAutoMergeJob`, `AutoReleaseEvaluationJob`,
+  `Models::FileModelHealthIssue`) or ahead of a needs-input/enhancement
+  label write (`CreateAgentRunActivity#initiate_feature_needs_input!`,
+  `HandleNoOutputIssueRunActivity#add_needs_input_label`,
+  `HandleNoOutputIssueRunActivity#add_recommend_close_label`,
+  `EnhanceIssueActivity#labels_added`) SHALL call
   `EnsureStandardLabels.call_best_effort` immediately before the label
   write, so a repo that never went through the manual sync button or the
   project-create bootstrap still gets the label created on first use
@@ -26,12 +31,21 @@
   `app/temporal/activities/mark_pr_ready_activity.rb`,
   `app/temporal/activities/merge_pull_request_activity.rb#add_auto_merge_label`,
   `app/jobs/dependabot_auto_merge_job.rb#add_label`,
-  `app/jobs/auto_release_evaluation_job.rb#add_label`.
+  `app/jobs/auto_release_evaluation_job.rb#add_label`,
+  `app/services/models/file_model_health_issue.rb#ensure_label`,
+  `app/temporal/activities/create_agent_run_activity.rb#initiate_feature_needs_input!`,
+  `app/temporal/activities/handle_no_output_issue_run_activity.rb#add_needs_input_label`,
+  `app/temporal/activities/handle_no_output_issue_run_activity.rb#add_recommend_close_label`,
+  `app/temporal/activities/enhance_issue_activity.rb#labels_added`.
   *Test:* `spec/services/projects/ensure_standard_labels_spec.rb`,
   `spec/temporal/activities/mark_pr_ready_activity_spec.rb`,
   `spec/temporal/activities/merge_pull_request_activity_spec.rb`,
   `spec/jobs/dependabot_auto_merge_job_spec.rb`,
-  `spec/jobs/auto_release_evaluation_job_spec.rb`.
+  `spec/jobs/auto_release_evaluation_job_spec.rb`,
+  `spec/services/models/file_model_health_issue_spec.rb`,
+  `spec/temporal/activities/create_agent_run_activity_spec.rb`,
+  `spec/temporal/activities/handle_no_output_issue_run_activity_spec.rb`,
+  `spec/temporal/activities/enhance_issue_activity_spec.rb`.
 
 - [x] **GH-LABELS-002** — When an existing Paid-owned label's color or
   description diverges from its canonical definition, `EnsureStandardLabels`
