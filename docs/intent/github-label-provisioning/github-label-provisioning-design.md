@@ -203,9 +203,12 @@ before the full catalog existed.
   ready, merge) already succeeded, so the guard is deliberately best-effort:
   a sync failure must not undo or block work that already happened on
   GitHub, only reduce the odds that the follow-up label write 404s.
-- `FileModelHealthIssue` calls `create_label` defensively immediately before
-  filing a model-health issue, because that label is filed by a background
-  job with no "Sync Labels" UI trigger in its path.
+- `FileModelHealthIssue` calls `EnsureStandardLabels.call_best_effort`
+  immediately before filing a model-health issue, because that label is filed
+  by a background job with no "Sync Labels" UI trigger in its path. Routing
+  through the canonical service (rather than a blind `create_label`) means a
+  stale `model-health` label's color/description gets reconciled too
+  (GH-LABELS-002), not just created once and left to drift.
 - `MarkEscalatedActivity` calls `Projects::EnsureStandardLabels.call` and
   bails out before writing `paid-escalated` remotely or flipping
   `Issue#pr_review_phase` locally — but only when the sync's `Result#errors`
@@ -233,9 +236,10 @@ before the full catalog existed.
   reconciliation.
 - `app/models/issue.rb` — `ESCALATED_LABEL`, `DISMISS_ESCALATION_LABEL`
   (alongside the pre-existing `PAUSED_LABEL`).
-- `app/services/models/file_model_health_issue.rb` — reads `LABEL_COLOR`/
-  `LABEL_DESCRIPTION` from `EnsureStandardLabels::LABEL_DEFINITIONS` instead
-  of duplicating them.
+- `app/services/models/file_model_health_issue.rb` — routes `ensure_label`
+  through `EnsureStandardLabels.call_best_effort` instead of a standalone
+  `create_label` call, so color/description are sourced from (and reconciled
+  against) `EnsureStandardLabels::LABEL_DEFINITIONS` rather than duplicated.
 - `app/temporal/activities/mark_escalated_activity.rb` — fronts the
   `paid-escalated` transition with `EnsureStandardLabels` and aborts the local
   escalation only when a label this transition depends on failed to sync.
