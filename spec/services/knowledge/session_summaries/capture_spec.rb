@@ -83,5 +83,35 @@ RSpec.describe Knowledge::SessionSummaries::Capture do
 
       expect(second).to eq(first)
     end
+
+    it "repairs an existing summary that is missing its knowledge artifact" do
+      summary = create(:agent_run_session_summary, project: project, agent_run: agent_run, issue: issue)
+
+      expect(Llm::GenerateSessionSummary).not_to receive(:call)
+
+      expect {
+        result = described_class.call(agent_run: agent_run)
+        expect(result).to eq(summary)
+      }.to change { KnowledgeArtifact.active.where(artifact_type: "session_summary").count }.by(1)
+    end
+
+    it "allows a later retry to sync an artifact after an earlier sync failure left the summary behind" do
+      allow(Knowledge::SessionSummaries::SyncKnowledgeArtifact).to receive(:call).and_raise(StandardError, "boom")
+
+      expect {
+        described_class.call(agent_run: agent_run)
+      }.to raise_error(StandardError, "boom")
+
+      summary = AgentRunSessionSummary.find_by!(agent_run: agent_run)
+      expect(KnowledgeArtifact.active.where(artifact_type: "session_summary")).to be_empty
+
+      allow(Knowledge::SessionSummaries::SyncKnowledgeArtifact).to receive(:call).and_call_original
+      expect(Llm::GenerateSessionSummary).not_to receive(:call)
+
+      expect {
+        result = described_class.call(agent_run: agent_run)
+        expect(result).to eq(summary)
+      }.to change { KnowledgeArtifact.active.where(artifact_type: "session_summary").count }.by(1)
+    end
   end
 end

@@ -105,19 +105,36 @@ module Llm
 
     def prompt_variables(transcript)
       {
-        issue_title: redact_secrets(agent_run.issue&.title.to_s).presence || "N/A",
+        issue_title: sanitized_text(agent_run.issue&.title).presence || "N/A",
         issue_number: agent_run.issue&.github_number,
-        pull_request_url: agent_run.pull_request_url.presence || "N/A",
-        goal: agent_run.goal,
-        status: agent_run.status,
-        error_message: redact_secrets(agent_run.error_message.to_s).presence || "None",
-        transcript: redact_secrets(transcript).truncate(MAX_TRANSCRIPT_LENGTH)
+        pull_request_url: sanitized_text(agent_run.pull_request_url).presence || "N/A",
+        goal: sanitized_text(agent_run.goal),
+        status: sanitized_text(agent_run.status),
+        error_message: sanitized_text(agent_run.error_message).presence || "None",
+        transcript: sanitized_text(transcript, max_length: MAX_TRANSCRIPT_LENGTH)
       }
+    end
+
+    def sanitized_text(text, max_length: nil)
+      sanitized = redact_secrets(Knowledge::Redaction::Redactor.call(text: normalized_text(text)).clean_text)
+      return sanitized if max_length.nil?
+
+      sanitized.truncate(max_length)
+    end
+
+    def normalized_text(text)
+      text.to_s.encode(Encoding::UTF_8, invalid: :replace, undef: :replace, replace: "").delete("\x00")
     end
 
     def redact_secrets(text)
       SECRET_PATTERNS.reduce(text.to_s) do |result, pattern|
-        result.gsub(pattern, "[REDACTED]")
+        result.gsub(pattern) do
+          if Regexp.last_match.captures.any?
+            "#{Regexp.last_match[1]}[REDACTED]"
+          else
+            "[REDACTED]"
+          end
+        end
       end
     end
 
@@ -140,8 +157,8 @@ module Llm
     end
 
     def build_result(parsed, response)
-      attrs = { summary: redact_secrets(parsed[:summary]), response: response }
-      ARRAY_FIELDS.each { |field| attrs[field] = Array(parsed[field]).map { |value| redact_secrets(value) } }
+      attrs = { summary: sanitized_text(parsed[:summary]), response: response }
+      ARRAY_FIELDS.each { |field| attrs[field] = Array(parsed[field]).map { |value| sanitized_text(value) } }
 
       Result.new(**attrs)
     end

@@ -23,7 +23,7 @@ module Knowledge
 
       def call
         existing = AgentRunSessionSummary.find_by(agent_run: agent_run)
-        return existing if existing
+        return ensure_knowledge_artifact!(existing) if existing
 
         result = Llm::GenerateSessionSummary.call(agent_run: agent_run)
         return nil unless result
@@ -38,6 +38,21 @@ module Knowledge
       end
 
       private
+
+      def ensure_knowledge_artifact!(summary)
+        return summary if knowledge_artifact_exists_for?(summary)
+
+        Knowledge::SessionSummaries::SyncKnowledgeArtifact.call(session_summary: summary)
+        summary
+      end
+
+      def knowledge_artifact_exists_for?(summary)
+        KnowledgeArtifact.active.exists?(
+          project: summary.project,
+          artifact_type: "session_summary",
+          scope_path: "agent_runs/#{summary.agent_run_id}/session_summary"
+        )
+      end
 
       def create_summary(result)
         AgentRunSessionSummary.create!(

@@ -90,8 +90,22 @@ RSpec.describe Llm::GenerateSessionSummary do
       described_class.call(agent_run: leaky_agent_run)
 
       expect(AgentHarness).to have_received(:send_message).with(
-        a_string_including("[REDACTED]").and(
+        a_string_including("[REDACTED").and(
           satisfy { |s| !s.include?("ghp_abcdefghijklmnopqrstuvwxyz0123456789") }
+        ),
+        hash_including(provider: :claude)
+      )
+    end
+
+    it "redacts JWTs and strips NUL bytes in the transcript before sending it to the LLM" do
+      leaky_agent_run = create(:agent_run, :completed, project: project, issue: issue)
+      leaky_agent_run.log!("stdout", "jwt=eyJabc.eyJdef.ghiJKL\0 extra")
+
+      described_class.call(agent_run: leaky_agent_run)
+
+      expect(AgentHarness).to have_received(:send_message).with(
+        a_string_including("[REDACTED").and(
+          satisfy { |s| !s.include?("eyJabc.eyJdef.ghiJKL") && !s.include?("\x00") }
         ),
         hash_including(provider: :claude)
       )
@@ -105,7 +119,7 @@ RSpec.describe Llm::GenerateSessionSummary do
       described_class.call(agent_run: leaky_agent_run)
 
       expect(AgentHarness).to have_received(:send_message).with(
-        a_string_including("[REDACTED]").and(
+        a_string_including("[REDACTED").and(
           satisfy { |s| !s.include?("ghp_abcdefghijklmnopqrstuvwxyz0123456789") }
         ),
         hash_including(provider: :claude)
@@ -120,7 +134,7 @@ RSpec.describe Llm::GenerateSessionSummary do
       described_class.call(agent_run: leaky_agent_run)
 
       expect(AgentHarness).to have_received(:send_message).with(
-        a_string_including("[REDACTED]").and(
+        a_string_including("[REDACTED").and(
           satisfy { |s| !s.include?("ghp_abcdefghijklmnopqrstuvwxyz0123456789") }
         ),
         hash_including(provider: :claude)
@@ -129,15 +143,16 @@ RSpec.describe Llm::GenerateSessionSummary do
 
     it "redacts secrets echoed back by the LLM into the parsed result" do
       leaky_json = {
-        summary: "Committed a fix using TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789.",
+        summary: "Committed a fix using jwt=eyJabc.eyJdef.ghiJKL.\u0000",
         files_touched: [], decisions: [], assumptions: [], failures: [], follow_ups: [], learnings: []
       }.to_json
       allow(llm_response).to receive(:output).and_return(leaky_json)
 
       result = described_class.call(agent_run: agent_run)
 
-      expect(result.summary).to include("[REDACTED]")
-      expect(result.summary).not_to include("ghp_abcdefghijklmnopqrstuvwxyz0123456789")
+      expect(result.summary).to include("[REDACTED")
+      expect(result.summary).not_to include("eyJabc.eyJdef.ghiJKL")
+      expect(result.summary).not_to include("\x00")
     end
   end
 end

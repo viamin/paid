@@ -95,6 +95,8 @@ module Projects
       change_intent = Knowledge::SessionSummaries::Promote.call(session_summary: summary, user: current_user)
       redirect_to project_change_intent_path(@project, change_intent),
         notice: "Session summary promoted to a draft Change Intent Record. Review and approve it to add it to the knowledge base."
+    rescue ActiveRecord::RecordInvalid => e
+      redirect_to project_agent_run_path(@project, @agent_run), alert: e.message
     rescue ArgumentError => e
       redirect_to project_agent_run_path(@project, @agent_run), alert: e.message
     end

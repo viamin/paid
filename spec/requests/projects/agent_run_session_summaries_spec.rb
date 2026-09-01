@@ -60,5 +60,18 @@ RSpec.describe "Projects::AgentRuns session summaries" do
       expect(response).to have_http_status(:redirect)
       expect(flash[:alert]).to eq("You are not authorized to perform this action.")
     end
+
+    it "redirects with an alert when promotion raises a validation error" do
+      invalid_record = ChangeIntent.new
+      invalid_record.errors.add(:intent, "is too long")
+      allow(Knowledge::SessionSummaries::Promote).to receive(:call)
+        .and_raise(ActiveRecord::RecordInvalid.new(invalid_record))
+
+      post promote_session_summary_project_agent_run_path(project, agent_run)
+
+      expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+      follow_redirect!
+      expect(response.body).to include("Validation failed: Intent is too long")
+    end
   end
 end
