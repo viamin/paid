@@ -408,9 +408,9 @@ RSpec.describe WorktreeService do
         FileUtils.mkdir_p(repo_path)
       end
 
-      it "returns the set of paths tracked at HEAD" do
+      it "returns the set of paths tracked at origin/default_branch" do
         allow(service).to receive(:run_git)
-          .with("ls-tree", "-r", "--name-only", "HEAD", chdir: repo_path)
+          .with("ls-tree", "-r", "--name-only", "origin/#{project.default_branch}", chdir: repo_path)
           .and_return("app/models/foo.rb\nconfig/routes.rb\n")
 
         expect(service.tracked_files).to eq(Set["app/models/foo.rb", "config/routes.rb"])
@@ -418,7 +418,7 @@ RSpec.describe WorktreeService do
 
       it "raises when the git command fails" do
         allow(service).to receive(:run_git)
-          .with("ls-tree", "-r", "--name-only", "HEAD", chdir: repo_path)
+          .with("ls-tree", "-r", "--name-only", "origin/#{project.default_branch}", chdir: repo_path)
           .and_raise(WorktreeService::Error, "bad object HEAD")
 
         expect { service.tracked_files }.to raise_error(WorktreeService::Error)

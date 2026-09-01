@@ -10,7 +10,7 @@ module Knowledge
     # repo-relative file paths. Several collectors (decisions, change
     # intents, session summaries, business context, PDF uploads) store
     # identifier-shaped scope_paths that intentionally never appear in
-    # `git ls-tree HEAD`; flagging them would permanently produce noise that
+    # `git ls-tree`; flagging them would permanently produce noise that
     # crowds real drift findings out of the per-check cap. The check is
     # conservative: by default it inspects the bare repository through
     # `WorktreeService`; environments without git access report zero
