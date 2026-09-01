@@ -509,19 +509,17 @@ module ApplicationHelper
   def agent_run_context_display(run)
     context = agent_run_context(run)
     tooltip_id = "context_#{run.id}"
+    tooltip_present = context[:tooltip].present?
+    described_by = (tooltip_present ? tooltip_id : nil)
     inner = case context[:type]
     when :link
-      tooltip_data = context[:tooltip].present? ? { action: "focusin->tooltip#show" } : {}
-      aria_attrs = context[:tooltip].present? ? { describedby: tooltip_id } : {}
       link_to(context[:label], context[:url], target: "_blank", rel: "noopener noreferrer",
         class: "text-indigo-600 hover:text-indigo-900", title: context[:tooltip],
-        aria: aria_attrs.presence, data: tooltip_data.presence)
+        aria: { describedby: described_by })
     when :text
-      tooltip_data = context[:tooltip].present? ? { action: "focusin->tooltip#show" } : {}
-      aria_attrs = context[:tooltip].present? ? { describedby: tooltip_id } : {}
       tag.span(context[:label], class: context[:classes], title: context[:tooltip],
-        tabindex: (context[:tooltip].present? ? "0" : nil),
-        aria: aria_attrs.presence, data: tooltip_data.presence)
+        tabindex: (tooltip_present ? "0" : nil),
+        aria: { describedby: described_by })
     when :in_progress
       tag.span("Creating issue\u2026", class: "italic text-gray-500")
     else
@@ -715,35 +713,48 @@ module ApplicationHelper
     end
   end
 
-  # Wraps content with a mobile-friendly info-icon tooltip using the Stimulus
-  # tooltip controller. Desktop users see the native title attribute; on touch
-  # devices the icon toggles a popover. Returns +inner+ unchanged when
-  # +tooltip_text+ is blank.
+  # Wraps content with a mobile-friendly info-icon tooltip using CSS-only details.
+  # Desktop users see the native title attribute on hover, and the popover on
+  # keyboard focus of +inner+ (group-focus-within); on touch devices the icon
+  # toggles the popover instead. Returns +inner+ unchanged when +tooltip_text+
+  # is blank.
+  #
+  # Callers MUST wire `aria-describedby: dom_id` onto the focusable trigger
+  # they pass in, otherwise assistive technology cannot associate the
+  # `role="tooltip"` content with its trigger and screen reader users who
+  # focus the link/span hear no description (see #3517 review feedback).
+  #
+  # `<details>` was kept over the Popover API (also raised in #3517 review
+  # feedback) because positioning a `[popover]` next to its trigger without
+  # JS requires CSS anchor positioning (`anchor-name`/`position-anchor`),
+  # which Safari and Firefox do not yet implement; without it a popover falls
+  # back to viewport-centered placement that doesn't track the trigger any
+  # better than the bug this fixes. `<details>` has no light-dismiss, so on
+  # touch devices the tooltip stays open until the info icon is tapped again
+  # — an accepted tradeoff now that the tooltip is anchored below the trigger
+  # (see the `absolute`/`top-full` positioning below) instead of overlapping
+  # row content.
   def mobile_tooltip_wrapper(inner, tooltip_text, dom_id, aria_label: "Show details")
     return inner if tooltip_text.blank?
 
-    tag.span(class: "inline-flex items-center gap-1", data: { controller: "tooltip" }) do
+    tag.details(class: "inline-flex items-center gap-1 group relative") do
       safe_join([
-        inner,
-        tag.button(
+        tag.summary(
           tag.svg(
             tag.path(d: "M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"),
             class: "h-4 w-4", fill: "none", viewBox: "0 0 24 24", stroke: "currentColor",
             "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round",
             aria: { hidden: "true" }, focusable: "false"
           ),
-          type: "button",
-          class: "[@media(hover:hover)_and_(pointer:fine)_and_(not_(any-pointer:coarse))]:hidden text-gray-400 hover:text-gray-600",
-          data: { action: "click->tooltip#toggle" },
-          aria: { label: aria_label, describedby: dom_id, expanded: "false", controls: dom_id }
+          class: "[@media(hover:hover)_and_(pointer:fine)_and_(not_(any-pointer:coarse))]:hidden cursor-pointer text-gray-400 hover:text-gray-600 list-none [&::-webkit-details-marker]:hidden",
+          aria: { label: aria_label, describedby: dom_id }
         ),
+        inner,
         tag.span(
           tooltip_text,
           id: dom_id,
           role: "tooltip",
-          aria: { hidden: "true" },
-          class: "hidden fixed z-50 w-48 rounded bg-gray-900 px-2 py-1 text-xs text-white shadow-lg",
-          data: { tooltip_target: "content" }
+          class: "hidden group-open:block group-focus-within:block absolute left-0 top-full mt-1 z-50 w-48 rounded bg-gray-900 px-2 py-1 text-xs text-white shadow-lg"
         )
       ])
     end

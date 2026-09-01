@@ -661,7 +661,7 @@ RSpec.describe "Dashboard" do
         headers = table.css("thead th").map { |header| header.text.squish }
         row = document.at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(run, :dashboard_row)}"]))
         context_cell = row.css("td")[headers.index("Context")]
-        context_tooltip_wrapper = context_cell.at_css('[data-controller="tooltip"]')
+        context_tooltip_wrapper = context_cell.at_css('details')
         context_tooltip = context_tooltip_wrapper&.at_css('span[role="tooltip"]')
 
         expect(row).to be_present
@@ -688,7 +688,7 @@ RSpec.describe "Dashboard" do
         expect(goal_cell.text).to include("Code Review")
         expect(goal_label).to be_present
         expect(goal_label["title"]).to be_nil
-        expect(goal_cell.at_css('[data-controller="tooltip"]')).to be_nil
+        expect(goal_cell.at_css('details')).to be_nil
         expect(goal_cell.at_css('span[role="tooltip"]')).to be_nil
       end
 
