@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_31_160707) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_01_083509) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -248,6 +248,35 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_31_160707) do
     t.index ["profile_level", "sample_count"], name: "idx_on_profile_level_sample_count_92a9d20505"
     t.index ["project_id"], name: "index_agent_run_resource_profiles_on_project_id"
     t.index ["runner_key", "goal"], name: "index_agent_run_resource_profiles_on_runner_key_and_goal", where: "((runner_key IS NOT NULL) AND (goal IS NOT NULL))"
+  end
+
+  create_table "agent_run_session_summaries", comment: "Synthesized session-summary knowledge observations captured after selected agent runs.", force: :cascade do |t|
+    t.bigint "agent_run_id", null: false, comment: "Agent run this summary was synthesized from."
+    t.jsonb "assumptions", default: [], null: false, comment: "Assumptions the agent made when information was incomplete."
+    t.bigint "change_intent_id", comment: "Change Intent Record created when this observation was promoted."
+    t.datetime "created_at", null: false
+    t.jsonb "decisions", default: [], null: false, comment: "Decisions the agent made and why."
+    t.jsonb "failures", default: [], null: false, comment: "Approaches that were tried and failed, or errors encountered."
+    t.jsonb "files_touched", default: [], null: false, comment: "File paths created, modified, or investigated."
+    t.jsonb "follow_ups", default: [], null: false, comment: "Follow-up work identified but not completed in this run."
+    t.datetime "generated_at", comment: "When the LLM synthesis that produced this summary completed."
+    t.bigint "issue_id", comment: "Issue the agent run worked on, when applicable."
+    t.jsonb "learnings", default: [], null: false, comment: "Reusable insights about the repository or codebase."
+    t.bigint "project_id", null: false, comment: "Project the summarized agent run belongs to."
+    t.datetime "promoted_at", comment: "When this observation was promoted to a durable Change Intent Record."
+    t.bigint "promoted_by_id", comment: "User who promoted this observation, when applicable."
+    t.integer "pull_request_number", comment: "Pull request number produced or updated by the run, when applicable."
+    t.string "pull_request_url", comment: "Pull request URL produced or updated by the run, when applicable."
+    t.string "status", limit: 50, default: "observation", null: false, comment: "Lifecycle state: observation (raw capture) or promoted (accepted into durable intent)."
+    t.text "summary", null: false, comment: "Narrative summary of what happened during the agent run."
+    t.datetime "updated_at", null: false
+    t.index ["agent_run_id"], name: "index_agent_run_session_summaries_on_agent_run_id", unique: true
+    t.index ["change_intent_id"], name: "index_agent_run_session_summaries_on_change_intent_id"
+    t.index ["issue_id"], name: "index_agent_run_session_summaries_on_issue_id"
+    t.index ["project_id", "created_at"], name: "index_agent_run_session_summaries_on_project_id_and_created_at"
+    t.index ["project_id", "status"], name: "index_agent_run_session_summaries_on_project_id_and_status"
+    t.index ["project_id"], name: "index_agent_run_session_summaries_on_project_id"
+    t.index ["promoted_by_id"], name: "index_agent_run_session_summaries_on_promoted_by_id"
   end
 
   create_table "agent_runs", force: :cascade do |t|
@@ -3337,6 +3366,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_31_160707) do
   add_foreign_key "agent_run_phases", "agent_runs", on_delete: :cascade
   add_foreign_key "agent_run_resource_profiles", "accounts", on_delete: :cascade
   add_foreign_key "agent_run_resource_profiles", "projects", on_delete: :cascade
+  add_foreign_key "agent_run_session_summaries", "agent_runs", on_delete: :cascade
+  add_foreign_key "agent_run_session_summaries", "change_intents", on_delete: :nullify
+  add_foreign_key "agent_run_session_summaries", "issues", on_delete: :nullify
+  add_foreign_key "agent_run_session_summaries", "projects", on_delete: :cascade
+  add_foreign_key "agent_run_session_summaries", "users", column: "promoted_by_id", on_delete: :nullify
   add_foreign_key "agent_runs", "configuration_bundles", on_delete: :nullify
   add_foreign_key "agent_runs", "issues", on_delete: :nullify
   add_foreign_key "agent_runs", "projects", on_delete: :cascade

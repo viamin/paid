@@ -267,6 +267,7 @@ Rails.application.routes.draw do
       post :diagnose_error, on: :member
       post :resume, on: :member
       post :terminate, on: :member
+      post :promote_session_summary, on: :member
       get :provenance, on: :member
       post :quick_create, on: :collection
       post :bump_priority, on: :collection

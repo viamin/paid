@@ -22,20 +22,34 @@ module Knowledge
 
       # Section builders in priority order. Curated sources (maintainer
       # business context, imported documents, OKF bundles) come before derived
-      # collector output.
-      SECTION_ORDER = %i[business_context documents okf routes symbols schema hotspots decisions change_intents stats].freeze
+      # collector output. Session summaries are raw agent-run observations,
+      # not vetted knowledge, so they sit last — conservative priority — and
+      # are only included when a caller opts in explicitly.
+      #
+      # @spec SESSION-SUMMARY-005
+      SECTION_ORDER = %i[
+        business_context documents okf routes symbols schema hotspots decisions change_intents stats
+        session_summaries
+      ].freeze
 
-      attr_reader :issue, :project, :agent_run, :agent_run_id, :token_budget, :section_order
+      attr_reader :issue, :project, :agent_run, :agent_run_id, :token_budget, :section_order, :include_session_summaries
 
       # issue is accepted for future relevance-ranking of artifacts.
       # Currently unused — all active artifacts are included project-wide.
-      def initialize(issue:, project:, agent_run: nil, agent_run_id: nil, token_budget: nil, section_order: nil)
+      #
+      # include_session_summaries defaults to false: session summaries are
+      # unvetted observations from individual agent runs, so context bundles
+      # only include them when a caller opts in explicitly.
+      def initialize(issue:, project:, agent_run: nil, agent_run_id: nil, token_budget: nil, section_order: nil,
+        include_session_summaries: false)
         @issue = issue
         @project = project
         @agent_run = agent_run
         @agent_run_id = agent_run_id
         @token_budget = token_budget || safe_experiment_value("knowledge.token_budget") || env_token_budget
-        @section_order = section_order || safe_experiment_value("knowledge.section_order") || SECTION_ORDER
+        @include_session_summaries = include_session_summaries
+        resolved_order = section_order || safe_experiment_value("knowledge.section_order") || SECTION_ORDER
+        @section_order = include_session_summaries ? resolved_order : resolved_order - [ :session_summaries ]
       end
 
       def self.call(...)
@@ -287,6 +301,30 @@ module Knowledge
         }
       end
 
+      # @spec SESSION-SUMMARY-005
+      def build_session_summaries_section
+        artifacts = active_artifacts("session_summary")
+        return nil if artifacts.empty?
+
+        total_chunks = 0
+        lines = artifacts.map do |artifact|
+          heading = artifact.identifier
+          summary_chunk = artifact.active_ordered_chunks.find { |chunk| chunk.chunk_type == "summary" }
+          total_chunks += 1 if summary_chunk
+          body = summary_chunk&.content.presence || artifact.content.to_s
+          "#### #{heading}\n#{body.tr("\n", " ").truncate(300)}"
+        end
+
+        artifact_section(
+          name: :session_summaries,
+          heading: "Session Summaries (agent-run observations, not vetted intent)",
+          content: lines.join("\n\n"),
+          artifacts: artifacts,
+          chunk_count: total_chunks,
+          item_marker: "#### "
+        )
+      end
+
       def build_stats_section
         artifacts = active_artifacts("language_stat")
         return nil if artifacts.empty?
@@ -327,7 +365,8 @@ module Knowledge
           schema: "schema",
           stats: "language_stat",
           decisions: "decision_record",
-          change_intents: "change_intent"
+          change_intents: "change_intent",
+          session_summaries: "session_summary"
         }.fetch(section_name.to_sym)
       end
 
@@ -411,6 +450,12 @@ module Knowledge
             .includes(:active_ordered_chunks)
             .order(:identifier)
             .limit(20)
+            .to_a
+        elsif type == "session_summary"
+          scope
+            .includes(:active_ordered_chunks)
+            .order(created_at: :desc)
+            .limit(10)
             .to_a
         else
           scope
