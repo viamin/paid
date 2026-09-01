@@ -26,6 +26,19 @@ RSpec.describe "Projects::AgentRuns session summaries" do
       expect(response.body).to include("Observation")
       expect(response.body).to include("Promote to Change Intent")
     end
+
+    it "renders a promoted summary safely after its draft change intent is discarded" do
+      change_intent = create(:change_intent, project: project, status: "draft")
+      session_summary.promote!(change_intent: change_intent, user: owner)
+      ChangeIntents::DiscardDraft.call(change_intent:)
+
+      get project_agent_run_path(project, agent_run)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Promoted draft discarded")
+      expect(response.body).not_to include("Promote to Change Intent")
+      expect(response.body).not_to include(project_change_intent_path(project, change_intent))
+    end
   end
 
   describe "POST /projects/:project_id/agent_runs/:id/promote_session_summary" do

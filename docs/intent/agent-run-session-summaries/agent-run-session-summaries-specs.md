@@ -46,7 +46,10 @@
   to the created record and the promoting user, and SHALL reject promoting
   an already-promoted summary. The UI SHALL label an unpromoted summary as
   an observation and a promoted summary with a link to its Change Intent
-  Record, so neither state is mistaken for accepted project intent.
+  Record when that draft still exists; if the promoted draft is later
+  discarded, the UI SHALL still render the promoted state without raising
+  and SHALL make clear that the draft was discarded, so neither state is
+  mistaken for accepted project intent.
   *Code:* `app/services/knowledge/session_summaries/promote.rb`,
   `app/controllers/projects/agent_runs_controller.rb`,
   `app/views/projects/agent_runs/_session_summary.html.erb`.

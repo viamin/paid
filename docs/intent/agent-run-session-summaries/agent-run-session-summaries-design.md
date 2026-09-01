@@ -83,8 +83,10 @@ knowledge base, exactly like any other Change Intent Record.
 
 The agent-run show page renders the summary with an explicit "Observation"
 badge, or "Promoted to Change Intent" linking to the created record once
-promoted, so the UI never presents an unreviewed observation as accepted
-project intent.
+promoted. If that draft Change Intent is later discarded, the summary
+remains promoted but the UI renders a non-link "Promoted draft discarded"
+badge instead of raising on a missing record, so the UI never presents an
+unreviewed observation as accepted project intent.
 
 ## Important Boundaries
 
