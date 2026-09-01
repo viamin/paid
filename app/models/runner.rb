@@ -7,7 +7,6 @@ require "shellwords"
 class Runner < ApplicationRecord
   has_logidze
   include Discard::Model
-  include LegacyAttributeBridge
   include Runners::OpenRouterDataRouting
 
   OPENROUTER_FREE_MODEL_PROVIDER = "openrouter"
@@ -268,7 +267,17 @@ class Runner < ApplicationRecord
   end
 
   def update_columns(attributes)
-    super(self.class.synchronize_bridge_attributes(attributes, LEGACY_PROVIDER_ATTRIBUTE_BRIDGES))
+    synced = attributes.to_h.stringify_keys
+
+    LEGACY_PROVIDER_ATTRIBUTE_BRIDGES.each do |legacy_name, runner_name|
+      if synced.key?(runner_name)
+        synced[legacy_name] = synced[runner_name]
+      elsif synced.key?(legacy_name)
+        synced[runner_name] = synced[legacy_name]
+      end
+    end
+
+    super(synced)
   end
 
   # Returns a merged hash of complexity thresholds (stored values overlaid on

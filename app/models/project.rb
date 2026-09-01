@@ -627,20 +627,20 @@ class Project < ApplicationRecord
   end
 
   def touch_last_agent_run_at(timestamp = Time.current)
-    update_column(:last_agent_run_at, timestamp)
+    update_columns(last_agent_run_at: timestamp)
   end
 
   def touch_last_github_activity_at(timestamp = Time.current)
-    update_column(:last_github_activity_at, timestamp)
+    update_columns(last_github_activity_at: timestamp)
   end
 
   def touch_last_polled_at(timestamp = Time.current)
-    update_column(:last_polled_at, timestamp)
+    update_columns(last_polled_at: timestamp)
     WorkflowState.record_polling_status(self, status: "running")
   end
 
   def touch_last_issue_sync_at(timestamp = Time.current)
-    update_column(:last_issue_sync_at, timestamp)
+    update_columns(last_issue_sync_at: timestamp)
   end
 
   def effective_screenshot_settings
