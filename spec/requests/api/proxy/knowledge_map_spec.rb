@@ -44,7 +44,7 @@ RSpec.describe "Api::Proxy::KnowledgeMap" do
         "X-Proxy-Token" => chat_session.proxy_token
       }
 
-      expect(response).to have_http_status(:unauthorized)
+      expect(response).to have_http_status(:unprocessable_entity)
     end
   end
 end

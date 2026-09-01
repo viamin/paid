@@ -141,10 +141,11 @@ module Knowledge
       def business_context_summary
         artifacts = KnowledgeArtifact.active.for_project(project).by_type("business_context")
         last_run = latest_collector_runs_by_type[BUSINESS_CONTEXT_COLLECTOR_TYPE]
+        count = artifacts.count
 
         {
-          present: artifacts.exists?,
-          artifact_count: artifacts.count,
+          present: count.positive?,
+          artifact_count: count,
           last_synthesized_at: last_run&.completed_at&.iso8601
         }
       end

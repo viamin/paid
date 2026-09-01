@@ -4,6 +4,7 @@ module Api
   module Proxy
     class KnowledgeMapController < ActionController::API
       include Api::ContainerAuthentication
+      allow_chat_session_authentication!
 
       # GET /api/proxy/knowledge/map
       def show
