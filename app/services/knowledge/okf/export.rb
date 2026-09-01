@@ -8,8 +8,11 @@ module Knowledge
     # store; the bundle is a snapshot/interchange artifact, not a sync target.
     #
     # Only artifacts with at least one active (non-redacted, non-stale) chunk
-    # are exported — fully redacted artifacts have no active chunks and are
-    # skipped rather than falling back to unscrubbed raw content.
+    # are exported — fully redacted artifacts have no active chunks, so the
+    # export query excludes them up front rather than fetching them (which
+    # would let them consume a `limit`/truncation slot ahead of an
+    # exportable artifact that sorts later) or falling back to unscrubbed
+    # raw content.
     class Export
       include Rails.application.routes.url_helpers
 
@@ -107,6 +110,7 @@ module Knowledge
           .for_project(project)
           .active
           .where(artifact_type: type)
+          .with_active_chunks
           .includes(:active_ordered_chunks, collector_run: :project_version)
           .order(:identifier, :id)
           .limit(limit + 1)

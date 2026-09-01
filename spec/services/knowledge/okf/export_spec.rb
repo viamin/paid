@@ -73,13 +73,25 @@ RSpec.describe Knowledge::Okf::Export do
       expect(parsed.body).to eq("Just a summary line")
     end
 
-    it "skips artifacts with no active chunks instead of exporting raw content" do
+    it "excludes artifacts with no active chunks from the export instead of exporting raw content" do
       artifact_with_chunks(chunk_types: [ [ "definition", "[REDACTED]", "redacted" ] ])
 
       result = described_class.call(project:, artifact_types: [ "okf_concept" ])
 
       expect(result.files).to be_empty
-      expect(result.skipped_count).to eq(1)
+      expect(result.skipped_count).to eq(0)
+    end
+
+    it "does not let a fully redacted artifact that sorts first starve the per-type limit" do
+      artifact_with_chunks(chunk_types: [ [ "definition", "[REDACTED]", "redacted" ] ], identifier: "AAA redacted")
+      exportable = artifact_with_chunks(chunk_types: [ [ "definition", "Users sign in with SSO." ] ],
+        identifier: "BBB exportable")
+
+      result = described_class.call(project:, artifact_types: [ "okf_concept" ], max_artifacts: 1)
+
+      expect(result.exported_count).to eq(1)
+      expect(result.files.map(&:relative_path)).to contain_exactly("okf_concept/bbb-exportable-#{exportable.id}.md")
+      expect(result.truncated_types).to be_empty
     end
 
     it "excludes stale artifacts" do
