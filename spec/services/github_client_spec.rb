@@ -2785,5 +2785,29 @@ RSpec.describe GithubClient do
 
       expect { test_client.repository("owner/repo") }.to raise_error(GithubClient::NotFoundError)
     end
+
+    it "retries delegated pass-through methods with the refreshed token after a 401" do
+      refresher = -> { fresh_token }
+      test_client = described_class.new(token: token, health_endpoint: health_endpoint, token_refresher: refresher)
+
+      stub_request(:get, "#{api_base}/repos/owner/repo")
+        .with(headers: { "Authorization" => "token #{token}" })
+        .to_return(
+          status: 401,
+          body: { message: "Bad credentials" }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+      stub_request(:get, "#{api_base}/repos/owner/repo")
+        .with(headers: { "Authorization" => "token #{fresh_token}" })
+        .to_return(
+          status: 200,
+          body: { id: 1, full_name: "owner/repo" }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      repository = test_client.repository("owner/repo")
+
+      expect(repository.full_name).to eq("owner/repo")
+    end
   end
 end

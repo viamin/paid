@@ -66,6 +66,25 @@ class GithubClient
   end
 
   # @spec GITHUB-SYNC-011
+  PASS_THROUGH_METHODS = %i[
+    repository
+    tree
+    search_code
+    search_issues
+    pull_request
+    issue
+    add_comment
+    update_comment
+    ref
+    commit
+    create_ref
+    delete_ref
+    pull_requests
+    request_pull_request_review
+  ].freeze
+  INTERNAL_PASS_THROUGH_METHODS = (PASS_THROUGH_METHODS + %i[remove_label]).freeze
+
+  # @spec GITHUB-SYNC-011
   class ErrorHandlingClient < SimpleDelegator
     def self.wraps(*method_names)
       method_names.each do |method_name|
@@ -77,21 +96,7 @@ class GithubClient
       end
     end
 
-    wraps :repository,
-      :tree,
-      :search_code,
-      :search_issues,
-      :pull_request,
-      :issue,
-      :add_comment,
-      :update_comment,
-      :remove_label,
-      :ref,
-      :commit,
-      :create_ref,
-      :delete_ref,
-      :pull_requests,
-      :request_pull_request_review
+    wraps(*INTERNAL_PASS_THROUGH_METHODS)
 
     def initialize(octokit_client, error_handler:)
       super(octokit_client)
@@ -101,8 +106,6 @@ class GithubClient
     private
 
     def call_wrapped(method_name, *args, **kwargs, &block)
-      return __getobj__.public_send(method_name, *args, &block) if kwargs.empty?
-
       __getobj__.public_send(method_name, *args, **kwargs, &block)
     end
   end
@@ -110,27 +113,12 @@ class GithubClient
   def self.delegates_to_client(*method_names)
     method_names.each do |method_name|
       define_method(method_name) do |*args, **kwargs, &block|
-        return client.public_send(method_name, *args, &block) if kwargs.empty?
-
         client.public_send(method_name, *args, **kwargs, &block)
       end
     end
   end
 
-  delegates_to_client :repository,
-    :tree,
-    :search_code,
-    :search_issues,
-    :pull_request,
-    :issue,
-    :add_comment,
-    :update_comment,
-    :ref,
-    :commit,
-    :create_ref,
-    :delete_ref,
-    :pull_requests,
-    :request_pull_request_review
+  delegates_to_client(*PASS_THROUGH_METHODS)
 
   attr_reader :client, :health_endpoint
 
@@ -424,7 +412,7 @@ class GithubClient
     failed = []
 
     labels.each do |label|
-      handle_errors { client.remove_label(repo, number, label) }
+      client.remove_label(repo, number, label)
       removed << label
     rescue Error => e
       failed << { label: label, error: e.message }
@@ -1718,7 +1706,7 @@ class GithubClient
 
     @token = new_token
     @cache_token_digest = nil
-    @client = build_client(new_token)
+    @client.__setobj__(build_octokit_client(new_token))
     configure_middleware
 
     Rails.logger.info(
@@ -1737,12 +1725,16 @@ class GithubClient
 
   def build_client(token)
     ErrorHandlingClient.new(
-      Octokit::Client.new(
-        access_token: token,
-        auto_paginate: false,
-        **@client_options
-      ),
+      build_octokit_client(token),
       error_handler: ->(&block) { handle_errors(&block) }
+    )
+  end
+
+  def build_octokit_client(token)
+    Octokit::Client.new(
+      access_token: token,
+      auto_paginate: false,
+      **@client_options
     )
   end
 
