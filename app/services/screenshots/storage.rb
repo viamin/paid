@@ -9,10 +9,11 @@ module Screenshots
   # Files are organized by: screenshots/{org}/{repo}/pr-{number}/{commit_sha}/{route_name}.{ext}
   #
   # S3 client construction, bucket/region/credential resolution, and the generic
-  # upload / signed-URL / delete operations are delegated to the shared
-  # {ArtifactStorage} module so every durable artifact type reuses one storage
-  # abstraction. This class keeps the screenshot-specific key layout and the
-  # before/after listing logic.
+  # upload / signed-URL / delete operations live on the shared {ArtifactStorage}
+  # module so every durable artifact type reuses one storage abstraction. This
+  # class keeps the screenshot-specific key layout, the before/after listing
+  # logic, and the convenience upload helpers that wrap `ArtifactStorage` with
+  # the screenshot-specific key and content-type contract.
   #
   # @example Upload a screenshot
   #   storage = Screenshots::Storage.new
@@ -37,15 +38,6 @@ module Screenshots
   # @spec ARTIFACT-STORAGE-003
   class Storage
     class StorageError < StandardError; end
-
-    # Storage/client configuration is delegated to {ArtifactStorage}. These
-    # constants are aliased so historical references
-    # (`Screenshots::Storage::MAX_URL_TTL`, etc.) keep resolving.
-    DEFAULT_BUCKET = ArtifactStorage::DEFAULT_BUCKET
-    DEFAULT_REGION = ArtifactStorage::DEFAULT_REGION
-    # AWS SigV4 presigned S3 URLs cannot exceed one week.
-    MAX_URL_TTL = ArtifactStorage::MAX_URL_TTL
-    DEFAULT_URL_TTL = ArtifactStorage::DEFAULT_URL_TTL
 
     DEFAULT_RETENTION_DAYS = 30
     PNG_CONTENT_TYPE = "image/png"
@@ -76,25 +68,6 @@ module Screenshots
 
     # The shared artifact storage backend that owns S3 client construction.
     attr_reader :artifact_storage
-
-    # The S3 bucket screenshots and traces share. Exposed so sibling services
-    # (e.g. {Previews::TraceViewer}) can address the same bucket.
-    def bucket
-      @artifact_storage.bucket
-    end
-
-    # The AWS region for the configured bucket.
-    def region
-      @artifact_storage.region
-    end
-
-    # Underlying S3 client, delegated to {ArtifactStorage}. Exposed so sibling
-    # services that operate on the shared bucket (trace existence checks, trace
-    # uploads) can reuse it instead of constructing a second, potentially
-    # divergent client.
-    def s3_client
-      @artifact_storage.client
-    end
 
     # Uploads a PNG screenshot to S3 and returns a presigned URL.
     #
@@ -140,7 +113,7 @@ module Screenshots
       key = artifact_key(org:, repo:, pr_number:, commit_sha:, route_name:, extension: resolved_extension)
 
       put_object(file_path:, key:, content_type:)
-      signed_url(key)
+      @artifact_storage.signed_url(key)
     rescue Aws::S3::Errors::ServiceError => e
       raise StorageError, "S3 upload failed: #{e.message}"
     end
@@ -150,7 +123,12 @@ module Screenshots
     # read from a captured file.
     # @spec PAGE-LOAD-EXPORT-001
     def upload_document(key:, body:, content_type: "application/json")
-      s3_client.put_object(bucket: bucket, key: key, body: body, content_type: content_type)
+      @artifact_storage.client.put_object(
+        bucket: @artifact_storage.bucket,
+        key: key,
+        body: body,
+        content_type: content_type
+      )
       key
     rescue Aws::S3::Errors::ServiceError => e
       raise StorageError, "S3 document upload failed: #{e.message}"
@@ -159,7 +137,7 @@ module Screenshots
     def upload_trace(file_path:, org:, repo:, pr_number:, commit_sha:)
       key = trace_object_key(org:, repo:, pr_number:, commit_sha:)
       put_object(file_path:, key:, content_type: "application/zip")
-      signed_url(key)
+      @artifact_storage.signed_url(key)
     rescue Aws::S3::Errors::ServiceError => e
       raise StorageError, "S3 trace upload failed: #{e.message}"
     end
@@ -167,17 +145,9 @@ module Screenshots
     def upload_video(file_path:, org:, repo:, pr_number:, commit_sha:)
       key = video_object_key(org:, repo:, pr_number:, commit_sha:)
       put_object(file_path:, key:, content_type: "video/webm")
-      signed_url(key)
+      @artifact_storage.signed_url(key)
     rescue Aws::S3::Errors::ServiceError => e
       raise StorageError, "S3 video upload failed: #{e.message}"
-    end
-
-    # Generates a signed URL for an existing S3 object.
-    #
-    # @param key [String] S3 object key
-    # @return [String] Presigned GET URL
-    def signed_url(key)
-      @artifact_storage.signed_url(key)
     end
 
     # Returns signed URLs for the most recent previous commit's screenshots,
@@ -192,7 +162,7 @@ module Screenshots
       prefix = "screenshots/#{org}/#{repo}/pr-#{pr_number}/"
       commits = Hash.new { |h, k| h[k] = [] }
 
-      s3_client.list_objects_v2(bucket: bucket, prefix: prefix).each_page do |page|
+      @artifact_storage.client.list_objects_v2(bucket: @artifact_storage.bucket, prefix: prefix).each_page do |page|
         page.contents.each do |obj|
           next unless obj.key.end_with?(".png")
 
@@ -213,7 +183,7 @@ module Screenshots
         next unless obj.key.end_with?(".png")
 
         route_name = File.basename(obj.key, ".png")
-        result[route_name] = signed_url(obj.key)
+        result[route_name] = @artifact_storage.signed_url(obj.key)
       end
     rescue Aws::S3::Errors::ServiceError
       {}
@@ -237,7 +207,7 @@ module Screenshots
       allowed_extensions = Array(extensions).map(&:downcase)
       commits = Hash.new { |h, k| h[k] = [] }
 
-      s3_client.list_objects_v2(bucket: bucket, prefix: prefix).each_page do |page|
+      @artifact_storage.client.list_objects_v2(bucket: @artifact_storage.bucket, prefix: prefix).each_page do |page|
         page.contents.each do |obj|
           parts = obj.key.delete_prefix(prefix).split("/", 2)
           next unless parts.size == 2
@@ -260,7 +230,7 @@ module Screenshots
 
         route_name = File.basename(obj.key, ext)
         format = ext.delete_prefix(".").to_sym
-        grouped[route_name][format] = signed_url(obj.key)
+        grouped[route_name][format] = @artifact_storage.signed_url(obj.key)
       end
 
       grouped
@@ -285,12 +255,14 @@ module Screenshots
     def cleanup_old_screenshots(retention_days: DEFAULT_RETENTION_DAYS)
       cutoff = retention_days.days.ago
       deleted_count = 0
+      client = @artifact_storage.client
+      bucket = @artifact_storage.bucket
 
-      s3_client.list_objects_v2(bucket: bucket, prefix: "screenshots/").each_page do |page|
+      client.list_objects_v2(bucket: bucket, prefix: "screenshots/").each_page do |page|
         old_objects = page.contents.select { |obj| obj.last_modified < cutoff }
         next if old_objects.empty?
 
-        s3_client.delete_objects(
+        client.delete_objects(
           bucket: bucket,
           delete: { objects: old_objects.map { |obj| { key: obj.key } } }
         )
@@ -298,17 +270,6 @@ module Screenshots
       end
 
       deleted_count
-    end
-
-    # Returns whether storage is properly configured.
-    #
-    # @return [Boolean]
-    def self.configured?
-      ArtifactStorage.configured?
-    end
-
-    def configured?
-      @artifact_storage.configured?
     end
 
     # Builds the S3 object key for a screenshot.
@@ -342,8 +303,8 @@ module Screenshots
 
     def put_object(file_path:, key:, content_type:)
       File.open(file_path, "rb") do |file|
-        s3_client.put_object(
-          bucket: bucket,
+        @artifact_storage.client.put_object(
+          bucket: @artifact_storage.bucket,
           key: key,
           body: file,
           content_type: content_type

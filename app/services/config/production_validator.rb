@@ -89,7 +89,7 @@ module Config
           workspace_writable: workspace_writable?(Rails.application.config.x.workspace_root.to_s),
           container_backend: ENV.fetch("CONTAINER_BACKEND", "local"),
           docker_socket_present: ENV["DOCKER_HOST"].present? || File.exist?(DEFAULT_DOCKER_SOCKET),
-          screenshots_configured: Screenshots::Storage.configured?,
+          screenshots_configured: ArtifactStorage.configured?,
           infrastructure_limit_errors: Capacity::InfrastructureLimits.production_errors(env: ENV),
           logger: logger
         )

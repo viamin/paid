@@ -36,26 +36,21 @@ RSpec.describe Screenshots::Storage, :no_db do
 
   describe "delegation to the shared ArtifactStorage module" do
     # @spec ARTIFACT-STORAGE-003
-    it "exposes the shared S3 client instead of constructing its own" do
+    it "composes an ArtifactStorage that owns the S3 client" do
       shared_client = Aws::S3::Client.new(stub_responses: true)
       storage = described_class.new(bucket: "shared-bucket", region: "us-west-2")
 
       allow(storage.artifact_storage).to receive(:client).and_return(shared_client)
 
-      expect(storage.s3_client).to be(shared_client)
       expect(storage.artifact_storage).to be_an(ArtifactStorage)
+      expect(storage.artifact_storage.client).to be(shared_client)
     end
 
     it "shares bucket and region resolution with ArtifactStorage" do
       storage = described_class.new(bucket: "shared-bucket", region: "us-west-2")
 
-      expect(storage.bucket).to eq("shared-bucket")
-      expect(storage.region).to eq("us-west-2")
-      expect(storage.bucket).to eq(storage.artifact_storage.bucket)
-    end
-
-    it "class-level configured? mirrors ArtifactStorage.configured?" do
-      expect(described_class.configured?).to eq(ArtifactStorage.configured?)
+      expect(storage.artifact_storage.bucket).to eq("shared-bucket")
+      expect(storage.artifact_storage.region).to eq("us-west-2")
     end
   end
 
@@ -113,7 +108,7 @@ RSpec.describe Screenshots::Storage, :no_db do
       file.rewind
 
       s3_client.stub_responses(:put_object, {})
-      allow(storage).to receive(:signed_url).and_return("https://example.test/uploaded.png?X-Amz-Signature=123")
+      allow(storage.artifact_storage).to receive(:signed_url).and_return("https://example.test/uploaded.png?X-Amz-Signature=123")
 
       url = storage.upload(
         file_path: file.path,
@@ -125,7 +120,7 @@ RSpec.describe Screenshots::Storage, :no_db do
       )
 
       expect(url).to eq("https://example.test/uploaded.png?X-Amz-Signature=123")
-      expect(storage).to have_received(:signed_url).with("screenshots/acme/web/pr-42/abc1234/dashboard.png")
+      expect(storage.artifact_storage).to have_received(:signed_url).with("screenshots/acme/web/pr-42/abc1234/dashboard.png")
     ensure
       file.close
       file.unlink
@@ -159,7 +154,7 @@ RSpec.describe Screenshots::Storage, :no_db do
       file.rewind
 
       s3_client.stub_responses(:put_object, {})
-      allow(storage).to receive(:signed_url).and_return("https://example.test/uploaded.png?X-Amz-Signature=123")
+      allow(storage.artifact_storage).to receive(:signed_url).and_return("https://example.test/uploaded.png?X-Amz-Signature=123")
 
       url = storage.upload(
         file_path: file.path,
@@ -177,29 +172,10 @@ RSpec.describe Screenshots::Storage, :no_db do
     end
   end
 
-  describe "#signed_url" do
-    it "delegates to the shared artifact storage with the configured URL TTL" do
-      presigner = instance_double(Aws::S3::Presigner)
-      storage = described_class.new(bucket: "test-bucket", region: "us-east-1", url_ttl: 1234)
-
-      allow(storage.artifact_storage).to receive_messages(client: s3_client, presigner: presigner)
-      allow(presigner).to receive(:presigned_url).and_return("https://example.test/screenshot.png")
-
-      storage.signed_url("screenshots/acme/web/pr-42/abc1234/dashboard.png")
-
-      expect(presigner).to have_received(:presigned_url).with(
-        :get_object,
-        bucket: "test-bucket",
-        key: "screenshots/acme/web/pr-42/abc1234/dashboard.png",
-        expires_in: 1234
-      )
-    end
-  end
-
   describe "#upload_trace" do
     it "uploads a trace archive and returns a presigned URL" do
       allow(storage).to receive(:put_object)
-      allow(storage).to receive(:signed_url).and_return("https://example.test/trace.zip?X-Amz-Signature=abc")
+      allow(storage.artifact_storage).to receive(:signed_url).and_return("https://example.test/trace.zip?X-Amz-Signature=abc")
 
       trace_tempfile do |file|
         expect(
@@ -218,7 +194,7 @@ RSpec.describe Screenshots::Storage, :no_db do
   describe "#upload_video" do
     it "uploads a session video and returns a presigned URL" do
       allow(storage).to receive(:put_object)
-      allow(storage).to receive(:signed_url).and_return("https://example.test/capture.webm?X-Amz-Signature=xyz")
+      allow(storage.artifact_storage).to receive(:signed_url).and_return("https://example.test/capture.webm?X-Amz-Signature=xyz")
 
       video_tempfile do |file|
         expect(
@@ -245,7 +221,7 @@ RSpec.describe Screenshots::Storage, :no_db do
         ],
         is_truncated: false
       })
-      allow(storage).to receive(:signed_url) do |key|
+      allow(storage.artifact_storage).to receive(:signed_url) do |key|
         "https://example.test/#{File.basename(key)}?X-Amz-Signature=123"
       end
 
@@ -264,7 +240,7 @@ RSpec.describe Screenshots::Storage, :no_db do
         ],
         is_truncated: false
       })
-      allow(storage).to receive(:signed_url) do |key|
+      allow(storage.artifact_storage).to receive(:signed_url) do |key|
         "https://example.test/#{File.basename(key)}?X-Amz-Signature=123"
       end
 
@@ -283,7 +259,7 @@ RSpec.describe Screenshots::Storage, :no_db do
         ],
         is_truncated: false
       })
-      allow(storage).to receive(:signed_url) do |key|
+      allow(storage.artifact_storage).to receive(:signed_url) do |key|
         "https://example.test/#{File.basename(key)}?X-Amz-Signature=123"
       end
 
@@ -315,7 +291,7 @@ RSpec.describe Screenshots::Storage, :no_db do
         ],
         is_truncated: false
       })
-      allow(storage).to receive(:signed_url) { |key| "https://example.test/#{File.basename(key)}" }
+      allow(storage.artifact_storage).to receive(:signed_url) { |key| "https://example.test/#{File.basename(key)}" }
 
       expect(storage.previous_screenshots(org: "acme", repo: "web", pr_number: 42, exclude_sha: "current"))
         .to eq({ "dashboard" => "https://example.test/dashboard.png" })
@@ -376,42 +352,6 @@ RSpec.describe Screenshots::Storage, :no_db do
     end
   end
 
-  describe "#configured?" do
-    it "mirrors the shared artifact storage configuration check" do
-      expect(storage.configured?).to eq(storage.artifact_storage.configured?)
-    end
-  end
-
-  describe ".configured?" do
-    around do |example|
-      original_env = ENV.to_h.slice(
-        "SCREENSHOTS_S3_ACCESS_KEY_ID",
-        "SCREENSHOTS_S3_SECRET_ACCESS_KEY",
-        "SCREENSHOTS_S3_URL_TTL"
-      )
-      example.run
-    ensure
-      %w[SCREENSHOTS_S3_ACCESS_KEY_ID SCREENSHOTS_S3_SECRET_ACCESS_KEY SCREENSHOTS_S3_URL_TTL].each do |key|
-        original_env.key?(key) ? ENV[key] = original_env[key] : ENV.delete(key)
-      end
-    end
-
-    it "checks only credentials and ignores unrelated URL TTL settings" do
-      ENV["SCREENSHOTS_S3_ACCESS_KEY_ID"] = "AKIA..."
-      ENV["SCREENSHOTS_S3_SECRET_ACCESS_KEY"] = "secret"
-      ENV["SCREENSHOTS_S3_URL_TTL"] = (described_class::MAX_URL_TTL + 1).to_s
-
-      expect(described_class.configured?).to be(true)
-    end
-  end
-
-  describe "default URL TTL configuration" do
-    it "delegates TTL resolution to the shared artifact storage" do
-      expect(described_class::MAX_URL_TTL).to eq(ArtifactStorage::MAX_URL_TTL)
-      expect(described_class::DEFAULT_URL_TTL).to eq(ArtifactStorage::DEFAULT_URL_TTL)
-    end
-  end
-
   describe "#artifact_key" do
     it "builds the correct S3 key path for a GIF artifact" do
       key = storage.artifact_key(
@@ -467,7 +407,7 @@ RSpec.describe Screenshots::Storage, :no_db do
     end
 
     it "uploads a GIF file with the correct content type and returns a presigned URL" do
-      allow(storage).to receive(:signed_url).and_return("https://example.test/dashboard.gif?X-Amz-Signature=123")
+      allow(storage.artifact_storage).to receive(:signed_url).and_return("https://example.test/dashboard.gif?X-Amz-Signature=123")
 
       url = storage.upload_artifact(
         file_path: gif_file.path,
@@ -483,7 +423,7 @@ RSpec.describe Screenshots::Storage, :no_db do
     end
 
     it "uploads a WebM file with the correct content type" do
-      allow(storage).to receive(:signed_url).and_return("https://example.test/dashboard.webm?X-Amz-Signature=123")
+      allow(storage.artifact_storage).to receive(:signed_url).and_return("https://example.test/dashboard.webm?X-Amz-Signature=123")
 
       url = storage.upload_artifact(
         file_path: webm_file.path,
@@ -517,7 +457,7 @@ RSpec.describe Screenshots::Storage, :no_db do
     end
 
     it "honors an explicit extension override when storing the artifact" do
-      allow(storage).to receive(:signed_url).and_return("https://example.test/dashboard.gif?X-Amz-Signature=123")
+      allow(storage.artifact_storage).to receive(:signed_url).and_return("https://example.test/dashboard.gif?X-Amz-Signature=123")
 
       storage.upload_artifact(
         file_path: webm_file.path,
@@ -559,7 +499,7 @@ RSpec.describe Screenshots::Storage, :no_db do
         ],
         is_truncated: false
       })
-      allow(storage).to receive(:signed_url) do |key|
+      allow(storage.artifact_storage).to receive(:signed_url) do |key|
         "https://example.test/#{File.basename(key)}?X-Amz-Signature=123"
       end
 
@@ -599,7 +539,7 @@ RSpec.describe Screenshots::Storage, :no_db do
         ],
         is_truncated: false
       })
-      allow(storage).to receive(:signed_url) do |key|
+      allow(storage.artifact_storage).to receive(:signed_url) do |key|
         "https://example.test/#{File.basename(key)}?X-Amz-Signature=123"
       end
 

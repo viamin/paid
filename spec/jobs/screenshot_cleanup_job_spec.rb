@@ -8,7 +8,8 @@ RSpec.describe ScreenshotCleanupJob do
       let(:storage) { instance_double(Screenshots::Storage) }
 
       before do
-        allow(Screenshots::Storage).to receive_messages(configured?: true, new: storage)
+        allow(ArtifactStorage).to receive_messages(configured?: true)
+        allow(Screenshots::Storage).to receive(:new).and_return(storage)
         allow(storage).to receive(:cleanup_old_screenshots).and_return(5)
       end
 
@@ -41,7 +42,7 @@ RSpec.describe ScreenshotCleanupJob do
 
     context "when storage is not configured" do
       before do
-        allow(Screenshots::Storage).to receive(:configured?).and_return(false)
+        allow(ArtifactStorage).to receive(:configured?).and_return(false)
       end
 
       it "skips cleanup" do
@@ -57,7 +58,8 @@ RSpec.describe ScreenshotCleanupJob do
     let(:storage) { instance_double(Screenshots::Storage, cleanup_old_screenshots: 0) }
 
     before do
-      allow(Screenshots::Storage).to receive_messages(configured?: true, new: storage)
+      allow(ArtifactStorage).to receive_messages(configured?: true)
+      allow(Screenshots::Storage).to receive(:new).and_return(storage)
     end
 
     # @spec PAGE-LOAD-LEDGER-004

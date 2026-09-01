@@ -40,7 +40,7 @@ RSpec.describe Screenshots::ContainerCapture do
   let(:storage) { instance_double(Screenshots::Storage) }
 
   before do
-    allow(Screenshots::Storage).to receive(:configured?).and_return(false)
+    allow(ArtifactStorage).to receive(:configured?).and_return(false)
     allow(service).to receive(:with_workspace).and_yield(Dir.mktmpdir("screenshots-spec"))
     allow(Previews::Provision).to receive(:new).and_return(preview_provision)
     allow(Screenshots::PrComment).to receive(:call)
@@ -326,12 +326,13 @@ RSpec.describe Screenshots::ContainerCapture do
       service.instance_variable_set(:@hints, { "home" => { "summary" => "Updated hero" } })
       service.instance_variable_set(:@trace_path, artifacts[:route_trace_path])
       service.instance_variable_set(:@video_path, artifacts[:video_path])
+      allow(ArtifactStorage).to receive_messages(
+        configured?: true
+      )
       allow(Screenshots::Storage).to receive_messages(
-        configured?: true,
         new: storage
       )
       allow(storage).to receive_messages(
-        configured?: true,
         object_key: "screenshots/#{project.owner}/#{project.repo}/pr-#{agent_run.pull_request_number}/#{agent_run.result_commit_sha}/home.png",
         trace_object_key: "screenshots/#{project.owner}/#{project.repo}/pr-#{agent_run.pull_request_number}/#{agent_run.result_commit_sha}/trace.zip",
         video_object_key: "screenshots/#{project.owner}/#{project.repo}/pr-#{agent_run.pull_request_number}/#{agent_run.result_commit_sha}/capture.webm",

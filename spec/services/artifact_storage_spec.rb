@@ -44,10 +44,6 @@ RSpec.describe ArtifactStorage, :no_db do
     end
   end
 
-  it "aliases s3_client to client for backward compatibility" do
-    expect(store.s3_client).to be(store.client)
-  end
-
   describe "#bucket and #region" do
     it "uses the constructor overrides" do
       store = described_class.new(bucket: "my-bucket", region: "eu-west-1")

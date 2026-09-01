@@ -274,7 +274,7 @@ RSpec.describe Config::ProductionValidator do
       allow(Capacity::InfrastructureLimits).to receive(:production_errors).and_return([])
       allow(Rails.application.config.x).to receive(:workspace_root).and_return(writable_dir)
       allow(Rails.application.credentials).to receive(:dig).with(:qdrant, :api_key).and_return(nil)
-      allow(Screenshots::Storage).to receive(:configured?).and_return(true)
+      allow(ArtifactStorage).to receive(:configured?).and_return(true)
     end
 
     it "builds a passing validator from resolved environment values" do

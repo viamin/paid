@@ -8,7 +8,7 @@ RSpec.describe PageLoadPerformance::ExportLedger do
   let(:uploaded) { {} }
 
   before do
-    allow(Screenshots::Storage).to receive(:configured?).and_return(true)
+    allow(ArtifactStorage).to receive(:configured?).and_return(true)
     allow(storage).to receive(:upload_document) do |key:, body:, **|
       uploaded[key] = body
       "https://s3.example.com/#{key}"
@@ -87,7 +87,7 @@ RSpec.describe PageLoadPerformance::ExportLedger do
 
   # @spec PAGE-LOAD-EXPORT-003
   it "skips the export when object storage is not configured" do
-    allow(Screenshots::Storage).to receive(:configured?).and_return(false)
+    allow(ArtifactStorage).to receive(:configured?).and_return(false)
     measurement
 
     expect(described_class.call(project: project, storage: nil)).to be_nil

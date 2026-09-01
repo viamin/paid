@@ -335,7 +335,7 @@ module Screenshots
 
     def publish_result!(screenshot_paths)
       return [] if screenshot_paths.empty?
-      return [] unless Screenshots::Storage.configured?
+      return [] unless ArtifactStorage.configured?
 
       storage = Screenshots::Storage.new
       uploaded = screenshot_paths.map { |path| upload_screenshot(storage, path) }

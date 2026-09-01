@@ -69,7 +69,7 @@ namespace :screenshots do
       next
     end
 
-    if Screenshots::Storage.configured?
+    if ArtifactStorage.configured?
       begin
         Screenshots::Publish.call(
           github_client: github_client,
@@ -159,7 +159,7 @@ namespace :screenshots do
 
     cleaned = false
 
-    if Screenshots::Storage.configured?
+    if ArtifactStorage.configured?
       Screenshots::Storage.new.delete_pr_screenshots(org: owner, repo: name, pr_number: pr_number)
       cleaned = true
     end
