@@ -28,9 +28,6 @@ application.register("chat-session-list", ChatSessionListController)
 import ChatStreamController from "./chat_stream_controller"
 application.register("chat-stream", ChatStreamController)
 
-import CheckboxToggleController from "./checkbox_toggle_controller"
-application.register("checkbox-toggle", CheckboxToggleController)
-
 import ClarifyingQuestionsController from "./clarifying_questions_controller"
 application.register("clarifying-questions", ClarifyingQuestionsController)
 
