@@ -4,6 +4,7 @@ module Knowledge
   class Search
     # @spec KNOWLEDGE-003
     # @spec KNOWLEDGE-005
+    # @spec KNOWLEDGE-CURATED-002
     MODES = %w[exact semantic hybrid].freeze
     DEFAULT_MODE = "hybrid"
     DEFAULT_LIMIT = 20
@@ -76,6 +77,7 @@ module Knowledge
     def strip_internal_fields(results)
       results.map do |result|
         result.except(:status, :link_count, :created_at)
+          .merge(curated: KnowledgeArtifact.curated_type?(result[:artifact_type]))
       end
     end
 

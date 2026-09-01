@@ -128,6 +128,27 @@ RSpec.describe Knowledge::Search do
         expect(result[:results].first).not_to have_key(:link_count)
         expect(result[:results].first).not_to have_key(:created_at)
       end
+
+      # @spec KNOWLEDGE-CURATED-002
+      it "tags derived results as not curated" do
+        result = described_class.call(project: project, query: "POST /api/users", mode: "exact")
+
+        expect(result[:results].first[:curated]).to be(false)
+      end
+
+      it "tags curated results as curated" do
+        curated_artifact = create(:knowledge_artifact,
+          project: project, collector_run: collector_run,
+          artifact_type: "decision_record", identifier: "Use JWT for auth",
+          content: "decision")
+        create(:knowledge_chunk,
+          knowledge_artifact: curated_artifact, project: project,
+          chunk_type: "definition", content: "We chose JWT for authentication.")
+
+        result = described_class.call(project: project, query: "Use JWT for auth", mode: "exact")
+
+        expect(result[:results].first[:curated]).to be(true)
+      end
     end
 
     context "with semantic mode" do
