@@ -18,19 +18,14 @@ module Knowledge
       end
 
       def findings
-        used_types = used_artifact_types
-        return [] if used_types.blank?
-
-        candidate_types = active_artifact_types - used_types
-        results = candidate_types.sort.map do |type|
+        candidate_types = active_artifact_types - used_artifact_types
+        candidate_types.sort.map do |type|
           build_finding(
             target_type: "ArtifactType",
             target_id: type,
             detail: "no retrieval usage in the last #{(Time.current - @since).round / 1.day} days"
           )
         end
-
-        results
       end
 
       private

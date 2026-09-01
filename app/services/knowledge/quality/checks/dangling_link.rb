@@ -17,12 +17,11 @@ module Knowledge
 
         link_scope = KnowledgeLink
           .joins(source_chunk: :knowledge_artifact)
+          .joins("LEFT JOIN knowledge_chunks target_chunks ON target_chunks.id = knowledge_links.target_chunk_id")
           .where(knowledge_artifacts: { project_id: project.id })
+          .where("target_chunks.id IS NULL OR target_chunks.status = ?", "deleted")
 
         link_scope.find_each(batch_size: 200) do |link|
-          target = KnowledgeChunk.find_by(id: link.target_chunk_id)
-          next if target && target.status != "deleted"
-
           results << build_finding(
             target_type: "KnowledgeLink",
             target_id: link.id,

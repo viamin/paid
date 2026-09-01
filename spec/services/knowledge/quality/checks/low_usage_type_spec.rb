@@ -21,6 +21,15 @@ RSpec.describe Knowledge::Quality::Checks::LowUsageType do
     expect(findings.map { |f| f[:target_id] }).to include("schema")
   end
 
+  it "flags every active artifact type when the project has no usage stats at all" do
+    collector_run = create(:collector_run, :completed, project_version: project_version, collector_type: "schema")
+    create(:knowledge_artifact, project: project, collector_run: collector_run,
+      artifact_type: "schema", status: "active")
+
+    findings = described_class.new(project: project).findings
+    expect(findings.map { |f| f[:target_id] }).to contain_exactly("schema")
+  end
+
   it "does not flag artifact types with active usage in the window" do
     run = create(:agent_run, :completed, project: project)
     create(:knowledge_usage_stat, agent_run: run, project: project,
