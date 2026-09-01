@@ -51,7 +51,7 @@ RSpec.describe "Project page header layout", :js, system_driver: :paid_cuprite, 
   end
 
   def settled_document_overflow
-    page.document.synchronize do
+    page.document.synchronize(errors: [ Capybara::ExpectationNotMet ]) do
       overflow = document_overflow
       return overflow if overflow <= 4
 
