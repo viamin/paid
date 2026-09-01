@@ -23,26 +23,42 @@ module Knowledge
 
       def call
         existing = AgentRunSessionSummary.find_by(agent_run: agent_run)
-        return ensure_knowledge_artifact!(existing) if existing
+        return repair_existing_summary!(existing) if existing
 
         result = Llm::GenerateSessionSummary.call(agent_run: agent_run)
         return nil unless result
 
-        summary = create_summary(result)
-        track_tokens(result.response)
-        record_llm_output_metric(summary)
-        Knowledge::SessionSummaries::SyncKnowledgeArtifact.call(session_summary: summary)
-        summary
+        persist_summary!(result)
       rescue ActiveRecord::RecordNotUnique
         # A concurrent capture won the insert race. Repair any missing
-        # knowledge artifact on the winner's row before returning so a
-        # swallowed SyncKnowledgeArtifact failure in the other job doesn't
-        # leave the summary permanently non-searchable.
+        # bookkeeping on the winner's row before returning so a swallowed
+        # follow-up failure in the other job doesn't leave the summary
+        # permanently undercounted or non-searchable.
         existing_after_race = AgentRunSessionSummary.find_by(agent_run: agent_run)
-        existing_after_race && ensure_knowledge_artifact!(existing_after_race)
+        existing_after_race && repair_existing_summary!(existing_after_race)
       end
 
       private
+
+      def repair_existing_summary!(summary)
+        ensure_knowledge_artifact!(summary)
+        record_llm_output_metric(summary)
+        summary
+      end
+
+      def persist_summary!(result)
+        AgentRunSessionSummary.transaction do
+          summary = create_summary(result)
+          finalize_summary!(summary, response: result.response)
+        end
+      end
+
+      def finalize_summary!(summary, response:)
+        track_tokens(response)
+        record_llm_output_metric(summary)
+        Knowledge::SessionSummaries::SyncKnowledgeArtifact.call(session_summary: summary)
+        summary
+      end
 
       def ensure_knowledge_artifact!(summary)
         return summary if knowledge_artifact_exists_for?(summary)
@@ -81,7 +97,7 @@ module Knowledge
         return unless response.respond_to?(:tokens) && response.tokens
 
         TokenUsageTracker.track(
-          tracked_run: agent_run,
+          tracked_run: agent_run.reload,
           usage: {
             tokens_input: response.respond_to?(:input_tokens) ? response.input_tokens.to_i : 0,
             tokens_output: response.respond_to?(:output_tokens) ? response.output_tokens.to_i : 0,
