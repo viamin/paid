@@ -154,6 +154,7 @@ RSpec.describe Api::KnowledgeSearchController, type: :request do
   end
 
   describe "GET /api/knowledge/resolve" do
+    # @spec KNOWLEDGE-URI-002
     it "resolves a chunk URI" do
       uri = chunk.knowledge_uri
 
@@ -168,6 +169,21 @@ RSpec.describe Api::KnowledgeSearchController, type: :request do
 
     it "resolves an artifact URI" do
       uri = artifact.knowledge_uri
+
+      get "/api/knowledge/resolve", params: { uri: uri }
+
+      expect(response).to have_http_status(:ok)
+      body = response.parsed_body
+      expect(body["kind"]).to eq("artifact")
+      expect(body["uri"]).to eq(uri)
+      expect(body["artifact_id"]).to eq(artifact.id)
+    end
+
+    # @spec KNOWLEDGE-URI-002
+    it "preserves a commit-pinned artifact uri in the response" do
+      project_version.update!(commit_sha: "abc123def456")
+      artifact.update!(status: "stale")
+      uri = artifact.versioned_knowledge_uri
 
       get "/api/knowledge/resolve", params: { uri: uri }
 

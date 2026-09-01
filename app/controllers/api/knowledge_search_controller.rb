@@ -57,12 +57,12 @@ module Api
       record = Knowledge::Uri::Resolver.call(parsed, project: @project)
       return render json: { error: "Not found" }, status: :not_found unless record
 
-      render json: serialize_resolved(record)
+      render json: serialize_resolved(record, parsed:)
     end
 
     private
 
-    def serialize_resolved(record)
+    def serialize_resolved(record, parsed:)
       case record
       when KnowledgeChunk
         {
@@ -72,7 +72,7 @@ module Api
         }
       when KnowledgeArtifact
         {
-          kind: "artifact", uri: record.knowledge_uri, artifact_id: record.id,
+          kind: "artifact", uri: record.knowledge_uri(commit_sha: parsed.commit_sha), artifact_id: record.id,
           artifact_type: record.artifact_type, identifier: record.identifier,
           scope_path: record.scope_path, status: record.status
         }
