@@ -3,7 +3,7 @@
 require "rails_helper"
 require "ostruct"
 
-# @spec GH-LABELS-001 @spec GH-LABELS-002 @spec GH-LABELS-003 @spec GH-LABELS-004 @spec GH-LABELS-005
+# @spec GH-LABELS-001 @spec GH-LABELS-002 @spec GH-LABELS-003 @spec GH-LABELS-004 @spec GH-LABELS-005 @spec GH-LABELS-007
 RSpec.describe Projects::EnsureStandardLabels do
   let(:github_client) { instance_double(GithubClient) }
   let(:github_token_stub) { Struct.new(:client).new(github_client) }
@@ -349,6 +349,146 @@ RSpec.describe Projects::EnsureStandardLabels do
 
         expect(result.created).to include("needs-review")
         expect(result.created).not_to include("paid-recommend-close")
+      end
+    end
+
+    # @spec GH-LABELS-007
+    context "when configured label names collide with a fixed category label" do
+      let(:project) do
+        project_class.new(
+          id: 1,
+          full_name: "test-owner/test-repo",
+          owner: "test-owner",
+          repo: "test-repo",
+          github_token: github_token_stub,
+          generated_label_name: "paid-auto-merged",
+          automation_label_name: "paid-automation",
+          enhance_issue_needs_input_label_name: "paid-needs-input",
+          enhance_issue_enhanced_label_name: "paid-enhanced",
+          effective_priority_labels: { "P1" => "P1", "P2" => "P2", "P3" => "P3" },
+          effective_auto_pick_skip_labels: AutoPickSkipLabels::DEFAULTS,
+          label_mappings: {}
+        )
+      end
+
+      before do
+        allow(github_client).to receive(:labels).with("test-owner/test-repo").and_return([])
+        allow(github_client).to receive(:create_label)
+        allow(github_client).to receive(:update_label)
+      end
+
+      it "records a collision error naming every category that claims the label" do
+        result = described_class.call(project: project)
+
+        expect(result.errors).to include(
+          a_hash_including(
+            name: "paid-auto-merged",
+            error: match(/paid-auto-merged.*generated_label_name.*PAID_AUTO_MERGED_LABEL/m)
+          )
+        )
+        expect(result.any_errors?).to be true
+      end
+
+      it "does not create or reconcile the colliding label" do
+        result = described_class.call(project: project)
+
+        expect(result.created).not_to include("paid-auto-merged")
+        expect(result.reconciled.map { |r| r[:name] }).not_to include("paid-auto-merged")
+        expect(github_client).not_to have_received(:create_label)
+          .with(anything, hash_including(name: "paid-auto-merged"))
+        expect(github_client).not_to have_received(:update_label)
+          .with(anything, "paid-auto-merged", any_args)
+      end
+
+      it "still provisions every non-colliding canonical label" do
+        result = described_class.call(project: project)
+
+        expect(result.created).to include("paid-automation", "paid-paused", "P1", "P2")
+      end
+    end
+
+    # @spec GH-LABELS-007
+    context "when a configured label name collides with another configured label case-insensitively" do
+      let(:project) do
+        project_class.new(
+          id: 1,
+          full_name: "test-owner/test-repo",
+          owner: "test-owner",
+          repo: "test-repo",
+          github_token: github_token_stub,
+          generated_label_name: "Shared-Label",
+          automation_label_name: "paid-automation",
+          enhance_issue_needs_input_label_name: "paid-needs-input",
+          enhance_issue_enhanced_label_name: "shared-label",
+          effective_priority_labels: { "P1" => "P1", "P2" => "P2", "P3" => "P3" },
+          effective_auto_pick_skip_labels: AutoPickSkipLabels::DEFAULTS,
+          label_mappings: {}
+        )
+      end
+
+      before do
+        allow(github_client).to receive(:labels).with("test-owner/test-repo").and_return([])
+        allow(github_client).to receive(:create_label)
+        allow(github_client).to receive(:update_label)
+      end
+
+      it "records a collision error naming both configurable categories" do
+        result = described_class.call(project: project)
+
+        collision = result.errors.find { |e| e[:name].casecmp?("shared-label") }
+        expect(collision).not_to be_nil
+        expect(collision[:error]).to match(/shared-label.*generated_label_name.*enhance_issue_enhanced_label_name/im)
+      end
+
+      it "does not PATCH the shared label into whichever definition ran last" do
+        described_class.call(project: project)
+
+        expect(github_client).not_to have_received(:create_label)
+          .with(anything, hash_including(name: "shared-label"))
+        expect(github_client).not_to have_received(:create_label)
+          .with(anything, hash_including(name: "Shared-Label"))
+      end
+    end
+
+    # @spec GH-LABELS-007
+    context "when two priority tiers map to the same label name" do
+      let(:project) do
+        project_class.new(
+          id: 1,
+          full_name: "test-owner/test-repo",
+          owner: "test-owner",
+          repo: "test-repo",
+          github_token: github_token_stub,
+          generated_label_name: "paid-generated",
+          automation_label_name: "paid-automation",
+          enhance_issue_needs_input_label_name: "paid-needs-input",
+          enhance_issue_enhanced_label_name: "paid-enhanced",
+          effective_priority_labels: { "P1" => "shared", "P2" => "shared", "P3" => "P3" },
+          effective_auto_pick_skip_labels: AutoPickSkipLabels::DEFAULTS,
+          label_mappings: {}
+        )
+      end
+
+      before do
+        allow(github_client).to receive(:labels).with("test-owner/test-repo").and_return([])
+        allow(github_client).to receive(:create_label)
+        allow(github_client).to receive(:update_label)
+      end
+
+      it "records a collision error naming both priority tiers" do
+        result = described_class.call(project: project)
+
+        collision = result.errors.find { |e| e[:name] == "shared" }
+        expect(collision).not_to be_nil
+        expect(collision[:error]).to match(/priority_label\[P1\].*priority_label\[P2\]/i)
+      end
+
+      it "does not create or reconcile the colliding label" do
+        result = described_class.call(project: project)
+
+        expect(result.created).not_to include("shared")
+        expect(github_client).not_to have_received(:create_label)
+          .with(anything, hash_including(name: "shared"))
       end
     end
 

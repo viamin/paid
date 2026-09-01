@@ -67,3 +67,20 @@
   `app/services/pull_requests/unblock.rb`.
   *Test:* `spec/models/issue_spec.rb`, `spec/services/pull_requests/unblock_spec.rb`,
   `spec/temporal/activities/mark_escalated_activity_spec.rb`.
+
+- [x] **GH-LABELS-007** — `EnsureStandardLabels` SHALL detect label-name
+  collisions across the canonical categories (case-insensitively) before
+  making any GitHub API call, record one actionable `Result#errors` entry
+  per colliding name listing every category that claims it, and SHALL NOT
+  create or reconcile the colliding label (so the later definition cannot
+  silently overwrite the earlier definition's color/description). Detection
+  covers configured-vs-configured, configured-vs-fixed, configured-vs-TDD,
+  configured-vs-auto-pick-skip, configured-vs-priority, and
+  within-category duplicates such as two priority tiers mapping to the
+  same name.
+  *Code:* `app/services/projects/ensure_standard_labels.rb#call`,
+  `app/services/projects/ensure_standard_labels.rb#detect_label_collisions`.
+  *Test:* `spec/services/projects/ensure_standard_labels_spec.rb`
+  ("configured label name collides with a fixed category label",
+  "case-insensitive configured name collision",
+  "two priority tiers map to the same label name").

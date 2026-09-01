@@ -8,7 +8,7 @@ module Projects
   # GitHub label with a Paid behavioral consequence — see
   # docs/intent/github-label-provisioning/ for the full inventory and design.
   #
-  # @spec GH-LABELS-001 @spec GH-LABELS-002 @spec GH-LABELS-004
+  # @spec GH-LABELS-001 @spec GH-LABELS-002 @spec GH-LABELS-004 @spec GH-LABELS-007
   #
   # Each definition in {LABEL_DEFINITIONS} carries a `kind` that distinguishes
   # three categories of GitHub label (@spec GH-LABELS-003):
@@ -114,6 +114,15 @@ module Projects
       client = github_client
       repo = project.full_name
 
+      expected = expected_labels
+
+      # Detect cross-category name collisions before any GitHub call.
+      # Processing the same GitHub label twice would let the later
+      # definition's reconcile_divergence silently PATCH the shared label
+      # into whichever color/description ran last, masking a project
+      # misconfiguration as success (@spec GH-LABELS-007).
+      colliding_names = detect_label_collisions(expected)
+
       remote_labels = fetch_remote_labels(client, repo)
       remote_by_name = remote_labels.each_with_object({}) do |label, h|
         h[label.name.downcase] = label
@@ -122,9 +131,11 @@ module Projects
       created = []
       existing = []
       reconciled = []
-      errors = []
+      errors = colliding_names.flat_map { |c| c[:errors] }
 
-      expected_labels.each do |expected|
+      expected.each do |expected|
+        next if colliding_names.any? { |c| c[:name].casecmp?(expected[:name]) }
+
         remote = remote_by_name[expected[:name].downcase]
 
         if remote.nil?
@@ -159,17 +170,23 @@ module Projects
       ]
     end
 
-    def label_entry(name, key)
+    # Each entry returned from the builders below carries the category
+    # identifier it was resolved from, so {detect_label_collisions} can
+    # produce an actionable error that names both claims on a colliding
+    # label rather than a generic "duplicate" message.
+    def label_entry(name, key, category:)
       definition = LABEL_DEFINITIONS.fetch(key)
-      { name: name, color: definition[:color], description: definition[:description] }
+      { name: name, color: definition[:color], description: definition[:description], category: category }
     end
 
     def configurable_labels
       [
-        label_entry(project.generated_label_name, :generated),
-        label_entry(project.automation_label_name, :automation),
-        label_entry(project.enhance_issue_needs_input_label_name, :enhance_issue_needs_input),
-        label_entry(project.enhance_issue_enhanced_label_name, :enhance_issue_enhanced)
+        label_entry(project.generated_label_name, :generated, category: "generated_label_name"),
+        label_entry(project.automation_label_name, :automation, category: "automation_label_name"),
+        label_entry(project.enhance_issue_needs_input_label_name, :enhance_issue_needs_input,
+          category: "enhance_issue_needs_input_label_name"),
+        label_entry(project.enhance_issue_enhanced_label_name, :enhance_issue_enhanced,
+          category: "enhance_issue_enhanced_label_name")
       ]
     end
 
@@ -179,7 +196,7 @@ module Projects
     def recommend_close_label
       name = project.label_for_stage("recommend_close") ||
         Activities::HandleNoOutputIssueRunActivity::PAID_RECOMMEND_CLOSE_LABEL
-      [ label_entry(name, :recommend_close) ]
+      [ label_entry(name, :recommend_close, category: "recommend_close_label_mapping") ]
     end
 
     # Hard-coded control/status labels (@spec GH-LABELS-006 for escalation).
@@ -188,14 +205,20 @@ module Projects
     # is the single place their color/description are declared.
     def fixed_control_labels
       [
-        label_entry(Issue::PAUSED_LABEL, :paused),
-        label_entry(Issue::ESCALATED_LABEL, :escalated),
-        label_entry(Issue::DISMISS_ESCALATION_LABEL, :dismiss_escalation),
-        label_entry(Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL, :skip_auto_merge),
-        label_entry(Activities::MergePullRequestActivity::PAID_AUTO_MERGED_LABEL, :auto_merged),
-        label_entry(DependabotAutoMergeJob::PAID_AUTO_MERGED_LABEL, :auto_merged_dependabot),
-        label_entry(AutoReleaseEvaluationJob::PAID_AUTO_RELEASED_LABEL, :auto_released),
-        label_entry(Models::FileModelHealthIssue::LABEL, :model_health)
+        label_entry(Issue::PAUSED_LABEL, :paused, category: "Issue::PAUSED_LABEL"),
+        label_entry(Issue::ESCALATED_LABEL, :escalated, category: "Issue::ESCALATED_LABEL"),
+        label_entry(Issue::DISMISS_ESCALATION_LABEL, :dismiss_escalation,
+          category: "Issue::DISMISS_ESCALATION_LABEL"),
+        label_entry(Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL, :skip_auto_merge,
+          category: "Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL"),
+        label_entry(Activities::MergePullRequestActivity::PAID_AUTO_MERGED_LABEL, :auto_merged,
+          category: "Activities::MergePullRequestActivity::PAID_AUTO_MERGED_LABEL"),
+        label_entry(DependabotAutoMergeJob::PAID_AUTO_MERGED_LABEL, :auto_merged_dependabot,
+          category: "DependabotAutoMergeJob::PAID_AUTO_MERGED_LABEL"),
+        label_entry(AutoReleaseEvaluationJob::PAID_AUTO_RELEASED_LABEL, :auto_released,
+          category: "AutoReleaseEvaluationJob::PAID_AUTO_RELEASED_LABEL"),
+        label_entry(Models::FileModelHealthIssue::LABEL, :model_health,
+          category: "Models::FileModelHealthIssue::LABEL")
       ]
     end
 
@@ -205,7 +228,8 @@ module Projects
     def tdd_labels
       %i[tdd_test_review tdd_tests_approved tdd_test_changes_requested].map do |key|
         definition = LABEL_DEFINITIONS.fetch(key)
-        { name: definition[:name], color: definition[:color], description: definition[:description] }
+        { name: definition[:name], color: definition[:color], description: definition[:description],
+          category: "TDD test-review label: #{definition[:name]}" }
       end
     end
 
@@ -218,7 +242,8 @@ module Projects
         {
           name: name,
           color: AUTO_PICK_SKIP_LABEL_COLOR,
-          description: AUTO_PICK_SKIP_LABEL_DESCRIPTIONS[name] || AUTO_PICK_SKIP_LABEL_DEFAULT_DESCRIPTION
+          description: AUTO_PICK_SKIP_LABEL_DESCRIPTIONS[name] || AUTO_PICK_SKIP_LABEL_DEFAULT_DESCRIPTION,
+          category: "auto_pick_skip_label"
         }
       end
     end
@@ -229,9 +254,31 @@ module Projects
         {
           name: label_name,
           color: defaults[:color] || "ededed",
-          description: defaults[:description] || "Priority #{tier}"
+          description: defaults[:description] || "Priority #{tier}",
+          category: "priority_label[#{tier}]"
         }
       end
+    end
+
+    # Returns one collision entry per colliding name: {name:, errors:},
+    # where errors is a single {name:, error:} describing every category
+    # that claims the label so the user can rename the misconfigured one.
+    def detect_label_collisions(expected)
+      expected.group_by { |entry| entry[:name].downcase }
+        .select { |_, entries| entries.size > 1 }
+        .map do |_normalized_name, entries|
+          winner_name = entries.first[:name]
+          categories = entries.map { |entry| entry[:category] }
+          {
+            name: winner_name,
+            errors: [ { name: winner_name, error: label_collision_error_message(winner_name, categories) } ]
+          }
+        end
+    end
+
+    def label_collision_error_message(name, categories)
+      "Multiple Paid-owned categories claim the label '#{name}': #{categories.join(', ')}. " \
+        "Rename one of the configured labels so each canonical label has a unique name."
     end
 
     def fetch_remote_labels(client, repo)

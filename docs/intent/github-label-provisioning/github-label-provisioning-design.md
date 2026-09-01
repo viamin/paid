@@ -110,6 +110,29 @@ above are ever created or updated. A repository's unrelated taxonomy labels
 (`bug`, `documentation`, third-party bot labels, etc.) are never inspected
 for divergence and never rewritten, because they never appear in that list.
 
+### Rejecting cross-category name collisions before syncing
+
+`expected_labels` is the union of every category's resolved labels (the four
+configurable columns, `recommend_close`, the eight fixed constants, the
+three TDD labels, the auto-pick skip list, the priority tiers). GitHub
+treats label names case-insensitively for matching, so two categories that
+resolve to the same name (e.g. `generated_label_name == "paid-auto-merged"`,
+a custom priority tier reusing `paid-paused`, two priority tiers pointing
+to the same name) would otherwise be processed twice and the later
+`reconcile_divergence` would PATCH the shared label into whichever
+definition ran last — a silent regression from the previous report-only
+behavior.
+
+To prevent that, `call` groups the expected entries by `name.downcase`
+before any GitHub call: any group with more than one entry becomes one
+`Result#errors` entry that names every category claiming that label, and
+the colliding label is skipped from both creation and reconciliation so
+the misconfiguration has to be fixed at the project level rather than
+being silently overwritten. Cross-category collision detection is a closed
+contract over the same canonical inventory, so a future category added to
+`expected_labels` only has to emit a `category:` in its entry to be
+covered (@spec GH-LABELS-007).
+
 ### Auto-pick skip labels are provisioned, not just matched
 
 `AutoPickSkipLabels::DEFAULTS` (`planning`, `research`, `waiting`,
