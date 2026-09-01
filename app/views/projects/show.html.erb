@@ -100,6 +100,9 @@
 
   <div class="bg-white shadow sm:rounded-lg">
     <div class="px-4 py-5 sm:px-6">
+      <%# Mobile-safe header: wrapping flex containers plus break-words/break-all
+          on the name and URL keep long content from widening the document.
+          (@spec RAILS-CONTROL-PLANE-008, #3538) %>
       <div class="flex flex-wrap items-center justify-between gap-4">
         <div class="min-w-0">
           <h1 class="break-words text-xl font-semibold text-gray-900"><%= @project.name %></h1>

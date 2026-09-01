@@ -23,13 +23,14 @@ RSpec.describe "Project page header layout", :js, system_driver: :paid_cuprite, 
   end
 
   it "does not overflow horizontally on a narrow viewport with the project name, status badge, buttons, and a long GitHub link" do
+    # @spec RAILS-CONTROL-PLANE-008
     project = create(
       :project,
       account: account,
       github_token: github_token,
-      name: "paid-3538-project-page-header-overflows-on-mobile",
-      owner: "a-very-long-organization-name-for-overflow-testing",
-      repo: "an-equally-long-repository-name-for-overflow-testing",
+      name: "paid3538projectpageheaderoverflowsonmobilewithoutseparators",
+      owner: "averylongorganizationnameforoverflowtestingwithoutseparators",
+      repo: "anequallylongrepositorynameforoverflowtestingwithoutseparators",
       active: true
     )
 

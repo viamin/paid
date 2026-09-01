@@ -1,6 +1,11 @@
 # frozen_string_literal: true
 
+# Resolves the Chromium/Chrome binary for Cuprite system specs. Included into
+# `type: :system` examples and callable directly so the driver registration in
+# `spec/support/capybara.rb` and per-spec skip guards resolve the same binary.
 module ChromiumAvailability
+  extend self
+
   CHROMIUM_CANDIDATE_PATHS = %w[
     /usr/bin/chromium
     /usr/bin/chromium-browser
@@ -9,12 +14,15 @@ module ChromiumAvailability
   ].freeze
 
   def chromium_path
-    @chromium_path ||= begin
-      configured = ENV["CHROMIUM_PATH"]
-      return configured if configured.present? && File.executable?(configured)
+    return @chromium_path if defined?(@chromium_path)
 
-      CHROMIUM_CANDIDATE_PATHS.find { |path| File.executable?(path) }
-    end
+    configured = ENV["CHROMIUM_PATH"]
+    @chromium_path =
+      if configured.present? && File.executable?(configured)
+        configured
+      else
+        CHROMIUM_CANDIDATE_PATHS.find { |path| File.executable?(path) }
+      end
   end
 end
 

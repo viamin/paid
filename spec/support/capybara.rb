@@ -2,6 +2,7 @@
 
 require "capybara/cuprite"
 require "capybara/rspec"
+require_relative "chromium_availability"
 
 # Note: this is registered as `:paid_cuprite`, not `:cuprite`, on purpose.
 # Rails' `driven_by(:cuprite)` has a built-in mapping that ignores
@@ -17,7 +18,7 @@ Capybara.register_driver(:paid_cuprite) do |app|
     js_errors: true,
     timeout: 15,
     process_timeout: 60,
-    browser_path: ENV["CHROMIUM_PATH"] || "/usr/bin/chromium",
+    browser_path: ChromiumAvailability.chromium_path || "/usr/bin/chromium",
     browser_options: {
       "no-sandbox": nil,
       "disable-dev-shm-usage": nil,

@@ -52,6 +52,15 @@
   component-layer migration replaces them.
   *Code:* `app/views/projects/agent_runs/show.html.erb`, `app/views/projects/knowledge_recommendations/update.turbo_stream.erb`.
 
+- [x] **RAILS-CONTROL-PLANE-008** — While the project show page renders its
+  header — project name, status badge, action buttons, and external tracker
+  link pills — the control plane SHALL keep the page inside the viewport width
+  on mobile-size screens: the header containers SHALL wrap, and long project
+  names and long external link URLs SHALL break within their flex containers
+  rather than widening the document horizontally.
+  *Tests:* `spec/system/projects/mobile_header_layout_spec.rb`.
+  *Code:* `app/views/projects/show.html.erb` (project header).
+
 - [D] **RAILS-CONTROL-PLANE-005** — When a Phlex migration is approved, the
   control plane SHALL update this segment to replace the ERB-specific claim with
   the new shipped component-layer behavior.
