@@ -55,7 +55,7 @@ export default class extends Controller {
 
     document.documentElement.classList.toggle("dark", dark)
     window.localStorage.setItem("theme_preference", preference)
-    window.dispatchEvent(new CustomEvent("theme:changed", { detail: { preference, dark } }))
+    window.dispatchEvent(new window.CustomEvent("theme:changed", { detail: { preference, dark } }))
 
     this.syncSettingsFormSelect(preference)
 

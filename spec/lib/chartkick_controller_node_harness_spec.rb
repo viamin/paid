@@ -57,21 +57,22 @@ class ChartkickControllerNodeHarness
         },
         removeEventListener(name, callback) {
           if (listeners[name] === callback) delete listeners[name];
+        },
+        getComputedStyle() {
+          return {
+            getPropertyValue(name) {
+              return {
+                "--dashboard-chart-success": "#4ade80",
+                "--dashboard-chart-annotation-border": "rgb(251 191 36 / 0.45)"
+              }[name] || "";
+            }
+          };
         }
       };
 
       global.document = {
         documentElement: {}
       };
-
-      global.getComputedStyle = () => ({
-        getPropertyValue(name) {
-          return {
-            "--dashboard-chart-success": "#4ade80",
-            "--dashboard-chart-annotation-border": "rgb(251 191 36 / 0.45)"
-          }[name] || "";
-        }
-      });
 
       global.__chartkickStub.charts["chart-1"] = staleChart;
 

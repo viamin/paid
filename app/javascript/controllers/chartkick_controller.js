@@ -63,7 +63,7 @@ export default class extends Controller {
     const match = value.match(/^var\((--[^)]+)\)$/)
     if (!match) return value
 
-    const resolved = getComputedStyle(document.documentElement).getPropertyValue(match[1]).trim()
+    const resolved = window.getComputedStyle(document.documentElement).getPropertyValue(match[1]).trim()
     return resolved || value
   }
 }

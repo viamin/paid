@@ -65,13 +65,12 @@ class ThemeControllerNodeHarness
         },
         dispatchEvent(event) {
           dispatchedEvents.push(event);
-        }
-      };
-
-      global.CustomEvent = class {
-        constructor(type, init = {}) {
-          this.type = type;
-          this.detail = init.detail;
+        },
+        CustomEvent: class {
+          constructor(type, init = {}) {
+            this.type = type;
+            this.detail = init.detail;
+          }
         }
       };
 
