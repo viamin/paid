@@ -13,6 +13,7 @@ module Knowledge
         .count
         .sort_by { |_, count| -count }
       @total_artifacts = @artifact_counts.sum(&:last)
+      @knowledge_map = Knowledge::Map::Build.call(project: @project)
     end
 
     def show
