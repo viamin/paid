@@ -723,6 +723,17 @@ module ApplicationHelper
   # they pass in, otherwise assistive technology cannot associate the
   # `role="tooltip"` content with its trigger and screen reader users who
   # focus the link/span hear no description (see #3517 review feedback).
+  #
+  # `<details>` was kept over the Popover API (also raised in #3517 review
+  # feedback) because positioning a `[popover]` next to its trigger without
+  # JS requires CSS anchor positioning (`anchor-name`/`position-anchor`),
+  # which Safari and Firefox do not yet implement; without it a popover falls
+  # back to viewport-centered placement that doesn't track the trigger any
+  # better than the bug this fixes. `<details>` has no light-dismiss, so on
+  # touch devices the tooltip stays open until the info icon is tapped again
+  # — an accepted tradeoff now that the tooltip is anchored below the trigger
+  # (see the `absolute`/`top-full` positioning below) instead of overlapping
+  # row content.
   def mobile_tooltip_wrapper(inner, tooltip_text, dom_id, aria_label: "Show details")
     return inner if tooltip_text.blank?
 
@@ -743,7 +754,7 @@ module ApplicationHelper
           tooltip_text,
           id: dom_id,
           role: "tooltip",
-          class: "hidden group-open:block group-focus-within:block fixed z-50 w-48 rounded bg-gray-900 px-2 py-1 text-xs text-white shadow-lg"
+          class: "hidden group-open:block group-focus-within:block absolute left-0 top-full mt-1 z-50 w-48 rounded bg-gray-900 px-2 py-1 text-xs text-white shadow-lg"
         )
       ])
     end
