@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "base"
+require_relative "collector_queries"
 
 module Knowledge
   module Quality
@@ -8,14 +9,17 @@ module Knowledge
     # finding. We use the latest per-type so an old transient failure that
     # has since recovered does not pollute the report.
     class Checks::FailedCollector < Checks::Base
+      include Checks::CollectorQueries
+
       code "failed_collector"
       severity "error"
 
-      def findings
-        latest_runs.filter_map do |type, run|
+      def collect_findings(collector)
+        latest_runs.each do |type, run|
           next unless run.status == "failed"
 
-          build_finding(
+          add_finding(
+            collector,
             target_type: "Collector",
             target_id: type,
             detail: "latest run failed: #{run.error_message.to_s.truncate(200)}",
@@ -27,18 +31,7 @@ module Knowledge
       private
 
       def latest_runs
-        @latest_runs ||= latest_runs_by_type
-      end
-
-      def latest_runs_by_type
-        rows = CollectorRun
-          .joins(:project_version)
-          .where(project_versions: { project_id: project.id })
-          .select("DISTINCT ON (collector_runs.collector_type) collector_runs.*")
-          .order(:collector_type, created_at: :desc)
-          .to_a
-
-        rows.index_by(&:collector_type)
+        @latest_runs ||= latest_collector_runs_by_type
       end
     end
   end

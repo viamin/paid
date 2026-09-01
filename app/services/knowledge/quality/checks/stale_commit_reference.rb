@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "base"
+require_relative "collector_queries"
 
 module Knowledge
   module Quality
@@ -9,14 +10,15 @@ module Knowledge
     # still recorded a successful completion); what's stale is the commit SHA
     # it was indexed against. Operators should re-collect to refresh.
     class Checks::StaleCommitReference < Checks::Base
+      include Checks::CollectorQueries
+
       code "stale_commit_reference"
       severity "info"
 
-      def findings
+      def collect_findings(collector)
         latest = latest_project_version
-        return [] unless latest
+        return unless latest
 
-        results = []
         KnowledgeArtifact
           .active
           .for_project(project)
@@ -25,7 +27,8 @@ module Knowledge
           .where.not(collector_runs: { project_version_id: latest.id })
           .find_each(batch_size: 200) do |artifact|
             run = artifact.collector_run
-            results << build_finding(
+            add_finding(
+              collector,
               target_type: "KnowledgeArtifact",
               target_id: artifact.id,
               artifact_type: artifact.artifact_type,
@@ -33,17 +36,6 @@ module Knowledge
                       "HEAD is #{latest.commit_sha&.first(7)}"
             )
           end
-
-        results
-      end
-
-      private
-
-      def latest_project_version
-        @latest_project_version ||= project.project_versions
-          .where.not(committed_at: nil)
-          .order(committed_at: :desc)
-          .first
       end
     end
   end

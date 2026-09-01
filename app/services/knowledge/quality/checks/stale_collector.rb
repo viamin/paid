@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "base"
+require_relative "collector_queries"
 
 module Knowledge
   module Quality
@@ -9,19 +10,22 @@ module Knowledge
     # overdue for that collector; severity is warning because staleness here
     # usually reflects an upstream collection gap, not user-visible drift.
     class Checks::StaleCollector < Checks::Base
+      include Checks::CollectorQueries
+
       code "stale_collector"
       severity "warning"
 
-      def findings
+      def collect_findings(collector)
         latest = latest_project_version
-        return [] unless latest
+        return unless latest
 
-        latest_runs.filter_map do |type, run|
+        latest_runs.each do |type, run|
           next unless run.status == "completed"
           next unless run.project_version&.committed_at
           next unless run.project_version.committed_at < latest.committed_at
 
-          build_finding(
+          add_finding(
+            collector,
             target_type: "Collector",
             target_id: type,
             detail: "latest run indexed at #{run.project_version.commit_sha.first(7)}, " \
@@ -34,23 +38,7 @@ module Knowledge
       private
 
       def latest_runs
-        @latest_runs ||= begin
-          rows = CollectorRun
-            .joins(:project_version)
-            .includes(:project_version)
-            .where(project_versions: { project_id: project.id })
-            .select("DISTINCT ON (collector_runs.collector_type) collector_runs.*")
-            .order(:collector_type, created_at: :desc)
-            .to_a
-          rows.index_by(&:collector_type)
-        end
-      end
-
-      def latest_project_version
-        @latest_project_version ||= project.project_versions
-          .where.not(committed_at: nil)
-          .order(committed_at: :desc)
-          .first
+        @latest_runs ||= latest_collector_runs_by_type
       end
     end
   end

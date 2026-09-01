@@ -21,11 +21,23 @@ RSpec.describe Knowledge::Quality::Checks::StaleScopePath do
     expect(findings).to be_empty
   end
 
+  it "produces zero findings when tracked_files returns an empty set" do
+    create(:knowledge_artifact, project: project, collector_run: collector_run,
+      scope_path: "app/controllers/missing.rb")
+
+    worktree_service = instance_double(WorktreeService, tracked_files: Set.new)
+    allow(WorktreeService).to receive(:new).and_return(worktree_service)
+
+    findings = described_class.new(project: project).findings
+    expect(findings).to be_empty
+  end
+
   it "flags artifacts whose scope_path is not present in HEAD" do
     artifact = create(:knowledge_artifact, project: project, collector_run: collector_run,
       scope_path: "app/controllers/missing.rb")
 
     check = described_class.new(project: project)
+    allow(check).to receive(:tracked_files).and_return(Set["config/routes.rb"])
     allow(check).to receive(:file_exists?).with(artifact.scope_path).and_return(false)
 
     findings = check.findings

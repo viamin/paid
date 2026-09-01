@@ -11,14 +11,15 @@ module Knowledge
       code "never_run_collector"
       severity "warning"
 
-      def findings
+      def collect_findings(collector)
         observed = observed_collector_types
         registered = Knowledge::CollectorRunner.registry.keys.map(&:to_s)
 
-        registered.filter_map do |type|
+        registered.each do |type|
           next if observed.include?(type)
 
-          build_finding(
+          add_finding(
+            collector,
             target_type: "Collector",
             target_id: type,
             detail: "collector type is registered but has no run on this project"

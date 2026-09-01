@@ -73,19 +73,16 @@ module Knowledge
         truncated_checks = []
 
         CHECK_CLASSES.each do |klass|
-          check_findings = safe_findings(klass)
-          if check_findings.size > MAX_FINDINGS_PER_CHECK
-            truncated_checks << { code: klass.code, omitted_count: check_findings.size - MAX_FINDINGS_PER_CHECK }
-            check_findings = check_findings.first(MAX_FINDINGS_PER_CHECK)
-          end
-          findings.concat(check_findings)
+          result = safe_finding_report(klass)
+          findings.concat(result.findings)
+          truncated_checks << { code: klass.code, omitted_count: result.omitted_count } if result.omitted_count.positive?
         end
 
         [ findings, truncated_checks ]
       end
 
-      def safe_findings(klass)
-        klass.new(project: project).findings
+      def safe_finding_report(klass)
+        klass.new(project: project).finding_report(max: MAX_FINDINGS_PER_CHECK)
       rescue StandardError => e
         Rails.logger.warn(
           message: "knowledge.quality.lint.check_failed",
@@ -94,7 +91,7 @@ module Knowledge
           error_class: e.class.name,
           error: e.message
         )
-        []
+        Checks::Base::Result.new(findings: [], omitted_count: 0)
       end
 
       def summarize(findings)

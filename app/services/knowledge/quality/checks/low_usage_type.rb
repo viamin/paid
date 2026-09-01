@@ -17,10 +17,11 @@ module Knowledge
         @since = since
       end
 
-      def findings
+      def collect_findings(collector)
         candidate_types = active_artifact_types - used_artifact_types
-        candidate_types.sort.map do |type|
-          build_finding(
+        candidate_types.sort.each do |type|
+          add_finding(
+            collector,
             target_type: "ArtifactType",
             target_id: type,
             detail: "no retrieval usage in the last #{(Time.current - @since).round / 1.day} days"

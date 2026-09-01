@@ -11,23 +11,21 @@ module Knowledge
       code "orphaned_artifact"
       severity "warning"
 
-      def findings
-        results = []
-        results.concat(zero_chunk_findings)
-        results.concat(all_deleted_chunk_findings)
-        results
+      def collect_findings(collector)
+        zero_chunk_findings(collector)
+        all_deleted_chunk_findings(collector)
       end
 
       private
 
-      def zero_chunk_findings
+      def zero_chunk_findings(collector)
         KnowledgeArtifact
           .active
           .for_project(project)
           .where.missing(:knowledge_chunks)
-          .find_each(batch_size: 200)
-          .map do |artifact|
-            build_finding(
+          .find_each(batch_size: 200) do |artifact|
+            add_finding(
+              collector,
               target_type: "KnowledgeArtifact",
               target_id: artifact.id,
               artifact_type: artifact.artifact_type,
@@ -36,7 +34,7 @@ module Knowledge
           end
       end
 
-      def all_deleted_chunk_findings
+      def all_deleted_chunk_findings(collector)
         KnowledgeArtifact
           .active
           .for_project(project)
@@ -45,9 +43,9 @@ module Knowledge
           .having(
             "COUNT(*) = SUM(CASE WHEN knowledge_chunks.status = 'deleted' THEN 1 ELSE 0 END)"
           )
-          .find_each(batch_size: 200)
-          .map do |artifact|
-            build_finding(
+          .find_each(batch_size: 200) do |artifact|
+            add_finding(
+              collector,
               target_type: "KnowledgeArtifact",
               target_id: artifact.id,
               artifact_type: artifact.artifact_type,

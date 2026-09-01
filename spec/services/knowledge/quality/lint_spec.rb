@@ -75,6 +75,7 @@ RSpec.describe Knowledge::Quality::Lint do
         artifact_type: "route", scope_path: "app/controllers/missing_controller.rb", status: "active")
 
       check = Knowledge::Quality::Checks::StaleScopePath.new(project: project)
+      allow(check).to receive(:tracked_files).and_return(Set["config/routes.rb"])
       allow(check).to receive(:file_exists?) do |scope_path|
         scope_path != "app/controllers/missing_controller.rb"
       end

@@ -13,8 +13,7 @@ module Knowledge
       code "fully_redacted_artifact"
       severity "warning"
 
-      def findings
-        results = []
+      def collect_findings(collector)
         KnowledgeArtifact
           .active
           .for_project(project)
@@ -24,15 +23,14 @@ module Knowledge
             "COUNT(*) = SUM(CASE WHEN knowledge_chunks.status = 'redacted' THEN 1 ELSE 0 END)"
           )
           .find_each(batch_size: 200) do |artifact|
-            results << build_finding(
+            add_finding(
+              collector,
               target_type: "KnowledgeArtifact",
               target_id: artifact.id,
               artifact_type: artifact.artifact_type,
               detail: "all chunks have status redacted"
             )
           end
-
-        results
       end
     end
   end

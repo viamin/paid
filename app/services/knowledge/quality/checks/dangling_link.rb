@@ -12,9 +12,7 @@ module Knowledge
       code "dangling_link"
       severity "warning"
 
-      def findings
-        results = []
-
+      def collect_findings(collector)
         link_scope = KnowledgeLink
           .joins(source_chunk: :knowledge_artifact)
           .joins("LEFT JOIN knowledge_chunks target_chunks ON target_chunks.id = knowledge_links.target_chunk_id")
@@ -22,15 +20,14 @@ module Knowledge
           .where("target_chunks.id IS NULL OR target_chunks.status = ?", "deleted")
 
         link_scope.find_each(batch_size: 200) do |link|
-          results << build_finding(
+          add_finding(
+            collector,
             target_type: "KnowledgeLink",
             target_id: link.id,
             detail: "link #{link.link_type} target_chunk=#{link.target_chunk_id} missing or deleted",
             extra: { source_chunk_id: link.source_chunk_id, target_chunk_id: link.target_chunk_id }
           )
         end
-
-        results
       end
     end
   end

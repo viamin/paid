@@ -13,8 +13,8 @@ module Knowledge
       code "stale_scope_path"
       severity "warning"
 
-      def findings
-        results = []
+      def collect_findings(collector)
+        return if tracked_files.empty?
 
         KnowledgeArtifact
           .active
@@ -23,16 +23,15 @@ module Knowledge
           .find_each(batch_size: 200) do |artifact|
             next if file_exists?(artifact.scope_path)
 
-            results << build_finding(
+            add_finding(
+              collector,
               target_type: "KnowledgeArtifact",
               target_id: artifact.id,
               artifact_type: artifact.artifact_type,
               detail: "scope_path '#{artifact.scope_path}' not found in HEAD"
             )
           end
-
-        results
-      rescue WorktreeService::Error, StandardError => e
+      rescue WorktreeService::Error => e
         Rails.logger.debug(
           message: "knowledge.quality.stale_scope_path.skipped",
           project_id: project.id,

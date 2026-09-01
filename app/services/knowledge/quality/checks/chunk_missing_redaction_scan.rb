@@ -13,23 +13,21 @@ module Knowledge
       code "chunk_missing_redaction_scan"
       severity "info"
 
-      def findings
-        results = []
+      def collect_findings(collector)
         KnowledgeChunk
           .active
           .for_project(project)
           .includes(:knowledge_artifact)
           .where(redaction_scanned_at: nil)
           .find_each(batch_size: 200) do |chunk|
-            results << build_finding(
+            add_finding(
+              collector,
               target_type: "KnowledgeChunk",
               target_id: chunk.id,
               artifact_type: chunk.knowledge_artifact&.artifact_type,
               detail: "active chunk has not been scanned for sensitive content"
             )
           end
-
-        results
       end
     end
   end
