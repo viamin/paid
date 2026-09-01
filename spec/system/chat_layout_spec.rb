@@ -36,16 +36,6 @@ RSpec.describe "Chat page layout", :js, system_driver: :paid_cuprite, type: :sys
     expect(metrics.fetch("transcriptShare")).to be >= 0.45
   end
 
-  def chromium_path
-    @chromium_path ||= begin
-      configured = ENV["CHROMIUM_PATH"]
-      return configured if configured.present? && File.executable?(configured)
-
-      %w[/usr/bin/chromium /usr/bin/chromium-browser /usr/bin/google-chrome /usr/bin/google-chrome-stable]
-        .find { |path| File.executable?(path) }
-    end
-  end
-
   def create_mobile_workspace_chat
     chat_session = create(
       :chat_session,
