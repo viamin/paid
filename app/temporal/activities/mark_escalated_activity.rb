@@ -167,24 +167,30 @@ module Activities
       )
     end
 
-    # The paid-escalated write path cannot assume prior manual setup or a
-    # best-effort create-time sync. If the canonical label catalog cannot be
-    # reconciled now, bail out before mutating either GitHub or local phase
-    # state so the PR never looks escalated locally without a dismissible
-    # control label on GitHub.
+    # This activity only writes paid-escalated and paid-ready (removing the
+    # latter). An unrelated catalog problem elsewhere — e.g. a colliding
+    # priority label or a stale paid-auto-released description the sync
+    # can't update — must not block every escalation; only bail out when the
+    # labels this activity actually touches failed to sync, so the PR never
+    # looks escalated locally without a dismissible control label on GitHub.
     # @spec GH-LABELS-005
+    ESCALATION_DEPENDENT_LABELS = [ PAID_ESCALATED_LABEL, MarkPrReadyActivity::PAID_READY_LABEL ].freeze
+
     def ensure_standard_labels(project, issue)
       result = Projects::EnsureStandardLabels.call(project: project)
       return true unless result.any_errors?
+
+      blocking_errors = result.errors.select { |error| ESCALATION_DEPENDENT_LABELS.include?(error[:name]) }
 
       logger.warn(
         message: "pr_review.escalation_label_sync_failed",
         project_id: project.id,
         issue_id: issue.id,
         pr_number: issue.github_number,
-        failed_labels: result.errors.map { |error| error[:name] }
+        failed_labels: result.errors.map { |error| error[:name] },
+        blocking: blocking_errors.any?
       )
-      false
+      blocking_errors.empty?
     end
 
     def remove_ready_label(client, project, issue)

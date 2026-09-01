@@ -13,9 +13,25 @@
   `dismiss_escalation`, `skip_auto_merge`, `auto_merged`,
   `auto_merged_dependabot`, `auto_released`, `paid_ready`, `model_health`,
   the three TDD gate labels, the priority tiers, and the project's effective
-  auto-pick skip labels — creating any that are missing.
-  *Code:* `app/services/projects/ensure_standard_labels.rb#expected_labels`.
-  *Test:* `spec/services/projects/ensure_standard_labels_spec.rb`.
+  auto-pick skip labels — creating any that are missing. Runtime write paths
+  that apply one of these status labels after their primary GitHub action
+  succeeds (`MarkPrReadyActivity`, `MergePullRequestActivity`,
+  `DependabotAutoMergeJob`, `AutoReleaseEvaluationJob`) SHALL call
+  `EnsureStandardLabels.call_best_effort` immediately before the label
+  write, so a repo that never went through the manual sync button or the
+  project-create bootstrap still gets the label created on first use
+  instead of silently 404ing.
+  *Code:* `app/services/projects/ensure_standard_labels.rb#expected_labels`,
+  `app/services/projects/ensure_standard_labels.rb#call_best_effort`,
+  `app/temporal/activities/mark_pr_ready_activity.rb`,
+  `app/temporal/activities/merge_pull_request_activity.rb#add_auto_merge_label`,
+  `app/jobs/dependabot_auto_merge_job.rb#add_label`,
+  `app/jobs/auto_release_evaluation_job.rb#add_label`.
+  *Test:* `spec/services/projects/ensure_standard_labels_spec.rb`,
+  `spec/temporal/activities/mark_pr_ready_activity_spec.rb`,
+  `spec/temporal/activities/merge_pull_request_activity_spec.rb`,
+  `spec/jobs/dependabot_auto_merge_job_spec.rb`,
+  `spec/jobs/auto_release_evaluation_job_spec.rb`.
 
 - [x] **GH-LABELS-002** — When an existing Paid-owned label's color or
   description diverges from its canonical definition, `EnsureStandardLabels`
@@ -54,13 +70,18 @@
   partial result, and a failed per-label create or reconcile (403) SHALL be
   recorded in `Result#errors` so `Result#any_errors?` lets a caller detect
   the failure before depending on the label existing. Runtime call sites that
-  need a specific control label to exist before mutating local state SHALL bail
-  out when `Result#any_errors?` is true rather than claiming the state change
-  succeeded locally without a matching GitHub label.
+  need a specific control label to exist before mutating local state SHALL
+  bail out only when `Result#errors` includes one of the labels that call
+  site actually depends on, not on any unrelated catalog error — an
+  unrelated failure (e.g. a colliding priority tier, or a stale label the
+  sync couldn't update) must not block a transition whose own control label
+  is confirmed present and writable.
   *Code:* `app/services/projects/ensure_standard_labels.rb`,
-  `app/temporal/activities/mark_escalated_activity.rb`.
+  `app/temporal/activities/mark_escalated_activity.rb#ensure_standard_labels`.
   *Test:* `spec/services/projects/ensure_standard_labels_spec.rb`,
-  `spec/temporal/activities/mark_escalated_activity_spec.rb`.
+  `spec/temporal/activities/mark_escalated_activity_spec.rb`
+  ("when ensuring standard labels reports errors",
+  "when ensuring standard labels reports errors unrelated to escalation").
 
 - [x] **GH-LABELS-006** — The escalation control labels
   (`paid-escalated`, `paid-dismiss-escalation`) SHALL be defined exactly

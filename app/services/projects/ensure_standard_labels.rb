@@ -113,6 +113,25 @@ module Projects
       new(...).call
     end
 
+    # Best-effort variant for runtime write paths that apply a single status
+    # label (paid-ready, paid-auto-merged, paid-auto-merged-dependabot,
+    # paid-auto-released) after their primary action already succeeded. A
+    # labels-list failure (e.g. insufficient permissions) must not fail the
+    # calling job/activity — it already logs its own warning when the
+    # subsequent label write 404s, so this only exists to make that write
+    # succeed on a repo that never went through manual sync or the
+    # create-time bootstrap (@spec GH-LABELS-001).
+    def self.call_best_effort(project:, logger: Rails.logger)
+      call(project: project)
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "github_sync.ensure_standard_labels_best_effort_failed",
+        project_id: project.id,
+        error: e.message
+      )
+      nil
+    end
+
     def call
       client = github_client
       repo = project.full_name

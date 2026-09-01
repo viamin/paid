@@ -647,6 +647,31 @@ RSpec.describe Projects::EnsureStandardLabels do
     end
   end
 
+  describe ".call_best_effort" do
+    # @spec GH-LABELS-001
+    it "delegates to .call and returns its result" do
+      allow(github_client).to receive(:labels).with("test-owner/test-repo").and_return([])
+      allow(github_client).to receive(:create_label)
+
+      result = described_class.call_best_effort(project: project)
+
+      expect(result).to be_a(described_class::Result)
+      expect(github_client).to have_received(:labels).with("test-owner/test-repo")
+    end
+
+    # @spec GH-LABELS-001
+    it "rescues a labels-list failure and logs a warning instead of raising" do
+      allow(github_client).to receive(:labels).with("test-owner/test-repo")
+        .and_raise(GithubClient::ApiError.new("Forbidden", status: 403))
+      logger = instance_double(Logger, warn: nil)
+
+      result = described_class.call_best_effort(project: project, logger: logger)
+
+      expect(result).to be_nil
+      expect(logger).to have_received(:warn).with(hash_including(project_id: project.id))
+    end
+  end
+
   describe "Result#notice_message" do
     it "summarizes created, existing, and reconciled labels" do
       result = described_class::Result.new(

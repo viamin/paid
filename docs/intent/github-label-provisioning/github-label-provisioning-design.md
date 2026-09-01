@@ -176,28 +176,48 @@ the behavioral consequence exists regardless of who created the label or why.
 
 ### Provisioning trigger points
 
-Full-catalog provisioning happens at the same two points it always has:
+Full-catalog provisioning happens at the two points it always has —
 automatically, best-effort, when a project is connected
 (`ProjectsController#ensure_labels_best_effort`, called from both project
 creation paths), and on demand via the "Sync Labels" action
-(`ProjectsController#ensure_labels`). This segment does not add a
-per-write "ensure it exists" guard to every individual label-writing call
-site (escalation, auto-merge, release automation, etc.) — GitHub's API
-returning a 404 on an unrecognized label is a real but rare failure mode
-once the full catalog exists, and duplicating a list-labels-and-create
-round trip into every write call site would trade a rare, cheaply-recovered
-failure for a GitHub API call on every automation write. Two narrow
-exceptions stay in place:
+(`ProjectsController#ensure_labels`) — plus a per-write guard immediately
+before every runtime call site that applies one of the four labels added to
+the catalog by this segment (`paid-ready`, `paid-auto-merged`,
+`paid-auto-merged-dependabot`, `paid-auto-released`). Without that guard, a
+repo that never went through project creation or a manual "Sync Labels"
+click (e.g. one connected before this segment shipped) could still 404 the
+first time one of these labels was applied — the two bootstrap points are
+each best-effort and neither is guaranteed to have run. `EnsureStandardLabels`
+already lists the full remote label set on every call, so a repeat sync
+after the first successful one is a single cheap GET with no further writes;
+that cost is what makes a per-write guard viable here where it wasn't
+before the full catalog existed.
 
+- `EnsureStandardLabels.call_best_effort(project:, logger:)` wraps `.call` and
+  swallows a `GithubClient::Error` (logging a warning) instead of raising, so
+  a labels-list failure never fails the calling job/activity. It is called
+  from `MarkPrReadyActivity`, `MergePullRequestActivity#add_auto_merge_label`,
+  `DependabotAutoMergeJob#add_label`, and `AutoReleaseEvaluationJob#add_label`
+  immediately before each one's own `add_labels_to_issue`/`add_labels` call.
+  These are all `:status` labels applied *after* the primary action (mark
+  ready, merge) already succeeded, so the guard is deliberately best-effort:
+  a sync failure must not undo or block work that already happened on
+  GitHub, only reduce the odds that the follow-up label write 404s.
 - `FileModelHealthIssue` calls `create_label` defensively immediately before
   filing a model-health issue, because that label is filed by a background
   job with no "Sync Labels" UI trigger in its path.
-- `MarkEscalatedActivity` calls `Projects::EnsureStandardLabels` and bails out
-  if the sync reports any errors before it writes `paid-escalated` remotely
-  or flips `Issue#pr_review_phase` locally. Escalation is a control-state
-  transition whose recovery instructions explicitly depend on the label's
-  presence on GitHub, so claiming the local phase without a remotely
-  dismissible label would violate the user-visible contract. Only the sync
+- `MarkEscalatedActivity` calls `Projects::EnsureStandardLabels.call` and
+  bails out before writing `paid-escalated` remotely or flipping
+  `Issue#pr_review_phase` locally — but only when the sync's `Result#errors`
+  includes one of the two labels this transition actually depends on
+  (`paid-escalated`, `paid-ready`), not any unrelated catalog error. An
+  unrelated failure (a colliding priority tier, a stale `paid-auto-released`
+  description the sync couldn't update) must not block every escalation when
+  the labels this transition actually needs are confirmed present and
+  writable. Escalation is a control-state transition whose recovery
+  instructions explicitly depend on the label's presence on GitHub, so
+  claiming the local phase without a remotely dismissible label would
+  violate the user-visible contract. Only a blocking-label sync failure
   bails: if the catalog synced cleanly but the subsequent label write itself
   fails transiently, the activity still escalates (the hold must reach the
   owner) and the escalated-phase scan re-applies the missing label, so remote
@@ -218,13 +238,24 @@ exceptions stay in place:
   of duplicating them.
 - `app/temporal/activities/mark_escalated_activity.rb` — fronts the
   `paid-escalated` transition with `EnsureStandardLabels` and aborts the local
-  escalation when provisioning reports errors.
+  escalation only when a label this transition depends on failed to sync.
 - `app/controllers/projects_controller.rb` — `ensure_labels` (manual sync)
   and `ensure_labels_best_effort` (project creation) call sites, unchanged.
+- `app/temporal/activities/mark_pr_ready_activity.rb`,
+  `app/temporal/activities/merge_pull_request_activity.rb`,
+  `app/jobs/dependabot_auto_merge_job.rb`,
+  `app/jobs/auto_release_evaluation_job.rb` — call
+  `EnsureStandardLabels.call_best_effort` immediately before applying
+  `paid-ready`/`paid-auto-merged`/`paid-auto-merged-dependabot`/
+  `paid-auto-released`.
 
 Test: `spec/services/projects/ensure_standard_labels_spec.rb`,
 `spec/services/github_client_spec.rb`,
-`spec/temporal/activities/mark_escalated_activity_spec.rb`.
+`spec/temporal/activities/mark_escalated_activity_spec.rb`,
+`spec/temporal/activities/mark_pr_ready_activity_spec.rb`,
+`spec/temporal/activities/merge_pull_request_activity_spec.rb`,
+`spec/jobs/dependabot_auto_merge_job_spec.rb`,
+`spec/jobs/auto_release_evaluation_job_spec.rb`.
 
 ## What this segment does NOT own
 
@@ -237,5 +268,8 @@ Test: `spec/services/projects/ensure_standard_labels_spec.rb`,
 - The TDD mode configuration and gate behavior — tracked under tdd-mode;
   this segment only owns the three labels' canonical color/description now
   that they live in the same `kind`-tagged catalog as everything else.
-- Per-write existence guards on individual automation call sites (see
-  "Provisioning trigger points" above for the rationale).
+- Per-write existence guards on automation call sites *not* added by this
+  segment's own catalog change (e.g. `paid-escalated`, `paid-paused`,
+  `paid-skip-auto-merge`) — those predate this segment and are out of scope
+  unless a runtime gap is found in them too (see "Provisioning trigger
+  points" above for which four call sites this segment guards).

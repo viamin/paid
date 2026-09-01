@@ -696,6 +696,32 @@ RSpec.describe Activities::MarkEscalatedActivity do
       end
     end
 
+    context "when ensuring standard labels reports errors unrelated to escalation" do
+      let(:issue) do
+        create(:issue, :pull_request,
+          pr_review_phase: "draft")
+      end
+      let(:ensure_labels_result) do
+        instance_double(
+          Projects::EnsureStandardLabels::Result,
+          any_errors?: true,
+          errors: [ { name: "P2", error: "Multiple Paid-owned categories claim the label 'P2'" } ]
+        )
+      end
+
+      before do
+        allow(github_client).to receive(:add_labels_to_issue)
+      end
+
+      # @spec GH-LABELS-005
+      it "still escalates, since paid-escalated and paid-ready are unaffected" do
+        result = activity.execute(issue_id: issue.id)
+
+        expect(result).to eq(updated: true)
+        expect(issue.reload.pr_review_phase).to eq("escalated")
+      end
+    end
+
     context "when comment posting fails" do
       let(:issue) do
         create(:issue, :pull_request,
