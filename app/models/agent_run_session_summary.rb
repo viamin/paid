@@ -28,6 +28,12 @@ class AgentRunSessionSummary < ApplicationRecord
     status == "promoted"
   end
 
+  def linked_change_intent
+    return if change_intent_id.blank?
+
+    ChangeIntent.find_by(id: change_intent_id, project_id: project_id)
+  end
+
   # @spec SESSION-SUMMARY-004
   def promote!(change_intent:, user:)
     with_lock do

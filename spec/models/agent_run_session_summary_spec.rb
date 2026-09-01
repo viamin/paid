@@ -72,6 +72,22 @@ RSpec.describe AgentRunSessionSummary do
     end
   end
 
+  describe "#linked_change_intent" do
+    it "returns the promoted change intent when it still exists" do
+      record = create(:agent_run_session_summary, :promoted)
+
+      expect(record.linked_change_intent).to eq(record.change_intent)
+    end
+
+    it "returns nil after the promoted draft change intent is discarded" do
+      record = create(:agent_run_session_summary, :promoted)
+
+      ChangeIntents::DiscardDraft.call(change_intent: record.change_intent)
+
+      expect(record.reload.linked_change_intent).to be_nil
+    end
+  end
+
   describe "#promote!" do
     it "transitions status and links the change intent and promoting user" do
       record = create(:agent_run_session_summary)
