@@ -3,6 +3,7 @@
 module Knowledge
   class UsageStats
     # @spec KNOWLEDGE-005
+    # @spec KNOWLEDGE-CURATED-005
     attr_reader :project, :since
 
     def initialize(project:, since: 30.days.ago)
@@ -48,6 +49,16 @@ module Knowledge
 
     def usage_by_context_type
       base_scope.group(:context_type).sum(:artifact_count)
+    end
+
+    def usage_by_lane(goal: nil)
+      scope = base_scope
+      scope = scope.by_goal(goal) if goal
+
+      scope.group(:artifact_type).sum(:artifact_count).each_with_object(Hash.new(0)) do |(type, count), lanes|
+        lane = KnowledgeArtifact.curated_type?(type) ? "curated" : "derived"
+        lanes[lane] += count
+      end
     end
 
     private

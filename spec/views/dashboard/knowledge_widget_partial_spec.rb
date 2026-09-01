@@ -38,6 +38,8 @@ RSpec.describe "dashboard/_knowledge_widget", :no_db, type: :view do
       token_usage_summary: [],
       knowledge_usage_summary: [],
       usage_by_goal: [],
+      # @spec KNOWLEDGE-CURATED-005
+      usage_by_lane: { "curated" => 0, "derived" => 0 },
       pipeline_metrics: {
         "embedding" => {
           total_runs: 1,
@@ -80,5 +82,25 @@ RSpec.describe "dashboard/_knowledge_widget", :no_db, type: :view do
     expect(rendered).to include("LLM Pipeline Metrics (Last 30 Days)")
     expect(rendered).to include("Runner")
     expect(rendered).to include("openai")
+  end
+
+  # @spec KNOWLEDGE-CURATED-005
+  it "renders curated and derived usage totals when a lane has usage" do
+    knowledge_stats[:usage_by_lane] = { "curated" => 4, "derived" => 15 }
+
+    render partial: "dashboard/knowledge_widget", locals: { knowledge_stats: knowledge_stats }
+
+    expect(rendered).to include("Knowledge Usage by Lane")
+    expect(rendered).to include("Curated")
+    expect(rendered).to include("Derived")
+    expect(rendered).to include("4")
+    expect(rendered).to include("15")
+  end
+
+  # @spec KNOWLEDGE-CURATED-005
+  it "omits the usage-by-lane section when no knowledge usage is recorded" do
+    render partial: "dashboard/knowledge_widget", locals: { knowledge_stats: knowledge_stats }
+
+    expect(rendered).not_to include("Knowledge Usage by Lane")
   end
 end

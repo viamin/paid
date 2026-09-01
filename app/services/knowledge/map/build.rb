@@ -12,6 +12,7 @@ module Knowledge
     #   Knowledge::Map::Build.call(project: project)
     class Build
       # @spec KNOWLEDGE-009
+      # @spec KNOWLEDGE-CURATED-006
       TOP_SCOPES_LIMIT = 15
       IMPORTED_DOCUMENTS_LIMIT = 10
       BUSINESS_CONTEXT_COLLECTOR_TYPE = "context_intake"
@@ -32,6 +33,7 @@ module Knowledge
           generated_at: Time.current.iso8601,
           latest_commit: latest_commit_info,
           artifact_counts: artifact_counts,
+          lane_counts: lane_counts,
           top_scopes: top_scopes,
           collectors: collector_freshness,
           business_context: business_context_summary,
@@ -64,6 +66,17 @@ module Knowledge
 
         counts.each_with_object(Hash.new { |h, k| h[k] = { active: 0, stale: 0 } }) do |((type, status), count), acc|
           acc[type][status.to_sym] = count
+        end
+      end
+
+      # @spec KNOWLEDGE-CURATED-006
+      def lane_counts
+        artifact_counts.each_with_object(
+          { curated: { active: 0, stale: 0 }, derived: { active: 0, stale: 0 } }
+        ) do |(type, counts), lanes|
+          lane = KnowledgeArtifact.curated_type?(type) ? :curated : :derived
+          lanes[lane][:active] += counts[:active]
+          lanes[lane][:stale] += counts[:stale]
         end
       end
 

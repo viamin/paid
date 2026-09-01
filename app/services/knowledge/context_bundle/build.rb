@@ -21,9 +21,11 @@ module Knowledge
       DEFAULT_TOKEN_BUDGET = 4000
 
       # Section builders in priority order. Curated sources (maintainer
-      # business context, imported documents, OKF bundles) come before derived
-      # collector output.
-      SECTION_ORDER = %i[business_context documents okf routes symbols schema hotspots decisions change_intents stats].freeze
+      # business context, imported documents, OKF bundles, decisions, change
+      # intents) come before derived collector output (routes, symbols,
+      # schema, hotspots, stats).
+      # @spec KNOWLEDGE-CURATED-004
+      SECTION_ORDER = %i[business_context documents okf decisions change_intents routes symbols schema hotspots stats].freeze
 
       attr_reader :issue, :project, :agent_run, :agent_run_id, :token_budget, :section_order
 

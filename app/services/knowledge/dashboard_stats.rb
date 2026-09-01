@@ -2,6 +2,7 @@
 
 module Knowledge
   class DashboardStats
+    # @spec KNOWLEDGE-CURATED-005
     CACHE_TTL = 5.minutes
     PIPELINE_LOOKBACK = 30.days
 
@@ -35,7 +36,8 @@ module Knowledge
         pipeline_metrics: pipeline_metrics,
         token_usage_summary: token_usage_summary,
         knowledge_usage_summary: knowledge_usage_summary,
-        usage_by_goal: usage_by_goal
+        usage_by_goal: usage_by_goal,
+        usage_by_lane: usage_by_lane
       }
     end
 
@@ -133,6 +135,13 @@ module Knowledge
         .group(:goal)
         .sum(:artifact_count)
         .sort_by { |_, v| -v }
+    end
+
+    def usage_by_lane
+      @usage_by_lane ||= knowledge_usage_summary.each_with_object({ "curated" => 0, "derived" => 0 }) do |(type, count), lanes|
+        lane = KnowledgeArtifact.curated_type?(type) ? "curated" : "derived"
+        lanes[lane] += count
+      end
     end
 
     def provider_health_cache_key
