@@ -91,3 +91,22 @@
   ("configured label name collides with a fixed category label",
   "case-insensitive configured name collision",
   "two priority tiers map to the same label name").
+
+- [x] **GH-LABELS-008** — When a label create returns 422,
+  `EnsureStandardLabels` SHALL treat it as a lost create race only after a
+  follow-up single-label fetch confirms the label now exists (recorded in
+  `Result#existing`); an unconfirmed 422 — a validation failure on the name
+  or description, or a verification fetch that itself fails — SHALL be
+  recorded in `Result#errors` so callers that gate on `any_errors?` never
+  proceed without the control label existing. Symmetrically, when a
+  reconcile update returns 404 because another writer deleted the label
+  mid-sync, the failure SHALL be recorded in `Result#errors` rather than
+  aborting the remaining labels' sync.
+  *Code:* `app/services/projects/ensure_standard_labels.rb#create_label`,
+  `app/services/projects/ensure_standard_labels.rb#reconcile_divergence`,
+  `app/services/github_client.rb#label`.
+  *Test:* `spec/services/projects/ensure_standard_labels_spec.rb`
+  ("422 race", "422 create failure is a validation failure",
+  "post-422 verification fetch itself fails",
+  "deleted between fetch and update"),
+  `spec/services/github_client_spec.rb`.

@@ -8,7 +8,7 @@ module Projects
   # GitHub label with a Paid behavioral consequence — see
   # docs/intent/github-label-provisioning/ for the full inventory and design.
   #
-  # @spec GH-LABELS-001 @spec GH-LABELS-002 @spec GH-LABELS-004 @spec GH-LABELS-007
+  # @spec GH-LABELS-001 @spec GH-LABELS-002 @spec GH-LABELS-004 @spec GH-LABELS-007 @spec GH-LABELS-008
   #
   # Each definition in {LABEL_DEFINITIONS} carries a `kind` that distinguishes
   # three categories of GitHub label (@spec GH-LABELS-003):
@@ -143,7 +143,7 @@ module Projects
         remote = remote_by_name[expected[:name].downcase]
 
         if remote.nil?
-          create_label(client, repo, expected, created, errors)
+          create_label(client, repo, expected, created, existing, errors)
         else
           existing << expected[:name]
           reconcile_divergence(client, repo, remote, expected, reconciled, errors)
@@ -317,15 +317,30 @@ module Projects
       raise
     end
 
-    def create_label(client, repo, expected, created, errors)
+    # Creates a missing canonical label. A 422 is treated as a lost create
+    # race only when a follow-up fetch confirms the label now exists —
+    # GitHub also returns 422 for real validation failures (invalid name,
+    # description past the 100-character limit), which must surface in
+    # `errors` so callers never proceed without the control label
+    # (@spec GH-LABELS-008).
+    def create_label(client, repo, expected, created, existing, errors)
       client.create_label(repo, name: expected[:name], color: expected[:color], description: expected[:description])
       created << expected[:name]
     rescue GithubClient::ApiError => e
-      if e.status == 422
-        # Label was created between our fetch and create — treat as existing
-        return
+      if e.status == 422 && fetch_label(client, repo, expected[:name])
+        existing << expected[:name]
+      else
+        errors << { name: expected[:name], error: permission_aware_message(e, "create") }
       end
-      errors << { name: expected[:name], error: permission_aware_message(e, "create") }
+    end
+
+    # Returns the remote label when it exists, nil when it does not or the
+    # verification call itself fails — an unverifiable 422 is never a race
+    # win (@spec GH-LABELS-008).
+    def fetch_label(client, repo, name)
+      client.label(repo, name)
+    rescue GithubClient::NotFoundError, GithubClient::ApiError
+      nil
     end
 
     # Reconciles (rather than only reports) any color/description drift on an
@@ -337,6 +352,14 @@ module Projects
 
       client.update_label(repo, remote.name, color: expected[:color], description: expected[:description])
       reconciled << { name: expected[:name], fields: fields }
+    rescue GithubClient::NotFoundError
+      # Another writer deleted the label between our list and update calls.
+      # Record the loss rather than abort the remaining labels' sync; the
+      # next sync re-creates it.
+      errors << {
+        name: expected[:name],
+        error: "Label '#{expected[:name]}' was deleted during the sync; retry the sync to re-create it."
+      }
     rescue GithubClient::ApiError => e
       errors << { name: expected[:name], error: permission_aware_message(e, "update") }
     end

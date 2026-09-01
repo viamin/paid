@@ -111,6 +111,23 @@ same actionable phrasing used for failed creates, so a caller checking
 best-effort provisioning call at project creation logs it — never treats
 reconciliation failure as success.
 
+### Create failures are verified, not guessed
+
+A 422 from a label create is ambiguous: GitHub returns the same status both
+when another writer created the label between our list and create calls and
+for real validation failures (an invalid custom name, a description past
+GitHub's 100-character limit). `EnsureStandardLabels` therefore never assumes
+the race interpretation from the status code alone — it re-fetches the single
+label (`GithubClient#label`) and records the label in `existing` only when
+that fetch confirms it exists. A 422 whose verification comes back 404, or
+whose verification call itself fails, is recorded in `errors`, so a caller
+gating a control transition on `any_errors?` (e.g. `MarkEscalatedActivity`)
+never proceeds without the label actually existing (@spec GH-LABELS-008).
+The mirror race on the update side — another writer *deleting* the label
+between our list and update calls — surfaces as a 404 on the update; it is
+recorded in `errors` for that one label rather than aborting the remaining
+labels' sync, and the next sync re-creates the label.
+
 ### What stays untouched
 
 `expected_labels` is a closed list: only names resolved from the sources

@@ -3,7 +3,7 @@
 require "rails_helper"
 require "ostruct"
 
-# @spec GH-LABELS-001 @spec GH-LABELS-002 @spec GH-LABELS-003 @spec GH-LABELS-004 @spec GH-LABELS-005 @spec GH-LABELS-007
+# @spec GH-LABELS-001 @spec GH-LABELS-002 @spec GH-LABELS-003 @spec GH-LABELS-004 @spec GH-LABELS-005 @spec GH-LABELS-007 @spec GH-LABELS-008
 RSpec.describe Projects::EnsureStandardLabels do
   let(:github_client) { instance_double(GithubClient) }
   let(:github_token_stub) { Struct.new(:client).new(github_client) }
@@ -228,6 +228,7 @@ RSpec.describe Projects::EnsureStandardLabels do
       end
     end
 
+    # @spec GH-LABELS-008
     context "when a label is created between fetch and create (422 race)" do
       before do
         allow(github_client).to receive(:labels).with("test-owner/test-repo").and_return([])
@@ -236,13 +237,83 @@ RSpec.describe Projects::EnsureStandardLabels do
             raise GithubClient::ApiError.new("Validation Failed", status: 422)
           end
         end
+        allow(github_client).to receive(:label).with("test-owner/test-repo", "P1")
+          .and_return(make_label("P1", color: "d93f0b", description: "High priority"))
       end
 
-      it "treats the 422 as the label already existing" do
+      it "treats a verified 422 as the label already existing" do
         result = described_class.call(project: project)
 
         expect(result.created).not_to include("P1")
+        expect(result.existing).to include("P1")
         expect(result.errors).to be_empty
+      end
+    end
+
+    # @spec GH-LABELS-008
+    context "when a 422 create failure is a validation failure" do
+      before do
+        allow(github_client).to receive(:labels).with("test-owner/test-repo").and_return([])
+        allow(github_client).to receive(:create_label) do |_repo, name:, **|
+          if name == "P1"
+            raise GithubClient::ApiError.new("Validation Failed", status: 422)
+          end
+        end
+        allow(github_client).to receive(:label).with("test-owner/test-repo", "P1")
+          .and_raise(GithubClient::NotFoundError)
+      end
+
+      it "records an error instead of treating the 422 as a race win" do
+        result = described_class.call(project: project)
+
+        expect(result.created).not_to include("P1")
+        expect(result.existing).not_to include("P1")
+        expect(result.errors).to contain_exactly({ name: "P1", error: "Validation Failed" })
+        expect(result.any_errors?).to be true
+      end
+    end
+
+    # @spec GH-LABELS-008
+    context "when the post-422 verification fetch itself fails" do
+      before do
+        allow(github_client).to receive(:labels).with("test-owner/test-repo").and_return([])
+        allow(github_client).to receive(:create_label) do |_repo, name:, **|
+          if name == "P1"
+            raise GithubClient::ApiError.new("Validation Failed", status: 422)
+          end
+        end
+        allow(github_client).to receive(:label).with("test-owner/test-repo", "P1")
+          .and_raise(GithubClient::ApiError.new("Server Error", status: 500))
+      end
+
+      it "records the original failure rather than assuming the label exists" do
+        result = described_class.call(project: project)
+
+        expect(result.existing).not_to include("P1")
+        expect(result.errors).to contain_exactly({ name: "P1", error: "Validation Failed" })
+        expect(result.any_errors?).to be true
+      end
+    end
+
+    context "when a label is deleted between fetch and update (404 race)" do
+      before do
+        labels = expected_definitions.map { |name, attrs| make_label(name, **attrs) }
+        labels.find { |l| l.name == "P1" }.color = "000000"
+        allow(github_client).to receive(:labels).with("test-owner/test-repo").and_return(labels)
+        allow(github_client).to receive(:update_label) do |_repo, name, **|
+          raise GithubClient::NotFoundError if name == "P1"
+        end
+      end
+
+      it "records an error instead of aborting the whole sync" do
+        result = described_class.call(project: project)
+
+        expect(result.reconciled.map { |r| r[:name] }).not_to include("P1")
+        expect(result.errors).to include(
+          name: "P1",
+          error: a_string_including("was deleted during the sync")
+        )
+        expect(result.any_errors?).to be true
       end
     end
 

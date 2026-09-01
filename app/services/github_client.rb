@@ -374,6 +374,16 @@ class GithubClient
     handle_errors { with_auto_paginate { client.labels(repo, per_page: 100) } }
   end
 
+  # Fetches a single label by name.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param name [String] Label name
+  # @return [Sawyer::Resource] The label
+  # @raise [NotFoundError] When the label does not exist
+  def label(repo, name)
+    handle_errors { client.label(repo, name) }
+  end
+
   # Creates a label on a repository.
   #
   # @param repo [String] Repository in "owner/name" format

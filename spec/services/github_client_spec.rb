@@ -713,6 +713,35 @@ RSpec.describe GithubClient do
     end
   end
 
+  describe "#label" do
+    let(:repo) { "owner/repo" }
+
+    it "returns the label when it exists" do
+      stub_request(:get, "#{api_base}/repos/#{repo}/labels/priority")
+        .to_return(
+          status: 200,
+          body: { id: 3, name: "priority", color: "ff0000", description: "High priority" }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      result = client.label(repo, "priority")
+
+      expect(result.name).to eq("priority")
+      expect(result.color).to eq("ff0000")
+    end
+
+    it "raises NotFoundError when the label does not exist" do
+      stub_request(:get, "#{api_base}/repos/#{repo}/labels/missing")
+        .to_return(
+          status: 404,
+          body: { message: "Not Found" }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      expect { client.label(repo, "missing") }.to raise_error(GithubClient::NotFoundError)
+    end
+  end
+
   describe "#create_label" do
     let(:repo) { "owner/repo" }
 
