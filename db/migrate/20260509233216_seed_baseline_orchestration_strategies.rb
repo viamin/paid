@@ -1,49 +1,20 @@
 # frozen_string_literal: true
 
+# No-op: this migration used to seed the baseline orchestration strategies by
+# calling Strategies::SeedBaselineOrchestration.call, but any query against
+# `strategies` or `strategy_versions` between 20260507211918 (RLS enabled,
+# self-referencing policies) and 20260511040425 (recursion fix) raises
+# "infinite recursion detected in policy for relation" — a structural
+# consequence of the two tables' policies referencing each other, independent
+# of the querying code. A from-scratch migration replay always hits this
+# window, so the seeding was moved out of migration history entirely:
+# `db/seeds.rb` and `bin/rails ci:bootstrap_test_defaults` now call
+# Strategies::SeedBaselineOrchestration.call directly. See issue #3585.
+#
+# Databases that already applied this migration keep the rows it created;
+# this file is kept only so schema_migrations history stays intact.
 class SeedBaselineOrchestrationStrategies < ActiveRecord::Migration[8.1]
-  def up
-    TenantContext.with_system_access do
-      Strategies::SeedBaselineOrchestration.call
-      backfill_baseline_strategy_versions
-    end
-  end
+  def up; end
 
-  def down
-    TenantContext.with_system_access do
-      clear_backfilled_strategy_versions
-
-      Strategy.global.where(slug: baseline_slugs).find_each(&:destroy!)
-    end
-  end
-
-  private
-
-  def backfill_baseline_strategy_versions
-    return unless table_exists?(:orchestration_decisions)
-
-    Strategies::BaselineOrchestration.definitions.each do |definition|
-      version_id = Strategy.global
-        .find_by!(slug: definition.fetch(:slug))
-        .current_version_id
-
-      OrchestrationDecision.where(
-        decision_type: definition.fetch(:decision_type),
-        strategy_version_id: nil
-      ).update_all(strategy_version_id: version_id)
-    end
-  end
-
-  def clear_backfilled_strategy_versions
-    return unless table_exists?(:orchestration_decisions)
-
-    OrchestrationDecision.where(
-      strategy_version_id: StrategyVersion.joins(:strategy)
-        .where(strategies: { slug: baseline_slugs, account_id: nil, project_id: nil })
-        .select(:id)
-    ).update_all(strategy_version_id: nil)
-  end
-
-  def baseline_slugs
-    Strategies::BaselineOrchestration.definitions.map { |definition| definition.fetch(:slug) }
-  end
+  def down; end
 end
