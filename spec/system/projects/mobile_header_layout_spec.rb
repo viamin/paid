@@ -41,12 +41,21 @@ RSpec.describe "Project page header layout", :js, system_driver: :paid_cuprite, 
     expect(page).to have_link("Trigger Run")
     expect(page).to have_link("Edit")
 
-    expect(document_overflow).to be <= 4
+    expect(settled_document_overflow).to be <= 4
   end
 
   def document_overflow
     page.evaluate_script(<<~JS)
       Number((document.documentElement.scrollWidth - window.innerWidth).toFixed(2))
     JS
+  end
+
+  def settled_document_overflow
+    page.document.synchronize do
+      overflow = document_overflow
+      return overflow if overflow <= 4
+
+      raise Capybara::ExpectationNotMet, "project page layout has not settled yet: overflow=#{overflow}"
+    end
   end
 end
